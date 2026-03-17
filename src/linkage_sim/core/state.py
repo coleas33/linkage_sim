@@ -129,6 +129,15 @@ class State:
         idx = self.get_index(body_id)
         return float(q[idx.theta_idx])
 
+    def set_angle(
+        self, body_id: str, q: NDArray[np.float64], theta: float
+    ) -> None:
+        """Set only θ for a body in the state vector."""
+        if body_id == GROUND_ID:
+            raise ValueError("Cannot set angle for ground body.")
+        idx = self.get_index(body_id)
+        q[idx.theta_idx] = theta
+
     def make_q(self) -> NDArray[np.float64]:
         """Create a zero-initialized state vector of the correct size."""
         return np.zeros(self.n_coords)
