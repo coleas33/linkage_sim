@@ -1,16 +1,18 @@
-"""Mechanism validation: topology checks and DOF analysis.
+"""Mechanism validation: topology checks, connectivity, and DOF analysis.
 
 Layer 1 (topology) and Layer 2 (constraint analysis) validations.
 """
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
 
 from linkage_sim.core.mechanism import Mechanism
+from linkage_sim.core.state import GROUND_ID
 from linkage_sim.solvers.assembly import assemble_jacobian
 
 
@@ -167,4 +169,90 @@ def jacobian_rank_analysis(
         condition_number=condition_number,
         has_redundant_constraints=has_redundant,
         grubler_agrees=not grubler.is_warning,
+    )
+
+
+@dataclass(frozen=True)
+class ConnectivityResult:
+    """Result of a graph connectivity check.
+
+    Attributes:
+        is_connected: True if all bodies are reachable from ground.
+        reachable_bodies: Set of body IDs reachable from ground.
+        disconnected_bodies: Set of body IDs NOT reachable from ground.
+        n_components: Number of connected components (1 = fully connected).
+    """
+
+    is_connected: bool
+    reachable_bodies: frozenset[str]
+    disconnected_bodies: frozenset[str]
+    n_components: int
+
+
+def check_connectivity(mechanism: Mechanism) -> ConnectivityResult:
+    """Check that all bodies are reachable from ground via joint connections.
+
+    Builds an undirected adjacency graph from joint body pairs and performs
+    BFS from the ground node. Bodies not reached are reported as disconnected.
+
+    Args:
+        mechanism: A built Mechanism instance.
+
+    Returns:
+        ConnectivityResult with reachability info.
+
+    Raises:
+        RuntimeError: If mechanism has not been built.
+    """
+    if not mechanism._built:
+        raise RuntimeError("Mechanism must be built before connectivity check.")
+
+    all_body_ids = set(mechanism.bodies.keys())
+
+    # Build adjacency list
+    adjacency: dict[str, set[str]] = {bid: set() for bid in all_body_ids}
+    for joint in mechanism.joints:
+        bi = joint.body_i_id
+        bj = joint.body_j_id
+        if bi in adjacency and bj in adjacency:
+            adjacency[bi].add(bj)
+            adjacency[bj].add(bi)
+
+    # BFS from ground
+    visited: set[str] = set()
+    queue: deque[str] = deque()
+
+    if GROUND_ID in adjacency:
+        queue.append(GROUND_ID)
+        visited.add(GROUND_ID)
+
+    while queue:
+        current = queue.popleft()
+        for neighbor in adjacency[current]:
+            if neighbor not in visited:
+                visited.add(neighbor)
+                queue.append(neighbor)
+
+    disconnected = all_body_ids - visited
+
+    # Count total connected components
+    remaining = set(all_body_ids)
+    n_components = 0
+    while remaining:
+        n_components += 1
+        start = next(iter(remaining))
+        component_queue: deque[str] = deque([start])
+        while component_queue:
+            current = component_queue.popleft()
+            if current in remaining:
+                remaining.discard(current)
+                for neighbor in adjacency[current]:
+                    if neighbor in remaining:
+                        component_queue.append(neighbor)
+
+    return ConnectivityResult(
+        is_connected=len(disconnected) == 0,
+        reachable_bodies=frozenset(visited),
+        disconnected_bodies=frozenset(disconnected),
+        n_components=n_components,
     )

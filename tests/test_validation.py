@@ -6,8 +6,10 @@ import numpy as np
 import pytest
 
 from linkage_sim.analysis.validation import (
+    ConnectivityResult,
     GrublerResult,
     JacobianRankResult,
+    check_connectivity,
     grubler_dof,
     jacobian_rank_analysis,
 )
@@ -320,3 +322,166 @@ class TestJacobianRankAnalysis:
         result = jacobian_rank_analysis(mech, q)
         with pytest.raises(AttributeError):
             result.constraint_rank = 99  # type: ignore[misc]
+
+
+class TestCheckConnectivity:
+    def test_fourbar_connected(self) -> None:
+        """All 4-bar bodies are reachable from ground."""
+        mech = build_fourbar()
+        result = check_connectivity(mech)
+        assert result.is_connected
+        assert result.n_components == 1
+        assert len(result.disconnected_bodies) == 0
+        assert "ground" in result.reachable_bodies
+
+    def test_single_body_connected(self) -> None:
+        """One body pinned to ground is connected."""
+        mech = Mechanism()
+        ground = make_ground(O=(0.0, 0.0))
+        bar = make_bar("bar", "A", "B", length=0.1)
+        mech.add_body(ground)
+        mech.add_body(bar)
+        mech.add_revolute_joint("J1", "ground", "O", "bar", "A")
+        mech.build()
+
+        result = check_connectivity(mech)
+        assert result.is_connected
+        assert result.n_components == 1
+
+    def test_disconnected_body(self) -> None:
+        """A body with no joints is disconnected from ground."""
+        mech = Mechanism()
+        ground = make_ground(O=(0.0, 0.0))
+        bar = make_bar("connected", "A", "B", length=0.1)
+        floating = Body(id="floating")
+        floating.add_attachment_point("X", 0.0, 0.0)
+        mech.add_body(ground)
+        mech.add_body(bar)
+        mech.add_body(floating)
+        mech.add_revolute_joint("J1", "ground", "O", "connected", "A")
+        mech.build()
+
+        result = check_connectivity(mech)
+        assert not result.is_connected
+        assert "floating" in result.disconnected_bodies
+        assert "connected" in result.reachable_bodies
+        assert "ground" in result.reachable_bodies
+        assert result.n_components == 2
+
+    def test_two_disconnected_groups(self) -> None:
+        """Two separate chains: ground-bar1 and bar2-bar3."""
+        mech = Mechanism()
+        ground = make_ground(O=(0.0, 0.0))
+        bar1 = make_bar("bar1", "A", "B", length=0.1)
+        bar2 = make_bar("bar2", "C", "D", length=0.1)
+        bar3 = make_bar("bar3", "E", "F", length=0.1)
+        mech.add_body(ground)
+        mech.add_body(bar1)
+        mech.add_body(bar2)
+        mech.add_body(bar3)
+        mech.add_revolute_joint("J1", "ground", "O", "bar1", "A")
+        mech.add_revolute_joint("J2", "bar2", "D", "bar3", "E")
+        mech.build()
+
+        result = check_connectivity(mech)
+        assert not result.is_connected
+        assert result.n_components == 2
+        assert "bar2" in result.disconnected_bodies
+        assert "bar3" in result.disconnected_bodies
+        assert "bar1" in result.reachable_bodies
+
+    def test_chain_connectivity(self) -> None:
+        """Chain: ground-bar1-bar2-bar3 should be fully connected."""
+        mech = Mechanism()
+        ground = make_ground(O=(0.0, 0.0))
+        bar1 = make_bar("bar1", "A", "B", length=0.1)
+        bar2 = make_bar("bar2", "C", "D", length=0.1)
+        bar3 = make_bar("bar3", "E", "F", length=0.1)
+        mech.add_body(ground)
+        mech.add_body(bar1)
+        mech.add_body(bar2)
+        mech.add_body(bar3)
+        mech.add_revolute_joint("J1", "ground", "O", "bar1", "A")
+        mech.add_revolute_joint("J2", "bar1", "B", "bar2", "C")
+        mech.add_revolute_joint("J3", "bar2", "D", "bar3", "E")
+        mech.build()
+
+        result = check_connectivity(mech)
+        assert result.is_connected
+        assert result.n_components == 1
+
+    def test_no_joints_all_disconnected(self) -> None:
+        """Bodies with no joints: only ground is 'connected' to itself."""
+        mech = Mechanism()
+        ground = make_ground()
+        bar1 = make_bar("bar1", "A", "B", length=0.1)
+        bar2 = make_bar("bar2", "C", "D", length=0.1)
+        mech.add_body(ground)
+        mech.add_body(bar1)
+        mech.add_body(bar2)
+        mech.build()
+
+        result = check_connectivity(mech)
+        assert not result.is_connected
+        assert result.n_components == 3
+        assert "bar1" in result.disconnected_bodies
+        assert "bar2" in result.disconnected_bodies
+
+    def test_requires_built_mechanism(self) -> None:
+        mech = Mechanism()
+        ground = make_ground(O=(0.0, 0.0))
+        mech.add_body(ground)
+        with pytest.raises(RuntimeError, match="must be built"):
+            check_connectivity(mech)
+
+    def test_result_is_frozen(self) -> None:
+        mech = build_fourbar()
+        result = check_connectivity(mech)
+        with pytest.raises(AttributeError):
+            result.is_connected = False  # type: ignore[misc]
+
+    def test_prismatic_joint_counts_as_connection(self) -> None:
+        """Prismatic joint creates a connection between bodies."""
+        mech = Mechanism()
+        ground = make_ground(rail=(0.0, 0.0))
+        slider = Body(id="slider")
+        slider.add_attachment_point("pin", 0.0, 0.0)
+        mech.add_body(ground)
+        mech.add_body(slider)
+        mech.add_prismatic_joint(
+            "P1", "ground", "rail", "slider", "pin",
+            axis_local_i=np.array([1.0, 0.0]),
+        )
+        mech.build()
+
+        result = check_connectivity(mech)
+        assert result.is_connected
+        assert result.n_components == 1
+
+    def test_driver_counts_as_connection(self) -> None:
+        """Revolute driver creates a connection between bodies."""
+        mech = Mechanism()
+        ground = make_ground(O=(0.0, 0.0))
+        bar = make_bar("bar", "A", "B", length=0.1)
+        mech.add_body(ground)
+        mech.add_body(bar)
+        # Only a driver, no geometric joint (unusual, but tests connectivity)
+        mech.add_revolute_driver(
+            "D1", "ground", "bar",
+            f=lambda t: t, f_dot=lambda t: 1.0, f_ddot=lambda t: 0.0,
+        )
+        mech.build()
+
+        result = check_connectivity(mech)
+        assert result.is_connected
+
+    def test_ground_only_mechanism(self) -> None:
+        """Mechanism with just ground: trivially connected."""
+        mech = Mechanism()
+        ground = make_ground()
+        mech.add_body(ground)
+        mech.build()
+
+        result = check_connectivity(mech)
+        assert result.is_connected
+        assert result.n_components == 1
