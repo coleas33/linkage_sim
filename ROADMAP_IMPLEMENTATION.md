@@ -24,7 +24,7 @@ See `ROADMAP.md` for the full phase plan and exit criteria.
 | 12 | Acceleration solver | Done | `solvers/kinematics.py` | `test_velocity_accel.py` (6 tests, FD acceleration verified) |
 | 13 | Coupler point evaluation | Done | `analysis/coupler.py` | `test_coupler.py` (11 tests, FD velocity verified, 4-bar coupler curve) |
 | 14 | JSON serialization / deserialization | Done | `io/serialization.py` | `test_serialization.py` (19 tests, full round-trip + file I/O) |
-| 15 | Minimal Matplotlib viewer | | | |
+| 15 | Minimal Matplotlib viewer | Done | `viz/viewer.py` | `test_viewer.py` (9 tests, bodies + joints + coupler trace) |
 | 16 | Animation | | | |
 | 17 | Test suite — 4-bar benchmark | | | |
 | 18 | Prismatic joint constraint | | | |
@@ -32,4 +32,4 @@ See `ROADMAP.md` for the full phase plan and exit criteria.
 | 20 | Graph connectivity check | | | |
 | 21 | Ternary body test (6-bar) | | | |
 
-**Total tests:** 195 passing | **mypy:** strict, clean
+**Total tests:** 204 passing | **mypy:** strict, clean
