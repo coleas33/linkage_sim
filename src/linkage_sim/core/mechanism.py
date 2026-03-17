@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 import numpy as np
 from numpy.typing import NDArray
 
+from typing import Callable
+
 from linkage_sim.core.bodies import Body
 from linkage_sim.core.constraints import (
     Constraint,
@@ -19,6 +21,11 @@ from linkage_sim.core.constraints import (
     RevoluteJoint,
     make_fixed_joint,
     make_revolute_joint,
+)
+from linkage_sim.core.drivers import (
+    RevoluteDriver,
+    constant_speed_driver,
+    make_revolute_driver,
 )
 from linkage_sim.core.state import GROUND_ID, State
 
@@ -129,6 +136,63 @@ class Mechanism:
             delta_theta_0=delta_theta_0,
         )
         self._joints.append(joint)
+
+    def add_revolute_driver(
+        self,
+        driver_id: str,
+        body_i_id: str,
+        body_j_id: str,
+        f: Callable[[float], float],
+        f_dot: Callable[[float], float],
+        f_ddot: Callable[[float], float],
+    ) -> None:
+        """Add a revolute driver prescribing relative angle vs. time.
+
+        Adds one constraint equation: θⱼ - θᵢ - f(t) = 0.
+        Both bodies must already be added to the mechanism.
+        """
+        if self._built:
+            raise RuntimeError("Cannot add drivers after build().")
+
+        self._get_body(body_i_id)
+        self._get_body(body_j_id)
+
+        driver = make_revolute_driver(
+            driver_id=driver_id,
+            body_i_id=body_i_id,
+            body_j_id=body_j_id,
+            f=f,
+            f_dot=f_dot,
+            f_ddot=f_ddot,
+        )
+        self._joints.append(driver)
+
+    def add_constant_speed_driver(
+        self,
+        driver_id: str,
+        body_i_id: str,
+        body_j_id: str,
+        omega: float,
+        theta_0: float = 0.0,
+    ) -> None:
+        """Add a constant-speed revolute driver.
+
+        f(t) = theta_0 + omega * t, f'(t) = omega, f''(t) = 0.
+        """
+        if self._built:
+            raise RuntimeError("Cannot add drivers after build().")
+
+        self._get_body(body_i_id)
+        self._get_body(body_j_id)
+
+        driver = constant_speed_driver(
+            driver_id=driver_id,
+            body_i_id=body_i_id,
+            body_j_id=body_j_id,
+            omega=omega,
+            theta_0=theta_0,
+        )
+        self._joints.append(driver)
 
     def build(self) -> None:
         """Finalize the mechanism: register moving bodies in the state vector.

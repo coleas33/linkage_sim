@@ -18,7 +18,7 @@ See `ROADMAP.md` for the full phase plan and exit criteria.
 | 6 | Grubler DOF count | Done | `analysis/validation.py` | `test_validation.py` (11 tests) |
 | 7 | Jacobian rank check | Done | `analysis/validation.py` | `test_validation.py` (11 new tests, SVD-based rank + condition number) |
 | 8 | Kinematic position solver (Newton-Raphson) | Done | `solvers/kinematics.py` | `test_kinematics.py` (12 tests, multi-angle convergence verified) |
-| 9 | Revolute driver constraint | | | |
+| 9 | Revolute driver constraint | Done | `core/drivers.py` | `test_drivers.py` (19 tests, FD Jacobian via hypothesis, driven 4-bar solve) |
 | 10 | Position sweep | | | |
 | 11 | Velocity solver | | | |
 | 12 | Acceleration solver | | | |
@@ -32,4 +32,4 @@ See `ROADMAP.md` for the full phase plan and exit criteria.
 | 20 | Graph connectivity check | | | |
 | 21 | Ternary body test (6-bar) | | | |
 
-**Total tests:** 124 passing | **mypy:** strict, clean
+**Total tests:** 143 passing | **mypy:** strict, clean
