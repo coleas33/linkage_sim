@@ -34,6 +34,9 @@ class Constraint(Protocol):
     def body_i_id(self) -> str: ...
 
     @property
+    def dof_removed(self) -> int: ...
+
+    @property
     def body_j_id(self) -> str: ...
 
     def constraint(
@@ -82,6 +85,10 @@ class RevoluteJoint:
 
     @property
     def n_equations(self) -> int:
+        return 2
+
+    @property
+    def dof_removed(self) -> int:
         return 2
 
     @property
@@ -205,6 +212,10 @@ class FixedJoint:
 
     @property
     def n_equations(self) -> int:
+        return 3
+
+    @property
+    def dof_removed(self) -> int:
         return 3
 
     @property
