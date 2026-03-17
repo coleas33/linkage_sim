@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+
+# Type checking
+.mypy_cache/
+
+# Testing
+.pytest_cache/
+.hypothesis/
+htmlcov/
+.coverage
+coverage.xml
+
+# IDE
+.cursor/
+.vscode/
+.idea/
+
+# AI tools
+.claude/
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Environment
+.env
+.env.*
+!.env.template
+
+# Golden test fixtures (generated, not committed until stable)
+data/benchmarks/golden/
+*.zip
+settings.json
+settings.local.json
+.cursorignore
