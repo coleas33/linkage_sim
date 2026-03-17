@@ -178,6 +178,106 @@ Add discontinuous and switching effects to the forward dynamics integrator.
 
 ---
 
+## Usability and Authoring Layer — Improvements from the Old Linkage Tool
+
+While the new simulator will retain its global body-constraint solver architecture, it should adopt several workflow improvements inspired by the old Linkage tool: fast gallery-based mechanism creation, strong snapping/alignment aids, built-in sample mechanisms, rich exports, a body/joint browser, readable versioned file formats, and early productivity features such as undo/redo and autosave. These features improve usability and iteration speed without compromising the more general solver design.
+
+**Important constraint:** Do not copy the old tool's likely solver approach. Keep the new global constraint-based architecture. Borrow the workflow and UX strengths, not the old local propagation solver.
+
+### 1. Fast Mechanism-Building Workflow
+
+The old tool appears optimized for quickly placing anchors, links, gears, sliders, and inputs from a visual gallery. The new tool should add:
+
+- A fast insert workflow for common mechanism elements
+- Right-click or palette-based element insertion
+- Drag-to-place joints and bodies
+- Low-friction editing for concept creation, not just analysis
+
+**Reason:** The new tool is mathematically stronger, but it will lose value if building a mechanism feels slow.
+
+### 2. Strong Interactive Editing Aids
+
+The old tool emphasized snapping, alignment, and visual construction aids. The new tool should include:
+
+- Snap to point / line / axis
+- Horizontal, vertical, perpendicular, tangent, and coincident helpers
+- Alignment guides
+- Angle and length constraints for sketching bodies/joints
+- Easy repositioning of joints and attachment points
+
+**Reason:** This will make topology creation faster and reduce bad geometry before the solver runs.
+
+### 3. Sample Mechanisms and Learning Assets
+
+The old tool seems to have shipped with example files and tutorials. The new tool should include:
+
+- Built-in sample mechanisms
+- Progressively harder examples: 4-bar, slider-crank, bell crank, geared linkage, cam follower
+- Known-good benchmark files for solver validation
+- Tutorial workflows tied to these examples
+
+**Reason:** Samples help both users and developers. They are also regression tests in disguise.
+
+### 4. Rich Export and Reporting
+
+The old tool supported image/video/CSV-style outputs. The new tool should add:
+
+- CSV export for angle, position, velocity, acceleration, reactions, input torque
+- Image export for plots and mechanism views
+- Animation export for presentations/debugging
+- Printable reports with mechanism summary and key results
+
+**Reason:** Engineering tools need easy ways to share results with non-experts.
+
+### 5. Separate Model, Solver, and View Cleanly
+
+The old tool's document-view split is still a useful product idea even if the math core changes. The new tool should keep:
+
+- Model storage separate from rendering
+- Solver separate from GUI interaction
+- Serialization separate from simulation
+- Display state separate from physical state
+
+**Reason:** This keeps the app maintainable and makes later GUI rewrites easier.
+
+### 6. User-Friendly Parts/Object Browser
+
+The old tool had a parts-list style view. The new tool should add:
+
+- Body/joint/constraint tree
+- Force-element list
+- Driver list
+- Suppression/visibility toggles
+- Quick jump to selected object in canvas
+
+**Reason:** Once mechanisms get bigger, direct clicking alone becomes painful.
+
+### 7. Easy Data File Format
+
+The old tool's XML-based .linkage2 format is a good lesson. The new tool should use:
+
+- A readable text-based file format
+- Explicit body, joint, constraint, driver, and force definitions
+- Versioning for future migration
+- Import/export structure that is stable and testable
+
+**Reason:** Human-readable files make debugging, testing, and migration much easier.
+
+### 8. Productivity Features Early, Not Only Math Features
+
+The old tool likely succeeded because it was convenient. The new tool should add early:
+
+- Undo/redo
+- Duplicate/copy/paste
+- Mechanism templates
+- Recent files
+- Autosave / crash recovery
+- Persistent view settings
+
+**Reason:** These are not glamorous, but they heavily affect whether people actually use the tool.
+
+---
+
 ## Rust Port — Between Phase 4 and Phase 5
 
 **After Phase 4 exits, port the solver kernel to Rust before building the GUI.** Phase 5 is built natively in Rust using `egui`, not in Python. The Python codebase becomes the reference implementation and test oracle.
