@@ -27,9 +27,9 @@ See `ROADMAP.md` for the full phase plan and exit criteria.
 | 15 | Minimal Matplotlib viewer | Done | `viz/viewer.py` | `test_viewer.py` (9 tests, bodies + joints + coupler trace) |
 | 16 | Animation | Done | `viz/animation.py` | `test_animation.py` (6 tests, FuncAnimation + coupler trace) |
 | 17 | Test suite — 4-bar benchmark | Done | `test_fourbar_benchmark.py` | 36 tests: DOF, position vs analytical, velocity/accel FD, sweep, coupler curve |
-| 18 | Prismatic joint constraint | | | |
+| 18 | Prismatic joint constraint | Done | `core/constraints.py` | `test_prismatic.py` (35 tests, FD Jacobian + gamma verified via hypothesis) |
 | 19 | Slider-crank benchmark | | | |
 | 20 | Graph connectivity check | | | |
 | 21 | Ternary body test (6-bar) | | | |
 
-**Total tests:** 246 passing | **mypy:** strict, clean
+**Total tests:** 281 passing | **mypy:** strict, clean

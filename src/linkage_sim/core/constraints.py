@@ -327,6 +327,249 @@ class FixedJoint:
         return result
 
 
+@dataclass
+class PrismaticJoint:
+    """Prismatic (slider) joint: allows translation along one axis, locks rotation.
+
+    Removes 2 DOF (1 perpendicular translation + 1 rotation).
+
+    Constraint (2 equations):
+        Φ[0] = n̂ᵢ_global · d = 0        // no displacement perpendicular to slide axis
+        Φ[1] = θⱼ - θᵢ - Δθ₀ = 0        // no relative rotation
+
+    Where:
+        d = rⱼ + Aⱼ * sⱼ - rᵢ - Aᵢ * sᵢ   (global vector from point_i to point_j)
+        n̂ᵢ_global = Aᵢ * n̂ᵢ                (perpendicular to slide axis, rotates with body i)
+        êᵢ = slide axis in body i's local frame
+        n̂ᵢ = perpendicular to êᵢ (rotate êᵢ by 90° CCW)
+
+    The free coordinate (slide displacement) is: s_slide = êᵢ_global · d
+    """
+
+    _id: str
+    _body_i_id: str
+    _point_i_name: str
+    _body_j_id: str
+    _point_j_name: str
+    _point_i_local: NDArray[np.float64]
+    _point_j_local: NDArray[np.float64]
+    _axis_local_i: NDArray[np.float64]
+    _n_hat_local_i: NDArray[np.float64]
+    _delta_theta_0: float
+
+    @property
+    def id(self) -> str:
+        return self._id
+
+    @property
+    def n_equations(self) -> int:
+        return 2
+
+    @property
+    def dof_removed(self) -> int:
+        return 2
+
+    @property
+    def body_i_id(self) -> str:
+        return self._body_i_id
+
+    @property
+    def body_j_id(self) -> str:
+        return self._body_j_id
+
+    def constraint(
+        self, state: State, q: NDArray[np.float64], t: float
+    ) -> NDArray[np.float64]:
+        """Φ[0] = n̂ᵢ_global · d, Φ[1] = θⱼ - θᵢ - Δθ₀"""
+        # Perpendicular constraint
+        theta_i = state.get_angle(self._body_i_id, q)
+        A_i = state.rotation_matrix(theta_i)
+        n_hat_g = A_i @ self._n_hat_local_i
+
+        pt_i_g = state.body_point_global(self._body_i_id, self._point_i_local, q)
+        pt_j_g = state.body_point_global(self._body_j_id, self._point_j_local, q)
+        d = pt_j_g - pt_i_g
+
+        # Rotation constraint
+        theta_j = state.get_angle(self._body_j_id, q)
+
+        phi = np.zeros(2)
+        phi[0] = float(np.dot(n_hat_g, d))
+        phi[1] = theta_j - theta_i - self._delta_theta_0
+        return phi
+
+    def phi_t(
+        self, state: State, q: NDArray[np.float64], t: float
+    ) -> NDArray[np.float64]:
+        """∂Φ/∂t = 0 for geometric joints."""
+        return np.zeros(2)
+
+    def jacobian(
+        self, state: State, q: NDArray[np.float64], t: float
+    ) -> NDArray[np.float64]:
+        """∂Φ/∂q — 2 rows × n_coords columns.
+
+        Row 0 (perpendicular constraint Φ[0] = n̂_g · d):
+            ∂Φ[0]/∂xᵢ = -n̂_g[0]
+            ∂Φ[0]/∂yᵢ = -n̂_g[1]
+            ∂Φ[0]/∂θᵢ = (Bᵢ @ n̂ᵢ) · d - n̂_g · (Bᵢ @ sᵢ)
+            ∂Φ[0]/∂xⱼ = n̂_g[0]
+            ∂Φ[0]/∂yⱼ = n̂_g[1]
+            ∂Φ[0]/∂θⱼ = n̂_g · (Bⱼ @ sⱼ)
+
+        Row 1 (rotation constraint Φ[1] = θⱼ - θᵢ - Δθ₀):
+            ∂Φ[1]/∂θᵢ = -1, ∂Φ[1]/∂θⱼ = 1
+        """
+        n = state.n_coords
+        jac = np.zeros((2, n))
+
+        theta_i = state.get_angle(self._body_i_id, q)
+        A_i = state.rotation_matrix(theta_i)
+        B_i = state.rotation_matrix_derivative(theta_i)
+        n_hat_g = A_i @ self._n_hat_local_i
+        B_n = B_i @ self._n_hat_local_i
+
+        pt_i_g = state.body_point_global(self._body_i_id, self._point_i_local, q)
+        pt_j_g = state.body_point_global(self._body_j_id, self._point_j_local, q)
+        d = pt_j_g - pt_i_g
+
+        if not state.is_ground(self._body_i_id):
+            idx_i = state.get_index(self._body_i_id)
+            # Row 0: perpendicular constraint
+            jac[0, idx_i.x_idx] = -n_hat_g[0]
+            jac[0, idx_i.y_idx] = -n_hat_g[1]
+            B_si = B_i @ self._point_i_local
+            jac[0, idx_i.theta_idx] = float(np.dot(B_n, d) - np.dot(n_hat_g, B_si))
+            # Row 1: rotation constraint
+            jac[1, idx_i.theta_idx] = -1.0
+
+        if not state.is_ground(self._body_j_id):
+            idx_j = state.get_index(self._body_j_id)
+            theta_j = state.get_angle(self._body_j_id, q)
+            B_j = state.rotation_matrix_derivative(theta_j)
+            # Row 0: perpendicular constraint
+            jac[0, idx_j.x_idx] = n_hat_g[0]
+            jac[0, idx_j.y_idx] = n_hat_g[1]
+            B_sj = B_j @ self._point_j_local
+            jac[0, idx_j.theta_idx] = float(np.dot(n_hat_g, B_sj))
+            # Row 1: rotation constraint
+            jac[1, idx_j.theta_idx] += 1.0
+
+        return jac
+
+    def gamma(
+        self,
+        state: State,
+        q: NDArray[np.float64],
+        q_dot: NDArray[np.float64],
+        t: float,
+    ) -> NDArray[np.float64]:
+        """Acceleration RHS for the prismatic joint.
+
+        γ[0] collects the velocity-quadratic terms from Φ̈[0] = d²(n̂_g · d)/dt²:
+            γ[0] = n̂_g · d · θ̇ᵢ²
+                   - 2 · θ̇ᵢ · (Bᵢ @ n̂ᵢ) · ḋ
+                   + n̂_g · (Aⱼ @ sⱼ) · θ̇ⱼ²
+                   - n̂_g · (Aᵢ @ sᵢ) · θ̇ᵢ²
+
+        γ[1] = 0 (rotation constraint is linear in θ).
+        """
+        result = np.zeros(2)
+
+        theta_i = state.get_angle(self._body_i_id, q)
+        theta_j = state.get_angle(self._body_j_id, q)
+        A_i = state.rotation_matrix(theta_i)
+        B_i = state.rotation_matrix_derivative(theta_i)
+        A_j = state.rotation_matrix(theta_j)
+        B_j = state.rotation_matrix_derivative(theta_j)
+
+        n_hat_g = A_i @ self._n_hat_local_i
+        B_n = B_i @ self._n_hat_local_i
+
+        pt_i_g = state.body_point_global(self._body_i_id, self._point_i_local, q)
+        pt_j_g = state.body_point_global(self._body_j_id, self._point_j_local, q)
+        d = pt_j_g - pt_i_g
+
+        # Velocities (zero for ground bodies)
+        theta_dot_i = 0.0
+        r_dot_i = np.zeros(2)
+        if not state.is_ground(self._body_i_id):
+            idx_i = state.get_index(self._body_i_id)
+            theta_dot_i = float(q_dot[idx_i.theta_idx])
+            r_dot_i = np.array([q_dot[idx_i.x_idx], q_dot[idx_i.y_idx]])
+
+        theta_dot_j = 0.0
+        r_dot_j = np.zeros(2)
+        if not state.is_ground(self._body_j_id):
+            idx_j = state.get_index(self._body_j_id)
+            theta_dot_j = float(q_dot[idx_j.theta_idx])
+            r_dot_j = np.array([q_dot[idx_j.x_idx], q_dot[idx_j.y_idx]])
+
+        # d_dot = velocity of d vector
+        d_dot = (
+            (r_dot_j + B_j @ self._point_j_local * theta_dot_j)
+            - (r_dot_i + B_i @ self._point_i_local * theta_dot_i)
+        )
+
+        # γ[0]: velocity-quadratic terms from Φ̈[0] = d²(n̂_g · d)/dt²
+        result[0] = (
+            float(np.dot(n_hat_g, d)) * theta_dot_i**2
+            - 2.0 * theta_dot_i * float(np.dot(B_n, d_dot))
+            + float(np.dot(n_hat_g, A_j @ self._point_j_local)) * theta_dot_j**2
+            - float(np.dot(n_hat_g, A_i @ self._point_i_local)) * theta_dot_i**2
+        )
+
+        # γ[1] = 0 (rotation constraint is linear in θ)
+        return result
+
+
+def make_prismatic_joint(
+    joint_id: str,
+    body_i_id: str,
+    point_i_name: str,
+    point_i_local: NDArray[np.float64],
+    body_j_id: str,
+    point_j_name: str,
+    point_j_local: NDArray[np.float64],
+    axis_local_i: NDArray[np.float64],
+    delta_theta_0: float = 0.0,
+) -> PrismaticJoint:
+    """Create a prismatic joint that allows sliding along one axis.
+
+    Args:
+        joint_id: Unique identifier for this joint.
+        body_i_id: ID of the body that owns the slide axis (can be "ground").
+        point_i_name: Name of the attachment point on body_i.
+        point_i_local: Local coordinates of the attachment point on body_i.
+        body_j_id: ID of the sliding body (can be "ground").
+        point_j_name: Name of the attachment point on body_j.
+        point_j_local: Local coordinates of the attachment point on body_j.
+        axis_local_i: Unit vector along the slide axis in body_i's local frame.
+        delta_theta_0: Initial relative angle θⱼ - θᵢ to maintain.
+    """
+    axis = axis_local_i.copy().astype(np.float64)
+    norm = float(np.linalg.norm(axis))
+    if norm < 1e-12:
+        raise ValueError("axis_local_i must be non-zero.")
+    axis /= norm
+
+    # Perpendicular: rotate axis by 90° CCW → n̂ = (-e_y, e_x)
+    n_hat = np.array([-axis[1], axis[0]], dtype=np.float64)
+
+    return PrismaticJoint(
+        _id=joint_id,
+        _body_i_id=body_i_id,
+        _point_i_name=point_i_name,
+        _body_j_id=body_j_id,
+        _point_j_name=point_j_name,
+        _point_i_local=point_i_local.copy(),
+        _point_j_local=point_j_local.copy(),
+        _axis_local_i=axis,
+        _n_hat_local_i=n_hat,
+        _delta_theta_0=delta_theta_0,
+    )
+
+
 def make_fixed_joint(
     joint_id: str,
     body_i_id: str,

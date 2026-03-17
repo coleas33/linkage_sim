@@ -18,8 +18,10 @@ from linkage_sim.core.bodies import Body
 from linkage_sim.core.constraints import (
     Constraint,
     FixedJoint,
+    PrismaticJoint,
     RevoluteJoint,
     make_fixed_joint,
+    make_prismatic_joint,
     make_revolute_joint,
 )
 from linkage_sim.core.drivers import (
@@ -133,6 +135,51 @@ class Mechanism:
             body_j_id=body_j_id,
             point_j_name=point_j_name,
             point_j_local=pt_j,
+            delta_theta_0=delta_theta_0,
+        )
+        self._joints.append(joint)
+
+    def add_prismatic_joint(
+        self,
+        joint_id: str,
+        body_i_id: str,
+        point_i_name: str,
+        body_j_id: str,
+        point_j_name: str,
+        axis_local_i: NDArray[np.float64],
+        delta_theta_0: float = 0.0,
+    ) -> None:
+        """Add a prismatic joint that allows sliding along one axis.
+
+        Body i owns the slide axis. Body j slides along it.
+        Both bodies must already be added to the mechanism.
+
+        Args:
+            joint_id: Unique identifier for this joint.
+            body_i_id: ID of the body that owns the slide axis.
+            point_i_name: Name of the attachment point on body_i.
+            body_j_id: ID of the sliding body.
+            point_j_name: Name of the attachment point on body_j.
+            axis_local_i: Unit vector along the slide axis in body_i's local frame.
+            delta_theta_0: Initial relative angle θⱼ - θᵢ to maintain.
+        """
+        if self._built:
+            raise RuntimeError("Cannot add joints after build().")
+
+        body_i = self._get_body(body_i_id)
+        body_j = self._get_body(body_j_id)
+        pt_i = body_i.get_attachment_point(point_i_name)
+        pt_j = body_j.get_attachment_point(point_j_name)
+
+        joint = make_prismatic_joint(
+            joint_id=joint_id,
+            body_i_id=body_i_id,
+            point_i_name=point_i_name,
+            point_i_local=pt_i,
+            body_j_id=body_j_id,
+            point_j_name=point_j_name,
+            point_j_local=pt_j,
+            axis_local_i=axis_local_i,
             delta_theta_0=delta_theta_0,
         )
         self._joints.append(joint)

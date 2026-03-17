@@ -78,13 +78,21 @@ def plot_mechanism(
             # Get the global position of the joint (body_i's point)
             body_i = mechanism.bodies[joint.body_i_id]
 
-            from linkage_sim.core.constraints import RevoluteJoint, FixedJoint
-            from linkage_sim.core.drivers import RevoluteDriver
+            from linkage_sim.core.constraints import (
+                FixedJoint,
+                PrismaticJoint,
+                RevoluteJoint,
+            )
 
-            if isinstance(joint, (RevoluteJoint, FixedJoint)):
+            if isinstance(joint, (RevoluteJoint, FixedJoint, PrismaticJoint)):
                 pt_local = body_i.get_attachment_point(joint._point_i_name)
                 pt_global = state.body_point_global(joint.body_i_id, pt_local, q)
-                marker = "o" if isinstance(joint, RevoluteJoint) else "s"
+                if isinstance(joint, RevoluteJoint):
+                    marker = "o"
+                elif isinstance(joint, PrismaticJoint):
+                    marker = "D"
+                else:
+                    marker = "s"
                 ax.plot(
                     pt_global[0], pt_global[1],
                     marker, color=joint_color, markersize=joint_size,

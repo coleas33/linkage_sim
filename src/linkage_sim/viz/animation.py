@@ -113,14 +113,23 @@ def animate_mechanism(
                 artists.append(line)
 
         # Draw joints
-        from linkage_sim.core.constraints import FixedJoint, RevoluteJoint
+        from linkage_sim.core.constraints import (
+            FixedJoint,
+            PrismaticJoint,
+            RevoluteJoint,
+        )
 
         for joint in mechanism.joints:
-            if isinstance(joint, (RevoluteJoint, FixedJoint)):
+            if isinstance(joint, (RevoluteJoint, FixedJoint, PrismaticJoint)):
                 body_i = mechanism.bodies[joint.body_i_id]
                 pt_local = body_i.get_attachment_point(joint._point_i_name)
                 pt_global = state.body_point_global(joint.body_i_id, pt_local, q)
-                marker = "o" if isinstance(joint, RevoluteJoint) else "s"
+                if isinstance(joint, RevoluteJoint):
+                    marker = "o"
+                elif isinstance(joint, PrismaticJoint):
+                    marker = "D"
+                else:
+                    marker = "s"
                 (pt,) = ax.plot(pt_global[0], pt_global[1], marker,
                                 color=joint_color, markersize=6, zorder=3)
                 artists.append(pt)

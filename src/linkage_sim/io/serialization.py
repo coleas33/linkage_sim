@@ -52,7 +52,11 @@ def mechanism_to_dict(mechanism: Mechanism) -> dict[str, Any]:
         }
 
         # Determine joint type and type-specific fields
-        from linkage_sim.core.constraints import FixedJoint, RevoluteJoint
+        from linkage_sim.core.constraints import (
+            FixedJoint,
+            PrismaticJoint,
+            RevoluteJoint,
+        )
         from linkage_sim.core.drivers import RevoluteDriver
 
         if isinstance(joint, RevoluteJoint):
@@ -63,6 +67,12 @@ def mechanism_to_dict(mechanism: Mechanism) -> dict[str, Any]:
             joint_data["type"] = "fixed"
             joint_data["point_i"] = joint._point_i_name
             joint_data["point_j"] = joint._point_j_name
+            joint_data["delta_theta_0"] = joint._delta_theta_0
+        elif isinstance(joint, PrismaticJoint):
+            joint_data["type"] = "prismatic"
+            joint_data["point_i"] = joint._point_i_name
+            joint_data["point_j"] = joint._point_j_name
+            joint_data["axis_local_i"] = joint._axis_local_i.tolist()
             joint_data["delta_theta_0"] = joint._delta_theta_0
         elif isinstance(joint, RevoluteDriver):
             joint_data["type"] = "revolute_driver"
@@ -156,6 +166,17 @@ def dict_to_mechanism(data: dict[str, Any]) -> Mechanism:
                 joint_data["point_i"],
                 joint_data["body_j"],
                 joint_data["point_j"],
+                delta_theta_0=joint_data.get("delta_theta_0", 0.0),
+            )
+        elif joint_type == "prismatic":
+            axis = np.array(joint_data["axis_local_i"], dtype=np.float64)
+            mech.add_prismatic_joint(
+                joint_id,
+                joint_data["body_i"],
+                joint_data["point_i"],
+                joint_data["body_j"],
+                joint_data["point_j"],
+                axis_local_i=axis,
                 delta_theta_0=joint_data.get("delta_theta_0", 0.0),
             )
         elif joint_type == "revolute_driver":
