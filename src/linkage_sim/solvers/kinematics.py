@@ -1,8 +1,8 @@
-"""Kinematic position solver: Newton-Raphson on Φ(q, t) = 0.
+"""Kinematic solvers: position, velocity, and acceleration.
 
-Solves the nonlinear constraint system for generalized coordinates q
-at a given time t. The solver uses the analytical Jacobian Φ_q for
-quadratic convergence.
+Position: Newton-Raphson on Φ(q, t) = 0
+Velocity: linear solve Φ_q * q̇ = -Φ_t
+Acceleration: linear solve Φ_q * q̈ = γ
 """
 
 from __future__ import annotations
@@ -13,7 +13,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 from linkage_sim.core.mechanism import Mechanism
-from linkage_sim.solvers.assembly import assemble_constraints, assemble_jacobian
+from linkage_sim.solvers.assembly import (
+    assemble_constraints,
+    assemble_gamma,
+    assemble_jacobian,
+    assemble_phi_t,
+)
 
 
 @dataclass(frozen=True)
@@ -92,3 +97,68 @@ def solve_position(
         iterations=max_iter,
         residual_norm=residual_norm,
     )
+
+
+def solve_velocity(
+    mechanism: Mechanism,
+    q: NDArray[np.float64],
+    t: float = 0.0,
+) -> NDArray[np.float64]:
+    """Solve for velocity: Φ_q * q̇ = -Φ_t.
+
+    This is a single linear solve (no iteration needed).
+    Φ_t is nonzero only for driver constraints.
+
+    Args:
+        mechanism: A built Mechanism instance.
+        q: Converged position vector from solve_position.
+        t: Time at which to evaluate.
+
+    Returns:
+        q_dot: Generalized velocity vector.
+
+    Raises:
+        RuntimeError: If mechanism has not been built.
+    """
+    if not mechanism._built:
+        raise RuntimeError("Mechanism must be built before solving.")
+
+    phi_q = assemble_jacobian(mechanism, q, t)
+    phi_t = assemble_phi_t(mechanism, q, t)
+    rhs = -phi_t
+
+    q_dot = np.asarray(np.linalg.lstsq(phi_q, rhs, rcond=None)[0], dtype=np.float64)
+    return q_dot
+
+
+def solve_acceleration(
+    mechanism: Mechanism,
+    q: NDArray[np.float64],
+    q_dot: NDArray[np.float64],
+    t: float = 0.0,
+) -> NDArray[np.float64]:
+    """Solve for acceleration: Φ_q * q̈ = γ.
+
+    This is a single linear solve (no iteration needed).
+    γ accounts for centripetal, Coriolis-like, and driver terms.
+
+    Args:
+        mechanism: A built Mechanism instance.
+        q: Converged position vector.
+        q_dot: Velocity vector from solve_velocity.
+        t: Time at which to evaluate.
+
+    Returns:
+        q_ddot: Generalized acceleration vector.
+
+    Raises:
+        RuntimeError: If mechanism has not been built.
+    """
+    if not mechanism._built:
+        raise RuntimeError("Mechanism must be built before solving.")
+
+    phi_q = assemble_jacobian(mechanism, q, t)
+    gamma = assemble_gamma(mechanism, q, q_dot, t)
+
+    q_ddot = np.asarray(np.linalg.lstsq(phi_q, gamma, rcond=None)[0], dtype=np.float64)
+    return q_ddot

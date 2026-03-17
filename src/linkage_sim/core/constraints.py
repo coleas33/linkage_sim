@@ -47,6 +47,10 @@ class Constraint(Protocol):
         self, state: State, q: NDArray[np.float64], t: float
     ) -> NDArray[np.float64]: ...
 
+    def phi_t(
+        self, state: State, q: NDArray[np.float64], t: float
+    ) -> NDArray[np.float64]: ...
+
     def gamma(
         self,
         state: State,
@@ -106,6 +110,12 @@ class RevoluteJoint:
         global_i = state.body_point_global(self._body_i_id, self._point_i_local, q)
         global_j = state.body_point_global(self._body_j_id, self._point_j_local, q)
         return global_i - global_j
+
+    def phi_t(
+        self, state: State, q: NDArray[np.float64], t: float
+    ) -> NDArray[np.float64]:
+        """∂Φ/∂t = 0 for geometric joints."""
+        return np.zeros(2)
 
     def jacobian(
         self, state: State, q: NDArray[np.float64], t: float
@@ -240,6 +250,12 @@ class FixedJoint:
         phi[0:2] = global_i - global_j
         phi[2] = theta_j - theta_i - self._delta_theta_0
         return phi
+
+    def phi_t(
+        self, state: State, q: NDArray[np.float64], t: float
+    ) -> NDArray[np.float64]:
+        """∂Φ/∂t = 0 for geometric joints."""
+        return np.zeros(3)
 
     def jacobian(
         self, state: State, q: NDArray[np.float64], t: float

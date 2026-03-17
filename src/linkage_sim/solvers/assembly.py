@@ -1,6 +1,6 @@
 """Global constraint system assembly from a Mechanism.
 
-Assembles the global Φ, Φ_q, and γ vectors/matrices by stacking
+Assembles the global Φ, Φ_q, Φ_t, and γ vectors/matrices by stacking
 contributions from all joints in the mechanism.
 """
 
@@ -51,6 +51,29 @@ def assemble_jacobian(
         row += n_eq
 
     return phi_q
+
+
+def assemble_phi_t(
+    mechanism: Mechanism, q: NDArray[np.float64], t: float
+) -> NDArray[np.float64]:
+    """Assemble global time-derivative vector Φ_t(q, t).
+
+    Nonzero only for driver constraints (the time derivative of the
+    driver function). Used in velocity equation: Φ_q * q̇ = -Φ_t.
+
+    Returns:
+        Φ_t: (m,) vector.
+    """
+    m = mechanism.n_constraints
+    phi_t = np.zeros(m)
+
+    row = 0
+    for joint in mechanism.joints:
+        n_eq = joint.n_equations
+        phi_t[row : row + n_eq] = joint.phi_t(mechanism.state, q, t)
+        row += n_eq
+
+    return phi_t
 
 
 def assemble_gamma(

@@ -66,6 +66,12 @@ class RevoluteDriver:
         theta_j = state.get_angle(self._body_j_id, q)
         return np.array([theta_j - theta_i - self._f(t)])
 
+    def phi_t(
+        self, state: State, q: NDArray[np.float64], t: float
+    ) -> NDArray[np.float64]:
+        """∂Φ/∂t = -f'(t)."""
+        return np.array([-self._f_dot(t)])
+
     def jacobian(
         self, state: State, q: NDArray[np.float64], t: float
     ) -> NDArray[np.float64]:
