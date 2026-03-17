@@ -25,11 +25,11 @@ See `ROADMAP.md` for the full phase plan and exit criteria.
 | 13 | Coupler point evaluation | Done | `analysis/coupler.py` | `test_coupler.py` (11 tests, FD velocity verified, 4-bar coupler curve) |
 | 14 | JSON serialization / deserialization | Done | `io/serialization.py` | `test_serialization.py` (19 tests, full round-trip + file I/O) |
 | 15 | Minimal Matplotlib viewer | Done | `viz/viewer.py` | `test_viewer.py` (9 tests, bodies + joints + coupler trace) |
-| 16 | Animation | | | |
+| 16 | Animation | Done | `viz/animation.py` | `test_animation.py` (6 tests, FuncAnimation + coupler trace) |
 | 17 | Test suite — 4-bar benchmark | | | |
 | 18 | Prismatic joint constraint | | | |
 | 19 | Slider-crank benchmark | | | |
 | 20 | Graph connectivity check | | | |
 | 21 | Ternary body test (6-bar) | | | |
 
-**Total tests:** 204 passing | **mypy:** strict, clean
+**Total tests:** 210 passing | **mypy:** strict, clean
