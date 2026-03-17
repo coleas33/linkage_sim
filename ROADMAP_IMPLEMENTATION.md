@@ -13,7 +13,7 @@ See `ROADMAP.md` for the full phase plan and exit criteria.
 | 1 | State vector and coordinate bookkeeping | Done | `core/state.py` | `test_state.py` (28 tests) |
 | 2 | Body data structure | Done | `core/bodies.py` | `test_bodies.py` (15 tests) |
 | 3 | Revolute joint constraint | Done | `core/constraints.py` | `test_constraints.py` (19 tests, FD Jacobian verified via hypothesis) |
-| 4 | Fixed joint constraint | | | |
+| 4 | Fixed joint constraint | Done | `core/constraints.py` | `test_constraints.py` (13 new tests, FD Jacobian + gamma verified) |
 | 5 | Mechanism assembly | | | |
 | 6 | Grubler DOF count | | | |
 | 7 | Jacobian rank check | | | |
@@ -32,4 +32,4 @@ See `ROADMAP.md` for the full phase plan and exit criteria.
 | 20 | Graph connectivity check | | | |
 | 21 | Ternary body test (6-bar) | | | |
 
-**Total tests:** 62 passing | **mypy:** strict, clean
+**Total tests:** 75 passing | **mypy:** strict, clean

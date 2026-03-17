@@ -12,7 +12,12 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from linkage_sim.core.constraints import RevoluteJoint, make_revolute_joint
+from linkage_sim.core.constraints import (
+    RevoluteJoint,
+    FixedJoint,
+    make_fixed_joint,
+    make_revolute_joint,
+)
 from linkage_sim.core.state import GROUND_ID, State
 
 
@@ -322,5 +327,188 @@ class TestRevoluteJointWithOffsetPoints:
         analytical = self.joint.jacobian(self.state, q, 0.0)
         numerical = finite_difference_jacobian(
             self.joint.constraint, self.state, q, 0.0, 2
+        )
+        np.testing.assert_array_almost_equal(analytical, numerical, decimal=5)
+
+
+# ============================================================
+# Fixed Joint Tests
+# ============================================================
+
+
+class TestFixedJointTwoBodies:
+    """Fixed joint between two moving bodies."""
+
+    def setup_method(self) -> None:
+        self.state = State()
+        self.state.register_body("body_i")
+        self.state.register_body("body_j")
+
+        self.joint = make_fixed_joint(
+            joint_id="F1",
+            body_i_id="body_i",
+            point_i_name="B",
+            point_i_local=np.array([0.1, 0.0]),
+            body_j_id="body_j",
+            point_j_name="A",
+            point_j_local=np.array([0.0, 0.0]),
+            delta_theta_0=0.0,
+        )
+
+    def test_n_equations(self) -> None:
+        assert self.joint.n_equations == 3
+
+    def test_constraint_satisfied(self) -> None:
+        """Points coincident and same angle => all Φ = 0."""
+        q = np.array([0.0, 0.0, 0.0, 0.1, 0.0, 0.0])
+        phi = self.joint.constraint(self.state, q, 0.0)
+        np.testing.assert_array_almost_equal(phi, [0.0, 0.0, 0.0])
+
+    def test_constraint_violated_by_rotation(self) -> None:
+        """Points coincident but different angles => Φ[2] != 0."""
+        q = np.array([0.0, 0.0, 0.0, 0.1, 0.0, 0.5])
+        phi = self.joint.constraint(self.state, q, 0.0)
+        assert phi[2] == pytest.approx(0.5)
+
+    def test_constraint_with_delta_theta(self) -> None:
+        """Nonzero delta_theta_0 allows a fixed angular offset."""
+        joint = make_fixed_joint(
+            joint_id="F2",
+            body_i_id="body_i",
+            point_i_name="B",
+            point_i_local=np.array([0.1, 0.0]),
+            body_j_id="body_j",
+            point_j_name="A",
+            point_j_local=np.array([0.0, 0.0]),
+            delta_theta_0=np.pi / 4,
+        )
+        q = np.array([0.0, 0.0, 0.0, 0.1, 0.0, np.pi / 4])
+        phi = joint.constraint(self.state, q, 0.0)
+        assert phi[2] == pytest.approx(0.0)
+
+    def test_jacobian_shape(self) -> None:
+        q = np.zeros(6)
+        jac = self.joint.jacobian(self.state, q, 0.0)
+        assert jac.shape == (3, 6)
+
+    def test_jacobian_matches_finite_difference(self) -> None:
+        q = np.array([0.1, 0.2, 0.5, 0.3, 0.4, 1.2])
+        analytical = self.joint.jacobian(self.state, q, 0.0)
+        numerical = finite_difference_jacobian(
+            self.joint.constraint, self.state, q, 0.0, 3
+        )
+        np.testing.assert_array_almost_equal(analytical, numerical, decimal=5)
+
+    @given(
+        xi=st.floats(-1.0, 1.0),
+        yi=st.floats(-1.0, 1.0),
+        ti=st.floats(-np.pi, np.pi),
+        xj=st.floats(-1.0, 1.0),
+        yj=st.floats(-1.0, 1.0),
+        tj=st.floats(-np.pi, np.pi),
+    )
+    @settings(max_examples=200)
+    def test_jacobian_matches_fd_hypothesis(
+        self,
+        xi: float,
+        yi: float,
+        ti: float,
+        xj: float,
+        yj: float,
+        tj: float,
+    ) -> None:
+        q = np.array([xi, yi, ti, xj, yj, tj])
+        analytical = self.joint.jacobian(self.state, q, 0.0)
+        numerical = finite_difference_jacobian(
+            self.joint.constraint, self.state, q, 0.0, 3
+        )
+        np.testing.assert_array_almost_equal(analytical, numerical, decimal=5)
+
+    def test_gamma_shape(self) -> None:
+        q = np.zeros(6)
+        q_dot = np.zeros(6)
+        gamma = self.joint.gamma(self.state, q, q_dot, 0.0)
+        assert gamma.shape == (3,)
+
+    def test_gamma_rotation_row_always_zero(self) -> None:
+        """The rotation constraint is linear in theta, so gamma[2] = 0 always."""
+        q = np.array([0.1, 0.2, 0.5, 0.3, 0.4, 1.2])
+        q_dot = np.array([1.0, -0.5, 3.0, -0.2, 0.8, -2.0])
+        gamma = self.joint.gamma(self.state, q, q_dot, 0.0)
+        assert gamma[2] == pytest.approx(0.0)
+
+    @given(
+        ti=st.floats(-np.pi, np.pi),
+        tj=st.floats(-np.pi, np.pi),
+        tdi=st.floats(-5.0, 5.0),
+        tdj=st.floats(-5.0, 5.0),
+    )
+    @settings(max_examples=100)
+    def test_gamma_matches_fd_velocity_rhs(
+        self,
+        ti: float,
+        tj: float,
+        tdi: float,
+        tdj: float,
+    ) -> None:
+        """Verify gamma: d(Phi_q * q_dot)/dt with q_ddot=0 should equal -gamma."""
+        q = np.array([0.1, 0.2, ti, 0.3, 0.4, tj])
+        q_dot = np.array([0.5, -0.3, tdi, -0.2, 0.1, tdj])
+
+        gamma = self.joint.gamma(self.state, q, q_dot, 0.0)
+
+        dt = 1e-7
+        q_plus = q + q_dot * dt
+        q_minus = q - q_dot * dt
+
+        jac_plus = self.joint.jacobian(self.state, q_plus, 0.0)
+        jac_minus = self.joint.jacobian(self.state, q_minus, 0.0)
+
+        d_phi_q_qdot_dt = (jac_plus @ q_dot - jac_minus @ q_dot) / (2 * dt)
+        np.testing.assert_array_almost_equal(d_phi_q_qdot_dt, -gamma, decimal=4)
+
+
+class TestFixedJointGroundToBody:
+    """Fixed joint between ground and a moving body (welded to ground)."""
+
+    def setup_method(self) -> None:
+        self.state = State()
+        self.state.register_body("body")
+
+        self.joint = make_fixed_joint(
+            joint_id="F_ground",
+            body_i_id=GROUND_ID,
+            point_i_name="O",
+            point_i_local=np.array([0.5, 0.3]),
+            body_j_id="body",
+            point_j_name="A",
+            point_j_local=np.array([0.0, 0.0]),
+            delta_theta_0=0.0,
+        )
+
+    def test_constraint_satisfied(self) -> None:
+        """Body at ground point, zero angle."""
+        q = np.array([0.5, 0.3, 0.0])
+        phi = self.joint.constraint(self.state, q, 0.0)
+        np.testing.assert_array_almost_equal(phi, [0.0, 0.0, 0.0])
+
+    def test_jacobian_shape(self) -> None:
+        q = np.zeros(3)
+        jac = self.joint.jacobian(self.state, q, 0.0)
+        assert jac.shape == (3, 3)
+
+    @given(
+        x=st.floats(-1.0, 1.0),
+        y=st.floats(-1.0, 1.0),
+        theta=st.floats(-np.pi, np.pi),
+    )
+    @settings(max_examples=200)
+    def test_jacobian_matches_fd_hypothesis(
+        self, x: float, y: float, theta: float
+    ) -> None:
+        q = np.array([x, y, theta])
+        analytical = self.joint.jacobian(self.state, q, 0.0)
+        numerical = finite_difference_jacobian(
+            self.joint.constraint, self.state, q, 0.0, 3
         )
         np.testing.assert_array_almost_equal(analytical, numerical, decimal=5)
