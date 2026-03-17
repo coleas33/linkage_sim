@@ -1,13 +1,17 @@
 """Mechanism validation: topology checks and DOF analysis.
 
-Layer 1 validations that can run instantly on any mechanism definition.
+Layer 1 (topology) and Layer 2 (constraint analysis) validations.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+from numpy.typing import NDArray
+
 from linkage_sim.core.mechanism import Mechanism
+from linkage_sim.solvers.assembly import assemble_jacobian
 
 
 @dataclass(frozen=True)
@@ -62,4 +66,105 @@ def grubler_dof(mechanism: Mechanism, expected_dof: int = 1) -> GrublerResult:
         dof=dof,
         expected_dof=expected_dof,
         is_warning=(dof != expected_dof),
+    )
+
+
+@dataclass(frozen=True)
+class JacobianRankResult:
+    """Result of a Jacobian rank analysis at a specific configuration.
+
+    Attributes:
+        constraint_rank: Numerical rank of Φ_q.
+        n_constraints: Total number of constraint equations (rows of Φ_q).
+        n_coords: Total number of generalized coordinates (columns of Φ_q).
+        instantaneous_mobility: n_coords - constraint_rank.
+        singular_values: All singular values of Φ_q (descending order).
+        condition_number: σ_max / σ_min (inf if rank-deficient).
+        has_redundant_constraints: True if rank < n_constraints.
+        grubler_agrees: True if instantaneous mobility == Grübler DOF.
+    """
+
+    constraint_rank: int
+    n_constraints: int
+    n_coords: int
+    instantaneous_mobility: int
+    singular_values: NDArray[np.float64]
+    condition_number: float
+    has_redundant_constraints: bool
+    grubler_agrees: bool
+
+
+def jacobian_rank_analysis(
+    mechanism: Mechanism,
+    q: NDArray[np.float64],
+    t: float = 0.0,
+    rank_tol: float | None = None,
+) -> JacobianRankResult:
+    """Analyze the Jacobian rank at configuration q.
+
+    Assembles Φ_q and computes its SVD to determine the numerical rank,
+    instantaneous mobility, condition number, and whether constraints
+    are redundant.
+
+    This is the authoritative DOF measure at the given configuration,
+    unlike Grübler which is purely topological.
+
+    Args:
+        mechanism: A built Mechanism instance.
+        q: Generalized coordinate vector (n_coords,).
+        t: Time (default 0.0).
+        rank_tol: Tolerance for treating singular values as zero.
+            Default: 1e-10 * max(singular_values).
+
+    Returns:
+        JacobianRankResult with rank, mobility, conditioning info.
+
+    Raises:
+        RuntimeError: If mechanism has not been built.
+    """
+    if not mechanism._built:
+        raise RuntimeError("Mechanism must be built before rank analysis.")
+
+    phi_q = assemble_jacobian(mechanism, q, t)
+    singular_values: NDArray[np.float64] = np.asarray(
+        np.linalg.svd(phi_q, compute_uv=False), dtype=np.float64
+    )
+
+    # Determine rank tolerance
+    if rank_tol is None:
+        if singular_values.size > 0 and singular_values[0] > 0:
+            rank_tol = 1e-10 * singular_values[0]
+        else:
+            rank_tol = 1e-10
+
+    constraint_rank = int(np.sum(singular_values > rank_tol))
+
+    n_constraints = phi_q.shape[0]
+    n_coords = phi_q.shape[1]
+    instantaneous_mobility = n_coords - constraint_rank
+
+    # Condition number
+    if constraint_rank == 0:
+        condition_number = float("inf")
+    else:
+        sigma_min = singular_values[constraint_rank - 1]
+        if sigma_min > 0:
+            condition_number = float(singular_values[0] / sigma_min)
+        else:
+            condition_number = float("inf")
+
+    has_redundant = constraint_rank < n_constraints
+
+    # Compare with Grübler
+    grubler = grubler_dof(mechanism, expected_dof=instantaneous_mobility)
+
+    return JacobianRankResult(
+        constraint_rank=constraint_rank,
+        n_constraints=n_constraints,
+        n_coords=n_coords,
+        instantaneous_mobility=instantaneous_mobility,
+        singular_values=singular_values,
+        condition_number=condition_number,
+        has_redundant_constraints=has_redundant,
+        grubler_agrees=not grubler.is_warning,
     )
