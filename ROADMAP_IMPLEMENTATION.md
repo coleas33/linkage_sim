@@ -14,7 +14,7 @@ See `ROADMAP.md` for the full phase plan and exit criteria.
 | 2 | Body data structure | Done | `core/bodies.py` | `test_bodies.py` (15 tests) |
 | 3 | Revolute joint constraint | Done | `core/constraints.py` | `test_constraints.py` (19 tests, FD Jacobian verified via hypothesis) |
 | 4 | Fixed joint constraint | Done | `core/constraints.py` | `test_constraints.py` (13 new tests, FD Jacobian + gamma verified) |
-| 5 | Mechanism assembly | | | |
+| 5 | Mechanism assembly | Done | `core/mechanism.py`, `solvers/assembly.py` | `test_mechanism.py` (15 tests, global FD Jacobian verified) |
 | 6 | Grubler DOF count | | | |
 | 7 | Jacobian rank check | | | |
 | 8 | Kinematic position solver (Newton-Raphson) | | | |
@@ -32,4 +32,4 @@ See `ROADMAP.md` for the full phase plan and exit criteria.
 | 20 | Graph connectivity check | | | |
 | 21 | Ternary body test (6-bar) | | | |
 
-**Total tests:** 75 passing | **mypy:** strict, clean
+**Total tests:** 90 passing | **mypy:** strict, clean
