@@ -206,6 +206,10 @@ reproducibility. This satisfies the entry criteria for the Rust port.
 | 4 | DRY refactor: `_detect_fourbar_link_lengths` | Done | `viz/interactive_viewer.py` | Uses `detect_fourbar_topology` from analysis module |
 | 5 | Fix 4-bar viewers (geometric q0) | Done | `scripts/view_crank_rocker.py`, `scripts/view_double_crank.py` | 360/360 convergence |
 | 6 | Resize 6-bar viewers for full rotation | Done | `scripts/view_sixbar*.py` (5 files) | 360/360 convergence |
+| 7 | Multi-coupler trace support | Done | `core/bodies.py`, `core/mechanism.py`, `solvers/sweep.py` | `test_coupler.py`, `test_sweep.py` |
+| 8 | `Mechanism.add_trace_point()` convenience API | Done | `core/mechanism.py` | `test_coupler.py` |
+| 9 | Connection line visualization (trace-to-centroid) | Done | `viz/interactive_viewer.py` | Visual verification via viewer scripts |
+| 10 | Multi-color trace rendering | Done | `viz/interactive_viewer.py` | Visual verification via viewer scripts |
 
 ### Crank Selection API
 

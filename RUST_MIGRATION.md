@@ -32,15 +32,15 @@ The Rust port begins **after Phase 4 exits** — when all four analysis modes (k
 
 **Phase 5 (GUI) is never built in Python.** The GUI is built natively in Rust from the start, using the ported solver kernel.
 
-| Phase | Language | Status at cutover |
-|-------|----------|-------------------|
+| Phase | Language | Status |
+|-------|----------|--------|
 | Phase 1 — Data model & kinematics | Python | Complete, validated |
 | Phase 2 — Force elements & statics | Python | Complete, validated |
 | Phase 3 — Actuators & inverse dynamics | Python | Complete, validated |
 | Phase 4 — Forward dynamics | Python | Complete, validated |
-| **Rust port** | **Rust** | **Port Phases 1–4, validate against Python golden data** |
-| Phase 5 — Interactive GUI | Rust | Built natively in Rust (egui) |
-| Phase 6 — Advanced & QoL | Rust | Built in Rust |
+| **Rust port** | **Rust** | **Complete — 110 tests, validated against Python golden data** |
+| Phase 5 — Interactive GUI | Rust | **In progress** — egui application |
+| Phase 6 — Advanced & QoL | Rust | Not started |
 
 ---
 
@@ -101,6 +101,45 @@ Pass `Mechanism` explicitly to all solver functions. Rust will enforce this anyw
 
 - Return explicit error types or raise specific exceptions — no bare `except` or silent `None` returns
 - This maps to Rust's `Result<T, E>` pattern
+
+### Coupler / Trace Points
+
+Coupler points (also called trace points) are arbitrary points rigidly attached
+to any moving body. They are tracked during kinematic sweeps for path tracing,
+velocity/acceleration analysis, and visualization.
+
+**Python API:**
+- `body.add_coupler_point(name, x, y)` — low-level, on the Body object directly
+- `mechanism.add_trace_point(name, body_id, x, y)` — convenience wrapper on Mechanism
+
+Multiple trace points can exist across different bodies. The sweep system
+auto-discovers all coupler points and traces each with a distinct color.
+
+**Rust mapping:**
+```rust
+// On Body struct — already mapped via coupler_points field:
+pub coupler_points: HashMap<String, Vector2<f64>>,
+
+// On Mechanism — convenience method:
+pub fn add_trace_point(&mut self, name: &str, body_id: &str, x: f64, y: f64) {
+    let body = self.bodies.get_mut(body_id).expect("body not found");
+    body.coupler_points.insert(name.to_string(), Vector2::new(x, y));
+}
+```
+
+**Sweep data structure per trace:**
+```rust
+struct CouplerTrace {
+    body_id: String,
+    point_name: String,
+    x: Vec<f64>,  // per sweep step, NaN where solve failed
+    y: Vec<f64>,
+}
+```
+
+The GUI (egui) should render each trace in a distinct color with a dashed
+connection line from the trace point to its body's centroid, making the
+rigid attachment visually clear.
 
 ---
 
@@ -239,31 +278,83 @@ The Python phase tells you exactly which mechanisms need implicit methods vs. wh
 
 The Rust port follows the same build order as the Python phases, validating against golden data at each step:
 
-1. `core/state.rs` + `core/body.rs` — coordinate bookkeeping, body structs
-2. `core/constraint.rs` — revolute, then prismatic, then fixed. Validate Jacobians via finite difference (`proptest`)
-3. `solver/assembly.rs` — global Φ, Φ_q assembly
-4. `solver/kinematics.rs` — NR position solver, velocity, acceleration. **Validate against golden 4-bar data**
-5. `core/mechanism.rs` — serde JSON round-trip. Load Python's benchmark JSON files directly
-6. `core/force_element.rs` + `solver/statics.rs` — force assembly, static solver. **Validate against golden statics data**
-7. `solver/inverse_dynamics.rs` — **Validate against golden inverse dynamics data**
-8. `solver/forward_dynamics.rs` — explicit integrator + Baumgarte. **Validate against golden trajectories** (looser tolerance)
-9. `analysis/*` — validation, transmission angle, toggle detection, envelopes
-10. `gui/*` — Phase 5, built fresh in egui
+1. `core/state.rs` + `core/body.rs` — coordinate bookkeeping, body structs — **COMPLETE** (March 2026)
+2. `core/constraint.rs` — revolute, prismatic, fixed — **COMPLETE** (March 2026)
+3. `solver/assembly.rs` — global Φ, Φ_q assembly — **COMPLETE** (March 2026)
+4. `solver/kinematics.rs` — NR position solver, velocity, acceleration. Validated against golden 4-bar data — **COMPLETE** (March 2026)
+5. `core/mechanism.rs` + `io/serialization.rs` — serde JSON round-trip — **COMPLETE** (March 2026)
+6. `forces/*` + `solver/statics.rs` — force assembly, static solver. Validated against golden statics data — **COMPLETE** (March 2026)
+7. `solver/inverse_dynamics.rs` — Validated against golden inverse dynamics data — **COMPLETE** (March 2026)
+8. `solver/forward_dynamics.rs` — explicit integrator + Baumgarte. Validated against golden trajectories — **COMPLETE** (March 2026)
+9. `analysis/*` — validation, transmission angle, Grashof classification, coupler curves, energy — **COMPLETE** (March 2026)
+10. `gui/*` — Phase 5, built in egui — **IN PROGRESS**
 
 Each step has a clear "done" condition: Rust output matches Python golden data within tolerance.
 
 ---
 
+## Port Completion Summary (March 2026)
+
+The solver kernel port (steps 1–9) is complete and validated. All four analysis modes produce results matching Python golden fixtures within tolerance.
+
+### Test coverage
+
+- **110 tests total**: 102 unit tests + 8 golden fixture integration tests
+- All tests pass via `cargo test`
+
+### Golden fixture coverage
+
+| Mechanism | Kinematics | Statics | Inverse Dynamics | Forward Dynamics |
+|-----------|:----------:|:-------:|:----------------:|:----------------:|
+| 4-bar crank-rocker | Yes | Yes | Yes | — |
+| Slider-crank | Yes | Yes | Yes | — |
+| Pendulum | — | — | — | Yes |
+
+### Tolerances achieved
+
+| Quantity | Tolerance | Notes |
+|----------|-----------|-------|
+| Position | < 1e-10 | Matches NR convergence tolerance |
+| Velocity | < 1e-8 | |
+| Acceleration | < 1e-2 | Looser near toggle configurations |
+| Lagrange multipliers | < 0.5 | Looser near toggle (180 degrees) |
+
+### Known differences from Python
+
+Near-singular configurations (toggle points at 180 degrees), the Rust solver uses SVD decomposition where Python uses `numpy.linalg.lstsq`. Both produce valid solutions, but the specific values diverge near singularities. This accounts for the wider tolerances on acceleration and Lagrange multipliers at those configurations.
+
+### Rust project structure
+
+```
+linkage-sim-rs/
+├── src/
+│   ├── core/           # Body, constraint, driver, mechanism, state
+│   ├── forces/         # Force element trait, gravity, helpers, assembly
+│   ├── solver/         # Kinematics, statics, inverse/forward dynamics, assembly
+│   ├── analysis/       # Validation, transmission, Grashof, coupler, energy
+│   ├── io/             # JSON serialization (serde)
+│   ├── gui/            # Phase 5 egui application (in progress)
+│   ├── bin/            # GUI binary entry point
+│   └── lib.rs
+├── tests/
+│   └── golden_fixtures.rs   # Integration tests against Python golden data
+├── data/
+│   └── golden/              # JSON fixtures exported from Python
+└── Cargo.toml
+```
+
+---
+
 ## Risks and Mitigations
 
-| Risk | Likelihood | Mitigation |
-|------|-----------|------------|
-| "Python is good enough, never port" | Medium | Phase 5 GUI is the forcing function — Python GUI options are bad enough to motivate the switch |
-| Port takes longer than expected | Medium | 1:1 module mapping and golden test data bound the scope. No design decisions during port — only transcription |
-| Forward dynamics needs implicit solver | Low for typical linkages | Python phase identifies which mechanisms need it. SUNDIALS FFI is a known, bounded task |
-| nalgebra API friction | Low | Well-documented, large user base. Dense linear algebra coverage is solid |
-| Expression evaluator (rhai/meval) limitations | Low | Scope is narrow: math expressions over named variables. Both crates handle this |
-| Premature port — big modeling changes discovered after porting | Medium | See "Timing Caveat" below |
+| Risk | Likelihood | Mitigation | Outcome |
+|------|-----------|------------|---------|
+| "Python is good enough, never port" | Medium | Phase 5 GUI is the forcing function | **Did not materialize.** Port completed; GUI work underway in egui |
+| Port takes longer than expected | Medium | 1:1 module mapping and golden test data bound the scope | **Did not materialize.** 1:1 mapping strategy worked as planned |
+| Forward dynamics needs implicit solver | Low | Python phase identifies which mechanisms need it | **Did not materialize.** Explicit RK4 + Baumgarte + projection sufficient for all benchmark mechanisms |
+| nalgebra API friction | Low | Well-documented, large user base | **Minor friction only.** SVD vs lstsq near singularities required tolerance adjustments but no design changes |
+| Expression evaluator (rhai/meval) limitations | Low | Scope is narrow: math expressions over named variables | **Not yet exercised.** Driver expressions still handled programmatically; expression evaluator deferred to schema v1.1 |
+| Premature port — big modeling changes discovered after porting | Medium | See "Timing Caveat" below | **Did not materialize.** Data model was stable; no rework required |
 
 ---
 
