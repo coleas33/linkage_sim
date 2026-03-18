@@ -44,4 +44,5 @@ Desktop.ini
 settings.json
 settings.local.json
 .cursorignore
-output/
+# Output — GIFs are committed for reference
+# output/
