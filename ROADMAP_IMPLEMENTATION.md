@@ -32,7 +32,7 @@ See `ROADMAP.md` for the full phase plan and exit criteria.
 | 20 | Graph connectivity check | Done | `analysis/validation.py` | `test_validation.py` (12 new tests, BFS from ground, disconnected detection, component count) |
 | 21 | Ternary body test (6-bar) | Done | `test_sixbar_ternary.py` | 27 tests: Watt I 6-bar, ternary link, DOF, position/vel/accel FD, sweep, internal distances |
 
-**Total tests:** 520 passing | **mypy:** strict, clean
+**Total tests:** 547 passing | **mypy:** strict, clean
 
 ---
 
@@ -64,8 +64,19 @@ graph connectivity, JSON serialization, and Matplotlib visualization/animation.
 | 13 | Mechanical advantage computation | Done | `analysis/mechanical_advantage.py` | `test_mechanical_advantage.py` (6 tests: finite MA, varies with angle, translational output) |
 | 14 | Pressure angle | — | Deferred: covered by transmission angle (Step 8) for 4-bar; general pose-based version deferred | — |
 | 15 | Toggle/dead point detection | Done | `analysis/toggle.py` | `test_toggle.py` (5 tests: σ_min monitoring, condition number, threshold) |
-| 16 | Result envelopes (peak, RMS, min/max) | | | |
-| 17 | Force-related plotting | | | |
-| 18 | Benchmark: 4-bar with gravity | | | |
-| 19 | Benchmark: 4-bar with spring | | | |
-| 20 | Benchmark: slider-crank with friction | | | |
+| 16 | Result envelopes (peak, RMS, min/max) | Done | `analysis/envelopes.py` | `test_envelopes.py` (6 tests: sinusoid, constant, peak angle, edge cases) |
+| 17 | Force-related plotting | Done | `viz/force_plots.py` | `test_force_plots.py` (3 tests: torque, reactions, transmission angle plots) |
+| 18 | Benchmark: 4-bar with gravity | Done | `test_benchmark_fourbar_gravity.py` | 8 tests: sweep convergence, driver torque, virtual work cross-check, reactions, envelopes, transmission angle, toggle detection |
+| 19 | Benchmark: 4-bar with spring | Done | `test_benchmark_fourbar_spring.py` | 4 tests: torsion spring counterbalance, linear spring, virtual work, torque envelope |
+| 20 | Benchmark: slider-crank with friction | Done | `test_benchmark_slidercrank_friction.py` | 5 tests: gravity sweep, friction effect, torque envelope, virtual work cross-check |
+
+---
+
+## Phase 2 Complete
+
+All 20 steps of Phase 2 are implemented (Step 14 deferred — pressure angle covered by
+transmission angle for 4-bar). The simulator now supports force elements (gravity, springs,
+friction, external loads), static equilibrium solving with Lagrange multiplier reaction
+extraction, virtual work cross-checks, mechanical advantage, Grashof classification,
+transmission angle analysis, toggle detection, result envelopes, and force-related plotting.
+All benchmarks validate the complete pipeline: position → statics → reactions → virtual work.
