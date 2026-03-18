@@ -102,6 +102,14 @@ pub struct AppState {
     pub driver_omega: f64,
     /// Initial driver angle (rad) at t=0.
     pub driver_theta_0: f64,
+    // ── Animation ────────────────────────────────────────────────────────
+    pub playing: bool,
+    pub animation_speed_deg_per_sec: f64,
+    pub loop_mode: bool,
+    pub animation_direction: f64,
+    // ── Driver ───────────────────────────────────────────────────────────
+    pub driver_joint_id: Option<String>,
+    pub pending_driver_reassignment: Option<String>,
 }
 
 impl Default for AppState {
@@ -118,6 +126,12 @@ impl Default for AppState {
             current_sample: None,
             driver_omega: 2.0 * PI,
             driver_theta_0: 0.0,
+            playing: false,
+            animation_speed_deg_per_sec: 90.0,
+            loop_mode: true,
+            animation_direction: 1.0,
+            driver_joint_id: None,
+            pending_driver_reassignment: None,
         }
     }
 }
@@ -163,6 +177,25 @@ impl AppState {
         self.mechanism = Some(mech);
         self.current_sample = Some(sample);
         self.selected = None;
+
+        // Detect which joint is currently driven
+        if let Some(mech) = &self.mechanism {
+            if let Some(pair) = mech.driver_body_pair() {
+                use crate::core::constraint::Constraint;
+                self.driver_joint_id = mech.joints().iter()
+                    .find(|j| {
+                        j.is_revolute()
+                            && ((j.body_i_id() == pair.0 && j.body_j_id() == pair.1)
+                                || (j.body_i_id() == pair.1 && j.body_j_id() == pair.0))
+                    })
+                    .map(|j| j.id().to_string());
+            } else {
+                self.driver_joint_id = None;
+            }
+        }
+        self.playing = false;
+        self.animation_direction = 1.0;
+        self.pending_driver_reassignment = None;
     }
 
     /// Solve the position problem for the given driver angle (radians).
@@ -211,6 +244,109 @@ impl AppState {
     pub fn has_mechanism(&self) -> bool {
         self.mechanism.is_some()
     }
+
+    /// Rebuild the mechanism with a different driver joint.
+    pub fn reassign_driver(&mut self, joint_id: &str) {
+        let Some(sample) = self.current_sample else { return };
+
+        match crate::gui::samples::build_sample_with_driver(sample, Some(joint_id)) {
+            Ok((mech, q0)) => {
+                // Extract driver theta_0 from the built mechanism
+                // The builder sets theta_0 to match q0's driven body angle
+                self.driver_omega = 2.0 * PI;
+                // We need to figure out what theta_0 was used. Since the driver
+                // constraint at t=0 is: theta_driven - theta_ground - theta_0 = 0,
+                // and the builder set theta_0 = driven body's angle in q0,
+                // we can read it from q0 after solving at t=0.
+                // For simplicity, solve at t=0 first, then set driver_angle = theta_0.
+
+                match solve_position(&mech, &q0, 0.0, 1e-10, 50) {
+                    Ok(result) => {
+                        self.solver_status = SolverStatus {
+                            converged: result.converged,
+                            residual_norm: result.residual_norm,
+                            iterations: result.iterations,
+                        };
+                        if result.converged {
+                            self.q = result.q.clone();
+                            self.last_good_q = result.q;
+                        } else {
+                            self.q = q0.clone();
+                            self.last_good_q = q0;
+                        }
+                    }
+                    Err(_) => {
+                        self.solver_status = SolverStatus {
+                            converged: false,
+                            residual_norm: f64::NAN,
+                            iterations: 0,
+                        };
+                        self.q = q0.clone();
+                        self.last_good_q = q0;
+                    }
+                }
+
+                // Reset to angle = theta_0 (the starting angle for this driver)
+                // Since the builder used theta_0 matching q0, and we solved at t=0,
+                // driver_angle should be theta_0.
+                self.driver_theta_0 = 0.0; // The builder maps t=0 to the start config
+                self.driver_angle = 0.0;
+                self.mechanism = Some(mech);
+                self.driver_joint_id = Some(joint_id.to_string());
+                self.selected = None;
+                self.playing = false;
+                self.animation_direction = 1.0;
+                self.pending_driver_reassignment = None;
+            }
+            Err(msg) => {
+                log::warn!("Driver reassignment failed: {}", msg);
+            }
+        }
+    }
+
+    /// Advance animation by one frame. Returns true if animation is active.
+    pub fn step_animation(&mut self, dt: f64) -> bool {
+        if !self.playing || !self.has_mechanism() {
+            return false;
+        }
+
+        let step_deg = self.animation_speed_deg_per_sec * dt * self.animation_direction;
+        let mut new_angle_deg = self.driver_angle.to_degrees() + step_deg;
+
+        if self.loop_mode {
+            // Wrap around
+            if new_angle_deg >= 360.0 {
+                new_angle_deg -= 360.0;
+            } else if new_angle_deg < 0.0 {
+                new_angle_deg += 360.0;
+            }
+        } else {
+            // Once mode: always forward, stop at 360
+            if new_angle_deg >= 360.0 {
+                new_angle_deg = 360.0;
+                self.playing = false;
+            }
+            if new_angle_deg < 0.0 {
+                new_angle_deg = 0.0;
+                self.playing = false;
+            }
+        }
+
+        let prev_converged = self.solver_status.converged;
+        self.solve_at_angle(new_angle_deg.to_radians());
+
+        // Ping-pong: reverse direction on solver failure in loop mode
+        if self.loop_mode && !self.solver_status.converged && prev_converged {
+            self.animation_direction *= -1.0;
+        }
+
+        // Stop on failure in once mode
+        if !self.loop_mode && !self.solver_status.converged {
+            self.playing = false;
+        }
+
+        self.playing
+    }
 }
 
 #[cfg(test)]
@@ -253,6 +389,42 @@ mod tests {
         );
         // q should have changed from the initial position
         assert_ne!(state.q, q_initial, "q did not change after solve_at_angle");
+    }
+
+    #[test]
+    fn step_animation_advances_angle() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.playing = true;
+        state.animation_speed_deg_per_sec = 180.0;
+
+        let angle_before = state.driver_angle;
+        let still_playing = state.step_animation(1.0 / 60.0);
+        assert!(still_playing);
+        assert!(state.driver_angle > angle_before);
+    }
+
+    #[test]
+    fn step_animation_noop_when_paused() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.playing = false;
+
+        let angle_before = state.driver_angle;
+        assert!(!state.step_animation(1.0 / 60.0));
+        assert_eq!(state.driver_angle, angle_before);
+    }
+
+    #[test]
+    fn reassign_driver_changes_joint() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        assert_eq!(state.driver_joint_id, Some("J1".to_string()));
+
+        state.reassign_driver("J4");
+        assert_eq!(state.driver_joint_id, Some("J4".to_string()));
+        assert!(state.solver_status.converged);
+        assert!(!state.playing);
     }
 
     #[test]
