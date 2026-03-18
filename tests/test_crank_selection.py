@@ -8,6 +8,7 @@ from linkage_sim.analysis.crank_selection import (
     CrankRecommendation,
     FourbarTopology,
     detect_fourbar_topology,
+    estimate_driven_range,
     recommend_crank_fourbar,
 )
 from linkage_sim.core.bodies import Body, make_bar, make_ground
@@ -157,3 +158,32 @@ class TestRecommendCrankFourbar:
         mech.add_body(ground)
         recs = recommend_crank_fourbar(mech)
         assert recs == []
+
+
+class TestEstimateDrivenRange:
+    """Numerical probing of driven link range."""
+
+    def test_crank_rocker_full_range(self) -> None:
+        """Grashof crank-rocker: driven link achieves ~360 deg."""
+        mech = _build_fourbar(4.0, 2.0, 4.0, 3.0)
+        mech.add_revolute_driver(
+            "D1", "ground", "crank",
+            f=lambda t: t, f_dot=lambda t: 1.0, f_ddot=lambda t: 0.0,
+        )
+        mech.build()
+        q0 = mech.state.make_q()
+        est = estimate_driven_range(mech, q0, n_probes=72)
+        assert est >= 355.0  # ~360 with probing tolerance
+
+    def test_non_grashof_limited_range(self) -> None:
+        """Non-Grashof: driven link has limited range."""
+        mech = _build_fourbar(5.0, 3.0, 4.0, 7.0)
+        mech.add_revolute_driver(
+            "D1", "ground", "crank",
+            f=lambda t: t, f_dot=lambda t: 1.0, f_ddot=lambda t: 0.0,
+        )
+        mech.build()
+        q0 = mech.state.make_q()
+        est = estimate_driven_range(mech, q0, n_probes=72)
+        assert est < 360.0
+        assert est > 0.0

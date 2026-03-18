@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from numpy.typing import NDArray
 
 from linkage_sim.analysis.grashof import GrashofType, check_grashof
 from linkage_sim.core.constraints import RevoluteJoint
@@ -309,3 +310,43 @@ def recommend_crank_fourbar(mechanism: Mechanism) -> list[CrankRecommendation]:
     )
 
     return recommendations
+
+
+def estimate_driven_range(
+    mechanism: Mechanism,
+    q0: NDArray[np.float64],
+    n_probes: int = 72,
+) -> float:
+    """Estimate valid angular range of the current driver by probing.
+
+    Attempts to solve the mechanism at n_probes evenly spaced angles
+    (0 to 360 degrees). Returns the estimated range in degrees based
+    on how many probes converge.
+
+    This works for any mechanism topology (4-bar, 6-bar, etc.).
+
+    Assumes the driver uses f(t) = t (identity), so t maps directly
+    to the driven angle in radians. This is the convention used by
+    all viewer scripts.
+
+    Args:
+        mechanism: A built Mechanism with an identity revolute driver.
+        q0: Initial guess for the solver.
+        n_probes: Number of angles to test (default 72 = every 5 degrees).
+
+    Returns:
+        Estimated valid range in degrees (0 to 360).
+    """
+    from linkage_sim.solvers.kinematics import solve_position
+
+    angles = np.linspace(0, 2 * np.pi, n_probes, endpoint=False)
+    n_converged = 0
+    q_current = q0.copy()
+
+    for angle in angles:
+        result = solve_position(mechanism, q_current, t=float(angle))
+        if result.converged:
+            n_converged += 1
+            q_current = result.q.copy()
+
+    return n_converged / n_probes * 360.0
