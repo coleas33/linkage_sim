@@ -9,28 +9,27 @@ midpoint traces an approximate straight line -- then opens the interactive
 viewer with gravity applied.
 
 Mechanism (Chebyshev Lambda):
-    Ground (link 1) = 4a    (horizontal distance between fixed pivots O2 and O4)
-    Crank  (link 2) = 5a    (left grounded link, pivots at O2)
-    Coupler(link 3) = 2a    (a + a; links 2 and 4 connect to each end)
-    Rocker (link 4) = 5a    (right grounded link, pivots at O4)
+    Ground         = 4a    (horizontal distance between fixed pivots O2 and O4)
+    Crank (input)  = 2a    (short driven link at O2, makes full rotation)
+    Coupler        = 5a    (long connecting rod; midpoint P traces straight line)
+    Rocker         = 5a    (long follower link at O4)
     Unit length a = 1.0
 
-    Proportions: ground : crank : coupler : rocker = 4 : 5 : 2 : 5
+    Link lengths: ground : crank : coupler : rocker = 4 : 2 : 5 : 5
 
-    Coupler point P at the midpoint of the coupler (local coords 1.0, 0.0).
-    This point traces an approximate straight horizontal line over the
-    central portion of its travel.
+    Coupler point P at the midpoint of the coupler (local coords 2.5, 0.0).
+    This point traces a curve whose central portion closely approximates
+    a straight horizontal line.
 
-    Grashof classification: Grashof double-rocker.
-    S=2 (coupler), L=5 (crank or rocker), P=5, Q=4
+    Grashof classification: Grashof crank-rocker.
+    S=2 (crank), L=5 (coupler or rocker), P=5, Q=4
     S + L = 7 < P + Q = 9.
-    The shortest link is the coupler (opposite ground), so neither grounded
-    link can make a full rotation. The mechanism operates over a limited
-    angular range (~65 degrees per branch). The viewer will show the valid
-    portion of the sweep and leave failed steps blank.
+    The shortest link is the crank (adjacent to ground), so the crank
+    can make a full 360-degree rotation.
 
-    Valid crank range (upper branch): arccos(0.8) to arccos(-0.2) ≈ 37° to 102°.
-    Toggle positions occur at the range boundaries where B, C, O4 are collinear.
+    Closure check: crank tip to O4 distance ranges from 2 (at 0 deg) to
+    6 (at 180 deg). Since |coupler - rocker| = 0 <= 2 and 6 <= 10 =
+    coupler + rocker, the mechanism closes at all crank angles.
 
 Validation:
     The key property to verify is that the coupler midpoint P traces a path
@@ -59,23 +58,25 @@ from linkage_sim.viz.interactive_viewer import launch_interactive
 def build_chebyshev_with_gravity() -> tuple[Mechanism, list, np.ndarray]:
     """Build Chebyshev's Lambda Mechanism with gravity.
 
-    Chebyshev proportions: ground=4a, crank=rocker=5a, coupler=2a (a=1).
+    Chebyshev proportions: ground=4a, crank=2a, coupler=rocker=5a (a=1).
+    The short crank (2a) is the driven input; full 360-degree rotation.
+    Coupler midpoint traces the approximate straight line.
 
     Returns:
         (mechanism, [gravity_element], q0_initial_guess)
     """
     # Chebyshev proportions with unit length a = 1
-    ground_len = 4.0   # link 1
-    crank_len = 5.0     # link 2
-    coupler_len = 2.0   # link 3 (= a + a)
-    rocker_len = 5.0    # link 4
+    ground_len = 4.0   # distance between O2 and O4
+    crank_len = 2.0     # short input link (a + a = 2a)
+    coupler_len = 5.0   # long connecting rod
+    rocker_len = 5.0    # long follower
 
     mech = Mechanism()
 
     ground = make_ground(O2=(0.0, 0.0), O4=(ground_len, 0.0))
-    crank = make_bar("crank", "A", "B", length=crank_len, mass=0.5, Izz_cg=0.1)
-    coupler = make_bar("coupler", "B", "C", length=coupler_len, mass=0.2, Izz_cg=0.01)
-    coupler.add_coupler_point("P", coupler_len / 2, 0.0)  # midpoint at (a, 0)
+    crank = make_bar("crank", "A", "B", length=crank_len, mass=0.2, Izz_cg=0.01)
+    coupler = make_bar("coupler", "B", "C", length=coupler_len, mass=0.5, Izz_cg=0.1)
+    coupler.add_coupler_point("P", coupler_len / 2, 0.0)  # midpoint at (2.5a, 0)
     rocker = make_bar("rocker", "D", "C", length=rocker_len, mass=0.5, Izz_cg=0.1)
 
     mech.add_body(ground)
@@ -93,40 +94,27 @@ def build_chebyshev_with_gravity() -> tuple[Mechanism, list, np.ndarray]:
     )
     mech.build()
 
-    # --- Geometric initial guess at crank angle 70° ---
-    # Valid crank range for this double-rocker: ~[37°, 102°] (upper branch).
-    # 70° is well within the range, giving a robust starting configuration.
-    theta0 = np.radians(70.0)
+    # --- Geometric initial guess at crank angle 0° ---
+    # Crank-rocker closes at all angles; compute upper assembly at theta=0.
+    theta0 = 0.0
 
-    # Crank tip B (= coupler body origin) in global coords
-    bx = crank_len * np.cos(theta0)
-    by = crank_len * np.sin(theta0)
+    # Crank tip B at theta=0
+    bx = crank_len  # (2, 0)
+    by = 0.0
 
-    # Find C by solving the coupler-rocker triangle B-C-O4.
-    # Law of cosines gives angle beta at B, then C follows.
-    o4x = ground_len
-    dist_bo4 = np.hypot(bx - o4x, by)
+    # Find C by intersecting coupler circle (r=5 from B) and rocker circle
+    # (r=5 from O4). At theta=0, B=(2,0), O4=(4,0), |B-O4|=2.
+    # Circles: (x-2)^2+y^2=25, (x-4)^2+y^2=25 => x=3, y=+-sqrt(24)
+    cx = 3.0
+    cy = np.sqrt(24.0)  # upper assembly mode
 
-    cos_beta = (coupler_len**2 + dist_bo4**2 - rocker_len**2) / (
-        2 * coupler_len * dist_bo4
-    )
-    beta = np.arccos(np.clip(cos_beta, -1.0, 1.0))
-
-    # Direction from B toward O4
-    angle_b_to_o4 = np.arctan2(-by, o4x - bx)
-
-    # Coupler angle: B toward C, taking "upper" assembly mode (+beta)
-    theta0_coupler = angle_b_to_o4 + beta
-
-    # Rocker angle: O4 toward C
-    cx = bx + coupler_len * np.cos(theta0_coupler)
-    cy = by + coupler_len * np.sin(theta0_coupler)
-    theta0_rocker = np.arctan2(cy, cx - o4x)
+    theta0_coupler = np.arctan2(cy - by, cx - bx)  # B toward C
+    theta0_rocker = np.arctan2(cy, cx - ground_len)  # O4 toward C
 
     q0 = mech.state.make_q()
-    mech.state.set_pose("crank", q0, 0.0, 0.0, float(theta0))
-    mech.state.set_pose("coupler", q0, float(bx), float(by), float(theta0_coupler))
-    mech.state.set_pose("rocker", q0, o4x, 0.0, float(theta0_rocker))
+    mech.state.set_pose("crank", q0, 0.0, 0.0, theta0)
+    mech.state.set_pose("coupler", q0, bx, by, float(theta0_coupler))
+    mech.state.set_pose("rocker", q0, ground_len, 0.0, float(theta0_rocker))
 
     gravity = Gravity(
         g_vector=np.array([0.0, -9.81]),
@@ -142,12 +130,10 @@ def main() -> None:
 
     print("Launching interactive Chebyshev straight-line linkage viewer...")
     print("  Chebyshev's Lambda Mechanism")
-    print("  Proportions: ground:crank:coupler:rocker = 4:5:2:5")
-    print("  Coupler point P at midpoint of coupler (1.0, 0.0)")
+    print("  Link lengths: ground:crank:coupler:rocker = 4:2:5:5")
+    print("  Crank (2a) is the driven input — full 360-degree rotation")
+    print("  Coupler point P at midpoint of coupler (2.5, 0.0)")
     print("  Gravity: [0, -9.81] m/s^2")
-    print()
-    print("  Grashof double-rocker: crank sweeps ~65 deg per branch.")
-    print("  Steps outside the valid range show as SOLVE FAILED.")
     print()
     print("Validation:")
     print("  The coupler midpoint should trace an approximate straight")
