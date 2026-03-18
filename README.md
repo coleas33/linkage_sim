@@ -12,6 +12,7 @@ Given a mechanism defined as rigid bodies connected by joints, with attached spr
 - **Static forces**: required input torque and all joint reaction forces at each configuration
 - **Inverse dynamics**: required actuator effort for a prescribed motion profile, including inertial loads
 - **Forward dynamics**: time-domain simulation of mechanism response to applied forces
+- **Crank selection analysis** for supported four-bar mechanisms — Grashof-based classification, driver ranking, and numerical range estimation (Python; Rust port planned)
 
 The target user is a mechanical engineer sizing actuators, selecting bearings, checking transmission angles, and validating linkage geometry — not an academic researcher building a general-purpose multibody dynamics code.
 
@@ -116,7 +117,7 @@ linkage-sim/
 
 ### Rust solver kernel (`linkage-sim-rs/`)
 
-The Rust port of the solver kernel is validated and feature-complete. All four analysis modes (kinematics, statics, inverse dynamics, forward dynamics) pass against Python golden fixtures. Phase 5 GUI development is underway.
+The Rust port of the solver kernel is validated and feature-complete. All four analysis modes (kinematics, statics, inverse dynamics, forward dynamics) pass against Python golden fixtures. **Phase 5 GUI (MVP complete):** Read-only visualization shell built with egui/eframe. Loads sample mechanisms, renders on a 2D canvas with pan/zoom, drives the kinematic solver via angle slider, and provides click-to-inspect property panels. Run with `cd linkage-sim-rs && cargo run --bin linkage-gui`. Full Phase 5 (interactive topology editor with undo/redo, animation playback, plotting, JSON file I/O, and export) is planned.
 
 ```
 linkage-sim-rs/

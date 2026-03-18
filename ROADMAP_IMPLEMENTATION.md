@@ -233,3 +233,24 @@ If limited rotation range is intentional (e.g., `view_double_rocker.py`), the us
 specifies their own driver and the warning can be suppressed with `warnings.filterwarnings`.
 
 **Total tests:** 1078 passing | **mypy:** strict, clean
+
+---
+
+## Phase 5 — Interactive GUI Editor (MVP)
+
+| Step | Description | Status | Key files | Tests |
+|------|-------------|--------|-----------|-------|
+| 1 | Solver API accessors for GUI | Done | `core/constraint.rs`, `core/mechanism.rs` | Existing solver tests pass |
+| 2 | egui/eframe app shell + binary target | Done | `gui/mod.rs`, `bin/linkage_gui.rs` | Compiles, window opens |
+| 3 | AppState + sample mechanism builders | Done | `gui/state.rs`, `gui/samples.rs` | 7 tests |
+| 4 | 2D canvas rendering + pan/zoom + hit testing | Done | `gui/canvas.rs` | Visual verification |
+| 5 | Angle slider + solver integration | Done | `gui/input_panel.rs` | Visual verification |
+| 6 | Read-only property panel | Done | `gui/property_panel.rs` | Visual verification |
+| 7 | App shell wiring (menu, panels, status bar) | Done | `gui/mod.rs` | Visual verification |
+| 8 | Code review fixes | Done | `gui/state.rs`, `gui/canvas.rs`, `gui/mod.rs` | 130 tests total |
+
+**Phase 5 MVP scope:** Read-only visualization shell. Loads hardcoded sample mechanisms (4-bar crank-rocker, slider-crank). Canvas renders from solved world-space poses. Angle slider drives kinematic solver. Click-to-select with read-only property inspection. Pan/zoom. Debug overlay with IDs and solver status.
+
+**Not yet implemented (full Phase 5):** Body/joint editing, undo/redo, animation playback, plotting, JSON save/load, validation panel, force visualization, unit conversion, snap-to-grid, export, load cases.
+
+**Total tests:** 130 passing (122 unit + 8 golden fixtures) | **Rust toolchain:** stable

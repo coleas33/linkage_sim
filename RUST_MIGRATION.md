@@ -215,11 +215,14 @@ linkage-sim-rs/
 │   │   ├── envelopes.rs         ← analysis/envelopes.py
 │   │   └── reactions.rs         ← analysis/reactions.py
 │   ├── gui/                      ← Phase 5, Rust-native (egui)
-│   │   ├── mod.rs
-│   │   ├── canvas.rs
-│   │   ├── property_panel.rs
-│   │   ├── animation.rs
-│   │   └── plot_panel.rs
+│   │   ├── mod.rs              ← App shell, menu bar, panel layout
+│   │   ├── state.rs            ← AppState, selection, view transform (MVP)
+│   │   ├── canvas.rs           ← 2D mechanism renderer, pan/zoom, hit testing (MVP)
+│   │   ├── input_panel.rs      ← Angle slider, solver status display (MVP)
+│   │   ├── property_panel.rs   ← Read-only property inspection (MVP)
+│   │   ├── samples.rs          ← Hardcoded sample mechanism builders (MVP)
+│   │   ├── animation.rs        ← Playback controls (planned)
+│   │   └── plot_panel.rs       ← Embedded plots (planned)
 │   ├── util/
 │   │   ├── mod.rs
 │   │   ├── units.rs             ← util/units.py
@@ -288,6 +291,8 @@ The Rust port follows the same build order as the Python phases, validating agai
 8. `solver/forward_dynamics.rs` — explicit integrator + Baumgarte. Validated against golden trajectories — **COMPLETE** (March 2026)
 9. `analysis/*` — validation, transmission angle, Grashof classification, coupler curves, energy — **COMPLETE** (March 2026)
 10. `gui/*` — Phase 5, built in egui — **IN PROGRESS**
+
+**Note:** Phase 5 MVP (visualization shell) was built in parallel after port steps 1-5, consuming only the kinematic solver API. Full Phase 5 (interactive editor with editing, undo/redo, plotting, export) requires the complete solver port.
 
 Each step has a clear "done" condition: Rust output matches Python golden data within tolerance.
 
