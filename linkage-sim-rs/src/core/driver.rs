@@ -20,6 +20,16 @@ pub struct DriverFn {
     pub f_ddot: Box<dyn Fn(f64) -> f64 + Send + Sync>,
 }
 
+/// Serializable metadata about a driver's parameterization.
+///
+/// Stored alongside the closure-based `DriverFn` so that constant-speed
+/// drivers can be round-tripped through JSON without re-parameterization.
+#[derive(Debug, Clone)]
+pub enum DriverMeta {
+    /// A constant angular-velocity driver: f(t) = theta_0 + omega * t.
+    ConstantSpeed { omega: f64, theta_0: f64 },
+}
+
 impl std::fmt::Debug for DriverFn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DriverFn").finish_non_exhaustive()
@@ -37,6 +47,9 @@ pub struct RevoluteDriver {
     body_i_id_: String,
     body_j_id_: String,
     driver_fn: DriverFn,
+    /// Optional metadata for serialization. Populated only for parameterized
+    /// drivers (e.g. constant-speed); general closure drivers leave this `None`.
+    pub meta: Option<DriverMeta>,
 }
 
 impl std::fmt::Debug for RevoluteDriver {
@@ -46,6 +59,13 @@ impl std::fmt::Debug for RevoluteDriver {
             .field("body_i_id", &self.body_i_id_)
             .field("body_j_id", &self.body_j_id_)
             .finish()
+    }
+}
+
+impl RevoluteDriver {
+    /// Return the serialization metadata, if available.
+    pub fn meta(&self) -> Option<&DriverMeta> {
+        self.meta.as_ref()
     }
 }
 
@@ -106,6 +126,9 @@ impl Constraint for RevoluteDriver {
 }
 
 /// Create a revolute driver that prescribes relative angle vs. time.
+///
+/// The resulting driver has `meta: None` — it cannot be serialized to JSON.
+/// Use [`constant_speed_driver`] for a serializable parameterized driver.
 pub fn make_revolute_driver(
     driver_id: &str,
     body_i_id: &str,
@@ -123,6 +146,7 @@ pub fn make_revolute_driver(
             f_dot: Box::new(f_dot),
             f_ddot: Box::new(f_ddot),
         },
+        meta: None,
     }
 }
 
@@ -131,6 +155,9 @@ pub fn make_revolute_driver(
 /// f(t) = theta_0 + omega * t
 /// f'(t) = omega
 /// f''(t) = 0
+///
+/// The resulting driver stores `DriverMeta::ConstantSpeed` so it can be
+/// round-tripped through JSON serialization.
 pub fn constant_speed_driver(
     driver_id: &str,
     body_i_id: &str,
@@ -138,14 +165,17 @@ pub fn constant_speed_driver(
     omega: f64,
     theta_0: f64,
 ) -> RevoluteDriver {
-    make_revolute_driver(
-        driver_id,
-        body_i_id,
-        body_j_id,
-        move |t| theta_0 + omega * t,
-        move |_t| omega,
-        |_t| 0.0,
-    )
+    RevoluteDriver {
+        id_: driver_id.to_string(),
+        body_i_id_: body_i_id.to_string(),
+        body_j_id_: body_j_id.to_string(),
+        driver_fn: DriverFn {
+            f: Box::new(move |t| theta_0 + omega * t),
+            f_dot: Box::new(move |_t| omega),
+            f_ddot: Box::new(|_t| 0.0),
+        },
+        meta: Some(DriverMeta::ConstantSpeed { omega, theta_0 }),
+    }
 }
 
 #[cfg(test)]

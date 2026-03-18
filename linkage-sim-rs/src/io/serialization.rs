@@ -13,6 +13,7 @@ use thiserror::Error;
 
 use crate::core::body::Body;
 use crate::core::constraint::{Constraint, JointConstraint};
+use crate::core::driver::DriverMeta;
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
 
@@ -29,6 +30,27 @@ pub struct MechanismJson {
     pub schema_version: String,
     pub bodies: HashMap<String, BodyJson>,
     pub joints: HashMap<String, JointJson>,
+    /// Serialized driver constraints. Only constant-speed revolute drivers are
+    /// supported; other driver types are skipped with a warning.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub drivers: HashMap<String, DriverJson>,
+}
+
+/// JSON representation of a driver constraint.
+///
+/// Only constant-speed revolute drivers can be serialized; general closure-based
+/// drivers are not representable and are omitted.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum DriverJson {
+    ConstantSpeed {
+        body_i: String,
+        body_j: String,
+        /// Angular velocity in rad/s.
+        omega: f64,
+        /// Initial angle offset in rad.
+        theta_0: f64,
+    },
 }
 
 /// JSON representation of a rigid body.
@@ -210,8 +232,9 @@ fn joint_to_json(
 
 /// Convert a `Mechanism` to its JSON-compatible struct.
 ///
-/// Driver constraints are **not** included — closures cannot be serialized.
-/// They must be re-attached after deserialization.
+/// Constant-speed revolute drivers are serialized with their `omega` and
+/// `theta_0` parameters. General closure-based drivers (those without
+/// `DriverMeta`) are silently skipped.
 pub fn mechanism_to_json(mech: &Mechanism) -> Result<MechanismJson, SerializationError> {
     let bodies: HashMap<String, BodyJson> = mech
         .bodies()
@@ -225,10 +248,28 @@ pub fn mechanism_to_json(mech: &Mechanism) -> Result<MechanismJson, Serializatio
         joints.insert(id, joint_to_json(joint, mech.bodies())?);
     }
 
+    let mut drivers = HashMap::new();
+    for driver in mech.drivers() {
+        if let Some(meta) = driver.meta() {
+            let id = driver.id().to_string();
+            let driver_json = match meta {
+                DriverMeta::ConstantSpeed { omega, theta_0 } => DriverJson::ConstantSpeed {
+                    body_i: driver.body_i_id().to_string(),
+                    body_j: driver.body_j_id().to_string(),
+                    omega: *omega,
+                    theta_0: *theta_0,
+                },
+            };
+            drivers.insert(id, driver_json);
+        }
+        // Drivers without metadata (general closures) are silently skipped.
+    }
+
     Ok(MechanismJson {
         schema_version: SCHEMA_VERSION.to_string(),
         bodies,
         joints,
+        drivers,
     })
 }
 
@@ -296,7 +337,7 @@ pub fn load_mechanism_unbuilt(json_str: &str) -> Result<Mechanism, Serialization
             .map_err(|e| SerializationError::Build(e.to_string()))?;
     }
 
-    // Rebuild joints (geometric constraints only; drivers are skipped)
+    // Rebuild joints (geometric constraints only; drivers are separate)
     for (joint_id, joint_json) in &json_struct.joints {
         match joint_json {
             JointJson::Revolute {
@@ -345,7 +386,23 @@ pub fn load_mechanism_unbuilt(json_str: &str) -> Result<Mechanism, Serialization
                 .map_err(|e| SerializationError::Build(e.to_string()))?;
             }
             JointJson::RevoluteDriver { .. } => {
-                // Drivers cannot be deserialized (closures). Skip silently.
+                // Legacy format: drivers in the joints map. Skip silently —
+                // they are handled via the top-level `drivers` map now.
+            }
+        }
+    }
+
+    // Rebuild drivers
+    for (driver_id, driver_json) in &json_struct.drivers {
+        match driver_json {
+            DriverJson::ConstantSpeed {
+                body_i,
+                body_j,
+                omega,
+                theta_0,
+            } => {
+                mech.add_constant_speed_driver(driver_id, body_i, body_j, *omega, *theta_0)
+                    .map_err(|e| SerializationError::Build(e.to_string()))?;
             }
         }
     }
@@ -677,7 +734,7 @@ mod tests {
     #[test]
     fn driver_joint_serialization_marker() {
         // Build a mechanism with a driver, save it, and verify the driver
-        // appears as a marker in the JSON.
+        // appears in the dedicated drivers map (not the joints map).
         let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
         let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
 
@@ -690,13 +747,106 @@ mod tests {
             .unwrap();
         mech.build().unwrap();
 
-        // Save — drivers are NOT included in joints (only geometric joints are)
         let json_str = save_mechanism(&mech).unwrap();
         let json_struct: MechanismJson = serde_json::from_str(&json_str).unwrap();
 
-        // Only the revolute joint should be in the output
+        // The revolute joint is in the joints map.
         assert_eq!(json_struct.joints.len(), 1);
         assert!(json_struct.joints.contains_key("J1"));
+
+        // The driver is in the dedicated drivers map.
+        assert_eq!(json_struct.drivers.len(), 1);
+        assert!(json_struct.drivers.contains_key("D1"));
+    }
+
+    #[test]
+    fn constant_speed_driver_round_trips_omega_and_theta0() {
+        let omega = 3.0 * PI;
+        let theta_0 = PI / 4.0;
+
+        let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
+        let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
+        let coupler = make_bar("coupler", "B", "C", 3.0, 1.5, 0.05);
+        let rocker = make_bar("rocker", "D", "C", 2.0, 1.5, 0.02);
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(crank).unwrap();
+        mech.add_body(coupler).unwrap();
+        mech.add_body(rocker).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+        mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+        mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+        mech.add_revolute_joint("J4", "ground", "O4", "rocker", "D").unwrap();
+        mech.add_constant_speed_driver("D1", "ground", "crank", omega, theta_0)
+            .unwrap();
+        mech.build().unwrap();
+
+        // Round-trip through JSON.
+        let json_str = save_mechanism(&mech).unwrap();
+        let json_struct: MechanismJson = serde_json::from_str(&json_str).unwrap();
+
+        // Verify omega and theta_0 are preserved in JSON.
+        match &json_struct.drivers["D1"] {
+            DriverJson::ConstantSpeed {
+                omega: j_omega,
+                theta_0: j_theta_0,
+                body_i,
+                body_j,
+            } => {
+                assert_abs_diff_eq!(*j_omega, omega, epsilon = 1e-15);
+                assert_abs_diff_eq!(*j_theta_0, theta_0, epsilon = 1e-15);
+                assert_eq!(body_i, "ground");
+                assert_eq!(body_j, "crank");
+            }
+        }
+
+        // Verify the loaded mechanism has the same driver count and can build.
+        let loaded = load_mechanism(&json_str).unwrap();
+        assert_eq!(loaded.n_drivers(), 1);
+
+        // The loaded driver should produce the same f(t) as the original.
+        // We verify indirectly: solve at t=0 with the original q0 and check
+        // that the driver constraint is satisfied.
+        use crate::solver::kinematics::solve_position;
+        let state = loaded.state();
+        let mut q0 = state.make_q();
+        state.set_pose("crank", &mut q0, 0.0, 0.0, theta_0);
+        state.set_pose("coupler", &mut q0, theta_0.cos(), theta_0.sin(), 0.0);
+        state.set_pose("rocker", &mut q0, 4.0, 0.0, PI / 2.0);
+        let result = solve_position(&loaded, &q0, 0.0, 1e-10, 50).unwrap();
+        assert!(
+            result.converged,
+            "Loaded mechanism with non-default omega/theta_0 did not converge: residual={}",
+            result.residual_norm,
+        );
+    }
+
+    #[test]
+    fn save_to_file_and_load_from_file_roundtrip() {
+        // Write to a temp file and reload to verify the file I/O path.
+        use crate::gui::AppState;
+        use crate::gui::samples::SampleMechanism;
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        let path = std::env::temp_dir().join("linkage_test_roundtrip.json");
+        state.save_to_file(&path).expect("save_to_file failed");
+
+        let mut state2 = AppState::default();
+        state2.load_from_file(&path).expect("load_from_file failed");
+
+        // The loaded mechanism should have the same structure.
+        let mech1 = state.mechanism.as_ref().unwrap();
+        let mech2 = state2.mechanism.as_ref().unwrap();
+
+        assert_eq!(mech2.bodies().len(), mech1.bodies().len());
+        assert_eq!(mech2.joints().len(), mech1.joints().len());
+        assert_eq!(mech2.n_drivers(), mech1.n_drivers());
+
+        // Clean up.
+        let _ = std::fs::remove_file(&path);
     }
 
     // -----------------------------------------------------------------------

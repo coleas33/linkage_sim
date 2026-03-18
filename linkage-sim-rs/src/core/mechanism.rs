@@ -70,6 +70,11 @@ impl Mechanism {
         self.drivers.len()
     }
 
+    /// Read-only access to all driver constraints.
+    pub fn drivers(&self) -> &[RevoluteDriver] {
+        &self.drivers
+    }
+
     pub fn is_built(&self) -> bool {
         self.built
     }
