@@ -181,6 +181,7 @@ def precompute_sweep(
     n_steps: int = 360,
     coupler_body_id: str | None = None,
     coupler_point_name: str | None = None,
+    q0: NDArray[np.float64] | None = None,
 ) -> SweepData:
     """Pre-compute a full 0-360 degree sweep of the mechanism.
 
@@ -193,6 +194,8 @@ def precompute_sweep(
         n_steps: Number of angular steps (default 360 for 1-degree resolution).
         coupler_body_id: Body ID for coupler trace (auto-detected if None).
         coupler_point_name: Coupler point name (auto-detected if None).
+        q0: Initial guess for the first solve step. If None, a default
+            all-zeros guess is used (works well for simple 4-bars).
 
     Returns:
         SweepData with all pre-computed results.
@@ -201,13 +204,11 @@ def precompute_sweep(
     angles_rad = np.deg2rad(angles_deg)
 
     # --- Position sweep using continuation ---
-    # Build an initial guess for the first angle
-    q0 = mechanism.state.make_q()
-    first_angle = angles_rad[0]
-
-    # Set a reasonable initial guess: bodies at origin with correct angles
-    for body_id in mechanism.state.body_ids:
-        mechanism.state.set_pose(body_id, q0, 0.0, 0.0, 0.0)
+    if q0 is None:
+        # Build a default initial guess: bodies at origin
+        q0 = mechanism.state.make_q()
+        for body_id in mechanism.state.body_ids:
+            mechanism.state.set_pose(body_id, q0, 0.0, 0.0, 0.0)
 
     # Use position sweep for robust continuation
     sweep = position_sweep(mechanism, q0, angles_rad)
@@ -481,6 +482,7 @@ def launch_interactive(
     coupler_point_name: str | None = None,
     figsize: tuple[float, float] = (16, 9),
     show: bool = True,
+    q0: NDArray[np.float64] | None = None,
 ) -> tuple[Any, SweepData]:
     """Launch the interactive mechanism viewer.
 
@@ -495,6 +497,9 @@ def launch_interactive(
         coupler_point_name: Coupler point name (auto-detected if None).
         figsize: Figure size (width, height) in inches.
         show: If True, call plt.show() (set False for testing).
+        q0: Initial guess for the first solve step. If None, a default
+            all-zeros guess is used. Provide this for mechanisms where
+            the default guess doesn't converge (e.g., 6-bar linkages).
 
     Returns:
         Tuple of (figure, sweep_data) for programmatic access.
@@ -512,6 +517,7 @@ def launch_interactive(
         n_steps=n_steps,
         coupler_body_id=coupler_body_id,
         coupler_point_name=coupler_point_name,
+        q0=q0,
     )
 
     # --- Compute bounds for the mechanism view ---
