@@ -130,6 +130,14 @@ For each benchmark mechanism (4-bar, slider-crank, 6-bar, etc.), export JSON fil
 - Lagrange multipliers: relative tolerance `|Δλ/λ| < 1e-6` (sensitive to conditioning)
 - Forward dynamics: looser — `‖Δq‖ < 1e-5` (different integrators will diverge slightly)
 
+### Known limitation: driver functions are not serializable
+
+`revolute_driver` joints use Python lambdas (`f`, `f_dot`, `f_ddot`) that cannot be serialized to JSON. The current schema (v1.0.0) skips driver payloads on load — see `test_driver_skipped_on_load` in `tests/test_serialization.py`.
+
+**Impact on Rust port:** Golden fixture JSON files do not fully define driven mechanisms. The Rust test harness must re-attach driver functions programmatically for each benchmark mechanism (e.g., `f(t) = ω*t` for constant-speed drivers).
+
+**Future fix:** When the Rust port introduces an expression evaluator (`meval` or `rhai`), extend the schema to v1.1 with a `"driver_expr"` string field (e.g., `"2*pi*t"`) that both Python and Rust can parse. This makes fixtures fully self-contained.
+
 ### When to export
 
 Add a `--export-golden` flag to the Python test runner. Run it once before starting the Rust port. Store results in `data/benchmarks/golden/`.
@@ -282,3 +290,29 @@ Before starting the Rust port, ask:
 If the answer to any of (1–3) is "yes, still changing," delay the port and keep iterating in Python. The cost of porting too early is porting twice. The cost of porting "too late" is a few extra weeks of Python visualization that you'd want anyway.
 
 **The forcing function is still valid:** Phase 5 GUI in Python is genuinely worse than in Rust. The question is not "should we port?" but "have we learned enough to port confidently?"
+
+---
+
+## Reassessment Results (2026-03-17)
+
+### 1. Have benchmarks revealed modeling gaps requiring data-model changes?
+
+**No.** All benchmark mechanisms (4-bar crank-rocker, slider-crank, 6-bar Watt I, pendulum) solve correctly across kinematics, statics, inverse dynamics, and forward dynamics. The interactive viewer scripts exercise all 4-bar Grashof variants, slider-crank, and all 5 Watt I 6-bar subtypes without uncovering missing joint types or constraint formulation problems. No data-model changes required.
+
+### 2. Is the ForceElement trait stable?
+
+**Yes.** The `ForceElement` protocol (`forces/protocol.py`) has not changed since its introduction in Phase 2 Step 1. Phase 4B added friction and joint limits as new force element implementations but did not alter the protocol signature: `evaluate(self, state, q, q_dot, t) -> NDArray`.
+
+### 3. Have you used the solver on at least one "real" mechanism?
+
+**Partially.** The solver has been exercised on textbook benchmarks (4-bar, slider-crank, 6-bar, pendulum) and all Grashof variants, but not on a mechanism from an actual engineering application. The interactive viewer demos provide good coverage of the parameter space but use textbook proportions.
+
+*TODO: If you have a specific real-world mechanism to test, run it through the viewer before starting the Rust port. If not, the textbook coverage across 12+ mechanism configurations provides reasonable confidence.*
+
+### 4. Confident the JSON schema won't need breaking changes?
+
+**Yes, with one known gap.** Schema v1.0.0 is stable for mechanism geometry (bodies, joints, attachment points, coupler points). The known gap is driver function serialization — lambdas cannot round-trip through JSON. This will be addressed in the Rust port via schema v1.1 with symbolic expression support (`meval`/`rhai`), which is an additive change, not a breaking one.
+
+### Go/No-Go Decision
+
+**GO.** Questions 1, 2, and 4 are clearly resolved. Question 3 is a soft gap — the solver handles a wide variety of mechanism topologies and parameters, even if none come from a specific engineering application. The golden fixture suite now covers all 3 mechanism types across all 4 analysis modes (9 fixture files, 750+ data points). The risk of discovering a modeling problem during the Rust port is acceptably low.
