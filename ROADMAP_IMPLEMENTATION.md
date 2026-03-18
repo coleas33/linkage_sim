@@ -251,7 +251,7 @@ specifies their own driver and the warning can be suppressed with `warnings.filt
 
 **Phase 5 MVP scope:** Read-only visualization shell. Loads hardcoded sample mechanisms (4-bar crank-rocker, slider-crank). Canvas renders from solved world-space poses. Angle slider drives kinematic solver. Click-to-select with read-only property inspection. Pan/zoom. Debug overlay with IDs and solver status.
 
-**Not yet implemented (full Phase 5):** Body/joint editing, undo/redo, animation playback, plotting, JSON save/load, validation panel, force visualization, unit conversion, snap-to-grid, export, load cases.
+**Not yet implemented (full Phase 5):** Body/joint editing (core editor), validation panel (live DOF, connectivity warnings), force visualization, unit conversion, snap-to-grid, export (CSV, image, animation), load cases.
 
 **Total tests:** 130 passing (122 unit + 8 golden fixtures) | **Rust toolchain:** stable
 
@@ -280,11 +280,29 @@ specifies their own driver and the warning can be suppressed with `warnings.filt
 
 ---
 
+## Phase 5 — Undo/Redo Infrastructure
+
+| Step | Description | Status | Key files | Tests |
+|------|-------------|--------|-----------|-------|
+| 1 | Undo/redo stack with mechanism JSON snapshots | Done | `gui/undo.rs` | — |
+| 2 | Ctrl+Z / Ctrl+Y keyboard bindings wired in app loop | Done | `gui/mod.rs` | Visual verification |
+
+---
+
+## Phase 5 — Plotting + Sweep Visualization
+
+| Step | Description | Status | Key files | Tests |
+|------|-------------|--------|-----------|-------|
+| 1 | Sweep data computation (coupler trace, body angles, transmission angle) | Done | `gui/state.rs` | — |
+| 2 | Plot panel with egui_plot (coupler trace, body angles, transmission angle) | Done | `gui/plot_panel.rs` | Visual verification |
+
+---
+
 ## Phase 5 — Sample Mechanism Gallery
 
 | Step | Description | Status | Key files | Tests |
 |------|-------------|--------|-----------|-------|
 | 1 | 4-bar: CrankRocker, DoubleRocker, DoubleCrank, Parallelogram, Chebyshev, TripleRocker | Done | `gui/samples.rs` | 6 tests |
-| 2 | 6-bar variants (A1, A2, B2, B3) | Not started | — | — |
+| 2 | 6-bar variants (SixBarB1/Watt I, SixBarA1, SixBarA2, SixBarB2, SixBarB3) | Done | `gui/samples.rs` | Visual verification |
 
-**Total Rust tests:** 169 passing (143 unit + 8 golden + 18 singular)
+**Total Rust tests:** 201 passing

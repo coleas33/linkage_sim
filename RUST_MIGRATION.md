@@ -223,13 +223,15 @@ linkage-sim-rs/
 │   │   ├── envelopes.rs         ← analysis/envelopes.py
 │   │   └── reactions.rs         ← analysis/reactions.py
 │   ├── gui/                      ← Phase 5, Rust-native (egui)
-│   │   ├── mod.rs              ← App shell, menu bar, panel layout, File Open/Save
-│   │   ├── state.rs            ← AppState, selection, view transform, animation + driver state
-│   │   ├── canvas.rs           ← 2D mechanism renderer, pan/zoom, hit testing, right-click driver menu
-│   │   ├── input_panel.rs      ← Angle slider, playback controls (play/pause/speed/loop)
-│   │   ├── property_panel.rs   ← Read-only property inspection (MVP)
-│   │   ├── samples.rs          ← 8 sample mechanism builders (CrankRocker, DoubleRocker, DoubleCrank, Parallelogram, Chebyshev, TripleRocker, SliderCrank, …)
-│   │   └── plot_panel.rs       ← Embedded plots (planned)
+│   │   ├── mod.rs              ← App shell, menu bar, panel layout
+│   │   ├── state.rs            ← AppState, SweepData, animation, solver integration
+│   │   ├── canvas.rs           ← 2D renderer, pan/zoom, hit testing, context menu
+│   │   ├── input_panel.rs      ← Playback controls, angle slider
+│   │   ├── property_panel.rs   ← Read-only property inspection
+│   │   ├── samples.rs          ← 13 sample mechanism builders (8 four-bar + 5 six-bar)
+│   │   ├── plot_panel.rs       ← Sweep plots: coupler trace, body angles, transmission angle
+│   │   ├── undo.rs             ← Undo/redo with mechanism JSON snapshots
+│   │   └── (future: editor modules)
 │   ├── util/
 │   │   ├── mod.rs
 │   │   ├── units.rs             ← util/units.py
@@ -297,9 +299,9 @@ The Rust port follows the same build order as the Python phases, validating agai
 7. `solver/inverse_dynamics.rs` — Validated against golden inverse dynamics data — **COMPLETE** (March 2026)
 8. `solver/forward_dynamics.rs` — explicit integrator + Baumgarte. Validated against golden trajectories — **COMPLETE** (March 2026)
 9. `analysis/*` — validation, transmission angle, Grashof classification, coupler curves, energy — **COMPLETE** (March 2026)
-10. `gui/*` — Phase 5, built in egui — **IN PROGRESS** (MVP + animation playback + driver reassignment + 8 sample mechanisms + JSON save/load done; interactive topology editor not yet started)
+10. `gui/*` — Phase 5, built in egui — **IN PROGRESS** (MVP + animation playback + driver reassignment + 13 sample mechanisms + JSON save/load + undo/redo + plotting done; interactive topology editor not yet started)
 
-**Note:** Phase 5 MVP (visualization shell) was built in parallel after port steps 1-5, consuming only the kinematic solver API. Sub-projects for animation playback and JSON save/load have since been completed. Full Phase 5 (interactive topology editor with body/joint editing, undo/redo, plotting, export) requires the complete solver port and is not yet started.
+**Note:** Phase 5 MVP (visualization shell) was built in parallel after port steps 1-5, consuming only the kinematic solver API. Sub-projects for animation playback, JSON save/load, undo/redo, plotting, and 6-bar sample mechanisms have since been completed. Full Phase 5 (interactive topology editor with body/joint editing, export) requires further work.
 
 Each step has a clear "done" condition: Rust output matches Python golden data within tolerance.
 
@@ -311,7 +313,7 @@ The solver kernel port (steps 1–9) is complete and validated. All four analysi
 
 ### Test coverage
 
-- **169 tests total**: 143 unit tests + 8 golden fixture integration tests + 18 singular tests
+- **201 tests total**
 - All tests pass via `cargo test`
 
 ### Golden fixture coverage
@@ -346,7 +348,7 @@ linkage-sim-rs/
 │   ├── solver/         # Kinematics, statics, inverse/forward dynamics, assembly
 │   ├── analysis/       # Validation, transmission, Grashof, coupler, energy
 │   ├── io/             # JSON serialization (serde), driver serialization
-│   ├── gui/            # Phase 5 egui application: animation, driver selection, 8 samples, JSON save/load
+│   ├── gui/            # Phase 5 egui application: animation, driver selection, 13 samples, JSON save/load, undo/redo, plotting
 │   ├── bin/            # GUI binary entry point
 │   └── lib.rs
 ├── tests/
