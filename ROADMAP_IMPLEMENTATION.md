@@ -32,7 +32,17 @@ See `ROADMAP.md` for the full phase plan and exit criteria.
 | 20 | Graph connectivity check | Done | `analysis/validation.py` | `test_validation.py` (12 new tests, BFS from ground, disconnected detection, component count) |
 | 21 | Ternary body test (6-bar) | Done | `test_sixbar_ternary.py` | 27 tests: Watt I 6-bar, ternary link, DOF, position/vel/accel FD, sweep, internal distances |
 
-**Total tests:** 580 passing | **mypy:** strict, clean
+**Total tests:** 594 passing | **mypy:** strict, clean
+
+---
+
+## Phase 3 Complete
+
+All 15 steps of Phase 3 are implemented. The simulator now supports inverse dynamics with
+inertial loads (M*q̈), force element types (motor with T-ω droop, linear actuator, gas
+spring, viscous/rotary dampers, bearing friction), mass matrix assembly, motor sizing
+feasibility checks, and force element contribution breakdowns. All benchmarks validate the
+pipeline: kinematics → inverse dynamics → reactions → motor sizing → envelopes.
 
 ---
 
@@ -94,11 +104,11 @@ All benchmarks validate the complete pipeline: position → statics → reaction
 | 5 | Gas spring (pressure-based force + velocity damping) | Done | `forces/gas_spring.py` | (tested via integration benchmarks) |
 | 6 | Mass matrix M assembly (block-diagonal) | Done | `solvers/mass_matrix.py` | `test_inverse_dynamics.py` (4 mass matrix tests: shape, diagonal, symmetric, zero) |
 | 7 | Inverse dynamics solver (Φ_qᵀ λ = Q - M q̈) | Done | `solvers/inverse_dynamics.py` | `test_inverse_dynamics.py` (6 tests: matches statics at zero mass, inertia effect, sweep) |
-| 8 | Driver and joint reaction extraction for inverse dynamics | | | |
-| 9 | Force element contribution breakdown | | | |
-| 10 | Bearing friction (constant drag + viscous + load-dependent) | | | |
-| 11 | Motor sizing assistant (T-ω envelope check) | | | |
-| 12 | Inverse dynamics result envelopes and plotting | | | |
-| 13 | Benchmark: 4-bar with inertia (pendulum limit) | | | |
-| 14 | Benchmark: slider-crank with motor | | | |
-| 15 | Benchmark: damped system (energy dissipation) | | | |
+| 8 | Driver and joint reaction extraction for inverse dynamics | Done | `analysis/reactions.py` (reused from Phase 2) | Tested via benchmarks |
+| 9 | Force element contribution breakdown | Done | `analysis/force_breakdown.py` | `test_benchmark_inertia.py` (contributions sum, inertia entry) |
+| 10 | Bearing friction (constant drag + viscous + load-dependent) | Done | `forces/bearing_friction.py` | (tested via protocol compliance) |
+| 11 | Motor sizing assistant (T-ω envelope check) | Done | `analysis/motor_sizing.py` | `test_benchmark_inertia.py` (4 tests: adequate, inadequate, overspeed, zero) |
+| 12 | Inverse dynamics result envelopes and plotting | Done | `analysis/envelopes.py` (reused), `viz/force_plots.py` (reused) | Tested via benchmarks |
+| 13 | Benchmark: 4-bar with inertia (pendulum limit) | Done | `test_benchmark_inertia.py` | 9 tests: sweep, inertia effect, envelopes, motor sizing, breakdown |
+| 14 | Benchmark: slider-crank with motor | Done | `test_benchmark_inertia.py` | 1 test: full slider-crank inverse dynamics + motor sizing |
+| 15 | Benchmark: damped system (energy dissipation) | Done | `test_benchmark_damped.py` | 4 tests: damper effect, breakdown, energy dissipation, combined forces sweep |
