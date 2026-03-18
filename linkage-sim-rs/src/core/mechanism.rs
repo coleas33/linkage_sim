@@ -43,6 +43,14 @@ impl Mechanism {
         &self.bodies
     }
 
+    pub fn joints(&self) -> &[JointConstraint] {
+        &self.joints
+    }
+
+    pub fn n_drivers(&self) -> usize {
+        self.drivers.len()
+    }
+
     pub fn is_built(&self) -> bool {
         self.built
     }

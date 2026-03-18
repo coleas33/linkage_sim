@@ -52,6 +52,15 @@ pub struct RevoluteJoint {
     point_j_local: Vector2<f64>,
 }
 
+impl RevoluteJoint {
+    pub fn point_i_local(&self) -> &Vector2<f64> {
+        &self.point_i_local
+    }
+    pub fn point_j_local(&self) -> &Vector2<f64> {
+        &self.point_j_local
+    }
+}
+
 impl Constraint for RevoluteJoint {
     fn id(&self) -> &str {
         &self.id_
@@ -173,6 +182,18 @@ pub struct FixedJoint {
     point_i_local: Vector2<f64>,
     point_j_local: Vector2<f64>,
     delta_theta_0: f64,
+}
+
+impl FixedJoint {
+    pub fn point_i_local(&self) -> &Vector2<f64> {
+        &self.point_i_local
+    }
+    pub fn point_j_local(&self) -> &Vector2<f64> {
+        &self.point_j_local
+    }
+    pub fn delta_theta_0(&self) -> f64 {
+        self.delta_theta_0
+    }
 }
 
 impl Constraint for FixedJoint {
@@ -308,6 +329,21 @@ pub struct PrismaticJoint {
     axis_local_i: Vector2<f64>,
     n_hat_local_i: Vector2<f64>,
     delta_theta_0: f64,
+}
+
+impl PrismaticJoint {
+    pub fn point_i_local(&self) -> &Vector2<f64> {
+        &self.point_i_local
+    }
+    pub fn point_j_local(&self) -> &Vector2<f64> {
+        &self.point_j_local
+    }
+    pub fn axis_local_i(&self) -> &Vector2<f64> {
+        &self.axis_local_i
+    }
+    pub fn delta_theta_0(&self) -> f64 {
+        self.delta_theta_0
+    }
 }
 
 impl Constraint for PrismaticJoint {
@@ -483,6 +519,36 @@ pub enum JointConstraint {
     Revolute(RevoluteJoint),
     Fixed(FixedJoint),
     Prismatic(PrismaticJoint),
+}
+
+impl JointConstraint {
+    pub fn point_i_local(&self) -> Vector2<f64> {
+        match self {
+            Self::Revolute(j) => j.point_i_local,
+            Self::Fixed(j) => j.point_i_local,
+            Self::Prismatic(j) => j.point_i_local,
+        }
+    }
+
+    pub fn point_j_local(&self) -> Vector2<f64> {
+        match self {
+            Self::Revolute(j) => j.point_j_local,
+            Self::Fixed(j) => j.point_j_local,
+            Self::Prismatic(j) => j.point_j_local,
+        }
+    }
+
+    pub fn is_revolute(&self) -> bool {
+        matches!(self, Self::Revolute(_))
+    }
+
+    pub fn is_prismatic(&self) -> bool {
+        matches!(self, Self::Prismatic(_))
+    }
+
+    pub fn is_fixed(&self) -> bool {
+        matches!(self, Self::Fixed(_))
+    }
 }
 
 impl Constraint for JointConstraint {
