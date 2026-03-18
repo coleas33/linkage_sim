@@ -81,81 +81,19 @@ class SweepData:
 def _detect_fourbar_link_lengths(
     mechanism: Mechanism,
 ) -> tuple[float, float, float, float] | None:
-    """Detect if the mechanism is a 4-bar and return (a, b, c, d) link lengths.
+    """Detect if the mechanism is a 4-bar and return (a, b, c, d) link lengths."""
+    from linkage_sim.analysis.crank_selection import detect_fourbar_topology
 
-    Returns None if the mechanism is not a standard 4-bar.
-    A standard 4-bar has exactly 3 moving bodies connected by 4 revolute joints
-    and 1 revolute driver, with the topology: ground-crank-coupler-rocker-ground.
-    """
-    moving_ids = [bid for bid in mechanism.bodies if bid != GROUND_ID]
-    if len(moving_ids) != 3:
+    topo = detect_fourbar_topology(mechanism)
+    if topo is None:
         return None
-
-    revolute_joints = [
-        j for j in mechanism.joints if isinstance(j, RevoluteJoint)
-    ]
-    if len(revolute_joints) != 4:
+    adj_ids = list(topo.ground_adjacent.keys())
+    if len(adj_ids) != 2:
         return None
-
-    # Find ground-connected joints (one end is ground)
-    ground_joints = [
-        j for j in revolute_joints
-        if j.body_i_id == GROUND_ID or j.body_j_id == GROUND_ID
-    ]
-    if len(ground_joints) != 2:
-        return None
-
-    # Identify crank (ground joint whose non-ground body has the driver)
-    from linkage_sim.core.drivers import RevoluteDriver
-    drivers = [j for j in mechanism.joints if isinstance(j, RevoluteDriver)]
-    if len(drivers) != 1:
-        return None
-
-    driver = drivers[0]
-    driver_body = driver.body_j_id if driver.body_i_id == GROUND_ID else driver.body_i_id
-
-    # Crank is the body connected to ground that is also driven
-    crank_id = None
-    rocker_id = None
-    for gj in ground_joints:
-        other = gj.body_j_id if gj.body_i_id == GROUND_ID else gj.body_i_id
-        if other == driver_body:
-            crank_id = other
-        else:
-            rocker_id = other
-
-    if crank_id is None or rocker_id is None:
-        return None
-
-    # Coupler is the remaining body
-    coupler_candidates = [bid for bid in moving_ids if bid not in (crank_id, rocker_id)]
-    if len(coupler_candidates) != 1:
-        return None
-    coupler_id = coupler_candidates[0]
-
-    # Compute link lengths from attachment points
-    crank_body = mechanism.bodies[crank_id]
-    coupler_body = mechanism.bodies[coupler_id]
-    rocker_body = mechanism.bodies[rocker_id]
-
-    pts_crank = list(crank_body.attachment_points.values())
-    pts_coupler = list(coupler_body.attachment_points.values())
-    pts_rocker = list(rocker_body.attachment_points.values())
-
-    if len(pts_crank) < 2 or len(pts_coupler) < 2 or len(pts_rocker) < 2:
-        return None
-
-    a = float(np.linalg.norm(pts_crank[1] - pts_crank[0]))  # crank length
-    b = float(np.linalg.norm(pts_coupler[1] - pts_coupler[0]))  # coupler length
-    c = float(np.linalg.norm(pts_rocker[1] - pts_rocker[0]))  # rocker length
-
-    # Ground length: distance between the two ground pivot points
-    ground = mechanism.bodies[GROUND_ID]
-    ground_pts = list(ground.attachment_points.values())
-    if len(ground_pts) < 2:
-        return None
-    d = float(np.linalg.norm(ground_pts[1] - ground_pts[0]))
-
+    a = topo.ground_adjacent[adj_ids[0]]
+    b = topo.coupler_length
+    c = topo.ground_adjacent[adj_ids[1]]
+    d = topo.ground_length
     return (a, b, c, d)
 
 
@@ -213,6 +151,20 @@ def precompute_sweep(
     # Use position sweep for robust continuation
     sweep = position_sweep(mechanism, q0, angles_rad)
     solutions = sweep.solutions
+
+    import warnings as _warnings
+
+    n_failed = sum(1 for s in solutions if s is None)
+    if n_failed > n_steps * 0.1:
+        _warnings.warn(
+            f"{n_failed} of {n_steps} sweep steps failed to converge. "
+            f"The driven link may not be able to complete full rotation "
+            f"with this mechanism's dimensions. "
+            f"Use analysis.crank_selection.recommend_crank_fourbar() "
+            f"(for 4-bars) or analysis.crank_selection.estimate_driven_range() "
+            f"(for general mechanisms) to diagnose.",
+            stacklevel=2,
+        )
 
     # --- Velocity + statics at each converged position ---
     velocities: list[NDArray[np.float64] | None] = []

@@ -187,3 +187,84 @@ class TestEstimateDrivenRange:
         est = estimate_driven_range(mech, q0, n_probes=72)
         assert est < 360.0
         assert est > 0.0
+
+
+import warnings
+
+import numpy as np
+
+
+class TestBuildWarning:
+    """Mechanism.build() warns when driven link limits rotation."""
+
+    def test_warns_on_suboptimal_crank(self) -> None:
+        """d=4, a=3, b=4, c=2. Rocker(2) is shortest grounded link.
+        Driving crank(3) instead of rocker(2) should warn."""
+        mech = _build_fourbar(4.0, 3.0, 4.0, 2.0)
+        mech.add_revolute_driver(
+            "D1", "ground", "crank",
+            f=lambda t: t, f_dot=lambda t: 1.0, f_ddot=lambda t: 0.0,
+        )
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            mech.build()
+            crank_warnings = [
+                x for x in w if "crank selection" in str(x.message).lower()
+            ]
+            assert len(crank_warnings) == 1
+
+    def test_no_warning_on_optimal_crank(self) -> None:
+        """Driving the shortest link should not warn."""
+        mech = _build_fourbar(4.0, 2.0, 4.0, 3.0)
+        mech.add_revolute_driver(
+            "D1", "ground", "crank",
+            f=lambda t: t, f_dot=lambda t: 1.0, f_ddot=lambda t: 0.0,
+        )
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            mech.build()
+            crank_warnings = [
+                x for x in w if "crank selection" in str(x.message).lower()
+            ]
+            assert len(crank_warnings) == 0
+
+    def test_no_warning_on_non_fourbar(self) -> None:
+        """Non-4-bar mechanisms should not trigger the warning."""
+        mech = Mechanism()
+        ground = make_ground(O2=(0.0, 0.0))
+        mech.add_body(ground)
+        mech.add_body(make_bar("b1", "A", "B", length=2.0))
+        mech.add_revolute_joint("J1", "ground", "O2", "b1", "A")
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            mech.build()
+            crank_warnings = [
+                x for x in w if "crank selection" in str(x.message).lower()
+            ]
+            assert len(crank_warnings) == 0
+
+
+class TestSweepWarning:
+    """precompute_sweep warns when many steps fail."""
+
+    def test_warns_on_high_failure_rate(self) -> None:
+        """Non-Grashof 4-bar: >10% failures should trigger warning."""
+        mech = _build_fourbar(5.0, 3.0, 4.0, 7.0)
+        mech.add_revolute_driver(
+            "D1", "ground", "crank",
+            f=lambda t: t, f_dot=lambda t: 1.0, f_ddot=lambda t: 0.0,
+        )
+        mech.build()
+        from linkage_sim.forces.gravity import Gravity
+        from linkage_sim.viz.interactive_viewer import precompute_sweep
+        gravity = Gravity(
+            g_vector=np.array([0.0, -9.81]),
+            bodies=mech.bodies,
+        )
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            precompute_sweep(mech, [gravity], n_steps=72)
+            sweep_warnings = [
+                x for x in w if "sweep steps failed" in str(x.message).lower()
+            ]
+            assert len(sweep_warnings) == 1

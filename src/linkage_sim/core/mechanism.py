@@ -256,6 +256,45 @@ class Mechanism:
                 self._state.register_body(body_id)
 
         self._built = True
+        self._check_crank_selection()
+
+    def _check_crank_selection(self) -> None:
+        """Warn if a 4-bar's driven link is suboptimal for rotation.
+
+        Only fires for 4-bar mechanisms with a revolute driver.
+        The user can override by specifying their own driver -- this
+        warning is advisory, not blocking.
+        """
+        from linkage_sim.analysis.crank_selection import (
+            detect_fourbar_topology,
+            recommend_crank_fourbar,
+        )
+
+        topo = detect_fourbar_topology(self)
+        if topo is None:
+            return  # Not a 4-bar
+
+        driven_id = topo.driven_body_id
+        if driven_id is None:
+            return  # No driver
+
+        recs = recommend_crank_fourbar(self)
+        if not recs:
+            return
+
+        best = recs[0]
+        if best.body_id != driven_id and best.full_rotation:
+            driven_len = topo.ground_adjacent.get(driven_id, 0.0)
+            import warnings
+            warnings.warn(
+                f"Crank selection: driven link '{driven_id}' "
+                f"(length={driven_len}) cannot make full rotation. "
+                f"For full 360-degree rotation, drive '{best.body_id}' "
+                f"instead ({best.reason}). "
+                f"Override by specifying your own driver if limited "
+                f"range is intentional.",
+                stacklevel=2,
+            )
 
     def _get_body(self, body_id: str) -> Body:
         if body_id not in self._bodies:
