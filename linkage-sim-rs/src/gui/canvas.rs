@@ -63,14 +63,21 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     let solver_residual = state.solver_status.residual_norm;
     let solver_iterations = state.solver_status.iterations;
 
+    // Copy driver state before the immutable scope (lives on AppState, not Mechanism).
+    let current_driver_joint = state.driver_joint_id.clone();
+
     // Collect joint screen positions and IDs for hit testing later.
     let mut joint_hit_targets: Vec<(Pos2, String)> = Vec::new();
     // Collect body attachment point screen positions and body IDs for hit testing.
     let mut body_hit_targets: Vec<(Pos2, String)> = Vec::new();
+    // Grounded revolute joint IDs — candidates for driver reassignment.
+    // Collected inside the immutable scope from the mechanism.
+    let grounded_revolute_ids: Vec<String>;
 
     // Scoped immutable borrow for rendering.
     {
         let mech = state.mechanism.as_ref().unwrap();
+        grounded_revolute_ids = mech.grounded_revolute_joint_ids();
         let mech_state = mech.state();
         let bodies = mech.bodies();
         let joints = mech.joints();
@@ -308,6 +315,51 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             state.selected = hit;
         }
     }
+
+    // ── Interaction: right-click context menu ────────────────────────
+    // Find what joint (if any) is under the right-click position.
+    let right_click_joint: Option<String> = response
+        .secondary_clicked()
+        .then(|| response.interact_pointer_pos())
+        .flatten()
+        .and_then(|pos| {
+            joint_hit_targets
+                .iter()
+                .find(|(screen_pos, _)| pos.distance(*screen_pos) <= HIT_RADIUS)
+                .map(|(_, id)| id.clone())
+        });
+
+    // Show context menu using egui's built-in context_menu.
+    // This works by checking if a right-click happened and opening a popup.
+    response.context_menu(|ui| {
+        if let Some(ref joint_id) = right_click_joint {
+            ui.label(format!("Joint: {}", joint_id));
+            ui.separator();
+
+            let is_grounded_revolute = grounded_revolute_ids.contains(joint_id);
+            let is_current_driver =
+                current_driver_joint.as_deref() == Some(joint_id.as_str());
+
+            if is_grounded_revolute {
+                let label = if is_current_driver {
+                    "Set as Driver (current)"
+                } else {
+                    "Set as Driver"
+                };
+                if ui
+                    .add_enabled(!is_current_driver, egui::Button::new(label))
+                    .clicked()
+                {
+                    state.pending_driver_reassignment = Some(joint_id.clone());
+                    ui.close();
+                }
+            } else {
+                ui.label("Not a grounded revolute joint");
+            }
+        } else {
+            ui.label("(no joint selected)");
+        }
+    });
 }
 
 /// Draw a ground-fixed marker: an inverted triangle with hatch lines below.
