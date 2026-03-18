@@ -78,7 +78,7 @@ pub fn solve_inverse_dynamics(
     let svd_t = phi_q_t.clone().svd(true, true);
     let sv = &svd_t.singular_values;
 
-    let condition_number = if sv.len() > 0 && sv[sv.len() - 1] > 0.0 {
+    let condition_number = if !sv.is_empty() && sv[sv.len() - 1] > 0.0 {
         sv[0] / sv[sv.len() - 1]
     } else {
         f64::INFINITY

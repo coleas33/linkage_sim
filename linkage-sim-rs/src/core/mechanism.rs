@@ -160,6 +160,7 @@ impl Mechanism {
     }
 
     /// Add a prismatic joint that allows sliding along one axis.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_prismatic_joint(
         &mut self,
         joint_id: &str,

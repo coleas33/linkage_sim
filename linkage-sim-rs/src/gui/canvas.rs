@@ -167,7 +167,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
 
         // ── Draw ground markers ─────────────────────────────────────────
         if let Some(ground) = bodies.get(GROUND_ID) {
-            for (_name, local) in &ground.attachment_points {
+            for local in ground.attachment_points.values() {
                 let global = mech_state.body_point_global(GROUND_ID, local, q);
                 let sp = view.world_to_screen(global.x, global.y);
                 let center = Pos2::new(sp[0], sp[1]);
@@ -290,30 +290,30 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     }
 
     // ── Interaction: hit testing for selection ──────────────────────────
-    if response.clicked() {
-        if let Some(pointer_pos) = response.interact_pointer_pos() {
-            let mut hit: Option<SelectedEntity> = None;
+    if response.clicked()
+        && let Some(pointer_pos) = response.interact_pointer_pos()
+    {
+        let mut hit: Option<SelectedEntity> = None;
 
-            // Check joints first (smaller targets get priority).
-            for (joint_screen, joint_id) in &joint_hit_targets {
-                if pointer_pos.distance(*joint_screen) <= HIT_RADIUS {
-                    hit = Some(SelectedEntity::Joint(joint_id.clone()));
+        // Check joints first (smaller targets get priority).
+        for (joint_screen, joint_id) in &joint_hit_targets {
+            if pointer_pos.distance(*joint_screen) <= HIT_RADIUS {
+                hit = Some(SelectedEntity::Joint(joint_id.clone()));
+                break;
+            }
+        }
+
+        // If no joint hit, check body attachment points.
+        if hit.is_none() {
+            for (pt_screen, body_id) in &body_hit_targets {
+                if pointer_pos.distance(*pt_screen) <= HIT_RADIUS {
+                    hit = Some(SelectedEntity::Body(body_id.clone()));
                     break;
                 }
             }
-
-            // If no joint hit, check body attachment points.
-            if hit.is_none() {
-                for (pt_screen, body_id) in &body_hit_targets {
-                    if pointer_pos.distance(*pt_screen) <= HIT_RADIUS {
-                        hit = Some(SelectedEntity::Body(body_id.clone()));
-                        break;
-                    }
-                }
-            }
-
-            state.selected = hit;
         }
+
+        state.selected = hit;
     }
 
     // ── Interaction: right-click context menu ────────────────────────

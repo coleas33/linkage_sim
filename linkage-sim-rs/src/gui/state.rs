@@ -371,7 +371,7 @@ mod tests {
             "Initial solve did not converge, residual = {}",
             state.solver_status.residual_norm
         );
-        assert!(state.q.len() > 0);
+        assert!(!state.q.is_empty());
     }
 
     #[test]

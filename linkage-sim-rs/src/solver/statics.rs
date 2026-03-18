@@ -59,7 +59,7 @@ pub fn solve_statics(
     let svd_t = phi_q_t.clone().svd(true, true);
     let sv = &svd_t.singular_values;
 
-    let (condition_number, is_overconstrained) = if sv.len() > 0 && sv[0] > 0.0 {
+    let (condition_number, is_overconstrained) = if !sv.is_empty() && sv[0] > 0.0 {
         let rank_tol = 1e-10 * sv[0];
         let rank = sv.iter().filter(|&&s| s > rank_tol).count();
         let sigma_min = if rank > 0 {
