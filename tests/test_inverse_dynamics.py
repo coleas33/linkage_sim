@@ -61,11 +61,12 @@ class TestMassMatrix:
     def test_block_diagonal(self) -> None:
         mech = build_fourbar(mass=2.0, Izz=0.1)
         M = assemble_mass_matrix(mech)
-        # Check crank block (first body, indices 0,1,2)
+        # Check crank block: crank has length=1, CG at (0.5, 0)
+        # M_θθ = Izz_cg + m * |s_cg|^2 = 0.1 + 2.0 * 0.25 = 0.6
         idx = mech.state.get_index("crank")
         assert M[idx.x_idx, idx.x_idx] == pytest.approx(2.0)
         assert M[idx.y_idx, idx.y_idx] == pytest.approx(2.0)
-        assert M[idx.theta_idx, idx.theta_idx] == pytest.approx(0.1)
+        assert M[idx.theta_idx, idx.theta_idx] == pytest.approx(0.6)
 
     def test_symmetric(self) -> None:
         mech = build_fourbar(mass=3.0, Izz=0.5)

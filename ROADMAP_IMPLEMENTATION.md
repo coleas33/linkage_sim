@@ -112,3 +112,34 @@ All benchmarks validate the complete pipeline: position → statics → reaction
 | 13 | Benchmark: 4-bar with inertia (pendulum limit) | Done | `test_benchmark_inertia.py` | 9 tests: sweep, inertia effect, envelopes, motor sizing, breakdown |
 | 14 | Benchmark: slider-crank with motor | Done | `test_benchmark_inertia.py` | 1 test: full slider-crank inverse dynamics + motor sizing |
 | 15 | Benchmark: damped system (energy dissipation) | Done | `test_benchmark_damped.py` | 4 tests: damper effect, breakdown, energy dissipation, combined forces sweep |
+
+**Total tests:** 594 passing | **mypy:** strict, clean
+
+---
+
+## Phase 3 Complete
+
+All 15 steps of Phase 3 are implemented. The simulator now supports inverse dynamics with
+inertial loads (M*q̈), force element types (motor with T-ω droop, linear actuator, gas
+spring, viscous/rotary dampers, bearing friction), mass matrix assembly, motor sizing
+feasibility checks, and force element contribution breakdowns. All benchmarks validate the
+pipeline: kinematics → inverse dynamics → reactions → motor sizing → envelopes.
+
+---
+
+## Phase 4A — Forward Dynamics (Smooth)
+
+| Step | Description | Status | Key files | Tests |
+|------|-------------|--------|-----------|-------|
+| 1 | DAE formulation + Baumgarte stabilization integrator | Done | `solvers/forward_dynamics.py` | `test_forward_dynamics.py` (8 tests) |
+| 2 | Constraint drift monitoring + projection correction | Done | `solvers/forward_dynamics.py` | Drift bounded < 1e-6 in pendulum test |
+| 3 | Energy balance tracking (KE + PE + dissipated vs work) | Done | `analysis/energy.py` | Energy conserved < 1% in undamped pendulum |
+| 4 | Forward dynamics plotting (position/velocity/energy vs time) | — | Deferred: reuse existing viz infrastructure | — |
+| 5 | Benchmark: simple pendulum (known period) | Done | `test_forward_dynamics.py` | Period matches 2π√(L/g) within 2% |
+| 6 | Benchmark: damped pendulum (exponential decay) | Done | `test_forward_dynamics.py` | Amplitude decreases, energy decreases |
+| 7 | Benchmark: 4-bar free response (energy balance) | Done | `test_forward_dynamics.py` | Spring+gravity energy conserved < 5% |
+| 8 | Benchmark: 4-bar step torque (steady state) | Done | `test_forward_dynamics.py` | Crank moves under step torque + damping |
+
+**Note:** Mass matrix assembly upgraded to handle bodies where coordinate origin ≠ CG.
+Uses parallel axis theorem: M_θθ = Izz_cg + m*|s_cg|², plus off-diagonal coupling terms
+m*B(θ)@s_cg. This was required for correct forward dynamics of the simple pendulum benchmark.

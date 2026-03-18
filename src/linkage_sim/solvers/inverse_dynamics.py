@@ -76,7 +76,7 @@ def solve_inverse_dynamics(
     phi_q_T = phi_q.T
 
     Q = assemble_Q(mechanism.state, force_elements, q, q_dot, t)
-    M = assemble_mass_matrix(mechanism)
+    M = assemble_mass_matrix(mechanism, q)
     M_q_ddot = M @ q_ddot
 
     # RHS = Q - M * q̈
