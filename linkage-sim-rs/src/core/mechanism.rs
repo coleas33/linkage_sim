@@ -274,6 +274,23 @@ impl Mechanism {
         Ok(())
     }
 
+    /// Return IDs of revolute joints where one body is ground.
+    pub fn grounded_revolute_joint_ids(&self) -> Vec<String> {
+        self.joints
+            .iter()
+            .filter(|j| {
+                j.is_revolute()
+                    && (j.body_i_id() == GROUND_ID || j.body_j_id() == GROUND_ID)
+            })
+            .map(|j| j.id().to_string())
+            .collect()
+    }
+
+    /// Return the (body_i, body_j) pair of the first driver, if any.
+    pub fn driver_body_pair(&self) -> Option<(&str, &str)> {
+        self.drivers.first().map(|d| (d.body_i_id(), d.body_j_id()))
+    }
+
     fn get_attachment_point(
         &self,
         body_id: &str,
@@ -535,6 +552,23 @@ mod tests {
         assert_eq!(ranges[3].constraint_id, "D1");
         assert_eq!(ranges[3].row_start, 6);
         assert_eq!(ranges[3].n_equations, 1);
+    }
+
+    #[test]
+    fn grounded_revolute_joint_ids_fourbar() {
+        let mech = build_fourbar();
+        let ids = mech.grounded_revolute_joint_ids();
+        assert!(ids.contains(&"J1".to_string()));
+        assert!(ids.contains(&"J4".to_string()));
+        assert_eq!(ids.len(), 2);
+        assert!(!ids.contains(&"J2".to_string()));
+    }
+
+    #[test]
+    fn driver_body_pair_returns_correct_pair() {
+        let mech = build_fourbar();
+        let pair = mech.driver_body_pair();
+        assert_eq!(pair, Some(("ground", "crank")));
     }
 
     #[test]
