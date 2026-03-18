@@ -208,3 +208,25 @@ class State:
         theta = self.get_angle(body_id, q)
         B = self.rotation_matrix_derivative(theta)
         return B @ local_point
+
+    def body_point_velocity(
+        self,
+        body_id: str,
+        local_point: NDArray[np.float64],
+        q: NDArray[np.float64],
+        q_dot: NDArray[np.float64],
+    ) -> NDArray[np.float64]:
+        """Compute the global velocity of a point on a body.
+
+        v_P = v_body + B(θ) * s_local * θ_dot
+
+        For ground, returns zeros (ground doesn't move).
+        """
+        if body_id == GROUND_ID:
+            return np.zeros(2)
+        idx = self.get_index(body_id)
+        v_body = np.array([float(q_dot[idx.x_idx]), float(q_dot[idx.y_idx])])
+        theta = self.get_angle(body_id, q)
+        theta_dot = float(q_dot[idx.theta_idx])
+        B = self.rotation_matrix_derivative(theta)
+        return v_body + (B @ local_point) * theta_dot
