@@ -44,3 +44,4 @@ Desktop.ini
 settings.json
 settings.local.json
 .cursorignore
+output/
