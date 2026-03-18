@@ -32,7 +32,7 @@ See `ROADMAP.md` for the full phase plan and exit criteria.
 | 20 | Graph connectivity check | Done | `analysis/validation.py` | `test_validation.py` (12 new tests, BFS from ground, disconnected detection, component count) |
 | 21 | Ternary body test (6-bar) | Done | `test_sixbar_ternary.py` | 27 tests: Watt I 6-bar, ternary link, DOF, position/vel/accel FD, sweep, internal distances |
 
-**Total tests:** 477 passing | **mypy:** strict, clean
+**Total tests:** 486 passing | **mypy:** strict, clean
 
 ---
 
@@ -57,7 +57,7 @@ graph connectivity, JSON serialization, and Matplotlib visualization/animation.
 | 6 | Driver and joint reaction extraction | Done | `analysis/reactions.py` | `test_reactions.py` (11 tests: extraction, filtering, local transform, equilibrium) |
 | 7 | Grashof condition check | Done | `analysis/grashof.py` | `test_grashof.py` (9 tests: all 5 classifications, values, edge cases) |
 | 8 | Transmission angle computation | Done | `analysis/transmission.py` | `test_transmission_angle.py` (9 tests: formula, sweep, symmetry, law of cosines cross-check) |
-| 9 | External load force element | | | |
+| 9 | External load force element | Done | `forces/external_load.py` | `test_external_load.py` (9 tests: constant, time/position-dependent, torque, virtual work) |
 | 10 | Coulomb friction (regularized) | | | |
 | 11 | PointMass element + composite mass recomputation | | | |
 | 12 | Virtual work cross-check | | | |
