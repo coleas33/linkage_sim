@@ -254,3 +254,37 @@ specifies their own driver and the warning can be suppressed with `warnings.filt
 **Not yet implemented (full Phase 5):** Body/joint editing, undo/redo, animation playback, plotting, JSON save/load, validation panel, force visualization, unit conversion, snap-to-grid, export, load cases.
 
 **Total tests:** 130 passing (122 unit + 8 golden fixtures) | **Rust toolchain:** stable
+
+---
+
+## Phase 5 — Sub-project 1: Animation Playback + Driver Selection
+
+| Step | Description | Status | Key files | Tests |
+|------|-------------|--------|-----------|-------|
+| 1 | Mechanism API (grounded_revolute_joint_ids, driver_body_pair) | Done | `core/mechanism.rs` | 2 tests |
+| 2 | Flexible sample builder (build_sample_with_driver) | Done | `gui/samples.rs` | 3 tests |
+| 3 | Animation + driver state in AppState | Done | `gui/state.rs` | 3 tests |
+| 4 | Playback controls (play/pause, speed, loop/once) | Done | `gui/input_panel.rs` | Visual verification |
+| 5 | Right-click context menu for driver reassignment | Done | `gui/canvas.rs` | Visual verification |
+| 6 | Animation stepping + pending actions in update loop | Done | `gui/mod.rs` | Visual verification |
+| 7 | Clippy cleanup | Done | Multiple files | 161 tests total |
+
+---
+
+## Phase 5 — Sub-project 2: JSON Save/Load
+
+| Step | Description | Status | Key files | Tests |
+|------|-------------|--------|-----------|-------|
+| 1 | DriverMeta enum + driver serialization | Done | `core/driver.rs`, `io/serialization.rs` | 2 tests |
+| 2 | File > Open/Save JSON with rfd file dialog | Done | `gui/mod.rs`, `gui/state.rs`, `Cargo.toml` | Visual verification |
+
+---
+
+## Phase 5 — Sample Mechanism Gallery
+
+| Step | Description | Status | Key files | Tests |
+|------|-------------|--------|-----------|-------|
+| 1 | 4-bar: CrankRocker, DoubleRocker, DoubleCrank, Parallelogram, Chebyshev, TripleRocker | Done | `gui/samples.rs` | 6 tests |
+| 2 | 6-bar variants (A1, A2, B2, B3) | Not started | — | — |
+
+**Total Rust tests:** 169 passing (143 unit + 8 golden + 18 singular)

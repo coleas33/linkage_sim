@@ -38,7 +38,7 @@ The Rust port begins **after Phase 4 exits** — when all four analysis modes (k
 | Phase 2 — Force elements & statics | Python | Complete, validated |
 | Phase 3 — Actuators & inverse dynamics | Python | Complete, validated |
 | Phase 4 — Forward dynamics | Python | Complete, validated |
-| **Rust port** | **Rust** | **Complete — 110 tests, validated against Python golden data** |
+| **Rust port** | **Rust** | **Complete — 169 tests, validated against Python golden data** |
 | Phase 5 — Interactive GUI | Rust | **In progress** — egui application |
 | Phase 6 — Advanced & QoL | Rust | Not started |
 
@@ -190,12 +190,13 @@ The Python module structure maps directly to Rust:
 ```
 linkage-sim-rs/
 ├── src/
+│   ├── error.rs                  ← centralized error types (LinkageError enum)
 │   ├── core/
 │   │   ├── mod.rs
 │   │   ├── body.rs              ← core/bodies.py
 │   │   ├── constraint.rs        ← core/constraints.py
 │   │   ├── force_element.rs     ← core/force_elements.py
-│   │   ├── driver.rs            ← core/drivers.py
+│   │   ├── driver.rs            ← core/drivers.py (+ DriverMeta for serialization)
 │   │   ├── mechanism.rs         ← core/mechanism.py
 │   │   ├── state.rs             ← core/state.py
 │   │   └── load_case.rs         ← core/load_cases.py
@@ -206,22 +207,28 @@ linkage-sim-rs/
 │   │   ├── statics.rs           ← solvers/statics.py
 │   │   ├── inverse_dynamics.rs  ← solvers/inverse_dynamics.py
 │   │   └── forward_dynamics.rs  ← solvers/forward_dynamics.py
+│   ├── forces/
+│   │   ├── mod.rs
+│   │   ├── assembly.rs          ← forces/assembly.py
+│   │   ├── gravity.rs           ← forces/gravity.py
+│   │   └── helpers.rs           ← forces/helpers.py
 │   ├── analysis/
 │   │   ├── mod.rs
-│   │   ├── validation.rs        ← analysis/validation.py
-│   │   ├── transmission.rs      ← analysis/transmission.py
-│   │   ├── toggle.rs            ← analysis/toggle.py
+│   │   ├── coupler.rs           ← analysis/coupler.py
 │   │   ├── energy.rs            ← analysis/energy.py
+│   │   ├── grashof.rs           ← analysis/grashof.py
+│   │   ├── transmission.rs      ← analysis/transmission.py
+│   │   ├── validation.rs        ← analysis/validation.py
+│   │   ├── toggle.rs            ← analysis/toggle.py
 │   │   ├── envelopes.rs         ← analysis/envelopes.py
 │   │   └── reactions.rs         ← analysis/reactions.py
 │   ├── gui/                      ← Phase 5, Rust-native (egui)
-│   │   ├── mod.rs              ← App shell, menu bar, panel layout
-│   │   ├── state.rs            ← AppState, selection, view transform (MVP)
-│   │   ├── canvas.rs           ← 2D mechanism renderer, pan/zoom, hit testing (MVP)
-│   │   ├── input_panel.rs      ← Angle slider, solver status display (MVP)
+│   │   ├── mod.rs              ← App shell, menu bar, panel layout, File Open/Save
+│   │   ├── state.rs            ← AppState, selection, view transform, animation + driver state
+│   │   ├── canvas.rs           ← 2D mechanism renderer, pan/zoom, hit testing, right-click driver menu
+│   │   ├── input_panel.rs      ← Angle slider, playback controls (play/pause/speed/loop)
 │   │   ├── property_panel.rs   ← Read-only property inspection (MVP)
-│   │   ├── samples.rs          ← Hardcoded sample mechanism builders (MVP)
-│   │   ├── animation.rs        ← Playback controls (planned)
+│   │   ├── samples.rs          ← 8 sample mechanism builders (CrankRocker, DoubleRocker, DoubleCrank, Parallelogram, Chebyshev, TripleRocker, SliderCrank, …)
 │   │   └── plot_panel.rs       ← Embedded plots (planned)
 │   ├── util/
 │   │   ├── mod.rs
@@ -290,9 +297,9 @@ The Rust port follows the same build order as the Python phases, validating agai
 7. `solver/inverse_dynamics.rs` — Validated against golden inverse dynamics data — **COMPLETE** (March 2026)
 8. `solver/forward_dynamics.rs` — explicit integrator + Baumgarte. Validated against golden trajectories — **COMPLETE** (March 2026)
 9. `analysis/*` — validation, transmission angle, Grashof classification, coupler curves, energy — **COMPLETE** (March 2026)
-10. `gui/*` — Phase 5, built in egui — **IN PROGRESS**
+10. `gui/*` — Phase 5, built in egui — **IN PROGRESS** (MVP + animation playback + driver reassignment + 8 sample mechanisms + JSON save/load done; interactive topology editor not yet started)
 
-**Note:** Phase 5 MVP (visualization shell) was built in parallel after port steps 1-5, consuming only the kinematic solver API. Full Phase 5 (interactive editor with editing, undo/redo, plotting, export) requires the complete solver port.
+**Note:** Phase 5 MVP (visualization shell) was built in parallel after port steps 1-5, consuming only the kinematic solver API. Sub-projects for animation playback and JSON save/load have since been completed. Full Phase 5 (interactive topology editor with body/joint editing, undo/redo, plotting, export) requires the complete solver port and is not yet started.
 
 Each step has a clear "done" condition: Rust output matches Python golden data within tolerance.
 
@@ -304,7 +311,7 @@ The solver kernel port (steps 1–9) is complete and validated. All four analysi
 
 ### Test coverage
 
-- **110 tests total**: 102 unit tests + 8 golden fixture integration tests
+- **169 tests total**: 143 unit tests + 8 golden fixture integration tests + 18 singular tests
 - All tests pass via `cargo test`
 
 ### Golden fixture coverage
@@ -333,12 +340,13 @@ Near-singular configurations (toggle points at 180 degrees), the Rust solver use
 ```
 linkage-sim-rs/
 ├── src/
-│   ├── core/           # Body, constraint, driver, mechanism, state
+│   ├── error.rs        # Centralized error types (LinkageError enum)
+│   ├── core/           # Body, constraint, driver (+ DriverMeta), mechanism, state
 │   ├── forces/         # Force element trait, gravity, helpers, assembly
 │   ├── solver/         # Kinematics, statics, inverse/forward dynamics, assembly
 │   ├── analysis/       # Validation, transmission, Grashof, coupler, energy
-│   ├── io/             # JSON serialization (serde)
-│   ├── gui/            # Phase 5 egui application (in progress)
+│   ├── io/             # JSON serialization (serde), driver serialization
+│   ├── gui/            # Phase 5 egui application: animation, driver selection, 8 samples, JSON save/load
 │   ├── bin/            # GUI binary entry point
 │   └── lib.rs
 ├── tests/

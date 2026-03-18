@@ -117,7 +117,7 @@ linkage-sim/
 
 ### Rust solver kernel (`linkage-sim-rs/`)
 
-The Rust port of the solver kernel is validated and feature-complete. All four analysis modes (kinematics, statics, inverse dynamics, forward dynamics) pass against Python golden fixtures. **Phase 5 GUI (MVP complete):** Read-only visualization shell built with egui/eframe. Loads sample mechanisms, renders on a 2D canvas with pan/zoom, drives the kinematic solver via angle slider, and provides click-to-inspect property panels. Run with `cd linkage-sim-rs && cargo run --bin linkage-gui`. Full Phase 5 (interactive topology editor with undo/redo, animation playback, plotting, JSON file I/O, and export) is planned.
+The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forward dynamics) is complete in Rust, validated against Python golden fixtures (169 tests). **Phase 5 GUI:** Built with egui/eframe. Loads 8 sample mechanisms (CrankRocker, DoubleRocker, DoubleCrank, Parallelogram, Chebyshev, TripleRocker, and more), renders on a 2D canvas with pan/zoom, drives the kinematic solver via angle slider, and provides click-to-inspect property panels. Animation playback (play/pause, speed control, loop/once) is supported, along with right-click driver reassignment on any grounded revolute joint. Mechanisms can be saved and loaded as JSON via File > Open / File > Save. Run with `cd linkage-sim-rs && cargo run --bin linkage-gui`. Not yet implemented: interactive topology editor (body/joint editing, undo/redo, plotting, export).
 
 ```
 linkage-sim-rs/
