@@ -50,9 +50,11 @@ pub fn solve_statics(
     let m = phi_q.nrows(); // n_constraints
     let rhs = -&q_forces;
 
-    // SVD for conditioning check and solve
-    let svd = phi_q.svd(true, true);
-    let sv = &svd.singular_values;
+    // Single SVD of Φ_q^T — reused for both conditioning and solve.
+    // Singular values of A^T are the same as those of A, so this gives
+    // the same condition number as SVD(Φ_q).
+    let svd_t = phi_q_t.clone().svd(true, true);
+    let sv = &svd_t.singular_values;
 
     let (condition_number, is_overconstrained) = if sv.len() > 0 && sv[0] > 0.0 {
         let rank_tol = 1e-10 * sv[0];
@@ -72,8 +74,7 @@ pub fn solve_statics(
         (f64::INFINITY, true)
     };
 
-    // Solve via SVD of Φ_q^T
-    let svd_t = phi_q_t.clone().svd(true, true);
+    // Solve Φ_q^T · λ = rhs using the already-computed SVD
     let lambdas = svd_t.solve(&rhs, 1e-14).unwrap();
 
     // Compute residual

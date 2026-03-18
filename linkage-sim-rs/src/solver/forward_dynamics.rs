@@ -17,11 +17,10 @@
 use nalgebra::{DMatrix, DVector};
 
 use crate::core::mechanism::Mechanism;
-use crate::core::state::GROUND_ID;
 use crate::forces::assembly::assemble_q;
 use crate::forces::gravity::Gravity;
 use crate::solver::assembly::{
-    assemble_constraints, assemble_gamma, assemble_jacobian, assemble_phi_t,
+    assemble_constraints, assemble_gamma, assemble_jacobian, assemble_mass_matrix, assemble_phi_t,
 };
 
 /// Configuration for the forward dynamics integrator.
@@ -75,55 +74,6 @@ pub struct ForwardDynamicsResult {
     pub success: bool,
     /// Status message.
     pub message: String,
-}
-
-/// Assemble the block-diagonal mass matrix M.
-///
-/// Each moving body contributes a 3x3 block:
-///   [m,    0,    m*Bs_x]
-///   [0,    m,    m*Bs_y]
-///   [m*Bs_x, m*Bs_y, Izz_cg + m*|s_cg|^2]
-///
-/// where Bs = B(theta) * s_cg (velocity Jacobian of the CG).
-/// When the CG is at the body origin, the off-diagonal terms vanish.
-fn assemble_mass_matrix(mech: &Mechanism, q: &DVector<f64>) -> DMatrix<f64> {
-    let state = mech.state();
-    let n = state.n_coords();
-    let mut m_mat = DMatrix::zeros(n, n);
-
-    for (body_id, body) in mech.bodies() {
-        if body_id == GROUND_ID || body.mass <= 0.0 {
-            continue;
-        }
-
-        let idx = state.get_index(body_id).expect("body not registered");
-        let mass = body.mass;
-        let s_cg = &body.cg_local;
-
-        // Diagonal terms: m, m
-        m_mat[(idx.x_idx(), idx.x_idx())] = mass;
-        m_mat[(idx.y_idx(), idx.y_idx())] = mass;
-
-        // M_theta_theta = Izz_cg + m * |s_cg|^2  (parallel axis theorem)
-        let s_cg_sq = s_cg.x * s_cg.x + s_cg.y * s_cg.y;
-        m_mat[(idx.theta_idx(), idx.theta_idx())] = body.izz_cg + mass * s_cg_sq;
-
-        // Off-diagonal coupling: m * B(theta) * s_cg
-        if mass > 0.0 && s_cg_sq > 0.0 {
-            let theta = q[idx.theta_idx()];
-            let (sin_t, cos_t) = theta.sin_cos();
-            // B(theta) * s_cg = [-sin*sx - cos*sy, cos*sx - sin*sy]
-            let bs_x = -sin_t * s_cg.x - cos_t * s_cg.y;
-            let bs_y = cos_t * s_cg.x - sin_t * s_cg.y;
-
-            m_mat[(idx.x_idx(), idx.theta_idx())] = mass * bs_x;
-            m_mat[(idx.theta_idx(), idx.x_idx())] = mass * bs_x;
-            m_mat[(idx.y_idx(), idx.theta_idx())] = mass * bs_y;
-            m_mat[(idx.theta_idx(), idx.y_idx())] = mass * bs_y;
-        }
-    }
-
-    m_mat
 }
 
 /// Compute the RHS of the ODE: dy/dt = [q_dot, q_ddot].
@@ -380,7 +330,7 @@ pub fn simulate(
 
     for (i, y) in y_out.iter().enumerate() {
         let mut q_i = y.rows(0, n).clone_owned();
-        let qd_i = y.rows(n, n).clone_owned();
+        let mut qd_i = y.rows(n, n).clone_owned();
 
         // Apply constraint projection if configured
         if cfg.project_interval > 0 && i > 0 && i % cfg.project_interval == 0 {
@@ -391,6 +341,18 @@ pub fn simulate(
                 cfg.project_tol,
                 cfg.max_project_iter,
             );
+
+            // Velocity projection: remove the constraint-violating component
+            // of velocity while preserving as much of the original velocity
+            // as possible. Minimum-correction approach:
+            //   q_dot_new = q_dot - Phi_q^+ * (Phi_q * q_dot + Phi_t)
+            let phi_q = assemble_jacobian(mech, &q_i, t_out[i]);
+            let phi_t = assemble_phi_t(mech, &q_i, t_out[i]);
+            let violation = &phi_q * &qd_i + &phi_t;
+            let svd = phi_q.svd(true, true);
+            if let Ok(correction) = svd.solve(&violation, 1e-14) {
+                qd_i -= correction;
+            }
         }
 
         let phi = assemble_constraints(mech, &q_i, t_out[i]);
@@ -414,6 +376,7 @@ pub fn simulate(
 mod tests {
     use super::*;
     use crate::core::body::{make_bar, make_ground, Body};
+    use crate::core::state::GROUND_ID;
     use approx::assert_abs_diff_eq;
     use nalgebra::Vector2;
     use std::collections::HashMap;

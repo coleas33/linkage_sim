@@ -22,6 +22,10 @@ pub struct Mechanism {
     drivers: Vec<RevoluteDriver>,
     state: State,
     built: bool,
+    /// Deterministic body ordering used for the state vector q.
+    /// Populated during `build()` — contains moving body IDs in alphabetical
+    /// order (matching the Python reference implementation).
+    body_order: Vec<String>,
 }
 
 impl Mechanism {
@@ -32,6 +36,7 @@ impl Mechanism {
             drivers: Vec::new(),
             state: State::new(),
             built: false,
+            body_order: Vec::new(),
         }
     }
 
@@ -53,6 +58,13 @@ impl Mechanism {
 
     pub fn is_built(&self) -> bool {
         self.built
+    }
+
+    /// Deterministic ordering of moving body IDs in the state vector q.
+    /// Bodies are sorted alphabetically (matching the Python reference).
+    /// Only valid after `build()`.
+    pub fn body_order(&self) -> &[String] {
+        &self.body_order
     }
 
     /// Total number of constraint equations across all joints and drivers.
@@ -200,6 +212,11 @@ impl Mechanism {
     }
 
     /// Finalize the mechanism: register moving bodies in the state vector.
+    ///
+    /// Bodies are registered in alphabetical order to ensure deterministic
+    /// state vector layout. This matches the Python reference implementation
+    /// (`sorted(self._bodies.keys())`). The resulting order is stored in
+    /// `body_order` and can be queried via `body_order()`.
     pub fn build(&mut self) -> Result<(), MechanismError> {
         if self.built {
             return Err(MechanismError::AlreadyBuilt("build"));
@@ -208,13 +225,16 @@ impl Mechanism {
         let mut body_ids: Vec<_> = self.bodies.keys().cloned().collect();
         body_ids.sort();
 
+        let mut order = Vec::new();
         for body_id in &body_ids {
             if body_id != GROUND_ID {
                 self.state
                     .register_body(body_id)
                     .map_err(|e| MechanismError::StateError(e.to_string()))?;
+                order.push(body_id.clone());
             }
         }
+        self.body_order = order;
 
         self.built = true;
         Ok(())
@@ -327,5 +347,70 @@ mod tests {
         let mech = build_fourbar();
         assert_eq!(mech.n_constraints(), 9);
         assert_eq!(mech.all_constraints().len(), 5); // 4 joints + 1 driver
+    }
+
+    #[test]
+    fn body_order_is_deterministic_alphabetical() {
+        // Verify body ordering is alphabetical regardless of insertion order.
+        let mech = build_fourbar();
+        let order = mech.body_order();
+        assert_eq!(order, &["coupler", "crank", "rocker"]);
+    }
+
+    #[test]
+    fn body_order_matches_state_body_ids() {
+        // body_order() and state().body_ids() must agree.
+        let mech = build_fourbar();
+        let order = mech.body_order();
+        let state_ids = mech.state().body_ids();
+        assert_eq!(order, state_ids.as_slice());
+    }
+
+    #[test]
+    fn body_order_independent_of_insertion_order() {
+        // Insert bodies in reverse-alphabetical order; ordering must still
+        // be alphabetical after build().
+        let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 0.038, 0.0)]);
+        let crank = make_bar("crank", "A", "B", 0.01, 0.0, 0.0);
+        let coupler = make_bar("coupler", "B", "C", 0.04, 0.0, 0.0);
+        let rocker = make_bar("rocker", "C", "D", 0.03, 0.0, 0.0);
+
+        let mut mech = Mechanism::new();
+        // Deliberately insert in reverse-alpha order
+        mech.add_body(rocker).unwrap();
+        mech.add_body(ground).unwrap();
+        mech.add_body(crank).unwrap();
+        mech.add_body(coupler).unwrap();
+
+        mech.add_revolute_joint("J1", "ground", "O2", "crank", "A")
+            .unwrap();
+        mech.add_revolute_joint("J2", "crank", "B", "coupler", "B")
+            .unwrap();
+        mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C")
+            .unwrap();
+        mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4")
+            .unwrap();
+
+        mech.build().unwrap();
+
+        assert_eq!(mech.body_order(), &["coupler", "crank", "rocker"]);
+        assert_eq!(mech.body_order(), mech.state().body_ids().as_slice());
+    }
+
+    #[test]
+    fn body_order_empty_before_build() {
+        let mut mech = Mechanism::new();
+        let ground = make_ground(&[("O", 0.0, 0.0)]);
+        mech.add_body(ground).unwrap();
+        assert!(mech.body_order().is_empty());
+    }
+
+    #[test]
+    fn body_order_excludes_ground() {
+        let mech = build_fourbar();
+        assert!(
+            !mech.body_order().contains(&"ground".to_string()),
+            "body_order should not contain ground"
+        );
     }
 }

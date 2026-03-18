@@ -8,13 +8,12 @@
 //! The multiplier for the driver constraint gives the required input
 //! torque including inertial effects.
 
-use nalgebra::{DMatrix, DVector};
+use nalgebra::DVector;
 
 use crate::core::mechanism::Mechanism;
-use crate::core::state::GROUND_ID;
 use crate::forces::assembly::assemble_q;
 use crate::forces::gravity::Gravity;
-use crate::solver::assembly::assemble_jacobian;
+use crate::solver::assembly::{assemble_jacobian, assemble_mass_matrix};
 
 /// Result of an inverse dynamics solve.
 #[derive(Debug, Clone)]
@@ -29,59 +28,6 @@ pub struct InverseDynamicsResult {
     pub residual_norm: f64,
     /// Condition number of Phi_q.
     pub condition_number: f64,
-}
-
-/// Assemble the block-diagonal mass matrix M.
-///
-/// Each moving body contributes a 3x3 block at its coordinate indices:
-///
-/// ```text
-///   [m,      0,      m*Bs_x ]
-///   [0,      m,      m*Bs_y ]
-///   [m*Bs_x, m*Bs_y, Izz_cg + m*|s_cg|^2]
-/// ```
-///
-/// where Bs = B(theta) * s_cg is the velocity Jacobian of the CG.
-/// When the body coordinate origin coincides with CG (s_cg = 0),
-/// this reduces to diag(m, m, Izz_cg).
-pub fn assemble_mass_matrix(mech: &Mechanism, q: &DVector<f64>) -> DMatrix<f64> {
-    let state = mech.state();
-    let n = state.n_coords();
-    let mut m_mat = DMatrix::zeros(n, n);
-
-    for (body_id, body) in mech.bodies() {
-        if body_id == GROUND_ID {
-            continue;
-        }
-
-        let idx = state.get_index(body_id).expect("body not registered");
-        let mass = body.mass;
-        let s_cg = &body.cg_local;
-
-        // Diagonal mass terms
-        m_mat[(idx.x_idx(), idx.x_idx())] = mass;
-        m_mat[(idx.y_idx(), idx.y_idx())] = mass;
-
-        // M_theta_theta = Izz_cg + m * |s_cg|^2 (parallel axis theorem)
-        let s_cg_sq = s_cg.x * s_cg.x + s_cg.y * s_cg.y;
-        m_mat[(idx.theta_idx(), idx.theta_idx())] = body.izz_cg + mass * s_cg_sq;
-
-        // Off-diagonal coupling when CG is offset from body origin
-        if mass > 0.0 && s_cg_sq > 0.0 {
-            let theta = q[idx.theta_idx()];
-            let (sin_t, cos_t) = theta.sin_cos();
-            // B(theta) * s_cg = [-sin(theta)*sx - cos(theta)*sy, cos(theta)*sx - sin(theta)*sy]
-            let bs_x = -sin_t * s_cg.x - cos_t * s_cg.y;
-            let bs_y = cos_t * s_cg.x - sin_t * s_cg.y;
-
-            m_mat[(idx.x_idx(), idx.theta_idx())] = mass * bs_x;
-            m_mat[(idx.theta_idx(), idx.x_idx())] = mass * bs_x;
-            m_mat[(idx.y_idx(), idx.theta_idx())] = mass * bs_y;
-            m_mat[(idx.theta_idx(), idx.y_idx())] = mass * bs_y;
-        }
-    }
-
-    m_mat
 }
 
 /// Solve inverse dynamics for constraint forces.
@@ -126,9 +72,11 @@ pub fn solve_inverse_dynamics(
     // RHS = -(Q - M * q_ddot)  [same sign convention as Python]
     let rhs = -(&q_forces - &m_q_ddot);
 
-    // Condition number via SVD of Phi_q
-    let svd = phi_q.svd(true, true);
-    let sv = &svd.singular_values;
+    // Single SVD of Phi_q^T — reused for both conditioning and solve.
+    // Singular values of A^T are the same as those of A, so this gives
+    // the same condition number as SVD(Phi_q).
+    let svd_t = phi_q_t.clone().svd(true, true);
+    let sv = &svd_t.singular_values;
 
     let condition_number = if sv.len() > 0 && sv[sv.len() - 1] > 0.0 {
         sv[0] / sv[sv.len() - 1]
@@ -136,8 +84,7 @@ pub fn solve_inverse_dynamics(
         f64::INFINITY
     };
 
-    // Solve Phi_q^T * lambda = rhs via SVD
-    let svd_t = phi_q_t.clone().svd(true, true);
+    // Solve Phi_q^T * lambda = rhs using the already-computed SVD
     let lambdas = svd_t.solve(&rhs, 1e-14).unwrap();
 
     // Compute residual
