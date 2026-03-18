@@ -72,7 +72,7 @@ impl eframe::App for LinkageApp {
                         ui.separator();
                         ui.label(format!(
                             "Bodies: {} | Joints: {} | DOF: {}",
-                            mech.bodies().len() - 1,
+                            mech.bodies().len().saturating_sub(1),
                             mech.joints().len(),
                             mech.state().n_coords() as isize - mech.n_constraints() as isize
                         ));

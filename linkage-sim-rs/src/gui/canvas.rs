@@ -271,14 +271,13 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 let new_scale = (old_scale * factor).clamp(MIN_SCALE, MAX_SCALE);
 
                 // Adjust offset so the world point under the cursor stays fixed.
-                // screen = offset + world * scale
-                // world_under_cursor = (pointer - offset) / old_scale
-                // new_offset = pointer - world_under_cursor * new_scale
-                let wx = (pointer_pos.x - state.view.offset[0]) / old_scale;
-                let wy = (pointer_pos.y - state.view.offset[1]) / old_scale;
-                state.view.offset[0] = pointer_pos.x - wx * new_scale;
-                state.view.offset[1] = pointer_pos.y - wy * new_scale;
+                // Use screen_to_world/world_to_screen to correctly handle the
+                // Y-axis flip in the view transform.
+                let [wx, wy] = state.view.screen_to_world(pointer_pos.x, pointer_pos.y);
                 state.view.scale = new_scale;
+                let new_screen = state.view.world_to_screen(wx, wy);
+                state.view.offset[0] += pointer_pos.x - new_screen[0];
+                state.view.offset[1] += pointer_pos.y - new_screen[1];
             }
         }
     }
@@ -330,7 +329,7 @@ fn draw_ground_marker(painter: &egui::Painter, center: Pos2, size: f32, color: C
     let n_hatches = 4;
     let hatch_len = size * 0.4;
     let spacing = size / n_hatches as f32;
-    for i in 0..=n_hatches {
+    for i in 0..n_hatches {
         let x = center.x - half + spacing * i as f32;
         painter.line_segment(
             [

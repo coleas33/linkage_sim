@@ -161,9 +161,16 @@ impl AppState {
     /// On failure, keeps `last_good_q` unchanged and reports the failure in
     /// `solver_status`.
     pub fn solve_at_angle(&mut self, angle_rad: f64) {
-        let Some(mech) = &self.mechanism else {
+        // Always update driver_angle to track the requested angle,
+        // even if the solver fails. This prevents the slider from
+        // re-triggering solve_at_angle every frame after a failure.
+        self.driver_angle = angle_rad;
+
+        let Some(mech) = &self.mechanism else { return };
+
+        if self.driver_omega.abs() < f64::EPSILON {
             return;
-        };
+        }
 
         // Convert driver angle to time using the constant-speed relationship:
         //   angle = theta_0 + omega * t  →  t = (angle - theta_0) / omega
@@ -178,12 +185,10 @@ impl AppState {
         };
 
         if result.converged {
-            self.last_good_q = result.q.clone();
-            self.q = result.q;
-            self.driver_angle = angle_rad;
+            self.q = result.q.clone();
+            self.last_good_q = result.q;
         }
-        // On failure, q and driver_angle are NOT updated; the UI retains the
-        // last valid pose.
+        // If not converged, keep last_good_q for display (spec: hold last good pose)
     }
 
     /// Returns true if a mechanism has been loaded.
