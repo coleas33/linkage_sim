@@ -23,7 +23,7 @@ impl LinkageApp {
 }
 
 impl eframe::App for LinkageApp {
-    fn update(&mut self, ctx: &egui::Context) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Linkage Simulator");
             ui.label("GUI shell — loading...");

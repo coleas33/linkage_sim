@@ -37,6 +37,9 @@ from linkage_sim.viz.interactive_viewer import (
 )
 
 
+TRACE_COLORS = ["green", "orange", "purple", "cyan", "magenta", "olive"]
+
+
 # ---------------------------------------------------------------------------
 # Registry: all mechanisms and their build functions
 # ---------------------------------------------------------------------------
@@ -237,21 +240,35 @@ def export_gif(
             _draw_joints(mechanism, q, ax_mech)
             _draw_ground(mechanism, q, ax_mech)
 
-            # Coupler trace up to current step
+            # Coupler traces (all coupler points with distinct colors)
             if sweep.coupler_traces:
-                trace = sweep.coupler_traces[0]
-                ctx = trace.x[:step_idx + 1]
-                cty = trace.y[:step_idx + 1]
-                valid = ~np.isnan(ctx)
-                if np.any(valid):
-                    ax_mech.plot(ctx[valid], cty[valid], "-",
-                                color="green", linewidth=1.2, alpha=0.5,
-                                zorder=1)
-                cx = trace.x[step_idx]
-                cy = trace.y[step_idx]
-                if not np.isnan(cx):
-                    ax_mech.plot(cx, cy, "o", color="green",
-                                markersize=4, zorder=5)
+                for ti, trace in enumerate(sweep.coupler_traces):
+                    color = TRACE_COLORS[ti % len(TRACE_COLORS)]
+                    # Draw trace path up to current step
+                    tx = trace.x[:step_idx + 1]
+                    ty = trace.y[:step_idx + 1]
+                    valid = ~np.isnan(tx)
+                    if np.any(valid):
+                        ax_mech.plot(
+                            tx[valid], ty[valid],
+                            "-", color=color, linewidth=1.2, alpha=0.5,
+                            zorder=1,
+                        )
+                    # Draw current coupler point + connection line to body
+                    cx, cy = trace.x[step_idx], trace.y[step_idx]
+                    if not np.isnan(cx):
+                        ax_mech.plot(cx, cy, "o", color=color,
+                                     markersize=4, zorder=5)
+                        # Dashed connection line to body centroid
+                        body = mechanism.bodies[trace.body_id]
+                        cg_g = mechanism.state.body_point_global(
+                            trace.body_id, body.cg_local, q,
+                        )
+                        ax_mech.plot(
+                            [float(cg_g[0]), cx], [float(cg_g[1]), cy],
+                            "--", color=color, linewidth=0.8, alpha=0.4,
+                            zorder=1,
+                        )
 
         # Move vertical indicators on overlay plots
         for vl in overlay_vlines:
