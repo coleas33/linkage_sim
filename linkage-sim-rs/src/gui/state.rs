@@ -2,9 +2,13 @@
 
 use nalgebra::DVector;
 use std::f64::consts::PI;
+use std::path::Path;
 
+use crate::core::constraint::Constraint;
+use crate::core::driver::DriverMeta;
 use crate::core::mechanism::Mechanism;
 use crate::gui::samples::{build_sample, SampleMechanism};
+use crate::io::serialization::{load_mechanism_unbuilt, save_mechanism};
 use crate::solver::kinematics::solve_position;
 
 // ── Selection ─────────────────────────────────────────────────────────────────
@@ -181,7 +185,6 @@ impl AppState {
         // Detect which joint is currently driven
         if let Some(mech) = &self.mechanism {
             if let Some(pair) = mech.driver_body_pair() {
-                use crate::core::constraint::Constraint;
                 self.driver_joint_id = mech.joints().iter()
                     .find(|j| {
                         j.is_revolute()
@@ -243,6 +246,104 @@ impl AppState {
     /// Returns true if a mechanism has been loaded.
     pub fn has_mechanism(&self) -> bool {
         self.mechanism.is_some()
+    }
+
+    /// Serialize the current mechanism to a JSON file at the given path.
+    ///
+    /// Returns `Err` with a human-readable message on any failure.
+    pub fn save_to_file(&self, path: &Path) -> Result<(), String> {
+        let mech = self
+            .mechanism
+            .as_ref()
+            .ok_or_else(|| "No mechanism loaded".to_string())?;
+
+        let json = save_mechanism(mech).map_err(|e| e.to_string())?;
+
+        std::fs::write(path, json).map_err(|e| format!("Failed to write file: {}", e))?;
+
+        Ok(())
+    }
+
+    /// Load a mechanism from a JSON file, solve at t=0, and update all state.
+    ///
+    /// After loading, the driver is restored from the JSON. If the file has no
+    /// driver, the mechanism is loaded without one (the user can assign one via
+    /// the Driver panel).
+    ///
+    /// Returns `Err` with a human-readable message on any failure.
+    pub fn load_from_file(&mut self, path: &Path) -> Result<(), String> {
+        let json =
+            std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
+
+        let mut mech = load_mechanism_unbuilt(&json).map_err(|e| e.to_string())?;
+        mech.build().map_err(|e| e.to_string())?;
+
+        // Extract driver parameters before we move mech into self.
+        let (driver_omega, driver_theta_0) = if let Some(driver) = mech.drivers().first() {
+            match driver.meta() {
+                Some(DriverMeta::ConstantSpeed { omega, theta_0 }) => (*omega, *theta_0),
+                None => (2.0 * PI, 0.0),
+            }
+        } else {
+            (2.0 * PI, 0.0)
+        };
+
+        // Detect the driven joint ID.
+        let driver_joint_id = if let Some(pair) = mech.driver_body_pair() {
+            mech.joints()
+                .iter()
+                .find(|j| {
+                    j.is_revolute()
+                        && ((j.body_i_id() == pair.0 && j.body_j_id() == pair.1)
+                            || (j.body_i_id() == pair.1 && j.body_j_id() == pair.0))
+                })
+                .map(|j| j.id().to_string())
+        } else {
+            None
+        };
+
+        // Build a zero initial guess and solve at t=0.
+        let q0 = mech.state().make_q();
+        let solve_result = solve_position(&mech, &q0, 0.0, 1e-10, 50);
+
+        match solve_result {
+            Ok(result) => {
+                self.solver_status = SolverStatus {
+                    converged: result.converged,
+                    residual_norm: result.residual_norm,
+                    iterations: result.iterations,
+                };
+                if result.converged {
+                    self.q = result.q.clone();
+                    self.last_good_q = result.q;
+                } else {
+                    self.q = q0.clone();
+                    self.last_good_q = q0;
+                }
+            }
+            Err(_) => {
+                self.solver_status = SolverStatus {
+                    converged: false,
+                    residual_norm: f64::NAN,
+                    iterations: 0,
+                };
+                self.q = q0.clone();
+                self.last_good_q = q0;
+            }
+        }
+
+        self.driver_omega = driver_omega;
+        self.driver_theta_0 = driver_theta_0;
+        self.driver_angle = driver_theta_0;
+        self.driver_joint_id = driver_joint_id;
+        self.mechanism = Some(mech);
+        self.current_sample = None;
+        self.selected = None;
+        self.playing = false;
+        self.animation_direction = 1.0;
+        self.pending_driver_reassignment = None;
+
+        Ok(())
     }
 
     /// Rebuild the mechanism with a different driver joint.

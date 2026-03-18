@@ -49,6 +49,30 @@ impl eframe::App for LinkageApp {
                         }
                     });
                     ui.separator();
+                    if ui.button("Open JSON...").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("JSON", &["json"])
+                            .pick_file()
+                        {
+                            if let Err(e) = self.state.load_from_file(&path) {
+                                log::error!("Failed to load mechanism: {}", e);
+                            }
+                        }
+                        ui.close();
+                    }
+                    if ui.button("Save JSON...").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("JSON", &["json"])
+                            .set_file_name("mechanism.json")
+                            .save_file()
+                        {
+                            if let Err(e) = self.state.save_to_file(&path) {
+                                log::error!("Failed to save mechanism: {}", e);
+                            }
+                        }
+                        ui.close();
+                    }
+                    ui.separator();
                     if ui.button("Quit").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
