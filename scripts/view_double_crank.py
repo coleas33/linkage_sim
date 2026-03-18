@@ -40,11 +40,11 @@ from linkage_sim.forces.gravity import Gravity
 from linkage_sim.viz.interactive_viewer import launch_interactive
 
 
-def build_double_crank_with_gravity() -> tuple[Mechanism, list]:
+def build_double_crank_with_gravity() -> tuple[Mechanism, list, np.ndarray]:
     """Build a double-crank (drag-link) mechanism with gravity.
 
     Returns:
-        (mechanism, [gravity_element])
+        (mechanism, [gravity_element], q0_initial_guess)
     """
     d, a, b, c = 2.0, 4.0, 3.5, 3.0
 
@@ -71,17 +71,35 @@ def build_double_crank_with_gravity() -> tuple[Mechanism, list]:
     )
     mech.build()
 
+    # --- Geometric initial guess at crank angle 0° ---
+    # At theta=0, crank tip B is at (a, 0). Find coupler-rocker joint C
+    # by law of cosines on triangle B-C-O4.
+    bx, by = a, 0.0  # crank tip at (4, 0)
+    dist_bo4 = np.hypot(bx - d, by)
+    cos_beta = (b**2 + dist_bo4**2 - c**2) / (2 * b * dist_bo4)
+    beta = np.arccos(np.clip(cos_beta, -1.0, 1.0))
+    angle_b_to_o4 = np.arctan2(-by, d - bx)
+    theta_coupler = angle_b_to_o4 + beta  # upper assembly
+    cx = bx + b * np.cos(theta_coupler)
+    cy = by + b * np.sin(theta_coupler)
+    theta_rocker = np.arctan2(cy, cx - d)
+
+    q0 = mech.state.make_q()
+    mech.state.set_pose("crank", q0, 0.0, 0.0, 0.0)
+    mech.state.set_pose("coupler", q0, bx, by, float(theta_coupler))
+    mech.state.set_pose("rocker", q0, d, 0.0, float(theta_rocker))
+
     gravity = Gravity(
         g_vector=np.array([0.0, -9.81]),
         bodies=mech.bodies,
     )
 
-    return mech, [gravity]
+    return mech, [gravity], q0
 
 
 def main() -> None:
     """Build mechanism and launch the interactive viewer."""
-    mech, force_elements = build_double_crank_with_gravity()
+    mech, force_elements, q0 = build_double_crank_with_gravity()
 
     print("Launching interactive double-crank (drag-link) viewer...")
     print("  Dimensions: d=2 (ground, shortest), a=4, b=3.5, c=3")
@@ -93,7 +111,7 @@ def main() -> None:
     print("  Norton, 'Design of Machinery' Ch. 2; Waldron & Kinzel Ch. 1")
     print()
 
-    launch_interactive(mech, force_elements=force_elements, n_steps=360)
+    launch_interactive(mech, force_elements=force_elements, n_steps=360, q0=q0)
 
 
 if __name__ == "__main__":
