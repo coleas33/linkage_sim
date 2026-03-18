@@ -25,6 +25,17 @@ impl LinkageApp {
 
 impl eframe::App for LinkageApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // ── Animation stepping (before rendering) ────────────────────
+        let dt = ctx.input(|i| i.stable_dt) as f64;
+        if self.state.step_animation(dt) {
+            ctx.request_repaint();
+        }
+
+        // ── Process pending driver reassignment ──────────────────────
+        if let Some(joint_id) = self.state.pending_driver_reassignment.take() {
+            self.state.reassign_driver(&joint_id);
+        }
+
         // --- Menu bar ---
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
@@ -67,6 +78,11 @@ impl eframe::App for LinkageApp {
                     ui.label(format!("‖Φ‖ = {:.2e}", status.residual_norm));
                     ui.separator();
                     ui.label(format!("θ = {:.1}°", self.state.driver_angle.to_degrees()));
+
+                    if self.state.playing {
+                        ui.separator();
+                        ui.colored_label(egui::Color32::from_rgb(80, 200, 80), "PLAYING");
+                    }
 
                     if let Some(mech) = &self.state.mechanism {
                         ui.separator();
