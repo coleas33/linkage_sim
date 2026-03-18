@@ -22,7 +22,7 @@ from linkage_sim.viz.interactive_viewer import (
     SweepData,
     _compute_bounds,
     _detect_fourbar_link_lengths,
-    _find_coupler_body_and_point,
+    _find_all_coupler_points,
     launch_interactive,
     precompute_sweep,
 )
@@ -186,14 +186,13 @@ class TestPrecomputeArrayLengths:
         assert data.transmission_angles_deg is None
 
     def test_coupler_trace_present(self) -> None:
-        """Coupler trace arrays should be present when coupler points exist."""
+        """Coupler traces should be present when coupler points exist."""
         mech, forces = build_fourbar()
         data = precompute_sweep(mech, forces, n_steps=36)
 
-        assert data.coupler_trace_x is not None
-        assert data.coupler_trace_y is not None
-        assert len(data.coupler_trace_x) == 36
-        assert len(data.coupler_trace_y) == 36
+        assert len(data.coupler_traces) == 1
+        assert len(data.coupler_traces[0].x) == 36
+        assert len(data.coupler_traces[0].y) == 36
 
 
 # ---------------------------------------------------------------------------
@@ -277,23 +276,23 @@ class TestHelperFunctions:
         result = _detect_fourbar_link_lengths(mech)
         assert result is None
 
-    def test_find_coupler_body_and_point_fourbar(self) -> None:
+    def test_find_all_coupler_points_fourbar(self) -> None:
         """Should find the coupler point on the coupler body."""
         mech, _ = build_fourbar()
-        result = _find_coupler_body_and_point(mech)
+        result = _find_all_coupler_points(mech)
 
-        assert result is not None
-        body_id, point_name = result
+        assert len(result) == 1
+        body_id, point_name, _ = result[0]
         assert body_id == "coupler"
         assert point_name == "P"
 
-    def test_find_coupler_body_and_point_slidercrank(self) -> None:
+    def test_find_all_coupler_points_slidercrank(self) -> None:
         """Should find the coupler point on the conrod body."""
         mech, _ = build_slidercrank()
-        result = _find_coupler_body_and_point(mech)
+        result = _find_all_coupler_points(mech)
 
-        assert result is not None
-        body_id, point_name = result
+        assert len(result) == 1
+        body_id, point_name, _ = result[0]
         assert body_id == "conrod"
         assert point_name == "P"
 
@@ -370,5 +369,5 @@ class TestLaunchInteractive:
         assert len(data.solutions) == 36
         assert len(data.driver_torques) == 36
         assert data.transmission_angles_deg is not None
-        assert data.coupler_trace_x is not None
+        assert len(data.coupler_traces) >= 1
         plt.close(fig)

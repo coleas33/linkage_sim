@@ -51,6 +51,22 @@ from linkage_sim.solvers.sweep import position_sweep
 # ---------------------------------------------------------------------------
 
 @dataclass
+class CouplerTrace:
+    """Trace data for a single coupler point across a sweep.
+
+    Attributes:
+        body_id: Which body this point is attached to.
+        point_name: Name of the coupler point on that body.
+        x: X coordinates per sweep step (NaN where solve failed).
+        y: Y coordinates per sweep step (NaN where solve failed).
+    """
+    body_id: str
+    point_name: str
+    x: NDArray[np.float64]
+    y: NDArray[np.float64]
+
+
+@dataclass
 class SweepData:
     """Pre-computed sweep results for all angles.
 
@@ -73,9 +89,8 @@ class SweepData:
     joint_reaction_mags: dict[str, NDArray[np.float64]]
     transmission_angles_deg: NDArray[np.float64] | None
 
-    # Coupler trace coordinates (filtered to valid solutions only)
-    coupler_trace_x: NDArray[np.float64] | None = None
-    coupler_trace_y: NDArray[np.float64] | None = None
+    # Coupler traces for all coupler points across all bodies
+    coupler_traces: list[CouplerTrace] = field(default_factory=list)
 
 
 def _detect_fourbar_link_lengths(
@@ -97,41 +112,38 @@ def _detect_fourbar_link_lengths(
     return (a, b, c, d)
 
 
-def _find_coupler_body_and_point(
+def _find_all_coupler_points(
     mechanism: Mechanism,
-) -> tuple[str, str] | None:
-    """Find a body with coupler points for tracing.
+) -> list[tuple[str, str, NDArray[np.float64]]]:
+    """Find all coupler points across all bodies.
 
-    Returns (body_id, point_name) or None if no coupler points exist.
+    Returns list of (body_id, point_name, point_local) tuples.
     """
+    result: list[tuple[str, str, NDArray[np.float64]]] = []
     for body_id, body in mechanism.bodies.items():
         if body_id == GROUND_ID:
             continue
-        if body.coupler_points:
-            first_name = next(iter(body.coupler_points))
-            return (body_id, first_name)
-    return None
+        for cp_name, cp_local in body.coupler_points.items():
+            result.append((body_id, cp_name, cp_local))
+    return result
 
 
 def precompute_sweep(
     mechanism: Mechanism,
     force_elements: list[ForceElement],
     n_steps: int = 360,
-    coupler_body_id: str | None = None,
-    coupler_point_name: str | None = None,
     q0: NDArray[np.float64] | None = None,
 ) -> SweepData:
     """Pre-compute a full 0-360 degree sweep of the mechanism.
 
     Solves position, velocity, and statics at each angle. Also computes
-    transmission angle if the mechanism is a 4-bar.
+    transmission angle if the mechanism is a 4-bar. Automatically discovers
+    and traces all coupler points across all bodies.
 
     Args:
         mechanism: A built Mechanism with a revolute driver.
         force_elements: Force elements for static analysis.
         n_steps: Number of angular steps (default 360 for 1-degree resolution).
-        coupler_body_id: Body ID for coupler trace (auto-detected if None).
-        coupler_point_name: Coupler point name (auto-detected if None).
         q0: Initial guess for the first solve step. If None, a default
             all-zeros guess is used (works well for simple 4-bars).
 
@@ -228,31 +240,23 @@ def precompute_sweep(
                 result = transmission_angle_fourbar(a, b, c, d, angles_rad[i])
                 transmission_angles_deg[i] = result.angle_deg
 
-    # --- Coupler trace ---
-    coupler_trace_x: NDArray[np.float64] | None = None
-    coupler_trace_y: NDArray[np.float64] | None = None
-
-    # Auto-detect coupler if not specified
-    if coupler_body_id is None or coupler_point_name is None:
-        detected = _find_coupler_body_and_point(mechanism)
-        if detected is not None:
-            coupler_body_id, coupler_point_name = detected
-
-    if coupler_body_id is not None and coupler_point_name is not None:
-        body = mechanism.bodies[coupler_body_id]
-        pt_local = body.coupler_points[coupler_point_name]
-        xs = []
-        ys = []
-        for q in solutions:
+    # --- Coupler traces (all coupler points across all bodies) ---
+    all_cp = _find_all_coupler_points(mechanism)
+    coupler_traces: list[CouplerTrace] = []
+    for cp_body_id, cp_name, cp_local in all_cp:
+        xs = np.full(n_steps, np.nan)
+        ys = np.full(n_steps, np.nan)
+        for i, q in enumerate(solutions):
             if q is not None:
-                pt_g = mechanism.state.body_point_global(coupler_body_id, pt_local, q)
-                xs.append(float(pt_g[0]))
-                ys.append(float(pt_g[1]))
-            else:
-                xs.append(np.nan)
-                ys.append(np.nan)
-        coupler_trace_x = np.array(xs)
-        coupler_trace_y = np.array(ys)
+                pt_g = mechanism.state.body_point_global(cp_body_id, cp_local, q)
+                xs[i] = float(pt_g[0])
+                ys[i] = float(pt_g[1])
+        coupler_traces.append(CouplerTrace(
+            body_id=cp_body_id,
+            point_name=cp_name,
+            x=xs,
+            y=ys,
+        ))
 
     return SweepData(
         angles_deg=np.asarray(angles_deg, dtype=np.float64),
@@ -265,8 +269,7 @@ def precompute_sweep(
         driver_torques=driver_torques,
         joint_reaction_mags=joint_reaction_mags,
         transmission_angles_deg=transmission_angles_deg,
-        coupler_trace_x=coupler_trace_x,
-        coupler_trace_y=coupler_trace_y,
+        coupler_traces=coupler_traces,
     )
 
 
@@ -467,8 +470,6 @@ def launch_interactive(
         mechanism,
         force_elements,
         n_steps=n_steps,
-        coupler_body_id=coupler_body_id,
-        coupler_point_name=coupler_point_name,
         q0=q0,
     )
 
@@ -665,10 +666,10 @@ def launch_interactive(
         if visibility["Forces"]:
             _draw_force_vectors(mechanism, q, ax_mech)
 
-        if visibility["Coupler"] and sweep_data.coupler_trace_x is not None and sweep_data.coupler_trace_y is not None:
-            # Draw full coupler trace up to current step
-            ctx = sweep_data.coupler_trace_x
-            cty = sweep_data.coupler_trace_y
+        if visibility["Coupler"] and sweep_data.coupler_traces:
+            trace = sweep_data.coupler_traces[0]
+            ctx = trace.x
+            cty = trace.y
             trace_x = ctx[: step_idx + 1]
             trace_y = cty[: step_idx + 1]
             valid = ~np.isnan(trace_x)
@@ -677,7 +678,6 @@ def launch_interactive(
                     trace_x[valid], trace_y[valid],
                     "-", color="green", linewidth=1.5, alpha=0.6, zorder=1,
                 )
-            # Draw current coupler point
             cx = ctx[step_idx]
             cy = cty[step_idx]
             if not np.isnan(cx):

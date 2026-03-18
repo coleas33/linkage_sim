@@ -238,17 +238,17 @@ def export_gif(
             _draw_ground(mechanism, q, ax_mech)
 
             # Coupler trace up to current step
-            if (sweep.coupler_trace_x is not None
-                    and sweep.coupler_trace_y is not None):
-                ctx = sweep.coupler_trace_x[:step_idx + 1]
-                cty = sweep.coupler_trace_y[:step_idx + 1]
+            if sweep.coupler_traces:
+                trace = sweep.coupler_traces[0]
+                ctx = trace.x[:step_idx + 1]
+                cty = trace.y[:step_idx + 1]
                 valid = ~np.isnan(ctx)
                 if np.any(valid):
                     ax_mech.plot(ctx[valid], cty[valid], "-",
                                 color="green", linewidth=1.2, alpha=0.5,
                                 zorder=1)
-                cx = sweep.coupler_trace_x[step_idx]
-                cy = sweep.coupler_trace_y[step_idx]
+                cx = trace.x[step_idx]
+                cy = trace.y[step_idx]
                 if not np.isnan(cx):
                     ax_mech.plot(cx, cy, "o", color="green",
                                 markersize=4, zorder=5)
