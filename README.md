@@ -11,7 +11,7 @@ Given a mechanism defined as rigid bodies connected by joints, with attached spr
 - **Kinematics**: position, velocity, and acceleration of every body and coupler point across the full range of motion
 - **Static forces**: required input torque and all joint reaction forces at each configuration
 - **Inverse dynamics**: required actuator effort for a prescribed motion profile, including inertial loads
-- **Forward dynamics** (later): time-domain simulation of mechanism response to applied forces
+- **Forward dynamics**: time-domain simulation of mechanism response to applied forces
 
 The target user is a mechanical engineer sizing actuators, selecting bearings, checking transmission angles, and validating linkage geometry — not an academic researcher building a general-purpose multibody dynamics code.
 
@@ -42,7 +42,7 @@ The simulator is built on four foundational decisions documented in detail in `d
 | `docs/VALIDATION.md` | Mechanism validation layers (topology, constraint rank, assembly). Constraint and loop diagnostics for actionable error reporting. Versioned benchmark suite with expected results including robustness/failure cases |
 | `docs/EXTENSIBILITY.md` | Three extension points (ForceElement, JointConstraint, conditional/switching). Coordinate representation extensions. Future components catalog. Design rules |
 | `docs/ROADMAP.md` | Development phases with deliverables and exit criteria (forward dynamics split into 4A smooth / 4B nonsmooth). Phase 6 prerequisites. Recommended build order for fastest path to useful tool |
-| `docs/RUST_MIGRATION.md` | Python-first, Rust-second strategy. Port plan, golden test fixture strategy, module mapping, Rust crate dependencies, coding conventions for portability. Timing reassessment checkpoint |
+| `RUST_MIGRATION.md` | Python-first, Rust-second strategy. Port plan, golden test fixture strategy, module mapping, Rust crate dependencies, coding conventions for portability. Port completion summary and risk outcomes |
 
 ---
 
@@ -51,7 +51,7 @@ The simulator is built on four foundational decisions documented in detail in `d
 | Layer | Choice | Rationale |
 |---|---|---|
 | Core solver (Phases 1–4) | Python + NumPy/SciPy | `fsolve` for constraints, `linalg` for linear systems, `solve_ivp` (Radau/BDF) for DAE |
-| Core solver (production) | Rust + nalgebra | Ported after Phase 4 validates all math. See `docs/RUST_MIGRATION.md` |
+| Core solver (production) | Rust + nalgebra | **Port complete** — validated against Python golden fixtures (110 tests). See `RUST_MIGRATION.md` |
 | Expression evaluator | Python: `asteval` → Rust: `meval` or `rhai` | For user-defined force laws and drivers. Not `eval()`, not raw lambdas |
 | GUI framework (Phase 5) | Rust: `egui` + `eframe` | 2D canvas, drag-and-drop, animation. Native + WebAssembly targets. Built in Rust, never in Python |
 | Plotting (development) | Matplotlib or Plotly | Engineering-quality plots during Python development |
@@ -112,6 +112,28 @@ linkage-sim/
 ├── docs/                       # Architecture & design documentation
 ├── README.md                   # This file
 └── DESIGN_PRINCIPLES.md        # Short reference card of invariants
+```
+
+### Rust solver kernel (`linkage-sim-rs/`)
+
+The Rust port of the solver kernel is validated and feature-complete. All four analysis modes (kinematics, statics, inverse dynamics, forward dynamics) pass against Python golden fixtures. Phase 5 GUI development is underway.
+
+```
+linkage-sim-rs/
+├── src/
+│   ├── core/               # Body, constraint, driver, mechanism, state
+│   ├── forces/             # Force element trait, gravity, helpers, assembly
+│   ├── solver/             # Kinematics, statics, inverse/forward dynamics, assembly
+│   ├── analysis/           # Validation, transmission, Grashof, coupler, energy
+│   ├── io/                 # JSON serialization (serde)
+│   ├── gui/                # Phase 5 egui application (in progress)
+│   ├── bin/                # GUI binary entry point
+│   └── lib.rs
+├── tests/
+│   └── golden_fixtures.rs  # Integration tests against Python golden data
+├── data/
+│   └── golden/             # JSON fixtures exported from Python
+└── Cargo.toml
 ```
 
 ---
