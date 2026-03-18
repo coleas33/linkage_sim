@@ -13,6 +13,12 @@ use crate::core::state::GROUND_ID;
 pub enum SampleMechanism {
     FourBar,
     SliderCrank,
+    CrankRocker,
+    DoubleRocker,
+    DoubleCrank,
+    Parallelogram,
+    Chebyshev,
+    TripleRocker,
 }
 
 impl SampleMechanism {
@@ -20,11 +26,26 @@ impl SampleMechanism {
         match self {
             SampleMechanism::FourBar => "4-Bar Crank-Rocker",
             SampleMechanism::SliderCrank => "Slider-Crank",
+            SampleMechanism::CrankRocker => "Crank-Rocker (4-2-4-3)",
+            SampleMechanism::DoubleRocker => "Double-Rocker (5-3-4-7)",
+            SampleMechanism::DoubleCrank => "Double-Crank (2-4-3.5-3)",
+            SampleMechanism::Parallelogram => "Parallelogram (4-2-4-2)",
+            SampleMechanism::Chebyshev => "Chebyshev (4-2-5-5)",
+            SampleMechanism::TripleRocker => "Triple-Rocker (4-2-5-2)",
         }
     }
 
     pub fn all() -> &'static [SampleMechanism] {
-        &[SampleMechanism::FourBar, SampleMechanism::SliderCrank]
+        &[
+            SampleMechanism::FourBar,
+            SampleMechanism::SliderCrank,
+            SampleMechanism::CrankRocker,
+            SampleMechanism::DoubleRocker,
+            SampleMechanism::DoubleCrank,
+            SampleMechanism::Parallelogram,
+            SampleMechanism::Chebyshev,
+            SampleMechanism::TripleRocker,
+        ]
     }
 }
 
@@ -44,6 +65,12 @@ pub fn build_sample_with_driver(
     match sample {
         SampleMechanism::FourBar => build_fourbar_with_driver(driver_joint_id),
         SampleMechanism::SliderCrank => build_slider_crank_with_driver(driver_joint_id),
+        SampleMechanism::CrankRocker => build_crank_rocker_with_driver(driver_joint_id),
+        SampleMechanism::DoubleRocker => build_double_rocker_with_driver(driver_joint_id),
+        SampleMechanism::DoubleCrank => build_double_crank_with_driver(driver_joint_id),
+        SampleMechanism::Parallelogram => build_parallelogram_with_driver(driver_joint_id),
+        SampleMechanism::Chebyshev => build_chebyshev_with_driver(driver_joint_id),
+        SampleMechanism::TripleRocker => build_triple_rocker_with_driver(driver_joint_id),
     }
 }
 
@@ -180,6 +207,7 @@ fn build_fourbar_with_driver(
     // Compute geometrically consistent initial poses from the crank angle.
     let q0 = fourbar_initial_q0(
         mech.state(), o2, o4, l_crank, l_coupler, l_rocker, theta_crank,
+        "crank", "coupler", "rocker",
     );
 
     Ok((mech, q0))
@@ -236,11 +264,13 @@ fn fourbar_rocker_angle_for_crank(
     alpha + beta + PI
 }
 
-/// Compute geometrically consistent initial poses for the 4-bar sample
+/// Compute geometrically consistent initial poses for a 4-bar linkage
 /// given a crank angle.
 ///
 /// Works by forward kinematics: place the crank at the given angle, then
 /// solve the coupler/rocker positions via the loop closure triangle.
+///
+/// `crank_id`, `coupler_id`, `rocker_id` are the body IDs in the mechanism.
 fn fourbar_initial_q0(
     state: &crate::core::state::State,
     o2: (f64, f64),
@@ -249,6 +279,9 @@ fn fourbar_initial_q0(
     l_coupler: f64,
     l_rocker: f64,
     theta_crank: f64,
+    crank_id: &str,
+    coupler_id: &str,
+    rocker_id: &str,
 ) -> DVector<f64> {
     let mut q0 = state.make_q();
 
@@ -256,7 +289,7 @@ fn fourbar_initial_q0(
     // Point B = O2 + R(theta_crank) * (l_crank, 0).
     let bx = o2.0 + l_crank * theta_crank.cos();
     let by = o2.1 + l_crank * theta_crank.sin();
-    state.set_pose("crank", &mut q0, o2.0, o2.1, theta_crank);
+    state.set_pose(crank_id, &mut q0, o2.0, o2.1, theta_crank);
 
     // Rocker: D must be at O4. Rocker origin is at C.
     // Solve for C position and rocker angle using triangle B-C-O4.
@@ -277,11 +310,11 @@ fn fourbar_initial_q0(
     let theta_rocker = alpha + beta + PI;
     let cx = o4.0 - l_rocker * theta_rocker.cos();
     let cy = o4.1 - l_rocker * theta_rocker.sin();
-    state.set_pose("rocker", &mut q0, cx, cy, theta_rocker);
+    state.set_pose(rocker_id, &mut q0, cx, cy, theta_rocker);
 
     // Coupler: origin at B (point B in local = (0,0)), angle from B→C direction.
     let theta_coupler = (cy - by).atan2(cx - bx);
-    state.set_pose("coupler", &mut q0, bx, by, theta_coupler);
+    state.set_pose(coupler_id, &mut q0, bx, by, theta_coupler);
 
     q0
 }
@@ -341,6 +374,180 @@ fn build_slider_crank_with_driver(
     Ok((mech, q0))
 }
 
+/// Build a standard 4-bar linkage (d=ground, a=crank, b=coupler, c=rocker)
+/// with ground pivots at O2=(0,0) and O4=(d,0).
+///
+/// A coupler point P is placed on the coupler at local x = coupler_point_x, y = 0
+/// (i.e. at the midpoint if coupler_point_x = l_coupler/2).
+///
+/// `theta_crank_init` sets the initial crank angle. Use 0.0 for Grashof linkages
+/// where the loop always closes at theta=0. For non-Grashof linkages the loop
+/// may be geometrically invalid at theta=0 (e.g. rocker too long to reach the
+/// crank tip), so pass a valid starting angle (e.g. PI/2).
+///
+/// The driver defaults to J1 (grounded revolute at O2, drives the crank).
+fn build_standard_fourbar(
+    crank_id: &str,
+    coupler_id: &str,
+    rocker_id: &str,
+    l_ground: f64,
+    l_crank: f64,
+    l_coupler: f64,
+    l_rocker: f64,
+    coupler_point_x: f64,
+    theta_crank_init: f64,
+    driver_joint_id: Option<&str>,
+) -> Result<(Mechanism, DVector<f64>), String> {
+    let o2 = (0.0_f64, 0.0_f64);
+    let o4 = (l_ground, 0.0_f64);
+
+    let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
+    let crank = make_bar(crank_id, "A", "B", l_crank, 0.0, 0.0);
+    let mut coupler = make_bar(coupler_id, "B", "C", l_coupler, 0.0, 0.0);
+    coupler
+        .add_coupler_point("P", coupler_point_x, 0.0)
+        .unwrap();
+    let rocker = make_bar(rocker_id, "C", "D", l_rocker, 0.0, 0.0);
+
+    let mut mech = Mechanism::new();
+    mech.add_body(ground).unwrap();
+    mech.add_body(crank).unwrap();
+    mech.add_body(coupler).unwrap();
+    mech.add_body(rocker).unwrap();
+
+    mech.add_revolute_joint("J1", "ground", "O2", crank_id, "A")
+        .unwrap();
+    mech.add_revolute_joint("J2", crank_id, "B", coupler_id, "B")
+        .unwrap();
+    mech.add_revolute_joint("J3", coupler_id, "C", rocker_id, "C")
+        .unwrap();
+    mech.add_revolute_joint("J4", rocker_id, "D", "ground", "O4")
+        .unwrap();
+
+    let joint_id = driver_joint_id.unwrap_or("J1");
+    attach_driver_to_grounded_revolute_with_theta0(
+        &mut mech,
+        joint_id,
+        "D1",
+        theta_crank_init,
+    )?;
+
+    mech.build().map_err(|e| e.to_string())?;
+
+    let q0 = fourbar_initial_q0(
+        mech.state(),
+        o2,
+        o4,
+        l_crank,
+        l_coupler,
+        l_rocker,
+        theta_crank_init,
+        crank_id,
+        coupler_id,
+        rocker_id,
+    );
+
+    Ok((mech, q0))
+}
+
+/// Grashof crank-rocker 4-bar: d=4, a=2, b=4, c=3.
+///
+/// Grashof condition satisfied (shortest=2, longest=4): 2+4 < 4+3 → 6 < 7 ✓
+/// Crank (a=2, shortest link grounded via O2) can rotate continuously.
+/// Coupler point P at (2.0, 0) on coupler.
+fn build_crank_rocker_with_driver(
+    driver_joint_id: Option<&str>,
+) -> Result<(Mechanism, DVector<f64>), String> {
+    build_standard_fourbar(
+        "crank", "coupler", "rocker",
+        4.0, 2.0, 4.0, 3.0, 2.0,
+        0.0,
+        driver_joint_id,
+    )
+}
+
+/// Non-Grashof double-rocker 4-bar: d=5, a=3, b=4, c=7.
+///
+/// No link can rotate fully; both input and output oscillate.
+/// Coupler point P at (2.0, 0) on coupler.
+/// Uses theta_crank = PI/2 as initial angle because at theta=0 the crank tip is
+/// only 2 units from O4, which is less than |b-c| = 3 and the triangle cannot close.
+fn build_double_rocker_with_driver(
+    driver_joint_id: Option<&str>,
+) -> Result<(Mechanism, DVector<f64>), String> {
+    build_standard_fourbar(
+        "crank", "coupler", "rocker",
+        5.0, 3.0, 4.0, 7.0, 2.0,
+        PI / 2.0,
+        driver_joint_id,
+    )
+}
+
+/// Grashof double-crank (drag-link) 4-bar: d=2, a=4, b=3.5, c=3.
+///
+/// Ground link is shortest: 2+3.5 < 4+3 → 5.5 < 7 ✓ (Grashof, ground shortest → double-crank).
+/// Both crank and rocker rotate fully.
+/// Coupler point P at (1.75, 0) on coupler.
+fn build_double_crank_with_driver(
+    driver_joint_id: Option<&str>,
+) -> Result<(Mechanism, DVector<f64>), String> {
+    build_standard_fourbar(
+        "crank", "coupler", "rocker",
+        2.0, 4.0, 3.5, 3.0, 1.75,
+        0.0,
+        driver_joint_id,
+    )
+}
+
+/// Grashof parallelogram 4-bar: d=4, a=2, b=4, c=2.
+///
+/// Opposite links equal (a=c=2, b=d=4). Coupler translates without rotating.
+/// Coupler point P at (2.0, 0) on coupler.
+fn build_parallelogram_with_driver(
+    driver_joint_id: Option<&str>,
+) -> Result<(Mechanism, DVector<f64>), String> {
+    build_standard_fourbar(
+        "crank", "coupler", "rocker",
+        4.0, 2.0, 4.0, 2.0, 2.0,
+        0.0,
+        driver_joint_id,
+    )
+}
+
+/// Chebyshev approximate straight-line 4-bar: d=4, a=2, b=5, c=5.
+///
+/// Grashof condition: 2+5 < 5+4 → 7 < 9 ✓ (crank-rocker).
+/// Coupler midpoint traces an approximate horizontal straight line.
+/// Coupler point P at (2.5, 0) on coupler (midpoint).
+fn build_chebyshev_with_driver(
+    driver_joint_id: Option<&str>,
+) -> Result<(Mechanism, DVector<f64>), String> {
+    build_standard_fourbar(
+        "crank", "coupler", "rocker",
+        4.0, 2.0, 5.0, 5.0, 2.5,
+        0.0,
+        driver_joint_id,
+    )
+}
+
+/// Non-Grashof triple-rocker 4-bar: d=4, a=2, b=5, c=2.
+///
+/// No link satisfies Grashof (shortest+longest = 2+5 = 7, sum of others = 4+2 = 6; 7 > 6).
+/// No link can make a full revolution; all three moving links oscillate.
+/// Coupler point P at (2.5, 0) on coupler.
+/// Uses theta_crank = PI/2 as initial angle because at theta=0 the crank tip is
+/// only 2 units from O4, which is less than |b-c| = 3 and the triangle cannot close.
+fn build_triple_rocker_with_driver(
+    driver_joint_id: Option<&str>,
+) -> Result<(Mechanism, DVector<f64>), String> {
+    build_standard_fourbar(
+        "crank", "coupler", "rocker",
+        4.0, 2.0, 5.0, 2.0, 2.5,
+        PI / 2.0,
+        driver_joint_id,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -369,8 +576,74 @@ mod tests {
     }
 
     #[test]
+    fn crank_rocker_sample_builds_and_solves() {
+        let (mech, q0) = build_sample(SampleMechanism::CrankRocker);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
+        assert!(
+            result.converged,
+            "crank-rocker sample did not converge at t=0, residual = {}",
+            result.residual_norm
+        );
+    }
+
+    #[test]
+    fn double_rocker_sample_builds_and_solves() {
+        let (mech, q0) = build_sample(SampleMechanism::DoubleRocker);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
+        assert!(
+            result.converged,
+            "double-rocker sample did not converge at t=0, residual = {}",
+            result.residual_norm
+        );
+    }
+
+    #[test]
+    fn double_crank_sample_builds_and_solves() {
+        let (mech, q0) = build_sample(SampleMechanism::DoubleCrank);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
+        assert!(
+            result.converged,
+            "double-crank sample did not converge at t=0, residual = {}",
+            result.residual_norm
+        );
+    }
+
+    #[test]
+    fn parallelogram_sample_builds_and_solves() {
+        let (mech, q0) = build_sample(SampleMechanism::Parallelogram);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
+        assert!(
+            result.converged,
+            "parallelogram sample did not converge at t=0, residual = {}",
+            result.residual_norm
+        );
+    }
+
+    #[test]
+    fn chebyshev_sample_builds_and_solves() {
+        let (mech, q0) = build_sample(SampleMechanism::Chebyshev);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
+        assert!(
+            result.converged,
+            "chebyshev sample did not converge at t=0, residual = {}",
+            result.residual_norm
+        );
+    }
+
+    #[test]
+    fn triple_rocker_sample_builds_and_solves() {
+        let (mech, q0) = build_sample(SampleMechanism::TripleRocker);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
+        assert!(
+            result.converged,
+            "triple-rocker sample did not converge at t=0, residual = {}",
+            result.residual_norm
+        );
+    }
+
+    #[test]
     fn all_samples_listed() {
-        assert_eq!(SampleMechanism::all().len(), 2);
+        assert_eq!(SampleMechanism::all().len(), 8);
     }
 
     #[test]
