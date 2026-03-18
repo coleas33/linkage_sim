@@ -22,6 +22,25 @@ from linkage_sim.core.state import GROUND_ID
 
 
 @dataclass(frozen=True)
+class FourbarTopology:
+    """Detected topology parameters for a 4-bar mechanism.
+
+    Attributes:
+        ground_length: Distance between ground pivots.
+        ground_adjacent: Map of body_id -> link_length for ground-adjacent bodies.
+        coupler_id: ID of the coupler body (not connected to ground).
+        coupler_length: Length of the coupler link.
+        driven_body_id: ID of the driven body (from RevoluteDriver), or None.
+    """
+
+    ground_length: float
+    ground_adjacent: dict[str, float]
+    coupler_id: str
+    coupler_length: float
+    driven_body_id: str | None
+
+
+@dataclass(frozen=True)
 class CrankRecommendation:
     """Recommendation for which link to drive in a mechanism.
 
@@ -40,7 +59,7 @@ class CrankRecommendation:
 
 def detect_fourbar_topology(
     mechanism: Mechanism,
-) -> dict[str, object] | None:
+) -> FourbarTopology | None:
     """Detect whether a mechanism has 4-bar topology and extract its parameters.
 
     A valid 4-bar has:
@@ -52,9 +71,8 @@ def detect_fourbar_topology(
         mechanism: A Mechanism instance (built or unbuilt, with or without driver).
 
     Returns:
-        A dict with topology info if the mechanism is a 4-bar, or None otherwise.
-        Keys: ground_length, ground_adjacent (dict body_id->link_length),
-              coupler_id, coupler_length, driven_body_id (or None if no driver).
+        A FourbarTopology with topology info if the mechanism is a 4-bar,
+        or None otherwise.
     """
     bodies = mechanism.bodies
     moving_body_ids = [bid for bid in bodies if bid != GROUND_ID]
@@ -105,7 +123,8 @@ def detect_fourbar_topology(
 
     # Identify coupler (the moving body not connected to ground)
     coupler_ids = [bid for bid in moving_body_ids if bid not in ground_adjacent]
-    assert len(coupler_ids) == 1
+    if len(coupler_ids) != 1:
+        return None
     coupler_id = coupler_ids[0]
 
     coupler_body = bodies[coupler_id]
@@ -126,13 +145,13 @@ def detect_fourbar_topology(
                 driven_body_id = j.body_j_id
             break
 
-    return {
-        "ground_length": ground_length,
-        "ground_adjacent": ground_adjacent,
-        "coupler_id": coupler_id,
-        "coupler_length": coupler_length,
-        "driven_body_id": driven_body_id,
-    }
+    return FourbarTopology(
+        ground_length=ground_length,
+        ground_adjacent=ground_adjacent,
+        coupler_id=coupler_id,
+        coupler_length=coupler_length,
+        driven_body_id=driven_body_id,
+    )
 
 
 def _estimate_driven_range_analytical(
@@ -192,16 +211,17 @@ def recommend_crank_fourbar(mechanism: Mechanism) -> list[CrankRecommendation]:
     if topo is None:
         return []
 
-    ground_length: float = topo["ground_length"]  # type: ignore[assignment]
-    ground_adjacent: dict[str, float] = topo["ground_adjacent"]  # type: ignore[assignment]
-    coupler_length: float = topo["coupler_length"]  # type: ignore[assignment]
+    ground_length = topo.ground_length
+    ground_adjacent = topo.ground_adjacent
+    coupler_length = topo.coupler_length
 
     recommendations: list[CrankRecommendation] = []
 
     for body_id, link_length in ground_adjacent.items():
         # Determine which is "crank" and which is "rocker" for this trial
         other_ids = [bid for bid in ground_adjacent if bid != body_id]
-        assert len(other_ids) == 1
+        if len(other_ids) != 1:
+            continue
         other_length = ground_adjacent[other_ids[0]]
 
         # Call check_grashof with this body as the "crank" position

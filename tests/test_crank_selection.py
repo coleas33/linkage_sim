@@ -6,6 +6,7 @@ import pytest
 
 from linkage_sim.analysis.crank_selection import (
     CrankRecommendation,
+    FourbarTopology,
     detect_fourbar_topology,
     recommend_crank_fourbar,
 )
@@ -40,7 +41,8 @@ class TestDetectFourbarTopology:
         mech = _build_fourbar(d=4.0, a=2.0, b=4.0, c=3.0)
         result = detect_fourbar_topology(mech)
         assert result is not None
-        assert result["ground_length"] == pytest.approx(4.0)
+        assert isinstance(result, FourbarTopology)
+        assert result.ground_length == pytest.approx(4.0)
 
     def test_fourbar_with_driver_detected(self) -> None:
         """Adding a revolute driver does not break 4-bar detection."""
@@ -48,8 +50,8 @@ class TestDetectFourbarTopology:
         mech.add_constant_speed_driver("D1", "ground", "crank", omega=1.0)
         result = detect_fourbar_topology(mech)
         assert result is not None
-        assert result["ground_length"] == pytest.approx(4.0)
-        assert result["driven_body_id"] == "crank"
+        assert result.ground_length == pytest.approx(4.0)
+        assert result.driven_body_id == "crank"
 
     def test_sixbar_not_detected(self) -> None:
         """A mechanism with 5+ moving bodies returns None."""
@@ -68,7 +70,7 @@ class TestDetectFourbarTopology:
         mech.add_constant_speed_driver("D1", "ground", "rocker", omega=1.0)
         result = detect_fourbar_topology(mech)
         assert result is not None
-        assert result["driven_body_id"] == "rocker"
+        assert result.driven_body_id == "rocker"
 
     def test_underjointed_not_detected(self) -> None:
         """3 moving bodies with only 3 revolute joints is not a 4-bar."""
@@ -102,6 +104,7 @@ class TestRecommendCrankFourbar:
         assert best.full_rotation is True
         assert best.estimated_range_deg == pytest.approx(360.0)
         assert best.body_id == "crank"
+        assert best.reason != ""
 
     def test_double_crank_either_works(self) -> None:
         """Double crank: both ground-adjacent links get 360."""
@@ -138,6 +141,14 @@ class TestRecommendCrankFourbar:
         assert best.body_id == "crank"
         assert best.full_rotation is True
         assert best.estimated_range_deg == pytest.approx(360.0)
+        assert best.reason != ""
+
+    def test_change_point_full_rotation(self) -> None:
+        """Change-point (S+L == P+Q): both grounded links get full rotation."""
+        mech = _build_fourbar(3.0, 3.0, 3.0, 3.0)
+        recs = recommend_crank_fourbar(mech)
+        full_recs = [r for r in recs if r.full_rotation]
+        assert len(full_recs) == 2
 
     def test_not_a_fourbar_returns_empty(self) -> None:
         """A mechanism with 1 body returns empty recommendations."""
