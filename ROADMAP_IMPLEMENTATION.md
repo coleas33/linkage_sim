@@ -32,7 +32,7 @@ See `ROADMAP.md` for the full phase plan and exit criteria.
 | 20 | Graph connectivity check | Done | `analysis/validation.py` | `test_validation.py` (12 new tests, BFS from ground, disconnected detection, component count) |
 | 21 | Ternary body test (6-bar) | Done | `test_sixbar_ternary.py` | 27 tests: Watt I 6-bar, ternary link, DOF, position/vel/accel FD, sweep, internal distances |
 
-**Total tests:** 391 passing | **mypy:** strict, clean
+**Total tests:** 436 passing | **mypy:** strict, clean
 
 ---
 
@@ -50,9 +50,9 @@ graph connectivity, JSON serialization, and Matplotlib visualization/animation.
 | Step | Description | Status | Key files | Tests |
 |------|-------------|--------|-----------|-------|
 | 1 | ForceElement protocol + generalized force helpers + Q assembly | Done | `forces/protocol.py`, `forces/helpers.py`, `forces/assembly.py` | `test_force_helpers.py` (23 tests: point_force_to_Q, body_torque_to_Q, gravity_to_Q, assemble_Q, virtual work consistency) |
-| 2 | Gravity force element | | | |
-| 3 | Linear spring force element | | | |
-| 4 | Torsion spring at revolute joints | | | |
+| 2 | Gravity force element | Done | `forces/gravity.py` | `test_gravity_element.py` (17 tests: protocol, force values, multi-body, virtual work) |
+| 3 | Linear spring force element | Done | `forces/spring.py` | `test_spring_element.py` (17 tests: basic, modes, two-body, edge cases, virtual work) |
+| 4 | Torsion spring at revolute joints | Done | `forces/torsion_spring.py` | `test_torsion_spring_element.py` (11 tests: basic, two-body, virtual work, protocol) |
 | 5 | Static force solver (Φ_qᵀ λ = −Q) | | | |
 | 6 | Driver and joint reaction extraction | | | |
 | 7 | Grashof condition check | | | |
