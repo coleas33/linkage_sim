@@ -20,6 +20,7 @@ At each time step:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -94,6 +95,7 @@ def simulate(
     force_elements: list[ForceElement],
     config: ForwardDynamicsConfig | None = None,
     t_eval: NDArray[np.float64] | None = None,
+    events: list[Any] | None = None,
 ) -> ForwardDynamicsResult:
     """Run a forward dynamics simulation.
 
@@ -178,6 +180,7 @@ def simulate(
         atol=config.atol,
         max_step=config.max_step,
         t_eval=t_eval,
+        events=events,
         dense_output=False,
     )
 

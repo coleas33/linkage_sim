@@ -143,3 +143,28 @@ pipeline: kinematics → inverse dynamics → reactions → motor sizing → env
 **Note:** Mass matrix assembly upgraded to handle bodies where coordinate origin ≠ CG.
 Uses parallel axis theorem: M_θθ = Izz_cg + m*|s_cg|², plus off-diagonal coupling terms
 m*B(θ)@s_cg. This was required for correct forward dynamics of the simple pendulum benchmark.
+
+---
+
+## Phase 4B — Forward Dynamics (Nonsmooth Effects)
+
+| Step | Description | Status | Key files | Tests |
+|------|-------------|--------|-----------|-------|
+| 1 | Joint limits with penalty method | Done | `forces/joint_limit.py` | `test_nonsmooth_dynamics.py` (6 unit tests + 2 benchmark tests) |
+| 2 | Event detection framework (zero-crossing) | Done | `solvers/events.py` | `test_nonsmooth_dynamics.py` (2 tests: angle limit, velocity reversal) |
+| 3 | Coulomb friction in forward dynamics (regularized + monitoring) | Done | `forces/friction.py` (reused from Phase 2) | `test_nonsmooth_dynamics.py` (2 tests: energy dissipation, amplitude decrease) |
+| 4 | Restitution coefficient for hard stops | Done | `forces/joint_limit.py` | Integrated into JointLimit damping model |
+| 5 | Benchmark: pendulum with hard stop | Done | `test_nonsmooth_dynamics.py` | Pendulum respects stop, energy decreases with damped restitution |
+| 6 | Benchmark: Coulomb friction dynamics | Done | `test_nonsmooth_dynamics.py` | Friction dissipates energy, amplitude decreases |
+| 7 | Benchmark: mechanism with joint limits | Done | `test_nonsmooth_dynamics.py` | 4-bar rocker stays within limit range |
+
+---
+
+## Phase 4B Complete
+
+All 7 steps of Phase 4B are implemented. The simulator now supports nonsmooth effects:
+penalty-based joint limits with restitution, Coulomb friction in forward dynamics, and
+event detection for zero-crossings. Benchmarks verify correct stop behavior, energy
+dissipation, and amplitude decay.
+
+**Total tests:** 615 passing | **mypy:** strict, clean
