@@ -293,10 +293,18 @@ pub fn save_mechanism(mech: &Mechanism) -> Result<String, SerializationError> {
 /// are not serializable).
 pub fn load_mechanism_unbuilt(json_str: &str) -> Result<Mechanism, SerializationError> {
     let json_struct: MechanismJson = serde_json::from_str(json_str)?;
+    load_mechanism_unbuilt_from_json(&json_struct)
+}
 
+/// Build an **unbuilt** `Mechanism` directly from a `MechanismJson` struct.
+///
+/// Same as [`load_mechanism_unbuilt`] but skips the JSON parsing step.
+/// Useful when you already have a `MechanismJson` in memory (e.g., from
+/// the editor blueprint).
+pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<Mechanism, SerializationError> {
     if json_struct.schema_version != SCHEMA_VERSION {
         return Err(SerializationError::UnsupportedVersion {
-            found: json_struct.schema_version,
+            found: json_struct.schema_version.clone(),
             expected: SCHEMA_VERSION.to_string(),
         });
     }
@@ -895,5 +903,28 @@ mod tests {
         let ground = loaded.bodies().get(GROUND_ID).unwrap();
         assert_abs_diff_eq!(ground.mass, 0.0, epsilon = 1e-15);
         assert_abs_diff_eq!(ground.izz_cg, 0.0, epsilon = 1e-15);
+    }
+
+    // -----------------------------------------------------------------------
+    // load_mechanism_unbuilt_from_json
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn load_unbuilt_from_json_matches_string_path() {
+        let mech = build_fourbar_no_driver();
+        let json_str = save_mechanism(&mech).unwrap();
+        let json_struct: MechanismJson = serde_json::from_str(&json_str).unwrap();
+
+        // Build via string path
+        let mut from_str = load_mechanism_unbuilt(&json_str).unwrap();
+        from_str.build().unwrap();
+
+        // Build via struct path
+        let mut from_json = load_mechanism_unbuilt_from_json(&json_struct).unwrap();
+        from_json.build().unwrap();
+
+        assert_eq!(from_str.bodies().len(), from_json.bodies().len());
+        assert_eq!(from_str.joints().len(), from_json.joints().len());
+        assert_eq!(from_str.state().n_coords(), from_json.state().n_coords());
     }
 }

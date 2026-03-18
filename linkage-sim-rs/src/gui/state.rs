@@ -12,7 +12,10 @@ use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
 use crate::gui::samples::{build_sample, SampleMechanism};
 use crate::gui::undo::{MechanismSnapshot, UndoHistory};
-use crate::io::serialization::{load_mechanism_unbuilt, mechanism_to_json, save_mechanism};
+use crate::io::serialization::{
+    load_mechanism_unbuilt, load_mechanism_unbuilt_from_json, mechanism_to_json, save_mechanism,
+    DriverJson, MechanismJson,
+};
 use crate::solver::kinematics::solve_position;
 
 // ── Selection ─────────────────────────────────────────────────────────────────
@@ -108,6 +111,9 @@ pub struct SweepData {
 
 /// All mutable application state in one place.
 pub struct AppState {
+    /// The editable blueprint -- source of truth for the mechanism definition.
+    /// Edits mutate this, then rebuild() reconstructs the Mechanism.
+    pub blueprint: Option<MechanismJson>,
     /// The currently loaded mechanism, if any.
     pub mechanism: Option<Mechanism>,
     /// Current generalized coordinate vector.
@@ -150,6 +156,7 @@ pub struct AppState {
 impl Default for AppState {
     fn default() -> Self {
         Self {
+            blueprint: None,
             mechanism: None,
             q: DVector::zeros(0),
             driver_angle: 0.0,
@@ -212,6 +219,10 @@ impl AppState {
         }
 
         self.driver_angle = self.driver_theta_0;
+
+        // Create blueprint from the built mechanism
+        self.blueprint = mechanism_to_json(&mech).ok();
+
         self.mechanism = Some(mech);
         self.current_sample = Some(sample);
         self.selected = None;
@@ -308,10 +319,16 @@ impl AppState {
     ///
     /// Returns `Err` with a human-readable message on any failure.
     pub fn load_from_file(&mut self, path: &Path) -> Result<(), String> {
-        let json =
+        let json_str =
             std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
 
-        let mut mech = load_mechanism_unbuilt(&json).map_err(|e| e.to_string())?;
+        // Parse JSON and store as blueprint before building
+        let json_struct: MechanismJson =
+            serde_json::from_str(&json_str).map_err(|e| e.to_string())?;
+        self.blueprint = Some(json_struct);
+
+        let mut mech =
+            load_mechanism_unbuilt(&json_str).map_err(|e| e.to_string())?;
         mech.build().map_err(|e| e.to_string())?;
 
         // Extract driver parameters before we move mech into self.
@@ -384,6 +401,160 @@ impl AppState {
         Ok(())
     }
 
+    // ── Blueprint rebuild pipeline ───────────────────────────────────────
+
+    /// Rebuild Mechanism from the current blueprint, solve at current angle.
+    /// Called after every edit operation.
+    pub fn rebuild(&mut self) {
+        let Some(bp) = &self.blueprint else { return };
+
+        // Build mechanism from blueprint
+        let mut mech = match load_mechanism_unbuilt_from_json(bp) {
+            Ok(m) => m,
+            Err(e) => {
+                log::warn!("Blueprint rebuild failed: {}", e);
+                self.solver_status = SolverStatus {
+                    converged: false,
+                    residual_norm: f64::NAN,
+                    iterations: 0,
+                };
+                return;
+            }
+        };
+
+        if let Err(e) = mech.build() {
+            log::warn!("Mechanism build failed: {}", e);
+            self.solver_status = SolverStatus {
+                converged: false,
+                residual_norm: f64::NAN,
+                iterations: 0,
+            };
+            return;
+        }
+
+        // Extract driver params from blueprint
+        // (look for the first constant_speed driver)
+        self.driver_omega = 2.0 * PI;
+        self.driver_theta_0 = 0.0;
+        // Check blueprint drivers for actual values
+        for (_id, driver) in &bp.drivers {
+            match driver {
+                DriverJson::ConstantSpeed { omega, theta_0, .. } => {
+                    self.driver_omega = *omega;
+                    self.driver_theta_0 = *theta_0;
+                    break;
+                }
+            }
+        }
+
+        // Detect driven joint
+        if let Some(pair) = mech.driver_body_pair() {
+            self.driver_joint_id = mech
+                .joints()
+                .iter()
+                .find(|j| {
+                    j.is_revolute()
+                        && ((j.body_i_id() == pair.0 && j.body_j_id() == pair.1)
+                            || (j.body_i_id() == pair.1 && j.body_j_id() == pair.0))
+                })
+                .map(|j| j.id().to_string());
+        }
+
+        // Solve at current angle using last_good_q as initial guess
+        let t = if self.driver_omega.abs() > f64::EPSILON {
+            (self.driver_angle - self.driver_theta_0) / self.driver_omega
+        } else {
+            0.0
+        };
+
+        // Try solving with last_good_q if it has the right dimension
+        let try_q = if self.last_good_q.len() == mech.state().n_coords() {
+            &self.last_good_q
+        } else {
+            &mech.state().make_q()
+        };
+
+        match solve_position(&mech, try_q, t, 1e-10, 50) {
+            Ok(result) => {
+                self.solver_status = SolverStatus {
+                    converged: result.converged,
+                    residual_norm: result.residual_norm,
+                    iterations: result.iterations,
+                };
+                if result.converged {
+                    self.q = result.q.clone();
+                    self.last_good_q = result.q;
+                }
+            }
+            Err(_) => {
+                // If solve fails with last_good_q, try from zeros
+                let q0 = mech.state().make_q();
+                match solve_position(&mech, &q0, t, 1e-10, 100) {
+                    Ok(result) => {
+                        self.solver_status = SolverStatus {
+                            converged: result.converged,
+                            residual_norm: result.residual_norm,
+                            iterations: result.iterations,
+                        };
+                        if result.converged {
+                            self.q = result.q.clone();
+                            self.last_good_q = result.q;
+                        } else {
+                            self.q = q0;
+                        }
+                    }
+                    Err(_) => {
+                        self.solver_status = SolverStatus {
+                            converged: false,
+                            residual_norm: f64::NAN,
+                            iterations: 0,
+                        };
+                    }
+                }
+            }
+        }
+
+        self.mechanism = Some(mech);
+    }
+
+    // ── Blueprint edit operations ────────────────────────────────────────
+
+    /// Move an attachment point on a body in the blueprint.
+    /// This is the core drag operation for the editor.
+    pub fn move_attachment_point(
+        &mut self,
+        body_id: &str,
+        point_name: &str,
+        new_x: f64,
+        new_y: f64,
+    ) {
+        let Some(bp) = &mut self.blueprint else { return };
+        if let Some(body) = bp.bodies.get_mut(body_id) {
+            if let Some(pt) = body.attachment_points.get_mut(point_name) {
+                *pt = [new_x, new_y];
+            }
+        }
+        self.rebuild();
+    }
+
+    /// Set mass property on a body in the blueprint.
+    pub fn set_body_mass(&mut self, body_id: &str, mass: f64) {
+        let Some(bp) = &mut self.blueprint else { return };
+        if let Some(body) = bp.bodies.get_mut(body_id) {
+            body.mass = mass;
+        }
+        self.rebuild();
+    }
+
+    /// Set moment of inertia on a body in the blueprint.
+    pub fn set_body_izz(&mut self, body_id: &str, izz: f64) {
+        let Some(bp) = &mut self.blueprint else { return };
+        if let Some(body) = bp.bodies.get_mut(body_id) {
+            body.izz_cg = izz;
+        }
+        self.rebuild();
+    }
+
     /// Rebuild the mechanism with a different driver joint.
     pub fn reassign_driver(&mut self, joint_id: &str) {
         let Some(sample) = self.current_sample else { return };
@@ -432,6 +603,8 @@ impl AppState {
                 // driver_angle should be theta_0.
                 self.driver_theta_0 = 0.0; // The builder maps t=0 to the start config
                 self.driver_angle = 0.0;
+                // Update blueprint to reflect the reassigned driver
+                self.blueprint = mechanism_to_json(&mech).ok();
                 self.mechanism = Some(mech);
                 self.driver_joint_id = Some(joint_id.to_string());
                 self.selected = None;
@@ -1175,5 +1348,188 @@ mod tests {
         let mech = state.mechanism.as_ref().unwrap();
         let links = detect_fourbar_links(mech);
         assert!(links.is_none(), "Should not detect 4-bar links for 6-bar");
+    }
+
+    // ── Blueprint + rebuild tests ────────────────────────────────────────
+
+    #[test]
+    fn load_sample_populates_blueprint() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        assert!(state.blueprint.is_some(), "blueprint should be Some after load_sample");
+        assert!(state.mechanism.is_some());
+        assert!(state.solver_status.converged);
+    }
+
+    #[test]
+    fn blueprint_bodies_match_mechanism_bodies() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let bp = state.blueprint.as_ref().unwrap();
+        let mech = state.mechanism.as_ref().unwrap();
+        assert_eq!(
+            bp.bodies.len(),
+            mech.bodies().len(),
+            "Blueprint and mechanism should have the same number of bodies"
+        );
+        for body_id in mech.bodies().keys() {
+            assert!(
+                bp.bodies.contains_key(body_id),
+                "Blueprint should contain body '{}'",
+                body_id
+            );
+        }
+    }
+
+    #[test]
+    fn rebuild_produces_valid_mechanism() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // Manually trigger rebuild
+        state.rebuild();
+
+        assert!(state.mechanism.is_some());
+        assert!(
+            state.solver_status.converged,
+            "rebuild() should produce a converged mechanism, residual = {}",
+            state.solver_status.residual_norm
+        );
+    }
+
+    #[test]
+    fn set_body_mass_updates_blueprint() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        state.set_body_mass("crank", 1.5);
+
+        let bp = state.blueprint.as_ref().unwrap();
+        let crank = bp.bodies.get("crank").unwrap();
+        assert!(
+            (crank.mass - 1.5).abs() < f64::EPSILON,
+            "Blueprint mass should be 1.5, got {}",
+            crank.mass
+        );
+        // Mechanism should still be valid after rebuild
+        assert!(state.mechanism.is_some());
+    }
+
+    #[test]
+    fn set_body_izz_updates_blueprint() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        state.set_body_izz("crank", 0.05);
+
+        let bp = state.blueprint.as_ref().unwrap();
+        let crank = bp.bodies.get("crank").unwrap();
+        assert!(
+            (crank.izz_cg - 0.05).abs() < f64::EPSILON,
+            "Blueprint izz_cg should be 0.05, got {}",
+            crank.izz_cg
+        );
+    }
+
+    #[test]
+    fn move_attachment_point_updates_blueprint_and_rebuilds() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // Read original position of an attachment point
+        let bp = state.blueprint.as_ref().unwrap();
+        let orig = bp.bodies.get("crank").unwrap().attachment_points.get("B").unwrap();
+        let orig_x = orig[0];
+        let orig_y = orig[1];
+
+        // Move it slightly
+        let new_x = orig_x + 0.001;
+        let new_y = orig_y + 0.001;
+        state.move_attachment_point("crank", "B", new_x, new_y);
+
+        // Check blueprint was updated
+        let bp = state.blueprint.as_ref().unwrap();
+        let moved = bp.bodies.get("crank").unwrap().attachment_points.get("B").unwrap();
+        assert!(
+            (moved[0] - new_x).abs() < f64::EPSILON,
+            "Blueprint point X should be {}, got {}",
+            new_x,
+            moved[0]
+        );
+        assert!(
+            (moved[1] - new_y).abs() < f64::EPSILON,
+            "Blueprint point Y should be {}, got {}",
+            new_y,
+            moved[1]
+        );
+
+        // Mechanism should still be present (rebuild happened)
+        assert!(state.mechanism.is_some());
+    }
+
+    #[test]
+    fn load_from_file_populates_blueprint() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // Save to file, then reload
+        let path = std::env::temp_dir().join("linkage_test_blueprint.json");
+        state.save_to_file(&path).expect("save_to_file failed");
+
+        let mut state2 = AppState::default();
+        state2.load_from_file(&path).expect("load_from_file failed");
+
+        assert!(
+            state2.blueprint.is_some(),
+            "blueprint should be Some after load_from_file"
+        );
+        assert!(state2.mechanism.is_some());
+
+        // Clean up
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn edit_nonexistent_body_is_noop() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // Edit a body that doesn't exist -- should not crash
+        state.set_body_mass("nonexistent", 999.0);
+
+        // Mechanism should still be valid (rebuild ran but nothing changed)
+        assert!(state.mechanism.is_some());
+        assert!(state.solver_status.converged);
+    }
+
+    #[test]
+    fn edit_nonexistent_point_is_noop() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // Edit a point that doesn't exist on the body -- should not crash
+        state.move_attachment_point("crank", "nonexistent", 0.0, 0.0);
+
+        // The rebuild still happens but the blueprint wasn't changed
+        assert!(state.mechanism.is_some());
+        assert!(state.solver_status.converged);
+    }
+
+    #[test]
+    fn rebuild_all_samples_have_blueprints() {
+        for sample in SampleMechanism::all() {
+            let mut state = AppState::default();
+            state.load_sample(*sample);
+            assert!(
+                state.blueprint.is_some(),
+                "Sample {:?} should have a blueprint after load_sample",
+                sample
+            );
+            assert!(
+                state.mechanism.is_some(),
+                "Sample {:?} should have a mechanism after load_sample",
+                sample
+            );
+        }
     }
 }

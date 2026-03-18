@@ -140,13 +140,23 @@ impl eframe::App for LinkageApp {
                     }
 
                     if let Some(mech) = &self.state.mechanism {
+                        let dof = mech.state().n_coords() as isize - mech.n_constraints() as isize;
                         ui.separator();
                         ui.label(format!(
                             "Bodies: {} | Joints: {} | DOF: {}",
                             mech.bodies().len().saturating_sub(1),
                             mech.joints().len(),
-                            mech.state().n_coords() as isize - mech.n_constraints() as isize
+                            dof,
                         ));
+                        // Warn if DOF != 0 (fully constrained with driver)
+                        if dof != 0 {
+                            let warn_color = egui::Color32::from_rgb(255, 180, 50);
+                            ui.colored_label(warn_color, format!(
+                                "(expected 0, coords={} constraints={})",
+                                mech.state().n_coords(),
+                                mech.n_constraints(),
+                            ));
+                        }
                     }
                 } else {
                     ui.label("No mechanism loaded");
@@ -169,7 +179,7 @@ impl eframe::App for LinkageApp {
             .default_width(280.0)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    property_panel::draw_property_panel(ui, &self.state);
+                    property_panel::draw_property_panel(ui, &mut self.state);
                     ui.add_space(20.0);
                     input_panel::draw_input_panel(ui, &mut self.state);
                 });
