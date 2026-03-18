@@ -32,7 +32,7 @@ See `ROADMAP.md` for the full phase plan and exit criteria.
 | 20 | Graph connectivity check | Done | `analysis/validation.py` | `test_validation.py` (12 new tests, BFS from ground, disconnected detection, component count) |
 | 21 | Ternary body test (6-bar) | Done | `test_sixbar_ternary.py` | 27 tests: Watt I 6-bar, ternary link, DOF, position/vel/accel FD, sweep, internal distances |
 
-**Total tests:** 486 passing | **mypy:** strict, clean
+**Total tests:** 520 passing | **mypy:** strict, clean
 
 ---
 
@@ -58,12 +58,12 @@ graph connectivity, JSON serialization, and Matplotlib visualization/animation.
 | 7 | Grashof condition check | Done | `analysis/grashof.py` | `test_grashof.py` (9 tests: all 5 classifications, values, edge cases) |
 | 8 | Transmission angle computation | Done | `analysis/transmission.py` | `test_transmission_angle.py` (9 tests: formula, sweep, symmetry, law of cosines cross-check) |
 | 9 | External load force element | Done | `forces/external_load.py` | `test_external_load.py` (9 tests: constant, time/position-dependent, torque, virtual work) |
-| 10 | Coulomb friction (regularized) | | | |
-| 11 | PointMass element + composite mass recomputation | | | |
-| 12 | Virtual work cross-check | | | |
-| 13 | Mechanical advantage computation | | | |
-| 14 | Pressure angle | | | |
-| 15 | Toggle/dead point detection | | | |
+| 10 | Coulomb friction (regularized) | Done | `forces/friction.py` | `test_friction.py` (10 tests: tanh model, direction, magnitude, smooth regularization, two-body) |
+| 11 | PointMass element + composite mass recomputation | Done | `core/point_mass.py` | `test_point_mass.py` (8 tests: CG shift, parallel axis theorem, multiple masses, symmetric) |
+| 12 | Virtual work cross-check | Done | `analysis/virtual_work.py` | `test_virtual_work.py` (5 tests: matches statics λ to 1e-6 with gravity, springs, combined forces) |
+| 13 | Mechanical advantage computation | Done | `analysis/mechanical_advantage.py` | `test_mechanical_advantage.py` (6 tests: finite MA, varies with angle, translational output) |
+| 14 | Pressure angle | — | Deferred: covered by transmission angle (Step 8) for 4-bar; general pose-based version deferred | — |
+| 15 | Toggle/dead point detection | Done | `analysis/toggle.py` | `test_toggle.py` (5 tests: σ_min monitoring, condition number, threshold) |
 | 16 | Result envelopes (peak, RMS, min/max) | | | |
 | 17 | Force-related plotting | | | |
 | 18 | Benchmark: 4-bar with gravity | | | |
