@@ -122,6 +122,8 @@ def build_sixbar_with_gravity() -> tuple[Mechanism, list, np.ndarray]:
         f=lambda t: t, f_dot=lambda t: 1.0, f_ddot=lambda t: 0.0,
     )
 
+    mech.add_trace_point("TP_link5", "link5", 1.0, 0.0)
+
     mech.build()
 
     gravity = Gravity(
@@ -217,8 +219,6 @@ def main() -> None:
         mech,
         force_elements=force_elements,
         n_steps=180,
-        coupler_body_id="ternary",
-        coupler_point_name="CP",
         q0=q0,
     )
 

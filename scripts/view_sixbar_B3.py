@@ -101,6 +101,9 @@ def build_B3_with_gravity() -> tuple[Mechanism, list, np.ndarray]:
         "D1", "ground", "t1",
         f=lambda t: t, f_dot=lambda t: 1.0, f_ddot=lambda t: 0.0,
     )
+
+    mech.add_trace_point("TP_t2", "t2", 0.5, -0.25)
+
     mech.build()
 
     gravity = Gravity(g_vector=np.array([0.0, -9.81]), bodies=mech.bodies)
@@ -161,7 +164,7 @@ def main() -> None:
 
     launch_interactive(
         mech, force_elements=force_elements, n_steps=360,
-        coupler_body_id="t1", coupler_point_name="CP", q0=q0,
+        q0=q0,
     )
 
 
