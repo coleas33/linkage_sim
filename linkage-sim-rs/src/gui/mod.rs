@@ -3,8 +3,10 @@
 mod state;
 mod canvas;
 mod input_panel;
+mod plot_panel;
 mod property_panel;
 pub mod samples;
+pub mod undo;
 
 use eframe::egui;
 pub use state::AppState;
@@ -25,6 +27,18 @@ impl LinkageApp {
 
 impl eframe::App for LinkageApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // ── Keyboard shortcuts ────────────────────────────────────────
+        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Z) && !i.modifiers.shift) {
+            self.state.undo();
+        }
+        if ctx.input(|i| {
+            i.modifiers.command
+                && (i.key_pressed(egui::Key::Y)
+                    || (i.key_pressed(egui::Key::Z) && i.modifiers.shift))
+        }) {
+            self.state.redo();
+        }
+
         // ── Animation stepping (before rendering) ────────────────────
         let dt = ctx.input(|i| i.stable_dt) as f64;
         if self.state.step_animation(dt) {
@@ -77,8 +91,25 @@ impl eframe::App for LinkageApp {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
+                ui.menu_button("Edit", |ui| {
+                    if ui
+                        .add_enabled(self.state.can_undo(), egui::Button::new("Undo  Ctrl+Z"))
+                        .clicked()
+                    {
+                        self.state.undo();
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(self.state.can_redo(), egui::Button::new("Redo  Ctrl+Y"))
+                        .clicked()
+                    {
+                        self.state.redo();
+                        ui.close();
+                    }
+                });
                 ui.menu_button("View", |ui| {
                     ui.checkbox(&mut self.state.show_debug_overlay, "Debug Overlay");
+                    ui.checkbox(&mut self.state.show_plots, "Plot Panel");
                 });
             });
         });
@@ -122,6 +153,16 @@ impl eframe::App for LinkageApp {
                 }
             });
         });
+
+        // --- Bottom panel: plots ---
+        if self.state.show_plots {
+            egui::TopBottomPanel::bottom("plot_panel")
+                .resizable(true)
+                .default_height(250.0)
+                .show(ctx, |ui| {
+                    plot_panel::draw_plot_panel(ui, &self.state);
+                });
+        }
 
         // --- Left panel: properties + input ---
         egui::SidePanel::left("left_panel")

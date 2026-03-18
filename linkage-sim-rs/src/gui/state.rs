@@ -1,14 +1,18 @@
 //! Application state: mechanism, solver results, selection, view transform.
 
 use nalgebra::DVector;
+use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::path::Path;
 
+use crate::analysis::transmission::transmission_angle_fourbar;
 use crate::core::constraint::Constraint;
 use crate::core::driver::DriverMeta;
 use crate::core::mechanism::Mechanism;
+use crate::core::state::GROUND_ID;
 use crate::gui::samples::{build_sample, SampleMechanism};
-use crate::io::serialization::{load_mechanism_unbuilt, save_mechanism};
+use crate::gui::undo::{MechanismSnapshot, UndoHistory};
+use crate::io::serialization::{load_mechanism_unbuilt, mechanism_to_json, save_mechanism};
 use crate::solver::kinematics::solve_position;
 
 // ── Selection ─────────────────────────────────────────────────────────────────
@@ -80,6 +84,26 @@ impl ViewTransform {
     }
 }
 
+// ── Sweep data ───────────────────────────────────────────────────────────────
+
+/// Pre-computed sweep results for the full driver rotation (0-360 degrees).
+///
+/// Computed once when a mechanism is loaded or the driver changes. Cached
+/// to avoid recomputing every frame. Used by the plot panel and canvas.
+#[derive(Debug, Clone)]
+pub struct SweepData {
+    /// Driver angles in degrees at which solutions were obtained.
+    pub angles_deg: Vec<f64>,
+    /// Body orientation angles (degrees) keyed by body ID.
+    pub body_angles: HashMap<String, Vec<f64>>,
+    /// Coupler point traces keyed by "body_id.point_name", each entry
+    /// is a sequence of [x, y] world-coordinate pairs.
+    pub coupler_traces: HashMap<String, Vec<[f64; 2]>>,
+    /// Transmission angle (degrees) at each step, if the mechanism is a
+    /// 4-bar linkage with identifiable link lengths.
+    pub transmission_angles: Option<Vec<f64>>,
+}
+
 // ── AppState ──────────────────────────────────────────────────────────────────
 
 /// All mutable application state in one place.
@@ -114,6 +138,13 @@ pub struct AppState {
     // ── Driver ───────────────────────────────────────────────────────────
     pub driver_joint_id: Option<String>,
     pub pending_driver_reassignment: Option<String>,
+    // ── Undo/Redo ────────────────────────────────────────────────────────
+    pub undo_history: UndoHistory,
+    // ── Sweep / Plots ────────────────────────────────────────────────────
+    /// Cached sweep data for the full driver rotation.
+    pub sweep_data: Option<SweepData>,
+    /// Whether the plot panel is visible.
+    pub show_plots: bool,
 }
 
 impl Default for AppState {
@@ -136,6 +167,9 @@ impl Default for AppState {
             animation_direction: 1.0,
             driver_joint_id: None,
             pending_driver_reassignment: None,
+            undo_history: UndoHistory::new(50),
+            sweep_data: None,
+            show_plots: false,
         }
     }
 }
@@ -199,6 +233,8 @@ impl AppState {
         self.playing = false;
         self.animation_direction = 1.0;
         self.pending_driver_reassignment = None;
+        self.undo_history.clear();
+        self.compute_sweep();
     }
 
     /// Solve the position problem for the given driver angle (radians).
@@ -342,6 +378,8 @@ impl AppState {
         self.playing = false;
         self.animation_direction = 1.0;
         self.pending_driver_reassignment = None;
+        self.undo_history.clear();
+        self.compute_sweep();
 
         Ok(())
     }
@@ -349,6 +387,8 @@ impl AppState {
     /// Rebuild the mechanism with a different driver joint.
     pub fn reassign_driver(&mut self, joint_id: &str) {
         let Some(sample) = self.current_sample else { return };
+
+        self.push_undo();
 
         match crate::gui::samples::build_sample_with_driver(sample, Some(joint_id)) {
             Ok((mech, q0)) => {
@@ -398,11 +438,151 @@ impl AppState {
                 self.playing = false;
                 self.animation_direction = 1.0;
                 self.pending_driver_reassignment = None;
+                self.compute_sweep();
             }
             Err(msg) => {
                 log::warn!("Driver reassignment failed: {}", msg);
             }
         }
+    }
+
+    // ── Undo / Redo ────────────────────────────────────────────────────────
+
+    /// Create a snapshot of the current mechanism document state.
+    ///
+    /// Returns `None` if no mechanism is loaded or serialization fails.
+    pub fn take_snapshot(&self) -> Option<MechanismSnapshot> {
+        let mech = self.mechanism.as_ref()?;
+        let json = mechanism_to_json(mech).ok()?;
+        let json_str = serde_json::to_string(&json).ok()?;
+        Some(MechanismSnapshot {
+            mechanism_json: json_str,
+            driver_angle: self.driver_angle,
+            driver_omega: self.driver_omega,
+            driver_theta_0: self.driver_theta_0,
+            driver_joint_id: self.driver_joint_id.clone(),
+            q: self.q.iter().copied().collect(),
+        })
+    }
+
+    /// Restore mechanism state from a snapshot.
+    ///
+    /// Deserializes the mechanism JSON, builds, solves at t=0, and updates all
+    /// document-level state. View transform, selection, and animation state are
+    /// left unchanged.
+    pub fn restore_snapshot(&mut self, snapshot: &MechanismSnapshot) {
+        let Ok(mut mech) = load_mechanism_unbuilt(&snapshot.mechanism_json) else {
+            log::warn!("Undo/redo: failed to deserialize mechanism snapshot");
+            return;
+        };
+        if mech.build().is_err() {
+            log::warn!("Undo/redo: failed to build mechanism from snapshot");
+            return;
+        }
+
+        // Solve at the snapshot's driver angle, using the stored q as the initial guess.
+        // Falls back to make_q() (all zeros) if the snapshot has no q data.
+        let t = (snapshot.driver_angle - snapshot.driver_theta_0) / snapshot.driver_omega;
+        let q0 = if snapshot.q.len() == mech.state().n_coords() {
+            DVector::from_vec(snapshot.q.clone())
+        } else {
+            mech.state().make_q()
+        };
+        match solve_position(&mech, &q0, t, 1e-10, 50) {
+            Ok(result) => {
+                self.solver_status = SolverStatus {
+                    converged: result.converged,
+                    residual_norm: result.residual_norm,
+                    iterations: result.iterations,
+                };
+                if result.converged {
+                    self.q = result.q.clone();
+                    self.last_good_q = result.q;
+                } else {
+                    self.q = q0.clone();
+                    self.last_good_q = q0;
+                }
+            }
+            Err(_) => {
+                self.solver_status = SolverStatus {
+                    converged: false,
+                    residual_norm: f64::NAN,
+                    iterations: 0,
+                };
+                self.q = q0.clone();
+                self.last_good_q = q0;
+            }
+        }
+
+        self.mechanism = Some(mech);
+        self.driver_angle = snapshot.driver_angle;
+        self.driver_omega = snapshot.driver_omega;
+        self.driver_theta_0 = snapshot.driver_theta_0;
+        self.driver_joint_id = snapshot.driver_joint_id.clone();
+        self.playing = false;
+    }
+
+    /// Push the current state onto the undo stack before an undoable action.
+    ///
+    /// No-op if no mechanism is loaded (nothing to snapshot).
+    pub fn push_undo(&mut self) {
+        if let Some(snapshot) = self.take_snapshot() {
+            self.undo_history.push(snapshot);
+        }
+    }
+
+    /// Undo the last action: restore the previous mechanism state.
+    pub fn undo(&mut self) {
+        let Some(current) = self.take_snapshot() else {
+            return;
+        };
+        if let Some(previous) = self.undo_history.undo(current) {
+            self.restore_snapshot(&previous);
+        }
+    }
+
+    /// Redo the last undone action: restore the next mechanism state.
+    pub fn redo(&mut self) {
+        let Some(current) = self.take_snapshot() else {
+            return;
+        };
+        if let Some(next) = self.undo_history.redo(current) {
+            self.restore_snapshot(&next);
+        }
+    }
+
+    /// Returns true if there is at least one state to undo.
+    pub fn can_undo(&self) -> bool {
+        self.undo_history.can_undo()
+    }
+
+    /// Returns true if there is at least one state to redo.
+    pub fn can_redo(&self) -> bool {
+        self.undo_history.can_redo()
+    }
+
+    // ── Sweep computation ─────────────────────────────────────────────────
+
+    /// Compute a full 0-360 degree sweep and cache the results.
+    ///
+    /// Solves the position problem at each degree using continuation
+    /// (previous solution as initial guess). Extracts body angles, coupler
+    /// point traces, and transmission angle if the mechanism is a simple
+    /// 4-bar.
+    pub fn compute_sweep(&mut self) {
+        if self.mechanism.is_none() {
+            self.sweep_data = None;
+            return;
+        }
+
+        // Copy values we need from self before taking a reference to the mechanism,
+        // to avoid borrow-checker conflicts between &self.mechanism and &mut self.sweep_data.
+        let q_start = self.last_good_q.clone();
+        let omega = self.driver_omega;
+        let theta_0 = self.driver_theta_0;
+
+        let data = compute_sweep_data(self.mechanism.as_ref().unwrap(), &q_start, omega, theta_0);
+        self.sweep_data = Some(data);
     }
 
     /// Advance animation by one frame. Returns true if animation is active.
@@ -448,6 +628,218 @@ impl AppState {
 
         self.playing
     }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/// Perform the sweep computation (0-360 degrees) and return `SweepData`.
+///
+/// Extracted as a free function so it borrows only `&Mechanism` and not
+/// `&mut AppState`, avoiding borrow-checker conflicts.
+fn compute_sweep_data(
+    mech: &Mechanism,
+    q_start: &DVector<f64>,
+    omega: f64,
+    theta_0: f64,
+) -> SweepData {
+    let mut data = SweepData {
+        angles_deg: Vec::with_capacity(361),
+        body_angles: HashMap::new(),
+        coupler_traces: HashMap::new(),
+        transmission_angles: None,
+    };
+
+    // Pre-allocate body angle vectors.
+    let body_order: Vec<String> = mech.body_order().to_vec();
+    for body_id in &body_order {
+        data.body_angles
+            .insert(body_id.clone(), Vec::with_capacity(361));
+    }
+
+    // Pre-allocate coupler trace vectors.
+    // Collect coupler point keys: "body_id.point_name"
+    let mut coupler_keys: Vec<(String, String, nalgebra::Vector2<f64>)> = Vec::new();
+    for (body_id, body) in mech.bodies() {
+        if body_id == GROUND_ID {
+            continue;
+        }
+        for (point_name, local) in &body.coupler_points {
+            let key = format!("{}.{}", body_id, point_name);
+            coupler_keys.push((key.clone(), body_id.clone(), *local));
+            data.coupler_traces.insert(key, Vec::with_capacity(361));
+        }
+        // Also trace attachment points on non-ground bodies (useful
+        // for visualization even if no explicit coupler points exist).
+        for (point_name, local) in &body.attachment_points {
+            let key = format!("{}.{}", body_id, point_name);
+            if !data.coupler_traces.contains_key(&key) {
+                coupler_keys.push((key.clone(), body_id.clone(), *local));
+                data.coupler_traces.insert(key, Vec::with_capacity(361));
+            }
+        }
+    }
+
+    // Detect 4-bar link lengths for transmission angle.
+    let fourbar_links = detect_fourbar_links(mech);
+    if fourbar_links.is_some() {
+        data.transmission_angles = Some(Vec::with_capacity(361));
+    }
+
+    // Sweep from 0 to 360 degrees in 1-degree steps.
+    let mut q = q_start.clone();
+
+    for i in 0..=360 {
+        let angle_deg = i as f64;
+        let t = (angle_deg.to_radians() - theta_0) / omega;
+
+        match solve_position(mech, &q, t, 1e-10, 50) {
+            Ok(result) if result.converged => {
+                q = result.q.clone();
+                data.angles_deg.push(angle_deg);
+
+                let mech_state = mech.state();
+
+                // Extract body angles.
+                for body_id in &body_order {
+                    let theta = mech_state.get_angle(body_id, &q);
+                    data.body_angles
+                        .get_mut(body_id)
+                        .unwrap()
+                        .push(theta.to_degrees());
+                }
+
+                // Extract coupler traces.
+                for (key, body_id, local) in &coupler_keys {
+                    let global = mech_state.body_point_global(body_id, local, &q);
+                    data.coupler_traces
+                        .get_mut(key)
+                        .unwrap()
+                        .push([global.x, global.y]);
+                }
+
+                // Transmission angle (4-bar only).
+                if let Some((a, b, c, d)) = fourbar_links {
+                    let theta_crank = angle_deg.to_radians();
+                    let ta = transmission_angle_fourbar(a, b, c, d, theta_crank);
+                    data.transmission_angles.as_mut().unwrap().push(ta.angle_deg);
+                }
+            }
+            _ => {
+                // Solver failed at this angle -- stop sweep.
+                // The mechanism likely cannot complete a full rotation.
+                break;
+            }
+        }
+    }
+
+    data
+}
+
+/// Try to detect a classic 4-bar linkage and return (crank, coupler, rocker,
+/// ground) link lengths for transmission angle computation.
+///
+/// A 4-bar is identified by:
+/// - Exactly 3 moving bodies
+/// - Exactly 4 revolute joints
+/// - Each moving body is a binary bar (exactly 2 attachment points)
+/// - One of the moving bodies is the driven body (crank)
+///
+/// Returns `None` for non-4-bar mechanisms.
+fn detect_fourbar_links(mech: &Mechanism) -> Option<(f64, f64, f64, f64)> {
+    use crate::core::constraint::Constraint;
+
+    let body_order = mech.body_order();
+    if body_order.len() != 3 {
+        return None;
+    }
+
+    let joints = mech.joints();
+    let revolute_joints: Vec<_> = joints.iter().filter(|j| j.is_revolute()).collect();
+    if revolute_joints.len() != 4 {
+        return None;
+    }
+
+    // Identify which body is the crank (driven body).
+    let driver_pair = mech.driver_body_pair()?;
+    let driven_body = if driver_pair.0 == GROUND_ID {
+        driver_pair.1
+    } else {
+        driver_pair.0
+    };
+
+    let bodies = mech.bodies();
+
+    // Find the crank length (distance between its two attachment points).
+    let crank_body = bodies.get(driven_body)?;
+    if crank_body.attachment_points.len() != 2 {
+        return None;
+    }
+    let crank_pts: Vec<_> = crank_body.attachment_points.values().collect();
+    let crank_len = (crank_pts[0] - crank_pts[1]).norm();
+
+    // Find the coupler and rocker. The coupler connects to the crank at a
+    // non-ground joint, and the rocker connects the coupler to ground.
+    // We identify them by finding which bodies connect to the crank vs ground.
+    let other_bodies: Vec<&str> = body_order
+        .iter()
+        .map(|s| s.as_str())
+        .filter(|s| *s != driven_body)
+        .collect();
+
+    if other_bodies.len() != 2 {
+        return None;
+    }
+
+    // Check which of the two bodies connects to ground (rocker).
+    let mut coupler_id = None;
+    let mut rocker_id = None;
+    for &body_id in &other_bodies {
+        let connects_to_ground = revolute_joints.iter().any(|j| {
+            (j.body_i_id() == body_id && j.body_j_id() == GROUND_ID)
+                || (j.body_j_id() == body_id && j.body_i_id() == GROUND_ID)
+        });
+        let connects_to_crank = revolute_joints.iter().any(|j| {
+            (j.body_i_id() == body_id && j.body_j_id() == driven_body)
+                || (j.body_j_id() == body_id && j.body_i_id() == driven_body)
+        });
+
+        if connects_to_ground && !connects_to_crank {
+            rocker_id = Some(body_id);
+        } else if connects_to_crank && !connects_to_ground {
+            coupler_id = Some(body_id);
+        } else if connects_to_crank && connects_to_ground {
+            // This body connects to both -- could be either in a parallelogram.
+            // Treat as rocker if we haven't assigned one yet.
+            if rocker_id.is_none() {
+                rocker_id = Some(body_id);
+            } else {
+                coupler_id = Some(body_id);
+            }
+        }
+    }
+
+    let coupler_body = bodies.get(coupler_id?)?;
+    let rocker_body = bodies.get(rocker_id?)?;
+
+    if coupler_body.attachment_points.len() != 2 || rocker_body.attachment_points.len() != 2 {
+        return None;
+    }
+
+    let coupler_pts: Vec<_> = coupler_body.attachment_points.values().collect();
+    let coupler_len = (coupler_pts[0] - coupler_pts[1]).norm();
+
+    let rocker_pts: Vec<_> = rocker_body.attachment_points.values().collect();
+    let rocker_len = (rocker_pts[0] - rocker_pts[1]).norm();
+
+    // Ground length: distance between the two ground pivots.
+    let ground = bodies.get(GROUND_ID)?;
+    if ground.attachment_points.len() != 2 {
+        return None;
+    }
+    let ground_pts: Vec<_> = ground.attachment_points.values().collect();
+    let ground_len = (ground_pts[0] - ground_pts[1]).norm();
+
+    Some((crank_len, coupler_len, rocker_len, ground_len))
 }
 
 #[cfg(test)]
@@ -528,6 +920,130 @@ mod tests {
         assert!(!state.playing);
     }
 
+    // ── Undo / Redo integration tests ──────────────────────────────────
+
+    #[test]
+    fn take_snapshot_returns_none_without_mechanism() {
+        let state = AppState::default();
+        assert!(state.take_snapshot().is_none());
+    }
+
+    #[test]
+    fn take_snapshot_returns_some_with_mechanism() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        assert!(state.take_snapshot().is_some());
+    }
+
+    #[test]
+    fn snapshot_roundtrip_preserves_mechanism() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        let snapshot = state.take_snapshot().unwrap();
+        let body_count = state.mechanism.as_ref().unwrap().bodies().len();
+        let joint_count = state.mechanism.as_ref().unwrap().joints().len();
+
+        // Clobber state then restore
+        state.load_sample(SampleMechanism::SliderCrank);
+        state.restore_snapshot(&snapshot);
+
+        let mech = state.mechanism.as_ref().unwrap();
+        assert_eq!(mech.bodies().len(), body_count);
+        assert_eq!(mech.joints().len(), joint_count);
+        assert!(state.solver_status.converged);
+    }
+
+    #[test]
+    fn snapshot_roundtrip_preserves_driver_fields() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.driver_omega = 5.0;
+        state.driver_theta_0 = 1.0;
+        state.driver_angle = 2.0;
+        state.driver_joint_id = Some("J1".to_string());
+
+        let snapshot = state.take_snapshot().unwrap();
+        state.restore_snapshot(&snapshot);
+
+        assert_eq!(state.driver_omega, 5.0);
+        assert_eq!(state.driver_theta_0, 1.0);
+        assert_eq!(state.driver_angle, 2.0);
+        assert_eq!(state.driver_joint_id, Some("J1".to_string()));
+    }
+
+    #[test]
+    fn load_sample_clears_undo_history() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.push_undo();
+        assert!(state.can_undo());
+
+        state.load_sample(SampleMechanism::SliderCrank);
+        assert!(!state.can_undo());
+        assert!(!state.can_redo());
+    }
+
+    #[test]
+    fn push_undo_noop_without_mechanism() {
+        let mut state = AppState::default();
+        state.push_undo();
+        assert!(!state.can_undo());
+    }
+
+    #[test]
+    fn undo_noop_without_mechanism() {
+        let mut state = AppState::default();
+        state.undo();
+        assert!(!state.can_undo());
+    }
+
+    #[test]
+    fn undo_after_driver_reassignment_restores_previous_driver() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        assert_eq!(state.driver_joint_id, Some("J1".to_string()));
+
+        state.reassign_driver("J4");
+        assert_eq!(state.driver_joint_id, Some("J4".to_string()));
+        assert!(state.can_undo());
+
+        state.undo();
+        assert_eq!(state.driver_joint_id, Some("J1".to_string()));
+        assert!(state.solver_status.converged);
+    }
+
+    #[test]
+    fn redo_after_undo_restores_forward_state() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        state.reassign_driver("J4");
+        assert_eq!(state.driver_joint_id, Some("J4".to_string()));
+
+        state.undo();
+        assert_eq!(state.driver_joint_id, Some("J1".to_string()));
+        assert!(state.can_redo());
+
+        state.redo();
+        assert_eq!(state.driver_joint_id, Some("J4".to_string()));
+        assert!(!state.can_redo());
+    }
+
+    #[test]
+    fn new_push_clears_redo_stack() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        state.reassign_driver("J4");
+        state.undo();
+        assert!(state.can_redo());
+
+        // A new undoable action should clear redo
+        state.push_undo();
+        assert!(!state.can_redo());
+    }
+
     #[test]
     fn world_to_screen_roundtrip() {
         let view = ViewTransform::default();
@@ -549,5 +1065,115 @@ mod tests {
             wy,
             wy2
         );
+    }
+
+    // ── Sweep tests ──────────────────────────────────────────────────────
+
+    #[test]
+    fn compute_sweep_produces_data_for_fourbar() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        // load_sample calls compute_sweep internally
+        let sweep = state.sweep_data.as_ref().expect("sweep_data should be Some after load_sample");
+
+        // FourBar is a Grashof crank-rocker -- full 361 points (0-360 inclusive).
+        assert_eq!(
+            sweep.angles_deg.len(),
+            361,
+            "Expected 361 sweep points, got {}",
+            sweep.angles_deg.len()
+        );
+
+        // Body angles should exist for all 3 moving bodies.
+        assert_eq!(sweep.body_angles.len(), 3);
+        for (body_id, angles) in &sweep.body_angles {
+            assert_eq!(
+                angles.len(),
+                361,
+                "Body '{}' has {} angle entries, expected 361",
+                body_id,
+                angles.len()
+            );
+        }
+    }
+
+    #[test]
+    fn compute_sweep_coupler_traces_non_empty() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let sweep = state.sweep_data.as_ref().unwrap();
+
+        assert!(
+            !sweep.coupler_traces.is_empty(),
+            "coupler_traces should not be empty"
+        );
+        for (key, trace) in &sweep.coupler_traces {
+            assert!(
+                !trace.is_empty(),
+                "trace for '{}' should not be empty",
+                key
+            );
+        }
+    }
+
+    #[test]
+    fn compute_sweep_fourbar_has_transmission_angle() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let sweep = state.sweep_data.as_ref().unwrap();
+
+        let ta = sweep
+            .transmission_angles
+            .as_ref()
+            .expect("FourBar should have transmission angles");
+        assert_eq!(ta.len(), 361);
+        // All transmission angles should be in (0, 180).
+        for &angle in ta {
+            assert!(
+                angle > 0.0 && angle < 180.0,
+                "transmission angle {} out of range",
+                angle
+            );
+        }
+    }
+
+    #[test]
+    fn compute_sweep_partial_for_non_crank() {
+        // Double-rocker cannot complete full 360 rotation.
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::DoubleRocker);
+        let sweep = state.sweep_data.as_ref().unwrap();
+
+        // Should have fewer than 361 points.
+        assert!(
+            sweep.angles_deg.len() < 361,
+            "Double-rocker sweep should stop before 360, got {} points",
+            sweep.angles_deg.len()
+        );
+        // But should have at least some data.
+        assert!(
+            !sweep.angles_deg.is_empty(),
+            "Sweep should have at least some points"
+        );
+    }
+
+    #[test]
+    fn detect_fourbar_links_returns_some_for_fourbar() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let mech = state.mechanism.as_ref().unwrap();
+        let links = detect_fourbar_links(mech);
+        assert!(links.is_some(), "Should detect 4-bar link lengths");
+        let (a, b, c, d) = links.unwrap();
+        assert!(a > 0.0 && b > 0.0 && c > 0.0 && d > 0.0);
+    }
+
+    #[test]
+    fn detect_fourbar_links_returns_none_for_sixbar() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::SixBarB1);
+        let mech = state.mechanism.as_ref().unwrap();
+        let links = detect_fourbar_links(mech);
+        assert!(links.is_none(), "Should not detect 4-bar links for 6-bar");
     }
 }
