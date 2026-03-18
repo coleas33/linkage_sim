@@ -14,7 +14,7 @@ use crate::gui::samples::{build_sample, SampleMechanism};
 use crate::gui::undo::{MechanismSnapshot, UndoHistory};
 use crate::io::serialization::{
     load_mechanism_unbuilt, load_mechanism_unbuilt_from_json, mechanism_to_json, save_mechanism,
-    DriverJson, MechanismJson,
+    BodyJson, DriverJson, JointJson, MechanismJson,
 };
 use crate::solver::kinematics::solve_position;
 
@@ -26,6 +26,32 @@ pub enum SelectedEntity {
     Body(String),
     Joint(String),
     Driver(String),
+}
+
+// ── Drag target ──────────────────────────────────────────────────────────────
+
+/// Tracks which attachment point is being dragged on the canvas.
+#[derive(Clone, Debug)]
+pub struct DragTarget {
+    /// Body that owns the attachment point being dragged.
+    pub body_id: String,
+    /// Name of the attachment point being dragged.
+    pub point_name: String,
+    /// True after the first movement (undo is pushed once at drag start).
+    pub started: bool,
+}
+
+// ── Validation warnings ──────────────────────────────────────────────────────
+
+/// Lightweight validation warnings computed after each rebuild.
+#[derive(Clone, Debug, Default)]
+pub struct ValidationWarnings {
+    /// Grubler DOF mismatch: expected 0 for a fully-constrained driven mechanism.
+    pub dof_warning: Option<String>,
+    /// Bodies not connected by any joint.
+    pub disconnected_bodies: Vec<String>,
+    /// Mechanism has no driver.
+    pub missing_driver: bool,
 }
 
 // ── Solver status ─────────────────────────────────────────────────────────────
@@ -151,6 +177,15 @@ pub struct AppState {
     pub sweep_data: Option<SweepData>,
     /// Whether the plot panel is visible.
     pub show_plots: bool,
+    // ── Drag interaction ─────────────────────────────────────────────────
+    /// Currently active drag target (attachment point being dragged).
+    pub drag_target: Option<DragTarget>,
+    // ── Joint creation mode ──────────────────────────────────────────────
+    /// First click of a two-click joint creation: (body_id, point_name).
+    pub creating_joint: Option<(String, String)>,
+    // ── Validation ───────────────────────────────────────────────────────
+    /// Validation warnings computed after each rebuild.
+    pub validation_warnings: ValidationWarnings,
 }
 
 impl Default for AppState {
@@ -177,6 +212,9 @@ impl Default for AppState {
             undo_history: UndoHistory::new(50),
             sweep_data: None,
             show_plots: false,
+            drag_target: None,
+            creating_joint: None,
+            validation_warnings: ValidationWarnings::default(),
         }
     }
 }
@@ -246,6 +284,7 @@ impl AppState {
         self.pending_driver_reassignment = None;
         self.undo_history.clear();
         self.compute_sweep();
+        self.compute_validation();
     }
 
     /// Solve the position problem for the given driver angle (radians).
@@ -397,6 +436,7 @@ impl AppState {
         self.pending_driver_reassignment = None;
         self.undo_history.clear();
         self.compute_sweep();
+        self.compute_validation();
 
         Ok(())
     }
@@ -515,6 +555,7 @@ impl AppState {
         }
 
         self.mechanism = Some(mech);
+        self.compute_validation();
     }
 
     // ── Blueprint edit operations ────────────────────────────────────────
@@ -553,6 +594,179 @@ impl AppState {
             body.izz_cg = izz;
         }
         self.rebuild();
+    }
+
+    // ── Create / delete operations ──────────────────────────────────────
+
+    /// Add a new ground pivot (attachment point on the ground body).
+    ///
+    /// Pushes undo, adds the point, and rebuilds.
+    pub fn add_ground_pivot(&mut self, name: &str, x: f64, y: f64) {
+        self.push_undo();
+        let Some(bp) = &mut self.blueprint else { return };
+        let ground = bp.bodies.entry(GROUND_ID.to_string()).or_insert_with(|| BodyJson {
+            attachment_points: HashMap::new(),
+            mass: 0.0,
+            cg_local: [0.0, 0.0],
+            izz_cg: 0.0,
+            coupler_points: HashMap::new(),
+        });
+        ground.attachment_points.insert(name.to_string(), [x, y]);
+        self.rebuild();
+    }
+
+    /// Add a new binary body with two attachment points.
+    ///
+    /// Creates a body with two points at `p1` and `p2`, default mass properties.
+    /// Pushes undo, adds the body, and rebuilds.
+    pub fn add_body(&mut self, body_id: &str, p1: (&str, f64, f64), p2: (&str, f64, f64)) {
+        self.push_undo();
+        let Some(bp) = &mut self.blueprint else { return };
+        let mut attachment_points = HashMap::new();
+        attachment_points.insert(p1.0.to_string(), [p1.1, p1.2]);
+        attachment_points.insert(p2.0.to_string(), [p2.1, p2.2]);
+        let cx = (p1.1 + p2.1) / 2.0;
+        let cy = (p1.2 + p2.2) / 2.0;
+        let body = BodyJson {
+            attachment_points,
+            mass: 1.0,
+            cg_local: [cx, cy],
+            izz_cg: 0.01,
+            coupler_points: HashMap::new(),
+        };
+        bp.bodies.insert(body_id.to_string(), body);
+        self.rebuild();
+    }
+
+    /// Remove a body and all joints/drivers that reference it.
+    ///
+    /// Pushes undo, removes the body and cascading references, and rebuilds.
+    pub fn remove_body(&mut self, body_id: &str) {
+        self.push_undo();
+        let Some(bp) = &mut self.blueprint else { return };
+
+        bp.bodies.remove(body_id);
+
+        // Remove joints that reference this body.
+        bp.joints.retain(|_id, joint| {
+            let (bi, bj) = joint_body_ids(joint);
+            bi != body_id && bj != body_id
+        });
+
+        // Remove drivers that reference this body.
+        bp.drivers.retain(|_id, driver| {
+            let (bi, bj) = driver_body_ids(driver);
+            bi != body_id && bj != body_id
+        });
+
+        self.rebuild();
+    }
+
+    /// Add a revolute joint between two body attachment points.
+    ///
+    /// Generates a unique joint ID. Pushes undo, adds joint, and rebuilds.
+    pub fn add_revolute_joint(
+        &mut self,
+        body_i: &str,
+        point_i: &str,
+        body_j: &str,
+        point_j: &str,
+    ) {
+        self.push_undo();
+        let Some(bp) = &mut self.blueprint else { return };
+
+        let joint_id = generate_unique_id("J", &bp.joints);
+        bp.joints.insert(
+            joint_id,
+            JointJson::Revolute {
+                body_i: body_i.to_string(),
+                body_j: body_j.to_string(),
+                point_i: point_i.to_string(),
+                point_j: point_j.to_string(),
+            },
+        );
+        self.rebuild();
+    }
+
+    /// Remove a joint by ID.
+    ///
+    /// Pushes undo, removes the joint, and rebuilds.
+    pub fn remove_joint(&mut self, joint_id: &str) {
+        self.push_undo();
+        let Some(bp) = &mut self.blueprint else { return };
+        bp.joints.remove(joint_id);
+        self.rebuild();
+    }
+
+    /// Generate a unique body ID (e.g. "body_1", "body_2", ...).
+    pub fn next_body_id(&self) -> String {
+        let Some(bp) = &self.blueprint else {
+            return "body_1".to_string();
+        };
+        generate_unique_id("body_", &bp.bodies)
+    }
+
+    /// Generate a unique ground pivot name (e.g. "P1", "P2", ...).
+    pub fn next_ground_pivot_name(&self) -> String {
+        let Some(bp) = &self.blueprint else {
+            return "P1".to_string();
+        };
+        if let Some(ground) = bp.bodies.get(GROUND_ID) {
+            let mut i = 1;
+            loop {
+                let name = format!("P{}", i);
+                if !ground.attachment_points.contains_key(&name) {
+                    return name;
+                }
+                i += 1;
+            }
+        } else {
+            "P1".to_string()
+        }
+    }
+
+    // ── Validation ──────────────────────────────────────────────────────
+
+    /// Compute validation warnings from the current mechanism state.
+    ///
+    /// Called after each rebuild to update `self.validation_warnings`.
+    pub fn compute_validation(&mut self) {
+        let mut warnings = ValidationWarnings::default();
+
+        if let Some(mech) = &self.mechanism {
+            // DOF check: 3 * n_moving - n_constraints should be 0
+            let n_coords = mech.state().n_coords() as isize;
+            let n_constraints = mech.n_constraints() as isize;
+            let dof = n_coords - n_constraints;
+            if dof != 0 {
+                warnings.dof_warning = Some(format!(
+                    "DOF = {} (coords={}, constraints={})",
+                    dof, n_coords, n_constraints
+                ));
+            }
+
+            // Missing driver check
+            warnings.missing_driver = mech.n_drivers() == 0;
+
+            // Disconnected body check: a body that has no joints connecting to it
+            if let Some(bp) = &self.blueprint {
+                for body_id in bp.bodies.keys() {
+                    if body_id == GROUND_ID {
+                        continue;
+                    }
+                    let connected = bp.joints.values().any(|j| {
+                        let (bi, bj) = joint_body_ids(j);
+                        bi == body_id || bj == body_id
+                    });
+                    if !connected {
+                        warnings.disconnected_bodies.push(body_id.clone());
+                    }
+                }
+                warnings.disconnected_bodies.sort();
+            }
+        }
+
+        self.validation_warnings = warnings;
     }
 
     /// Rebuild the mechanism with a different driver joint.
@@ -612,6 +826,7 @@ impl AppState {
                 self.animation_direction = 1.0;
                 self.pending_driver_reassignment = None;
                 self.compute_sweep();
+                self.compute_validation();
             }
             Err(msg) => {
                 log::warn!("Driver reassignment failed: {}", msg);
@@ -687,12 +902,16 @@ impl AppState {
             }
         }
 
+        // Restore the blueprint from the snapshot JSON so it stays in sync.
+        self.blueprint = serde_json::from_str(&snapshot.mechanism_json).ok();
+
         self.mechanism = Some(mech);
         self.driver_angle = snapshot.driver_angle;
         self.driver_omega = snapshot.driver_omega;
         self.driver_theta_0 = snapshot.driver_theta_0;
         self.driver_joint_id = snapshot.driver_joint_id.clone();
         self.playing = false;
+        self.compute_validation();
     }
 
     /// Push the current state onto the undo stack before an undoable action.
@@ -800,6 +1019,39 @@ impl AppState {
         }
 
         self.playing
+    }
+}
+
+// ── Blueprint helper functions ────────────────────────────────────────────────
+
+/// Extract the body_i and body_j IDs from a JointJson.
+fn joint_body_ids(joint: &JointJson) -> (&str, &str) {
+    match joint {
+        JointJson::Revolute { body_i, body_j, .. }
+        | JointJson::Fixed { body_i, body_j, .. }
+        | JointJson::Prismatic { body_i, body_j, .. }
+        | JointJson::RevoluteDriver { body_i, body_j, .. } => (body_i.as_str(), body_j.as_str()),
+    }
+}
+
+/// Extract the body_i and body_j IDs from a DriverJson.
+fn driver_body_ids(driver: &DriverJson) -> (&str, &str) {
+    match driver {
+        DriverJson::ConstantSpeed { body_i, body_j, .. } => (body_i.as_str(), body_j.as_str()),
+    }
+}
+
+/// Generate a unique ID with the given prefix in a HashMap.
+///
+/// Tries prefix + "1", prefix + "2", ... until an unused key is found.
+fn generate_unique_id<V>(prefix: &str, map: &HashMap<String, V>) -> String {
+    let mut i = 1;
+    loop {
+        let id = format!("{}{}", prefix, i);
+        if !map.contains_key(&id) {
+            return id;
+        }
+        i += 1;
     }
 }
 
@@ -1531,5 +1783,306 @@ mod tests {
                 sample
             );
         }
+    }
+
+    // ── Create / delete tests ───────────────────────────────────────────
+
+    #[test]
+    fn add_ground_pivot_updates_blueprint() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::CrankRocker);
+        let n_before = state
+            .blueprint
+            .as_ref()
+            .unwrap()
+            .bodies
+            .get("ground")
+            .unwrap()
+            .attachment_points
+            .len();
+        state.add_ground_pivot("O5", 5.0, 0.0);
+        let n_after = state
+            .blueprint
+            .as_ref()
+            .unwrap()
+            .bodies
+            .get("ground")
+            .unwrap()
+            .attachment_points
+            .len();
+        assert_eq!(n_after, n_before + 1);
+        // The new point should exist with the right coordinates.
+        let pt = state
+            .blueprint
+            .as_ref()
+            .unwrap()
+            .bodies
+            .get("ground")
+            .unwrap()
+            .attachment_points
+            .get("O5")
+            .unwrap();
+        assert!((pt[0] - 5.0).abs() < f64::EPSILON);
+        assert!((pt[1] - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn add_ground_pivot_is_undoable() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let n_before = state
+            .blueprint
+            .as_ref()
+            .unwrap()
+            .bodies
+            .get("ground")
+            .unwrap()
+            .attachment_points
+            .len();
+
+        state.add_ground_pivot("P99", 1.0, 2.0);
+        assert!(state.can_undo());
+
+        state.undo();
+        let n_after = state
+            .blueprint
+            .as_ref()
+            .unwrap()
+            .bodies
+            .get("ground")
+            .unwrap()
+            .attachment_points
+            .len();
+        assert_eq!(n_after, n_before);
+    }
+
+    #[test]
+    fn add_body_creates_new_body_in_blueprint() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let n_bodies_before = state.blueprint.as_ref().unwrap().bodies.len();
+
+        state.add_body("new_link", ("X", 0.0, 0.0), ("Y", 0.05, 0.0));
+
+        let bp = state.blueprint.as_ref().unwrap();
+        assert_eq!(bp.bodies.len(), n_bodies_before + 1);
+        assert!(bp.bodies.contains_key("new_link"));
+        let body = bp.bodies.get("new_link").unwrap();
+        assert_eq!(body.attachment_points.len(), 2);
+        assert!(body.attachment_points.contains_key("X"));
+        assert!(body.attachment_points.contains_key("Y"));
+    }
+
+    #[test]
+    fn remove_body_cascades_to_joints() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::CrankRocker);
+        let joints_before = state.blueprint.as_ref().unwrap().joints.len();
+
+        state.remove_body("coupler");
+
+        let bp = state.blueprint.as_ref().unwrap();
+        assert!(!bp.bodies.contains_key("coupler"));
+        // Joints connected to coupler should be removed.
+        assert!(
+            bp.joints.len() < joints_before,
+            "Expected fewer joints after removing coupler, got {} (was {})",
+            bp.joints.len(),
+            joints_before
+        );
+        // No remaining joint should reference "coupler".
+        for (_id, joint) in &bp.joints {
+            let (bi, bj) = joint_body_ids(joint);
+            assert_ne!(bi, "coupler", "Joint still references removed body");
+            assert_ne!(bj, "coupler", "Joint still references removed body");
+        }
+    }
+
+    #[test]
+    fn remove_body_is_undoable() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let n_bodies = state.blueprint.as_ref().unwrap().bodies.len();
+        let n_joints = state.blueprint.as_ref().unwrap().joints.len();
+
+        state.remove_body("crank");
+        assert!(state.can_undo());
+
+        state.undo();
+        let bp = state.blueprint.as_ref().unwrap();
+        assert_eq!(bp.bodies.len(), n_bodies);
+        assert_eq!(bp.joints.len(), n_joints);
+    }
+
+    #[test]
+    fn add_revolute_joint_creates_joint_in_blueprint() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let n_joints_before = state.blueprint.as_ref().unwrap().joints.len();
+
+        // Add a new body first so we have a valid target.
+        state.add_body("extra", ("E1", 0.0, 0.0), ("E2", 0.01, 0.0));
+
+        // Add joint between ground and the new body.
+        state.add_revolute_joint("ground", "O2", "extra", "E1");
+
+        let bp = state.blueprint.as_ref().unwrap();
+        // +1 from the new joint (the add_body doesn't add joints).
+        assert_eq!(bp.joints.len(), n_joints_before + 1);
+    }
+
+    #[test]
+    fn remove_joint_removes_from_blueprint() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let n_joints_before = state.blueprint.as_ref().unwrap().joints.len();
+
+        // Get the first joint ID.
+        let joint_id = state
+            .blueprint
+            .as_ref()
+            .unwrap()
+            .joints
+            .keys()
+            .next()
+            .unwrap()
+            .clone();
+        state.remove_joint(&joint_id);
+
+        let bp = state.blueprint.as_ref().unwrap();
+        assert_eq!(bp.joints.len(), n_joints_before - 1);
+        assert!(!bp.joints.contains_key(&joint_id));
+    }
+
+    #[test]
+    fn remove_joint_is_undoable() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let n_joints = state.blueprint.as_ref().unwrap().joints.len();
+
+        let joint_id = state
+            .blueprint
+            .as_ref()
+            .unwrap()
+            .joints
+            .keys()
+            .next()
+            .unwrap()
+            .clone();
+        state.remove_joint(&joint_id);
+        assert!(state.can_undo());
+
+        state.undo();
+        assert_eq!(state.blueprint.as_ref().unwrap().joints.len(), n_joints);
+    }
+
+    #[test]
+    fn next_body_id_generates_unique_ids() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        let id1 = state.next_body_id();
+        state.add_body(&id1, ("A", 0.0, 0.0), ("B", 0.01, 0.0));
+
+        let id2 = state.next_body_id();
+        assert_ne!(id1, id2, "Second ID should differ from first");
+        assert!(
+            !state.blueprint.as_ref().unwrap().bodies.contains_key(&id2),
+            "Generated ID should not already exist in blueprint"
+        );
+    }
+
+    #[test]
+    fn next_ground_pivot_name_generates_unique_names() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        let name1 = state.next_ground_pivot_name();
+        state.add_ground_pivot(&name1, 1.0, 0.0);
+
+        let name2 = state.next_ground_pivot_name();
+        assert_ne!(name1, name2);
+    }
+
+    // ── Validation tests ────────────────────────────────────────────────
+
+    #[test]
+    fn validation_no_warnings_for_valid_mechanism() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        // FourBar has driver, correct DOF, no disconnected bodies.
+        state.compute_validation();
+
+        assert!(
+            state.validation_warnings.dof_warning.is_none(),
+            "FourBar should have DOF=0, got: {:?}",
+            state.validation_warnings.dof_warning
+        );
+        assert!(
+            !state.validation_warnings.missing_driver,
+            "FourBar should have a driver"
+        );
+        assert!(
+            state.validation_warnings.disconnected_bodies.is_empty(),
+            "FourBar should have no disconnected bodies"
+        );
+    }
+
+    #[test]
+    fn validation_disconnected_body_detected() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // Add a body with no joints.
+        state.add_body("floating", ("F1", 0.0, 0.5), ("F2", 0.01, 0.5));
+        state.compute_validation();
+
+        assert!(
+            state.validation_warnings.disconnected_bodies.contains(&"floating".to_string()),
+            "Should detect 'floating' as disconnected"
+        );
+    }
+
+    #[test]
+    fn validation_dof_warning_after_removing_joint() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // Remove a joint -- DOF should no longer be 0.
+        let joint_id = state
+            .blueprint
+            .as_ref()
+            .unwrap()
+            .joints
+            .keys()
+            .next()
+            .unwrap()
+            .clone();
+        state.remove_joint(&joint_id);
+
+        // Validation is computed during rebuild.
+        assert!(
+            state.validation_warnings.dof_warning.is_some(),
+            "Should have DOF warning after removing a joint"
+        );
+    }
+
+    #[test]
+    fn remove_body_cascades_to_drivers() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // The driver references ground + crank. Removing crank should
+        // also remove the driver.
+        let drivers_before = state.blueprint.as_ref().unwrap().drivers.len();
+        assert!(drivers_before > 0, "FourBar should have a driver");
+
+        state.remove_body("crank");
+
+        let bp = state.blueprint.as_ref().unwrap();
+        assert!(
+            bp.drivers.is_empty(),
+            "Drivers referencing removed body should be cascaded"
+        );
     }
 }

@@ -148,15 +148,29 @@ impl eframe::App for LinkageApp {
                             mech.joints().len(),
                             dof,
                         ));
-                        // Warn if DOF != 0 (fully constrained with driver)
-                        if dof != 0 {
-                            let warn_color = egui::Color32::from_rgb(255, 180, 50);
-                            ui.colored_label(warn_color, format!(
-                                "(expected 0, coords={} constraints={})",
-                                mech.state().n_coords(),
-                                mech.n_constraints(),
-                            ));
-                        }
+                    }
+
+                    // Validation warnings from the computed ValidationWarnings struct.
+                    let warn_color = egui::Color32::from_rgb(255, 180, 50);
+                    let warnings = &self.state.validation_warnings;
+
+                    if let Some(ref dof_msg) = warnings.dof_warning {
+                        ui.separator();
+                        ui.colored_label(warn_color, dof_msg);
+                    }
+                    if warnings.missing_driver {
+                        ui.separator();
+                        ui.colored_label(warn_color, "No driver");
+                    }
+                    if !warnings.disconnected_bodies.is_empty() {
+                        ui.separator();
+                        ui.colored_label(
+                            warn_color,
+                            format!(
+                                "Disconnected: {}",
+                                warnings.disconnected_bodies.join(", ")
+                            ),
+                        );
                     }
                 } else {
                     ui.label("No mechanism loaded");

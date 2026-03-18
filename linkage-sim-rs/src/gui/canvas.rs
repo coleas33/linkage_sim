@@ -1,10 +1,10 @@
-//! 2D mechanism canvas: rendering, pan/zoom, hit testing, debug overlay.
+//! 2D mechanism canvas: rendering, pan/zoom, hit testing, drag, context menus.
 
 use eframe::egui::{self, Color32, FontId, Pos2, Rect, Stroke, Vec2};
 
 use crate::core::constraint::Constraint;
 use crate::core::state::GROUND_ID;
-use crate::gui::state::{AppState, SelectedEntity};
+use crate::gui::state::{AppState, DragTarget, SelectedEntity};
 
 // ── Colors ──────────────────────────────────────────────────────────────────
 
@@ -18,6 +18,7 @@ const GROUND_MARKER_COLOR: Color32 = Color32::from_rgb(120, 120, 100);
 const DEBUG_TEXT_COLOR: Color32 = Color32::from_rgb(180, 180, 180);
 const DEBUG_DIM_COLOR: Color32 = Color32::from_rgb(100, 100, 100);
 const NO_MECH_TEXT_COLOR: Color32 = Color32::from_rgb(120, 120, 120);
+const JOINT_CREATE_HIGHLIGHT: Color32 = Color32::from_rgb(80, 255, 80);
 
 // ── Sizing ──────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,14 @@ const HIT_RADIUS: f32 = 10.0;
 const ZOOM_FACTOR: f32 = 1.1;
 const MIN_SCALE: f32 = 100.0;
 const MAX_SCALE: f32 = 100_000.0;
+
+/// An attachment point hit target: screen position, body ID, point name.
+#[derive(Clone)]
+struct AttachmentHit {
+    screen_pos: Pos2,
+    body_id: String,
+    point_name: String,
+}
 
 /// Draw the 2D mechanism canvas with interaction.
 pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
@@ -66,10 +75,13 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     // Copy driver state before the immutable scope (lives on AppState, not Mechanism).
     let current_driver_joint = state.driver_joint_id.clone();
 
+    // Copy joint-creation state for rendering highlights.
+    let creating_joint_first = state.creating_joint.clone();
+
     // Collect joint screen positions and IDs for hit testing later.
     let mut joint_hit_targets: Vec<(Pos2, String)> = Vec::new();
-    // Collect body attachment point screen positions and body IDs for hit testing.
-    let mut body_hit_targets: Vec<(Pos2, String)> = Vec::new();
+    // Collect attachment point hit targets (screen pos, body_id, point_name).
+    let mut attachment_hit_targets: Vec<AttachmentHit> = Vec::new();
     // Grounded revolute joint IDs — candidates for driver reassignment.
     // Collected inside the immutable scope from the mechanism.
     let grounded_revolute_ids: Vec<String>;
@@ -93,6 +105,42 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 [Pos2::new(left[0], left[1]), Pos2::new(right[0], right[1])],
                 Stroke::new(1.0, GROUND_LINE_COLOR),
             );
+        }
+
+        // ── Draw coupler traces from sweep data ──────────────────────────
+        if let Some(sweep) = &state.sweep_data {
+            let trace_colors = [
+                Color32::from_rgba_premultiplied(100, 200, 255, 60),
+                Color32::from_rgba_premultiplied(255, 150, 80, 60),
+                Color32::from_rgba_premultiplied(120, 220, 120, 60),
+                Color32::from_rgba_premultiplied(255, 100, 100, 60),
+                Color32::from_rgba_premultiplied(200, 150, 255, 60),
+                Color32::from_rgba_premultiplied(255, 220, 100, 60),
+            ];
+            let mut color_idx = 0;
+            let mut keys: Vec<&String> = sweep.coupler_traces.keys().collect();
+            keys.sort();
+
+            for key in keys {
+                let trace = &sweep.coupler_traces[key];
+                if trace.len() < 2 {
+                    continue;
+                }
+                let color = trace_colors[color_idx % trace_colors.len()];
+                color_idx += 1;
+
+                let screen_pts: Vec<Pos2> = trace
+                    .iter()
+                    .map(|[wx, wy]| {
+                        let sp = view.world_to_screen(*wx, *wy);
+                        Pos2::new(sp[0], sp[1])
+                    })
+                    .collect();
+
+                for pair in screen_pts.windows(2) {
+                    painter.line_segment([pair[0], pair[1]], Stroke::new(1.0, color));
+                }
+            }
         }
 
         // ── Draw bodies ─────────────────────────────────────────────────
@@ -159,19 +207,45 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 }
             }
 
-            // Store body hit targets (screen positions of attachment points).
-            for sp in &screen_points {
-                body_hit_targets.push((*sp, body_id.clone()));
+            // Store attachment hit targets (screen positions of attachment points).
+            for (i, sp) in screen_points.iter().enumerate() {
+                attachment_hit_targets.push(AttachmentHit {
+                    screen_pos: *sp,
+                    body_id: body_id.clone(),
+                    point_name: point_names[i].clone(),
+                });
             }
         }
 
-        // ── Draw ground markers ─────────────────────────────────────────
+        // ── Draw ground markers and collect ground hit targets ──────────
         if let Some(ground) = bodies.get(GROUND_ID) {
-            for local in ground.attachment_points.values() {
+            let mut ground_point_names: Vec<&String> =
+                ground.attachment_points.keys().collect();
+            ground_point_names.sort();
+
+            for name in &ground_point_names {
+                let local = &ground.attachment_points[*name];
                 let global = mech_state.body_point_global(GROUND_ID, local, q);
                 let sp = view.world_to_screen(global.x, global.y);
                 let center = Pos2::new(sp[0], sp[1]);
                 draw_ground_marker(&painter, center, GROUND_MARKER_SIZE, GROUND_MARKER_COLOR);
+
+                // Ground points are also draggable hit targets.
+                attachment_hit_targets.push(AttachmentHit {
+                    screen_pos: center,
+                    body_id: GROUND_ID.to_string(),
+                    point_name: (*name).clone(),
+                });
+
+                if show_debug {
+                    painter.text(
+                        Pos2::new(center.x + 8.0, center.y + GROUND_MARKER_SIZE + 4.0),
+                        egui::Align2::LEFT_TOP,
+                        *name,
+                        FontId::proportional(9.0),
+                        DEBUG_DIM_COLOR,
+                    );
+                }
             }
         }
 
@@ -222,6 +296,21 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             // Store joint hit targets.
             joint_hit_targets.push((center, joint.id().to_string()));
         }
+
+        // ── Joint creation mode: highlight first selected point ─────────
+        if let Some((ref cj_body, ref cj_point)) = creating_joint_first {
+            // Find the screen position of the first-click attachment point.
+            for hit in &attachment_hit_targets {
+                if hit.body_id == *cj_body && hit.point_name == *cj_point {
+                    painter.circle_stroke(
+                        hit.screen_pos,
+                        JOINT_RADIUS + 4.0,
+                        Stroke::new(2.0, JOINT_CREATE_HIGHLIGHT),
+                    );
+                    break;
+                }
+            }
+        }
     }
     // Immutable borrows of state.mechanism (and its sub-borrows) are now dropped.
 
@@ -249,12 +338,83 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         );
     }
 
+    // ── Joint creation mode hint text ──────────────────────────────────
+    if state.creating_joint.is_some() {
+        painter.text(
+            Pos2::new(canvas_rect.center().x, canvas_rect.top() + 20.0),
+            egui::Align2::CENTER_TOP,
+            "Click a second attachment point to create joint (Esc to cancel)",
+            FontId::proportional(13.0),
+            JOINT_CREATE_HIGHLIGHT,
+        );
+    }
+
+    // ── Interaction: drag attachment points ─────────────────────────────
+    // Primary drag (not shift, not middle) near an attachment point initiates
+    // a drag operation. During drag, the attachment point tracks the mouse
+    // position in world coords. Undo is pushed once at drag start.
+
+    let is_shift = ui.input(|i| i.modifiers.shift);
+
+    // Drag start: on primary button press near an attachment point.
+    if response.drag_started_by(egui::PointerButton::Primary) && !is_shift {
+        if let Some(pointer_pos) = response.interact_pointer_pos() {
+            // Find nearest attachment point within hit radius.
+            let nearest = attachment_hit_targets
+                .iter()
+                .filter(|h| pointer_pos.distance(h.screen_pos) <= HIT_RADIUS)
+                .min_by(|a, b| {
+                    pointer_pos
+                        .distance(a.screen_pos)
+                        .partial_cmp(&pointer_pos.distance(b.screen_pos))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+            if let Some(hit) = nearest {
+                state.drag_target = Some(DragTarget {
+                    body_id: hit.body_id.clone(),
+                    point_name: hit.point_name.clone(),
+                    started: false,
+                });
+            }
+        }
+    }
+
+    // Drag in progress: update attachment point position.
+    // Extract drag info first to avoid overlapping borrows with &mut self methods.
+    if response.dragged_by(egui::PointerButton::Primary) && !is_shift {
+        if let Some(pointer_pos) = ui.input(|i| i.pointer.hover_pos()) {
+            let drag_info = state.drag_target.as_ref().map(|d| {
+                (d.body_id.clone(), d.point_name.clone(), d.started)
+            });
+
+            if let Some((body_id, point_name, started)) = drag_info {
+                // Push undo once at the start of the drag.
+                if !started {
+                    state.push_undo();
+                    if let Some(ref mut drag) = state.drag_target {
+                        drag.started = true;
+                    }
+                }
+
+                // Convert screen position to world coordinates.
+                let [wx, wy] = state.view.screen_to_world(pointer_pos.x, pointer_pos.y);
+                state.move_attachment_point(&body_id, &point_name, wx, wy);
+            }
+        }
+    }
+
+    // Drag end: clear drag target when the pointer is no longer dragging.
+    // response.dragged() is false when the button is released.
+    if state.drag_target.is_some() && !response.dragged() {
+        state.drag_target = None;
+    }
+
     // ── Interaction: pan ────────────────────────────────────────────────
     // Middle-click drag OR shift+primary drag.
     if response.dragged() {
         let is_middle = response.dragged_by(egui::PointerButton::Middle);
-        let is_shift_primary = ui.input(|i| i.modifiers.shift)
-            && response.dragged_by(egui::PointerButton::Primary);
+        let is_shift_primary =
+            is_shift && response.dragged_by(egui::PointerButton::Primary);
         if is_middle || is_shift_primary {
             let delta = response.drag_delta();
             state.view.offset[0] += delta.x;
@@ -289,50 +449,91 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         }
     }
 
-    // ── Interaction: hit testing for selection ──────────────────────────
-    if response.clicked()
-        && let Some(pointer_pos) = response.interact_pointer_pos()
-    {
-        let mut hit: Option<SelectedEntity> = None;
-
-        // Check joints first (smaller targets get priority).
-        for (joint_screen, joint_id) in &joint_hit_targets {
-            if pointer_pos.distance(*joint_screen) <= HIT_RADIUS {
-                hit = Some(SelectedEntity::Joint(joint_id.clone()));
-                break;
-            }
-        }
-
-        // If no joint hit, check body attachment points.
-        if hit.is_none() {
-            for (pt_screen, body_id) in &body_hit_targets {
-                if pointer_pos.distance(*pt_screen) <= HIT_RADIUS {
-                    hit = Some(SelectedEntity::Body(body_id.clone()));
-                    break;
-                }
-            }
-        }
-
-        state.selected = hit;
+    // ── Interaction: Escape key cancels joint creation mode ─────────────
+    if state.creating_joint.is_some() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        state.creating_joint = None;
     }
 
-    // ── Interaction: right-click context menu ────────────────────────
-    // Find what joint (if any) is under the right-click position.
-    let right_click_joint: Option<String> = response
+    // ── Interaction: hit testing for selection / joint creation ─────────
+    // Only process clicks when no drag is in progress.
+    if state.drag_target.is_none() && response.clicked() {
+        if let Some(pointer_pos) = response.interact_pointer_pos() {
+            // In joint-creation mode, the second click creates the joint.
+            if let Some((first_body, first_point)) = state.creating_joint.take() {
+                // Find the attachment point under the cursor.
+                let second_hit = attachment_hit_targets
+                    .iter()
+                    .find(|h| pointer_pos.distance(h.screen_pos) <= HIT_RADIUS);
+
+                if let Some(hit) = second_hit {
+                    // Don't create a joint between the same point on the same body.
+                    if hit.body_id != first_body || hit.point_name != first_point {
+                        state.add_revolute_joint(
+                            &first_body,
+                            &first_point,
+                            &hit.body_id,
+                            &hit.point_name,
+                        );
+                    }
+                }
+                // If no hit or same point, joint creation is simply cancelled.
+            } else {
+                // Normal selection mode.
+                let mut hit: Option<SelectedEntity> = None;
+
+                // Check joints first (smaller targets get priority).
+                for (joint_screen, joint_id) in &joint_hit_targets {
+                    if pointer_pos.distance(*joint_screen) <= HIT_RADIUS {
+                        hit = Some(SelectedEntity::Joint(joint_id.clone()));
+                        break;
+                    }
+                }
+
+                // If no joint hit, check attachment points.
+                if hit.is_none() {
+                    for ah in &attachment_hit_targets {
+                        if pointer_pos.distance(ah.screen_pos) <= HIT_RADIUS {
+                            hit = Some(SelectedEntity::Body(ah.body_id.clone()));
+                            break;
+                        }
+                    }
+                }
+
+                state.selected = hit;
+            }
+        }
+    }
+
+    // ── Interaction: right-click context menu ────────────────────────────
+    // Determine what entity (if any) is under the right-click position.
+    let right_click_pos: Option<Pos2> = response
         .secondary_clicked()
         .then(|| response.interact_pointer_pos())
-        .flatten()
-        .and_then(|pos| {
-            joint_hit_targets
-                .iter()
-                .find(|(screen_pos, _)| pos.distance(*screen_pos) <= HIT_RADIUS)
-                .map(|(_, id)| id.clone())
-        });
+        .flatten();
+
+    let right_click_joint: Option<String> = right_click_pos.and_then(|pos| {
+        joint_hit_targets
+            .iter()
+            .find(|(screen_pos, _)| pos.distance(*screen_pos) <= HIT_RADIUS)
+            .map(|(_, id)| id.clone())
+    });
+
+    let right_click_body: Option<(String, String)> = right_click_pos.and_then(|pos| {
+        attachment_hit_targets
+            .iter()
+            .find(|h| h.body_id != GROUND_ID && pos.distance(h.screen_pos) <= HIT_RADIUS)
+            .map(|h| (h.body_id.clone(), h.point_name.clone()))
+    });
+
+    // Cache the world coordinates of the right-click for "Add" operations.
+    let right_click_world: Option<[f64; 2]> = right_click_pos.map(|pos| {
+        state.view.screen_to_world(pos.x, pos.y)
+    });
 
     // Show context menu using egui's built-in context_menu.
-    // This works by checking if a right-click happened and opening a popup.
     response.context_menu(|ui| {
         if let Some(ref joint_id) = right_click_joint {
+            // ── Joint context menu ──────────────────────────────────────
             ui.label(format!("Joint: {}", joint_id));
             ui.separator();
 
@@ -353,11 +554,69 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                     state.pending_driver_reassignment = Some(joint_id.clone());
                     ui.close();
                 }
-            } else {
-                ui.label("Not a grounded revolute joint");
+            }
+
+            if ui.button("Delete Joint").clicked() {
+                state.remove_joint(joint_id);
+                ui.close();
+            }
+        } else if let Some((ref body_id, ref point_name)) = right_click_body {
+            // ── Body context menu ───────────────────────────────────────
+            ui.label(format!("Body: {}", body_id));
+            ui.separator();
+
+            if ui.button("Delete Body").clicked() {
+                state.remove_body(body_id);
+                state.selected = None;
+                ui.close();
+            }
+
+            if ui.button("Add Revolute Joint...").clicked() {
+                // Enter joint-creation mode with first click = this point.
+                state.creating_joint = Some((body_id.clone(), point_name.clone()));
+                ui.close();
             }
         } else {
-            ui.label("(no joint selected)");
+            // ── Empty canvas context menu ───────────────────────────────
+            if let Some([wx, wy]) = right_click_world {
+                if ui.button("Add Ground Pivot Here").clicked() {
+                    let name = state.next_ground_pivot_name();
+                    state.add_ground_pivot(&name, wx, wy);
+                    ui.close();
+                }
+
+                if ui.button("Add Body Here").clicked() {
+                    let body_id = state.next_body_id();
+                    // Create a binary body with two points: one at click, one offset.
+                    let offset = 0.02; // 2cm offset in world coords
+                    state.add_body(
+                        &body_id,
+                        ("A", wx, wy),
+                        ("B", wx + offset, wy),
+                    );
+                    ui.close();
+                }
+
+                if ui.button("Add Revolute Joint...").clicked() {
+                    // Enter joint-creation mode: user clicks two attachment points.
+                    // First, find the nearest attachment point to the click.
+                    if let Some(rcp) = right_click_pos {
+                        let nearest = attachment_hit_targets
+                            .iter()
+                            .filter(|h| rcp.distance(h.screen_pos) <= HIT_RADIUS * 2.0)
+                            .min_by(|a, b| {
+                                rcp.distance(a.screen_pos)
+                                    .partial_cmp(&rcp.distance(b.screen_pos))
+                                    .unwrap_or(std::cmp::Ordering::Equal)
+                            });
+                        if let Some(hit) = nearest {
+                            state.creating_joint =
+                                Some((hit.body_id.clone(), hit.point_name.clone()));
+                        }
+                    }
+                    ui.close();
+                }
+            }
         }
     });
 }
