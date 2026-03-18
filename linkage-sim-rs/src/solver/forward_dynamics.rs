@@ -17,6 +17,7 @@
 use nalgebra::{DMatrix, DVector};
 
 use crate::core::mechanism::Mechanism;
+use crate::error::LinkageError;
 use crate::forces::assembly::assemble_q;
 use crate::forces::gravity::Gravity;
 use crate::solver::assembly::{
@@ -294,8 +295,10 @@ pub fn simulate(
     gravity: Option<&Gravity>,
     config: Option<&ForwardDynamicsConfig>,
     t_eval: Option<&[f64]>,
-) -> ForwardDynamicsResult {
-    assert!(mech.is_built(), "Mechanism must be built before simulation.");
+) -> Result<ForwardDynamicsResult, LinkageError> {
+    if !mech.is_built() {
+        return Err(LinkageError::MechanismNotBuilt);
+    }
 
     let default_config = ForwardDynamicsConfig::default();
     let cfg = config.unwrap_or(&default_config);
@@ -362,14 +365,14 @@ pub fn simulate(
         qd_out.push(qd_i);
     }
 
-    ForwardDynamicsResult {
+    Ok(ForwardDynamicsResult {
         t: t_out,
         q: q_out,
         q_dot: qd_out,
         constraint_drift: drift,
         success: true,
         message: "RK4 integration completed.".to_string(),
-    }
+    })
 }
 
 #[cfg(test)]
@@ -486,7 +489,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = simulate(&mech, &q0, &qd0, (0.0, 1.0), Some(&gravity), Some(&config), None);
+        let result = simulate(&mech, &q0, &qd0, (0.0, 1.0), Some(&gravity), Some(&config), None).unwrap();
         assert!(result.success);
         assert!(!result.t.is_empty());
     }
@@ -504,7 +507,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = simulate(&mech, &q0, &qd0, (0.0, 2.0), Some(&gravity), Some(&config), None);
+        let result = simulate(&mech, &q0, &qd0, (0.0, 2.0), Some(&gravity), Some(&config), None).unwrap();
         assert!(result.success);
 
         let max_drift = result
@@ -543,7 +546,7 @@ mod tests {
             Some(&gravity),
             Some(&config),
             Some(&t_eval),
-        );
+        ).unwrap();
         assert!(result.success);
 
         // Compute energy at each step
@@ -615,7 +618,7 @@ mod tests {
             Some(&gravity),
             Some(&config),
             Some(&t_eval),
-        );
+        ).unwrap();
         assert!(result.success);
 
         // Extract theta(t) and find zero crossings to measure period
@@ -672,7 +675,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = simulate(&mech, &q0, &qd0, (0.0, 2.0), Some(&gravity), Some(&config), None);
+        let result = simulate(&mech, &q0, &qd0, (0.0, 2.0), Some(&gravity), Some(&config), None).unwrap();
         assert!(result.success);
 
         // With projection, constraint drift should remain small
@@ -710,7 +713,7 @@ mod tests {
             Some(&gravity),
             Some(&config),
             Some(&t_eval),
-        );
+        ).unwrap();
         assert!(result.success);
         assert_eq!(result.t.len(), t_eval.len());
 

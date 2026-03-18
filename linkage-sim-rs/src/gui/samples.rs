@@ -138,7 +138,7 @@ mod tests {
     #[test]
     fn fourbar_sample_builds_and_solves() {
         let (mech, q0) = build_fourbar_sample();
-        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
         assert!(
             result.converged,
             "4-bar sample did not converge at t=0, residual = {}",
@@ -149,7 +149,7 @@ mod tests {
     #[test]
     fn slider_crank_sample_builds_and_solves() {
         let (mech, q0) = build_slider_crank_sample();
-        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
         assert!(
             result.converged,
             "slider-crank sample did not converge at t=0, residual = {}",

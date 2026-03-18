@@ -1,4 +1,5 @@
 pub mod core;
+pub mod error;
 pub mod forces;
 pub mod solver;
 pub mod analysis;

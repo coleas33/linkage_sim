@@ -279,7 +279,7 @@ mod tests {
         state.set_pose("coupler", &mut q0, bx, by, 0.0);
         state.set_pose("rocker", &mut q0, 4.0, 0.0, PI / 2.0);
 
-        let pos = solve_position(&mech, &q0, angle, 1e-10, 50);
+        let pos = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
         assert!(pos.converged);
 
         let rank_result = jacobian_rank_analysis(&mech, &pos.q, 0.0, None);
@@ -304,7 +304,7 @@ mod tests {
         state.set_pose("coupler", &mut q0, angle.cos(), angle.sin(), 0.0);
         state.set_pose("rocker", &mut q0, 4.0, 0.0, PI / 2.0);
 
-        let pos = solve_position(&mech, &q0, angle, 1e-10, 50);
+        let pos = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
         assert!(pos.converged);
 
         let rank_result = jacobian_rank_analysis(&mech, &pos.q, 0.0, None);

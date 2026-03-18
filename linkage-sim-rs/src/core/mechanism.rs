@@ -15,6 +15,17 @@ use crate::core::constraint::{
 use crate::core::driver::{constant_speed_driver, make_revolute_driver, RevoluteDriver};
 use crate::core::state::{State, GROUND_ID};
 
+/// Row range in the lambda vector for a single constraint (joint or driver).
+///
+/// After `build()`, every joint and driver owns a contiguous block of rows
+/// in the assembled constraint vector Phi and the multiplier vector lambda.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstraintRange {
+    pub constraint_id: String,
+    pub row_start: usize,
+    pub n_equations: usize,
+}
+
 /// A planar mechanism: bodies connected by joint constraints.
 pub struct Mechanism {
     bodies: HashMap<String, Body>,
@@ -26,6 +37,8 @@ pub struct Mechanism {
     /// Populated during `build()` — contains moving body IDs in alphabetical
     /// order (matching the Python reference implementation).
     body_order: Vec<String>,
+    /// Row ranges in the lambda vector for each constraint, computed once in `build()`.
+    constraint_ranges: Vec<ConstraintRange>,
 }
 
 impl Mechanism {
@@ -37,6 +50,7 @@ impl Mechanism {
             state: State::new(),
             built: false,
             body_order: Vec::new(),
+            constraint_ranges: Vec::new(),
         }
     }
 
@@ -65,6 +79,12 @@ impl Mechanism {
     /// Only valid after `build()`.
     pub fn body_order(&self) -> &[String] {
         &self.body_order
+    }
+
+    /// Row ranges in the lambda vector for each constraint (joints then drivers).
+    /// Only valid after `build()`.
+    pub fn constraint_ranges(&self) -> &[ConstraintRange] {
+        &self.constraint_ranges
     }
 
     /// Total number of constraint equations across all joints and drivers.
@@ -236,6 +256,20 @@ impl Mechanism {
         }
         self.body_order = order;
 
+        // Compute constraint row ranges (joints first, then drivers).
+        let mut ranges = Vec::new();
+        let mut row = 0;
+        for constraint in self.all_constraints() {
+            let n_eq = constraint.n_equations();
+            ranges.push(ConstraintRange {
+                constraint_id: constraint.id().to_string(),
+                row_start: row,
+                n_equations: n_eq,
+            });
+            row += n_eq;
+        }
+        self.constraint_ranges = ranges;
+
         self.built = true;
         Ok(())
     }
@@ -285,6 +319,7 @@ pub enum MechanismError {
 mod tests {
     use super::*;
     use crate::core::body::{make_bar, make_ground};
+    use nalgebra::Vector2;
     use std::f64::consts::PI;
 
     fn build_fourbar() -> Mechanism {
@@ -412,5 +447,107 @@ mod tests {
             !mech.body_order().contains(&"ground".to_string()),
             "body_order should not contain ground"
         );
+    }
+
+    #[test]
+    fn constraint_ranges_match_manual_counting() {
+        // Build a 4-bar and verify constraint_ranges matches walking
+        // all_constraints() and manually accumulating row offsets.
+        let mech = build_fourbar();
+
+        let constraints = mech.all_constraints();
+        let ranges = mech.constraint_ranges();
+
+        assert_eq!(
+            ranges.len(),
+            constraints.len(),
+            "constraint_ranges length must match all_constraints length"
+        );
+
+        let mut expected_row = 0;
+        for (constraint, range) in constraints.iter().zip(ranges.iter()) {
+            assert_eq!(range.constraint_id, constraint.id());
+            assert_eq!(range.row_start, expected_row);
+            assert_eq!(range.n_equations, constraint.n_equations());
+            expected_row += constraint.n_equations();
+        }
+
+        // Total rows must equal n_constraints()
+        assert_eq!(expected_row, mech.n_constraints());
+    }
+
+    #[test]
+    fn constraint_ranges_for_slider_crank() {
+        // Slider-crank: ground + crank + slider
+        // Joints: revolute(ground-crank), revolute(crank-slider), prismatic(ground-slider)
+        // Driver: constant speed on crank
+        let ground = make_ground(&[("O", 0.0, 0.0), ("S", 0.0, 0.0)]);
+        let crank = make_bar("crank", "A", "B", 0.1, 0.0, 0.0);
+        let slider = make_bar("slider", "P", "Q", 0.2, 0.0, 0.0);
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(crank).unwrap();
+        mech.add_body(slider).unwrap();
+
+        // Revolute: ground-crank (2 eq)
+        mech.add_revolute_joint("R1", "ground", "O", "crank", "A")
+            .unwrap();
+        // Revolute: crank-slider (2 eq)
+        mech.add_revolute_joint("R2", "crank", "B", "slider", "P")
+            .unwrap();
+        // Prismatic: ground-slider along x-axis (2 eq)
+        mech.add_prismatic_joint(
+            "P1",
+            "ground",
+            "S",
+            "slider",
+            "Q",
+            Vector2::new(1.0, 0.0),
+            0.0,
+        )
+        .unwrap();
+        // Driver: constant speed (1 eq)
+        mech.add_constant_speed_driver("D1", "ground", "crank", 2.0 * PI, 0.0)
+            .unwrap();
+
+        mech.build().unwrap();
+
+        let ranges = mech.constraint_ranges();
+        assert_eq!(ranges.len(), 4);
+
+        // R1: revolute, 2 equations, starts at row 0
+        assert_eq!(ranges[0].constraint_id, "R1");
+        assert_eq!(ranges[0].row_start, 0);
+        assert_eq!(ranges[0].n_equations, 2);
+
+        // R2: revolute, 2 equations, starts at row 2
+        assert_eq!(ranges[1].constraint_id, "R2");
+        assert_eq!(ranges[1].row_start, 2);
+        assert_eq!(ranges[1].n_equations, 2);
+
+        // P1: prismatic, 2 equations, starts at row 4
+        assert_eq!(ranges[2].constraint_id, "P1");
+        assert_eq!(ranges[2].row_start, 4);
+        assert_eq!(ranges[2].n_equations, 2);
+
+        // D1: driver, 1 equation, starts at row 6
+        assert_eq!(ranges[3].constraint_id, "D1");
+        assert_eq!(ranges[3].row_start, 6);
+        assert_eq!(ranges[3].n_equations, 1);
+    }
+
+    #[test]
+    fn body_coord_range_matches_body_index() {
+        // Verify body_coord_range agrees with get_index for every body.
+        let mech = build_fourbar();
+        let state = mech.state();
+
+        for body_id in mech.body_order() {
+            let idx = state.get_index(body_id).unwrap();
+            let (start, end) = state.body_coord_range(body_id).unwrap();
+            assert_eq!(start, idx.q_start);
+            assert_eq!(end, idx.q_start + 3);
+        }
     }
 }

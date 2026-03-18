@@ -11,6 +11,7 @@
 use nalgebra::DVector;
 
 use crate::core::mechanism::Mechanism;
+use crate::error::LinkageError;
 use crate::forces::assembly::assemble_q;
 use crate::forces::gravity::Gravity;
 use crate::solver::assembly::{assemble_jacobian, assemble_mass_matrix};
@@ -52,11 +53,10 @@ pub fn solve_inverse_dynamics(
     q_ddot: &DVector<f64>,
     gravity: Option<&Gravity>,
     t: f64,
-) -> InverseDynamicsResult {
-    assert!(
-        mech.is_built(),
-        "Mechanism must be built before inverse dynamics."
-    );
+) -> Result<InverseDynamicsResult, LinkageError> {
+    if !mech.is_built() {
+        return Err(LinkageError::MechanismNotBuilt);
+    }
 
     let state = mech.state();
 
@@ -85,19 +85,21 @@ pub fn solve_inverse_dynamics(
     };
 
     // Solve Phi_q^T * lambda = rhs using the already-computed SVD
-    let lambdas = svd_t.solve(&rhs, 1e-14).unwrap();
+    let lambdas = svd_t
+        .solve(&rhs, 1e-14)
+        .map_err(|_| LinkageError::SvdSolveFailed)?;
 
     // Compute residual
     let residual = &phi_q_t * &lambdas - &rhs;
     let residual_norm = residual.norm();
 
-    InverseDynamicsResult {
+    Ok(InverseDynamicsResult {
         lambdas,
         q_forces,
         m_q_ddot,
         residual_norm,
         condition_number,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -158,13 +160,13 @@ mod tests {
         state.set_pose("coupler", &mut q0, bx, by, 0.0);
         state.set_pose("rocker", &mut q0, 4.0, 0.0, PI / 2.0);
 
-        let pos = solve_position(&mech, &q0, angle, 1e-10, 50);
+        let pos = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
         assert!(pos.converged);
 
-        let q_dot = solve_velocity(&mech, &pos.q, angle);
-        let q_ddot = solve_acceleration(&mech, &pos.q, &q_dot, angle);
+        let q_dot = solve_velocity(&mech, &pos.q, angle).unwrap();
+        let q_ddot = solve_acceleration(&mech, &pos.q, &q_dot, angle).unwrap();
 
-        let result = solve_inverse_dynamics(&mech, &pos.q, &q_dot, &q_ddot, Some(&gravity), angle);
+        let result = solve_inverse_dynamics(&mech, &pos.q, &q_dot, &q_ddot, Some(&gravity), angle).unwrap();
         assert!(
             result.residual_norm < 1e-8,
             "residual = {}",
@@ -184,7 +186,7 @@ mod tests {
         state.set_pose("coupler", &mut q0, angle.cos(), angle.sin(), 0.0);
         state.set_pose("rocker", &mut q0, 4.0, 0.0, PI / 2.0);
 
-        let pos = solve_position(&mech, &q0, angle, 1e-10, 50);
+        let pos = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
         assert!(pos.converged);
 
         let n = state.n_coords();
@@ -198,9 +200,9 @@ mod tests {
             &q_ddot_zero,
             Some(&gravity),
             angle,
-        );
+        ).unwrap();
         let statics =
-            crate::solver::statics::solve_statics(&mech, &pos.q, Some(&gravity), angle);
+            crate::solver::statics::solve_statics(&mech, &pos.q, Some(&gravity), angle).unwrap();
 
         // M*q_ddot should be zero
         for i in 0..n {

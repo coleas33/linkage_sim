@@ -132,20 +132,31 @@ impl AppState {
         self.driver_omega = 2.0 * PI;
         self.driver_theta_0 = 0.0;
 
-        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50);
+        match solve_position(&mech, &q0, 0.0, 1e-10, 50) {
+            Ok(result) => {
+                self.solver_status = SolverStatus {
+                    converged: result.converged,
+                    residual_norm: result.residual_norm,
+                    iterations: result.iterations,
+                };
 
-        self.solver_status = SolverStatus {
-            converged: result.converged,
-            residual_norm: result.residual_norm,
-            iterations: result.iterations,
-        };
-
-        if result.converged {
-            self.q = result.q.clone();
-            self.last_good_q = result.q;
-        } else {
-            self.q = q0.clone();
-            self.last_good_q = q0;
+                if result.converged {
+                    self.q = result.q.clone();
+                    self.last_good_q = result.q;
+                } else {
+                    self.q = q0.clone();
+                    self.last_good_q = q0;
+                }
+            }
+            Err(_) => {
+                self.solver_status = SolverStatus {
+                    converged: false,
+                    residual_norm: f64::NAN,
+                    iterations: 0,
+                };
+                self.q = q0.clone();
+                self.last_good_q = q0;
+            }
         }
 
         self.driver_angle = self.driver_theta_0;
@@ -161,34 +172,39 @@ impl AppState {
     /// On failure, keeps `last_good_q` unchanged and reports the failure in
     /// `solver_status`.
     pub fn solve_at_angle(&mut self, angle_rad: f64) {
-        // Always update driver_angle to track the requested angle,
-        // even if the solver fails. This prevents the slider from
-        // re-triggering solve_at_angle every frame after a failure.
-        self.driver_angle = angle_rad;
-
-        let Some(mech) = &self.mechanism else { return };
-
-        if self.driver_omega.abs() < f64::EPSILON {
+        let Some(mech) = &self.mechanism else {
             return;
-        }
+        };
 
         // Convert driver angle to time using the constant-speed relationship:
         //   angle = theta_0 + omega * t  →  t = (angle - theta_0) / omega
         let t = (angle_rad - self.driver_theta_0) / self.driver_omega;
 
-        let result = solve_position(mech, &self.last_good_q, t, 1e-10, 50);
+        match solve_position(mech, &self.last_good_q, t, 1e-10, 50) {
+            Ok(result) => {
+                self.solver_status = SolverStatus {
+                    converged: result.converged,
+                    residual_norm: result.residual_norm,
+                    iterations: result.iterations,
+                };
 
-        self.solver_status = SolverStatus {
-            converged: result.converged,
-            residual_norm: result.residual_norm,
-            iterations: result.iterations,
-        };
-
-        if result.converged {
-            self.q = result.q.clone();
-            self.last_good_q = result.q;
+                if result.converged {
+                    self.last_good_q = result.q.clone();
+                    self.q = result.q;
+                    self.driver_angle = angle_rad;
+                }
+                // On failure, q and driver_angle are NOT updated; the UI retains the
+                // last valid pose.
+            }
+            Err(_) => {
+                self.solver_status = SolverStatus {
+                    converged: false,
+                    residual_norm: f64::NAN,
+                    iterations: 0,
+                };
+                // On error, retain last valid pose.
+            }
         }
-        // If not converged, keep last_good_q for display (spec: hold last good pose)
     }
 
     /// Returns true if a mechanism has been loaded.

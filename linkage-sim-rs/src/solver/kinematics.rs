@@ -7,6 +7,7 @@
 use nalgebra::DVector;
 
 use crate::core::mechanism::Mechanism;
+use crate::error::LinkageError;
 use crate::solver::assembly::{
     assemble_constraints, assemble_gamma, assemble_jacobian, assemble_phi_t,
 };
@@ -37,8 +38,10 @@ pub fn solve_position(
     t: f64,
     tol: f64,
     max_iter: usize,
-) -> PositionSolveResult {
-    assert!(mech.is_built(), "Mechanism must be built before solving.");
+) -> Result<PositionSolveResult, LinkageError> {
+    if !mech.is_built() {
+        return Err(LinkageError::MechanismNotBuilt);
+    }
 
     let mut q = q0.clone();
 
@@ -47,12 +50,12 @@ pub fn solve_position(
         let residual_norm = phi.norm();
 
         if residual_norm < tol {
-            return PositionSolveResult {
+            return Ok(PositionSolveResult {
                 q,
                 converged: true,
                 iterations: iteration,
                 residual_norm,
-            };
+            });
         }
 
         let phi_q = assemble_jacobian(mech, &q, t);
@@ -60,7 +63,7 @@ pub fn solve_position(
         // Solve Φ_q · Δq = −Φ via least-squares (SVD decomposition)
         let neg_phi = -phi;
         let svd = phi_q.svd(true, true);
-        let delta_q = svd.solve(&neg_phi, 1e-14).unwrap();
+        let delta_q = svd.solve(&neg_phi, 1e-14).map_err(|_| LinkageError::SvdSolveFailed)?;
         q += delta_q;
     }
 
@@ -68,26 +71,32 @@ pub fn solve_position(
     let phi = assemble_constraints(mech, &q, t);
     let residual_norm = phi.norm();
 
-    PositionSolveResult {
+    Ok(PositionSolveResult {
         q,
         converged: residual_norm < tol,
         iterations: max_iter,
         residual_norm,
-    }
+    })
 }
 
 /// Solve for velocity: Φ_q · q̇ = −Φ_t.
 ///
 /// Single linear solve (no iteration needed).
-pub fn solve_velocity(mech: &Mechanism, q: &DVector<f64>, t: f64) -> DVector<f64> {
-    assert!(mech.is_built(), "Mechanism must be built before solving.");
+pub fn solve_velocity(
+    mech: &Mechanism,
+    q: &DVector<f64>,
+    t: f64,
+) -> Result<DVector<f64>, LinkageError> {
+    if !mech.is_built() {
+        return Err(LinkageError::MechanismNotBuilt);
+    }
 
     let phi_q = assemble_jacobian(mech, q, t);
     let phi_t = assemble_phi_t(mech, q, t);
     let rhs = -phi_t;
 
     let svd = phi_q.svd(true, true);
-    svd.solve(&rhs, 1e-14).unwrap()
+    svd.solve(&rhs, 1e-14).map_err(|_| LinkageError::SvdSolveFailed)
 }
 
 /// Solve for acceleration: Φ_q · q̈ = γ.
@@ -98,14 +107,16 @@ pub fn solve_acceleration(
     q: &DVector<f64>,
     q_dot: &DVector<f64>,
     t: f64,
-) -> DVector<f64> {
-    assert!(mech.is_built(), "Mechanism must be built before solving.");
+) -> Result<DVector<f64>, LinkageError> {
+    if !mech.is_built() {
+        return Err(LinkageError::MechanismNotBuilt);
+    }
 
     let phi_q = assemble_jacobian(mech, q, t);
     let gamma = assemble_gamma(mech, q, q_dot, t);
 
     let svd = phi_q.svd(true, true);
-    svd.solve(&gamma, 1e-14).unwrap()
+    svd.solve(&gamma, 1e-14).map_err(|_| LinkageError::SvdSolveFailed)
 }
 
 #[cfg(test)]
@@ -158,7 +169,7 @@ mod tests {
         // rocker from coupler end to ground O4=(0.038, 0)
         state.set_pose("rocker", &mut q0, 0.04, 0.005, 0.5);
 
-        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
 
         assert!(
             result.converged,
@@ -178,10 +189,10 @@ mod tests {
         state.set_pose("coupler", &mut q0, 0.025, 0.0, 0.0);
         state.set_pose("rocker", &mut q0, 0.04, 0.005, 0.5);
 
-        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
         assert!(result.converged);
 
-        let q_dot = solve_velocity(&mech, &result.q, 0.0);
+        let q_dot = solve_velocity(&mech, &result.q, 0.0).unwrap();
 
         // Crank velocity: θ̇_crank should be ω = 2π (from constant speed driver)
         let crank_idx = state.get_index("crank").unwrap();
@@ -198,11 +209,11 @@ mod tests {
         state.set_pose("coupler", &mut q0, 0.025, 0.0, 0.0);
         state.set_pose("rocker", &mut q0, 0.04, 0.005, 0.5);
 
-        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
         assert!(result.converged);
 
-        let q_dot = solve_velocity(&mech, &result.q, 0.0);
-        let q_ddot = solve_acceleration(&mech, &result.q, &q_dot, 0.0);
+        let q_dot = solve_velocity(&mech, &result.q, 0.0).unwrap();
+        let q_ddot = solve_acceleration(&mech, &result.q, &q_dot, 0.0).unwrap();
 
         // Crank acceleration: θ̈_crank should be 0 (constant speed)
         let crank_idx = state.get_index("crank").unwrap();
@@ -235,7 +246,7 @@ mod tests {
         let mut q_prev = q0;
         for i in 0..n_steps {
             let t = i as f64 / n_steps as f64;
-            let result = solve_position(&mech, &q_prev, t, 1e-10, 50);
+            let result = solve_position(&mech, &q_prev, t, 1e-10, 50).unwrap();
             assert!(
                 result.converged,
                 "Failed at step {} (t={}), residual = {}",

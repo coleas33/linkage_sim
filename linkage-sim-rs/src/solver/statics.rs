@@ -6,6 +6,7 @@
 use nalgebra::DVector;
 
 use crate::core::mechanism::Mechanism;
+use crate::error::LinkageError;
 use crate::forces::assembly::assemble_q;
 use crate::forces::gravity::Gravity;
 use crate::solver::assembly::assemble_jacobian;
@@ -35,8 +36,10 @@ pub fn solve_statics(
     q: &DVector<f64>,
     gravity: Option<&Gravity>,
     t: f64,
-) -> StaticSolveResult {
-    assert!(mech.is_built(), "Mechanism must be built before static solve.");
+) -> Result<StaticSolveResult, LinkageError> {
+    if !mech.is_built() {
+        return Err(LinkageError::MechanismNotBuilt);
+    }
 
     let state = mech.state();
 
@@ -75,19 +78,21 @@ pub fn solve_statics(
     };
 
     // Solve Φ_q^T · λ = rhs using the already-computed SVD
-    let lambdas = svd_t.solve(&rhs, 1e-14).unwrap();
+    let lambdas = svd_t
+        .solve(&rhs, 1e-14)
+        .map_err(|_| LinkageError::SvdSolveFailed)?;
 
     // Compute residual
     let residual = &phi_q_t * &lambdas + &q_forces;
     let residual_norm = residual.norm();
 
-    StaticSolveResult {
+    Ok(StaticSolveResult {
         lambdas,
         q_forces,
         residual_norm,
         is_overconstrained,
         condition_number,
-    }
+    })
 }
 
 /// Reaction data for a single joint or driver.
@@ -114,11 +119,10 @@ pub struct JointReaction {
 /// Maps rows of the λ vector back to each joint/driver constraint.
 pub fn extract_reactions(mech: &Mechanism, result: &StaticSolveResult) -> Vec<JointReaction> {
     let mut reactions = Vec::new();
-    let mut row = 0;
 
-    for constraint in mech.all_constraints() {
-        let n_eq = constraint.n_equations();
-        let lam = result.lambdas.rows(row, n_eq).clone_owned();
+    for (constraint, range) in mech.all_constraints().iter().zip(mech.constraint_ranges()) {
+        let n_eq = range.n_equations;
+        let lam = result.lambdas.rows(range.row_start, n_eq).clone_owned();
 
         let (force_global, moment, effort, resultant) = match n_eq {
             2 => {
@@ -154,8 +158,6 @@ pub fn extract_reactions(mech: &Mechanism, result: &StaticSolveResult) -> Vec<Jo
             effort,
             resultant,
         });
-
-        row += n_eq;
     }
 
     reactions
@@ -227,10 +229,10 @@ mod tests {
         state.set_pose("coupler", &mut q0, bx, by, 0.0);
         state.set_pose("rocker", &mut q0, 4.0, 0.0, PI / 2.0);
 
-        let pos = solve_position(&mech, &q0, angle, 1e-10, 50);
+        let pos = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
         assert!(pos.converged);
 
-        let result = solve_statics(&mech, &pos.q, Some(&gravity), angle);
+        let result = solve_statics(&mech, &pos.q, Some(&gravity), angle).unwrap();
         assert!(result.residual_norm < 1e-8, "residual = {}", result.residual_norm);
     }
 
@@ -245,10 +247,10 @@ mod tests {
         state.set_pose("coupler", &mut q0, angle.cos(), angle.sin(), 0.0);
         state.set_pose("rocker", &mut q0, 4.0, 0.0, PI / 2.0);
 
-        let pos = solve_position(&mech, &q0, angle, 1e-10, 50);
+        let pos = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
         assert!(pos.converged);
 
-        let statics = solve_statics(&mech, &pos.q, Some(&gravity), angle);
+        let statics = solve_statics(&mech, &pos.q, Some(&gravity), angle).unwrap();
         let reactions = extract_reactions(&mech, &statics);
 
         // 4 joints + 1 driver = 5 reactions

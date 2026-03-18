@@ -153,7 +153,7 @@ fn fourbar_kinematics_matches_golden() {
     for (step_idx, step) in golden.steps.iter().enumerate() {
         let angle = step.input_angle_rad;
         let q0 = fourbar_initial_guess(&mech, angle);
-        let result = solve_position(&mech, &q0, angle, 1e-10, 50);
+        let result = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
 
         assert!(
             result.converged,
@@ -175,7 +175,7 @@ fn fourbar_kinematics_matches_golden() {
         );
 
         // Compare velocity
-        let q_dot = solve_velocity(&mech, &result.q, angle);
+        let q_dot = solve_velocity(&mech, &result.q, angle).unwrap();
         let q_dot_golden = DVector::from_column_slice(&step.q_dot);
         let q_dot_diff = (&q_dot - &q_dot_golden).norm();
         assert!(
@@ -188,7 +188,7 @@ fn fourbar_kinematics_matches_golden() {
 
         // Compare acceleration (looser tolerance near singular configurations —
         // lstsq vs SVD give slightly different results near toggle points)
-        let q_ddot = solve_acceleration(&mech, &result.q, &q_dot, angle);
+        let q_ddot = solve_acceleration(&mech, &result.q, &q_dot, angle).unwrap();
         let q_ddot_golden = DVector::from_column_slice(&step.q_ddot);
         let q_ddot_diff = (&q_ddot - &q_ddot_golden).norm();
         assert!(
@@ -209,7 +209,7 @@ fn slidercrank_kinematics_matches_golden() {
     for (step_idx, step) in golden.steps.iter().enumerate() {
         let angle = step.input_angle_rad;
         let q0 = slidercrank_initial_guess(&mech, angle);
-        let result = solve_position(&mech, &q0, angle, 1e-10, 50);
+        let result = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
 
         assert!(
             result.converged,
@@ -231,7 +231,7 @@ fn slidercrank_kinematics_matches_golden() {
         );
 
         // Compare velocity
-        let q_dot = solve_velocity(&mech, &result.q, angle);
+        let q_dot = solve_velocity(&mech, &result.q, angle).unwrap();
         let q_dot_golden = DVector::from_column_slice(&step.q_dot);
         let q_dot_diff = (&q_dot - &q_dot_golden).norm();
         assert!(
@@ -243,7 +243,7 @@ fn slidercrank_kinematics_matches_golden() {
         );
 
         // Compare acceleration
-        let q_ddot = solve_acceleration(&mech, &result.q, &q_dot, angle);
+        let q_ddot = solve_acceleration(&mech, &result.q, &q_dot, angle).unwrap();
         let q_ddot_golden = DVector::from_column_slice(&step.q_ddot);
         let q_ddot_diff = (&q_ddot - &q_ddot_golden).norm();
         assert!(
@@ -319,10 +319,10 @@ fn fourbar_statics_matches_golden() {
     for (step_idx, step) in golden.steps.iter().enumerate() {
         let angle = step.input_angle_rad;
         let q0 = fourbar_initial_guess(&mech, angle);
-        let pos = solve_position(&mech, &q0, angle, 1e-10, 50);
+        let pos = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
         assert!(pos.converged, "Position solve failed at step {}", step_idx);
 
-        let result = solve_statics(&mech, &pos.q, Some(&gravity), angle);
+        let result = solve_statics(&mech, &pos.q, Some(&gravity), angle).unwrap();
 
         // Compare lambdas (looser near singular configs at toggle points)
         let lam_golden = DVector::from_column_slice(&step.lambdas);
@@ -389,10 +389,10 @@ fn slidercrank_statics_matches_golden() {
     for (step_idx, step) in golden.steps.iter().enumerate() {
         let angle = step.input_angle_rad;
         let q0 = slidercrank_initial_guess(&mech, angle);
-        let pos = solve_position(&mech, &q0, angle, 1e-10, 50);
+        let pos = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
         assert!(pos.converged, "Position solve failed at step {}", step_idx);
 
-        let result = solve_statics(&mech, &pos.q, Some(&gravity), angle);
+        let result = solve_statics(&mech, &pos.q, Some(&gravity), angle).unwrap();
 
         // Compare lambdas
         let lam_golden = DVector::from_column_slice(&step.lambdas);
@@ -448,13 +448,13 @@ fn fourbar_inverse_dynamics_matches_golden() {
     for (step_idx, step) in golden.steps.iter().enumerate() {
         let angle = step.input_angle_rad;
         let q0 = fourbar_initial_guess(&mech, angle);
-        let pos = solve_position(&mech, &q0, angle, 1e-10, 50);
+        let pos = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
         assert!(pos.converged, "Position solve failed at step {}", step_idx);
 
-        let q_dot = solve_velocity(&mech, &pos.q, angle);
-        let q_ddot = solve_acceleration(&mech, &pos.q, &q_dot, angle);
+        let q_dot = solve_velocity(&mech, &pos.q, angle).unwrap();
+        let q_ddot = solve_acceleration(&mech, &pos.q, &q_dot, angle).unwrap();
 
-        let result = solve_inverse_dynamics(&mech, &pos.q, &q_dot, &q_ddot, Some(&gravity), angle);
+        let result = solve_inverse_dynamics(&mech, &pos.q, &q_dot, &q_ddot, Some(&gravity), angle).unwrap();
 
         // Compare Q (generalized forces -- should match closely)
         let q_golden = DVector::from_column_slice(&step.q_forces);
@@ -537,13 +537,13 @@ fn slidercrank_inverse_dynamics_matches_golden() {
     for (step_idx, step) in golden.steps.iter().enumerate() {
         let angle = step.input_angle_rad;
         let q0 = slidercrank_initial_guess(&mech, angle);
-        let pos = solve_position(&mech, &q0, angle, 1e-10, 50);
+        let pos = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
         assert!(pos.converged, "Position solve failed at step {}", step_idx);
 
-        let q_dot = solve_velocity(&mech, &pos.q, angle);
-        let q_ddot = solve_acceleration(&mech, &pos.q, &q_dot, angle);
+        let q_dot = solve_velocity(&mech, &pos.q, angle).unwrap();
+        let q_ddot = solve_acceleration(&mech, &pos.q, &q_dot, angle).unwrap();
 
-        let result = solve_inverse_dynamics(&mech, &pos.q, &q_dot, &q_ddot, Some(&gravity), angle);
+        let result = solve_inverse_dynamics(&mech, &pos.q, &q_dot, &q_ddot, Some(&gravity), angle).unwrap();
 
         // Compare Q
         let q_golden = DVector::from_column_slice(&step.q_forces);
@@ -671,7 +671,7 @@ fn pendulum_dynamics_matches_golden() {
         Some(&gravity),
         Some(&config),
         Some(&t_eval),
-    );
+    ).unwrap();
     assert!(result.success, "Simulation failed: {}", result.message);
     assert_eq!(result.t.len(), golden.steps.len());
 
@@ -740,7 +740,7 @@ fn pendulum_dynamics_energy_conservation() {
         Some(&gravity),
         Some(&config),
         Some(&t_eval),
-    );
+    ).unwrap();
     assert!(result.success);
 
     let g_mag = 9.81;

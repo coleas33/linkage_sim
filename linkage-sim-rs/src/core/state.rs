@@ -88,6 +88,15 @@ impl State {
             .ok_or_else(|| StateError::UnknownBody(body_id.to_string()))
     }
 
+    /// Returns the half-open range `(start, end_exclusive)` of indices in q
+    /// for the given body's 3-element coordinate block `[x, y, theta]`.
+    ///
+    /// Ground has no state entries and returns an error.
+    pub fn body_coord_range(&self, body_id: &str) -> Result<(usize, usize), StateError> {
+        let idx = self.get_index(body_id)?;
+        Ok((idx.q_start, idx.q_start + 3))
+    }
+
     pub fn is_ground(&self, body_id: &str) -> bool {
         body_id == GROUND_ID
     }
@@ -346,5 +355,34 @@ mod tests {
         state.register_body("rocker").unwrap();
         let ids = state.body_ids();
         assert_eq!(ids, vec!["coupler", "crank", "rocker"]);
+    }
+
+    #[test]
+    fn body_coord_range_basic() {
+        // Register 3 bodies, verify ranges are [0,3), [3,6), [6,9).
+        let mut state = State::new();
+        state.register_body("alpha").unwrap();
+        state.register_body("beta").unwrap();
+        state.register_body("gamma").unwrap();
+
+        let (s0, e0) = state.body_coord_range("alpha").unwrap();
+        assert_eq!(s0, 0);
+        assert_eq!(e0, 3);
+
+        let (s1, e1) = state.body_coord_range("beta").unwrap();
+        assert_eq!(s1, 3);
+        assert_eq!(e1, 6);
+
+        let (s2, e2) = state.body_coord_range("gamma").unwrap();
+        assert_eq!(s2, 6);
+        assert_eq!(e2, 9);
+    }
+
+    #[test]
+    fn body_coord_range_ground_errors() {
+        // Ground has no state entries; body_coord_range should return an error.
+        let state = State::new();
+        let result = state.body_coord_range("ground");
+        assert!(result.is_err());
     }
 }

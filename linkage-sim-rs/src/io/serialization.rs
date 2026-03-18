@@ -598,7 +598,7 @@ mod tests {
         state.set_pose("coupler", &mut q0, angle.cos(), angle.sin(), 0.0);
         state.set_pose("rocker", &mut q0, 4.0, 0.0, PI / 2.0);
 
-        let result = solve_position(&mech, &q0, angle, 1e-10, 50);
+        let result = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
         assert!(
             result.converged,
             "Kinematics solve on loaded 4-bar did not converge, residual = {}",
@@ -629,7 +629,7 @@ mod tests {
         state.set_pose("conrod", &mut q0, bx, by, phi);
         state.set_pose("slider", &mut q0, cx, 0.0, 0.0);
 
-        let result = solve_position(&mech, &q0, angle, 1e-10, 50);
+        let result = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
         assert!(
             result.converged,
             "Slider-crank solve on loaded mechanism did not converge, residual = {}",
