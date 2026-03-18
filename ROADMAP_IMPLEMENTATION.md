@@ -32,7 +32,7 @@ See `ROADMAP.md` for the full phase plan and exit criteria.
 | 20 | Graph connectivity check | Done | `analysis/validation.py` | `test_validation.py` (12 new tests, BFS from ground, disconnected detection, component count) |
 | 21 | Ternary body test (6-bar) | Done | `test_sixbar_ternary.py` | 27 tests: Watt I 6-bar, ternary link, DOF, position/vel/accel FD, sweep, internal distances |
 
-**Total tests:** 368 passing | **mypy:** strict, clean
+**Total tests:** 391 passing | **mypy:** strict, clean
 
 ---
 
@@ -42,3 +42,30 @@ All 21 steps of Phase 1 are implemented. The simulator handles 4-bar, slider-cra
 and 6-bar (with ternary links) mechanisms with full kinematic analysis: position,
 velocity, acceleration, coupler point tracking, DOF validation, Jacobian rank analysis,
 graph connectivity, JSON serialization, and Matplotlib visualization/animation.
+
+---
+
+## Phase 2 — Force Elements & Static Analysis
+
+| Step | Description | Status | Key files | Tests |
+|------|-------------|--------|-----------|-------|
+| 1 | ForceElement protocol + generalized force helpers + Q assembly | Done | `forces/protocol.py`, `forces/helpers.py`, `forces/assembly.py` | `test_force_helpers.py` (23 tests: point_force_to_Q, body_torque_to_Q, gravity_to_Q, assemble_Q, virtual work consistency) |
+| 2 | Gravity force element | | | |
+| 3 | Linear spring force element | | | |
+| 4 | Torsion spring at revolute joints | | | |
+| 5 | Static force solver (Φ_qᵀ λ = −Q) | | | |
+| 6 | Driver and joint reaction extraction | | | |
+| 7 | Grashof condition check | | | |
+| 8 | Transmission angle computation | | | |
+| 9 | External load force element | | | |
+| 10 | Coulomb friction (regularized) | | | |
+| 11 | PointMass element + composite mass recomputation | | | |
+| 12 | Virtual work cross-check | | | |
+| 13 | Mechanical advantage computation | | | |
+| 14 | Pressure angle | | | |
+| 15 | Toggle/dead point detection | | | |
+| 16 | Result envelopes (peak, RMS, min/max) | | | |
+| 17 | Force-related plotting | | | |
+| 18 | Benchmark: 4-bar with gravity | | | |
+| 19 | Benchmark: 4-bar with spring | | | |
+| 20 | Benchmark: slider-crank with friction | | | |
