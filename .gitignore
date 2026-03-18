@@ -38,8 +38,8 @@ Desktop.ini
 .env.*
 !.env.template
 
-# Golden test fixtures (generated, not committed until stable)
-data/benchmarks/golden/
+# Golden test fixtures — committed after Phase 4 completion for Rust port
+# data/benchmarks/golden/  # now tracked
 *.zip
 settings.json
 settings.local.json

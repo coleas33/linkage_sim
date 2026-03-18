@@ -168,3 +168,28 @@ event detection for zero-crossings. Benchmarks verify correct stop behavior, ene
 dissipation, and amplitude decay.
 
 **Total tests:** 615 passing | **mypy:** strict, clean
+
+---
+
+## Phase 4 Exit Gate — Golden Test Fixtures
+
+| Step | Description | Status | Key files | Tests |
+|------|-------------|--------|-----------|-------|
+| 1 | Golden fixture export script | Done | `scripts/export_golden.py` | Generates all 6 fixture files |
+| 2 | Golden fixture: 4-bar kinematics | Done | `data/benchmarks/golden/fourbar_kinematics.json` | 61 steps, q/q_dot/q_ddot + coupler point |
+| 3 | Golden fixture: slider-crank kinematics | Done | `data/benchmarks/golden/slidercrank_kinematics.json` | 67 steps |
+| 4 | Golden fixture: 6-bar kinematics | Done | `data/benchmarks/golden/sixbar_kinematics.json` | 25 steps |
+| 5 | Golden fixture: 4-bar statics (gravity) | Done | `data/benchmarks/golden/fourbar_statics.json` | 61 steps, λ + reactions |
+| 6 | Golden fixture: 4-bar inverse dynamics | Done | `data/benchmarks/golden/fourbar_inverse_dynamics.json` | 61 steps, λ + M*q̈ |
+| 7 | Golden fixture: pendulum forward dynamics | Done | `data/benchmarks/golden/pendulum_dynamics.json` | 250 steps, trajectory + energy |
+| 8 | Golden fixture comparison tests | Done | `test_golden_fixtures.py` | 10 tests: position, velocity, acceleration, coupler, statics, inverse dynamics, dynamics |
+
+---
+
+## Phase 4 Exit Gate Complete
+
+All golden test fixtures exported to `data/benchmarks/golden/`. The Python solver is
+validated across all analysis modes with 625 tests. Golden fixture comparison tests verify
+reproducibility. This satisfies the entry criteria for the Rust port.
+
+**Total tests:** 625 passing | **mypy:** strict, clean
