@@ -12,7 +12,9 @@ use serde::Deserialize;
 
 use linkage_sim_rs::core::body::{make_bar, make_ground, Body};
 use linkage_sim_rs::core::mechanism::Mechanism;
+use linkage_sim_rs::forces::gravity::Gravity;
 use linkage_sim_rs::solver::kinematics::{solve_acceleration, solve_position, solve_velocity};
+use linkage_sim_rs::solver::statics::{extract_reactions, get_driver_reactions, solve_statics};
 
 // ---------------------------------------------------------------------------
 // JSON schema for golden fixture files
@@ -247,6 +249,166 @@ fn slidercrank_kinematics_matches_golden() {
             step_idx,
             angle.to_degrees(),
             q_ddot_diff,
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Statics golden fixture schemas
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct GoldenStatics {
+    steps: Vec<StaticsStep>,
+}
+
+#[derive(Deserialize)]
+struct StaticsStep {
+    input_angle_rad: f64,
+    lambdas: Vec<f64>,
+    #[serde(rename = "Q")]
+    q_forces: Vec<f64>,
+    driver_torque: f64,
+}
+
+fn load_golden_statics(filename: &str) -> GoldenStatics {
+    let path = golden_path(filename);
+    let data = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
+    serde_json::from_str(&data).unwrap()
+}
+
+fn build_fourbar_gravity() -> (Mechanism, Gravity) {
+    let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
+    let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
+    let mut coupler = make_bar("coupler", "B", "C", 3.0, 3.0, 0.05);
+    coupler.add_coupler_point("P", 1.5, 0.5).unwrap();
+    let rocker = make_bar("rocker", "D", "C", 2.0, 2.0, 0.02);
+
+    let mut bodies = std::collections::HashMap::new();
+    bodies.insert("ground".to_string(), ground.clone());
+    bodies.insert("crank".to_string(), crank.clone());
+    bodies.insert("coupler".to_string(), coupler.clone());
+    bodies.insert("rocker".to_string(), rocker.clone());
+
+    let mut mech = Mechanism::new();
+    mech.add_body(ground).unwrap();
+    mech.add_body(crank).unwrap();
+    mech.add_body(coupler).unwrap();
+    mech.add_body(rocker).unwrap();
+    mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+    mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+    mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+    mech.add_revolute_joint("J4", "ground", "O4", "rocker", "D").unwrap();
+    mech.add_revolute_driver("D1", "ground", "crank", |t| t, |_t| 1.0, |_t| 0.0)
+        .unwrap();
+    mech.build().unwrap();
+
+    let gravity = Gravity::new(Vector2::new(0.0, -9.81), &bodies);
+    (mech, gravity)
+}
+
+#[test]
+fn fourbar_statics_matches_golden() {
+    let golden = load_golden_statics("fourbar_statics.json");
+    let (mech, gravity) = build_fourbar_gravity();
+
+    for (step_idx, step) in golden.steps.iter().enumerate() {
+        let angle = step.input_angle_rad;
+        let q0 = fourbar_initial_guess(&mech, angle);
+        let pos = solve_position(&mech, &q0, angle, 1e-10, 50);
+        assert!(pos.converged, "Position solve failed at step {}", step_idx);
+
+        let result = solve_statics(&mech, &pos.q, Some(&gravity), angle);
+
+        // Compare lambdas (looser near singular configs at toggle points)
+        let lam_golden = DVector::from_column_slice(&step.lambdas);
+        let lam_diff = (&result.lambdas - &lam_golden).norm();
+        assert!(
+            lam_diff < 0.5,
+            "4-bar λ mismatch at step {} (angle={:.1} deg): ‖Δλ‖={:e}",
+            step_idx, angle.to_degrees(), lam_diff,
+        );
+
+        // Compare Q (generalized forces — should match exactly)
+        let q_golden = DVector::from_column_slice(&step.q_forces);
+        let q_diff = (&result.q_forces - &q_golden).norm();
+        assert!(
+            q_diff < 1e-8,
+            "4-bar Q mismatch at step {} (angle={:.1} deg): ‖ΔQ‖={:e}",
+            step_idx, angle.to_degrees(), q_diff,
+        );
+
+        // Compare driver torque (looser near singular configs)
+        let reactions = extract_reactions(&mech, &result);
+        let drivers = get_driver_reactions(&reactions);
+        assert_eq!(drivers.len(), 1);
+        let torque_diff = (drivers[0].effort - step.driver_torque).abs();
+        assert!(
+            torque_diff < 0.5,
+            "4-bar driver torque mismatch at step {} (angle={:.1} deg): Δτ={:e}",
+            step_idx, angle.to_degrees(), torque_diff,
+        );
+    }
+}
+
+#[test]
+fn slidercrank_statics_matches_golden() {
+    let golden = load_golden_statics("slidercrank_statics.json");
+
+    let ground = make_ground(&[("O2", 0.0, 0.0), ("rail", 3.0, 0.0)]);
+    let crank = make_bar("crank", "A", "B", 1.0, 1.0, 0.01);
+    let conrod = make_bar("conrod", "B", "C", 3.0, 2.0, 0.1);
+    let mut slider = Body::new("slider");
+    slider.add_attachment_point("C", 0.0, 0.0).unwrap();
+    slider.mass = 0.5;
+
+    let mut bodies = std::collections::HashMap::new();
+    bodies.insert("ground".to_string(), ground.clone());
+    bodies.insert("crank".to_string(), crank.clone());
+    bodies.insert("conrod".to_string(), conrod.clone());
+    bodies.insert("slider".to_string(), slider.clone());
+
+    let mut mech = Mechanism::new();
+    mech.add_body(ground).unwrap();
+    mech.add_body(crank).unwrap();
+    mech.add_body(conrod).unwrap();
+    mech.add_body(slider).unwrap();
+    mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+    mech.add_revolute_joint("J2", "crank", "B", "conrod", "B").unwrap();
+    mech.add_revolute_joint("J3", "conrod", "C", "slider", "C").unwrap();
+    mech.add_prismatic_joint("P1", "ground", "rail", "slider", "C", Vector2::new(1.0, 0.0), 0.0).unwrap();
+    mech.add_revolute_driver("D1", "ground", "crank", |t| t, |_t| 1.0, |_t| 0.0).unwrap();
+    mech.build().unwrap();
+
+    let gravity = Gravity::new(Vector2::new(0.0, -9.81), &bodies);
+
+    for (step_idx, step) in golden.steps.iter().enumerate() {
+        let angle = step.input_angle_rad;
+        let q0 = slidercrank_initial_guess(&mech, angle);
+        let pos = solve_position(&mech, &q0, angle, 1e-10, 50);
+        assert!(pos.converged, "Position solve failed at step {}", step_idx);
+
+        let result = solve_statics(&mech, &pos.q, Some(&gravity), angle);
+
+        // Compare lambdas
+        let lam_golden = DVector::from_column_slice(&step.lambdas);
+        let lam_diff = (&result.lambdas - &lam_golden).norm();
+        assert!(
+            lam_diff < 1e-4,
+            "Slider-crank λ mismatch at step {} (angle={:.1} deg): ‖Δλ‖={:e}",
+            step_idx, angle.to_degrees(), lam_diff,
+        );
+
+        // Compare driver torque
+        let reactions = extract_reactions(&mech, &result);
+        let drivers = get_driver_reactions(&reactions);
+        assert_eq!(drivers.len(), 1);
+        let torque_diff = (drivers[0].effort - step.driver_torque).abs();
+        assert!(
+            torque_diff < 1e-4,
+            "Slider-crank driver torque mismatch at step {} (angle={:.1} deg): Δτ={:e}",
+            step_idx, angle.to_degrees(), torque_diff,
         );
     }
 }

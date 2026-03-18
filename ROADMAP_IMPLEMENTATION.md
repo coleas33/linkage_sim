@@ -193,3 +193,39 @@ validated across all analysis modes with 625 tests. Golden fixture comparison te
 reproducibility. This satisfies the entry criteria for the Rust port.
 
 **Total tests:** 625 passing | **mypy:** strict, clean
+
+---
+
+## Crank Selection Analysis & Viewer Fixes
+
+| Step | Description | Status | Key files | Tests |
+|------|-------------|--------|-----------|-------|
+| 1 | Crank selection analysis module | Done | `analysis/crank_selection.py` | `test_crank_selection.py` (14 tests: topology detection, Grashof recommendation, numerical probing) |
+| 2 | Build-time warning for suboptimal crank | Done | `core/mechanism.py` | `test_crank_selection.py` (3 tests: warns on suboptimal, silent on optimal, silent on non-4-bar) |
+| 3 | Sweep failure warning (>10% failures) | Done | `viz/interactive_viewer.py` | `test_crank_selection.py` (1 test: non-Grashof triggers warning) |
+| 4 | DRY refactor: `_detect_fourbar_link_lengths` | Done | `viz/interactive_viewer.py` | Uses `detect_fourbar_topology` from analysis module |
+| 5 | Fix 4-bar viewers (geometric q0) | Done | `scripts/view_crank_rocker.py`, `scripts/view_double_crank.py` | 360/360 convergence |
+| 6 | Resize 6-bar viewers for full rotation | Done | `scripts/view_sixbar*.py` (5 files) | 360/360 convergence |
+
+### Crank Selection API
+
+The `analysis.crank_selection` module provides:
+
+- **`recommend_crank_fourbar(mechanism)`** — Grashof-based ranking of ground-adjacent
+  links by rotation capability. Returns `list[CrankRecommendation]`, best first.
+  For Grashof crank-rocker, the shortest grounded link gets 360 degrees.
+
+- **`estimate_driven_range(mechanism, q0)`** — Numerical probing for any mechanism
+  topology. Solves at 72 evenly spaced angles and reports estimated range in degrees.
+
+- **`detect_fourbar_topology(mechanism)`** — Returns `FourbarTopology` dataclass or
+  None. Identifies ground-adjacent bodies, coupler, link lengths, and current driver.
+
+### Override Pattern
+
+The user can always override the crank selection by specifying their own revolute
+driver. The analysis functions and build-time warnings are advisory, not prescriptive.
+If limited rotation range is intentional (e.g., `view_double_rocker.py`), the user
+specifies their own driver and the warning can be suppressed with `warnings.filterwarnings`.
+
+**Total tests:** 1078 passing | **mypy:** strict, clean
