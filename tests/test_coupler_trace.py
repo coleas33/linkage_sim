@@ -118,3 +118,76 @@ class TestMultiCouplerTrace:
             mech.build()
             sweep = precompute_sweep(mech, [], n_steps=36)
         assert len(sweep.coupler_traces) == 0
+
+
+class TestAddTracePoint:
+    """Mechanism.add_trace_point() attaches arbitrary trace points to bodies."""
+
+    def test_adds_trace_point_to_body(self) -> None:
+        mech = Mechanism()
+        ground = make_ground(O2=(0.0, 0.0), O4=(4.0, 0.0))
+        crank = make_bar("crank", "A", "B", length=2.0, mass=0.5)
+        mech.add_body(ground)
+        mech.add_body(crank)
+        mech.add_trace_point("TP1", "crank", 1.0, 0.5)
+        assert "TP1" in mech.bodies["crank"].coupler_points
+        pt = mech.bodies["crank"].coupler_points["TP1"]
+        assert pt[0] == pytest.approx(1.0)
+        assert pt[1] == pytest.approx(0.5)
+
+    def test_trace_point_on_ground_raises(self) -> None:
+        mech = Mechanism()
+        ground = make_ground(O2=(0.0, 0.0))
+        mech.add_body(ground)
+        with pytest.raises(ValueError, match="ground"):
+            mech.add_trace_point("TP1", "ground", 0.0, 0.0)
+
+    def test_trace_point_unknown_body_raises(self) -> None:
+        mech = Mechanism()
+        ground = make_ground(O2=(0.0, 0.0))
+        mech.add_body(ground)
+        with pytest.raises(KeyError):
+            mech.add_trace_point("TP1", "nonexistent", 0.0, 0.0)
+
+    def test_trace_point_after_build_raises(self) -> None:
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            mech = Mechanism()
+            ground = make_ground(O2=(0.0, 0.0))
+            crank = make_bar("crank", "A", "B", length=2.0)
+            mech.add_body(ground)
+            mech.add_body(crank)
+            mech.build()
+        with pytest.raises(RuntimeError):
+            mech.add_trace_point("TP1", "crank", 1.0, 0.0)
+
+    def test_trace_points_appear_in_sweep(self) -> None:
+        """Trace points added via add_trace_point show up in sweep traces."""
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            mech = Mechanism()
+            ground = make_ground(O2=(0.0, 0.0), O4=(4.0, 0.0))
+            crank = make_bar("crank", "A", "B", length=2.0, mass=0.5)
+            coupler = make_bar("coupler", "B", "C", length=4.0, mass=1.0)
+            rocker = make_bar("rocker", "D", "C", length=3.0, mass=0.8)
+            mech.add_body(ground)
+            mech.add_body(crank)
+            mech.add_body(coupler)
+            mech.add_body(rocker)
+            mech.add_revolute_joint("J1", "ground", "O2", "crank", "A")
+            mech.add_revolute_joint("J2", "crank", "B", "coupler", "B")
+            mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C")
+            mech.add_revolute_joint("J4", "ground", "O4", "rocker", "D")
+            mech.add_trace_point("T1", "crank", 1.5, 0.2)
+            mech.add_trace_point("T2", "rocker", 1.0, -0.3)
+            mech.add_revolute_driver(
+                "D1", "ground", "crank",
+                f=lambda t: t, f_dot=lambda t: 1.0, f_ddot=lambda t: 0.0,
+            )
+            mech.build()
+            sweep = precompute_sweep(mech, [], n_steps=36)
+        assert len(sweep.coupler_traces) == 2
+        body_ids = {t.body_id for t in sweep.coupler_traces}
+        assert body_ids == {"crank", "rocker"}

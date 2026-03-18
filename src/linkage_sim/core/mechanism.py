@@ -241,6 +241,45 @@ class Mechanism:
         )
         self._joints.append(driver)
 
+    def add_trace_point(
+        self,
+        name: str,
+        body_id: str,
+        x: float,
+        y: float,
+    ) -> None:
+        """Add a trace point to a body for path tracking during sweeps.
+
+        Trace points are rigidly attached to the specified body at the given
+        local coordinates. During a sweep, the viewer traces their global
+        path. Multiple trace points can be added to different bodies.
+
+        This is a convenience wrapper around Body.add_coupler_point().
+        The user can also call body.add_coupler_point() directly.
+
+        Args:
+            name: Unique name for the trace point.
+            body_id: ID of the body to attach to (must not be ground).
+            x: X coordinate in body-local frame.
+            y: Y coordinate in body-local frame.
+
+        Raises:
+            RuntimeError: If called after build().
+            ValueError: If body_id is ground.
+            KeyError: If body_id not found.
+        """
+        if self._built:
+            raise RuntimeError("Cannot add trace points after build().")
+
+        if body_id == GROUND_ID:
+            raise ValueError(
+                "Cannot add trace points to ground. "
+                "Trace points must be on moving bodies."
+            )
+
+        body = self._get_body(body_id)
+        body.add_coupler_point(name, x, y)
+
     def build(self) -> None:
         """Finalize the mechanism: register moving bodies in the state vector.
 
