@@ -21,13 +21,13 @@ Graph definition (type B3 -- Chain B, exclusive-binary ground):
     Ground neighbors: T1, B4 (ground adjacent to ONE ternary only)
     Driver: ground-T1 (J1) -- drive ternary T1 relative to ground
 
-Dimensions:
-    Ground pivots: O2=(0,0), O4=(6,0)
-    T1 (ternary, driven): P1=(0,0), P2=(2.5,0), P3=(1.2,1.0) at O2
-    B1 (binary): length=2.5
-    T2 (ternary): Q1=(0,0), Q2=(2.5,0), Q3=(1.2,-1.0)
-    B2 (binary): length=2.5
-    B4 (binary): length=2.5
+Dimensions (Grashof-compliant for full crank rotation):
+    Ground pivots: O2=(0,0), O4=(2.5,0)
+    T1 (ternary, driven): P1=(0,0), P2=(1.0,0), P3=(0.5,0.5) at O2
+    B1 (binary): length=2.0
+    T2 (ternary): Q1=(0,0), Q2=(1.5,0), Q3=(0.8,-0.6)
+    B2 (binary): length=2.0
+    B4 (binary): length=2.0
 
     DOF: 3*5 - 2*7 - 1 = 0 (Grubler, with driver)
 """
@@ -65,21 +65,21 @@ def _make_ternary(
 def build_B3_with_gravity() -> tuple[Mechanism, list, np.ndarray]:
     mech = Mechanism()
 
-    ground = make_ground(O2=(0.0, 0.0), O4=(6.0, 0.0))
+    ground = make_ground(O2=(0.0, 0.0), O4=(2.5, 0.0))
 
     t1 = _make_ternary("t1", "P1", "P2", "P3",
-                        p2_local=(2.5, 0.0), p3_local=(1.2, 1.0),
+                        p2_local=(1.0, 0.0), p3_local=(0.5, 0.5),
                         mass=1.2, Izz_cg=0.08)
-    t1.add_coupler_point("CP", 1.25, 0.5)
+    t1.add_coupler_point("CP", 0.5, 0.25)
 
-    b1 = make_bar("b1", "B1A", "B1B", length=2.5, mass=0.6, Izz_cg=0.02)
+    b1 = make_bar("b1", "B1A", "B1B", length=2.0, mass=0.6, Izz_cg=0.02)
 
     t2 = _make_ternary("t2", "Q1", "Q2", "Q3",
-                        p2_local=(2.5, 0.0), p3_local=(1.2, -1.0),
+                        p2_local=(1.5, 0.0), p3_local=(0.8, -0.6),
                         mass=1.2, Izz_cg=0.08)
 
-    b2 = make_bar("b2", "B2A", "B2B", length=2.5, mass=0.6, Izz_cg=0.02)
-    b4 = make_bar("b4", "B4A", "B4B", length=2.5, mass=0.6, Izz_cg=0.02)
+    b2 = make_bar("b2", "B2A", "B2B", length=2.0, mass=0.6, Izz_cg=0.02)
+    b4 = make_bar("b4", "B4A", "B4B", length=2.0, mass=0.6, Izz_cg=0.02)
 
     mech.add_body(ground)
     mech.add_body(t1)
@@ -109,36 +109,36 @@ def build_B3_with_gravity() -> tuple[Mechanism, list, np.ndarray]:
 
 
 def _find_initial(mech: Mechanism) -> np.ndarray:
-    angle = 0.5
+    angle = 0.3
     q = mech.state.make_q()
 
     # T1 at O2, driven
     mech.state.set_pose("t1", q, 0.0, 0.0, angle)
     ct1, st1 = np.cos(angle), np.sin(angle)
-    p2x, p2y = 2.5 * ct1, 2.5 * st1
-    p3x, p3y = 1.2 * ct1 - 1.0 * st1, 1.2 * st1 + 1.0 * ct1
+    p2x, p2y = 1.0 * ct1, 1.0 * st1
+    p3x, p3y = 0.5 * ct1 - 0.5 * st1, 0.5 * st1 + 0.5 * ct1
 
     # B1: from T1 P2, pointing toward the middle
     theta_b1 = angle + 0.8
     mech.state.set_pose("b1", q, p2x, p2y, theta_b1)
-    b1ex = p2x + 2.5 * np.cos(theta_b1)
-    b1ey = p2y + 2.5 * np.sin(theta_b1)
+    b1ex = p2x + 2.0 * np.cos(theta_b1)
+    b1ey = p2y + 2.0 * np.sin(theta_b1)
 
     # T2: Q1 at B1 end
     theta_t2 = theta_b1 + 0.5
     mech.state.set_pose("t2", q, b1ex, b1ey, theta_t2)
     ct2, st2 = np.cos(theta_t2), np.sin(theta_t2)
-    q2x = b1ex + 2.5 * ct2
-    q2y = b1ey + 2.5 * st2
-    q3x = b1ex + 1.2 * ct2 - (-1.0) * st2
-    q3y = b1ey + 1.2 * st2 + (-1.0) * ct2
+    q2x = b1ex + 1.5 * ct2
+    q2y = b1ey + 1.5 * st2
+    q3x = b1ex + 0.8 * ct2 - (-0.6) * st2
+    q3y = b1ey + 0.8 * st2 + (-0.6) * ct2
 
     # B2: from T1 P3 toward T2 Q2
     theta_b2 = np.arctan2(q2y - p3y, q2x - p3x)
     mech.state.set_pose("b2", q, p3x, p3y, theta_b2)
 
-    # B4: from T2 Q3 toward O4=(6,0)
-    theta_b4 = np.arctan2(0.0 - q3y, 6.0 - q3x)
+    # B4: from T2 Q3 toward O4=(2.5,0)
+    theta_b4 = np.arctan2(0.0 - q3y, 2.5 - q3x)
     mech.state.set_pose("b4", q, q3x, q3y, theta_b4)
 
     result = solve_position(mech, q, t=angle)

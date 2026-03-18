@@ -23,13 +23,17 @@ Graph definition (type B1 -- Chain B, ternary ground):
     textbook convention is used for the adjacency criterion. The graph
     definition above is unambiguous.
 
-Dimensions:
-    Ground: O2=(0,0), O4=(3,1), O6=(6,0)
+Dimensions (Grashof-compliant for full crank rotation):
+    Ground: O2=(0,0), O4=(2.5,0.5), O6=(3.5,0)
     Crank: length=1.5, pivot at O2
     Ternary coupler: P1, P2=(3,0), P3=(1.5,1) in local coords
     Rocker4: length=2.5, pivot at O6
     Link5: length=2.0
     Output6: length=2.0, pivot at O4
+
+    Loop 1 (O2-crank-ternary_P2-rocker4-O6): 3.5, 1.5, 3.0, 2.5
+        S+L=1.5+3.5=5.0 <= P+Q=3.0+2.5=5.5  GRASHOF
+    Loop 2 (ternary_P3-link5-output6-O4): effective 4-bar with moving ground
 
     DOF: 3*5 - 2*7 - 1 = 0  (Grubler, with driver)
 
@@ -84,7 +88,7 @@ def build_sixbar_with_gravity() -> tuple[Mechanism, list, np.ndarray]:
     """
     mech = Mechanism()
 
-    ground = make_ground(O2=(0.0, 0.0), O4=(3.0, 1.0), O6=(6.0, 0.0))
+    ground = make_ground(O2=(0.0, 0.0), O4=(2.5, 0.5), O6=(3.5, 0.0))
     crank = make_bar("crank", "A", "B", length=1.5, mass=0.5, Izz_cg=0.01)
     ternary = make_ternary_link(
         "ternary", "P1", "P2", "P3",
@@ -95,8 +99,8 @@ def build_sixbar_with_gravity() -> tuple[Mechanism, list, np.ndarray]:
     )
     ternary.add_coupler_point("CP", 1.5, 0.0)
     rocker4 = make_bar("rocker4", "R4A", "R4B", length=2.5, mass=1.0, Izz_cg=0.05)
-    link5 = make_bar("link5", "L5A", "L5B", length=2.0, mass=0.8, Izz_cg=0.03)
-    output6 = make_bar("output6", "R6A", "R6B", length=2.0, mass=0.8, Izz_cg=0.03)
+    link5 = make_bar("link5", "L5A", "L5B", length=2.5, mass=0.8, Izz_cg=0.03)
+    output6 = make_bar("output6", "R6A", "R6B", length=2.5, mass=0.8, Izz_cg=0.03)
 
     mech.add_body(ground)
     mech.add_body(crank)
@@ -160,29 +164,29 @@ def _initial_guess(mech: Mechanism, crank_angle: float) -> np.ndarray:
     p2_gx = bx + 3.0 * ct
     p2_gy = by + 3.0 * st
 
-    # Rocker4: R4A at O6=(6,0), R4B should be near P2
-    dx = p2_gx - 6.0
+    # Rocker4: R4A at O6=(3.5,0), R4B should be near P2
+    dx = p2_gx - 3.5
     dy = p2_gy
     theta_r4 = np.arctan2(dy, dx)
-    mech.state.set_pose("rocker4", q, 6.0, 0.0, theta_r4)
+    mech.state.set_pose("rocker4", q, 3.5, 0.0, theta_r4)
 
     # Ternary P3 global (approximate)
     p3_gx = bx + 1.5 * ct - 1.0 * st
     p3_gy = by + 1.5 * st + 1.0 * ct
 
     # Link5: L5A at P3, pointing toward O4 region
-    dx5 = 3.0 - p3_gx
-    dy5 = 1.0 - p3_gy
+    dx5 = 2.5 - p3_gx
+    dy5 = 0.5 - p3_gy
     theta_l5 = np.arctan2(dy5, dx5)
     mech.state.set_pose("link5", q, p3_gx, p3_gy, theta_l5)
 
-    # Output6: R6A at O4=(3,1), R6B should be near link5 L5B
-    l5b_gx = p3_gx + 2.0 * np.cos(theta_l5)
-    l5b_gy = p3_gy + 2.0 * np.sin(theta_l5)
-    dx6 = l5b_gx - 3.0
-    dy6 = l5b_gy - 1.0
+    # Output6: R6A at O4=(2.5,0.5), R6B should be near link5 L5B
+    l5b_gx = p3_gx + 2.5 * np.cos(theta_l5)
+    l5b_gy = p3_gy + 2.5 * np.sin(theta_l5)
+    dx6 = l5b_gx - 2.5
+    dy6 = l5b_gy - 0.5
     theta_o6 = np.arctan2(dy6, dx6)
-    mech.state.set_pose("output6", q, 3.0, 1.0, theta_o6)
+    mech.state.set_pose("output6", q, 2.5, 0.5, theta_o6)
 
     return q
 
@@ -193,8 +197,8 @@ def main() -> None:
 
     print("Launching interactive Watt I 6-bar viewer...")
     print("  Topology: Watt I with ternary coupler")
-    print("  Ground pivots: O2=(0,0), O4=(3,1), O6=(6,0)")
-    print("  Links: crank=1.5, ternary (3 pts), rocker4=2.5, link5=2.0, output6=2.0")
+    print("  Ground pivots: O2=(0,0), O4=(2.5,0.5), O6=(3.5,0)")
+    print("  Links: crank=1.5, ternary (3 pts), rocker4=2.5, link5=2.5, output6=2.5")
     print("  Gravity: [0, -9.81] m/s^2 applied to all links")
     print("  Coupler point CP at (1.5, 0.0) on ternary body")
     print()

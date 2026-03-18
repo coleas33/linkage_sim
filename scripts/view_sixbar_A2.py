@@ -23,16 +23,20 @@ Graph definition (type A2 -- Chain A, ternary ground):
         Loop 1: ground - B1 - B4 - T2 - ground  (4-bar)
         Loop 2: ground - B2 - B3 - T2 - ground  (4-bar)
 
-Dimensions:
-    Ground pivots: O2=(0,0), O4=(3,0), O6=(5,0)
+Dimensions (Grashof-compliant for full crank rotation):
+    Ground pivots: O2=(0,0), O4=(4.5,0), O6=(2.8,0)
     B1 (crank, driven): length=1.0, at O2
     B2 (binary): length=1.5, at O4
-    T2 (ternary): Q1=(0,0), Q2=(3.0,0), Q3=(1.5,1.0)
-    B3 (binary): length=2.0
+    T2 (ternary): Q1=(0,0), Q2=(2.5,0), Q3=(1.5,1.0)
+    B3 (binary): length=2.5
     B4 (binary): length=2.5
 
-    Loop 1 effective 4-bar: ground(O2-O6)=5, B1=1, B4=2.5, T2(Q3-Q1)=1.8
-    Loop 2 effective 4-bar: ground(O4-O6)=2, B2=1.5, B3=2.0, T2(Q2-Q1)=3.0
+    Loop 1 (O2-B1-B4-T2_Q3-T2_Q1-O6):
+        ground=2.8, B1=1.0, B4=2.5, T2_arm(Q1-Q3)=1.803
+        S+L=1.0+2.8=3.8 <= P+Q=2.5+1.803=4.303  GRASHOF
+    Loop 2 (O4-B2-B3-T2_Q2-T2_Q1-O6):
+        ground=1.7, B2=1.5, B3=2.5, T2_arm(Q1-Q2)=2.5
+        S+L=1.5+2.5=4.0 <= P+Q=1.7+2.5=4.2  GRASHOF
 
     DOF: 3*5 - 2*7 - 1 = 0 (Grubler, with driver)
 """
@@ -71,7 +75,7 @@ def build_A2_with_gravity() -> tuple[Mechanism, list, np.ndarray]:
     mech = Mechanism()
 
     # Ground: ternary, 3 pivots
-    ground = make_ground(O2=(0.0, 0.0), O4=(3.0, 0.0), O6=(5.0, 0.0))
+    ground = make_ground(O2=(0.0, 0.0), O4=(4.5, 0.0), O6=(2.8, 0.0))
 
     # B1: binary crank at O2 (driven)
     b1 = make_bar("b1", "B1A", "B1B", length=1.0, mass=0.3, Izz_cg=0.005)
@@ -126,23 +130,23 @@ def _find_initial(mech: Mechanism) -> np.ndarray:
     mech.state.set_pose("b1", q, 0.0, 0.0, angle)
     b1x, b1y = 1.0 * np.cos(angle), 1.0 * np.sin(angle)
 
-    # T2: Q1 at O6=(5,0)
-    theta_t2 = -0.86
-    mech.state.set_pose("t2", q, 5.0, 0.0, theta_t2)
+    # T2: Q1 at O6=(2.8,0)
+    theta_t2 = -0.5
+    mech.state.set_pose("t2", q, 2.8, 0.0, theta_t2)
     ct2, st2 = np.cos(theta_t2), np.sin(theta_t2)
 
     # T2 Q3 global -> B4 connects to B1
-    q3x = 5.0 + 1.5 * ct2 - 1.0 * st2
+    q3x = 2.8 + 1.5 * ct2 - 1.0 * st2
     q3y = 1.5 * st2 + 1.0 * ct2
     theta_b4 = np.arctan2(b1y - q3y, b1x - q3x)
     mech.state.set_pose("b4", q, q3x, q3y, theta_b4)
 
     # T2 Q2 global -> B3 connects to B2
-    q2x = 5.0 + 2.5 * ct2
+    q2x = 2.8 + 2.5 * ct2
     q2y = 2.5 * st2
-    theta_b2 = np.arctan2(q2y, q2x - 3.0)
-    mech.state.set_pose("b2", q, 3.0, 0.0, theta_b2)
-    b2x = 3.0 + 1.5 * np.cos(theta_b2)
+    theta_b2 = np.arctan2(q2y, q2x - 4.5)
+    mech.state.set_pose("b2", q, 4.5, 0.0, theta_b2)
+    b2x = 4.5 + 1.5 * np.cos(theta_b2)
     b2y = 1.5 * np.sin(theta_b2)
     theta_b3 = np.arctan2(b2y - q2y, b2x - q2x)
     mech.state.set_pose("b3", q, q2x, q2y, theta_b3)

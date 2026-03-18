@@ -26,13 +26,20 @@ Graph definition (type A1 -- Chain A, binary ground):
     Note: Conventional name depends on textbook -- may be called
     "Watt I" or "Stephenson I" depending on the adjacency convention used.
 
-Dimensions:
-    Ground pivots: O2=(0,0), O4=(5,0)
-    T1 (ternary): P1=(0,0), P2=(3,0), P3=(1.5,1.0)
-    B2 (binary): length=2.5
-    T2 (ternary): Q1=(0,0), Q2=(2.5,0), Q3=(1.0,1.0)
-    B3 (binary): length=2.5
+Dimensions (Grashof-compliant for full crank rotation):
+    Ground pivots: O2=(0,0), O4=(2.0,0)
+    T1 (ternary): P1=(0,0), P2=(1.5,0), P3=(0.8,0.6)
+    B2 (binary): length=2.0
+    T2 (ternary): Q1=(0,0), Q2=(1.5,0), Q3=(0.8,0.6)
+    B3 (binary): length=2.0
     B4 (binary): length=2.0
+
+    Loop 1 (O2-T1_P3-T2_Q1-T2_Q3-B4-O4):
+        crank_arm(P1-P3)=1.0, T2_arm(Q1-Q3)=1.0, B4=2.0, ground=2.0
+        S+L=1.0+2.0=3.0 <= P+Q=1.0+2.0=3.0  GRASHOF (limiting)
+    Loop 2 (T1_P2-B2-B3-T2_Q2, closed by T1_P3-T2_Q1):
+        T1_arm(P3-P2)=0.922, B2=2.0, B3=2.0, T2_arm(Q1-Q2)=1.5
+        S+L=0.922+2.0=2.922 <= P+Q=2.0+1.5=3.5  GRASHOF
 
     DOF: 3*5 - 2*7 - 1 = 0 (Grubler, with driver)
 """
@@ -71,7 +78,7 @@ def build_A1_with_gravity() -> tuple[Mechanism, list, np.ndarray]:
     mech = Mechanism()
 
     # Ground: binary, 2 pivots
-    ground = make_ground(O2=(0.0, 0.0), O4=(3.0, 0.0))
+    ground = make_ground(O2=(0.0, 0.0), O4=(2.0, 0.0))
 
     # T1: ternary, driven by ground at P1
     t1 = _make_ternary("t1", "P1", "P2", "P3",
@@ -144,7 +151,7 @@ def _find_initial(mech: Mechanism) -> np.ndarray:
     theta_b3 = np.arctan2(b2ey - q2y, b2ex - q2x)
     mech.state.set_pose("b3", q, q2x, q2y, theta_b3)
 
-    theta_b4 = np.arctan2(0.0 - q3y, 3.0 - q3x)
+    theta_b4 = np.arctan2(0.0 - q3y, 2.0 - q3x)
     mech.state.set_pose("b4", q, q3x, q3y, theta_b4)
 
     result = solve_position(mech, q, t=angle)

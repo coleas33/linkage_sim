@@ -24,13 +24,19 @@ Graph definition (type B2 -- Chain B, shared-binary ground):
     Note: The driven input T1 is a ternary body with 3 attachment points.
     This is valid -- the driver prescribes T1's angle relative to ground.
 
-Dimensions:
-    Ground pivots: O2=(0,0), O4=(5,0)
-    T1 (ternary, driven): P1=(0,0), P2=(2.5,0), P3=(1.2,1.0) at O2
-    B2 (binary): length=2.5
-    T2 (ternary): Q1=(0,0), Q2=(2.5,0), Q3=(1.2,-1.0) at O4
-    B3 (binary): length=3.0
-    B4 (binary): length=3.0
+Dimensions (Grashof-compliant for full crank rotation):
+    Ground pivots: O2=(0,0), O4=(1.8,0)
+    T1 (ternary, driven): P1=(0,0), P2=(0.5,0), P3=(0.25,0.25) at O2
+    B2 (binary): length=2.0
+    T2 (ternary): Q1=(0,0), Q2=(1.5,0), Q3=(0.8,-0.6) at O4
+    B3 (binary): length=2.0
+    B4 (binary): length=2.0
+
+    Loop 1 (O2-T1_P2-B2-T2_Q2-O4):
+        crank_arm(P1-P2)=0.5, ground=1.8, B2=2.0, T2_arm(Q1-Q2)=1.5
+        S+L=0.5+2.0=2.5 <= P+Q=1.5+1.8=3.3  GRASHOF
+    Loop 2 (dyad B3-B4 connecting T1_P3 to T2_Q3):
+        B3+B4=4.0 >= max|P3-Q3|~3.15  feasible
 
     DOF: 3*5 - 2*7 - 1 = 0 (Grubler, with driver)
 """
@@ -68,17 +74,17 @@ def _make_ternary(
 def build_B2_with_gravity() -> tuple[Mechanism, list, np.ndarray]:
     mech = Mechanism()
 
-    ground = make_ground(O2=(0.0, 0.0), O4=(3.0, 0.0))
+    ground = make_ground(O2=(0.0, 0.0), O4=(1.8, 0.0))
 
     t1 = _make_ternary("t1", "P1", "P2", "P3",
-                        p2_local=(1.2, 0.0), p3_local=(0.6, 0.5),
+                        p2_local=(0.5, 0.0), p3_local=(0.25, 0.25),
                         mass=0.8, Izz_cg=0.04)
-    t1.add_coupler_point("CP", 0.6, 0.25)
+    t1.add_coupler_point("CP", 0.25, 0.125)
 
-    b2 = make_bar("b2", "B2A", "B2B", length=1.5, mass=0.5, Izz_cg=0.01)
+    b2 = make_bar("b2", "B2A", "B2B", length=2.0, mass=0.5, Izz_cg=0.01)
 
     t2 = _make_ternary("t2", "Q1", "Q2", "Q3",
-                        p2_local=(1.2, 0.0), p3_local=(0.6, -0.5),
+                        p2_local=(1.5, 0.0), p3_local=(0.8, -0.6),
                         mass=0.8, Izz_cg=0.04)
 
     b3 = make_bar("b3", "B3A", "B3B", length=2.0, mass=0.6, Izz_cg=0.02)
@@ -117,14 +123,14 @@ def _find_initial(mech: Mechanism) -> np.ndarray:
 
     ct1, st1 = np.cos(angle), np.sin(angle)
     mech.state.set_pose("t1", q, 0.0, 0.0, angle)
-    p2x, p2y = 1.2 * ct1, 1.2 * st1
-    p3x, p3y = 0.6 * ct1 - 0.5 * st1, 0.6 * st1 + 0.5 * ct1
+    p2x, p2y = 0.5 * ct1, 0.5 * st1
+    p3x, p3y = 0.25 * ct1 - 0.25 * st1, 0.25 * st1 + 0.25 * ct1
 
-    theta_t2 = -2.0
-    mech.state.set_pose("t2", q, 3.0, 0.0, theta_t2)
+    theta_t2 = -1.5
+    mech.state.set_pose("t2", q, 1.8, 0.0, theta_t2)
     ct2, st2 = np.cos(theta_t2), np.sin(theta_t2)
-    q2x, q2y = 3.0 + 1.2 * ct2, 1.2 * st2
-    q3x, q3y = 3.0 + 0.6 * ct2 + 0.5 * st2, 0.6 * st2 - 0.5 * ct2
+    q2x, q2y = 1.8 + 1.5 * ct2, 1.5 * st2
+    q3x, q3y = 1.8 + 0.8 * ct2 + 0.6 * st2, 0.8 * st2 - 0.6 * ct2
 
     theta_b2 = np.arctan2(q2y - p2y, q2x - p2x)
     mech.state.set_pose("b2", q, p2x, p2y, theta_b2)
