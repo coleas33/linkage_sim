@@ -34,6 +34,76 @@ pub trait Constraint {
 }
 
 // ---------------------------------------------------------------------------
+// Shared translational helpers (used by Revolute and Fixed joints)
+// ---------------------------------------------------------------------------
+
+/// Compute the 2-row translational Jacobian block for the constraint
+///     Phi = r_i + A_i * s_i - r_j - A_j * s_j = 0
+///
+/// Writes into rows 0..2 of a pre-allocated Jacobian matrix.
+fn translational_jacobian_block(
+    state: &State,
+    body_i_id: &str,
+    body_j_id: &str,
+    point_i_local: &Vector2<f64>,
+    point_j_local: &Vector2<f64>,
+    q: &DVector<f64>,
+    jac: &mut DMatrix<f64>,
+) {
+    if !state.is_ground(body_i_id) {
+        let idx_i = state.get_index(body_i_id).unwrap();
+        jac[(0, idx_i.x_idx())] = 1.0;
+        jac[(1, idx_i.y_idx())] = 1.0;
+        let b_si = state.body_point_global_derivative(body_i_id, point_i_local, q);
+        jac[(0, idx_i.theta_idx())] = b_si.x;
+        jac[(1, idx_i.theta_idx())] = b_si.y;
+    }
+
+    if !state.is_ground(body_j_id) {
+        let idx_j = state.get_index(body_j_id).unwrap();
+        jac[(0, idx_j.x_idx())] = -1.0;
+        jac[(1, idx_j.y_idx())] = -1.0;
+        let b_sj = state.body_point_global_derivative(body_j_id, point_j_local, q);
+        jac[(0, idx_j.theta_idx())] = -b_sj.x;
+        jac[(1, idx_j.theta_idx())] = -b_sj.y;
+    }
+}
+
+/// Compute the 2-element translational gamma (centripetal terms) for the constraint
+///     Phi = r_i + A_i * s_i - r_j - A_j * s_j = 0
+///
+/// gamma_trans = A_i * s_i * theta_dot_i^2 - A_j * s_j * theta_dot_j^2
+fn translational_gamma(
+    state: &State,
+    body_i_id: &str,
+    body_j_id: &str,
+    point_i_local: &Vector2<f64>,
+    point_j_local: &Vector2<f64>,
+    q: &DVector<f64>,
+    q_dot: &DVector<f64>,
+) -> Vector2<f64> {
+    let mut result = Vector2::zeros();
+
+    if !state.is_ground(body_i_id) {
+        let theta_i = state.get_angle(body_i_id, q);
+        let idx_i = state.get_index(body_i_id).unwrap();
+        let theta_dot_i = q_dot[idx_i.theta_idx()];
+        let a_i = State::rotation_matrix(theta_i);
+        result += (a_i * point_i_local) * theta_dot_i.powi(2);
+    }
+
+    if !state.is_ground(body_j_id) {
+        let theta_j = state.get_angle(body_j_id, q);
+        let idx_j = state.get_index(body_j_id).unwrap();
+        let theta_dot_j = q_dot[idx_j.theta_idx()];
+        let a_j = State::rotation_matrix(theta_j);
+        result -= (a_j * point_j_local) * theta_dot_j.powi(2);
+    }
+
+    result
+}
+
+// ---------------------------------------------------------------------------
 // Revolute joint
 // ---------------------------------------------------------------------------
 
@@ -85,35 +155,22 @@ impl Constraint for RevoluteJoint {
         DVector::from_column_slice(&[diff.x, diff.y])
     }
 
-    fn phi_t(&self, state: &State, _q: &DVector<f64>, _t: f64) -> DVector<f64> {
-        let _ = state;
+    fn phi_t(&self, _state: &State, _q: &DVector<f64>, _t: f64) -> DVector<f64> {
         DVector::zeros(2)
     }
 
     fn jacobian(&self, state: &State, q: &DVector<f64>, _t: f64) -> DMatrix<f64> {
         let n = state.n_coords();
         let mut jac = DMatrix::zeros(2, n);
-
-        if !state.is_ground(&self.body_i_id_) {
-            let idx_i = state.get_index(&self.body_i_id_).unwrap();
-            jac[(0, idx_i.x_idx())] = 1.0;
-            jac[(1, idx_i.y_idx())] = 1.0;
-            let b_si =
-                state.body_point_global_derivative(&self.body_i_id_, &self.point_i_local, q);
-            jac[(0, idx_i.theta_idx())] = b_si.x;
-            jac[(1, idx_i.theta_idx())] = b_si.y;
-        }
-
-        if !state.is_ground(&self.body_j_id_) {
-            let idx_j = state.get_index(&self.body_j_id_).unwrap();
-            jac[(0, idx_j.x_idx())] = -1.0;
-            jac[(1, idx_j.y_idx())] = -1.0;
-            let b_sj =
-                state.body_point_global_derivative(&self.body_j_id_, &self.point_j_local, q);
-            jac[(0, idx_j.theta_idx())] = -b_sj.x;
-            jac[(1, idx_j.theta_idx())] = -b_sj.y;
-        }
-
+        translational_jacobian_block(
+            state,
+            &self.body_i_id_,
+            &self.body_j_id_,
+            &self.point_i_local,
+            &self.point_j_local,
+            q,
+            &mut jac,
+        );
         jac
     }
 
@@ -124,25 +181,16 @@ impl Constraint for RevoluteJoint {
         q_dot: &DVector<f64>,
         _t: f64,
     ) -> DVector<f64> {
-        let mut result = Vector2::zeros();
-
-        if !state.is_ground(&self.body_i_id_) {
-            let theta_i = state.get_angle(&self.body_i_id_, q);
-            let idx_i = state.get_index(&self.body_i_id_).unwrap();
-            let theta_dot_i = q_dot[idx_i.theta_idx()];
-            let a_i = State::rotation_matrix(theta_i);
-            result += (a_i * self.point_i_local) * theta_dot_i.powi(2);
-        }
-
-        if !state.is_ground(&self.body_j_id_) {
-            let theta_j = state.get_angle(&self.body_j_id_, q);
-            let idx_j = state.get_index(&self.body_j_id_).unwrap();
-            let theta_dot_j = q_dot[idx_j.theta_idx()];
-            let a_j = State::rotation_matrix(theta_j);
-            result -= (a_j * self.point_j_local) * theta_dot_j.powi(2);
-        }
-
-        DVector::from_column_slice(&[result.x, result.y])
+        let g = translational_gamma(
+            state,
+            &self.body_i_id_,
+            &self.body_j_id_,
+            &self.point_i_local,
+            &self.point_j_local,
+            q,
+            q_dot,
+        );
+        DVector::from_column_slice(&[g.x, g.y])
     }
 }
 
@@ -224,8 +272,7 @@ impl Constraint for FixedJoint {
         DVector::from_column_slice(&[diff.x, diff.y, theta_j - theta_i - self.delta_theta_0])
     }
 
-    fn phi_t(&self, state: &State, _q: &DVector<f64>, _t: f64) -> DVector<f64> {
-        let _ = state;
+    fn phi_t(&self, _state: &State, _q: &DVector<f64>, _t: f64) -> DVector<f64> {
         DVector::zeros(3)
     }
 
@@ -233,25 +280,24 @@ impl Constraint for FixedJoint {
         let n = state.n_coords();
         let mut jac = DMatrix::zeros(3, n);
 
+        // Rows 0-1: translational block (shared with revolute)
+        translational_jacobian_block(
+            state,
+            &self.body_i_id_,
+            &self.body_j_id_,
+            &self.point_i_local,
+            &self.point_j_local,
+            q,
+            &mut jac,
+        );
+
+        // Row 2: rotation lock
         if !state.is_ground(&self.body_i_id_) {
             let idx_i = state.get_index(&self.body_i_id_).unwrap();
-            jac[(0, idx_i.x_idx())] = 1.0;
-            jac[(1, idx_i.y_idx())] = 1.0;
-            let b_si =
-                state.body_point_global_derivative(&self.body_i_id_, &self.point_i_local, q);
-            jac[(0, idx_i.theta_idx())] = b_si.x;
-            jac[(1, idx_i.theta_idx())] = b_si.y;
             jac[(2, idx_i.theta_idx())] = -1.0;
         }
-
         if !state.is_ground(&self.body_j_id_) {
             let idx_j = state.get_index(&self.body_j_id_).unwrap();
-            jac[(0, idx_j.x_idx())] = -1.0;
-            jac[(1, idx_j.y_idx())] = -1.0;
-            let b_sj =
-                state.body_point_global_derivative(&self.body_j_id_, &self.point_j_local, q);
-            jac[(0, idx_j.theta_idx())] = -b_sj.x;
-            jac[(1, idx_j.theta_idx())] = -b_sj.y;
             jac[(2, idx_j.theta_idx())] += 1.0;
         }
 
@@ -265,25 +311,17 @@ impl Constraint for FixedJoint {
         q_dot: &DVector<f64>,
         _t: f64,
     ) -> DVector<f64> {
-        let mut pos_gamma = Vector2::zeros();
+        let pos_gamma = translational_gamma(
+            state,
+            &self.body_i_id_,
+            &self.body_j_id_,
+            &self.point_i_local,
+            &self.point_j_local,
+            q,
+            q_dot,
+        );
 
-        if !state.is_ground(&self.body_i_id_) {
-            let theta_i = state.get_angle(&self.body_i_id_, q);
-            let idx_i = state.get_index(&self.body_i_id_).unwrap();
-            let theta_dot_i = q_dot[idx_i.theta_idx()];
-            let a_i = State::rotation_matrix(theta_i);
-            pos_gamma += (a_i * self.point_i_local) * theta_dot_i.powi(2);
-        }
-
-        if !state.is_ground(&self.body_j_id_) {
-            let theta_j = state.get_angle(&self.body_j_id_, q);
-            let idx_j = state.get_index(&self.body_j_id_).unwrap();
-            let theta_dot_j = q_dot[idx_j.theta_idx()];
-            let a_j = State::rotation_matrix(theta_j);
-            pos_gamma -= (a_j * self.point_j_local) * theta_dot_j.powi(2);
-        }
-
-        // γ[2] = 0 (rotation constraint is linear in θ)
+        // gamma[2] = 0 (rotation constraint is linear in theta)
         DVector::from_column_slice(&[pos_gamma.x, pos_gamma.y, 0.0])
     }
 }
@@ -380,8 +418,7 @@ impl Constraint for PrismaticJoint {
         ])
     }
 
-    fn phi_t(&self, state: &State, _q: &DVector<f64>, _t: f64) -> DVector<f64> {
-        let _ = state;
+    fn phi_t(&self, _state: &State, _q: &DVector<f64>, _t: f64) -> DVector<f64> {
         DVector::zeros(2)
     }
 
@@ -876,5 +913,283 @@ mod tests {
                 );
             }
         }
+    }
+
+    // -----------------------------------------------------------------
+    // Gamma finite-difference helper
+    // -----------------------------------------------------------------
+
+    /// Compute gamma via finite differences on phi_dot = Phi_q * q_dot + Phi_t.
+    ///
+    /// At time t with state (q, q_dot), advance to q_plus = q + q_dot * dt,
+    /// then gamma_fd = -(phi_dot_plus - phi_dot) / dt.
+    fn gamma_fd<C: Constraint>(
+        joint: &C,
+        state: &State,
+        q: &DVector<f64>,
+        q_dot: &DVector<f64>,
+        t: f64,
+    ) -> DVector<f64> {
+        let dt = 1e-7;
+
+        let jac = joint.jacobian(state, q, t);
+        let phi_t = joint.phi_t(state, q, t);
+        let phi_dot = &jac * q_dot + &phi_t;
+
+        let q_plus = q + q_dot * dt;
+        let t_plus = t + dt;
+        let jac_plus = joint.jacobian(state, &q_plus, t_plus);
+        let phi_t_plus = joint.phi_t(state, &q_plus, t_plus);
+        let phi_dot_plus = &jac_plus * q_dot + &phi_t_plus;
+
+        -(&phi_dot_plus - &phi_dot) / dt
+    }
+
+    fn assert_gamma_matches_fd<C: Constraint>(
+        joint: &C,
+        state: &State,
+        q: &DVector<f64>,
+        q_dot: &DVector<f64>,
+        t: f64,
+        tol: f64,
+    ) {
+        let gamma_analytical = joint.gamma(state, q, q_dot, t);
+        let gamma_numerical = gamma_fd(joint, state, q, q_dot, t);
+        let n_eq = joint.n_equations();
+        for i in 0..n_eq {
+            assert_abs_diff_eq!(
+                gamma_analytical[i],
+                gamma_numerical[i],
+                epsilon = tol
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Revolute gamma FD tests
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn revolute_gamma_fd_two_bodies() {
+        let state = two_body_state();
+        let mut q = state.make_q();
+        state.set_pose("crank", &mut q, 0.1, 0.2, 0.7);
+        state.set_pose("coupler", &mut q, 0.3, -0.1, 1.2);
+
+        let mut q_dot = state.make_q();
+        q_dot[0] = 0.1; // crank x_dot
+        q_dot[1] = -0.2; // crank y_dot
+        q_dot[2] = 3.0; // crank theta_dot
+        q_dot[3] = -0.05; // coupler x_dot
+        q_dot[4] = 0.15; // coupler y_dot
+        q_dot[5] = -2.0; // coupler theta_dot
+
+        let joint = make_revolute_joint(
+            "J1",
+            "crank",
+            Vector2::new(0.1, 0.05),
+            "coupler",
+            Vector2::new(-0.03, 0.02),
+        );
+
+        assert_gamma_matches_fd(&joint, &state, &q, &q_dot, 0.0, 1e-5);
+    }
+
+    #[test]
+    fn revolute_gamma_fd_ground_to_body() {
+        let mut state = State::new();
+        state.register_body("crank").unwrap();
+        let mut q = state.make_q();
+        state.set_pose("crank", &mut q, 0.0, 0.0, 1.0);
+
+        let mut q_dot = state.make_q();
+        q_dot[2] = 5.0; // theta_dot
+
+        let joint = make_revolute_joint(
+            "J_gnd",
+            "ground",
+            Vector2::new(0.0, 0.0),
+            "crank",
+            Vector2::new(0.0, 0.0),
+        );
+
+        assert_gamma_matches_fd(&joint, &state, &q, &q_dot, 0.0, 1e-5);
+    }
+
+    // -----------------------------------------------------------------
+    // Fixed gamma FD tests
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn fixed_gamma_fd_two_bodies() {
+        let state = two_body_state();
+        let mut q = state.make_q();
+        state.set_pose("crank", &mut q, 0.1, 0.2, 0.7);
+        state.set_pose("coupler", &mut q, 0.3, -0.1, 1.2);
+
+        let mut q_dot = state.make_q();
+        q_dot[0] = 0.1;
+        q_dot[1] = -0.2;
+        q_dot[2] = 3.0;
+        q_dot[3] = -0.05;
+        q_dot[4] = 0.15;
+        q_dot[5] = -2.0;
+
+        let joint = make_fixed_joint(
+            "F1",
+            "crank",
+            Vector2::new(0.1, 0.05),
+            "coupler",
+            Vector2::new(-0.03, 0.02),
+            0.5,
+        );
+
+        assert_gamma_matches_fd(&joint, &state, &q, &q_dot, 0.0, 1e-5);
+    }
+
+    // -----------------------------------------------------------------
+    // Prismatic gamma FD tests
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn prismatic_gamma_fd_x_axis_ground_to_slider() {
+        let mut state = State::new();
+        state.register_body("slider").unwrap();
+        let mut q = state.make_q();
+        state.set_pose("slider", &mut q, 0.5, 0.01, 0.0);
+
+        let mut q_dot = state.make_q();
+        q_dot[0] = 1.0; // slider x_dot
+        q_dot[1] = 0.05; // slider y_dot
+        q_dot[2] = 0.0; // slider theta_dot (locked by constraint)
+
+        let joint = make_prismatic_joint(
+            "P_x",
+            "ground",
+            Vector2::new(0.0, 0.0),
+            "slider",
+            Vector2::new(0.0, 0.0),
+            Vector2::new(1.0, 0.0),
+            0.0,
+        )
+        .unwrap();
+
+        assert_gamma_matches_fd(&joint, &state, &q, &q_dot, 0.0, 1e-5);
+    }
+
+    #[test]
+    fn prismatic_gamma_fd_y_axis_ground_to_slider() {
+        let mut state = State::new();
+        state.register_body("slider").unwrap();
+        let mut q = state.make_q();
+        state.set_pose("slider", &mut q, 0.02, 0.8, 0.0);
+
+        let mut q_dot = state.make_q();
+        q_dot[0] = 0.03;
+        q_dot[1] = 2.0;
+        q_dot[2] = 0.0;
+
+        let joint = make_prismatic_joint(
+            "P_y",
+            "ground",
+            Vector2::new(0.0, 0.0),
+            "slider",
+            Vector2::new(0.0, 0.0),
+            Vector2::new(0.0, 1.0),
+            0.0,
+        )
+        .unwrap();
+
+        assert_gamma_matches_fd(&joint, &state, &q, &q_dot, 0.0, 1e-5);
+    }
+
+    #[test]
+    fn prismatic_gamma_fd_rotated_rail() {
+        // Body i (rail) is at a nonzero angle, so the axis is rotated in world space.
+        let state = two_body_state();
+        let mut q = state.make_q();
+        state.set_pose("crank", &mut q, 0.0, 0.0, PI / 6.0); // rail at 30 deg
+        state.set_pose("coupler", &mut q, 0.5, 0.3, PI / 6.0); // slider
+
+        let mut q_dot = state.make_q();
+        q_dot[0] = 0.0; // crank x_dot
+        q_dot[1] = 0.0; // crank y_dot
+        q_dot[2] = 0.0; // crank theta_dot (rail stationary)
+        q_dot[3] = 0.5; // coupler x_dot
+        q_dot[4] = 0.3; // coupler y_dot
+        q_dot[5] = 0.0; // coupler theta_dot (locked)
+
+        let joint = make_prismatic_joint(
+            "P_rot",
+            "crank",
+            Vector2::new(0.0, 0.0),
+            "coupler",
+            Vector2::new(0.0, 0.0),
+            Vector2::new(1.0, 0.0),
+            0.0,
+        )
+        .unwrap();
+
+        assert_gamma_matches_fd(&joint, &state, &q, &q_dot, 0.0, 1e-5);
+    }
+
+    #[test]
+    fn prismatic_gamma_fd_moving_parent_body() {
+        // Body i (rail) is not ground and has translational velocity.
+        let state = two_body_state();
+        let mut q = state.make_q();
+        state.set_pose("crank", &mut q, 0.1, 0.2, 0.3);
+        state.set_pose("coupler", &mut q, 0.6, 0.25, 0.3);
+
+        let mut q_dot = state.make_q();
+        q_dot[0] = 0.5; // crank x_dot
+        q_dot[1] = -0.3; // crank y_dot
+        q_dot[2] = 0.0; // crank theta_dot
+        q_dot[3] = 1.0; // coupler x_dot
+        q_dot[4] = -0.1; // coupler y_dot
+        q_dot[5] = 0.0; // coupler theta_dot
+
+        let joint = make_prismatic_joint(
+            "P_move",
+            "crank",
+            Vector2::new(0.05, 0.02),
+            "coupler",
+            Vector2::new(-0.01, 0.0),
+            Vector2::new(1.0, 0.0),
+            0.0,
+        )
+        .unwrap();
+
+        assert_gamma_matches_fd(&joint, &state, &q, &q_dot, 0.0, 1e-5);
+    }
+
+    #[test]
+    fn prismatic_gamma_fd_nonzero_rail_angular_velocity() {
+        // The rail-carrying body has nonzero angular velocity — most complex case.
+        let state = two_body_state();
+        let mut q = state.make_q();
+        state.set_pose("crank", &mut q, 0.1, 0.2, 0.8);
+        state.set_pose("coupler", &mut q, 0.5, 0.4, 0.8);
+
+        let mut q_dot = state.make_q();
+        q_dot[0] = 0.3; // crank x_dot
+        q_dot[1] = -0.1; // crank y_dot
+        q_dot[2] = 2.5; // crank theta_dot (nonzero angular velocity!)
+        q_dot[3] = 0.8; // coupler x_dot
+        q_dot[4] = 0.2; // coupler y_dot
+        q_dot[5] = 2.5; // coupler theta_dot (locked, same as crank)
+
+        let joint = make_prismatic_joint(
+            "P_omega",
+            "crank",
+            Vector2::new(0.05, 0.03),
+            "coupler",
+            Vector2::new(-0.02, 0.01),
+            Vector2::new(1.0, 0.0),
+            0.0,
+        )
+        .unwrap();
+
+        assert_gamma_matches_fd(&joint, &state, &q, &q_dot, 0.0, 1e-5);
     }
 }
