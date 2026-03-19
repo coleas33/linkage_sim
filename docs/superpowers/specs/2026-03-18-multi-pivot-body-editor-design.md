@@ -1,7 +1,7 @@
 # Multi-Pivot Body Editor Design
 
 **Date:** 2026-03-18
-**Status:** Draft
+**Status:** Approved
 **Scope:** GUI editor enhancements to support creating and editing bodies with arbitrary numbers of attachment points (ternary plates, bell-cranks, etc.)
 
 ---
@@ -304,7 +304,7 @@ rebuild()            // one rebuild at the end
 
 This applies to:
 - **Draw Link** (existing): push_undo, add_ground_pivot_raw (if needed), add_body_raw, add_revolute_joint_raw (1-2x), rebuild
-- **Draw Link with segment snap** (Feature C): push_undo, add_attachment_point_raw, add_body_raw, add_revolute_joint_raw (1-2x), rebuild
+- **Draw Link with segment snap** (Feature C): push_undo, add_attachment_point_local_raw, add_body_raw, add_revolute_joint_raw (1-2x), rebuild
 - **Standalone actions** (Add Pivot Here, Create Joint, Delete, etc.): continue using the public methods that push undo + rebuild individually
 
 ### Which methods need `_raw` variants
@@ -314,7 +314,7 @@ This applies to:
 | `add_body_with_points` | Yes | Draw Link |
 | `add_revolute_joint` | Yes | Draw Link, Create Joint (compound only when part of Draw Link) |
 | `add_ground_pivot` | Yes | Draw Link (start on empty space) |
-| `add_attachment_point_to_body` | Yes | Draw Link segment snap |
+| `add_attachment_point_to_body` (raw: `add_attachment_point_local_raw`) | Yes | Draw Link segment snap |
 | `remove_body` | No | Standalone only |
 | `remove_joint` | No | Standalone only |
 | `remove_attachment_point` | No | Standalone only |
