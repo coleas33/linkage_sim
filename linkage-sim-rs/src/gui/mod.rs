@@ -11,6 +11,7 @@ pub mod undo;
 use eframe::egui;
 pub use state::AppState;
 use samples::SampleMechanism;
+use state::{LengthUnit, AngleUnit};
 
 /// Top-level application struct for eframe.
 pub struct LinkageApp {
@@ -110,6 +111,24 @@ impl eframe::App for LinkageApp {
                 ui.menu_button("View", |ui| {
                     ui.checkbox(&mut self.state.show_debug_overlay, "Debug Overlay");
                     ui.checkbox(&mut self.state.show_plots, "Plot Panel");
+                    ui.separator();
+                    ui.label("Units:");
+                    let mut use_mm = self.state.display_units.length == LengthUnit::Millimeters;
+                    if ui.checkbox(&mut use_mm, "Millimeters").changed() {
+                        self.state.display_units.length = if use_mm {
+                            LengthUnit::Millimeters
+                        } else {
+                            LengthUnit::Meters
+                        };
+                    }
+                    let mut use_deg = self.state.display_units.angle == AngleUnit::Degrees;
+                    if ui.checkbox(&mut use_deg, "Degrees").changed() {
+                        self.state.display_units.angle = if use_deg {
+                            AngleUnit::Degrees
+                        } else {
+                            AngleUnit::Radians
+                        };
+                    }
                 });
             });
         });
@@ -132,7 +151,11 @@ impl eframe::App for LinkageApp {
                     ui.colored_label(color, "●");
                     ui.label(format!("‖Φ‖ = {:.2e}", status.residual_norm));
                     ui.separator();
-                    ui.label(format!("θ = {:.1}°", self.state.driver_angle.to_degrees()));
+                    ui.label(format!(
+                        "\u{03b8} = {:.1}{}",
+                        self.state.display_units.angle(self.state.driver_angle),
+                        self.state.display_units.angle_suffix()
+                    ));
 
                     if self.state.playing {
                         ui.separator();

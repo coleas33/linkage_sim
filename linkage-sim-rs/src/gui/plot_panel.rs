@@ -5,7 +5,7 @@
 use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints, VLine};
 
-use super::state::AppState;
+use super::state::{AppState, DisplayUnits};
 
 /// Selected plot tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,21 +57,23 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &AppState) {
 
     ui.separator();
 
+    let current_driver_display = state.display_units.angle(state.driver_angle);
     match selected_tab {
-        PlotTab::CouplerTrace => draw_coupler_trace(ui, sweep),
-        PlotTab::BodyAngles => draw_body_angles(ui, sweep, state.driver_angle.to_degrees()),
+        PlotTab::CouplerTrace => draw_coupler_trace(ui, sweep, &state.display_units),
+        PlotTab::BodyAngles => draw_body_angles(ui, sweep, current_driver_display, &state.display_units),
         PlotTab::TransmissionAngle => {
-            draw_transmission_angle(ui, sweep, state.driver_angle.to_degrees());
+            draw_transmission_angle(ui, sweep, current_driver_display, &state.display_units);
         }
     }
 }
 
-/// Plot coupler point traces: x vs y in world coordinates.
-fn draw_coupler_trace(ui: &mut egui::Ui, sweep: &super::state::SweepData) {
+/// Plot coupler point traces: x vs y, converted to display length units.
+fn draw_coupler_trace(ui: &mut egui::Ui, sweep: &super::state::SweepData, units: &DisplayUnits) {
+    let axis_label = units.length_axis_label();
     let plot = Plot::new("coupler_trace_plot")
         .data_aspect(1.0) // equal axis scaling
-        .x_axis_label("X (m)")
-        .y_axis_label("Y (m)")
+        .x_axis_label(format!("X ({})", axis_label))
+        .y_axis_label(format!("Y ({})", axis_label))
         .legend(egui_plot::Legend::default());
 
     plot.show(ui, |plot_ui| {
@@ -87,7 +89,10 @@ fn draw_coupler_trace(ui: &mut egui::Ui, sweep: &super::state::SweepData) {
                 continue;
             }
 
-            let points: PlotPoints = trace.iter().map(|[x, y]| [*x, *y]).collect();
+            let points: PlotPoints = trace
+                .iter()
+                .map(|[x, y]| [units.length(*x), units.length(*y)])
+                .collect();
             let color = colors[color_idx % colors.len()];
             plot_ui.line(
                 Line::new(key.as_str(), points)
@@ -99,11 +104,21 @@ fn draw_coupler_trace(ui: &mut egui::Ui, sweep: &super::state::SweepData) {
     });
 }
 
-/// Plot body angles (degrees) vs driver angle (degrees).
-fn draw_body_angles(ui: &mut egui::Ui, sweep: &super::state::SweepData, current_angle_deg: f64) {
+/// Plot body angles vs driver angle, using the current display angle unit.
+fn draw_body_angles(
+    ui: &mut egui::Ui,
+    sweep: &super::state::SweepData,
+    current_driver_display: f64,
+    units: &DisplayUnits,
+) {
+    // Sweep stores angles in degrees; convert to display unit on the fly.
+    let angle_label = match units.angle {
+        super::state::AngleUnit::Degrees => "deg",
+        super::state::AngleUnit::Radians => "rad",
+    };
     let plot = Plot::new("body_angles_plot")
-        .x_axis_label("Driver Angle (deg)")
-        .y_axis_label("Body Angle (deg)")
+        .x_axis_label(format!("Driver Angle ({})", angle_label))
+        .y_axis_label(format!("Body Angle ({})", angle_label))
         .legend(egui_plot::Legend::default());
 
     plot.show(ui, |plot_ui| {
@@ -119,7 +134,12 @@ fn draw_body_angles(ui: &mut egui::Ui, sweep: &super::state::SweepData, current_
                 .angles_deg
                 .iter()
                 .zip(angles.iter())
-                .map(|(&x, &y)| [x, y])
+                // Sweep data is in degrees; convert both axes to display unit.
+                .map(|(&x_deg, &y_deg)| {
+                    let x = units.angle(x_deg.to_radians());
+                    let y = units.angle(y_deg.to_radians());
+                    [x, y]
+                })
                 .collect();
 
             let color = colors[color_idx % colors.len()];
@@ -131,28 +151,40 @@ fn draw_body_angles(ui: &mut egui::Ui, sweep: &super::state::SweepData, current_
             color_idx += 1;
         }
 
-        // Vertical marker at current driver angle.
+        // Vertical marker at current driver angle (already in display units).
         plot_ui.vline(
-            VLine::new("cursor", current_angle_deg)
+            VLine::new("cursor", current_driver_display)
                 .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
                 .width(1.0),
         );
     });
 }
 
-/// Plot transmission angle (degrees) vs driver angle (degrees).
+/// Plot transmission angle (degrees) vs driver angle.
+///
+/// Transmission angle data is always in degrees; the x-axis driver angle is
+/// shown in the current display unit.
 fn draw_transmission_angle(
     ui: &mut egui::Ui,
     sweep: &super::state::SweepData,
-    current_angle_deg: f64,
+    current_driver_display: f64,
+    units: &DisplayUnits,
 ) {
     let Some(ta) = &sweep.transmission_angles else {
         ui.label("Transmission angle not available for this mechanism.");
         return;
     };
 
+    // The x-axis driver angle is shown in the current display angle unit.
+    let angle_label = match units.angle {
+        super::state::AngleUnit::Degrees => "deg",
+        super::state::AngleUnit::Radians => "rad",
+    };
+    // The x-axis span in display units (0 to 2π).
+    let x_max = units.angle(2.0 * std::f64::consts::PI);
+
     let plot = Plot::new("transmission_angle_plot")
-        .x_axis_label("Driver Angle (deg)")
+        .x_axis_label(format!("Driver Angle ({})", angle_label))
         .y_axis_label("Transmission Angle (deg)")
         .legend(egui_plot::Legend::default());
 
@@ -161,7 +193,8 @@ fn draw_transmission_angle(
             .angles_deg
             .iter()
             .zip(ta.iter())
-            .map(|(&x, &y)| [x, y])
+            // x: driver angle in display unit; y: transmission angle always in degrees.
+            .map(|(&x_deg, &y)| [units.angle(x_deg.to_radians()), y])
             .collect();
 
         plot_ui.line(
@@ -170,9 +203,9 @@ fn draw_transmission_angle(
                 .width(2.0),
         );
 
-        // Ideal zone: 40-140 degrees.
-        let ideal_low: PlotPoints = [[0.0, 40.0], [360.0, 40.0]].into_iter().collect();
-        let ideal_high: PlotPoints = [[0.0, 140.0], [360.0, 140.0]].into_iter().collect();
+        // Ideal zone: 40-140 degrees (y-axis stays in degrees always).
+        let ideal_low: PlotPoints = [[0.0, 40.0], [x_max, 40.0]].into_iter().collect();
+        let ideal_high: PlotPoints = [[0.0, 140.0], [x_max, 140.0]].into_iter().collect();
         plot_ui.line(
             Line::new("Poor threshold (40 deg)", ideal_low)
                 .color(egui::Color32::from_rgba_premultiplied(200, 60, 60, 120))
@@ -186,9 +219,9 @@ fn draw_transmission_angle(
                 .width(1.0),
         );
 
-        // Vertical marker at current angle.
+        // Vertical marker at current driver angle (already in display units).
         plot_ui.vline(
-            VLine::new("cursor", current_angle_deg)
+            VLine::new("cursor", current_driver_display)
                 .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
                 .width(1.0),
         );

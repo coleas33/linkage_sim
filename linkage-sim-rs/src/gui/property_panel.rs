@@ -7,7 +7,7 @@
 use eframe::egui;
 use crate::core::constraint::Constraint;
 use crate::core::state::GROUND_ID;
-use super::state::{AppState, SelectedEntity};
+use super::state::{AppState, SelectedEntity}; // DisplayUnits used via state.display_units
 
 /// Pending edit collected during UI rendering, applied after all reads
 /// are done to avoid borrow conflicts.
@@ -49,13 +49,23 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                     let mech_state = mech.state();
                     let q = &state.q;
 
+                    let units = &state.display_units;
                     if body_id != GROUND_ID {
                         let (x, y, theta) = mech_state.get_pose(&body_id, q);
-                        ui.label(format!("Position: ({:.4}, {:.4}) m", x, y));
-                        ui.label(format!("Angle: {:.2}\u{00b0}", theta.to_degrees()));
+                        ui.label(format!(
+                            "Position: ({:.3}, {:.3}){}",
+                            units.length(x),
+                            units.length(y),
+                            units.length_suffix()
+                        ));
+                        ui.label(format!(
+                            "Angle: {:.2}{}",
+                            units.angle(theta),
+                            units.angle_suffix()
+                        ));
                     } else {
-                        ui.label("Position: (0, 0) \u{2014} fixed");
-                        ui.label("Angle: 0\u{00b0} \u{2014} fixed");
+                        ui.label(format!("Position: (0, 0){} \u{2014} fixed", units.length_suffix()));
+                        ui.label(format!("Angle: 0{} \u{2014} fixed", units.angle_suffix()));
                     }
 
                     ui.separator();
@@ -127,8 +137,10 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                     }
 
                     ui.label(format!(
-                        "CG local: ({:.4}, {:.4})",
-                        body.cg_local.x, body.cg_local.y
+                        "CG local: ({:.3}, {:.3}){}",
+                        units.length(body.cg_local.x),
+                        units.length(body.cg_local.y),
+                        units.length_suffix()
                     ));
 
                     ui.separator();
@@ -138,8 +150,14 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                     for (name, local) in pts {
                         let global = mech_state.body_point_global(&body_id, local, q);
                         ui.label(format!(
-                            "  {} \u{2014} local: ({:.4}, {:.4}), global: ({:.4}, {:.4})",
-                            name, local.x, local.y, global.x, global.y
+                            "  {} \u{2014} local: ({:.3}, {:.3}){}, global: ({:.3}, {:.3}){}",
+                            name,
+                            units.length(local.x),
+                            units.length(local.y),
+                            units.length_suffix(),
+                            units.length(global.x),
+                            units.length(global.y),
+                            units.length_suffix()
                         ));
                     }
                 }
@@ -171,9 +189,12 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                         &joint.point_i_local(),
                         q,
                     );
+                    let units = &state.display_units;
                     ui.label(format!(
-                        "Position: ({:.4}, {:.4}) m",
-                        global_pos.x, global_pos.y
+                        "Position: ({:.3}, {:.3}){}",
+                        units.length(global_pos.x),
+                        units.length(global_pos.y),
+                        units.length_suffix()
                     ));
                 }
             }
