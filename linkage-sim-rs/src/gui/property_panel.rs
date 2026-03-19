@@ -21,6 +21,7 @@ enum PendingPropertyEdit {
     AddForce(ForceElement),
     RemoveForce(usize),
     UpdateForce { index: usize, force: ForceElement },
+    SetDriver(String),
 }
 
 /// Draw the property panel showing info about the selected entity.
@@ -216,6 +217,19 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                         let resultant = (fx * fx + fy * fy).sqrt();
                         ui.label(format!("Resultant: {:.4} N", resultant));
                     }
+
+                    // "Set as Driver" button for grounded revolute joints.
+                    let grounded_ids = mech.grounded_revolute_joint_ids();
+                    if grounded_ids.contains(&joint_id.to_string()) {
+                        ui.separator();
+                        let is_current =
+                            state.driver_joint_id.as_deref() == Some(joint_id.as_str());
+                        if is_current {
+                            ui.label("(Current driver)");
+                        } else if ui.button("Set as Driver").clicked() {
+                            pending = Some(PendingPropertyEdit::SetDriver(joint_id.to_string()));
+                        }
+                    }
                 }
             }
             SelectedEntity::Driver(_driver_id) => {
@@ -261,6 +275,9 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
             }
             PendingPropertyEdit::UpdateForce { index, force } => {
                 state.update_force_element(index, force);
+            }
+            PendingPropertyEdit::SetDriver(joint_id) => {
+                state.pending_driver_reassignment = Some(joint_id);
             }
         }
     }
