@@ -306,3 +306,21 @@ specifies their own driver and the warning can be suppressed with `warnings.filt
 | 2 | 6-bar variants (SixBarB1/Watt I, SixBarA1, SixBarA2, SixBarB2, SixBarB3) | Done | `gui/samples.rs` | Visual verification |
 
 **Total Rust tests:** 201 passing
+
+---
+
+## Phase 5 — Sub-project 4+5: Core Editor + Basic Validation
+
+| Step | Description | Status | Key files |
+|------|-------------|--------|-----------|
+| 1 | MechanismBlueprint + rebuild pipeline | Done | `gui/state.rs`, `io/serialization.rs` |
+| 2 | Editable mass/Izz in property panel | Done | `gui/property_panel.rs` |
+| 3 | Canvas drag for attachment points | Done | `gui/canvas.rs` |
+| 4 | Create/delete bodies via context menu | Done | `gui/canvas.rs`, `gui/state.rs` |
+| 5 | Create/delete joints via context menu | Done | `gui/canvas.rs`, `gui/state.rs` |
+| 6 | Two-click joint creation workflow | Done | `gui/canvas.rs` |
+| 7 | Add ground pivots via context menu | Done | `gui/state.rs` |
+| 8 | Basic validation (DOF, connectivity, driver) | Done | `gui/state.rs`, `gui/mod.rs` |
+| 9 | Undo integration for all edit operations | Done | `gui/state.rs` |
+
+**Total tests:** 226 passing

@@ -117,7 +117,19 @@ linkage-sim/
 
 ### Rust solver kernel (`linkage-sim-rs/`)
 
-The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forward dynamics) is complete in Rust, validated against Python golden fixtures (169 tests). **Phase 5 GUI:** Built with egui/eframe. Loads 13 sample mechanisms — 2 original (FourBar micro, SliderCrank), 6 four-bar variants (CrankRocker, DoubleRocker, DoubleCrank, Parallelogram, Chebyshev, TripleRocker), and 5 six-bar variants (SixBarB1/Watt I, SixBarA1, SixBarA2, SixBarB2, SixBarB3). Renders on a 2D canvas with pan/zoom. Drives the kinematic solver via angle slider. Click-to-inspect property panels. Animation playback (play/pause, speed control, loop/once). Right-click driver reassignment on any grounded revolute joint. Plotting panel with coupler trace, body angles, and transmission angle (via egui_plot). Undo/redo (Ctrl+Z / Ctrl+Y). Mechanisms can be saved and loaded as JSON via File > Open / File > Save. Run with `cd linkage-sim-rs && cargo run --bin linkage-gui`. Not yet implemented: interactive topology editor (body/joint editing), validation panel, force visualization, unit conversion, snap-to-grid, export (CSV, image, animation), load cases.
+The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forward dynamics) is complete in Rust, validated against Python golden fixtures (169 tests). **Phase 5 GUI:** Built with egui/eframe. Loads 13 sample mechanisms — 2 original (FourBar micro, SliderCrank), 6 four-bar variants (CrankRocker, DoubleRocker, DoubleCrank, Parallelogram, Chebyshev, TripleRocker), and 5 six-bar variants (SixBarB1/Watt I, SixBarA1, SixBarA2, SixBarB2, SixBarB3). Renders on a 2D canvas with pan/zoom. Drives the kinematic solver via angle slider. Click-to-inspect property panels. Animation playback (play/pause, speed control, loop/once). Right-click driver reassignment on any grounded revolute joint. Plotting panel with coupler trace, body angles, and transmission angle (via egui_plot). Undo/redo (Ctrl+Z / Ctrl+Y). Mechanisms can be saved and loaded as JSON via File > Open / File > Save. Run with `cd linkage-sim-rs && cargo run --bin linkage-gui`.
+
+**Interactive editor (shipped):** The GUI is now a full interactive editor, not just a visualization shell. Capabilities:
+- Create bodies, joints, and ground pivots via right-click context menu on the canvas
+- Drag attachment points (on ground and moving bodies) to reshape mechanism geometry in real-time, with immediate solver rebuild
+- Edit mass properties (mass, Izz) via DragValue widgets in the property panel
+- Delete bodies and joints with cascading cleanup of dependent elements
+- Two-click joint creation workflow with visual feedback (green ring highlight, hint text)
+- Live validation warnings in status bar: DOF mismatch, disconnected bodies, missing driver
+- MechanismBlueprint (MechanismJson) is the editable source of truth; rebuild() runs on every edit
+- All edit operations push to the undo/redo stack; blueprint stays in sync with snapshots
+
+Not yet implemented: force visualization, unit conversion (mm, degrees at display boundary), snap-to-grid and alignment helpers, export (CSV, image, animation), load cases.
 
 ```
 linkage-sim-rs/
