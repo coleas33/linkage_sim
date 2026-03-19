@@ -234,6 +234,9 @@ pub enum EditorTool {
     /// another point → creates bar + auto-creates revolute joints at both
     /// ends if they connect to existing points.
     DrawLink,
+    /// Multi-click body placement: click to place attachment points, then
+    /// confirm to create a body with those points.
+    AddBody,
     /// Click canvas to place a new ground pivot.
     AddGroundPivot,
 }
@@ -249,8 +252,12 @@ pub enum EditorTool {
 pub struct ContextMenuTarget {
     /// Joint ID if right-click landed on a joint.
     pub joint_id: Option<String>,
-    /// (body_id, point_name) if right-click landed on a body attachment point.
-    pub body: Option<(String, String)>,
+    /// Attachment point under cursor (body_id, point_name).
+    /// Takes priority over body_area.
+    pub attachment_point: Option<(String, String)>,
+    /// Body area under cursor (body_id) -- only set when no
+    /// attachment point is within HIT_RADIUS.
+    pub body_area: Option<String>,
     /// World coordinates of the right-click position.
     pub world_pos: Option<[f64; 2]>,
 }
@@ -503,6 +510,9 @@ pub struct AppState {
     /// attachment point (body_id, point_name). If None, a new ground pivot
     /// was created at the start position.
     pub draw_link_start: Option<DrawLinkStart>,
+    // ── Add Body state ──────────────────────────────────────────────────
+    /// Multi-click body placement state. None when not in AddBody mode.
+    pub add_body_state: Option<AddBodyState>,
     // ── Diagnostics ─────────────────────────────────────────────────────
     /// Cached Grashof classification for 4-bar mechanisms.
     pub grashof_result: Option<GrashofResult>,
@@ -513,6 +523,13 @@ pub struct AppState {
     pub simulation: Option<SimulationState>,
     /// Duration for forward dynamics simulation (seconds).
     pub simulation_duration: f64,
+}
+
+/// Tracks placement state for the Add Body tool.
+#[derive(Debug, Clone)]
+pub struct AddBodyState {
+    /// Points placed so far: (name, world_position).
+    pub points: Vec<(String, [f64; 2])>,
 }
 
 /// Tracks the start of a Draw Link gesture.
@@ -586,6 +603,7 @@ impl Default for AppState {
             active_tool: EditorTool::Select,
             context_menu_target: ContextMenuTarget::default(),
             draw_link_start: None,
+            add_body_state: None,
             grashof_result: None,
             crank_recommendation: None,
             simulation: None,

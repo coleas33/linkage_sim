@@ -6,8 +6,8 @@ use crate::core::constraint::Constraint;
 use crate::core::state::GROUND_ID;
 use crate::forces::elements::ForceElement;
 use crate::gui::state::{
-    AppState, ContextMenuTarget, DragTarget, EditorTool, GridSettings, SelectedEntity,
-    ViewTransform,
+    AddBodyState, AppState, ContextMenuTarget, DragTarget, EditorTool, GridSettings,
+    SelectedEntity, ViewTransform,
 };
 
 // ── Colors ──────────────────────────────────────────────────────────────────
@@ -453,6 +453,9 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 Some("Click a point or empty space, then drag to draw a link (Esc to cancel)")
             }
         }
+        EditorTool::AddBody => {
+            Some("Click to place attachment points, then confirm to create a body (Esc to cancel)")
+        }
         EditorTool::AddGroundPivot => {
             Some("Click on canvas to place a ground pivot (Esc to cancel)")
         }
@@ -570,6 +573,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         state.creating_joint = None;
         state.draw_link_start = None;
+        state.add_body_state = None;
         state.active_tool = EditorTool::Select;
     }
 
@@ -728,6 +732,9 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 EditorTool::DrawLink => {
                     // Handled by drag section above.
                 }
+                EditorTool::AddBody => {
+                    // Handled by AddBody tool section (future task).
+                }
                 EditorTool::Select => {
                     let mut hit: Option<SelectedEntity> = None;
 
@@ -764,16 +771,28 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 .find(|(screen_pos, _)| pos.distance(*screen_pos) <= HIT_RADIUS)
                 .map(|(_, id)| id.clone());
 
-            let body = attachment_hit_targets
+            // Attachment points first (priority over body area)
+            let attachment_point = attachment_hit_targets
                 .iter()
                 .find(|h| h.body_id != GROUND_ID && pos.distance(h.screen_pos) <= HIT_RADIUS)
                 .map(|h| (h.body_id.clone(), h.point_name.clone()));
+
+            // Body area: only if no attachment point matched
+            let body_area = if attachment_point.is_none() {
+                attachment_hit_targets
+                    .iter()
+                    .find(|h| h.body_id != GROUND_ID && pos.distance(h.screen_pos) <= HIT_RADIUS * 3.0)
+                    .map(|h| h.body_id.clone())
+            } else {
+                None
+            };
 
             let world_pos = Some(state.view.screen_to_world(pos.x, pos.y));
 
             state.context_menu_target = ContextMenuTarget {
                 joint_id,
-                body,
+                attachment_point,
+                body_area,
                 world_pos,
             };
         }
@@ -811,17 +830,58 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 state.remove_joint(joint_id);
                 ui.close();
             }
-        } else if let Some((ref body_id, ref _point_name)) = ctx_target.body {
-            // ── Body context menu ───────────────────────────────────────
+        } else if let Some((ref body_id, ref point_name)) = ctx_target.attachment_point {
+            // ── Attachment point context menu ────────────────────────────
+            ui.label(format!("Point: {}.{}", body_id, point_name));
+            ui.separator();
+
+            if ui.button("Create Joint").clicked() {
+                // Start two-click joint creation from this point.
+                state.creating_joint = Some((body_id.clone(), point_name.clone()));
+                ui.close();
+            }
+
+            if ui.button("Delete Pivot").clicked() {
+                state.remove_attachment_point(body_id, point_name);
+                ui.close();
+            }
+
+            // Set as Driver: only if this body belongs to a grounded revolute joint.
+            if let Some(mech) = &state.mechanism {
+                let grounded = mech.grounded_revolute_joint_ids();
+                for joint in mech.joints() {
+                    if joint.is_revolute()
+                        && grounded.contains(&joint.id().to_string())
+                        && ((joint.body_i_id() == *body_id) || (joint.body_j_id() == *body_id))
+                        && current_driver_joint.as_deref() != Some(joint.id())
+                    {
+                        if ui.button("Set as Driver").clicked() {
+                            state.pending_driver_reassignment = Some(joint.id().to_string());
+                            ui.close();
+                        }
+                        break;
+                    }
+                }
+            }
+        } else if let Some(ref body_id) = ctx_target.body_area {
+            // ── Body area context menu ──────────────────────────────────
             ui.label(format!("Body: {}", body_id));
             ui.separator();
+
+            if let Some([wx, wy]) = ctx_target.world_pos {
+                if ui.button("Add Pivot Here").clicked() {
+                    let name = state.next_attachment_point_name(body_id);
+                    let (sx, sy) = state.grid.snap_point(wx, wy);
+                    state.add_attachment_point_to_body(body_id, &name, sx, sy);
+                    ui.close();
+                }
+            }
 
             if ui.button("Delete Body").clicked() {
                 state.remove_body(body_id);
                 state.selected = None;
                 ui.close();
             }
-
         } else {
             // ── Empty canvas context menu ───────────────────────────────
             if let Some([wx, wy]) = ctx_target.world_pos {
@@ -833,6 +893,16 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
 
                 if ui.button("Draw Link").clicked() {
                     state.active_tool = EditorTool::DrawLink;
+                    ui.close();
+                }
+
+                if ui.button("Start Body Here").clicked() {
+                    let (sx, sy) = state.grid.snap_point(wx, wy);
+                    let name = state.next_attachment_point_name("__pending__");
+                    state.active_tool = EditorTool::AddBody;
+                    state.add_body_state = Some(AddBodyState {
+                        points: vec![(name, [sx, sy])],
+                    });
                     ui.close();
                 }
             }
