@@ -6,7 +6,9 @@ use std::f64::consts::PI;
 use std::path::Path;
 
 use crate::analysis::grashof::{check_grashof, GrashofResult};
-use crate::analysis::transmission::transmission_angle_fourbar;
+use crate::analysis::transmission::{
+    mechanical_advantage, transmission_angle_fourbar, VelocityCoord,
+};
 use crate::core::constraint::Constraint;
 use crate::core::driver::DriverMeta;
 use crate::core::mechanism::Mechanism;
@@ -19,7 +21,8 @@ use crate::io::serialization::{
 };
 use crate::forces::elements::{ForceElement, GravityElement};
 use crate::analysis::energy::compute_energy_state_mech;
-use crate::solver::kinematics::{solve_position, solve_velocity};
+use crate::solver::kinematics::{solve_acceleration, solve_position, solve_velocity};
+use crate::solver::inverse_dynamics::solve_inverse_dynamics;
 use crate::solver::statics::{
     extract_reactions, get_driver_reactions, get_joint_reactions, solve_statics,
 };
@@ -320,6 +323,8 @@ pub struct ForceResults {
     pub condition_number: Option<f64>,
     /// True if the statics solver detected an overconstrained system.
     pub is_overconstrained: bool,
+    /// Mechanical advantage (output/input angular velocity ratio) at current pose.
+    pub mechanical_advantage: Option<f64>,
 }
 
 // ── View transform ────────────────────────────────────────────────────────────
@@ -387,6 +392,12 @@ pub struct SweepData {
     pub potential_energy: Vec<f64>,
     /// Total mechanical energy (KE + PE) at each sweep step (Joules).
     pub total_energy: Vec<f64>,
+    /// Inverse dynamics driver torque at each sweep step (N·m).
+    /// Includes inertial effects (unlike the statics-based driver_torques).
+    pub inverse_dynamics_torques: Vec<f64>,
+    /// Mechanical advantage (output/input angular velocity ratio) at each
+    /// sweep step. Requires velocity solve and a detectable driver body pair.
+    pub mechanical_advantage: Vec<f64>,
 }
 
 // ── AppState ──────────────────────────────────────────────────────────────────
@@ -743,11 +754,37 @@ impl AppState {
             );
         }
 
+        // Compute mechanical advantage via velocity solve.
+        let ma = if let Ok(q_dot) = solve_velocity(mech, &self.q, t) {
+            // The driver body pair gives (body_i, body_j) where body_j is
+            // the driven body (crank). Find the last non-driver moving body
+            // as the output body.
+            if let Some((_body_i, driver_body)) = mech.driver_body_pair() {
+                let output_body = mech.body_order().iter()
+                    .filter(|b| b.as_str() != driver_body)
+                    .last();
+                if let Some(out_id) = output_body {
+                    mechanical_advantage(
+                        mech.state(), &q_dot,
+                        driver_body, out_id,
+                        VelocityCoord::Theta, VelocityCoord::Theta,
+                    ).map(|r| r.ma)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         self.force_results = ForceResults {
             driver_torque,
             joint_reactions,
             condition_number: Some(statics_result.condition_number),
             is_overconstrained: statics_result.is_overconstrained,
+            mechanical_advantage: ma,
         };
     }
 
@@ -1777,6 +1814,8 @@ fn compute_sweep_data(
         kinetic_energy: Vec::with_capacity(361),
         potential_energy: Vec::with_capacity(361),
         total_energy: Vec::with_capacity(361),
+        inverse_dynamics_torques: Vec::with_capacity(361),
+        mechanical_advantage: Vec::with_capacity(361),
     };
 
     // Pre-allocate body angle vectors.
@@ -1814,6 +1853,15 @@ fn compute_sweep_data(
     if fourbar_links.is_some() {
         data.transmission_angles = Some(Vec::with_capacity(361));
     }
+
+    // Detect driver/output body pair for mechanical advantage.
+    let ma_bodies: Option<(String, String)> = mech.driver_body_pair().and_then(|(_bi, driver)| {
+        let output = mech.body_order().iter()
+            .filter(|b| b.as_str() != driver)
+            .last()
+            .cloned();
+        output.map(|out| (driver.to_string(), out))
+    });
 
     // Sweep from 0 to 360 degrees in 1-degree steps.
     let mut q = q_start.clone();
@@ -1870,16 +1918,47 @@ fn compute_sweep_data(
                     data.driver_torques.as_mut().unwrap().push(0.0);
                 }
 
-                // Velocity solve for energy computation.
+                // Velocity solve for energy and mechanical advantage.
                 if let Ok(q_dot) = solve_velocity(mech, &q, t) {
                     let energy = compute_energy_state_mech(mech, &q, &q_dot, 9.81);
                     data.kinetic_energy.push(energy.kinetic);
                     data.potential_energy.push(energy.potential_gravity);
                     data.total_energy.push(energy.total);
+
+                    // Mechanical advantage from velocity ratio.
+                    if let Some((ref input_id, ref output_id)) = ma_bodies {
+                        let ma_val = mechanical_advantage(
+                            mech.state(), &q_dot,
+                            input_id, output_id,
+                            VelocityCoord::Theta, VelocityCoord::Theta,
+                        ).map(|r| r.ma).unwrap_or(f64::NAN);
+                        data.mechanical_advantage.push(ma_val);
+                    } else {
+                        data.mechanical_advantage.push(f64::NAN);
+                    }
+
+                    // Acceleration solve + inverse dynamics for torque including inertial effects
+                    if let Ok(q_ddot) = solve_acceleration(mech, &q, &q_dot, t) {
+                        if let Ok(inv_dyn) = solve_inverse_dynamics(mech, &q, &q_dot, &q_ddot, t) {
+                            // Extract driver torque from the last lambda (driver is last constraint)
+                            let n_lam = inv_dyn.lambdas.len();
+                            if n_lam > 0 {
+                                data.inverse_dynamics_torques.push(inv_dyn.lambdas[n_lam - 1]);
+                            } else {
+                                data.inverse_dynamics_torques.push(f64::NAN);
+                            }
+                        } else {
+                            data.inverse_dynamics_torques.push(f64::NAN);
+                        }
+                    } else {
+                        data.inverse_dynamics_torques.push(f64::NAN);
+                    }
                 } else {
                     data.kinetic_energy.push(f64::NAN);
                     data.potential_energy.push(f64::NAN);
                     data.total_energy.push(f64::NAN);
+                    data.inverse_dynamics_torques.push(f64::NAN);
+                    data.mechanical_advantage.push(f64::NAN);
                 }
             }
             _ => {

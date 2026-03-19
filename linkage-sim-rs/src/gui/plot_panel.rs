@@ -14,7 +14,9 @@ enum PlotTab {
     BodyAngles,
     TransmissionAngle,
     DriverTorque,
+    InverseDynamics,
     Energy,
+    MechanicalAdvantage,
 }
 
 /// Draw the plot panel with tabbed plots.
@@ -64,10 +66,31 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &AppState) {
             );
         });
 
+        // Only show inverse dynamics tab if data exists.
+        let has_id = !sweep.inverse_dynamics_torques.is_empty();
+        ui.add_enabled_ui(has_id, |ui| {
+            ui.selectable_value(
+                &mut selected_tab,
+                PlotTab::InverseDynamics,
+                "Inv. Dynamics",
+            );
+        });
+
         // Only show energy tab if data exists.
         let has_energy = !sweep.kinetic_energy.is_empty();
         ui.add_enabled_ui(has_energy, |ui| {
             ui.selectable_value(&mut selected_tab, PlotTab::Energy, "Energy");
+        });
+
+        // Only show mechanical advantage tab if data exists.
+        let has_ma = !sweep.mechanical_advantage.is_empty()
+            && sweep.mechanical_advantage.iter().any(|v| v.is_finite());
+        ui.add_enabled_ui(has_ma, |ui| {
+            ui.selectable_value(
+                &mut selected_tab,
+                PlotTab::MechanicalAdvantage,
+                "Mech. Advantage",
+            );
         });
     });
 
@@ -85,8 +108,14 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &AppState) {
         PlotTab::DriverTorque => {
             draw_driver_torque(ui, sweep, current_driver_display, &state.display_units);
         }
+        PlotTab::InverseDynamics => {
+            draw_inverse_dynamics(ui, sweep, current_driver_display, &state.display_units);
+        }
         PlotTab::Energy => {
             draw_energy(ui, sweep, current_driver_display, &state.display_units);
+        }
+        PlotTab::MechanicalAdvantage => {
+            draw_mechanical_advantage(ui, sweep, current_driver_display, &state.display_units);
         }
     }
 }
@@ -297,6 +326,70 @@ fn draw_driver_torque(
     });
 }
 
+/// Plot inverse dynamics driver torque vs driver angle,
+/// with optional statics torque overlay for comparison.
+fn draw_inverse_dynamics(
+    ui: &mut egui::Ui,
+    sweep: &super::state::SweepData,
+    current_driver_display: f64,
+    units: &DisplayUnits,
+) {
+    if sweep.inverse_dynamics_torques.is_empty() {
+        ui.label("Inverse dynamics data not available.");
+        return;
+    }
+
+    let angle_label = match units.angle {
+        super::state::AngleUnit::Degrees => "deg",
+        super::state::AngleUnit::Radians => "rad",
+    };
+
+    let plot = Plot::new("inverse_dynamics_plot")
+        .x_axis_label(format!("Driver Angle ({})", angle_label))
+        .y_axis_label("Driver Torque (N\u{00b7}m)")
+        .legend(egui_plot::Legend::default());
+
+    plot.show(ui, |plot_ui| {
+        // Inverse dynamics torque (cyan).
+        let id_points: PlotPoints = sweep
+            .angles_deg
+            .iter()
+            .zip(sweep.inverse_dynamics_torques.iter())
+            .filter(|&(_, &t)| t.is_finite())
+            .map(|(&x_deg, &t)| [units.angle(x_deg.to_radians()), t])
+            .collect();
+        plot_ui.line(
+            Line::new("Inverse Dynamics Torque", id_points)
+                .color(egui::Color32::from_rgb(100, 200, 255))
+                .width(2.0),
+        );
+
+        // Overlay statics torque if available (orange, dashed).
+        if let Some(statics_torques) = &sweep.driver_torques {
+            let st_points: PlotPoints = sweep
+                .angles_deg
+                .iter()
+                .zip(statics_torques.iter())
+                .filter(|&(_, &t)| t.is_finite())
+                .map(|(&x_deg, &t)| [units.angle(x_deg.to_radians()), t])
+                .collect();
+            plot_ui.line(
+                Line::new("Statics Torque", st_points)
+                    .color(egui::Color32::from_rgb(255, 150, 80))
+                    .style(egui_plot::LineStyle::Dashed { length: 4.0 })
+                    .width(1.5),
+            );
+        }
+
+        // Vertical marker at current driver angle.
+        plot_ui.vline(
+            VLine::new("cursor", current_driver_display)
+                .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
+                .width(1.0),
+        );
+    });
+}
+
 /// Plot energy (KE, PE, total) vs driver angle.
 fn draw_energy(
     ui: &mut egui::Ui,
@@ -360,6 +453,62 @@ fn draw_energy(
             Line::new("Total Energy", te_points)
                 .color(egui::Color32::from_rgb(120, 220, 120))
                 .width(2.0),
+        );
+
+        // Vertical marker at current driver angle.
+        plot_ui.vline(
+            VLine::new("cursor", current_driver_display)
+                .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
+                .width(1.0),
+        );
+    });
+}
+
+/// Plot mechanical advantage (dimensionless) vs driver angle.
+fn draw_mechanical_advantage(
+    ui: &mut egui::Ui,
+    sweep: &super::state::SweepData,
+    current_driver_display: f64,
+    units: &DisplayUnits,
+) {
+    if sweep.mechanical_advantage.is_empty() {
+        ui.label("Mechanical advantage data not available.");
+        return;
+    }
+
+    let angle_label = match units.angle {
+        super::state::AngleUnit::Degrees => "deg",
+        super::state::AngleUnit::Radians => "rad",
+    };
+
+    let plot = Plot::new("mechanical_advantage_plot")
+        .x_axis_label(format!("Driver Angle ({})", angle_label))
+        .y_axis_label("Mechanical Advantage")
+        .legend(egui_plot::Legend::default());
+
+    plot.show(ui, |plot_ui| {
+        let points: PlotPoints = sweep
+            .angles_deg
+            .iter()
+            .zip(sweep.mechanical_advantage.iter())
+            .filter(|&(_, &ma)| ma.is_finite())
+            .map(|(&x_deg, &ma)| [units.angle(x_deg.to_radians()), ma])
+            .collect();
+
+        plot_ui.line(
+            Line::new("Mechanical Advantage", points)
+                .color(egui::Color32::from_rgb(200, 150, 255))
+                .width(2.0),
+        );
+
+        // Unity reference line (MA = 1).
+        let x_max = units.angle(2.0 * std::f64::consts::PI);
+        let unity: PlotPoints = [[0.0, 1.0], [x_max, 1.0]].into_iter().collect();
+        plot_ui.line(
+            Line::new("MA = 1", unity)
+                .color(egui::Color32::from_rgba_premultiplied(200, 200, 200, 80))
+                .style(egui_plot::LineStyle::Dashed { length: 4.0 })
+                .width(1.0),
         );
 
         // Vertical marker at current driver angle.

@@ -227,6 +227,15 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
             ui.strong("Driver Torque:");
             ui.label(format!("{:.4} N\u{00b7}m", torque));
         }
+
+        // Show mechanical advantage regardless of what is selected.
+        if let Some(ma) = state.force_results.mechanical_advantage {
+            if state.force_results.driver_torque.is_none() {
+                ui.separator();
+            }
+            ui.strong("Mechanical Advantage:");
+            ui.label(format!("{:.3}", ma));
+        }
     } // end immutable borrow block
 
     // ── Force Elements section ─────────────────────────────────────────

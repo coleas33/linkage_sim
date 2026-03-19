@@ -28,6 +28,11 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
     if sweep.driver_torques.is_some() {
         headers.push("driver_torque_Nm".to_string());
     }
+    let has_ma = !sweep.mechanical_advantage.is_empty()
+        && sweep.mechanical_advantage.iter().any(|v| v.is_finite());
+    if has_ma {
+        headers.push("mechanical_advantage".to_string());
+    }
     writeln!(file, "{}", headers.join(",")).map_err(|e| e.to_string())?;
 
     // Data rows
@@ -42,6 +47,10 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
         }
         if let Some(ref dt) = sweep.driver_torques {
             row.push(format!("{:.6}", dt.get(i).copied().unwrap_or(f64::NAN)));
+        }
+        if has_ma {
+            let ma = sweep.mechanical_advantage.get(i).copied().unwrap_or(f64::NAN);
+            row.push(format!("{:.6}", ma));
         }
         writeln!(file, "{}", row.join(",")).map_err(|e| e.to_string())?;
     }
@@ -330,6 +339,8 @@ mod tests {
             kinetic_energy: vec![0.1, 0.2, 0.3, 0.2, 0.1],
             potential_energy: vec![0.5, 0.4, 0.3, 0.4, 0.5],
             total_energy: vec![0.6, 0.6, 0.6, 0.6, 0.6],
+            inverse_dynamics_torques: vec![1.2, 1.8, 0.6, -0.4, 1.2],
+            mechanical_advantage: vec![0.5, 0.45, 0.6, 0.55, 0.5],
         }
     }
 
@@ -359,6 +370,10 @@ mod tests {
             header.contains("driver_torque_Nm"),
             "header should have driver torque"
         );
+        assert!(
+            header.contains("mechanical_advantage"),
+            "header should have mechanical advantage"
+        );
 
         // First data row should start with 0.0000
         assert!(
@@ -385,6 +400,7 @@ mod tests {
         let mut sweep = test_sweep_data();
         sweep.transmission_angles = None;
         sweep.driver_torques = None;
+        sweep.mechanical_advantage.clear();
 
         let path = std::env::temp_dir().join("test_sweep_no_optional.csv");
 
@@ -400,6 +416,10 @@ mod tests {
         assert!(
             !header.contains("driver_torque"),
             "header should not have driver torque"
+        );
+        assert!(
+            !header.contains("mechanical_advantage"),
+            "header should not have mechanical advantage"
         );
 
         // angle_deg + crank + rocker = 3 columns

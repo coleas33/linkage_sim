@@ -38,7 +38,7 @@ The Rust port begins **after Phase 4 exits** — when all four analysis modes (k
 | Phase 2 — Force elements & statics | Python | Complete, validated |
 | Phase 3 — Actuators & inverse dynamics | Python | Complete, validated |
 | Phase 4 — Forward dynamics | Python | Complete, validated |
-| **Rust port** | **Rust** | **Complete — 295 tests, validated against Python golden data** |
+| **Rust port** | **Rust** | **Complete — 302 tests, validated against Python golden data** |
 | Phase 5 — Interactive GUI | Rust | **In progress** — egui application |
 | Phase 6 — Advanced & QoL | Rust | Not started |
 
@@ -321,7 +321,7 @@ The solver kernel port (steps 1–9) is complete and validated. All four analysi
 
 ### Test coverage
 
-- **295 tests total**
+- **302 tests total**
 - All tests pass via `cargo test`
 
 ### Golden fixture coverage
@@ -473,9 +473,9 @@ The solver kernel port (steps 1–9) is complete for **constraint-based analysis
 |--------|:------------:|:--------:|-------|
 | Position kinematics | Yes | Yes | Core of sweep + animation |
 | Velocity kinematics | Yes | Yes (sweep) | Called at each sweep step for energy computation |
-| Acceleration kinematics | Yes | **No** | Solver exists, not called from GUI |
+| Acceleration kinematics | Yes | Yes (sweep) | Called at each sweep step for inverse dynamics |
 | Statics | Yes | Yes | Driver torque + reaction force arrows |
-| Inverse dynamics | Yes | **No** | Solver exists, no GUI trigger |
+| Inverse dynamics | Yes | Yes (sweep + plot) | Torque including inertial effects, overlaid with statics |
 | Forward dynamics | Yes | **No** | Full RK4+Baumgarte solver, no GUI trigger |
 
 ### Plan to close the gap
