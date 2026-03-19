@@ -129,6 +129,28 @@ impl eframe::App for LinkageApp {
                         }
                         ui.close();
                     }
+                    if ui
+                        .add_enabled(
+                            self.state.mechanism.is_some(),
+                            egui::Button::new("Export SVG..."),
+                        )
+                        .clicked()
+                    {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("SVG", &["svg"])
+                            .set_file_name("mechanism.svg")
+                            .save_file()
+                        {
+                            if let Some(ref mech) = self.state.mechanism {
+                                if let Err(e) =
+                                    export::export_mechanism_svg(&path, mech, &self.state.q)
+                                {
+                                    log::error!("SVG export failed: {}", e);
+                                }
+                            }
+                        }
+                        ui.close();
+                    }
                     ui.separator();
                     if ui.button("Quit").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
