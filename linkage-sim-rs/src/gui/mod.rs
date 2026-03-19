@@ -154,6 +154,32 @@ impl eframe::App for LinkageApp {
                         }
                         ui.close();
                     }
+                    if ui
+                        .add_enabled(
+                            self.state.mechanism.is_some(),
+                            egui::Button::new("Export PNG..."),
+                        )
+                        .clicked()
+                    {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("PNG", &["png"])
+                            .set_file_name("mechanism.png")
+                            .save_file()
+                        {
+                            if let Some(ref mech) = self.state.mechanism {
+                                if let Err(e) = export::export_mechanism_png(
+                                    &path,
+                                    mech,
+                                    &self.state.q,
+                                    1920,
+                                    1080,
+                                ) {
+                                    log::error!("PNG export failed: {}", e);
+                                }
+                            }
+                        }
+                        ui.close();
+                    }
                     ui.separator();
                     if ui.button("Quit").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);

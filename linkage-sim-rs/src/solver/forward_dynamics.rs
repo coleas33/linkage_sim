@@ -21,6 +21,7 @@ use crate::error::LinkageError;
 use crate::solver::assembly::{
     assemble_constraints, assemble_gamma, assemble_jacobian, assemble_mass_matrix, assemble_phi_t,
 };
+use crate::solver::events::{check_events, DynamicsEvent, EventOccurrence};
 
 /// Configuration for the forward dynamics integrator.
 #[derive(Debug, Clone)]
@@ -69,6 +70,8 @@ pub struct ForwardDynamicsResult {
     pub q_dot: Vec<DVector<f64>>,
     /// ||Phi(q, t)|| at each time step.
     pub constraint_drift: Vec<f64>,
+    /// Events detected during integration (empty when no events are monitored).
+    pub detected_events: Vec<EventOccurrence>,
     /// True if integration completed without error.
     pub success: bool,
     /// Status message.
@@ -365,8 +368,192 @@ pub fn simulate(
         q: q_out,
         q_dot: qd_out,
         constraint_drift: drift,
+        detected_events: Vec::new(),
         success: true,
         message: "RK4 integration completed.".to_string(),
+    })
+}
+
+/// Run a forward dynamics simulation with event detection.
+///
+/// This is identical to [`simulate`] but additionally monitors a list
+/// of [`DynamicsEvent`]s.  After each RK4 step, event functions are
+/// evaluated and zero crossings are recorded.  If a terminal event
+/// fires, integration stops early.
+///
+/// # Arguments
+///
+/// * `mech` - Built mechanism.
+/// * `q0` - Initial positions satisfying Phi(q0, t0) ~ 0.
+/// * `q_dot0` - Initial velocities satisfying Phi_q * q_dot0 ~ -Phi_t.
+/// * `t_span` - (t_start, t_end) time interval.
+/// * `config` - Integration parameters. Uses defaults if None.
+/// * `t_eval` - Optional array of times at which to store solution.
+/// * `events` - Slice of events to monitor.
+///
+/// # Returns
+///
+/// `ForwardDynamicsResult` with time histories and `detected_events`.
+pub fn simulate_with_events(
+    mech: &Mechanism,
+    q0: &DVector<f64>,
+    q_dot0: &DVector<f64>,
+    t_span: (f64, f64),
+    config: Option<&ForwardDynamicsConfig>,
+    t_eval: Option<&[f64]>,
+    events: &[DynamicsEvent],
+) -> Result<ForwardDynamicsResult, LinkageError> {
+    if !mech.is_built() {
+        return Err(LinkageError::MechanismNotBuilt);
+    }
+    if events.is_empty() {
+        return simulate(mech, q0, q_dot0, t_span, config, t_eval);
+    }
+
+    let default_config = ForwardDynamicsConfig::default();
+    let cfg = config.unwrap_or(&default_config);
+
+    let n = mech.state().n_coords();
+    let alpha = cfg.alpha;
+    let beta = cfg.beta;
+
+    // Pack initial state: y = [q; q_dot]
+    let mut y0 = DVector::zeros(2 * n);
+    for i in 0..n {
+        y0[i] = q0[i];
+        y0[n + i] = q_dot0[i];
+    }
+
+    // RHS closure
+    let rhs = |t: f64, y: &DVector<f64>| -> DVector<f64> {
+        let q = y.rows(0, n).clone_owned();
+        let qd = y.rows(n, n).clone_owned();
+        compute_rhs(mech, &q, &qd, t, alpha, beta)
+    };
+
+    // Manual RK4 loop with event checking
+    let n_steps = ((t_span.1 - t_span.0) / cfg.max_step).ceil() as usize;
+    let actual_h = (t_span.1 - t_span.0) / n_steps as f64;
+
+    let store_all = t_eval.is_none();
+    let empty_eval: Vec<f64> = Vec::new();
+    let eval_times = t_eval.unwrap_or(&empty_eval);
+    let mut eval_idx = 0;
+
+    let mut t_out: Vec<f64> = Vec::new();
+    let mut y_out: Vec<DVector<f64>> = Vec::new();
+    let mut all_events: Vec<EventOccurrence> = Vec::new();
+
+    let mut t = t_span.0;
+    let mut y = y0;
+
+    // Store initial point
+    if store_all {
+        t_out.push(t);
+        y_out.push(y.clone());
+    } else if eval_idx < eval_times.len() && (eval_times[eval_idx] - t).abs() < 1e-14 {
+        t_out.push(t);
+        y_out.push(y.clone());
+        eval_idx += 1;
+    }
+
+    let mut terminated = false;
+
+    for _step in 0..n_steps {
+        let t_next = t + actual_h;
+
+        // RK4 stages
+        let k1 = rhs(t, &y);
+        let k2 = rhs(t + actual_h * 0.5, &(&y + &k1 * (actual_h * 0.5)));
+        let k3 = rhs(t + actual_h * 0.5, &(&y + &k2 * (actual_h * 0.5)));
+        let k4 = rhs(t_next, &(&y + &k3 * actual_h));
+        let y_next = &y + (actual_h / 6.0) * (&k1 + 2.0 * &k2 + 2.0 * &k3 + &k4);
+
+        // Check events between this step
+        let occs = check_events(events, mech.state(), t, &y, t_next, &y_next);
+
+        let has_terminal = occs.iter().any(|o| events[o.event_index].terminal);
+        all_events.extend(occs);
+
+        // Store output points
+        if store_all {
+            t_out.push(t_next);
+            y_out.push(y_next.clone());
+        } else {
+            while eval_idx < eval_times.len()
+                && eval_times[eval_idx] <= t_next + 1e-14
+            {
+                let te = eval_times[eval_idx];
+                if (te - t_next).abs() < 1e-14 {
+                    t_out.push(te);
+                    y_out.push(y_next.clone());
+                } else if te >= t && te < t_next {
+                    let frac = (te - t) / actual_h;
+                    let y_interp = &y * (1.0 - frac) + &y_next * frac;
+                    t_out.push(te);
+                    y_out.push(y_interp);
+                }
+                eval_idx += 1;
+            }
+        }
+
+        t = t_next;
+        y = y_next;
+
+        if has_terminal {
+            terminated = true;
+            break;
+        }
+    }
+
+    // Unpack results
+    let mut q_out: Vec<DVector<f64>> = Vec::with_capacity(t_out.len());
+    let mut qd_out: Vec<DVector<f64>> = Vec::with_capacity(t_out.len());
+    let mut drift: Vec<f64> = Vec::with_capacity(t_out.len());
+
+    for (i, y_i) in y_out.iter().enumerate() {
+        let mut q_i = y_i.rows(0, n).clone_owned();
+        let mut qd_i = y_i.rows(n, n).clone_owned();
+
+        // Apply constraint projection if configured
+        if cfg.project_interval > 0 && i > 0 && i % cfg.project_interval == 0 {
+            q_i = project_constraints(
+                mech,
+                &q_i,
+                t_out[i],
+                cfg.project_tol,
+                cfg.max_project_iter,
+            );
+            let phi_q = assemble_jacobian(mech, &q_i, t_out[i]);
+            let phi_t = assemble_phi_t(mech, &q_i, t_out[i]);
+            let violation = &phi_q * &qd_i + &phi_t;
+            let svd = phi_q.svd(true, true);
+            if let Ok(correction) = svd.solve(&violation, 1e-14) {
+                qd_i -= correction;
+            }
+        }
+
+        let phi = assemble_constraints(mech, &q_i, t_out[i]);
+        drift.push(phi.norm());
+
+        q_out.push(q_i);
+        qd_out.push(qd_i);
+    }
+
+    let message = if terminated {
+        "RK4 integration terminated by event.".to_string()
+    } else {
+        "RK4 integration completed.".to_string()
+    };
+
+    Ok(ForwardDynamicsResult {
+        t: t_out,
+        q: q_out,
+        q_dot: qd_out,
+        constraint_drift: drift,
+        detected_events: all_events,
+        success: true,
+        message,
     })
 }
 

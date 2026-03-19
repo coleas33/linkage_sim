@@ -38,7 +38,7 @@ The Rust port begins **after Phase 4 exits** — when all four analysis modes (k
 | Phase 2 — Force elements & statics | Python | Complete, validated |
 | Phase 3 — Actuators & inverse dynamics | Python | Complete, validated |
 | Phase 4 — Forward dynamics | Python | Complete, validated |
-| **Rust port** | **Rust** | **Complete — 347 tests, validated against Python golden data** |
+| **Rust port** | **Rust** | **Complete — 363 tests, validated against Python golden data + property-based stress tests** |
 | Phase 5 — Interactive GUI | Rust | **In progress** — egui application |
 | Phase 6 — Advanced & QoL | Rust | Not started |
 
@@ -310,7 +310,10 @@ The Rust port follows the same build order as the Python phases, validating agai
 - Forward dynamics GUI — **done** (simulate button, timeline scrubbing, playback speed, constraint drift display)
 - Inverse dynamics GUI — **done** (sweep plot tab with statics overlay)
 - Toggle detection, envelopes, force breakdown analysis — **done** (ported to Rust, torque envelope stats in diagnostics panel)
-- Raster/animation export: PNG, GIF/MP4 (nice-to-have)
+- PNG export — **done** (resvg SVG-to-PNG rasterization)
+- Event detection for forward dynamics — **done** (angle limits, velocity reversals, terminal events)
+- Property-based stress testing — **done** (proptest: random 4-bar generation, constraint/velocity/serialization invariants)
+- Animation export: GIF/MP4 (nice-to-have)
 
 Each step has a clear "done" condition: Rust output matches Python golden data within tolerance.
 
@@ -322,7 +325,7 @@ The solver kernel port (steps 1–9) is complete and validated. All four analysi
 
 ### Test coverage
 
-- **347 tests total**
+- **363 tests total** (includes 7 property-based tests via proptest)
 - All tests pass via `cargo test`
 
 ### Golden fixture coverage

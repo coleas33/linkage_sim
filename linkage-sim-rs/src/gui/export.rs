@@ -100,12 +100,13 @@ pub fn export_coupler_csv(path: &Path, sweep: &SweepData) -> Result<(), String> 
     Ok(())
 }
 
-/// Export the mechanism at its current pose as an SVG file.
-pub fn export_mechanism_svg(
-    path: &std::path::Path,
+/// Generate the SVG string for a mechanism at its current pose.
+///
+/// This is the shared core used by both SVG file export and PNG rasterization.
+pub fn generate_svg_string(
     mechanism: &crate::core::mechanism::Mechanism,
     q: &nalgebra::DVector<f64>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     use crate::core::constraint::Constraint;
     use crate::core::state::GROUND_ID;
 
@@ -296,7 +297,54 @@ pub fn export_mechanism_svg(
 
     svg.push_str("</svg>\n");
 
+    Ok(svg)
+}
+
+/// Export the mechanism at its current pose as an SVG file.
+pub fn export_mechanism_svg(
+    path: &std::path::Path,
+    mechanism: &crate::core::mechanism::Mechanism,
+    q: &nalgebra::DVector<f64>,
+) -> Result<(), String> {
+    let svg = generate_svg_string(mechanism, q)?;
     std::fs::write(path, svg).map_err(|e| e.to_string())
+}
+
+/// Export the mechanism at its current pose as a PNG image.
+///
+/// Generates an SVG string, rasterizes it with resvg at the given dimensions,
+/// and saves the result as a PNG file.
+pub fn export_mechanism_png(
+    path: &std::path::Path,
+    mechanism: &crate::core::mechanism::Mechanism,
+    q: &nalgebra::DVector<f64>,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    let svg_str = generate_svg_string(mechanism, q)?;
+
+    // Parse SVG with resvg/usvg
+    let opt = resvg::usvg::Options::default();
+    let tree = resvg::usvg::Tree::from_str(&svg_str, &opt)
+        .map_err(|e| format!("Failed to parse SVG for rasterization: {}", e))?;
+
+    // Create pixmap at the requested size
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
+        .ok_or_else(|| format!("Failed to create {}x{} pixmap", width, height))?;
+
+    // Fill with white background
+    pixmap.fill(resvg::tiny_skia::Color::WHITE);
+
+    // Compute scale to fit the SVG into the target dimensions
+    let transform = resvg::tiny_skia::Transform::from_scale(
+        width as f32 / tree.size().width(),
+        height as f32 / tree.size().height(),
+    );
+
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
+
+    pixmap.save_png(path)
+        .map_err(|e| format!("Failed to save PNG: {}", e))
 }
 
 #[cfg(test)]
@@ -529,6 +577,98 @@ mod tests {
         let path = std::env::temp_dir().join("test_mechanism_empty.svg");
         let result = export_mechanism_svg(&path, &mech, &q);
         assert!(result.is_err(), "empty mechanism should return an error");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn generate_svg_string_returns_valid_svg() {
+        use crate::gui::samples::{build_sample, SampleMechanism};
+        use crate::solver::kinematics::solve_position;
+
+        let (mech, q0) = build_sample(SampleMechanism::CrankRocker);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).expect("solver should succeed");
+        let q = if result.converged { result.q } else { q0 };
+
+        let svg = generate_svg_string(&mech, &q).expect("SVG generation should succeed");
+        assert!(svg.contains("<svg"), "should contain SVG root element");
+        assert!(svg.contains("</svg>"), "SVG should be properly closed");
+        assert!(svg.contains("class=\"body\""), "should contain body lines");
+    }
+
+    #[test]
+    fn generate_svg_string_empty_mechanism_returns_error() {
+        use crate::core::mechanism::Mechanism;
+        use nalgebra::DVector;
+
+        let mut mech = Mechanism::new();
+        mech.build().expect("build should succeed");
+        let q = DVector::zeros(0);
+
+        let result = generate_svg_string(&mech, &q);
+        assert!(result.is_err(), "empty mechanism should return an error");
+    }
+
+    #[test]
+    fn export_png_produces_valid_file() {
+        use crate::gui::samples::{build_sample, SampleMechanism};
+        use crate::solver::kinematics::solve_position;
+
+        let (mech, q0) = build_sample(SampleMechanism::CrankRocker);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).expect("solver should succeed");
+        let q = if result.converged { result.q } else { q0 };
+
+        let path = std::env::temp_dir().join("test_mechanism.png");
+        export_mechanism_png(&path, &mech, &q, 1920, 1080)
+            .expect("PNG export should succeed");
+
+        // Verify the file exists and has reasonable size
+        let metadata = std::fs::metadata(&path).expect("PNG file should exist");
+        assert!(metadata.len() > 100, "PNG file should not be empty");
+
+        // Verify PNG magic bytes
+        let bytes = std::fs::read(&path).expect("should read PNG file");
+        assert_eq!(
+            &bytes[..4],
+            &[0x89, 0x50, 0x4E, 0x47],
+            "file should start with PNG magic bytes"
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn export_png_empty_mechanism_returns_error() {
+        use crate::core::mechanism::Mechanism;
+        use nalgebra::DVector;
+
+        let mut mech = Mechanism::new();
+        mech.build().expect("build should succeed");
+        let q = DVector::zeros(0);
+
+        let path = std::env::temp_dir().join("test_mechanism_empty.png");
+        let result = export_mechanism_png(&path, &mech, &q, 1920, 1080);
+        assert!(result.is_err(), "empty mechanism should return an error");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn export_png_custom_dimensions() {
+        use crate::gui::samples::{build_sample, SampleMechanism};
+        use crate::solver::kinematics::solve_position;
+
+        let (mech, q0) = build_sample(SampleMechanism::FourBar);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).expect("solver should succeed");
+        let q = if result.converged { result.q } else { q0 };
+
+        // Test with a smaller resolution
+        let path = std::env::temp_dir().join("test_mechanism_small.png");
+        export_mechanism_png(&path, &mech, &q, 640, 480)
+            .expect("PNG export at 640x480 should succeed");
+
+        let metadata = std::fs::metadata(&path).expect("PNG file should exist");
+        assert!(metadata.len() > 100, "PNG file should not be empty");
 
         let _ = std::fs::remove_file(&path);
     }
