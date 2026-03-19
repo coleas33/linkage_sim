@@ -1,7 +1,10 @@
 pub mod coupler;
+pub mod crank_selection;
 pub mod energy;
 pub mod envelopes;
 pub mod force_breakdown;
 pub mod grashof;
+pub mod motor_sizing;
 pub mod transmission;
 pub mod validation;
+pub mod virtual_work;

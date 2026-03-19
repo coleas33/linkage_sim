@@ -38,7 +38,7 @@ The Rust port begins **after Phase 4 exits** — when all four analysis modes (k
 | Phase 2 — Force elements & statics | Python | Complete, validated |
 | Phase 3 — Actuators & inverse dynamics | Python | Complete, validated |
 | Phase 4 — Forward dynamics | Python | Complete, validated |
-| **Rust port** | **Rust** | **Complete — 316 tests, validated against Python golden data** |
+| **Rust port** | **Rust** | **Complete — 333 tests, validated against Python golden data** |
 | Phase 5 — Interactive GUI | Rust | **In progress** — egui application |
 | Phase 6 — Advanced & QoL | Rust | Not started |
 
@@ -322,7 +322,7 @@ The solver kernel port (steps 1–9) is complete and validated. All four analysi
 
 ### Test coverage
 
-- **316 tests total**
+- **333 tests total**
 - All tests pass via `cargo test`
 
 ### Golden fixture coverage
@@ -434,9 +434,9 @@ If the answer to any of (1–3) is "yes, still changing," delay the port and kee
 
 ---
 
-## Feature Parity Gap: Python vs Rust (as of 2026-03-18)
+## Feature Parity: Python vs Rust (as of 2026-03-18)
 
-The solver kernel port (steps 1–9) is complete for **constraint-based analysis** (kinematics, statics, inverse dynamics, forward dynamics). However, the Python codebase has a richer force element library that was **not ported** to Rust. This section tracks the gap.
+The solver kernel port (steps 1–9) is complete. Force elements, analysis modules, and solver GUI paths are at full parity with the Python codebase.
 
 ### Force elements
 
@@ -467,6 +467,13 @@ The solver kernel port (steps 1–9) is complete for **constraint-based analysis
 | Grashof classification | Yes | Yes (diagnostics) | Shown in collapsible diagnostics panel |
 | Jacobian rank/condition | Yes | Yes (diagnostics) | Condition number + overconstrained warning |
 | Validation (Grubler DOF) | Yes | Partial (status bar) | |
+| Mechanical advantage | Yes | Yes (plot tab + panel) | Angular velocity ratio |
+| Signal envelopes | Yes | Yes (diagnostics) | Min/max/RMS of torque over sweep |
+| Force breakdown | Yes | — | Per-element Q contribution norms |
+| Toggle detection | Yes | — | SVD-based singularity check |
+| Motor sizing | Yes | Yes (diagnostics) | Feasibility check when MotorElement present |
+| Virtual work cross-check | Yes | — | Independent torque validation |
+| Crank selection | Yes | Yes (diagnostics) | Link rotation recommendation for 4-bar |
 
 ### Solver capabilities — backend vs GUI
 

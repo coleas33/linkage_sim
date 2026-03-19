@@ -7,6 +7,7 @@
 use eframe::egui;
 use crate::analysis::envelopes::compute_envelope;
 use crate::analysis::grashof::GrashofType;
+use crate::analysis::motor_sizing::check_motor_sizing;
 use crate::core::constraint::Constraint;
 use crate::core::state::GROUND_ID;
 use crate::forces::elements::*;
@@ -267,10 +268,12 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
 // ── Diagnostics section ──────────────────────────────────────────────────
 
-/// Draw Grashof classification, Jacobian conditioning, and sweep envelope diagnostics.
+/// Draw Grashof classification, crank recommendation, Jacobian conditioning,
+/// and sweep envelope diagnostics.
 ///
 /// Shows a collapsible "Diagnostics" header containing:
 /// - Grashof classification and link lengths (4-bar mechanisms only)
+/// - Crank recommendation (which link to drive for maximum rotation)
 /// - Constraint Jacobian condition number (when forces have been solved)
 /// - Sweep envelope statistics (torque min/max/RMS when sweep data available)
 fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
@@ -279,6 +282,7 @@ fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
     }
 
     let has_grashof = state.grashof_result.is_some();
+    let has_crank_rec = state.crank_recommendation.is_some();
     let has_condition = state.force_results.condition_number.is_some();
     let has_sweep_torques = state
         .sweep_data
@@ -286,7 +290,7 @@ fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
         .and_then(|s| s.driver_torques.as_ref())
         .is_some();
 
-    if !has_grashof && !has_condition && !has_sweep_torques {
+    if !has_grashof && !has_crank_rec && !has_condition && !has_sweep_torques {
         return;
     }
 
@@ -337,9 +341,48 @@ fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
                 ));
             }
 
+            // ── Crank recommendation ─────────────────────────────
+            if let Some(ref rec) = state.crank_recommendation {
+                if has_grashof {
+                    ui.separator();
+                }
+
+                let drive_color = if rec.full_rotation {
+                    egui::Color32::from_rgb(100, 200, 100) // full rotation
+                } else {
+                    egui::Color32::from_rgb(220, 180, 60)  // limited range
+                };
+
+                ui.horizontal(|ui| {
+                    ui.label("Drive:");
+                    ui.colored_label(
+                        drive_color,
+                        format!("'{}'", rec.recommended_link),
+                    );
+                    if rec.full_rotation {
+                        ui.label("(360\u{00b0})");
+                    }
+                });
+
+                // Show reason for the best candidate.
+                if let Some(best) = rec.candidates.first() {
+                    ui.label(format!("  {}", best.reason));
+                }
+
+                // If other candidates exist with different capabilities, note them.
+                for candidate in rec.candidates.iter().skip(1) {
+                    if candidate.can_fully_rotate != rec.full_rotation {
+                        ui.label(format!(
+                            "  Alt: '{}' ~{:.0}\u{00b0}",
+                            candidate.link_name, candidate.estimated_range_deg
+                        ));
+                    }
+                }
+            }
+
             // ── Jacobian conditioning ──────────────────────────────
             if let Some(kappa) = state.force_results.condition_number {
-                if has_grashof {
+                if has_grashof || has_crank_rec {
                     ui.separator();
                 }
 
@@ -368,7 +411,7 @@ fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
             if let Some(ref sweep) = state.sweep_data {
                 if let Some(ref torques) = sweep.driver_torques {
                     if let Some(env) = compute_envelope(torques) {
-                        if has_grashof || has_condition {
+                        if has_grashof || has_crank_rec || has_condition {
                             ui.separator();
                         }
 
@@ -380,9 +423,84 @@ fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
                     }
                 }
             }
+
+            // ── Motor sizing feasibility ────────────────────────────
+            draw_motor_sizing_diagnostic(ui, state);
         });
 
     ui.separator();
+}
+
+/// Draw motor sizing feasibility when sweep data and a MotorElement are both present.
+///
+/// Extracts the motor's stall_torque and no_load_speed from the force elements,
+/// gets the sweep's driver angular velocities and inverse dynamics torques,
+/// runs `check_motor_sizing`, and displays the result.
+fn draw_motor_sizing_diagnostic(ui: &mut egui::Ui, state: &AppState) {
+    // Need sweep data with inverse dynamics torques.
+    let sweep = match state.sweep_data.as_ref() {
+        Some(s) if !s.inverse_dynamics_torques.is_empty() => s,
+        _ => return,
+    };
+
+    // Find the first MotorElement in the blueprint forces.
+    let bp = match state.blueprint.as_ref() {
+        Some(bp) => bp,
+        None => return,
+    };
+
+    let motor = bp.forces.iter().find_map(|f| match f {
+        ForceElement::Motor(m) => Some(m),
+        _ => None,
+    });
+
+    let motor = match motor {
+        Some(m) if m.no_load_speed > 0.0 => m,
+        _ => return,
+    };
+
+    // Build the speed array for each sweep step.
+    // The driver angular velocity is constant (driver_omega) for a constant-speed driver.
+    let omega = state.driver_omega;
+    let n = sweep.inverse_dynamics_torques.len();
+    let speeds: Vec<f64> = vec![omega; n];
+
+    // Filter out NaN torques (failed solves) -- use 0.0 as fallback.
+    let torques: Vec<f64> = sweep
+        .inverse_dynamics_torques
+        .iter()
+        .map(|&t| if t.is_finite() { t } else { 0.0 })
+        .collect();
+
+    let result = check_motor_sizing(&speeds, &torques, motor.stall_torque, motor.no_load_speed);
+
+    ui.separator();
+    if result.all_feasible {
+        ui.horizontal(|ui| {
+            ui.label("Motor:");
+            ui.colored_label(
+                egui::Color32::from_rgb(100, 200, 100),
+                "\u{2713} all feasible",
+            );
+        });
+        ui.label(format!(
+            "  Worst margin: {:.0}% at {:.0}\u{00b0}",
+            result.worst_margin * 100.0,
+            sweep.angles_deg.get(result.worst_index).unwrap_or(&0.0),
+        ));
+    } else {
+        ui.horizontal(|ui| {
+            ui.label("Motor:");
+            ui.colored_label(
+                egui::Color32::from_rgb(220, 80, 80),
+                format!(
+                    "\u{2717} worst margin = {:.0}% at {:.0}\u{00b0}",
+                    result.worst_margin * 100.0,
+                    sweep.angles_deg.get(result.worst_index).unwrap_or(&0.0),
+                ),
+            );
+        });
+    }
 }
 
 // ── Force Elements panel ─────────────────────────────────────────────────
