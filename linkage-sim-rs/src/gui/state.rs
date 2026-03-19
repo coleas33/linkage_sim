@@ -13,8 +13,8 @@ use crate::core::state::GROUND_ID;
 use crate::gui::samples::{build_sample, SampleMechanism};
 use crate::gui::undo::{MechanismSnapshot, UndoHistory};
 use crate::io::serialization::{
-    load_mechanism_unbuilt, load_mechanism_unbuilt_from_json, mechanism_to_json, save_mechanism,
-    BodyJson, DriverJson, JointJson, MechanismJson,
+    load_mechanism_unbuilt, load_mechanism_unbuilt_from_json, mechanism_to_json,
+    BodyJson, DriverJson, JointJson, LoadCaseJson, MechanismJson,
 };
 use crate::solver::kinematics::solve_position;
 use crate::solver::statics::{
@@ -141,6 +141,78 @@ impl GridSettings {
     /// Snap an (x, y) world-coordinate pair to the nearest grid point.
     pub fn snap_point(&self, x: f64, y: f64) -> (f64, f64) {
         (self.snap(x), self.snap(y))
+    }
+}
+
+// ── Load cases ────────────────────────────────────────────────────────────────
+
+/// A named driver configuration on the same mechanism geometry.
+///
+/// Engineers use load cases to compare different operating conditions
+/// (which joint is driven, speed, direction) without rebuilding the mechanism.
+///
+/// Type alias for `LoadCaseJson` — the canonical definition lives in
+/// `io::serialization` so load cases can be serialized/deserialized
+/// alongside the mechanism JSON.
+pub type LoadCase = LoadCaseJson;
+
+/// Manages multiple load cases for the current mechanism.
+#[derive(Debug, Clone)]
+pub struct LoadCaseManager {
+    pub cases: Vec<LoadCase>,
+    pub active_index: usize,
+}
+
+impl Default for LoadCaseManager {
+    fn default() -> Self {
+        Self {
+            cases: Vec::new(),
+            active_index: 0,
+        }
+    }
+}
+
+impl LoadCaseManager {
+    /// Create a manager with a single default load case from the current driver settings.
+    pub fn new_default(driver_joint_id: &str, omega: f64, theta_0: f64) -> Self {
+        Self {
+            cases: vec![LoadCase {
+                name: "Default".to_string(),
+                driver_joint_id: driver_joint_id.to_string(),
+                omega,
+                theta_0,
+            }],
+            active_index: 0,
+        }
+    }
+
+    /// Add a new load case by copying the current driver settings.
+    ///
+    /// Returns the index of the newly added case.
+    pub fn add_case(&mut self, driver_joint_id: &str, omega: f64, theta_0: f64) -> usize {
+        let n = self.cases.len() + 1;
+        self.cases.push(LoadCase {
+            name: format!("Case {}", n),
+            driver_joint_id: driver_joint_id.to_string(),
+            omega,
+            theta_0,
+        });
+        self.cases.len() - 1
+    }
+
+    /// Remove the load case at the given index.
+    ///
+    /// Returns false (no-op) if there is only one case remaining.
+    pub fn remove_case(&mut self, index: usize) -> bool {
+        if self.cases.len() <= 1 || index >= self.cases.len() {
+            return false;
+        }
+        self.cases.remove(index);
+        // Adjust active_index if it's out of bounds or was pointing at the removed case
+        if self.active_index >= self.cases.len() {
+            self.active_index = self.cases.len() - 1;
+        }
+        true
     }
 }
 
@@ -336,6 +408,9 @@ pub struct AppState {
     pub force_results: ForceResults,
     /// Whether to draw force arrows on the canvas.
     pub show_forces: bool,
+    // ── Load cases ──────────────────────────────────────────────────────
+    /// Named driver configurations for comparing operating conditions.
+    pub load_cases: LoadCaseManager,
 }
 
 impl Default for AppState {
@@ -369,6 +444,7 @@ impl Default for AppState {
             grid: GridSettings::default(),
             force_results: ForceResults::default(),
             show_forces: false,
+            load_cases: LoadCaseManager::default(),
         }
     }
 }
@@ -433,6 +509,13 @@ impl AppState {
                 self.driver_joint_id = None;
             }
         }
+        // Initialize default load case from current driver settings
+        self.load_cases = if let Some(ref joint_id) = self.driver_joint_id {
+            LoadCaseManager::new_default(joint_id, self.driver_omega, self.driver_theta_0)
+        } else {
+            LoadCaseManager::default()
+        };
+
         self.playing = false;
         self.animation_direction = 1.0;
         self.pending_driver_reassignment = None;
@@ -547,6 +630,9 @@ impl AppState {
 
     /// Serialize the current mechanism to a JSON file at the given path.
     ///
+    /// Load cases are included in the saved JSON so they persist across
+    /// save/load cycles.
+    ///
     /// Returns `Err` with a human-readable message on any failure.
     pub fn save_to_file(&self, path: &Path) -> Result<(), String> {
         let mech = self
@@ -554,8 +640,12 @@ impl AppState {
             .as_ref()
             .ok_or_else(|| "No mechanism loaded".to_string())?;
 
-        let json = save_mechanism(mech).map_err(|e| e.to_string())?;
+        let mut json_struct = mechanism_to_json(mech).map_err(|e| e.to_string())?;
 
+        // Persist load cases into the JSON structure
+        json_struct.load_cases = self.load_cases.cases.clone();
+
+        let json = serde_json::to_string_pretty(&json_struct).map_err(|e| e.to_string())?;
         std::fs::write(path, json).map_err(|e| format!("Failed to write file: {}", e))?;
 
         Ok(())
@@ -642,6 +732,30 @@ impl AppState {
         self.mechanism = Some(mech);
         self.current_sample = None;
         self.selected = None;
+
+        // Restore load cases from the blueprint, or create a default one
+        if let Some(ref bp) = self.blueprint {
+            if !bp.load_cases.is_empty() {
+                self.load_cases = LoadCaseManager {
+                    cases: bp.load_cases.clone(),
+                    active_index: 0,
+                };
+            } else if let Some(ref joint_id) = self.driver_joint_id {
+                self.load_cases = LoadCaseManager::new_default(
+                    joint_id,
+                    self.driver_omega,
+                    self.driver_theta_0,
+                );
+            } else {
+                self.load_cases = LoadCaseManager::default();
+            }
+        } else if let Some(ref joint_id) = self.driver_joint_id {
+            self.load_cases =
+                LoadCaseManager::new_default(joint_id, self.driver_omega, self.driver_theta_0);
+        } else {
+            self.load_cases = LoadCaseManager::default();
+        }
+
         self.playing = false;
         self.animation_direction = 1.0;
         self.pending_driver_reassignment = None;
@@ -1082,6 +1196,14 @@ impl AppState {
                 self.mechanism = Some(mech);
                 self.driver_joint_id = Some(joint_id.to_string());
                 self.selected = None;
+
+                // Reset load cases to a single default for the new driver
+                self.load_cases = LoadCaseManager::new_default(
+                    joint_id,
+                    self.driver_omega,
+                    self.driver_theta_0,
+                );
+
                 self.playing = false;
                 self.animation_direction = 1.0;
                 self.pending_driver_reassignment = None;
@@ -1091,6 +1213,75 @@ impl AppState {
             Err(msg) => {
                 log::warn!("Driver reassignment failed: {}", msg);
             }
+        }
+    }
+
+    // ── Load case operations ──────────────────────────────────────────────
+
+    /// Add a new load case by copying the current driver settings.
+    pub fn add_load_case(&mut self) {
+        let driver_joint_id = self
+            .driver_joint_id
+            .clone()
+            .unwrap_or_default();
+        self.load_cases.add_case(&driver_joint_id, self.driver_omega, self.driver_theta_0);
+    }
+
+    /// Remove the currently active load case.
+    ///
+    /// No-op if only one case remains. After removal, applies the new active case.
+    pub fn remove_active_load_case(&mut self) {
+        let index = self.load_cases.active_index;
+        if self.load_cases.remove_case(index) {
+            self.apply_load_case(self.load_cases.active_index);
+        }
+    }
+
+    /// Switch to and apply the load case at the given index.
+    ///
+    /// Updates driver settings from the load case. If the driver joint differs
+    /// from the current one, triggers a driver reassignment via the pending
+    /// mechanism. Otherwise just updates omega/theta_0 and re-solves.
+    pub fn apply_load_case(&mut self, index: usize) {
+        if index >= self.load_cases.cases.len() {
+            return;
+        }
+
+        self.push_undo();
+        self.load_cases.active_index = index;
+
+        let case = self.load_cases.cases[index].clone();
+
+        let current_joint = self.driver_joint_id.clone().unwrap_or_default();
+
+        if case.driver_joint_id != current_joint {
+            // Different driver joint -- need to reassign.
+            // Store the load case driver params so they survive reassignment,
+            // then trigger the rebuild via the pending reassignment path.
+            self.driver_omega = case.omega;
+            self.driver_theta_0 = case.theta_0;
+            self.pending_driver_reassignment = Some(case.driver_joint_id.clone());
+        } else {
+            // Same driver joint -- just update speed and angle.
+            self.driver_omega = case.omega;
+            self.driver_theta_0 = case.theta_0;
+            self.driver_angle = case.theta_0;
+            self.solve_at_angle(case.theta_0);
+            self.compute_sweep();
+        }
+    }
+
+    /// Sync the active load case from the current driver state.
+    ///
+    /// Called when the user changes driver settings (omega, theta_0, or joint)
+    /// so the active load case stays in sync.
+    pub fn sync_active_load_case(&mut self) {
+        if let Some(case) = self.load_cases.cases.get_mut(self.load_cases.active_index) {
+            if let Some(ref joint_id) = self.driver_joint_id {
+                case.driver_joint_id = joint_id.clone();
+            }
+            case.omega = self.driver_omega;
+            case.theta_0 = self.driver_theta_0;
         }
     }
 
@@ -2443,5 +2634,201 @@ mod tests {
             "CrankRocker grid spacing should be 0.1-2.0 m, got {} m",
             state.grid.spacing_m
         );
+    }
+
+    // ── Load case tests ───────────────────────────────────────────────
+
+    #[test]
+    fn default_load_case_created_on_sample_load() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::CrankRocker);
+        assert_eq!(state.load_cases.cases.len(), 1);
+        assert_eq!(state.load_cases.cases[0].name, "Default");
+        assert_eq!(state.load_cases.active_index, 0);
+    }
+
+    #[test]
+    fn add_load_case_copies_current() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::CrankRocker);
+        state.add_load_case();
+        assert_eq!(state.load_cases.cases.len(), 2);
+        assert_eq!(state.load_cases.cases[1].name, "Case 2");
+        // New case should have same driver params as current
+        assert_eq!(
+            state.load_cases.cases[1].omega,
+            state.driver_omega,
+        );
+    }
+
+    #[test]
+    fn remove_load_case_prevents_last_removal() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::CrankRocker);
+        assert_eq!(state.load_cases.cases.len(), 1);
+        // Should not be able to remove the last case
+        state.remove_active_load_case();
+        assert_eq!(state.load_cases.cases.len(), 1);
+    }
+
+    #[test]
+    fn remove_load_case_works_with_multiple() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::CrankRocker);
+        state.add_load_case();
+        assert_eq!(state.load_cases.cases.len(), 2);
+        state.remove_active_load_case();
+        assert_eq!(state.load_cases.cases.len(), 1);
+    }
+
+    #[test]
+    fn switch_load_case_changes_omega() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::CrankRocker);
+
+        let original_omega = state.driver_omega;
+        let new_omega = original_omega * 2.0;
+
+        // Add a case with different omega
+        state.load_cases.cases.push(LoadCase {
+            name: "Fast".to_string(),
+            driver_joint_id: state.driver_joint_id.clone().unwrap(),
+            omega: new_omega,
+            theta_0: 0.0,
+        });
+
+        state.apply_load_case(1);
+        assert_eq!(state.driver_omega, new_omega);
+        assert_eq!(state.load_cases.active_index, 1);
+    }
+
+    #[test]
+    fn switch_load_case_changes_driver_joint() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::CrankRocker);
+
+        // Add a case targeting a different joint (J4 is the rocker pivot)
+        state.load_cases.cases.push(LoadCase {
+            name: "Rocker Drive".to_string(),
+            driver_joint_id: "J4".to_string(),
+            omega: 2.0 * PI,
+            theta_0: 0.0,
+        });
+
+        state.apply_load_case(1);
+        // The pending_driver_reassignment should be set for the next frame
+        assert_eq!(
+            state.pending_driver_reassignment,
+            Some("J4".to_string()),
+        );
+    }
+
+    #[test]
+    fn load_case_manager_new_default() {
+        let mgr = LoadCaseManager::new_default("J1", 2.0 * PI, 0.5);
+        assert_eq!(mgr.cases.len(), 1);
+        assert_eq!(mgr.cases[0].name, "Default");
+        assert_eq!(mgr.cases[0].driver_joint_id, "J1");
+        assert_eq!(mgr.cases[0].omega, 2.0 * PI);
+        assert_eq!(mgr.cases[0].theta_0, 0.5);
+        assert_eq!(mgr.active_index, 0);
+    }
+
+    #[test]
+    fn load_case_manager_add_case_returns_index() {
+        let mut mgr = LoadCaseManager::new_default("J1", PI, 0.0);
+        let idx = mgr.add_case("J2", 2.0 * PI, 1.0);
+        assert_eq!(idx, 1);
+        assert_eq!(mgr.cases.len(), 2);
+        assert_eq!(mgr.cases[1].driver_joint_id, "J2");
+    }
+
+    #[test]
+    fn load_case_manager_remove_adjusts_active_index() {
+        let mut mgr = LoadCaseManager::new_default("J1", PI, 0.0);
+        mgr.add_case("J2", 2.0 * PI, 0.0);
+        mgr.add_case("J3", 3.0 * PI, 0.0);
+        mgr.active_index = 2; // point to last
+
+        mgr.remove_case(2);
+        // active_index should be clamped to the last valid index
+        assert_eq!(mgr.active_index, 1);
+        assert_eq!(mgr.cases.len(), 2);
+    }
+
+    #[test]
+    fn load_case_manager_remove_single_case_is_noop() {
+        let mut mgr = LoadCaseManager::new_default("J1", PI, 0.0);
+        assert!(!mgr.remove_case(0));
+        assert_eq!(mgr.cases.len(), 1);
+    }
+
+    #[test]
+    fn sync_active_load_case_updates_params() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::CrankRocker);
+        assert_eq!(state.load_cases.cases[0].omega, 2.0 * PI);
+
+        state.driver_omega = 10.0;
+        state.sync_active_load_case();
+        assert_eq!(state.load_cases.cases[0].omega, 10.0);
+    }
+
+    #[test]
+    fn load_cases_persist_through_save_load() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.add_load_case();
+        state.load_cases.cases[1].name = "High Speed".to_string();
+        state.load_cases.cases[1].omega = 10.0 * PI;
+        assert_eq!(state.load_cases.cases.len(), 2);
+
+        let path = std::env::temp_dir().join("linkage_test_load_cases.json");
+        state.save_to_file(&path).expect("save_to_file failed");
+
+        let mut state2 = AppState::default();
+        state2.load_from_file(&path).expect("load_from_file failed");
+
+        assert_eq!(state2.load_cases.cases.len(), 2);
+        assert_eq!(state2.load_cases.cases[0].name, "Default");
+        assert_eq!(state2.load_cases.cases[1].name, "High Speed");
+        assert!(
+            (state2.load_cases.cases[1].omega - 10.0 * PI).abs() < 1e-10,
+            "omega should be preserved, got {}",
+            state2.load_cases.cases[1].omega,
+        );
+
+        // Clean up
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn reassign_driver_resets_load_cases() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.add_load_case();
+        assert_eq!(state.load_cases.cases.len(), 2);
+
+        state.reassign_driver("J4");
+        // After reassignment, load cases should be reset to a single default
+        assert_eq!(state.load_cases.cases.len(), 1);
+        assert_eq!(state.load_cases.cases[0].name, "Default");
+        assert_eq!(state.load_cases.cases[0].driver_joint_id, "J4");
+    }
+
+    #[test]
+    fn load_sample_no_driver_has_empty_load_cases() {
+        // Build a state, check that samples without a driver don't crash
+        let state = AppState::default();
+        assert!(state.load_cases.cases.is_empty());
+    }
+
+    #[test]
+    fn apply_load_case_out_of_bounds_is_noop() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::CrankRocker);
+        let omega_before = state.driver_omega;
+        state.apply_load_case(999);
+        assert_eq!(state.driver_omega, omega_before);
     }
 }

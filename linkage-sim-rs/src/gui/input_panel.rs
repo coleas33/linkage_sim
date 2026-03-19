@@ -1,9 +1,9 @@
-//! Angle slider, playback controls, and solver status display.
+//! Angle slider, playback controls, load case selector, and solver status display.
 
 use eframe::egui;
 use super::state::AppState;
 
-/// Draw the input panel with animation controls.
+/// Draw the input panel with animation controls and load case management.
 pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
     if !state.has_mechanism() {
         return;
@@ -11,6 +11,9 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
     ui.separator();
     ui.heading("Driver Input");
+
+    // ── Load case selector ──────────────────────────────────────────
+    draw_load_case_selector(ui, state);
 
     // ── Playback controls ────────────────────────────────────────────
     ui.horizontal(|ui| {
@@ -91,5 +94,73 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
     // ── Driver info ──────────────────────────────────────────────────
     if let Some(joint_id) = &state.driver_joint_id {
         ui.label(format!("Driver: {} (right-click joint to change)", joint_id));
+    }
+}
+
+/// Draw the load case selector: ComboBox for switching, +/- buttons, and
+/// an editable name field for the active case.
+fn draw_load_case_selector(ui: &mut egui::Ui, state: &mut AppState) {
+    if state.load_cases.cases.is_empty() {
+        return;
+    }
+
+    ui.separator();
+    ui.strong("Load Case");
+
+    // Collect values needed for the combo box to avoid borrow issues
+    let active_index = state.load_cases.active_index;
+    let active_name = state.load_cases.cases[active_index].name.clone();
+    let case_count = state.load_cases.cases.len();
+
+    // Combo box + add/remove buttons on the same row
+    let mut new_active: Option<usize> = None;
+    let mut add_case = false;
+    let mut remove_case = false;
+
+    ui.horizontal(|ui| {
+        egui::ComboBox::from_id_salt("load_case_selector")
+            .selected_text(&active_name)
+            .show_ui(ui, |ui| {
+                for i in 0..case_count {
+                    let case_name = state.load_cases.cases[i].name.clone();
+                    if ui
+                        .selectable_label(i == active_index, &case_name)
+                        .clicked()
+                    {
+                        new_active = Some(i);
+                    }
+                }
+            });
+
+        if ui.button("+").on_hover_text("Add load case (copy current)").clicked() {
+            add_case = true;
+        }
+
+        let remove_enabled = case_count > 1;
+        if ui
+            .add_enabled(remove_enabled, egui::Button::new("-"))
+            .on_hover_text("Remove current load case")
+            .clicked()
+        {
+            remove_case = true;
+        }
+    });
+
+    // Editable name for the active case
+    ui.horizontal(|ui| {
+        ui.label("Name:");
+        let name = &mut state.load_cases.cases[active_index].name;
+        ui.text_edit_singleline(name);
+    });
+
+    // Apply deferred actions after UI rendering to avoid borrow conflicts
+    if let Some(idx) = new_active {
+        state.apply_load_case(idx);
+    }
+    if add_case {
+        state.add_load_case();
+    }
+    if remove_case {
+        state.remove_active_load_case();
     }
 }

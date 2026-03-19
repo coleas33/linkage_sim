@@ -34,6 +34,21 @@ pub struct MechanismJson {
     /// supported; other driver types are skipped with a warning.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub drivers: HashMap<String, DriverJson>,
+    /// Named load cases (driver configurations) for scenario comparison.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub load_cases: Vec<LoadCaseJson>,
+}
+
+/// JSON representation of a load case — a named driver configuration.
+///
+/// Engineers use load cases to compare different operating conditions on the
+/// same mechanism geometry without rebuilding.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadCaseJson {
+    pub name: String,
+    pub driver_joint_id: String,
+    pub omega: f64,   // rad/s
+    pub theta_0: f64, // rad
 }
 
 /// JSON representation of a driver constraint.
@@ -270,6 +285,7 @@ pub fn mechanism_to_json(mech: &Mechanism) -> Result<MechanismJson, Serializatio
         bodies,
         joints,
         drivers,
+        load_cases: Vec::new(),
     })
 }
 
