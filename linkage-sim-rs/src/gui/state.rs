@@ -3737,4 +3737,83 @@ mod tests {
         assert!(bp.joints.len() < joint_count_before);
         assert!(state.can_undo());
     }
+
+    // ── Integration tests: multi-pivot body editing workflows ─────────────────
+
+    #[test]
+    fn create_ternary_body_via_add_body_with_points() {
+        let mut state = AppState::default();
+        let points = vec![
+            ("A".to_string(), [0.0, 0.0]),
+            ("B".to_string(), [0.1, 0.0]),
+            ("C".to_string(), [0.05, 0.08]),
+        ];
+        state.add_body_with_points(&points);
+        let bp = state.blueprint.as_ref().unwrap();
+        // Should have ground + the new body
+        assert_eq!(bp.bodies.len(), 2);
+        let body = bp.bodies.iter()
+            .find(|(id, _)| *id != "ground")
+            .unwrap().1;
+        assert_eq!(body.attachment_points.len(), 3);
+        assert!(state.can_undo());
+    }
+
+    #[test]
+    fn add_pivot_then_joint_creates_ternary_mechanism() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        // Add a third pivot to the coupler body
+        // (FourBar coupler has attachment points B and C)
+        state.add_attachment_point_to_body("coupler", "P", 0.02, 0.01);
+        let bp = state.blueprint.as_ref().unwrap();
+        let coupler = bp.bodies.get("coupler").unwrap();
+        assert_eq!(coupler.attachment_points.len(), 3); // B, C, P
+    }
+
+    #[test]
+    fn remove_attachment_point_with_min_two_points_survives() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        // Crank has A and B. Removing B should leave just A.
+        state.remove_attachment_point("crank", "B");
+        let bp = state.blueprint.as_ref().unwrap();
+        let crank = bp.bodies.get("crank").unwrap();
+        assert_eq!(crank.attachment_points.len(), 1);
+        assert!(crank.attachment_points.contains_key("A"));
+    }
+
+    #[test]
+    fn compound_draw_link_is_single_undo_step() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        let bp_before = state.blueprint.as_ref().unwrap().clone();
+        let bodies_before = bp_before.bodies.len();
+        let joints_before = bp_before.joints.len();
+
+        // Simulate a compound Draw Link operation
+        state.push_undo();
+        state.add_ground_pivot_raw("PX", 0.1, 0.1);
+        let new_body_id = state.next_body_id();
+        let points = vec![
+            ("A".to_string(), [0.1, 0.1]),
+            ("B".to_string(), [0.2, 0.1]),
+        ];
+        state.add_body_with_points_raw(&new_body_id, &points);
+        state.add_revolute_joint_raw("ground", "PX", &new_body_id, "A");
+        state.rebuild();
+
+        // Verify operation added bodies/joints
+        let bp_after = state.blueprint.as_ref().unwrap();
+        assert!(bp_after.bodies.len() > bodies_before);
+        assert!(bp_after.joints.len() > joints_before);
+
+        // One undo should restore the entire previous state
+        assert!(state.can_undo());
+        state.undo();
+        let bp_undone = state.blueprint.as_ref().unwrap();
+        assert_eq!(bp_undone.bodies.len(), bodies_before);
+        assert_eq!(bp_undone.joints.len(), joints_before);
+    }
 }
