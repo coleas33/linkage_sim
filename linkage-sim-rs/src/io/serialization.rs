@@ -58,8 +58,8 @@ pub struct LoadCaseJson {
 
 /// JSON representation of a driver constraint.
 ///
-/// Only constant-speed revolute drivers can be serialized; general closure-based
-/// drivers are not representable and are omitted.
+/// Constant-speed and expression-based revolute drivers can be serialized.
+/// General closure-based drivers (those without `DriverMeta`) are omitted.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DriverJson {
@@ -70,6 +70,17 @@ pub enum DriverJson {
         omega: f64,
         /// Initial angle offset in rad.
         theta_0: f64,
+    },
+    /// User-defined expression driver: f(t), f'(t), f''(t) as math strings.
+    Expression {
+        body_i: String,
+        body_j: String,
+        /// Position expression, e.g. `"2*pi*t"` or `"pi/2 * sin(3*t)"`.
+        expr: String,
+        /// Velocity expression (first derivative of `expr`).
+        expr_dot: String,
+        /// Acceleration expression (second derivative of `expr`).
+        expr_ddot: String,
     },
 }
 
@@ -279,6 +290,17 @@ pub fn mechanism_to_json(mech: &Mechanism) -> Result<MechanismJson, Serializatio
                     omega: *omega,
                     theta_0: *theta_0,
                 },
+                DriverMeta::Expression {
+                    expr,
+                    expr_dot,
+                    expr_ddot,
+                } => DriverJson::Expression {
+                    body_i: driver.body_i_id().to_string(),
+                    body_j: driver.body_j_id().to_string(),
+                    expr: expr.clone(),
+                    expr_dot: expr_dot.clone(),
+                    expr_ddot: expr_ddot.clone(),
+                },
             };
             drivers.insert(id, driver_json);
         }
@@ -433,6 +455,18 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
             } => {
                 mech.add_constant_speed_driver(driver_id, body_i, body_j, *omega, *theta_0)
                     .map_err(|e| SerializationError::Build(e.to_string()))?;
+            }
+            DriverJson::Expression {
+                body_i,
+                body_j,
+                expr,
+                expr_dot,
+                expr_ddot,
+            } => {
+                mech.add_expression_driver(
+                    driver_id, body_i, body_j, expr, expr_dot, expr_ddot,
+                )
+                .map_err(|e| SerializationError::Build(e.to_string()))?;
             }
         }
     }
@@ -834,6 +868,7 @@ mod tests {
                 assert_eq!(body_i, "ground");
                 assert_eq!(body_j, "crank");
             }
+            other => panic!("Expected ConstantSpeed driver, got {:?}", other),
         }
 
         // Verify the loaded mechanism has the same driver count and can build.
@@ -1055,5 +1090,193 @@ mod tests {
         let json_str = save_mechanism(&mech).unwrap();
         assert!(json_str.contains("ExternalTorque"), "JSON should contain ExternalTorque, got: {}", json_str);
         assert!(json_str.contains("7.5"), "JSON should contain torque value 7.5");
+    }
+
+    // -----------------------------------------------------------------------
+    // Expression driver serialization
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn expression_driver_round_trips_expressions() {
+        let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
+        let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
+        let coupler = make_bar("coupler", "B", "C", 3.0, 1.5, 0.05);
+        let rocker = make_bar("rocker", "D", "C", 2.0, 1.5, 0.02);
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(crank).unwrap();
+        mech.add_body(coupler).unwrap();
+        mech.add_body(rocker).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+        mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+        mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+        mech.add_revolute_joint("J4", "ground", "O4", "rocker", "D").unwrap();
+        mech.add_expression_driver(
+            "D1",
+            "ground",
+            "crank",
+            "2*pi*t",
+            "2*pi",
+            "0",
+        )
+        .unwrap();
+        mech.build().unwrap();
+
+        // Serialize
+        let json_str = save_mechanism(&mech).unwrap();
+        let json_struct: MechanismJson = serde_json::from_str(&json_str).unwrap();
+
+        // Verify the expression driver is in JSON
+        assert_eq!(json_struct.drivers.len(), 1);
+        match &json_struct.drivers["D1"] {
+            DriverJson::Expression {
+                body_i,
+                body_j,
+                expr,
+                expr_dot,
+                expr_ddot,
+            } => {
+                assert_eq!(body_i, "ground");
+                assert_eq!(body_j, "crank");
+                assert_eq!(expr, "2*pi*t");
+                assert_eq!(expr_dot, "2*pi");
+                assert_eq!(expr_ddot, "0");
+            }
+            other => panic!("Expected Expression driver, got {:?}", other),
+        }
+
+        // Deserialize and verify the mechanism builds and solves.
+        // Use t=0.1 (crank angle ~36 deg) to avoid the degenerate t=0 config.
+        let loaded = load_mechanism(&json_str).unwrap();
+        assert_eq!(loaded.n_drivers(), 1);
+
+        let state = loaded.state();
+        let angle = 2.0 * PI * 0.1; // f(0.1) = 0.2*pi
+        let mut q0 = state.make_q();
+        state.set_pose("crank", &mut q0, 0.0, 0.0, angle);
+        state.set_pose("coupler", &mut q0, angle.cos(), angle.sin(), 0.0);
+        state.set_pose("rocker", &mut q0, 4.0, 0.0, PI / 2.0);
+        let result = solve_position(&loaded, &q0, 0.1, 1e-10, 50).unwrap();
+        assert!(
+            result.converged,
+            "Loaded expression driver mechanism did not converge: residual={}",
+            result.residual_norm,
+        );
+    }
+
+    #[test]
+    fn expression_driver_json_contains_type_tag() {
+        let ground = make_ground(&[("O", 0.0, 0.0)]);
+        let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(crank).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O", "crank", "A").unwrap();
+        mech.add_expression_driver("D1", "ground", "crank", "t", "1", "0")
+            .unwrap();
+        mech.build().unwrap();
+
+        let json_str = save_mechanism(&mech).unwrap();
+        assert!(
+            json_str.contains("\"expression\""),
+            "JSON should contain expression type tag, got: {}",
+            json_str,
+        );
+    }
+
+    #[test]
+    fn expression_driver_invalid_expr_fails_to_load() {
+        // Construct JSON with an invalid expression string
+        let json = r#"{
+            "schema_version": "1.0.0",
+            "bodies": {
+                "ground": {
+                    "attachment_points": {"O": [0.0, 0.0]},
+                    "mass": 0.0,
+                    "cg_local": [0.0, 0.0],
+                    "izz_cg": 0.0
+                },
+                "crank": {
+                    "attachment_points": {"A": [0.0, 0.0], "B": [1.0, 0.0]},
+                    "mass": 2.0,
+                    "cg_local": [0.5, 0.0],
+                    "izz_cg": 0.01
+                }
+            },
+            "joints": {
+                "J1": {
+                    "type": "revolute",
+                    "body_i": "ground",
+                    "body_j": "crank",
+                    "point_i": "O",
+                    "point_j": "A"
+                }
+            },
+            "drivers": {
+                "D1": {
+                    "type": "expression",
+                    "body_i": "ground",
+                    "body_j": "crank",
+                    "expr": "???invalid",
+                    "expr_dot": "1",
+                    "expr_ddot": "0"
+                }
+            }
+        }"#;
+
+        let result = load_mechanism(json);
+        assert!(result.is_err(), "Expected error for invalid expression driver");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Invalid") || err.contains("invalid") || err.contains("Failed"),
+            "Error should mention parse failure: {}",
+            err,
+        );
+    }
+
+    #[test]
+    fn expression_driver_with_sin_cos_solves() {
+        // Expression with trigonometric functions -- verifies meval supports them.
+        // f(t) = pi/4 * sin(t), so at t=1 the crank angle is ~0.675 rad.
+        let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
+        let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
+        let coupler = make_bar("coupler", "B", "C", 3.0, 1.5, 0.05);
+        let rocker = make_bar("rocker", "D", "C", 2.0, 1.5, 0.02);
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(crank).unwrap();
+        mech.add_body(coupler).unwrap();
+        mech.add_body(rocker).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+        mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+        mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+        mech.add_revolute_joint("J4", "ground", "O4", "rocker", "D").unwrap();
+        mech.add_expression_driver(
+            "D1",
+            "ground",
+            "crank",
+            "pi/4 * sin(t)",
+            "pi/4 * cos(t)",
+            "-pi/4 * sin(t)",
+        )
+        .unwrap();
+        mech.build().unwrap();
+
+        // Solve at t=1 where f(1) = pi/4 * sin(1) ~ 0.675 rad
+        let state = mech.state();
+        let angle = PI / 4.0 * 1.0_f64.sin();
+        let mut q0 = state.make_q();
+        state.set_pose("crank", &mut q0, 0.0, 0.0, angle);
+        state.set_pose("coupler", &mut q0, angle.cos(), angle.sin(), 0.0);
+        state.set_pose("rocker", &mut q0, 4.0, 0.0, PI / 2.0);
+        let result = solve_position(&mech, &q0, 1.0, 1e-10, 50).unwrap();
+        assert!(
+            result.converged,
+            "Expression driver with sin/cos did not converge: residual={}",
+            result.residual_norm,
+        );
     }
 }

@@ -71,9 +71,9 @@ The simulator is built on four foundational decisions documented in detail in `d
 | Layer | Choice | Rationale |
 |---|---|---|
 | Core solver (Phases 1–4) | Python + NumPy/SciPy | `fsolve` for constraints, `linalg` for linear systems, `solve_ivp` (Radau/BDF) for DAE |
-| Core solver (production) | Rust + nalgebra | **Port complete** — validated against Python golden fixtures (378 tests). All 12 force element types ported. See `RUST_MIGRATION.md` |
-| Expression evaluator | Python: `asteval` → Rust: `meval` or `rhai` | For user-defined force laws and drivers. Not `eval()`, not raw lambdas |
-| GUI framework (Phase 5) | Rust: `egui` + `eframe` | 2D canvas, drag-and-drop, animation. Native + WebAssembly targets. Built in Rust, never in Python |
+| Core solver (production) | Rust + nalgebra | **Port complete** — validated against Python golden fixtures (387 tests). All 12 force element types ported. See `RUST_MIGRATION.md` |
+| Expression evaluator | Python: `asteval` / Rust: `meval` | **Shipped.** User-defined driver expressions (e.g., `"pi/2 * sin(3*t)"`) with GUI editor, serializable to JSON |
+| GUI framework (Phase 5) | Rust: `egui` + `eframe` | 2D canvas, drag-and-drop, animation. Native + WebAssembly targets. WASM build infrastructure shipped (feature flags, web entry point) |
 | Plotting (development) | Matplotlib or Plotly | Engineering-quality plots during Python development |
 | Plotting (production) | `egui_plot` | Embedded in Rust GUI |
 | Data persistence | JSON with schema versioning | Human-readable, diffable, version-controllable mechanism definitions. Python: `json`. Rust: `serde` |
@@ -136,7 +136,7 @@ linkage-sim/
 
 ### Rust solver kernel (`linkage-sim-rs/`)
 
-The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forward dynamics) is complete in Rust, validated against Python golden fixtures (378 tests). **Phase 5 GUI:** Built with egui/eframe. Features:
+The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forward dynamics) is complete in Rust, validated against Python golden fixtures (387 tests). **Phase 5 GUI:** Built with egui/eframe. Features:
 - 12 force element types, all editable in the property panel and rendered on the canvas
 - 7 plot tabs: coupler trace, body angles, transmission angle, driver torque, inverse dynamics, energy (KE/PE/total), mechanical advantage
 - Forward dynamics simulation with timeline scrubbing, playback speed control, and constraint drift display

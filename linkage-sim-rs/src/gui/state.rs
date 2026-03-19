@@ -523,6 +523,15 @@ pub struct AppState {
     pub simulation: Option<SimulationState>,
     /// Duration for forward dynamics simulation (seconds).
     pub simulation_duration: f64,
+    // ── Expression driver editor ────────────────────────────────────────
+    /// Text buffer for f(t) expression being edited.
+    pub expr_buf: String,
+    /// Text buffer for f'(t) expression being edited.
+    pub expr_dot_buf: String,
+    /// Text buffer for f''(t) expression being edited.
+    pub expr_ddot_buf: String,
+    /// Whether the expression editor is currently showing parse errors.
+    pub expr_error: Option<String>,
 }
 
 /// Tracks placement state for the Add Body tool.
@@ -608,6 +617,10 @@ impl Default for AppState {
             crank_recommendation: None,
             simulation: None,
             simulation_duration: 5.0,
+            expr_buf: String::new(),
+            expr_dot_buf: String::new(),
+            expr_ddot_buf: String::new(),
+            expr_error: None,
         };
         state.rebuild();
         state
@@ -927,6 +940,7 @@ impl AppState {
         let (driver_omega, driver_theta_0) = if let Some(driver) = mech.drivers().first() {
             match driver.meta() {
                 Some(DriverMeta::ConstantSpeed { omega, theta_0 }) => (*omega, *theta_0),
+                Some(DriverMeta::Expression { .. }) => (2.0 * PI, 0.0),
                 None => (2.0 * PI, 0.0),
             }
         } else {
@@ -1101,15 +1115,19 @@ impl AppState {
         }
 
         // Extract driver params from blueprint
-        // (look for the first constant_speed driver)
         self.driver_omega = 2.0 * PI;
         self.driver_theta_0 = 0.0;
-        // Check blueprint drivers for actual values (use first constant_speed driver)
+        // Check blueprint drivers for actual values
         if let Some(driver) = bp.drivers.values().next() {
             match driver {
                 DriverJson::ConstantSpeed { omega, theta_0, .. } => {
                     self.driver_omega = *omega;
                     self.driver_theta_0 = *theta_0;
+                }
+                DriverJson::Expression { .. } => {
+                    // Expression drivers use f(t) directly; omega/theta_0
+                    // aren't meaningful, so keep defaults for angle-slider
+                    // mapping (omega=2*pi means 1 rev/s, theta_0=0).
                 }
             }
         }
@@ -1723,6 +1741,71 @@ impl AppState {
         self.compute_sweep();
     }
 
+    /// Switch the current driver to an expression-based driver.
+    ///
+    /// Replaces the first driver in the blueprint with an `Expression` variant,
+    /// preserving the body pair. Pushes undo and rebuilds.
+    pub fn set_expression_driver(&mut self, expr: &str, expr_dot: &str, expr_ddot: &str) {
+        let Some(bp) = &self.blueprint else { return };
+
+        // Find the first driver and its ID + body pair
+        let Some((id, existing)) = bp.drivers.iter().next() else { return };
+        let id = id.clone();
+        let (body_i, body_j) = match existing {
+            DriverJson::ConstantSpeed { body_i, body_j, .. }
+            | DriverJson::Expression { body_i, body_j, .. } => {
+                (body_i.clone(), body_j.clone())
+            }
+        };
+
+        self.push_undo();
+        let bp = self.blueprint.as_mut().unwrap();
+        bp.drivers.insert(
+            id,
+            DriverJson::Expression {
+                body_i,
+                body_j,
+                expr: expr.to_string(),
+                expr_dot: expr_dot.to_string(),
+                expr_ddot: expr_ddot.to_string(),
+            },
+        );
+        self.rebuild();
+    }
+
+    /// Switch the current driver back to a constant-speed driver.
+    ///
+    /// Replaces the first driver in the blueprint with a `ConstantSpeed` variant,
+    /// preserving the body pair. Pushes undo and rebuilds.
+    pub fn set_constant_speed_driver(&mut self, omega: f64, theta_0: f64) {
+        let Some(bp) = &self.blueprint else { return };
+
+        // Find the first driver and its ID + body pair
+        let Some((id, existing)) = bp.drivers.iter().next() else { return };
+        let id = id.clone();
+        let (body_i, body_j) = match existing {
+            DriverJson::ConstantSpeed { body_i, body_j, .. }
+            | DriverJson::Expression { body_i, body_j, .. } => {
+                (body_i.clone(), body_j.clone())
+            }
+        };
+
+        self.push_undo();
+        let bp = self.blueprint.as_mut().unwrap();
+        bp.drivers.insert(
+            id,
+            DriverJson::ConstantSpeed {
+                body_i,
+                body_j,
+                omega,
+                theta_0,
+            },
+        );
+        self.driver_omega = omega;
+        self.driver_theta_0 = theta_0;
+        self.rebuild();
+    }
+
     // ── Load case operations ──────────────────────────────────────────────
 
     /// Add a new load case by copying the current driver settings.
@@ -2144,7 +2227,8 @@ fn joint_references_point(joint: &JointJson, body_id: &str, point_name: &str) ->
 /// Extract the body_i and body_j IDs from a DriverJson.
 fn driver_body_ids(driver: &DriverJson) -> (&str, &str) {
     match driver {
-        DriverJson::ConstantSpeed { body_i, body_j, .. } => (body_i.as_str(), body_j.as_str()),
+        DriverJson::ConstantSpeed { body_i, body_j, .. }
+        | DriverJson::Expression { body_i, body_j, .. } => (body_i.as_str(), body_j.as_str()),
     }
 }
 

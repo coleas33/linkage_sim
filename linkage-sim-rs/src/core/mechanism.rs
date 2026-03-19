@@ -14,7 +14,9 @@ use crate::core::body::Body;
 use crate::core::constraint::{
     make_fixed_joint, make_prismatic_joint, make_revolute_joint, Constraint, JointConstraint,
 };
-use crate::core::driver::{constant_speed_driver, make_revolute_driver, RevoluteDriver};
+use crate::core::driver::{
+    constant_speed_driver, expression_driver, make_revolute_driver, RevoluteDriver,
+};
 use crate::core::state::{State, GROUND_ID};
 use crate::forces::elements::ForceElement;
 
@@ -30,6 +32,21 @@ pub struct ConstraintRange {
 }
 
 /// A planar mechanism: bodies connected by joint constraints.
+///
+/// Manual `Debug` impl because `DriverFn` contains `Box<dyn Fn(...)>` which
+/// cannot derive `Debug`.
+impl std::fmt::Debug for Mechanism {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Mechanism")
+            .field("bodies", &self.bodies.keys().collect::<Vec<_>>())
+            .field("n_joints", &self.joints.len())
+            .field("n_drivers", &self.drivers.len())
+            .field("n_forces", &self.forces.len())
+            .field("built", &self.built)
+            .finish()
+    }
+}
+
 pub struct Mechanism {
     bodies: HashMap<String, Body>,
     joints: Vec<JointConstraint>,
@@ -238,6 +255,33 @@ impl Mechanism {
         self.validate_body_exists(body_j_id)?;
 
         let driver = make_revolute_driver(driver_id, body_i_id, body_j_id, f, f_dot, f_ddot);
+        self.drivers.push(driver);
+        Ok(())
+    }
+
+    /// Add a revolute driver defined by math expression strings.
+    ///
+    /// Each expression is a function of `t` (time in seconds).
+    /// The driver stores `DriverMeta::Expression` so it can be round-tripped
+    /// through JSON serialization.
+    pub fn add_expression_driver(
+        &mut self,
+        driver_id: &str,
+        body_i_id: &str,
+        body_j_id: &str,
+        expr: &str,
+        expr_dot: &str,
+        expr_ddot: &str,
+    ) -> Result<(), MechanismError> {
+        if self.built {
+            return Err(MechanismError::AlreadyBuilt("add driver"));
+        }
+        self.validate_body_exists(body_i_id)?;
+        self.validate_body_exists(body_j_id)?;
+
+        let driver =
+            expression_driver(driver_id, body_i_id, body_j_id, expr, expr_dot, expr_ddot)
+                .map_err(MechanismError::InvalidJoint)?;
         self.drivers.push(driver);
         Ok(())
     }

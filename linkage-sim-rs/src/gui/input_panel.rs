@@ -2,6 +2,7 @@
 
 use eframe::egui;
 use super::state::AppState;
+use crate::io::serialization::DriverJson;
 
 /// Draw the input panel with animation controls and load case management.
 pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
@@ -95,6 +96,9 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
     if let Some(joint_id) = &state.driver_joint_id {
         ui.label(format!("Driver: {} (right-click joint to change)", joint_id));
     }
+
+    // ── Driver type selector + expression editor ────────────────────
+    draw_driver_type_selector(ui, state);
 
     // ── Simulation ──────────────────────────────────────────────────
     draw_simulation_controls(ui, state);
@@ -297,5 +301,131 @@ fn draw_load_case_selector(ui: &mut egui::Ui, state: &mut AppState) {
     }
     if remove_case {
         state.remove_active_load_case();
+    }
+}
+
+/// Draw a combo box to switch between "Constant Speed" and "Custom Expression"
+/// driver modes, plus text fields for expression editing.
+fn draw_driver_type_selector(ui: &mut egui::Ui, state: &mut AppState) {
+    // Only show when there's a blueprint with at least one driver
+    let Some(bp) = &state.blueprint else { return };
+    if bp.drivers.is_empty() {
+        return;
+    }
+
+    // Determine the current driver type from the blueprint
+    let is_expression = bp
+        .drivers
+        .values()
+        .next()
+        .is_some_and(|d| matches!(d, DriverJson::Expression { .. }));
+
+    ui.separator();
+    ui.strong("Driver Function");
+
+    // Combo box for driver type
+    let current_label = if is_expression {
+        "Custom Expression"
+    } else {
+        "Constant Speed"
+    };
+    let mut switch_to_expression = false;
+    let mut switch_to_constant = false;
+
+    egui::ComboBox::from_id_salt("driver_type_selector")
+        .selected_text(current_label)
+        .show_ui(ui, |ui| {
+            if ui
+                .selectable_label(!is_expression, "Constant Speed")
+                .clicked()
+                && is_expression
+            {
+                switch_to_constant = true;
+            }
+            if ui
+                .selectable_label(is_expression, "Custom Expression")
+                .clicked()
+                && !is_expression
+            {
+                switch_to_expression = true;
+            }
+        });
+
+    if switch_to_expression {
+        // Initialize expression buffers with default linear driver
+        state.expr_buf = "2*pi*t".to_string();
+        state.expr_dot_buf = "2*pi".to_string();
+        state.expr_ddot_buf = "0".to_string();
+        state.expr_error = None;
+        state.set_expression_driver("2*pi*t", "2*pi", "0");
+        return;
+    }
+
+    if switch_to_constant {
+        state.expr_error = None;
+        state.set_constant_speed_driver(state.driver_omega, state.driver_theta_0);
+        return;
+    }
+
+    // Show expression editor when in expression mode
+    if is_expression {
+        // Sync buffers from blueprint on first render (if empty)
+        if state.expr_buf.is_empty() {
+            if let Some(DriverJson::Expression {
+                expr,
+                expr_dot,
+                expr_ddot,
+                ..
+            }) = bp.drivers.values().next()
+            {
+                state.expr_buf = expr.clone();
+                state.expr_dot_buf = expr_dot.clone();
+                state.expr_ddot_buf = expr_ddot.clone();
+            }
+        }
+
+        let mut changed = false;
+        ui.horizontal(|ui| {
+            ui.label("f(t) =");
+            if ui.text_edit_singleline(&mut state.expr_buf).lost_focus() {
+                changed = true;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("f'(t) =");
+            if ui.text_edit_singleline(&mut state.expr_dot_buf).lost_focus() {
+                changed = true;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("f''(t) =");
+            if ui.text_edit_singleline(&mut state.expr_ddot_buf).lost_focus() {
+                changed = true;
+            }
+        });
+
+        // Show error if present
+        if let Some(err) = &state.expr_error {
+            ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
+        }
+
+        if changed {
+            // Validate by attempting to parse (fast feedback)
+            let expr = state.expr_buf.clone();
+            let expr_dot = state.expr_dot_buf.clone();
+            let expr_ddot = state.expr_ddot_buf.clone();
+
+            match crate::core::driver::expression_driver(
+                "validate", "a", "b", &expr, &expr_dot, &expr_ddot,
+            ) {
+                Ok(_) => {
+                    state.expr_error = None;
+                    state.set_expression_driver(&expr, &expr_dot, &expr_ddot);
+                }
+                Err(e) => {
+                    state.expr_error = Some(e);
+                }
+            }
+        }
     }
 }

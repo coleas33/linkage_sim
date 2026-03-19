@@ -4,6 +4,7 @@ use std::io::Write;
 use std::path::Path;
 
 use super::state::SweepData;
+#[cfg(feature = "native")]
 use crate::core::mechanism::Mechanism;
 
 /// Export sweep data to CSV file.
@@ -314,7 +315,8 @@ pub fn export_mechanism_svg(
 /// Rasterize an SVG string to RGBA pixel data at the given dimensions.
 ///
 /// This is the shared rasterization core used by both PNG export and GIF
-/// frame generation.
+/// frame generation. Requires the `native` feature (depends on `resvg`).
+#[cfg(feature = "native")]
 fn rasterize_svg_to_rgba(
     svg_str: &str,
     width: u32,
@@ -347,7 +349,8 @@ fn rasterize_svg_to_rgba(
 /// Export the mechanism at its current pose as a PNG image.
 ///
 /// Generates an SVG string, rasterizes it with resvg at the given dimensions,
-/// and saves the result as a PNG file.
+/// and saves the result as a PNG file. Requires the `native` feature.
+#[cfg(feature = "native")]
 pub fn export_mechanism_png(
     path: &std::path::Path,
     mechanism: &Mechanism,
@@ -369,7 +372,9 @@ pub fn export_mechanism_png(
 /// Export an animated GIF of the mechanism sweep.
 ///
 /// Re-solves the mechanism position at each sampled sweep step, renders via
-/// SVG + resvg, and encodes as a looping animated GIF.
+/// SVG + resvg, and encodes as a looping animated GIF. Requires the `native`
+/// feature (depends on `resvg` and `gif`).
+#[cfg(feature = "native")]
 pub fn export_mechanism_gif(
     path: &std::path::Path,
     mech: &Mechanism,
@@ -695,6 +700,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "native")]
     fn export_png_produces_valid_file() {
         use crate::gui::samples::{build_sample, SampleMechanism};
         use crate::solver::kinematics::solve_position;
@@ -723,6 +729,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "native")]
     fn export_png_empty_mechanism_returns_error() {
         use crate::core::mechanism::Mechanism;
         use nalgebra::DVector;
@@ -739,6 +746,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "native")]
     fn export_png_custom_dimensions() {
         use crate::gui::samples::{build_sample, SampleMechanism};
         use crate::solver::kinematics::solve_position;
@@ -759,6 +767,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "native")]
     fn export_gif_produces_valid_file() {
         use crate::gui::samples::SampleMechanism;
         use crate::gui::state::AppState;
@@ -799,6 +808,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "native")]
     fn export_gif_empty_sweep_returns_error() {
         use crate::gui::samples::{build_sample, SampleMechanism};
 
@@ -834,6 +844,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "native")]
     fn export_gif_crank_rocker_produces_valid_file() {
         use crate::gui::state::AppState;
         use crate::gui::samples::SampleMechanism;
@@ -867,6 +878,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "native")]
     fn rasterize_svg_to_rgba_produces_correct_size() {
         use crate::gui::samples::{build_sample, SampleMechanism};
         use crate::solver::kinematics::solve_position;
