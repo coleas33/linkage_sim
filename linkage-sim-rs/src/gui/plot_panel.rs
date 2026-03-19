@@ -14,6 +14,7 @@ enum PlotTab {
     BodyAngles,
     TransmissionAngle,
     DriverTorque,
+    Energy,
 }
 
 /// Draw the plot panel with tabbed plots.
@@ -62,6 +63,12 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &AppState) {
                 "Driver Torque",
             );
         });
+
+        // Only show energy tab if data exists.
+        let has_energy = !sweep.kinetic_energy.is_empty();
+        ui.add_enabled_ui(has_energy, |ui| {
+            ui.selectable_value(&mut selected_tab, PlotTab::Energy, "Energy");
+        });
     });
 
     ui.memory_mut(|mem| mem.data.insert_temp(tab_id, selected_tab));
@@ -77,6 +84,9 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &AppState) {
         }
         PlotTab::DriverTorque => {
             draw_driver_torque(ui, sweep, current_driver_display, &state.display_units);
+        }
+        PlotTab::Energy => {
+            draw_energy(ui, sweep, current_driver_display, &state.display_units);
         }
     }
 }
@@ -275,6 +285,80 @@ fn draw_driver_torque(
         plot_ui.line(
             Line::new("Driver Torque", points)
                 .color(egui::Color32::from_rgb(255, 150, 80))
+                .width(2.0),
+        );
+
+        // Vertical marker at current driver angle.
+        plot_ui.vline(
+            VLine::new("cursor", current_driver_display)
+                .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
+                .width(1.0),
+        );
+    });
+}
+
+/// Plot energy (KE, PE, total) vs driver angle.
+fn draw_energy(
+    ui: &mut egui::Ui,
+    sweep: &super::state::SweepData,
+    current_driver_display: f64,
+    units: &DisplayUnits,
+) {
+    if sweep.kinetic_energy.is_empty() {
+        ui.label("Energy data not available (velocity solve needed).");
+        return;
+    }
+
+    let angle_label = match units.angle {
+        super::state::AngleUnit::Degrees => "deg",
+        super::state::AngleUnit::Radians => "rad",
+    };
+
+    let plot = Plot::new("energy_plot")
+        .x_axis_label(format!("Driver Angle ({})", angle_label))
+        .y_axis_label("Energy (J)")
+        .legend(egui_plot::Legend::default());
+
+    plot.show(ui, |plot_ui| {
+        // Kinetic energy
+        let ke_points: PlotPoints = sweep
+            .angles_deg
+            .iter()
+            .zip(sweep.kinetic_energy.iter())
+            .filter(|&(_, &e)| e.is_finite())
+            .map(|(&x_deg, &e)| [units.angle(x_deg.to_radians()), e])
+            .collect();
+        plot_ui.line(
+            Line::new("Kinetic Energy", ke_points)
+                .color(egui::Color32::from_rgb(255, 150, 80))
+                .width(2.0),
+        );
+
+        // Potential energy
+        let pe_points: PlotPoints = sweep
+            .angles_deg
+            .iter()
+            .zip(sweep.potential_energy.iter())
+            .filter(|&(_, &e)| e.is_finite())
+            .map(|(&x_deg, &e)| [units.angle(x_deg.to_radians()), e])
+            .collect();
+        plot_ui.line(
+            Line::new("Potential Energy", pe_points)
+                .color(egui::Color32::from_rgb(100, 200, 255))
+                .width(2.0),
+        );
+
+        // Total energy
+        let te_points: PlotPoints = sweep
+            .angles_deg
+            .iter()
+            .zip(sweep.total_energy.iter())
+            .filter(|&(_, &e)| e.is_finite())
+            .map(|(&x_deg, &e)| [units.angle(x_deg.to_radians()), e])
+            .collect();
+        plot_ui.line(
+            Line::new("Total Energy", te_points)
+                .color(egui::Color32::from_rgb(120, 220, 120))
                 .width(2.0),
         );
 

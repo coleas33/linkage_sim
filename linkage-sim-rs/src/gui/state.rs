@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::path::Path;
 
+use crate::analysis::grashof::{check_grashof, GrashofResult};
 use crate::analysis::transmission::transmission_angle_fourbar;
 use crate::core::constraint::Constraint;
 use crate::core::driver::DriverMeta;
@@ -17,7 +18,8 @@ use crate::io::serialization::{
     BodyJson, DriverJson, JointJson, LoadCaseJson, MechanismJson,
 };
 use crate::forces::elements::{ForceElement, GravityElement};
-use crate::solver::kinematics::solve_position;
+use crate::analysis::energy::compute_energy_state_mech;
+use crate::solver::kinematics::{solve_position, solve_velocity};
 use crate::solver::statics::{
     extract_reactions, get_driver_reactions, get_joint_reactions, solve_statics,
 };
@@ -314,6 +316,10 @@ pub struct ForceResults {
     pub driver_torque: Option<f64>,
     /// Per-joint reaction forces in global frame: joint_id -> (Fx, Fy) in Newtons.
     pub joint_reactions: HashMap<String, (f64, f64)>,
+    /// Condition number of the constraint Jacobian at this pose.
+    pub condition_number: Option<f64>,
+    /// True if the statics solver detected an overconstrained system.
+    pub is_overconstrained: bool,
 }
 
 // ── View transform ────────────────────────────────────────────────────────────
@@ -375,6 +381,12 @@ pub struct SweepData {
     pub transmission_angles: Option<Vec<f64>>,
     /// Driver torque (N*m) at each step, computed from statics.
     pub driver_torques: Option<Vec<f64>>,
+    /// Kinetic energy at each sweep step (Joules). Requires velocity solve.
+    pub kinetic_energy: Vec<f64>,
+    /// Gravitational potential energy at each sweep step (Joules).
+    pub potential_energy: Vec<f64>,
+    /// Total mechanical energy (KE + PE) at each sweep step (Joules).
+    pub total_energy: Vec<f64>,
 }
 
 // ── AppState ──────────────────────────────────────────────────────────────────
@@ -459,6 +471,9 @@ pub struct AppState {
     /// attachment point (body_id, point_name). If None, a new ground pivot
     /// was created at the start position.
     pub draw_link_start: Option<DrawLinkStart>,
+    // ── Diagnostics ─────────────────────────────────────────────────────
+    /// Cached Grashof classification for 4-bar mechanisms.
+    pub grashof_result: Option<GrashofResult>,
 }
 
 /// Tracks the start of a Draw Link gesture.
@@ -532,6 +547,7 @@ impl Default for AppState {
             active_tool: EditorTool::Select,
             context_menu_target: ContextMenuTarget::default(),
             draw_link_start: None,
+            grashof_result: None,
         };
         state.rebuild();
         state
@@ -612,6 +628,7 @@ impl AppState {
         self.undo_history.clear();
         self.auto_grid_spacing();
         self.compute_forces(0.0);
+        self.update_grashof();
         self.compute_sweep();
         self.compute_validation();
     }
@@ -729,7 +746,36 @@ impl AppState {
         self.force_results = ForceResults {
             driver_torque,
             joint_reactions,
+            condition_number: Some(statics_result.condition_number),
+            is_overconstrained: statics_result.is_overconstrained,
         };
+    }
+
+    /// Update cached Grashof classification from the current mechanism.
+    ///
+    /// Only produces a result for 4-bar mechanisms (3 moving bodies + ground,
+    /// 4 revolute joints). Sets `grashof_result` to `None` for all other
+    /// mechanism topologies.
+    fn update_grashof(&mut self) {
+        let Some(mech) = &self.mechanism else {
+            self.grashof_result = None;
+            return;
+        };
+
+        match detect_fourbar_links(mech) {
+            Some((crank_len, coupler_len, rocker_len, ground_len)) => {
+                self.grashof_result = Some(check_grashof(
+                    ground_len,
+                    crank_len,
+                    coupler_len,
+                    rocker_len,
+                    1e-10,
+                ));
+            }
+            None => {
+                self.grashof_result = None;
+            }
+        }
     }
 
     /// Returns true if a mechanism has been loaded.
@@ -1048,6 +1094,7 @@ impl AppState {
 
         self.mechanism = Some(mech);
         self.compute_forces(t);
+        self.update_grashof();
         self.compute_validation();
     }
 
@@ -1727,6 +1774,9 @@ fn compute_sweep_data(
         coupler_traces: HashMap::new(),
         transmission_angles: None,
         driver_torques: Some(Vec::with_capacity(361)),
+        kinetic_energy: Vec::with_capacity(361),
+        potential_energy: Vec::with_capacity(361),
+        total_energy: Vec::with_capacity(361),
     };
 
     // Pre-allocate body angle vectors.
@@ -1818,6 +1868,18 @@ fn compute_sweep_data(
                     data.driver_torques.as_mut().unwrap().push(torque);
                 } else {
                     data.driver_torques.as_mut().unwrap().push(0.0);
+                }
+
+                // Velocity solve for energy computation.
+                if let Ok(q_dot) = solve_velocity(mech, &q, t) {
+                    let energy = compute_energy_state_mech(mech, &q, &q_dot, 9.81);
+                    data.kinetic_energy.push(energy.kinetic);
+                    data.potential_energy.push(energy.potential_gravity);
+                    data.total_energy.push(energy.total);
+                } else {
+                    data.kinetic_energy.push(f64::NAN);
+                    data.potential_energy.push(f64::NAN);
+                    data.total_energy.push(f64::NAN);
                 }
             }
             _ => {

@@ -5,6 +5,7 @@
 //! and `AppState::set_body_izz`, which mutate the blueprint and rebuild.
 
 use eframe::egui;
+use crate::analysis::grashof::GrashofType;
 use crate::core::constraint::Constraint;
 use crate::core::state::GROUND_ID;
 use crate::forces::elements::*;
@@ -26,6 +27,9 @@ enum PendingPropertyEdit {
 /// blueprint is present and the selected body is not ground.
 pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
     ui.heading("Properties");
+
+    // ── Diagnostics section (always shown when a mechanism is loaded) ───
+    draw_diagnostics_section(ui, state);
 
     // Collect any pending edits during rendering, then apply them after
     // we're done reading from state (avoids &/&mut borrow overlap).
@@ -249,6 +253,103 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
             }
         }
     }
+}
+
+// ── Diagnostics section ──────────────────────────────────────────────────
+
+/// Draw Grashof classification and Jacobian conditioning diagnostics.
+///
+/// Shows a collapsible "Diagnostics" header containing:
+/// - Grashof classification and link lengths (4-bar mechanisms only)
+/// - Constraint Jacobian condition number (when forces have been solved)
+fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
+    if state.mechanism.is_none() {
+        return;
+    }
+
+    let has_grashof = state.grashof_result.is_some();
+    let has_condition = state.force_results.condition_number.is_some();
+
+    if !has_grashof && !has_condition {
+        return;
+    }
+
+    egui::CollapsingHeader::new("Diagnostics")
+        .default_open(true)
+        .show(ui, |ui| {
+            // ── Grashof classification ──────────────────────────────
+            if let Some(ref gr) = state.grashof_result {
+                let (label, is_ok) = match gr.classification {
+                    GrashofType::CrankRocker => ("Crank-Rocker", true),
+                    GrashofType::DoubleCrank => ("Double-Crank", true),
+                    GrashofType::DoubleRocker => ("Double-Rocker", true),
+                    GrashofType::ChangePoint => ("Change-Point", false),
+                    GrashofType::NonGrashof => ("Non-Grashof", false),
+                };
+
+                let units = &state.display_units;
+
+                ui.horizontal(|ui| {
+                    ui.label("Grashof:");
+                    if is_ok {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(100, 200, 100),
+                            label,
+                        );
+                    } else {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(220, 180, 60),
+                            label,
+                        );
+                    }
+                });
+
+                let [ground, crank, coupler, rocker] = gr.link_lengths;
+                ui.label(format!(
+                    "  Ground: {:.2}{}  Crank: {:.2}{}",
+                    units.length(ground),
+                    units.length_suffix(),
+                    units.length(crank),
+                    units.length_suffix(),
+                ));
+                ui.label(format!(
+                    "  Coupler: {:.2}{}  Rocker: {:.2}{}",
+                    units.length(coupler),
+                    units.length_suffix(),
+                    units.length(rocker),
+                    units.length_suffix(),
+                ));
+            }
+
+            // ── Jacobian conditioning ──────────────────────────────
+            if let Some(kappa) = state.force_results.condition_number {
+                if has_grashof {
+                    ui.separator();
+                }
+
+                let color = if kappa < 1e4 {
+                    egui::Color32::from_rgb(100, 200, 100) // well-conditioned
+                } else if kappa < 1e8 {
+                    egui::Color32::from_rgb(220, 180, 60) // moderate
+                } else {
+                    egui::Color32::from_rgb(220, 80, 80) // ill-conditioned
+                };
+
+                ui.horizontal(|ui| {
+                    ui.label("Conditioning:");
+                    ui.colored_label(color, format!("\u{03ba} = {:.2e}", kappa));
+                });
+
+                if state.force_results.is_overconstrained {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(220, 180, 60),
+                        "  Overconstrained (pseudo-inverse used)",
+                    );
+                }
+            }
+        });
+
+    ui.separator();
 }
 
 // ── Force Elements panel ─────────────────────────────────────────────────

@@ -299,14 +299,17 @@ The Rust port follows the same build order as the Python phases, validating agai
 7. `solver/inverse_dynamics.rs` — Validated against golden inverse dynamics data — **COMPLETE** (March 2026)
 8. `solver/forward_dynamics.rs` — explicit integrator + Baumgarte. Validated against golden trajectories — **COMPLETE** (March 2026)
 9. `analysis/*` — validation, transmission angle, Grashof classification, coupler curves, energy — **COMPLETE** (March 2026)
-10. `gui/*` — Phase 5, built in egui — **IN PROGRESS** (MVP + animation playback + driver reassignment + 13 sample mechanisms + JSON save/load + undo/redo + plotting + gravity-loaded reaction force arrows + interactive topology editor + SVG export done; force element GUI + analysis displays remaining)
+10. `gui/*` — Phase 5, built in egui — **IN PROGRESS** (MVP + animation playback + driver reassignment + 13 sample mechanisms + JSON save/load + undo/redo + plotting + gravity-loaded reaction force arrows + interactive topology editor + SVG export + force element GUI + analysis displays done; raster export remaining)
 
 **Note:** Phase 5 MVP (visualization shell) was built in parallel after port steps 1-5, consuming only the kinematic solver API. Sub-projects for animation playback, JSON save/load, undo/redo, plotting, 6-bar sample mechanisms, interactive topology editor, load cases, and SVG export have since been completed.
 
 **Remaining Phase 5 work:**
-- Force element GUI: define/edit springs, dampers, external loads on bodies/joints — **partially done** (property panel editing complete, canvas rendering of spring/damper/force symbols complete)
-- Analysis displays: energy plot tab, Grashof classification, Jacobian rank diagnostics (backend modules exist, GUI wiring needed)
+- Force element GUI: define/edit springs, dampers, external loads on bodies/joints — **done** (property panel editing, canvas rendering of spring/damper/force symbols)
+- Analysis displays: energy plot tab, Grashof classification, Jacobian rank diagnostics — **done** (energy plot with KE/PE/total, Grashof classification in diagnostics panel, condition number display)
+- Velocity solve in sweep — **done** (called at each sweep step for energy computation)
 - Raster/animation export: PNG, GIF/MP4 (nice-to-have)
+- Forward dynamics GUI trigger (nice-to-have)
+- Inverse dynamics GUI trigger (nice-to-have)
 
 Each step has a clear "done" condition: Rust output matches Python golden data within tolerance.
 
@@ -459,9 +462,9 @@ The solver kernel port (steps 1–9) is complete for **constraint-based analysis
 |----------|:------------:|:--------:|-------|
 | Transmission angle | Yes | Yes (plot tab) | 4-bar only |
 | Coupler point tracing | Yes (pos, vel, accel) | Yes (position only) | Velocity/acceleration vectors not rendered |
-| Energy (KE/PE/total) | Yes | **No** | No plot tab |
-| Grashof classification | Yes | **No** | No display |
-| Jacobian rank/condition | Yes | **No** | Grubler partially used; SVD analysis not shown |
+| Energy (KE/PE/total) | Yes | Yes (plot tab) | KE, PE, total energy vs driver angle |
+| Grashof classification | Yes | Yes (diagnostics) | Shown in collapsible diagnostics panel |
+| Jacobian rank/condition | Yes | Yes (diagnostics) | Condition number + overconstrained warning |
 | Validation (Grubler DOF) | Yes | Partial (status bar) | |
 
 ### Solver capabilities — backend vs GUI
@@ -469,7 +472,7 @@ The solver kernel port (steps 1–9) is complete for **constraint-based analysis
 | Solver | Rust Backend | Rust GUI | Notes |
 |--------|:------------:|:--------:|-------|
 | Position kinematics | Yes | Yes | Core of sweep + animation |
-| Velocity kinematics | Yes | **No** | Solver exists, not called from GUI |
+| Velocity kinematics | Yes | Yes (sweep) | Called at each sweep step for energy computation |
 | Acceleration kinematics | Yes | **No** | Solver exists, not called from GUI |
 | Statics | Yes | Yes | Driver torque + reaction force arrows |
 | Inverse dynamics | Yes | **No** | Solver exists, no GUI trigger |
@@ -479,5 +482,5 @@ The solver kernel port (steps 1–9) is complete for **constraint-based analysis
 
 1. **Force element enum** — ~~Create `ForceElement` enum (not trait) on `Mechanism`, refactor solver APIs to read forces from mechanism. Add serialization support (tagged enum, backward-compatible JSON).~~ **DONE.** `ForceElement` enum with 7 variants, integrated into solver APIs and serialization.
 2. **Force element GUI** — Collapsible force sections in property panel for body/joint selection. Canvas rendering of spring/damper symbols and external force arrows. **Partially done:** property panel editing complete, canvas rendering of spring/damper/force symbols complete.
-3. **Analysis displays** — Energy plot tab (requires velocity solve in sweep). Grashof classification in property panel diagnostics. Jacobian rank at current pose in diagnostics.
-4. **Velocity solve in sweep** — Add linear velocity solve at each sweep step to enable energy computation.
+3. **Analysis displays** — ~~Energy plot tab (requires velocity solve in sweep). Grashof classification in property panel diagnostics. Jacobian rank at current pose in diagnostics.~~ **DONE.** Energy plot tab with KE/PE/total, Grashof classification in diagnostics panel, Jacobian condition number display.
+4. **Velocity solve in sweep** — ~~Add linear velocity solve at each sweep step to enable energy computation.~~ **DONE.** Velocity solved at each sweep step; energy computed via `compute_energy_state_mech`.

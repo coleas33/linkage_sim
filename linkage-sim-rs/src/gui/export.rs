@@ -327,6 +327,9 @@ mod tests {
             coupler_traces,
             transmission_angles: Some(vec![80.0, 75.0, 90.0, 105.0, 80.0]),
             driver_torques: Some(vec![1.0, 1.5, 0.5, -0.5, 1.0]),
+            kinetic_energy: vec![0.1, 0.2, 0.3, 0.2, 0.1],
+            potential_energy: vec![0.5, 0.4, 0.3, 0.4, 0.5],
+            total_energy: vec![0.6, 0.6, 0.6, 0.6, 0.6],
         }
     }
 

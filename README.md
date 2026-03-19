@@ -146,8 +146,8 @@ The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forwa
 - All edit operations push to the undo/redo stack; blueprint stays in sync with snapshots
 
 **Phase 5 substantially complete.** Remaining items:
-- Force element GUI (define/edit springs, dampers, external loads on bodies/joints) — **partially done** (property panel editing and canvas rendering of spring/damper/force symbols complete)
-- Analysis displays (energy plot, Grashof classification, Jacobian rank diagnostics) — **planned**
+- Force element GUI (define/edit springs, dampers, external loads on bodies/joints) — **done** (property panel editing, canvas rendering of spring/damper/force symbols)
+- Analysis displays (energy plot, Grashof classification, Jacobian rank diagnostics) — **done** (energy plot tab with KE/PE/total, Grashof in diagnostics panel, condition number display)
 - Raster/animation export (PNG, GIF/MP4) — nice-to-have
 
 ```
