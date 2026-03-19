@@ -210,6 +210,13 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                         Stroke::new(BODY_STROKE_WIDTH, color),
                     );
                 }
+                // Close polygon for bodies with 3+ points.
+                if screen_points.len() >= 3 {
+                    painter.line_segment(
+                        [*screen_points.last().unwrap(), screen_points[0]],
+                        Stroke::new(BODY_STROKE_WIDTH, color),
+                    );
+                }
             } else if screen_points.len() == 1 {
                 painter.circle_filled(screen_points[0], 4.0, color);
             }
