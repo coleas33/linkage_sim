@@ -1355,6 +1355,40 @@ impl AppState {
 
     // ── Create / delete operations ──────────────────────────────────────
 
+    /// Add a named attachment point to a body at a world-coordinate position.
+    ///
+    /// Converts the world coordinates to body-local using the current pose, then
+    /// delegates to `add_attachment_point_local_raw`. Pushes undo and rebuilds.
+    /// No-op if the body does not exist or there is no blueprint.
+    pub fn add_attachment_point_to_body(
+        &mut self,
+        body_id: &str,
+        name: &str,
+        world_x: f64,
+        world_y: f64,
+    ) {
+        self.push_undo();
+        let [lx, ly] = self.world_to_body_local(body_id, world_x, world_y);
+        self.add_attachment_point_local_raw(body_id, name, lx, ly);
+        self.rebuild();
+    }
+
+    /// Remove a named attachment point from a body.
+    ///
+    /// Cascades: any joint that references `(body_id, point_name)` is also
+    /// removed. Pushes undo and rebuilds.
+    /// No-op if the body or point does not exist, or there is no blueprint.
+    pub fn remove_attachment_point(&mut self, body_id: &str, point_name: &str) {
+        self.push_undo();
+        let Some(bp) = &mut self.blueprint else { return };
+        if let Some(body) = bp.bodies.get_mut(body_id) {
+            body.attachment_points.remove(point_name);
+        }
+        bp.joints
+            .retain(|_id, joint| !joint_references_point(joint, body_id, point_name));
+        self.rebuild();
+    }
+
     /// Add a new ground pivot (attachment point on the ground body).
     ///
     /// Pushes undo, adds the point, and rebuilds.
@@ -2067,6 +2101,25 @@ fn joint_body_ids(joint: &JointJson) -> (&str, &str) {
         | JointJson::Fixed { body_i, body_j, .. }
         | JointJson::Prismatic { body_i, body_j, .. }
         | JointJson::RevoluteDriver { body_i, body_j, .. } => (body_i.as_str(), body_j.as_str()),
+    }
+}
+
+/// Returns true if the joint references the given (body_id, point_name) pair.
+///
+/// Used by `remove_attachment_point` to cascade-delete joints that depend on
+/// the removed pivot. RevoluteDriver joints reference bodies but not specific
+/// attachment points, so they are never matched.
+fn joint_references_point(joint: &JointJson, body_id: &str, point_name: &str) -> bool {
+    match joint {
+        JointJson::Revolute { body_i, point_i, body_j, point_j, .. }
+        | JointJson::Prismatic { body_i, point_i, body_j, point_j, .. }
+        | JointJson::Fixed { body_i, point_i, body_j, point_j, .. } => {
+            (body_i == body_id && point_i == point_name)
+                || (body_j == body_id && point_j == point_name)
+        }
+        // RevoluteDriver has body_i/body_j but no point_i/point_j fields.
+        // It references bodies, not specific attachment points.
+        JointJson::RevoluteDriver { .. } => false,
     }
 }
 
@@ -3634,5 +3687,36 @@ mod tests {
         let c = crank.attachment_points.get("C").unwrap();
         assert!((c[0] - 0.005).abs() < 1e-15);
         assert!((c[1] - 0.003).abs() < 1e-15);
+    }
+
+    // ── add_attachment_point_to_body / remove_attachment_point tests ──────────
+
+    #[test]
+    fn add_attachment_point_to_body_converts_world_to_local() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        // Ground is at (0,0,0), so world = local for ground
+        state.add_attachment_point_to_body("ground", "PX", 0.05, 0.02);
+        let bp = state.blueprint.as_ref().unwrap();
+        let ground = bp.bodies.get("ground").unwrap();
+        let px = ground.attachment_points.get("PX").unwrap();
+        assert!((px[0] - 0.05).abs() < 1e-10);
+        assert!((px[1] - 0.02).abs() < 1e-10);
+        assert!(state.can_undo());
+    }
+
+    #[test]
+    fn remove_attachment_point_cascades_to_joints() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        // Crank has points A and B. J1 connects ground:O2 to crank:A.
+        // Removing crank:A should also remove J1.
+        let bp = state.blueprint.as_ref().unwrap();
+        let joint_count_before = bp.joints.len();
+        state.remove_attachment_point("crank", "A");
+        let bp = state.blueprint.as_ref().unwrap();
+        assert!(!bp.bodies.get("crank").unwrap().attachment_points.contains_key("A"));
+        assert!(bp.joints.len() < joint_count_before);
+        assert!(state.can_undo());
     }
 }
