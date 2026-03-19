@@ -406,6 +406,9 @@ pub struct SweepData {
     /// Mechanical advantage (output/input angular velocity ratio) at each
     /// sweep step. Requires velocity solve and a detectable driver body pair.
     pub mechanical_advantage: Vec<f64>,
+    /// Per-joint reaction force magnitudes (N) over the sweep.
+    /// Key: joint_id, Value: vec of resultant force magnitudes at each step.
+    pub joint_reaction_magnitudes: HashMap<String, Vec<f64>>,
 }
 
 // ── Simulation state ──────────────────────────────────────────────────────────
@@ -2272,7 +2275,12 @@ fn compute_sweep_data(
         total_energy: Vec::with_capacity(361),
         inverse_dynamics_torques: Vec::with_capacity(361),
         mechanical_advantage: Vec::with_capacity(361),
+        joint_reaction_magnitudes: HashMap::new(),
     };
+
+    // Temporary accumulator for reaction data (filled during sweep,
+    // then moved into `data` at the end).
+    let mut reaction_data: HashMap<String, Vec<f64>> = HashMap::new();
 
     // Pre-allocate body angle vectors.
     let body_order: Vec<String> = mech.body_order().to_vec();
@@ -2362,7 +2370,7 @@ fn compute_sweep_data(
                     data.transmission_angles.as_mut().unwrap().push(ta.angle_deg);
                 }
 
-                // Driver torque from statics solve.
+                // Driver torque and joint reactions from statics solve.
                 if let Ok(statics) = solve_statics(mech, &q, t) {
                     let reactions = extract_reactions(mech, &statics);
                     let torque = get_driver_reactions(&reactions)
@@ -2370,8 +2378,23 @@ fn compute_sweep_data(
                         .map(|r| r.effort)
                         .unwrap_or(0.0);
                     data.driver_torques.as_mut().unwrap().push(torque);
+
+                    // Per-joint reaction magnitudes.
+                    for jr in &reactions {
+                        if jr.n_equations > 1 {
+                            reaction_data
+                                .entry(jr.joint_id.clone())
+                                .or_insert_with(|| Vec::with_capacity(361))
+                                .push(jr.resultant);
+                        }
+                    }
                 } else {
                     data.driver_torques.as_mut().unwrap().push(0.0);
+
+                    // Push NaN for all tracked joints when statics fails.
+                    for values in reaction_data.values_mut() {
+                        values.push(f64::NAN);
+                    }
                 }
 
                 // Velocity solve for energy and mechanical advantage.
@@ -2424,6 +2447,8 @@ fn compute_sweep_data(
             }
         }
     }
+
+    data.joint_reaction_magnitudes = reaction_data;
 
     (data, q_at_zero)
 }

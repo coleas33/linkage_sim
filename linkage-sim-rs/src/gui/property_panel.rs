@@ -5,12 +5,14 @@
 //! and `AppState::set_body_izz`, which mutate the blueprint and rebuild.
 
 use eframe::egui;
+use meval;
 use crate::analysis::envelopes::compute_envelope;
 use crate::analysis::grashof::GrashofType;
 use crate::analysis::motor_sizing::check_motor_sizing;
 use crate::core::constraint::Constraint;
 use crate::core::state::GROUND_ID;
 use crate::forces::elements::*;
+use crate::solver::statics::reaction_to_local;
 use super::state::{AppState, SelectedEntity}; // DisplayUnits used via state.display_units
 
 /// Pending edit collected during UI rendering, applied after all reads
@@ -216,6 +218,18 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                         ui.label(format!("Fy: {:.4} N", fy));
                         let resultant = (fx * fx + fy * fy).sqrt();
                         ui.label(format!("Resultant: {:.4} N", resultant));
+
+                        // Local-frame reactions (body i frame)
+                        let theta_i = if mech_state.is_ground(joint.body_i_id()) {
+                            0.0
+                        } else {
+                            mech_state.get_angle(joint.body_i_id(), q)
+                        };
+                        let local = reaction_to_local([fx, fy], theta_i);
+                        ui.separator();
+                        ui.strong("Local Frame (body i):");
+                        ui.label(format!("Fx_local: {:.4} N", local[0]));
+                        ui.label(format!("Fy_local: {:.4} N", local[1]));
                     }
 
                     // "Set as Driver" button for grounded revolute joints.
@@ -908,6 +922,12 @@ fn draw_force_element_details(
                 updated.local_point = pt;
                 ForceElement::ExternalForce(updated)
             }, pending);
+
+            draw_modulation_fields(ui, index, &f.modulation, |m| {
+                let mut updated = f.clone();
+                updated.modulation = m;
+                ForceElement::ExternalForce(updated)
+            }, pending);
         }
 
         ForceElement::ExternalTorque(t) => {
@@ -932,6 +952,12 @@ fn draw_force_element_details(
                     });
                 }
             });
+
+            draw_modulation_fields(ui, index, &t.modulation, |m| {
+                let mut updated = t.clone();
+                updated.modulation = m;
+                ForceElement::ExternalTorque(updated)
+            }, pending);
         }
 
         ForceElement::TorsionSpring(s) => {
@@ -1479,6 +1505,209 @@ fn draw_force_element_details(
                 updated.point_b = pt;
                 ForceElement::LinearActuator(updated)
             }, pending);
+        }
+    }
+}
+
+/// Modulation type index for the ComboBox selector.
+///
+/// Maps TimeModulation variants to integer indices for the UI selector.
+fn modulation_type_index(m: &TimeModulation) -> usize {
+    match m {
+        TimeModulation::Constant => 0,
+        TimeModulation::Sinusoidal { .. } => 1,
+        TimeModulation::Step { .. } => 2,
+        TimeModulation::Ramp { .. } => 3,
+        TimeModulation::Expression { .. } => 4,
+    }
+}
+
+/// Human-readable label for a modulation type index.
+fn modulation_type_label(idx: usize) -> &'static str {
+    match idx {
+        0 => "Constant",
+        1 => "Sinusoidal",
+        2 => "Step",
+        3 => "Ramp",
+        4 => "Expression",
+        _ => "Unknown",
+    }
+}
+
+/// Draw time modulation type selector and parameter fields.
+///
+/// When the modulation type or a parameter changes, the current element
+/// is reconstructed via `make_element` and emitted as an UpdateForce edit.
+fn draw_modulation_fields(
+    ui: &mut egui::Ui,
+    index: usize,
+    modulation: &TimeModulation,
+    make_element: impl Fn(TimeModulation) -> ForceElement,
+    pending: &mut Option<PendingPropertyEdit>,
+) {
+    ui.separator();
+    ui.label("Modulation:");
+
+    let mut type_idx = modulation_type_index(modulation);
+    let prev_idx = type_idx;
+
+    egui::ComboBox::from_id_salt(format!("mod_type_{}", index))
+        .selected_text(modulation_type_label(type_idx))
+        .show_ui(ui, |ui| {
+            for i in 0..5 {
+                ui.selectable_value(&mut type_idx, i, modulation_type_label(i));
+            }
+        });
+
+    // If the type changed, switch to new variant with default parameters.
+    if type_idx != prev_idx {
+        let new_mod = match type_idx {
+            0 => TimeModulation::Constant,
+            1 => TimeModulation::Sinusoidal { omega: 1.0, phase: 0.0 },
+            2 => TimeModulation::Step { t_on: 0.0 },
+            3 => TimeModulation::Ramp { t_start: 0.0, t_end: 1.0 },
+            4 => TimeModulation::Expression { expr: "sin(2*pi*t)".into() },
+            _ => TimeModulation::Constant,
+        };
+        *pending = Some(PendingPropertyEdit::UpdateForce {
+            index,
+            force: make_element(new_mod),
+        });
+        return;
+    }
+
+    // Draw parameter fields for the current modulation type.
+    match modulation {
+        TimeModulation::Constant => {} // no parameters
+
+        TimeModulation::Sinusoidal { omega, phase } => {
+            let mut w = *omega;
+            ui.horizontal(|ui| {
+                ui.label("\u{03c9}:");
+                if ui
+                    .add(egui::DragValue::new(&mut w).speed(0.1).suffix(" rad/s"))
+                    .changed()
+                {
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: make_element(TimeModulation::Sinusoidal {
+                            omega: w,
+                            phase: *phase,
+                        }),
+                    });
+                }
+            });
+
+            let mut p = *phase;
+            ui.horizontal(|ui| {
+                ui.label("Phase:");
+                if ui
+                    .add(egui::DragValue::new(&mut p).speed(0.01).suffix(" rad"))
+                    .changed()
+                {
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: make_element(TimeModulation::Sinusoidal {
+                            omega: *omega,
+                            phase: p,
+                        }),
+                    });
+                }
+            });
+        }
+
+        TimeModulation::Step { t_on } => {
+            let mut t = *t_on;
+            ui.horizontal(|ui| {
+                ui.label("t_on:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut t)
+                            .speed(0.01)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" s"),
+                    )
+                    .changed()
+                {
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: make_element(TimeModulation::Step { t_on: t }),
+                    });
+                }
+            });
+        }
+
+        TimeModulation::Ramp { t_start, t_end } => {
+            let mut ts = *t_start;
+            ui.horizontal(|ui| {
+                ui.label("t_start:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut ts)
+                            .speed(0.01)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" s"),
+                    )
+                    .changed()
+                {
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: make_element(TimeModulation::Ramp {
+                            t_start: ts,
+                            t_end: *t_end,
+                        }),
+                    });
+                }
+            });
+
+            let mut te = *t_end;
+            ui.horizontal(|ui| {
+                ui.label("t_end:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut te)
+                            .speed(0.01)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" s"),
+                    )
+                    .changed()
+                {
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: make_element(TimeModulation::Ramp {
+                            t_start: *t_start,
+                            t_end: te,
+                        }),
+                    });
+                }
+            });
+        }
+
+        TimeModulation::Expression { expr } => {
+            let mut text = expr.clone();
+            ui.horizontal(|ui| {
+                ui.label("f(t):");
+                let response = ui.text_edit_singleline(&mut text);
+                if response.lost_focus() && text != *expr {
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: make_element(TimeModulation::Expression { expr: text }),
+                    });
+                }
+            });
+
+            // Validation hint: try parsing the expression
+            if let Err(e) = expr.parse::<meval::Expr>() {
+                ui.colored_label(
+                    egui::Color32::from_rgb(220, 80, 80),
+                    format!("Parse error: {}", e),
+                );
+            } else if expr.parse::<meval::Expr>().ok().and_then(|e| e.bind("t").ok()).is_none() {
+                ui.colored_label(
+                    egui::Color32::from_rgb(220, 80, 80),
+                    "Error: cannot bind variable 't'",
+                );
+            }
         }
     }
 }

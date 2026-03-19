@@ -17,6 +17,7 @@ enum PlotTab {
     InverseDynamics,
     Energy,
     MechanicalAdvantage,
+    JointReactions,
 }
 
 /// Draw the plot panel with tabbed plots.
@@ -92,6 +93,16 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &AppState) {
                 "Mech. Advantage",
             );
         });
+
+        // Only show joint reactions tab if data exists.
+        let has_jr = !sweep.joint_reaction_magnitudes.is_empty();
+        ui.add_enabled_ui(has_jr, |ui| {
+            ui.selectable_value(
+                &mut selected_tab,
+                PlotTab::JointReactions,
+                "Joint Reactions",
+            );
+        });
     });
 
     ui.memory_mut(|mem| mem.data.insert_temp(tab_id, selected_tab));
@@ -116,6 +127,9 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &AppState) {
         }
         PlotTab::MechanicalAdvantage => {
             draw_mechanical_advantage(ui, sweep, current_driver_display, &state.display_units);
+        }
+        PlotTab::JointReactions => {
+            draw_joint_reactions(ui, sweep, current_driver_display, &state.display_units);
         }
     }
 }
@@ -510,6 +524,67 @@ fn draw_mechanical_advantage(
                 .style(egui_plot::LineStyle::Dashed { length: 4.0 })
                 .width(1.0),
         );
+
+        // Vertical marker at current driver angle.
+        plot_ui.vline(
+            VLine::new("cursor", current_driver_display)
+                .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
+                .width(1.0),
+        );
+    });
+}
+
+/// Plot joint reaction force magnitudes (N) vs driver angle.
+///
+/// Each joint gets its own series with a distinct color from the standard
+/// palette. Only finite values are plotted (NaN from failed statics solves
+/// is silently skipped).
+fn draw_joint_reactions(
+    ui: &mut egui::Ui,
+    sweep: &super::state::SweepData,
+    current_driver_display: f64,
+    units: &DisplayUnits,
+) {
+    if sweep.joint_reaction_magnitudes.is_empty() {
+        ui.label("Joint reaction data not available.");
+        return;
+    }
+
+    let angle_label = match units.angle {
+        super::state::AngleUnit::Degrees => "deg",
+        super::state::AngleUnit::Radians => "rad",
+    };
+
+    let plot = Plot::new("joint_reactions_plot")
+        .x_axis_label(format!("Driver Angle ({})", angle_label))
+        .y_axis_label("Reaction Force (N)")
+        .legend(egui_plot::Legend::default());
+
+    plot.show(ui, |plot_ui| {
+        let colors = series_colors();
+        let mut color_idx = 0;
+
+        let mut joint_ids: Vec<&String> = sweep.joint_reaction_magnitudes.keys().collect();
+        joint_ids.sort();
+
+        for joint_id in joint_ids {
+            let magnitudes = &sweep.joint_reaction_magnitudes[joint_id];
+            let points: PlotPoints = sweep
+                .angles_deg
+                .iter()
+                .zip(magnitudes.iter())
+                .filter(|&(_, &m)| m.is_finite())
+                .map(|(&x_deg, &m)| [units.angle(x_deg.to_radians()), m])
+                .collect();
+
+            let color = colors[color_idx % colors.len()];
+            plot_ui.line(
+                Line::new(joint_id.as_str(), points)
+                    .color(color)
+                    .width(1.5),
+            );
+            color_idx += 1;
+        }
 
         // Vertical marker at current driver angle.
         plot_ui.vline(

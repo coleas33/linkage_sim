@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 
+use meval;
 use nalgebra::{DVector, Vector2};
 use serde::{Deserialize, Serialize};
 
@@ -43,6 +44,9 @@ pub enum TimeModulation {
     Step { t_on: f64 },
     /// Ramp: linearly from 0 to 1 over [t_start, t_end].
     Ramp { t_start: f64, t_end: f64 },
+    /// User-defined expression of time: e.g., "sin(2*pi*t)" or "1 - exp(-t/0.5)".
+    /// Uses the `meval` crate for parsing and evaluation.
+    Expression { expr: String },
 }
 
 impl Default for TimeModulation {
@@ -71,6 +75,20 @@ impl TimeModulation {
                     1.0
                 } else {
                     (t - t_start) / (t_end - t_start)
+                }
+            }
+            TimeModulation::Expression { expr } => {
+                // Parse and evaluate (re-parse each call for thread safety,
+                // same pattern as ExprEval in the driver module).
+                match expr.parse::<meval::Expr>() {
+                    Ok(parsed) => match parsed.bind("t") {
+                        Ok(f) => {
+                            let val = f(t);
+                            if val.is_finite() { val } else { 1.0 }
+                        }
+                        Err(_) => 1.0,
+                    },
+                    Err(_) => 1.0,
                 }
             }
         }
@@ -1799,6 +1817,99 @@ mod tests {
         // After step: t=2.0 → factor = 1
         let r2 = elem.evaluate(&state, &bodies, &q, &q_dot, 2.0);
         assert_abs_diff_eq!(r2[0], 50.0, epsilon = 1e-15);
+    }
+
+    #[test]
+    fn expression_modulation_evaluates_correctly() {
+        let (state, bodies) = setup_single_bar();
+        let mut q = state.make_q();
+        state.set_pose("bar", &mut q, 0.0, 0.0, 0.0);
+        let q_dot = DVector::zeros(state.n_coords());
+
+        let elem = ForceElement::ExternalForce(ExternalForceElement {
+            body_id: "bar".into(),
+            local_point: [0.0, 0.0],
+            force: [100.0, 0.0],
+            modulation: TimeModulation::Expression {
+                expr: "sin(2*pi*t)".into(),
+            },
+        });
+
+        // At t=0: sin(0) = 0 -> force = 0
+        let r0 = elem.evaluate(&state, &bodies, &q, &q_dot, 0.0);
+        assert_abs_diff_eq!(r0[0], 0.0, epsilon = 1e-10);
+
+        // At t=0.25: sin(pi/2) = 1.0 -> force = 100
+        let r1 = elem.evaluate(&state, &bodies, &q, &q_dot, 0.25);
+        assert_abs_diff_eq!(r1[0], 100.0, epsilon = 1e-10);
+
+        // At t=0.5: sin(pi) ~ 0 -> force ~ 0
+        let r2 = elem.evaluate(&state, &bodies, &q, &q_dot, 0.5);
+        assert_abs_diff_eq!(r2[0], 0.0, epsilon = 1e-10);
+
+        // At t=0.75: sin(3*pi/2) = -1.0 -> force = -100
+        let r3 = elem.evaluate(&state, &bodies, &q, &q_dot, 0.75);
+        assert_abs_diff_eq!(r3[0], -100.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn expression_modulation_invalid_expr_returns_1() {
+        // An invalid expression should silently fall back to factor = 1.0
+        let modulation = TimeModulation::Expression {
+            expr: "not_a_valid_expr!!!".into(),
+        };
+        assert_abs_diff_eq!(modulation.factor(1.0), 1.0, epsilon = 1e-15);
+    }
+
+    #[test]
+    fn expression_modulation_exp_decay() {
+        // Test exponential decay: 1 - exp(-t/0.5)
+        let modulation = TimeModulation::Expression {
+            expr: "1 - exp(-t/0.5)".into(),
+        };
+
+        // At t=0: 1 - exp(0) = 0
+        assert_abs_diff_eq!(modulation.factor(0.0), 0.0, epsilon = 1e-10);
+
+        // At t=0.5: 1 - exp(-1) ~ 0.6321
+        assert_abs_diff_eq!(
+            modulation.factor(0.5),
+            1.0 - (-1.0_f64).exp(),
+            epsilon = 1e-10
+        );
+
+        // At large t: should approach 1.0
+        assert_abs_diff_eq!(modulation.factor(10.0), 1.0, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn serde_roundtrip_expression_modulation() {
+        let elem = ForceElement::ExternalForce(ExternalForceElement {
+            body_id: "bar".into(),
+            local_point: [0.5, 0.0],
+            force: [10.0, -5.0],
+            modulation: TimeModulation::Expression {
+                expr: "sin(2*pi*t)".into(),
+            },
+        });
+        let json = serde_json::to_string(&elem).unwrap();
+        assert!(json.contains("\"modulation_type\":\"Expression\""));
+        assert!(json.contains("sin(2*pi*t)"));
+
+        let back: ForceElement = serde_json::from_str(&json).unwrap();
+        match back {
+            ForceElement::ExternalForce(f) => {
+                match &f.modulation {
+                    TimeModulation::Expression { expr } => {
+                        assert_eq!(expr, "sin(2*pi*t)");
+                        // Verify the deserialized expression evaluates correctly
+                        assert_abs_diff_eq!(f.modulation.factor(0.25), 1.0, epsilon = 1e-10);
+                    }
+                    _ => panic!("Expected Expression modulation"),
+                }
+            }
+            _ => panic!("Expected ExternalForce"),
+        }
     }
 
     #[test]

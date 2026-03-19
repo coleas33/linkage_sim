@@ -35,6 +35,12 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
     if has_ma {
         headers.push("mechanical_advantage".to_string());
     }
+    // Joint reaction magnitude columns (sorted by joint ID).
+    let mut reaction_ids: Vec<&String> = sweep.joint_reaction_magnitudes.keys().collect();
+    reaction_ids.sort();
+    for jid in &reaction_ids {
+        headers.push(format!("{}_reaction_N", jid));
+    }
     writeln!(file, "{}", headers.join(",")).map_err(|e| e.to_string())?;
 
     // Data rows
@@ -53,6 +59,13 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
         if has_ma {
             let ma = sweep.mechanical_advantage.get(i).copied().unwrap_or(f64::NAN);
             row.push(format!("{:.6}", ma));
+        }
+        for jid in &reaction_ids {
+            let val = sweep.joint_reaction_magnitudes[*jid]
+                .get(i)
+                .copied()
+                .unwrap_or(f64::NAN);
+            row.push(format!("{:.6}", val));
         }
         writeln!(file, "{}", row.join(",")).map_err(|e| e.to_string())?;
     }
@@ -468,6 +481,16 @@ mod tests {
             ],
         );
 
+        let mut joint_reaction_magnitudes = HashMap::new();
+        joint_reaction_magnitudes.insert(
+            "J1".to_string(),
+            vec![5.0, 7.5, 6.0, 8.0, 5.0],
+        );
+        joint_reaction_magnitudes.insert(
+            "J2".to_string(),
+            vec![3.0, 4.5, 3.5, 5.0, 3.0],
+        );
+
         SweepData {
             angles_deg,
             body_angles,
@@ -479,6 +502,7 @@ mod tests {
             total_energy: vec![0.6, 0.6, 0.6, 0.6, 0.6],
             inverse_dynamics_torques: vec![1.2, 1.8, 0.6, -0.4, 1.2],
             mechanical_advantage: vec![0.5, 0.45, 0.6, 0.55, 0.5],
+            joint_reaction_magnitudes,
         }
     }
 
@@ -539,6 +563,7 @@ mod tests {
         sweep.transmission_angles = None;
         sweep.driver_torques = None;
         sweep.mechanical_advantage.clear();
+        sweep.joint_reaction_magnitudes.clear();
 
         let path = std::env::temp_dir().join("test_sweep_no_optional.csv");
 
@@ -558,6 +583,10 @@ mod tests {
         assert!(
             !header.contains("mechanical_advantage"),
             "header should not have mechanical advantage"
+        );
+        assert!(
+            !header.contains("reaction_N"),
+            "header should not have joint reaction columns"
         );
 
         // angle_deg + crank + rocker = 3 columns
@@ -824,6 +853,7 @@ mod tests {
             total_energy: vec![],
             inverse_dynamics_torques: vec![],
             mechanical_advantage: vec![],
+            joint_reaction_magnitudes: HashMap::new(),
         };
 
         let path = std::env::temp_dir().join("test_mechanism_empty.gif");
