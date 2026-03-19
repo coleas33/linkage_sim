@@ -100,6 +100,47 @@ impl DisplayUnits {
     }
 }
 
+// ── Grid settings ─────────────────────────────────────────────────────────────
+
+/// Grid display and snap-to-grid settings. Spacing is stored in meters (SI);
+/// the UI converts to/from the active display unit at the display boundary.
+pub struct GridSettings {
+    /// Whether snap-to-grid is active during drag operations.
+    pub snap_enabled: bool,
+    /// Whether to draw the grid on the canvas.
+    pub show_grid: bool,
+    /// Grid spacing in meters (SI).
+    pub spacing_m: f64,
+}
+
+impl Default for GridSettings {
+    fn default() -> Self {
+        Self {
+            snap_enabled: true,
+            show_grid: true,
+            spacing_m: 1.0,
+        }
+    }
+}
+
+impl GridSettings {
+    /// Snap a single world-coordinate value to the nearest grid point.
+    ///
+    /// Returns the value unchanged when snapping is disabled or spacing is
+    /// non-positive.
+    pub fn snap(&self, value: f64) -> f64 {
+        if !self.snap_enabled || self.spacing_m <= 0.0 {
+            return value;
+        }
+        (value / self.spacing_m).round() * self.spacing_m
+    }
+
+    /// Snap an (x, y) world-coordinate pair to the nearest grid point.
+    pub fn snap_point(&self, x: f64, y: f64) -> (f64, f64) {
+        (self.snap(x), self.snap(y))
+    }
+}
+
 // ── Selection ─────────────────────────────────────────────────────────────────
 
 /// Which entity in the mechanism is currently selected for inspection.
@@ -271,6 +312,9 @@ pub struct AppState {
     // ── Display units ────────────────────────────────────────────────────
     /// Unit preferences for display. Solvers remain SI internally.
     pub display_units: DisplayUnits,
+    // ── Grid ─────────────────────────────────────────────────────────────
+    /// Grid display and snap-to-grid settings.
+    pub grid: GridSettings,
 }
 
 impl Default for AppState {
@@ -301,6 +345,7 @@ impl Default for AppState {
             creating_joint: None,
             validation_warnings: ValidationWarnings::default(),
             display_units: DisplayUnits::default(),
+            grid: GridSettings::default(),
         }
     }
 }
@@ -369,6 +414,7 @@ impl AppState {
         self.animation_direction = 1.0;
         self.pending_driver_reassignment = None;
         self.undo_history.clear();
+        self.auto_grid_spacing();
         self.compute_sweep();
         self.compute_validation();
     }
@@ -521,10 +567,57 @@ impl AppState {
         self.animation_direction = 1.0;
         self.pending_driver_reassignment = None;
         self.undo_history.clear();
+        self.auto_grid_spacing();
         self.compute_sweep();
         self.compute_validation();
 
         Ok(())
+    }
+
+    // ── Grid auto-spacing ─────────────────────────────────────────────────
+
+    /// Set grid spacing based on the bounding box of all attachment points
+    /// in the current blueprint. Picks a "clean" spacing that gives roughly
+    /// 10-20 grid cells across the largest dimension.
+    pub fn auto_grid_spacing(&mut self) {
+        let Some(bp) = &self.blueprint else { return };
+
+        let mut x_min = f64::INFINITY;
+        let mut x_max = f64::NEG_INFINITY;
+        let mut y_min = f64::INFINITY;
+        let mut y_max = f64::NEG_INFINITY;
+        let mut count = 0usize;
+
+        for body in bp.bodies.values() {
+            for pt in body.attachment_points.values() {
+                x_min = x_min.min(pt[0]);
+                x_max = x_max.max(pt[0]);
+                y_min = y_min.min(pt[1]);
+                y_max = y_max.max(pt[1]);
+                count += 1;
+            }
+        }
+
+        if count < 2 {
+            return; // Not enough points to determine scale
+        }
+
+        let extent = (x_max - x_min).max(y_max - y_min);
+        if extent <= 0.0 || !extent.is_finite() {
+            return;
+        }
+
+        // Target ~10 grid cells across the largest dimension.
+        // Round down to the nearest "clean" value from a fixed set.
+        let raw = extent / 10.0;
+        const CLEAN: [f64; 12] = [
+            10.0, 5.0, 2.0, 1.0, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005, 0.001,
+        ];
+        self.grid.spacing_m = CLEAN
+            .iter()
+            .copied()
+            .find(|&c| c <= raw)
+            .unwrap_or(0.001);
     }
 
     // ── Blueprint rebuild pipeline ───────────────────────────────────────
@@ -2169,6 +2262,92 @@ mod tests {
         assert!(
             bp.drivers.is_empty(),
             "Drivers referencing removed body should be cascaded"
+        );
+    }
+
+    // ── Grid snap tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn snap_to_grid_rounds_to_nearest() {
+        let grid = GridSettings {
+            snap_enabled: true,
+            show_grid: true,
+            spacing_m: 1.0,
+        };
+        assert_eq!(grid.snap(2.3), 2.0);
+        assert_eq!(grid.snap(2.7), 3.0);
+        assert_eq!(grid.snap(-0.4), 0.0);
+        assert_eq!(grid.snap(0.5), 1.0); // half-away-from-zero: 0.5 rounds to 1
+        assert_eq!(grid.snap(1.5), 2.0); // half-away-from-zero: 1.5 rounds to 2
+    }
+
+    #[test]
+    fn snap_disabled_passes_through() {
+        let grid = GridSettings {
+            snap_enabled: false,
+            show_grid: true,
+            spacing_m: 1.0,
+        };
+        assert_eq!(grid.snap(2.3), 2.3);
+        assert_eq!(grid.snap(-7.777), -7.777);
+    }
+
+    #[test]
+    fn snap_zero_spacing_passes_through() {
+        let grid = GridSettings {
+            snap_enabled: true,
+            show_grid: true,
+            spacing_m: 0.0,
+        };
+        assert_eq!(grid.snap(2.3), 2.3);
+    }
+
+    #[test]
+    fn snap_point_snaps_both_axes() {
+        let grid = GridSettings {
+            snap_enabled: true,
+            show_grid: true,
+            spacing_m: 0.5,
+        };
+        let (sx, sy) = grid.snap_point(1.3, -0.2);
+        assert!((sx - 1.5).abs() < 1e-12);
+        assert!((sy - 0.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn snap_fine_spacing() {
+        let grid = GridSettings {
+            snap_enabled: true,
+            show_grid: true,
+            spacing_m: 0.005,
+        };
+        // 0.0123 is closest to 0.010 (2.46 grid units, rounds to 2)
+        // Actually 0.0123 / 0.005 = 2.46, rounds to 2 -> 0.010
+        let result = grid.snap(0.0123);
+        assert!((result - 0.010).abs() < 1e-12, "got {}", result);
+    }
+
+    #[test]
+    fn auto_grid_spacing_fourbar_small_scale() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        // FourBar has ground=0.038m. Expect a fine grid spacing.
+        assert!(
+            state.grid.spacing_m >= 0.001 && state.grid.spacing_m <= 0.01,
+            "FourBar grid spacing should be 1-10 mm, got {} m",
+            state.grid.spacing_m
+        );
+    }
+
+    #[test]
+    fn auto_grid_spacing_crank_rocker_large_scale() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::CrankRocker);
+        // CrankRocker has d=4m ground. Expect a coarser grid.
+        assert!(
+            state.grid.spacing_m >= 0.1 && state.grid.spacing_m <= 2.0,
+            "CrankRocker grid spacing should be 0.1-2.0 m, got {} m",
+            state.grid.spacing_m
         );
     }
 }

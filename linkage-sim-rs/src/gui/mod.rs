@@ -11,7 +11,7 @@ pub mod undo;
 use eframe::egui;
 pub use state::AppState;
 use samples::SampleMechanism;
-use state::{LengthUnit, AngleUnit};
+use state::{AngleUnit, LengthUnit};
 
 /// Top-level application struct for eframe.
 pub struct LinkageApp {
@@ -129,6 +129,27 @@ impl eframe::App for LinkageApp {
                             AngleUnit::Radians
                         };
                     }
+                    ui.separator();
+                    ui.label("Grid:");
+                    ui.checkbox(&mut self.state.grid.show_grid, "Show Grid");
+                    ui.checkbox(&mut self.state.grid.snap_enabled, "Snap to Grid");
+                    ui.horizontal(|ui| {
+                        ui.label("Spacing:");
+                        let mut spacing_display =
+                            self.state.display_units.length(self.state.grid.spacing_m);
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut spacing_display)
+                                    .speed(0.1)
+                                    .range(0.001..=100.0)
+                                    .suffix(self.state.display_units.length_suffix()),
+                            )
+                            .changed()
+                        {
+                            self.state.grid.spacing_m =
+                                self.state.display_units.length_to_si(spacing_display);
+                        }
+                    });
                 });
             });
         });

@@ -4,11 +4,12 @@ use eframe::egui::{self, Color32, FontId, Pos2, Rect, Stroke, Vec2};
 
 use crate::core::constraint::Constraint;
 use crate::core::state::GROUND_ID;
-use crate::gui::state::{AppState, DragTarget, SelectedEntity};
+use crate::gui::state::{AppState, DragTarget, GridSettings, SelectedEntity, ViewTransform};
 
 // ── Colors ──────────────────────────────────────────────────────────────────
 
 const BG_COLOR: Color32 = Color32::from_rgb(30, 30, 35);
+const GRID_COLOR: Color32 = Color32::from_rgba_premultiplied(60, 60, 70, 40);
 const GROUND_LINE_COLOR: Color32 = Color32::from_rgb(60, 60, 65);
 const BODY_COLOR: Color32 = Color32::from_rgb(140, 180, 220);
 const BODY_SELECTED_COLOR: Color32 = Color32::from_rgb(255, 200, 80);
@@ -85,6 +86,9 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     // Grounded revolute joint IDs — candidates for driver reassignment.
     // Collected inside the immutable scope from the mechanism.
     let grounded_revolute_ids: Vec<String>;
+
+    // ── Draw grid behind everything ──────────────────────────────────────
+    draw_grid(&painter, canvas_rect, &state.view, &state.grid);
 
     // Scoped immutable borrow for rendering.
     {
@@ -396,9 +400,10 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                     }
                 }
 
-                // Convert screen position to world coordinates.
+                // Convert screen position to world coordinates, snapping to grid.
                 let [wx, wy] = state.view.screen_to_world(pointer_pos.x, pointer_pos.y);
-                state.move_attachment_point(&body_id, &point_name, wx, wy);
+                let (snap_x, snap_y) = state.grid.snap_point(wx, wy);
+                state.move_attachment_point(&body_id, &point_name, snap_x, snap_y);
             }
         }
     }
@@ -648,6 +653,73 @@ fn draw_ground_marker(painter: &egui::Painter, center: Pos2, size: f32, color: C
                 Pos2::new(x - hatch_len * 0.5, hatch_y + hatch_len),
             ],
             Stroke::new(1.0, color),
+        );
+    }
+}
+
+/// Draw a grid of lines on the canvas behind the mechanism.
+///
+/// Lines are drawn at multiples of `grid.spacing_m` in world coordinates.
+/// If the viewport is zoomed out so far that more than 200 lines would be
+/// drawn, the grid is suppressed to avoid visual clutter and performance cost.
+fn draw_grid(
+    painter: &egui::Painter,
+    rect: Rect,
+    view: &ViewTransform,
+    grid: &GridSettings,
+) {
+    if !grid.show_grid {
+        return;
+    }
+
+    let spacing = grid.spacing_m;
+    if spacing <= 0.0 {
+        return;
+    }
+
+    // Convert screen bounds to world coordinates.
+    let [world_left, world_top] = view.screen_to_world(rect.left(), rect.top());
+    let [world_right, world_bottom] = view.screen_to_world(rect.right(), rect.bottom());
+
+    // world_top > world_bottom because screen Y is flipped.
+    let x_min_i = (world_left / spacing).floor() as i64;
+    let x_max_i = (world_right / spacing).ceil() as i64;
+    let y_min_i = (world_bottom / spacing).floor() as i64;
+    let y_max_i = (world_top / spacing).ceil() as i64;
+
+    // Bail out if too many lines (zoomed out too far for this spacing).
+    let n_lines = (x_max_i - x_min_i) + (y_max_i - y_min_i);
+    if n_lines > 200 {
+        return;
+    }
+
+    let grid_stroke = Stroke::new(0.5, GRID_COLOR);
+
+    // Vertical lines.
+    for i in x_min_i..=x_max_i {
+        let wx = i as f64 * spacing;
+        let top = view.world_to_screen(wx, world_top);
+        let bottom = view.world_to_screen(wx, world_bottom);
+        painter.line_segment(
+            [
+                Pos2::new(top[0], top[1]),
+                Pos2::new(bottom[0], bottom[1]),
+            ],
+            grid_stroke,
+        );
+    }
+
+    // Horizontal lines.
+    for i in y_min_i..=y_max_i {
+        let wy = i as f64 * spacing;
+        let left = view.world_to_screen(world_left, wy);
+        let right = view.world_to_screen(world_right, wy);
+        painter.line_segment(
+            [
+                Pos2::new(left[0], left[1]),
+                Pos2::new(right[0], right[1]),
+            ],
+            grid_stroke,
         );
     }
 }
