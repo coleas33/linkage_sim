@@ -1068,10 +1068,8 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
 
             // Body area: only if no attachment point matched
             let body_area = if attachment_point.is_none() {
-                attachment_hit_targets
-                    .iter()
-                    .find(|h| h.body_id != GROUND_ID && pos.distance(h.screen_pos) <= HIT_RADIUS * 3.0)
-                    .map(|h| h.body_id.clone())
+                find_nearest_body_segment(pos, &body_segments, HIT_RADIUS)
+                    .map(|hit| hit.body_id)
             } else {
                 None
             };
