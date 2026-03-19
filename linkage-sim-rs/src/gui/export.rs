@@ -503,6 +503,7 @@ mod tests {
             inverse_dynamics_torques: vec![1.2, 1.8, 0.6, -0.4, 1.2],
             mechanical_advantage: vec![0.5, 0.45, 0.6, 0.55, 0.5],
             joint_reaction_magnitudes,
+            toggle_angles: Vec::new(),
         }
     }
 
@@ -854,6 +855,7 @@ mod tests {
             inverse_dynamics_torques: vec![],
             mechanical_advantage: vec![],
             joint_reaction_magnitudes: HashMap::new(),
+            toggle_angles: Vec::new(),
         };
 
         let path = std::env::temp_dir().join("test_mechanism_empty.gif");

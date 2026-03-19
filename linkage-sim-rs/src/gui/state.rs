@@ -21,6 +21,9 @@ use crate::io::serialization::{
 };
 use crate::forces::elements::{ForceElement, GravityElement};
 use crate::analysis::energy::compute_energy_state_mech;
+use crate::analysis::force_breakdown::evaluate_contributions;
+use crate::analysis::validation::check_toggle;
+use crate::analysis::virtual_work::virtual_work_check;
 use crate::solver::kinematics::{solve_acceleration, solve_position, solve_velocity};
 use crate::solver::inverse_dynamics::solve_inverse_dynamics;
 use crate::solver::forward_dynamics::{simulate, ForwardDynamicsConfig};
@@ -333,6 +336,10 @@ pub struct ForceResults {
     pub is_overconstrained: bool,
     /// Mechanical advantage (output/input angular velocity ratio) at current pose.
     pub mechanical_advantage: Option<f64>,
+    /// Per-element force contribution norms at the current pose.
+    pub force_contributions: Vec<(String, f64)>,
+    /// Virtual work cross-check result: (vw_torque, lagrange_torque, agrees).
+    pub virtual_work_check: Option<(f64, f64, bool)>,
 }
 
 // ── View transform ────────────────────────────────────────────────────────────
@@ -409,6 +416,8 @@ pub struct SweepData {
     /// Per-joint reaction force magnitudes (N) over the sweep.
     /// Key: joint_id, Value: vec of resultant force magnitudes at each step.
     pub joint_reaction_magnitudes: HashMap<String, Vec<f64>>,
+    /// Angles (degrees) at which toggle/dead points were detected.
+    pub toggle_angles: Vec<f64>,
 }
 
 // ── Simulation state ──────────────────────────────────────────────────────────
@@ -844,12 +853,32 @@ impl AppState {
             None
         };
 
+        // Per-element force contribution breakdown.
+        let n = self.q.len();
+        let q_dot_zero = DVector::zeros(n);
+        let mut contribs: Vec<(String, f64)> = evaluate_contributions(mech, &self.q, &q_dot_zero, t)
+            .iter()
+            .map(|c| (c.type_name.clone(), c.q_norm))
+            .collect();
+        contribs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Virtual work cross-check.
+        let vw_check = if let Some(dt) = driver_torque {
+            virtual_work_check(mech, &self.q, t, dt, 1e-4).ok().map(|vw| {
+                (vw.input_torque, vw.lagrange_torque, vw.agrees)
+            })
+        } else {
+            None
+        };
+
         self.force_results = ForceResults {
             driver_torque,
             joint_reactions,
             condition_number: Some(statics_result.condition_number),
             is_overconstrained: statics_result.is_overconstrained,
             mechanical_advantage: ma,
+            force_contributions: contribs,
+            virtual_work_check: vw_check,
         };
     }
 
@@ -2276,6 +2305,7 @@ fn compute_sweep_data(
         inverse_dynamics_torques: Vec::with_capacity(361),
         mechanical_advantage: Vec::with_capacity(361),
         joint_reaction_magnitudes: HashMap::new(),
+        toggle_angles: Vec::new(),
     };
 
     // Temporary accumulator for reaction data (filled during sweep,
@@ -2342,6 +2372,12 @@ fn compute_sweep_data(
                     q_at_zero = q.clone();
                 }
                 data.angles_deg.push(angle_deg);
+
+                // Toggle/dead-point detection.
+                let toggle = check_toggle(mech, &q, t, 1e-6);
+                if toggle.is_near_toggle {
+                    data.toggle_angles.push(angle_deg);
+                }
 
                 let mech_state = mech.state();
 

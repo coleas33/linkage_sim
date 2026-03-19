@@ -468,6 +468,48 @@ fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
                 }
             }
 
+            // ── Force contributions ────────────────────────────────
+            if !state.force_results.force_contributions.is_empty() {
+                ui.separator();
+                ui.strong("Force Contributions:");
+                let max_norm = state
+                    .force_results
+                    .force_contributions
+                    .iter()
+                    .map(|(_, n)| *n)
+                    .fold(0.0_f64, f64::max);
+                for (name, norm) in &state.force_results.force_contributions {
+                    let bar_frac = if max_norm > 0.0 {
+                        (*norm / max_norm).min(1.0)
+                    } else {
+                        0.0
+                    };
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{}: {:.4}", name, norm));
+                        let bar = egui::ProgressBar::new(bar_frac as f32)
+                            .desired_width(60.0);
+                        ui.add(bar);
+                    });
+                }
+            }
+
+            // ── Virtual work cross-check ─────────────────────────────
+            if let Some((vw_torque, lm_torque, agrees)) = state.force_results.virtual_work_check {
+                ui.separator();
+                ui.strong("Virtual Work Check:");
+                let color = if agrees {
+                    egui::Color32::from_rgb(100, 200, 100)
+                } else {
+                    egui::Color32::from_rgb(220, 80, 80)
+                };
+                ui.colored_label(
+                    color,
+                    if agrees { "\u{2713} Agrees" } else { "\u{2717} Disagrees" },
+                );
+                ui.label(format!("VW torque: {:.4} N\u{00b7}m", vw_torque));
+                ui.label(format!("\u{03bb} torque:  {:.4} N\u{00b7}m", lm_torque));
+            }
+
             // ── Motor sizing feasibility ────────────────────────────
             draw_motor_sizing_diagnostic(ui, state);
         });

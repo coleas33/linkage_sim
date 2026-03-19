@@ -224,6 +224,8 @@ fn draw_body_angles(
                 .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
                 .width(1.0),
         );
+
+        draw_toggle_markers(plot_ui, sweep, units);
     });
 }
 
@@ -292,6 +294,8 @@ fn draw_transmission_angle(
                 .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
                 .width(1.0),
         );
+
+        draw_toggle_markers(plot_ui, sweep, units);
     });
 }
 
@@ -337,6 +341,8 @@ fn draw_driver_torque(
                 .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
                 .width(1.0),
         );
+
+        draw_toggle_markers(plot_ui, sweep, units);
     });
 }
 
@@ -401,6 +407,8 @@ fn draw_inverse_dynamics(
                 .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
                 .width(1.0),
         );
+
+        draw_toggle_markers(plot_ui, sweep, units);
     });
 }
 
@@ -475,6 +483,8 @@ fn draw_energy(
                 .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
                 .width(1.0),
         );
+
+        draw_toggle_markers(plot_ui, sweep, units);
     });
 }
 
@@ -531,6 +541,8 @@ fn draw_mechanical_advantage(
                 .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
                 .width(1.0),
         );
+
+        draw_toggle_markers(plot_ui, sweep, units);
     });
 }
 
@@ -592,7 +604,29 @@ fn draw_joint_reactions(
                 .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
                 .width(1.0),
         );
+
+        draw_toggle_markers(plot_ui, sweep, units);
     });
+}
+
+/// Draw faint red dashed vertical lines at toggle/dead-point angles.
+///
+/// Toggle angles are in degrees; they are converted to the current display
+/// angle unit before being drawn.
+fn draw_toggle_markers(
+    plot_ui: &mut egui_plot::PlotUi,
+    sweep: &super::state::SweepData,
+    units: &DisplayUnits,
+) {
+    for (i, &toggle_deg) in sweep.toggle_angles.iter().enumerate() {
+        let toggle_display = units.angle(toggle_deg.to_radians());
+        plot_ui.vline(
+            VLine::new(format!("toggle_{}", i), toggle_display)
+                .color(egui::Color32::from_rgba_premultiplied(255, 60, 60, 100))
+                .style(egui_plot::LineStyle::Dashed { length: 3.0 })
+                .width(1.0),
+        );
+    }
 }
 
 /// A palette of distinguishable colors for plot series.
