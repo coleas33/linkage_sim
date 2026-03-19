@@ -72,6 +72,33 @@ impl Body {
         Ok(())
     }
 
+    /// Add a point mass at a local body position.
+    ///
+    /// Updates total mass, CG position, and moment of inertia using
+    /// the parallel axis theorem.  Mirrors the Python
+    /// `linkage_sim.core.point_mass.add_point_mass` function.
+    pub fn add_point_mass(&mut self, mass: f64, local_pos: Vector2<f64>) {
+        let old_mass = self.mass;
+        let new_total = old_mass + mass;
+
+        if new_total <= 0.0 {
+            return;
+        }
+
+        // New CG is weighted average
+        let new_cg = (self.cg_local * old_mass + local_pos * mass) / new_total;
+
+        // Parallel axis: shift existing Izz from old CG to new CG,
+        // add point mass contribution shifted from its position to new CG
+        let d_old = (self.cg_local - new_cg).norm();
+        let d_new = (local_pos - new_cg).norm();
+        let new_izz = self.izz_cg + old_mass * d_old * d_old + mass * d_new * d_new;
+
+        self.mass = new_total;
+        self.cg_local = new_cg;
+        self.izz_cg = new_izz;
+    }
+
     /// Add a named coupler point for output tracking.
     pub fn add_coupler_point(
         &mut self,
@@ -200,5 +227,84 @@ mod tests {
         let mut body = Body::new("test");
         body.add_coupler_point("C", 0.5, 0.3).unwrap();
         assert!(body.coupler_points.contains_key("C"));
+    }
+
+    // ── Point mass tests ──────────────────────────────────────────────
+
+    #[test]
+    fn point_mass_at_cg_does_not_shift_cg() {
+        let mut body = Body::new("test");
+        body.mass = 2.0;
+        body.cg_local = Vector2::new(0.5, 0.0);
+        body.izz_cg = 0.01;
+
+        body.add_point_mass(1.0, Vector2::new(0.5, 0.0));
+
+        assert_abs_diff_eq!(body.mass, 3.0, epsilon = 1e-15);
+        assert_abs_diff_eq!(body.cg_local.x, 0.5, epsilon = 1e-15);
+        assert_abs_diff_eq!(body.cg_local.y, 0.0, epsilon = 1e-15);
+        // No shift so Izz only gains the point mass contribution (zero offset)
+        assert_abs_diff_eq!(body.izz_cg, 0.01, epsilon = 1e-15);
+    }
+
+    #[test]
+    fn point_mass_at_offset_shifts_cg() {
+        let mut body = Body::new("test");
+        body.mass = 1.0;
+        body.cg_local = Vector2::new(0.0, 0.0);
+        body.izz_cg = 0.0;
+
+        // Add equal mass at (1, 0) -- CG should move to (0.5, 0)
+        body.add_point_mass(1.0, Vector2::new(1.0, 0.0));
+
+        assert_abs_diff_eq!(body.mass, 2.0, epsilon = 1e-15);
+        assert_abs_diff_eq!(body.cg_local.x, 0.5, epsilon = 1e-15);
+        assert_abs_diff_eq!(body.cg_local.y, 0.0, epsilon = 1e-15);
+    }
+
+    #[test]
+    fn point_mass_increases_inertia_with_parallel_axis() {
+        let mut body = Body::new("test");
+        body.mass = 2.0;
+        body.cg_local = Vector2::new(0.0, 0.0);
+        body.izz_cg = 0.1;
+
+        // Add 1 kg at (0.3, 0) -- new CG at (0.1, 0)
+        body.add_point_mass(1.0, Vector2::new(0.3, 0.0));
+
+        let new_total = 3.0;
+        let new_cg_x = (2.0 * 0.0 + 1.0 * 0.3) / new_total;
+        let d_old = new_cg_x; // distance old CG moved: |0 - 0.1|
+        let d_new = (0.3_f64 - new_cg_x).abs(); // distance point mass to new CG
+        let expected_izz = 0.1 + 2.0 * d_old * d_old + 1.0 * d_new * d_new;
+
+        assert_abs_diff_eq!(body.mass, new_total, epsilon = 1e-15);
+        assert_abs_diff_eq!(body.cg_local.x, new_cg_x, epsilon = 1e-15);
+        assert_abs_diff_eq!(body.izz_cg, expected_izz, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn multiple_point_masses_accumulate() {
+        let mut body = Body::new("test");
+        body.mass = 1.0;
+        body.cg_local = Vector2::new(0.0, 0.0);
+        body.izz_cg = 0.0;
+
+        // Add three equal masses forming a symmetric pattern
+        body.add_point_mass(1.0, Vector2::new(1.0, 0.0));
+        body.add_point_mass(1.0, Vector2::new(0.0, 1.0));
+        body.add_point_mass(1.0, Vector2::new(1.0, 1.0));
+
+        assert_abs_diff_eq!(body.mass, 4.0, epsilon = 1e-15);
+        // CG of four equal masses at (0,0), (1,0), (0,1), (1,1) is (0.5, 0.5)
+        assert_abs_diff_eq!(body.cg_local.x, 0.5, epsilon = 1e-12);
+        assert_abs_diff_eq!(body.cg_local.y, 0.5, epsilon = 1e-12);
+        // Inertia should be positive and greater than zero
+        assert!(body.izz_cg > 0.0);
+
+        // Verify by computing expected Izz: four point masses at corners
+        // around CG (0.5, 0.5), each at distance sqrt(0.5) = 0.5*sqrt(2)
+        // Izz = 4 * 1.0 * 0.5 = 2.0
+        assert_abs_diff_eq!(body.izz_cg, 2.0, epsilon = 1e-12);
     }
 }

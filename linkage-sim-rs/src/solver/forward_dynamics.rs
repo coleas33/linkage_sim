@@ -375,7 +375,10 @@ mod tests {
     use super::*;
     use crate::core::body::{make_bar, make_ground, Body};
     use crate::core::state::GROUND_ID;
-    use crate::forces::elements::{ForceElement, GravityElement};
+    use crate::forces::elements::{
+        ForceElement, GravityElement, JointLimitElement, LinearSpringElement, RotaryDamperElement,
+        TorsionSpringElement,
+    };
     use approx::assert_abs_diff_eq;
     use nalgebra::Vector2;
     use std::f64::consts::PI;
@@ -732,5 +735,419 @@ mod tests {
         let x = solve_augmented(&a, &b);
         assert_abs_diff_eq!(x[0], 1.8, epsilon = 1e-12);
         assert_abs_diff_eq!(x[1], 1.4, epsilon = 1e-12);
+    }
+
+    // ── Force-element dynamic integration tests ──────────────────────────────
+
+    /// Build a pendulum with no gravity, just a torsion spring at the pivot.
+    /// Point mass m at distance L from pivot: I = m*L^2.
+    /// With a torsion spring of stiffness k and no gravity, the system is a
+    /// simple harmonic oscillator: theta'' + (k/I)*theta = 0
+    /// Period T = 2*pi*sqrt(I/k).
+    fn build_torsion_spring_pendulum(k: f64, free_angle: f64) -> Mechanism {
+        let ground = make_ground(&[("O", 0.0, 0.0)]);
+
+        let mut bar = Body::new("bar");
+        bar.add_attachment_point("A", 0.0, 0.0).unwrap();
+        bar.mass = 1.0;
+        bar.cg_local = Vector2::new(1.0, 0.0);
+        bar.izz_cg = 0.0; // point mass at L=1
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(bar).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O", "bar", "A")
+            .unwrap();
+        mech.add_force(ForceElement::TorsionSpring(TorsionSpringElement {
+            body_i: "ground".into(),
+            body_j: "bar".into(),
+            stiffness: k,
+            free_angle,
+        }));
+        mech.build().unwrap();
+        mech
+    }
+
+    #[test]
+    fn torsion_spring_pendulum_period() {
+        // Point mass pendulum with torsion spring at pivot (no gravity).
+        // Simple harmonic oscillator: theta'' + (k/I)*theta = 0
+        // m=1, L=1 => I = m*L^2 = 1, k=10
+        // T = 2*pi*sqrt(I/k) = 2*pi*sqrt(0.1) ~ 1.987 s
+        let k = 10.0;
+        let free_angle = -PI / 2.0; // equilibrium at hanging
+        let mech = build_torsion_spring_pendulum(k, free_angle);
+
+        // Initial condition: 5-degree offset from equilibrium
+        let theta0 = free_angle + 0.087;
+        let (q0, qd0) = pendulum_initial_state(&mech, theta0);
+
+        let config = ForwardDynamicsConfig {
+            alpha: 10.0,
+            beta: 10.0,
+            max_step: 0.001,
+            ..Default::default()
+        };
+
+        let i_total = 1.0; // m * L^2
+        let t_analytical = 2.0 * PI * (i_total / k).sqrt();
+        let t_end = 3.0 * t_analytical;
+
+        let t_eval: Vec<f64> = (0..500).map(|i| i as f64 * t_end / 499.0).collect();
+        let result = simulate(
+            &mech,
+            &q0,
+            &qd0,
+            (0.0, t_end),
+            Some(&config),
+            Some(&t_eval),
+        )
+        .unwrap();
+        assert!(result.success);
+
+        // Find period from positive-going zero crossings of theta offset
+        let bar_idx = mech.state().get_index("bar").unwrap();
+        let theta_offset: Vec<f64> = result
+            .q
+            .iter()
+            .map(|q| q[bar_idx.theta_idx()] - free_angle)
+            .collect();
+
+        let mut crossings: Vec<f64> = Vec::new();
+        for i in 1..theta_offset.len() {
+            if theta_offset[i - 1] < 0.0 && theta_offset[i] >= 0.0 {
+                let frac = -theta_offset[i - 1] / (theta_offset[i] - theta_offset[i - 1]);
+                crossings.push(result.t[i - 1] + frac * (result.t[i] - result.t[i - 1]));
+            }
+        }
+
+        assert!(
+            crossings.len() >= 2,
+            "Found only {} crossings, need >= 2",
+            crossings.len()
+        );
+        let measured_period = crossings[1] - crossings[0];
+        let rel_error = (measured_period - t_analytical).abs() / t_analytical;
+        assert!(
+            rel_error < 0.05,
+            "Period mismatch: measured={}, analytical={}, rel_error={}",
+            measured_period,
+            t_analytical,
+            rel_error
+        );
+    }
+
+    #[test]
+    fn damped_pendulum_energy_decreases() {
+        // Pendulum with gravity + rotary damper at the pivot.
+        // With dissipation, total energy (KE + gravitational PE) must
+        // decrease monotonically (within numerical tolerance).
+        let ground = make_ground(&[("O", 0.0, 0.0)]);
+
+        let mut bar = Body::new("bar");
+        bar.add_attachment_point("A", 0.0, 0.0).unwrap();
+        bar.mass = 1.0;
+        bar.cg_local = Vector2::new(1.0, 0.0);
+        bar.izz_cg = 0.0;
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(bar).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O", "bar", "A")
+            .unwrap();
+        mech.add_force(ForceElement::Gravity(GravityElement::default()));
+        mech.add_force(ForceElement::RotaryDamper(RotaryDamperElement {
+            body_i: "ground".into(),
+            body_j: "bar".into(),
+            damping: 0.5,
+        }));
+        mech.build().unwrap();
+
+        // Start from a 30-degree offset from hanging
+        let theta0 = -PI / 2.0 + 0.52;
+        let (q0, qd0) = pendulum_initial_state(&mech, theta0);
+
+        let config = ForwardDynamicsConfig {
+            alpha: 10.0,
+            beta: 10.0,
+            max_step: 0.001,
+            ..Default::default()
+        };
+
+        let t_eval: Vec<f64> = (0..=400).map(|i| i as f64 * 0.01).collect();
+        let result = simulate(
+            &mech,
+            &q0,
+            &qd0,
+            (0.0, 4.0),
+            Some(&config),
+            Some(&t_eval),
+        )
+        .unwrap();
+        assert!(result.success);
+
+        // Compute total energy at each step
+        let state = mech.state();
+        let g_mag = 9.81;
+        let mut energies: Vec<f64> = Vec::new();
+
+        for i in 0..result.t.len() {
+            let q = &result.q[i];
+            let qd = &result.q_dot[i];
+
+            let m_mat = assemble_mass_matrix(&mech, q);
+            let ke = 0.5 * qd.dot(&(&m_mat * qd));
+
+            let mut pe = 0.0;
+            for (body_id, body) in mech.bodies() {
+                if body_id == GROUND_ID || body.mass <= 0.0 {
+                    continue;
+                }
+                let r_cg = state.body_point_global(body_id, &body.cg_local, q);
+                pe += body.mass * g_mag * r_cg.y;
+            }
+            energies.push(ke + pe);
+        }
+
+        // Energy at end should be less than energy at start
+        let e_start = energies[0];
+        let e_end = *energies.last().unwrap();
+        assert!(
+            e_end < e_start - 0.01,
+            "Damped pendulum energy did not decrease: e_start={}, e_end={}",
+            e_start,
+            e_end
+        );
+
+        // Energy should not increase at any step (allow small tolerance for
+        // numerical integration artifacts)
+        let tolerance = e_start.abs() * 1e-3 + 1e-6;
+        for i in 1..energies.len() {
+            assert!(
+                energies[i] <= energies[i - 1] + tolerance,
+                "Energy increased at step {}: E[{}]={}, E[{}]={}, diff={}",
+                i,
+                i - 1,
+                energies[i - 1],
+                i,
+                energies[i],
+                energies[i] - energies[i - 1],
+            );
+        }
+    }
+
+    #[test]
+    fn spring_mass_energy_conserved() {
+        // Two bars connected by a linear spring, no gravity, no damping.
+        // Total energy (KE + spring PE) should be conserved.
+        //
+        // Setup: two point-mass bars pinned to ground, connected by a spring.
+        // bar_a at ground point (-1, 0), bar_b at ground point (1, 0).
+        // Spring connects the tips (at local (1, 0)) of each bar.
+        let ground = make_ground(&[("P1", -1.0, 0.0), ("P2", 1.0, 0.0)]);
+
+        let mut bar_a = Body::new("bar_a");
+        bar_a.add_attachment_point("A", 0.0, 0.0).unwrap();
+        bar_a.add_attachment_point("tip", 1.0, 0.0).unwrap();
+        bar_a.mass = 1.0;
+        bar_a.cg_local = Vector2::new(0.5, 0.0);
+        bar_a.izz_cg = 0.01;
+
+        let mut bar_b = Body::new("bar_b");
+        bar_b.add_attachment_point("B", 0.0, 0.0).unwrap();
+        bar_b.add_attachment_point("tip", 1.0, 0.0).unwrap();
+        bar_b.mass = 1.0;
+        bar_b.cg_local = Vector2::new(0.5, 0.0);
+        bar_b.izz_cg = 0.01;
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(bar_a).unwrap();
+        mech.add_body(bar_b).unwrap();
+        mech.add_revolute_joint("J1", "ground", "P1", "bar_a", "A")
+            .unwrap();
+        mech.add_revolute_joint("J2", "ground", "P2", "bar_b", "B")
+            .unwrap();
+
+        // Spring between tips of bar_a and bar_b
+        let spring_k = 50.0;
+        // Free length = distance between tips when both bars hang straight down
+        // At theta=-PI/2: tip of bar_a = (-1, 0) + R(-PI/2)*(1,0) = (-1, -1)
+        //                  tip of bar_b = ( 1, 0) + R(-PI/2)*(1,0) = ( 1, -1)
+        // Distance = 2.0
+        let free_length = 2.0;
+        mech.add_force(ForceElement::LinearSpring(LinearSpringElement {
+            body_a: "bar_a".into(),
+            point_a: [1.0, 0.0],
+            body_b: "bar_b".into(),
+            point_b: [1.0, 0.0],
+            stiffness: spring_k,
+            free_length,
+        }));
+        mech.build().unwrap();
+
+        // Start with bars at different angles to load the spring.
+        // bar_a at -80 deg, bar_b at -100 deg (symmetric offset from -90).
+        let state = mech.state();
+        let mut q0 = state.make_q();
+        state.set_pose("bar_a", &mut q0, -1.0, 0.0, -80.0_f64.to_radians());
+        state.set_pose("bar_b", &mut q0, 1.0, 0.0, -100.0_f64.to_radians());
+        let qd0 = DVector::zeros(state.n_coords());
+
+        let config = ForwardDynamicsConfig {
+            alpha: 10.0,
+            beta: 10.0,
+            max_step: 0.001,
+            ..Default::default()
+        };
+
+        let t_eval: Vec<f64> = (0..=300).map(|i| i as f64 * 0.01).collect();
+        let result = simulate(
+            &mech,
+            &q0,
+            &qd0,
+            (0.0, 3.0),
+            Some(&config),
+            Some(&t_eval),
+        )
+        .unwrap();
+        assert!(result.success);
+
+        // Compute total energy (KE + spring PE) at each step
+        let mut energies: Vec<f64> = Vec::new();
+        for i in 0..result.t.len() {
+            let q = &result.q[i];
+            let qd = &result.q_dot[i];
+
+            // KE
+            let m_mat = assemble_mass_matrix(&mech, q);
+            let ke = 0.5 * qd.dot(&(&m_mat * qd));
+
+            // Spring PE = 0.5 * k * (length - free_length)^2
+            let tip_a_local = Vector2::new(1.0, 0.0);
+            let tip_b_local = Vector2::new(1.0, 0.0);
+            let tip_a = state.body_point_global("bar_a", &tip_a_local, q);
+            let tip_b = state.body_point_global("bar_b", &tip_b_local, q);
+            let length = (tip_b - tip_a).norm();
+            let extension = length - free_length;
+            let spring_pe = 0.5 * spring_k * extension * extension;
+
+            energies.push(ke + spring_pe);
+        }
+
+        let e0 = energies[0];
+        let max_deviation = energies
+            .iter()
+            .fold(0.0_f64, |acc, &e| acc.max((e - e0).abs()));
+
+        // Energy should stay within 5% of initial (no dissipation)
+        assert!(
+            max_deviation < e0.abs() * 0.05 + 1e-6,
+            "Spring-mass energy not conserved: max_deviation={:e}, initial={:e}, ratio={:e}",
+            max_deviation,
+            e0,
+            max_deviation / (e0.abs() + 1e-15)
+        );
+    }
+
+    #[test]
+    fn joint_limit_prevents_excessive_rotation() {
+        // Pendulum with gravity and joint limits. The bar should bounce
+        // off the limit and never exceed [angle_min, angle_max] by more
+        // than a small overshoot (penalty-based compliance).
+        let ground = make_ground(&[("O", 0.0, 0.0)]);
+
+        let mut bar = Body::new("bar");
+        bar.add_attachment_point("A", 0.0, 0.0).unwrap();
+        bar.mass = 1.0;
+        bar.cg_local = Vector2::new(1.0, 0.0);
+        bar.izz_cg = 0.0;
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(bar).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O", "bar", "A")
+            .unwrap();
+        mech.add_force(ForceElement::Gravity(GravityElement::default()));
+
+        // Joint limits: allow rotation in [-2.5, -0.5] rad
+        // (hanging is at -PI/2 ~ -1.571, so this range allows about 60 deg
+        // swing on either side of hanging)
+        let angle_min = -2.5;
+        let angle_max = -0.5;
+        mech.add_force(ForceElement::JointLimit(JointLimitElement {
+            body_i: "ground".into(),
+            body_j: "bar".into(),
+            angle_min,
+            angle_max,
+            stiffness: 5000.0,
+            damping: 100.0,
+            restitution: 0.3,
+        }));
+        mech.build().unwrap();
+
+        // Start near the upper limit so the pendulum hits it
+        let theta0 = -0.6; // just inside the upper limit
+        let (q0, qd0) = pendulum_initial_state(&mech, theta0);
+
+        let config = ForwardDynamicsConfig {
+            alpha: 10.0,
+            beta: 10.0,
+            max_step: 0.0005, // small step for stiff penalty
+            ..Default::default()
+        };
+
+        let t_eval: Vec<f64> = (0..=500).map(|i| i as f64 * 0.006).collect();
+        let result = simulate(
+            &mech,
+            &q0,
+            &qd0,
+            (0.0, 3.0),
+            Some(&config),
+            Some(&t_eval),
+        )
+        .unwrap();
+        assert!(result.success);
+
+        // Check that the angle stays within limits plus a small overshoot
+        // allowed by the penalty method. With k=5000 and c=100, overshoot
+        // should be modest.
+        let bar_idx = mech.state().get_index("bar").unwrap();
+        let overshoot_tolerance = 0.15; // rad ~ 8.6 deg
+
+        for (i, q) in result.q.iter().enumerate() {
+            let theta = q[bar_idx.theta_idx()];
+            assert!(
+                theta >= angle_min - overshoot_tolerance,
+                "Angle {} rad below min limit at t={}: min={}, overshoot={}",
+                theta,
+                result.t[i],
+                angle_min,
+                angle_min - theta,
+            );
+            assert!(
+                theta <= angle_max + overshoot_tolerance,
+                "Angle {} rad above max limit at t={}: max={}, overshoot={}",
+                theta,
+                result.t[i],
+                angle_max,
+                theta - angle_max,
+            );
+        }
+
+        // Additionally, verify the pendulum actually reached a limit at
+        // some point (i.e., the limits were exercised, not just avoided).
+        let any_near_max = result
+            .q
+            .iter()
+            .any(|q| q[bar_idx.theta_idx()] > angle_max - 0.1);
+        let any_near_min = result
+            .q
+            .iter()
+            .any(|q| q[bar_idx.theta_idx()] < angle_min + 0.1);
+        assert!(
+            any_near_max || any_near_min,
+            "Pendulum never approached either joint limit"
+        );
     }
 }

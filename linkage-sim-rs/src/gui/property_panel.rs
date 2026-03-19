@@ -277,28 +277,37 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
 /// - Constraint Jacobian condition number (when forces have been solved)
 /// - Sweep envelope statistics (torque min/max/RMS when sweep data available)
 fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
-    if state.mechanism.is_none() {
-        return;
-    }
+    let mech = match &state.mechanism {
+        Some(m) => m,
+        None => return,
+    };
 
     let has_grashof = state.grashof_result.is_some();
     let has_crank_rec = state.crank_recommendation.is_some();
     let has_condition = state.force_results.condition_number.is_some();
-    let has_sweep_torques = state
-        .sweep_data
-        .as_ref()
-        .and_then(|s| s.driver_torques.as_ref())
-        .is_some();
-
-    if !has_grashof && !has_crank_rec && !has_condition && !has_sweep_torques {
-        return;
-    }
-
+    // Always show diagnostics when a mechanism is loaded (mass summary is
+    // always available).
     egui::CollapsingHeader::new("Diagnostics")
         .default_open(true)
         .show(ui, |ui| {
+            // ── Mechanism mass summary ─────────────────────────────
+            let total_mass: f64 = mech.bodies().values()
+                .filter(|b| b.id != GROUND_ID)
+                .map(|b| b.mass)
+                .sum();
+            let total_izz: f64 = mech.bodies().values()
+                .filter(|b| b.id != GROUND_ID)
+                .map(|b| b.izz_cg)
+                .sum();
+            ui.label(format!("Total mass: {:.4} kg", total_mass));
+            ui.label(format!(
+                "Total Izz (body CGs): {:.6} kg\u{00b7}m\u{00b2}",
+                total_izz
+            ));
+
             // ── Grashof classification ──────────────────────────────
             if let Some(ref gr) = state.grashof_result {
+                ui.separator();
                 let (label, is_ok) = match gr.classification {
                     GrashofType::CrankRocker => ("Crank-Rocker", true),
                     GrashofType::DoubleCrank => ("Double-Crank", true),
@@ -343,7 +352,9 @@ fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
 
             // ── Crank recommendation ─────────────────────────────
             if let Some(ref rec) = state.crank_recommendation {
-                if has_grashof {
+                if !has_grashof {
+                    // Grashof section already added a separator; only add one
+                    // when it was skipped.
                     ui.separator();
                 }
 
@@ -382,7 +393,9 @@ fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
 
             // ── Jacobian conditioning ──────────────────────────────
             if let Some(kappa) = state.force_results.condition_number {
-                if has_grashof || has_crank_rec {
+                if !has_grashof && !has_crank_rec {
+                    // Previous sections already added separators; only add one
+                    // when they were all skipped.
                     ui.separator();
                 }
 
@@ -411,7 +424,7 @@ fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
             if let Some(ref sweep) = state.sweep_data {
                 if let Some(ref torques) = sweep.driver_torques {
                     if let Some(env) = compute_envelope(torques) {
-                        if has_grashof || has_crank_rec || has_condition {
+                        if !has_grashof && !has_crank_rec && !has_condition {
                             ui.separator();
                         }
 
