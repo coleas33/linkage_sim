@@ -251,9 +251,9 @@ specifies their own driver and the warning can be suppressed with `warnings.filt
 
 **Phase 5 MVP scope:** Read-only visualization shell. Loads hardcoded sample mechanisms (4-bar crank-rocker, slider-crank). Canvas renders from solved world-space poses. Angle slider drives kinematic solver. Click-to-select with read-only property inspection. Pan/zoom. Debug overlay with IDs and solver status.
 
-**Not yet implemented (full Phase 5):** Body/joint editing (core editor), validation panel (live DOF, connectivity warnings), force visualization, unit conversion, snap-to-grid, export (CSV, image, animation), load cases.
+**Not yet implemented (full Phase 5):** Force visualization, export (CSV, image, animation), load cases.
 
-**Total tests:** 130 passing (122 unit + 8 golden fixtures) | **Rust toolchain:** stable
+**Total tests:** 233 passing (207 unit + 8 golden + 18 singular) | **Rust toolchain:** stable
 
 ---
 

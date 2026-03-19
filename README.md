@@ -129,7 +129,7 @@ The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forwa
 - MechanismBlueprint (MechanismJson) is the editable source of truth; rebuild() runs on every edit
 - All edit operations push to the undo/redo stack; blueprint stays in sync with snapshots
 
-Not yet implemented: force visualization, unit conversion (mm, degrees at display boundary), snap-to-grid and alignment helpers, export (CSV, image, animation), load cases.
+Not yet implemented: force visualization, export (CSV, image, animation), load cases.
 
 ```
 linkage-sim-rs/
