@@ -66,6 +66,79 @@ struct AttachmentHit {
     point_name: String,
 }
 
+/// Result of a body-segment hit test.
+#[allow(dead_code)]
+struct SegmentHit {
+    body_id: String,
+    world_pos: [f64; 2],
+    screen_pos: Pos2,
+    point_a_name: String,
+    point_b_name: String,
+}
+
+/// Collected body segment for hit testing.
+struct BodySegment {
+    screen_a: Pos2,
+    screen_b: Pos2,
+    world_a: [f64; 2],
+    world_b: [f64; 2],
+    body_id: String,
+    point_a_name: String,
+    point_b_name: String,
+}
+
+/// Project a point onto a line segment. Returns projected point and distance,
+/// or None if projection falls outside the segment.
+fn project_onto_segment(point: Pos2, seg_a: Pos2, seg_b: Pos2) -> Option<(Pos2, f32)> {
+    let ab = seg_b - seg_a;
+    let ap = point - seg_a;
+    let len_sq = ab.length_sq();
+    if len_sq < 1e-10 {
+        return None;
+    }
+    let t = ab.dot(ap) / len_sq;
+    if t < 0.0 || t > 1.0 {
+        return None;
+    }
+    let proj = seg_a + ab * t;
+    let dist = point.distance(proj);
+    Some((proj, dist))
+}
+
+/// Find the nearest body line segment to a screen point.
+fn find_nearest_body_segment(
+    point: Pos2,
+    segments: &[BodySegment],
+    max_distance: f32,
+) -> Option<SegmentHit> {
+    let mut best: Option<(f32, Pos2, [f64; 2], String, String, String)> = None;
+
+    for seg in segments {
+        if let Some((proj_screen, dist)) = project_onto_segment(point, seg.screen_a, seg.screen_b) {
+            if dist <= max_distance {
+                if best.as_ref().map_or(true, |(d, _, _, _, _, _)| dist < *d) {
+                    let ab_screen = seg.screen_b - seg.screen_a;
+                    let ap_screen = proj_screen - seg.screen_a;
+                    let t = if ab_screen.length_sq() > 1e-10 {
+                        ap_screen.length() / ab_screen.length()
+                    } else {
+                        0.0
+                    };
+                    let world_x = seg.world_a[0] + t as f64 * (seg.world_b[0] - seg.world_a[0]);
+                    let world_y = seg.world_a[1] + t as f64 * (seg.world_b[1] - seg.world_a[1]);
+
+                    best = Some((dist, proj_screen, [world_x, world_y], seg.body_id.clone(),
+                                 seg.point_a_name.clone(), seg.point_b_name.clone()));
+                }
+            }
+        }
+    }
+
+    best.map(|(_, screen_pos, world_pos, body_id, point_a_name, point_b_name)| SegmentHit {
+        body_id, world_pos, screen_pos, point_a_name, point_b_name,
+    })
+}
+
 /// Draw the 2D mechanism canvas with interaction.
 pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     let (response, painter) =
@@ -109,6 +182,8 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     let mut joint_hit_targets: Vec<(Pos2, String)> = Vec::new();
     // Collect attachment point hit targets (screen pos, body_id, point_name).
     let mut attachment_hit_targets: Vec<AttachmentHit> = Vec::new();
+    // Collect body segments for Draw Link segment snap.
+    let mut body_segments: Vec<BodySegment> = Vec::new();
     // Grounded revolute joint IDs — candidates for driver reassignment.
     // Collected inside the immutable scope from the mechanism.
     let grounded_revolute_ids: Vec<String>;
@@ -257,6 +332,33 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                     body_id: body_id.clone(),
                     point_name: point_names[i].clone(),
                 });
+            }
+
+            // Collect segments for hit testing.
+            if point_positions.len() >= 2 {
+                for i in 0..point_positions.len() - 1 {
+                    body_segments.push(BodySegment {
+                        screen_a: point_positions[i].0,
+                        screen_b: point_positions[i + 1].0,
+                        world_a: point_positions[i].1,
+                        world_b: point_positions[i + 1].1,
+                        body_id: body_id.clone(),
+                        point_a_name: point_names[i].clone(),
+                        point_b_name: point_names[i + 1].clone(),
+                    });
+                }
+                // Close polygon for 3+ points.
+                if point_positions.len() >= 3 {
+                    body_segments.push(BodySegment {
+                        screen_a: point_positions.last().unwrap().0,
+                        screen_b: point_positions[0].0,
+                        world_a: point_positions.last().unwrap().1,
+                        world_b: point_positions[0].1,
+                        body_id: body_id.clone(),
+                        point_a_name: point_names.last().unwrap().to_string(),
+                        point_b_name: point_names[0].clone(),
+                    });
+                }
             }
         }
 
@@ -656,8 +758,14 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             if let Some(pos) = response.interact_pointer_pos() {
                 let snap_hit = find_nearest_attachment(pos);
                 let (world_pos, attachment) = if let Some(hit) = snap_hit {
-                    // Snap to exact world position of existing point.
+                    // Priority 1: snap to exact world position of existing point.
                     (hit.world_pos, Some((hit.body_id.clone(), hit.point_name.clone())))
+                } else if let Some(seg_hit) = find_nearest_body_segment(pos, &body_segments, 8.0) {
+                    // Priority 2: snap to body segment — create new pivot.
+                    let name = state.next_attachment_point_name(&seg_hit.body_id);
+                    let [lx, ly] = state.world_to_body_local(&seg_hit.body_id, seg_hit.world_pos[0], seg_hit.world_pos[1]);
+                    state.add_attachment_point_local_raw(&seg_hit.body_id, &name, lx, ly);
+                    (seg_hit.world_pos, Some((seg_hit.body_id.clone(), name)))
                 } else {
                     let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
                     let (sx, sy) = state.grid.snap_point(wx, wy);
@@ -671,7 +779,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             }
         }
 
-        // Preview line while dragging — snap end to existing points.
+        // Preview line while dragging — snap end to existing points or body segments.
         if let Some(ref start) = state.draw_link_start {
             if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
                 let [sx, sy] = start.world_pos;
@@ -684,10 +792,17 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                     (gx, gy, false)
                 };
 
+                // Check for segment snap when no point snap is active.
+                let segment_snap = if !end_snapped {
+                    find_nearest_body_segment(pos, &body_segments, 8.0)
+                } else {
+                    None
+                };
+
                 let start_screen = state.view.world_to_screen(sx, sy);
                 let end_screen = state.view.world_to_screen(ex, ey);
 
-                let end_color = if end_snapped {
+                let end_color = if end_snapped || segment_snap.is_some() {
                     JOINT_CREATE_HIGHLIGHT
                 } else {
                     BODY_COLOR
@@ -710,6 +825,23 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                     JOINT_RADIUS,
                     end_color,
                 );
+
+                // Diamond indicator for segment snap.
+                if let Some(ref seg_hit) = segment_snap {
+                    let center = seg_hit.screen_pos;
+                    let size = 5.0_f32;
+                    let diamond = vec![
+                        Pos2::new(center.x, center.y - size),
+                        Pos2::new(center.x + size, center.y),
+                        Pos2::new(center.x, center.y + size),
+                        Pos2::new(center.x - size, center.y),
+                    ];
+                    painter.add(egui::Shape::convex_polygon(
+                        diamond,
+                        JOINT_CREATE_HIGHLIGHT,
+                        Stroke::NONE,
+                    ));
+                }
             }
         }
 
@@ -719,11 +851,19 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             if let Some(pos) = response.interact_pointer_pos() {
                 let [sx, sy] = start.world_pos;
 
-                // Snap end to existing point or grid.
+                // Snap end to existing point, body segment, or grid.
                 let snap_end = find_nearest_attachment(pos);
                 let (ex, ey, end_attach) = if let Some(hit) = snap_end {
+                    // Priority 1: snap to existing attachment point.
                     (hit.world_pos[0], hit.world_pos[1],
                      Some((hit.body_id.clone(), hit.point_name.clone())))
+                } else if let Some(seg_hit) = find_nearest_body_segment(pos, &body_segments, 8.0) {
+                    // Priority 2: snap to body segment — create new pivot.
+                    let name = state.next_attachment_point_name(&seg_hit.body_id);
+                    let [lx, ly] = state.world_to_body_local(&seg_hit.body_id, seg_hit.world_pos[0], seg_hit.world_pos[1]);
+                    state.add_attachment_point_local_raw(&seg_hit.body_id, &name, lx, ly);
+                    (seg_hit.world_pos[0], seg_hit.world_pos[1],
+                     Some((seg_hit.body_id.clone(), name)))
                 } else {
                     let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
                     let (gx, gy) = state.grid.snap_point(wx, wy);
