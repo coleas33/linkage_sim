@@ -988,6 +988,7 @@ mod tests {
             body_id: "crank".into(),
             local_point: [0.5, 0.0],
             force: [10.0, -5.0],
+            modulation: TimeModulation::Constant,
         }));
 
         mech.build().unwrap();
@@ -1047,6 +1048,7 @@ mod tests {
         mech.add_force(ForceElement::ExternalTorque(ExternalTorqueElement {
             body_id: "bar".into(),
             torque: 7.5,
+            modulation: TimeModulation::Constant,
         }));
         mech.build().unwrap();
 

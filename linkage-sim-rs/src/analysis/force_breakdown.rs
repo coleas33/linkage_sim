@@ -65,7 +65,7 @@ mod tests {
     use crate::core::body::{make_bar, make_ground};
     use crate::core::mechanism::Mechanism;
     use crate::forces::elements::{
-        ExternalForceElement, ForceElement, GravityElement, LinearSpringElement,
+        ExternalForceElement, ForceElement, GravityElement, LinearSpringElement, TimeModulation,
     };
     use approx::assert_abs_diff_eq;
 
@@ -87,6 +87,7 @@ mod tests {
             body_id: "bar".into(),
             local_point: [0.5, 0.0],
             force: [100.0, 0.0],
+            modulation: TimeModulation::Constant,
         }));
 
         mech.build().unwrap();

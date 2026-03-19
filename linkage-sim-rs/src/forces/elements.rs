@@ -27,6 +27,56 @@ fn default_direction() -> f64 {
     1.0
 }
 
+// ── Time modulation ──────────────────────────────────────────────────────────
+
+/// Time modulation for external loads.
+///
+/// Multiplies the base force/torque by a time-dependent factor.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "modulation_type")]
+pub enum TimeModulation {
+    /// Constant (default, no modulation). Factor = 1.0 always.
+    Constant,
+    /// Sinusoidal: factor = sin(omega * t + phase).
+    Sinusoidal { omega: f64, phase: f64 },
+    /// Step: zero before t_on, full after t_on.
+    Step { t_on: f64 },
+    /// Ramp: linearly from 0 to 1 over [t_start, t_end].
+    Ramp { t_start: f64, t_end: f64 },
+}
+
+impl Default for TimeModulation {
+    fn default() -> Self {
+        TimeModulation::Constant
+    }
+}
+
+impl TimeModulation {
+    /// Compute the modulation factor at time `t`.
+    pub fn factor(&self, t: f64) -> f64 {
+        match self {
+            TimeModulation::Constant => 1.0,
+            TimeModulation::Sinusoidal { omega, phase } => (omega * t + phase).sin(),
+            TimeModulation::Step { t_on } => {
+                if t >= *t_on {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            TimeModulation::Ramp { t_start, t_end } => {
+                if t <= *t_start {
+                    0.0
+                } else if t >= *t_end {
+                    1.0
+                } else {
+                    (t - t_start) / (t_end - t_start)
+                }
+            }
+        }
+    }
+}
+
 // ── Element data structs ─────────────────────────────────────────────────────
 
 /// Uniform gravitational field applied to all bodies with mass > 0.
@@ -110,7 +160,7 @@ pub struct RotaryDamperElement {
 
 /// External point force applied at a fixed local point on a body.
 ///
-/// Force direction is in global coordinates.
+/// Force direction is in global coordinates. Optionally modulated by time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalForceElement {
     /// Body the force is applied to.
@@ -119,6 +169,9 @@ pub struct ExternalForceElement {
     pub local_point: [f64; 2],
     /// Force vector in global coordinates (N).
     pub force: [f64; 2],
+    /// Time modulation applied to the force vector.
+    #[serde(default)]
+    pub modulation: TimeModulation,
 }
 
 /// External pure torque applied to a body.
@@ -128,6 +181,9 @@ pub struct ExternalTorqueElement {
     pub body_id: String,
     /// Torque magnitude (N·m). Positive = counterclockwise.
     pub torque: f64,
+    /// Time modulation applied to the torque.
+    #[serde(default)]
+    pub modulation: TimeModulation,
 }
 
 /// Gas spring between two body points.
@@ -273,6 +329,31 @@ pub enum ForceElement {
 }
 
 impl ForceElement {
+    /// Create a Coulomb friction element (pure sliding friction at a revolute joint).
+    ///
+    /// This is a convenience for `BearingFriction` with only the Coulomb component
+    /// (constant_drag=0, viscous_coeff=0).
+    ///
+    /// Torque: τ = -μ * R * F_n * tanh(ω_rel / v_threshold)
+    pub fn coulomb_friction(
+        body_i: &str,
+        body_j: &str,
+        friction_coeff: f64,
+        pin_radius: f64,
+        radial_load: f64,
+    ) -> Self {
+        ForceElement::BearingFriction(BearingFrictionElement {
+            body_i: body_i.to_string(),
+            body_j: body_j.to_string(),
+            constant_drag: 0.0,
+            viscous_coeff: 0.0,
+            coulomb_coeff: friction_coeff,
+            pin_radius,
+            radial_load,
+            v_threshold: 0.01,
+        })
+    }
+
     /// Evaluate this force element's contribution to the generalized force vector Q.
     ///
     /// Uses the virtual work principle: physical forces are converted to
@@ -291,8 +372,8 @@ impl ForceElement {
             ForceElement::TorsionSpring(s) => evaluate_torsion_spring(s, state, q),
             ForceElement::LinearDamper(d) => evaluate_linear_damper(d, state, q, q_dot),
             ForceElement::RotaryDamper(d) => evaluate_rotary_damper(d, state, q_dot),
-            ForceElement::ExternalForce(f) => evaluate_external_force(f, state, q),
-            ForceElement::ExternalTorque(t) => evaluate_external_torque(t, state),
+            ForceElement::ExternalForce(f) => evaluate_external_force(f, state, q, _t),
+            ForceElement::ExternalTorque(t) => evaluate_external_torque(t, state, _t),
             ForceElement::GasSpring(g) => evaluate_gas_spring(g, state, q, q_dot),
             ForceElement::BearingFriction(b) => evaluate_bearing_friction(b, state, q_dot),
             ForceElement::JointLimit(j) => evaluate_joint_limit(j, state, q, q_dot),
@@ -480,14 +561,17 @@ fn evaluate_external_force(
     f: &ExternalForceElement,
     state: &State,
     q: &DVector<f64>,
+    t: f64,
 ) -> DVector<f64> {
     let local_pt = Vector2::new(f.local_point[0], f.local_point[1]);
-    let force = Vector2::new(f.force[0], f.force[1]);
+    let factor = f.modulation.factor(t);
+    let force = Vector2::new(f.force[0] * factor, f.force[1] * factor);
     point_force_to_q(state, &f.body_id, &local_pt, &force, q)
 }
 
-fn evaluate_external_torque(t: &ExternalTorqueElement, state: &State) -> DVector<f64> {
-    body_torque_to_q(state, &t.body_id, t.torque)
+fn evaluate_external_torque(te: &ExternalTorqueElement, state: &State, t: f64) -> DVector<f64> {
+    let factor = te.modulation.factor(t);
+    body_torque_to_q(state, &te.body_id, te.torque * factor)
 }
 
 fn evaluate_gas_spring(
@@ -852,6 +936,7 @@ mod tests {
             body_id: "bar".into(),
             local_point: [0.5, 0.0], // CG
             force: [10.0, -5.0],
+            modulation: TimeModulation::Constant,
         });
 
         let result = ext.evaluate(&state, &bodies, &q, &q_dot, 0.0);
@@ -871,6 +956,7 @@ mod tests {
         let ext = ForceElement::ExternalTorque(ExternalTorqueElement {
             body_id: "bar".into(),
             torque: 7.5,
+            modulation: TimeModulation::Constant,
         });
 
         let result = ext.evaluate(&state, &bodies, &q, &q_dot, 0.0);
@@ -958,6 +1044,7 @@ mod tests {
             body_id: "bar".into(),
             local_point: [0.5, 0.0],
             force: [10.0, -5.0],
+            modulation: TimeModulation::Constant,
         });
         let json = serde_json::to_string(&elem).unwrap();
         assert!(json.contains("\"type\":\"ExternalForce\""));
@@ -1623,5 +1710,122 @@ mod tests {
             .type_name(),
             "Linear Actuator"
         );
+    }
+
+    // ── Coulomb friction convenience constructor ────────────────────────────
+
+    #[test]
+    fn coulomb_friction_produces_correct_torque() {
+        let (state, bodies) = setup_two_bars();
+        let q = state.make_q();
+        let mut q_dot = DVector::zeros(state.n_coords());
+        // bar2 spinning at 10 rad/s (fast enough that tanh ~ 1.0)
+        q_dot[5] = 10.0;
+
+        let elem = ForceElement::coulomb_friction("bar1", "bar2", 0.3, 0.01, 1000.0);
+        let result = elem.evaluate(&state, &bodies, &q, &q_dot, 0.0);
+
+        // μ * R * F_n = 0.3 * 0.01 * 1000 = 3.0
+        // tanh(10.0 / 0.01) ~ 1.0
+        // torque on bar2 = -3.0 (opposes positive rotation)
+        assert_abs_diff_eq!(result[5], -3.0, epsilon = 1e-3); // bar2 θ
+        assert_abs_diff_eq!(result[2], 3.0, epsilon = 1e-3); // bar1 θ (reaction)
+
+        // Verify this is a pure Coulomb element (no drag, no viscous)
+        match &elem {
+            ForceElement::BearingFriction(b) => {
+                assert_abs_diff_eq!(b.constant_drag, 0.0, epsilon = 1e-15);
+                assert_abs_diff_eq!(b.viscous_coeff, 0.0, epsilon = 1e-15);
+                assert_abs_diff_eq!(b.coulomb_coeff, 0.3, epsilon = 1e-15);
+            }
+            _ => panic!("Expected BearingFriction variant"),
+        }
+    }
+
+    // ── Time modulation tests ──────────────────────────────────────────────
+
+    #[test]
+    fn sinusoidal_modulation_external_force() {
+        let (state, bodies) = setup_single_bar();
+        let mut q = state.make_q();
+        state.set_pose("bar", &mut q, 0.0, 0.0, 0.0);
+        let q_dot = DVector::zeros(state.n_coords());
+
+        let elem = ForceElement::ExternalForce(ExternalForceElement {
+            body_id: "bar".into(),
+            local_point: [0.0, 0.0],
+            force: [100.0, 0.0],
+            modulation: TimeModulation::Sinusoidal {
+                omega: PI,
+                phase: 0.0,
+            },
+        });
+
+        // At t=0: sin(0) = 0 → force = 0
+        let r0 = elem.evaluate(&state, &bodies, &q, &q_dot, 0.0);
+        assert_abs_diff_eq!(r0[0], 0.0, epsilon = 1e-14);
+
+        // At t=0.5: sin(π * 0.5) = 1.0 → force = 100
+        let r1 = elem.evaluate(&state, &bodies, &q, &q_dot, 0.5);
+        assert_abs_diff_eq!(r1[0], 100.0, epsilon = 1e-10);
+
+        // At t=1.0: sin(π * 1.0) ~ 0 → force ~ 0
+        let r2 = elem.evaluate(&state, &bodies, &q, &q_dot, 1.0);
+        assert_abs_diff_eq!(r2[0], 0.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn step_modulation_external_force() {
+        let (state, bodies) = setup_single_bar();
+        let mut q = state.make_q();
+        state.set_pose("bar", &mut q, 0.0, 0.0, 0.0);
+        let q_dot = DVector::zeros(state.n_coords());
+
+        let elem = ForceElement::ExternalForce(ExternalForceElement {
+            body_id: "bar".into(),
+            local_point: [0.0, 0.0],
+            force: [50.0, 0.0],
+            modulation: TimeModulation::Step { t_on: 1.0 },
+        });
+
+        // Before step: t=0.5 → factor = 0
+        let r0 = elem.evaluate(&state, &bodies, &q, &q_dot, 0.5);
+        assert_abs_diff_eq!(r0[0], 0.0, epsilon = 1e-15);
+
+        // At step: t=1.0 → factor = 1
+        let r1 = elem.evaluate(&state, &bodies, &q, &q_dot, 1.0);
+        assert_abs_diff_eq!(r1[0], 50.0, epsilon = 1e-15);
+
+        // After step: t=2.0 → factor = 1
+        let r2 = elem.evaluate(&state, &bodies, &q, &q_dot, 2.0);
+        assert_abs_diff_eq!(r2[0], 50.0, epsilon = 1e-15);
+    }
+
+    #[test]
+    fn ramp_modulation_external_torque() {
+        let (state, bodies) = setup_single_bar();
+        let q = state.make_q();
+        let q_dot = DVector::zeros(state.n_coords());
+
+        let elem = ForceElement::ExternalTorque(ExternalTorqueElement {
+            body_id: "bar".into(),
+            torque: 20.0,
+            modulation: TimeModulation::Ramp {
+                t_start: 1.0,
+                t_end: 3.0,
+            },
+        });
+
+        // Before ramp: t=0.5 → factor = 0
+        let r0 = elem.evaluate(&state, &bodies, &q, &q_dot, 0.5);
+        assert_abs_diff_eq!(r0[2], 0.0, epsilon = 1e-15);
+
+        // Mid-ramp: t=2.0 → factor = (2-1)/(3-1) = 0.5 → torque = 10
+        let r1 = elem.evaluate(&state, &bodies, &q, &q_dot, 2.0);
+        assert_abs_diff_eq!(r1[2], 10.0, epsilon = 1e-10);
+
+        // After ramp: t=4.0 → factor = 1.0 → torque = 20
+        let r2 = elem.evaluate(&state, &bodies, &q, &q_dot, 4.0);
+        assert_abs_diff_eq!(r2[2], 20.0, epsilon = 1e-15);
     }
 }

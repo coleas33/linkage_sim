@@ -38,7 +38,7 @@ The Rust port begins **after Phase 4 exits** — when all four analysis modes (k
 | Phase 2 — Force elements & statics | Python | Complete, validated |
 | Phase 3 — Actuators & inverse dynamics | Python | Complete, validated |
 | Phase 4 — Forward dynamics | Python | Complete, validated |
-| **Rust port** | **Rust** | **Complete — 363 tests, validated against Python golden data + property-based stress tests** |
+| **Rust port** | **Rust** | **Complete — 374 tests, validated against Python golden data + property-based stress tests** |
 | Phase 5 — Interactive GUI | Rust | **In progress** — egui application |
 | Phase 6 — Advanced & QoL | Rust | Not started |
 
@@ -326,7 +326,7 @@ The solver kernel port (steps 1–9) is complete and validated. All four analysi
 
 ### Test coverage
 
-- **363 tests total** (includes 7 property-based tests via proptest)
+- **374 tests total** (includes 7 property-based tests via proptest)
 - All tests pass via `cargo test`
 
 ### Golden fixture coverage

@@ -626,6 +626,7 @@ fn draw_force_elements_panel(
                         body_id: id,
                         local_point: [0.0, 0.0],
                         force: [0.0, -10.0],
+                        modulation: TimeModulation::Constant,
                     }),
                 ));
             }
@@ -637,6 +638,7 @@ fn draw_force_elements_panel(
                     ForceElement::ExternalTorque(ExternalTorqueElement {
                         body_id: id,
                         torque: 1.0,
+                        modulation: TimeModulation::Constant,
                     }),
                 ));
             }
