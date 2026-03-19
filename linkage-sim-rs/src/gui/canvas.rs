@@ -665,19 +665,26 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                     * state.view.scale as f64;
 
                 if dist_px > 10.0 {
+                    // Single undo snapshot for the entire compound operation.
+                    state.push_undo();
+
                     // Start connection: existing point or new ground pivot.
                     let start_attach = start.attachment.clone().unwrap_or_else(|| {
                         let name = state.next_ground_pivot_name();
-                        state.add_ground_pivot(&name, sx, sy);
+                        state.add_ground_pivot_raw(&name, sx, sy);
                         (GROUND_ID.to_string(), name)
                     });
 
                     // Create the body with endpoints at exact snap positions.
                     let body_id = state.next_body_id();
-                    state.add_body(&body_id, ("A", sx, sy), ("B", ex, ey));
+                    let points = vec![
+                        ("A".to_string(), [sx, sy]),
+                        ("B".to_string(), [ex, ey]),
+                    ];
+                    state.add_body_with_points_raw(&body_id, &points);
 
                     // Joint at start.
-                    state.add_revolute_joint(
+                    state.add_revolute_joint_raw(
                         &start_attach.0,
                         &start_attach.1,
                         &body_id,
@@ -686,13 +693,16 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
 
                     // Joint at end (only if snapped to existing point).
                     if let Some((end_body, end_point)) = end_attach {
-                        state.add_revolute_joint(
+                        state.add_revolute_joint_raw(
                             &end_body,
                             &end_point,
                             &body_id,
                             "B",
                         );
                     }
+
+                    // Single rebuild after all mutations.
+                    state.rebuild();
                 }
             }
             // Stay in DrawLink tool for chaining.

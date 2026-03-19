@@ -506,6 +506,8 @@ pub struct AppState {
     // ── Diagnostics ─────────────────────────────────────────────────────
     /// Cached Grashof classification for 4-bar mechanisms.
     pub grashof_result: Option<GrashofResult>,
+    /// Cached crank recommendation for 4-bar mechanisms.
+    pub crank_recommendation: Option<crate::analysis::crank_selection::CrankRecommendation>,
     // ── Forward dynamics simulation ─────────────────────────────────────
     /// Forward dynamics simulation result and playback state.
     pub simulation: Option<SimulationState>,
@@ -585,6 +587,7 @@ impl Default for AppState {
             context_menu_target: ContextMenuTarget::default(),
             draw_link_start: None,
             grashof_result: None,
+            crank_recommendation: None,
             simulation: None,
             simulation_duration: 5.0,
         };
@@ -816,14 +819,16 @@ impl AppState {
         };
     }
 
-    /// Update cached Grashof classification from the current mechanism.
+    /// Update cached Grashof classification and crank recommendation from
+    /// the current mechanism.
     ///
-    /// Only produces a result for 4-bar mechanisms (3 moving bodies + ground,
-    /// 4 revolute joints). Sets `grashof_result` to `None` for all other
-    /// mechanism topologies.
+    /// Only produces results for 4-bar mechanisms (3 moving bodies + ground,
+    /// 4 revolute joints). Sets both `grashof_result` and
+    /// `crank_recommendation` to `None` for all other mechanism topologies.
     fn update_grashof(&mut self) {
         let Some(mech) = &self.mechanism else {
             self.grashof_result = None;
+            self.crank_recommendation = None;
             return;
         };
 
@@ -836,9 +841,18 @@ impl AppState {
                     rocker_len,
                     1e-10,
                 ));
+                self.crank_recommendation = Some(
+                    crate::analysis::crank_selection::recommend_crank(
+                        ground_len,
+                        crank_len,
+                        coupler_len,
+                        rocker_len,
+                    ),
+                );
             }
             None => {
                 self.grashof_result = None;
+                self.crank_recommendation = None;
             }
         }
     }
@@ -1239,13 +1253,13 @@ impl AppState {
         self.rebuild();
     }
 
-    // ── Create / delete operations ──────────────────────────────────────
+    // ── Raw blueprint helpers (no undo / no rebuild) ──────────────────
 
-    /// Add a new ground pivot (attachment point on the ground body).
+    /// Add a ground pivot (attachment point on the ground body).
     ///
-    /// Pushes undo, adds the point, and rebuilds.
-    pub fn add_ground_pivot(&mut self, name: &str, x: f64, y: f64) {
-        self.push_undo();
+    /// Mutates the blueprint only. Does **not** push undo or rebuild.
+    /// Use this inside compound operations that batch a single undo + rebuild.
+    pub(crate) fn add_ground_pivot_raw(&mut self, name: &str, x: f64, y: f64) {
         let Some(bp) = &mut self.blueprint else { return };
         let ground = bp.bodies.entry(GROUND_ID.to_string()).or_insert_with(|| BodyJson {
             attachment_points: HashMap::new(),
@@ -1255,30 +1269,113 @@ impl AppState {
             coupler_points: HashMap::new(),
         });
         ground.attachment_points.insert(name.to_string(), [x, y]);
-        self.rebuild();
     }
 
-    /// Add a new binary body with two attachment points.
+    /// Add a revolute joint between two body attachment points.
     ///
-    /// Creates a body with two points at `p1` and `p2`, default mass properties.
-    /// Pushes undo, adds the body, and rebuilds.
-    pub fn add_body(&mut self, body_id: &str, p1: (&str, f64, f64), p2: (&str, f64, f64)) {
-        self.push_undo();
+    /// Mutates the blueprint only. Does **not** push undo or rebuild.
+    pub(crate) fn add_revolute_joint_raw(
+        &mut self,
+        body_i: &str,
+        point_i: &str,
+        body_j: &str,
+        point_j: &str,
+    ) {
         let Some(bp) = &mut self.blueprint else { return };
+        let joint_id = generate_unique_id("J", &bp.joints);
+        bp.joints.insert(
+            joint_id,
+            JointJson::Revolute {
+                body_i: body_i.to_string(),
+                body_j: body_j.to_string(),
+                point_i: point_i.to_string(),
+                point_j: point_j.to_string(),
+            },
+        );
+    }
+
+    /// Create a body from N world-coordinate points.
+    ///
+    /// The first point becomes local (0, 0); all other points are stored
+    /// relative to the first. CG is set to the centroid of all local points.
+    /// Default mass properties (mass=1, Izz=0.01) are assigned.
+    ///
+    /// Mutates the blueprint only. Does **not** push undo or rebuild.
+    pub(crate) fn add_body_with_points_raw(
+        &mut self,
+        body_id: &str,
+        points: &[(String, [f64; 2])],
+    ) {
+        let Some(bp) = &mut self.blueprint else { return };
+        if points.is_empty() {
+            return;
+        }
+
+        // First point becomes the body-local origin.
+        let origin = points[0].1;
         let mut attachment_points = HashMap::new();
-        attachment_points.insert(p1.0.to_string(), [p1.1, p1.2]);
-        attachment_points.insert(p2.0.to_string(), [p2.1, p2.2]);
-        let cx = (p1.1 + p2.1) / 2.0;
-        let cy = (p1.2 + p2.2) / 2.0;
+        let mut sum_x = 0.0;
+        let mut sum_y = 0.0;
+
+        for (name, world) in points {
+            let local_x = world[0] - origin[0];
+            let local_y = world[1] - origin[1];
+            attachment_points.insert(name.clone(), [local_x, local_y]);
+            sum_x += local_x;
+            sum_y += local_y;
+        }
+
+        let n = points.len() as f64;
         let body = BodyJson {
             attachment_points,
             mass: 1.0,
-            cg_local: [cx, cy],
+            cg_local: [sum_x / n, sum_y / n],
             izz_cg: 0.01,
             coupler_points: HashMap::new(),
         };
         bp.bodies.insert(body_id.to_string(), body);
+    }
+
+    /// Add an attachment point to an existing body in body-local coordinates.
+    ///
+    /// Mutates the blueprint only. Does **not** push undo or rebuild.
+    /// No-op if the body does not exist.
+    pub(crate) fn add_attachment_point_local_raw(
+        &mut self,
+        body_id: &str,
+        name: &str,
+        local_x: f64,
+        local_y: f64,
+    ) {
+        let Some(bp) = &mut self.blueprint else { return };
+        if let Some(body) = bp.bodies.get_mut(body_id) {
+            body.attachment_points.insert(name.to_string(), [local_x, local_y]);
+        }
+    }
+
+    // ── Create / delete operations ──────────────────────────────────────
+
+    /// Add a new ground pivot (attachment point on the ground body).
+    ///
+    /// Pushes undo, adds the point, and rebuilds.
+    pub fn add_ground_pivot(&mut self, name: &str, x: f64, y: f64) {
+        self.push_undo();
+        self.add_ground_pivot_raw(name, x, y);
         self.rebuild();
+    }
+
+    /// Add a new body from N world-coordinate points.
+    ///
+    /// Auto-generates a body ID via `next_body_id()`. The first point becomes
+    /// local (0, 0); CG is at the centroid. Pushes undo, adds the body, and rebuilds.
+    ///
+    /// Returns the generated body ID.
+    pub fn add_body_with_points(&mut self, points: &[(String, [f64; 2])]) -> String {
+        self.push_undo();
+        let body_id = self.next_body_id();
+        self.add_body_with_points_raw(&body_id, points);
+        self.rebuild();
+        body_id
     }
 
     /// Remove a body and all joints/drivers that reference it.
@@ -1316,18 +1413,7 @@ impl AppState {
         point_j: &str,
     ) {
         self.push_undo();
-        let Some(bp) = &mut self.blueprint else { return };
-
-        let joint_id = generate_unique_id("J", &bp.joints);
-        bp.joints.insert(
-            joint_id,
-            JointJson::Revolute {
-                body_i: body_i.to_string(),
-                body_j: body_j.to_string(),
-                point_i: point_i.to_string(),
-                point_j: point_j.to_string(),
-            },
-        );
+        self.add_revolute_joint_raw(body_i, point_i, body_j, point_j);
         self.rebuild();
     }
 
@@ -2887,17 +2973,21 @@ mod tests {
     }
 
     #[test]
-    fn add_body_creates_new_body_in_blueprint() {
+    fn add_body_with_points_creates_new_body_in_blueprint() {
         let mut state = AppState::default();
         state.load_sample(SampleMechanism::FourBar);
         let n_bodies_before = state.blueprint.as_ref().unwrap().bodies.len();
 
-        state.add_body("new_link", ("X", 0.0, 0.0), ("Y", 0.05, 0.0));
+        let points = vec![
+            ("X".to_string(), [0.0, 0.0]),
+            ("Y".to_string(), [0.05, 0.0]),
+        ];
+        let body_id = state.add_body_with_points(&points);
 
         let bp = state.blueprint.as_ref().unwrap();
         assert_eq!(bp.bodies.len(), n_bodies_before + 1);
-        assert!(bp.bodies.contains_key("new_link"));
-        let body = bp.bodies.get("new_link").unwrap();
+        assert!(bp.bodies.contains_key(&body_id));
+        let body = bp.bodies.get(&body_id).unwrap();
         assert_eq!(body.attachment_points.len(), 2);
         assert!(body.attachment_points.contains_key("X"));
         assert!(body.attachment_points.contains_key("Y"));
@@ -2951,13 +3041,17 @@ mod tests {
         let n_joints_before = state.blueprint.as_ref().unwrap().joints.len();
 
         // Add a new body first so we have a valid target.
-        state.add_body("extra", ("E1", 0.0, 0.0), ("E2", 0.01, 0.0));
+        let points = vec![
+            ("E1".to_string(), [0.0, 0.0]),
+            ("E2".to_string(), [0.01, 0.0]),
+        ];
+        let extra_id = state.add_body_with_points(&points);
 
         // Add joint between ground and the new body.
-        state.add_revolute_joint("ground", "O2", "extra", "E1");
+        state.add_revolute_joint("ground", "O2", &extra_id, "E1");
 
         let bp = state.blueprint.as_ref().unwrap();
-        // +1 from the new joint (the add_body doesn't add joints).
+        // +1 from the new joint (add_body_with_points doesn't add joints).
         assert_eq!(bp.joints.len(), n_joints_before + 1);
     }
 
@@ -3012,7 +3106,11 @@ mod tests {
         state.load_sample(SampleMechanism::FourBar);
 
         let id1 = state.next_body_id();
-        state.add_body(&id1, ("A", 0.0, 0.0), ("B", 0.01, 0.0));
+        let points = vec![
+            ("A".to_string(), [0.0, 0.0]),
+            ("B".to_string(), [0.01, 0.0]),
+        ];
+        state.add_body_with_points(&points);
 
         let id2 = state.next_body_id();
         assert_ne!(id1, id2, "Second ID should differ from first");
@@ -3064,12 +3162,17 @@ mod tests {
         state.load_sample(SampleMechanism::FourBar);
 
         // Add a body with no joints.
-        state.add_body("floating", ("F1", 0.0, 0.5), ("F2", 0.01, 0.5));
+        let points = vec![
+            ("F1".to_string(), [0.0, 0.5]),
+            ("F2".to_string(), [0.01, 0.5]),
+        ];
+        let floating_id = state.add_body_with_points(&points);
         state.compute_validation();
 
         assert!(
-            state.validation_warnings.disconnected_bodies.contains(&"floating".to_string()),
-            "Should detect 'floating' as disconnected"
+            state.validation_warnings.disconnected_bodies.contains(&floating_id),
+            "Should detect '{}' as disconnected",
+            floating_id,
         );
     }
 
@@ -3452,5 +3555,84 @@ mod tests {
         let [lx, ly] = state.world_to_body_local("ground", 0.05, 0.03);
         assert!((lx - 0.05).abs() < 1e-10);
         assert!((ly - 0.03).abs() < 1e-10);
+    }
+
+    // ── Raw helper tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn add_ground_pivot_raw_mutates_blueprint() {
+        let mut state = AppState::default();
+        state.add_ground_pivot_raw("P1", 0.1, 0.2);
+        let bp = state.blueprint.as_ref().unwrap();
+        let ground = bp.bodies.get("ground").unwrap();
+        assert!(ground.attachment_points.contains_key("P1"));
+        let pt = ground.attachment_points.get("P1").unwrap();
+        assert!((pt[0] - 0.1).abs() < 1e-15);
+        assert!((pt[1] - 0.2).abs() < 1e-15);
+        assert!(!state.can_undo());
+    }
+
+    #[test]
+    fn add_revolute_joint_raw_mutates_blueprint() {
+        let mut state = AppState::default();
+        state.add_ground_pivot_raw("O", 0.0, 0.0);
+        let bp = state.blueprint.as_mut().unwrap();
+        let mut pts = HashMap::new();
+        pts.insert("A".to_string(), [0.0, 0.0]);
+        pts.insert("B".to_string(), [0.1, 0.0]);
+        bp.bodies.insert("link".to_string(), BodyJson {
+            attachment_points: pts,
+            mass: 1.0,
+            cg_local: [0.05, 0.0],
+            izz_cg: 0.01,
+            coupler_points: HashMap::new(),
+        });
+        state.add_revolute_joint_raw("ground", "O", "link", "A");
+        let bp = state.blueprint.as_ref().unwrap();
+        assert_eq!(bp.joints.len(), 1);
+        assert!(!state.can_undo());
+    }
+
+    #[test]
+    fn add_body_with_points_raw_first_point_is_local_origin() {
+        let mut state = AppState::default();
+        let points = vec![
+            ("A".to_string(), [0.05, 0.03]),
+            ("B".to_string(), [0.15, 0.03]),
+            ("C".to_string(), [0.10, 0.08]),
+        ];
+        let new_body_id = state.next_body_id();
+        state.add_body_with_points_raw(&new_body_id, &points);
+        let bp = state.blueprint.as_ref().unwrap();
+        let body = bp.bodies.values()
+            .find(|b| b.attachment_points.contains_key("A") && b.attachment_points.contains_key("C"))
+            .expect("body with A, B, C");
+        let a = body.attachment_points.get("A").unwrap();
+        assert!((a[0]).abs() < 1e-15);
+        assert!((a[1]).abs() < 1e-15);
+        let b = body.attachment_points.get("B").unwrap();
+        assert!((b[0] - 0.10).abs() < 1e-15);
+        assert!((b[1] - 0.00).abs() < 1e-15);
+        let c = body.attachment_points.get("C").unwrap();
+        assert!((c[0] - 0.05).abs() < 1e-15);
+        assert!((c[1] - 0.05).abs() < 1e-15);
+        let expected_cg_x = (0.0 + 0.10 + 0.05) / 3.0;
+        let expected_cg_y = (0.0 + 0.0 + 0.05) / 3.0;
+        assert!((body.cg_local[0] - expected_cg_x).abs() < 1e-10);
+        assert!((body.cg_local[1] - expected_cg_y).abs() < 1e-10);
+        assert!(!state.can_undo());
+    }
+
+    #[test]
+    fn add_attachment_point_local_raw_adds_to_existing_body() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.add_attachment_point_local_raw("crank", "C", 0.005, 0.003);
+        let bp = state.blueprint.as_ref().unwrap();
+        let crank = bp.bodies.get("crank").unwrap();
+        assert!(crank.attachment_points.contains_key("C"));
+        let c = crank.attachment_points.get("C").unwrap();
+        assert!((c[0] - 0.005).abs() < 1e-15);
+        assert!((c[1] - 0.003).abs() < 1e-15);
     }
 }
