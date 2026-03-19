@@ -111,6 +111,7 @@ impl eframe::App for LinkageApp {
                 ui.menu_button("View", |ui| {
                     ui.checkbox(&mut self.state.show_debug_overlay, "Debug Overlay");
                     ui.checkbox(&mut self.state.show_plots, "Plot Panel");
+                    ui.checkbox(&mut self.state.show_forces, "Force Arrows");
                     ui.separator();
                     ui.label("Units:");
                     let mut use_mm = self.state.display_units.length == LengthUnit::Millimeters;
@@ -177,6 +178,11 @@ impl eframe::App for LinkageApp {
                         self.state.display_units.angle(self.state.driver_angle),
                         self.state.display_units.angle_suffix()
                     ));
+
+                    if let Some(torque) = self.state.force_results.driver_torque {
+                        ui.separator();
+                        ui.label(format!("\u{03c4} = {:.3} N\u{00b7}m", torque));
+                    }
 
                     if self.state.playing {
                         ui.separator();

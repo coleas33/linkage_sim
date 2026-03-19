@@ -13,6 +13,7 @@ enum PlotTab {
     CouplerTrace,
     BodyAngles,
     TransmissionAngle,
+    DriverTorque,
 }
 
 /// Draw the plot panel with tabbed plots.
@@ -51,6 +52,16 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &AppState) {
                 "Transmission Angle",
             );
         });
+
+        // Only show driver torque tab if data exists.
+        let has_dt = sweep.driver_torques.is_some();
+        ui.add_enabled_ui(has_dt, |ui| {
+            ui.selectable_value(
+                &mut selected_tab,
+                PlotTab::DriverTorque,
+                "Driver Torque",
+            );
+        });
     });
 
     ui.memory_mut(|mem| mem.data.insert_temp(tab_id, selected_tab));
@@ -63,6 +74,9 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &AppState) {
         PlotTab::BodyAngles => draw_body_angles(ui, sweep, current_driver_display, &state.display_units),
         PlotTab::TransmissionAngle => {
             draw_transmission_angle(ui, sweep, current_driver_display, &state.display_units);
+        }
+        PlotTab::DriverTorque => {
+            draw_driver_torque(ui, sweep, current_driver_display, &state.display_units);
         }
     }
 }
@@ -220,6 +234,51 @@ fn draw_transmission_angle(
         );
 
         // Vertical marker at current driver angle (already in display units).
+        plot_ui.vline(
+            VLine::new("cursor", current_driver_display)
+                .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
+                .width(1.0),
+        );
+    });
+}
+
+/// Plot driver torque (N*m) vs driver angle.
+fn draw_driver_torque(
+    ui: &mut egui::Ui,
+    sweep: &super::state::SweepData,
+    current_driver_display: f64,
+    units: &DisplayUnits,
+) {
+    let Some(torques) = &sweep.driver_torques else {
+        ui.label("Driver torque data not available.");
+        return;
+    };
+
+    let angle_label = match units.angle {
+        super::state::AngleUnit::Degrees => "deg",
+        super::state::AngleUnit::Radians => "rad",
+    };
+
+    let plot = Plot::new("driver_torque_plot")
+        .x_axis_label(format!("Driver Angle ({})", angle_label))
+        .y_axis_label("Driver Torque (N\u{00b7}m)")
+        .legend(egui_plot::Legend::default());
+
+    plot.show(ui, |plot_ui| {
+        let points: PlotPoints = sweep
+            .angles_deg
+            .iter()
+            .zip(torques.iter())
+            .map(|(&x_deg, &y)| [units.angle(x_deg.to_radians()), y])
+            .collect();
+
+        plot_ui.line(
+            Line::new("Driver Torque", points)
+                .color(egui::Color32::from_rgb(255, 150, 80))
+                .width(2.0),
+        );
+
+        // Vertical marker at current driver angle.
         plot_ui.vline(
             VLine::new("cursor", current_driver_display)
                 .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))

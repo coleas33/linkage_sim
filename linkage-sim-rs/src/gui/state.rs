@@ -17,6 +17,9 @@ use crate::io::serialization::{
     BodyJson, DriverJson, JointJson, MechanismJson,
 };
 use crate::solver::kinematics::solve_position;
+use crate::solver::statics::{
+    extract_reactions, get_driver_reactions, get_joint_reactions, solve_statics,
+};
 
 // ── Display units ─────────────────────────────────────────────────────────────
 
@@ -197,6 +200,17 @@ impl Default for SolverStatus {
     }
 }
 
+// ── Force results ─────────────────────────────────────────────────────────────
+
+/// Results from static/inverse-dynamics force computation at the current pose.
+#[derive(Debug, Clone, Default)]
+pub struct ForceResults {
+    /// Driver torque (N*m) -- the required input effort from the driver constraint.
+    pub driver_torque: Option<f64>,
+    /// Per-joint reaction forces in global frame: joint_id -> (Fx, Fy) in Newtons.
+    pub joint_reactions: HashMap<String, (f64, f64)>,
+}
+
 // ── View transform ────────────────────────────────────────────────────────────
 
 /// Maps between world coordinates (meters) and screen coordinates (pixels).
@@ -254,6 +268,8 @@ pub struct SweepData {
     /// Transmission angle (degrees) at each step, if the mechanism is a
     /// 4-bar linkage with identifiable link lengths.
     pub transmission_angles: Option<Vec<f64>>,
+    /// Driver torque (N*m) at each step, computed from statics.
+    pub driver_torques: Option<Vec<f64>>,
 }
 
 // ── AppState ──────────────────────────────────────────────────────────────────
@@ -315,6 +331,11 @@ pub struct AppState {
     // ── Grid ─────────────────────────────────────────────────────────────
     /// Grid display and snap-to-grid settings.
     pub grid: GridSettings,
+    // ── Force visualization ─────────────────────────────────────────────
+    /// Force computation results at the current pose.
+    pub force_results: ForceResults,
+    /// Whether to draw force arrows on the canvas.
+    pub show_forces: bool,
 }
 
 impl Default for AppState {
@@ -346,6 +367,8 @@ impl Default for AppState {
             validation_warnings: ValidationWarnings::default(),
             display_units: DisplayUnits::default(),
             grid: GridSettings::default(),
+            force_results: ForceResults::default(),
+            show_forces: false,
         }
     }
 }
@@ -415,6 +438,7 @@ impl AppState {
         self.pending_driver_reassignment = None;
         self.undo_history.clear();
         self.auto_grid_spacing();
+        self.compute_forces(0.0);
         self.compute_sweep();
         self.compute_validation();
     }
@@ -446,6 +470,7 @@ impl AppState {
                     self.last_good_q = result.q.clone();
                     self.q = result.q;
                     self.driver_angle = angle_rad;
+                    self.compute_forces(t);
                 }
                 // On failure, q and driver_angle are NOT updated; the UI retains the
                 // last valid pose.
@@ -459,6 +484,60 @@ impl AppState {
                 // On error, retain last valid pose.
             }
         }
+    }
+
+    /// Compute static force results (joint reactions + driver torque) at the
+    /// current pose. Called after each successful position solve.
+    ///
+    /// Uses the statics solver (no inertial effects) since the GUI currently
+    /// operates at quasi-static conditions. Falls back gracefully on failure,
+    /// clearing force results rather than propagating errors.
+    fn compute_forces(&mut self, t: f64) {
+        let Some(mech) = &self.mechanism else {
+            self.force_results = ForceResults::default();
+            return;
+        };
+
+        // Guard: only compute forces when the solver converged and q has the
+        // correct dimension (prevents panics during partial rebuilds).
+        if !self.solver_status.converged
+            || self.q.len() != mech.state().n_coords()
+            || mech.n_drivers() == 0
+        {
+            self.force_results = ForceResults::default();
+            return;
+        }
+
+        // Statics solve: no gravity for now (Q = 0), gives constraint-force-only results.
+        // The driver torque is always meaningful even without external loads.
+        let statics_result = match solve_statics(mech, &self.q, None, t) {
+            Ok(r) => r,
+            Err(_) => {
+                self.force_results = ForceResults::default();
+                return;
+            }
+        };
+
+        let reactions = extract_reactions(mech, &statics_result);
+
+        // Extract driver torque.
+        let driver_torque = get_driver_reactions(&reactions)
+            .first()
+            .map(|r| r.effort);
+
+        // Extract per-joint reaction forces.
+        let mut joint_reactions = HashMap::new();
+        for jr in get_joint_reactions(&reactions) {
+            joint_reactions.insert(
+                jr.joint_id.clone(),
+                (jr.force_global[0], jr.force_global[1]),
+            );
+        }
+
+        self.force_results = ForceResults {
+            driver_torque,
+            joint_reactions,
+        };
     }
 
     /// Returns true if a mechanism has been loaded.
@@ -568,6 +647,7 @@ impl AppState {
         self.pending_driver_reassignment = None;
         self.undo_history.clear();
         self.auto_grid_spacing();
+        self.compute_forces(0.0);
         self.compute_sweep();
         self.compute_validation();
 
@@ -734,6 +814,7 @@ impl AppState {
         }
 
         self.mechanism = Some(mech);
+        self.compute_forces(t);
         self.compute_validation();
     }
 
@@ -1251,6 +1332,7 @@ fn compute_sweep_data(
         body_angles: HashMap::new(),
         coupler_traces: HashMap::new(),
         transmission_angles: None,
+        driver_torques: Some(Vec::with_capacity(361)),
     };
 
     // Pre-allocate body angle vectors.
@@ -1326,6 +1408,18 @@ fn compute_sweep_data(
                     let theta_crank = angle_deg.to_radians();
                     let ta = transmission_angle_fourbar(a, b, c, d, theta_crank);
                     data.transmission_angles.as_mut().unwrap().push(ta.angle_deg);
+                }
+
+                // Driver torque from statics solve.
+                if let Ok(statics) = solve_statics(mech, &q, None, t) {
+                    let reactions = extract_reactions(mech, &statics);
+                    let torque = get_driver_reactions(&reactions)
+                        .first()
+                        .map(|r| r.effort)
+                        .unwrap_or(0.0);
+                    data.driver_torques.as_mut().unwrap().push(torque);
+                } else {
+                    data.driver_torques.as_mut().unwrap().push(0.0);
                 }
             }
             _ => {

@@ -196,11 +196,28 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                         units.length(global_pos.y),
                         units.length_suffix()
                     ));
+
+                    // Show reaction forces for this joint if available.
+                    if let Some(&(fx, fy)) = state.force_results.joint_reactions.get(joint_id) {
+                        ui.separator();
+                        ui.strong("Reaction Forces:");
+                        ui.label(format!("Fx: {:.4} N", fx));
+                        ui.label(format!("Fy: {:.4} N", fy));
+                        let resultant = (fx * fx + fy * fy).sqrt();
+                        ui.label(format!("Resultant: {:.4} N", resultant));
+                    }
                 }
             }
             SelectedEntity::Driver(_driver_id) => {
                 ui.label("Driver properties not yet available.");
             }
+        }
+
+        // Show driver torque regardless of what is selected.
+        if let Some(torque) = state.force_results.driver_torque {
+            ui.separator();
+            ui.strong("Driver Torque:");
+            ui.label(format!("{:.4} N\u{00b7}m", torque));
         }
     } // end immutable borrow block
 

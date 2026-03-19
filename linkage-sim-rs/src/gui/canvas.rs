@@ -20,8 +20,17 @@ const DEBUG_TEXT_COLOR: Color32 = Color32::from_rgb(180, 180, 180);
 const DEBUG_DIM_COLOR: Color32 = Color32::from_rgb(100, 100, 100);
 const NO_MECH_TEXT_COLOR: Color32 = Color32::from_rgb(120, 120, 120);
 const JOINT_CREATE_HIGHLIGHT: Color32 = Color32::from_rgb(80, 255, 80);
+const FORCE_ARROW_COLOR: Color32 = Color32::from_rgb(255, 80, 80);
 
 // ── Sizing ──────────────────────────────────────────────────────────────────
+
+const FORCE_ARROW_WIDTH: f32 = 2.0;
+/// Minimum arrow length in pixels (below this, arrows are not drawn).
+const FORCE_ARROW_MIN_PX: f32 = 3.0;
+/// Maximum arrow length in pixels (clamp very large forces).
+const FORCE_ARROW_MAX_PX: f32 = 80.0;
+/// Scale factor: pixels per Newton. Adjustable; 1 N = 30 px is a reasonable default.
+const FORCE_ARROW_SCALE: f32 = 30.0;
 
 const BODY_STROKE_WIDTH: f32 = 3.0;
 const JOINT_RADIUS: f32 = 5.0;
@@ -317,6 +326,15 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         }
     }
     // Immutable borrows of state.mechanism (and its sub-borrows) are now dropped.
+
+    // ── Force arrows ────────────────────────────────────────────────────
+    if state.show_forces && solver_converged {
+        for (screen_pos, joint_id) in &joint_hit_targets {
+            if let Some(&(fx, fy)) = state.force_results.joint_reactions.get(joint_id) {
+                draw_force_arrow(&painter, *screen_pos, fx as f32, fy as f32);
+            }
+        }
+    }
 
     // ── Debug overlay: solver status indicator ──────────────────────────
     if show_debug {
@@ -624,6 +642,59 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             }
         }
     });
+}
+
+/// Draw a force arrow at a joint location.
+///
+/// `fx`, `fy` are force components in Newtons (world frame). The arrow is
+/// scaled, clamped, and drawn with an arrowhead. Screen Y is flipped relative
+/// to world Y.
+fn draw_force_arrow(painter: &egui::Painter, origin: Pos2, fx: f32, fy: f32) {
+    let mag = (fx * fx + fy * fy).sqrt();
+    if mag < 1e-12 {
+        return; // negligible force
+    }
+
+    // Scale force magnitude to pixel length, then clamp.
+    let px_len = (mag * FORCE_ARROW_SCALE).clamp(FORCE_ARROW_MIN_PX, FORCE_ARROW_MAX_PX);
+
+    // Unit direction in screen coords (flip Y for screen space).
+    let dx = fx / mag;
+    let dy = -fy / mag; // flip Y: world up is screen down
+
+    let tip = Pos2::new(origin.x + dx * px_len, origin.y + dy * px_len);
+
+    // Shaft line.
+    painter.line_segment(
+        [origin, tip],
+        Stroke::new(FORCE_ARROW_WIDTH, FORCE_ARROW_COLOR),
+    );
+
+    // Arrowhead: two lines at +/-25 degrees from the shaft, 8px long.
+    let head_len: f32 = 8.0;
+    let head_angle: f32 = 0.44; // ~25 degrees in radians
+    let back_dx = -dx;
+    let back_dy = -dy;
+    for sign in [-1.0_f32, 1.0] {
+        let cos_a = head_angle.cos();
+        let sin_a = head_angle.sin() * sign;
+        let hx = back_dx * cos_a - back_dy * sin_a;
+        let hy = back_dx * sin_a + back_dy * cos_a;
+        let head_end = Pos2::new(tip.x + hx * head_len, tip.y + hy * head_len);
+        painter.line_segment(
+            [tip, head_end],
+            Stroke::new(FORCE_ARROW_WIDTH, FORCE_ARROW_COLOR),
+        );
+    }
+
+    // Magnitude label near the tip.
+    painter.text(
+        Pos2::new(tip.x + 4.0, tip.y - 4.0),
+        egui::Align2::LEFT_BOTTOM,
+        format!("{:.2} N", mag),
+        FontId::proportional(9.0),
+        FORCE_ARROW_COLOR,
+    );
 }
 
 /// Draw a ground-fixed marker: an inverted triangle with hatch lines below.
