@@ -383,6 +383,61 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         draw_force_elements(&painter, state, &state.view);
     }
 
+    // ── Add Body mode: render placed points and preview ─────────────
+    if let Some(ref abs) = state.add_body_state {
+        let placed_points: Vec<Pos2> = abs
+            .points
+            .iter()
+            .map(|(_, [wx, wy])| {
+                let sp = state.view.world_to_screen(*wx, *wy);
+                Pos2::new(sp[0], sp[1])
+            })
+            .collect();
+
+        // Draw connecting lines between placed points.
+        if placed_points.len() >= 2 {
+            for pair in placed_points.windows(2) {
+                painter.line_segment(
+                    [pair[0], pair[1]],
+                    Stroke::new(2.0, JOINT_CREATE_HIGHLIGHT),
+                );
+            }
+            // Close preview polygon for 3+ points.
+            if placed_points.len() >= 3 {
+                let dimmer_green = Color32::from_rgba_premultiplied(60, 230, 100, 80);
+                painter.line_segment(
+                    [*placed_points.last().unwrap(), placed_points[0]],
+                    Stroke::new(1.5, dimmer_green),
+                );
+            }
+        }
+
+        // Draw green dots at each placed point.
+        for sp in &placed_points {
+            painter.circle_filled(*sp, JOINT_RADIUS, JOINT_CREATE_HIGHLIGHT);
+        }
+
+        // Ghost dot at cursor position with connecting line from last placed point.
+        if let Some(hover_pos) = ui.input(|i| i.pointer.hover_pos()) {
+            if canvas_rect.contains(hover_pos) {
+                let [gwx, gwy] = state.view.screen_to_world(hover_pos.x, hover_pos.y);
+                let (sx, sy) = state.grid.snap_point(gwx, gwy);
+                let ghost_screen = state.view.world_to_screen(sx, sy);
+                let ghost_pos = Pos2::new(ghost_screen[0], ghost_screen[1]);
+
+                let ghost_color = Color32::from_rgba_premultiplied(60, 230, 100, 120);
+                painter.circle_filled(ghost_pos, JOINT_RADIUS * 0.7, ghost_color);
+
+                if let Some(last) = placed_points.last() {
+                    painter.line_segment(
+                        [*last, ghost_pos],
+                        Stroke::new(1.5, ghost_color),
+                    );
+                }
+            }
+        }
+    }
+
     // ── Gravity indicator ─────────────────────────────────────────────
     if state.enable_gravity {
         let indicator_x = canvas_rect.left() + 20.0;
@@ -461,7 +516,11 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             }
         }
         EditorTool::AddBody => {
-            Some("Click to place attachment points, then confirm to create a body (Esc to cancel)")
+            if state.add_body_state.is_some() {
+                Some("Click to add points, double-click or Enter to finish (Esc to cancel)")
+            } else {
+                Some("Click to place first point of new body (Esc to cancel)")
+            }
         }
         EditorTool::AddGroundPivot => {
             Some("Click on canvas to place a ground pivot (Esc to cancel)")
@@ -720,10 +779,64 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         }
     }
 
+    // ── Interaction: Add Body tool ──────────────────────────────────────
+    if state.active_tool == EditorTool::AddBody {
+        // Helper: check if placed points are ready to finalize (>= 2 points).
+        let can_finish = state
+            .add_body_state
+            .as_ref()
+            .map_or(false, |abs| abs.points.len() >= 2);
+
+        // Enter key finishes the body.
+        if ui.input(|i| i.key_pressed(egui::Key::Enter)) && can_finish {
+            if let Some(abs) = state.add_body_state.take() {
+                state.add_body_with_points(&abs.points);
+            }
+        }
+
+        // Double-click finishes (same as Enter -- do NOT place a new point).
+        // Guard with state.add_body_state.is_some() in case Enter already consumed it
+        // on the same frame.
+        if response.double_clicked() {
+            if can_finish {
+                if let Some(abs) = state.add_body_state.take() {
+                    state.add_body_with_points(&abs.points);
+                }
+            }
+        } else if response.clicked() {
+            // Single click: place a point.
+            if let Some(pos) = response.interact_pointer_pos() {
+                let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+                let (sx, sy) = state.grid.snap_point(wx, wy);
+
+                if let Some(ref mut abs) = state.add_body_state {
+                    let n = abs.points.len();
+                    let name = if n < 26 {
+                        String::from((b'A' + n as u8) as char)
+                    } else {
+                        let hi = (n - 26) / 26;
+                        let lo = (n - 26) % 26;
+                        format!(
+                            "{}{}",
+                            (b'A' + hi as u8) as char,
+                            (b'A' + lo as u8) as char
+                        )
+                    };
+                    abs.points.push((name, [sx, sy]));
+                } else {
+                    state.add_body_state = Some(AddBodyState {
+                        points: vec![("A".to_string(), [sx, sy])],
+                    });
+                }
+            }
+        }
+    }
+
     // ── Interaction: click for selection / ground pivot ──────────────────
     if state.drag_target.is_none()
         && state.draw_link_start.is_none()
         && state.active_tool != EditorTool::DrawLink
+        && state.active_tool != EditorTool::AddBody
         && response.clicked()
     {
         if let Some(pointer_pos) = response.interact_pointer_pos() {
@@ -740,7 +853,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                     // Handled by drag section above.
                 }
                 EditorTool::AddBody => {
-                    // Handled by AddBody tool section (future task).
+                    // Handled by Add Body interaction section above.
                 }
                 EditorTool::Select => {
                     let mut hit: Option<SelectedEntity> = None;
