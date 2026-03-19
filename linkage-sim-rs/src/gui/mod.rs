@@ -2,6 +2,7 @@
 
 mod state;
 mod canvas;
+mod export;
 mod input_panel;
 mod plot_panel;
 mod property_panel;
@@ -83,6 +84,47 @@ impl eframe::App for LinkageApp {
                         {
                             if let Err(e) = self.state.save_to_file(&path) {
                                 log::error!("Failed to save mechanism: {}", e);
+                            }
+                        }
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui
+                        .add_enabled(
+                            self.state.sweep_data.is_some(),
+                            egui::Button::new("Export Sweep CSV..."),
+                        )
+                        .clicked()
+                    {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("CSV", &["csv"])
+                            .set_file_name("sweep_data.csv")
+                            .save_file()
+                        {
+                            if let Some(ref sweep) = self.state.sweep_data {
+                                if let Err(e) = export::export_sweep_csv(&path, sweep) {
+                                    log::error!("CSV export failed: {}", e);
+                                }
+                            }
+                        }
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(
+                            self.state.sweep_data.is_some(),
+                            egui::Button::new("Export Coupler CSV..."),
+                        )
+                        .clicked()
+                    {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("CSV", &["csv"])
+                            .set_file_name("coupler_trace.csv")
+                            .save_file()
+                        {
+                            if let Some(ref sweep) = self.state.sweep_data {
+                                if let Err(e) = export::export_coupler_csv(&path, sweep) {
+                                    log::error!("Coupler CSV export failed: {}", e);
+                                }
                             }
                         }
                         ui.close();
