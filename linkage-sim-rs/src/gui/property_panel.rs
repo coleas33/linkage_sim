@@ -485,6 +485,86 @@ fn draw_force_elements_panel(
                 ));
             }
         }
+
+        if ui.small_button("Add Gas Spring").clicked() {
+            if let Some((a, b)) = two_body_ids(&body_ids) {
+                *pending = Some(PendingPropertyEdit::AddForce(
+                    ForceElement::GasSpring(GasSpringElement {
+                        body_a: a,
+                        point_a: [0.0, 0.0],
+                        body_b: b,
+                        point_b: [0.0, 0.0],
+                        initial_force: 100.0,
+                        extended_length: 0.5,
+                        stroke: 0.2,
+                        damping: 0.0,
+                        polytropic_exp: 1.0,
+                    }),
+                ));
+            }
+        }
+
+        if ui.small_button("Add Bearing Friction").clicked() {
+            if let Some((a, b)) = two_body_ids(&body_ids) {
+                *pending = Some(PendingPropertyEdit::AddForce(
+                    ForceElement::BearingFriction(BearingFrictionElement {
+                        body_i: a,
+                        body_j: b,
+                        constant_drag: 0.1,
+                        viscous_coeff: 0.01,
+                        coulomb_coeff: 0.0,
+                        pin_radius: 0.0,
+                        radial_load: 0.0,
+                        v_threshold: 0.01,
+                    }),
+                ));
+            }
+        }
+
+        if ui.small_button("Add Joint Limit").clicked() {
+            if let Some((a, b)) = two_body_ids(&body_ids) {
+                *pending = Some(PendingPropertyEdit::AddForce(
+                    ForceElement::JointLimit(JointLimitElement {
+                        body_i: a,
+                        body_j: b,
+                        angle_min: -std::f64::consts::FRAC_PI_2,
+                        angle_max: std::f64::consts::FRAC_PI_2,
+                        stiffness: 100.0,
+                        damping: 0.0,
+                        restitution: 0.5,
+                    }),
+                ));
+            }
+        }
+
+        if ui.small_button("Add Motor").clicked() {
+            if let Some((a, b)) = two_body_ids(&body_ids) {
+                *pending = Some(PendingPropertyEdit::AddForce(
+                    ForceElement::Motor(MotorElement {
+                        body_i: a,
+                        body_j: b,
+                        stall_torque: 10.0,
+                        no_load_speed: 10.0,
+                        direction: 1.0,
+                    }),
+                ));
+            }
+        }
+
+        if ui.small_button("Add Linear Actuator").clicked() {
+            if let Some((a, b)) = two_body_ids(&body_ids) {
+                *pending = Some(PendingPropertyEdit::AddForce(
+                    ForceElement::LinearActuator(LinearActuatorElement {
+                        body_a: a,
+                        point_a: [0.0, 0.0],
+                        body_b: b,
+                        point_b: [0.0, 0.0],
+                        force: 100.0,
+                        speed_limit: 0.0,
+                    }),
+                ));
+            }
+        }
     });
 }
 
@@ -739,6 +819,483 @@ fn draw_force_element_details(
                     });
                 }
             });
+        }
+
+        ForceElement::GasSpring(gs) => {
+            ui.label(format!("Body A: {}  Body B: {}", gs.body_a, gs.body_b));
+
+            let mut initial_force = gs.initial_force;
+            ui.horizontal(|ui| {
+                ui.label("F\u{2080}:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut initial_force)
+                            .speed(1.0)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" N"),
+                    )
+                    .changed()
+                {
+                    let mut updated = gs.clone();
+                    updated.initial_force = initial_force;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::GasSpring(updated),
+                    });
+                }
+            });
+
+            let mut extended_length = gs.extended_length;
+            ui.horizontal(|ui| {
+                ui.label("L\u{2091}\u{2093}\u{209c}:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut extended_length)
+                            .speed(0.001)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" m"),
+                    )
+                    .changed()
+                {
+                    let mut updated = gs.clone();
+                    updated.extended_length = extended_length;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::GasSpring(updated),
+                    });
+                }
+            });
+
+            let mut stroke = gs.stroke;
+            ui.horizontal(|ui| {
+                ui.label("Stroke:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut stroke)
+                            .speed(0.001)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" m"),
+                    )
+                    .changed()
+                {
+                    let mut updated = gs.clone();
+                    updated.stroke = stroke;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::GasSpring(updated),
+                    });
+                }
+            });
+
+            let mut damping = gs.damping;
+            ui.horizontal(|ui| {
+                ui.label("c:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut damping)
+                            .speed(0.1)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" N\u{00b7}s/m"),
+                    )
+                    .changed()
+                {
+                    let mut updated = gs.clone();
+                    updated.damping = damping;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::GasSpring(updated),
+                    });
+                }
+            });
+
+            let mut polytropic_exp = gs.polytropic_exp;
+            ui.horizontal(|ui| {
+                ui.label("n:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut polytropic_exp)
+                            .speed(0.01)
+                            .range(0.0..=f64::MAX),
+                    )
+                    .changed()
+                {
+                    let mut updated = gs.clone();
+                    updated.polytropic_exp = polytropic_exp;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::GasSpring(updated),
+                    });
+                }
+            });
+
+            draw_point_fields(ui, "Pt A", &gs.point_a, index, |pt| {
+                let mut updated = gs.clone();
+                updated.point_a = pt;
+                ForceElement::GasSpring(updated)
+            }, pending);
+
+            draw_point_fields(ui, "Pt B", &gs.point_b, index, |pt| {
+                let mut updated = gs.clone();
+                updated.point_b = pt;
+                ForceElement::GasSpring(updated)
+            }, pending);
+        }
+
+        ForceElement::BearingFriction(bf) => {
+            ui.label(format!("Body I: {}  Body J: {}", bf.body_i, bf.body_j));
+
+            let mut constant_drag = bf.constant_drag;
+            ui.horizontal(|ui| {
+                ui.label("Drag:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut constant_drag)
+                            .speed(0.01)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" N\u{00b7}m"),
+                    )
+                    .changed()
+                {
+                    let mut updated = bf.clone();
+                    updated.constant_drag = constant_drag;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::BearingFriction(updated),
+                    });
+                }
+            });
+
+            let mut viscous_coeff = bf.viscous_coeff;
+            ui.horizontal(|ui| {
+                ui.label("Viscous:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut viscous_coeff)
+                            .speed(0.001)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" N\u{00b7}m\u{00b7}s/rad"),
+                    )
+                    .changed()
+                {
+                    let mut updated = bf.clone();
+                    updated.viscous_coeff = viscous_coeff;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::BearingFriction(updated),
+                    });
+                }
+            });
+
+            let mut coulomb_coeff = bf.coulomb_coeff;
+            ui.horizontal(|ui| {
+                ui.label("\u{03bc}:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut coulomb_coeff)
+                            .speed(0.001)
+                            .range(0.0..=f64::MAX),
+                    )
+                    .changed()
+                {
+                    let mut updated = bf.clone();
+                    updated.coulomb_coeff = coulomb_coeff;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::BearingFriction(updated),
+                    });
+                }
+            });
+
+            let mut pin_radius = bf.pin_radius;
+            ui.horizontal(|ui| {
+                ui.label("Pin r:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut pin_radius)
+                            .speed(0.001)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" m"),
+                    )
+                    .changed()
+                {
+                    let mut updated = bf.clone();
+                    updated.pin_radius = pin_radius;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::BearingFriction(updated),
+                    });
+                }
+            });
+
+            let mut radial_load = bf.radial_load;
+            ui.horizontal(|ui| {
+                ui.label("Radial:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut radial_load)
+                            .speed(0.1)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" N"),
+                    )
+                    .changed()
+                {
+                    let mut updated = bf.clone();
+                    updated.radial_load = radial_load;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::BearingFriction(updated),
+                    });
+                }
+            });
+
+            let mut v_threshold = bf.v_threshold;
+            ui.horizontal(|ui| {
+                ui.label("v\u{209c}\u{2095}:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut v_threshold)
+                            .speed(0.001)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" rad/s"),
+                    )
+                    .changed()
+                {
+                    let mut updated = bf.clone();
+                    updated.v_threshold = v_threshold;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::BearingFriction(updated),
+                    });
+                }
+            });
+        }
+
+        ForceElement::JointLimit(jl) => {
+            ui.label(format!("Body I: {}  Body J: {}", jl.body_i, jl.body_j));
+
+            let mut angle_min = jl.angle_min;
+            ui.horizontal(|ui| {
+                ui.label("\u{03b8}\u{2098}\u{1d62}\u{2099}:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut angle_min)
+                            .speed(0.01)
+                            .suffix(" rad"),
+                    )
+                    .changed()
+                {
+                    let mut updated = jl.clone();
+                    updated.angle_min = angle_min;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::JointLimit(updated),
+                    });
+                }
+            });
+
+            let mut angle_max = jl.angle_max;
+            ui.horizontal(|ui| {
+                ui.label("\u{03b8}\u{2098}\u{2090}\u{2093}:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut angle_max)
+                            .speed(0.01)
+                            .suffix(" rad"),
+                    )
+                    .changed()
+                {
+                    let mut updated = jl.clone();
+                    updated.angle_max = angle_max;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::JointLimit(updated),
+                    });
+                }
+            });
+
+            let mut stiffness = jl.stiffness;
+            ui.horizontal(|ui| {
+                ui.label("k:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut stiffness)
+                            .speed(1.0)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" N\u{00b7}m/rad"),
+                    )
+                    .changed()
+                {
+                    let mut updated = jl.clone();
+                    updated.stiffness = stiffness;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::JointLimit(updated),
+                    });
+                }
+            });
+
+            let mut damping = jl.damping;
+            ui.horizontal(|ui| {
+                ui.label("c:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut damping)
+                            .speed(0.1)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" N\u{00b7}m\u{00b7}s/rad"),
+                    )
+                    .changed()
+                {
+                    let mut updated = jl.clone();
+                    updated.damping = damping;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::JointLimit(updated),
+                    });
+                }
+            });
+
+            let mut restitution = jl.restitution;
+            ui.horizontal(|ui| {
+                ui.label("e:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut restitution)
+                            .speed(0.01)
+                            .range(0.0..=1.0),
+                    )
+                    .changed()
+                {
+                    let mut updated = jl.clone();
+                    updated.restitution = restitution;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::JointLimit(updated),
+                    });
+                }
+            });
+        }
+
+        ForceElement::Motor(m) => {
+            ui.label(format!("Body I: {}  Body J: {}", m.body_i, m.body_j));
+
+            let mut stall_torque = m.stall_torque;
+            ui.horizontal(|ui| {
+                ui.label("\u{03c4}\u{209b}:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut stall_torque)
+                            .speed(0.1)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" N\u{00b7}m"),
+                    )
+                    .changed()
+                {
+                    let mut updated = m.clone();
+                    updated.stall_torque = stall_torque;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::Motor(updated),
+                    });
+                }
+            });
+
+            let mut no_load_speed = m.no_load_speed;
+            ui.horizontal(|ui| {
+                ui.label("\u{03c9}\u{2080}:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut no_load_speed)
+                            .speed(0.1)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" rad/s"),
+                    )
+                    .changed()
+                {
+                    let mut updated = m.clone();
+                    updated.no_load_speed = no_load_speed;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::Motor(updated),
+                    });
+                }
+            });
+
+            let mut direction = m.direction;
+            ui.horizontal(|ui| {
+                ui.label("Dir:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut direction)
+                            .speed(0.1),
+                    )
+                    .changed()
+                {
+                    let mut updated = m.clone();
+                    updated.direction = direction;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::Motor(updated),
+                    });
+                }
+            });
+        }
+
+        ForceElement::LinearActuator(la) => {
+            ui.label(format!("Body A: {}  Body B: {}", la.body_a, la.body_b));
+
+            let mut force = la.force;
+            ui.horizontal(|ui| {
+                ui.label("F:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut force)
+                            .speed(1.0)
+                            .suffix(" N"),
+                    )
+                    .changed()
+                {
+                    let mut updated = la.clone();
+                    updated.force = force;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::LinearActuator(updated),
+                    });
+                }
+            });
+
+            let mut speed_limit = la.speed_limit;
+            ui.horizontal(|ui| {
+                ui.label("v\u{2098}\u{2090}\u{2093}:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut speed_limit)
+                            .speed(0.01)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" m/s"),
+                    )
+                    .changed()
+                {
+                    let mut updated = la.clone();
+                    updated.speed_limit = speed_limit;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::LinearActuator(updated),
+                    });
+                }
+            });
+
+            draw_point_fields(ui, "Pt A", &la.point_a, index, |pt| {
+                let mut updated = la.clone();
+                updated.point_a = pt;
+                ForceElement::LinearActuator(updated)
+            }, pending);
+
+            draw_point_fields(ui, "Pt B", &la.point_b, index, |pt| {
+                let mut updated = la.clone();
+                updated.point_b = pt;
+                ForceElement::LinearActuator(updated)
+            }, pending);
         }
     }
 }

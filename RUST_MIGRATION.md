@@ -38,7 +38,7 @@ The Rust port begins **after Phase 4 exits** — when all four analysis modes (k
 | Phase 2 — Force elements & statics | Python | Complete, validated |
 | Phase 3 — Actuators & inverse dynamics | Python | Complete, validated |
 | Phase 4 — Forward dynamics | Python | Complete, validated |
-| **Rust port** | **Rust** | **Complete — 269 tests, validated against Python golden data** |
+| **Rust port** | **Rust** | **Complete — 295 tests, validated against Python golden data** |
 | Phase 5 — Interactive GUI | Rust | **In progress** — egui application |
 | Phase 6 — Advanced & QoL | Rust | Not started |
 
@@ -295,7 +295,7 @@ The Rust port follows the same build order as the Python phases, validating agai
 3. `solver/assembly.rs` — global Φ, Φ_q assembly — **COMPLETE** (March 2026)
 4. `solver/kinematics.rs` — NR position solver, velocity, acceleration. Validated against golden 4-bar data — **COMPLETE** (March 2026)
 5. `core/mechanism.rs` + `io/serialization.rs` — serde JSON round-trip — **COMPLETE** (March 2026)
-6. `forces/*` + `solver/statics.rs` — gravity + force helpers + static solver. Validated against golden statics data — **COMPLETE** (March 2026). *Note: springs, dampers, and external loads have been ported as `ForceElement` enum variants. Gas springs, bearing friction, joint limits, and motors remain Python-only.*
+6. `forces/*` + `solver/statics.rs` — gravity + force helpers + static solver. Validated against golden statics data — **COMPLETE** (March 2026). *Note: all Python force elements have been ported as `ForceElement` enum variants (12 total): gravity, springs, dampers, external loads, gas springs, bearing friction, joint limits, motors, linear actuators.*
 7. `solver/inverse_dynamics.rs` — Validated against golden inverse dynamics data — **COMPLETE** (March 2026)
 8. `solver/forward_dynamics.rs` — explicit integrator + Baumgarte. Validated against golden trajectories — **COMPLETE** (March 2026)
 9. `analysis/*` — validation, transmission angle, Grashof classification, coupler curves, energy — **COMPLETE** (March 2026)
@@ -321,7 +321,7 @@ The solver kernel port (steps 1–9) is complete and validated. All four analysi
 
 ### Test coverage
 
-- **269 tests total**
+- **295 tests total**
 - All tests pass via `cargo test`
 
 ### Golden fixture coverage
@@ -352,7 +352,7 @@ linkage-sim-rs/
 ├── src/
 │   ├── error.rs        # Centralized error types (LinkageError enum)
 │   ├── core/           # Body, constraint, driver (+ DriverMeta), mechanism, state
-│   ├── forces/         # ForceElement enum (springs, dampers, external loads, gravity), helpers (point_force_to_q, body_torque_to_q), assembly
+│   ├── forces/         # ForceElement enum (12 variants: springs, dampers, external loads, gas springs, friction, motors, etc.), helpers, assembly
 │   ├── solver/         # Kinematics, statics, inverse/forward dynamics, assembly
 │   ├── analysis/       # Validation, transmission, Grashof, coupler, energy
 │   ├── io/             # JSON serialization (serde), driver serialization
@@ -449,12 +449,12 @@ The solver kernel port (steps 1–9) is complete for **constraint-based analysis
 | Rotary dampers | Yes | Yes | |
 | External point forces | Yes | Yes | |
 | External torques | Yes | Yes | |
-| Gas springs | Yes | **Not ported** | |
-| Bearing friction | Yes | **Not ported** | |
-| Joint limits | Yes | **Not ported** | |
-| Motors/actuators (force-based) | Yes | **Not ported** | Rust has drivers (constraint-based) only |
+| Gas springs | Yes | Yes | Polytropic compression + damping |
+| Bearing friction | Yes | Yes | Constant + viscous + Coulomb, tanh regularization |
+| Joint limits | Yes | Yes | Penalty method with restitution-modulated damping |
+| Motors/actuators (force-based) | Yes | Yes | Linear T-ω droop model + linear actuator |
 
-**Rust infrastructure in place:** `forces/helpers.rs` has `point_force_to_q()` and `body_torque_to_q()` ready for use. `forces/assembly.rs` assembles contributions from gravity and all `ForceElement` variants. The `ForceElement` enum is complete with 7 variants: `LinearSpring`, `TorsionSpring`, `LinearDamper`, `RotaryDamper`, `ExternalForce`, `ExternalTorque`, and `Gravity`.
+**Rust force element library complete:** `ForceElement` enum has 12 variants: `Gravity`, `LinearSpring`, `TorsionSpring`, `LinearDamper`, `RotaryDamper`, `ExternalForce`, `ExternalTorque`, `GasSpring`, `BearingFriction`, `JointLimit`, `Motor`, `LinearActuator`. All are serializable, editable in the GUI property panel, and rendered on the canvas.
 
 ### Analysis modules — backend vs GUI
 

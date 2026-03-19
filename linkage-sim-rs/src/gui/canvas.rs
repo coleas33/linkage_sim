@@ -30,6 +30,11 @@ const FORCE_ARROW_COLOR: Color32 = Color32::from_rgb(255, 85, 85);
 const SPRING_COLOR: Color32 = Color32::from_rgb(60, 200, 120);
 const DAMPER_COLOR: Color32 = Color32::from_rgb(100, 150, 255);
 const EXT_FORCE_COLOR: Color32 = Color32::from_rgb(255, 165, 0);
+const GAS_SPRING_COLOR: Color32 = Color32::from_rgb(180, 100, 255);
+const ACTUATOR_COLOR: Color32 = Color32::from_rgb(255, 120, 60);
+const BEARING_COLOR: Color32 = Color32::from_rgb(200, 180, 100);
+const JOINT_LIMIT_COLOR: Color32 = Color32::from_rgb(220, 80, 80);
+const MOTOR_COLOR: Color32 = Color32::from_rgb(100, 220, 140);
 
 // ── Sizing ──────────────────────────────────────────────────────────────────
 
@@ -934,6 +939,125 @@ fn draw_force_elements(
                     DAMPER_COLOR,
                 );
                 draw_torque_arc(painter, center, 1.0, DAMPER_COLOR);
+            }
+            ForceElement::GasSpring(gs) => {
+                let pt_a = mech_state.body_point_global(
+                    &gs.body_a,
+                    &nalgebra::Vector2::new(gs.point_a[0], gs.point_a[1]),
+                    q,
+                );
+                let pt_b = mech_state.body_point_global(
+                    &gs.body_b,
+                    &nalgebra::Vector2::new(gs.point_b[0], gs.point_b[1]),
+                    q,
+                );
+                let start_sp = view.world_to_screen(pt_a.x, pt_a.y);
+                let end_sp = view.world_to_screen(pt_b.x, pt_b.y);
+                let start = Pos2::new(start_sp[0], start_sp[1]);
+                let end = Pos2::new(end_sp[0], end_sp[1]);
+                draw_spring_zigzag(painter, start, end, GAS_SPRING_COLOR);
+            }
+            ForceElement::LinearActuator(la) => {
+                let pt_a = mech_state.body_point_global(
+                    &la.body_a,
+                    &nalgebra::Vector2::new(la.point_a[0], la.point_a[1]),
+                    q,
+                );
+                let pt_b = mech_state.body_point_global(
+                    &la.body_b,
+                    &nalgebra::Vector2::new(la.point_b[0], la.point_b[1]),
+                    q,
+                );
+                let start_sp = view.world_to_screen(pt_a.x, pt_a.y);
+                let end_sp = view.world_to_screen(pt_b.x, pt_b.y);
+                let start = Pos2::new(start_sp[0], start_sp[1]);
+                let end = Pos2::new(end_sp[0], end_sp[1]);
+                // Draw line of action and an arrow from A toward B.
+                let delta = end - start;
+                let length = delta.length();
+                if length > 2.0 {
+                    let dir = delta / length;
+                    painter.line_segment(
+                        [start, end],
+                        Stroke::new(2.0, ACTUATOR_COLOR),
+                    );
+                    // Arrowhead at midpoint pointing A -> B.
+                    let mid = Pos2::new(
+                        start.x + delta.x * 0.5,
+                        start.y + delta.y * 0.5,
+                    );
+                    let head_len = 8.0_f32;
+                    let head_angle = 0.44_f32;
+                    let back_dx = -dir.x;
+                    let back_dy = -dir.y;
+                    for sign in [-1.0_f32, 1.0] {
+                        let cos_a = head_angle.cos();
+                        let sin_a = head_angle.sin() * sign;
+                        let hx = back_dx * cos_a - back_dy * sin_a;
+                        let hy = back_dx * sin_a + back_dy * cos_a;
+                        let head_end = Pos2::new(mid.x + hx * head_len, mid.y + hy * head_len);
+                        painter.line_segment(
+                            [mid, head_end],
+                            Stroke::new(2.0, ACTUATOR_COLOR),
+                        );
+                    }
+                    // Force magnitude label.
+                    painter.text(
+                        Pos2::new(mid.x, mid.y - 10.0),
+                        egui::Align2::CENTER_BOTTOM,
+                        format!("{:.0} N", la.force),
+                        FontId::proportional(9.0),
+                        ACTUATOR_COLOR,
+                    );
+                }
+            }
+            ForceElement::BearingFriction(bf) => {
+                let (xi, yi, _) = mech_state.get_pose(&bf.body_i, q);
+                let (xj, yj, _) = mech_state.get_pose(&bf.body_j, q);
+                let mid_x = (xi + xj) / 2.0;
+                let mid_y = (yi + yj) / 2.0;
+                let sp = view.world_to_screen(mid_x, mid_y);
+                let center = Pos2::new(sp[0], sp[1]);
+                painter.text(
+                    Pos2::new(center.x, center.y - 8.0),
+                    egui::Align2::CENTER_BOTTOM,
+                    "Brg",
+                    FontId::proportional(9.0),
+                    BEARING_COLOR,
+                );
+                draw_torque_arc(painter, center, 1.0, BEARING_COLOR);
+            }
+            ForceElement::JointLimit(jl) => {
+                let (xi, yi, _) = mech_state.get_pose(&jl.body_i, q);
+                let (xj, yj, _) = mech_state.get_pose(&jl.body_j, q);
+                let mid_x = (xi + xj) / 2.0;
+                let mid_y = (yi + yj) / 2.0;
+                let sp = view.world_to_screen(mid_x, mid_y);
+                let center = Pos2::new(sp[0], sp[1]);
+                painter.text(
+                    Pos2::new(center.x, center.y - 8.0),
+                    egui::Align2::CENTER_BOTTOM,
+                    format!("[{:.1},{:.1}]", jl.angle_min, jl.angle_max),
+                    FontId::proportional(9.0),
+                    JOINT_LIMIT_COLOR,
+                );
+                draw_torque_arc(painter, center, 1.0, JOINT_LIMIT_COLOR);
+            }
+            ForceElement::Motor(m) => {
+                let (xi, yi, _) = mech_state.get_pose(&m.body_i, q);
+                let (xj, yj, _) = mech_state.get_pose(&m.body_j, q);
+                let mid_x = (xi + xj) / 2.0;
+                let mid_y = (yi + yj) / 2.0;
+                let sp = view.world_to_screen(mid_x, mid_y);
+                let center = Pos2::new(sp[0], sp[1]);
+                painter.text(
+                    Pos2::new(center.x, center.y - 8.0),
+                    egui::Align2::CENTER_BOTTOM,
+                    format!("M {:.1}Nm", m.stall_torque),
+                    FontId::proportional(9.0),
+                    MOTOR_COLOR,
+                );
+                draw_torque_arc(painter, center, m.direction as f32, MOTOR_COLOR);
             }
         }
     }
