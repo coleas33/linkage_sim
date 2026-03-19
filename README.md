@@ -6,13 +6,29 @@ A general-purpose planar multibody simulator for engineering analysis of linkage
 
 ## What This Tool Does
 
-Given a mechanism defined as rigid bodies connected by joints, with attached springs, dampers, motors, gravity, and external loads, this tool computes:
+Given a mechanism defined as rigid bodies connected by joints, this tool computes:
 
 - **Kinematics**: position, velocity, and acceleration of every body and coupler point across the full range of motion
-- **Static forces**: required input torque and all joint reaction forces at each configuration
+- **Static forces**: required input torque and all joint reaction forces at each configuration (gravity, springs, dampers, and external loads supported in both Python and Rust; gas springs, bearing friction, joint limits: Python only)
 - **Inverse dynamics**: required actuator effort for a prescribed motion profile, including inertial loads
 - **Forward dynamics**: time-domain simulation of mechanism response to applied forces
 - **Crank selection analysis** for supported four-bar mechanisms — Grashof-based classification, driver ranking, and numerical range estimation (Python; Rust port planned)
+
+### Force element status
+
+| Force Type | Python | Rust |
+|---|---|---|
+| Gravity | Yes | Yes (GUI toggle) |
+| Linear springs | Yes | **Yes** |
+| Torsion springs | Yes | **Yes** |
+| Viscous dampers | Yes | **Yes** |
+| External point forces | Yes | **Yes** |
+| External torques | Yes | **Yes** |
+| Gas springs | Yes | **Planned** |
+| Bearing friction | Yes | **Planned** |
+| Joint limits | Yes | **Planned** |
+
+The Rust solver has a `ForceElement` enum with 7 variants covering springs, dampers, and external loads. Gas springs, bearing friction, and joint limits remain Python-only. Force element porting is tracked in `RUST_MIGRATION.md`.
 
 The target user is a mechanical engineer sizing actuators, selecting bearings, checking transmission angles, and validating linkage geometry — not an academic researcher building a general-purpose multibody dynamics code.
 
@@ -52,7 +68,7 @@ The simulator is built on four foundational decisions documented in detail in `d
 | Layer | Choice | Rationale |
 |---|---|---|
 | Core solver (Phases 1–4) | Python + NumPy/SciPy | `fsolve` for constraints, `linalg` for linear systems, `solve_ivp` (Radau/BDF) for DAE |
-| Core solver (production) | Rust + nalgebra | **Port complete** — validated against Python golden fixtures (110 tests). See `RUST_MIGRATION.md` |
+| Core solver (production) | Rust + nalgebra | **Port complete** — validated against Python golden fixtures (269 tests). Force elements (springs, dampers, external loads) ported. See `RUST_MIGRATION.md` |
 | Expression evaluator | Python: `asteval` → Rust: `meval` or `rhai` | For user-defined force laws and drivers. Not `eval()`, not raw lambdas |
 | GUI framework (Phase 5) | Rust: `egui` + `eframe` | 2D canvas, drag-and-drop, animation. Native + WebAssembly targets. Built in Rust, never in Python |
 | Plotting (development) | Matplotlib or Plotly | Engineering-quality plots during Python development |
@@ -117,7 +133,7 @@ linkage-sim/
 
 ### Rust solver kernel (`linkage-sim-rs/`)
 
-The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forward dynamics) is complete in Rust, validated against Python golden fixtures (169 tests). **Phase 5 GUI:** Built with egui/eframe. Loads 13 sample mechanisms — 2 original (FourBar micro, SliderCrank), 6 four-bar variants (CrankRocker, DoubleRocker, DoubleCrank, Parallelogram, Chebyshev, TripleRocker), and 5 six-bar variants (SixBarB1/Watt I, SixBarA1, SixBarA2, SixBarB2, SixBarB3). Renders on a 2D canvas with pan/zoom. Drives the kinematic solver via angle slider. Click-to-inspect property panels. Animation playback (play/pause, speed control, loop/once). Right-click driver reassignment on any grounded revolute joint. Plotting panel with coupler trace, body angles, and transmission angle (via egui_plot). Undo/redo (Ctrl+Z / Ctrl+Y). Mechanisms can be saved and loaded as JSON via File > Open / File > Save. Run with `cd linkage-sim-rs && cargo run --bin linkage-gui`.
+The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forward dynamics) is complete in Rust, validated against Python golden fixtures (269 tests). **Phase 5 GUI:** Built with egui/eframe. Loads 13 sample mechanisms — 2 original (FourBar micro, SliderCrank), 6 four-bar variants (CrankRocker, DoubleRocker, DoubleCrank, Parallelogram, Chebyshev, TripleRocker), and 5 six-bar variants (SixBarB1/Watt I, SixBarA1, SixBarA2, SixBarB2, SixBarB3). Renders on a 2D canvas with pan/zoom. Drives the kinematic solver via angle slider. Click-to-inspect property panels. Animation playback (play/pause, speed control, loop/once) with seamless 360° wrap — the solver initial guess resets to the cached angle-0 solution on wrap-around, preventing assembly-branch jumps. Right-click driver reassignment on any grounded revolute joint. Plotting panel with coupler trace, body angles, and transmission angle (via egui_plot). Undo/redo (Ctrl+Z / Ctrl+Y). Mechanisms can be saved and loaded as JSON via File > Open / File > Save. Gravity-loaded reaction forces displayed as red arrows at every joint (enabled by default); gravity direction indicator ("g↓") on canvas; both toggleable via View menu. Run with `cd linkage-sim-rs && cargo run --bin linkage-gui`.
 
 **Interactive editor (shipped):** The GUI is now a full interactive editor, not just a visualization shell. Capabilities:
 - Create bodies, joints, and ground pivots via right-click context menu on the canvas
@@ -129,13 +145,16 @@ The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forwa
 - MechanismBlueprint (MechanismJson) is the editable source of truth; rebuild() runs on every edit
 - All edit operations push to the undo/redo stack; blueprint stays in sync with snapshots
 
-**Phase 5 substantially complete.** Remaining nice-to-haves: raster/animation export (PNG, GIF/MP4).
+**Phase 5 substantially complete.** Remaining items:
+- Force element GUI (define/edit springs, dampers, external loads on bodies/joints) — **partially done** (property panel editing and canvas rendering of spring/damper/force symbols complete)
+- Analysis displays (energy plot, Grashof classification, Jacobian rank diagnostics) — **planned**
+- Raster/animation export (PNG, GIF/MP4) — nice-to-have
 
 ```
 linkage-sim-rs/
 ├── src/
 │   ├── core/               # Body, constraint, driver, mechanism, state
-│   ├── forces/             # Force element trait, gravity, helpers, assembly
+│   ├── forces/             # ForceElement enum (springs, dampers, external loads, gravity), helpers (point_force_to_q, body_torque_to_q), assembly
 │   ├── solver/             # Kinematics, statics, inverse/forward dynamics, assembly
 │   ├── analysis/           # Validation, transmission, Grashof, coupler, energy
 │   ├── io/                 # JSON serialization (serde)
@@ -159,7 +178,7 @@ These are invariants. If any code violates them, it is a bug.
 
 2. **Constraints are the mathematical foundation.** `Φ(q, t) = 0` and `Φ_q` are the backbone of every analysis mode from day one.
 
-3. **Force elements are pluggable.** Adding a new smooth force element means writing one `evaluate(state, t)` method that returns a generalized force contribution. The solvers never change.
+3. **Force elements are pluggable.** Adding a new smooth force element means implementing one `evaluate` method that returns a generalized force contribution. The solvers never change. (Python has the full `ForceElement` protocol. Rust has a `ForceElement` enum with 7 variants: linear springs, torsion springs, linear dampers, rotary dampers, external forces, external torques, and gravity. Gas springs, bearing friction, and joint limits remain Python-only.)
 
 4. **Smooth elements: no solver changes. Switching elements: solver changes expected.** Cables, clutches, and stick-slip friction change the mathematical class of the problem. This is acknowledged and planned for.
 

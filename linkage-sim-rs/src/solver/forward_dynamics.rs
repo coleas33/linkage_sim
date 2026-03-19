@@ -18,8 +18,6 @@ use nalgebra::{DMatrix, DVector};
 
 use crate::core::mechanism::Mechanism;
 use crate::error::LinkageError;
-use crate::forces::assembly::assemble_q;
-use crate::forces::gravity::Gravity;
 use crate::solver::assembly::{
     assemble_constraints, assemble_gamma, assemble_jacobian, assemble_mass_matrix, assemble_phi_t,
 };
@@ -89,7 +87,6 @@ fn compute_rhs(
     q: &DVector<f64>,
     qd: &DVector<f64>,
     t: f64,
-    gravity: Option<&Gravity>,
     alpha: f64,
     beta: f64,
 ) -> DVector<f64> {
@@ -101,7 +98,7 @@ fn compute_rhs(
     let phi = assemble_constraints(mech, q, t);
     let phi_t = assemble_phi_t(mech, q, t);
     let gamma = assemble_gamma(mech, q, qd, t);
-    let q_forces = assemble_q(mech.state(), gravity, q, qd, t);
+    let q_forces = mech.assemble_forces(q, qd, t);
 
     // Baumgarte-stabilized acceleration RHS:
     // gamma_stab = gamma - 2*alpha*(Phi_q*q_dot + Phi_t) - beta^2*Phi
@@ -280,7 +277,6 @@ where
 /// * `q0` - Initial position satisfying Phi(q0, t0) ~ 0.
 /// * `q_dot0` - Initial velocity satisfying Phi_q * q_dot0 ~ -Phi_t.
 /// * `t_span` - (t_start, t_end) time interval.
-/// * `gravity` - Optional gravity force element.
 /// * `config` - Integration parameters. Uses defaults if None.
 /// * `t_eval` - Optional array of times at which to store solution.
 ///
@@ -292,7 +288,6 @@ pub fn simulate(
     q0: &DVector<f64>,
     q_dot0: &DVector<f64>,
     t_span: (f64, f64),
-    gravity: Option<&Gravity>,
     config: Option<&ForwardDynamicsConfig>,
     t_eval: Option<&[f64]>,
 ) -> Result<ForwardDynamicsResult, LinkageError> {
@@ -318,7 +313,7 @@ pub fn simulate(
     let rhs = |t: f64, y: &DVector<f64>| -> DVector<f64> {
         let q = y.rows(0, n).clone_owned();
         let qd = y.rows(n, n).clone_owned();
-        compute_rhs(mech, &q, &qd, t, gravity, alpha, beta)
+        compute_rhs(mech, &q, &qd, t, alpha, beta)
     };
 
     // Integrate using RK4
@@ -380,14 +375,14 @@ mod tests {
     use super::*;
     use crate::core::body::{make_bar, make_ground, Body};
     use crate::core::state::GROUND_ID;
+    use crate::forces::elements::{ForceElement, GravityElement};
     use approx::assert_abs_diff_eq;
     use nalgebra::Vector2;
-    use std::collections::HashMap;
     use std::f64::consts::PI;
 
     /// Build a simple pendulum: single bar pinned to ground.
     /// CG at tip (point mass), L=1, m=1.
-    fn build_pendulum() -> (Mechanism, Gravity) {
+    fn build_pendulum() -> Mechanism {
         let ground = make_ground(&[("O", 0.0, 0.0)]);
 
         // Bar with mass concentrated at tip: cg_local = (1, 0), Izz_cg = 0
@@ -397,19 +392,14 @@ mod tests {
         bar.cg_local = Vector2::new(1.0, 0.0);
         bar.izz_cg = 0.0;
 
-        let mut bodies = HashMap::new();
-        bodies.insert("ground".to_string(), ground.clone());
-        bodies.insert("bar".to_string(), bar.clone());
-
         let mut mech = Mechanism::new();
         mech.add_body(ground).unwrap();
         mech.add_body(bar).unwrap();
         mech.add_revolute_joint("J1", "ground", "O", "bar", "A")
             .unwrap();
+        mech.add_force(ForceElement::Gravity(GravityElement::default()));
         mech.build().unwrap();
-
-        let gravity = Gravity::new(Vector2::new(0.0, -9.81), &bodies);
-        (mech, gravity)
+        mech
     }
 
     fn pendulum_initial_state(
@@ -478,7 +468,7 @@ mod tests {
 
     #[test]
     fn pendulum_simulation_runs() {
-        let (mech, gravity) = build_pendulum();
+        let mech = build_pendulum();
         let theta0 = -PI / 2.0 + 0.1;
         let (q0, qd0) = pendulum_initial_state(&mech, theta0);
 
@@ -489,14 +479,14 @@ mod tests {
             ..Default::default()
         };
 
-        let result = simulate(&mech, &q0, &qd0, (0.0, 1.0), Some(&gravity), Some(&config), None).unwrap();
+        let result = simulate(&mech, &q0, &qd0, (0.0, 1.0), Some(&config), None).unwrap();
         assert!(result.success);
         assert!(!result.t.is_empty());
     }
 
     #[test]
     fn pendulum_constraint_drift_bounded() {
-        let (mech, gravity) = build_pendulum();
+        let mech = build_pendulum();
         let theta0 = -PI / 2.0 + 0.1;
         let (q0, qd0) = pendulum_initial_state(&mech, theta0);
 
@@ -507,7 +497,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = simulate(&mech, &q0, &qd0, (0.0, 2.0), Some(&gravity), Some(&config), None).unwrap();
+        let result = simulate(&mech, &q0, &qd0, (0.0, 2.0), Some(&config), None).unwrap();
         assert!(result.success);
 
         let max_drift = result
@@ -524,7 +514,7 @@ mod tests {
 
     #[test]
     fn pendulum_energy_approximately_conserved() {
-        let (mech, gravity) = build_pendulum();
+        let mech = build_pendulum();
         let theta0 = -PI / 2.0 + 0.2;
         let (q0, qd0) = pendulum_initial_state(&mech, theta0);
 
@@ -543,7 +533,6 @@ mod tests {
             &q0,
             &qd0,
             (0.0, 3.0),
-            Some(&gravity),
             Some(&config),
             Some(&t_eval),
         ).unwrap();
@@ -592,7 +581,7 @@ mod tests {
 
     #[test]
     fn pendulum_period_approximately_correct() {
-        let (mech, gravity) = build_pendulum();
+        let mech = build_pendulum();
         let theta0 = -PI / 2.0 + 0.087; // ~5 degrees from hanging
         let (q0, qd0) = pendulum_initial_state(&mech, theta0);
 
@@ -615,7 +604,6 @@ mod tests {
             &q0,
             &qd0,
             (0.0, t_end),
-            Some(&gravity),
             Some(&config),
             Some(&t_eval),
         ).unwrap();
@@ -661,7 +649,7 @@ mod tests {
 
     #[test]
     fn pendulum_with_constraint_projection() {
-        let (mech, gravity) = build_pendulum();
+        let mech = build_pendulum();
         let theta0 = -PI / 2.0 + 0.2;
         let (q0, qd0) = pendulum_initial_state(&mech, theta0);
 
@@ -675,7 +663,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = simulate(&mech, &q0, &qd0, (0.0, 2.0), Some(&gravity), Some(&config), None).unwrap();
+        let result = simulate(&mech, &q0, &qd0, (0.0, 2.0), Some(&config), None).unwrap();
         assert!(result.success);
 
         // With projection, constraint drift should remain small
@@ -693,7 +681,7 @@ mod tests {
 
     #[test]
     fn t_eval_stores_correct_times() {
-        let (mech, gravity) = build_pendulum();
+        let mech = build_pendulum();
         let theta0 = -PI / 2.0 + 0.1;
         let (q0, qd0) = pendulum_initial_state(&mech, theta0);
 
@@ -710,7 +698,6 @@ mod tests {
             &q0,
             &qd0,
             (0.0, 0.5),
-            Some(&gravity),
             Some(&config),
             Some(&t_eval),
         ).unwrap();

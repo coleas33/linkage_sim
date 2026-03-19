@@ -5,7 +5,6 @@
 //! zero/near-zero inertia, prismatic joints near dead center, and branch
 //! consistency across full sweeps.
 
-use std::collections::HashMap;
 use std::f64::consts::PI;
 
 use nalgebra::{DVector, Vector2};
@@ -13,7 +12,7 @@ use nalgebra::{DVector, Vector2};
 use linkage_sim_rs::analysis::validation::{grubler_dof, jacobian_rank_analysis};
 use linkage_sim_rs::core::body::{make_bar, make_ground, Body};
 use linkage_sim_rs::core::mechanism::Mechanism;
-use linkage_sim_rs::forces::gravity::Gravity;
+use linkage_sim_rs::forces::elements::{ForceElement, GravityElement};
 use linkage_sim_rs::solver::assembly::assemble_mass_matrix;
 use linkage_sim_rs::solver::inverse_dynamics::solve_inverse_dynamics;
 use linkage_sim_rs::solver::kinematics::{solve_acceleration, solve_position, solve_velocity};
@@ -52,17 +51,11 @@ fn build_standard_fourbar() -> Mechanism {
     mech
 }
 
-fn build_standard_fourbar_with_gravity() -> (Mechanism, Gravity) {
+fn build_standard_fourbar_with_gravity() -> Mechanism {
     let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
     let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
     let coupler = make_bar("coupler", "B", "C", 3.0, 3.0, 0.05);
     let rocker = make_bar("rocker", "D", "C", 2.0, 2.0, 0.02);
-
-    let mut bodies = HashMap::new();
-    bodies.insert("ground".to_string(), ground.clone());
-    bodies.insert("crank".to_string(), crank.clone());
-    bodies.insert("coupler".to_string(), coupler.clone());
-    bodies.insert("rocker".to_string(), rocker.clone());
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -79,10 +72,9 @@ fn build_standard_fourbar_with_gravity() -> (Mechanism, Gravity) {
         .unwrap();
     mech.add_revolute_driver("D1", "ground", "crank", |t| t, |_t| 1.0, |_t| 0.0)
         .unwrap();
+    mech.add_force(ForceElement::Gravity(GravityElement::default()));
     mech.build().unwrap();
-
-    let gravity = Gravity::new(Vector2::new(0.0, -9.81), &bodies);
-    (mech, gravity)
+    mech
 }
 
 /// Create initial guess for the standard 4-bar at a given crank angle.
@@ -214,7 +206,7 @@ fn near_toggle_acceleration_large_but_finite() {
 
 #[test]
 fn near_toggle_statics_returns_finite_lambdas() {
-    let (mech, gravity) = build_standard_fourbar_with_gravity();
+    let mech = build_standard_fourbar_with_gravity();
 
     let safe_angle = 170.0_f64.to_radians();
     let q0 = fourbar_initial_guess(&mech, safe_angle);
@@ -230,7 +222,7 @@ fn near_toggle_statics_returns_finite_lambdas() {
             continue;
         }
 
-        let statics_result = solve_statics(&mech, &pos.q, Some(&gravity), angle).unwrap();
+        let statics_result = solve_statics(&mech, &pos.q, angle).unwrap();
 
         for i in 0..statics_result.lambdas.len() {
             assert!(
@@ -360,12 +352,6 @@ fn parallelogram_statics_produces_finite_results() {
     let coupler = make_bar("coupler", "B", "C", 4.0, 2.0, 0.05);
     let rocker = make_bar("rocker", "D", "C", 2.0, 1.0, 0.02);
 
-    let mut bodies = HashMap::new();
-    bodies.insert("ground".to_string(), ground.clone());
-    bodies.insert("crank".to_string(), crank.clone());
-    bodies.insert("coupler".to_string(), coupler.clone());
-    bodies.insert("rocker".to_string(), rocker.clone());
-
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
     mech.add_body(crank).unwrap();
@@ -381,16 +367,15 @@ fn parallelogram_statics_produces_finite_results() {
         .unwrap();
     mech.add_revolute_driver("D1", "ground", "crank", |t| t, |_t| 1.0, |_t| 0.0)
         .unwrap();
+    mech.add_force(ForceElement::Gravity(GravityElement::default()));
     mech.build().unwrap();
-
-    let gravity = Gravity::new(Vector2::new(0.0, -9.81), &bodies);
 
     let angle = PI / 4.0;
     let q0 = parallelogram_initial_guess(&mech, angle);
     let pos = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
     assert!(pos.converged);
 
-    let statics_result = solve_statics(&mech, &pos.q, Some(&gravity), angle).unwrap();
+    let statics_result = solve_statics(&mech, &pos.q, angle).unwrap();
 
     // Lambdas should all be finite (SVD pseudoinverse handles any redundancy)
     for i in 0..statics_result.lambdas.len() {
@@ -562,12 +547,6 @@ fn zero_izz_nonzero_mass_inverse_dynamics_works() {
     let coupler = make_bar("coupler", "B", "C", 3.0, 3.0, 0.05);
     let rocker = make_bar("rocker", "D", "C", 2.0, 2.0, 0.02);
 
-    let mut bodies = HashMap::new();
-    bodies.insert("ground".to_string(), ground.clone());
-    bodies.insert("crank".to_string(), crank.clone());
-    bodies.insert("coupler".to_string(), coupler.clone());
-    bodies.insert("rocker".to_string(), rocker.clone());
-
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
     mech.add_body(crank).unwrap();
@@ -583,9 +562,8 @@ fn zero_izz_nonzero_mass_inverse_dynamics_works() {
         .unwrap();
     mech.add_revolute_driver("D1", "ground", "crank", |t| t, |_t| 1.0, |_t| 0.0)
         .unwrap();
+    mech.add_force(ForceElement::Gravity(GravityElement::default()));
     mech.build().unwrap();
-
-    let gravity = Gravity::new(Vector2::new(0.0, -9.81), &bodies);
 
     let angle = PI / 3.0;
     let q0 = fourbar_initial_guess(&mech, angle);
@@ -596,7 +574,7 @@ fn zero_izz_nonzero_mass_inverse_dynamics_works() {
     let q_ddot = solve_acceleration(&mech, &pos.q, &q_dot, angle).unwrap();
 
     let result =
-        solve_inverse_dynamics(&mech, &pos.q, &q_dot, &q_ddot, Some(&gravity), angle).unwrap();
+        solve_inverse_dynamics(&mech, &pos.q, &q_dot, &q_ddot, angle).unwrap();
 
     // All lambdas and inertial forces should be finite
     for i in 0..result.lambdas.len() {

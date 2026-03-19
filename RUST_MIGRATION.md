@@ -38,7 +38,7 @@ The Rust port begins **after Phase 4 exits** — when all four analysis modes (k
 | Phase 2 — Force elements & statics | Python | Complete, validated |
 | Phase 3 — Actuators & inverse dynamics | Python | Complete, validated |
 | Phase 4 — Forward dynamics | Python | Complete, validated |
-| **Rust port** | **Rust** | **Complete — 169 tests, validated against Python golden data** |
+| **Rust port** | **Rust** | **Complete — 269 tests, validated against Python golden data** |
 | Phase 5 — Interactive GUI | Rust | **In progress** — egui application |
 | Phase 6 — Advanced & QoL | Rust | Not started |
 
@@ -295,13 +295,18 @@ The Rust port follows the same build order as the Python phases, validating agai
 3. `solver/assembly.rs` — global Φ, Φ_q assembly — **COMPLETE** (March 2026)
 4. `solver/kinematics.rs` — NR position solver, velocity, acceleration. Validated against golden 4-bar data — **COMPLETE** (March 2026)
 5. `core/mechanism.rs` + `io/serialization.rs` — serde JSON round-trip — **COMPLETE** (March 2026)
-6. `forces/*` + `solver/statics.rs` — force assembly, static solver. Validated against golden statics data — **COMPLETE** (March 2026)
+6. `forces/*` + `solver/statics.rs` — gravity + force helpers + static solver. Validated against golden statics data — **COMPLETE** (March 2026). *Note: springs, dampers, and external loads have been ported as `ForceElement` enum variants. Gas springs, bearing friction, joint limits, and motors remain Python-only.*
 7. `solver/inverse_dynamics.rs` — Validated against golden inverse dynamics data — **COMPLETE** (March 2026)
 8. `solver/forward_dynamics.rs` — explicit integrator + Baumgarte. Validated against golden trajectories — **COMPLETE** (March 2026)
 9. `analysis/*` — validation, transmission angle, Grashof classification, coupler curves, energy — **COMPLETE** (March 2026)
-10. `gui/*` — Phase 5, built in egui — **IN PROGRESS** (MVP + animation playback + driver reassignment + 13 sample mechanisms + JSON save/load + undo/redo + plotting done; interactive topology editor not yet started)
+10. `gui/*` — Phase 5, built in egui — **IN PROGRESS** (MVP + animation playback + driver reassignment + 13 sample mechanisms + JSON save/load + undo/redo + plotting + gravity-loaded reaction force arrows + interactive topology editor + SVG export done; force element GUI + analysis displays remaining)
 
-**Note:** Phase 5 MVP (visualization shell) was built in parallel after port steps 1-5, consuming only the kinematic solver API. Sub-projects for animation playback, JSON save/load, undo/redo, plotting, and 6-bar sample mechanisms have since been completed. Full Phase 5 (interactive topology editor with body/joint editing, export) requires further work.
+**Note:** Phase 5 MVP (visualization shell) was built in parallel after port steps 1-5, consuming only the kinematic solver API. Sub-projects for animation playback, JSON save/load, undo/redo, plotting, 6-bar sample mechanisms, interactive topology editor, load cases, and SVG export have since been completed.
+
+**Remaining Phase 5 work:**
+- Force element GUI: define/edit springs, dampers, external loads on bodies/joints — **partially done** (property panel editing complete, canvas rendering of spring/damper/force symbols complete)
+- Analysis displays: energy plot tab, Grashof classification, Jacobian rank diagnostics (backend modules exist, GUI wiring needed)
+- Raster/animation export: PNG, GIF/MP4 (nice-to-have)
 
 Each step has a clear "done" condition: Rust output matches Python golden data within tolerance.
 
@@ -313,7 +318,7 @@ The solver kernel port (steps 1–9) is complete and validated. All four analysi
 
 ### Test coverage
 
-- **201 tests total**
+- **269 tests total**
 - All tests pass via `cargo test`
 
 ### Golden fixture coverage
@@ -344,7 +349,7 @@ linkage-sim-rs/
 ├── src/
 │   ├── error.rs        # Centralized error types (LinkageError enum)
 │   ├── core/           # Body, constraint, driver (+ DriverMeta), mechanism, state
-│   ├── forces/         # Force element trait, gravity, helpers, assembly
+│   ├── forces/         # ForceElement enum (springs, dampers, external loads, gravity), helpers (point_force_to_q, body_torque_to_q), assembly
 │   ├── solver/         # Kinematics, statics, inverse/forward dynamics, assembly
 │   ├── analysis/       # Validation, transmission, Grashof, coupler, energy
 │   ├── io/             # JSON serialization (serde), driver serialization
@@ -422,3 +427,57 @@ If the answer to any of (1–3) is "yes, still changing," delay the port and kee
 ### Go/No-Go Decision
 
 **GO.** Questions 1, 2, and 4 are clearly resolved. Question 3 is a soft gap — the solver handles a wide variety of mechanism topologies and parameters, even if none come from a specific engineering application. The golden fixture suite now covers all 3 mechanism types across all 4 analysis modes (9 fixture files, 750+ data points). The risk of discovering a modeling problem during the Rust port is acceptably low.
+
+---
+
+## Feature Parity Gap: Python vs Rust (as of 2026-03-18)
+
+The solver kernel port (steps 1–9) is complete for **constraint-based analysis** (kinematics, statics, inverse dynamics, forward dynamics). However, the Python codebase has a richer force element library that was **not ported** to Rust. This section tracks the gap.
+
+### Force elements
+
+| Feature | Python | Rust | Notes |
+|---------|--------|------|-------|
+| Gravity | Yes | Yes | Toggleable in GUI |
+| `ForceElement` protocol/trait | Yes (`Protocol`) | Yes (enum) | `ForceElement` enum with 7 variants |
+| Linear springs | Yes | Yes | |
+| Torsion springs | Yes | Yes | |
+| Viscous dampers (translational) | Yes | Yes | LinearDamper |
+| Rotary dampers | Yes | Yes | |
+| External point forces | Yes | Yes | |
+| External torques | Yes | Yes | |
+| Gas springs | Yes | **Not ported** | |
+| Bearing friction | Yes | **Not ported** | |
+| Joint limits | Yes | **Not ported** | |
+| Motors/actuators (force-based) | Yes | **Not ported** | Rust has drivers (constraint-based) only |
+
+**Rust infrastructure in place:** `forces/helpers.rs` has `point_force_to_q()` and `body_torque_to_q()` ready for use. `forces/assembly.rs` assembles contributions from gravity and all `ForceElement` variants. The `ForceElement` enum is complete with 7 variants: `LinearSpring`, `TorsionSpring`, `LinearDamper`, `RotaryDamper`, `ExternalForce`, `ExternalTorque`, and `Gravity`.
+
+### Analysis modules — backend vs GUI
+
+| Analysis | Rust Backend | Rust GUI | Notes |
+|----------|:------------:|:--------:|-------|
+| Transmission angle | Yes | Yes (plot tab) | 4-bar only |
+| Coupler point tracing | Yes (pos, vel, accel) | Yes (position only) | Velocity/acceleration vectors not rendered |
+| Energy (KE/PE/total) | Yes | **No** | No plot tab |
+| Grashof classification | Yes | **No** | No display |
+| Jacobian rank/condition | Yes | **No** | Grubler partially used; SVD analysis not shown |
+| Validation (Grubler DOF) | Yes | Partial (status bar) | |
+
+### Solver capabilities — backend vs GUI
+
+| Solver | Rust Backend | Rust GUI | Notes |
+|--------|:------------:|:--------:|-------|
+| Position kinematics | Yes | Yes | Core of sweep + animation |
+| Velocity kinematics | Yes | **No** | Solver exists, not called from GUI |
+| Acceleration kinematics | Yes | **No** | Solver exists, not called from GUI |
+| Statics | Yes | Yes | Driver torque + reaction force arrows |
+| Inverse dynamics | Yes | **No** | Solver exists, no GUI trigger |
+| Forward dynamics | Yes | **No** | Full RK4+Baumgarte solver, no GUI trigger |
+
+### Plan to close the gap
+
+1. **Force element enum** — ~~Create `ForceElement` enum (not trait) on `Mechanism`, refactor solver APIs to read forces from mechanism. Add serialization support (tagged enum, backward-compatible JSON).~~ **DONE.** `ForceElement` enum with 7 variants, integrated into solver APIs and serialization.
+2. **Force element GUI** — Collapsible force sections in property panel for body/joint selection. Canvas rendering of spring/damper symbols and external force arrows. **Partially done:** property panel editing complete, canvas rendering of spring/damper/force symbols complete.
+3. **Analysis displays** — Energy plot tab (requires velocity solve in sweep). Grashof classification in property panel diagnostics. Jacobian rank at current pose in diagnostics.
+4. **Velocity solve in sweep** — Add linear velocity solve at each sweep step to enable energy computation.

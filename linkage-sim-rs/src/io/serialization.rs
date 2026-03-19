@@ -16,6 +16,7 @@ use crate::core::constraint::{Constraint, JointConstraint};
 use crate::core::driver::DriverMeta;
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
+use crate::forces::elements::ForceElement;
 
 /// Current schema version for the JSON format.
 pub const SCHEMA_VERSION: &str = "1.0.0";
@@ -37,6 +38,10 @@ pub struct MechanismJson {
     /// Named load cases (driver configurations) for scenario comparison.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub load_cases: Vec<LoadCaseJson>,
+    /// Force elements attached to the mechanism (springs, dampers, external loads, etc.).
+    /// Backward-compatible: old files without this field default to an empty list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub forces: Vec<ForceElement>,
 }
 
 /// JSON representation of a load case — a named driver configuration.
@@ -286,6 +291,7 @@ pub fn mechanism_to_json(mech: &Mechanism) -> Result<MechanismJson, Serializatio
         joints,
         drivers,
         load_cases: Vec::new(),
+        forces: mech.forces().to_vec(),
     })
 }
 
@@ -429,6 +435,11 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
                     .map_err(|e| SerializationError::Build(e.to_string()))?;
             }
         }
+    }
+
+    // Restore force elements
+    for force in &json_struct.forces {
+        mech.add_force(force.clone());
     }
 
     Ok(mech)
@@ -942,5 +953,105 @@ mod tests {
         assert_eq!(from_str.bodies().len(), from_json.bodies().len());
         assert_eq!(from_str.joints().len(), from_json.joints().len());
         assert_eq!(from_str.state().n_coords(), from_json.state().n_coords());
+    }
+
+    // -----------------------------------------------------------------------
+    // Force element serialization
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn force_elements_round_trip() {
+        use crate::forces::elements::*;
+
+        let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
+        let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
+        let rocker = make_bar("rocker", "C", "D", 2.0, 2.0, 0.02);
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(crank).unwrap();
+        mech.add_body(rocker).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+        mech.add_revolute_joint("J2", "ground", "O4", "rocker", "C").unwrap();
+
+        // Add various force elements
+        mech.add_force(ForceElement::Gravity(GravityElement::default()));
+        mech.add_force(ForceElement::LinearSpring(LinearSpringElement {
+            body_a: "crank".into(),
+            point_a: [0.5, 0.0],
+            body_b: "rocker".into(),
+            point_b: [1.0, 0.0],
+            stiffness: 500.0,
+            free_length: 0.3,
+        }));
+        mech.add_force(ForceElement::ExternalForce(ExternalForceElement {
+            body_id: "crank".into(),
+            local_point: [0.5, 0.0],
+            force: [10.0, -5.0],
+        }));
+
+        mech.build().unwrap();
+
+        let json_str = save_mechanism(&mech).unwrap();
+        let loaded = load_mechanism(&json_str).unwrap();
+
+        assert_eq!(loaded.forces().len(), 3);
+        assert_eq!(loaded.forces()[0].type_name(), "Gravity");
+        assert_eq!(loaded.forces()[1].type_name(), "Linear Spring");
+        assert_eq!(loaded.forces()[2].type_name(), "External Force");
+
+        // Verify spring parameters survived
+        match &loaded.forces()[1] {
+            ForceElement::LinearSpring(s) => {
+                assert_abs_diff_eq!(s.stiffness, 500.0, epsilon = 1e-15);
+                assert_abs_diff_eq!(s.free_length, 0.3, epsilon = 1e-15);
+                assert_eq!(s.body_a, "crank");
+                assert_eq!(s.body_b, "rocker");
+            }
+            _ => panic!("Expected LinearSpring"),
+        }
+    }
+
+    #[test]
+    fn old_json_without_forces_loads_cleanly() {
+        // Simulate an old-format JSON file that doesn't have the "forces" field
+        let json = r#"{
+            "schema_version": "1.0.0",
+            "bodies": {
+                "ground": {
+                    "attachment_points": {"O": [0.0, 0.0]},
+                    "mass": 0.0,
+                    "cg_local": [0.0, 0.0],
+                    "izz_cg": 0.0
+                }
+            },
+            "joints": {}
+        }"#;
+
+        let loaded = load_mechanism(json).unwrap();
+        assert!(loaded.forces().is_empty());
+        assert!(loaded.is_built());
+    }
+
+    #[test]
+    fn force_elements_appear_in_json_output() {
+        use crate::forces::elements::*;
+
+        let ground = make_ground(&[("O", 0.0, 0.0)]);
+        let bar = make_bar("bar", "A", "B", 1.0, 2.0, 0.01);
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(bar).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O", "bar", "A").unwrap();
+        mech.add_force(ForceElement::ExternalTorque(ExternalTorqueElement {
+            body_id: "bar".into(),
+            torque: 7.5,
+        }));
+        mech.build().unwrap();
+
+        let json_str = save_mechanism(&mech).unwrap();
+        assert!(json_str.contains("ExternalTorque"), "JSON should contain ExternalTorque, got: {}", json_str);
+        assert!(json_str.contains("7.5"), "JSON should contain torque value 7.5");
     }
 }

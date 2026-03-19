@@ -7,8 +7,6 @@ use nalgebra::DVector;
 
 use crate::core::mechanism::Mechanism;
 use crate::error::LinkageError;
-use crate::forces::assembly::assemble_q;
-use crate::forces::gravity::Gravity;
 use crate::solver::assembly::assemble_jacobian;
 
 /// Result of a static force solve.
@@ -34,7 +32,6 @@ pub struct StaticSolveResult {
 pub fn solve_statics(
     mech: &Mechanism,
     q: &DVector<f64>,
-    gravity: Option<&Gravity>,
     t: f64,
 ) -> Result<StaticSolveResult, LinkageError> {
     if !mech.is_built() {
@@ -46,7 +43,7 @@ pub fn solve_statics(
     // Assemble Φ_q and Q
     let phi_q = assemble_jacobian(mech, q, t);
     let q_dot = DVector::zeros(state.n_coords());
-    let q_forces = assemble_q(state, gravity, q, &q_dot, t);
+    let q_forces = mech.assemble_forces(q, &q_dot, t);
 
     // Φ_q^T is (n_coords × m). We solve Φ_q^T · λ = −Q
     let phi_q_t = phi_q.transpose();
@@ -178,25 +175,17 @@ mod tests {
     use super::*;
     use crate::core::body::{make_bar, make_ground};
     use crate::core::mechanism::Mechanism;
+    use crate::forces::elements::{ForceElement, GravityElement};
     use crate::solver::kinematics::solve_position;
-    use nalgebra::Vector2;
     use std::f64::consts::PI;
 
-    fn build_fourbar_with_gravity() -> (Mechanism, Gravity) {
+    fn build_fourbar_with_gravity() -> Mechanism {
         let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
         let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
         let coupler = make_bar("coupler", "B", "C", 3.0, 3.0, 0.05);
         let rocker = make_bar("rocker", "D", "C", 2.0, 2.0, 0.02);
 
         let mut mech = Mechanism::new();
-        let bodies_for_gravity = {
-            let mut m = std::collections::HashMap::new();
-            m.insert("ground".to_string(), ground.clone());
-            m.insert("crank".to_string(), crank.clone());
-            m.insert("coupler".to_string(), coupler.clone());
-            m.insert("rocker".to_string(), rocker.clone());
-            m
-        };
 
         mech.add_body(ground).unwrap();
         mech.add_body(crank).unwrap();
@@ -210,15 +199,14 @@ mod tests {
         mech.add_revolute_driver("D1", "ground", "crank", |t| t, |_t| 1.0, |_t| 0.0)
             .unwrap();
 
+        mech.add_force(ForceElement::Gravity(GravityElement::default()));
         mech.build().unwrap();
-
-        let gravity = Gravity::new(Vector2::new(0.0, -9.81), &bodies_for_gravity);
-        (mech, gravity)
+        mech
     }
 
     #[test]
     fn fourbar_statics_solves() {
-        let (mech, gravity) = build_fourbar_with_gravity();
+        let mech = build_fourbar_with_gravity();
         let state = mech.state();
 
         let angle = PI / 3.0; // 60 degrees
@@ -232,13 +220,13 @@ mod tests {
         let pos = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
         assert!(pos.converged);
 
-        let result = solve_statics(&mech, &pos.q, Some(&gravity), angle).unwrap();
+        let result = solve_statics(&mech, &pos.q, angle).unwrap();
         assert!(result.residual_norm < 1e-8, "residual = {}", result.residual_norm);
     }
 
     #[test]
     fn fourbar_reactions_extract() {
-        let (mech, gravity) = build_fourbar_with_gravity();
+        let mech = build_fourbar_with_gravity();
         let state = mech.state();
 
         let angle = PI / 3.0;
@@ -250,7 +238,7 @@ mod tests {
         let pos = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
         assert!(pos.converged);
 
-        let statics = solve_statics(&mech, &pos.q, Some(&gravity), angle).unwrap();
+        let statics = solve_statics(&mech, &pos.q, angle).unwrap();
         let reactions = extract_reactions(&mech, &statics);
 
         // 4 joints + 1 driver = 5 reactions

@@ -8,12 +8,15 @@ use nalgebra::Vector2;
 use std::collections::HashMap;
 use thiserror::Error;
 
+use nalgebra::DVector;
+
 use crate::core::body::Body;
 use crate::core::constraint::{
     make_fixed_joint, make_prismatic_joint, make_revolute_joint, Constraint, JointConstraint,
 };
 use crate::core::driver::{constant_speed_driver, make_revolute_driver, RevoluteDriver};
 use crate::core::state::{State, GROUND_ID};
+use crate::forces::elements::ForceElement;
 
 /// Row range in the lambda vector for a single constraint (joint or driver).
 ///
@@ -31,6 +34,7 @@ pub struct Mechanism {
     bodies: HashMap<String, Body>,
     joints: Vec<JointConstraint>,
     drivers: Vec<RevoluteDriver>,
+    forces: Vec<ForceElement>,
     state: State,
     built: bool,
     /// Deterministic body ordering used for the state vector q.
@@ -47,6 +51,7 @@ impl Mechanism {
             bodies: HashMap::new(),
             joints: Vec::new(),
             drivers: Vec::new(),
+            forces: Vec::new(),
             state: State::new(),
             built: false,
             body_order: Vec::new(),
@@ -295,6 +300,40 @@ impl Mechanism {
     /// Return the (body_i, body_j) pair of the first driver, if any.
     pub fn driver_body_pair(&self) -> Option<(&str, &str)> {
         self.drivers.first().map(|d| (d.body_i_id(), d.body_j_id()))
+    }
+
+    /// Read-only access to all force elements.
+    pub fn forces(&self) -> &[ForceElement] {
+        &self.forces
+    }
+
+    /// Mutable access to all force elements.
+    pub fn forces_mut(&mut self) -> &mut Vec<ForceElement> {
+        &mut self.forces
+    }
+
+    /// Add a force element to the mechanism.
+    pub fn add_force(&mut self, force: ForceElement) {
+        self.forces.push(force);
+    }
+
+    /// Remove a force element by index.
+    pub fn remove_force(&mut self, idx: usize) -> ForceElement {
+        self.forces.remove(idx)
+    }
+
+    /// Assemble the total generalized force vector Q from all force elements.
+    pub fn assemble_forces(
+        &self,
+        q: &DVector<f64>,
+        q_dot: &DVector<f64>,
+        t: f64,
+    ) -> DVector<f64> {
+        let mut total = DVector::zeros(self.state.n_coords());
+        for force in &self.forces {
+            total += force.evaluate(&self.state, &self.bodies, q, q_dot, t);
+        }
+        total
     }
 
     fn get_attachment_point(

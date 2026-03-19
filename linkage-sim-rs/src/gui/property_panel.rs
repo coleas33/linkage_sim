@@ -7,6 +7,7 @@
 use eframe::egui;
 use crate::core::constraint::Constraint;
 use crate::core::state::GROUND_ID;
+use crate::forces::elements::*;
 use super::state::{AppState, SelectedEntity}; // DisplayUnits used via state.display_units
 
 /// Pending edit collected during UI rendering, applied after all reads
@@ -14,6 +15,9 @@ use super::state::{AppState, SelectedEntity}; // DisplayUnits used via state.dis
 enum PendingPropertyEdit {
     Mass { body_id: String, value: f64 },
     Izz { body_id: String, value: f64 },
+    AddForce(ForceElement),
+    RemoveForce(usize),
+    UpdateForce { index: usize, force: ForceElement },
 }
 
 /// Draw the property panel showing info about the selected entity.
@@ -221,6 +225,10 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
         }
     } // end immutable borrow block
 
+    // ── Force Elements section ─────────────────────────────────────────
+    ui.separator();
+    draw_force_elements_panel(ui, state, &mut pending);
+
     // --- Apply any pending edits (mutable borrow now safe) ---
     if let Some(edit) = pending {
         match edit {
@@ -230,6 +238,447 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
             PendingPropertyEdit::Izz { body_id, value } => {
                 state.set_body_izz(&body_id, value);
             }
+            PendingPropertyEdit::AddForce(force) => {
+                state.add_force_element(force);
+            }
+            PendingPropertyEdit::RemoveForce(idx) => {
+                state.remove_force_element(idx);
+            }
+            PendingPropertyEdit::UpdateForce { index, force } => {
+                state.update_force_element(index, force);
+            }
         }
     }
+}
+
+// ── Force Elements panel ─────────────────────────────────────────────────
+
+/// Draw the force elements section of the property panel.
+///
+/// Lists all non-gravity force elements with editable parameters in
+/// collapsing headers, plus "Add ..." buttons for creating new elements.
+/// Reads from the blueprint to avoid borrow conflicts with the mechanism.
+fn draw_force_elements_panel(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    pending: &mut Option<PendingPropertyEdit>,
+) {
+    ui.heading("Force Elements");
+
+    let Some(bp) = &state.blueprint else {
+        ui.label("No blueprint loaded.");
+        return;
+    };
+
+    // Collect non-ground body IDs for default values when adding elements.
+    let body_ids: Vec<String> = if let Some(mech) = &state.mechanism {
+        mech.body_order().to_vec()
+    } else {
+        bp.bodies
+            .keys()
+            .filter(|id| id.as_str() != GROUND_ID)
+            .cloned()
+            .collect()
+    };
+
+    // List existing force elements (skip Gravity -- toggled via View menu).
+    let mut visible_count = 0u32;
+    for (bp_idx, force) in bp.forces.iter().enumerate() {
+        if matches!(force, ForceElement::Gravity(_)) {
+            continue;
+        }
+        visible_count += 1;
+
+        let header_label = format!("{} #{}", force.type_name(), visible_count);
+        egui::CollapsingHeader::new(&header_label)
+            .id_salt(format!("force_{}", bp_idx))
+            .show(ui, |ui| {
+                draw_force_element_details(ui, bp_idx, force, pending);
+
+                if ui.small_button("Remove").clicked() {
+                    *pending = Some(PendingPropertyEdit::RemoveForce(bp_idx));
+                }
+            });
+    }
+
+    if visible_count == 0 {
+        ui.label("No force elements.");
+    }
+
+    // "Add ..." buttons
+    ui.separator();
+    ui.horizontal_wrapped(|ui| {
+        if ui.small_button("Add Spring").clicked() {
+            if let Some((a, b)) = two_body_ids(&body_ids) {
+                *pending = Some(PendingPropertyEdit::AddForce(
+                    ForceElement::LinearSpring(LinearSpringElement {
+                        body_a: a,
+                        point_a: [0.0, 0.0],
+                        body_b: b,
+                        point_b: [0.0, 0.0],
+                        stiffness: 100.0,
+                        free_length: 0.1,
+                    }),
+                ));
+            }
+        }
+
+        if ui.small_button("Add Damper").clicked() {
+            if let Some((a, b)) = two_body_ids(&body_ids) {
+                *pending = Some(PendingPropertyEdit::AddForce(
+                    ForceElement::LinearDamper(LinearDamperElement {
+                        body_a: a,
+                        point_a: [0.0, 0.0],
+                        body_b: b,
+                        point_b: [0.0, 0.0],
+                        damping: 10.0,
+                    }),
+                ));
+            }
+        }
+
+        if ui.small_button("Add Ext. Force").clicked() {
+            if let Some(id) = body_ids.first().cloned() {
+                *pending = Some(PendingPropertyEdit::AddForce(
+                    ForceElement::ExternalForce(ExternalForceElement {
+                        body_id: id,
+                        local_point: [0.0, 0.0],
+                        force: [0.0, -10.0],
+                    }),
+                ));
+            }
+        }
+
+        if ui.small_button("Add Ext. Torque").clicked() {
+            if let Some(id) = body_ids.first().cloned() {
+                *pending = Some(PendingPropertyEdit::AddForce(
+                    ForceElement::ExternalTorque(ExternalTorqueElement {
+                        body_id: id,
+                        torque: 1.0,
+                    }),
+                ));
+            }
+        }
+
+        if ui.small_button("Add Torsion Spring").clicked() {
+            if let Some((a, b)) = two_body_ids(&body_ids) {
+                *pending = Some(PendingPropertyEdit::AddForce(
+                    ForceElement::TorsionSpring(TorsionSpringElement {
+                        body_i: a,
+                        body_j: b,
+                        stiffness: 10.0,
+                        free_angle: 0.0,
+                    }),
+                ));
+            }
+        }
+
+        if ui.small_button("Add Rotary Damper").clicked() {
+            if let Some((a, b)) = two_body_ids(&body_ids) {
+                *pending = Some(PendingPropertyEdit::AddForce(
+                    ForceElement::RotaryDamper(RotaryDamperElement {
+                        body_i: a,
+                        body_j: b,
+                        damping: 5.0,
+                    }),
+                ));
+            }
+        }
+    });
+}
+
+/// Return two non-ground body IDs for two-body elements, or None if fewer
+/// than two moving bodies exist.
+fn two_body_ids(body_ids: &[String]) -> Option<(String, String)> {
+    if body_ids.len() >= 2 {
+        Some((body_ids[0].clone(), body_ids[1].clone()))
+    } else {
+        None
+    }
+}
+
+/// Draw editable parameter fields for a single force element.
+///
+/// When a `DragValue` changes, the current element is cloned with the
+/// modified parameter and set as an `UpdateForce` pending edit.
+fn draw_force_element_details(
+    ui: &mut egui::Ui,
+    index: usize,
+    force: &ForceElement,
+    pending: &mut Option<PendingPropertyEdit>,
+) {
+    match force {
+        ForceElement::Gravity(_) => {} // skipped in caller
+
+        ForceElement::LinearSpring(s) => {
+            ui.label(format!("Body A: {}  Body B: {}", s.body_a, s.body_b));
+
+            let mut stiffness = s.stiffness;
+            ui.horizontal(|ui| {
+                ui.label("k:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut stiffness)
+                            .speed(1.0)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" N/m"),
+                    )
+                    .changed()
+                {
+                    let mut updated = s.clone();
+                    updated.stiffness = stiffness;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::LinearSpring(updated),
+                    });
+                }
+            });
+
+            let mut free_len = s.free_length;
+            ui.horizontal(|ui| {
+                ui.label("L\u{2080}:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut free_len)
+                            .speed(0.001)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" m"),
+                    )
+                    .changed()
+                {
+                    let mut updated = s.clone();
+                    updated.free_length = free_len;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::LinearSpring(updated),
+                    });
+                }
+            });
+
+            draw_point_fields(ui, "Pt A", &s.point_a, index, |pt| {
+                let mut updated = s.clone();
+                updated.point_a = pt;
+                ForceElement::LinearSpring(updated)
+            }, pending);
+
+            draw_point_fields(ui, "Pt B", &s.point_b, index, |pt| {
+                let mut updated = s.clone();
+                updated.point_b = pt;
+                ForceElement::LinearSpring(updated)
+            }, pending);
+        }
+
+        ForceElement::LinearDamper(d) => {
+            ui.label(format!("Body A: {}  Body B: {}", d.body_a, d.body_b));
+
+            let mut damping = d.damping;
+            ui.horizontal(|ui| {
+                ui.label("c:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut damping)
+                            .speed(0.1)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" N\u{00b7}s/m"),
+                    )
+                    .changed()
+                {
+                    let mut updated = d.clone();
+                    updated.damping = damping;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::LinearDamper(updated),
+                    });
+                }
+            });
+
+            draw_point_fields(ui, "Pt A", &d.point_a, index, |pt| {
+                let mut updated = d.clone();
+                updated.point_a = pt;
+                ForceElement::LinearDamper(updated)
+            }, pending);
+
+            draw_point_fields(ui, "Pt B", &d.point_b, index, |pt| {
+                let mut updated = d.clone();
+                updated.point_b = pt;
+                ForceElement::LinearDamper(updated)
+            }, pending);
+        }
+
+        ForceElement::ExternalForce(f) => {
+            ui.label(format!("Body: {}", f.body_id));
+
+            let mut fx = f.force[0];
+            let mut fy = f.force[1];
+            ui.horizontal(|ui| {
+                ui.label("Fx:");
+                if ui
+                    .add(egui::DragValue::new(&mut fx).speed(0.1).suffix(" N"))
+                    .changed()
+                {
+                    let mut updated = f.clone();
+                    updated.force[0] = fx;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::ExternalForce(updated),
+                    });
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label("Fy:");
+                if ui
+                    .add(egui::DragValue::new(&mut fy).speed(0.1).suffix(" N"))
+                    .changed()
+                {
+                    let mut updated = f.clone();
+                    updated.force[1] = fy;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::ExternalForce(updated),
+                    });
+                }
+            });
+
+            draw_point_fields(ui, "Local pt", &f.local_point, index, |pt| {
+                let mut updated = f.clone();
+                updated.local_point = pt;
+                ForceElement::ExternalForce(updated)
+            }, pending);
+        }
+
+        ForceElement::ExternalTorque(t) => {
+            ui.label(format!("Body: {}", t.body_id));
+
+            let mut torque = t.torque;
+            ui.horizontal(|ui| {
+                ui.label("\u{03c4}:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut torque)
+                            .speed(0.1)
+                            .suffix(" N\u{00b7}m"),
+                    )
+                    .changed()
+                {
+                    let mut updated = t.clone();
+                    updated.torque = torque;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::ExternalTorque(updated),
+                    });
+                }
+            });
+        }
+
+        ForceElement::TorsionSpring(s) => {
+            ui.label(format!("Body I: {}  Body J: {}", s.body_i, s.body_j));
+
+            let mut stiffness = s.stiffness;
+            ui.horizontal(|ui| {
+                ui.label("k:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut stiffness)
+                            .speed(0.1)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" N\u{00b7}m/rad"),
+                    )
+                    .changed()
+                {
+                    let mut updated = s.clone();
+                    updated.stiffness = stiffness;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::TorsionSpring(updated),
+                    });
+                }
+            });
+
+            let mut free_angle = s.free_angle;
+            ui.horizontal(|ui| {
+                ui.label("\u{03b8}\u{2080}:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut free_angle)
+                            .speed(0.01)
+                            .suffix(" rad"),
+                    )
+                    .changed()
+                {
+                    let mut updated = s.clone();
+                    updated.free_angle = free_angle;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::TorsionSpring(updated),
+                    });
+                }
+            });
+        }
+
+        ForceElement::RotaryDamper(d) => {
+            ui.label(format!("Body I: {}  Body J: {}", d.body_i, d.body_j));
+
+            let mut damping = d.damping;
+            ui.horizontal(|ui| {
+                ui.label("c:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut damping)
+                            .speed(0.1)
+                            .range(0.0..=f64::MAX)
+                            .suffix(" N\u{00b7}m\u{00b7}s/rad"),
+                    )
+                    .changed()
+                {
+                    let mut updated = d.clone();
+                    updated.damping = damping;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::RotaryDamper(updated),
+                    });
+                }
+            });
+        }
+    }
+}
+
+/// Draw x/y DragValue fields for a 2D point, emitting an UpdateForce edit
+/// when either component changes.
+///
+/// `make_element` takes the updated `[f64; 2]` and returns the full
+/// `ForceElement` with that point replaced.
+fn draw_point_fields(
+    ui: &mut egui::Ui,
+    label: &str,
+    point: &[f64; 2],
+    index: usize,
+    make_element: impl Fn([f64; 2]) -> ForceElement,
+    pending: &mut Option<PendingPropertyEdit>,
+) {
+    let mut x = point[0];
+    let mut y = point[1];
+    ui.horizontal(|ui| {
+        ui.label(format!("{} x:", label));
+        if ui
+            .add(egui::DragValue::new(&mut x).speed(0.001).suffix(" m"))
+            .changed()
+        {
+            *pending = Some(PendingPropertyEdit::UpdateForce {
+                index,
+                force: make_element([x, point[1]]),
+            });
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.label(format!("{} y:", label));
+        if ui
+            .add(egui::DragValue::new(&mut y).speed(0.001).suffix(" m"))
+            .changed()
+        {
+            *pending = Some(PendingPropertyEdit::UpdateForce {
+                index,
+                force: make_element([point[0], y]),
+            });
+        }
+    });
 }

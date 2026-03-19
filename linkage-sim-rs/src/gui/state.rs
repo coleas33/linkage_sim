@@ -16,6 +16,7 @@ use crate::io::serialization::{
     load_mechanism_unbuilt, load_mechanism_unbuilt_from_json, mechanism_to_json,
     BodyJson, DriverJson, JointJson, LoadCaseJson, MechanismJson,
 };
+use crate::forces::elements::{ForceElement, GravityElement};
 use crate::solver::kinematics::solve_position;
 use crate::solver::statics::{
     extract_reactions, get_driver_reactions, get_joint_reactions, solve_statics,
@@ -216,6 +217,38 @@ impl LoadCaseManager {
     }
 }
 
+// ── Editor tool ───────────────────────────────────────────────────────────────
+
+/// Active editor tool — determines what happens on canvas clicks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorTool {
+    /// Default: click to select entities. Drag empty space to pan.
+    Select,
+    /// Draw Link: click a point (or empty space for ground pivot), drag to
+    /// another point → creates bar + auto-creates revolute joints at both
+    /// ends if they connect to existing points.
+    DrawLink,
+    /// Click canvas to place a new ground pivot.
+    AddGroundPivot,
+}
+
+// ── Context menu target ──────────────────────────────────────────────────────
+
+/// Stores what was under the cursor when a right-click occurred.
+///
+/// egui's `context_menu()` closure runs every frame while the menu is open,
+/// but `secondary_clicked()` is only true on the trigger frame. This struct
+/// persists the hit-test result so the menu content stays correct.
+#[derive(Debug, Clone, Default)]
+pub struct ContextMenuTarget {
+    /// Joint ID if right-click landed on a joint.
+    pub joint_id: Option<String>,
+    /// (body_id, point_name) if right-click landed on a body attachment point.
+    pub body: Option<(String, String)>,
+    /// World coordinates of the right-click position.
+    pub world_pos: Option<[f64; 2]>,
+}
+
 // ── Selection ─────────────────────────────────────────────────────────────────
 
 /// Which entity in the mechanism is currently selected for inspection.
@@ -359,6 +392,8 @@ pub struct AppState {
     pub driver_angle: f64,
     /// Last successfully solved q — used as fallback when the solver fails.
     pub last_good_q: DVector<f64>,
+    /// Solved q at driver angle = 0 — used to reset initial guess on animation wrap.
+    pub q_at_zero: DVector<f64>,
     /// Status of the most recent solver call.
     pub solver_status: SolverStatus,
     /// Currently selected entity (for the property panel).
@@ -408,19 +443,67 @@ pub struct AppState {
     pub force_results: ForceResults,
     /// Whether to draw force arrows on the canvas.
     pub show_forces: bool,
+    /// Whether to include gravity (9.81 m/s² downward) in force computation.
+    pub enable_gravity: bool,
     // ── Load cases ──────────────────────────────────────────────────────
     /// Named driver configurations for comparing operating conditions.
     pub load_cases: LoadCaseManager,
+    // ── Editor tool ─────────────────────────────────────────────────────
+    /// Active editor tool (Select, AddBody, AddGroundPivot, AddJoint).
+    pub active_tool: EditorTool,
+    // ── Context menu ────────────────────────────────────────────────────
+    /// Persisted right-click target for context menu rendering across frames.
+    pub context_menu_target: ContextMenuTarget,
+    // ── Draw Link state ──────────────────────────────────────────────────
+    /// Start of a Draw Link gesture: world position and optional existing
+    /// attachment point (body_id, point_name). If None, a new ground pivot
+    /// was created at the start position.
+    pub draw_link_start: Option<DrawLinkStart>,
+}
+
+/// Tracks the start of a Draw Link gesture.
+#[derive(Debug, Clone)]
+pub struct DrawLinkStart {
+    /// World coordinates of the start point.
+    pub world_pos: [f64; 2],
+    /// If the start landed on an existing attachment point: (body_id, point_name).
+    /// If None, a new ground pivot was created at this position.
+    pub attachment: Option<(String, String)>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
-        Self {
-            blueprint: None,
+        // Start with an empty mechanism (just a ground body) so the canvas
+        // is immediately editable without loading a sample first.
+        let empty_blueprint = MechanismJson {
+            schema_version: "1.0.0".to_string(),
+            bodies: {
+                let mut m = HashMap::new();
+                m.insert(
+                    GROUND_ID.to_string(),
+                    BodyJson {
+                        attachment_points: HashMap::new(),
+                        mass: 0.0,
+                        cg_local: [0.0, 0.0],
+                        izz_cg: 0.0,
+                        coupler_points: HashMap::new(),
+                    },
+                );
+                m
+            },
+            joints: HashMap::new(),
+            drivers: HashMap::new(),
+            load_cases: Vec::new(),
+            forces: Vec::new(),
+        };
+
+        let mut state = Self {
+            blueprint: Some(empty_blueprint),
             mechanism: None,
             q: DVector::zeros(0),
             driver_angle: 0.0,
             last_good_q: DVector::zeros(0),
+            q_at_zero: DVector::zeros(0),
             solver_status: SolverStatus::default(),
             selected: None,
             view: ViewTransform::default(),
@@ -443,9 +526,15 @@ impl Default for AppState {
             display_units: DisplayUnits::default(),
             grid: GridSettings::default(),
             force_results: ForceResults::default(),
-            show_forces: false,
+            show_forces: true,
+            enable_gravity: true,
             load_cases: LoadCaseManager::default(),
-        }
+            active_tool: EditorTool::Select,
+            context_menu_target: ContextMenuTarget::default(),
+            draw_link_start: None,
+        };
+        state.rebuild();
+        state
     }
 }
 
@@ -487,6 +576,7 @@ impl AppState {
         }
 
         self.driver_angle = self.driver_theta_0;
+        self.q_at_zero = self.q.clone();
 
         // Create blueprint from the built mechanism
         self.blueprint = mechanism_to_json(&mech).ok();
@@ -569,6 +659,26 @@ impl AppState {
         }
     }
 
+    /// Sync gravity force element on the mechanism with the `enable_gravity` flag.
+    /// Adds `ForceElement::Gravity` if enabled and not present; removes it if disabled.
+    pub fn sync_gravity(&mut self) {
+        let Some(mech) = &mut self.mechanism else {
+            return;
+        };
+        let has_gravity = mech.forces().iter().any(|f| matches!(f, ForceElement::Gravity(_)));
+        if self.enable_gravity && !has_gravity {
+            mech.add_force(ForceElement::Gravity(GravityElement::default()));
+        } else if !self.enable_gravity && has_gravity {
+            if let Some(idx) = mech
+                .forces()
+                .iter()
+                .position(|f| matches!(f, ForceElement::Gravity(_)))
+            {
+                mech.remove_force(idx);
+            }
+        }
+    }
+
     /// Compute static force results (joint reactions + driver torque) at the
     /// current pose. Called after each successful position solve.
     ///
@@ -576,6 +686,7 @@ impl AppState {
     /// operates at quasi-static conditions. Falls back gracefully on failure,
     /// clearing force results rather than propagating errors.
     fn compute_forces(&mut self, t: f64) {
+        self.sync_gravity();
         let Some(mech) = &self.mechanism else {
             self.force_results = ForceResults::default();
             return;
@@ -591,9 +702,7 @@ impl AppState {
             return;
         }
 
-        // Statics solve: no gravity for now (Q = 0), gives constraint-force-only results.
-        // The driver torque is always meaningful even without external loads.
-        let statics_result = match solve_statics(mech, &self.q, None, t) {
+        let statics_result = match solve_statics(mech, &self.q, t) {
             Ok(r) => r,
             Err(_) => {
                 self.force_results = ForceResults::default();
@@ -728,6 +837,7 @@ impl AppState {
         self.driver_omega = driver_omega;
         self.driver_theta_0 = driver_theta_0;
         self.driver_angle = driver_theta_0;
+        self.q_at_zero = self.q.clone();
         self.driver_joint_id = driver_joint_id;
         self.mechanism = Some(mech);
         self.current_sample = None;
@@ -817,8 +927,10 @@ impl AppState {
     // ── Blueprint rebuild pipeline ───────────────────────────────────────
 
     /// Rebuild Mechanism from the current blueprint, solve at current angle.
-    /// Called after every edit operation.
+    /// Called after every edit operation. Pauses animation to prevent the solver
+    /// from fighting with mid-edit mechanism state.
     pub fn rebuild(&mut self) {
+        self.playing = false;
         let Some(bp) = &self.blueprint else { return };
 
         // Build mechanism from blueprint
@@ -849,13 +961,12 @@ impl AppState {
         // (look for the first constant_speed driver)
         self.driver_omega = 2.0 * PI;
         self.driver_theta_0 = 0.0;
-        // Check blueprint drivers for actual values
-        for (_id, driver) in &bp.drivers {
+        // Check blueprint drivers for actual values (use first constant_speed driver)
+        if let Some(driver) = bp.drivers.values().next() {
             match driver {
                 DriverJson::ConstantSpeed { omega, theta_0, .. } => {
                     self.driver_omega = *omega;
                     self.driver_theta_0 = *theta_0;
-                    break;
                 }
             }
         }
@@ -927,6 +1038,14 @@ impl AppState {
             }
         }
 
+        // Ensure q always matches the new mechanism's dimension.
+        let n = mech.state().n_coords();
+        if self.q.len() != n {
+            self.q = mech.state().make_q();
+            self.last_good_q = self.q.clone();
+            self.q_at_zero = self.q.clone();
+        }
+
         self.mechanism = Some(mech);
         self.compute_forces(t);
         self.compute_validation();
@@ -967,6 +1086,44 @@ impl AppState {
         if let Some(body) = bp.bodies.get_mut(body_id) {
             body.izz_cg = izz;
         }
+        self.rebuild();
+    }
+
+    /// Add a force element to the blueprint.
+    ///
+    /// Pushes undo, appends the element, and rebuilds.
+    pub fn add_force_element(&mut self, force: ForceElement) {
+        self.push_undo();
+        let Some(bp) = &mut self.blueprint else { return };
+        bp.forces.push(force);
+        self.rebuild();
+    }
+
+    /// Remove a force element from the blueprint by index.
+    ///
+    /// Pushes undo, removes the element, and rebuilds.
+    /// No-op if `index` is out of bounds.
+    pub fn remove_force_element(&mut self, index: usize) {
+        self.push_undo();
+        let Some(bp) = &mut self.blueprint else { return };
+        if index >= bp.forces.len() {
+            return;
+        }
+        bp.forces.remove(index);
+        self.rebuild();
+    }
+
+    /// Replace a force element in the blueprint at the given index.
+    ///
+    /// Intended for continuous parameter tweaks (e.g. DragValue), so no undo
+    /// snapshot is pushed.
+    /// No-op if `index` is out of bounds.
+    pub fn update_force_element(&mut self, index: usize, force: ForceElement) {
+        let Some(bp) = &mut self.blueprint else { return };
+        if index >= bp.forces.len() {
+            return;
+        }
+        bp.forces[index] = force;
         self.rebuild();
     }
 
@@ -1144,76 +1301,114 @@ impl AppState {
     }
 
     /// Rebuild the mechanism with a different driver joint.
+    ///
+    /// Works for both sample mechanisms (via sample builder) and blueprint-based
+    /// mechanisms (via blueprint driver mutation + rebuild).
     pub fn reassign_driver(&mut self, joint_id: &str) {
-        let Some(sample) = self.current_sample else { return };
-
-        self.push_undo();
-
-        match crate::gui::samples::build_sample_with_driver(sample, Some(joint_id)) {
-            Ok((mech, q0)) => {
-                // Extract driver theta_0 from the built mechanism
-                // The builder sets theta_0 to match q0's driven body angle
-                self.driver_omega = 2.0 * PI;
-                // We need to figure out what theta_0 was used. Since the driver
-                // constraint at t=0 is: theta_driven - theta_ground - theta_0 = 0,
-                // and the builder set theta_0 = driven body's angle in q0,
-                // we can read it from q0 after solving at t=0.
-                // For simplicity, solve at t=0 first, then set driver_angle = theta_0.
-
-                match solve_position(&mech, &q0, 0.0, 1e-10, 50) {
-                    Ok(result) => {
-                        self.solver_status = SolverStatus {
-                            converged: result.converged,
-                            residual_norm: result.residual_norm,
-                            iterations: result.iterations,
-                        };
-                        if result.converged {
-                            self.q = result.q.clone();
-                            self.last_good_q = result.q;
-                        } else {
+        // Try sample-based reassignment first (preserves sample-specific builder logic).
+        if let Some(sample) = self.current_sample {
+            self.push_undo();
+            match crate::gui::samples::build_sample_with_driver(sample, Some(joint_id)) {
+                Ok((mech, q0)) => {
+                    self.driver_omega = 2.0 * PI;
+                    match solve_position(&mech, &q0, 0.0, 1e-10, 50) {
+                        Ok(result) => {
+                            self.solver_status = SolverStatus {
+                                converged: result.converged,
+                                residual_norm: result.residual_norm,
+                                iterations: result.iterations,
+                            };
+                            if result.converged {
+                                self.q = result.q.clone();
+                                self.last_good_q = result.q;
+                            } else {
+                                self.q = q0.clone();
+                                self.last_good_q = q0;
+                            }
+                        }
+                        Err(_) => {
+                            self.solver_status = SolverStatus {
+                                converged: false,
+                                residual_norm: f64::NAN,
+                                iterations: 0,
+                            };
                             self.q = q0.clone();
                             self.last_good_q = q0;
                         }
                     }
-                    Err(_) => {
-                        self.solver_status = SolverStatus {
-                            converged: false,
-                            residual_norm: f64::NAN,
-                            iterations: 0,
-                        };
-                        self.q = q0.clone();
-                        self.last_good_q = q0;
-                    }
+                    self.driver_theta_0 = 0.0;
+                    self.driver_angle = 0.0;
+                    self.q_at_zero = self.q.clone();
+                    self.blueprint = mechanism_to_json(&mech).ok();
+                    self.mechanism = Some(mech);
+                    self.driver_joint_id = Some(joint_id.to_string());
+                    self.selected = None;
+                    self.load_cases = LoadCaseManager::new_default(
+                        joint_id,
+                        self.driver_omega,
+                        self.driver_theta_0,
+                    );
+                    self.playing = false;
+                    self.animation_direction = 1.0;
+                    self.pending_driver_reassignment = None;
+                    self.compute_sweep();
+                    self.compute_validation();
+                    return;
                 }
-
-                // Reset to angle = theta_0 (the starting angle for this driver)
-                // Since the builder used theta_0 matching q0, and we solved at t=0,
-                // driver_angle should be theta_0.
-                self.driver_theta_0 = 0.0; // The builder maps t=0 to the start config
-                self.driver_angle = 0.0;
-                // Update blueprint to reflect the reassigned driver
-                self.blueprint = mechanism_to_json(&mech).ok();
-                self.mechanism = Some(mech);
-                self.driver_joint_id = Some(joint_id.to_string());
-                self.selected = None;
-
-                // Reset load cases to a single default for the new driver
-                self.load_cases = LoadCaseManager::new_default(
-                    joint_id,
-                    self.driver_omega,
-                    self.driver_theta_0,
-                );
-
-                self.playing = false;
-                self.animation_direction = 1.0;
-                self.pending_driver_reassignment = None;
-                self.compute_sweep();
-                self.compute_validation();
-            }
-            Err(msg) => {
-                log::warn!("Driver reassignment failed: {}", msg);
+                Err(msg) => {
+                    log::warn!("Sample-based driver reassignment failed: {}", msg);
+                    // Fall through to blueprint-based reassignment.
+                }
             }
         }
+
+        // Blueprint-based reassignment: modify the driver in the blueprint and rebuild.
+        let Some(bp) = &self.blueprint else { return };
+
+        // Find the joint and its body pair.
+        let Some(joint) = bp.joints.get(joint_id) else {
+            log::warn!("Joint '{}' not found in blueprint", joint_id);
+            return;
+        };
+        let (body_i, body_j) = joint_body_ids(joint);
+        let body_i = body_i.to_string();
+        let body_j = body_j.to_string();
+
+        self.push_undo();
+        let bp = self.blueprint.as_mut().unwrap();
+
+        // Remove all existing drivers.
+        bp.drivers.clear();
+
+        // Add new constant-speed driver for the target joint's body pair.
+        let driver_id = generate_unique_id("D", &bp.drivers);
+        bp.drivers.insert(
+            driver_id,
+            DriverJson::ConstantSpeed {
+                body_i,
+                body_j,
+                omega: self.driver_omega,
+                theta_0: 0.0,
+            },
+        );
+
+        self.driver_theta_0 = 0.0;
+        self.driver_angle = 0.0;
+        self.driver_joint_id = Some(joint_id.to_string());
+        self.selected = None;
+        self.playing = false;
+        self.animation_direction = 1.0;
+        self.pending_driver_reassignment = None;
+
+        self.load_cases = LoadCaseManager::new_default(
+            joint_id,
+            self.driver_omega,
+            self.driver_theta_0,
+        );
+
+        self.rebuild();
+        self.q_at_zero = self.q.clone();
+        self.compute_sweep();
     }
 
     // ── Load case operations ──────────────────────────────────────────────
@@ -1417,6 +1612,7 @@ impl AppState {
             self.sweep_data = None;
             return;
         }
+        self.sync_gravity();
 
         // Copy values we need from self before taking a reference to the mechanism,
         // to avoid borrow-checker conflicts between &self.mechanism and &mut self.sweep_data.
@@ -1424,8 +1620,9 @@ impl AppState {
         let omega = self.driver_omega;
         let theta_0 = self.driver_theta_0;
 
-        let data = compute_sweep_data(self.mechanism.as_ref().unwrap(), &q_start, omega, theta_0);
+        let (data, q_zero) = compute_sweep_data(self.mechanism.as_ref().unwrap(), &q_start, omega, theta_0);
         self.sweep_data = Some(data);
+        self.q_at_zero = q_zero;
     }
 
     /// Advance animation by one frame. Returns true if animation is active.
@@ -1438,11 +1635,14 @@ impl AppState {
         let mut new_angle_deg = self.driver_angle.to_degrees() + step_deg;
 
         if self.loop_mode {
-            // Wrap around
+            // Wrap around — reset initial guess to the solved q at angle 0
+            // so the solver stays on the same assembly configuration branch.
             if new_angle_deg >= 360.0 {
                 new_angle_deg -= 360.0;
+                self.last_good_q = self.q_at_zero.clone();
             } else if new_angle_deg < 0.0 {
                 new_angle_deg += 360.0;
+                self.last_good_q = self.q_at_zero.clone();
             }
         } else {
             // Once mode: always forward, stop at 360
@@ -1508,16 +1708,19 @@ fn generate_unique_id<V>(prefix: &str, map: &HashMap<String, V>) -> String {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/// Perform the sweep computation (0-360 degrees) and return `SweepData`.
+/// Perform the sweep computation (0-360 degrees) and return `(SweepData, q_at_zero)`.
 ///
 /// Extracted as a free function so it borrows only `&Mechanism` and not
 /// `&mut AppState`, avoiding borrow-checker conflicts.
+///
+/// Returns the sweep data and the solved q at angle 0 (used to reset the
+/// initial guess when animation wraps around 360→0).
 fn compute_sweep_data(
     mech: &Mechanism,
     q_start: &DVector<f64>,
     omega: f64,
     theta_0: f64,
-) -> SweepData {
+) -> (SweepData, DVector<f64>) {
     let mut data = SweepData {
         angles_deg: Vec::with_capacity(361),
         body_angles: HashMap::new(),
@@ -1564,6 +1767,7 @@ fn compute_sweep_data(
 
     // Sweep from 0 to 360 degrees in 1-degree steps.
     let mut q = q_start.clone();
+    let mut q_at_zero = q_start.clone();
 
     for i in 0..=360 {
         let angle_deg = i as f64;
@@ -1572,6 +1776,9 @@ fn compute_sweep_data(
         match solve_position(mech, &q, t, 1e-10, 50) {
             Ok(result) if result.converged => {
                 q = result.q.clone();
+                if i == 0 {
+                    q_at_zero = q.clone();
+                }
                 data.angles_deg.push(angle_deg);
 
                 let mech_state = mech.state();
@@ -1602,7 +1809,7 @@ fn compute_sweep_data(
                 }
 
                 // Driver torque from statics solve.
-                if let Ok(statics) = solve_statics(mech, &q, None, t) {
+                if let Ok(statics) = solve_statics(mech, &q, t) {
                     let reactions = extract_reactions(mech, &statics);
                     let torque = get_driver_reactions(&reactions)
                         .first()
@@ -1621,7 +1828,7 @@ fn compute_sweep_data(
         }
     }
 
-    data
+    (data, q_at_zero)
 }
 
 /// Try to detect a classic 4-bar linkage and return (crank, coupler, rocker,
@@ -1736,11 +1943,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_state_has_no_mechanism() {
+    fn default_state_has_empty_mechanism() {
         let state = AppState::default();
-        assert!(!state.has_mechanism());
+        // Default state starts with an empty mechanism (ground only).
+        assert!(state.has_mechanism());
         assert!(state.current_sample.is_none());
-        assert_eq!(state.q.len(), 0);
+        assert!(state.blueprint.is_some());
     }
 
     #[test]
@@ -1812,9 +2020,10 @@ mod tests {
     // ── Undo / Redo integration tests ──────────────────────────────────
 
     #[test]
-    fn take_snapshot_returns_none_without_mechanism() {
+    fn take_snapshot_returns_some_for_default_state() {
         let state = AppState::default();
-        assert!(state.take_snapshot().is_none());
+        // Default state has an empty mechanism, so snapshots should work.
+        assert!(state.take_snapshot().is_some());
     }
 
     #[test]
@@ -1874,10 +2083,11 @@ mod tests {
     }
 
     #[test]
-    fn push_undo_noop_without_mechanism() {
+    fn push_undo_works_on_default_empty_mechanism() {
         let mut state = AppState::default();
         state.push_undo();
-        assert!(!state.can_undo());
+        // Default state has an empty mechanism, so undo should work.
+        assert!(state.can_undo());
     }
 
     #[test]

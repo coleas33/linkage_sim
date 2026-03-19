@@ -12,8 +12,6 @@ use nalgebra::DVector;
 
 use crate::core::mechanism::Mechanism;
 use crate::error::LinkageError;
-use crate::forces::assembly::assemble_q;
-use crate::forces::gravity::Gravity;
 use crate::solver::assembly::{assemble_jacobian, assemble_mass_matrix};
 
 /// Result of an inverse dynamics solve.
@@ -44,26 +42,22 @@ pub struct InverseDynamicsResult {
 /// * `q` - Position vector (from position solve)
 /// * `q_dot` - Velocity vector (from velocity solve)
 /// * `q_ddot` - Acceleration vector (from acceleration solve)
-/// * `gravity` - Optional gravity force element
 /// * `t` - Time parameter
 pub fn solve_inverse_dynamics(
     mech: &Mechanism,
     q: &DVector<f64>,
     q_dot: &DVector<f64>,
     q_ddot: &DVector<f64>,
-    gravity: Option<&Gravity>,
     t: f64,
 ) -> Result<InverseDynamicsResult, LinkageError> {
     if !mech.is_built() {
         return Err(LinkageError::MechanismNotBuilt);
     }
 
-    let state = mech.state();
-
     // Assemble Phi_q and Q
     let phi_q = assemble_jacobian(mech, q, t);
     let phi_q_t = phi_q.transpose();
-    let q_forces = assemble_q(state, gravity, q, q_dot, t);
+    let q_forces = mech.assemble_forces(q, q_dot, t);
 
     // Mass matrix and inertial term
     let m_mat = assemble_mass_matrix(mech, q);
@@ -107,22 +101,16 @@ mod tests {
     use super::*;
     use crate::core::body::{make_bar, make_ground};
     use crate::core::mechanism::Mechanism;
-    use crate::forces::gravity::Gravity;
+    use crate::forces::elements::{ForceElement, GravityElement};
     use crate::solver::kinematics::{solve_acceleration, solve_position, solve_velocity};
     use nalgebra::Vector2;
     use std::f64::consts::PI;
 
-    fn build_fourbar_with_gravity() -> (Mechanism, Gravity) {
+    fn build_fourbar_with_gravity() -> Mechanism {
         let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
         let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
         let coupler = make_bar("coupler", "B", "C", 3.0, 3.0, 0.05);
         let rocker = make_bar("rocker", "D", "C", 2.0, 2.0, 0.02);
-
-        let mut bodies = std::collections::HashMap::new();
-        bodies.insert("ground".to_string(), ground.clone());
-        bodies.insert("crank".to_string(), crank.clone());
-        bodies.insert("coupler".to_string(), coupler.clone());
-        bodies.insert("rocker".to_string(), rocker.clone());
 
         let mut mech = Mechanism::new();
         mech.add_body(ground).unwrap();
@@ -141,15 +129,14 @@ mod tests {
         mech.add_revolute_driver("D1", "ground", "crank", |t| t, |_t| 1.0, |_t| 0.0)
             .unwrap();
 
+        mech.add_force(ForceElement::Gravity(GravityElement::default()));
         mech.build().unwrap();
-
-        let gravity = Gravity::new(Vector2::new(0.0, -9.81), &bodies);
-        (mech, gravity)
+        mech
     }
 
     #[test]
     fn inverse_dynamics_solves() {
-        let (mech, gravity) = build_fourbar_with_gravity();
+        let mech = build_fourbar_with_gravity();
         let state = mech.state();
 
         let angle = PI / 3.0;
@@ -166,7 +153,7 @@ mod tests {
         let q_dot = solve_velocity(&mech, &pos.q, angle).unwrap();
         let q_ddot = solve_acceleration(&mech, &pos.q, &q_dot, angle).unwrap();
 
-        let result = solve_inverse_dynamics(&mech, &pos.q, &q_dot, &q_ddot, Some(&gravity), angle).unwrap();
+        let result = solve_inverse_dynamics(&mech, &pos.q, &q_dot, &q_ddot, angle).unwrap();
         assert!(
             result.residual_norm < 1e-8,
             "residual = {}",
@@ -177,7 +164,7 @@ mod tests {
     #[test]
     fn inverse_dynamics_reduces_to_statics_at_zero_acceleration() {
         // When q_dot = 0 and q_ddot = 0, inverse dynamics should give same result as statics
-        let (mech, gravity) = build_fourbar_with_gravity();
+        let mech = build_fourbar_with_gravity();
         let state = mech.state();
 
         let angle = PI / 4.0;
@@ -198,11 +185,10 @@ mod tests {
             &pos.q,
             &q_dot_zero,
             &q_ddot_zero,
-            Some(&gravity),
             angle,
         ).unwrap();
         let statics =
-            crate::solver::statics::solve_statics(&mech, &pos.q, Some(&gravity), angle).unwrap();
+            crate::solver::statics::solve_statics(&mech, &pos.q, angle).unwrap();
 
         // M*q_ddot should be zero
         for i in 0..n {

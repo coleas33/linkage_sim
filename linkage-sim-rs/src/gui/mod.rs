@@ -12,7 +12,7 @@ pub mod undo;
 use eframe::egui;
 pub use state::AppState;
 use samples::SampleMechanism;
-use state::{AngleUnit, LengthUnit};
+use state::{AngleUnit, EditorTool, LengthUnit, SelectedEntity};
 
 /// Top-level application struct for eframe.
 pub struct LinkageApp {
@@ -176,6 +176,7 @@ impl eframe::App for LinkageApp {
                     ui.checkbox(&mut self.state.show_debug_overlay, "Debug Overlay");
                     ui.checkbox(&mut self.state.show_plots, "Plot Panel");
                     ui.checkbox(&mut self.state.show_forces, "Force Arrows");
+                    ui.checkbox(&mut self.state.enable_gravity, "Gravity");
                     ui.separator();
                     ui.label("Units:");
                     let mut use_mm = self.state.display_units.length == LengthUnit::Millimeters;
@@ -216,6 +217,83 @@ impl eframe::App for LinkageApp {
                         }
                     });
                 });
+            });
+        });
+
+        // --- Toolbar ---
+        egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().button_padding = egui::vec2(6.0, 3.0);
+
+                // ── Tool buttons (mutually exclusive) ────────────────
+                let tool = self.state.active_tool;
+
+                if ui
+                    .selectable_label(tool == EditorTool::Select, "Select")
+                    .on_hover_text("Select and move entities (click to select, drag to move points, drag empty space to pan)")
+                    .clicked()
+                {
+                    self.state.active_tool = EditorTool::Select;
+                    self.state.draw_link_start = None;
+                }
+
+                if ui
+                    .selectable_label(
+                        tool == EditorTool::DrawLink || self.state.draw_link_start.is_some(),
+                        "Draw Link",
+                    )
+                    .on_hover_text("Click and drag to draw a link — auto-creates joints at connection points")
+                    .clicked()
+                {
+                    self.state.active_tool = EditorTool::DrawLink;
+                    self.state.draw_link_start = None;
+                }
+
+                if ui
+                    .selectable_label(tool == EditorTool::AddGroundPivot, "+ Ground")
+                    .on_hover_text("Click canvas to place a ground pivot")
+                    .clicked()
+                {
+                    self.state.active_tool = EditorTool::AddGroundPivot;
+                    self.state.draw_link_start = None;
+                }
+
+                ui.separator();
+
+                // ── Action buttons (immediate) ──────────────────────
+                let has_selected = self.state.selected.is_some();
+                if ui
+                    .add_enabled(has_selected, egui::Button::new("Delete"))
+                    .on_hover_text("Delete the selected body or joint (Del)")
+                    .clicked()
+                {
+                    match self.state.selected.take() {
+                        Some(SelectedEntity::Body(id)) => {
+                            self.state.remove_body(&id);
+                        }
+                        Some(SelectedEntity::Joint(id)) => {
+                            self.state.remove_joint(&id);
+                        }
+                        _ => {}
+                    }
+                }
+
+                let can_set_driver = if let Some(SelectedEntity::Joint(ref jid)) = self.state.selected {
+                    self.state.mechanism.as_ref().is_some_and(|mech| {
+                        mech.grounded_revolute_joint_ids().contains(jid)
+                            && self.state.driver_joint_id.as_deref() != Some(jid.as_str())
+                    })
+                } else {
+                    false
+                };
+                if ui
+                    .add_enabled(can_set_driver, egui::Button::new("Set Driver"))
+                    .on_hover_text("Set the selected grounded revolute joint as the driver")
+                    .clicked()
+                    && let Some(SelectedEntity::Joint(ref jid)) = self.state.selected
+                {
+                    self.state.pending_driver_reassignment = Some(jid.clone());
+                }
             });
         });
 

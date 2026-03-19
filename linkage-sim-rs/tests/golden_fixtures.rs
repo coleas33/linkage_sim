@@ -13,7 +13,7 @@ use serde::Deserialize;
 use linkage_sim_rs::analysis::energy::compute_energy_state_mech;
 use linkage_sim_rs::core::body::{make_bar, make_ground, Body};
 use linkage_sim_rs::core::mechanism::Mechanism;
-use linkage_sim_rs::forces::gravity::Gravity;
+use linkage_sim_rs::forces::elements::{ForceElement, GravityElement};
 use linkage_sim_rs::solver::forward_dynamics::{simulate, ForwardDynamicsConfig};
 use linkage_sim_rs::solver::inverse_dynamics::solve_inverse_dynamics;
 use linkage_sim_rs::solver::kinematics::{solve_acceleration, solve_position, solve_velocity};
@@ -281,18 +281,12 @@ fn load_golden_statics(filename: &str) -> GoldenStatics {
     serde_json::from_str(&data).unwrap()
 }
 
-fn build_fourbar_gravity() -> (Mechanism, Gravity) {
+fn build_fourbar_gravity() -> Mechanism {
     let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
     let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
     let mut coupler = make_bar("coupler", "B", "C", 3.0, 3.0, 0.05);
     coupler.add_coupler_point("P", 1.5, 0.5).unwrap();
     let rocker = make_bar("rocker", "D", "C", 2.0, 2.0, 0.02);
-
-    let mut bodies = std::collections::HashMap::new();
-    bodies.insert("ground".to_string(), ground.clone());
-    bodies.insert("crank".to_string(), crank.clone());
-    bodies.insert("coupler".to_string(), coupler.clone());
-    bodies.insert("rocker".to_string(), rocker.clone());
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -305,16 +299,16 @@ fn build_fourbar_gravity() -> (Mechanism, Gravity) {
     mech.add_revolute_joint("J4", "ground", "O4", "rocker", "D").unwrap();
     mech.add_revolute_driver("D1", "ground", "crank", |t| t, |_t| 1.0, |_t| 0.0)
         .unwrap();
+    mech.add_force(ForceElement::Gravity(GravityElement::default()));
     mech.build().unwrap();
 
-    let gravity = Gravity::new(Vector2::new(0.0, -9.81), &bodies);
-    (mech, gravity)
+    mech
 }
 
 #[test]
 fn fourbar_statics_matches_golden() {
     let golden = load_golden_statics("fourbar_statics.json");
-    let (mech, gravity) = build_fourbar_gravity();
+    let mech = build_fourbar_gravity();
 
     for (step_idx, step) in golden.steps.iter().enumerate() {
         let angle = step.input_angle_rad;
@@ -322,7 +316,7 @@ fn fourbar_statics_matches_golden() {
         let pos = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
         assert!(pos.converged, "Position solve failed at step {}", step_idx);
 
-        let result = solve_statics(&mech, &pos.q, Some(&gravity), angle).unwrap();
+        let result = solve_statics(&mech, &pos.q, angle).unwrap();
 
         // Compare lambdas (looser near singular configs at toggle points)
         let lam_golden = DVector::from_column_slice(&step.lambdas);
@@ -366,12 +360,6 @@ fn slidercrank_statics_matches_golden() {
     slider.add_attachment_point("C", 0.0, 0.0).unwrap();
     slider.mass = 0.5;
 
-    let mut bodies = std::collections::HashMap::new();
-    bodies.insert("ground".to_string(), ground.clone());
-    bodies.insert("crank".to_string(), crank.clone());
-    bodies.insert("conrod".to_string(), conrod.clone());
-    bodies.insert("slider".to_string(), slider.clone());
-
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
     mech.add_body(crank).unwrap();
@@ -382,9 +370,8 @@ fn slidercrank_statics_matches_golden() {
     mech.add_revolute_joint("J3", "conrod", "C", "slider", "C").unwrap();
     mech.add_prismatic_joint("P1", "ground", "rail", "slider", "C", Vector2::new(1.0, 0.0), 0.0).unwrap();
     mech.add_revolute_driver("D1", "ground", "crank", |t| t, |_t| 1.0, |_t| 0.0).unwrap();
+    mech.add_force(ForceElement::Gravity(GravityElement::default()));
     mech.build().unwrap();
-
-    let gravity = Gravity::new(Vector2::new(0.0, -9.81), &bodies);
 
     for (step_idx, step) in golden.steps.iter().enumerate() {
         let angle = step.input_angle_rad;
@@ -392,7 +379,7 @@ fn slidercrank_statics_matches_golden() {
         let pos = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
         assert!(pos.converged, "Position solve failed at step {}", step_idx);
 
-        let result = solve_statics(&mech, &pos.q, Some(&gravity), angle).unwrap();
+        let result = solve_statics(&mech, &pos.q, angle).unwrap();
 
         // Compare lambdas
         let lam_golden = DVector::from_column_slice(&step.lambdas);
@@ -443,7 +430,7 @@ fn load_golden_inverse_dynamics(filename: &str) -> GoldenInverseDynamics {
 #[test]
 fn fourbar_inverse_dynamics_matches_golden() {
     let golden = load_golden_inverse_dynamics("fourbar_inverse_dynamics.json");
-    let (mech, gravity) = build_fourbar_gravity();
+    let mech = build_fourbar_gravity();
 
     for (step_idx, step) in golden.steps.iter().enumerate() {
         let angle = step.input_angle_rad;
@@ -454,7 +441,7 @@ fn fourbar_inverse_dynamics_matches_golden() {
         let q_dot = solve_velocity(&mech, &pos.q, angle).unwrap();
         let q_ddot = solve_acceleration(&mech, &pos.q, &q_dot, angle).unwrap();
 
-        let result = solve_inverse_dynamics(&mech, &pos.q, &q_dot, &q_ddot, Some(&gravity), angle).unwrap();
+        let result = solve_inverse_dynamics(&mech, &pos.q, &q_dot, &q_ddot, angle).unwrap();
 
         // Compare Q (generalized forces -- should match closely)
         let q_golden = DVector::from_column_slice(&step.q_forces);
@@ -514,12 +501,6 @@ fn slidercrank_inverse_dynamics_matches_golden() {
     slider.add_attachment_point("C", 0.0, 0.0).unwrap();
     slider.mass = 0.5;
 
-    let mut bodies = std::collections::HashMap::new();
-    bodies.insert("ground".to_string(), ground.clone());
-    bodies.insert("crank".to_string(), crank.clone());
-    bodies.insert("conrod".to_string(), conrod.clone());
-    bodies.insert("slider".to_string(), slider.clone());
-
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
     mech.add_body(crank).unwrap();
@@ -530,9 +511,8 @@ fn slidercrank_inverse_dynamics_matches_golden() {
     mech.add_revolute_joint("J3", "conrod", "C", "slider", "C").unwrap();
     mech.add_prismatic_joint("P1", "ground", "rail", "slider", "C", Vector2::new(1.0, 0.0), 0.0).unwrap();
     mech.add_revolute_driver("D1", "ground", "crank", |t| t, |_t| 1.0, |_t| 0.0).unwrap();
+    mech.add_force(ForceElement::Gravity(GravityElement::default()));
     mech.build().unwrap();
-
-    let gravity = Gravity::new(Vector2::new(0.0, -9.81), &bodies);
 
     for (step_idx, step) in golden.steps.iter().enumerate() {
         let angle = step.input_angle_rad;
@@ -543,7 +523,7 @@ fn slidercrank_inverse_dynamics_matches_golden() {
         let q_dot = solve_velocity(&mech, &pos.q, angle).unwrap();
         let q_ddot = solve_acceleration(&mech, &pos.q, &q_dot, angle).unwrap();
 
-        let result = solve_inverse_dynamics(&mech, &pos.q, &q_dot, &q_ddot, Some(&gravity), angle).unwrap();
+        let result = solve_inverse_dynamics(&mech, &pos.q, &q_dot, &q_ddot, angle).unwrap();
 
         // Compare Q
         let q_golden = DVector::from_column_slice(&step.q_forces);
@@ -614,7 +594,7 @@ fn load_golden_dynamics(filename: &str) -> GoldenDynamics {
 
 /// Build the pendulum matching the golden fixture:
 /// Single bar pinned to ground, L=1, m=1, Izz_cg=0, CG at tip.
-fn build_pendulum_for_golden() -> (Mechanism, Gravity) {
+fn build_pendulum_for_golden() -> Mechanism {
     let ground = make_ground(&[("O", 0.0, 0.0)]);
 
     let mut bar = Body::new("bar");
@@ -623,25 +603,21 @@ fn build_pendulum_for_golden() -> (Mechanism, Gravity) {
     bar.cg_local = Vector2::new(1.0, 0.0);
     bar.izz_cg = 0.0;
 
-    let mut bodies = std::collections::HashMap::new();
-    bodies.insert("ground".to_string(), ground.clone());
-    bodies.insert("bar".to_string(), bar.clone());
-
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
     mech.add_body(bar).unwrap();
     mech.add_revolute_joint("J1", "ground", "O", "bar", "A")
         .unwrap();
+    mech.add_force(ForceElement::Gravity(GravityElement::default()));
     mech.build().unwrap();
 
-    let gravity = Gravity::new(Vector2::new(0.0, -9.81), &bodies);
-    (mech, gravity)
+    mech
 }
 
 #[test]
 fn pendulum_dynamics_matches_golden() {
     let golden = load_golden_dynamics("pendulum_dynamics.json");
-    let (mech, gravity) = build_pendulum_for_golden();
+    let mech = build_pendulum_for_golden();
     let state = mech.state();
 
     // Set up initial conditions matching the golden fixture
@@ -668,7 +644,6 @@ fn pendulum_dynamics_matches_golden() {
         &q0,
         &qd0,
         (0.0, t_end),
-        Some(&gravity),
         Some(&config),
         Some(&t_eval),
     ).unwrap();
@@ -716,7 +691,7 @@ fn pendulum_dynamics_matches_golden() {
 fn pendulum_dynamics_energy_conservation() {
     // Independent energy conservation test (not dependent on golden data accuracy,
     // just verifies our own simulation conserves energy internally)
-    let (mech, gravity) = build_pendulum_for_golden();
+    let mech = build_pendulum_for_golden();
     let state = mech.state();
 
     let theta0 = -std::f64::consts::FRAC_PI_2 + 0.2;
@@ -737,7 +712,6 @@ fn pendulum_dynamics_energy_conservation() {
         &q0,
         &qd0,
         (0.0, 5.0),
-        Some(&gravity),
         Some(&config),
         Some(&t_eval),
     ).unwrap();
