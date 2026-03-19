@@ -70,7 +70,7 @@ The simulator is built on four foundational decisions documented in detail in `d
 | Layer | Choice | Rationale |
 |---|---|---|
 | Core solver (Phases 1–4) | Python + NumPy/SciPy | `fsolve` for constraints, `linalg` for linear systems, `solve_ivp` (Radau/BDF) for DAE |
-| Core solver (production) | Rust + nalgebra | **Port complete** — validated against Python golden fixtures (302 tests). Force elements (springs, dampers, external loads) ported. See `RUST_MIGRATION.md` |
+| Core solver (production) | Rust + nalgebra | **Port complete** — validated against Python golden fixtures (316 tests). Force elements (springs, dampers, external loads) ported. See `RUST_MIGRATION.md` |
 | Expression evaluator | Python: `asteval` → Rust: `meval` or `rhai` | For user-defined force laws and drivers. Not `eval()`, not raw lambdas |
 | GUI framework (Phase 5) | Rust: `egui` + `eframe` | 2D canvas, drag-and-drop, animation. Native + WebAssembly targets. Built in Rust, never in Python |
 | Plotting (development) | Matplotlib or Plotly | Engineering-quality plots during Python development |
@@ -135,7 +135,7 @@ linkage-sim/
 
 ### Rust solver kernel (`linkage-sim-rs/`)
 
-The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forward dynamics) is complete in Rust, validated against Python golden fixtures (302 tests). **Phase 5 GUI:** Built with egui/eframe. Loads 13 sample mechanisms — 2 original (FourBar micro, SliderCrank), 6 four-bar variants (CrankRocker, DoubleRocker, DoubleCrank, Parallelogram, Chebyshev, TripleRocker), and 5 six-bar variants (SixBarB1/Watt I, SixBarA1, SixBarA2, SixBarB2, SixBarB3). Renders on a 2D canvas with pan/zoom. Drives the kinematic solver via angle slider. Click-to-inspect property panels. Animation playback (play/pause, speed control, loop/once) with seamless 360° wrap — the solver initial guess resets to the cached angle-0 solution on wrap-around, preventing assembly-branch jumps. Right-click driver reassignment on any grounded revolute joint. Plotting panel with coupler trace, body angles, and transmission angle (via egui_plot). Undo/redo (Ctrl+Z / Ctrl+Y). Mechanisms can be saved and loaded as JSON via File > Open / File > Save. Gravity-loaded reaction forces displayed as red arrows at every joint (enabled by default); gravity direction indicator ("g↓") on canvas; both toggleable via View menu. Run with `cd linkage-sim-rs && cargo run --bin linkage-gui`.
+The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forward dynamics) is complete in Rust, validated against Python golden fixtures (316 tests). **Phase 5 GUI:** Built with egui/eframe. Loads 13 sample mechanisms — 2 original (FourBar micro, SliderCrank), 6 four-bar variants (CrankRocker, DoubleRocker, DoubleCrank, Parallelogram, Chebyshev, TripleRocker), and 5 six-bar variants (SixBarB1/Watt I, SixBarA1, SixBarA2, SixBarB2, SixBarB3). Renders on a 2D canvas with pan/zoom. Drives the kinematic solver via angle slider. Click-to-inspect property panels. Animation playback (play/pause, speed control, loop/once) with seamless 360° wrap — the solver initial guess resets to the cached angle-0 solution on wrap-around, preventing assembly-branch jumps. Right-click driver reassignment on any grounded revolute joint. Plotting panel with coupler trace, body angles, and transmission angle (via egui_plot). Undo/redo (Ctrl+Z / Ctrl+Y). Mechanisms can be saved and loaded as JSON via File > Open / File > Save. Gravity-loaded reaction forces displayed as red arrows at every joint (enabled by default); gravity direction indicator ("g↓") on canvas; both toggleable via View menu. Run with `cd linkage-sim-rs && cargo run --bin linkage-gui`.
 
 **Interactive editor (shipped):** The GUI is now a full interactive editor, not just a visualization shell. Capabilities:
 - Create bodies, joints, and ground pivots via right-click context menu on the canvas
@@ -147,10 +147,12 @@ The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forwa
 - MechanismBlueprint (MechanismJson) is the editable source of truth; rebuild() runs on every edit
 - All edit operations push to the undo/redo stack; blueprint stays in sync with snapshots
 
-**Phase 5 substantially complete.** Remaining items:
-- Force element GUI (define/edit springs, dampers, external loads on bodies/joints) — **done** (property panel editing, canvas rendering of spring/damper/force symbols)
-- Analysis displays (energy plot, Grashof classification, Jacobian rank diagnostics) — **done** (energy plot tab with KE/PE/total, Grashof in diagnostics panel, condition number display)
-- Raster/animation export (PNG, GIF/MP4) — nice-to-have
+**Phase 5 substantially complete.** All major features shipped:
+- Force element GUI — **done** (property panel editing + canvas rendering for all 12 element types)
+- Analysis displays — **done** (energy, Grashof, Jacobian conditioning, mechanical advantage, torque envelopes)
+- Forward dynamics simulation — **done** (simulate button, timeline scrubbing, playback, constraint drift)
+- Inverse dynamics — **done** (sweep plot tab with statics overlay)
+- Remaining nice-to-have: raster/animation export (PNG, GIF/MP4)
 
 ```
 linkage-sim-rs/

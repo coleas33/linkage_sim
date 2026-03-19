@@ -23,6 +23,7 @@ use crate::forces::elements::{ForceElement, GravityElement};
 use crate::analysis::energy::compute_energy_state_mech;
 use crate::solver::kinematics::{solve_acceleration, solve_position, solve_velocity};
 use crate::solver::inverse_dynamics::solve_inverse_dynamics;
+use crate::solver::forward_dynamics::{simulate, ForwardDynamicsConfig};
 use crate::solver::statics::{
     extract_reactions, get_driver_reactions, get_joint_reactions, solve_statics,
 };
@@ -400,6 +401,26 @@ pub struct SweepData {
     pub mechanical_advantage: Vec<f64>,
 }
 
+// ── Simulation state ──────────────────────────────────────────────────────────
+
+/// Forward dynamics simulation result and playback state.
+pub struct SimulationState {
+    /// Time history from the simulation.
+    pub times: Vec<f64>,
+    /// Position history (one q vector per time step).
+    pub positions: Vec<DVector<f64>>,
+    /// Current playback index into the trajectory.
+    pub time_index: usize,
+    /// Whether simulation playback is active.
+    pub playing: bool,
+    /// Playback speed multiplier.
+    pub speed: f64,
+    /// Accumulated time for playback interpolation.
+    pub elapsed: f64,
+    /// Constraint drift at each step.
+    pub drift: Vec<f64>,
+}
+
 // ── AppState ──────────────────────────────────────────────────────────────────
 
 /// All mutable application state in one place.
@@ -485,6 +506,11 @@ pub struct AppState {
     // ── Diagnostics ─────────────────────────────────────────────────────
     /// Cached Grashof classification for 4-bar mechanisms.
     pub grashof_result: Option<GrashofResult>,
+    // ── Forward dynamics simulation ─────────────────────────────────────
+    /// Forward dynamics simulation result and playback state.
+    pub simulation: Option<SimulationState>,
+    /// Duration for forward dynamics simulation (seconds).
+    pub simulation_duration: f64,
 }
 
 /// Tracks the start of a Draw Link gesture.
@@ -559,6 +585,8 @@ impl Default for AppState {
             context_menu_target: ContextMenuTarget::default(),
             draw_link_start: None,
             grashof_result: None,
+            simulation: None,
+            simulation_duration: 5.0,
         };
         state.rebuild();
         state
@@ -1340,6 +1368,68 @@ impl AppState {
         }
     }
 
+    /// Generate the next unused attachment point name for a body.
+    ///
+    /// Names follow the sequence A, B, ..., Z, AA, AB, ..., AZ, BA, ...
+    /// (bijective base-26, always uppercase). Returns "A" when the body
+    /// does not exist or the blueprint is absent.
+    pub fn next_attachment_point_name(&self, body_id: &str) -> String {
+        let Some(bp) = &self.blueprint else {
+            return "A".to_string();
+        };
+        let existing: std::collections::HashSet<&String> = bp
+            .bodies
+            .get(body_id)
+            .map(|b| b.attachment_points.keys().collect())
+            .unwrap_or_default();
+
+        let mut name = String::new();
+        let mut n: usize = 0;
+        loop {
+            name.clear();
+            let mut val = n;
+            loop {
+                name.push((b'A' + (val % 26) as u8) as char);
+                val /= 26;
+                if val == 0 {
+                    break;
+                }
+                val -= 1;
+            }
+            let name_rev: String = name.chars().rev().collect();
+            if !existing.contains(&name_rev) {
+                return name_rev;
+            }
+            n += 1;
+        }
+    }
+
+    /// Convert world coordinates to body-local coordinates using the body's
+    /// current pose from `self.q`.
+    ///
+    /// Returns world coordinates unchanged for the ground body (which has no
+    /// pose in `q`) or when the mechanism is not built.
+    pub fn world_to_body_local(&self, body_id: &str, world_x: f64, world_y: f64) -> [f64; 2] {
+        if body_id == GROUND_ID {
+            return [world_x, world_y];
+        }
+        let q_start = match &self.mechanism {
+            Some(mech) => match mech.state().get_index(body_id) {
+                Ok(idx) => idx.q_start,
+                Err(_) => return [world_x, world_y],
+            },
+            None => return [world_x, world_y],
+        };
+        let bx = self.q[q_start];
+        let by = self.q[q_start + 1];
+        let theta = self.q[q_start + 2];
+        let dx = world_x - bx;
+        let dy = world_y - by;
+        let cos_t = theta.cos();
+        let sin_t = theta.sin();
+        [cos_t * dx + sin_t * dy, -sin_t * dx + cos_t * dy]
+    }
+
     // ── Validation ──────────────────────────────────────────────────────
 
     /// Compute validation warnings from the current mechanism state.
@@ -1707,6 +1797,131 @@ impl AppState {
         let (data, q_zero) = compute_sweep_data(self.mechanism.as_ref().unwrap(), &q_start, omega, theta_0);
         self.sweep_data = Some(data);
         self.q_at_zero = q_zero;
+    }
+
+    /// Run a forward dynamics simulation from the current pose.
+    ///
+    /// Builds a copy of the mechanism without driver constraints (free motion),
+    /// runs RK4 + Baumgarte integration, and stores the trajectory for playback.
+    pub fn run_simulation(&mut self, duration: f64) {
+        let Some(bp) = &self.blueprint else { return };
+
+        // Build mechanism WITHOUT the driver constraint
+        let mut mech_json = bp.clone();
+        mech_json.drivers.clear();
+
+        let mut mech = match load_mechanism_unbuilt_from_json(&mech_json) {
+            Ok(m) => m,
+            Err(_) => return,
+        };
+        if mech.build().is_err() {
+            return;
+        }
+
+        // Sync gravity
+        if self.enable_gravity {
+            mech.add_force(ForceElement::Gravity(GravityElement::default()));
+        }
+        // Copy non-gravity force elements from blueprint
+        for force in &bp.forces {
+            if !matches!(force, ForceElement::Gravity(_)) {
+                mech.add_force(force.clone());
+            }
+        }
+
+        // Use current position as initial conditions (zero velocity).
+        // Dimension of q stays the same -- drivers add constraint equations,
+        // not coordinates.
+        let q0 = self.q.clone();
+        let q_dot0 = DVector::zeros(q0.len());
+
+        let config = ForwardDynamicsConfig {
+            alpha: 10.0,
+            beta: 10.0,
+            max_step: 0.002,
+            project_interval: 10,
+            project_tol: 1e-10,
+            max_project_iter: 10,
+            ..Default::default()
+        };
+
+        // Generate evaluation times (60 fps)
+        let n_frames = (duration * 60.0) as usize;
+        let t_eval: Vec<f64> = (0..=n_frames)
+            .map(|i| i as f64 * duration / n_frames as f64)
+            .collect();
+
+        match simulate(
+            &mech,
+            &q0,
+            &q_dot0,
+            (0.0, duration),
+            Some(&config),
+            Some(&t_eval),
+        ) {
+            Ok(result) if result.success => {
+                self.simulation = Some(SimulationState {
+                    times: result.t,
+                    positions: result.q,
+                    time_index: 0,
+                    playing: true,
+                    speed: 1.0,
+                    elapsed: 0.0,
+                    drift: result.constraint_drift,
+                });
+                // Stop kinematic animation
+                self.playing = false;
+            }
+            _ => {
+                log::warn!("Forward dynamics simulation failed");
+            }
+        }
+    }
+
+    /// Advance simulation playback by dt. Returns true if playback is active.
+    pub fn step_simulation(&mut self, dt: f64) -> bool {
+        // Compute the new time index without holding a mutable borrow across
+        // the assignment to self.q.
+        let new_q = {
+            let Some(sim) = &mut self.simulation else {
+                return false;
+            };
+            if !sim.playing || sim.positions.is_empty() {
+                return false;
+            }
+
+            sim.elapsed += dt * sim.speed;
+
+            // Find the time index closest to elapsed time
+            let target_t = sim.elapsed;
+            if target_t >= *sim.times.last().unwrap_or(&0.0) {
+                // Simulation ended
+                sim.playing = false;
+                sim.time_index = sim.positions.len() - 1;
+            } else {
+                // Find first index where t >= target_t
+                sim.time_index = sim
+                    .times
+                    .iter()
+                    .position(|&t| t >= target_t)
+                    .unwrap_or(sim.positions.len() - 1);
+            }
+
+            // Clone the position vector so we can drop the sim borrow
+            let idx = sim.time_index;
+            if idx < sim.positions.len() {
+                Some(sim.positions[idx].clone())
+            } else {
+                None
+            }
+        };
+
+        // Update q from simulation trajectory (sim borrow is dropped)
+        if let Some(q) = new_q {
+            self.q = q;
+        }
+
+        true // request repaint
     }
 
     /// Advance animation by one frame. Returns true if animation is active.
@@ -3181,5 +3396,61 @@ mod tests {
         let omega_before = state.driver_omega;
         state.apply_load_case(999);
         assert_eq!(state.driver_omega, omega_before);
+    }
+
+    // ── next_attachment_point_name tests ─────────────────────────────────
+
+    #[test]
+    fn next_attachment_point_name_skips_existing() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        // FourBar sample uses body names "crank", "coupler", "rocker" with points A/B
+        let name = state.next_attachment_point_name("crank");
+        assert_eq!(name, "C");
+    }
+
+    #[test]
+    fn next_attachment_point_name_empty_body() {
+        let mut state = AppState::default();
+        let bp = state.blueprint.as_mut().unwrap();
+        bp.bodies.insert("empty".to_string(), BodyJson {
+            attachment_points: HashMap::new(),
+            mass: 1.0,
+            cg_local: [0.0, 0.0],
+            izz_cg: 0.01,
+            coupler_points: HashMap::new(),
+        });
+        let name = state.next_attachment_point_name("empty");
+        assert_eq!(name, "A");
+    }
+
+    #[test]
+    fn next_attachment_point_name_overflow_past_z() {
+        let mut state = AppState::default();
+        let bp = state.blueprint.as_mut().unwrap();
+        let mut pts = HashMap::new();
+        for c in b'A'..=b'Z' {
+            pts.insert(String::from(c as char), [0.0, 0.0]);
+        }
+        bp.bodies.insert("full".to_string(), BodyJson {
+            attachment_points: pts,
+            mass: 1.0,
+            cg_local: [0.0, 0.0],
+            izz_cg: 0.01,
+            coupler_points: HashMap::new(),
+        });
+        let name = state.next_attachment_point_name("full");
+        assert_eq!(name, "AA");
+    }
+
+    // ── world_to_body_local tests ─────────────────────────────────────────
+
+    #[test]
+    fn world_to_body_local_identity_pose() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let [lx, ly] = state.world_to_body_local("ground", 0.05, 0.03);
+        assert!((lx - 0.05).abs() < 1e-10);
+        assert!((ly - 0.03).abs() < 1e-10);
     }
 }

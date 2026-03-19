@@ -54,6 +54,66 @@ pub fn grubler_dof(mech: &Mechanism, expected_dof: i32) -> GrublerResult {
     }
 }
 
+/// Result of toggle point analysis.
+///
+/// A toggle (dead point) occurs when the constraint Jacobian becomes
+/// singular — i.e., the smallest singular value drops to zero. Near a
+/// toggle, the mechanism loses instantaneous mobility in one direction,
+/// which makes the kinematic equations ill-conditioned.
+#[derive(Debug, Clone)]
+pub struct ToggleAnalysis {
+    /// Smallest singular value of Phi_q.
+    pub min_singular_value: f64,
+    /// Whether the configuration is near a toggle (min_sv < threshold).
+    pub is_near_toggle: bool,
+    /// Condition number of the Jacobian (sigma_max / sigma_min).
+    pub condition_number: f64,
+}
+
+/// Check if the current configuration is near a toggle/dead point.
+///
+/// Assembles the constraint Jacobian at the given configuration and
+/// examines the smallest singular value. If it falls below `threshold`,
+/// the mechanism is flagged as near a toggle.
+///
+/// # Arguments
+/// * `mech` - A built Mechanism instance.
+/// * `q` - Generalized coordinate vector.
+/// * `t` - Time.
+/// * `threshold` - sigma_min below this is flagged as near-toggle.
+///
+/// # Panics
+/// Panics if mechanism has not been built.
+pub fn check_toggle(
+    mech: &Mechanism,
+    q: &DVector<f64>,
+    t: f64,
+    threshold: f64,
+) -> ToggleAnalysis {
+    assert!(
+        mech.is_built(),
+        "Mechanism must be built before toggle check."
+    );
+
+    let phi_q = assemble_jacobian(mech, q, t);
+    let svd = phi_q.svd(false, false);
+    let sv = &svd.singular_values;
+
+    let min_sv = if sv.is_empty() { 0.0 } else { sv[sv.len() - 1] };
+    let max_sv = if sv.is_empty() { 0.0 } else { sv[0] };
+    let cond = if min_sv > 1e-15 {
+        max_sv / min_sv
+    } else {
+        f64::INFINITY
+    };
+
+    ToggleAnalysis {
+        min_singular_value: min_sv,
+        is_near_toggle: min_sv < threshold,
+        condition_number: cond,
+    }
+}
+
 /// Result of a Jacobian rank analysis at a specific configuration.
 #[derive(Debug, Clone)]
 pub struct JacobianRankResult {
@@ -313,5 +373,72 @@ mod tests {
         for &sv in rank_result.singular_values.iter() {
             assert!(sv > 0.0, "singular value should be positive, got {}", sv);
         }
+    }
+
+    // ── Toggle detection tests ──────────────────────────────────────────
+
+    #[test]
+    fn toggle_not_near_at_normal_config() {
+        // At a typical mid-range angle (π/3), the 4-bar should NOT be near toggle.
+        let mech = build_fourbar();
+        let state = mech.state();
+
+        let angle = PI / 3.0;
+        let mut q0 = state.make_q();
+        state.set_pose("crank", &mut q0, 0.0, 0.0, angle);
+        let bx = angle.cos();
+        let by = angle.sin();
+        state.set_pose("coupler", &mut q0, bx, by, 0.0);
+        state.set_pose("rocker", &mut q0, 4.0, 0.0, PI / 2.0);
+
+        let pos = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
+        assert!(pos.converged);
+
+        let result = check_toggle(&mech, &pos.q, 0.0, 1e-3);
+        assert!(!result.is_near_toggle);
+        assert!(result.min_singular_value > 1e-3);
+        assert!(result.condition_number.is_finite());
+    }
+
+    #[test]
+    fn toggle_condition_number_positive() {
+        // Condition number should always be >= 1.0 for a valid Jacobian.
+        let mech = build_fourbar();
+        let state = mech.state();
+
+        let angle = PI / 4.0;
+        let mut q0 = state.make_q();
+        state.set_pose("crank", &mut q0, 0.0, 0.0, angle);
+        state.set_pose("coupler", &mut q0, angle.cos(), angle.sin(), 0.0);
+        state.set_pose("rocker", &mut q0, 4.0, 0.0, PI / 2.0);
+
+        let pos = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
+        assert!(pos.converged);
+
+        let result = check_toggle(&mech, &pos.q, 0.0, 1e-3);
+        assert!(result.condition_number >= 1.0);
+    }
+
+    #[test]
+    fn toggle_with_high_threshold_flags_everything() {
+        // A very high threshold should flag any configuration as near-toggle,
+        // since min_sv will always be below a huge threshold.
+        let mech = build_fourbar();
+        let state = mech.state();
+
+        let angle = PI / 3.0;
+        let mut q0 = state.make_q();
+        state.set_pose("crank", &mut q0, 0.0, 0.0, angle);
+        let bx = angle.cos();
+        let by = angle.sin();
+        state.set_pose("coupler", &mut q0, bx, by, 0.0);
+        state.set_pose("rocker", &mut q0, 4.0, 0.0, PI / 2.0);
+
+        let pos = solve_position(&mech, &q0, angle, 1e-10, 50).unwrap();
+        assert!(pos.converged);
+
+        // Threshold absurdly high — anything should be flagged
+        let result = check_toggle(&mech, &pos.q, 0.0, 1e10);
+        assert!(result.is_near_toggle);
     }
 }

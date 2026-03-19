@@ -5,6 +5,7 @@
 //! and `AppState::set_body_izz`, which mutate the blueprint and rebuild.
 
 use eframe::egui;
+use crate::analysis::envelopes::compute_envelope;
 use crate::analysis::grashof::GrashofType;
 use crate::core::constraint::Constraint;
 use crate::core::state::GROUND_ID;
@@ -266,11 +267,12 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
 // ── Diagnostics section ──────────────────────────────────────────────────
 
-/// Draw Grashof classification and Jacobian conditioning diagnostics.
+/// Draw Grashof classification, Jacobian conditioning, and sweep envelope diagnostics.
 ///
 /// Shows a collapsible "Diagnostics" header containing:
 /// - Grashof classification and link lengths (4-bar mechanisms only)
 /// - Constraint Jacobian condition number (when forces have been solved)
+/// - Sweep envelope statistics (torque min/max/RMS when sweep data available)
 fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
     if state.mechanism.is_none() {
         return;
@@ -278,8 +280,13 @@ fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
 
     let has_grashof = state.grashof_result.is_some();
     let has_condition = state.force_results.condition_number.is_some();
+    let has_sweep_torques = state
+        .sweep_data
+        .as_ref()
+        .and_then(|s| s.driver_torques.as_ref())
+        .is_some();
 
-    if !has_grashof && !has_condition {
+    if !has_grashof && !has_condition && !has_sweep_torques {
         return;
     }
 
@@ -354,6 +361,23 @@ fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
                         egui::Color32::from_rgb(220, 180, 60),
                         "  Overconstrained (pseudo-inverse used)",
                     );
+                }
+            }
+
+            // ── Sweep envelope statistics ────────────────────────────
+            if let Some(ref sweep) = state.sweep_data {
+                if let Some(ref torques) = sweep.driver_torques {
+                    if let Some(env) = compute_envelope(torques) {
+                        if has_grashof || has_condition {
+                            ui.separator();
+                        }
+
+                        ui.label(format!(
+                            "Torque: {:.3} to {:.3} N\u{00b7}m",
+                            env.min_value, env.max_value
+                        ));
+                        ui.label(format!("RMS: {:.3} N\u{00b7}m", env.rms));
+                    }
                 }
             }
         });

@@ -38,7 +38,7 @@ The Rust port begins **after Phase 4 exits** — when all four analysis modes (k
 | Phase 2 — Force elements & statics | Python | Complete, validated |
 | Phase 3 — Actuators & inverse dynamics | Python | Complete, validated |
 | Phase 4 — Forward dynamics | Python | Complete, validated |
-| **Rust port** | **Rust** | **Complete — 302 tests, validated against Python golden data** |
+| **Rust port** | **Rust** | **Complete — 316 tests, validated against Python golden data** |
 | Phase 5 — Interactive GUI | Rust | **In progress** — egui application |
 | Phase 6 — Advanced & QoL | Rust | Not started |
 
@@ -307,9 +307,10 @@ The Rust port follows the same build order as the Python phases, validating agai
 - Force element GUI: define/edit springs, dampers, external loads on bodies/joints — **done** (property panel editing, canvas rendering of spring/damper/force symbols)
 - Analysis displays: energy plot tab, Grashof classification, Jacobian rank diagnostics — **done** (energy plot with KE/PE/total, Grashof classification in diagnostics panel, condition number display)
 - Velocity solve in sweep — **done** (called at each sweep step for energy computation)
+- Forward dynamics GUI — **done** (simulate button, timeline scrubbing, playback speed, constraint drift display)
+- Inverse dynamics GUI — **done** (sweep plot tab with statics overlay)
+- Toggle detection, envelopes, force breakdown analysis — **done** (ported to Rust, torque envelope stats in diagnostics panel)
 - Raster/animation export: PNG, GIF/MP4 (nice-to-have)
-- Forward dynamics GUI trigger (nice-to-have)
-- Inverse dynamics GUI trigger (nice-to-have)
 
 Each step has a clear "done" condition: Rust output matches Python golden data within tolerance.
 
@@ -321,7 +322,7 @@ The solver kernel port (steps 1–9) is complete and validated. All four analysi
 
 ### Test coverage
 
-- **302 tests total**
+- **316 tests total**
 - All tests pass via `cargo test`
 
 ### Golden fixture coverage
@@ -476,7 +477,7 @@ The solver kernel port (steps 1–9) is complete for **constraint-based analysis
 | Acceleration kinematics | Yes | Yes (sweep) | Called at each sweep step for inverse dynamics |
 | Statics | Yes | Yes | Driver torque + reaction force arrows |
 | Inverse dynamics | Yes | Yes (sweep + plot) | Torque including inertial effects, overlaid with statics |
-| Forward dynamics | Yes | **No** | Full RK4+Baumgarte solver, no GUI trigger |
+| Forward dynamics | Yes | Yes (simulate) | RK4+Baumgarte with GUI playback, timeline scrubbing |
 
 ### Plan to close the gap
 

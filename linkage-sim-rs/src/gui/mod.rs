@@ -41,8 +41,11 @@ impl eframe::App for LinkageApp {
             self.state.redo();
         }
 
-        // ── Animation stepping (before rendering) ────────────────────
+        // ── Animation / simulation stepping (before rendering) ────────
         let dt = ctx.input(|i| i.stable_dt) as f64;
+        if self.state.step_simulation(dt) {
+            ctx.request_repaint();
+        }
         if self.state.step_animation(dt) {
             ctx.request_repaint();
         }
@@ -329,6 +332,21 @@ impl eframe::App for LinkageApp {
                     if self.state.playing {
                         ui.separator();
                         ui.colored_label(egui::Color32::from_rgb(80, 200, 80), "PLAYING");
+                    }
+
+                    if let Some(sim) = &self.state.simulation {
+                        ui.separator();
+                        ui.colored_label(
+                            egui::Color32::from_rgb(100, 200, 255),
+                            "SIM",
+                        );
+                        ui.label(format!(
+                            "t = {:.3} s",
+                            sim.times.get(sim.time_index).unwrap_or(&0.0)
+                        ));
+                        if let Some(&drift) = sim.drift.get(sim.time_index) {
+                            ui.label(format!("drift = {:.2e}", drift));
+                        }
                     }
 
                     if let Some(mech) = &self.state.mechanism {

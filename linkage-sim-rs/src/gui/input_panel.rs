@@ -95,6 +95,141 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
     if let Some(joint_id) = &state.driver_joint_id {
         ui.label(format!("Driver: {} (right-click joint to change)", joint_id));
     }
+
+    // ── Simulation ──────────────────────────────────────────────────
+    draw_simulation_controls(ui, state);
+}
+
+/// Draw forward dynamics simulation controls: duration, run button,
+/// timeline scrubber, and stop button.
+fn draw_simulation_controls(ui: &mut egui::Ui, state: &mut AppState) {
+    ui.separator();
+    ui.strong("Simulation");
+
+    // Duration + Simulate button
+    ui.horizontal(|ui| {
+        ui.label("Duration:");
+        ui.add(
+            egui::DragValue::new(&mut state.simulation_duration)
+                .speed(0.1)
+                .range(1.0..=30.0)
+                .suffix(" s"),
+        );
+
+        let sim_active = state.simulation.is_some();
+        if ui
+            .add_enabled(!sim_active, egui::Button::new("Simulate"))
+            .on_hover_text("Run forward dynamics from the current pose")
+            .clicked()
+        {
+            let duration = state.simulation_duration;
+            state.run_simulation(duration);
+        }
+    });
+
+    // Timeline slider and stop button (only when simulation exists)
+    if state.simulation.is_some() {
+        // Extract values we need for the slider before mutably borrowing
+        let t_end = state
+            .simulation
+            .as_ref()
+            .map(|s| *s.times.last().unwrap_or(&1.0))
+            .unwrap_or(1.0);
+        let mut current_t = state
+            .simulation
+            .as_ref()
+            .map(|s| *s.times.get(s.time_index).unwrap_or(&0.0))
+            .unwrap_or(0.0);
+        let prev_t = current_t;
+
+        ui.horizontal(|ui| {
+            ui.label("Time:");
+            let response = ui.add(
+                egui::Slider::new(&mut current_t, 0.0..=t_end)
+                    .suffix(" s")
+                    .step_by(t_end / 300.0),
+            );
+            if response.dragged() {
+                // Pause playback when scrubbing
+                if let Some(sim) = &mut state.simulation {
+                    sim.playing = false;
+                }
+            }
+        });
+
+        // If the slider moved, seek to the new time
+        if (current_t - prev_t).abs() > 1e-9 {
+            let new_q = {
+                let Some(sim) = &mut state.simulation else {
+                    unreachable!()
+                };
+                sim.elapsed = current_t;
+                sim.time_index = sim
+                    .times
+                    .iter()
+                    .position(|&t| t >= current_t)
+                    .unwrap_or(sim.positions.len() - 1);
+                let idx = sim.time_index;
+                if idx < sim.positions.len() {
+                    Some(sim.positions[idx].clone())
+                } else {
+                    None
+                }
+            };
+            if let Some(q) = new_q {
+                state.q = q;
+            }
+        }
+
+        // Playback controls + stop
+        ui.horizontal(|ui| {
+            // Play/Pause for simulation playback
+            let is_playing = state
+                .simulation
+                .as_ref()
+                .map(|s| s.playing)
+                .unwrap_or(false);
+            let play_label = if is_playing { "Pause" } else { "Play" };
+            if ui.button(play_label).clicked() {
+                if let Some(sim) = &mut state.simulation {
+                    sim.playing = !sim.playing;
+                    // If resuming at the end, restart from beginning
+                    if sim.playing && sim.time_index >= sim.positions.len().saturating_sub(1) {
+                        sim.time_index = 0;
+                        sim.elapsed = 0.0;
+                    }
+                }
+            }
+
+            ui.label("Speed:");
+            let mut speed = state
+                .simulation
+                .as_ref()
+                .map(|s| s.speed)
+                .unwrap_or(1.0);
+            if ui
+                .add(
+                    egui::DragValue::new(&mut speed)
+                        .speed(0.05)
+                        .range(0.1..=5.0)
+                        .suffix("x"),
+                )
+                .changed()
+            {
+                if let Some(sim) = &mut state.simulation {
+                    sim.speed = speed;
+                }
+            }
+
+            if ui
+                .button("Stop")
+                .on_hover_text("Stop simulation and return to kinematic mode")
+                .clicked()
+            {
+                state.simulation = None;
+            }
+        });
+    }
 }
 
 /// Draw the load case selector: ComboBox for switching, +/- buttons, and
