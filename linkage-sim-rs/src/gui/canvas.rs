@@ -832,9 +832,38 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         }
     }
 
+    // ── Interaction: Create Joint two-click flow ────────────────────────
+    // Must fire BEFORE the selection handler to consume the click.
+    if state.creating_joint.is_some() && response.clicked() {
+        if let Some(pos) = response.interact_pointer_pos() {
+            let second_hit = find_nearest_attachment(pos);
+            if let Some(hit) = second_hit {
+                let (first_body, first_point) = state.creating_joint.clone().unwrap();
+                let second_body = hit.body_id.clone();
+                let second_point = hit.point_name.clone();
+
+                // Validate: not same body, not ground-ground
+                if first_body == second_body {
+                    // Invalid: same body — ignore, stay in creating_joint mode
+                } else if first_body == GROUND_ID && second_body == GROUND_ID {
+                    // Invalid: ground-ground — ignore, stay in creating_joint mode
+                } else {
+                    state.add_revolute_joint(
+                        &first_body,
+                        &first_point,
+                        &second_body,
+                        &second_point,
+                    );
+                    state.creating_joint = None;
+                }
+            }
+        }
+    }
+
     // ── Interaction: click for selection / ground pivot ──────────────────
     if state.drag_target.is_none()
         && state.draw_link_start.is_none()
+        && state.creating_joint.is_none()
         && state.active_tool != EditorTool::DrawLink
         && state.active_tool != EditorTool::AddBody
         && response.clicked()
