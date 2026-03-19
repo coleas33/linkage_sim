@@ -38,8 +38,8 @@ The Rust port begins **after Phase 4 exits** — when all four analysis modes (k
 | Phase 2 — Force elements & statics | Python | Complete, validated |
 | Phase 3 — Actuators & inverse dynamics | Python | Complete, validated |
 | Phase 4 — Forward dynamics | Python | Complete, validated |
-| **Rust port** | **Rust** | **Complete — 374 tests, validated against Python golden data + property-based stress tests** |
-| Phase 5 — Interactive GUI | Rust | **In progress** — egui application |
+| **Rust port** | **Rust** | **Complete — 378 tests, validated against Python golden data + property-based stress tests** |
+| Phase 5 — Interactive GUI | Rust | **Substantially complete** — egui application, all major features shipped |
 | Phase 6 — Advanced & QoL | Rust | Not started |
 
 ---
@@ -195,48 +195,45 @@ linkage-sim-rs/
 │   │   ├── mod.rs
 │   │   ├── body.rs              ← core/bodies.py
 │   │   ├── constraint.rs        ← core/constraints.py
-│   │   ├── force_element.rs     ← core/force_elements.py
 │   │   ├── driver.rs            ← core/drivers.py (+ DriverMeta for serialization)
 │   │   ├── mechanism.rs         ← core/mechanism.py
-│   │   ├── state.rs             ← core/state.py
-│   │   └── load_case.rs         ← core/load_cases.py
+│   │   └── state.rs             ← core/state.py
 │   ├── solver/
 │   │   ├── mod.rs
 │   │   ├── assembly.rs          ← solvers/assembly.py
 │   │   ├── kinematics.rs        ← solvers/kinematics.py
 │   │   ├── statics.rs           ← solvers/statics.py
 │   │   ├── inverse_dynamics.rs  ← solvers/inverse_dynamics.py
-│   │   └── forward_dynamics.rs  ← solvers/forward_dynamics.py
+│   │   ├── forward_dynamics.rs  ← solvers/forward_dynamics.py
+│   │   └── events.rs            ← event detection (angle limits, velocity reversals)
 │   ├── forces/
 │   │   ├── mod.rs
+│   │   ├── elements.rs          ← ForceElement enum (12 variants)
 │   │   ├── assembly.rs          ← forces/assembly.py
 │   │   ├── gravity.rs           ← forces/gravity.py
 │   │   └── helpers.rs           ← forces/helpers.py
 │   ├── analysis/
 │   │   ├── mod.rs
 │   │   ├── coupler.rs           ← analysis/coupler.py
+│   │   ├── crank_selection.rs   ← crank selection / driver ranking
 │   │   ├── energy.rs            ← analysis/energy.py
+│   │   ├── envelopes.rs         ← analysis/envelopes.py
+│   │   ├── force_breakdown.rs   ← per-element Q contribution norms
 │   │   ├── grashof.rs           ← analysis/grashof.py
+│   │   ├── motor_sizing.rs      ← motor feasibility check
 │   │   ├── transmission.rs      ← analysis/transmission.py
 │   │   ├── validation.rs        ← analysis/validation.py
-│   │   ├── toggle.rs            ← analysis/toggle.py
-│   │   ├── envelopes.rs         ← analysis/envelopes.py
-│   │   └── reactions.rs         ← analysis/reactions.py
+│   │   └── virtual_work.rs      ← independent torque cross-check
 │   ├── gui/                      ← Phase 5, Rust-native (egui)
 │   │   ├── mod.rs              ← App shell, menu bar, panel layout
 │   │   ├── state.rs            ← AppState, SweepData, animation, solver integration
 │   │   ├── canvas.rs           ← 2D renderer, pan/zoom, hit testing, context menu
 │   │   ├── input_panel.rs      ← Playback controls, angle slider
-│   │   ├── property_panel.rs   ← Read-only property inspection
+│   │   ├── property_panel.rs   ← Property inspection and editing
 │   │   ├── samples.rs          ← 13 sample mechanism builders (8 four-bar + 5 six-bar)
-│   │   ├── plot_panel.rs       ← Sweep plots: coupler trace, body angles, transmission angle
+│   │   ├── plot_panel.rs       ← Sweep plots: coupler, body angles, transmission, torque, energy, MA
 │   │   ├── undo.rs             ← Undo/redo with mechanism JSON snapshots
-│   │   └── (future: editor modules)
-│   ├── util/
-│   │   ├── mod.rs
-│   │   ├── units.rs             ← util/units.py
-│   │   ├── expressions.rs       ← util/expressions.py (rhai or meval)
-│   │   └── plugin_registry.rs   ← util/plugin_registry.py
+│   │   └── export.rs           ← PNG + SVG export
 │   └── lib.rs
 ├── tests/
 │   ├── golden/                   ← loaded from data/benchmarks/golden/
@@ -299,7 +296,7 @@ The Rust port follows the same build order as the Python phases, validating agai
 7. `solver/inverse_dynamics.rs` — Validated against golden inverse dynamics data — **COMPLETE** (March 2026)
 8. `solver/forward_dynamics.rs` — explicit integrator + Baumgarte. Validated against golden trajectories — **COMPLETE** (March 2026)
 9. `analysis/*` — validation, transmission angle, Grashof classification, coupler curves, energy — **COMPLETE** (March 2026)
-10. `gui/*` — Phase 5, built in egui — **IN PROGRESS** (MVP + animation playback + driver reassignment + 13 sample mechanisms + JSON save/load + undo/redo + plotting + gravity-loaded reaction force arrows + interactive topology editor with multi-pivot body editing + SVG export + force element GUI + analysis displays done; raster export remaining)
+10. `gui/*` — Phase 5, built in egui — **SUBSTANTIALLY COMPLETE** (MVP, animation playback, driver reassignment, 13 sample mechanisms, JSON save/load, undo/redo, plotting, gravity-loaded reaction force arrows, interactive topology editor with multi-pivot body editing, SVG + PNG export, force element GUI, analysis displays — all shipped)
 
 **Note:** Phase 5 MVP (visualization shell) was built in parallel after port steps 1-5, consuming only the kinematic solver API. Sub-projects for animation playback, JSON save/load, undo/redo, plotting, 6-bar sample mechanisms, interactive topology editor, load cases, and SVG export have since been completed.
 
@@ -314,7 +311,7 @@ The Rust port follows the same build order as the Python phases, validating agai
 - Event detection for forward dynamics — **done** (angle limits, velocity reversals, terminal events)
 - Property-based stress testing — **done** (proptest: random 4-bar generation, constraint/velocity/serialization invariants)
 - Interactive topology editor with multi-pivot body support — **done**: multi-point body creation (ternary, quaternary bodies via + Body tool); Add Pivot Here context menu to add/remove attachment points on existing bodies, promoting binary bars to ternary plates; body-aware Draw Link with segment snapping that auto-creates pivots for branching connections; compound undo batching for multi-step operations; context menu restructured to distinguish body-area vs attachment-point interactions
-- Animation export: GIF/MP4 (nice-to-have)
+- GIF animation export — **done** (renders sweep frames via resvg, encodes with gif crate)
 
 Each step has a clear "done" condition: Rust output matches Python golden data within tolerance.
 
@@ -326,7 +323,7 @@ The solver kernel port (steps 1–9) is complete and validated. All four analysi
 
 ### Test coverage
 
-- **374 tests total** (includes 7 property-based tests via proptest)
+- **378 tests total** (includes 7 property-based tests via proptest)
 - All tests pass via `cargo test`
 
 ### Golden fixture coverage
@@ -356,16 +353,20 @@ Near-singular configurations (toggle points at 180 degrees), the Rust solver use
 linkage-sim-rs/
 ├── src/
 │   ├── error.rs        # Centralized error types (LinkageError enum)
-│   ├── core/           # Body, constraint, driver (+ DriverMeta), mechanism, state
-│   ├── forces/         # ForceElement enum (12 variants: springs, dampers, external loads, gas springs, friction, motors, etc.), helpers, assembly
-│   ├── solver/         # Kinematics, statics, inverse/forward dynamics, assembly
-│   ├── analysis/       # Validation, transmission, Grashof, coupler, energy
-│   ├── io/             # JSON serialization (serde), driver serialization
-│   ├── gui/            # Phase 5 egui application: animation, driver selection, 13 samples, JSON save/load, undo/redo, plotting
-│   ├── bin/            # GUI binary entry point
+│   ├── core/           # body, constraint, driver (+ DriverMeta), mechanism, state
+│   ├── forces/         # elements (ForceElement enum, 12 variants), gravity, helpers, assembly
+│   ├── solver/         # kinematics, statics, inverse_dynamics, forward_dynamics, assembly, events
+│   ├── analysis/       # coupler, energy, envelopes, force_breakdown, grashof,
+│   │                   #   crank_selection, motor_sizing, transmission, validation, virtual_work
+│   ├── io/             # serialization (serde JSON round-trip, driver serialization)
+│   ├── gui/            # mod, state, canvas, input_panel, property_panel, plot_panel,
+│   │                   #   samples, undo, export
+│   ├── bin/            # linkage_gui (GUI binary entry point)
 │   └── lib.rs
 ├── tests/
-│   └── golden_fixtures.rs   # Integration tests against Python golden data
+│   ├── golden_fixtures.rs   # Integration tests against Python golden data
+│   ├── property_tests.rs    # Proptest: random mechanism generation, invariant checks
+│   └── singular_behavior.rs # Near-singularity tolerance tests
 ├── data/
 │   └── golden/              # JSON fixtures exported from Python
 └── Cargo.toml
@@ -438,16 +439,16 @@ If the answer to any of (1–3) is "yes, still changing," delay the port and kee
 
 ---
 
-## Feature Parity: Python vs Rust (as of 2026-03-18)
+## Feature Parity: Python vs Rust (as of 2026-03-19)
 
-The solver kernel port (steps 1–9) is complete. Force elements, analysis modules, and solver GUI paths are at full parity with the Python codebase.
+The solver kernel port (steps 1–9) is complete. Full feature parity with the Python codebase is achieved: all force elements, analysis modules, and solver GUI paths are ported and validated.
 
 ### Force elements
 
 | Feature | Python | Rust | Notes |
 |---------|--------|------|-------|
 | Gravity | Yes | Yes | Toggleable in GUI |
-| `ForceElement` protocol/trait | Yes (`Protocol`) | Yes (enum) | `ForceElement` enum with 7 variants |
+| `ForceElement` protocol/trait | Yes (`Protocol`) | Yes (enum) | `ForceElement` enum with 12 variants |
 | Linear springs | Yes | Yes | |
 | Torsion springs | Yes | Yes | |
 | Viscous dampers (translational) | Yes | Yes | LinearDamper |
@@ -492,7 +493,7 @@ The solver kernel port (steps 1–9) is complete. Force elements, analysis modul
 
 ### Plan to close the gap
 
-1. **Force element enum** — ~~Create `ForceElement` enum (not trait) on `Mechanism`, refactor solver APIs to read forces from mechanism. Add serialization support (tagged enum, backward-compatible JSON).~~ **DONE.** `ForceElement` enum with 7 variants, integrated into solver APIs and serialization.
-2. **Force element GUI** — Collapsible force sections in property panel for body/joint selection. Canvas rendering of spring/damper symbols and external force arrows. **Partially done:** property panel editing complete, canvas rendering of spring/damper/force symbols complete.
+1. **Force element enum** — ~~Create `ForceElement` enum (not trait) on `Mechanism`, refactor solver APIs to read forces from mechanism. Add serialization support (tagged enum, backward-compatible JSON).~~ **DONE.** `ForceElement` enum with 12 variants, integrated into solver APIs and serialization.
+2. **Force element GUI** — ~~Collapsible force sections in property panel for body/joint selection. Canvas rendering of spring/damper symbols and external force arrows.~~ **DONE.** Property panel editing complete, canvas rendering of spring/damper/force symbols complete for all 12 element types.
 3. **Analysis displays** — ~~Energy plot tab (requires velocity solve in sweep). Grashof classification in property panel diagnostics. Jacobian rank at current pose in diagnostics.~~ **DONE.** Energy plot tab with KE/PE/total, Grashof classification in diagnostics panel, Jacobian condition number display.
 4. **Velocity solve in sweep** — ~~Add linear velocity solve at each sweep step to enable energy computation.~~ **DONE.** Velocity solved at each sweep step; energy computed via `compute_energy_state_mech`.

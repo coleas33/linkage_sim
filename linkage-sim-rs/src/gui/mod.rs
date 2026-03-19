@@ -180,6 +180,39 @@ impl eframe::App for LinkageApp {
                         }
                         ui.close();
                     }
+                    if ui
+                        .add_enabled(
+                            self.state.sweep_data.is_some()
+                                && self.state.mechanism.is_some(),
+                            egui::Button::new("Export GIF..."),
+                        )
+                        .clicked()
+                    {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("GIF", &["gif"])
+                            .set_file_name("mechanism.gif")
+                            .save_file()
+                        {
+                            if let (Some(mech), Some(sweep)) =
+                                (&self.state.mechanism, &self.state.sweep_data)
+                            {
+                                if let Err(e) = export::export_mechanism_gif(
+                                    &path,
+                                    mech,
+                                    sweep,
+                                    &self.state.q,
+                                    self.state.driver_omega,
+                                    self.state.driver_theta_0,
+                                    800,
+                                    600,
+                                    5,
+                                ) {
+                                    log::error!("GIF export failed: {}", e);
+                                }
+                            }
+                        }
+                        ui.close();
+                    }
                     ui.separator();
                     if ui.button("Quit").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);

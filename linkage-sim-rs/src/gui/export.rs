@@ -1,9 +1,10 @@
-//! Export functionality: CSV sweep data and coupler traces.
+//! Export functionality: CSV sweep data, coupler traces, SVG/PNG/GIF images.
 
 use std::io::Write;
 use std::path::Path;
 
 use super::state::SweepData;
+use crate::core::mechanism::Mechanism;
 
 /// Export sweep data to CSV file.
 ///
@@ -310,41 +311,125 @@ pub fn export_mechanism_svg(
     std::fs::write(path, svg).map_err(|e| e.to_string())
 }
 
+/// Rasterize an SVG string to RGBA pixel data at the given dimensions.
+///
+/// This is the shared rasterization core used by both PNG export and GIF
+/// frame generation.
+fn rasterize_svg_to_rgba(
+    svg_str: &str,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, String> {
+    let opt = resvg::usvg::Options::default();
+    let tree = resvg::usvg::Tree::from_str(svg_str, &opt)
+        .map_err(|e| format!("Failed to parse SVG for rasterization: {}", e))?;
+
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
+        .ok_or_else(|| format!("Failed to create {}x{} pixmap", width, height))?;
+
+    pixmap.fill(resvg::tiny_skia::Color::WHITE);
+
+    // Scale uniformly to fit, centering the shorter axis.
+    let sx = width as f32 / tree.size().width();
+    let sy = height as f32 / tree.size().height();
+    let scale = sx.min(sy);
+    let tx = (width as f32 - tree.size().width() * scale) / 2.0;
+    let ty = (height as f32 - tree.size().height() * scale) / 2.0;
+
+    let transform = resvg::tiny_skia::Transform::from_scale(scale, scale)
+        .post_translate(tx, ty);
+
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
+
+    Ok(pixmap.take())
+}
+
 /// Export the mechanism at its current pose as a PNG image.
 ///
 /// Generates an SVG string, rasterizes it with resvg at the given dimensions,
 /// and saves the result as a PNG file.
 pub fn export_mechanism_png(
     path: &std::path::Path,
-    mechanism: &crate::core::mechanism::Mechanism,
+    mechanism: &Mechanism,
     q: &nalgebra::DVector<f64>,
     width: u32,
     height: u32,
 ) -> Result<(), String> {
     let svg_str = generate_svg_string(mechanism, q)?;
+    let rgba = rasterize_svg_to_rgba(&svg_str, width, height)?;
 
-    // Parse SVG with resvg/usvg
-    let opt = resvg::usvg::Options::default();
-    let tree = resvg::usvg::Tree::from_str(&svg_str, &opt)
-        .map_err(|e| format!("Failed to parse SVG for rasterization: {}", e))?;
-
-    // Create pixmap at the requested size
-    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
-        .ok_or_else(|| format!("Failed to create {}x{} pixmap", width, height))?;
-
-    // Fill with white background
-    pixmap.fill(resvg::tiny_skia::Color::WHITE);
-
-    // Compute scale to fit the SVG into the target dimensions
-    let transform = resvg::tiny_skia::Transform::from_scale(
-        width as f32 / tree.size().width(),
-        height as f32 / tree.size().height(),
-    );
-
-    resvg::render(&tree, transform, &mut pixmap.as_mut());
+    // Reconstruct a Pixmap from the raw RGBA data so we can use save_png.
+    let pixmap = resvg::tiny_skia::Pixmap::from_vec(rgba, resvg::tiny_skia::IntSize::from_wh(width, height).unwrap())
+        .ok_or_else(|| "Failed to reconstruct pixmap from RGBA data".to_string())?;
 
     pixmap.save_png(path)
         .map_err(|e| format!("Failed to save PNG: {}", e))
+}
+
+/// Export an animated GIF of the mechanism sweep.
+///
+/// Re-solves the mechanism position at each sampled sweep step, renders via
+/// SVG + resvg, and encodes as a looping animated GIF.
+pub fn export_mechanism_gif(
+    path: &std::path::Path,
+    mech: &Mechanism,
+    sweep: &SweepData,
+    q_start: &nalgebra::DVector<f64>,
+    omega: f64,
+    theta_0: f64,
+    width: u32,
+    height: u32,
+    frame_delay_cs: u16,
+) -> Result<(), String> {
+    use crate::solver::kinematics::solve_position;
+    use gif::{Encoder, Frame, Repeat};
+
+    let n_steps = sweep.angles_deg.len();
+    if n_steps == 0 {
+        return Err("No sweep data to export".to_string());
+    }
+
+    let file = std::fs::File::create(path)
+        .map_err(|e| format!("Failed to create GIF file: {}", e))?;
+    let mut encoder = Encoder::new(file, width as u16, height as u16, &[])
+        .map_err(|e| format!("Failed to initialize GIF encoder: {}", e))?;
+    encoder.set_repeat(Repeat::Infinite)
+        .map_err(|e| format!("Failed to set GIF repeat: {}", e))?;
+
+    // Target ~72 frames for a smooth animation; skip steps if sweep is denser.
+    let step_skip = (n_steps / 72).max(1);
+    let mut q_guess = q_start.clone();
+
+    for i in (0..n_steps).step_by(step_skip) {
+        let angle_rad = sweep.angles_deg[i].to_radians();
+        let t = (angle_rad - theta_0) / omega;
+
+        match solve_position(mech, &q_guess, t, 1e-10, 50) {
+            Ok(result) if result.converged => {
+                if let Ok(svg_str) = generate_svg_string(mech, &result.q) {
+                    if let Ok(rgba) = rasterize_svg_to_rgba(&svg_str, width, height) {
+                        let mut rgba_buf = rgba;
+                        let mut frame = Frame::from_rgba_speed(
+                            width as u16,
+                            height as u16,
+                            &mut rgba_buf,
+                            10,
+                        );
+                        frame.delay = frame_delay_cs;
+                        encoder.write_frame(&frame)
+                            .map_err(|e| format!("Failed to write GIF frame: {}", e))?;
+                    }
+                }
+                q_guess = result.q;
+            }
+            _ => {
+                // Skip frames that fail to converge; the animation will still
+                // be useful with the frames that do converge.
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -671,5 +756,133 @@ mod tests {
         assert!(metadata.len() > 100, "PNG file should not be empty");
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn export_gif_produces_valid_file() {
+        use crate::gui::samples::SampleMechanism;
+        use crate::gui::state::AppState;
+
+        // Use AppState to get sweep data (which requires a full sample load).
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let mech = state.mechanism.as_ref().expect("mechanism should be loaded");
+        let sweep = state.sweep_data.as_ref().expect("sweep_data should be Some");
+
+        let path = std::env::temp_dir().join("test_mechanism.gif");
+        export_mechanism_gif(
+            &path,
+            mech,
+            sweep,
+            &state.q,
+            state.driver_omega,
+            state.driver_theta_0,
+            400,
+            300,
+            5,
+        )
+        .expect("GIF export should succeed");
+
+        // Verify the file exists and has reasonable size.
+        let metadata = std::fs::metadata(&path).expect("GIF file should exist");
+        assert!(metadata.len() > 100, "GIF file should not be empty");
+
+        // Verify GIF magic bytes ("GIF89a" for animated GIFs).
+        let bytes = std::fs::read(&path).expect("should read GIF file");
+        assert_eq!(
+            &bytes[..6],
+            b"GIF89a",
+            "file should start with GIF89a magic bytes"
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn export_gif_empty_sweep_returns_error() {
+        use crate::gui::samples::{build_sample, SampleMechanism};
+
+        let (mech, q0) = build_sample(SampleMechanism::FourBar);
+        let empty_sweep = SweepData {
+            angles_deg: vec![],
+            body_angles: HashMap::new(),
+            coupler_traces: HashMap::new(),
+            transmission_angles: None,
+            driver_torques: None,
+            kinetic_energy: vec![],
+            potential_energy: vec![],
+            total_energy: vec![],
+            inverse_dynamics_torques: vec![],
+            mechanical_advantage: vec![],
+        };
+
+        let path = std::env::temp_dir().join("test_mechanism_empty.gif");
+        let result = export_mechanism_gif(
+            &path,
+            &mech,
+            &empty_sweep,
+            &q0,
+            2.0 * std::f64::consts::PI,
+            0.0,
+            400,
+            300,
+            5,
+        );
+        assert!(result.is_err(), "empty sweep should return an error");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn export_gif_crank_rocker_produces_valid_file() {
+        use crate::gui::state::AppState;
+        use crate::gui::samples::SampleMechanism;
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::CrankRocker);
+        let mech = state.mechanism.as_ref().expect("mechanism should be loaded");
+        let sweep = state.sweep_data.as_ref().expect("sweep_data should be Some");
+
+        let path = std::env::temp_dir().join("test_crank_rocker.gif");
+        export_mechanism_gif(
+            &path,
+            mech,
+            sweep,
+            &state.q,
+            state.driver_omega,
+            state.driver_theta_0,
+            800,
+            600,
+            5,
+        )
+        .expect("CrankRocker GIF export should succeed");
+
+        let metadata = std::fs::metadata(&path).expect("GIF file should exist");
+        assert!(
+            metadata.len() > 1000,
+            "CrankRocker GIF should have multiple frames"
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn rasterize_svg_to_rgba_produces_correct_size() {
+        use crate::gui::samples::{build_sample, SampleMechanism};
+        use crate::solver::kinematics::solve_position;
+
+        let (mech, q0) = build_sample(SampleMechanism::FourBar);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).expect("solver should succeed");
+        let q = if result.converged { result.q } else { q0 };
+
+        let svg = generate_svg_string(&mech, &q).expect("SVG generation should succeed");
+        let rgba = rasterize_svg_to_rgba(&svg, 320, 240).expect("rasterization should succeed");
+
+        // RGBA: 4 bytes per pixel
+        assert_eq!(
+            rgba.len(),
+            320 * 240 * 4,
+            "RGBA buffer should be width * height * 4 bytes"
+        );
     }
 }
