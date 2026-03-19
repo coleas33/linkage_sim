@@ -299,7 +299,7 @@ The Rust port follows the same build order as the Python phases, validating agai
 7. `solver/inverse_dynamics.rs` — Validated against golden inverse dynamics data — **COMPLETE** (March 2026)
 8. `solver/forward_dynamics.rs` — explicit integrator + Baumgarte. Validated against golden trajectories — **COMPLETE** (March 2026)
 9. `analysis/*` — validation, transmission angle, Grashof classification, coupler curves, energy — **COMPLETE** (March 2026)
-10. `gui/*` — Phase 5, built in egui — **IN PROGRESS** (MVP + animation playback + driver reassignment + 13 sample mechanisms + JSON save/load + undo/redo + plotting + gravity-loaded reaction force arrows + interactive topology editor + SVG export + force element GUI + analysis displays done; raster export remaining)
+10. `gui/*` — Phase 5, built in egui — **IN PROGRESS** (MVP + animation playback + driver reassignment + 13 sample mechanisms + JSON save/load + undo/redo + plotting + gravity-loaded reaction force arrows + interactive topology editor with multi-pivot body editing + SVG export + force element GUI + analysis displays done; raster export remaining)
 
 **Note:** Phase 5 MVP (visualization shell) was built in parallel after port steps 1-5, consuming only the kinematic solver API. Sub-projects for animation playback, JSON save/load, undo/redo, plotting, 6-bar sample mechanisms, interactive topology editor, load cases, and SVG export have since been completed.
 
@@ -313,6 +313,7 @@ The Rust port follows the same build order as the Python phases, validating agai
 - PNG export — **done** (resvg SVG-to-PNG rasterization)
 - Event detection for forward dynamics — **done** (angle limits, velocity reversals, terminal events)
 - Property-based stress testing — **done** (proptest: random 4-bar generation, constraint/velocity/serialization invariants)
+- Interactive topology editor with multi-pivot body support — **done**: multi-point body creation (ternary, quaternary bodies via + Body tool); Add Pivot Here context menu to add/remove attachment points on existing bodies, promoting binary bars to ternary plates; body-aware Draw Link with segment snapping that auto-creates pivots for branching connections; compound undo batching for multi-step operations; context menu restructured to distinguish body-area vs attachment-point interactions
 - Animation export: GIF/MP4 (nice-to-have)
 
 Each step has a clear "done" condition: Rust output matches Python golden data within tolerance.

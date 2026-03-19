@@ -141,11 +141,17 @@ The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forwa
 - Create bodies, joints, and ground pivots via right-click context menu on the canvas
 - Drag attachment points (on ground and moving bodies) to reshape mechanism geometry in real-time, with immediate solver rebuild
 - Edit mass properties (mass, Izz) via DragValue widgets in the property panel
-- Delete bodies and joints with cascading cleanup of dependent elements
+- Delete bodies and joints with cascading cleanup of dependent elements; Delete via keyboard, Set Driver via context menu/property panel
 - Two-click joint creation workflow with visual feedback (green ring highlight, hint text)
 - Live validation warnings in status bar: DOF mismatch, disconnected bodies, missing driver
 - MechanismBlueprint (MechanismJson) is the editable source of truth; rebuild() runs on every edit
 - All edit operations push to the undo/redo stack; blueprint stays in sync with snapshots
+- Multi-point body creation via + Body tool: click to place points, double-click or Enter to finish
+- Add Pivot Here context menu: right-click a body edge to add attachment points, promoting binary bars to ternary plates
+- Body-aware Draw Link: snapping to body segments auto-creates pivots for branching connections
+- Create Joint two-click flow: right-click attachment point → Create Joint → click second point
+- Modes-only toolbar: [Select] [Draw Link] [+ Body] [+ Ground]
+- Closed polygon rendering for 3+ point bodies (ternary plates render as triangles)
 
 **Phase 5 substantially complete.** All major features shipped:
 - Force element GUI — **done** (property panel editing + canvas rendering for all 12 element types)
