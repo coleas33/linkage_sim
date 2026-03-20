@@ -413,6 +413,7 @@ impl eframe::App for LinkageApp {
                     let mut check = enabled;
                     if ui.checkbox(&mut check, "Gravity").changed() {
                         self.state.gravity_magnitude = if check { 9.81 } else { 0.0 };
+                        self.state.mark_sweep_dirty();
                     }
                     ui.separator();
                     ui.label("Units:");
