@@ -833,45 +833,34 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             })
     };
 
+    // ── DEBUG: Show current selection on canvas ─────────────────────────
+    {
+        let sel_text = match &state.selected {
+            Some(SelectedEntity::Body(id)) => format!("Selected: {}", id),
+            Some(SelectedEntity::Joint(id)) => format!("Selected joint: {}", id),
+            _ => "Selected: none".to_string(),
+        };
+        painter.text(
+            Pos2::new(canvas_rect.left() + 10.0, canvas_rect.top() + 10.0),
+            egui::Align2::LEFT_TOP,
+            &sel_text,
+            FontId::proportional(14.0),
+            Color32::from_rgb(255, 255, 0),
+        );
+    }
+
     // ── Interaction: click to select ────────────────────────────────────
-    // Uses press+release position tracking for reliable click detection.
-    // egui's clicked_by() requires zero mouse movement which fails on most
-    // hardware. Instead we track where the press started and where it ended.
-    if state.active_tool == EditorTool::Select && !is_shift {
-        let primary_pressed = ui.input(|i| i.pointer.primary_pressed());
-        let primary_released = ui.input(|i| i.pointer.primary_released());
-
-        // Record press position
-        if primary_pressed {
-            if let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
-                if canvas_rect.contains(pos) {
-                    ui.memory_mut(|mem| mem.data.insert_temp(
-                        ui.id().with("click_press_pos"),
-                        pos,
-                    ));
-                }
-            }
-        }
-
-        // On release, check distance from press — if small, treat as click
-        if primary_released {
-            if let Some(release_pos) = ui.input(|i| i.pointer.latest_pos()) {
-                let press_pos: Option<Pos2> = ui.memory(|mem|
-                    mem.data.get_temp(ui.id().with("click_press_pos"))
-                );
-                if let Some(press_pos) = press_pos {
-                    let dist = press_pos.distance(release_pos);
-                    if dist < 10.0 && canvas_rect.contains(release_pos) {
-                        let click_pos = release_pos;
-                        if let Some(hit) = find_nearest_attachment(click_pos) {
-                            state.selected = Some(SelectedEntity::Body(hit.body_id.clone()));
-                        } else if let Some(seg_hit) = find_nearest_body_segment(click_pos, &body_segments, LINK_HALF_WIDTH + 4.0) {
-                            state.selected = Some(SelectedEntity::Body(seg_hit.body_id.clone()));
-                        }
-                        // Force repaint so left panel shows updated selection
-                        ui.ctx().request_repaint();
-                    }
-                }
+    // The update() loop detects press→release (< 15px) and stores it as
+    // pending_canvas_click BEFORE panels render. We consume it here where
+    // we have the hit targets. Since update() runs before all panels, the
+    // property panel on this SAME frame will see the updated selection.
+    if let Some([cx, cy]) = state.pending_canvas_click.take() {
+        let click_pos = Pos2::new(cx, cy);
+        if canvas_rect.contains(click_pos) && state.active_tool == EditorTool::Select {
+            if let Some(hit) = find_nearest_attachment(click_pos) {
+                state.selected = Some(SelectedEntity::Body(hit.body_id.clone()));
+            } else if let Some(seg_hit) = find_nearest_body_segment(click_pos, &body_segments, LINK_HALF_WIDTH + 4.0) {
+                state.selected = Some(SelectedEntity::Body(seg_hit.body_id.clone()));
             }
         }
     }

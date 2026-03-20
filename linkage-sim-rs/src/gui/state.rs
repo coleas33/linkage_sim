@@ -757,6 +757,12 @@ pub struct AppState {
     pub expr_ddot_buf: String,
     /// Whether the expression editor is currently showing parse errors.
     pub expr_error: Option<String>,
+    // ── Click tracking for canvas selection ────────────────────────
+    /// Screen position where primary button was pressed on the canvas.
+    pub canvas_press_pos: Option<[f32; 2]>,
+    /// Pending click position for the canvas to process (set by update loop,
+    /// consumed by canvas render where hit targets are available).
+    pub pending_canvas_click: Option<[f32; 2]>,
     // ── Help dialog ─────────────────────────────────────────────────
     /// Whether the keyboard shortcuts help window is open.
     pub show_shortcuts: bool,
@@ -889,6 +895,8 @@ impl Default for AppState {
             expr_dot_buf: String::new(),
             expr_ddot_buf: String::new(),
             expr_error: None,
+            canvas_press_pos: None,
+            pending_canvas_click: None,
             show_shortcuts: false,
             autosave_timer: 0.0,
             last_save_path: None,
