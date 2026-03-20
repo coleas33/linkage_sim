@@ -584,7 +584,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     }
 
     // ── Gravity indicator ─────────────────────────────────────────────
-    if state.enable_gravity {
+    if state.gravity_magnitude > 0.0 {
         let indicator_x = canvas_rect.left() + 20.0;
         let indicator_y = canvas_rect.top() + 18.0;
         let arrow_len = 14.0;

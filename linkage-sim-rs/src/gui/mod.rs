@@ -409,7 +409,11 @@ impl eframe::App for LinkageApp {
                     ui.checkbox(&mut self.state.show_parametric, "Parametric Study");
                     ui.checkbox(&mut self.state.show_forces, "Force Arrows");
                     ui.checkbox(&mut self.state.show_dimensions, "Link Dimensions");
-                    ui.checkbox(&mut self.state.enable_gravity, "Gravity");
+                    let enabled = self.state.gravity_magnitude > 0.0;
+                    let mut check = enabled;
+                    if ui.checkbox(&mut check, "Gravity").changed() {
+                        self.state.gravity_magnitude = if check { 9.81 } else { 0.0 };
+                    }
                     ui.separator();
                     ui.label("Units:");
                     let mut use_mm = self.state.display_units.length == LengthUnit::Millimeters;

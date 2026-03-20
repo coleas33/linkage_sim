@@ -720,8 +720,8 @@ pub struct AppState {
     pub show_forces: bool,
     /// Whether to show link length dimensions on the canvas.
     pub show_dimensions: bool,
-    /// Whether to include gravity (9.81 m/s² downward) in force computation.
-    pub enable_gravity: bool,
+    /// Gravity magnitude in m/s² (0 = disabled, 9.81 = Earth standard).
+    pub gravity_magnitude: f64,
     // ── Load cases ──────────────────────────────────────────────────────
     /// Named driver configurations for comparing operating conditions.
     pub load_cases: LoadCaseManager,
@@ -868,7 +868,7 @@ impl Default for AppState {
             force_results: ForceResults::default(),
             show_forces: true,
             show_dimensions: false,
-            enable_gravity: true,
+            gravity_magnitude: 9.81,
             load_cases: LoadCaseManager::default(),
             active_tool: EditorTool::Select,
             context_menu_target: ContextMenuTarget::default(),
@@ -1054,16 +1054,29 @@ impl AppState {
         }
     }
 
-    /// Sync gravity force element on the mechanism with the `enable_gravity` flag.
-    /// Adds `ForceElement::Gravity` if enabled and not present; removes it if disabled.
+    /// Sync gravity force element on the mechanism with the `gravity_magnitude` value.
+    /// Adds or updates `ForceElement::Gravity` when magnitude > 0; removes it when 0.
     pub fn sync_gravity(&mut self) {
         let Some(mech) = &mut self.mechanism else {
             return;
         };
         let has_gravity = mech.forces().iter().any(|f| matches!(f, ForceElement::Gravity(_)));
-        if self.enable_gravity && !has_gravity {
-            mech.add_force(ForceElement::Gravity(GravityElement::default()));
-        } else if !self.enable_gravity && has_gravity {
+        if self.gravity_magnitude > 0.0 {
+            let g_elem = GravityElement {
+                g_vector: [0.0, -self.gravity_magnitude],
+            };
+            if has_gravity {
+                if let Some(idx) = mech
+                    .forces()
+                    .iter()
+                    .position(|f| matches!(f, ForceElement::Gravity(_)))
+                {
+                    mech.replace_force(idx, ForceElement::Gravity(g_elem));
+                }
+            } else {
+                mech.add_force(ForceElement::Gravity(g_elem));
+            }
+        } else if has_gravity {
             if let Some(idx) = mech
                 .forces()
                 .iter()
@@ -1888,7 +1901,7 @@ impl AppState {
             // Use current q as initial guess when dimensions match
             let q0 = if self.q.len() == mech.state().n_coords() { self.q.clone() } else { mech.state().make_q() };
             let theta_0 = self.driver_theta_0;
-            let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0);
+            let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0, self.gravity_magnitude);
 
             // Extract the selected metric
             metric_values.push(config.metric.extract(&sweep));
@@ -1928,7 +1941,7 @@ impl AppState {
             let Ok(mut mech) = load_mechanism_unbuilt_from_json(base_bp) else { return };
             if mech.build().is_err() { return; }
             let q0 = if q_init.len() == mech.state().n_coords() { q_init.clone() } else { mech.state().make_q() };
-            let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0);
+            let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0, self.gravity_magnitude);
             sweep
         };
         let baseline_torques = baseline_sweep.driver_torques.clone().unwrap_or_default();
@@ -1985,7 +1998,7 @@ impl AppState {
                 }
 
                 let q0 = if q_init.len() == mech.state().n_coords() { q_init.clone() } else { mech.state().make_q() };
-                let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0);
+                let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0, self.gravity_magnitude);
                 let pp = sweep.driver_torques.as_ref()
                     .and_then(|t| compute_envelope(t))
                     .map(|e| e.peak_to_peak)
@@ -2883,7 +2896,7 @@ impl AppState {
         let omega = self.driver_omega;
         let theta_0 = self.driver_theta_0;
 
-        let (data, q_zero) = compute_sweep_data(self.mechanism.as_ref().unwrap(), &q_start, omega, theta_0);
+        let (data, q_zero) = compute_sweep_data(self.mechanism.as_ref().unwrap(), &q_start, omega, theta_0, self.gravity_magnitude);
         self.sweep_data = Some(data);
         self.q_at_zero = q_zero;
     }
@@ -2914,8 +2927,10 @@ impl AppState {
         }
 
         // Sync gravity
-        if self.enable_gravity {
-            mech.add_force(ForceElement::Gravity(GravityElement::default()));
+        if self.gravity_magnitude > 0.0 {
+            mech.add_force(ForceElement::Gravity(GravityElement {
+                g_vector: [0.0, -self.gravity_magnitude],
+            }));
         }
         // Copy non-gravity force elements from blueprint
         for force in &bp.forces {
@@ -3222,6 +3237,7 @@ pub(crate) fn compute_sweep_data(
     q_start: &DVector<f64>,
     omega: f64,
     theta_0: f64,
+    gravity_magnitude: f64,
 ) -> (SweepData, DVector<f64>) {
     let mut data = SweepData {
         angles_deg: Vec::with_capacity(361),
@@ -3375,7 +3391,7 @@ pub(crate) fn compute_sweep_data(
 
                 // Velocity solve for energy and mechanical advantage.
                 if let Ok(q_dot) = solve_velocity(mech, &q, t) {
-                    let energy = compute_energy_state_mech(mech, &q, &q_dot, 9.81);
+                    let energy = compute_energy_state_mech(mech, &q, &q_dot, gravity_magnitude);
                     data.kinetic_energy.push(energy.kinetic);
                     data.potential_energy.push(energy.potential_gravity);
                     data.total_energy.push(energy.total);
@@ -5430,5 +5446,32 @@ mod tests {
             !sweep.joint_reaction_magnitudes.is_empty(),
             "Sweep should have joint reaction data"
         );
+    }
+
+    #[test]
+    fn gravity_magnitude_zero_disables_gravity_force() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.gravity_magnitude = 0.0;
+        state.sync_gravity();
+        let mech = state.mechanism.as_ref().unwrap();
+        assert!(
+            !mech.forces().iter().any(|f| matches!(f, ForceElement::Gravity(_))),
+            "Gravity should be removed when magnitude is 0"
+        );
+    }
+
+    #[test]
+    fn gravity_magnitude_nondefault_updates_element() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.gravity_magnitude = 3.71;
+        state.sync_gravity();
+        let mech = state.mechanism.as_ref().unwrap();
+        let grav = mech.forces().iter().find(|f| matches!(f, ForceElement::Gravity(_)));
+        assert!(grav.is_some(), "Gravity element should exist");
+        if let Some(ForceElement::Gravity(g)) = grav {
+            assert!((g.g_vector[1] - (-3.71)).abs() < 1e-10);
+        }
     }
 }

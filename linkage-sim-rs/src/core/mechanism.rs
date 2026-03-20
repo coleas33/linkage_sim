@@ -401,6 +401,13 @@ impl Mechanism {
         self.forces.remove(idx)
     }
 
+    /// Replace a force element at the given index.
+    pub fn replace_force(&mut self, idx: usize, force: ForceElement) {
+        if idx < self.forces.len() {
+            self.forces[idx] = force;
+        }
+    }
+
     /// Assemble the total generalized force vector Q from all force elements.
     pub fn assemble_forces(
         &self,

@@ -92,6 +92,22 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
         }
     });
 
+    // ── Gravity controls ───────────────────────────────────────────────
+    ui.separator();
+    ui.horizontal(|ui| {
+        ui.label("Gravity:");
+        let prev_g = state.gravity_magnitude;
+        ui.add(
+            egui::Slider::new(&mut state.gravity_magnitude, 0.0..=20.0)
+                .suffix(" m/s\u{00b2}")
+                .step_by(0.01)
+                .clamping(egui::SliderClamping::Always),
+        );
+        if (state.gravity_magnitude - prev_g).abs() > 1e-9 {
+            state.mark_sweep_dirty();
+        }
+    });
+
     // ── Driver info ──────────────────────────────────────────────────
     if let Some(joint_id) = &state.driver_joint_id {
         ui.label(format!("Driver: {} (right-click joint to change)", joint_id));
