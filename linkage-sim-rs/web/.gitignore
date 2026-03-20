@@ -1,0 +1,3 @@
+# Generated WASM build artifacts (run scripts/build_web.sh to regenerate)
+linkage-web.js
+linkage-web_bg.wasm

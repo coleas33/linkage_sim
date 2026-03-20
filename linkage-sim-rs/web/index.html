@@ -21,6 +21,9 @@
 <body>
     <!-- The canvas ID must match the string passed to eframe::WebRunner::start() -->
     <canvas id="linkage_canvas"></canvas>
-    <script src="./linkage_web.js"></script>
+    <script type="module">
+        import init from './linkage-web.js';
+        init();
+    </script>
 </body>
 </html>

@@ -672,3 +672,48 @@ Phase 6 can begin when ready.
 | 3 | Test (DXF string contains LINE, CIRCLE, POINT, EOF) | Done | `gui/export.rs` |
 
 **Total Rust tests:** 418 passing (381 unit + 11 golden + 8 property + 18 singular)
+
+### Phase 6.7 — Web Deployment
+
+**Goal:** Build the GUI as a locally-hosted website using WASM. User runs a build script, opens localhost in a browser, and gets the full simulator.
+
+**Approach:**
+- Build WASM binary: `cargo build --release --target wasm32-unknown-unknown --bin linkage-web --no-default-features`
+- Generate JS glue with `wasm-bindgen`: outputs `.js` + `_bg.wasm` files into `web/` directory
+- Serve locally with Python's `http.server` (zero-dependency, available everywhere)
+- Build script: `scripts/build_web.sh` that runs cargo + wasm-bindgen + prints serve instructions
+
+**Limitations in WASM mode:**
+- No file dialogs (rfd requires native). Save/load JSON uses browser download/upload instead.
+- No PNG/SVG/GIF export (resvg + gif crates are native-only). DXF export is native-only.
+- No autosave (no filesystem access). No recent files persistence.
+- All analysis, plotting, and editing features work identically.
+
+**Key issue:** The `open` crate (used by HTML report to open browser) is native-only — already gated behind `#[cfg(feature = "native")]`. All native-only features are properly feature-gated.
+
+| Step | Description | Status | Key files |
+|------|-------------|--------|-----------|
+| 1 | Build script (cargo WASM build + wasm-bindgen JS generation) | Done | `scripts/build_web.sh` |
+| 2 | Serve script (python http.server on localhost:8080) | Done | `scripts/serve_web.sh` |
+| 3 | Fix index.html to use ES module import for wasm-bindgen output | Done | `web/index.html` |
+| 4 | .gitignore for generated WASM artifacts | Done | `web/.gitignore` |
+| 5 | Update README with web deployment instructions | Done | `README.md` |
+| 6 | WASM binary builds successfully (4.7 MB optimized) | Done | — |
+
+---
+
+## Phase 6 Complete
+
+All 7 Phase 6 deliverables are implemented:
+
+| # | Deliverable | Status | Commit |
+|---|-------------|--------|--------|
+| 1 | Parametric studies | Done | b8673d9 |
+| 2 | Report generation (HTML) | Done | 05afe4f |
+| 3 | Mechanism library (13→17 samples) | Done | a9a3f06 |
+| 4 | Counterbalance assistant | Done | 741af7b |
+| 5 | Cam-follower joint type | Done | cfe127e |
+| 6 | DXF export | Done | 03c0f68 |
+| 7 | Web deployment (WASM) | Done | (this commit) |
+
+**Phase 6 is the final planned development phase.** The project is feature-complete for its intended scope.

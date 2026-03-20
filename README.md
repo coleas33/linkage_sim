@@ -147,7 +147,16 @@ The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forwa
 - Right-click driver reassignment on any grounded revolute joint
 - Gravity-loaded reaction force arrows at every joint; gravity direction indicator on canvas; both toggleable via View menu
 
-Run with `cd linkage-sim-rs && cargo run --bin linkage-gui`.
+**Run natively:** `cd linkage-sim-rs && cargo run --bin linkage-gui`
+
+**Run in browser (WASM):**
+```bash
+cd linkage-sim-rs
+./scripts/build_web.sh          # Build WASM + JS bindings
+./scripts/serve_web.sh          # Serve at http://localhost:8080
+```
+Requires: `rustup target add wasm32-unknown-unknown` and `cargo install wasm-bindgen-cli`.
+Note: file dialogs, PNG/SVG/GIF/DXF export, autosave, and HTML reports are native-only. All analysis, editing, and plotting features work in the browser.
 
 **Interactive editor (shipped):** The GUI is now a full interactive editor, not just a visualization shell. Capabilities:
 - Create bodies, joints, and ground pivots via right-click context menu on the canvas
