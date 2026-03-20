@@ -600,6 +600,30 @@ impl eframe::App for LinkageApp {
                         self.state.animation_direction = 1.0;
                     }
                 }
+
+                // Speed control (compact)
+                ui.add(
+                    egui::Slider::new(&mut self.state.animation_speed_deg_per_sec, 10.0..=720.0)
+                        .text("\u{00B0}/s")
+                        .logarithmic(true)
+                        .clamping(egui::SliderClamping::Always),
+                );
+
+                ui.separator();
+
+                // ── Sample mechanism selector (purple) ──────────────
+                let sample_color = egui::Color32::from_rgb(180, 140, 255);
+                ui.menu_button(
+                    egui::RichText::new("\u{1F4C2} Samples \u{25BC}").color(sample_color),
+                    |ui| {
+                        for sample in SampleMechanism::all() {
+                            if ui.button(sample.label()).clicked() {
+                                self.state.load_sample(*sample);
+                                ui.close();
+                            }
+                        }
+                    },
+                );
             });
         });
 
@@ -617,84 +641,79 @@ impl eframe::App for LinkageApp {
         // --- Status bar ---
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
+                let dim = egui::Color32::from_rgb(140, 145, 160);
+                let bright = egui::Color32::from_rgb(200, 205, 220);
+                let green = egui::Color32::from_rgb(80, 200, 80);
+                let red = egui::Color32::from_rgb(220, 70, 70);
+                let blue = egui::Color32::from_rgb(100, 180, 255);
+                let warn = egui::Color32::from_rgb(255, 180, 50);
+
                 if let Some(sample) = self.state.current_sample {
-                    ui.label(format!("Mechanism: {}", sample.label()));
-                    ui.separator();
+                    ui.colored_label(bright, sample.label());
+                    ui.colored_label(dim, "\u{2502}");
                 }
 
                 if self.state.has_mechanism() {
+                    // Solver status
                     let status = &self.state.solver_status;
-                    let color = if status.converged {
-                        egui::Color32::from_rgb(80, 200, 80)
+                    if status.converged {
+                        ui.colored_label(green, "\u{25CF}");
                     } else {
-                        egui::Color32::from_rgb(200, 60, 60)
-                    };
-                    ui.colored_label(color, "●");
-                    ui.label(format!("‖Φ‖ = {:.2e}", status.residual_norm));
-                    ui.separator();
-                    ui.label(format!(
-                        "\u{03b8} = {:.1}{}",
+                        ui.colored_label(red, "\u{25CF} FAIL");
+                    }
+                    ui.colored_label(dim, "\u{2502}");
+
+                    // Angle + torque
+                    ui.colored_label(dim, "\u{03b8}");
+                    ui.colored_label(bright, format!(
+                        "{:.1}{}",
                         self.state.display_units.angle(self.state.driver_angle),
                         self.state.display_units.angle_suffix()
                     ));
 
                     if let Some(torque) = self.state.force_results.driver_torque {
-                        ui.separator();
-                        ui.label(format!("\u{03c4} = {:.3} N\u{00b7}m", torque));
+                        ui.colored_label(dim, "\u{03c4}");
+                        ui.colored_label(bright, format!("{:.3} N\u{00b7}m", torque));
+                    }
+                    ui.colored_label(dim, "\u{2502}");
+
+                    // Mechanism info
+                    if let Some(mech) = &self.state.mechanism {
+                        let n_b = mech.bodies().len().saturating_sub(1);
+                        let n_j = mech.joints().len();
+                        let dof = mech.state().n_coords() as isize - mech.n_constraints() as isize;
+                        ui.colored_label(dim, format!("{}B {}J DOF={}", n_b, n_j, dof));
                     }
 
+                    // Playback/sim state
                     if self.state.playing {
-                        ui.separator();
-                        ui.colored_label(egui::Color32::from_rgb(80, 200, 80), "PLAYING");
+                        ui.colored_label(dim, "\u{2502}");
+                        ui.colored_label(green, "\u{25B6} PLAYING");
                     }
-
                     if let Some(sim) = &self.state.simulation {
-                        ui.separator();
-                        ui.colored_label(
-                            egui::Color32::from_rgb(100, 200, 255),
-                            "SIM",
-                        );
-                        ui.label(format!(
-                            "t = {:.3} s",
+                        ui.colored_label(dim, "\u{2502}");
+                        ui.colored_label(blue, format!(
+                            "SIM t={:.2}s",
                             sim.times.get(sim.time_index).unwrap_or(&0.0)
                         ));
-                        if let Some(&drift) = sim.drift.get(sim.time_index) {
-                            ui.label(format!("drift = {:.2e}", drift));
-                        }
                     }
 
-                    if let Some(mech) = &self.state.mechanism {
-                        let dof = mech.state().n_coords() as isize - mech.n_constraints() as isize;
-                        ui.separator();
-                        ui.label(format!(
-                            "Bodies: {} | Joints: {} | DOF: {}",
-                            mech.bodies().len().saturating_sub(1),
-                            mech.joints().len(),
-                            dof,
-                        ));
-                    }
-
-                    // Validation warnings from the computed ValidationWarnings struct.
-                    let warn_color = egui::Color32::from_rgb(255, 180, 50);
+                    // Warnings
                     let warnings = &self.state.validation_warnings;
-
                     if let Some(ref dof_msg) = warnings.dof_warning {
-                        ui.separator();
-                        ui.colored_label(warn_color, dof_msg);
+                        ui.colored_label(dim, "\u{2502}");
+                        ui.colored_label(warn, dof_msg);
                     }
                     if warnings.missing_driver {
-                        ui.separator();
-                        ui.colored_label(warn_color, "No driver");
+                        ui.colored_label(dim, "\u{2502}");
+                        ui.colored_label(warn, "\u{26A0} No driver");
                     }
                     if !warnings.disconnected_bodies.is_empty() {
-                        ui.separator();
-                        ui.colored_label(
-                            warn_color,
-                            format!(
-                                "Disconnected: {}",
-                                warnings.disconnected_bodies.join(", ")
-                            ),
-                        );
+                        ui.colored_label(dim, "\u{2502}");
+                        ui.colored_label(warn, format!(
+                            "\u{26A0} Disconnected: {}",
+                            warnings.disconnected_bodies.join(", ")
+                        ));
                     }
 
                     if !self.state.error_log.is_empty() {
