@@ -800,8 +800,6 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         }
     }
 
-    state.drag_target = None;
-
     // ── Interaction: pan ────────────────────────────────────────────────
     if response.dragged() {
         let is_middle = response.dragged_by(egui::PointerButton::Middle);
@@ -1114,8 +1112,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     }
 
     // ── Interaction: click for selection / ground pivot ──────────────────
-    if state.drag_target.is_none()
-        && state.draw_link_start.is_none()
+    if state.draw_link_start.is_none()
         && state.creating_joint.is_none()
         && state.active_tool != EditorTool::DrawLink
         && state.active_tool != EditorTool::AddBody

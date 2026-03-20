@@ -284,19 +284,6 @@ pub enum SelectedEntity {
     Driver(String),
 }
 
-// ── Drag target ──────────────────────────────────────────────────────────────
-
-/// Tracks which attachment point is being dragged on the canvas.
-#[derive(Clone, Debug)]
-pub struct DragTarget {
-    /// Body that owns the attachment point being dragged.
-    pub body_id: String,
-    /// Name of the attachment point being dragged.
-    pub point_name: String,
-    /// True after the first movement (undo is pushed once at drag start).
-    pub started: bool,
-}
-
 // ── Validation warnings ──────────────────────────────────────────────────────
 
 /// Lightweight validation warnings computed after each rebuild.
@@ -698,9 +685,6 @@ pub struct AppState {
     pub sweep_dirty: bool,
     /// Timestamp (egui time in seconds) when sweep was last marked dirty (for debounce).
     pub sweep_dirty_since: Option<f64>,
-    // ── Drag interaction ─────────────────────────────────────────────────
-    /// Currently active drag target (attachment point being dragged).
-    pub drag_target: Option<DragTarget>,
     // ── Joint creation mode ──────────────────────────────────────────────
     /// First click of a two-click joint creation: (body_id, point_name, type).
     pub creating_joint: Option<(String, String, PendingJointType)>,
@@ -860,7 +844,6 @@ impl Default for AppState {
             show_plots: false,
             sweep_dirty: false,
             sweep_dirty_since: None,
-            drag_target: None,
             creating_joint: None,
             validation_warnings: ValidationWarnings::default(),
             display_units: DisplayUnits::default(),
@@ -5565,5 +5548,84 @@ mod tests {
 
         assert!((pa_after[0] - pa_before[0]).abs() < 1e-12);
         assert!((pa_after[1] - pa_before[1]).abs() < 1e-12);
+    }
+
+    #[test]
+    fn integration_gravity_affects_driver_torque() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // Give bodies non-zero mass so gravity has an observable effect.
+        state.set_body_mass("crank", 0.5);
+        state.set_body_mass("coupler", 1.0);
+        state.set_body_mass("rocker", 0.5);
+
+        // With gravity
+        state.gravity_magnitude = 9.81;
+        state.sync_gravity();
+        state.compute_sweep();
+        let sweep_grav = state.sweep_data.as_ref().unwrap();
+        let torques_grav: Vec<f64> = sweep_grav
+            .driver_torques
+            .as_ref()
+            .unwrap()
+            .iter()
+            .copied()
+            .collect();
+
+        // Without gravity
+        state.gravity_magnitude = 0.0;
+        state.sync_gravity();
+        state.compute_sweep();
+        let sweep_no_grav = state.sweep_data.as_ref().unwrap();
+        let torques_no_grav: Vec<f64> = sweep_no_grav
+            .driver_torques
+            .as_ref()
+            .unwrap()
+            .iter()
+            .copied()
+            .collect();
+
+        assert_eq!(torques_grav.len(), torques_no_grav.len());
+        let differs = torques_grav
+            .iter()
+            .zip(torques_no_grav.iter())
+            .any(|(a, b)| (a - b).abs() > 1e-10);
+        assert!(
+            differs,
+            "Driver torque should change when gravity is toggled"
+        );
+    }
+
+    #[test]
+    fn integration_force_add_uses_context() {
+        use crate::gui::force_toolbar::resolve_target_bodies;
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // No selection — should return None
+        state.selected = None;
+        let (sel, _) = resolve_target_bodies(&state);
+        assert!(sel.is_none());
+
+        // Select crank — should resolve
+        state.selected = Some(SelectedEntity::Body("crank".to_string()));
+        let (sel, conn) = resolve_target_bodies(&state);
+        assert_eq!(sel, Some("crank".to_string()));
+        assert!(conn.is_some());
+    }
+
+    #[test]
+    fn all_samples_have_sweep_data_after_load() {
+        for sample in SampleMechanism::all() {
+            let mut state = AppState::default();
+            state.load_sample(*sample);
+            assert!(
+                state.sweep_data.is_some(),
+                "Sample {:?} should have sweep data after load",
+                sample
+            );
+        }
     }
 }
