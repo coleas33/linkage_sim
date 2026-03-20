@@ -32,6 +32,7 @@ web-sys = "0.3"
 [dev-dependencies]
 approx = "0.5"
 proptest = "1"
+meval = "0.2"
 
 [[bin]]
 name = "linkage-gui"

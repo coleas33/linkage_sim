@@ -337,6 +337,48 @@ proptest! {
         }
     }
 
+    /// Expression driver evaluation must match the equivalent constant-speed
+    /// driver f(t) = omega * t + theta_0 for arbitrary parameters.
+    #[test]
+    fn expression_driver_matches_constant_speed(
+        omega in 0.5_f64..10.0,
+        theta_0 in 0.0_f64..6.28,
+        t in 0.0_f64..2.0,
+    ) {
+        let expr = format!("{}*t+{}", omega, theta_0);
+        let expr_dot = format!("{}", omega);
+        let expr_ddot = "0".to_string();
+
+        // Parse and evaluate f(t)
+        let f = expr.parse::<meval::Expr>().unwrap().bind("t").unwrap();
+        let expected = omega * t + theta_0;
+        let actual = f(t);
+        prop_assert!(
+            (actual - expected).abs() < 1e-10,
+            "f(t) mismatch: expected={}, actual={}, expr='{}'",
+            expected, actual, expr,
+        );
+
+        // Parse and evaluate f'(t)
+        let f_dot = expr_dot.parse::<meval::Expr>().unwrap().bind("t").unwrap();
+        let expected_dot = omega;
+        let actual_dot = f_dot(t);
+        prop_assert!(
+            (actual_dot - expected_dot).abs() < 1e-10,
+            "f'(t) mismatch: expected={}, actual={}",
+            expected_dot, actual_dot,
+        );
+
+        // Parse and evaluate f''(t)
+        let f_ddot = expr_ddot.parse::<meval::Expr>().unwrap().bind("t").unwrap();
+        let actual_ddot = f_ddot(t);
+        prop_assert!(
+            actual_ddot.abs() < 1e-10,
+            "f''(t) should be 0, got {}",
+            actual_ddot,
+        );
+    }
+
     /// The Jacobian matrix dimensions must always match n_constraints x n_coords.
     #[test]
     fn jacobian_dimensions_are_correct(

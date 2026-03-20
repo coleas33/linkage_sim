@@ -735,3 +735,248 @@ fn pendulum_dynamics_energy_conservation() {
         e0,
     );
 }
+
+// ---------------------------------------------------------------------------
+// Expression driver: matches constant-speed driver
+// ---------------------------------------------------------------------------
+
+/// Build a 4-bar with an expression driver that is equivalent to the identity
+/// driver: f(t) = t, f'(t) = 1, f''(t) = 0.
+fn build_fourbar_expression_driver() -> Mechanism {
+    let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
+    let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
+    let mut coupler = make_bar("coupler", "B", "C", 3.0, 3.0, 0.05);
+    coupler.add_coupler_point("P", 1.5, 0.5).unwrap();
+    let rocker = make_bar("rocker", "D", "C", 2.0, 2.0, 0.02);
+
+    let mut mech = Mechanism::new();
+    mech.add_body(ground).unwrap();
+    mech.add_body(crank).unwrap();
+    mech.add_body(coupler).unwrap();
+    mech.add_body(rocker).unwrap();
+
+    mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+    mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+    mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+    mech.add_revolute_joint("J4", "ground", "O4", "rocker", "D").unwrap();
+
+    // f(t) = 1*t + 0  — matches the identity driver used by build_fourbar_driven
+    mech.add_expression_driver(
+        "D1", "ground", "crank",
+        "1*t", "1", "0",
+    ).unwrap();
+
+    mech.build().unwrap();
+    mech
+}
+
+#[test]
+fn expression_driver_matches_constant_speed() {
+    // Build two equivalent mechanisms: one with constant-speed driver, one with expression driver.
+    let mech_const = build_fourbar_driven();
+    let mech_expr = build_fourbar_expression_driver();
+
+    let test_angles = [0.3, 0.8, 1.5, 2.5, 4.0, 5.5];
+
+    for &angle in &test_angles {
+        let q0_const = fourbar_initial_guess(&mech_const, angle);
+        let q0_expr = fourbar_initial_guess(&mech_expr, angle);
+
+        // Both drivers use f(t) = t, so t = angle for both.
+        let res_const = solve_position(&mech_const, &q0_const, angle, 1e-10, 50).unwrap();
+        let res_expr = solve_position(&mech_expr, &q0_expr, angle, 1e-10, 50).unwrap();
+
+        assert!(res_const.converged, "constant-speed solve failed at angle={:.2}", angle);
+        assert!(res_expr.converged, "expression solve failed at angle={:.2}", angle);
+
+        let q_diff = (&res_const.q - &res_expr.q).norm();
+        assert!(
+            q_diff < 1e-8,
+            "Position mismatch at angle={:.2}: ||dq||={:e}",
+            angle, q_diff,
+        );
+
+        // Velocity should also match.
+        let qd_const = solve_velocity(&mech_const, &res_const.q, angle).unwrap();
+        let qd_expr = solve_velocity(&mech_expr, &res_expr.q, angle).unwrap();
+        let qd_diff = (&qd_const - &qd_expr).norm();
+        assert!(
+            qd_diff < 1e-6,
+            "Velocity mismatch at angle={:.2}: ||dqd||={:e}",
+            angle, qd_diff,
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Expression driver: sinusoidal motion produces oscillation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn expression_driver_sinusoidal_oscillates() {
+    // f(t) = pi/4 * sin(2*pi*t) — should oscillate, not advance monotonically.
+    let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
+    let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
+    let coupler = make_bar("coupler", "B", "C", 3.0, 3.0, 0.05);
+    let rocker = make_bar("rocker", "D", "C", 2.0, 2.0, 0.02);
+
+    let mut mech = Mechanism::new();
+    mech.add_body(ground).unwrap();
+    mech.add_body(crank).unwrap();
+    mech.add_body(coupler).unwrap();
+    mech.add_body(rocker).unwrap();
+
+    mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+    mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+    mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+    mech.add_revolute_joint("J4", "ground", "O4", "rocker", "D").unwrap();
+
+    mech.add_expression_driver(
+        "D1", "ground", "crank",
+        "pi/4 * sin(2*pi*t)",
+        "pi/4 * 2*pi * cos(2*pi*t)",
+        "-pi/4 * (2*pi)^2 * sin(2*pi*t)",
+    ).unwrap();
+
+    mech.build().unwrap();
+
+    // At t=0: f(0) = 0
+    let state = mech.state();
+    let q0 = {
+        let mut q = state.make_q();
+        state.set_pose("crank", &mut q, 0.0, 0.0, 0.0);
+        let bx = 0.0_f64.cos();
+        let by = 0.0_f64.sin();
+        state.set_pose("coupler", &mut q, bx, by, 0.0);
+        state.set_pose("rocker", &mut q, 4.0, 0.0, std::f64::consts::FRAC_PI_2);
+        q
+    };
+
+    let res_t0 = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
+    assert!(res_t0.converged, "solve at t=0 failed");
+
+    // At t=0.25: f(0.25) = pi/4 * sin(pi/2) = pi/4
+    let res_t025 = solve_position(&mech, &res_t0.q, 0.25, 1e-10, 50).unwrap();
+    assert!(res_t025.converged, "solve at t=0.25 failed");
+
+    // At t=0.5: f(0.5) = pi/4 * sin(pi) ~ 0 (should return near initial config)
+    let res_t05 = solve_position(&mech, &res_t025.q, 0.5, 1e-10, 50).unwrap();
+    assert!(res_t05.converged, "solve at t=0.5 failed");
+
+    // Positions at t=0 and t=0.5 should be very similar (both near angle=0).
+    let diff_0_05 = (&res_t0.q - &res_t05.q).norm();
+    assert!(
+        diff_0_05 < 1e-4,
+        "t=0 and t=0.5 should have similar positions (both near angle=0), got ||dq||={:e}",
+        diff_0_05,
+    );
+
+    // Positions at t=0 and t=0.25 should be different (angle=0 vs angle=pi/4).
+    let diff_0_025 = (&res_t0.q - &res_t025.q).norm();
+    assert!(
+        diff_0_025 > 0.01,
+        "t=0 and t=0.25 should have different positions, got ||dq||={:e}",
+        diff_0_025,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Force elements in statics: spring affects driver torque
+// ---------------------------------------------------------------------------
+
+#[test]
+fn spring_affects_statics_driver_torque() {
+    // Build 4-bar with gravity only, solve statics, record driver torque.
+    // Then add a linear spring between crank and rocker and verify the
+    // driver torque changes.
+
+    let test_angles = [0.5, 1.0, 2.0, 3.0, 5.0];
+
+    // --- Mechanism WITHOUT spring ---
+    let mech_no_spring = build_fourbar_gravity();
+
+    // --- Mechanism WITH spring ---
+    let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
+    let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
+    let mut coupler = make_bar("coupler", "B", "C", 3.0, 3.0, 0.05);
+    coupler.add_coupler_point("P", 1.5, 0.5).unwrap();
+    let rocker = make_bar("rocker", "D", "C", 2.0, 2.0, 0.02);
+
+    let mut mech_spring = Mechanism::new();
+    mech_spring.add_body(ground).unwrap();
+    mech_spring.add_body(crank).unwrap();
+    mech_spring.add_body(coupler).unwrap();
+    mech_spring.add_body(rocker).unwrap();
+    mech_spring.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+    mech_spring.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+    mech_spring.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+    mech_spring.add_revolute_joint("J4", "ground", "O4", "rocker", "D").unwrap();
+    mech_spring.add_revolute_driver("D1", "ground", "crank", |t| t, |_t| 1.0, |_t| 0.0).unwrap();
+    mech_spring.add_force(ForceElement::Gravity(GravityElement::default()));
+
+    // Add a stiff linear spring between crank tip (B at local 1,0) and
+    // rocker base (D at local 0,0). Free length chosen much shorter than
+    // actual distance so the spring is always in tension and produces
+    // significant force at every angle.
+    use linkage_sim_rs::forces::elements::LinearSpringElement;
+    mech_spring.add_force(ForceElement::LinearSpring(LinearSpringElement {
+        body_a: "crank".to_string(),
+        point_a: [1.0, 0.0],   // crank tip B
+        body_b: "rocker".to_string(),
+        point_b: [0.0, 0.0],   // rocker base D
+        stiffness: 1000.0,
+        free_length: 0.5,      // much shorter than actual distance (~3-5 m)
+    }));
+
+    mech_spring.build().unwrap();
+
+    let mut any_torque_different = false;
+
+    for &angle in &test_angles {
+        // Solve position for both mechanisms.
+        let q0 = fourbar_initial_guess(&mech_no_spring, angle);
+
+        let pos_ns = solve_position(&mech_no_spring, &q0, angle, 1e-10, 50).unwrap();
+        let pos_s = solve_position(&mech_spring, &q0, angle, 1e-10, 50).unwrap();
+
+        if !pos_ns.converged || !pos_s.converged {
+            continue;
+        }
+
+        // Solve statics for both.
+        let stat_ns = solve_statics(&mech_no_spring, &pos_ns.q, angle).unwrap();
+        let stat_s = solve_statics(&mech_spring, &pos_s.q, angle).unwrap();
+
+        let reactions_ns = extract_reactions(&mech_no_spring, &stat_ns);
+        let reactions_s = extract_reactions(&mech_spring, &stat_s);
+        let drivers_ns = get_driver_reactions(&reactions_ns);
+        let drivers_s = get_driver_reactions(&reactions_s);
+
+        assert_eq!(drivers_ns.len(), 1);
+        assert_eq!(drivers_s.len(), 1);
+
+        let torque_ns = drivers_ns[0].effort;
+        let torque_s = drivers_s[0].effort;
+
+        // The torques should differ due to the spring.
+        if (torque_ns - torque_s).abs() > 1e-6 {
+            any_torque_different = true;
+        }
+
+        // Virtual work cross-check for the spring mechanism.
+        use linkage_sim_rs::analysis::virtual_work::virtual_work_check;
+        let vw = virtual_work_check(&mech_spring, &pos_s.q, angle, torque_s, 0.05);
+        if let Ok(result) = vw {
+            assert!(
+                result.agrees,
+                "Virtual work disagreed at angle={:.2}: rel_err={:.4}",
+                angle, result.relative_error,
+            );
+        }
+    }
+
+    assert!(
+        any_torque_different,
+        "Spring should affect the driver torque at some angles"
+    );
+}

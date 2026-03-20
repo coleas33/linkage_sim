@@ -35,11 +35,40 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
     if has_ma {
         headers.push("mechanical_advantage".to_string());
     }
+    // Energy columns (always present — may be empty vecs, in which case we skip).
+    let has_energy = !sweep.kinetic_energy.is_empty();
+    if has_energy {
+        headers.push("kinetic_energy_J".to_string());
+        headers.push("potential_energy_J".to_string());
+        headers.push("total_energy_J".to_string());
+    }
+    // Inverse dynamics torque column.
+    let has_inv_dyn = !sweep.inverse_dynamics_torques.is_empty();
+    if has_inv_dyn {
+        headers.push("inverse_dynamics_torque_Nm".to_string());
+    }
     // Joint reaction magnitude columns (sorted by joint ID).
     let mut reaction_ids: Vec<&String> = sweep.joint_reaction_magnitudes.keys().collect();
     reaction_ids.sort();
     for jid in &reaction_ids {
         headers.push(format!("{}_reaction_N", jid));
+    }
+    // Coupler velocity magnitude columns (sorted by trace name).
+    let mut vel_names: Vec<&String> = sweep.coupler_velocities.keys().collect();
+    vel_names.sort();
+    for name in &vel_names {
+        headers.push(format!("{}_velocity_m_s", name));
+    }
+    // Coupler acceleration magnitude columns (sorted by trace name).
+    let mut acc_names: Vec<&String> = sweep.coupler_accelerations.keys().collect();
+    acc_names.sort();
+    for name in &acc_names {
+        headers.push(format!("{}_acceleration_m_s2", name));
+    }
+    // Toggle angles as a final informational column (sparse: only non-empty at toggle steps).
+    let has_toggles = !sweep.toggle_angles.is_empty();
+    if has_toggles {
+        headers.push("toggle_angle_deg".to_string());
     }
     writeln!(file, "{}", headers.join(",")).map_err(|e| e.to_string())?;
 
@@ -60,12 +89,44 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
             let ma = sweep.mechanical_advantage.get(i).copied().unwrap_or(f64::NAN);
             row.push(format!("{:.6}", ma));
         }
+        if has_energy {
+            row.push(format!("{:.6}", sweep.kinetic_energy.get(i).copied().unwrap_or(f64::NAN)));
+            row.push(format!("{:.6}", sweep.potential_energy.get(i).copied().unwrap_or(f64::NAN)));
+            row.push(format!("{:.6}", sweep.total_energy.get(i).copied().unwrap_or(f64::NAN)));
+        }
+        if has_inv_dyn {
+            row.push(format!("{:.6}", sweep.inverse_dynamics_torques.get(i).copied().unwrap_or(f64::NAN)));
+        }
         for jid in &reaction_ids {
             let val = sweep.joint_reaction_magnitudes[*jid]
                 .get(i)
                 .copied()
                 .unwrap_or(f64::NAN);
             row.push(format!("{:.6}", val));
+        }
+        for name in &vel_names {
+            let val = sweep.coupler_velocities[*name]
+                .get(i)
+                .copied()
+                .unwrap_or(f64::NAN);
+            row.push(format!("{:.6}", val));
+        }
+        for name in &acc_names {
+            let val = sweep.coupler_accelerations[*name]
+                .get(i)
+                .copied()
+                .unwrap_or(f64::NAN);
+            row.push(format!("{:.6}", val));
+        }
+        if has_toggles {
+            // Toggle angles are sparse: emit the value only if this angle is a toggle.
+            let angle_val = *angle;
+            let is_toggle = sweep.toggle_angles.iter().any(|ta| (ta - angle_val).abs() < 1e-6);
+            if is_toggle {
+                row.push(format!("{:.4}", angle_val));
+            } else {
+                row.push(String::new());
+            }
         }
         writeln!(file, "{}", row.join(",")).map_err(|e| e.to_string())?;
     }
@@ -551,6 +612,30 @@ mod tests {
             header.contains("mechanical_advantage"),
             "header should have mechanical advantage"
         );
+        assert!(
+            header.contains("kinetic_energy_J"),
+            "header should have kinetic energy"
+        );
+        assert!(
+            header.contains("potential_energy_J"),
+            "header should have potential energy"
+        );
+        assert!(
+            header.contains("total_energy_J"),
+            "header should have total energy"
+        );
+        assert!(
+            header.contains("inverse_dynamics_torque_Nm"),
+            "header should have inverse dynamics torque"
+        );
+        assert!(
+            header.contains("coupler.tip_velocity_m_s"),
+            "header should have coupler velocity"
+        );
+        assert!(
+            header.contains("coupler.tip_acceleration_m_s2"),
+            "header should have coupler acceleration"
+        );
 
         // First data row should start with 0.0000
         assert!(
@@ -579,6 +664,13 @@ mod tests {
         sweep.driver_torques = None;
         sweep.mechanical_advantage.clear();
         sweep.joint_reaction_magnitudes.clear();
+        sweep.kinetic_energy.clear();
+        sweep.potential_energy.clear();
+        sweep.total_energy.clear();
+        sweep.inverse_dynamics_torques.clear();
+        sweep.coupler_velocities.clear();
+        sweep.coupler_accelerations.clear();
+        sweep.toggle_angles.clear();
 
         let path = std::env::temp_dir().join("test_sweep_no_optional.csv");
 
@@ -602,6 +694,26 @@ mod tests {
         assert!(
             !header.contains("reaction_N"),
             "header should not have joint reaction columns"
+        );
+        assert!(
+            !header.contains("kinetic_energy"),
+            "header should not have energy columns"
+        );
+        assert!(
+            !header.contains("inverse_dynamics"),
+            "header should not have inverse dynamics column"
+        );
+        assert!(
+            !header.contains("velocity"),
+            "header should not have velocity columns"
+        );
+        assert!(
+            !header.contains("acceleration"),
+            "header should not have acceleration columns"
+        );
+        assert!(
+            !header.contains("toggle"),
+            "header should not have toggle column"
         );
 
         // angle_deg + crank + rocker = 3 columns
