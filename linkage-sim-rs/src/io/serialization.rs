@@ -136,6 +136,16 @@ pub enum JointJson {
         #[serde(default)]
         delta_theta_0: f64,
     },
+    /// Cam-follower joint with profile.
+    CamFollower {
+        body_i: String,
+        body_j: String,
+        point_i: String,
+        point_j: String,
+        follower_direction: [f64; 2],
+        #[serde(flatten)]
+        profile: crate::core::constraint::CamProfile,
+    },
     /// Marker for driver constraints. The closure is not serializable;
     /// users must re-attach the driver function after loading.
     RevoluteDriver {
@@ -271,6 +281,20 @@ fn joint_to_json(
                 point_j: find_point_name(body_j, j.point_j_local(), body_j_id)?,
                 axis_local_i: [j.axis_local_i().x, j.axis_local_i().y],
                 delta_theta_0: j.delta_theta_0(),
+            })
+        }
+        JointConstraint::CamFollower(j) => {
+            let body_i_id = j.body_i_id();
+            let body_j_id = j.body_j_id();
+            let body_i = &bodies[body_i_id];
+            let body_j = &bodies[body_j_id];
+            Ok(JointJson::CamFollower {
+                body_i: body_i_id.to_string(),
+                body_j: body_j_id.to_string(),
+                point_i: find_point_name(body_i, &j.point_i_local, body_i_id)?,
+                point_j: find_point_name(body_j, &j.point_j_local, body_j_id)?,
+                follower_direction: [j.follower_dir.x, j.follower_dir.y],
+                profile: j.profile.clone(),
             })
         }
     }
@@ -456,6 +480,25 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
                     point_j,
                     Vector2::new(axis_local_i[0], axis_local_i[1]),
                     *delta_theta_0,
+                )
+                .map_err(|e| SerializationError::Build(e.to_string()))?;
+            }
+            JointJson::CamFollower {
+                body_i,
+                body_j,
+                point_i,
+                point_j,
+                follower_direction,
+                profile,
+            } => {
+                mech.add_cam_follower_joint(
+                    joint_id,
+                    body_i,
+                    point_i,
+                    body_j,
+                    point_j,
+                    Vector2::new(follower_direction[0], follower_direction[1]),
+                    profile.clone(),
                 )
                 .map_err(|e| SerializationError::Build(e.to_string()))?;
             }

@@ -3042,6 +3042,7 @@ fn joint_body_ids(joint: &JointJson) -> (&str, &str) {
         JointJson::Revolute { body_i, body_j, .. }
         | JointJson::Fixed { body_i, body_j, .. }
         | JointJson::Prismatic { body_i, body_j, .. }
+        | JointJson::CamFollower { body_i, body_j, .. }
         | JointJson::RevoluteDriver { body_i, body_j, .. } => (body_i.as_str(), body_j.as_str()),
     }
 }
@@ -3055,7 +3056,8 @@ fn joint_references_point(joint: &JointJson, body_id: &str, point_name: &str) ->
     match joint {
         JointJson::Revolute { body_i, point_i, body_j, point_j, .. }
         | JointJson::Prismatic { body_i, point_i, body_j, point_j, .. }
-        | JointJson::Fixed { body_i, point_i, body_j, point_j, .. } => {
+        | JointJson::Fixed { body_i, point_i, body_j, point_j, .. }
+        | JointJson::CamFollower { body_i, point_i, body_j, point_j, .. } => {
             (body_i == body_id && point_i == point_name)
                 || (body_j == body_id && point_j == point_name)
         }

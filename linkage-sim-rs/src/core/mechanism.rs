@@ -12,7 +12,8 @@ use nalgebra::DVector;
 
 use crate::core::body::Body;
 use crate::core::constraint::{
-    make_fixed_joint, make_prismatic_joint, make_revolute_joint, Constraint, JointConstraint,
+    make_cam_follower, make_fixed_joint, make_prismatic_joint, make_revolute_joint,
+    CamProfile, Constraint, JointConstraint,
 };
 use crate::core::driver::{
     constant_speed_driver, expression_driver, make_revolute_driver, RevoluteDriver,
@@ -220,6 +221,35 @@ impl Mechanism {
         )
         .map_err(|e| MechanismError::InvalidJoint(e.to_string()))?;
         self.joints.push(JointConstraint::Prismatic(joint));
+        Ok(())
+    }
+
+    /// Add a cam-follower joint.
+    ///
+    /// The follower displacement along `follower_direction_local` (in body_i's
+    /// local frame) is prescribed by the cam profile as a function of body_i's
+    /// rotation angle.
+    pub fn add_cam_follower_joint(
+        &mut self,
+        joint_id: &str,
+        cam_body_id: &str,
+        cam_point_name: &str,
+        follower_body_id: &str,
+        follower_point_name: &str,
+        follower_direction_local: Vector2<f64>,
+        profile: CamProfile,
+    ) -> Result<(), MechanismError> {
+        if self.built {
+            return Err(MechanismError::AlreadyBuilt("add joint"));
+        }
+        let pt_i = *self.get_attachment_point(cam_body_id, cam_point_name)?;
+        let pt_j = *self.get_attachment_point(follower_body_id, follower_point_name)?;
+
+        let joint = make_cam_follower(
+            joint_id, cam_body_id, follower_body_id,
+            pt_i, pt_j, follower_direction_local, profile,
+        );
+        self.joints.push(JointConstraint::CamFollower(joint));
         Ok(())
     }
 

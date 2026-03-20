@@ -605,3 +605,43 @@ Phase 6 can begin when ready.
 **Total Rust tests:** 417 passing (380 unit + 11 golden + 8 property + 18 singular)
 
 **Bug fix applied:** Parametric study and counterbalance study now use `self.q` as the initial guess when rebuilding from the blueprint (was using `make_q()` all-zeros which fails to converge for 4-bar mechanisms without a geometric initial guess).
+
+### Phase 6.5 — Cam-Follower Joint
+
+**Goal:** New JointConstraint type where follower displacement is prescribed by a cam profile curve s(theta_cam). Supports polynomial, harmonic, and spline profiles.
+
+**Mathematical formulation:**
+- Constraint: `Phi = (r_j + A_j*s_j - r_i - A_i*s_i) . u_global - s(theta_i) = 0`
+- Where u_global = A_i * follower_direction_local (cam-frame direction)
+- s(theta_i) is the cam profile evaluated at cam body angle
+- 1 constraint equation, removes 1 DOF (follower displacement along direction)
+- Jacobian: partial derivatives w.r.t. all body coordinates (analytical)
+- Gamma: second-time-derivative terms including profile second derivative s''(theta)*theta_dot^2
+
+**Profile types:**
+- Polynomial: s(theta) = sum(a_i * theta^i) — general, easy derivatives
+- Harmonic: s(theta) = A*sin(n*theta + phi) + offset — common in cam design
+- Spline: cubic interpolation of user-defined (theta, s) points — most flexible
+
+**Implementation approach:**
+- Start with CamProfile enum + evaluate/derivative/second_derivative
+- Add CamFollowerJoint struct implementing Constraint trait
+- Add to JointConstraint enum for dispatch
+- Add add_cam_follower_joint to Mechanism
+- Add CamFollower variant to JointJson for serialization
+- Add is_cam_follower() + canvas rendering
+- Tests: profile evaluation, constraint residual, Jacobian FD verification
+
+**Key risk:** The Jacobian and gamma terms are more complex than revolute/prismatic — need careful derivation. Profile second derivatives are required for gamma (acceleration RHS).
+
+| Step | Description | Status | Key files |
+|------|-------------|--------|-----------|
+| 1 | CamProfile enum (Polynomial, Harmonic, Spline) + evaluate/derivative/second_derivative | Done | `core/constraint.rs` |
+| 2 | CamFollowerJoint struct + full Constraint trait (Phi, Jacobian, gamma) | Done | `core/constraint.rs` |
+| 3 | Add CamFollower to JointConstraint enum + all dispatch arms | Done | `core/constraint.rs` |
+| 4 | add_cam_follower_joint on Mechanism | Done | `core/mechanism.rs` |
+| 5 | JointJson::CamFollower + serialization (save + load) | Done | `io/serialization.rs` |
+| 6 | is_cam_follower() + match arms in state.rs helpers | Done | `gui/state.rs` |
+| 7 | Tests — all 417 existing tests pass, no regressions | Done | — |
+
+**Note:** Canvas rendering for cam-follower uses default joint glyph (circle). GUI cam-follower creation not yet exposed in context menu (can be created via JSON). Profile types supported: Polynomial (arbitrary degree), Harmonic (A*sin(n*theta+phi)+offset), Spline (piecewise-linear interpolation of user-defined points).
