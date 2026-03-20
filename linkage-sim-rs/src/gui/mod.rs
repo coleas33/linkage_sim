@@ -4,6 +4,7 @@ mod state;
 mod canvas;
 mod export;
 mod input_panel;
+mod parametric_panel;
 mod plot_panel;
 mod property_panel;
 pub mod samples;
@@ -326,6 +327,7 @@ impl eframe::App for LinkageApp {
                 ui.menu_button("View", |ui| {
                     ui.checkbox(&mut self.state.show_debug_overlay, "Debug Overlay");
                     ui.checkbox(&mut self.state.show_plots, "Plot Panel");
+                    ui.checkbox(&mut self.state.show_parametric, "Parametric Study");
                     ui.checkbox(&mut self.state.show_forces, "Force Arrows");
                     ui.checkbox(&mut self.state.show_dimensions, "Link Dimensions");
                     ui.checkbox(&mut self.state.enable_gravity, "Gravity");
@@ -550,6 +552,18 @@ impl eframe::App for LinkageApp {
                     input_panel::draw_input_panel(ui, &mut self.state);
                 });
             });
+
+        // --- Right panel: parametric study ---
+        if self.state.show_parametric {
+            egui::SidePanel::right("parametric_panel")
+                .default_width(300.0)
+                .resizable(true)
+                .show(ctx, |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        parametric_panel::draw_parametric_panel(ui, &mut self.state);
+                    });
+                });
+        }
 
         // --- Central canvas ---
         egui::CentralPanel::default().show(ctx, |ui| {

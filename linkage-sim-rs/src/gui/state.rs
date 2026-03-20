@@ -435,6 +435,147 @@ pub struct SweepData {
     pub toggle_angles: Vec<f64>,
 }
 
+// ── Parametric study ──────────────────────────────────────────────────────────
+
+/// A parameter that can be swept in a parametric study.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SweepParameter {
+    /// Body mass (kg). Value: body_id.
+    BodyMass(String),
+    /// Body moment of inertia about CG (kg*m^2). Value: body_id.
+    BodyIzz(String),
+    /// Attachment point X coordinate (m). Value: (body_id, point_name).
+    AttachmentX(String, String),
+    /// Attachment point Y coordinate (m). Value: (body_id, point_name).
+    AttachmentY(String, String),
+    /// Force element scalar parameter. Value: (force_index, field_name).
+    ForceParam(usize, String),
+    /// Driver angular velocity (rad/s).
+    DriverOmega,
+}
+
+impl SweepParameter {
+    /// Human-readable label for the parameter.
+    pub fn label(&self) -> String {
+        match self {
+            Self::BodyMass(id) => format!("{} mass (kg)", id),
+            Self::BodyIzz(id) => format!("{} Izz (kg*m^2)", id),
+            Self::AttachmentX(body, pt) => format!("{}.{} x (m)", body, pt),
+            Self::AttachmentY(body, pt) => format!("{}.{} y (m)", body, pt),
+            Self::ForceParam(idx, field) => format!("Force[{}].{}", idx, field),
+            Self::DriverOmega => "Driver omega (rad/s)".to_string(),
+        }
+    }
+}
+
+/// Which output metric to plot on the Y-axis of a parametric study.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParametricMetric {
+    PeakDriverTorque,
+    RmsDriverTorque,
+    MinTransmissionAngle,
+    MaxTransmissionAngle,
+    PeakReaction,
+    PeakKineticEnergy,
+    MeanMechanicalAdvantage,
+}
+
+impl ParametricMetric {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::PeakDriverTorque => "Peak Driver Torque (N*m)",
+            Self::RmsDriverTorque => "RMS Driver Torque (N*m)",
+            Self::MinTransmissionAngle => "Min Transmission Angle (deg)",
+            Self::MaxTransmissionAngle => "Max Transmission Angle (deg)",
+            Self::PeakReaction => "Peak Joint Reaction (N)",
+            Self::PeakKineticEnergy => "Peak Kinetic Energy (J)",
+            Self::MeanMechanicalAdvantage => "Mean Mechanical Advantage",
+        }
+    }
+
+    pub fn all() -> &'static [ParametricMetric] {
+        &[
+            Self::PeakDriverTorque,
+            Self::RmsDriverTorque,
+            Self::MinTransmissionAngle,
+            Self::MaxTransmissionAngle,
+            Self::PeakReaction,
+            Self::PeakKineticEnergy,
+            Self::MeanMechanicalAdvantage,
+        ]
+    }
+
+    /// Extract a scalar value from a sweep dataset for this metric.
+    pub fn extract(&self, sweep: &SweepData) -> f64 {
+        match self {
+            Self::PeakDriverTorque => sweep
+                .driver_torques
+                .as_ref()
+                .map(|v| v.iter().map(|x| x.abs()).fold(0.0_f64, f64::max))
+                .unwrap_or(0.0),
+            Self::RmsDriverTorque => sweep
+                .driver_torques
+                .as_ref()
+                .map(|v| {
+                    let n = v.len() as f64;
+                    if n == 0.0 { return 0.0; }
+                    (v.iter().map(|x| x * x).sum::<f64>() / n).sqrt()
+                })
+                .unwrap_or(0.0),
+            Self::MinTransmissionAngle => sweep
+                .transmission_angles
+                .as_ref()
+                .map(|v| v.iter().copied().fold(f64::INFINITY, f64::min))
+                .unwrap_or(0.0),
+            Self::MaxTransmissionAngle => sweep
+                .transmission_angles
+                .as_ref()
+                .map(|v| v.iter().copied().fold(0.0_f64, f64::max))
+                .unwrap_or(0.0),
+            Self::PeakReaction => sweep
+                .joint_reaction_magnitudes
+                .values()
+                .flat_map(|v| v.iter().copied())
+                .fold(0.0_f64, f64::max),
+            Self::PeakKineticEnergy => sweep
+                .kinetic_energy
+                .iter()
+                .copied()
+                .fold(0.0_f64, f64::max),
+            Self::MeanMechanicalAdvantage => {
+                let v = &sweep.mechanical_advantage;
+                if v.is_empty() { return 0.0; }
+                // Filter out extreme values near toggle
+                let filtered: Vec<f64> = v.iter().copied().filter(|x| x.abs() < 1e6).collect();
+                if filtered.is_empty() { return 0.0; }
+                filtered.iter().sum::<f64>() / filtered.len() as f64
+            }
+        }
+    }
+}
+
+/// Configuration for a parametric study.
+#[derive(Debug, Clone)]
+pub struct ParametricStudyConfig {
+    pub parameter: SweepParameter,
+    pub min_value: f64,
+    pub max_value: f64,
+    pub num_steps: usize,
+    pub metric: ParametricMetric,
+}
+
+/// Results of a parametric study.
+#[derive(Debug, Clone)]
+pub struct ParametricStudyResult {
+    pub config: ParametricStudyConfig,
+    /// Parameter values at each step.
+    pub parameter_values: Vec<f64>,
+    /// Extracted metric value at each step.
+    pub metric_values: Vec<f64>,
+    /// Full sweep data for the selected (hovered/clicked) parameter value, if any.
+    pub selected_sweep: Option<(f64, SweepData)>,
+}
+
 // ── Simulation state ──────────────────────────────────────────────────────────
 
 /// Forward dynamics simulation result and playback state.
@@ -552,6 +693,13 @@ pub struct AppState {
     pub simulation: Option<SimulationState>,
     /// Duration for forward dynamics simulation (seconds).
     pub simulation_duration: f64,
+    // ── Parametric study ──────────────────────────────────────────────
+    /// Cached parametric study results.
+    pub parametric_result: Option<ParametricStudyResult>,
+    /// Whether the parametric study panel is visible.
+    pub show_parametric: bool,
+    /// Active parametric study configuration (persists across panel close/open).
+    pub parametric_config: ParametricStudyConfig,
     // ── Expression driver editor ────────────────────────────────────────
     /// Text buffer for f(t) expression being edited.
     pub expr_buf: String,
@@ -664,6 +812,15 @@ impl Default for AppState {
             crank_recommendation: None,
             simulation: None,
             simulation_duration: 5.0,
+            parametric_result: None,
+            show_parametric: false,
+            parametric_config: ParametricStudyConfig {
+                parameter: SweepParameter::DriverOmega,
+                min_value: 1.0,
+                max_value: 10.0,
+                num_steps: 5,
+                metric: ParametricMetric::PeakDriverTorque,
+            },
             expr_buf: String::new(),
             expr_dot_buf: String::new(),
             expr_ddot_buf: String::new(),
@@ -1554,6 +1711,154 @@ impl AppState {
         }
         bp.forces[index] = force;
         self.rebuild();
+    }
+
+    // ── Parametric study ──────────────────────────────────────────────
+
+    /// Apply a parameter value to a blueprint clone. Returns None if the
+    /// parameter path doesn't resolve.
+    fn set_parameter_on_blueprint(
+        bp: &mut MechanismJson,
+        param: &SweepParameter,
+        value: f64,
+        omega: &mut f64,
+    ) -> bool {
+        match param {
+            SweepParameter::BodyMass(id) => {
+                if let Some(body) = bp.bodies.get_mut(id) {
+                    body.mass = value;
+                    return true;
+                }
+            }
+            SweepParameter::BodyIzz(id) => {
+                if let Some(body) = bp.bodies.get_mut(id) {
+                    body.izz_cg = value;
+                    return true;
+                }
+            }
+            SweepParameter::AttachmentX(body_id, point_name) => {
+                if let Some(body) = bp.bodies.get_mut(body_id) {
+                    if let Some(pt) = body.attachment_points.get_mut(point_name) {
+                        pt[0] = value;
+                        return true;
+                    }
+                }
+            }
+            SweepParameter::AttachmentY(body_id, point_name) => {
+                if let Some(body) = bp.bodies.get_mut(body_id) {
+                    if let Some(pt) = body.attachment_points.get_mut(point_name) {
+                        pt[1] = value;
+                        return true;
+                    }
+                }
+            }
+            SweepParameter::ForceParam(idx, field) => {
+                if let Some(force) = bp.forces.get_mut(*idx) {
+                    return set_force_field(force, field, value);
+                }
+            }
+            SweepParameter::DriverOmega => {
+                *omega = value;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Run a parametric study: sweep a parameter across a range, compute a full
+    /// kinematic/force sweep at each value, and extract the selected metric.
+    ///
+    /// Clones the blueprint for each parameter value — the user's current
+    /// mechanism is not modified.
+    pub fn run_parametric_study(&mut self) {
+        let Some(ref base_bp) = self.blueprint else { return };
+        let config = &self.parametric_config;
+        if config.num_steps < 2 {
+            return;
+        }
+
+        let step_size = (config.max_value - config.min_value) / (config.num_steps - 1) as f64;
+        let mut param_values = Vec::with_capacity(config.num_steps);
+        let mut metric_values = Vec::with_capacity(config.num_steps);
+
+        for i in 0..config.num_steps {
+            let value = config.min_value + i as f64 * step_size;
+            param_values.push(value);
+
+            // Clone blueprint and apply parameter
+            let mut bp = base_bp.clone();
+            let mut omega = self.driver_omega;
+            if !Self::set_parameter_on_blueprint(&mut bp, &config.parameter, value, &mut omega) {
+                metric_values.push(f64::NAN);
+                continue;
+            }
+
+            // Build mechanism from modified blueprint
+            let Ok(mut mech) = load_mechanism_unbuilt_from_json(&bp) else {
+                metric_values.push(f64::NAN);
+                continue;
+            };
+            if mech.build().is_err() {
+                metric_values.push(f64::NAN);
+                continue;
+            }
+
+            // Compute initial guess and run sweep
+            let q0 = mech.state().make_q();
+            let theta_0 = self.driver_theta_0;
+            let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0);
+
+            // Extract the selected metric
+            metric_values.push(config.metric.extract(&sweep));
+        }
+
+        self.parametric_result = Some(ParametricStudyResult {
+            config: config.clone(),
+            parameter_values: param_values,
+            metric_values,
+            selected_sweep: None,
+        });
+    }
+
+    /// Enumerate all sweepable parameters from the current blueprint.
+    pub fn available_parameters(&self) -> Vec<SweepParameter> {
+        let Some(ref bp) = self.blueprint else { return Vec::new() };
+        let mut params = Vec::new();
+
+        // Body parameters (skip ground)
+        for (body_id, body) in &bp.bodies {
+            if body_id == GROUND_ID { continue; }
+            params.push(SweepParameter::BodyMass(body_id.clone()));
+            params.push(SweepParameter::BodyIzz(body_id.clone()));
+            let mut pts: Vec<_> = body.attachment_points.keys().collect();
+            pts.sort();
+            for pt_name in pts {
+                params.push(SweepParameter::AttachmentX(body_id.clone(), pt_name.clone()));
+                params.push(SweepParameter::AttachmentY(body_id.clone(), pt_name.clone()));
+            }
+        }
+
+        // Ground attachment point positions
+        if let Some(ground) = bp.bodies.get(GROUND_ID) {
+            let mut pts: Vec<_> = ground.attachment_points.keys().collect();
+            pts.sort();
+            for pt_name in pts {
+                params.push(SweepParameter::AttachmentX(GROUND_ID.to_string(), pt_name.clone()));
+                params.push(SweepParameter::AttachmentY(GROUND_ID.to_string(), pt_name.clone()));
+            }
+        }
+
+        // Force element parameters
+        for (idx, force) in bp.forces.iter().enumerate() {
+            for field in force_sweepable_fields(force) {
+                params.push(SweepParameter::ForceParam(idx, field));
+            }
+        }
+
+        // Driver omega
+        params.push(SweepParameter::DriverOmega);
+
+        params
     }
 
     // ── Raw blueprint helpers (no undo / no rebuild) ──────────────────
@@ -2600,6 +2905,84 @@ fn generate_unique_id<V>(prefix: &str, map: &HashMap<String, V>) -> String {
 ///
 /// Returns the sweep data and the solved q at angle 0 (used to reset the
 /// initial guess when animation wraps around 360→0).
+/// Set a single scalar field on a force element by field name. Returns true if successful.
+fn set_force_field(force: &mut ForceElement, field: &str, value: f64) -> bool {
+    match force {
+        ForceElement::LinearSpring(e) => match field {
+            "stiffness" => { e.stiffness = value; true }
+            "free_length" => { e.free_length = value; true }
+            _ => false,
+        },
+        ForceElement::TorsionSpring(e) => match field {
+            "stiffness" => { e.stiffness = value; true }
+            "free_angle" => { e.free_angle = value; true }
+            _ => false,
+        },
+        ForceElement::LinearDamper(e) => match field {
+            "damping" => { e.damping = value; true }
+            _ => false,
+        },
+        ForceElement::RotaryDamper(e) => match field {
+            "damping" => { e.damping = value; true }
+            _ => false,
+        },
+        ForceElement::GasSpring(e) => match field {
+            "initial_force" => { e.initial_force = value; true }
+            "extended_length" => { e.extended_length = value; true }
+            "stroke" => { e.stroke = value; true }
+            _ => false,
+        },
+        ForceElement::Motor(e) => match field {
+            "stall_torque" => { e.stall_torque = value; true }
+            "no_load_speed" => { e.no_load_speed = value; true }
+            _ => false,
+        },
+        ForceElement::ExternalForce(e) => match field {
+            "force_x" => { e.force[0] = value; true }
+            "force_y" => { e.force[1] = value; true }
+            _ => false,
+        },
+        ForceElement::ExternalTorque(e) => match field {
+            "torque" => { e.torque = value; true }
+            _ => false,
+        },
+        ForceElement::BearingFriction(e) => match field {
+            "constant_drag" => { e.constant_drag = value; true }
+            "viscous_coeff" => { e.viscous_coeff = value; true }
+            "coulomb_coeff" => { e.coulomb_coeff = value; true }
+            _ => false,
+        },
+        ForceElement::JointLimit(e) => match field {
+            "stiffness" => { e.stiffness = value; true }
+            _ => false,
+        },
+        ForceElement::LinearActuator(e) => match field {
+            "force" => { e.force = value; true }
+            "speed_limit" => { e.speed_limit = value; true }
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// List sweepable field names for a force element.
+fn force_sweepable_fields(force: &ForceElement) -> Vec<String> {
+    match force {
+        ForceElement::LinearSpring(_) => vec!["stiffness".into(), "free_length".into()],
+        ForceElement::TorsionSpring(_) => vec!["stiffness".into(), "free_angle".into()],
+        ForceElement::LinearDamper(_) => vec!["damping".into()],
+        ForceElement::RotaryDamper(_) => vec!["damping".into()],
+        ForceElement::GasSpring(_) => vec!["initial_force".into(), "extended_length".into(), "stroke".into()],
+        ForceElement::Motor(_) => vec!["stall_torque".into(), "no_load_speed".into()],
+        ForceElement::ExternalForce(_) => vec!["force_x".into(), "force_y".into()],
+        ForceElement::ExternalTorque(_) => vec!["torque".into()],
+        ForceElement::BearingFriction(_) => vec!["constant_drag".into(), "viscous_coeff".into(), "coulomb_coeff".into()],
+        ForceElement::JointLimit(_) => vec!["stiffness".into()],
+        ForceElement::LinearActuator(_) => vec!["force".into(), "speed_limit".into()],
+        _ => Vec::new(),
+    }
+}
+
 fn compute_sweep_data(
     mech: &Mechanism,
     q_start: &DVector<f64>,
@@ -4629,5 +5012,91 @@ mod tests {
             joints_before,
             "undo should remove the prismatic joint"
         );
+    }
+
+    // ── Parametric study tests ────────────────────────────────────────────
+
+    #[test]
+    fn available_parameters_includes_body_mass_and_driver_omega() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let params = state.available_parameters();
+        assert!(!params.is_empty());
+        assert!(
+            params.iter().any(|p| matches!(p, SweepParameter::DriverOmega)),
+            "should include DriverOmega"
+        );
+        assert!(
+            params.iter().any(|p| matches!(p, SweepParameter::BodyMass(_))),
+            "should include at least one BodyMass"
+        );
+    }
+
+    #[test]
+    fn run_parametric_study_produces_results() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // Use PeakKineticEnergy — always non-zero for a mechanism with mass
+        state.parametric_config = ParametricStudyConfig {
+            parameter: SweepParameter::DriverOmega,
+            min_value: 1.0,
+            max_value: 10.0,
+            num_steps: 3,
+            metric: ParametricMetric::PeakKineticEnergy,
+        };
+
+        state.run_parametric_study();
+
+        let result = state.parametric_result.as_ref().expect("should have results");
+        assert_eq!(result.parameter_values.len(), 3);
+        assert_eq!(result.metric_values.len(), 3);
+        assert!(
+            result.metric_values.iter().all(|v| v.is_finite()),
+            "all metric values should be finite, got {:?}",
+            result.metric_values
+        );
+    }
+
+    #[test]
+    fn parametric_study_body_mass_sweep() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // Find a non-ground body
+        let body_id = {
+            let bp = state.blueprint.as_ref().unwrap();
+            bp.bodies.keys().find(|k| k.as_str() != GROUND_ID).unwrap().clone()
+        };
+
+        // Sweep mass — just verify it produces finite results at each step
+        state.parametric_config = ParametricStudyConfig {
+            parameter: SweepParameter::BodyMass(body_id),
+            min_value: 0.5,
+            max_value: 5.0,
+            num_steps: 3,
+            metric: ParametricMetric::PeakKineticEnergy,
+        };
+
+        state.run_parametric_study();
+
+        let result = state.parametric_result.as_ref().expect("should have results");
+        assert_eq!(result.parameter_values.len(), 3);
+        assert!(
+            result.metric_values.iter().all(|v| v.is_finite()),
+            "all metric values should be finite, got {:?}",
+            result.metric_values
+        );
+    }
+
+    #[test]
+    fn parametric_metric_extract_peak_ke() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.compute_sweep();
+        let sweep = state.sweep_data.as_ref().expect("should have sweep data");
+
+        let ke = ParametricMetric::PeakKineticEnergy.extract(sweep);
+        assert!(ke >= 0.0, "peak KE should be non-negative, got {}", ke);
     }
 }

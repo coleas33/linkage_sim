@@ -474,4 +474,49 @@ All Phase 6 prerequisites from ROADMAP.md are met:
 | Repeatable benchmarks | Met — golden fixture suite (391→411 tests) |
 | Deterministic solver behavior | Met — fixed tolerances, no random initial guesses |
 
-Phase 6 (synthesis, optimization, multi-DOF, cam-follower) can begin when ready.
+Phase 6 can begin when ready.
+
+---
+
+## Phase 6 — Advanced & Quality-of-Life
+
+### Phase 6.1 — Parametric Studies
+
+**Goal:** Sweep any single design variable across a range, run a full kinematic/force sweep at each value, and plot how output quantities change with the parameter. This is the #1 feature engineers need for design iteration.
+
+**Approach:**
+- New `ParametricStudyConfig` struct: parameter selector, min/max/steps
+- New `ParametricStudyResult` struct: `Vec<(f64, SweepData)>` — one full sweep per parameter value
+- `AppState::run_parametric_study()` method: clone blueprint, mutate parameter, rebuild mechanism, run `compute_sweep_data()`, collect results
+- New `gui/parametric_panel.rs` module: collapsible panel in the left sidebar with parameter dropdown, range inputs, run button, and output metric selector
+- New plot tab `PlotTab::Parametric`: overlaid curves colored by parameter value with legend
+
+**Parameter categories (all included per user requirement):**
+- Geometry: attachment point positions (link lengths)
+- Mass properties: body mass, Izz, CG position
+- Force elements: spring k, damper c, free length, motor stall torque, gas spring pressure, etc.
+- Driver: omega (speed)
+
+**Output metrics available for Y-axis:**
+- Peak driver torque, RMS driver torque
+- Min/max transmission angle
+- Peak joint reaction (per joint)
+- Coupler point displacement envelope
+- Energy (peak KE, peak PE)
+- Mechanical advantage range
+
+**Key design decisions:**
+- Blueprint is cloned (not mutated in place) for each parameter value — user's current mechanism is not affected
+- Sweep runs synchronously (blocking) — parametric studies are compute-intensive but typically < 2 seconds for 10 parameter values x 360 angle steps
+- Results cached in `AppState::parametric_result: Option<ParametricStudyResult>`
+
+| Step | Description | Status | Key files |
+|------|-------------|--------|-----------|
+| 1 | ParametricStudyConfig + Parameter enum + set_parameter helper | Done | `gui/state.rs` |
+| 2 | run_parametric_study() method on AppState | Done | `gui/state.rs` |
+| 3 | Parametric panel UI (parameter selector, range, run button) | Done | `gui/parametric_panel.rs` |
+| 4 | Parametric plot (metric vs parameter with egui_plot) | Done | `gui/parametric_panel.rs` |
+| 5 | Wire into mod.rs + View menu toggle | Done | `gui/mod.rs` |
+| 6 | Tests (4 tests: available_parameters, run_study, mass_sweep, metric_extract) | Done | `gui/state.rs` |
+
+**Total Rust tests:** 415 passing (378 unit + 11 golden + 8 property + 18 singular)
