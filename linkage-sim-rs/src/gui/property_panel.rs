@@ -401,7 +401,12 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
     // ── Force Elements section ─────────────────────────────────────────
     ui.separator();
-    draw_force_elements_panel(ui, state, &mut pending);
+    egui::CollapsingHeader::new("Force Elements")
+        .id_salt("force_elements_section")
+        .default_open(true)
+        .show(ui, |ui| {
+            draw_force_elements_panel(ui, state, &mut pending);
+        });
 
     // --- Apply any pending edits (mutable borrow now safe) ---
     if let Some(edit) = pending {
@@ -741,8 +746,6 @@ fn draw_force_elements_panel(
     state: &AppState,
     pending: &mut Option<PendingPropertyEdit>,
 ) {
-    ui.heading("Force Elements");
-
     let Some(bp) = &state.blueprint else {
         ui.label("No blueprint loaded.");
         return;

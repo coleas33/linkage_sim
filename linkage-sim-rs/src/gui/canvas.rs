@@ -739,6 +739,21 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 }
             }
 
+            // Then check body segments (link lines)
+            if tooltip_text.is_none() {
+                if let Some(seg_hit) = find_nearest_body_segment(hover_pos, &body_segments, HIT_RADIUS) {
+                    if let Some(mech) = &state.mechanism {
+                        if let Some(body) = mech.bodies().get(&seg_hit.body_id) {
+                            tooltip_text = Some(format!(
+                                "{} \u{2014} {:.3} kg \u{2014} click to select",
+                                seg_hit.body_id,
+                                body.mass
+                            ));
+                        }
+                    }
+                }
+            }
+
             if let Some(text) = tooltip_text {
                 // Paint tooltip as a text label near the cursor with a background box.
                 let tip_pos = Pos2::new(hover_pos.x + 14.0, hover_pos.y - 18.0);
@@ -778,8 +793,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     };
 
     // ── Interaction: click to select (Select mode) ────────────────────────
-    // Canvas drag-to-resize has been removed; link lengths are edited via
-    // sidebar sliders. Click still selects the nearest body.
+    // Click selects: attachment points first, then body segments (links).
     if response.clicked_by(egui::PointerButton::Primary)
         && !is_shift
         && state.active_tool == EditorTool::Select
@@ -787,6 +801,8 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         if let Some(pointer_pos) = response.interact_pointer_pos() {
             if let Some(hit) = find_nearest_attachment(pointer_pos) {
                 state.selected = Some(SelectedEntity::Body(hit.body_id.clone()));
+            } else if let Some(seg_hit) = find_nearest_body_segment(pointer_pos, &body_segments, HIT_RADIUS) {
+                state.selected = Some(SelectedEntity::Body(seg_hit.body_id.clone()));
             }
         }
     }

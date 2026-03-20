@@ -663,6 +663,7 @@ impl eframe::App for LinkageApp {
         // --- Left panel: properties + input ---
         egui::SidePanel::left("left_panel")
             .default_width(280.0)
+            .resizable(true)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     property_panel::draw_property_panel(ui, &mut self.state);

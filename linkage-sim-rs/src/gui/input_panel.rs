@@ -11,124 +11,126 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
     }
 
     ui.separator();
-    ui.heading("Driver Input");
 
-    // ── Load case selector ──────────────────────────────────────────
-    draw_load_case_selector(ui, state);
+    // ── Playback (always visible — primary interaction) ──────────────
+    egui::CollapsingHeader::new("Playback")
+        .id_salt("playback_section")
+        .default_open(true)
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let play_label = if state.playing { "Pause" } else { "Play" };
+                if ui.button(play_label).clicked() {
+                    state.playing = !state.playing;
+                    if state.playing && !state.loop_mode {
+                        state.animation_direction = 1.0;
+                    }
+                }
 
-    // ── Playback controls ────────────────────────────────────────────
-    ui.horizontal(|ui| {
-        let play_label = if state.playing { "Pause" } else { "Play" };
-        if ui.button(play_label).clicked() {
-            state.playing = !state.playing;
-            if state.playing && !state.loop_mode {
-                state.animation_direction = 1.0;
+                ui.label("Speed:");
+                ui.add(
+                    egui::Slider::new(&mut state.animation_speed_deg_per_sec, 10.0..=720.0)
+                        .suffix(" \u{00B0}/s")
+                        .logarithmic(true)
+                        .clamping(egui::SliderClamping::Always),
+                );
+            });
+
+            ui.horizontal(|ui| {
+                let mode_label = if state.loop_mode { "Loop" } else { "Once" };
+                if ui.button(mode_label).clicked() {
+                    state.loop_mode = !state.loop_mode;
+                    state.animation_direction = 1.0;
+                }
+                if state.loop_mode {
+                    ui.label("(ping-pong)");
+                } else {
+                    ui.label("(forward, stop at 360\u{00B0})");
+                }
+            });
+
+            let mut angle_deg = state.driver_angle.to_degrees();
+            let prev_angle = angle_deg;
+            ui.horizontal(|ui| {
+                ui.label("Crank:");
+                let response = ui.add(
+                    egui::Slider::new(&mut angle_deg, 0.0..=360.0)
+                        .suffix("\u{00B0}")
+                        .step_by(0.5),
+                );
+                if response.dragged() && state.playing {
+                    state.playing = false;
+                    state.animation_direction = 1.0;
+                }
+            });
+            if (angle_deg - prev_angle).abs() > 1e-6 {
+                state.solve_at_angle(angle_deg.to_radians());
             }
-        }
 
-        ui.label("Speed:");
-        ui.add(
-            egui::Slider::new(&mut state.animation_speed_deg_per_sec, 10.0..=720.0)
-                .suffix(" \u{00B0}/s")
-                .logarithmic(true)
-                .clamping(egui::SliderClamping::Always),
-        );
-    });
+            // Solver status
+            let status = &state.solver_status;
+            ui.horizontal(|ui| {
+                let color = if status.converged {
+                    egui::Color32::from_rgb(80, 200, 80)
+                } else {
+                    egui::Color32::from_rgb(200, 60, 60)
+                };
+                ui.colored_label(color, "\u{25CF}");
+                if status.converged {
+                    ui.label(format!(
+                        "Converged {} iters (r={:.1e})",
+                        status.iterations, status.residual_norm
+                    ));
+                } else {
+                    ui.label(format!(
+                        "FAILED (r={:.1e})",
+                        status.residual_norm
+                    ));
+                }
+            });
+        });
 
-    ui.horizontal(|ui| {
-        let mode_label = if state.loop_mode { "Loop" } else { "Once" };
-        if ui.button(mode_label).clicked() {
-            state.loop_mode = !state.loop_mode;
-            state.animation_direction = 1.0;
-        }
-        if state.loop_mode {
-            ui.label("(continuous, ping-pong at limits)");
-        } else {
-            ui.label("(sweep forward, stop at 360\u{00B0})");
-        }
-    });
+    // ── Gravity ──────────────────────────────────────────────────────
+    egui::CollapsingHeader::new("Gravity")
+        .id_salt("gravity_section")
+        .default_open(true)
+        .show(ui, |ui| {
+            let prev_g = state.gravity_magnitude;
+            ui.add(
+                egui::Slider::new(&mut state.gravity_magnitude, 0.0..=981.0)
+                    .suffix(" m/s\u{00b2}")
+                    .step_by(0.01)
+                    .clamping(egui::SliderClamping::Always),
+            );
+            ui.label(format!("({:.2} g)", state.gravity_magnitude / 9.81));
+            if (state.gravity_magnitude - prev_g).abs() > 1e-9 {
+                state.mark_sweep_dirty();
+            }
+        });
 
-    // ── Angle slider ─────────────────────────────────────────────────
-    let mut angle_deg = state.driver_angle.to_degrees();
-    let prev_angle = angle_deg;
+    // ── Driver ───────────────────────────────────────────────────────
+    egui::CollapsingHeader::new("Driver")
+        .id_salt("driver_section")
+        .default_open(true)
+        .show(ui, |ui| {
+            draw_load_case_selector(ui, state);
+            if let Some(joint_id) = &state.driver_joint_id {
+                ui.label(format!("{} (right-click to change)", joint_id));
+            }
+            draw_driver_type_selector(ui, state);
+        });
 
-    ui.horizontal(|ui| {
-        ui.label("Crank angle:");
-        let response = ui.add(
-            egui::Slider::new(&mut angle_deg, 0.0..=360.0)
-                .suffix("\u{00B0}")
-                .step_by(0.5),
-        );
-        if response.dragged() && state.playing {
-            state.playing = false;
-            state.animation_direction = 1.0;
-        }
-    });
-
-    if (angle_deg - prev_angle).abs() > 1e-6 {
-        state.solve_at_angle(angle_deg.to_radians());
-    }
-
-    // ── Solver status ────────────────────────────────────────────────
-    ui.separator();
-    let status = &state.solver_status;
-    ui.horizontal(|ui| {
-        let color = if status.converged {
-            egui::Color32::from_rgb(80, 200, 80)
-        } else {
-            egui::Color32::from_rgb(200, 60, 60)
-        };
-        ui.colored_label(color, "\u{25CF}");
-        if status.converged {
-            ui.label(format!(
-                "Converged in {} iters (r = {:.2e})",
-                status.iterations, status.residual_norm
-            ));
-        } else {
-            ui.label(format!(
-                "FAILED (r = {:.2e}) \u{2014} last good pose",
-                status.residual_norm
-            ));
-        }
-    });
-
-    // ── Gravity controls ───────────────────────────────────────────────
-    ui.separator();
-    let prev_g = state.gravity_magnitude;
-    ui.horizontal(|ui| {
-        ui.label("Gravity:");
-        ui.add(
-            egui::Slider::new(&mut state.gravity_magnitude, 0.0..=981.0)
-                .suffix(" m/s\u{00b2}")
-                .step_by(0.01)
-                .clamping(egui::SliderClamping::Always),
-        );
-    });
-    ui.horizontal(|ui| {
-        ui.add_space(55.0);
-        ui.label(format!("({:.2} g)", state.gravity_magnitude / 9.81));
-    });
-    if (state.gravity_magnitude - prev_g).abs() > 1e-9 {
-        state.mark_sweep_dirty();
-    }
-
-    // ── Driver info ──────────────────────────────────────────────────
-    if let Some(joint_id) = &state.driver_joint_id {
-        ui.label(format!("Driver: {} (right-click joint to change)", joint_id));
-    }
-
-    // ── Driver type selector + expression editor ────────────────────
-    draw_driver_type_selector(ui, state);
-
-    // ── Simulation ──────────────────────────────────────────────────
-    draw_simulation_controls(ui, state);
+    // ── Simulation ───────────────────────────────────────────────────
+    egui::CollapsingHeader::new("Simulation")
+        .id_salt("simulation_section")
+        .default_open(true)
+        .show(ui, |ui| {
+            draw_simulation_controls(ui, state);
+        });
 }
 
 /// Draw forward dynamics simulation controls: duration, run button,
 /// timeline scrubber, and stop button.
 fn draw_simulation_controls(ui: &mut egui::Ui, state: &mut AppState) {
-    ui.separator();
-    ui.strong("Simulation");
 
     // Duration + Simulate button
     ui.horizontal(|ui| {
