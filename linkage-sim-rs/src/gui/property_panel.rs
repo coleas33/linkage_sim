@@ -90,7 +90,7 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
             ui.separator();
 
             // Skip to force elements section
-            drop(mech);
+            let _ = mech;
             draw_force_elements_inner(ui, state, &mut pending);
             apply_pending(state, pending);
             return;
