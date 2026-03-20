@@ -4,6 +4,7 @@ mod state;
 mod canvas;
 mod error_panel;
 mod export;
+mod force_toolbar;
 mod input_panel;
 mod parametric_panel;
 mod plot_panel;
@@ -526,6 +527,17 @@ impl eframe::App for LinkageApp {
                     self.state.add_body_state = None;
                 }
             });
+        });
+
+        // --- Force element toolbar ribbon ---
+        egui::TopBottomPanel::top("force_toolbar").show(ctx, |ui| {
+            if let Some(force_add) = force_toolbar::draw_force_toolbar(ui, &self.state) {
+                match force_add {
+                    force_toolbar::PendingForceAdd::Add(force) => {
+                        self.state.add_force_element(force);
+                    }
+                }
+            }
         });
 
         // --- Status bar ---

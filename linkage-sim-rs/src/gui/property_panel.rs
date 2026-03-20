@@ -21,7 +21,6 @@ use super::state::{AppState, SelectedEntity}; // DisplayUnits used via state.dis
 enum PendingPropertyEdit {
     Mass { body_id: String, value: f64 },
     Izz { body_id: String, value: f64 },
-    AddForce(ForceElement),
     RemoveForce(usize),
     UpdateForce { index: usize, force: ForceElement },
     SetDriver(String),
@@ -438,9 +437,6 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
             PendingPropertyEdit::Izz { body_id, value } => {
                 state.set_body_izz(&body_id, value);
             }
-            PendingPropertyEdit::AddForce(force) => {
-                state.add_force_element(force);
-            }
             PendingPropertyEdit::RemoveForce(idx) => {
                 state.remove_force_element(idx);
             }
@@ -777,17 +773,6 @@ fn draw_force_elements_panel(
         return;
     };
 
-    // Collect non-ground body IDs for default values when adding elements.
-    let body_ids: Vec<String> = if let Some(mech) = &state.mechanism {
-        mech.body_order().to_vec()
-    } else {
-        bp.bodies
-            .keys()
-            .filter(|id| id.as_str() != GROUND_ID)
-            .cloned()
-            .collect()
-    };
-
     // List existing force elements (skip Gravity -- toggled via View menu).
     let mut visible_count = 0u32;
     for (bp_idx, force) in bp.forces.iter().enumerate() {
@@ -812,178 +797,7 @@ fn draw_force_elements_panel(
         ui.label("No force elements.");
     }
 
-    // "Add ..." buttons
-    ui.separator();
-    ui.horizontal_wrapped(|ui| {
-        if ui.small_button("Add Spring").clicked() {
-            if let Some((a, b)) = two_body_ids(&body_ids) {
-                *pending = Some(PendingPropertyEdit::AddForce(
-                    ForceElement::LinearSpring(LinearSpringElement {
-                        body_a: a,
-                        point_a: [0.0, 0.0],
-                        body_b: b,
-                        point_b: [0.0, 0.0],
-                        stiffness: 100.0,
-                        free_length: 0.1,
-                    }),
-                ));
-            }
-        }
-
-        if ui.small_button("Add Damper").clicked() {
-            if let Some((a, b)) = two_body_ids(&body_ids) {
-                *pending = Some(PendingPropertyEdit::AddForce(
-                    ForceElement::LinearDamper(LinearDamperElement {
-                        body_a: a,
-                        point_a: [0.0, 0.0],
-                        body_b: b,
-                        point_b: [0.0, 0.0],
-                        damping: 10.0,
-                    }),
-                ));
-            }
-        }
-
-        if ui.small_button("Add Ext. Force").clicked() {
-            if let Some(id) = body_ids.first().cloned() {
-                *pending = Some(PendingPropertyEdit::AddForce(
-                    ForceElement::ExternalForce(ExternalForceElement {
-                        body_id: id,
-                        local_point: [0.0, 0.0],
-                        force: [0.0, -10.0],
-                        modulation: TimeModulation::Constant,
-                    }),
-                ));
-            }
-        }
-
-        if ui.small_button("Add Ext. Torque").clicked() {
-            if let Some(id) = body_ids.first().cloned() {
-                *pending = Some(PendingPropertyEdit::AddForce(
-                    ForceElement::ExternalTorque(ExternalTorqueElement {
-                        body_id: id,
-                        torque: 1.0,
-                        modulation: TimeModulation::Constant,
-                    }),
-                ));
-            }
-        }
-
-        if ui.small_button("Add Torsion Spring").clicked() {
-            if let Some((a, b)) = two_body_ids(&body_ids) {
-                *pending = Some(PendingPropertyEdit::AddForce(
-                    ForceElement::TorsionSpring(TorsionSpringElement {
-                        body_i: a,
-                        body_j: b,
-                        stiffness: 10.0,
-                        free_angle: 0.0,
-                    }),
-                ));
-            }
-        }
-
-        if ui.small_button("Add Rotary Damper").clicked() {
-            if let Some((a, b)) = two_body_ids(&body_ids) {
-                *pending = Some(PendingPropertyEdit::AddForce(
-                    ForceElement::RotaryDamper(RotaryDamperElement {
-                        body_i: a,
-                        body_j: b,
-                        damping: 5.0,
-                    }),
-                ));
-            }
-        }
-
-        if ui.small_button("Add Gas Spring").clicked() {
-            if let Some((a, b)) = two_body_ids(&body_ids) {
-                *pending = Some(PendingPropertyEdit::AddForce(
-                    ForceElement::GasSpring(GasSpringElement {
-                        body_a: a,
-                        point_a: [0.0, 0.0],
-                        body_b: b,
-                        point_b: [0.0, 0.0],
-                        initial_force: 100.0,
-                        extended_length: 0.5,
-                        stroke: 0.2,
-                        damping: 0.0,
-                        polytropic_exp: 1.0,
-                    }),
-                ));
-            }
-        }
-
-        if ui.small_button("Add Bearing Friction").clicked() {
-            if let Some((a, b)) = two_body_ids(&body_ids) {
-                *pending = Some(PendingPropertyEdit::AddForce(
-                    ForceElement::BearingFriction(BearingFrictionElement {
-                        body_i: a,
-                        body_j: b,
-                        constant_drag: 0.1,
-                        viscous_coeff: 0.01,
-                        coulomb_coeff: 0.0,
-                        pin_radius: 0.0,
-                        radial_load: 0.0,
-                        v_threshold: 0.01,
-                    }),
-                ));
-            }
-        }
-
-        if ui.small_button("Add Joint Limit").clicked() {
-            if let Some((a, b)) = two_body_ids(&body_ids) {
-                *pending = Some(PendingPropertyEdit::AddForce(
-                    ForceElement::JointLimit(JointLimitElement {
-                        body_i: a,
-                        body_j: b,
-                        angle_min: -std::f64::consts::FRAC_PI_2,
-                        angle_max: std::f64::consts::FRAC_PI_2,
-                        stiffness: 100.0,
-                        damping: 0.0,
-                        restitution: 0.5,
-                    }),
-                ));
-            }
-        }
-
-        if ui.small_button("Add Motor").clicked() {
-            if let Some((a, b)) = two_body_ids(&body_ids) {
-                *pending = Some(PendingPropertyEdit::AddForce(
-                    ForceElement::Motor(MotorElement {
-                        body_i: a,
-                        body_j: b,
-                        stall_torque: 10.0,
-                        no_load_speed: 10.0,
-                        direction: 1.0,
-                    }),
-                ));
-            }
-        }
-
-        if ui.small_button("Add Linear Actuator").clicked() {
-            if let Some((a, b)) = two_body_ids(&body_ids) {
-                *pending = Some(PendingPropertyEdit::AddForce(
-                    ForceElement::LinearActuator(LinearActuatorElement {
-                        body_a: a,
-                        point_a: [0.0, 0.0],
-                        body_b: b,
-                        point_b: [0.0, 0.0],
-                        force: 100.0,
-                        speed_limit: 0.0,
-                    }),
-                ));
-            }
-        }
-    });
-}
-
-/// Return two non-ground body IDs for two-body elements, or None if fewer
-/// than two moving bodies exist.
-fn two_body_ids(body_ids: &[String]) -> Option<(String, String)> {
-    if body_ids.len() >= 2 {
-        Some((body_ids[0].clone(), body_ids[1].clone()))
-    } else {
-        None
-    }
+    // Force elements are added via the toolbar ribbon (force_toolbar.rs).
 }
 
 /// Draw editable parameter fields for a single force element.
