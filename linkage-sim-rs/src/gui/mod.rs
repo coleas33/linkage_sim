@@ -297,6 +297,47 @@ impl eframe::App for LinkageApp {
                             ui.close();
                         }
                     }
+                    #[cfg(feature = "native")]
+                    {
+                        ui.separator();
+                        if ui
+                            .add_enabled(
+                                self.state.sweep_data.is_some()
+                                    && self.state.mechanism.is_some(),
+                                egui::Button::new("Generate Report (HTML)..."),
+                            )
+                            .clicked()
+                        {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("HTML", &["html"])
+                                .set_file_name("mechanism_report.html")
+                                .save_file()
+                            {
+                                if let (Some(mech), Some(sweep)) =
+                                    (&self.state.mechanism, &self.state.sweep_data)
+                                {
+                                    match export::generate_html_report(
+                                        mech,
+                                        &self.state.q,
+                                        sweep,
+                                        self.state.grashof_result.as_ref(),
+                                        &self.state.display_units,
+                                    ) {
+                                        Ok(html) => {
+                                            if let Err(e) = std::fs::write(&path, &html) {
+                                                log::error!("Report write failed: {}", e);
+                                            } else {
+                                                // Open in browser
+                                                let _ = open::that(&path);
+                                            }
+                                        }
+                                        Err(e) => log::error!("Report generation failed: {}", e),
+                                    }
+                                }
+                            }
+                            ui.close();
+                        }
+                    }
                     ui.separator();
                     if ui.button("Quit").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);

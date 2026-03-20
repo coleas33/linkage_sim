@@ -2983,7 +2983,7 @@ fn force_sweepable_fields(force: &ForceElement) -> Vec<String> {
     }
 }
 
-fn compute_sweep_data(
+pub(crate) fn compute_sweep_data(
     mech: &Mechanism,
     q_start: &DVector<f64>,
     omega: f64,

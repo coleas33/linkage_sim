@@ -520,3 +520,35 @@ Phase 6 can begin when ready.
 | 6 | Tests (4 tests: available_parameters, run_study, mass_sweep, metric_extract) | Done | `gui/state.rs` |
 
 **Total Rust tests:** 415 passing (378 unit + 11 golden + 8 property + 18 singular)
+
+### Phase 6.2 — Report Generation (HTML)
+
+**Goal:** One-click HTML report with mechanism diagram, dimensions, mass properties, Grashof classification, torque/transmission/reaction envelopes, force element summary. Opens in browser.
+
+**Approach:**
+- New `generate_html_report()` function in `gui/export.rs` — builds an HTML string with embedded CSS and inline SVG
+- Reuses `generate_svg_string()` for the mechanism diagram
+- Computes envelopes using `analysis::envelopes::compute_envelope()`
+- Extracts dimensions by computing distances between attachment points
+- File > Generate Report... menu item (native only, saves .html and opens in browser via `open::that()`)
+- No external template engine — plain Rust `format!()` string building
+
+**Report sections:**
+1. Header (mechanism name, date, solver version)
+2. Mechanism diagram (embedded SVG)
+3. Topology table (bodies, joints, DOF, Grashof)
+4. Dimensions table (link lengths between attachment points)
+5. Mass properties table (body mass, Izz, CG)
+6. Driver torque envelope (min, max, RMS, peak angle)
+7. Transmission angle range (min, max, min angle location)
+8. Joint reaction peaks (per joint: peak resultant force)
+9. Force element summary (type, parameters)
+10. Energy summary (peak KE, peak PE)
+
+| Step | Description | Status | Key files |
+|------|-------------|--------|-----------|
+| 1 | generate_html_report() — 10-section HTML with embedded SVG, envelopes, tables | Done | `gui/export.rs` |
+| 2 | File > Generate Report (HTML)... menu item + open in browser via `open` crate | Done | `gui/mod.rs`, `Cargo.toml` |
+| 3 | Test (report string contains title, SVG, dimensions, mass tables) | Done | `gui/export.rs` |
+
+**Total Rust tests:** 416 passing (379 unit + 11 golden + 8 property + 18 singular)
