@@ -31,6 +31,7 @@ enum PendingPropertyEdit {
     LinkOrientation { body_id: String, point_a: String, point_b: String, angle_rad: f64 },
     SelectBody(String),
     Deselect,
+    SetEditorBody(String),
 }
 
 /// Draw the property panel showing info about the selected entity.
@@ -38,11 +39,16 @@ enum PendingPropertyEdit {
 /// Mass and inertia fields are editable via `DragValue` widgets when a
 /// blueprint is present and the selected body is not ground.
 pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
-    ui.heading("Properties");
+    let mut pending: Option<PendingPropertyEdit> = None;
 
-    // ── Compact mechanism summary (always visible) ─────────────────────
-    if let Some(mech) = &state.mechanism {
-        let n_bodies = mech.bodies().len().saturating_sub(1); // exclude ground
+    let Some(mech) = &state.mechanism else {
+        ui.label("No mechanism loaded.");
+        return;
+    };
+
+    // ── Compact mechanism summary ─────────────────────────────────────
+    {
+        let n_bodies = mech.bodies().len().saturating_sub(1);
         let n_joints = mech.joints().len();
         let total_mass: f64 = mech.bodies().values()
             .filter(|b| b.id != GROUND_ID)
@@ -56,74 +62,49 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
             ui.small("\u{2022}");
             ui.small(format!("{:.2} kg", total_mass));
         });
-        ui.separator();
     }
 
-    // ── Diagnostics section (always shown when a mechanism is loaded) ───
-    draw_diagnostics_section(ui, state);
+    // ── Link Editor (always visible, dropdown to pick body) ───────────
+    let body_ids: Vec<String> = mech.body_order().to_vec();
 
-    // Collect any pending edits during rendering, then apply them after
-    // we're done reading from state (avoids &/&mut borrow overlap).
-    let mut pending: Option<PendingPropertyEdit> = None;
+    // Auto-select first body if none selected
+    if state.link_editor_body.is_none() && !body_ids.is_empty() {
+        // Can't mutate here (mech borrows state), use pending
+        pending = Some(PendingPropertyEdit::SetEditorBody(body_ids[0].clone()));
+    }
 
-    // --- Immutable-borrow block: read mechanism, blueprint, and draw UI ---
-    {
-        let Some(mech) = &state.mechanism else {
-            ui.label("No mechanism loaded.");
-            return;
-        };
+    egui::CollapsingHeader::new("Link Editor")
+        .id_salt("link_editor")
+        .default_open(true)
+        .show(ui, |ui| {
+            // Body selector dropdown
+            let current_label = state.link_editor_body.as_deref().unwrap_or("(none)");
+            egui::ComboBox::from_label("Body")
+                .selected_text(current_label)
+                .show_ui(ui, |ui| {
+                    for bid in &body_ids {
+                        let is_selected = state.link_editor_body.as_deref() == Some(bid.as_str());
+                        if ui.selectable_label(is_selected, bid).clicked() {
+                            pending = Some(PendingPropertyEdit::SetEditorBody(bid.clone()));
+                        }
+                    }
+                });
 
-        let Some(selected) = &state.selected else {
-            ui.label("Click a link on the canvas to edit it.");
-            ui.separator();
-            ui.strong("Quick select:");
-            let body_ids: Vec<String> = mech.body_order().to_vec();
-            for bid in &body_ids {
-                if ui.button(bid).clicked() {
-                    // Can't mutate state inside immutable borrow block, so
-                    // use pending to defer selection.
-                    pending = Some(PendingPropertyEdit::SelectBody(bid.clone()));
-                }
-            }
-            // Still need to draw force elements below, so don't return.
-            // Fall through with no selected entity content.
-            ui.separator();
-
-            // Skip to force elements section
-            let _ = mech;
-            draw_force_elements_inner(ui, state, &mut pending);
-            apply_pending(state, pending);
-            return;
-        };
-
-        match selected {
-            SelectedEntity::Body(body_id) => {
+            // Show editor for the selected body
+            if let Some(body_id) = &state.link_editor_body {
                 let body_id = body_id.clone();
                 if let Some(body) = mech.bodies().get(&body_id) {
                     let mech_state = mech.state();
                     let q = &state.q;
                     let units = &state.display_units;
 
-                    // ── Link Editor header ─────────────────────────────────
-                    ui.horizontal(|ui| {
-                        ui.heading(format!("Link Editor: {}", body_id));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button("\u{2715} Close").clicked() {
-                                pending = Some(PendingPropertyEdit::Deselect);
-                            }
-                        });
-                    });
-                    ui.separator();
-
                     if body_id != GROUND_ID {
                         let (x, y, theta) = mech_state.get_pose(&body_id, q);
-                        ui.horizontal(|ui| {
-                            ui.label(format!(
-                                "Pos: ({:.3}, {:.3}){}  Angle: {:.1}{}",
-                                units.length(x), units.length(y), units.length_suffix(),
-                                units.angle(theta), units.angle_suffix()
-                            ));
-                        });
+                        ui.label(format!(
+                            "Pos: ({:.3}, {:.3}){}  \u{2220} {:.1}{}",
+                            units.length(x), units.length(y), units.length_suffix(),
+                            units.angle(theta), units.angle_suffix()
+                        ));
                     }
 
                     // ── Geometry: lengths + orientations ──────────────────
@@ -132,314 +113,105 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
                     if pts.len() >= 2 && body_id != GROUND_ID {
                         ui.separator();
-                        ui.strong("Geometry");
 
-                        // Build segments with length and angle
                         let mut segments: Vec<(&str, &str, f64, f64)> = Vec::new();
                         for pair in pts.windows(2) {
-                            let (name_a, pt_a) = &pair[0];
-                            let (name_b, pt_b) = &pair[1];
-                            let dx = pt_b.x - pt_a.x;
-                            let dy = pt_b.y - pt_a.y;
-                            let len = (dx * dx + dy * dy).sqrt();
-                            let angle = dy.atan2(dx);
-                            segments.push((name_a.as_str(), name_b.as_str(), len, angle));
+                            let (na, pa) = &pair[0];
+                            let (nb, pb) = &pair[1];
+                            let dx = pb.x - pa.x;
+                            let dy = pb.y - pa.y;
+                            segments.push((na.as_str(), nb.as_str(), (dx*dx+dy*dy).sqrt(), dy.atan2(dx)));
                         }
                         if pts.len() >= 3 {
-                            let (name_a, pt_a) = pts.last().unwrap();
-                            let (name_b, pt_b) = &pts[0];
-                            let dx = pt_b.x - pt_a.x;
-                            let dy = pt_b.y - pt_a.y;
-                            let len = (dx * dx + dy * dy).sqrt();
-                            let angle = dy.atan2(dx);
-                            segments.push((name_a.as_str(), name_b.as_str(), len, angle));
+                            let (na, pa) = pts.last().unwrap();
+                            let (nb, pb) = &pts[0];
+                            let dx = pb.x - pa.x;
+                            let dy = pb.y - pa.y;
+                            segments.push((na.as_str(), nb.as_str(), (dx*dx+dy*dy).sqrt(), dy.atan2(dx)));
                         }
 
-                        for (name_a, name_b, len, angle) in &segments {
-                            ui.label(format!("  {}\u{2192}{}", name_a, name_b));
+                        for (na, nb, len, angle) in &segments {
+                            ui.strong(format!("{}\u{2192}{}", na, nb));
 
-                            // Length slider — only rebuild on release
                             let mut display_len = units.length(*len);
-                            let len_resp = ui.add(
+                            let lr = ui.add(
                                 egui::Slider::new(&mut display_len, units.length(0.001)..=units.length(2.0))
                                     .text("length")
                                     .suffix(units.length_suffix())
                                     .clamping(egui::SliderClamping::Never)
                                     .logarithmic(true),
                             );
-                            if len_resp.drag_stopped() || (len_resp.changed() && !len_resp.dragged()) {
-                                let new_si = units.length_to_si(display_len);
+                            if lr.drag_stopped() || (lr.changed() && !lr.dragged()) {
                                 pending = Some(PendingPropertyEdit::LinkLength {
                                     body_id: body_id.clone(),
-                                    point_a: name_a.to_string(),
-                                    point_b: name_b.to_string(),
-                                    length: new_si,
+                                    point_a: na.to_string(), point_b: nb.to_string(),
+                                    length: units.length_to_si(display_len),
                                 });
                             }
 
-                            // Orientation slider — only rebuild on release
-                            let mut angle_deg = angle.to_degrees();
-                            let ang_resp = ui.add(
-                                egui::Slider::new(&mut angle_deg, -180.0..=180.0)
-                                    .text("angle")
-                                    .suffix("\u{00B0}")
-                                    .step_by(0.5),
+                            let mut adeg = angle.to_degrees();
+                            let ar = ui.add(
+                                egui::Slider::new(&mut adeg, -180.0..=180.0)
+                                    .text("angle").suffix("\u{00B0}").step_by(0.5),
                             );
-                            if ang_resp.drag_stopped() || (ang_resp.changed() && !ang_resp.dragged()) {
-                                let new_angle_rad = angle_deg.to_radians();
+                            if ar.drag_stopped() || (ar.changed() && !ar.dragged()) {
                                 pending = Some(PendingPropertyEdit::LinkOrientation {
                                     body_id: body_id.clone(),
-                                    point_a: name_a.to_string(),
-                                    point_b: name_b.to_string(),
-                                    angle_rad: new_angle_rad,
+                                    point_a: na.to_string(), point_b: nb.to_string(),
+                                    angle_rad: adeg.to_radians(),
                                 });
                             }
                         }
                     }
 
-                    // ── Mass & Inertia (editable sliders) ─────────────────────
+                    // ── Mass & Inertia ────────────────────────────────────
                     if body_id != GROUND_ID {
                         ui.separator();
-                        ui.strong("Mass & Inertia");
-
                         if let Some(bp) = &state.blueprint {
                             if let Some(bp_body) = bp.bodies.get(&body_id) {
                                 let mut mass = bp_body.mass;
-                                let mut izz = bp_body.izz_cg;
-
-                                ui.label("Mass");
-                                let mass_resp = ui.add(
+                                let mr = ui.add(
                                     egui::Slider::new(&mut mass, 0.0..=100.0)
-                                        .suffix(" kg")
+                                        .text("mass").suffix(" kg")
                                         .clamping(egui::SliderClamping::Never)
                                         .logarithmic(true),
                                 );
-                                if mass_resp.drag_stopped() || (mass_resp.changed() && !mass_resp.dragged()) {
+                                if mr.drag_stopped() || (mr.changed() && !mr.dragged()) {
                                     pending = Some(PendingPropertyEdit::Mass {
-                                        body_id: body_id.clone(),
-                                        value: mass,
+                                        body_id: body_id.clone(), value: mass,
                                     });
                                 }
 
-                                ui.label("Inertia (Izz)");
-                                let izz_resp = ui.add(
+                                let mut izz = bp_body.izz_cg;
+                                let ir = ui.add(
                                     egui::Slider::new(&mut izz, 0.0..=10.0)
-                                        .suffix(" kg\u{00b7}m\u{00b2}")
+                                        .text("Izz").suffix(" kg\u{00b7}m\u{00b2}")
                                         .clamping(egui::SliderClamping::Never)
                                         .logarithmic(true),
                                 );
-                                if izz_resp.drag_stopped() || (izz_resp.changed() && !izz_resp.dragged()) {
+                                if ir.drag_stopped() || (ir.changed() && !ir.dragged()) {
                                     pending = Some(PendingPropertyEdit::Izz {
-                                        body_id: body_id.clone(),
-                                        value: izz,
+                                        body_id: body_id.clone(), value: izz,
                                     });
                                 }
                             }
                         }
-
-                        ui.label(format!(
-                            "CG local: ({:.3}, {:.3}){}",
-                            units.length(body.cg_local.x),
-                            units.length(body.cg_local.y),
-                            units.length_suffix()
-                        ));
-
-                        // Point masses
-                        egui::CollapsingHeader::new("Point Masses")
-                            .id_salt("point_masses")
-                            .show(ui, |ui| {
-                                if let Some(bp) = &state.blueprint {
-                                    if let Some(bp_body) = bp.bodies.get(&body_id) {
-                                        if bp_body.point_masses.is_empty() {
-                                            ui.label("None");
-                                        }
-                                        let mut remove_idx = None;
-                                        for (idx, pm) in bp_body.point_masses.iter().enumerate() {
-                                            ui.horizontal(|ui| {
-                                                ui.label(format!(
-                                                    "{:.3} kg at ({:.1}, {:.1}){}",
-                                                    pm.mass,
-                                                    units.length(pm.local_pos[0]),
-                                                    units.length(pm.local_pos[1]),
-                                                    units.length_suffix()
-                                                ));
-                                                if ui.small_button("\u{2715}").on_hover_text("Remove").clicked() {
-                                                    remove_idx = Some(idx);
-                                                }
-                                            });
-                                        }
-                                        if let Some(idx) = remove_idx {
-                                            pending = Some(PendingPropertyEdit::RemovePointMass {
-                                                body_id: body_id.clone(),
-                                                index: idx,
-                                            });
-                                        }
-                                        if ui.small_button("+ Point Mass").clicked() {
-                                            pending = Some(PendingPropertyEdit::AddPointMass {
-                                                body_id: body_id.clone(),
-                                                mass: 1.0,
-                                                local_pos: [0.0, 0.0],
-                                            });
-                                        }
-                                    }
-                                }
-                            });
-                    }
-
-                    // ── Attachment points (read-only, collapsed) ──────────────
-                    if body_id != GROUND_ID {
-                        egui::CollapsingHeader::new("Attachment Points")
-                            .id_salt("attach_pts")
-                            .show(ui, |ui| {
-                                for (name, local) in &pts {
-                                    let global = mech_state.body_point_global(&body_id, local, q);
-                                    ui.label(format!(
-                                        "{}: ({:.3}, {:.3}){}",
-                                        name,
-                                        units.length(global.x),
-                                        units.length(global.y),
-                                        units.length_suffix()
-                                    ));
-                                }
-                            });
                     }
                 }
             }
-            SelectedEntity::Joint(joint_id) => {
-                if let Some(joint) = mech.joints().iter().find(|j| j.id() == joint_id) {
-                    let joint_type = if joint.is_revolute() {
-                        "Revolute"
-                    } else if joint.is_prismatic() {
-                        "Prismatic"
-                    } else {
-                        "Fixed"
-                    };
+        });
 
-                    ui.strong(format!("Joint: {}", joint_id));
-                    ui.label(format!("Type: {}", joint_type));
-                    ui.separator();
+    // ── Diagnostics (collapsed) ───────────────────────────────────────
+    draw_diagnostics_section(ui, state);
 
-                    ui.label(format!("Body i: {}", joint.body_i_id()));
-                    ui.label(format!("Body j: {}", joint.body_j_id()));
-                    ui.label(format!("DOF removed: {}", joint.dof_removed()));
-                    ui.label(format!("Equations: {}", joint.n_equations()));
-
-                    ui.separator();
-                    let mech_state = mech.state();
-                    let q = &state.q;
-                    let global_pos = mech_state.body_point_global(
-                        joint.body_i_id(),
-                        &joint.point_i_local(),
-                        q,
-                    );
-                    let units = &state.display_units;
-                    ui.label(format!(
-                        "Position: ({:.3}, {:.3}){}",
-                        units.length(global_pos.x),
-                        units.length(global_pos.y),
-                        units.length_suffix()
-                    ));
-
-                    // Prismatic axis editing (only for prismatic joints with a blueprint).
-                    if joint.is_prismatic() {
-                        if let Some(bp) = &state.blueprint {
-                            if let Some(bpj) = bp.joints.get(joint_id) {
-                                if let JointJson::Prismatic { axis_local_i, .. } = bpj {
-                                    ui.separator();
-                                    ui.strong("Slide Axis (body i local):");
-                                    let mut ax = axis_local_i[0];
-                                    let mut ay = axis_local_i[1];
-                                    let mut changed = false;
-                                    ui.horizontal(|ui| {
-                                        ui.label("x:");
-                                        if ui
-                                            .add(egui::DragValue::new(&mut ax).speed(0.01).range(-1.0..=1.0))
-                                            .changed()
-                                        {
-                                            changed = true;
-                                        }
-                                        ui.label("y:");
-                                        if ui
-                                            .add(egui::DragValue::new(&mut ay).speed(0.01).range(-1.0..=1.0))
-                                            .changed()
-                                        {
-                                            changed = true;
-                                        }
-                                    });
-                                    if changed {
-                                        // Normalize the axis
-                                        let len = (ax * ax + ay * ay).sqrt();
-                                        if len > 1e-12 {
-                                            ax /= len;
-                                            ay /= len;
-                                        }
-                                        pending = Some(PendingPropertyEdit::UpdatePrismaticAxis {
-                                            joint_id: joint_id.clone(),
-                                            axis: [ax, ay],
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Show reaction forces for this joint if available.
-                    if let Some(&(fx, fy)) = state.force_results.joint_reactions.get(joint_id) {
-                        ui.separator();
-                        ui.strong("Reaction Forces:");
-                        ui.label(format!("Fx: {:.4} N", fx));
-                        ui.label(format!("Fy: {:.4} N", fy));
-                        let resultant = (fx * fx + fy * fy).sqrt();
-                        ui.label(format!("Resultant: {:.4} N", resultant));
-
-                        // Local-frame reactions (body i frame)
-                        let theta_i = if mech_state.is_ground(joint.body_i_id()) {
-                            0.0
-                        } else {
-                            mech_state.get_angle(joint.body_i_id(), q)
-                        };
-                        let local = reaction_to_local([fx, fy], theta_i);
-                        ui.separator();
-                        ui.strong("Local Frame (body i):");
-                        ui.label(format!("Fx_local: {:.4} N", local[0]));
-                        ui.label(format!("Fy_local: {:.4} N", local[1]));
-                    }
-
-                    // "Set as Driver" button for grounded revolute joints.
-                    let grounded_ids = mech.grounded_revolute_joint_ids();
-                    if grounded_ids.contains(&joint_id.to_string()) {
-                        ui.separator();
-                        let is_current =
-                            state.driver_joint_id.as_deref() == Some(joint_id.as_str());
-                        if is_current {
-                            ui.label("(Current driver)");
-                        } else if ui.button("Set as Driver").clicked() {
-                            pending = Some(PendingPropertyEdit::SetDriver(joint_id.to_string()));
-                        }
-                    }
-                }
-            }
-            SelectedEntity::Driver(_driver_id) => {
-                ui.label("Driver properties not yet available.");
-            }
-        }
-
-        // Show driver torque regardless of what is selected.
-        if let Some(torque) = state.force_results.driver_torque {
-            ui.separator();
-            ui.strong("Driver Torque:");
-            ui.label(format!("{:.4} N\u{00b7}m", torque));
-        }
-
-        // Show mechanical advantage regardless of what is selected.
-        if let Some(ma) = state.force_results.mechanical_advantage {
-            if state.force_results.driver_torque.is_none() {
-                ui.separator();
-            }
-            ui.strong("Mechanical Advantage:");
-            ui.label(format!("{:.3}", ma));
-        }
-    } // end immutable borrow block
+    // ── Driver torque & mechanical advantage ─────────────────────────
+    if let Some(torque) = state.force_results.driver_torque {
+        ui.separator();
+        ui.label(format!("Driver Torque: {:.4} N\u{00b7}m", torque));
+    }
+    if let Some(ma) = state.force_results.mechanical_advantage {
+        ui.label(format!("Mech. Advantage: {:.3}", ma));
+    }
 
     // ── Force Elements section ─────────────────────────────────────────
     draw_force_elements_inner(ui, state, &mut pending);
@@ -502,6 +274,9 @@ fn apply_pending(state: &mut AppState, pending: Option<PendingPropertyEdit>) {
             }
             PendingPropertyEdit::Deselect => {
                 state.selected = None;
+            }
+            PendingPropertyEdit::SetEditorBody(body_id) => {
+                state.link_editor_body = Some(body_id);
             }
         }
     }

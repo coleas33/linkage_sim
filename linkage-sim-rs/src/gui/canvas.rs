@@ -833,37 +833,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             })
     };
 
-    // ── DEBUG: Show current selection on canvas ─────────────────────────
-    {
-        let sel_text = match &state.selected {
-            Some(SelectedEntity::Body(id)) => format!("Selected: {}", id),
-            Some(SelectedEntity::Joint(id)) => format!("Selected joint: {}", id),
-            _ => "Selected: none".to_string(),
-        };
-        painter.text(
-            Pos2::new(canvas_rect.left() + 10.0, canvas_rect.top() + 10.0),
-            egui::Align2::LEFT_TOP,
-            &sel_text,
-            FontId::proportional(14.0),
-            Color32::from_rgb(255, 255, 0),
-        );
-    }
-
-    // ── Interaction: click to select ────────────────────────────────────
-    // The update() loop detects press→release (< 15px) and stores it as
-    // pending_canvas_click BEFORE panels render. We consume it here where
-    // we have the hit targets. Since update() runs before all panels, the
-    // property panel on this SAME frame will see the updated selection.
-    if let Some([cx, cy]) = state.pending_canvas_click.take() {
-        let click_pos = Pos2::new(cx, cy);
-        if canvas_rect.contains(click_pos) && state.active_tool == EditorTool::Select {
-            if let Some(hit) = find_nearest_attachment(click_pos) {
-                state.selected = Some(SelectedEntity::Body(hit.body_id.clone()));
-            } else if let Some(seg_hit) = find_nearest_body_segment(click_pos, &body_segments, LINK_HALF_WIDTH + 4.0) {
-                state.selected = Some(SelectedEntity::Body(seg_hit.body_id.clone()));
-            }
-        }
-    }
+    // Canvas click-to-select removed — Link Editor uses dropdown instead.
 
     // Primary drag on empty space (Select mode) pans the view.
     if response.dragged_by(egui::PointerButton::Primary) && !is_shift {

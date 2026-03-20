@@ -79,33 +79,6 @@ impl eframe::App for LinkageApp {
             self.state.new_empty_mechanism();
         }
 
-        // ── Canvas click selection (processed before panels render) ─────
-        // Track primary button state on AppState. When released after a
-        // short press (< 15px movement), set pending_canvas_click for the
-        // canvas to process during its render pass (where it has hit targets).
-        {
-            let pointer_down = ctx.input(|i| i.pointer.primary_down());
-            let pointer_pos = ctx.input(|i| i.pointer.latest_pos());
-
-            if pointer_down && self.state.canvas_press_pos.is_none() {
-                if let Some(pos) = pointer_pos {
-                    self.state.canvas_press_pos = Some([pos.x, pos.y]);
-                }
-            }
-            if !pointer_down {
-                if let Some([px, py]) = self.state.canvas_press_pos.take() {
-                    if let Some(pos) = pointer_pos {
-                        let dx = pos.x - px;
-                        let dy = pos.y - py;
-                        let dist = (dx * dx + dy * dy).sqrt();
-                        if dist < 15.0 {
-                            self.state.pending_canvas_click = Some([pos.x, pos.y]);
-                        }
-                    }
-                }
-            }
-        }
-
         // ── Debounced sweep recomputation ──────────────────────────────
         if self.state.sweep_dirty {
             let now = ctx.input(|i| i.time);
