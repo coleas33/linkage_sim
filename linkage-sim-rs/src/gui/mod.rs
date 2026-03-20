@@ -78,6 +78,21 @@ impl eframe::App for LinkageApp {
             self.state.new_empty_mechanism();
         }
 
+        // ── Debounced sweep recomputation ──────────────────────────────
+        if self.state.sweep_dirty {
+            let now = ctx.input(|i| i.time);
+            // Stamp the dirty-since time on first detection.
+            if self.state.sweep_dirty_since.is_none() {
+                self.state.sweep_dirty_since = Some(now);
+            }
+            if let Some(since) = self.state.sweep_dirty_since {
+                if (now - since) >= 0.2 {
+                    self.state.compute_sweep();
+                }
+            }
+            ctx.request_repaint();
+        }
+
         // ── Animation / simulation stepping (before rendering) ────────
         let dt = ctx.input(|i| i.stable_dt) as f64;
         if self.state.step_simulation(dt) {

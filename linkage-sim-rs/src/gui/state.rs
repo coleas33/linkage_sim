@@ -694,6 +694,10 @@ pub struct AppState {
     pub sweep_data: Option<SweepData>,
     /// Whether the plot panel is visible.
     pub show_plots: bool,
+    /// Whether sweep data needs recomputation (set by rebuild, gravity change, etc.).
+    pub sweep_dirty: bool,
+    /// Timestamp (egui time in seconds) when sweep was last marked dirty (for debounce).
+    pub sweep_dirty_since: Option<f64>,
     // ── Drag interaction ─────────────────────────────────────────────────
     /// Currently active drag target (attachment point being dragged).
     pub drag_target: Option<DragTarget>,
@@ -854,6 +858,8 @@ impl Default for AppState {
             undo_history: UndoHistory::new(50),
             sweep_data: None,
             show_plots: false,
+            sweep_dirty: false,
+            sweep_dirty_since: None,
             drag_target: None,
             creating_joint: None,
             validation_warnings: ValidationWarnings::default(),
@@ -1669,6 +1675,7 @@ impl AppState {
         self.compute_forces(t);
         self.update_grashof();
         self.compute_validation();
+        self.mark_sweep_dirty();
     }
 
     // ── Blueprint edit operations ────────────────────────────────────────
@@ -2527,7 +2534,7 @@ impl AppState {
                     self.playing = false;
                     self.animation_direction = 1.0;
                     self.pending_driver_reassignment = None;
-                    self.compute_sweep();
+                    self.mark_sweep_dirty();
                     self.compute_validation();
                     return;
                 }
@@ -2584,7 +2591,7 @@ impl AppState {
 
         self.rebuild();
         self.q_at_zero = self.q.clone();
-        self.compute_sweep();
+        // rebuild() already calls mark_sweep_dirty()
     }
 
     /// Switch the current driver to an expression-based driver.
@@ -2703,7 +2710,7 @@ impl AppState {
             self.driver_theta_0 = case.theta_0;
             self.driver_angle = case.theta_0;
             self.solve_at_angle(case.theta_0);
-            self.compute_sweep();
+            self.mark_sweep_dirty();
         }
     }
 
@@ -2849,7 +2856,21 @@ impl AppState {
     /// (previous solution as initial guess). Extracts body angles, coupler
     /// point traces, and transmission angle if the mechanism is a simple
     /// 4-bar.
+    /// Mark sweep data as stale, starting the debounce timer.
+    ///
+    /// The actual recomputation happens in the update loop after a 200ms
+    /// debounce delay, so rapid edits don't cause jank.
+    pub fn mark_sweep_dirty(&mut self) {
+        self.sweep_dirty = true;
+        // sweep_dirty_since is set in the update loop using egui time
+        // (we can't use std::time::Instant because it panics on WASM).
+        // If it's already set, keep the existing timestamp for proper debounce.
+    }
+
     pub fn compute_sweep(&mut self) {
+        self.sweep_dirty = false;
+        self.sweep_dirty_since = None;
+
         if self.mechanism.is_none() {
             self.sweep_data = None;
             return;
@@ -5381,5 +5402,33 @@ mod tests {
         } else {
             assert!(!state.error_log.is_empty());
         }
+    }
+
+    #[test]
+    fn rebuild_marks_sweep_dirty() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.sweep_dirty = false; // reset for test
+        state.rebuild();
+        assert!(state.sweep_dirty, "rebuild() should mark sweep as dirty");
+    }
+
+    #[test]
+    fn load_sample_produces_sweep_data() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        assert!(
+            state.sweep_data.is_some(),
+            "load_sample should produce sweep data immediately"
+        );
+        let sweep = state.sweep_data.as_ref().unwrap();
+        assert!(
+            !sweep.angles_deg.is_empty(),
+            "Sweep should have angle data"
+        );
+        assert!(
+            !sweep.joint_reaction_magnitudes.is_empty(),
+            "Sweep should have joint reaction data"
+        );
     }
 }
