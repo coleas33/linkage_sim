@@ -299,6 +299,28 @@ impl eframe::App for LinkageApp {
                     }
                     #[cfg(feature = "native")]
                     {
+                        if ui
+                            .add_enabled(
+                                self.state.mechanism.is_some(),
+                                egui::Button::new("Export DXF..."),
+                            )
+                            .clicked()
+                        {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("DXF", &["dxf"])
+                                .set_file_name("mechanism.dxf")
+                                .save_file()
+                            {
+                                if let Some(ref mech) = self.state.mechanism {
+                                    if let Err(e) =
+                                        export::export_mechanism_dxf(&path, mech, &self.state.q)
+                                    {
+                                        log::error!("DXF export failed: {}", e);
+                                    }
+                                }
+                            }
+                            ui.close();
+                        }
                         ui.separator();
                         if ui
                             .add_enabled(

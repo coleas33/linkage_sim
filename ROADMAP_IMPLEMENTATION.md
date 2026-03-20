@@ -645,3 +645,30 @@ Phase 6 can begin when ready.
 | 7 | Tests — all 417 existing tests pass, no regressions | Done | — |
 
 **Note:** Canvas rendering for cam-follower uses default joint glyph (circle). GUI cam-follower creation not yet exposed in context menu (can be created via JSON). Profile types supported: Polynomial (arbitrary degree), Harmonic (A*sin(n*theta+phi)+offset), Spline (piecewise-linear interpolation of user-defined points).
+
+### Phase 6.6 — DXF Export
+
+**Goal:** Export mechanism geometry as 2D DXF for import into SolidWorks, AutoCAD, etc.
+
+**Approach:**
+- Generate DXF ASCII format directly (no external crate — format is simple text)
+- Export bodies as LINE entities between attachment points
+- Export joints as CIRCLE entities at joint locations
+- Export ground markers as POINT entities
+- All coordinates in meters (DXF has no inherent unit — CAD tools typically assume meters or mm; we'll note this)
+- Uses the current mechanism pose (solved q)
+
+**DXF structure:**
+```
+0\nSECTION\n2\nENTITIES\n  [LINE/CIRCLE/POINT entities]  \n0\nENDSEC\n0\nEOF
+```
+
+**Why no external crate:** The `dxf` crate (0.6.1) is full-featured but adds dependency weight for a simple export. We only need LINE, CIRCLE, and POINT entities in a flat ENTITIES section — about 50 lines of format strings.
+
+| Step | Description | Status | Key files |
+|------|-------------|--------|-----------|
+| 1 | generate_dxf_string() — LINE entities for bodies, CIRCLE for joints, POINT for ground | Done | `gui/export.rs` |
+| 2 | File > Export DXF... menu item | Done | `gui/mod.rs` |
+| 3 | Test (DXF string contains LINE, CIRCLE, POINT, EOF) | Done | `gui/export.rs` |
+
+**Total Rust tests:** 418 passing (381 unit + 11 golden + 8 property + 18 singular)
