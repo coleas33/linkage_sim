@@ -552,3 +552,20 @@ Phase 6 can begin when ready.
 | 3 | Test (report string contains title, SVG, dimensions, mass tables) | Done | `gui/export.rs` |
 
 **Total Rust tests:** 416 passing (379 unit + 11 golden + 8 property + 18 singular)
+
+### Phase 6.3 — Mechanism Library Expansion
+
+**Goal:** Expand from 13 to 17 sample mechanisms, adding common textbook linkages.
+
+**New mechanisms added:**
+- **Quick-Return** (crank-shaper): asymmetric output stroke with time ratio > 1, ground=0.060, crank=0.015, coupler=0.060, rocker=0.045
+- **Toggle Clamp**: 4-bar near toggle configuration for high mechanical advantage clamping, ground=0.040, crank=0.012, coupler=0.038, rocker=0.020
+- **Scotch Yoke**: produces pure sinusoidal output via crank + prismatic joint on vertical axis, crank=0.02
+- **Inverted Slider-Crank**: crank drives prismatic joint through coupler rotation, different motion profile than standard slider-crank
+
+| Step | Description | Status | Key files |
+|------|-------------|--------|-----------|
+| 1 | Add 4 new SampleMechanism variants + labels | Done | `gui/samples.rs` |
+| 2 | Implement builders (quick-return, toggle clamp, scotch yoke, inverted slider-crank) | Done | `gui/samples.rs` |
+| 3 | Update all_samples_listed test count (13 → 17) | Done | `gui/samples.rs` |
+| 4 | Verify rebuild_all_samples passes for new mechanisms | Done | `gui/state.rs` |
