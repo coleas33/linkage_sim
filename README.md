@@ -18,7 +18,7 @@ Given a mechanism defined as rigid bodies connected by joints, this tool compute
 
 | Force Type | Python | Rust |
 |---|---|---|
-| Gravity | Yes | Yes (GUI toggle) |
+| Gravity | Yes | Yes (GUI slider, 0-100g) |
 | Linear springs | Yes | Yes |
 | Torsion springs | Yes | Yes |
 | Viscous dampers (translational) | Yes | Yes |
@@ -142,10 +142,18 @@ The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forwa
 - Forward dynamics simulation with timeline scrubbing, playback speed control, and constraint drift display
 - PNG + SVG export (resvg-based rasterization, 1920x1080 default)
 - Diagnostics panel: Grashof classification, Jacobian conditioning, crank selection, motor sizing, torque envelopes
-- 13 sample mechanisms (8 four-bar + 5 six-bar), JSON save/load, undo/redo
+- 17 sample mechanisms (8 four-bar + 5 six-bar + 4 specialty), JSON save/load, undo/redo
 - Animation playback with seamless 360-degree wrap (solver initial guess resets to cached angle-0 solution on wrap-around, preventing assembly-branch jumps)
 - Right-click driver reassignment on any grounded revolute joint
+- Gravity slider (0-100g / 0-981 m/s²) with real-time g-value display
 - Gravity-loaded reaction force arrows at every joint; gravity direction indicator on canvas; both toggleable via View menu
+- Auto-sweep: plots update automatically after mechanism changes (200ms debounce)
+- Error panel: simulation failures surface in a collapsible bottom panel instead of silently failing
+- Link Editor panel: dropdown body selector with length sliders and mass/inertia controls
+- Force element toolbar ribbon: categorized "Joint Torques" and "Link Forces" dropdown menus
+- Professional dark theme with color-coded toolbar buttons (blue for tools, green for play, orange for forces)
+- Links rendered as rectangular bars for visual clarity; dashed coupler traces
+- All sidebar sections collapsible (Playback, Gravity, Driver, Simulation, Force Elements, Diagnostics)
 
 **Run natively:** `cd linkage-sim-rs && cargo run --bin linkage-gui`
 
@@ -158,10 +166,12 @@ cd linkage-sim-rs
 Requires: `rustup target add wasm32-unknown-unknown` and `cargo install wasm-bindgen-cli`.
 Note: file dialogs, PNG/SVG/GIF/DXF export, autosave, and HTML reports are native-only. All analysis, editing, and plotting features work in the browser.
 
+**Live deployment:** Pushes to `main` auto-deploy to [colesorkness.com](https://colesorkness.com) via GitHub Actions + Vercel. See `.github/workflows/deploy-web.yml` for the CI pipeline.
+
 **Interactive editor (shipped):** The GUI is now a full interactive editor, not just a visualization shell. Capabilities:
 - Create bodies, joints, and ground pivots via right-click context menu on the canvas
-- Drag attachment points (on ground and moving bodies) to reshape mechanism geometry in real-time, with immediate solver rebuild
-- Edit mass properties (mass, Izz) via DragValue widgets in the property panel
+- Edit link lengths via logarithmic sliders in the Link Editor panel (deferred rebuild on slider release for smooth interaction)
+- Edit mass and inertia properties via logarithmic sliders with type-to-enter exact values
 - Delete bodies and joints with cascading cleanup of dependent elements; Delete via keyboard, Set Driver via context menu/property panel
 - Two-click joint creation workflow with visual feedback (green ring highlight, hint text)
 - Live validation warnings in status bar: DOF mismatch, disconnected bodies, missing driver
@@ -171,7 +181,7 @@ Note: file dialogs, PNG/SVG/GIF/DXF export, autosave, and HTML reports are nativ
 - Add Pivot Here context menu: right-click a body edge to add attachment points, promoting binary bars to ternary plates
 - Body-aware Draw Link: snapping to body segments auto-creates pivots for branching connections
 - Create Joint two-click flow: right-click attachment point → Create Joint → click second point
-- Modes-only toolbar: [Select] [Draw Link] [+ Body] [+ Ground]
+- Toolbar: [Select] [Draw Link] [+ Body] [+ Ground] | [Play/Pause] | Force dropdowns
 - Closed polygon rendering for 3+ point bodies (ternary plates render as triangles)
 
 **Phase 5 complete.** All ROADMAP deliverables shipped:
@@ -194,6 +204,19 @@ Note: file dialogs, PNG/SVG/GIF/DXF export, autosave, and HTML reports are nativ
 - Autosave recovery — **done** (prompt on startup when autosave file found from previous session)
 - Link lengths in property panel — **done** (segment lengths shown with attachment point list)
 - Prismatic + Fixed joint creation — **done** (Create Joint submenu: Revolute / Prismatic / Fixed)
+
+**Phase 6.8 GUI/UX overhaul:**
+- Professional dark theme inspired by SolidWorks/ANSYS (custom egui Visuals)
+- Color-coded toolbar: blue editor tools with unicode icons, green play button, colored force menus
+- Link Editor panel with body dropdown, length sliders, mass/inertia sliders
+- Gravity magnitude slider (0-100g) with g-value readout
+- Force toolbar ribbon with categorized dropdowns (Joint Torques / Link Forces)
+- Error panel for simulation failures (collapsible, status bar indicator)
+- Auto-sweep on mechanism changes (200ms debounced)
+- Links rendered as rectangular bars with hover tooltips
+- Dashed coupler traces for visual distinction
+- All sidebar sections collapsible (Playback, Gravity, Driver, Simulation, Force Elements, Diagnostics)
+- Deferred slider rebuild (only on release) for lag-free interaction
 - Ctrl+N new mechanism — **done** (File > New resets to empty canvas, preserves preferences)
 
 ```
