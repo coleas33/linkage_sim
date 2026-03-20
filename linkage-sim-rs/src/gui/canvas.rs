@@ -48,6 +48,8 @@ const FORCE_ARROW_MAX_PX: f32 = 80.0;
 const FORCE_ARROW_SCALE: f32 = 30.0;
 
 const BODY_STROKE_WIDTH: f32 = 3.5;
+/// Half-width of the link rectangle in pixels.
+const LINK_HALF_WIDTH: f32 = 8.0;
 const JOINT_RADIUS: f32 = 6.0;
 const JOINT_STROKE_WIDTH: f32 = 2.0;
 const GROUND_MARKER_SIZE: f32 = 12.0;
@@ -278,20 +280,41 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 .collect();
             let screen_points: Vec<Pos2> = point_positions.iter().map(|(sp, _)| *sp).collect();
 
-            // Draw lines between consecutive attachment points.
+            // Draw links as rounded rectangles (bars) for visibility and click targets.
             if screen_points.len() >= 2 {
+                let fill_alpha = if is_selected { 80u8 } else { 40u8 };
+                let fill_color = egui::Color32::from_rgba_unmultiplied(
+                    color.r(), color.g(), color.b(), fill_alpha,
+                );
+                let stroke_color = color;
+
+                let draw_link_bar = |p: &egui::Painter, a: Pos2, b: Pos2| {
+                    let dx = b.x - a.x;
+                    let dy = b.y - a.y;
+                    let len = (dx * dx + dy * dy).sqrt();
+                    if len < 1.0 { return; }
+                    // Normal perpendicular to the link direction
+                    let nx = -dy / len * LINK_HALF_WIDTH;
+                    let ny = dx / len * LINK_HALF_WIDTH;
+                    let corners = [
+                        Pos2::new(a.x + nx, a.y + ny),
+                        Pos2::new(b.x + nx, b.y + ny),
+                        Pos2::new(b.x - nx, b.y - ny),
+                        Pos2::new(a.x - nx, a.y - ny),
+                    ];
+                    let shape = egui::epaint::PathShape::convex_polygon(
+                        corners.to_vec(),
+                        fill_color,
+                        Stroke::new(1.5, stroke_color),
+                    );
+                    p.add(shape);
+                };
+
                 for pair in screen_points.windows(2) {
-                    painter.line_segment(
-                        [pair[0], pair[1]],
-                        Stroke::new(BODY_STROKE_WIDTH, color),
-                    );
+                    draw_link_bar(&painter, pair[0], pair[1]);
                 }
-                // Close polygon for bodies with 3+ points.
                 if screen_points.len() >= 3 {
-                    painter.line_segment(
-                        [*screen_points.last().unwrap(), screen_points[0]],
-                        Stroke::new(BODY_STROKE_WIDTH, color),
-                    );
+                    draw_link_bar(&painter, *screen_points.last().unwrap(), screen_points[0]);
                 }
             } else if screen_points.len() == 1 {
                 painter.circle_filled(screen_points[0], 4.0, color);
@@ -741,7 +764,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
 
             // Then check body segments (link lines) -- wider radius for easier hover
             if tooltip_text.is_none() {
-                if let Some(seg_hit) = find_nearest_body_segment(hover_pos, &body_segments, HIT_RADIUS * 2.0) {
+                if let Some(seg_hit) = find_nearest_body_segment(hover_pos, &body_segments, LINK_HALF_WIDTH + 4.0) {
                     if let Some(mech) = &state.mechanism {
                         if let Some(body) = mech.bodies().get(&seg_hit.body_id) {
                             tooltip_text = Some(format!(
@@ -808,7 +831,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 if canvas_rect.contains(pointer_pos) {
                     if let Some(hit) = find_nearest_attachment(pointer_pos) {
                         state.selected = Some(SelectedEntity::Body(hit.body_id.clone()));
-                    } else if let Some(seg_hit) = find_nearest_body_segment(pointer_pos, &body_segments, HIT_RADIUS * 2.0) {
+                    } else if let Some(seg_hit) = find_nearest_body_segment(pointer_pos, &body_segments, LINK_HALF_WIDTH + 4.0) {
                         state.selected = Some(SelectedEntity::Body(seg_hit.body_id.clone()));
                     }
                 }
