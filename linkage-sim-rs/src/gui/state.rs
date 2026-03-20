@@ -745,6 +745,10 @@ pub struct AppState {
     pub simulation: Option<SimulationState>,
     /// Duration for forward dynamics simulation (seconds).
     pub simulation_duration: f64,
+    /// Error messages from simulation and solver failures.
+    pub error_log: Vec<String>,
+    /// Whether the error panel is visible.
+    pub show_error_panel: bool,
     // ── Parametric study ──────────────────────────────────────────────
     /// Cached parametric study results.
     pub parametric_result: Option<ParametricStudyResult>,
@@ -868,6 +872,8 @@ impl Default for AppState {
             crank_recommendation: None,
             simulation: None,
             simulation_duration: 5.0,
+            error_log: Vec::new(),
+            show_error_panel: false,
             parametric_result: None,
             show_parametric: false,
             parametric_config: ParametricStudyConfig {
@@ -2874,9 +2880,15 @@ impl AppState {
 
         let mut mech = match load_mechanism_unbuilt_from_json(&mech_json) {
             Ok(m) => m,
-            Err(_) => return,
+            Err(e) => {
+                self.error_log.push(format!("Simulation: failed to build mechanism: {}", e));
+                self.show_error_panel = true;
+                return;
+            }
         };
-        if mech.build().is_err() {
+        if let Err(e) = mech.build() {
+            self.error_log.push(format!("Simulation: mechanism assembly failed: {}", e));
+            self.show_error_panel = true;
             return;
         }
 
@@ -2934,8 +2946,16 @@ impl AppState {
                 // Stop kinematic animation
                 self.playing = false;
             }
-            _ => {
-                log::warn!("Forward dynamics simulation failed");
+            Ok(result) => {
+                self.error_log.push(format!(
+                    "Simulation did not converge: {}",
+                    result.message
+                ));
+                self.show_error_panel = true;
+            }
+            Err(e) => {
+                self.error_log.push(format!("Simulation failed: {}", e));
+                self.show_error_panel = true;
             }
         }
     }
@@ -5323,5 +5343,43 @@ mod tests {
         assert_eq!(result.grid[0].len(), 2);
         assert!(!result.angles_deg.is_empty(), "should have sweep angles");
         assert!(!result.baseline_torques.is_empty(), "should have baseline torques");
+    }
+
+    // ── Error panel / simulation error surfacing tests ────────────────────
+
+    #[test]
+    fn run_simulation_no_blueprint_no_panic() {
+        let mut state = AppState::default();
+        state.blueprint = None;
+        state.run_simulation(1.0);
+        // No blueprint means early return with no errors logged.
+        assert!(state.error_log.is_empty());
+    }
+
+    #[test]
+    fn run_simulation_corrupted_mechanism_surfaces_error() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        if let Some(ref mut bp) = state.blueprint {
+            bp.bodies.clear();
+        }
+        state.run_simulation(1.0);
+        assert!(
+            !state.error_log.is_empty(),
+            "Simulation with corrupted mechanism should surface an error"
+        );
+        assert!(state.show_error_panel, "Error panel should auto-show on failure");
+    }
+
+    #[test]
+    fn run_simulation_valid_mechanism_succeeds() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.run_simulation(1.0);
+        if state.simulation.is_some() {
+            assert!(state.error_log.is_empty());
+        } else {
+            assert!(!state.error_log.is_empty());
+        }
     }
 }

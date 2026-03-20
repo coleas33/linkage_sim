@@ -2,6 +2,7 @@
 
 mod state;
 mod canvas;
+mod error_panel;
 mod export;
 mod input_panel;
 mod parametric_panel;
@@ -589,6 +590,18 @@ impl eframe::App for LinkageApp {
                             ),
                         );
                     }
+
+                    if !self.state.error_log.is_empty() {
+                        ui.separator();
+                        let label = format!("{} error(s)", self.state.error_log.len());
+                        if ui
+                            .colored_label(egui::Color32::from_rgb(220, 80, 80), &label)
+                            .on_hover_text("Click to show error panel")
+                            .clicked()
+                        {
+                            self.state.show_error_panel = !self.state.show_error_panel;
+                        }
+                    }
                 } else {
                     ui.label("No mechanism loaded");
                 }
@@ -602,6 +615,16 @@ impl eframe::App for LinkageApp {
                 .default_height(250.0)
                 .show(ctx, |ui| {
                     plot_panel::draw_plot_panel(ui, &self.state);
+                });
+        }
+
+        // --- Error panel (between plots and canvas) ---
+        if self.state.show_error_panel && !self.state.error_log.is_empty() {
+            egui::TopBottomPanel::bottom("error_panel")
+                .resizable(true)
+                .default_height(120.0)
+                .show(ctx, |ui| {
+                    error_panel::draw_error_panel(ui, &mut self.state);
                 });
         }
 
