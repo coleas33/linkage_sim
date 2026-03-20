@@ -834,23 +834,41 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     };
 
     // ── Interaction: click to select ────────────────────────────────────
-    // Click selects: attachment points first, then body segments (links).
+    // Uses press+release position tracking for reliable click detection.
+    // egui's clicked_by() requires zero mouse movement which fails on most
+    // hardware. Instead we track where the press started and where it ended.
     if state.active_tool == EditorTool::Select && !is_shift {
-        // Use pointer release position — more reliable than clicked_by which
-        // requires zero mouse movement between press and release.
-        let released = ui.input(|i| i.pointer.primary_released());
-        let was_click = released && !response.dragged();
-        // Also accept very short drags as clicks (< 5px total movement)
-        let was_short_drag = response.drag_stopped_by(egui::PointerButton::Primary)
-            && response.drag_delta().length() < 5.0;
+        let primary_pressed = ui.input(|i| i.pointer.primary_pressed());
+        let primary_released = ui.input(|i| i.pointer.primary_released());
 
-        if was_click || was_short_drag {
-            if let Some(pointer_pos) = ui.input(|i| i.pointer.latest_pos()) {
-                if canvas_rect.contains(pointer_pos) {
-                    if let Some(hit) = find_nearest_attachment(pointer_pos) {
-                        state.selected = Some(SelectedEntity::Body(hit.body_id.clone()));
-                    } else if let Some(seg_hit) = find_nearest_body_segment(pointer_pos, &body_segments, LINK_HALF_WIDTH + 4.0) {
-                        state.selected = Some(SelectedEntity::Body(seg_hit.body_id.clone()));
+        // Record press position
+        if primary_pressed {
+            if let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
+                if canvas_rect.contains(pos) {
+                    ui.memory_mut(|mem| mem.data.insert_temp(
+                        ui.id().with("click_press_pos"),
+                        pos,
+                    ));
+                }
+            }
+        }
+
+        // On release, check distance from press — if small, treat as click
+        if primary_released {
+            if let Some(release_pos) = ui.input(|i| i.pointer.latest_pos()) {
+                let press_pos: Option<Pos2> = ui.memory(|mem|
+                    mem.data.get_temp(ui.id().with("click_press_pos"))
+                );
+                if let Some(press_pos) = press_pos {
+                    let dist = press_pos.distance(release_pos);
+                    if dist < 10.0 && canvas_rect.contains(release_pos) {
+                        // This is a click — select the nearest entity
+                        let click_pos = release_pos;
+                        if let Some(hit) = find_nearest_attachment(click_pos) {
+                            state.selected = Some(SelectedEntity::Body(hit.body_id.clone()));
+                        } else if let Some(seg_hit) = find_nearest_body_segment(click_pos, &body_segments, LINK_HALF_WIDTH + 4.0) {
+                            state.selected = Some(SelectedEntity::Body(seg_hit.body_id.clone()));
+                        }
                     }
                 }
             }
