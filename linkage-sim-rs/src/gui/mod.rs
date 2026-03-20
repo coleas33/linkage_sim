@@ -40,6 +40,41 @@ impl eframe::App for LinkageApp {
         }) {
             self.state.redo();
         }
+        // Ctrl+S — quick save to last path, or Save As if no path yet.
+        #[cfg(feature = "native")]
+        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S) && !i.modifiers.shift) {
+            if let Some(path) = self.state.last_save_path.clone() {
+                if let Err(e) = self.state.save_to_file(&path) {
+                    log::error!("Quick save failed: {}", e);
+                }
+            } else if let Some(path) = rfd::FileDialog::new()
+                .add_filter("JSON", &["json"])
+                .set_file_name("mechanism.json")
+                .save_file()
+            {
+                if let Err(e) = self.state.save_to_file(&path) {
+                    log::error!("Save failed: {}", e);
+                }
+            }
+        }
+        // Ctrl+Shift+S — Save As (always shows file dialog).
+        #[cfg(feature = "native")]
+        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S) && i.modifiers.shift) {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("JSON", &["json"])
+                .set_file_name("mechanism.json")
+                .save_file()
+            {
+                if let Err(e) = self.state.save_to_file(&path) {
+                    log::error!("Save As failed: {}", e);
+                }
+            }
+        }
+
+        // Ctrl+N — New empty mechanism.
+        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::N)) {
+            self.state.new_empty_mechanism();
+        }
 
         // ── Animation / simulation stepping (before rendering) ────────
         let dt = ctx.input(|i| i.stable_dt) as f64;
@@ -59,6 +94,10 @@ impl eframe::App for LinkageApp {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
+                    if ui.button("New  Ctrl+N").clicked() {
+                        self.state.new_empty_mechanism();
+                        ui.close();
+                    }
                     ui.menu_button("Load Sample", |ui| {
                         for sample in SampleMechanism::all() {
                             if ui.button(sample.label()).clicked() {
@@ -82,7 +121,47 @@ impl eframe::App for LinkageApp {
                             }
                             ui.close();
                         }
-                        if ui.button("Save JSON...").clicked() {
+                        if !self.state.recent_files.is_empty() {
+                            ui.menu_button("Recent Files", |ui| {
+                                let mut load_path = None;
+                                for path in &self.state.recent_files {
+                                    let label = path
+                                        .file_name()
+                                        .map(|n| n.to_string_lossy().to_string())
+                                        .unwrap_or_else(|| path.to_string_lossy().to_string());
+                                    if ui
+                                        .button(&label)
+                                        .on_hover_text(path.to_string_lossy().to_string())
+                                        .clicked()
+                                    {
+                                        load_path = Some(path.clone());
+                                        ui.close();
+                                    }
+                                }
+                                if let Some(path) = load_path {
+                                    if let Err(e) = self.state.load_from_file(&path) {
+                                        log::error!("Failed to load recent file: {}", e);
+                                    }
+                                }
+                            });
+                        }
+                        if ui.button("Save  Ctrl+S").clicked() {
+                            if let Some(path) = self.state.last_save_path.clone() {
+                                if let Err(e) = self.state.save_to_file(&path) {
+                                    log::error!("Save failed: {}", e);
+                                }
+                            } else if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("JSON", &["json"])
+                                .set_file_name("mechanism.json")
+                                .save_file()
+                            {
+                                if let Err(e) = self.state.save_to_file(&path) {
+                                    log::error!("Save failed: {}", e);
+                                }
+                            }
+                            ui.close();
+                        }
+                        if ui.button("Save As...  Ctrl+Shift+S").clicked() {
                             if let Some(path) = rfd::FileDialog::new()
                                 .add_filter("JSON", &["json"])
                                 .set_file_name("mechanism.json")
@@ -238,10 +317,17 @@ impl eframe::App for LinkageApp {
                         ui.close();
                     }
                 });
+                ui.menu_button("Help", |ui| {
+                    if ui.button("Keyboard Shortcuts").clicked() {
+                        self.state.show_shortcuts = true;
+                        ui.close();
+                    }
+                });
                 ui.menu_button("View", |ui| {
                     ui.checkbox(&mut self.state.show_debug_overlay, "Debug Overlay");
                     ui.checkbox(&mut self.state.show_plots, "Plot Panel");
                     ui.checkbox(&mut self.state.show_forces, "Force Arrows");
+                    ui.checkbox(&mut self.state.show_dimensions, "Link Dimensions");
                     ui.checkbox(&mut self.state.enable_gravity, "Gravity");
                     ui.separator();
                     ui.label("Units:");
@@ -469,5 +555,82 @@ impl eframe::App for LinkageApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             canvas::draw_canvas(ui, &mut self.state);
         });
+
+        // ── Autosave recovery prompt ──────────────────────────────────
+        if self.state.recovery_path.is_some() {
+            let mut dismiss = false;
+            let mut load = false;
+            egui::Window::new("Recover Unsaved Work?")
+                .collapsible(false)
+                .resizable(false)
+                .default_width(340.0)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.label("An autosave file was found from a previous session.");
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Recover").clicked() {
+                            load = true;
+                        }
+                        if ui.button("Discard").clicked() {
+                            dismiss = true;
+                        }
+                    });
+                });
+            if load {
+                if let Some(path) = self.state.recovery_path.take() {
+                    if let Err(e) = self.state.load_from_file(&path) {
+                        log::error!("Failed to recover autosave: {}", e);
+                    }
+                    // Clean up the autosave file after loading.
+                    let _ = std::fs::remove_file(&path);
+                }
+            } else if dismiss {
+                if let Some(path) = self.state.recovery_path.take() {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+        }
+
+        // ── Keyboard shortcuts window ────────────────────────────────────
+        if self.state.show_shortcuts {
+            egui::Window::new("Keyboard Shortcuts")
+                .collapsible(false)
+                .resizable(false)
+                .default_width(340.0)
+                .open(&mut self.state.show_shortcuts)
+                .show(ctx, |ui| {
+                    egui::Grid::new("shortcuts_grid")
+                        .num_columns(2)
+                        .spacing([20.0, 6.0])
+                        .show(ui, |ui| {
+                            let shortcuts = [
+                                ("Ctrl+N", "New empty mechanism"),
+                                ("Ctrl+S", "Save (quick save to last path)"),
+                                ("Ctrl+Shift+S", "Save As (choose new path)"),
+                                ("Ctrl+Z", "Undo"),
+                                ("Ctrl+Y / Ctrl+Shift+Z", "Redo"),
+                                ("Delete / Backspace", "Delete selected entity"),
+                                ("Escape", "Cancel current tool / operation"),
+                                ("Enter / Double-click", "Finish multi-point body"),
+                                ("Mouse wheel", "Zoom in/out"),
+                                ("Right-click drag", "Pan canvas"),
+                                ("Left-click", "Select / place point"),
+                                ("Right-click joint", "Set Driver / Create Joint"),
+                                ("Right-click body edge", "Add Pivot Here"),
+                                ("Right-click canvas", "Add Ground Pivot / Body"),
+                            ];
+                            for (key, action) in shortcuts {
+                                ui.strong(key);
+                                ui.label(action);
+                                ui.end_row();
+                            }
+                        });
+                });
+        }
+
+        // ── Autosave tick ────────────────────────────────────────────────
+        #[cfg(feature = "native")]
+        self.state.tick_autosave(dt);
     }
 }

@@ -1,8 +1,11 @@
 //! Export functionality: CSV sweep data, coupler traces, SVG/PNG/GIF images.
 
+#[cfg(feature = "native")]
 use std::io::Write;
+#[cfg(feature = "native")]
 use std::path::Path;
 
+#[cfg(feature = "native")]
 use super::state::SweepData;
 #[cfg(feature = "native")]
 use crate::core::mechanism::Mechanism;
@@ -12,6 +15,7 @@ use crate::core::mechanism::Mechanism;
 /// Columns: driver angle, then sorted body angles, then transmission angle
 /// (if available), then driver torque (if available). All angles in degrees,
 /// torque in N*m.
+#[cfg(feature = "native")]
 pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
     let mut file = std::fs::File::create(path).map_err(|e| e.to_string())?;
 
@@ -138,6 +142,7 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
 ///
 /// Columns: driver angle, then sorted coupler trace x/y pairs. Coordinates
 /// are in meters (SI).
+#[cfg(feature = "native")]
 pub fn export_coupler_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
     let mut trace_names: Vec<&String> = sweep.coupler_traces.keys().collect();
     trace_names.sort();
@@ -179,6 +184,7 @@ pub fn export_coupler_csv(path: &Path, sweep: &SweepData) -> Result<(), String> 
 /// Generate the SVG string for a mechanism at its current pose.
 ///
 /// This is the shared core used by both SVG file export and PNG rasterization.
+#[cfg(feature = "native")]
 pub fn generate_svg_string(
     mechanism: &crate::core::mechanism::Mechanism,
     q: &nalgebra::DVector<f64>,
@@ -377,6 +383,7 @@ pub fn generate_svg_string(
 }
 
 /// Export the mechanism at its current pose as an SVG file.
+#[cfg(feature = "native")]
 pub fn export_mechanism_svg(
     path: &std::path::Path,
     mechanism: &crate::core::mechanism::Mechanism,

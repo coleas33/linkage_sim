@@ -26,13 +26,24 @@ fn main() {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen::prelude::wasm_bindgen(start)]
 pub async fn start() {
+    use wasm_bindgen::JsCast;
+
     // Redirect log macros to console.log.
     eframe::WebLogger::init(log::LevelFilter::Debug).ok();
+
+    let canvas = web_sys::window()
+        .expect("no window")
+        .document()
+        .expect("no document")
+        .get_element_by_id("linkage_canvas")
+        .expect("no canvas element with id 'linkage_canvas'")
+        .dyn_into::<web_sys::HtmlCanvasElement>()
+        .expect("element is not a canvas");
 
     let web_options = eframe::WebOptions::default();
     eframe::WebRunner::new()
         .start(
-            "linkage_canvas", // must match the <canvas id="..."> in index.html
+            canvas,
             web_options,
             Box::new(|cc| Ok(Box::new(linkage_sim_rs::gui::LinkageApp::new(cc)))),
         )

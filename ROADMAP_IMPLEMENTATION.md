@@ -324,3 +324,154 @@ specifies their own driver and the warning can be suppressed with `warnings.filt
 | 9 | Undo integration for all edit operations | Done | `gui/state.rs` |
 
 **Total tests:** 226 passing
+
+---
+
+## Phase 5 — Sub-project 6: Multi-Pivot Body Editor
+
+| Step | Description | Status | Key files |
+|------|-------------|--------|-----------|
+| 1 | Multi-point body creation (ternary/quaternary via + Body tool) | Done | `gui/canvas.rs` |
+| 2 | Add Pivot Here context menu (promote binary bars to ternary) | Done | `gui/canvas.rs`, `gui/state.rs` |
+| 3 | Body-aware Draw Link with segment snapping | Done | `gui/canvas.rs` |
+| 4 | Compound undo batching for multi-step operations | Done | `gui/undo.rs` |
+| 5 | Closed polygon rendering for 3+ point bodies | Done | `gui/canvas.rs` |
+
+---
+
+## Phase 5 — Sub-project 7: Force Element GUI
+
+| Step | Description | Status | Key files |
+|------|-------------|--------|-----------|
+| 1 | ForceElement property panel editing (all 12 types) | Done | `gui/property_panel.rs` |
+| 2 | Canvas rendering of spring/damper/force symbols | Done | `gui/canvas.rs` |
+| 3 | Add force element buttons (Spring, Damper, Motor, etc.) | Done | `gui/property_panel.rs` |
+| 4 | Force element deletion and editing | Done | `gui/property_panel.rs`, `gui/state.rs` |
+
+---
+
+## Phase 5 — Sub-project 8: Analysis Displays + Diagnostics
+
+| Step | Description | Status | Key files |
+|------|-------------|--------|-----------|
+| 1 | Energy plot tab (KE/PE/total vs driver angle) | Done | `gui/plot_panel.rs` |
+| 2 | Grashof classification in diagnostics panel | Done | `gui/property_panel.rs` |
+| 3 | Jacobian condition number display | Done | `gui/property_panel.rs` |
+| 4 | Mechanical advantage plot tab | Done | `gui/plot_panel.rs` |
+| 5 | Torque envelope stats (min/max/RMS) in diagnostics | Done | `gui/property_panel.rs` |
+| 6 | Crank selection ranking in diagnostics | Done | `gui/property_panel.rs` |
+| 7 | Motor sizing feasibility check | Done | `gui/property_panel.rs` |
+| 8 | Force breakdown (per-element Q norms with progress bars) | Done | `gui/property_panel.rs` |
+| 9 | Toggle detection markers (red dashed lines on sweep plots) | Done | `gui/plot_panel.rs` |
+| 10 | Virtual work cross-check indicator (green/red agreement) | Done | `gui/property_panel.rs` |
+
+---
+
+## Phase 5 — Sub-project 9: Forward Dynamics GUI
+
+| Step | Description | Status | Key files |
+|------|-------------|--------|-----------|
+| 1 | Simulate button + RK4+Baumgarte integration | Done | `gui/state.rs`, `gui/input_panel.rs` |
+| 2 | Timeline scrubbing + playback speed control | Done | `gui/input_panel.rs` |
+| 3 | Constraint drift display | Done | `gui/input_panel.rs` |
+
+---
+
+## Phase 5 — Sub-project 10: Export
+
+| Step | Description | Status | Key files |
+|------|-------------|--------|-----------|
+| 1 | SVG export (mechanism visualization) | Done | `gui/export.rs` |
+| 2 | PNG export (resvg SVG-to-PNG rasterization, 1920x1080) | Done | `gui/export.rs` |
+| 3 | GIF animation export (sweep frames, gif crate, 800x600 @ 20fps) | Done | `gui/export.rs` |
+| 4 | CSV export — sweep data (angles, torque, energy, reactions) | Done | `gui/export.rs` |
+| 5 | CSV export — coupler trace data | Done | `gui/export.rs` |
+
+---
+
+## Phase 5 — Sub-project 11: Expression Evaluator + WASM
+
+| Step | Description | Status | Key files |
+|------|-------------|--------|-----------|
+| 1 | meval-based expression evaluator for drivers | Done | `core/driver.rs` |
+| 2 | Expression driver GUI (combo box, text input, live validation) | Done | `gui/property_panel.rs` |
+| 3 | Expression-modulated force elements | Done | `forces/elements.rs` |
+| 4 | Driver expression serialization (JSON round-trip) | Done | `io/serialization.rs` |
+| 5 | WASM compilation infrastructure (feature flags, web entry point) | Done | `Cargo.toml`, `bin/linkage_web.rs`, `web/index.html` |
+
+---
+
+## Phase 5 — Sub-project 12: Coupler Velocity/Acceleration + Plot Enhancements
+
+| Step | Description | Status | Key files |
+|------|-------------|--------|-----------|
+| 1 | Coupler velocity plot tab | Done | `gui/plot_panel.rs` |
+| 2 | Coupler acceleration plot tab | Done | `gui/plot_panel.rs` |
+| 3 | Joint reaction plot tab | Done | `gui/plot_panel.rs` |
+| 4 | Inverse dynamics plot tab (with statics overlay) | Done | `gui/plot_panel.rs` |
+| 5 | Gravity-loaded reaction force arrows at joints | Done | `gui/canvas.rs` |
+| 6 | Load case manager (multiple operating conditions) | Done | `gui/input_panel.rs`, `gui/state.rs` |
+
+---
+
+## Phase 5 — Sub-project 13: Grid, Snapping, and Misc
+
+| Step | Description | Status | Key files |
+|------|-------------|--------|-----------|
+| 1 | Snap-to-grid with configurable spacing | Done | `gui/state.rs`, `gui/canvas.rs` |
+| 2 | Grid visualization (toggleable) | Done | `gui/canvas.rs`, `gui/mod.rs` |
+| 3 | 13 sample mechanisms (8 four-bar + 5 six-bar) | Done | `gui/samples.rs` |
+
+**Total Rust tests:** 411 passing (374 unit + 11 golden + 8 property + 18 singular)
+
+---
+
+## Phase 5 Complete
+
+All Phase 5 deliverables from ROADMAP.md are implemented:
+
+| Deliverable | Status |
+|-------------|--------|
+| 2D canvas: place bodies, attachment points, drag-and-drop | Done |
+| Body editor: add/remove/move attachment points, mass properties | Done |
+| Joint creation: click A → click B, select type (Revolute/Prismatic/Fixed) | Done |
+| Prismatic joint: visual axis editing in property panel | Done |
+| Force element attachment: all 12 types, property panel editing + canvas rendering | Done |
+| Point mass placement: add/remove with parallel axis theorem | Done |
+| Driver editor: constant speed + expression, right-click or property panel | Done |
+| Validation panel: Grübler, Jacobian rank, connectivity, warnings — live | Done |
+| Real-time animation with playback controls (speed, pause, loop) | Done |
+| Integrated plotting panels (10 tabs) | Done |
+| Unit conversion at GUI boundary (mm/m, degrees/radians) | Done |
+| Snap-to-grid + dimensioned display (link lengths on canvas + property panel) | Done |
+| Undo/redo (Ctrl+Z/Y, unlimited history) | Done |
+| JSON save/load (Ctrl+S, Ctrl+Shift+S, recent files, autosave + recovery) | Done |
+| Load case panel: define and switch between scenarios | Done |
+
+**Additional productivity features shipped (beyond ROADMAP minimum):**
+- Keyboard shortcuts help dialog (Help > Keyboard Shortcuts)
+- Ctrl+N new mechanism
+- CSV export (sweep data + coupler traces)
+- PNG + SVG + GIF export
+- Canvas hover tooltips (body/joint info on hover)
+- Mechanism mass summary in property panel header
+- Force breakdown, toggle detection, virtual work cross-check in diagnostics
+- WebAssembly build (feature flags, WASM entry point, zero-warning compilation)
+
+**Exit criteria met:** User can build, edit, simulate, and analyze any planar mechanism entirely through the GUI using all three joint types (revolute, prismatic, fixed), all 12 force element types, and all four analysis modes.
+
+---
+
+## Phase 6 Prerequisites — Status
+
+All Phase 6 prerequisites from ROADMAP.md are met:
+
+| Prerequisite | Status |
+|-------------|--------|
+| Branch-stable sweeps | Met — predictor-corrector continuation with assembly-branch reset on wrap |
+| Singularity metrics (σ_min, κ, MA) reported and tested | Met — diagnostics panel + toggle markers |
+| Reliable failed-step handling | Met — graceful degradation with status reporting |
+| Repeatable benchmarks | Met — golden fixture suite (391→411 tests) |
+| Deterministic solver behavior | Met — fixed tolerances, no random initial guesses |
+
+Phase 6 (synthesis, optimization, multi-DOF, cam-follower) can begin when ready.

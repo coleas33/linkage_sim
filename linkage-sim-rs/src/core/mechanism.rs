@@ -84,6 +84,11 @@ impl Mechanism {
         &self.bodies
     }
 
+    /// Mutable reference to a body by ID.
+    pub fn body_mut(&mut self, id: &str) -> Option<&mut Body> {
+        self.bodies.get_mut(id)
+    }
+
     pub fn joints(&self) -> &[JointConstraint] {
         &self.joints
     }

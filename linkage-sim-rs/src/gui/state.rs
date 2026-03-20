@@ -229,6 +229,14 @@ impl LoadCaseManager {
 
 // ── Editor tool ───────────────────────────────────────────────────────────────
 
+/// Joint type for the two-click creation flow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PendingJointType {
+    Revolute,
+    Prismatic,
+    Fixed,
+}
+
 /// Active editor tool — determines what happens on canvas clicks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorTool {
@@ -497,8 +505,8 @@ pub struct AppState {
     /// Currently active drag target (attachment point being dragged).
     pub drag_target: Option<DragTarget>,
     // ── Joint creation mode ──────────────────────────────────────────────
-    /// First click of a two-click joint creation: (body_id, point_name).
-    pub creating_joint: Option<(String, String)>,
+    /// First click of a two-click joint creation: (body_id, point_name, type).
+    pub creating_joint: Option<(String, String, PendingJointType)>,
     // ── Validation ───────────────────────────────────────────────────────
     /// Validation warnings computed after each rebuild.
     pub validation_warnings: ValidationWarnings,
@@ -513,6 +521,8 @@ pub struct AppState {
     pub force_results: ForceResults,
     /// Whether to draw force arrows on the canvas.
     pub show_forces: bool,
+    /// Whether to show link length dimensions on the canvas.
+    pub show_dimensions: bool,
     /// Whether to include gravity (9.81 m/s² downward) in force computation.
     pub enable_gravity: bool,
     // ── Load cases ──────────────────────────────────────────────────────
@@ -551,6 +561,22 @@ pub struct AppState {
     pub expr_ddot_buf: String,
     /// Whether the expression editor is currently showing parse errors.
     pub expr_error: Option<String>,
+    // ── Help dialog ─────────────────────────────────────────────────
+    /// Whether the keyboard shortcuts help window is open.
+    pub show_shortcuts: bool,
+    // ── Autosave ────────────────────────────────────────────────────
+    /// Accumulated time since last autosave (seconds).
+    pub autosave_timer: f64,
+    /// Path of the last manual save (used for autosave naming).
+    pub last_save_path: Option<std::path::PathBuf>,
+    /// Whether unsaved changes exist since last manual save or load.
+    pub dirty: bool,
+    // ── Recent files ────────────────────────────────────────────────
+    /// Recently opened/saved file paths (most recent first, max 5).
+    pub recent_files: Vec<std::path::PathBuf>,
+    // ── Autosave recovery ───────────────────────────────────────────
+    /// Path to a recoverable autosave file found on startup (if any).
+    pub recovery_path: Option<std::path::PathBuf>,
 }
 
 /// Tracks placement state for the Add Body tool.
@@ -586,6 +612,7 @@ impl Default for AppState {
                         cg_local: [0.0, 0.0],
                         izz_cg: 0.0,
                         coupler_points: HashMap::new(),
+                        point_masses: Vec::new(),
                     },
                 );
                 m
@@ -626,6 +653,7 @@ impl Default for AppState {
             grid: GridSettings::default(),
             force_results: ForceResults::default(),
             show_forces: true,
+            show_dimensions: false,
             enable_gravity: true,
             load_cases: LoadCaseManager::default(),
             active_tool: EditorTool::Select,
@@ -640,6 +668,12 @@ impl Default for AppState {
             expr_dot_buf: String::new(),
             expr_ddot_buf: String::new(),
             expr_error: None,
+            show_shortcuts: false,
+            autosave_timer: 0.0,
+            last_save_path: None,
+            dirty: false,
+            recent_files: Self::load_recent_files(),
+            recovery_path: Self::check_autosave_recovery(),
         };
         state.rebuild();
         state
@@ -647,6 +681,20 @@ impl Default for AppState {
 }
 
 impl AppState {
+    /// Reset to an empty mechanism (just ground body), clearing all state.
+    pub fn new_empty_mechanism(&mut self) {
+        let fresh = AppState::default();
+        // Preserve user preferences across reset.
+        let recent = std::mem::take(&mut self.recent_files);
+        let units = DisplayUnits {
+            length: self.display_units.length,
+            angle: self.display_units.angle,
+        };
+        *self = fresh;
+        self.recent_files = recent;
+        self.display_units = units;
+    }
+
     /// Load a named sample: build mechanism, solve at t=0, and store state.
     pub fn load_sample(&mut self, sample: SampleMechanism) {
         let (mech, q0) = build_sample(sample);
@@ -938,7 +986,7 @@ impl AppState {
     /// save/load cycles.
     ///
     /// Returns `Err` with a human-readable message on any failure.
-    pub fn save_to_file(&self, path: &Path) -> Result<(), String> {
+    pub fn save_to_file(&mut self, path: &Path) -> Result<(), String> {
         let mech = self
             .mechanism
             .as_ref()
@@ -949,10 +997,145 @@ impl AppState {
         // Persist load cases into the JSON structure
         json_struct.load_cases = self.load_cases.cases.clone();
 
+        // Preserve blueprint-only data that mechanism_to_json can't reconstruct:
+        // point masses are baked into mass/CG/Izz at build time, so copy them
+        // from the blueprint to ensure they persist through save/load.
+        if let Some(ref bp) = self.blueprint {
+            for (body_id, bp_body) in &bp.bodies {
+                if let Some(json_body) = json_struct.bodies.get_mut(body_id) {
+                    json_body.point_masses = bp_body.point_masses.clone();
+                }
+            }
+        }
+
         let json = serde_json::to_string_pretty(&json_struct).map_err(|e| e.to_string())?;
         std::fs::write(path, json).map_err(|e| format!("Failed to write file: {}", e))?;
 
+        self.last_save_path = Some(path.to_path_buf());
+        self.dirty = false;
+        self.add_recent_file(path);
         Ok(())
+    }
+
+    /// Perform periodic autosave to a temp file alongside the last save path.
+    ///
+    /// Called from the update loop with accumulated dt. Saves every 30 seconds
+    /// if there are unsaved changes and a mechanism is loaded.
+    #[cfg(feature = "native")]
+    pub fn tick_autosave(&mut self, dt: f64) {
+        const AUTOSAVE_INTERVAL: f64 = 30.0;
+
+        if !self.dirty || self.mechanism.is_none() {
+            return;
+        }
+
+        self.autosave_timer += dt;
+        if self.autosave_timer < AUTOSAVE_INTERVAL {
+            return;
+        }
+        self.autosave_timer = 0.0;
+
+        let autosave_path = self.autosave_path();
+        if let Some(path) = autosave_path {
+            if let Err(e) = self.write_json_to(&path) {
+                log::warn!("Autosave failed: {}", e);
+            } else {
+                log::debug!("Autosaved to {:?}", path);
+            }
+        }
+    }
+
+    /// Compute the autosave file path (sibling to last save, or temp dir).
+    #[cfg(feature = "native")]
+    fn autosave_path(&self) -> Option<std::path::PathBuf> {
+        if let Some(ref save_path) = self.last_save_path {
+            let mut p = save_path.clone();
+            let stem = p.file_stem()?.to_string_lossy().to_string();
+            p.set_file_name(format!(".{}.autosave.json", stem));
+            Some(p)
+        } else {
+            let mut p = std::env::temp_dir();
+            p.push("linkage_simulator_autosave.json");
+            Some(p)
+        }
+    }
+
+    /// Write mechanism JSON to an arbitrary path (for autosave — doesn't clear dirty flag).
+    #[cfg(feature = "native")]
+    fn write_json_to(&self, path: &Path) -> Result<(), String> {
+        let mech = self
+            .mechanism
+            .as_ref()
+            .ok_or_else(|| "No mechanism loaded".to_string())?;
+        let mut json_struct = mechanism_to_json(mech).map_err(|e| e.to_string())?;
+        json_struct.load_cases = self.load_cases.cases.clone();
+        // Preserve blueprint point masses (baked into mass/CG/Izz at build time).
+        if let Some(ref bp) = self.blueprint {
+            for (body_id, bp_body) in &bp.bodies {
+                if let Some(json_body) = json_struct.bodies.get_mut(body_id) {
+                    json_body.point_masses = bp_body.point_masses.clone();
+                }
+            }
+        }
+        let json = serde_json::to_string_pretty(&json_struct).map_err(|e| e.to_string())?;
+        std::fs::write(path, json).map_err(|e| format!("Failed to write: {}", e))?;
+        Ok(())
+    }
+
+    // ── Recent files ─────────────────────────────────────────────────────
+
+    /// Add a path to the recent files list (deduplicates, keeps max 5).
+    pub fn add_recent_file(&mut self, path: &Path) {
+        let canonical = path.to_path_buf();
+        self.recent_files.retain(|p| p != &canonical);
+        self.recent_files.insert(0, canonical);
+        self.recent_files.truncate(5);
+        self.save_recent_files();
+    }
+
+    /// Path to the recent files JSON in the user's temp directory.
+    fn recent_files_path() -> std::path::PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push("linkage_simulator_recent.json");
+        p
+    }
+
+    /// Load recent files list from disk (returns empty Vec on any failure).
+    fn load_recent_files() -> Vec<std::path::PathBuf> {
+        let path = Self::recent_files_path();
+        let Ok(json) = std::fs::read_to_string(&path) else {
+            return Vec::new();
+        };
+        serde_json::from_str(&json).unwrap_or_default()
+    }
+
+    /// Check for an autosave file in the temp directory on startup.
+    /// Returns the path if a recoverable file exists (< 1 hour old).
+    fn check_autosave_recovery() -> Option<std::path::PathBuf> {
+        let mut p = std::env::temp_dir();
+        p.push("linkage_simulator_autosave.json");
+        if !p.exists() {
+            return None;
+        }
+        // Only offer recovery for recent autosaves (< 1 hour).
+        if let Ok(metadata) = std::fs::metadata(&p) {
+            if let Ok(modified) = metadata.modified() {
+                if let Ok(elapsed) = modified.elapsed() {
+                    if elapsed.as_secs() < 3600 {
+                        return Some(p);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Save recent files list to disk.
+    fn save_recent_files(&self) {
+        let path = Self::recent_files_path();
+        if let Ok(json) = serde_json::to_string(&self.recent_files) {
+            let _ = std::fs::write(&path, json);
+        }
     }
 
     /// Load a mechanism from a JSON file, solve at t=0, and update all state.
@@ -1070,6 +1253,10 @@ impl AppState {
         self.compute_forces(0.0);
         self.compute_sweep();
         self.compute_validation();
+        self.last_save_path = Some(path.to_path_buf());
+        self.dirty = false;
+        self.autosave_timer = 0.0;
+        self.add_recent_file(path);
 
         Ok(())
     }
@@ -1314,6 +1501,47 @@ impl AppState {
         self.rebuild();
     }
 
+    /// Add a point mass to a body in the blueprint.
+    ///
+    /// Pushes undo, appends the point mass, and rebuilds (which recomputes
+    /// composite mass, CG, and Izz via parallel axis theorem).
+    pub fn add_point_mass(&mut self, body_id: &str, mass: f64, local_pos: [f64; 2]) {
+        self.push_undo();
+        let Some(bp) = &mut self.blueprint else { return };
+        let Some(body) = bp.bodies.get_mut(body_id) else { return };
+        body.point_masses.push(crate::io::serialization::PointMassJson {
+            mass,
+            local_pos,
+        });
+        self.rebuild();
+    }
+
+    /// Remove a point mass from a body in the blueprint by index.
+    ///
+    /// Pushes undo, removes the point mass, and rebuilds.
+    pub fn remove_point_mass(&mut self, body_id: &str, index: usize) {
+        self.push_undo();
+        let Some(bp) = &mut self.blueprint else { return };
+        let Some(body) = bp.bodies.get_mut(body_id) else { return };
+        if index < body.point_masses.len() {
+            body.point_masses.remove(index);
+            self.rebuild();
+        }
+    }
+
+    /// Update the slide axis of a prismatic joint in the blueprint.
+    ///
+    /// Continuous parameter tweak — no undo snapshot pushed.
+    pub fn update_prismatic_axis(&mut self, joint_id: &str, axis: [f64; 2]) {
+        let Some(bp) = &mut self.blueprint else { return };
+        if let Some(joint) = bp.joints.get_mut(joint_id) {
+            if let JointJson::Prismatic { axis_local_i, .. } = joint {
+                *axis_local_i = axis;
+            }
+        }
+        self.rebuild();
+    }
+
     /// Replace a force element in the blueprint at the given index.
     ///
     /// Intended for continuous parameter tweaks (e.g. DragValue), so no undo
@@ -1342,6 +1570,7 @@ impl AppState {
             cg_local: [0.0, 0.0],
             izz_cg: 0.0,
             coupler_points: HashMap::new(),
+            point_masses: Vec::new(),
         });
         ground.attachment_points.insert(name.to_string(), [x, y]);
     }
@@ -1407,6 +1636,7 @@ impl AppState {
             cg_local: [sum_x / n, sum_y / n],
             izz_cg: 0.01,
             coupler_points: HashMap::new(),
+            point_masses: Vec::new(),
         };
         bp.bodies.insert(body_id.to_string(), body);
     }
@@ -1523,6 +1753,81 @@ impl AppState {
     ) {
         self.push_undo();
         self.add_revolute_joint_raw(body_i, point_i, body_j, point_j);
+        self.rebuild();
+    }
+
+    /// Add a prismatic joint between two bodies at the given attachment points.
+    ///
+    /// The slide axis defaults to the vector from point_i to point_j in body_i's
+    /// local frame (normalized). delta_theta_0 defaults to 0.
+    pub fn add_prismatic_joint(
+        &mut self,
+        body_i: &str,
+        point_i: &str,
+        body_j: &str,
+        point_j: &str,
+    ) {
+        self.push_undo();
+        let Some(bp) = &mut self.blueprint else { return };
+
+        // Compute default axis from the direction between the two points.
+        // Use the blueprint coordinates (local frame of body_i).
+        let axis = if let (Some(bi), Some(bj)) = (bp.bodies.get(body_i), bp.bodies.get(body_j)) {
+            if let (Some(pi), Some(pj)) = (
+                bi.attachment_points.get(point_i),
+                bj.attachment_points.get(point_j),
+            ) {
+                let dx = pj[0] - pi[0];
+                let dy = pj[1] - pi[1];
+                let len = (dx * dx + dy * dy).sqrt();
+                if len > 1e-12 {
+                    [dx / len, dy / len]
+                } else {
+                    [1.0, 0.0]
+                }
+            } else {
+                [1.0, 0.0]
+            }
+        } else {
+            [1.0, 0.0]
+        };
+
+        let joint_id = generate_unique_id("J", &bp.joints);
+        bp.joints.insert(
+            joint_id,
+            JointJson::Prismatic {
+                body_i: body_i.to_string(),
+                body_j: body_j.to_string(),
+                point_i: point_i.to_string(),
+                point_j: point_j.to_string(),
+                axis_local_i: axis,
+                delta_theta_0: 0.0,
+            },
+        );
+        self.rebuild();
+    }
+
+    /// Add a fixed joint between two bodies at the given attachment points.
+    pub fn add_fixed_joint(
+        &mut self,
+        body_i: &str,
+        point_i: &str,
+        body_j: &str,
+        point_j: &str,
+    ) {
+        self.push_undo();
+        let Some(bp) = &mut self.blueprint else { return };
+        let joint_id = generate_unique_id("J", &bp.joints);
+        bp.joints.insert(
+            joint_id,
+            JointJson::Fixed {
+                body_i: body_i.to_string(),
+                body_j: body_j.to_string(),
+                point_i: point_i.to_string(),
+                point_j: point_j.to_string(),
+                delta_theta_0: 0.0,
+            },
+        );
         self.rebuild();
     }
 
@@ -2000,6 +2305,7 @@ impl AppState {
     pub fn push_undo(&mut self) {
         if let Some(snapshot) = self.take_snapshot() {
             self.undo_history.push(snapshot);
+            self.dirty = true;
         }
     }
 
@@ -3784,6 +4090,7 @@ mod tests {
             cg_local: [0.0, 0.0],
             izz_cg: 0.01,
             coupler_points: HashMap::new(),
+            point_masses: Vec::new(),
         });
         let name = state.next_attachment_point_name("empty");
         assert_eq!(name, "A");
@@ -3803,6 +4110,7 @@ mod tests {
             cg_local: [0.0, 0.0],
             izz_cg: 0.01,
             coupler_points: HashMap::new(),
+            point_masses: Vec::new(),
         });
         let name = state.next_attachment_point_name("full");
         assert_eq!(name, "AA");
@@ -3848,6 +4156,7 @@ mod tests {
             cg_local: [0.05, 0.0],
             izz_cg: 0.01,
             coupler_points: HashMap::new(),
+            point_masses: Vec::new(),
         });
         state.add_revolute_joint_raw("ground", "O", "link", "A");
         let bp = state.blueprint.as_ref().unwrap();
@@ -4006,5 +4315,319 @@ mod tests {
         let bp_undone = state.blueprint.as_ref().unwrap();
         assert_eq!(bp_undone.bodies.len(), bodies_before);
         assert_eq!(bp_undone.joints.len(), joints_before);
+    }
+
+    #[test]
+    fn dirty_flag_set_on_push_undo() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        assert!(!state.dirty, "freshly loaded sample should not be dirty");
+        state.push_undo();
+        assert!(state.dirty, "push_undo should set dirty flag");
+    }
+
+    #[test]
+    fn show_shortcuts_defaults_false() {
+        let state = AppState::default();
+        assert!(!state.show_shortcuts);
+    }
+
+    #[test]
+    fn show_dimensions_defaults_false() {
+        let state = AppState::default();
+        assert!(!state.show_dimensions);
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn autosave_path_with_no_save_uses_temp_dir() {
+        let state = AppState::default();
+        let path = state.autosave_path();
+        assert!(path.is_some());
+        let p = path.unwrap();
+        assert!(p.to_string_lossy().contains("linkage_simulator_autosave"));
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn autosave_path_with_save_path_creates_sibling() {
+        let mut state = AppState::default();
+        state.last_save_path = Some(std::path::PathBuf::from("/tmp/my_mechanism.json"));
+        let path = state.autosave_path();
+        assert!(path.is_some());
+        let p = path.unwrap();
+        assert!(
+            p.to_string_lossy().contains(".my_mechanism.autosave.json"),
+            "Expected sibling autosave path, got {:?}",
+            p
+        );
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn save_to_file_clears_dirty_flag() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.push_undo(); // sets dirty=true
+        assert!(state.dirty);
+
+        let tmp = std::env::temp_dir().join("linkage_test_save.json");
+        state.save_to_file(&tmp).expect("save should succeed");
+        assert!(!state.dirty, "save_to_file should clear dirty flag");
+        assert_eq!(state.last_save_path.as_deref(), Some(tmp.as_path()));
+
+        // Cleanup
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn load_from_file_clears_dirty_flag() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // Save first
+        let tmp = std::env::temp_dir().join("linkage_test_load.json");
+        state.save_to_file(&tmp).expect("save should succeed");
+
+        // Dirty it, then reload
+        state.push_undo();
+        assert!(state.dirty);
+
+        state.load_from_file(&tmp).expect("load should succeed");
+        assert!(!state.dirty, "load_from_file should clear dirty flag");
+        assert_eq!(state.last_save_path.as_deref(), Some(tmp.as_path()));
+
+        // Cleanup
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn add_point_mass_modifies_blueprint() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // Find a non-ground body
+        let body_id = {
+            let bp = state.blueprint.as_ref().unwrap();
+            bp.bodies.keys().find(|k| k.as_str() != GROUND_ID).unwrap().clone()
+        };
+
+        assert!(
+            state.blueprint.as_ref().unwrap().bodies[&body_id].point_masses.is_empty(),
+            "should start with no point masses"
+        );
+
+        state.add_point_mass(&body_id, 0.5, [0.01, 0.0]);
+
+        let bp = state.blueprint.as_ref().unwrap();
+        assert_eq!(bp.bodies[&body_id].point_masses.len(), 1);
+        assert!((bp.bodies[&body_id].point_masses[0].mass - 0.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn remove_point_mass_modifies_blueprint() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        let body_id = {
+            let bp = state.blueprint.as_ref().unwrap();
+            bp.bodies.keys().find(|k| k.as_str() != GROUND_ID).unwrap().clone()
+        };
+
+        state.add_point_mass(&body_id, 0.5, [0.01, 0.0]);
+        assert_eq!(
+            state.blueprint.as_ref().unwrap().bodies[&body_id].point_masses.len(),
+            1
+        );
+
+        state.remove_point_mass(&body_id, 0);
+        assert!(
+            state.blueprint.as_ref().unwrap().bodies[&body_id].point_masses.is_empty(),
+            "point mass should be removed"
+        );
+    }
+
+    #[test]
+    fn add_point_mass_is_undoable() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        let body_id = {
+            let bp = state.blueprint.as_ref().unwrap();
+            bp.bodies.keys().find(|k| k.as_str() != GROUND_ID).unwrap().clone()
+        };
+
+        state.add_point_mass(&body_id, 0.5, [0.01, 0.0]);
+        assert_eq!(
+            state.blueprint.as_ref().unwrap().bodies[&body_id].point_masses.len(),
+            1
+        );
+
+        state.undo();
+        assert!(
+            state.blueprint.as_ref().unwrap().bodies[&body_id].point_masses.is_empty(),
+            "undo should remove the point mass"
+        );
+    }
+
+    #[test]
+    fn point_mass_affects_built_mechanism_mass() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        let body_id = {
+            let bp = state.blueprint.as_ref().unwrap();
+            bp.bodies.keys().find(|k| k.as_str() != GROUND_ID).unwrap().clone()
+        };
+
+        let mass_before = state.mechanism.as_ref().unwrap().bodies()[&body_id].mass;
+
+        state.add_point_mass(&body_id, 2.0, [0.01, 0.0]);
+
+        let mass_after = state.mechanism.as_ref().unwrap().bodies()[&body_id].mass;
+        assert!(
+            (mass_after - mass_before - 2.0).abs() < 1e-10,
+            "built mechanism mass should increase by 2.0 kg, was {} now {}",
+            mass_before,
+            mass_after
+        );
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn point_mass_persists_through_save_load() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        let body_id = {
+            let bp = state.blueprint.as_ref().unwrap();
+            bp.bodies.keys().find(|k| k.as_str() != GROUND_ID).unwrap().clone()
+        };
+
+        state.add_point_mass(&body_id, 1.5, [0.02, -0.01]);
+
+        // Save
+        let tmp = std::env::temp_dir().join("linkage_test_pm.json");
+        state.save_to_file(&tmp).expect("save should succeed");
+
+        // Reload into fresh state
+        let mut state2 = AppState::default();
+        state2.load_from_file(&tmp).expect("load should succeed");
+
+        let bp2 = state2.blueprint.as_ref().unwrap();
+        assert_eq!(
+            bp2.bodies[&body_id].point_masses.len(),
+            1,
+            "point mass should persist through save/load"
+        );
+        assert!((bp2.bodies[&body_id].point_masses[0].mass - 1.5).abs() < 1e-10);
+
+        // Cleanup
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn new_empty_mechanism_resets_state() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        assert!(state.current_sample.is_some());
+
+        // Add a recent file so we can verify it persists
+        state.recent_files.push(std::path::PathBuf::from("/fake/file.json"));
+        state.display_units.length = LengthUnit::Meters;
+
+        state.new_empty_mechanism();
+
+        // Mechanism should be ground-only
+        assert!(state.current_sample.is_none());
+        let bp = state.blueprint.as_ref().unwrap();
+        assert_eq!(bp.bodies.len(), 1, "should have only ground body");
+        assert!(bp.bodies.contains_key(GROUND_ID));
+        assert!(bp.joints.is_empty());
+
+        // Preferences should persist
+        assert!(
+            state.recent_files.iter().any(|p| p.to_string_lossy().contains("fake")),
+            "recent_files should contain the fake entry we added"
+        );
+        assert_eq!(state.display_units.length, LengthUnit::Meters);
+    }
+
+    #[test]
+    fn add_prismatic_joint_creates_joint_in_blueprint() {
+        let mut state = AppState::default();
+        // Build a minimal mechanism with two bodies + ground pivots.
+        state.add_ground_pivot("PX", 0.0, 0.0);
+        let body_id = state.next_body_id();
+        state.push_undo();
+        state.add_body_with_points_raw(&body_id, &[("A".into(), [0.0, 0.0]), ("B".into(), [0.1, 0.0])]);
+        state.rebuild();
+        let bp = state.blueprint.as_ref().unwrap();
+        let body_point = bp.bodies[&body_id]
+            .attachment_points.keys().next().unwrap().clone();
+
+        let joints_before = state.blueprint.as_ref().unwrap().joints.len();
+        state.add_prismatic_joint(GROUND_ID, "PX", &body_id, &body_point);
+
+        let bp = state.blueprint.as_ref().unwrap();
+        assert_eq!(bp.joints.len(), joints_before + 1);
+        // Find the new joint and verify it's prismatic
+        let new_joint = bp.joints.values().last().unwrap();
+        match new_joint {
+            JointJson::Prismatic { axis_local_i, .. } => {
+                // Axis should be a unit vector
+                let len = (axis_local_i[0].powi(2) + axis_local_i[1].powi(2)).sqrt();
+                assert!(
+                    (len - 1.0).abs() < 1e-6 || len < 1e-12,
+                    "axis should be normalized or zero, got length {}",
+                    len
+                );
+            }
+            _ => panic!("Expected Prismatic joint, got {:?}", new_joint),
+        }
+    }
+
+    #[test]
+    fn add_fixed_joint_creates_joint_in_blueprint() {
+        let mut state = AppState::default();
+        state.add_ground_pivot("PX", 0.0, 0.0);
+        let body_id = state.next_body_id();
+        state.push_undo();
+        state.add_body_with_points_raw(&body_id, &[("A".into(), [0.0, 0.0]), ("B".into(), [0.1, 0.0])]);
+        state.rebuild();
+        let bp = state.blueprint.as_ref().unwrap();
+        let body_point = bp.bodies[&body_id]
+            .attachment_points.keys().next().unwrap().clone();
+
+        state.add_fixed_joint(GROUND_ID, "PX", &body_id, &body_point);
+
+        let bp = state.blueprint.as_ref().unwrap();
+        let has_fixed = bp.joints.values().any(|j| matches!(j, JointJson::Fixed { .. }));
+        assert!(has_fixed, "Should have a Fixed joint in the blueprint");
+    }
+
+    #[test]
+    fn add_prismatic_joint_is_undoable() {
+        let mut state = AppState::default();
+        state.add_ground_pivot("PX", 0.0, 0.0);
+        let body_id = state.next_body_id();
+        state.push_undo();
+        state.add_body_with_points_raw(&body_id, &[("A".into(), [0.0, 0.0]), ("B".into(), [0.1, 0.0])]);
+        state.rebuild();
+        let bp = state.blueprint.as_ref().unwrap();
+        let body_point = bp.bodies[&body_id]
+            .attachment_points.keys().next().unwrap().clone();
+
+        let joints_before = state.blueprint.as_ref().unwrap().joints.len();
+        state.add_prismatic_joint(GROUND_ID, "PX", &body_id, &body_point);
+        assert_eq!(state.blueprint.as_ref().unwrap().joints.len(), joints_before + 1);
+
+        state.undo();
+        assert_eq!(
+            state.blueprint.as_ref().unwrap().joints.len(),
+            joints_before,
+            "undo should remove the prismatic joint"
+        );
     }
 }

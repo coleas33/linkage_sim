@@ -44,7 +44,7 @@ verification.
 | AC7 | Force helpers validated via virtual work principle | L3a virtual work tests pass |
 | AC8 | All Hypothesis tests deterministic in CI | `derandomize=True` on every `@given` test, no CI flakiness over 10 consecutive runs |
 | AC9 | FD tolerances calibrated, not guessed | Each test file contains calibration comment block with empirical h-vs-error analysis |
-| AC10 | All existing 391 tests still pass | `pytest` full suite green after all new tests added |
+| AC10 | All existing 395 tests still pass | `pytest` full suite green after all new tests added |
 
 ---
 
@@ -404,4 +404,4 @@ Ordered by dependency chain and priority. Each step is a committable unit.
 | L5 Regression baselines | test_regression_baselines.py | 11 | P3 |
 | **Total new** | **6 files** | **~108** | |
 
-Combined with existing 391 tests: ~499 total tests.
+Combined with existing 395 tests: ~503 total tests.

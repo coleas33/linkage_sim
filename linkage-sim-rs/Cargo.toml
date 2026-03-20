@@ -27,7 +27,7 @@ gif = { version = "0.13", optional = true }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-web-sys = "0.3"
+web-sys = { version = "0.3", features = ["HtmlCanvasElement"] }
 
 [dev-dependencies]
 approx = "0.5"
@@ -37,6 +37,7 @@ meval = "0.2"
 [[bin]]
 name = "linkage-gui"
 path = "src/bin/linkage_gui.rs"
+required-features = ["native"]
 
 [[bin]]
 name = "linkage-web"

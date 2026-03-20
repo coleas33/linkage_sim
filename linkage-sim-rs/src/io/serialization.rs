@@ -84,6 +84,13 @@ pub enum DriverJson {
     },
 }
 
+/// A point mass attached to a body at a local position.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PointMassJson {
+    pub mass: f64,
+    pub local_pos: [f64; 2],
+}
+
 /// JSON representation of a rigid body.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BodyJson {
@@ -93,6 +100,10 @@ pub struct BodyJson {
     pub izz_cg: f64,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub coupler_points: HashMap<String, [f64; 2]>,
+    /// Point masses attached to this body. Applied during build to update
+    /// composite mass, CG, and Izz via parallel axis theorem.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub point_masses: Vec<PointMassJson>,
 }
 
 /// JSON representation of a joint constraint.
@@ -208,6 +219,10 @@ fn body_to_json(body: &Body) -> BodyJson {
         cg_local: [body.cg_local.x, body.cg_local.y],
         izz_cg: body.izz_cg,
         coupler_points,
+        // Point masses are a blueprint-level concept — they modify mass/CG/Izz
+        // at build time. When exporting from a built mechanism, the composite
+        // properties are already baked in, so we emit an empty list.
+        point_masses: Vec::new(),
     }
 }
 
@@ -387,6 +402,13 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
         };
         mech.add_body(body)
             .map_err(|e| SerializationError::Build(e.to_string()))?;
+
+        // Apply point masses to update composite mass/CG/Izz
+        for pm in &body_json.point_masses {
+            if let Some(body_mut) = mech.body_mut(body_id) {
+                body_mut.add_point_mass(pm.mass, Vector2::new(pm.local_pos[0], pm.local_pos[1]));
+            }
+        }
     }
 
     // Rebuild joints (geometric constraints only; drivers are separate)

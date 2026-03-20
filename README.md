@@ -71,7 +71,7 @@ The simulator is built on four foundational decisions documented in detail in `d
 | Layer | Choice | Rationale |
 |---|---|---|
 | Core solver (Phases 1–4) | Python + NumPy/SciPy | `fsolve` for constraints, `linalg` for linear systems, `solve_ivp` (Radau/BDF) for DAE |
-| Core solver (production) | Rust + nalgebra | **Port complete** — validated against Python golden fixtures (391 tests). All 12 force element types ported. See `RUST_MIGRATION.md` |
+| Core solver (production) | Rust + nalgebra | **Port complete** — validated against Python golden fixtures (411 tests). All 12 force element types ported. See `RUST_MIGRATION.md` |
 | Expression evaluator | Python: `asteval` / Rust: `meval` | **Shipped.** User-defined driver expressions (e.g., `"pi/2 * sin(3*t)"`) with GUI editor, serializable to JSON |
 | GUI framework (Phase 5) | Rust: `egui` + `eframe` | 2D canvas, drag-and-drop, animation. Native + WebAssembly targets. WASM build infrastructure shipped (feature flags, web entry point) |
 | Plotting (development) | Matplotlib or Plotly | Engineering-quality plots during Python development |
@@ -136,7 +136,7 @@ linkage-sim/
 
 ### Rust solver kernel (`linkage-sim-rs/`)
 
-The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forward dynamics) is complete in Rust, validated against Python golden fixtures (391 tests). **Phase 5 GUI:** Built with egui/eframe. Features:
+The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forward dynamics) is complete in Rust, validated against Python golden fixtures (411 tests). **Phase 5 GUI:** Built with egui/eframe. Features:
 - 12 force element types, all editable in the property panel and rendered on the canvas
 - 10 plot tabs: coupler trace, body angles, transmission angle, driver torque, inverse dynamics, energy (KE/PE/total), mechanical advantage, joint reactions, coupler velocity, coupler acceleration
 - Forward dynamics simulation with timeline scrubbing, playback speed control, and constraint drift display
@@ -165,13 +165,27 @@ Run with `cd linkage-sim-rs && cargo run --bin linkage-gui`.
 - Modes-only toolbar: [Select] [Draw Link] [+ Body] [+ Ground]
 - Closed polygon rendering for 3+ point bodies (ternary plates render as triangles)
 
-**Phase 5 substantially complete.** All major features shipped:
+**Phase 5 complete.** All ROADMAP deliverables shipped:
 - Force element GUI — **done** (property panel editing + canvas rendering for all 12 element types)
 - Analysis displays — **done** (energy, Grashof, Jacobian conditioning, mechanical advantage, torque envelopes, crank selection, motor sizing)
 - Forward dynamics simulation — **done** (simulate button, timeline scrubbing, playback, constraint drift)
 - Inverse dynamics — **done** (sweep plot tab with statics overlay)
 - PNG + SVG export — **done** (via resvg SVG-to-PNG rasterization, 1920x1080 default)
 - GIF animation export — **done** (renders sweep frames via resvg, encodes with gif crate, 800x600 @ 20fps)
+- CSV export — **done** (sweep data + coupler traces with comprehensive columns)
+- Link dimension annotations — **done** (toggleable via View > Link Dimensions, shows lengths in display units)
+- Point mass GUI — **done** (add/remove point masses on bodies with parallel axis theorem recomputation)
+- Keyboard shortcuts help — **done** (Help > Keyboard Shortcuts dialog)
+- Autosave — **done** (periodic save every 30s to sibling `.autosave.json` file)
+- WebAssembly build — **done** (feature flags, WASM entry point, zero-warning compilation)
+- Recent files menu — **done** (tracks last 5 opened/saved files, persisted across sessions)
+- Canvas hover tooltips — **done** (body/joint info on hover without clicking)
+- Mechanism summary — **done** (body count, joint count, total mass always visible in property panel)
+- Ctrl+S / Ctrl+Shift+S save shortcuts — **done** (quick save to last path, or Save As)
+- Autosave recovery — **done** (prompt on startup when autosave file found from previous session)
+- Link lengths in property panel — **done** (segment lengths shown with attachment point list)
+- Prismatic + Fixed joint creation — **done** (Create Joint submenu: Revolute / Prismatic / Fixed)
+- Ctrl+N new mechanism — **done** (File > New resets to empty canvas, preserves preferences)
 
 ```
 linkage-sim-rs/

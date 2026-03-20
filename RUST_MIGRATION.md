@@ -38,8 +38,8 @@ The Rust port begins **after Phase 4 exits** — when all four analysis modes (k
 | Phase 2 — Force elements & statics | Python | Complete, validated |
 | Phase 3 — Actuators & inverse dynamics | Python | Complete, validated |
 | Phase 4 — Forward dynamics | Python | Complete, validated |
-| **Rust port** | **Rust** | **Complete — 391 tests, validated against Python golden data + property-based stress tests** |
-| Phase 5 — Interactive GUI | Rust | **Substantially complete** — egui application, all major features shipped |
+| **Rust port** | **Rust** | **Complete — 411 tests, validated against Python golden data + property-based stress tests** |
+| Phase 5 — Interactive GUI | Rust | **Complete** — all ROADMAP deliverables shipped, exit criteria met |
 | Phase 6 — Advanced & QoL | Rust | **In progress** — expression evaluator (meval) + WASM compilation |
 
 ---
@@ -296,22 +296,11 @@ The Rust port follows the same build order as the Python phases, validating agai
 7. `solver/inverse_dynamics.rs` — Validated against golden inverse dynamics data — **COMPLETE** (March 2026)
 8. `solver/forward_dynamics.rs` — explicit integrator + Baumgarte. Validated against golden trajectories — **COMPLETE** (March 2026)
 9. `analysis/*` — validation, transmission angle, Grashof classification, coupler curves, energy — **COMPLETE** (March 2026)
-10. `gui/*` — Phase 5, built in egui — **SUBSTANTIALLY COMPLETE** (MVP, animation playback, driver reassignment, 13 sample mechanisms, JSON save/load, undo/redo, plotting, gravity-loaded reaction force arrows, interactive topology editor with multi-pivot body editing, SVG + PNG export, force element GUI, analysis displays — all shipped)
+10. `gui/*` — Phase 5, built in egui — **COMPLETE** (all ROADMAP deliverables shipped: all 3 joint types creatable, all 12 force elements editable, 10 plot tabs, forward dynamics simulation, PNG/SVG/GIF/CSV export, autosave + recovery, prismatic axis editing, point mass GUI, keyboard shortcuts, recent files, WASM build)
 
 **Note:** Phase 5 MVP (visualization shell) was built in parallel after port steps 1-5, consuming only the kinematic solver API. Sub-projects for animation playback, JSON save/load, undo/redo, plotting, 6-bar sample mechanisms, interactive topology editor, load cases, and SVG export have since been completed.
 
-**Remaining Phase 5 work:**
-- Force element GUI: define/edit springs, dampers, external loads on bodies/joints — **done** (property panel editing, canvas rendering of spring/damper/force symbols)
-- Analysis displays: energy plot tab, Grashof classification, Jacobian rank diagnostics — **done** (energy plot with KE/PE/total, Grashof classification in diagnostics panel, condition number display)
-- Velocity solve in sweep — **done** (called at each sweep step for energy computation)
-- Forward dynamics GUI — **done** (simulate button, timeline scrubbing, playback speed, constraint drift display)
-- Inverse dynamics GUI — **done** (sweep plot tab with statics overlay)
-- Toggle detection, envelopes, force breakdown analysis — **done** (ported to Rust, torque envelope stats in diagnostics panel)
-- PNG export — **done** (resvg SVG-to-PNG rasterization)
-- Event detection for forward dynamics — **done** (angle limits, velocity reversals, terminal events)
-- Property-based stress testing — **done** (proptest: random 4-bar generation, constraint/velocity/serialization invariants)
-- Interactive topology editor with multi-pivot body support — **done**: multi-point body creation (ternary, quaternary bodies via + Body tool); Add Pivot Here context menu to add/remove attachment points on existing bodies, promoting binary bars to ternary plates; body-aware Draw Link with segment snapping that auto-creates pivots for branching connections; compound undo batching for multi-step operations; context menu restructured to distinguish body-area vs attachment-point interactions
-- GIF animation export — **done** (renders sweep frames via resvg, encodes with gif crate)
+**Phase 5 work: all items complete.** Force element GUI, analysis displays, forward/inverse dynamics GUI, PNG/SVG/GIF/CSV export, event detection, property-based testing, interactive topology editor, prismatic/fixed joint creation, point mass GUI, autosave + recovery, keyboard shortcuts, recent files, link dimensions, canvas tooltips — all shipped.
 
 Each step has a clear "done" condition: Rust output matches Python golden data within tolerance.
 
@@ -323,7 +312,7 @@ The solver kernel port (steps 1–9) is complete and validated. All four analysi
 
 ### Test coverage
 
-- **391 tests total** (includes 7 property-based tests via proptest)
+- **411 tests total** (includes 8 property-based tests via proptest)
 - All tests pass via `cargo test`
 
 ### Golden fixture coverage
@@ -382,7 +371,7 @@ linkage-sim-rs/
 | Port takes longer than expected | Medium | 1:1 module mapping and golden test data bound the scope | **Did not materialize.** 1:1 mapping strategy worked as planned |
 | Forward dynamics needs implicit solver | Low | Python phase identifies which mechanisms need it | **Did not materialize.** Explicit RK4 + Baumgarte + projection sufficient for all benchmark mechanisms |
 | nalgebra API friction | Low | Well-documented, large user base | **Minor friction only.** SVD vs lstsq near singularities required tolerance adjustments but no design changes |
-| Expression evaluator (rhai/meval) limitations | Low | Scope is narrow: math expressions over named variables | **Not yet exercised.** Driver expressions still handled programmatically; expression evaluator deferred to schema v1.1 |
+| Expression evaluator (rhai/meval) limitations | Low | Scope is narrow: math expressions over named variables | **Shipped.** `meval` crate integrated for driver expressions (e.g., `"pi/2 * sin(3*t)"`). GUI editor with live validation, JSON serialization, and 9 tests. Force elements also support expression-modulated parameters |
 | Premature port — big modeling changes discovered after porting | Medium | See "Timing Caveat" below | **Did not materialize.** Data model was stable; no rework required |
 
 ---
@@ -467,17 +456,17 @@ The solver kernel port (steps 1–9) is complete. Full feature parity with the P
 | Analysis | Rust Backend | Rust GUI | Notes |
 |----------|:------------:|:--------:|-------|
 | Transmission angle | Yes | Yes (plot tab) | 4-bar only |
-| Coupler point tracing | Yes (pos, vel, accel) | Yes (position only) | Velocity/acceleration vectors not rendered |
+| Coupler point tracing | Yes (pos, vel, accel) | Yes (pos, vel, accel) | Velocity/acceleration plot tabs shipped |
 | Energy (KE/PE/total) | Yes | Yes (plot tab) | KE, PE, total energy vs driver angle |
 | Grashof classification | Yes | Yes (diagnostics) | Shown in collapsible diagnostics panel |
 | Jacobian rank/condition | Yes | Yes (diagnostics) | Condition number + overconstrained warning |
 | Validation (Grubler DOF) | Yes | Partial (status bar) | |
 | Mechanical advantage | Yes | Yes (plot tab + panel) | Angular velocity ratio |
 | Signal envelopes | Yes | Yes (diagnostics) | Min/max/RMS of torque over sweep |
-| Force breakdown | Yes | — | Per-element Q contribution norms |
-| Toggle detection | Yes | — | SVD-based singularity check |
+| Force breakdown | Yes | Yes (diagnostics) | Per-element Q contribution norms with progress bars |
+| Toggle detection | Yes | Yes (plot markers) | Red dashed lines on all sweep plots at near-singular angles |
 | Motor sizing | Yes | Yes (diagnostics) | Feasibility check when MotorElement present |
-| Virtual work cross-check | Yes | — | Independent torque validation |
+| Virtual work cross-check | Yes | Yes (diagnostics) | Green/red agreement indicator with VW and Lagrange torque values |
 | Crank selection | Yes | Yes (diagnostics) | Link rotation recommendation for 4-bar |
 
 ### Solver capabilities — backend vs GUI

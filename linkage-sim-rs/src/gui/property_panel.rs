@@ -13,6 +13,7 @@ use crate::core::constraint::Constraint;
 use crate::core::state::GROUND_ID;
 use crate::forces::elements::*;
 use crate::solver::statics::reaction_to_local;
+use crate::io::serialization::JointJson;
 use super::state::{AppState, SelectedEntity}; // DisplayUnits used via state.display_units
 
 /// Pending edit collected during UI rendering, applied after all reads
@@ -24,6 +25,9 @@ enum PendingPropertyEdit {
     RemoveForce(usize),
     UpdateForce { index: usize, force: ForceElement },
     SetDriver(String),
+    AddPointMass { body_id: String, mass: f64, local_pos: [f64; 2] },
+    RemovePointMass { body_id: String, index: usize },
+    UpdatePrismaticAxis { joint_id: String, axis: [f64; 2] },
 }
 
 /// Draw the property panel showing info about the selected entity.
@@ -32,6 +36,25 @@ enum PendingPropertyEdit {
 /// blueprint is present and the selected body is not ground.
 pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
     ui.heading("Properties");
+
+    // ── Compact mechanism summary (always visible) ─────────────────────
+    if let Some(mech) = &state.mechanism {
+        let n_bodies = mech.bodies().len().saturating_sub(1); // exclude ground
+        let n_joints = mech.joints().len();
+        let total_mass: f64 = mech.bodies().values()
+            .filter(|b| b.id != GROUND_ID)
+            .map(|b| b.mass)
+            .sum();
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            ui.small(format!("{} bodies", n_bodies));
+            ui.small("\u{2022}");
+            ui.small(format!("{} joints", n_joints));
+            ui.small("\u{2022}");
+            ui.small(format!("{:.2} kg", total_mass));
+        });
+        ui.separator();
+    }
 
     // ── Diagnostics section (always shown when a mechanism is loaded) ───
     draw_diagnostics_section(ui, state);
@@ -156,11 +179,52 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                         units.length_suffix()
                     ));
 
+                    // Point masses section
+                    if body_id != GROUND_ID {
+                        ui.separator();
+                        ui.strong("Point masses:");
+                        if let Some(bp) = &state.blueprint {
+                            if let Some(bp_body) = bp.bodies.get(&body_id) {
+                                if bp_body.point_masses.is_empty() {
+                                    ui.label("None");
+                                }
+                                let mut remove_idx = None;
+                                for (idx, pm) in bp_body.point_masses.iter().enumerate() {
+                                    ui.horizontal(|ui| {
+                                        ui.label(format!(
+                                            "{:.3} kg at ({:.1}, {:.1}){}",
+                                            pm.mass,
+                                            units.length(pm.local_pos[0]),
+                                            units.length(pm.local_pos[1]),
+                                            units.length_suffix()
+                                        ));
+                                        if ui.small_button("\u{2715}").on_hover_text("Remove").clicked() {
+                                            remove_idx = Some(idx);
+                                        }
+                                    });
+                                }
+                                if let Some(idx) = remove_idx {
+                                    pending = Some(PendingPropertyEdit::RemovePointMass {
+                                        body_id: body_id.clone(),
+                                        index: idx,
+                                    });
+                                }
+                                if ui.small_button("+ Point Mass").clicked() {
+                                    pending = Some(PendingPropertyEdit::AddPointMass {
+                                        body_id: body_id.clone(),
+                                        mass: 1.0,
+                                        local_pos: [0.0, 0.0],
+                                    });
+                                }
+                            }
+                        }
+                    }
+
                     ui.separator();
                     ui.strong("Attachment points:");
                     let mut pts: Vec<_> = body.attachment_points.iter().collect();
                     pts.sort_by_key(|(name, _)| name.as_str());
-                    for (name, local) in pts {
+                    for (name, local) in &pts {
                         let global = mech_state.body_point_global(&body_id, local, q);
                         ui.label(format!(
                             "  {} \u{2014} local: ({:.3}, {:.3}){}, global: ({:.3}, {:.3}){}",
@@ -172,6 +236,39 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                             units.length(global.y),
                             units.length_suffix()
                         ));
+                    }
+
+                    // Show link segment lengths between consecutive attachment points.
+                    if pts.len() >= 2 {
+                        ui.separator();
+                        ui.strong("Link lengths:");
+                        for pair in pts.windows(2) {
+                            let (name_a, pt_a) = &pair[0];
+                            let (name_b, pt_b) = &pair[1];
+                            let dx = pt_b.x - pt_a.x;
+                            let dy = pt_b.y - pt_a.y;
+                            let len = (dx * dx + dy * dy).sqrt();
+                            ui.label(format!(
+                                "  {}\u{2192}{}: {:.3}{}",
+                                name_a, name_b,
+                                units.length(len),
+                                units.length_suffix()
+                            ));
+                        }
+                        if pts.len() >= 3 {
+                            // Closing segment for polygon bodies.
+                            let (name_a, pt_a) = pts.last().unwrap();
+                            let (name_b, pt_b) = &pts[0];
+                            let dx = pt_b.x - pt_a.x;
+                            let dy = pt_b.y - pt_a.y;
+                            let len = (dx * dx + dy * dy).sqrt();
+                            ui.label(format!(
+                                "  {}\u{2192}{}: {:.3}{}",
+                                name_a, name_b,
+                                units.length(len),
+                                units.length_suffix()
+                            ));
+                        }
                     }
                 }
             }
@@ -209,6 +306,49 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                         units.length(global_pos.y),
                         units.length_suffix()
                     ));
+
+                    // Prismatic axis editing (only for prismatic joints with a blueprint).
+                    if joint.is_prismatic() {
+                        if let Some(bp) = &state.blueprint {
+                            if let Some(bpj) = bp.joints.get(joint_id) {
+                                if let JointJson::Prismatic { axis_local_i, .. } = bpj {
+                                    ui.separator();
+                                    ui.strong("Slide Axis (body i local):");
+                                    let mut ax = axis_local_i[0];
+                                    let mut ay = axis_local_i[1];
+                                    let mut changed = false;
+                                    ui.horizontal(|ui| {
+                                        ui.label("x:");
+                                        if ui
+                                            .add(egui::DragValue::new(&mut ax).speed(0.01).range(-1.0..=1.0))
+                                            .changed()
+                                        {
+                                            changed = true;
+                                        }
+                                        ui.label("y:");
+                                        if ui
+                                            .add(egui::DragValue::new(&mut ay).speed(0.01).range(-1.0..=1.0))
+                                            .changed()
+                                        {
+                                            changed = true;
+                                        }
+                                    });
+                                    if changed {
+                                        // Normalize the axis
+                                        let len = (ax * ax + ay * ay).sqrt();
+                                        if len > 1e-12 {
+                                            ax /= len;
+                                            ay /= len;
+                                        }
+                                        pending = Some(PendingPropertyEdit::UpdatePrismaticAxis {
+                                            joint_id: joint_id.clone(),
+                                            axis: [ax, ay],
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     // Show reaction forces for this joint if available.
                     if let Some(&(fx, fy)) = state.force_results.joint_reactions.get(joint_id) {
@@ -292,6 +432,15 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
             }
             PendingPropertyEdit::SetDriver(joint_id) => {
                 state.pending_driver_reassignment = Some(joint_id);
+            }
+            PendingPropertyEdit::AddPointMass { body_id, mass, local_pos } => {
+                state.add_point_mass(&body_id, mass, local_pos);
+            }
+            PendingPropertyEdit::RemovePointMass { body_id, index } => {
+                state.remove_point_mass(&body_id, index);
+            }
+            PendingPropertyEdit::UpdatePrismaticAxis { joint_id, axis } => {
+                state.update_prismatic_axis(&joint_id, axis);
             }
         }
     }

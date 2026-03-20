@@ -35,6 +35,7 @@ const ACTUATOR_COLOR: Color32 = Color32::from_rgb(255, 120, 60);
 const BEARING_COLOR: Color32 = Color32::from_rgb(200, 180, 100);
 const JOINT_LIMIT_COLOR: Color32 = Color32::from_rgb(220, 80, 80);
 const MOTOR_COLOR: Color32 = Color32::from_rgb(100, 220, 140);
+const DIM_LABEL_COLOR: Color32 = Color32::from_rgb(180, 200, 140);
 
 // ── Sizing ──────────────────────────────────────────────────────────────────
 
@@ -301,6 +302,48 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 painter.circle_filled(*sp, ATTACHMENT_DOT_RADIUS, ATTACHMENT_DOT_COLOR);
             }
 
+            // Dimension labels: show link segment lengths at midpoints.
+            if state.show_dimensions && point_positions.len() >= 2 {
+                let segments: Vec<(usize, usize)> = if point_positions.len() >= 3 {
+                    // Closed polygon: all consecutive pairs + last→first
+                    (0..point_positions.len())
+                        .map(|i| (i, (i + 1) % point_positions.len()))
+                        .collect()
+                } else {
+                    // Binary link: single segment
+                    vec![(0, 1)]
+                };
+                for (i, j) in segments {
+                    let (sp_a, wp_a) = &point_positions[i];
+                    let (sp_b, wp_b) = &point_positions[j];
+                    let dx = wp_b[0] - wp_a[0];
+                    let dy = wp_b[1] - wp_a[1];
+                    let dist_m = (dx * dx + dy * dy).sqrt();
+                    let label = format!(
+                        "{:.1}{}",
+                        state.display_units.length(dist_m),
+                        state.display_units.length_suffix()
+                    );
+                    let mid = Pos2::new(
+                        (sp_a.x + sp_b.x) * 0.5,
+                        (sp_a.y + sp_b.y) * 0.5,
+                    );
+                    // Offset perpendicular to the segment so the label doesn't overlap the link.
+                    let seg_dx = sp_b.x - sp_a.x;
+                    let seg_dy = sp_b.y - sp_a.y;
+                    let seg_len = (seg_dx * seg_dx + seg_dy * seg_dy).sqrt().max(1.0);
+                    let nx = -seg_dy / seg_len * 10.0;
+                    let ny = seg_dx / seg_len * 10.0;
+                    painter.text(
+                        Pos2::new(mid.x + nx, mid.y + ny),
+                        egui::Align2::CENTER_CENTER,
+                        &label,
+                        FontId::proportional(10.0),
+                        DIM_LABEL_COLOR,
+                    );
+                }
+            }
+
             // Debug overlay: body ID at CG, attachment point labels.
             if show_debug {
                 let cg_global = mech_state.body_point_global(body_id, &body.cg_local, q);
@@ -455,7 +498,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         }
 
         // ── Joint creation mode: highlight first selected point ─────────
-        if let Some((ref cj_body, ref cj_point)) = creating_joint_first {
+        if let Some((ref cj_body, ref cj_point, _)) = creating_joint_first {
             // Find the screen position of the first-click attachment point.
             for hit in &attachment_hit_targets {
                 if hit.body_id == *cj_body && hit.point_name == *cj_point {
@@ -637,6 +680,81 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             FontId::proportional(13.0),
             JOINT_CREATE_HIGHLIGHT,
         );
+    }
+
+    // ── Hover tooltips ────────────────────────────────────────────────
+    // Show a tooltip when the mouse hovers over a body or joint.
+    if let Some(hover_pos) = ui.input(|i| i.pointer.hover_pos()) {
+        if canvas_rect.contains(hover_pos) && state.active_tool == EditorTool::Select {
+            let mut tooltip_text: Option<String> = None;
+
+            // Check joints first (they're drawn on top)
+            for (jpos, jid) in &joint_hit_targets {
+                if jpos.distance(hover_pos) < HIT_RADIUS {
+                    if let Some(mech) = &state.mechanism {
+                        if let Some(joint) = mech.joints().iter().find(|j| j.id() == jid) {
+                            let jtype = if joint.is_revolute() {
+                                "Revolute"
+                            } else if joint.is_prismatic() {
+                                "Prismatic"
+                            } else {
+                                "Fixed"
+                            };
+                            tooltip_text = Some(format!(
+                                "{} ({}) \u{2014} {} \u{2194} {}",
+                                jid,
+                                jtype,
+                                joint.body_i_id(),
+                                joint.body_j_id()
+                            ));
+                        }
+                    }
+                    break;
+                }
+            }
+
+            // Then check attachment points / body areas
+            if tooltip_text.is_none() {
+                for hit in &attachment_hit_targets {
+                    if hit.screen_pos.distance(hover_pos) < HIT_RADIUS {
+                        if let Some(mech) = &state.mechanism {
+                            if let Some(body) = mech.bodies().get(&hit.body_id) {
+                                if hit.body_id == GROUND_ID {
+                                    tooltip_text = Some(format!(
+                                        "Ground: {}",
+                                        hit.point_name
+                                    ));
+                                } else {
+                                    tooltip_text = Some(format!(
+                                        "{}: {} \u{2014} {:.3} kg",
+                                        hit.body_id,
+                                        hit.point_name,
+                                        body.mass
+                                    ));
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+
+            if let Some(text) = tooltip_text {
+                // Paint tooltip as a text label near the cursor with a background box.
+                let tip_pos = Pos2::new(hover_pos.x + 14.0, hover_pos.y - 18.0);
+                let galley = painter.layout_no_wrap(
+                    text,
+                    FontId::proportional(11.0),
+                    Color32::from_rgb(220, 225, 235),
+                );
+                let text_rect = egui::Align2::LEFT_BOTTOM
+                    .anchor_size(tip_pos, galley.size());
+                let bg_rect = text_rect.expand(3.0);
+                painter.rect_filled(bg_rect, 3.0, Color32::from_rgba_premultiplied(30, 32, 40, 220));
+                painter.rect_stroke(bg_rect, 3.0, Stroke::new(1.0, Color32::from_rgb(60, 65, 80)), egui::StrokeKind::Outside);
+                painter.galley(text_rect.min, galley, Color32::PLACEHOLDER);
+            }
+        }
     }
 
     // ── Interaction: drag attachment points ─────────────────────────────
@@ -978,7 +1096,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         if let Some(pos) = response.interact_pointer_pos() {
             let second_hit = find_nearest_attachment(pos);
             if let Some(hit) = second_hit {
-                let (first_body, first_point) = state.creating_joint.clone().unwrap();
+                let (first_body, first_point, joint_type) = state.creating_joint.clone().unwrap();
                 let second_body = hit.body_id.clone();
                 let second_point = hit.point_name.clone();
 
@@ -988,12 +1106,27 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 } else if first_body == GROUND_ID && second_body == GROUND_ID {
                     // Invalid: ground-ground — ignore, stay in creating_joint mode
                 } else {
-                    state.add_revolute_joint(
-                        &first_body,
-                        &first_point,
-                        &second_body,
-                        &second_point,
-                    );
+                    use super::state::PendingJointType;
+                    match joint_type {
+                        PendingJointType::Revolute => {
+                            state.add_revolute_joint(
+                                &first_body, &first_point,
+                                &second_body, &second_point,
+                            );
+                        }
+                        PendingJointType::Prismatic => {
+                            state.add_prismatic_joint(
+                                &first_body, &first_point,
+                                &second_body, &second_point,
+                            );
+                        }
+                        PendingJointType::Fixed => {
+                            state.add_fixed_joint(
+                                &first_body, &first_point,
+                                &second_body, &second_point,
+                            );
+                        }
+                    }
                     state.creating_joint = None;
                 }
             }
@@ -1122,11 +1255,21 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             ui.label(format!("Point: {}.{}", body_id, point_name));
             ui.separator();
 
-            if ui.button("Create Joint").clicked() {
-                // Start two-click joint creation from this point.
-                state.creating_joint = Some((body_id.clone(), point_name.clone()));
-                ui.close();
-            }
+            ui.menu_button("Create Joint", |ui| {
+                use super::state::PendingJointType;
+                if ui.button("Revolute").clicked() {
+                    state.creating_joint = Some((body_id.clone(), point_name.clone(), PendingJointType::Revolute));
+                    ui.close();
+                }
+                if ui.button("Prismatic").clicked() {
+                    state.creating_joint = Some((body_id.clone(), point_name.clone(), PendingJointType::Prismatic));
+                    ui.close();
+                }
+                if ui.button("Fixed").clicked() {
+                    state.creating_joint = Some((body_id.clone(), point_name.clone(), PendingJointType::Fixed));
+                    ui.close();
+                }
+            });
 
             if ui.button("Delete Pivot").clicked() {
                 state.remove_attachment_point(body_id, point_name);
