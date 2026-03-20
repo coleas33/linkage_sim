@@ -28,6 +28,7 @@ enum PendingPropertyEdit {
     AddPointMass { body_id: String, mass: f64, local_pos: [f64; 2] },
     RemovePointMass { body_id: String, index: usize },
     UpdatePrismaticAxis { joint_id: String, axis: [f64; 2] },
+    LinkLength { body_id: String, point_a: String, point_b: String, length: f64 },
 }
 
 /// Draw the property panel showing info about the selected entity.
@@ -238,36 +239,52 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                         ));
                     }
 
-                    // Show link segment lengths between consecutive attachment points.
+                    // Show editable link segment lengths between consecutive attachment points.
                     if pts.len() >= 2 {
                         ui.separator();
                         ui.strong("Link lengths:");
+
+                        // Build list of segment pairs (including closing segment for polygons)
+                        let mut segments: Vec<(&str, &str, f64)> = Vec::new();
                         for pair in pts.windows(2) {
                             let (name_a, pt_a) = &pair[0];
                             let (name_b, pt_b) = &pair[1];
                             let dx = pt_b.x - pt_a.x;
                             let dy = pt_b.y - pt_a.y;
                             let len = (dx * dx + dy * dy).sqrt();
-                            ui.label(format!(
-                                "  {}\u{2192}{}: {:.3}{}",
-                                name_a, name_b,
-                                units.length(len),
-                                units.length_suffix()
-                            ));
+                            segments.push((name_a.as_str(), name_b.as_str(), len));
                         }
                         if pts.len() >= 3 {
-                            // Closing segment for polygon bodies.
                             let (name_a, pt_a) = pts.last().unwrap();
                             let (name_b, pt_b) = &pts[0];
                             let dx = pt_b.x - pt_a.x;
                             let dy = pt_b.y - pt_a.y;
                             let len = (dx * dx + dy * dy).sqrt();
-                            ui.label(format!(
-                                "  {}\u{2192}{}: {:.3}{}",
-                                name_a, name_b,
-                                units.length(len),
-                                units.length_suffix()
-                            ));
+                            segments.push((name_a.as_str(), name_b.as_str(), len));
+                        }
+
+                        for (name_a, name_b, len) in &segments {
+                            let mut display_len = units.length(*len);
+                            ui.horizontal(|ui| {
+                                ui.label(format!("  {}\u{2192}{}:", name_a, name_b));
+                                if ui
+                                    .add(
+                                        egui::DragValue::new(&mut display_len)
+                                            .speed(units.length(0.001))
+                                            .range(units.length(0.001)..=units.length(10.0))
+                                            .suffix(units.length_suffix()),
+                                    )
+                                    .changed()
+                                {
+                                    let new_si = units.length_to_si(display_len);
+                                    pending = Some(PendingPropertyEdit::LinkLength {
+                                        body_id: body_id.clone(),
+                                        point_a: name_a.to_string(),
+                                        point_b: name_b.to_string(),
+                                        length: new_si,
+                                    });
+                                }
+                            });
                         }
                     }
                 }
@@ -441,6 +458,9 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
             }
             PendingPropertyEdit::UpdatePrismaticAxis { joint_id, axis } => {
                 state.update_prismatic_axis(&joint_id, axis);
+            }
+            PendingPropertyEdit::LinkLength { body_id, point_a, point_b, length } => {
+                state.set_link_length(&body_id, &point_a, &point_b, length);
             }
         }
     }

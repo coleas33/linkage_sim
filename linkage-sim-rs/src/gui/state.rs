@@ -1711,6 +1711,43 @@ impl AppState {
         self.rebuild();
     }
 
+    /// Set the distance between two attachment points on a body, maintaining direction.
+    ///
+    /// Moves `point_b` along the vector from `point_a` to `point_b` so that
+    /// the new distance equals `new_length`. If the points are coincident,
+    /// moves `point_b` along the +X direction.
+    pub fn set_link_length(
+        &mut self,
+        body_id: &str,
+        point_a: &str,
+        point_b: &str,
+        new_length: f64,
+    ) {
+        let Some(bp) = &mut self.blueprint else { return };
+        let Some(body) = bp.bodies.get(body_id) else { return };
+        let Some(&pa) = body.attachment_points.get(point_a) else { return };
+        let Some(&pb) = body.attachment_points.get(point_b) else { return };
+
+        let dx = pb[0] - pa[0];
+        let dy = pb[1] - pa[1];
+        let current_len = (dx * dx + dy * dy).sqrt();
+
+        let (ux, uy) = if current_len > 1e-12 {
+            (dx / current_len, dy / current_len)
+        } else {
+            (1.0, 0.0)
+        };
+
+        let new_pb = [pa[0] + ux * new_length, pa[1] + uy * new_length];
+
+        if let Some(body) = bp.bodies.get_mut(body_id) {
+            if let Some(pt) = body.attachment_points.get_mut(point_b) {
+                *pt = new_pb;
+            }
+        }
+        self.rebuild();
+    }
+
     /// Set mass property on a body in the blueprint.
     pub fn set_body_mass(&mut self, body_id: &str, mass: f64) {
         let Some(bp) = &mut self.blueprint else { return };
@@ -5473,5 +5510,60 @@ mod tests {
         if let Some(ForceElement::Gravity(g)) = grav {
             assert!((g.g_vector[1] - (-3.71)).abs() < 1e-10);
         }
+    }
+
+    #[test]
+    fn set_link_length_maintains_direction() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        let bp = state.blueprint.as_ref().unwrap();
+        let crank = bp.bodies.get("crank").unwrap();
+        let pa = crank.attachment_points.get("A").unwrap();
+        let pb = crank.attachment_points.get("B").unwrap();
+        let dx = pb[0] - pa[0];
+        let dy = pb[1] - pa[1];
+        let orig_len = (dx * dx + dy * dy).sqrt();
+        let orig_angle = dy.atan2(dx);
+
+        let new_len = orig_len * 1.5;
+        state.set_link_length("crank", "A", "B", new_len);
+
+        let bp = state.blueprint.as_ref().unwrap();
+        let crank = bp.bodies.get("crank").unwrap();
+        let pa2 = crank.attachment_points.get("A").unwrap();
+        let pb2 = crank.attachment_points.get("B").unwrap();
+        let dx2 = pb2[0] - pa2[0];
+        let dy2 = pb2[1] - pa2[1];
+        let actual_len = (dx2 * dx2 + dy2 * dy2).sqrt();
+        let actual_angle = dy2.atan2(dx2);
+
+        assert!(
+            (actual_len - new_len).abs() < 1e-10,
+            "Length should be {}, got {}", new_len, actual_len
+        );
+        assert!(
+            (actual_angle - orig_angle).abs() < 1e-10,
+            "Direction should be preserved: expected {}, got {}", orig_angle, actual_angle
+        );
+    }
+
+    #[test]
+    fn set_link_length_point_a_stays_fixed() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        let bp = state.blueprint.as_ref().unwrap();
+        let pa_before = *bp.bodies.get("crank").unwrap()
+            .attachment_points.get("A").unwrap();
+
+        state.set_link_length("crank", "A", "B", 0.05);
+
+        let bp = state.blueprint.as_ref().unwrap();
+        let pa_after = bp.bodies.get("crank").unwrap()
+            .attachment_points.get("A").unwrap();
+
+        assert!((pa_after[0] - pa_before[0]).abs() < 1e-12);
+        assert!((pa_after[1] - pa_before[1]).abs() < 1e-12);
     }
 }

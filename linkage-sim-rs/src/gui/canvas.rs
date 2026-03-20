@@ -6,7 +6,7 @@ use crate::core::constraint::Constraint;
 use crate::core::state::GROUND_ID;
 use crate::forces::elements::ForceElement;
 use crate::gui::state::{
-    AddBodyState, AppState, ContextMenuTarget, DragTarget, EditorTool, GridSettings,
+    AddBodyState, AppState, ContextMenuTarget, EditorTool, GridSettings,
     SelectedEntity, ViewTransform,
 };
 
@@ -777,50 +777,30 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             })
     };
 
-    // Drag start (Select mode): attachment drag or pan.
-    if response.drag_started_by(egui::PointerButton::Primary)
+    // ── Interaction: click to select (Select mode) ────────────────────────
+    // Canvas drag-to-resize has been removed; link lengths are edited via
+    // sidebar sliders. Click still selects the nearest body.
+    if response.clicked_by(egui::PointerButton::Primary)
         && !is_shift
         && state.active_tool == EditorTool::Select
     {
         if let Some(pointer_pos) = response.interact_pointer_pos() {
             if let Some(hit) = find_nearest_attachment(pointer_pos) {
-                state.drag_target = Some(DragTarget {
-                    body_id: hit.body_id.clone(),
-                    point_name: hit.point_name.clone(),
-                    started: false,
-                });
+                state.selected = Some(SelectedEntity::Body(hit.body_id.clone()));
             }
         }
     }
 
-    // Drag in progress (Select mode): move point or pan.
+    // Primary drag on empty space (Select mode) pans the view.
     if response.dragged_by(egui::PointerButton::Primary) && !is_shift {
-        if let Some(pointer_pos) = ui.input(|i| i.pointer.hover_pos()) {
-            let drag_info = state.drag_target.as_ref().map(|d| {
-                (d.body_id.clone(), d.point_name.clone(), d.started)
-            });
-
-            if let Some((body_id, point_name, started)) = drag_info {
-                if !started {
-                    state.push_undo();
-                    if let Some(ref mut drag) = state.drag_target {
-                        drag.started = true;
-                    }
-                }
-                let [wx, wy] = state.view.screen_to_world(pointer_pos.x, pointer_pos.y);
-                let (snap_x, snap_y) = state.grid.snap_point(wx, wy);
-                state.move_attachment_point(&body_id, &point_name, snap_x, snap_y);
-            } else if state.active_tool == EditorTool::Select
-                && state.draw_link_start.is_none()
-            {
-                is_panning = true;
-            }
+        if state.active_tool == EditorTool::Select
+            && state.draw_link_start.is_none()
+        {
+            is_panning = true;
         }
     }
 
-    if state.drag_target.is_some() && !response.dragged() {
-        state.drag_target = None;
-    }
+    state.drag_target = None;
 
     // ── Interaction: pan ────────────────────────────────────────────────
     if response.dragged() {
