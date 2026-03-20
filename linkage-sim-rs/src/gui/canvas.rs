@@ -794,23 +794,23 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
 
     // ── Interaction: click to select ────────────────────────────────────
     // Click selects: attachment points first, then body segments (links).
-    // Works in Select mode on click. Also works as secondary action in any
-    // tool mode so users can always click a link to inspect it.
-    {
-        let clicked = response.clicked_by(egui::PointerButton::Primary) && !is_shift;
-        // Also detect short taps that egui might classify as drag-start-then-release
-        let short_tap = response.drag_stopped_by(egui::PointerButton::Primary)
-            && !is_shift
-            && response.drag_delta().length() < 3.0;
+    if state.active_tool == EditorTool::Select && !is_shift {
+        // Use pointer release position — more reliable than clicked_by which
+        // requires zero mouse movement between press and release.
+        let released = ui.input(|i| i.pointer.primary_released());
+        let was_click = released && !response.dragged();
+        // Also accept very short drags as clicks (< 5px total movement)
+        let was_short_drag = response.drag_stopped_by(egui::PointerButton::Primary)
+            && response.drag_delta().length() < 5.0;
 
-        if (clicked || short_tap) && state.active_tool == EditorTool::Select {
-            if let Some(pointer_pos) = response.interact_pointer_pos()
-                .or_else(|| ui.input(|i| i.pointer.hover_pos()))
-            {
-                if let Some(hit) = find_nearest_attachment(pointer_pos) {
-                    state.selected = Some(SelectedEntity::Body(hit.body_id.clone()));
-                } else if let Some(seg_hit) = find_nearest_body_segment(pointer_pos, &body_segments, HIT_RADIUS * 2.0) {
-                    state.selected = Some(SelectedEntity::Body(seg_hit.body_id.clone()));
+        if was_click || was_short_drag {
+            if let Some(pointer_pos) = ui.input(|i| i.pointer.latest_pos()) {
+                if canvas_rect.contains(pointer_pos) {
+                    if let Some(hit) = find_nearest_attachment(pointer_pos) {
+                        state.selected = Some(SelectedEntity::Body(hit.body_id.clone()));
+                    } else if let Some(seg_hit) = find_nearest_body_segment(pointer_pos, &body_segments, HIT_RADIUS * 2.0) {
+                        state.selected = Some(SelectedEntity::Body(seg_hit.body_id.clone()));
+                    }
                 }
             }
         }

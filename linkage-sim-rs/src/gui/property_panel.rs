@@ -30,6 +30,7 @@ enum PendingPropertyEdit {
     LinkLength { body_id: String, point_a: String, point_b: String, length: f64 },
     LinkOrientation { body_id: String, point_a: String, point_b: String, angle_rad: f64 },
     SelectBody(String),
+    Deselect,
 }
 
 /// Draw the property panel showing info about the selected entity.
@@ -104,7 +105,14 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                     let units = &state.display_units;
 
                     // ── Link Editor header ─────────────────────────────────
-                    ui.heading(format!("Link Editor: {}", body_id));
+                    ui.horizontal(|ui| {
+                        ui.heading(format!("Link Editor: {}", body_id));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.small_button("\u{2715} Close").clicked() {
+                                pending = Some(PendingPropertyEdit::Deselect);
+                            }
+                        });
+                    });
                     ui.separator();
 
                     if body_id != GROUND_ID {
@@ -150,18 +158,16 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                         for (name_a, name_b, len, angle) in &segments {
                             ui.label(format!("  {}\u{2192}{}", name_a, name_b));
 
-                            // Length slider
+                            // Length slider — only rebuild on release
                             let mut display_len = units.length(*len);
-                            if ui
-                                .add(
-                                    egui::Slider::new(&mut display_len, units.length(0.001)..=units.length(2.0))
-                                        .text("length")
-                                        .suffix(units.length_suffix())
-                                        .clamping(egui::SliderClamping::Never)
-                                        .logarithmic(true),
-                                )
-                                .changed()
-                            {
+                            let len_resp = ui.add(
+                                egui::Slider::new(&mut display_len, units.length(0.001)..=units.length(2.0))
+                                    .text("length")
+                                    .suffix(units.length_suffix())
+                                    .clamping(egui::SliderClamping::Never)
+                                    .logarithmic(true),
+                            );
+                            if len_resp.drag_stopped() || (len_resp.changed() && !len_resp.dragged()) {
                                 let new_si = units.length_to_si(display_len);
                                 pending = Some(PendingPropertyEdit::LinkLength {
                                     body_id: body_id.clone(),
@@ -171,17 +177,15 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                 });
                             }
 
-                            // Orientation slider
+                            // Orientation slider — only rebuild on release
                             let mut angle_deg = angle.to_degrees();
-                            if ui
-                                .add(
-                                    egui::Slider::new(&mut angle_deg, -180.0..=180.0)
-                                        .text("angle")
-                                        .suffix("\u{00B0}")
-                                        .step_by(0.5),
-                                )
-                                .changed()
-                            {
+                            let ang_resp = ui.add(
+                                egui::Slider::new(&mut angle_deg, -180.0..=180.0)
+                                    .text("angle")
+                                    .suffix("\u{00B0}")
+                                    .step_by(0.5),
+                            );
+                            if ang_resp.drag_stopped() || (ang_resp.changed() && !ang_resp.dragged()) {
                                 let new_angle_rad = angle_deg.to_radians();
                                 pending = Some(PendingPropertyEdit::LinkOrientation {
                                     body_id: body_id.clone(),
@@ -204,15 +208,13 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                 let mut izz = bp_body.izz_cg;
 
                                 ui.label("Mass");
-                                if ui
-                                    .add(
-                                        egui::Slider::new(&mut mass, 0.0..=100.0)
-                                            .suffix(" kg")
-                                            .clamping(egui::SliderClamping::Never)
-                                            .logarithmic(true),
-                                    )
-                                    .changed()
-                                {
+                                let mass_resp = ui.add(
+                                    egui::Slider::new(&mut mass, 0.0..=100.0)
+                                        .suffix(" kg")
+                                        .clamping(egui::SliderClamping::Never)
+                                        .logarithmic(true),
+                                );
+                                if mass_resp.drag_stopped() || (mass_resp.changed() && !mass_resp.dragged()) {
                                     pending = Some(PendingPropertyEdit::Mass {
                                         body_id: body_id.clone(),
                                         value: mass,
@@ -220,15 +222,13 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                 }
 
                                 ui.label("Inertia (Izz)");
-                                if ui
-                                    .add(
-                                        egui::Slider::new(&mut izz, 0.0..=10.0)
-                                            .suffix(" kg\u{00b7}m\u{00b2}")
-                                            .clamping(egui::SliderClamping::Never)
-                                            .logarithmic(true),
-                                    )
-                                    .changed()
-                                {
+                                let izz_resp = ui.add(
+                                    egui::Slider::new(&mut izz, 0.0..=10.0)
+                                        .suffix(" kg\u{00b7}m\u{00b2}")
+                                        .clamping(egui::SliderClamping::Never)
+                                        .logarithmic(true),
+                                );
+                                if izz_resp.drag_stopped() || (izz_resp.changed() && !izz_resp.dragged()) {
                                     pending = Some(PendingPropertyEdit::Izz {
                                         body_id: body_id.clone(),
                                         value: izz,
@@ -499,6 +499,9 @@ fn apply_pending(state: &mut AppState, pending: Option<PendingPropertyEdit>) {
             }
             PendingPropertyEdit::SelectBody(body_id) => {
                 state.selected = Some(SelectedEntity::Body(body_id));
+            }
+            PendingPropertyEdit::Deselect => {
+                state.selected = None;
             }
         }
     }
