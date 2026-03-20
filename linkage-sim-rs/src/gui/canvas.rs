@@ -10,51 +10,57 @@ use crate::gui::state::{
     SelectedEntity, ViewTransform,
 };
 
-// ── Colors ──────────────────────────────────────────────────────────────────
+// ── Colors — CAD-inspired dark palette ───────────────────────────────────────
 
-const BG_COLOR: Color32 = Color32::from_rgb(18, 20, 28);
-const GRID_COLOR: Color32 = Color32::from_rgba_premultiplied(50, 55, 70, 60);
-const GROUND_LINE_COLOR: Color32 = Color32::from_rgb(70, 75, 90);
-const BODY_COLOR: Color32 = Color32::from_rgb(65, 160, 255);
-const BODY_SELECTED_COLOR: Color32 = Color32::from_rgb(255, 185, 40);
-const JOINT_COLOR: Color32 = Color32::from_rgb(230, 235, 245);
-const JOINT_SELECTED_COLOR: Color32 = Color32::from_rgb(255, 185, 40);
-const DRIVER_JOINT_COLOR: Color32 = Color32::from_rgb(100, 220, 140);
-const GROUND_MARKER_COLOR: Color32 = Color32::from_rgb(170, 155, 120);
-const ATTACHMENT_DOT_COLOR: Color32 = Color32::from_rgb(180, 195, 220);
-const DEBUG_TEXT_COLOR: Color32 = Color32::from_rgb(160, 170, 190);
-const DEBUG_DIM_COLOR: Color32 = Color32::from_rgb(90, 95, 110);
-const NO_MECH_TEXT_COLOR: Color32 = Color32::from_rgb(100, 105, 120);
-const JOINT_CREATE_HIGHLIGHT: Color32 = Color32::from_rgb(60, 230, 100);
-const FORCE_ARROW_COLOR: Color32 = Color32::from_rgb(255, 85, 85);
-const SPRING_COLOR: Color32 = Color32::from_rgb(60, 200, 120);
-const DAMPER_COLOR: Color32 = Color32::from_rgb(100, 150, 255);
-const EXT_FORCE_COLOR: Color32 = Color32::from_rgb(255, 165, 0);
-const GAS_SPRING_COLOR: Color32 = Color32::from_rgb(180, 100, 255);
-const ACTUATOR_COLOR: Color32 = Color32::from_rgb(255, 120, 60);
-const BEARING_COLOR: Color32 = Color32::from_rgb(200, 180, 100);
-const JOINT_LIMIT_COLOR: Color32 = Color32::from_rgb(220, 80, 80);
-const MOTOR_COLOR: Color32 = Color32::from_rgb(100, 220, 140);
-const DIM_LABEL_COLOR: Color32 = Color32::from_rgb(180, 200, 140);
+// Canvas background: subtle gradient-like dark with slight blue tint
+const BG_COLOR: Color32 = Color32::from_rgb(22, 24, 32);
+const GRID_COLOR: Color32 = Color32::from_rgba_premultiplied(45, 50, 65, 50);
+const GRID_MAJOR_COLOR: Color32 = Color32::from_rgba_premultiplied(55, 60, 80, 80);
+const GROUND_LINE_COLOR: Color32 = Color32::from_rgb(80, 85, 100);
+
+// Bodies: clean blue with warm orange selection (SolidWorks-style)
+const BODY_COLOR: Color32 = Color32::from_rgb(70, 150, 240);
+const BODY_SELECTED_COLOR: Color32 = Color32::from_rgb(255, 180, 40);
+
+// Joints: bright with clear hierarchy
+const JOINT_COLOR: Color32 = Color32::from_rgb(220, 225, 240);
+const JOINT_SELECTED_COLOR: Color32 = Color32::from_rgb(255, 180, 40);
+const DRIVER_JOINT_COLOR: Color32 = Color32::from_rgb(80, 220, 130);
+const GROUND_MARKER_COLOR: Color32 = Color32::from_rgb(160, 145, 110);
+const ATTACHMENT_DOT_COLOR: Color32 = Color32::from_rgb(170, 185, 210);
+
+// Labels
+const DEBUG_TEXT_COLOR: Color32 = Color32::from_rgb(150, 160, 180);
+const DEBUG_DIM_COLOR: Color32 = Color32::from_rgb(85, 90, 105);
+const NO_MECH_TEXT_COLOR: Color32 = Color32::from_rgb(90, 95, 115);
+const JOINT_CREATE_HIGHLIGHT: Color32 = Color32::from_rgb(50, 230, 100);
+const DIM_LABEL_COLOR: Color32 = Color32::from_rgb(170, 195, 130);
+
+// Force elements: semantic color coding
+const FORCE_ARROW_COLOR: Color32 = Color32::from_rgb(255, 80, 80);
+const SPRING_COLOR: Color32 = Color32::from_rgb(50, 200, 110);
+const DAMPER_COLOR: Color32 = Color32::from_rgb(90, 145, 255);
+const EXT_FORCE_COLOR: Color32 = Color32::from_rgb(255, 160, 30);
+const GAS_SPRING_COLOR: Color32 = Color32::from_rgb(170, 95, 255);
+const ACTUATOR_COLOR: Color32 = Color32::from_rgb(255, 115, 55);
+const BEARING_COLOR: Color32 = Color32::from_rgb(190, 175, 95);
+const JOINT_LIMIT_COLOR: Color32 = Color32::from_rgb(215, 75, 75);
+const MOTOR_COLOR: Color32 = Color32::from_rgb(80, 220, 130);
 
 // ── Sizing ──────────────────────────────────────────────────────────────────
 
-const FORCE_ARROW_WIDTH: f32 = 2.0;
-/// Minimum arrow length in pixels (below this, arrows are not drawn).
+const FORCE_ARROW_WIDTH: f32 = 2.5;
 const FORCE_ARROW_MIN_PX: f32 = 3.0;
-/// Maximum arrow length in pixels (clamp very large forces).
 const FORCE_ARROW_MAX_PX: f32 = 80.0;
-/// Scale factor: pixels per Newton. Adjustable; 1 N = 30 px is a reasonable default.
 const FORCE_ARROW_SCALE: f32 = 30.0;
 
 const BODY_STROKE_WIDTH: f32 = 3.5;
-/// Half-width of the link rectangle in pixels.
 const LINK_HALF_WIDTH: f32 = 8.0;
-const JOINT_RADIUS: f32 = 6.0;
+const JOINT_RADIUS: f32 = 7.0;
 const JOINT_STROKE_WIDTH: f32 = 2.0;
-const GROUND_MARKER_SIZE: f32 = 12.0;
+const GROUND_MARKER_SIZE: f32 = 14.0;
 const HIT_RADIUS: f32 = 12.0;
-const ATTACHMENT_DOT_RADIUS: f32 = 3.0;
+const ATTACHMENT_DOT_RADIUS: f32 = 3.5;
 const ZOOM_FACTOR: f32 = 1.04;
 const MIN_SCALE: f32 = 100.0;
 const MAX_SCALE: f32 = 100_000.0;
@@ -499,29 +505,51 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             };
 
             if joint.is_revolute() {
-                // Filled circle with contrasting stroke for better visibility.
-                painter.circle_filled(center, JOINT_RADIUS, BG_COLOR);
+                // Glow ring for driver joint
+                if is_driver {
+                    painter.circle_filled(
+                        center, JOINT_RADIUS + 4.0,
+                        Color32::from_rgba_premultiplied(80, 220, 130, 40),
+                    );
+                }
+                // Selection glow
+                if is_selected {
+                    painter.circle_filled(
+                        center, JOINT_RADIUS + 3.0,
+                        Color32::from_rgba_premultiplied(255, 180, 40, 50),
+                    );
+                }
+                // Dark fill + colored ring
+                painter.circle_filled(center, JOINT_RADIUS, Color32::from_rgb(28, 30, 38));
                 painter.circle_stroke(
                     center,
                     JOINT_RADIUS,
                     Stroke::new(JOINT_STROKE_WIDTH, color),
                 );
-                // Inner dot for driver joint to make it extra visible.
+                // Inner dot for driver joint
                 if is_driver {
-                    painter.circle_filled(center, 2.5, DRIVER_JOINT_COLOR);
+                    painter.circle_filled(center, 3.0, DRIVER_JOINT_COLOR);
                 }
             } else if joint.is_prismatic() {
                 let half = JOINT_RADIUS;
                 let rect = Rect::from_center_size(center, Vec2::splat(half * 2.0));
-                painter.rect_filled(rect, 0.0, BG_COLOR);
-                painter.rect_stroke(
-                    rect,
-                    0.0,
-                    Stroke::new(JOINT_STROKE_WIDTH, color),
-                    egui::StrokeKind::Middle,
-                );
+                if is_selected {
+                    let glow = rect.expand(3.0);
+                    painter.rect_filled(glow, 2.0, Color32::from_rgba_premultiplied(255, 180, 40, 50));
+                }
+                painter.rect_filled(rect, 2.0, Color32::from_rgb(28, 30, 38));
+                painter.rect_stroke(rect, 2.0, Stroke::new(JOINT_STROKE_WIDTH, color), egui::StrokeKind::Middle);
             } else if joint.is_fixed() {
-                painter.circle_filled(center, JOINT_RADIUS, color);
+                // X marker for fixed joints
+                let r = JOINT_RADIUS * 0.7;
+                painter.line_segment(
+                    [Pos2::new(center.x - r, center.y - r), Pos2::new(center.x + r, center.y + r)],
+                    Stroke::new(2.5, color),
+                );
+                painter.line_segment(
+                    [Pos2::new(center.x + r, center.y - r), Pos2::new(center.x - r, center.y + r)],
+                    Stroke::new(2.5, color),
+                );
             }
 
             if show_debug {
@@ -1940,33 +1968,46 @@ fn draw_grid(
         return;
     }
 
-    let grid_stroke = Stroke::new(0.5, GRID_COLOR);
+    let minor_stroke = Stroke::new(0.5, GRID_COLOR);
+    let major_stroke = Stroke::new(1.0, GRID_MAJOR_COLOR);
 
-    // Vertical lines.
+    // Vertical lines (every 5th is major).
     for i in x_min_i..=x_max_i {
         let wx = i as f64 * spacing;
         let top = view.world_to_screen(wx, world_top);
         let bottom = view.world_to_screen(wx, world_bottom);
+        let stroke = if i % 5 == 0 { major_stroke } else { minor_stroke };
         painter.line_segment(
-            [
-                Pos2::new(top[0], top[1]),
-                Pos2::new(bottom[0], bottom[1]),
-            ],
-            grid_stroke,
+            [Pos2::new(top[0], top[1]), Pos2::new(bottom[0], bottom[1])],
+            stroke,
         );
     }
 
-    // Horizontal lines.
+    // Horizontal lines (every 5th is major).
     for i in y_min_i..=y_max_i {
         let wy = i as f64 * spacing;
         let left = view.world_to_screen(world_left, wy);
         let right = view.world_to_screen(world_right, wy);
+        let stroke = if i % 5 == 0 { major_stroke } else { minor_stroke };
         painter.line_segment(
-            [
-                Pos2::new(left[0], left[1]),
-                Pos2::new(right[0], right[1]),
-            ],
-            grid_stroke,
+            [Pos2::new(left[0], left[1]), Pos2::new(right[0], right[1])],
+            stroke,
+        );
+    }
+
+    // Origin crosshair (subtle red/green axis lines like CAD tools).
+    let origin = view.world_to_screen(0.0, 0.0);
+    let origin_pos = Pos2::new(origin[0], origin[1]);
+    if rect.contains(origin_pos) {
+        // X-axis (red, horizontal)
+        painter.line_segment(
+            [Pos2::new(rect.left(), origin[1]), Pos2::new(rect.right(), origin[1])],
+            Stroke::new(1.0, Color32::from_rgba_premultiplied(180, 60, 60, 100)),
+        );
+        // Y-axis (green, vertical)
+        painter.line_segment(
+            [Pos2::new(origin[0], rect.top()), Pos2::new(origin[0], rect.bottom())],
+            Stroke::new(1.0, Color32::from_rgba_premultiplied(60, 180, 60, 100)),
         );
     }
 }
