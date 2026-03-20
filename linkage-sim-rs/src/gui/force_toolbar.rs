@@ -139,28 +139,16 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
     pending
 }
 
-/// Determine target bodies from current selection.
+/// Determine target bodies from current Link Editor selection.
 pub(crate) fn resolve_target_bodies(state: &AppState) -> (Option<String>, Option<String>) {
-    let selected_body = match &state.selected {
-        Some(SelectedEntity::Body(id)) if id != GROUND_ID => Some(id.clone()),
-        Some(SelectedEntity::Joint(joint_id)) => {
-            if let Some(mech) = &state.mechanism {
-                mech.joints()
-                    .iter()
-                    .find(|j| j.id() == joint_id)
-                    .map(|j| {
-                        if j.body_i_id() == GROUND_ID {
-                            j.body_j_id().to_string()
-                        } else {
-                            j.body_i_id().to_string()
-                        }
-                    })
-            } else {
-                None
-            }
-        }
-        _ => None,
-    };
+    // Use link_editor_body (dropdown) as the primary source
+    let selected_body = state.link_editor_body.clone()
+        .filter(|id| id != GROUND_ID)
+        // Fall back to canvas selection if Link Editor has nothing
+        .or_else(|| match &state.selected {
+            Some(SelectedEntity::Body(id)) if id != GROUND_ID => Some(id.clone()),
+            _ => None,
+        });
 
     let connected_body = if let (Some(sel_id), Some(mech)) = (&selected_body, &state.mechanism) {
         mech.joints()
