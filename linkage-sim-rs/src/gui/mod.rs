@@ -526,6 +526,28 @@ impl eframe::App for LinkageApp {
                     self.state.draw_link_start = None;
                     self.state.add_body_state = None;
                 }
+
+                ui.separator();
+
+                // Play/Pause button — prominent green
+                let is_playing = self.state.playing;
+                let (label, color) = if is_playing {
+                    ("\u{23F8} Pause", egui::Color32::from_rgb(220, 180, 50))
+                } else {
+                    ("\u{25B6} Play", egui::Color32::from_rgb(50, 200, 80))
+                };
+                let btn = egui::Button::new(
+                    egui::RichText::new(label).color(color).strong()
+                );
+                if ui.add(btn)
+                    .on_hover_text("Animate the mechanism (kinematic playback)")
+                    .clicked()
+                {
+                    self.state.playing = !self.state.playing;
+                    if self.state.playing && !self.state.loop_mode {
+                        self.state.animation_direction = 1.0;
+                    }
+                }
             });
         });
 
