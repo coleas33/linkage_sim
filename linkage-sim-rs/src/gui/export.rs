@@ -491,6 +491,18 @@ mod tests {
             vec![3.0, 4.5, 3.5, 5.0, 3.0],
         );
 
+        let mut coupler_velocities = HashMap::new();
+        coupler_velocities.insert(
+            "coupler.tip".to_string(),
+            vec![0.5, 0.8, 0.6, 0.7, 0.5],
+        );
+
+        let mut coupler_accelerations = HashMap::new();
+        coupler_accelerations.insert(
+            "coupler.tip".to_string(),
+            vec![1.0, 1.5, 1.2, 1.3, 1.0],
+        );
+
         SweepData {
             angles_deg,
             body_angles,
@@ -503,6 +515,8 @@ mod tests {
             inverse_dynamics_torques: vec![1.2, 1.8, 0.6, -0.4, 1.2],
             mechanical_advantage: vec![0.5, 0.45, 0.6, 0.55, 0.5],
             joint_reaction_magnitudes,
+            coupler_velocities,
+            coupler_accelerations,
             toggle_angles: Vec::new(),
         }
     }
@@ -855,6 +869,8 @@ mod tests {
             inverse_dynamics_torques: vec![],
             mechanical_advantage: vec![],
             joint_reaction_magnitudes: HashMap::new(),
+            coupler_velocities: HashMap::new(),
+            coupler_accelerations: HashMap::new(),
             toggle_angles: Vec::new(),
         };
 

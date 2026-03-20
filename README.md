@@ -138,7 +138,7 @@ linkage-sim/
 
 The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forward dynamics) is complete in Rust, validated against Python golden fixtures (391 tests). **Phase 5 GUI:** Built with egui/eframe. Features:
 - 12 force element types, all editable in the property panel and rendered on the canvas
-- 8 plot tabs: coupler trace, body angles, transmission angle, driver torque, inverse dynamics, energy (KE/PE/total), mechanical advantage, joint reactions
+- 10 plot tabs: coupler trace, body angles, transmission angle, driver torque, inverse dynamics, energy (KE/PE/total), mechanical advantage, joint reactions, coupler velocity, coupler acceleration
 - Forward dynamics simulation with timeline scrubbing, playback speed control, and constraint drift display
 - PNG + SVG export (resvg-based rasterization, 1920x1080 default)
 - Diagnostics panel: Grashof classification, Jacobian conditioning, crank selection, motor sizing, torque envelopes

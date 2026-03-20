@@ -20,6 +20,7 @@ use crate::io::serialization::{
     BodyJson, DriverJson, JointJson, LoadCaseJson, MechanismJson,
 };
 use crate::forces::elements::{ForceElement, GravityElement};
+use crate::analysis::coupler::eval_coupler_point;
 use crate::analysis::energy::compute_energy_state_mech;
 use crate::analysis::force_breakdown::evaluate_contributions;
 use crate::analysis::validation::check_toggle;
@@ -416,6 +417,12 @@ pub struct SweepData {
     /// Per-joint reaction force magnitudes (N) over the sweep.
     /// Key: joint_id, Value: vec of resultant force magnitudes at each step.
     pub joint_reaction_magnitudes: HashMap<String, Vec<f64>>,
+    /// Coupler point velocity magnitudes over the sweep.
+    /// Key: trace name (same as coupler_traces), Value: velocity magnitude (m/s) at each step.
+    pub coupler_velocities: HashMap<String, Vec<f64>>,
+    /// Coupler point acceleration magnitudes over the sweep.
+    /// Key: trace name, Value: acceleration magnitude (m/s^2) at each step.
+    pub coupler_accelerations: HashMap<String, Vec<f64>>,
     /// Angles (degrees) at which toggle/dead points were detected.
     pub toggle_angles: Vec<f64>,
 }
@@ -2305,6 +2312,8 @@ fn compute_sweep_data(
         inverse_dynamics_torques: Vec::with_capacity(361),
         mechanical_advantage: Vec::with_capacity(361),
         joint_reaction_magnitudes: HashMap::new(),
+        coupler_velocities: HashMap::new(),
+        coupler_accelerations: HashMap::new(),
         toggle_angles: Vec::new(),
     };
 
@@ -2340,6 +2349,14 @@ fn compute_sweep_data(
                 data.coupler_traces.insert(key, Vec::with_capacity(361));
             }
         }
+    }
+
+    // Pre-allocate coupler velocity and acceleration vectors.
+    let mut coupler_vel_data: HashMap<String, Vec<f64>> = HashMap::new();
+    let mut coupler_accel_data: HashMap<String, Vec<f64>> = HashMap::new();
+    for (key, _, _) in &coupler_keys {
+        coupler_vel_data.insert(key.clone(), Vec::with_capacity(361));
+        coupler_accel_data.insert(key.clone(), Vec::with_capacity(361));
     }
 
     // Detect 4-bar link lengths for transmission angle.
@@ -2453,8 +2470,9 @@ fn compute_sweep_data(
                     }
 
                     // Acceleration solve + inverse dynamics for torque including inertial effects
-                    if let Ok(q_ddot) = solve_acceleration(mech, &q, &q_dot, t) {
-                        if let Ok(inv_dyn) = solve_inverse_dynamics(mech, &q, &q_dot, &q_ddot, t) {
+                    let accel_result = solve_acceleration(mech, &q, &q_dot, t);
+                    if let Ok(ref q_ddot) = accel_result {
+                        if let Ok(inv_dyn) = solve_inverse_dynamics(mech, &q, &q_dot, q_ddot, t) {
                             // Extract driver torque from the last lambda (driver is last constraint)
                             let n_lam = inv_dyn.lambdas.len();
                             if n_lam > 0 {
@@ -2468,12 +2486,38 @@ fn compute_sweep_data(
                     } else {
                         data.inverse_dynamics_torques.push(f64::NAN);
                     }
+
+                    // Coupler point velocities and accelerations.
+                    let n = q.len();
+                    for (key, body_id, local) in &coupler_keys {
+                        if let Ok(ref q_ddot) = accel_result {
+                            let (_pos, vel, acc) = eval_coupler_point(
+                                mech.state(), body_id, local, &q, &q_dot, q_ddot,
+                            );
+                            coupler_vel_data.get_mut(key).unwrap().push(vel.norm());
+                            coupler_accel_data.get_mut(key).unwrap().push(acc.norm());
+                        } else {
+                            // No acceleration -- still store velocity.
+                            let zero = DVector::zeros(n);
+                            let (_pos, vel, _acc) = eval_coupler_point(
+                                mech.state(), body_id, local, &q, &q_dot, &zero,
+                            );
+                            coupler_vel_data.get_mut(key).unwrap().push(vel.norm());
+                            coupler_accel_data.get_mut(key).unwrap().push(f64::NAN);
+                        }
+                    }
                 } else {
                     data.kinetic_energy.push(f64::NAN);
                     data.potential_energy.push(f64::NAN);
                     data.total_energy.push(f64::NAN);
                     data.inverse_dynamics_torques.push(f64::NAN);
                     data.mechanical_advantage.push(f64::NAN);
+
+                    // No velocity solve -- push NaN for coupler vel/accel.
+                    for (key, _, _) in &coupler_keys {
+                        coupler_vel_data.get_mut(key).unwrap().push(f64::NAN);
+                        coupler_accel_data.get_mut(key).unwrap().push(f64::NAN);
+                    }
                 }
             }
             _ => {
@@ -2485,6 +2529,8 @@ fn compute_sweep_data(
     }
 
     data.joint_reaction_magnitudes = reaction_data;
+    data.coupler_velocities = coupler_vel_data;
+    data.coupler_accelerations = coupler_accel_data;
 
     (data, q_at_zero)
 }

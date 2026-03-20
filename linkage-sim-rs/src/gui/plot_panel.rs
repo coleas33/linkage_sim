@@ -18,6 +18,8 @@ enum PlotTab {
     Energy,
     MechanicalAdvantage,
     JointReactions,
+    CouplerVelocity,
+    CouplerAcceleration,
 }
 
 /// Draw the plot panel with tabbed plots.
@@ -103,6 +105,26 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &AppState) {
                 "Joint Reactions",
             );
         });
+
+        // Only show coupler velocity tab if data exists.
+        let has_cv = !sweep.coupler_velocities.is_empty();
+        ui.add_enabled_ui(has_cv, |ui| {
+            ui.selectable_value(
+                &mut selected_tab,
+                PlotTab::CouplerVelocity,
+                "Coupler Vel.",
+            );
+        });
+
+        // Only show coupler acceleration tab if data exists.
+        let has_ca = !sweep.coupler_accelerations.is_empty();
+        ui.add_enabled_ui(has_ca, |ui| {
+            ui.selectable_value(
+                &mut selected_tab,
+                PlotTab::CouplerAcceleration,
+                "Coupler Accel.",
+            );
+        });
     });
 
     ui.memory_mut(|mem| mem.data.insert_temp(tab_id, selected_tab));
@@ -130,6 +152,12 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &AppState) {
         }
         PlotTab::JointReactions => {
             draw_joint_reactions(ui, sweep, current_driver_display, &state.display_units);
+        }
+        PlotTab::CouplerVelocity => {
+            draw_coupler_velocity(ui, sweep, current_driver_display, &state.display_units);
+        }
+        PlotTab::CouplerAcceleration => {
+            draw_coupler_acceleration(ui, sweep, current_driver_display, &state.display_units);
         }
     }
 }
@@ -592,6 +620,130 @@ fn draw_joint_reactions(
             let color = colors[color_idx % colors.len()];
             plot_ui.line(
                 Line::new(joint_id.as_str(), points)
+                    .color(color)
+                    .width(1.5),
+            );
+            color_idx += 1;
+        }
+
+        // Vertical marker at current driver angle.
+        plot_ui.vline(
+            VLine::new("cursor", current_driver_display)
+                .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
+                .width(1.0),
+        );
+
+        draw_toggle_markers(plot_ui, sweep, units);
+    });
+}
+
+/// Plot coupler point velocity magnitudes (m/s) vs driver angle.
+///
+/// Each coupler point gets its own series with a distinct color from the
+/// standard palette. Only finite values are plotted.
+fn draw_coupler_velocity(
+    ui: &mut egui::Ui,
+    sweep: &super::state::SweepData,
+    current_driver_display: f64,
+    units: &DisplayUnits,
+) {
+    if sweep.coupler_velocities.is_empty() {
+        ui.label("Coupler velocity data not available.");
+        return;
+    }
+
+    let angle_label = match units.angle {
+        super::state::AngleUnit::Degrees => "deg",
+        super::state::AngleUnit::Radians => "rad",
+    };
+
+    let plot = Plot::new("coupler_velocity_plot")
+        .x_axis_label(format!("Driver Angle ({})", angle_label))
+        .y_axis_label("Velocity (m/s)")
+        .legend(egui_plot::Legend::default());
+
+    plot.show(ui, |plot_ui| {
+        let colors = series_colors();
+        let mut color_idx = 0;
+
+        let mut keys: Vec<&String> = sweep.coupler_velocities.keys().collect();
+        keys.sort();
+
+        for key in keys {
+            let velocities = &sweep.coupler_velocities[key];
+            let points: PlotPoints = sweep
+                .angles_deg
+                .iter()
+                .zip(velocities.iter())
+                .filter(|&(_, &v)| v.is_finite())
+                .map(|(&x_deg, &v)| [units.angle(x_deg.to_radians()), v])
+                .collect();
+
+            let color = colors[color_idx % colors.len()];
+            plot_ui.line(
+                Line::new(key.as_str(), points)
+                    .color(color)
+                    .width(1.5),
+            );
+            color_idx += 1;
+        }
+
+        // Vertical marker at current driver angle.
+        plot_ui.vline(
+            VLine::new("cursor", current_driver_display)
+                .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
+                .width(1.0),
+        );
+
+        draw_toggle_markers(plot_ui, sweep, units);
+    });
+}
+
+/// Plot coupler point acceleration magnitudes (m/s^2) vs driver angle.
+///
+/// Each coupler point gets its own series with a distinct color from the
+/// standard palette. Only finite values are plotted.
+fn draw_coupler_acceleration(
+    ui: &mut egui::Ui,
+    sweep: &super::state::SweepData,
+    current_driver_display: f64,
+    units: &DisplayUnits,
+) {
+    if sweep.coupler_accelerations.is_empty() {
+        ui.label("Coupler acceleration data not available.");
+        return;
+    }
+
+    let angle_label = match units.angle {
+        super::state::AngleUnit::Degrees => "deg",
+        super::state::AngleUnit::Radians => "rad",
+    };
+
+    let plot = Plot::new("coupler_acceleration_plot")
+        .x_axis_label(format!("Driver Angle ({})", angle_label))
+        .y_axis_label("Acceleration (m/s\u{00b2})")
+        .legend(egui_plot::Legend::default());
+
+    plot.show(ui, |plot_ui| {
+        let colors = series_colors();
+        let mut color_idx = 0;
+
+        let mut keys: Vec<&String> = sweep.coupler_accelerations.keys().collect();
+        keys.sort();
+
+        for key in keys {
+            let accelerations = &sweep.coupler_accelerations[key];
+            let points: PlotPoints = sweep
+                .angles_deg
+                .iter()
+                .zip(accelerations.iter())
+                .filter(|&(_, &a)| a.is_finite())
+                .map(|(&x_deg, &a)| [units.angle(x_deg.to_radians()), a])
+                .collect();
+
+            let color = colors[color_idx % colors.len()];
+            plot_ui.line(
+                Line::new(key.as_str(), points)
                     .color(color)
                     .width(1.5),
             );
