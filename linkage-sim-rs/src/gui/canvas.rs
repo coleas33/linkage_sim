@@ -862,13 +862,14 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 if let Some(press_pos) = press_pos {
                     let dist = press_pos.distance(release_pos);
                     if dist < 10.0 && canvas_rect.contains(release_pos) {
-                        // This is a click — select the nearest entity
                         let click_pos = release_pos;
                         if let Some(hit) = find_nearest_attachment(click_pos) {
                             state.selected = Some(SelectedEntity::Body(hit.body_id.clone()));
                         } else if let Some(seg_hit) = find_nearest_body_segment(click_pos, &body_segments, LINK_HALF_WIDTH + 4.0) {
                             state.selected = Some(SelectedEntity::Body(seg_hit.body_id.clone()));
                         }
+                        // Force repaint so left panel shows updated selection
+                        ui.ctx().request_repaint();
                     }
                 }
             }
