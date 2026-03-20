@@ -332,22 +332,29 @@ Without these, optimization will exploit solver glitches (branch jumps, near-sin
 
 **Deliverables:**
 
-- **Synthesis tools**: find linkage dimensions for desired coupler curve or output motion (3-point, 4-point, function generation)
-- **Optimization**: objective function on outputs (minimize peak torque, maximize min transmission angle, match target path) with parameter bounds. Optimizer must handle: solver failure at some parameter combinations (return penalty, not crash), branch jumps (detect and penalize or re-seed), and near-singular configurations (penalize via `σ_min` or MA thresholds)
-- **Multi-DOF mechanisms**: 2+ input systems (e.g., 5-bar with two drivers)
-- **Cam-follower**: cam profile as a new JointConstraint type
-- **Import/export**: CAD export (DXF), animation export (GIF/MP4)
 - **Parametric studies**: sweep a design variable, plot output sensitivity
 - **Report generation**: auto-generated summary with diagram, dimensions, Grashof check, peak forces, transmission angle range
 - **Mechanism library**: Watt, Stephenson, Roberts, quick-return, toggle clamp, slider-crank, scotch yoke as starting templates
 - **Counterbalance assistant**: compute optimal spring/point-mass parameters to minimize torque variation
+- **Optimization**: objective function on outputs (minimize peak torque, maximize min transmission angle, match target path) with parameter bounds. Optimizer must handle: solver failure at some parameter combinations (return penalty, not crash), branch jumps (detect and penalize or re-seed), and near-singular configurations (penalize via `σ_min` or MA thresholds)
+- **Cam-follower**: cam profile as a new JointConstraint type
+- **Import/export**: CAD export (DXF), animation export (GIF/MP4)
+
+**Phase 6 is the final planned development phase.** No work beyond Phase 6 will be investigated at this time.
+
+**Deferred from Phase 6 (moved to backlog):**
+
+- **Synthesis tools** (Burmester theory, 3-point/4-point precision position): valuable but high effort and niche — deferred until Phase 6 core features prove out the optimization infrastructure
+- **Multi-DOF mechanisms** (2+ input systems, e.g., 5-bar with two drivers): requires reworking the single-driver assumption throughout the GUI and solver — deferred indefinitely
 
 ---
 
 ## What Is Explicitly Deferred
 
-These are acknowledged as valuable but not in any current phase:
+These are acknowledged as valuable but not in any planned phase:
 
+- Synthesis tools (Burmester theory, function generation) — see Phase 6 note above
+- Multi-DOF mechanisms (5-bar, parallel robots) — see Phase 6 note above
 - Automatic assembly mode detection and branch switching (v1 uses continuation + user initial guess)
 - Full stick-slip friction (v1 uses velocity regularization)
 - Nonsmooth dynamics methods (complementarity solvers, Moreau time-stepping)
