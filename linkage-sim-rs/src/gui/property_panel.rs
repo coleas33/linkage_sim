@@ -29,6 +29,7 @@ enum PendingPropertyEdit {
     UpdatePrismaticAxis { joint_id: String, axis: [f64; 2] },
     LinkLength { body_id: String, point_a: String, point_b: String, length: f64 },
     LinkOrientation { body_id: String, point_a: String, point_b: String, angle_rad: f64 },
+    SelectBody(String),
 }
 
 /// Draw the property panel showing info about the selected entity.
@@ -72,7 +73,25 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
         };
 
         let Some(selected) = &state.selected else {
-            ui.label("Click a body or joint to inspect.");
+            ui.label("Click a link on the canvas to edit it.");
+            ui.separator();
+            ui.strong("Quick select:");
+            let body_ids: Vec<String> = mech.body_order().to_vec();
+            for bid in &body_ids {
+                if ui.button(bid).clicked() {
+                    // Can't mutate state inside immutable borrow block, so
+                    // use pending to defer selection.
+                    pending = Some(PendingPropertyEdit::SelectBody(bid.clone()));
+                }
+            }
+            // Still need to draw force elements below, so don't return.
+            // Fall through with no selected entity content.
+            ui.separator();
+
+            // Skip to force elements section
+            drop(mech);
+            draw_force_elements_inner(ui, state, &mut pending);
+            apply_pending(state, pending);
             return;
         };
 
@@ -423,15 +442,29 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
     } // end immutable borrow block
 
     // ── Force Elements section ─────────────────────────────────────────
+    draw_force_elements_inner(ui, state, &mut pending);
+
+    // --- Apply any pending edits (mutable borrow now safe) ---
+    apply_pending(state, pending);
+}
+
+/// Draw the force elements collapsible section.
+fn draw_force_elements_inner(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    pending: &mut Option<PendingPropertyEdit>,
+) {
     ui.separator();
     egui::CollapsingHeader::new("Force Elements")
         .id_salt("force_elements_section")
         .default_open(true)
         .show(ui, |ui| {
-            draw_force_elements_panel(ui, state, &mut pending);
+            draw_force_elements_panel(ui, state, pending);
         });
+}
 
-    // --- Apply any pending edits (mutable borrow now safe) ---
+/// Apply a pending property edit.
+fn apply_pending(state: &mut AppState, pending: Option<PendingPropertyEdit>) {
     if let Some(edit) = pending {
         match edit {
             PendingPropertyEdit::Mass { body_id, value } => {
@@ -463,6 +496,9 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
             }
             PendingPropertyEdit::LinkOrientation { body_id, point_a, point_b, angle_rad } => {
                 state.set_link_orientation(&body_id, &point_a, &point_b, angle_rad);
+            }
+            PendingPropertyEdit::SelectBody(body_id) => {
+                state.selected = Some(SelectedEntity::Body(body_id));
             }
         }
     }
