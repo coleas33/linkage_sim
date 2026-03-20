@@ -2908,6 +2908,12 @@ impl AppState {
             self.sweep_data = None;
             return;
         }
+        // Guard: need at least one driver and one moving body for a meaningful sweep.
+        let mech = self.mechanism.as_ref().unwrap();
+        if mech.n_drivers() == 0 || mech.body_order().is_empty() {
+            self.sweep_data = None;
+            return;
+        }
         self.sync_gravity();
 
         // Copy values we need from self before taking a reference to the mechanism,
