@@ -28,6 +28,7 @@ enum PendingPropertyEdit {
     RemovePointMass { body_id: String, index: usize },
     UpdatePrismaticAxis { joint_id: String, axis: [f64; 2] },
     LinkLength { body_id: String, point_a: String, point_b: String, length: f64 },
+    LinkOrientation { body_id: String, point_a: String, point_b: String, angle_rad: f64 },
 }
 
 /// Draw the property panel showing info about the selected entity.
@@ -79,61 +80,63 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
             SelectedEntity::Body(body_id) => {
                 let body_id = body_id.clone();
                 if let Some(body) = mech.bodies().get(&body_id) {
-                    ui.strong(format!("Body: {}", body_id));
-                    ui.separator();
-
                     let mech_state = mech.state();
                     let q = &state.q;
-
                     let units = &state.display_units;
+
+                    // ── Link Editor header ─────────────────────────────────
+                    ui.heading(format!("Link Editor: {}", body_id));
+                    ui.separator();
+
                     if body_id != GROUND_ID {
                         let (x, y, theta) = mech_state.get_pose(&body_id, q);
-                        ui.label(format!(
-                            "Position: ({:.3}, {:.3}){}",
-                            units.length(x),
-                            units.length(y),
-                            units.length_suffix()
-                        ));
-                        ui.label(format!(
-                            "Angle: {:.2}{}",
-                            units.angle(theta),
-                            units.angle_suffix()
-                        ));
-                    } else {
-                        ui.label(format!("Position: (0, 0){} \u{2014} fixed", units.length_suffix()));
-                        ui.label(format!("Angle: 0{} \u{2014} fixed", units.angle_suffix()));
+                        ui.horizontal(|ui| {
+                            ui.label(format!(
+                                "Pos: ({:.3}, {:.3}){}  Angle: {:.1}{}",
+                                units.length(x), units.length(y), units.length_suffix(),
+                                units.angle(theta), units.angle_suffix()
+                            ));
+                        });
                     }
 
-                    // ── Link lengths (editable sliders) ─────────────────────
+                    // ── Geometry: lengths + orientations ──────────────────
                     let mut pts: Vec<_> = body.attachment_points.iter().collect();
                     pts.sort_by_key(|(name, _)| name.as_str());
 
                     if pts.len() >= 2 && body_id != GROUND_ID {
                         ui.separator();
-                        ui.strong("Link Lengths");
+                        ui.strong("Geometry");
 
-                        let mut segments: Vec<(&str, &str, f64)> = Vec::new();
+                        // Build segments with length and angle
+                        let mut segments: Vec<(&str, &str, f64, f64)> = Vec::new();
                         for pair in pts.windows(2) {
                             let (name_a, pt_a) = &pair[0];
                             let (name_b, pt_b) = &pair[1];
                             let dx = pt_b.x - pt_a.x;
                             let dy = pt_b.y - pt_a.y;
-                            segments.push((name_a.as_str(), name_b.as_str(), (dx * dx + dy * dy).sqrt()));
+                            let len = (dx * dx + dy * dy).sqrt();
+                            let angle = dy.atan2(dx);
+                            segments.push((name_a.as_str(), name_b.as_str(), len, angle));
                         }
                         if pts.len() >= 3 {
                             let (name_a, pt_a) = pts.last().unwrap();
                             let (name_b, pt_b) = &pts[0];
                             let dx = pt_b.x - pt_a.x;
                             let dy = pt_b.y - pt_a.y;
-                            segments.push((name_a.as_str(), name_b.as_str(), (dx * dx + dy * dy).sqrt()));
+                            let len = (dx * dx + dy * dy).sqrt();
+                            let angle = dy.atan2(dx);
+                            segments.push((name_a.as_str(), name_b.as_str(), len, angle));
                         }
 
-                        for (name_a, name_b, len) in &segments {
-                            let mut display_len = units.length(*len);
+                        for (name_a, name_b, len, angle) in &segments {
                             ui.label(format!("  {}\u{2192}{}", name_a, name_b));
+
+                            // Length slider
+                            let mut display_len = units.length(*len);
                             if ui
                                 .add(
                                     egui::Slider::new(&mut display_len, units.length(0.001)..=units.length(2.0))
+                                        .text("length")
                                         .suffix(units.length_suffix())
                                         .clamping(egui::SliderClamping::Never)
                                         .logarithmic(true),
@@ -146,6 +149,26 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                     point_a: name_a.to_string(),
                                     point_b: name_b.to_string(),
                                     length: new_si,
+                                });
+                            }
+
+                            // Orientation slider
+                            let mut angle_deg = angle.to_degrees();
+                            if ui
+                                .add(
+                                    egui::Slider::new(&mut angle_deg, -180.0..=180.0)
+                                        .text("angle")
+                                        .suffix("\u{00B0}")
+                                        .step_by(0.5),
+                                )
+                                .changed()
+                            {
+                                let new_angle_rad = angle_deg.to_radians();
+                                pending = Some(PendingPropertyEdit::LinkOrientation {
+                                    body_id: body_id.clone(),
+                                    point_a: name_a.to_string(),
+                                    point_b: name_b.to_string(),
+                                    angle_rad: new_angle_rad,
                                 });
                             }
                         }
@@ -438,6 +461,9 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
             PendingPropertyEdit::LinkLength { body_id, point_a, point_b, length } => {
                 state.set_link_length(&body_id, &point_a, &point_b, length);
             }
+            PendingPropertyEdit::LinkOrientation { body_id, point_a, point_b, angle_rad } => {
+                state.set_link_orientation(&body_id, &point_a, &point_b, angle_rad);
+            }
         }
     }
 }
@@ -464,7 +490,7 @@ fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
     // Always show diagnostics when a mechanism is loaded (mass summary is
     // always available).
     egui::CollapsingHeader::new("Diagnostics")
-        .default_open(true)
+        .default_open(false)
         .show(ui, |ui| {
             // ── Mechanism mass summary ─────────────────────────────
             let total_mass: f64 = mech.bodies().values()

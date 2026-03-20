@@ -739,9 +739,9 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 }
             }
 
-            // Then check body segments (link lines)
+            // Then check body segments (link lines) -- wider radius for easier hover
             if tooltip_text.is_none() {
-                if let Some(seg_hit) = find_nearest_body_segment(hover_pos, &body_segments, HIT_RADIUS) {
+                if let Some(seg_hit) = find_nearest_body_segment(hover_pos, &body_segments, HIT_RADIUS * 2.0) {
                     if let Some(mech) = &state.mechanism {
                         if let Some(body) = mech.bodies().get(&seg_hit.body_id) {
                             tooltip_text = Some(format!(
@@ -801,7 +801,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         if let Some(pointer_pos) = response.interact_pointer_pos() {
             if let Some(hit) = find_nearest_attachment(pointer_pos) {
                 state.selected = Some(SelectedEntity::Body(hit.body_id.clone()));
-            } else if let Some(seg_hit) = find_nearest_body_segment(pointer_pos, &body_segments, HIT_RADIUS) {
+            } else if let Some(seg_hit) = find_nearest_body_segment(pointer_pos, &body_segments, HIT_RADIUS * 2.0) {
                 state.selected = Some(SelectedEntity::Body(seg_hit.body_id.clone()));
             }
         }

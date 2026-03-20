@@ -841,7 +841,7 @@ impl Default for AppState {
             pending_driver_reassignment: None,
             undo_history: UndoHistory::new(50),
             sweep_data: None,
-            show_plots: false,
+            show_plots: true,
             sweep_dirty: false,
             sweep_dirty_since: None,
             creating_joint: None,
@@ -850,7 +850,7 @@ impl Default for AppState {
             grid: GridSettings::default(),
             force_results: ForceResults::default(),
             show_forces: true,
-            show_dimensions: false,
+            show_dimensions: true,
             gravity_magnitude: 9.81,
             load_cases: LoadCaseManager::default(),
             active_tool: EditorTool::Select,
@@ -1722,6 +1722,42 @@ impl AppState {
         };
 
         let new_pb = [pa[0] + ux * new_length, pa[1] + uy * new_length];
+
+        if let Some(body) = bp.bodies.get_mut(body_id) {
+            if let Some(pt) = body.attachment_points.get_mut(point_b) {
+                *pt = new_pb;
+            }
+        }
+        self.rebuild();
+    }
+
+    /// Set the orientation (angle from point_a to point_b) while preserving length.
+    ///
+    /// Moves `point_b` to the new angle relative to `point_a`, keeping the
+    /// distance between them the same.
+    pub fn set_link_orientation(
+        &mut self,
+        body_id: &str,
+        point_a: &str,
+        point_b: &str,
+        new_angle_rad: f64,
+    ) {
+        let Some(bp) = &mut self.blueprint else { return };
+        let Some(body) = bp.bodies.get(body_id) else { return };
+        let Some(&pa) = body.attachment_points.get(point_a) else { return };
+        let Some(&pb) = body.attachment_points.get(point_b) else { return };
+
+        let dx = pb[0] - pa[0];
+        let dy = pb[1] - pa[1];
+        let current_len = (dx * dx + dy * dy).sqrt();
+        if current_len < 1e-12 {
+            return;
+        }
+
+        let new_pb = [
+            pa[0] + current_len * new_angle_rad.cos(),
+            pa[1] + current_len * new_angle_rad.sin(),
+        ];
 
         if let Some(body) = bp.bodies.get_mut(body_id) {
             if let Some(pt) = body.attachment_points.get_mut(point_b) {
@@ -4992,9 +5028,9 @@ mod tests {
     }
 
     #[test]
-    fn show_dimensions_defaults_false() {
+    fn show_dimensions_defaults_true() {
         let state = AppState::default();
-        assert!(!state.show_dimensions);
+        assert!(state.show_dimensions);
     }
 
     #[cfg(feature = "native")]
