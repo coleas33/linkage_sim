@@ -245,8 +245,26 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                     })
                     .collect();
 
+                // Draw as dashed line
+                let dash_len = 6.0f32;
+                let gap_len = 4.0f32;
                 for pair in screen_pts.windows(2) {
-                    painter.line_segment([pair[0], pair[1]], Stroke::new(1.5, color));
+                    let a = pair[0];
+                    let b = pair[1];
+                    let dx = b.x - a.x;
+                    let dy = b.y - a.y;
+                    let seg_len = (dx * dx + dy * dy).sqrt();
+                    if seg_len < 0.5 { continue; }
+                    let ux = dx / seg_len;
+                    let uy = dy / seg_len;
+                    let mut t = 0.0f32;
+                    while t < seg_len {
+                        let t_end = (t + dash_len).min(seg_len);
+                        let p0 = Pos2::new(a.x + ux * t, a.y + uy * t);
+                        let p1 = Pos2::new(a.x + ux * t_end, a.y + uy * t_end);
+                        painter.line_segment([p0, p1], Stroke::new(1.5, color));
+                        t += dash_len + gap_len;
+                    }
                 }
             }
         }
