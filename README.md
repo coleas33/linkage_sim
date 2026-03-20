@@ -205,17 +205,38 @@ Note: file dialogs, PNG/SVG/GIF/DXF export, autosave, and HTML reports are nativ
 - Link lengths in property panel — **done** (segment lengths shown with attachment point list)
 - Prismatic + Fixed joint creation — **done** (Create Joint submenu: Revolute / Prismatic / Fixed)
 
-**Phase 6.8 GUI/UX overhaul:**
-- Professional dark theme inspired by SolidWorks/ANSYS (custom egui Visuals)
-- Color-coded toolbar: blue editor tools with unicode icons, green play button, colored force menus
-- Link Editor panel with body dropdown, length sliders, mass/inertia sliders
-- Gravity magnitude slider (0-100g) with g-value readout
-- Force toolbar ribbon with categorized dropdowns (Joint Torques / Link Forces)
+**Phase 6.8 GUI/UX overhaul** (CAD-inspired redesign):
+
+*Theme & Layout:*
+- Professional dark theme (custom egui Visuals — dark panels, blue accent, subtle widget fills)
+- All sidebar sections collapsible with color-coded unicode icons
+- Compact status bar with dim/bright contrast, Greek symbols, warning icons
+- Resizable left panel
+
+*Toolbar:*
+- Color-coded tool buttons: blue editor tools, green play/pause, purple sample selector
+- Unicode icons for every tool (cursor, pencil, plus, anchor, play, gear)
+- Speed slider and sample mechanism dropdown integrated into toolbar
+- Force toolbar ribbon: green "Joint Torques", orange "Link Forces" dropdowns
+
+*Canvas:*
+- Links rendered as rectangular bars (16px wide) for visibility
+- Major/minor grid hierarchy with origin crosshair (red X / green Y, CAD convention)
+- Joint glow effects: green for driver, orange for selected
+- Fixed joints use X-marker (distinct from revolute circles)
+- Dashed coupler traces for visual distinction from mechanism geometry
+- Hover tooltips on body segments
+
+*Sidebar Panels:*
+- Link Editor: dropdown body selector, logarithmic length/mass/inertia sliders
+- Crank Angle section replaces redundant playback controls
+- Gravity slider (0-100g / 0-981 m/s²) with g-value readout
+- Simulation section collapsed by default
+- Force element toolbar (not sidebar) for adding forces
 - Error panel for simulation failures (collapsible, status bar indicator)
+
+*Performance:*
 - Auto-sweep on mechanism changes (200ms debounced)
-- Links rendered as rectangular bars with hover tooltips
-- Dashed coupler traces for visual distinction
-- All sidebar sections collapsible (Playback, Gravity, Driver, Simulation, Force Elements, Diagnostics)
 - Deferred slider rebuild (only on release) for lag-free interaction
 - Ctrl+N new mechanism — **done** (File > New resets to empty canvas, preserves preferences)
 

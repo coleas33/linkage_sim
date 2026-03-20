@@ -63,7 +63,10 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
         pending = Some(PendingPropertyEdit::SetEditorBody(body_ids[0].clone()));
     }
 
-    egui::CollapsingHeader::new("Link Editor")
+    let link_color = egui::Color32::from_rgb(70, 150, 240);
+    egui::CollapsingHeader::new(
+        egui::RichText::new("\u{1F517} Link Editor").color(link_color),
+    )
         .id_salt("link_editor")
         .default_open(true)
         .show(ui, |ui| {
@@ -202,7 +205,10 @@ fn draw_force_elements_inner(
     pending: &mut Option<PendingPropertyEdit>,
 ) {
     ui.separator();
-    egui::CollapsingHeader::new("Force Elements")
+    let force_color = egui::Color32::from_rgb(255, 140, 60);
+    egui::CollapsingHeader::new(
+        egui::RichText::new("\u{26A1} Force Elements").color(force_color),
+    )
         .id_salt("force_elements_section")
         .default_open(true)
         .show(ui, |ui| {
@@ -257,7 +263,9 @@ fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
     let has_condition = state.force_results.condition_number.is_some();
     // Always show diagnostics when a mechanism is loaded (mass summary is
     // always available).
-    egui::CollapsingHeader::new("Diagnostics")
+    egui::CollapsingHeader::new(
+        egui::RichText::new("\u{1F4CA} Diagnostics").color(egui::Color32::from_rgb(150, 160, 180)),
+    )
         .default_open(false)
         .show(ui, |ui| {
             // ── Mechanism mass summary ─────────────────────────────
