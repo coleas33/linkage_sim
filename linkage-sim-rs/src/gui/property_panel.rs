@@ -21,7 +21,6 @@ enum PendingPropertyEdit {
     RemoveForce(usize),
     UpdateForce { index: usize, force: ForceElement },
     LinkLength { body_id: String, point_a: String, point_b: String, length: f64 },
-    LinkOrientation { body_id: String, point_a: String, point_b: String, angle_rad: f64 },
     SetEditorBody(String),
 }
 
@@ -105,29 +104,27 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                     if pts.len() >= 2 && body_id != GROUND_ID {
                         ui.separator();
 
-                        let mut segments: Vec<(&str, &str, f64, f64)> = Vec::new();
+                        let mut segments: Vec<(&str, &str, f64)> = Vec::new();
                         for pair in pts.windows(2) {
                             let (na, pa) = &pair[0];
                             let (nb, pb) = &pair[1];
                             let dx = pb.x - pa.x;
                             let dy = pb.y - pa.y;
-                            segments.push((na.as_str(), nb.as_str(), (dx*dx+dy*dy).sqrt(), dy.atan2(dx)));
+                            segments.push((na.as_str(), nb.as_str(), (dx*dx+dy*dy).sqrt()));
                         }
                         if pts.len() >= 3 {
                             let (na, pa) = pts.last().unwrap();
                             let (nb, pb) = &pts[0];
                             let dx = pb.x - pa.x;
                             let dy = pb.y - pa.y;
-                            segments.push((na.as_str(), nb.as_str(), (dx*dx+dy*dy).sqrt(), dy.atan2(dx)));
+                            segments.push((na.as_str(), nb.as_str(), (dx*dx+dy*dy).sqrt()));
                         }
 
-                        for (na, nb, len, angle) in &segments {
-                            ui.strong(format!("{}\u{2192}{}", na, nb));
-
+                        for (na, nb, len) in &segments {
                             let mut display_len = units.length(*len);
                             let lr = ui.add(
                                 egui::Slider::new(&mut display_len, units.length(0.001)..=units.length(2.0))
-                                    .text("length")
+                                    .text(format!("{}\u{2192}{}", na, nb))
                                     .suffix(units.length_suffix())
                                     .clamping(egui::SliderClamping::Never)
                                     .logarithmic(true),
@@ -137,19 +134,6 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                     body_id: body_id.clone(),
                                     point_a: na.to_string(), point_b: nb.to_string(),
                                     length: units.length_to_si(display_len),
-                                });
-                            }
-
-                            let mut adeg = angle.to_degrees();
-                            let ar = ui.add(
-                                egui::Slider::new(&mut adeg, -180.0..=180.0)
-                                    .text("angle").suffix("\u{00B0}").step_by(0.5),
-                            );
-                            if ar.drag_stopped() || (ar.changed() && !ar.dragged()) {
-                                pending = Some(PendingPropertyEdit::LinkOrientation {
-                                    body_id: body_id.clone(),
-                                    point_a: na.to_string(), point_b: nb.to_string(),
-                                    angle_rad: adeg.to_radians(),
                                 });
                             }
                         }
@@ -244,9 +228,6 @@ fn apply_pending(state: &mut AppState, pending: Option<PendingPropertyEdit>) {
             }
             PendingPropertyEdit::LinkLength { body_id, point_a, point_b, length } => {
                 state.set_link_length(&body_id, &point_a, &point_b, length);
-            }
-            PendingPropertyEdit::LinkOrientation { body_id, point_a, point_b, angle_rad } => {
-                state.set_link_orientation(&body_id, &point_a, &point_b, angle_rad);
             }
             PendingPropertyEdit::SetEditorBody(body_id) => {
                 state.link_editor_body = Some(body_id);
