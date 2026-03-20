@@ -9,12 +9,9 @@ use meval;
 use crate::analysis::envelopes::compute_envelope;
 use crate::analysis::grashof::GrashofType;
 use crate::analysis::motor_sizing::check_motor_sizing;
-use crate::core::constraint::Constraint;
 use crate::core::state::GROUND_ID;
 use crate::forces::elements::*;
-use crate::solver::statics::reaction_to_local;
-use crate::io::serialization::JointJson;
-use super::state::{AppState, SelectedEntity}; // DisplayUnits used via state.display_units
+use super::state::AppState;
 
 /// Pending edit collected during UI rendering, applied after all reads
 /// are done to avoid borrow conflicts.
@@ -23,14 +20,8 @@ enum PendingPropertyEdit {
     Izz { body_id: String, value: f64 },
     RemoveForce(usize),
     UpdateForce { index: usize, force: ForceElement },
-    SetDriver(String),
-    AddPointMass { body_id: String, mass: f64, local_pos: [f64; 2] },
-    RemovePointMass { body_id: String, index: usize },
-    UpdatePrismaticAxis { joint_id: String, axis: [f64; 2] },
     LinkLength { body_id: String, point_a: String, point_b: String, length: f64 },
     LinkOrientation { body_id: String, point_a: String, point_b: String, angle_rad: f64 },
-    SelectBody(String),
-    Deselect,
     SetEditorBody(String),
 }
 
@@ -251,29 +242,11 @@ fn apply_pending(state: &mut AppState, pending: Option<PendingPropertyEdit>) {
             PendingPropertyEdit::UpdateForce { index, force } => {
                 state.update_force_element(index, force);
             }
-            PendingPropertyEdit::SetDriver(joint_id) => {
-                state.pending_driver_reassignment = Some(joint_id);
-            }
-            PendingPropertyEdit::AddPointMass { body_id, mass, local_pos } => {
-                state.add_point_mass(&body_id, mass, local_pos);
-            }
-            PendingPropertyEdit::RemovePointMass { body_id, index } => {
-                state.remove_point_mass(&body_id, index);
-            }
-            PendingPropertyEdit::UpdatePrismaticAxis { joint_id, axis } => {
-                state.update_prismatic_axis(&joint_id, axis);
-            }
             PendingPropertyEdit::LinkLength { body_id, point_a, point_b, length } => {
                 state.set_link_length(&body_id, &point_a, &point_b, length);
             }
             PendingPropertyEdit::LinkOrientation { body_id, point_a, point_b, angle_rad } => {
                 state.set_link_orientation(&body_id, &point_a, &point_b, angle_rad);
-            }
-            PendingPropertyEdit::SelectBody(body_id) => {
-                state.selected = Some(SelectedEntity::Body(body_id));
-            }
-            PendingPropertyEdit::Deselect => {
-                state.selected = None;
             }
             PendingPropertyEdit::SetEditorBody(body_id) => {
                 state.link_editor_body = Some(body_id);
