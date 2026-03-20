@@ -148,12 +148,12 @@ impl eframe::App for LinkageApp {
         // --- Menu bar ---
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
-                ui.menu_button("File", |ui| {
-                    if ui.button("New  Ctrl+N").clicked() {
+                ui.menu_button("\u{1F4C1} File", |ui| {
+                    if ui.button("\u{1F4C4} New  Ctrl+N").clicked() {
                         self.state.new_empty_mechanism();
                         ui.close();
                     }
-                    ui.menu_button("Load Sample", |ui| {
+                    ui.menu_button("\u{1F4C2} Load Sample", |ui| {
                         for sample in SampleMechanism::all() {
                             if ui.button(sample.label()).clicked() {
                                 self.state.load_sample(*sample);
@@ -165,7 +165,7 @@ impl eframe::App for LinkageApp {
                     #[cfg(feature = "native")]
                     {
                         ui.separator();
-                        if ui.button("Open JSON...").clicked() {
+                        if ui.button("\u{1F4C2} Open JSON...").clicked() {
                             if let Some(path) = rfd::FileDialog::new()
                                 .add_filter("JSON", &["json"])
                                 .pick_file()
@@ -200,7 +200,7 @@ impl eframe::App for LinkageApp {
                                 }
                             });
                         }
-                        if ui.button("Save  Ctrl+S").clicked() {
+                        if ui.button("\u{1F4BE} Save  Ctrl+S").clicked() {
                             if let Some(path) = self.state.last_save_path.clone() {
                                 if let Err(e) = self.state.save_to_file(&path) {
                                     log::error!("Save failed: {}", e);
@@ -216,7 +216,7 @@ impl eframe::App for LinkageApp {
                             }
                             ui.close();
                         }
-                        if ui.button("Save As...  Ctrl+Shift+S").clicked() {
+                        if ui.button("\u{1F4BE} Save As...  Ctrl+Shift+S").clicked() {
                             if let Some(path) = rfd::FileDialog::new()
                                 .add_filter("JSON", &["json"])
                                 .set_file_name("mechanism.json")
@@ -419,29 +419,29 @@ impl eframe::App for LinkageApp {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
-                ui.menu_button("Edit", |ui| {
+                ui.menu_button("\u{270F} Edit", |ui| {
                     if ui
-                        .add_enabled(self.state.can_undo(), egui::Button::new("Undo  Ctrl+Z"))
+                        .add_enabled(self.state.can_undo(), egui::Button::new("\u{21A9} Undo  Ctrl+Z"))
                         .clicked()
                     {
                         self.state.undo();
                         ui.close();
                     }
                     if ui
-                        .add_enabled(self.state.can_redo(), egui::Button::new("Redo  Ctrl+Y"))
+                        .add_enabled(self.state.can_redo(), egui::Button::new("\u{21AA} Redo  Ctrl+Y"))
                         .clicked()
                     {
                         self.state.redo();
                         ui.close();
                     }
                 });
-                ui.menu_button("Help", |ui| {
-                    if ui.button("Keyboard Shortcuts").clicked() {
+                ui.menu_button("\u{2753} Help", |ui| {
+                    if ui.button("\u{2328} Keyboard Shortcuts").clicked() {
                         self.state.show_shortcuts = true;
                         ui.close();
                     }
                 });
-                ui.menu_button("View", |ui| {
+                ui.menu_button("\u{1F441} View", |ui| {
                     ui.checkbox(&mut self.state.show_debug_overlay, "Debug Overlay");
                     ui.checkbox(&mut self.state.show_plots, "Plot Panel");
                     ui.checkbox(&mut self.state.show_parametric, "Parametric Study");
