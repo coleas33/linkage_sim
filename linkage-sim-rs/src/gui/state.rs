@@ -576,6 +576,58 @@ pub struct ParametricStudyResult {
     pub selected_sweep: Option<(f64, SweepData)>,
 }
 
+// ── Counterbalance assistant ──────────────────────────────────────────────────
+
+/// Configuration for a counterbalance spring optimization.
+#[derive(Debug, Clone)]
+pub struct CounterbalanceConfig {
+    /// Body A for the spring attachment (e.g., ground).
+    pub body_a: String,
+    /// Attachment point name on body A.
+    pub point_a: String,
+    /// Body B for the spring attachment (e.g., coupler).
+    pub body_b: String,
+    /// Attachment point name on body B.
+    pub point_b: String,
+    /// Minimum spring stiffness to search (N/m).
+    pub k_min: f64,
+    /// Maximum spring stiffness to search (N/m).
+    pub k_max: f64,
+    /// Number of stiffness steps.
+    pub k_steps: usize,
+    /// Minimum free length to search (m).
+    pub free_length_min: f64,
+    /// Maximum free length to search (m).
+    pub free_length_max: f64,
+    /// Number of free length steps.
+    pub free_length_steps: usize,
+}
+
+/// Results from a counterbalance optimization.
+#[derive(Debug, Clone)]
+pub struct CounterbalanceResult {
+    /// Optimal spring stiffness (N/m).
+    pub best_k: f64,
+    /// Optimal free length (m).
+    pub best_free_length: f64,
+    /// Peak-to-peak torque with the optimal spring (N*m).
+    pub best_peak_to_peak: f64,
+    /// Peak-to-peak torque without any counterbalance spring (N*m).
+    pub baseline_peak_to_peak: f64,
+    /// Driver torques over the sweep WITHOUT the spring (baseline).
+    pub baseline_torques: Vec<f64>,
+    /// Driver torques over the sweep WITH the optimal spring.
+    pub optimized_torques: Vec<f64>,
+    /// Sweep angles in degrees (shared by both torque curves).
+    pub angles_deg: Vec<f64>,
+    /// Full grid of peak-to-peak values: [k_idx][fl_idx].
+    pub grid: Vec<Vec<f64>>,
+    /// K values searched.
+    pub k_values: Vec<f64>,
+    /// Free length values searched.
+    pub fl_values: Vec<f64>,
+}
+
 // ── Simulation state ──────────────────────────────────────────────────────────
 
 /// Forward dynamics simulation result and playback state.
@@ -700,6 +752,10 @@ pub struct AppState {
     pub show_parametric: bool,
     /// Active parametric study configuration (persists across panel close/open).
     pub parametric_config: ParametricStudyConfig,
+    /// Cached counterbalance study results.
+    pub counterbalance_result: Option<CounterbalanceResult>,
+    /// Active counterbalance configuration.
+    pub counterbalance_config: CounterbalanceConfig,
     // ── Expression driver editor ────────────────────────────────────────
     /// Text buffer for f(t) expression being edited.
     pub expr_buf: String,
@@ -820,6 +876,19 @@ impl Default for AppState {
                 max_value: 10.0,
                 num_steps: 5,
                 metric: ParametricMetric::PeakDriverTorque,
+            },
+            counterbalance_result: None,
+            counterbalance_config: CounterbalanceConfig {
+                body_a: GROUND_ID.to_string(),
+                point_a: String::new(),
+                body_b: String::new(),
+                point_b: String::new(),
+                k_min: 10.0,
+                k_max: 1000.0,
+                k_steps: 10,
+                free_length_min: 0.01,
+                free_length_max: 0.10,
+                free_length_steps: 5,
             },
             expr_buf: String::new(),
             expr_dot_buf: String::new(),
@@ -1803,8 +1872,8 @@ impl AppState {
                 continue;
             }
 
-            // Compute initial guess and run sweep
-            let q0 = mech.state().make_q();
+            // Use current q as initial guess when dimensions match
+            let q0 = if self.q.len() == mech.state().n_coords() { self.q.clone() } else { mech.state().make_q() };
             let theta_0 = self.driver_theta_0;
             let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0);
 
@@ -1818,6 +1887,128 @@ impl AppState {
             metric_values,
             selected_sweep: None,
         });
+    }
+
+    /// Run a counterbalance optimization: grid search over spring (k, free_length)
+    /// to minimize driver torque peak-to-peak variation.
+    ///
+    /// The baseline torque curve (without the spring) is computed first, then
+    /// each (k, free_length) combination is evaluated.
+    pub fn run_counterbalance_study(&mut self) {
+        use crate::analysis::envelopes::compute_envelope;
+
+        let Some(ref base_bp) = self.blueprint else { return };
+        let config = &self.counterbalance_config;
+        if config.k_steps < 2 || config.body_a.is_empty() || config.body_b.is_empty() {
+            return;
+        }
+
+        let omega = self.driver_omega;
+        let theta_0 = self.driver_theta_0;
+
+        // Use current q as the initial guess (the geometric guess from sample loading
+        // converges much better than all-zeros for the first step).
+        let q_init = self.q.clone();
+
+        // 1. Compute baseline (no spring)
+        let baseline_sweep = {
+            let Ok(mut mech) = load_mechanism_unbuilt_from_json(base_bp) else { return };
+            if mech.build().is_err() { return; }
+            let q0 = if q_init.len() == mech.state().n_coords() { q_init.clone() } else { mech.state().make_q() };
+            let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0);
+            sweep
+        };
+        let baseline_torques = baseline_sweep.driver_torques.clone().unwrap_or_default();
+        let baseline_pp = compute_envelope(&baseline_torques)
+            .map(|e| e.peak_to_peak)
+            .unwrap_or(0.0);
+
+        // 2. Grid search
+        let k_step = if config.k_steps > 1 {
+            (config.k_max - config.k_min) / (config.k_steps - 1) as f64
+        } else { 0.0 };
+        let fl_steps = config.free_length_steps.max(1);
+        let fl_step = if fl_steps > 1 {
+            (config.free_length_max - config.free_length_min) / (fl_steps - 1) as f64
+        } else { 0.0 };
+
+        let mut k_values = Vec::with_capacity(config.k_steps);
+        let mut fl_values = Vec::with_capacity(fl_steps);
+        for i in 0..config.k_steps {
+            k_values.push(config.k_min + i as f64 * k_step);
+        }
+        for j in 0..fl_steps {
+            fl_values.push(config.free_length_min + j as f64 * fl_step);
+        }
+
+        let mut grid: Vec<Vec<f64>> = vec![vec![f64::INFINITY; fl_steps]; config.k_steps];
+        let mut best_k = config.k_min;
+        let mut best_fl = config.free_length_min;
+        let mut best_pp = f64::INFINITY;
+        let mut best_torques: Option<Vec<f64>> = None;
+
+        for (ki, &k) in k_values.iter().enumerate() {
+            for (fi, &fl) in fl_values.iter().enumerate() {
+                let mut bp = base_bp.clone();
+                // Add a linear spring to the blueprint
+                bp.forces.push(ForceElement::LinearSpring(
+                    crate::forces::elements::LinearSpringElement {
+                        body_a: config.body_a.clone(),
+                        point_a: Self::resolve_point_coords(&bp, &config.body_a, &config.point_a),
+                        body_b: config.body_b.clone(),
+                        point_b: Self::resolve_point_coords(&bp, &config.body_b, &config.point_b),
+                        stiffness: k,
+                        free_length: fl,
+                    },
+                ));
+
+                let Ok(mut mech) = load_mechanism_unbuilt_from_json(&bp) else {
+                    grid[ki][fi] = f64::NAN;
+                    continue;
+                };
+                if mech.build().is_err() {
+                    grid[ki][fi] = f64::NAN;
+                    continue;
+                }
+
+                let q0 = if q_init.len() == mech.state().n_coords() { q_init.clone() } else { mech.state().make_q() };
+                let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0);
+                let pp = sweep.driver_torques.as_ref()
+                    .and_then(|t| compute_envelope(t))
+                    .map(|e| e.peak_to_peak)
+                    .unwrap_or(f64::INFINITY);
+                grid[ki][fi] = pp;
+
+                if pp < best_pp {
+                    best_pp = pp;
+                    best_k = k;
+                    best_fl = fl;
+                    best_torques = sweep.driver_torques.clone();
+                }
+            }
+        }
+
+        self.counterbalance_result = Some(CounterbalanceResult {
+            best_k,
+            best_free_length: best_fl,
+            best_peak_to_peak: best_pp,
+            baseline_peak_to_peak: baseline_pp,
+            baseline_torques,
+            optimized_torques: best_torques.unwrap_or_default(),
+            angles_deg: baseline_sweep.angles_deg,
+            grid,
+            k_values,
+            fl_values,
+        });
+    }
+
+    /// Helper: look up attachment point local coordinates from the blueprint.
+    fn resolve_point_coords(bp: &MechanismJson, body_id: &str, point_name: &str) -> [f64; 2] {
+        bp.bodies
+            .get(body_id)
+            .and_then(|b| b.attachment_points.get(point_name))
+            .copied()
+            .unwrap_or([0.0, 0.0])
     }
 
     /// Enumerate all sweepable parameters from the current blueprint.
@@ -5098,5 +5289,37 @@ mod tests {
 
         let ke = ParametricMetric::PeakKineticEnergy.extract(sweep);
         assert!(ke >= 0.0, "peak KE should be non-negative, got {}", ke);
+    }
+
+    // ── Counterbalance tests ──────────────────────────────────────────────
+
+    #[test]
+    fn counterbalance_study_produces_results() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // Use "crank" body point A and ground point O2
+        state.counterbalance_config = CounterbalanceConfig {
+            body_a: GROUND_ID.to_string(),
+            point_a: "O2".to_string(),
+            body_b: "crank".to_string(),
+            point_b: "B".to_string(),
+            k_min: 10.0,
+            k_max: 100.0,
+            k_steps: 3,
+            free_length_min: 0.01,
+            free_length_max: 0.05,
+            free_length_steps: 2,
+        };
+
+        state.run_counterbalance_study();
+
+        let result = state.counterbalance_result.as_ref().expect("should have results");
+        assert_eq!(result.k_values.len(), 3);
+        assert_eq!(result.fl_values.len(), 2);
+        assert_eq!(result.grid.len(), 3);
+        assert_eq!(result.grid[0].len(), 2);
+        assert!(!result.angles_deg.is_empty(), "should have sweep angles");
+        assert!(!result.baseline_torques.is_empty(), "should have baseline torques");
     }
 }

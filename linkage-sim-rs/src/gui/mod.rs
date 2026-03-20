@@ -602,6 +602,9 @@ impl eframe::App for LinkageApp {
                 .show(ctx, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         parametric_panel::draw_parametric_panel(ui, &mut self.state);
+                        ui.add_space(20.0);
+                        ui.separator();
+                        parametric_panel::draw_counterbalance_panel(ui, &mut self.state);
                     });
                 });
         }

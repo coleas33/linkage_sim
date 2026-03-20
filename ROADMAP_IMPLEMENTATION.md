@@ -569,3 +569,39 @@ Phase 6 can begin when ready.
 | 2 | Implement builders (quick-return, toggle clamp, scotch yoke, inverted slider-crank) | Done | `gui/samples.rs` |
 | 3 | Update all_samples_listed test count (13 → 17) | Done | `gui/samples.rs` |
 | 4 | Verify rebuild_all_samples passes for new mechanisms | Done | `gui/state.rs` |
+
+### Phase 6.4 — Counterbalance Assistant
+
+**Goal:** Find optimal spring (k, free_length) and/or point mass (mass, position) to minimize driver torque variation over the full rotation.
+
+**Engineering context:** A gravity-loaded linkage has a torque ripple — the driver works harder at some angles than others. Adding a counterbalance spring can flatten the torque curve, reducing peak actuator requirements and improving efficiency. Similarly, a point mass can shift the CG to reduce gravity torque.
+
+**Algorithm:**
+- User configures: spring attachment bodies/points, k range, free_length range, step counts
+- Grid search over (k, free_length) space — typically 10x10 = 100 evaluations
+- Each evaluation: clone blueprint → add/modify spring → build mechanism → run full sweep → extract peak-to-peak torque from envelope
+- Find minimum peak-to-peak torque → report optimal (k, free_length)
+- Show before/after torque curves overlaid
+
+**Key design decisions:**
+- Grid search (not gradient-based) — robust, no derivative needed, 100 sweeps takes ~5 seconds
+- Spring counterbalance only for v1 (point mass counterbalance deferred to v2 — requires searching over continuous 2D position space which is harder)
+- Objective: minimize peak-to-peak driver torque (from SignalEnvelope)
+- Uses existing blueprint-clone-and-sweep pattern from parametric studies
+
+**Issues and tradeoffs:**
+- Grid search is O(N^2) in (k, free_length) — 10x10 is fast but coarse. Could add a refinement step (zoom into best region) for better accuracy.
+- Spring attachment points must exist on the bodies — user picks from existing attachment points, no new point creation in this flow.
+- Near-toggle configurations will have extreme torque spikes — these should be excluded from the envelope (or capped) to prevent them from dominating the optimization.
+
+| Step | Description | Status | Key files |
+|------|-------------|--------|-----------|
+| 1 | CounterbalanceConfig + CounterbalanceResult structs | Done | `gui/state.rs` |
+| 2 | run_counterbalance_study() — grid search over (k, free_length) | Done | `gui/state.rs` |
+| 3 | Counterbalance panel UI (body/point selectors, range inputs, run button) | Done | `gui/parametric_panel.rs` |
+| 4 | Before/after torque overlay plot + % reduction display | Done | `gui/parametric_panel.rs` |
+| 5 | Test + fix: use current q as initial guess for blueprint-rebuilt mechanisms | Done | `gui/state.rs` |
+
+**Total Rust tests:** 417 passing (380 unit + 11 golden + 8 property + 18 singular)
+
+**Bug fix applied:** Parametric study and counterbalance study now use `self.q` as the initial guess when rebuilding from the blueprint (was using `make_q()` all-zeros which fails to converge for 4-bar mechanisms without a geometric initial guess).
