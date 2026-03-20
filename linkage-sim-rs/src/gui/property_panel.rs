@@ -104,187 +104,162 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                         ui.label(format!("Angle: 0{} \u{2014} fixed", units.angle_suffix()));
                     }
 
-                    ui.separator();
-
-                    // Editable mass properties for non-ground bodies with a blueprint
-                    if body_id != GROUND_ID {
-                        if let Some(bp) = &state.blueprint {
-                            if let Some(bp_body) = bp.bodies.get(&body_id) {
-                                let mut mass = bp_body.mass;
-                                let mut izz = bp_body.izz_cg;
-
-                                ui.horizontal(|ui| {
-                                    ui.label("Mass:");
-                                    if ui
-                                        .add(
-                                            egui::DragValue::new(&mut mass)
-                                                .speed(0.01)
-                                                .range(0.0..=f64::MAX)
-                                                .suffix(" kg"),
-                                        )
-                                        .changed()
-                                    {
-                                        pending = Some(PendingPropertyEdit::Mass {
-                                            body_id: body_id.clone(),
-                                            value: mass,
-                                        });
-                                    }
-                                });
-
-                                ui.horizontal(|ui| {
-                                    ui.label("Izz_cg:");
-                                    if ui
-                                        .add(
-                                            egui::DragValue::new(&mut izz)
-                                                .speed(0.001)
-                                                .range(0.0..=f64::MAX)
-                                                .suffix(" kg\u{00b7}m\u{00b2}"),
-                                        )
-                                        .changed()
-                                    {
-                                        pending = Some(PendingPropertyEdit::Izz {
-                                            body_id: body_id.clone(),
-                                            value: izz,
-                                        });
-                                    }
-                                });
-                            } else {
-                                // Blueprint exists but body not found (shouldn't happen)
-                                ui.label(format!("Mass: {:.4} kg", body.mass));
-                                ui.label(format!(
-                                    "Izz_cg: {:.6} kg\u{00b7}m\u{00b2}",
-                                    body.izz_cg
-                                ));
-                            }
-                        } else {
-                            // No blueprint -- read-only display from mechanism
-                            ui.label(format!("Mass: {:.4} kg", body.mass));
-                            ui.label(format!(
-                                "Izz_cg: {:.6} kg\u{00b7}m\u{00b2}",
-                                body.izz_cg
-                            ));
-                        }
-                    } else {
-                        ui.label(format!("Mass: {:.4} kg", body.mass));
-                        ui.label(format!(
-                            "Izz_cg: {:.6} kg\u{00b7}m\u{00b2}",
-                            body.izz_cg
-                        ));
-                    }
-
-                    ui.label(format!(
-                        "CG local: ({:.3}, {:.3}){}",
-                        units.length(body.cg_local.x),
-                        units.length(body.cg_local.y),
-                        units.length_suffix()
-                    ));
-
-                    // Point masses section
-                    if body_id != GROUND_ID {
-                        ui.separator();
-                        ui.strong("Point masses:");
-                        if let Some(bp) = &state.blueprint {
-                            if let Some(bp_body) = bp.bodies.get(&body_id) {
-                                if bp_body.point_masses.is_empty() {
-                                    ui.label("None");
-                                }
-                                let mut remove_idx = None;
-                                for (idx, pm) in bp_body.point_masses.iter().enumerate() {
-                                    ui.horizontal(|ui| {
-                                        ui.label(format!(
-                                            "{:.3} kg at ({:.1}, {:.1}){}",
-                                            pm.mass,
-                                            units.length(pm.local_pos[0]),
-                                            units.length(pm.local_pos[1]),
-                                            units.length_suffix()
-                                        ));
-                                        if ui.small_button("\u{2715}").on_hover_text("Remove").clicked() {
-                                            remove_idx = Some(idx);
-                                        }
-                                    });
-                                }
-                                if let Some(idx) = remove_idx {
-                                    pending = Some(PendingPropertyEdit::RemovePointMass {
-                                        body_id: body_id.clone(),
-                                        index: idx,
-                                    });
-                                }
-                                if ui.small_button("+ Point Mass").clicked() {
-                                    pending = Some(PendingPropertyEdit::AddPointMass {
-                                        body_id: body_id.clone(),
-                                        mass: 1.0,
-                                        local_pos: [0.0, 0.0],
-                                    });
-                                }
-                            }
-                        }
-                    }
-
-                    ui.separator();
-                    ui.strong("Attachment points:");
+                    // ── Link lengths (editable sliders) ─────────────────────
                     let mut pts: Vec<_> = body.attachment_points.iter().collect();
                     pts.sort_by_key(|(name, _)| name.as_str());
-                    for (name, local) in &pts {
-                        let global = mech_state.body_point_global(&body_id, local, q);
-                        ui.label(format!(
-                            "  {} \u{2014} local: ({:.3}, {:.3}){}, global: ({:.3}, {:.3}){}",
-                            name,
-                            units.length(local.x),
-                            units.length(local.y),
-                            units.length_suffix(),
-                            units.length(global.x),
-                            units.length(global.y),
-                            units.length_suffix()
-                        ));
-                    }
 
-                    // Show editable link segment lengths between consecutive attachment points.
-                    if pts.len() >= 2 {
+                    if pts.len() >= 2 && body_id != GROUND_ID {
                         ui.separator();
-                        ui.strong("Link lengths:");
+                        ui.strong("Link Lengths");
 
-                        // Build list of segment pairs (including closing segment for polygons)
                         let mut segments: Vec<(&str, &str, f64)> = Vec::new();
                         for pair in pts.windows(2) {
                             let (name_a, pt_a) = &pair[0];
                             let (name_b, pt_b) = &pair[1];
                             let dx = pt_b.x - pt_a.x;
                             let dy = pt_b.y - pt_a.y;
-                            let len = (dx * dx + dy * dy).sqrt();
-                            segments.push((name_a.as_str(), name_b.as_str(), len));
+                            segments.push((name_a.as_str(), name_b.as_str(), (dx * dx + dy * dy).sqrt()));
                         }
                         if pts.len() >= 3 {
                             let (name_a, pt_a) = pts.last().unwrap();
                             let (name_b, pt_b) = &pts[0];
                             let dx = pt_b.x - pt_a.x;
                             let dy = pt_b.y - pt_a.y;
-                            let len = (dx * dx + dy * dy).sqrt();
-                            segments.push((name_a.as_str(), name_b.as_str(), len));
+                            segments.push((name_a.as_str(), name_b.as_str(), (dx * dx + dy * dy).sqrt()));
                         }
 
                         for (name_a, name_b, len) in &segments {
                             let mut display_len = units.length(*len);
-                            ui.horizontal(|ui| {
-                                ui.label(format!("  {}\u{2192}{}:", name_a, name_b));
+                            ui.label(format!("  {}\u{2192}{}", name_a, name_b));
+                            if ui
+                                .add(
+                                    egui::Slider::new(&mut display_len, units.length(0.001)..=units.length(2.0))
+                                        .suffix(units.length_suffix())
+                                        .clamping(egui::SliderClamping::Never)
+                                        .logarithmic(true),
+                                )
+                                .changed()
+                            {
+                                let new_si = units.length_to_si(display_len);
+                                pending = Some(PendingPropertyEdit::LinkLength {
+                                    body_id: body_id.clone(),
+                                    point_a: name_a.to_string(),
+                                    point_b: name_b.to_string(),
+                                    length: new_si,
+                                });
+                            }
+                        }
+                    }
+
+                    // ── Mass & Inertia (editable sliders) ─────────────────────
+                    if body_id != GROUND_ID {
+                        ui.separator();
+                        ui.strong("Mass & Inertia");
+
+                        if let Some(bp) = &state.blueprint {
+                            if let Some(bp_body) = bp.bodies.get(&body_id) {
+                                let mut mass = bp_body.mass;
+                                let mut izz = bp_body.izz_cg;
+
+                                ui.label("Mass");
                                 if ui
                                     .add(
-                                        egui::DragValue::new(&mut display_len)
-                                            .speed(units.length(0.001))
-                                            .range(units.length(0.001)..=units.length(10.0))
-                                            .suffix(units.length_suffix()),
+                                        egui::Slider::new(&mut mass, 0.0..=100.0)
+                                            .suffix(" kg")
+                                            .clamping(egui::SliderClamping::Never)
+                                            .logarithmic(true),
                                     )
                                     .changed()
                                 {
-                                    let new_si = units.length_to_si(display_len);
-                                    pending = Some(PendingPropertyEdit::LinkLength {
+                                    pending = Some(PendingPropertyEdit::Mass {
                                         body_id: body_id.clone(),
-                                        point_a: name_a.to_string(),
-                                        point_b: name_b.to_string(),
-                                        length: new_si,
+                                        value: mass,
                                     });
                                 }
-                            });
+
+                                ui.label("Inertia (Izz)");
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut izz, 0.0..=10.0)
+                                            .suffix(" kg\u{00b7}m\u{00b2}")
+                                            .clamping(egui::SliderClamping::Never)
+                                            .logarithmic(true),
+                                    )
+                                    .changed()
+                                {
+                                    pending = Some(PendingPropertyEdit::Izz {
+                                        body_id: body_id.clone(),
+                                        value: izz,
+                                    });
+                                }
+                            }
                         }
+
+                        ui.label(format!(
+                            "CG local: ({:.3}, {:.3}){}",
+                            units.length(body.cg_local.x),
+                            units.length(body.cg_local.y),
+                            units.length_suffix()
+                        ));
+
+                        // Point masses
+                        egui::CollapsingHeader::new("Point Masses")
+                            .id_salt("point_masses")
+                            .show(ui, |ui| {
+                                if let Some(bp) = &state.blueprint {
+                                    if let Some(bp_body) = bp.bodies.get(&body_id) {
+                                        if bp_body.point_masses.is_empty() {
+                                            ui.label("None");
+                                        }
+                                        let mut remove_idx = None;
+                                        for (idx, pm) in bp_body.point_masses.iter().enumerate() {
+                                            ui.horizontal(|ui| {
+                                                ui.label(format!(
+                                                    "{:.3} kg at ({:.1}, {:.1}){}",
+                                                    pm.mass,
+                                                    units.length(pm.local_pos[0]),
+                                                    units.length(pm.local_pos[1]),
+                                                    units.length_suffix()
+                                                ));
+                                                if ui.small_button("\u{2715}").on_hover_text("Remove").clicked() {
+                                                    remove_idx = Some(idx);
+                                                }
+                                            });
+                                        }
+                                        if let Some(idx) = remove_idx {
+                                            pending = Some(PendingPropertyEdit::RemovePointMass {
+                                                body_id: body_id.clone(),
+                                                index: idx,
+                                            });
+                                        }
+                                        if ui.small_button("+ Point Mass").clicked() {
+                                            pending = Some(PendingPropertyEdit::AddPointMass {
+                                                body_id: body_id.clone(),
+                                                mass: 1.0,
+                                                local_pos: [0.0, 0.0],
+                                            });
+                                        }
+                                    }
+                                }
+                            });
+                    }
+
+                    // ── Attachment points (read-only, collapsed) ──────────────
+                    if body_id != GROUND_ID {
+                        egui::CollapsingHeader::new("Attachment Points")
+                            .id_salt("attach_pts")
+                            .show(ui, |ui| {
+                                for (name, local) in &pts {
+                                    let global = mech_state.body_point_global(&body_id, local, q);
+                                    ui.label(format!(
+                                        "{}: ({:.3}, {:.3}){}",
+                                        name,
+                                        units.length(global.x),
+                                        units.length(global.y),
+                                        units.length_suffix()
+                                    ));
+                                }
+                            });
                     }
                 }
             }
