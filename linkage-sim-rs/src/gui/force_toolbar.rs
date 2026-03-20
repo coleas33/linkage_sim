@@ -17,10 +17,15 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
     let (selected_body, connected_body) = resolve_target_bodies(state);
 
     ui.horizontal(|ui| {
-        ui.spacing_mut().button_padding = egui::vec2(6.0, 3.0);
+        ui.spacing_mut().button_padding = egui::vec2(10.0, 5.0);
+
+        let torque_color = egui::Color32::from_rgb(100, 220, 140);
+        let force_color = egui::Color32::from_rgb(255, 165, 80);
 
         // -- Joint Torques dropdown --
-        ui.menu_button("Joint Torques \u{25BC}", |ui| {
+        ui.menu_button(
+            egui::RichText::new("\u{2699} Joint Torques \u{25BC}").color(torque_color),
+            |ui| {
             if let Some((ref a, ref b)) = two_bodies(&selected_body, &connected_body) {
                 if ui.button("Motor").clicked() {
                     pending = Some(PendingForceAdd::Add(ForceElement::Motor(MotorElement {
@@ -65,7 +70,9 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
         });
 
         // -- Link Forces dropdown --
-        ui.menu_button("Link Forces \u{25BC}", |ui| {
+        ui.menu_button(
+            egui::RichText::new("\u{2B06} Link Forces \u{25BC}").color(force_color),
+            |ui| {
             // Single-body elements
             if let Some(ref body_id) = selected_body {
                 if ui.button("External Force").clicked() {

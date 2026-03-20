@@ -23,7 +23,44 @@ pub struct LinkageApp {
 }
 
 impl LinkageApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        // Professional dark theme inspired by CAD tools (SolidWorks, ANSYS)
+        let mut visuals = egui::Visuals::dark();
+
+        // Darker, more professional background tones
+        visuals.panel_fill = egui::Color32::from_rgb(30, 32, 38);
+        visuals.window_fill = egui::Color32::from_rgb(35, 37, 44);
+        visuals.extreme_bg_color = egui::Color32::from_rgb(20, 22, 28);
+        visuals.faint_bg_color = egui::Color32::from_rgb(38, 40, 48);
+
+        // Accent color for selections and interactions
+        visuals.selection.bg_fill = egui::Color32::from_rgb(40, 100, 200);
+        visuals.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 160, 255));
+
+        // Widget styling — more rounded, cleaner
+        visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(42, 44, 52);
+        visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(0.5, egui::Color32::from_rgb(60, 62, 72));
+
+        visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(50, 52, 62);
+        visuals.widgets.inactive.bg_stroke = egui::Stroke::new(0.5, egui::Color32::from_rgb(70, 72, 82));
+
+        visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(60, 65, 80);
+        visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(100, 140, 220));
+
+        visuals.widgets.active.bg_fill = egui::Color32::from_rgb(40, 100, 200);
+        visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 160, 255));
+
+        // Separator and window stroke
+        visuals.window_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(55, 58, 68));
+
+        cc.egui_ctx.set_visuals(visuals);
+
+        // Slightly larger default font for readability
+        let mut style = (*cc.egui_ctx.style()).clone();
+        style.spacing.item_spacing = egui::vec2(6.0, 4.0);
+        style.spacing.button_padding = egui::vec2(8.0, 4.0);
+        cc.egui_ctx.set_style(style);
+
         Self {
             state: AppState::default(),
         }
@@ -477,13 +514,21 @@ impl eframe::App for LinkageApp {
         // --- Toolbar ---
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.spacing_mut().button_padding = egui::vec2(6.0, 3.0);
+                ui.spacing_mut().button_padding = egui::vec2(10.0, 5.0);
 
                 let tool = self.state.active_tool;
 
-                if ui
-                    .selectable_label(tool == EditorTool::Select, "Select")
-                    .on_hover_text("Select and move entities")
+                // ── Editor tools (blue accent) ──────────────────────
+                let tool_color = egui::Color32::from_rgb(80, 160, 255);
+                let tool_active_color = egui::Color32::from_rgb(40, 120, 220);
+
+                let select_text = if tool == EditorTool::Select {
+                    egui::RichText::new("\u{1F5B1} Select").color(tool_active_color).strong()
+                } else {
+                    egui::RichText::new("\u{1F5B1} Select").color(tool_color)
+                };
+                if ui.add(egui::Button::new(select_text))
+                    .on_hover_text("Select entities on the canvas")
                     .clicked()
                 {
                     self.state.active_tool = EditorTool::Select;
@@ -491,11 +536,13 @@ impl eframe::App for LinkageApp {
                     self.state.add_body_state = None;
                 }
 
-                if ui
-                    .selectable_label(
-                        tool == EditorTool::DrawLink || self.state.draw_link_start.is_some(),
-                        "Draw Link",
-                    )
+                let draw_active = tool == EditorTool::DrawLink || self.state.draw_link_start.is_some();
+                let draw_text = if draw_active {
+                    egui::RichText::new("\u{270F} Draw Link").color(tool_active_color).strong()
+                } else {
+                    egui::RichText::new("\u{270F} Draw Link").color(tool_color)
+                };
+                if ui.add(egui::Button::new(draw_text))
                     .on_hover_text("Click and drag to draw a link")
                     .clicked()
                 {
@@ -504,12 +551,14 @@ impl eframe::App for LinkageApp {
                     self.state.add_body_state = None;
                 }
 
-                if ui
-                    .selectable_label(
-                        tool == EditorTool::AddBody || self.state.add_body_state.is_some(),
-                        "+ Body",
-                    )
-                    .on_hover_text("Click to place attachment points, double-click or Enter to finish")
+                let body_active = tool == EditorTool::AddBody || self.state.add_body_state.is_some();
+                let body_text = if body_active {
+                    egui::RichText::new("\u{2795} Body").color(tool_active_color).strong()
+                } else {
+                    egui::RichText::new("\u{2795} Body").color(tool_color)
+                };
+                if ui.add(egui::Button::new(body_text))
+                    .on_hover_text("Click to place points, double-click to finish")
                     .clicked()
                 {
                     self.state.active_tool = EditorTool::AddBody;
@@ -517,8 +566,12 @@ impl eframe::App for LinkageApp {
                     self.state.add_body_state = None;
                 }
 
-                if ui
-                    .selectable_label(tool == EditorTool::AddGroundPivot, "+ Ground")
+                let ground_text = if tool == EditorTool::AddGroundPivot {
+                    egui::RichText::new("\u{2693} Ground").color(tool_active_color).strong()
+                } else {
+                    egui::RichText::new("\u{2693} Ground").color(tool_color)
+                };
+                if ui.add(egui::Button::new(ground_text))
                     .on_hover_text("Click canvas to place a ground pivot")
                     .clicked()
                 {
@@ -529,17 +582,16 @@ impl eframe::App for LinkageApp {
 
                 ui.separator();
 
-                // Play/Pause button — prominent green
+                // ── Playback controls (green/yellow) ────────────────
                 let is_playing = self.state.playing;
                 let (label, color) = if is_playing {
-                    ("\u{23F8} Pause", egui::Color32::from_rgb(220, 180, 50))
+                    ("\u{23F8}  Pause", egui::Color32::from_rgb(240, 200, 60))
                 } else {
-                    ("\u{25B6} Play", egui::Color32::from_rgb(50, 200, 80))
+                    ("\u{25B6}  Play", egui::Color32::from_rgb(60, 220, 90))
                 };
-                let btn = egui::Button::new(
-                    egui::RichText::new(label).color(color).strong()
-                );
-                if ui.add(btn)
+                if ui.add(egui::Button::new(
+                    egui::RichText::new(label).color(color).strong().size(14.0)
+                ))
                     .on_hover_text("Animate the mechanism (kinematic playback)")
                     .clicked()
                 {
