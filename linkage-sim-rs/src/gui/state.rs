@@ -877,6 +877,50 @@ impl AppState {
         self.display_units = units;
     }
 
+    /// Compute view transform that fits all body attachment points in the canvas.
+    pub fn fit_to_view(&mut self, canvas_width: f32, canvas_height: f32) {
+        let Some(ref mech) = self.mechanism else {
+            return;
+        };
+        let q = &self.q;
+        let sim_state = mech.state();
+
+        let mut x_min = f64::INFINITY;
+        let mut x_max = f64::NEG_INFINITY;
+        let mut y_min = f64::INFINITY;
+        let mut y_max = f64::NEG_INFINITY;
+
+        for (body_id, body) in mech.bodies() {
+            for pt in body.attachment_points.values() {
+                let global = sim_state.body_point_global(body_id, pt, q);
+                x_min = x_min.min(global.x);
+                x_max = x_max.max(global.x);
+                y_min = y_min.min(global.y);
+                y_max = y_max.max(global.y);
+            }
+        }
+
+        if !x_min.is_finite() || !x_max.is_finite() {
+            return;
+        }
+
+        let margin = 0.15; // 15% margin on each side
+        let w = (x_max - x_min).max(0.01);
+        let h = (y_max - y_min).max(0.01);
+        let cx = (x_min + x_max) / 2.0;
+        let cy = (y_min + y_max) / 2.0;
+
+        let scale_x = canvas_width as f64 / (w * (1.0 + 2.0 * margin));
+        let scale_y = canvas_height as f64 / (h * (1.0 + 2.0 * margin));
+        let scale = scale_x.min(scale_y) as f32;
+
+        self.view.scale = scale.clamp(100.0, 100_000.0);
+        self.view.offset = [
+            canvas_width / 2.0 - (cx as f32) * self.view.scale,
+            canvas_height / 2.0 + (cy as f32) * self.view.scale,
+        ];
+    }
+
     /// Load a named sample: build mechanism, solve at t=0, and store state.
     pub fn load_sample(&mut self, sample: SampleMechanism) {
         let (mech, q0) = build_sample(sample);

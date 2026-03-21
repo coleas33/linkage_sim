@@ -753,6 +753,28 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         );
     }
 
+    // ── Solver failure overlay banner ─────────────────────────────────
+    if !solver_converged && state.mechanism.is_some() {
+        let banner_text = "Solver failed to converge \u{2014} mechanism may be over-constrained or at a toggle point";
+        let banner_pos = Pos2::new(canvas_rect.center().x, canvas_rect.top() + 30.0);
+        let galley = painter.layout_no_wrap(
+            banner_text.to_string(),
+            FontId::proportional(13.0),
+            Color32::from_rgb(255, 100, 100),
+        );
+        let text_rect = egui::Rect::from_min_size(
+            Pos2::new(banner_pos.x - galley.size().x / 2.0, banner_pos.y),
+            galley.size(),
+        )
+        .expand2(egui::vec2(8.0, 4.0));
+        painter.rect_filled(text_rect, 4.0, Color32::from_rgba_premultiplied(40, 10, 10, 220));
+        painter.galley(
+            Pos2::new(banner_pos.x - galley.size().x / 2.0, banner_pos.y),
+            galley,
+            Color32::PLACEHOLDER,
+        );
+    }
+
     // ── Hover tooltips ────────────────────────────────────────────────
     // Show a tooltip when the mouse hovers over a body or joint.
     if let Some(hover_pos) = ui.input(|i| i.pointer.hover_pos()) {
@@ -905,6 +927,11 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 state.view.offset[1] += pointer_pos.y - new_screen[1];
             }
         }
+    }
+
+    // ── Interaction: Fit to View (F key) ────────────────────────────────
+    if ui.input(|i| i.key_pressed(egui::Key::F)) {
+        state.fit_to_view(canvas_rect.width(), canvas_rect.height());
     }
 
     // ── Interaction: Escape cancels active tool ─────────────────────────
