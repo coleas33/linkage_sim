@@ -157,6 +157,11 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         ui.allocate_painter(ui.available_size(), egui::Sense::click_and_drag());
     let canvas_rect = response.rect;
 
+    if state.pending_fit_to_view {
+        state.fit_to_view(canvas_rect.width(), canvas_rect.height());
+        state.pending_fit_to_view = false;
+    }
+
     // Fill background.
     painter.rect_filled(canvas_rect, 0.0, BG_COLOR);
 

@@ -775,6 +775,10 @@ pub struct AppState {
     // ── Highlight ──────────────────────────────────────────────────────
     /// Joint ID to visually highlight on the canvas (e.g. from panel hover).
     pub highlight_joint: Option<String>,
+    // ── View automation ─────────────────────────────────────────────────
+    /// When true, `fit_to_view` is called on the next canvas frame and then
+    /// cleared. Set after a mechanism is loaded so the view auto-fits.
+    pub pending_fit_to_view: bool,
 }
 
 /// Tracks placement state for the Add Body tool.
@@ -902,6 +906,7 @@ impl Default for AppState {
             status_message: None,
             status_message_time: 0.0,
             highlight_joint: None,
+            pending_fit_to_view: false,
         };
         state.rebuild();
         state
@@ -959,6 +964,13 @@ impl AppState {
                 x_max = x_max.max(global.x);
                 y_min = y_min.min(global.y);
                 y_max = y_max.max(global.y);
+            }
+            for pt in body.mount_points.values() {
+                let global = sim_state.body_point_global(body_id, pt, q);
+                if global.x < x_min { x_min = global.x; }
+                if global.x > x_max { x_max = global.x; }
+                if global.y < y_min { y_min = global.y; }
+                if global.y > y_max { y_max = global.y; }
             }
         }
 
@@ -1047,6 +1059,7 @@ impl AppState {
         self.update_grashof();
         self.compute_sweep();
         self.compute_validation();
+        self.pending_fit_to_view = true;
     }
 
     /// Solve the position problem for the given driver angle (radians).
