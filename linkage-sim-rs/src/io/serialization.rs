@@ -565,9 +565,18 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
         }
     }
 
-    // Restore force elements
-    for force in &json_struct.forces {
-        mech.add_force(force.clone());
+    // Restore force elements, resolving any named mount/attachment points
+    // against the bodies that were just added to the mechanism.
+    let bodies = mech.bodies().clone();
+    let resolved_forces: Vec<ForceElement> = json_struct.forces
+        .iter()
+        .map(|f| f.resolve_named_points(&bodies).unwrap_or_else(|e| {
+            log::warn!("Failed to resolve force point name: {e}");
+            f.clone()
+        }))
+        .collect();
+    for force in resolved_forces {
+        mech.add_force(force);
     }
 
     Ok(mech)

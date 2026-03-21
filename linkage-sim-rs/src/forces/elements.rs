@@ -550,6 +550,74 @@ impl ForceElement {
         }
     }
 
+    /// Resolve any named mount/attachment points and cache their coordinates.
+    ///
+    /// For each force element variant that carries `point_X_name` fields, this
+    /// looks up the named point on the corresponding body (checking both
+    /// `attachment_points` and `mount_points`) and writes the resolved
+    /// coordinates into the matching `point_X` field.  Variants without named
+    /// points (e.g. `Gravity`, `TorsionSpring`) are returned unchanged.
+    ///
+    /// Call this once at build time (e.g. inside
+    /// `load_mechanism_unbuilt_from_json`) so that the resolved coordinates are
+    /// baked in before simulation starts.
+    pub fn resolve_named_points(
+        &self,
+        bodies: &HashMap<String, Body>,
+    ) -> Result<ForceElement, crate::core::body::BodyError> {
+        let mut resolved = self.clone();
+        match &mut resolved {
+            ForceElement::LinearSpring(s) => {
+                if let Some(ref name) = s.point_a_name.clone() {
+                    let pt = bodies[&s.body_a].resolve_force_point(name)?;
+                    s.point_a = [pt.x, pt.y];
+                }
+                if let Some(ref name) = s.point_b_name.clone() {
+                    let pt = bodies[&s.body_b].resolve_force_point(name)?;
+                    s.point_b = [pt.x, pt.y];
+                }
+            }
+            ForceElement::LinearDamper(d) => {
+                if let Some(ref name) = d.point_a_name.clone() {
+                    let pt = bodies[&d.body_a].resolve_force_point(name)?;
+                    d.point_a = [pt.x, pt.y];
+                }
+                if let Some(ref name) = d.point_b_name.clone() {
+                    let pt = bodies[&d.body_b].resolve_force_point(name)?;
+                    d.point_b = [pt.x, pt.y];
+                }
+            }
+            ForceElement::GasSpring(g) => {
+                if let Some(ref name) = g.point_a_name.clone() {
+                    let pt = bodies[&g.body_a].resolve_force_point(name)?;
+                    g.point_a = [pt.x, pt.y];
+                }
+                if let Some(ref name) = g.point_b_name.clone() {
+                    let pt = bodies[&g.body_b].resolve_force_point(name)?;
+                    g.point_b = [pt.x, pt.y];
+                }
+            }
+            ForceElement::LinearActuator(a) => {
+                if let Some(ref name) = a.point_a_name.clone() {
+                    let pt = bodies[&a.body_a].resolve_force_point(name)?;
+                    a.point_a = [pt.x, pt.y];
+                }
+                if let Some(ref name) = a.point_b_name.clone() {
+                    let pt = bodies[&a.body_b].resolve_force_point(name)?;
+                    a.point_b = [pt.x, pt.y];
+                }
+            }
+            ForceElement::ExternalForce(e) => {
+                if let Some(ref name) = e.local_point_name.clone() {
+                    let pt = bodies[&e.body_id].resolve_force_point(name)?;
+                    e.local_point = [pt.x, pt.y];
+                }
+            }
+            _ => {}
+        }
+        Ok(resolved)
+    }
+
     /// Returns body IDs this force element is attached to.
     pub fn attached_body_ids(&self) -> Vec<&str> {
         match self {
@@ -2220,6 +2288,67 @@ mod tests {
         let loaded: ForceElement = serde_json::from_str(&json).unwrap();
         if let ForceElement::ExternalForce(e) = loaded {
             assert_eq!(e.local_point_name, Some("A".to_string()));
+        } else {
+            panic!("wrong variant");
+        }
+    }
+
+    #[test]
+    fn resolve_named_points_caches_coordinates() {
+        use crate::core::body::Body;
+
+        let mut ground = Body::new("ground");
+        ground.add_mount_point("M1", 0.02, 0.01).unwrap();
+
+        let mut crank = Body::new("crank");
+        crank.add_attachment_point("A", 0.015, 0.0).unwrap();
+
+        let mut bodies = HashMap::new();
+        bodies.insert("ground".to_string(), ground);
+        bodies.insert("crank".to_string(), crank);
+
+        let spring = LinearSpringElement {
+            body_a: "ground".to_string(),
+            point_a: [0.0, 0.0],
+            point_a_name: Some("M1".to_string()),
+            body_b: "crank".to_string(),
+            point_b: [0.0, 0.0],
+            point_b_name: Some("A".to_string()),
+            stiffness: 500.0,
+            free_length: 0.05,
+        };
+
+        let fe = ForceElement::LinearSpring(spring);
+        let resolved = fe.resolve_named_points(&bodies).unwrap();
+
+        if let ForceElement::LinearSpring(s) = &resolved {
+            assert_abs_diff_eq!(s.point_a[0], 0.02, epsilon = 1e-15);
+            assert_abs_diff_eq!(s.point_a[1], 0.01, epsilon = 1e-15);
+            assert_abs_diff_eq!(s.point_b[0], 0.015, epsilon = 1e-15);
+            assert_abs_diff_eq!(s.point_b[1], 0.0, epsilon = 1e-15);
+        } else {
+            panic!("wrong variant");
+        }
+    }
+
+    #[test]
+    fn resolve_named_points_none_preserves_raw_coords() {
+        let bodies = HashMap::new();
+        let spring = LinearSpringElement {
+            body_a: "ground".to_string(),
+            point_a: [0.05, 0.03],
+            point_a_name: None,
+            body_b: "crank".to_string(),
+            point_b: [0.01, 0.0],
+            point_b_name: None,
+            stiffness: 500.0,
+            free_length: 0.05,
+        };
+        let fe = ForceElement::LinearSpring(spring);
+        let resolved = fe.resolve_named_points(&bodies).unwrap();
+        if let ForceElement::LinearSpring(s) = &resolved {
+            assert_abs_diff_eq!(s.point_a[0], 0.05, epsilon = 1e-15);
+            assert_abs_diff_eq!(s.point_b[0], 0.01, epsilon = 1e-15);
         } else {
             panic!("wrong variant");
         }
