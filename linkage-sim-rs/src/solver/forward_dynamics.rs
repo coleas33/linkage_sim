@@ -92,6 +92,7 @@ fn compute_rhs(
     t: f64,
     alpha: f64,
     beta: f64,
+    compiled_modulations: &[Box<dyn Fn(f64) -> f64>],
 ) -> Option<DVector<f64>> {
     let n = mech.state().n_coords();
     let m = mech.n_constraints();
@@ -101,7 +102,7 @@ fn compute_rhs(
     let phi = assemble_constraints(mech, q, t);
     let phi_t = assemble_phi_t(mech, q, t);
     let gamma = assemble_gamma(mech, q, qd, t);
-    let q_forces = mech.assemble_forces(q, qd, t);
+    let q_forces = mech.assemble_forces_compiled(q, qd, t, compiled_modulations);
 
     // Baumgarte-stabilized acceleration RHS:
     // gamma_stab = gamma - 2*alpha*(Phi_q*q_dot + Phi_t) - beta^2*Phi
@@ -322,6 +323,10 @@ pub fn simulate(
     let alpha = cfg.alpha;
     let beta = cfg.beta;
 
+    // Pre-compile time modulations once (avoids re-parsing expression strings
+    // on every RHS evaluation inside the integration loop).
+    let compiled_modulations = mech.compile_force_modulations();
+
     // Pack initial state: y = [q; q_dot]
     let mut y0 = DVector::zeros(2 * n);
     for i in 0..n {
@@ -333,7 +338,7 @@ pub fn simulate(
     let rhs = |t: f64, y: &DVector<f64>| -> Option<DVector<f64>> {
         let q = y.rows(0, n).clone_owned();
         let qd = y.rows(n, n).clone_owned();
-        compute_rhs(mech, &q, &qd, t, alpha, beta)
+        compute_rhs(mech, &q, &qd, t, alpha, beta, &compiled_modulations)
     };
 
     // Integrate using RK4
@@ -441,6 +446,10 @@ pub fn simulate_with_events(
     let alpha = cfg.alpha;
     let beta = cfg.beta;
 
+    // Pre-compile time modulations once (avoids re-parsing expression strings
+    // on every RHS evaluation inside the integration loop).
+    let compiled_modulations = mech.compile_force_modulations();
+
     // Pack initial state: y = [q; q_dot]
     let mut y0 = DVector::zeros(2 * n);
     for i in 0..n {
@@ -452,7 +461,7 @@ pub fn simulate_with_events(
     let rhs = |t: f64, y: &DVector<f64>| -> Option<DVector<f64>> {
         let q = y.rows(0, n).clone_owned();
         let qd = y.rows(n, n).clone_owned();
-        compute_rhs(mech, &q, &qd, t, alpha, beta)
+        compute_rhs(mech, &q, &qd, t, alpha, beta, &compiled_modulations)
     };
 
     // Manual RK4 loop with event checking

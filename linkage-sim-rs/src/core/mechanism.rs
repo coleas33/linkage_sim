@@ -419,6 +419,36 @@ impl Mechanism {
         total
     }
 
+    /// Pre-compile time modulations for all force elements.
+    ///
+    /// Returns one closure per force element. For elements with
+    /// `TimeModulation::Expression`, the meval string is parsed once here
+    /// rather than on every `factor(t)` call. Call this once before the
+    /// integration loop and pass the result to [`assemble_forces_compiled`].
+    pub fn compile_force_modulations(&self) -> Vec<Box<dyn Fn(f64) -> f64>> {
+        self.forces.iter().map(|f| f.compile_modulation()).collect()
+    }
+
+    /// Assemble generalized forces using pre-compiled modulation closures.
+    ///
+    /// Equivalent to [`assemble_forces`] but uses pre-compiled closures from
+    /// [`compile_force_modulations`] instead of re-parsing expression strings
+    /// on every call.
+    pub fn assemble_forces_compiled(
+        &self,
+        q: &DVector<f64>,
+        q_dot: &DVector<f64>,
+        t: f64,
+        compiled_modulations: &[Box<dyn Fn(f64) -> f64>],
+    ) -> DVector<f64> {
+        let mut total = DVector::zeros(self.state.n_coords());
+        for (force, modulation_fn) in self.forces.iter().zip(compiled_modulations.iter()) {
+            let factor = modulation_fn(t);
+            total += force.evaluate_compiled(&self.state, &self.bodies, q, q_dot, t, factor);
+        }
+        total
+    }
+
     fn get_attachment_point(
         &self,
         body_id: &str,

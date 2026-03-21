@@ -57,6 +57,9 @@ impl Default for TimeModulation {
 
 impl TimeModulation {
     /// Compute the modulation factor at time `t`.
+    ///
+    /// Note: for the `Expression` variant this re-parses the expression string
+    /// on every call. In hot loops prefer [`compile`] to pre-parse once.
     pub fn factor(&self, t: f64) -> f64 {
         match self {
             TimeModulation::Constant => 1.0,
@@ -94,6 +97,62 @@ impl TimeModulation {
                     Err(_) => {
                         log::warn!("TimeModulation: failed to parse expression '{expr}' — force disabled");
                         0.0
+                    }
+                }
+            }
+        }
+    }
+
+    /// Pre-compile this modulation into a closure that can be called repeatedly
+    /// without re-parsing expression strings.
+    ///
+    /// For `Constant`, `Sinusoidal`, `Step`, and `Ramp` variants this simply
+    /// captures the parameters. For `Expression` the meval string is parsed
+    /// once and the bound closure is captured, eliminating the O(n) parse on
+    /// every evaluation.
+    ///
+    /// The returned closure is **not** `Send`/`Sync` (meval closures aren't),
+    /// but that is fine for single-threaded simulation loops.
+    pub fn compile(&self) -> Box<dyn Fn(f64) -> f64> {
+        match self {
+            TimeModulation::Constant => Box::new(|_t| 1.0),
+            TimeModulation::Sinusoidal { omega, phase } => {
+                let omega = *omega;
+                let phase = *phase;
+                Box::new(move |t| (omega * t + phase).sin())
+            }
+            TimeModulation::Step { t_on } => {
+                let t_on = *t_on;
+                Box::new(move |t| if t >= t_on { 1.0 } else { 0.0 })
+            }
+            TimeModulation::Ramp { t_start, t_end } => {
+                let t_start = *t_start;
+                let t_end = *t_end;
+                Box::new(move |t| {
+                    if t <= t_start {
+                        0.0
+                    } else if t >= t_end {
+                        1.0
+                    } else {
+                        (t - t_start) / (t_end - t_start)
+                    }
+                })
+            }
+            TimeModulation::Expression { expr } => {
+                match expr.parse::<meval::Expr>() {
+                    Ok(parsed) => match parsed.bind("t") {
+                        Ok(f) => Box::new(move |t| {
+                            let val = f(t);
+                            if val.is_finite() { val } else { 0.0 }
+                        }),
+                        Err(_) => {
+                            log::warn!("TimeModulation::compile: failed to bind 't' in expression '{expr}' — force disabled");
+                            Box::new(|_t| 0.0)
+                        }
+                    },
+                    Err(_) => {
+                        log::warn!("TimeModulation::compile: failed to parse expression '{expr}' — force disabled");
+                        Box::new(|_t| 0.0)
                     }
                 }
             }
@@ -406,6 +465,46 @@ impl ForceElement {
         }
     }
 
+    /// Evaluate this force element using a pre-computed modulation factor.
+    ///
+    /// For force elements with `TimeModulation` (ExternalForce, ExternalTorque),
+    /// the supplied `modulation_factor` replaces the call to `modulation.factor(t)`,
+    /// avoiding expression re-parsing in the hot loop. For all other variants the
+    /// `modulation_factor` is ignored and evaluation proceeds normally.
+    pub fn evaluate_compiled(
+        &self,
+        state: &State,
+        bodies: &HashMap<String, Body>,
+        q: &DVector<f64>,
+        q_dot: &DVector<f64>,
+        t: f64,
+        modulation_factor: f64,
+    ) -> DVector<f64> {
+        match self {
+            ForceElement::ExternalForce(f) => {
+                evaluate_external_force_with_factor(f, state, q, modulation_factor)
+            }
+            ForceElement::ExternalTorque(te) => {
+                evaluate_external_torque_with_factor(te, state, modulation_factor)
+            }
+            // All other variants have no time modulation — delegate unchanged.
+            _ => self.evaluate(state, bodies, q, q_dot, t),
+        }
+    }
+
+    /// Pre-compile this element's time modulation into a closure.
+    ///
+    /// For ExternalForce and ExternalTorque the modulation is compiled via
+    /// [`TimeModulation::compile`]. For all other element types the returned
+    /// closure always returns `1.0` (no modulation).
+    pub fn compile_modulation(&self) -> Box<dyn Fn(f64) -> f64> {
+        match self {
+            ForceElement::ExternalForce(f) => f.modulation.compile(),
+            ForceElement::ExternalTorque(t) => t.modulation.compile(),
+            _ => Box::new(|_t| 1.0),
+        }
+    }
+
     /// Human-readable name for this force element type.
     pub fn type_name(&self) -> &'static str {
         match self {
@@ -615,6 +714,27 @@ fn evaluate_external_force(
 
 fn evaluate_external_torque(te: &ExternalTorqueElement, state: &State, t: f64) -> DVector<f64> {
     let factor = te.modulation.factor(t);
+    body_torque_to_q(state, &te.body_id, te.torque * factor)
+}
+
+/// Evaluate external force with a pre-computed modulation factor.
+fn evaluate_external_force_with_factor(
+    f: &ExternalForceElement,
+    state: &State,
+    q: &DVector<f64>,
+    factor: f64,
+) -> DVector<f64> {
+    let local_pt = Vector2::new(f.local_point[0], f.local_point[1]);
+    let force = Vector2::new(f.force[0] * factor, f.force[1] * factor);
+    point_force_to_q(state, &f.body_id, &local_pt, &force, q)
+}
+
+/// Evaluate external torque with a pre-computed modulation factor.
+fn evaluate_external_torque_with_factor(
+    te: &ExternalTorqueElement,
+    state: &State,
+    factor: f64,
+) -> DVector<f64> {
     body_torque_to_q(state, &te.body_id, te.torque * factor)
 }
 

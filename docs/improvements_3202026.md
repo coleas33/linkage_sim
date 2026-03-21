@@ -13,7 +13,7 @@ Deep review of the Rust application (`linkage-sim-rs/`, ~30K LOC) across archite
 
 | # | Issue | Location | Status |
 |---|---|---|---|
-| Q1 | `add_force_element` doesn't call `rebuild()` — added forces have no effect | `gui/state.rs:1795` | [x] Already had rebuild() — false positive |
+| Q1 | `add_force_element` doesn't call `rebuild()` | `gui/state.rs:1795` | [x] Already had rebuild() — false positive |
 | Q2 | `driver_joint_id` not cleared when `rebuild()` finds no driver | `gui/state.rs:1599` | [x] df07cdc |
 | Q3 | `update_grashof` not called in `load_from_file` | `gui/state.rs:~1499` | [x] df07cdc |
 | Q4 | `solve_augmented` silently returns zero vector on singular matrix | `solver/forward_dynamics.rs:160` | [x] df07cdc — returns Option, RK4 aborts early |
@@ -26,7 +26,7 @@ Deep review of the Rust application (`linkage-sim-rs/`, ~30K LOC) across archite
 
 Extract `gui/sweep.rs` (~350 lines) and `gui/persistence.rs` (~300 lines) as the lowest-risk first step.
 
-**Status:** [ ]
+**Status:** [x] sweep.rs extracted (1218b40) — persistence.rs deferred
 
 ### 2. Code Quality — Fix panicking `unwrap()`/`expect()` in production paths
 
@@ -41,13 +41,13 @@ Replace panicking body-ID lookups with graceful error handling in:
 
 The `CamFollowerJoint::gamma()` omits centripetal terms from the rotating direction vector. Add a finite-difference validation test (matching existing pattern for other joints) and implement the full gamma derivation.
 
-**Status:** [ ]
+**Status:** [x] 1218b40 — full gamma implemented, 3 FD tests added
 
 ### 4. Performance — Hot-path optimizations
 
 | Item | Location | Fix | Status |
 |---|---|---|---|
-| Expression re-parse every timestep | `forces/elements.rs:83–93` | Pre-compile at sim start | [ ] |
+| Expression re-parse every timestep | `forces/elements.rs:83–93` | Pre-compile at sim start | [ ] In progress |
 | `all_constraints()` allocates Vec per call | `core/mechanism.rs:131` | Return `impl Iterator` with `.chain()` | [x] df07cdc |
 | Undo `Vec::remove(0)` is O(n) | `gui/undo.rs:56` | Replace with `VecDeque` | [x] df07cdc |
 
