@@ -71,6 +71,30 @@ impl LinkageApp {
 
 impl eframe::App for LinkageApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // ── Update window title to show filename and dirty state ──────
+        let title = if let Some(ref path) = self.state.last_save_path {
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            if self.state.dirty {
+                format!("Linkage Simulator \u{2014} {}*", name)
+            } else {
+                format!("Linkage Simulator \u{2014} {}", name)
+            }
+        } else if self.state.dirty {
+            "Linkage Simulator \u{2014} unsaved*".to_string()
+        } else {
+            "Linkage Simulator".to_string()
+        };
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+
+        // ── Tick status-message timer ─────────────────────────────────
+        if self.state.status_message_time > 0.0 {
+            self.state.status_message_time -= ctx.input(|i| i.unstable_dt) as f64;
+            if self.state.status_message_time <= 0.0 {
+                self.state.status_message = None;
+                self.state.status_message_time = 0.0;
+            }
+        }
+
         // ── Keyboard shortcuts ────────────────────────────────────────
         if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Z) && !i.modifiers.shift) {
             self.state.undo();
@@ -731,6 +755,13 @@ impl eframe::App for LinkageApp {
                     }
                 } else {
                     ui.label("No mechanism loaded");
+                }
+
+                // ── Status toast (e.g. "Saved: foo.json") ──────────────
+                if let Some(ref msg) = self.state.status_message {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.colored_label(egui::Color32::from_rgb(100, 220, 100), msg);
+                    });
                 }
             });
         });

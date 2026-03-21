@@ -726,6 +726,11 @@ pub struct AppState {
     // ── Autosave recovery ───────────────────────────────────────────
     /// Path to a recoverable autosave file found on startup (if any).
     pub recovery_path: Option<std::path::PathBuf>,
+    // ── Status toast ──────────────────────────────────────────────────
+    /// Transient status message shown in the status bar (e.g. "Saved: foo.json").
+    pub status_message: Option<String>,
+    /// Remaining display time for the status message (seconds).
+    pub status_message_time: f64,
 }
 
 /// Tracks placement state for the Add Body tool.
@@ -849,6 +854,8 @@ impl Default for AppState {
             dirty: false,
             recent_files: Self::load_recent_files(),
             recovery_path: Self::check_autosave_recovery(),
+            status_message: None,
+            status_message_time: 0.0,
         };
         state.rebuild();
         state
@@ -1202,6 +1209,8 @@ impl AppState {
         self.last_save_path = Some(path.to_path_buf());
         self.dirty = false;
         self.add_recent_file(path);
+        self.status_message = Some(format!("Saved: {}", path.display()));
+        self.status_message_time = 3.0;
         Ok(())
     }
 
