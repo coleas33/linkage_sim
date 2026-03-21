@@ -90,6 +90,11 @@ impl Mechanism {
         self.bodies.get_mut(id)
     }
 
+    /// Mutable access to the full bodies map (for compound force expansion).
+    pub fn bodies_mut(&mut self) -> &mut HashMap<String, Body> {
+        &mut self.bodies
+    }
+
     pub fn joints(&self) -> &[JointConstraint] {
         &self.joints
     }

@@ -16,6 +16,7 @@ use crate::core::constraint::{Constraint, JointConstraint};
 use crate::core::driver::DriverMeta;
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
+use crate::forces::compound::{analyze_force, expand_compound_force, CompoundAnalysis};
 use crate::forces::elements::ForceElement;
 
 /// Current schema version for the JSON format.
@@ -386,6 +387,37 @@ pub fn save_mechanism(mech: &Mechanism) -> Result<String, SerializationError> {
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Compound force helpers
+// ---------------------------------------------------------------------------
+
+/// Extract the local-frame coordinates of point A or B from a two-point force element.
+///
+/// Returns `[0.0, 0.0]` for force variants that don't carry explicit point coordinates.
+fn get_force_point_pos(force: &ForceElement, is_a: bool) -> [f64; 2] {
+    match force {
+        ForceElement::LinearSpring(s) => if is_a { s.point_a } else { s.point_b },
+        ForceElement::LinearDamper(d) => if is_a { d.point_a } else { d.point_b },
+        ForceElement::GasSpring(g) => if is_a { g.point_a } else { g.point_b },
+        ForceElement::LinearActuator(a) => if is_a { a.point_a } else { a.point_b },
+        _ => [0.0, 0.0],
+    }
+}
+
+/// Extract the body-A and body-B IDs from a two-point force element.
+///
+/// Returns `None` for force variants that don't reference two specific bodies.
+fn get_force_body_ids(force: &ForceElement) -> Option<(String, String)> {
+    match force {
+        ForceElement::LinearSpring(s) => Some((s.body_a.clone(), s.body_b.clone())),
+        ForceElement::LinearDamper(d) => Some((d.body_a.clone(), d.body_b.clone())),
+        ForceElement::GasSpring(g) => Some((g.body_a.clone(), g.body_b.clone())),
+        ForceElement::LinearActuator(a) => Some((a.body_a.clone(), a.body_b.clone())),
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // JSON → Mechanism
 // ---------------------------------------------------------------------------
 
@@ -567,16 +599,53 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
 
     // Restore force elements, resolving any named mount/attachment points
     // against the bodies that were just added to the mechanism.
-    let bodies = mech.bodies().clone();
+    // Forces that reference mount points are expanded into compound bodies
+    // (cylinder + rod + prismatic joint) so the solver can handle them.
+    let bodies_snapshot = mech.bodies().clone();
     let resolved_forces: Vec<ForceElement> = json_struct.forces
         .iter()
-        .map(|f| f.resolve_named_points(&bodies).unwrap_or_else(|e| {
+        .map(|f| f.resolve_named_points(&bodies_snapshot).unwrap_or_else(|e| {
             log::warn!("Failed to resolve force point name: {e}");
             f.clone()
         }))
         .collect();
-    for force in resolved_forces {
-        mech.add_force(force);
+
+    for (i, force) in resolved_forces.iter().enumerate() {
+        match analyze_force(force, &json_struct.bodies) {
+            CompoundAnalysis::PureForce(f) => {
+                mech.add_force(f);
+            }
+            CompoundAnalysis::NeedsExpansion { force: f, mount_a, mount_b } => {
+                let point_a_pos = get_force_point_pos(&f, true);
+                let point_b_pos = get_force_point_pos(&f, false);
+
+                // Promote mount points to synthetic attachment points so that
+                // `add_revolute_joint` can find them on the original bodies.
+                if let Some((body_a_id, body_b_id)) = get_force_body_ids(&f) {
+                    if mount_a {
+                        let synthetic = format!("_force_{}_mount_a", i);
+                        if let Some(body) = mech.bodies_mut().get_mut(&body_a_id) {
+                            let _ = body.add_attachment_point(&synthetic, point_a_pos[0], point_a_pos[1]);
+                        }
+                    }
+                    if mount_b {
+                        let synthetic = format!("_force_{}_mount_b", i);
+                        if let Some(body) = mech.bodies_mut().get_mut(&body_b_id) {
+                            let _ = body.add_attachment_point(&synthetic, point_b_pos[0], point_b_pos[1]);
+                        }
+                    }
+                }
+
+                // Expand into compound bodies + joints + replacement force.
+                match expand_compound_force(&mut mech, &f, i, mount_a, mount_b, point_a_pos, point_b_pos) {
+                    Ok(replacement) => mech.add_force(replacement),
+                    Err(e) => {
+                        log::warn!("Failed to expand compound force {i}: {e}");
+                        mech.add_force(f); // fallback: add original force as-is
+                    }
+                }
+            }
+        }
     }
 
     Ok(mech)
