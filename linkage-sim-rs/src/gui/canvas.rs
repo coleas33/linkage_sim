@@ -723,27 +723,32 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     }
 
     // ── Tool mode hint text ─────────────────────────────────────────────
-    let hint_text: Option<&str> = match state.active_tool {
+    let hint_text: Option<String> = match state.active_tool {
         EditorTool::DrawLink => {
             if state.draw_link_start.is_some() {
-                Some("Drag to set link length and direction, release to place (Esc to cancel)")
+                Some("Drag to set link length and direction, release to place (Esc to cancel)".to_string())
             } else {
-                Some("Click an existing point to start drawing a link — use +Ground to place anchors first (Esc to cancel)")
+                Some("Click an existing point to start drawing a link — use +Ground to place anchors first (Esc to cancel)".to_string())
             }
         }
         EditorTool::AddBody => {
-            if state.add_body_state.is_some() {
-                Some("Click to add points, double-click or Enter to finish (Esc to cancel)")
+            if let Some(ref abs) = state.add_body_state {
+                let n = abs.points.len();
+                if n < 2 {
+                    Some(format!("Click to add more points \u{2014} need at least 2 ({} placed). Esc to cancel", n))
+                } else {
+                    Some(format!("Click to add more, double-click or Enter to finish ({} points). Esc to cancel", n))
+                }
             } else {
-                Some("Click to place first point of new body (Esc to cancel)")
+                Some("Click to place first point of new body (Esc to cancel)".to_string())
             }
         }
         EditorTool::AddGroundPivot => {
-            Some("Click on canvas to place a ground pivot (Esc to cancel)")
+            Some("Click on canvas to place a ground pivot (Esc to cancel)".to_string())
         }
         EditorTool::Select => None,
     };
-    if let Some(hint) = hint_text {
+    if let Some(ref hint) = hint_text {
         painter.text(
             Pos2::new(canvas_rect.center().x, canvas_rect.top() + 20.0),
             egui::Align2::CENTER_TOP,
@@ -1966,7 +1971,7 @@ fn draw_ground_marker(painter: &egui::Painter, center: Pos2, size: f32, color: C
 ///
 /// Lines are drawn at multiples of `grid.spacing_m` in world coordinates.
 /// If the viewport is zoomed out so far that more than 200 lines would be
-/// drawn, the grid is suppressed to avoid visual clutter and performance cost.
+/// drawn, the spacing is recursively doubled until the line count fits.
 fn draw_grid(
     painter: &egui::Painter,
     rect: Rect,
@@ -1977,7 +1982,7 @@ fn draw_grid(
         return;
     }
 
-    let spacing = grid.spacing_m;
+    let mut spacing = grid.spacing_m;
     if spacing <= 0.0 {
         return;
     }
@@ -1987,16 +1992,20 @@ fn draw_grid(
     let [world_right, world_bottom] = view.screen_to_world(rect.right(), rect.bottom());
 
     // world_top > world_bottom because screen Y is flipped.
+    // Coarsen the grid by doubling the spacing until the line count fits.
+    loop {
+        let x_count = (world_right / spacing).ceil() as i64 - (world_left / spacing).floor() as i64;
+        let y_count = (world_top / spacing).ceil() as i64 - (world_bottom / spacing).floor() as i64;
+        if x_count + y_count <= 200 {
+            break;
+        }
+        spacing *= 2.0;
+    }
+
     let x_min_i = (world_left / spacing).floor() as i64;
     let x_max_i = (world_right / spacing).ceil() as i64;
     let y_min_i = (world_bottom / spacing).floor() as i64;
     let y_max_i = (world_top / spacing).ceil() as i64;
-
-    // Bail out if too many lines (zoomed out too far for this spacing).
-    let n_lines = (x_max_i - x_min_i) + (y_max_i - y_min_i);
-    if n_lines > 200 {
-        return;
-    }
 
     let minor_stroke = Stroke::new(0.5, GRID_COLOR);
     let major_stroke = Stroke::new(1.0, GRID_MAJOR_COLOR);

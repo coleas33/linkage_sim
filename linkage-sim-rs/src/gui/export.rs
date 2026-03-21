@@ -292,13 +292,17 @@ pub fn generate_svg_string(
             }
         }
 
-        // Body label at the first attachment point.
-        if let Some(first) = screen_points.first() {
+        // Body label at the centroid of all attachment points.
+        if !screen_points.is_empty() {
+            let centroid_x: f64 =
+                screen_points.iter().map(|p| p.0).sum::<f64>() / screen_points.len() as f64;
+            let centroid_y: f64 =
+                screen_points.iter().map(|p| p.1).sum::<f64>() / screen_points.len() as f64;
             svg.push_str(&format!(
                 r#"<text x="{:.2}" y="{:.2}" class="label" text-anchor="middle">{}</text>
 "#,
-                first.0,
-                first.1 - 8.0,
+                centroid_x,
+                centroid_y - 14.0,
                 body_id
             ));
         }
@@ -839,8 +843,32 @@ fn chrono_now() -> String {
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    // Simple UTC timestamp without chrono dependency
-    format!("Unix timestamp {}", now)
+    format_unix_timestamp(now)
+}
+
+/// Format a Unix timestamp (seconds since epoch) as an approximate UTC date string.
+///
+/// Uses simple arithmetic instead of a chrono dependency. The month/day are
+/// approximate (assumes 365-day years and 30-day months) but sufficient for
+/// display purposes in generated reports.
+fn format_unix_timestamp(secs: u64) -> String {
+    let s = secs % 60;
+    let m = (secs / 60) % 60;
+    let h = (secs / 3600) % 24;
+    let days = secs / 86400;
+    let years = 1970 + days / 365;
+    let day_of_year = days % 365;
+    let month = day_of_year / 30 + 1;
+    let day = day_of_year % 30 + 1;
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
+        years,
+        month.min(12),
+        day.min(31),
+        h,
+        m,
+        s,
+    )
 }
 
 /// Summarize a force element as (type_name, detail_string).
