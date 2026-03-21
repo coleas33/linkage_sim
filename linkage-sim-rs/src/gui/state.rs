@@ -1489,6 +1489,7 @@ impl AppState {
         self.undo_history.clear();
         self.auto_grid_spacing();
         self.compute_forces(0.0);
+        self.update_grashof();
         self.compute_sweep();
         self.compute_validation();
         self.last_save_path = Some(path.to_path_buf());
@@ -1607,6 +1608,8 @@ impl AppState {
                             || (j.body_i_id() == pair.1 && j.body_j_id() == pair.0))
                 })
                 .map(|j| j.id().to_string());
+        } else {
+            self.driver_joint_id = None;
         }
 
         // Solve at current angle using last_good_q as initial guess

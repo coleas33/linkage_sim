@@ -133,7 +133,7 @@ pub struct JointReaction {
 pub fn extract_reactions(mech: &Mechanism, result: &StaticSolveResult) -> Vec<JointReaction> {
     let mut reactions = Vec::new();
 
-    for (constraint, range) in mech.all_constraints().iter().zip(mech.constraint_ranges()) {
+    for (constraint, range) in mech.all_constraints().zip(mech.constraint_ranges()) {
         let n_eq = range.n_equations;
         let lam = result.lambdas.rows(range.row_start, n_eq).clone_owned();
 

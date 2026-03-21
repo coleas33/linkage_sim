@@ -4,6 +4,8 @@
 //! state is serialized to a JSON snapshot and pushed onto the undo stack.
 //! Undo/redo swap snapshots between undo and redo stacks.
 
+use std::collections::VecDeque;
+
 /// Snapshot of the mechanism state for undo/redo.
 ///
 /// Captures only the "document" state that the user would want to undo:
@@ -27,10 +29,10 @@ pub struct MechanismSnapshot {
 
 /// Manages undo/redo stacks of mechanism snapshots.
 pub struct UndoHistory {
-    /// Stack of past states (most recent at end).
-    undo_stack: Vec<MechanismSnapshot>,
+    /// Stack of past states (most recent at back).
+    undo_stack: VecDeque<MechanismSnapshot>,
     /// Stack of undone states (for redo).
-    redo_stack: Vec<MechanismSnapshot>,
+    redo_stack: VecDeque<MechanismSnapshot>,
     /// Maximum number of undo levels.
     max_levels: usize,
 }
@@ -39,8 +41,8 @@ impl UndoHistory {
     /// Create a new UndoHistory with the given maximum number of undo levels.
     pub fn new(max_levels: usize) -> Self {
         Self {
-            undo_stack: Vec::new(),
-            redo_stack: Vec::new(),
+            undo_stack: VecDeque::new(),
+            redo_stack: VecDeque::new(),
             max_levels,
         }
     }
@@ -51,9 +53,9 @@ impl UndoHistory {
     /// If the undo stack exceeds `max_levels`, the oldest entry is dropped.
     pub fn push(&mut self, snapshot: MechanismSnapshot) {
         self.redo_stack.clear();
-        self.undo_stack.push(snapshot);
+        self.undo_stack.push_back(snapshot);
         if self.undo_stack.len() > self.max_levels {
-            self.undo_stack.remove(0);
+            self.undo_stack.pop_front();
         }
     }
 
@@ -61,8 +63,8 @@ impl UndoHistory {
     ///
     /// Returns the snapshot to restore, or `None` if there is nothing to undo.
     pub fn undo(&mut self, current: MechanismSnapshot) -> Option<MechanismSnapshot> {
-        let previous = self.undo_stack.pop()?;
-        self.redo_stack.push(current);
+        let previous = self.undo_stack.pop_back()?;
+        self.redo_stack.push_back(current);
         Some(previous)
     }
 
@@ -70,8 +72,8 @@ impl UndoHistory {
     ///
     /// Returns the snapshot to restore, or `None` if there is nothing to redo.
     pub fn redo(&mut self, current: MechanismSnapshot) -> Option<MechanismSnapshot> {
-        let next = self.redo_stack.pop()?;
-        self.undo_stack.push(current);
+        let next = self.redo_stack.pop_back()?;
+        self.undo_stack.push_back(current);
         Some(next)
     }
 

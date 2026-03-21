@@ -84,11 +84,17 @@ impl TimeModulation {
                     Ok(parsed) => match parsed.bind("t") {
                         Ok(f) => {
                             let val = f(t);
-                            if val.is_finite() { val } else { 1.0 }
+                            if val.is_finite() { val } else { 0.0 }
                         }
-                        Err(_) => 1.0,
+                        Err(_) => {
+                            log::warn!("TimeModulation: failed to bind variable 't' in expression '{expr}' — force disabled");
+                            0.0
+                        }
                     },
-                    Err(_) => 1.0,
+                    Err(_) => {
+                        log::warn!("TimeModulation: failed to parse expression '{expr}' — force disabled");
+                        0.0
+                    }
                 }
             }
         }
@@ -437,6 +443,32 @@ impl ForceElement {
     }
 }
 
+// ── Angular element helpers ──────────────────────────────────────────────────
+
+/// Get theta_dot for a body, returning 0.0 for ground and None for unknown bodies.
+fn get_body_theta_dot(state: &State, body_id: &str, q_dot: &DVector<f64>) -> Option<f64> {
+    if state.is_ground(body_id) {
+        return Some(0.0);
+    }
+    state.get_index(body_id).ok().map(|idx| q_dot[idx.theta_idx()])
+}
+
+/// Get (theta, theta_dot) for a body, returning (0.0, 0.0) for ground and None for unknown bodies.
+fn get_body_theta_and_dot(
+    state: &State,
+    body_id: &str,
+    q: &DVector<f64>,
+    q_dot: &DVector<f64>,
+) -> Option<(f64, f64)> {
+    if state.is_ground(body_id) {
+        return Some((0.0, 0.0));
+    }
+    state
+        .get_index(body_id)
+        .ok()
+        .map(|idx| (q[idx.theta_idx()], q_dot[idx.theta_idx()]))
+}
+
 // ── Evaluation functions ─────────────────────────────────────────────────────
 
 fn evaluate_gravity(
@@ -553,17 +585,11 @@ fn evaluate_rotary_damper(
     state: &State,
     q_dot: &DVector<f64>,
 ) -> DVector<f64> {
-    let theta_dot_i = if state.is_ground(&d.body_i) {
-        0.0
-    } else {
-        let idx = state.get_index(&d.body_i).expect("body not registered");
-        q_dot[idx.theta_idx()]
+    let Some(theta_dot_i) = get_body_theta_dot(state, &d.body_i, q_dot) else {
+        return DVector::zeros(q_dot.len());
     };
-    let theta_dot_j = if state.is_ground(&d.body_j) {
-        0.0
-    } else {
-        let idx = state.get_index(&d.body_j).expect("body not registered");
-        q_dot[idx.theta_idx()]
+    let Some(theta_dot_j) = get_body_theta_dot(state, &d.body_j, q_dot) else {
+        return DVector::zeros(q_dot.len());
     };
 
     let relative_rate = theta_dot_j - theta_dot_i;
@@ -648,17 +674,11 @@ fn evaluate_bearing_friction(
     state: &State,
     q_dot: &DVector<f64>,
 ) -> DVector<f64> {
-    let omega_i = if state.is_ground(&b.body_i) {
-        0.0
-    } else {
-        let idx = state.get_index(&b.body_i).expect("body not registered");
-        q_dot[idx.theta_idx()]
+    let Some(omega_i) = get_body_theta_dot(state, &b.body_i, q_dot) else {
+        return DVector::zeros(q_dot.len());
     };
-    let omega_j = if state.is_ground(&b.body_j) {
-        0.0
-    } else {
-        let idx = state.get_index(&b.body_j).expect("body not registered");
-        q_dot[idx.theta_idx()]
+    let Some(omega_j) = get_body_theta_dot(state, &b.body_j, q_dot) else {
+        return DVector::zeros(q_dot.len());
     };
 
     let omega_rel = omega_j - omega_i;
@@ -686,17 +706,11 @@ fn evaluate_joint_limit(
     q_dot: &DVector<f64>,
 ) -> DVector<f64> {
     // Get relative angle and angular velocity
-    let (theta_i, omega_i) = if state.is_ground(&j.body_i) {
-        (0.0, 0.0)
-    } else {
-        let idx = state.get_index(&j.body_i).expect("body not registered");
-        (q[idx.theta_idx()], q_dot[idx.theta_idx()])
+    let Some((theta_i, omega_i)) = get_body_theta_and_dot(state, &j.body_i, q, q_dot) else {
+        return DVector::zeros(q_dot.len());
     };
-    let (theta_j, omega_j) = if state.is_ground(&j.body_j) {
-        (0.0, 0.0)
-    } else {
-        let idx = state.get_index(&j.body_j).expect("body not registered");
-        (q[idx.theta_idx()], q_dot[idx.theta_idx()])
+    let Some((theta_j, omega_j)) = get_body_theta_and_dot(state, &j.body_j, q, q_dot) else {
+        return DVector::zeros(q_dot.len());
     };
 
     let theta_rel = theta_j - theta_i;
@@ -741,17 +755,11 @@ fn evaluate_motor(
         return DVector::zeros(state.n_coords());
     }
 
-    let omega_i = if state.is_ground(&m.body_i) {
-        0.0
-    } else {
-        let idx = state.get_index(&m.body_i).expect("body not registered");
-        q_dot[idx.theta_idx()]
+    let Some(omega_i) = get_body_theta_dot(state, &m.body_i, q_dot) else {
+        return DVector::zeros(q_dot.len());
     };
-    let omega_j = if state.is_ground(&m.body_j) {
-        0.0
-    } else {
-        let idx = state.get_index(&m.body_j).expect("body not registered");
-        q_dot[idx.theta_idx()]
+    let Some(omega_j) = get_body_theta_dot(state, &m.body_j, q_dot) else {
+        return DVector::zeros(q_dot.len());
     };
 
     let omega_rel = omega_j - omega_i;
@@ -1853,12 +1861,12 @@ mod tests {
     }
 
     #[test]
-    fn expression_modulation_invalid_expr_returns_1() {
-        // An invalid expression should silently fall back to factor = 1.0
+    fn expression_modulation_invalid_expr_returns_0() {
+        // An invalid expression disables the force (factor = 0.0)
         let modulation = TimeModulation::Expression {
             expr: "not_a_valid_expr!!!".into(),
         };
-        assert_abs_diff_eq!(modulation.factor(1.0), 1.0, epsilon = 1e-15);
+        assert_abs_diff_eq!(modulation.factor(1.0), 0.0, epsilon = 1e-15);
     }
 
     #[test]

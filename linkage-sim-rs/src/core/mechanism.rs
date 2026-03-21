@@ -128,15 +128,12 @@ impl Mechanism {
     }
 
     /// Iterate over all constraints (joints + drivers) in order.
-    pub fn all_constraints(&self) -> Vec<&dyn Constraint> {
-        let mut all: Vec<&dyn Constraint> = Vec::new();
-        for j in &self.joints {
-            all.push(j);
-        }
-        for d in &self.drivers {
-            all.push(d);
-        }
-        all
+    /// Returns a zero-allocation iterator using chain.
+    pub fn all_constraints(&self) -> impl Iterator<Item = &dyn Constraint> {
+        self.joints
+            .iter()
+            .map(|j| j as &dyn Constraint)
+            .chain(self.drivers.iter().map(|d| d as &dyn Constraint))
     }
 
     /// Add a body to the mechanism.
@@ -529,7 +526,7 @@ mod tests {
     fn fourbar_constraint_count() {
         let mech = build_fourbar();
         assert_eq!(mech.n_constraints(), 9);
-        assert_eq!(mech.all_constraints().len(), 5); // 4 joints + 1 driver
+        assert_eq!(mech.all_constraints().count(), 5); // 4 joints + 1 driver
     }
 
     #[test]
@@ -603,7 +600,7 @@ mod tests {
         // all_constraints() and manually accumulating row offsets.
         let mech = build_fourbar();
 
-        let constraints = mech.all_constraints();
+        let constraints: Vec<&dyn Constraint> = mech.all_constraints().collect();
         let ranges = mech.constraint_ranges();
 
         assert_eq!(

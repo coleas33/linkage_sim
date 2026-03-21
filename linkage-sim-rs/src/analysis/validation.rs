@@ -40,7 +40,6 @@ pub fn grubler_dof(mech: &Mechanism, expected_dof: i32) -> GrublerResult {
     let n = mech.state().n_moving_bodies();
     let total_removed: usize = mech
         .all_constraints()
-        .iter()
         .map(|c| c.dof_removed())
         .sum();
     let dof = 3 * n as i32 - total_removed as i32;

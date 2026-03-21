@@ -21,6 +21,12 @@ use crate::forces::elements::ForceElement;
 /// Current schema version for the JSON format.
 pub const SCHEMA_VERSION: &str = "1.0.0";
 
+/// Extract the major version number from a semver string (e.g., "1.2.3" → 1).
+/// Returns `None` if the string doesn't start with a valid integer.
+fn semver_major(version: &str) -> Option<u32> {
+    version.split('.').next()?.parse().ok()
+}
+
 // ---------------------------------------------------------------------------
 // JSON schema types
 // ---------------------------------------------------------------------------
@@ -162,7 +168,7 @@ pub enum JointJson {
 
 #[derive(Debug, Error)]
 pub enum SerializationError {
-    #[error("Unsupported schema version '{found}'. Expected '{expected}'.")]
+    #[error("Unsupported schema version '{found}' (expected major version compatible with '{expected}').")]
     UnsupportedVersion { found: String, expected: String },
 
     #[error("JSON error: {0}")]
@@ -247,8 +253,8 @@ fn joint_to_json(
         JointConstraint::Revolute(j) => {
             let body_i_id = j.body_i_id();
             let body_j_id = j.body_j_id();
-            let body_i = &bodies[body_i_id];
-            let body_j = &bodies[body_j_id];
+            let body_i = bodies.get(body_i_id).ok_or_else(|| SerializationError::Build(format!("body '{}' not found", body_i_id)))?;
+            let body_j = bodies.get(body_j_id).ok_or_else(|| SerializationError::Build(format!("body '{}' not found", body_j_id)))?;
             Ok(JointJson::Revolute {
                 body_i: body_i_id.to_string(),
                 body_j: body_j_id.to_string(),
@@ -259,8 +265,8 @@ fn joint_to_json(
         JointConstraint::Fixed(j) => {
             let body_i_id = j.body_i_id();
             let body_j_id = j.body_j_id();
-            let body_i = &bodies[body_i_id];
-            let body_j = &bodies[body_j_id];
+            let body_i = bodies.get(body_i_id).ok_or_else(|| SerializationError::Build(format!("body '{}' not found", body_i_id)))?;
+            let body_j = bodies.get(body_j_id).ok_or_else(|| SerializationError::Build(format!("body '{}' not found", body_j_id)))?;
             Ok(JointJson::Fixed {
                 body_i: body_i_id.to_string(),
                 body_j: body_j_id.to_string(),
@@ -272,8 +278,8 @@ fn joint_to_json(
         JointConstraint::Prismatic(j) => {
             let body_i_id = j.body_i_id();
             let body_j_id = j.body_j_id();
-            let body_i = &bodies[body_i_id];
-            let body_j = &bodies[body_j_id];
+            let body_i = bodies.get(body_i_id).ok_or_else(|| SerializationError::Build(format!("body '{}' not found", body_i_id)))?;
+            let body_j = bodies.get(body_j_id).ok_or_else(|| SerializationError::Build(format!("body '{}' not found", body_j_id)))?;
             Ok(JointJson::Prismatic {
                 body_i: body_i_id.to_string(),
                 body_j: body_j_id.to_string(),
@@ -286,8 +292,8 @@ fn joint_to_json(
         JointConstraint::CamFollower(j) => {
             let body_i_id = j.body_i_id();
             let body_j_id = j.body_j_id();
-            let body_i = &bodies[body_i_id];
-            let body_j = &bodies[body_j_id];
+            let body_i = bodies.get(body_i_id).ok_or_else(|| SerializationError::Build(format!("body '{}' not found", body_i_id)))?;
+            let body_j = bodies.get(body_j_id).ok_or_else(|| SerializationError::Build(format!("body '{}' not found", body_j_id)))?;
             Ok(JointJson::CamFollower {
                 body_i: body_i_id.to_string(),
                 body_j: body_j_id.to_string(),
@@ -385,7 +391,9 @@ pub fn load_mechanism_unbuilt(json_str: &str) -> Result<Mechanism, Serialization
 /// Useful when you already have a `MechanismJson` in memory (e.g., from
 /// the editor blueprint).
 pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<Mechanism, SerializationError> {
-    if json_struct.schema_version != SCHEMA_VERSION {
+    let found_major = semver_major(&json_struct.schema_version);
+    let expected_major = semver_major(SCHEMA_VERSION);
+    if found_major != expected_major {
         return Err(SerializationError::UnsupportedVersion {
             found: json_struct.schema_version.clone(),
             expected: SCHEMA_VERSION.to_string(),

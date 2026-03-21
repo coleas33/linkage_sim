@@ -132,8 +132,8 @@ proptest! {
         prop_assert_eq!(n as isize - m as isize, 0, "DOF should be 0 with driver");
 
         // Verify the constraint decomposition
-        let all = mech.all_constraints();
-        prop_assert_eq!(all.len(), 5, "expected 5 constraints (4 joints + 1 driver)");
+        let all_count = mech.all_constraints().count();
+        prop_assert_eq!(all_count, 5, "expected 5 constraints (4 joints + 1 driver)");
 
         // Each revolute joint contributes 2 equations, driver contributes 1
         let joint_eqs: usize = mech.joints().iter().map(|j| j.n_equations()).sum();
@@ -417,7 +417,7 @@ proptest! {
     ) {
         let mech = build_random_fourbar(ground, crank, coupler, rocker);
         let ranges = mech.constraint_ranges();
-        let constraints = mech.all_constraints();
+        let constraints: Vec<&dyn linkage_sim_rs::core::constraint::Constraint> = mech.all_constraints().collect();
 
         prop_assert_eq!(
             ranges.len(), constraints.len(),

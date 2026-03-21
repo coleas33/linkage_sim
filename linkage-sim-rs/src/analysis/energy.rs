@@ -45,7 +45,7 @@ pub fn compute_kinetic_energy(
             continue;
         }
 
-        let idx = state.get_index(body_id).expect("body not registered");
+        let Ok(idx) = state.get_index(body_id) else { continue; };
 
         // CG velocity in global frame
         let v_cg = state.body_point_velocity(body_id, &body.cg_local, q, q_dot);

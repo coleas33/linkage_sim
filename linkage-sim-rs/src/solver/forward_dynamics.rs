@@ -92,7 +92,7 @@ fn compute_rhs(
     t: f64,
     alpha: f64,
     beta: f64,
-) -> DVector<f64> {
+) -> Option<DVector<f64>> {
     let n = mech.state().n_coords();
     let m = mech.n_constraints();
 
@@ -142,7 +142,7 @@ fn compute_rhs(
     }
 
     // Solve the augmented system
-    let x = solve_augmented(&a_mat, &b_vec);
+    let x = solve_augmented(&a_mat, &b_vec)?;
 
     // Extract q_ddot from solution
     let q_ddot = x.rows(0, n).clone_owned();
@@ -153,18 +153,25 @@ fn compute_rhs(
         dy[i] = qd[i];
         dy[n + i] = q_ddot[i];
     }
-    dy
+    Some(dy)
 }
 
 /// Solve a linear system A*x = b, falling back to SVD if LU fails.
-fn solve_augmented(a: &DMatrix<f64>, b: &DVector<f64>) -> DVector<f64> {
+/// Returns `None` if both LU and SVD fail (singular augmented system).
+fn solve_augmented(a: &DMatrix<f64>, b: &DVector<f64>) -> Option<DVector<f64>> {
     // Try LU decomposition first (fast path)
     if let Some(lu) = a.clone().lu().solve(b) {
-        return lu;
+        return Some(lu);
     }
     // Fallback: SVD least-squares
     let svd = a.clone().svd(true, true);
-    svd.solve(b, 1e-14).unwrap_or_else(|_| DVector::zeros(b.len()))
+    match svd.solve(b, 1e-14) {
+        Ok(x) => Some(x),
+        Err(_) => {
+            log::warn!("solve_augmented: both LU and SVD failed — singular augmented system");
+            None
+        }
+    }
 }
 
 /// Newton-Raphson constraint projection: project q back onto constraint manifold.
@@ -196,6 +203,8 @@ fn project_constraints(
 ///
 /// Integrates y' = f(t, y) from t_start to t_end with step size h.
 /// Records solution at t_eval times (linearly interpolated from steps).
+/// Returns `(times, states, solve_failed)` where `solve_failed` is true if
+/// the RHS function returned `None` (singular system) at any stage.
 fn rk4_integrate<F>(
     f: &F,
     y0: &DVector<f64>,
@@ -203,9 +212,9 @@ fn rk4_integrate<F>(
     t_end: f64,
     h: f64,
     t_eval: &[f64],
-) -> (Vec<f64>, Vec<DVector<f64>>)
+) -> (Vec<f64>, Vec<DVector<f64>>, bool)
 where
-    F: Fn(f64, &DVector<f64>) -> DVector<f64>,
+    F: Fn(f64, &DVector<f64>) -> Option<DVector<f64>>,
 {
     // Pre-compute number of steps
     let n_steps = ((t_end - t_start) / h).ceil() as usize;
@@ -234,11 +243,19 @@ where
     for _step in 0..n_steps {
         let t_next = t + actual_h;
 
-        // RK4 stages
-        let k1 = f(t, &y);
-        let k2 = f(t + actual_h * 0.5, &(&y + &k1 * (actual_h * 0.5)));
-        let k3 = f(t + actual_h * 0.5, &(&y + &k2 * (actual_h * 0.5)));
-        let k4 = f(t_next, &(&y + &k3 * actual_h));
+        // RK4 stages — abort integration if any stage fails
+        let Some(k1) = f(t, &y) else {
+            return (t_out, y_out, true);
+        };
+        let Some(k2) = f(t + actual_h * 0.5, &(&y + &k1 * (actual_h * 0.5))) else {
+            return (t_out, y_out, true);
+        };
+        let Some(k3) = f(t + actual_h * 0.5, &(&y + &k2 * (actual_h * 0.5))) else {
+            return (t_out, y_out, true);
+        };
+        let Some(k4) = f(t_next, &(&y + &k3 * actual_h)) else {
+            return (t_out, y_out, true);
+        };
 
         let y_next = &y + (actual_h / 6.0) * (&k1 + 2.0 * &k2 + 2.0 * &k3 + &k4);
 
@@ -268,7 +285,7 @@ where
         y = y_next;
     }
 
-    (t_out, y_out)
+    (t_out, y_out, false)
 }
 
 /// Run a forward dynamics simulation.
@@ -313,7 +330,7 @@ pub fn simulate(
     }
 
     // Define the RHS function
-    let rhs = |t: f64, y: &DVector<f64>| -> DVector<f64> {
+    let rhs = |t: f64, y: &DVector<f64>| -> Option<DVector<f64>> {
         let q = y.rows(0, n).clone_owned();
         let qd = y.rows(n, n).clone_owned();
         compute_rhs(mech, &q, &qd, t, alpha, beta)
@@ -322,7 +339,8 @@ pub fn simulate(
     // Integrate using RK4
     let empty_t_eval: Vec<f64> = Vec::new();
     let eval_times = t_eval.unwrap_or(&empty_t_eval);
-    let (t_out, y_out) = rk4_integrate(&rhs, &y0, t_span.0, t_span.1, cfg.max_step, eval_times);
+    let (t_out, y_out, solve_failed) =
+        rk4_integrate(&rhs, &y0, t_span.0, t_span.1, cfg.max_step, eval_times);
 
     // Unpack results
     let mut q_out: Vec<DVector<f64>> = Vec::with_capacity(t_out.len());
@@ -363,14 +381,20 @@ pub fn simulate(
         qd_out.push(qd_i);
     }
 
+    let (success, message) = if solve_failed {
+        (false, "RK4 integration aborted: singular augmented system (both LU and SVD failed).".to_string())
+    } else {
+        (true, "RK4 integration completed.".to_string())
+    };
+
     Ok(ForwardDynamicsResult {
         t: t_out,
         q: q_out,
         q_dot: qd_out,
         constraint_drift: drift,
         detected_events: Vec::new(),
-        success: true,
-        message: "RK4 integration completed.".to_string(),
+        success,
+        message,
     })
 }
 
@@ -425,7 +449,7 @@ pub fn simulate_with_events(
     }
 
     // RHS closure
-    let rhs = |t: f64, y: &DVector<f64>| -> DVector<f64> {
+    let rhs = |t: f64, y: &DVector<f64>| -> Option<DVector<f64>> {
         let q = y.rows(0, n).clone_owned();
         let qd = y.rows(n, n).clone_owned();
         compute_rhs(mech, &q, &qd, t, alpha, beta)
@@ -458,15 +482,16 @@ pub fn simulate_with_events(
     }
 
     let mut terminated = false;
+    let mut solve_failed = false;
 
     for _step in 0..n_steps {
         let t_next = t + actual_h;
 
-        // RK4 stages
-        let k1 = rhs(t, &y);
-        let k2 = rhs(t + actual_h * 0.5, &(&y + &k1 * (actual_h * 0.5)));
-        let k3 = rhs(t + actual_h * 0.5, &(&y + &k2 * (actual_h * 0.5)));
-        let k4 = rhs(t_next, &(&y + &k3 * actual_h));
+        // RK4 stages — abort integration if any stage fails
+        let Some(k1) = rhs(t, &y) else { solve_failed = true; break; };
+        let Some(k2) = rhs(t + actual_h * 0.5, &(&y + &k1 * (actual_h * 0.5))) else { solve_failed = true; break; };
+        let Some(k3) = rhs(t + actual_h * 0.5, &(&y + &k2 * (actual_h * 0.5))) else { solve_failed = true; break; };
+        let Some(k4) = rhs(t_next, &(&y + &k3 * actual_h)) else { solve_failed = true; break; };
         let y_next = &y + (actual_h / 6.0) * (&k1 + 2.0 * &k2 + 2.0 * &k3 + &k4);
 
         // Check events between this step
@@ -540,10 +565,12 @@ pub fn simulate_with_events(
         qd_out.push(qd_i);
     }
 
-    let message = if terminated {
-        "RK4 integration terminated by event.".to_string()
+    let (success, message) = if solve_failed {
+        (false, "RK4 integration aborted: singular augmented system (both LU and SVD failed).".to_string())
+    } else if terminated {
+        (true, "RK4 integration terminated by event.".to_string())
     } else {
-        "RK4 integration completed.".to_string()
+        (true, "RK4 integration completed.".to_string())
     };
 
     Ok(ForwardDynamicsResult {
@@ -552,7 +579,7 @@ pub fn simulate_with_events(
         q_dot: qd_out,
         constraint_drift: drift,
         detected_events: all_events,
-        success: true,
+        success,
         message,
     })
 }
@@ -902,11 +929,12 @@ mod tests {
     #[test]
     fn rk4_integrates_simple_ode() {
         // Test RK4 on a known ODE: y' = -y, y(0) = 1 => y(t) = e^(-t)
-        let f = |_t: f64, y: &DVector<f64>| -> DVector<f64> { -y.clone() };
+        let f = |_t: f64, y: &DVector<f64>| -> Option<DVector<f64>> { Some(-y.clone()) };
         let y0 = DVector::from_column_slice(&[1.0]);
 
         let t_eval: Vec<f64> = vec![0.0, 0.5, 1.0, 2.0];
-        let (t_out, y_out) = rk4_integrate(&f, &y0, 0.0, 2.0, 0.01, &t_eval);
+        let (t_out, y_out, failed) = rk4_integrate(&f, &y0, 0.0, 2.0, 0.01, &t_eval);
+        assert!(!failed);
 
         for (i, &t) in t_out.iter().enumerate() {
             let expected = (-t).exp();
@@ -919,7 +947,7 @@ mod tests {
         // Simple 2x2 system: [[2, 1], [1, 3]] * x = [5, 6] => x = [1.8, 1.4]
         let a = DMatrix::from_row_slice(2, 2, &[2.0, 1.0, 1.0, 3.0]);
         let b = DVector::from_column_slice(&[5.0, 6.0]);
-        let x = solve_augmented(&a, &b);
+        let x = solve_augmented(&a, &b).expect("solve should succeed");
         assert_abs_diff_eq!(x[0], 1.8, epsilon = 1e-12);
         assert_abs_diff_eq!(x[1], 1.4, epsilon = 1e-12);
     }
