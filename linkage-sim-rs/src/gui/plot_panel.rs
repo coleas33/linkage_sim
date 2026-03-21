@@ -1,11 +1,14 @@
 //! Plot panel: sweep data visualization using egui_plot.
 //!
 //! Shows tabbed plots for coupler trace, body angles, and transmission angle.
+//!
+//! Clicking on any plot whose X-axis is driver angle scrubs the mechanism to
+//! that angle.
 
 use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints, VLine};
 
-use super::state::{AppState, DisplayUnits};
+use super::state::{AngleUnit, AppState, DisplayUnits};
 use super::sweep::SweepData;
 
 /// Selected plot tab.
@@ -24,7 +27,10 @@ enum PlotTab {
 }
 
 /// Draw the plot panel with tabbed plots.
-pub fn draw_plot_panel(ui: &mut egui::Ui, state: &AppState) {
+///
+/// When the user clicks on a plot whose X-axis is driver angle, the mechanism
+/// is scrubbed to that angle.
+pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
     if !state.has_mechanism() {
         ui.label("No mechanism loaded.");
         return;
@@ -133,34 +139,72 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &AppState) {
     ui.separator();
 
     let current_driver_display = state.display_units.angle(state.driver_angle);
-    match selected_tab {
-        PlotTab::CouplerTrace => draw_coupler_trace(ui, sweep, &state.display_units),
-        PlotTab::BodyAngles => draw_body_angles(ui, sweep, current_driver_display, &state.display_units),
+
+    // Each driver-angle-on-X-axis plot returns Some(x) when clicked, where x
+    // is the X coordinate in display angle units. CouplerTrace (X vs Y) does
+    // not participate in scrubbing.
+    let clicked_display_angle: Option<f64> = match selected_tab {
+        PlotTab::CouplerTrace => {
+            draw_coupler_trace(ui, sweep, &state.display_units);
+            None
+        }
+        PlotTab::BodyAngles => {
+            draw_body_angles(ui, sweep, current_driver_display, &state.display_units)
+        }
         PlotTab::TransmissionAngle => {
-            draw_transmission_angle(ui, sweep, current_driver_display, &state.display_units);
+            draw_transmission_angle(ui, sweep, current_driver_display, &state.display_units)
         }
         PlotTab::DriverTorque => {
-            draw_driver_torque(ui, sweep, current_driver_display, &state.display_units);
+            draw_driver_torque(ui, sweep, current_driver_display, &state.display_units)
         }
         PlotTab::InverseDynamics => {
-            draw_inverse_dynamics(ui, sweep, current_driver_display, &state.display_units);
+            draw_inverse_dynamics(ui, sweep, current_driver_display, &state.display_units)
         }
         PlotTab::Energy => {
-            draw_energy(ui, sweep, current_driver_display, &state.display_units);
+            draw_energy(ui, sweep, current_driver_display, &state.display_units)
         }
         PlotTab::MechanicalAdvantage => {
-            draw_mechanical_advantage(ui, sweep, current_driver_display, &state.display_units);
+            draw_mechanical_advantage(ui, sweep, current_driver_display, &state.display_units)
         }
         PlotTab::JointReactions => {
-            draw_joint_reactions(ui, sweep, current_driver_display, &state.display_units);
+            draw_joint_reactions(ui, sweep, current_driver_display, &state.display_units)
         }
         PlotTab::CouplerVelocity => {
-            draw_coupler_velocity(ui, sweep, current_driver_display, &state.display_units);
+            draw_coupler_velocity(ui, sweep, current_driver_display, &state.display_units)
         }
         PlotTab::CouplerAcceleration => {
-            draw_coupler_acceleration(ui, sweep, current_driver_display, &state.display_units);
+            draw_coupler_acceleration(ui, sweep, current_driver_display, &state.display_units)
+        }
+    };
+
+    // Scrub the mechanism to the clicked angle.
+    if let Some(display_angle) = clicked_display_angle {
+        let angle_rad = display_to_radians(display_angle, &state.display_units);
+        state.solve_at_angle(angle_rad);
+    }
+}
+
+/// Convert a display-unit angle back to radians.
+///
+/// This is the inverse of `DisplayUnits::angle()`.
+fn display_to_radians(display_angle: f64, units: &DisplayUnits) -> f64 {
+    match units.angle {
+        AngleUnit::Radians => display_angle,
+        AngleUnit::Degrees => display_angle.to_radians(),
+    }
+}
+
+/// Detect a click on the plot and return the X coordinate in plot space.
+///
+/// Call this inside a `plot_ui` closure. Returns `Some(x)` when the user
+/// clicks (not drags) on the plot area.
+fn detect_plot_click(plot_ui: &egui_plot::PlotUi) -> Option<f64> {
+    if plot_ui.response().clicked() {
+        if let Some(coord) = plot_ui.pointer_coordinate() {
+            return Some(coord.x);
         }
     }
+    None
 }
 
 /// Plot coupler point traces: x vs y, converted to display length units.
@@ -201,22 +245,25 @@ fn draw_coupler_trace(ui: &mut egui::Ui, sweep: &SweepData, units: &DisplayUnits
 }
 
 /// Plot body angles vs driver angle, using the current display angle unit.
+///
+/// Returns the clicked X coordinate (display angle units) if the user clicked.
 fn draw_body_angles(
     ui: &mut egui::Ui,
     sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
-) {
+) -> Option<f64> {
     // Sweep stores angles in degrees; convert to display unit on the fly.
     let angle_label = match units.angle {
-        super::state::AngleUnit::Degrees => "deg",
-        super::state::AngleUnit::Radians => "rad",
+        AngleUnit::Degrees => "deg",
+        AngleUnit::Radians => "rad",
     };
     let plot = Plot::new("body_angles_plot")
         .x_axis_label(format!("Driver Angle ({})", angle_label))
         .y_axis_label(format!("Body Angle ({})", angle_label))
         .legend(egui_plot::Legend::default());
 
+    let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
         let colors = series_colors();
         let mut color_idx = 0;
@@ -255,30 +302,34 @@ fn draw_body_angles(
         );
 
         draw_toggle_markers(plot_ui, sweep, units);
+        clicked_x = detect_plot_click(plot_ui);
     });
+    clicked_x
 }
 
 /// Plot transmission angle (degrees) vs driver angle.
 ///
 /// Transmission angle data is always in degrees; the x-axis driver angle is
 /// shown in the current display unit.
+///
+/// Returns the clicked X coordinate (display angle units) if the user clicked.
 fn draw_transmission_angle(
     ui: &mut egui::Ui,
     sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
-) {
+) -> Option<f64> {
     let Some(ta) = &sweep.transmission_angles else {
         ui.label("Transmission angle not available for this mechanism.");
-        return;
+        return None;
     };
 
     // The x-axis driver angle is shown in the current display angle unit.
     let angle_label = match units.angle {
-        super::state::AngleUnit::Degrees => "deg",
-        super::state::AngleUnit::Radians => "rad",
+        AngleUnit::Degrees => "deg",
+        AngleUnit::Radians => "rad",
     };
-    // The x-axis span in display units (0 to 2π).
+    // The x-axis span in display units (0 to 2pi).
     let x_max = units.angle(2.0 * std::f64::consts::PI);
 
     let plot = Plot::new("transmission_angle_plot")
@@ -286,6 +337,7 @@ fn draw_transmission_angle(
         .y_axis_label("Transmission Angle (deg)")
         .legend(egui_plot::Legend::default());
 
+    let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
         let points: PlotPoints = sweep
             .angles_deg
@@ -325,24 +377,28 @@ fn draw_transmission_angle(
         );
 
         draw_toggle_markers(plot_ui, sweep, units);
+        clicked_x = detect_plot_click(plot_ui);
     });
+    clicked_x
 }
 
 /// Plot driver torque (N*m) vs driver angle.
+///
+/// Returns the clicked X coordinate (display angle units) if the user clicked.
 fn draw_driver_torque(
     ui: &mut egui::Ui,
     sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
-) {
+) -> Option<f64> {
     let Some(torques) = &sweep.driver_torques else {
         ui.label("Driver torque data not available.");
-        return;
+        return None;
     };
 
     let angle_label = match units.angle {
-        super::state::AngleUnit::Degrees => "deg",
-        super::state::AngleUnit::Radians => "rad",
+        AngleUnit::Degrees => "deg",
+        AngleUnit::Radians => "rad",
     };
 
     let plot = Plot::new("driver_torque_plot")
@@ -350,6 +406,7 @@ fn draw_driver_torque(
         .y_axis_label("Driver Torque (N\u{00b7}m)")
         .legend(egui_plot::Legend::default());
 
+    let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
         let points: PlotPoints = sweep
             .angles_deg
@@ -372,25 +429,29 @@ fn draw_driver_torque(
         );
 
         draw_toggle_markers(plot_ui, sweep, units);
+        clicked_x = detect_plot_click(plot_ui);
     });
+    clicked_x
 }
 
 /// Plot inverse dynamics driver torque vs driver angle,
 /// with optional statics torque overlay for comparison.
+///
+/// Returns the clicked X coordinate (display angle units) if the user clicked.
 fn draw_inverse_dynamics(
     ui: &mut egui::Ui,
     sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
-) {
+) -> Option<f64> {
     if sweep.inverse_dynamics_torques.is_empty() {
         ui.label("Inverse dynamics data not available.");
-        return;
+        return None;
     }
 
     let angle_label = match units.angle {
-        super::state::AngleUnit::Degrees => "deg",
-        super::state::AngleUnit::Radians => "rad",
+        AngleUnit::Degrees => "deg",
+        AngleUnit::Radians => "rad",
     };
 
     let plot = Plot::new("inverse_dynamics_plot")
@@ -398,6 +459,7 @@ fn draw_inverse_dynamics(
         .y_axis_label("Driver Torque (N\u{00b7}m)")
         .legend(egui_plot::Legend::default());
 
+    let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
         // Inverse dynamics torque (cyan).
         let id_points: PlotPoints = sweep
@@ -438,24 +500,28 @@ fn draw_inverse_dynamics(
         );
 
         draw_toggle_markers(plot_ui, sweep, units);
+        clicked_x = detect_plot_click(plot_ui);
     });
+    clicked_x
 }
 
 /// Plot energy (KE, PE, total) vs driver angle.
+///
+/// Returns the clicked X coordinate (display angle units) if the user clicked.
 fn draw_energy(
     ui: &mut egui::Ui,
     sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
-) {
+) -> Option<f64> {
     if sweep.kinetic_energy.is_empty() {
         ui.label("Energy data not available (velocity solve needed).");
-        return;
+        return None;
     }
 
     let angle_label = match units.angle {
-        super::state::AngleUnit::Degrees => "deg",
-        super::state::AngleUnit::Radians => "rad",
+        AngleUnit::Degrees => "deg",
+        AngleUnit::Radians => "rad",
     };
 
     let plot = Plot::new("energy_plot")
@@ -463,6 +529,7 @@ fn draw_energy(
         .y_axis_label("Energy (J)")
         .legend(egui_plot::Legend::default());
 
+    let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
         // Kinetic energy
         let ke_points: PlotPoints = sweep
@@ -514,24 +581,28 @@ fn draw_energy(
         );
 
         draw_toggle_markers(plot_ui, sweep, units);
+        clicked_x = detect_plot_click(plot_ui);
     });
+    clicked_x
 }
 
 /// Plot mechanical advantage (dimensionless) vs driver angle.
+///
+/// Returns the clicked X coordinate (display angle units) if the user clicked.
 fn draw_mechanical_advantage(
     ui: &mut egui::Ui,
     sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
-) {
+) -> Option<f64> {
     if sweep.mechanical_advantage.is_empty() {
         ui.label("Mechanical advantage data not available.");
-        return;
+        return None;
     }
 
     let angle_label = match units.angle {
-        super::state::AngleUnit::Degrees => "deg",
-        super::state::AngleUnit::Radians => "rad",
+        AngleUnit::Degrees => "deg",
+        AngleUnit::Radians => "rad",
     };
 
     let plot = Plot::new("mechanical_advantage_plot")
@@ -539,6 +610,7 @@ fn draw_mechanical_advantage(
         .y_axis_label("Mechanical Advantage")
         .legend(egui_plot::Legend::default());
 
+    let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
         let points: PlotPoints = sweep
             .angles_deg
@@ -572,7 +644,9 @@ fn draw_mechanical_advantage(
         );
 
         draw_toggle_markers(plot_ui, sweep, units);
+        clicked_x = detect_plot_click(plot_ui);
     });
+    clicked_x
 }
 
 /// Plot joint reaction force magnitudes (N) vs driver angle.
@@ -580,20 +654,22 @@ fn draw_mechanical_advantage(
 /// Each joint gets its own series with a distinct color from the standard
 /// palette. Only finite values are plotted (NaN from failed statics solves
 /// is silently skipped).
+///
+/// Returns the clicked X coordinate (display angle units) if the user clicked.
 fn draw_joint_reactions(
     ui: &mut egui::Ui,
     sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
-) {
+) -> Option<f64> {
     if sweep.joint_reaction_magnitudes.is_empty() {
         ui.label("Joint reaction data not available.");
-        return;
+        return None;
     }
 
     let angle_label = match units.angle {
-        super::state::AngleUnit::Degrees => "deg",
-        super::state::AngleUnit::Radians => "rad",
+        AngleUnit::Degrees => "deg",
+        AngleUnit::Radians => "rad",
     };
 
     let plot = Plot::new("joint_reactions_plot")
@@ -601,6 +677,7 @@ fn draw_joint_reactions(
         .y_axis_label("Reaction Force (N)")
         .legend(egui_plot::Legend::default());
 
+    let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
         let colors = series_colors();
         let mut color_idx = 0;
@@ -635,27 +712,31 @@ fn draw_joint_reactions(
         );
 
         draw_toggle_markers(plot_ui, sweep, units);
+        clicked_x = detect_plot_click(plot_ui);
     });
+    clicked_x
 }
 
 /// Plot coupler point velocity magnitudes (m/s) vs driver angle.
 ///
 /// Each coupler point gets its own series with a distinct color from the
 /// standard palette. Only finite values are plotted.
+///
+/// Returns the clicked X coordinate (display angle units) if the user clicked.
 fn draw_coupler_velocity(
     ui: &mut egui::Ui,
     sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
-) {
+) -> Option<f64> {
     if sweep.coupler_velocities.is_empty() {
         ui.label("Coupler velocity data not available.");
-        return;
+        return None;
     }
 
     let angle_label = match units.angle {
-        super::state::AngleUnit::Degrees => "deg",
-        super::state::AngleUnit::Radians => "rad",
+        AngleUnit::Degrees => "deg",
+        AngleUnit::Radians => "rad",
     };
 
     let plot = Plot::new("coupler_velocity_plot")
@@ -663,6 +744,7 @@ fn draw_coupler_velocity(
         .y_axis_label("Velocity (m/s)")
         .legend(egui_plot::Legend::default());
 
+    let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
         let colors = series_colors();
         let mut color_idx = 0;
@@ -697,27 +779,31 @@ fn draw_coupler_velocity(
         );
 
         draw_toggle_markers(plot_ui, sweep, units);
+        clicked_x = detect_plot_click(plot_ui);
     });
+    clicked_x
 }
 
 /// Plot coupler point acceleration magnitudes (m/s^2) vs driver angle.
 ///
 /// Each coupler point gets its own series with a distinct color from the
 /// standard palette. Only finite values are plotted.
+///
+/// Returns the clicked X coordinate (display angle units) if the user clicked.
 fn draw_coupler_acceleration(
     ui: &mut egui::Ui,
     sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
-) {
+) -> Option<f64> {
     if sweep.coupler_accelerations.is_empty() {
         ui.label("Coupler acceleration data not available.");
-        return;
+        return None;
     }
 
     let angle_label = match units.angle {
-        super::state::AngleUnit::Degrees => "deg",
-        super::state::AngleUnit::Radians => "rad",
+        AngleUnit::Degrees => "deg",
+        AngleUnit::Radians => "rad",
     };
 
     let plot = Plot::new("coupler_acceleration_plot")
@@ -725,6 +811,7 @@ fn draw_coupler_acceleration(
         .y_axis_label("Acceleration (m/s\u{00b2})")
         .legend(egui_plot::Legend::default());
 
+    let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
         let colors = series_colors();
         let mut color_idx = 0;
@@ -759,7 +846,9 @@ fn draw_coupler_acceleration(
         );
 
         draw_toggle_markers(plot_ui, sweep, units);
+        clicked_x = detect_plot_click(plot_ui);
     });
+    clicked_x
 }
 
 /// Draw faint red dashed vertical lines at toggle/dead-point angles.

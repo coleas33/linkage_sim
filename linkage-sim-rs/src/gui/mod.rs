@@ -778,7 +778,7 @@ impl eframe::App for LinkageApp {
                 .resizable(true)
                 .default_height(250.0)
                 .show(ctx, |ui| {
-                    plot_panel::draw_plot_panel(ui, &self.state);
+                    plot_panel::draw_plot_panel(ui, &mut self.state);
                 });
         }
 
