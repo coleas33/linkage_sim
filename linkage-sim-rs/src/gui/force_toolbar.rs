@@ -2,7 +2,6 @@
 
 use eframe::egui;
 use crate::core::constraint::Constraint;
-use crate::core::state::GROUND_ID;
 use crate::forces::elements::*;
 use super::state::{AppState, SelectedEntity};
 
@@ -153,10 +152,9 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
 pub(crate) fn resolve_target_bodies(state: &AppState) -> (Option<String>, Option<String>) {
     // Use link_editor_body (dropdown) as the primary source
     let selected_body = state.link_editor_body.clone()
-        .filter(|id| id != GROUND_ID)
         // Fall back to canvas selection if Link Editor has nothing
         .or_else(|| match &state.selected {
-            Some(SelectedEntity::Body(id)) if id != GROUND_ID => Some(id.clone()),
+            Some(SelectedEntity::Body(id)) => Some(id.clone()),
             _ => None,
         });
 
@@ -213,11 +211,11 @@ mod tests {
     }
 
     #[test]
-    fn resolve_target_bodies_ground_selection_excluded() {
+    fn resolve_target_bodies_ground_is_valid() {
         let mut state = AppState::default();
         state.load_sample(SampleMechanism::FourBar);
-        state.selected = Some(SelectedEntity::Body("ground".to_string()));
+        state.link_editor_body = Some("ground".to_string());
         let (sel, _conn) = resolve_target_bodies(&state);
-        assert!(sel.is_none(), "Ground should not be a valid force target");
+        assert_eq!(sel, Some("ground".to_string()), "Ground should be a valid force target");
     }
 }
