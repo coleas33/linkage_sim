@@ -809,6 +809,7 @@ impl Default for AppState {
                         mass: 0.0,
                         cg_local: [0.0, 0.0],
                         izz_cg: 0.0,
+                        mount_points: HashMap::new(),
                         coupler_points: HashMap::new(),
                         point_masses: Vec::new(),
                     },
@@ -2160,6 +2161,7 @@ impl AppState {
             mass: 0.0,
             cg_local: [0.0, 0.0],
             izz_cg: 0.0,
+            mount_points: HashMap::new(),
             coupler_points: HashMap::new(),
             point_masses: Vec::new(),
         });
@@ -2226,6 +2228,7 @@ impl AppState {
             mass: 1.0,
             cg_local: [sum_x / n, sum_y / n],
             izz_cg: 0.01,
+            mount_points: HashMap::new(),
             coupler_points: HashMap::new(),
             point_masses: Vec::new(),
         };
@@ -4429,6 +4432,7 @@ mod tests {
             mass: 1.0,
             cg_local: [0.0, 0.0],
             izz_cg: 0.01,
+            mount_points: HashMap::new(),
             coupler_points: HashMap::new(),
             point_masses: Vec::new(),
         });
@@ -4449,6 +4453,7 @@ mod tests {
             mass: 1.0,
             cg_local: [0.0, 0.0],
             izz_cg: 0.01,
+            mount_points: HashMap::new(),
             coupler_points: HashMap::new(),
             point_masses: Vec::new(),
         });
@@ -4495,6 +4500,7 @@ mod tests {
             mass: 1.0,
             cg_local: [0.05, 0.0],
             izz_cg: 0.01,
+            mount_points: HashMap::new(),
             coupler_points: HashMap::new(),
             point_masses: Vec::new(),
         });

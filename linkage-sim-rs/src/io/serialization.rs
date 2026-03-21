@@ -105,6 +105,8 @@ pub struct BodyJson {
     pub cg_local: [f64; 2],
     pub izz_cg: f64,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub mount_points: HashMap<String, [f64; 2]>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub coupler_points: HashMap<String, [f64; 2]>,
     /// Point masses attached to this body. Applied during build to update
     /// composite mass, CG, and Izz via parallel axis theorem.
@@ -208,6 +210,11 @@ fn find_point_name(
             return Ok(name.clone());
         }
     }
+    for (name, pt) in &body.mount_points {
+        if (pt.x - coords.x).abs() < TOL && (pt.y - coords.y).abs() < TOL {
+            return Ok(name.clone());
+        }
+    }
     Err(SerializationError::PointNameNotFound {
         body_id: body_id.to_string(),
         x: coords.x,
@@ -223,6 +230,12 @@ fn body_to_json(body: &Body) -> BodyJson {
         .map(|(name, pt)| (name.clone(), [pt.x, pt.y]))
         .collect();
 
+    let mount_points = body
+        .mount_points
+        .iter()
+        .map(|(name, pt)| (name.clone(), [pt.x, pt.y]))
+        .collect();
+
     let coupler_points = body
         .coupler_points
         .iter()
@@ -234,6 +247,7 @@ fn body_to_json(body: &Body) -> BodyJson {
         mass: body.mass,
         cg_local: [body.cg_local.x, body.cg_local.y],
         izz_cg: body.izz_cg,
+        mount_points,
         coupler_points,
         // Point masses are a blueprint-level concept — they modify mass/CG/Izz
         // at build time. When exporting from a built mechanism, the composite
@@ -410,6 +424,12 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
             .map(|(name, coords)| (name.clone(), Vector2::new(coords[0], coords[1])))
             .collect();
 
+        let mount_points: HashMap<String, Vector2<f64>> = body_json
+            .mount_points
+            .iter()
+            .map(|(k, v)| (k.clone(), Vector2::new(v[0], v[1])))
+            .collect();
+
         let coupler_points: HashMap<String, Vector2<f64>> = body_json
             .coupler_points
             .iter()
@@ -430,7 +450,7 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
             } else {
                 body_json.izz_cg
             },
-            mount_points: HashMap::new(),
+            mount_points,
             coupler_points,
         };
         mech.add_body(body)
@@ -1062,6 +1082,65 @@ mod tests {
         assert_eq!(from_str.bodies().len(), from_json.bodies().len());
         assert_eq!(from_str.joints().len(), from_json.joints().len());
         assert_eq!(from_str.state().n_coords(), from_json.state().n_coords());
+    }
+
+    // -----------------------------------------------------------------------
+    // mount_points serialization
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn round_trip_preserves_mount_points() {
+        let json_str = r#"{
+            "schema_version": "1.0.0",
+            "bodies": {
+                "ground": {
+                    "attachment_points": {"O2": [0.0, 0.0], "O4": [0.038, 0.0]},
+                    "mount_points": {"M1": [0.02, 0.01]},
+                    "mass": 0.0, "cg_local": [0.0, 0.0], "izz_cg": 0.0
+                },
+                "crank": {
+                    "attachment_points": {"O2": [0.0, 0.0], "A": [0.015, 0.0]},
+                    "mass": 0.5, "cg_local": [0.0075, 0.0], "izz_cg": 0.0001
+                }
+            },
+            "joints": {
+                "J1": {"type": "revolute", "body_i": "ground", "body_j": "crank", "point_i": "O2", "point_j": "O2"}
+            },
+            "drivers": {
+                "D1": {"type": "constant_speed", "body_i": "ground", "body_j": "crank", "omega": 1.0, "theta_0": 0.0}
+            }
+        }"#;
+        let loaded = load_mechanism_unbuilt(json_str).unwrap();
+        let ground = loaded.bodies().get("ground").unwrap();
+        assert!(ground.mount_points.contains_key("M1"));
+        assert_abs_diff_eq!(ground.mount_points["M1"].x, 0.02, epsilon = 1e-15);
+        assert_abs_diff_eq!(ground.mount_points["M1"].y, 0.01, epsilon = 1e-15);
+
+        // Round-trip: build first (mechanism_to_json requires built mechanism)
+        let mut built = loaded;
+        built.build().unwrap();
+        let saved = mechanism_to_json(&built).unwrap();
+        let reloaded = load_mechanism_unbuilt_from_json(&saved).unwrap();
+        let ground2 = reloaded.bodies().get("ground").unwrap();
+        assert!(ground2.mount_points.contains_key("M1"));
+        assert_abs_diff_eq!(ground2.mount_points["M1"].x, 0.02, epsilon = 1e-15);
+    }
+
+    #[test]
+    fn old_json_without_mount_points_loads_with_empty() {
+        let json_str = r#"{
+            "schema_version": "1.0.0",
+            "bodies": {
+                "ground": {
+                    "attachment_points": {"O2": [0.0, 0.0]},
+                    "mass": 0.0, "cg_local": [0.0, 0.0], "izz_cg": 0.0
+                }
+            },
+            "joints": {}
+        }"#;
+        let loaded = load_mechanism_unbuilt(json_str).unwrap();
+        let ground = loaded.bodies().get("ground").unwrap();
+        assert!(ground.mount_points.is_empty());
     }
 
     // -----------------------------------------------------------------------
