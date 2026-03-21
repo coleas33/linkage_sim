@@ -926,16 +926,23 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     }
 
     // ── Interaction: pan ────────────────────────────────────────────────
+    // Right-drag also pans (in addition to middle-click and shift+primary).
     if response.dragged() {
         let is_middle = response.dragged_by(egui::PointerButton::Middle);
+        let is_secondary = response.dragged_by(egui::PointerButton::Secondary);
         let is_shift_primary =
             is_shift && response.dragged_by(egui::PointerButton::Primary);
-        if is_middle || is_shift_primary || is_panning {
+        if is_middle || is_secondary || is_shift_primary || is_panning {
             let delta = response.drag_delta();
             state.view.offset[0] += delta.x;
             state.view.offset[1] += delta.y;
         }
     }
+
+    // Track whether a right-drag just ended this frame. If so, suppress
+    // the context menu so that a right-drag-to-pan doesn't accidentally
+    // open it on release.
+    let right_drag_ended = response.drag_stopped_by(egui::PointerButton::Secondary);
 
     // ── Interaction: zoom toward mouse ──────────────────────────────────
     if response.hovered() {
@@ -1294,7 +1301,8 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     // On the frame the right-click occurs, capture what was under the cursor
     // and store it in AppState. The context_menu closure runs every frame
     // while the popup is open, so it reads from stored state.
-    if response.secondary_clicked() {
+    // Only trigger on a true click (not after a right-drag pan).
+    if response.secondary_clicked() && !right_drag_ended {
         if let Some(pos) = response.interact_pointer_pos() {
             let joint_id = joint_hit_targets
                 .iter()
@@ -1326,10 +1334,24 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         }
     }
 
-    // Show context menu using egui's built-in context_menu.
-    // Reads from state.context_menu_target which persists across frames.
+    // Show context menu using a manual Popup so we can suppress it after
+    // a right-drag pan.  Popup::context_menu() unconditionally opens on
+    // secondary_clicked(); we replicate its logic but gate on
+    // `!right_drag_ended`.
     let ctx_target = state.context_menu_target.clone();
-    response.context_menu(|ui| {
+    let should_open = response.secondary_clicked() && !right_drag_ended;
+    let should_close = response.clicked(); // primary click closes menu
+    let open_cmd = if should_open {
+        Some(egui::SetOpenCommand::Bool(true))
+    } else if should_close {
+        Some(egui::SetOpenCommand::Bool(false))
+    } else {
+        None
+    };
+    egui::Popup::menu(&response)
+        .open_memory(open_cmd)
+        .at_pointer_fixed()
+        .show(|ui| {
         if let Some(ref joint_id) = ctx_target.joint_id {
             // ── Joint context menu ──────────────────────────────────────
             ui.label(format!("Joint: {}", joint_id));
@@ -1525,38 +1547,40 @@ fn draw_force_elements(
                 draw_torque_arc(painter, center, t.torque as f32, EXT_FORCE_COLOR);
             }
             ForceElement::TorsionSpring(s) => {
-                // Draw a small label at the midpoint between the two bodies.
                 let (xi, yi, _) = mech_state.get_pose(&s.body_i, q);
                 let (xj, yj, _) = mech_state.get_pose(&s.body_j, q);
-                let mid_x = (xi + xj) / 2.0;
-                let mid_y = (yi + yj) / 2.0;
-                let sp = view.world_to_screen(mid_x, mid_y);
-                let center = Pos2::new(sp[0], sp[1]);
+                let spi = view.world_to_screen(xi, yi);
+                let spj = view.world_to_screen(xj, yj);
+                let pi = Pos2::new(spi[0], spi[1]);
+                let pj = Pos2::new(spj[0], spj[1]);
+                draw_rotary_badge(painter, pi, pj, "k", SPRING_COLOR);
+                let mid = Pos2::new((pi.x + pj.x) * 0.5, (pi.y + pj.y) * 0.5);
                 painter.text(
-                    Pos2::new(center.x, center.y - 8.0),
+                    Pos2::new(mid.x, mid.y - 14.0),
                     egui::Align2::CENTER_BOTTOM,
                     format!("k={:.1}", s.stiffness),
                     FontId::proportional(11.0),
                     SPRING_COLOR,
                 );
-                draw_torque_arc(painter, center, 1.0, SPRING_COLOR);
+                draw_torque_arc(painter, mid, 1.0, SPRING_COLOR);
             }
             ForceElement::RotaryDamper(d) => {
-                // Draw a small label at the midpoint between the two bodies.
                 let (xi, yi, _) = mech_state.get_pose(&d.body_i, q);
                 let (xj, yj, _) = mech_state.get_pose(&d.body_j, q);
-                let mid_x = (xi + xj) / 2.0;
-                let mid_y = (yi + yj) / 2.0;
-                let sp = view.world_to_screen(mid_x, mid_y);
-                let center = Pos2::new(sp[0], sp[1]);
+                let spi = view.world_to_screen(xi, yi);
+                let spj = view.world_to_screen(xj, yj);
+                let pi = Pos2::new(spi[0], spi[1]);
+                let pj = Pos2::new(spj[0], spj[1]);
+                draw_rotary_badge(painter, pi, pj, "c", DAMPER_COLOR);
+                let mid = Pos2::new((pi.x + pj.x) * 0.5, (pi.y + pj.y) * 0.5);
                 painter.text(
-                    Pos2::new(center.x, center.y - 8.0),
+                    Pos2::new(mid.x, mid.y - 14.0),
                     egui::Align2::CENTER_BOTTOM,
                     format!("c={:.1}", d.damping),
                     FontId::proportional(11.0),
                     DAMPER_COLOR,
                 );
-                draw_torque_arc(painter, center, 1.0, DAMPER_COLOR);
+                draw_torque_arc(painter, mid, 1.0, DAMPER_COLOR);
             }
             ForceElement::GasSpring(gs) => {
                 let pt_a = mech_state.body_point_global(
@@ -1632,50 +1656,49 @@ fn draw_force_elements(
             ForceElement::BearingFriction(bf) => {
                 let (xi, yi, _) = mech_state.get_pose(&bf.body_i, q);
                 let (xj, yj, _) = mech_state.get_pose(&bf.body_j, q);
-                let mid_x = (xi + xj) / 2.0;
-                let mid_y = (yi + yj) / 2.0;
-                let sp = view.world_to_screen(mid_x, mid_y);
-                let center = Pos2::new(sp[0], sp[1]);
-                painter.text(
-                    Pos2::new(center.x, center.y - 8.0),
-                    egui::Align2::CENTER_BOTTOM,
-                    "Brg",
-                    FontId::proportional(11.0),
-                    BEARING_COLOR,
-                );
-                draw_torque_arc(painter, center, 1.0, BEARING_COLOR);
+                let spi = view.world_to_screen(xi, yi);
+                let spj = view.world_to_screen(xj, yj);
+                let pi = Pos2::new(spi[0], spi[1]);
+                let pj = Pos2::new(spj[0], spj[1]);
+                draw_rotary_badge(painter, pi, pj, "f", BEARING_COLOR);
+                let mid = Pos2::new((pi.x + pj.x) * 0.5, (pi.y + pj.y) * 0.5);
+                draw_torque_arc(painter, mid, 1.0, BEARING_COLOR);
             }
             ForceElement::JointLimit(jl) => {
                 let (xi, yi, _) = mech_state.get_pose(&jl.body_i, q);
                 let (xj, yj, _) = mech_state.get_pose(&jl.body_j, q);
-                let mid_x = (xi + xj) / 2.0;
-                let mid_y = (yi + yj) / 2.0;
-                let sp = view.world_to_screen(mid_x, mid_y);
-                let center = Pos2::new(sp[0], sp[1]);
+                let spi = view.world_to_screen(xi, yi);
+                let spj = view.world_to_screen(xj, yj);
+                let pi = Pos2::new(spi[0], spi[1]);
+                let pj = Pos2::new(spj[0], spj[1]);
+                draw_rotary_badge(painter, pi, pj, "[", JOINT_LIMIT_COLOR);
+                let mid = Pos2::new((pi.x + pj.x) * 0.5, (pi.y + pj.y) * 0.5);
                 painter.text(
-                    Pos2::new(center.x, center.y - 8.0),
+                    Pos2::new(mid.x, mid.y - 14.0),
                     egui::Align2::CENTER_BOTTOM,
                     format!("[{:.1},{:.1}]", jl.angle_min, jl.angle_max),
                     FontId::proportional(11.0),
                     JOINT_LIMIT_COLOR,
                 );
-                draw_torque_arc(painter, center, 1.0, JOINT_LIMIT_COLOR);
+                draw_torque_arc(painter, mid, 1.0, JOINT_LIMIT_COLOR);
             }
             ForceElement::Motor(m) => {
                 let (xi, yi, _) = mech_state.get_pose(&m.body_i, q);
                 let (xj, yj, _) = mech_state.get_pose(&m.body_j, q);
-                let mid_x = (xi + xj) / 2.0;
-                let mid_y = (yi + yj) / 2.0;
-                let sp = view.world_to_screen(mid_x, mid_y);
-                let center = Pos2::new(sp[0], sp[1]);
+                let spi = view.world_to_screen(xi, yi);
+                let spj = view.world_to_screen(xj, yj);
+                let pi = Pos2::new(spi[0], spi[1]);
+                let pj = Pos2::new(spj[0], spj[1]);
+                draw_rotary_badge(painter, pi, pj, "M", MOTOR_COLOR);
+                let mid = Pos2::new((pi.x + pj.x) * 0.5, (pi.y + pj.y) * 0.5);
                 painter.text(
-                    Pos2::new(center.x, center.y - 8.0),
+                    Pos2::new(mid.x, mid.y - 14.0),
                     egui::Align2::CENTER_BOTTOM,
                     format!("M {:.1}Nm", m.stall_torque),
                     FontId::proportional(11.0),
                     MOTOR_COLOR,
                 );
-                draw_torque_arc(painter, center, m.direction as f32, MOTOR_COLOR);
+                draw_torque_arc(painter, mid, m.direction as f32, MOTOR_COLOR);
             }
         }
     }
@@ -1897,6 +1920,78 @@ fn draw_torque_arc(
         let head_pt = Pos2::new(tip.x + hx * head_len, tip.y + hy * head_len);
         painter.line_segment([tip, head_pt], stroke);
     }
+}
+
+/// Draw a dashed line between two screen-space points.
+///
+/// `dash_len` and `gap_len` control the dash pattern in pixels.
+fn draw_dashed_line(
+    painter: &egui::Painter,
+    start: Pos2,
+    end: Pos2,
+    stroke: Stroke,
+    dash_len: f32,
+    gap_len: f32,
+) {
+    let delta = end - start;
+    let length = delta.length();
+    if length < 1.0 {
+        return;
+    }
+    let dir = delta / length;
+    let mut t = 0.0_f32;
+    while t < length {
+        let seg_start = Pos2::new(start.x + dir.x * t, start.y + dir.y * t);
+        let seg_end_t = (t + dash_len).min(length);
+        let seg_end = Pos2::new(start.x + dir.x * seg_end_t, start.y + dir.y * seg_end_t);
+        painter.line_segment([seg_start, seg_end], stroke);
+        t += dash_len + gap_len;
+    }
+}
+
+/// Draw a rotary force element badge: a dashed line from body_i CG to body_j CG,
+/// with a circled letter at the midpoint.
+///
+/// `body_i_screen` / `body_j_screen` are the screen-space CG positions.
+/// `letter` is the single-character badge (e.g. "M", "k", "c", "f", "[").
+/// `color` is the element's semantic color.
+fn draw_rotary_badge(
+    painter: &egui::Painter,
+    body_i_screen: Pos2,
+    body_j_screen: Pos2,
+    letter: &str,
+    color: Color32,
+) {
+    // Dashed line connecting the two body CGs (semi-transparent).
+    let dash_color = Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 200);
+    draw_dashed_line(
+        painter,
+        body_i_screen,
+        body_j_screen,
+        Stroke::new(1.5, dash_color),
+        6.0,
+        4.0,
+    );
+
+    // Midpoint badge.
+    let mid = Pos2::new(
+        (body_i_screen.x + body_j_screen.x) * 0.5,
+        (body_i_screen.y + body_j_screen.y) * 0.5,
+    );
+    let badge_radius = 9.0_f32;
+
+    // Filled circle background.
+    painter.circle_filled(mid, badge_radius, Color32::from_rgb(30, 32, 42));
+    // Circle outline in element color.
+    painter.circle_stroke(mid, badge_radius, Stroke::new(1.5, color));
+    // Letter centered inside.
+    painter.text(
+        mid,
+        egui::Align2::CENTER_CENTER,
+        letter,
+        FontId::proportional(11.0),
+        color,
+    );
 }
 
 /// Draw a force arrow at a joint location.
