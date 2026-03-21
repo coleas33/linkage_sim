@@ -80,8 +80,8 @@ The `CamFollowerJoint::gamma()` omits centripetal terms from the rotating direct
 |---|---|---|---|
 | U10 | **Driver joint panel says "right-click to change" with no visual cue** | `input_panel.rs:78` | [ ] |
 | U11 | **Counterbalance assistant uses raw SI** | `parametric_panel.rs:231–247` | [ ] |
-| U12 | **"Add Body" tool doesn't show point count** | `canvas.rs:723–752` | [ ] |
-| U13 | **Kinematic and simulation playback can run simultaneously** | `mod.rs, input_panel.rs` | [ ] |
+| U12 | **"Add Body" tool doesn't show point count** | `canvas.rs:723–752` | [x] 7a3055f — dynamic hint |
+| U13 | **Kinematic and simulation playback can run simultaneously** | `mod.rs, input_panel.rs` | [x] 7f1eed1 — mutually exclusive |
 | U14 | **Load case switching doesn't push undo** | `input_panel.rs:282–284` | [ ] |
 | U15 | **Expression driver only applies on focus-lost** | `input_panel.rs:376–415` | [x] 415b0d2 — applies on change |
 
@@ -97,10 +97,10 @@ The `CamFollowerJoint::gamma()` omits centripetal terms from the rotating direct
 | V6 | **SVG export uses hairlines, not filled bars** | `export.rs:247, 285–293` | [ ] |
 | V7 | **PNG rasterizer fills white before dark SVG** | `export.rs:413` | [x] 462b337 — dark fill |
 | V8 | **Rotary force elements render as floating text only** | `canvas.rs:1469–1621` | [ ] |
-| V9 | **Grid vanishes when zoomed out** instead of coarsening | `canvas.rs:1967–1970` | [ ] |
+| V9 | **Grid vanishes when zoomed out** instead of coarsening | `canvas.rs:1967–1970` | [x] 7a3055f — doubles spacing |
 | V10 | **Coupler trace dashes fixed in pixels** | `canvas.rs:255–274` | [ ] |
-| V11 | **HTML report timestamp is raw Unix seconds** | `export.rs:834–842` | [ ] |
-| V12 | **SVG body labels overlap joint circles** | `export.rs:296–304` | [ ] |
+| V11 | **HTML report timestamp is raw Unix seconds** | `export.rs:834–842` | [x] 7a3055f — formatted date |
+| V12 | **SVG body labels overlap joint circles** | `export.rs:296–304` | [x] 7f1eed1 — centroid placement |
 
 ---
 
