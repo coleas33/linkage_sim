@@ -387,7 +387,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                         Pos2::new(mid.x + nx, mid.y + ny),
                         egui::Align2::CENTER_CENTER,
                         &label,
-                        FontId::proportional(10.0),
+                        FontId::proportional(11.0),
                         DIM_LABEL_COLOR,
                     );
                 }
@@ -1480,7 +1480,7 @@ fn draw_force_elements(
                     Pos2::new(center.x, center.y - 8.0),
                     egui::Align2::CENTER_BOTTOM,
                     format!("k={:.1}", s.stiffness),
-                    FontId::proportional(9.0),
+                    FontId::proportional(11.0),
                     SPRING_COLOR,
                 );
                 draw_torque_arc(painter, center, 1.0, SPRING_COLOR);
@@ -1497,7 +1497,7 @@ fn draw_force_elements(
                     Pos2::new(center.x, center.y - 8.0),
                     egui::Align2::CENTER_BOTTOM,
                     format!("c={:.1}", d.damping),
-                    FontId::proportional(9.0),
+                    FontId::proportional(11.0),
                     DAMPER_COLOR,
                 );
                 draw_torque_arc(painter, center, 1.0, DAMPER_COLOR);
@@ -1568,7 +1568,7 @@ fn draw_force_elements(
                         Pos2::new(mid.x, mid.y - 10.0),
                         egui::Align2::CENTER_BOTTOM,
                         format!("{:.0} N", la.force),
-                        FontId::proportional(9.0),
+                        FontId::proportional(11.0),
                         ACTUATOR_COLOR,
                     );
                 }
@@ -1584,7 +1584,7 @@ fn draw_force_elements(
                     Pos2::new(center.x, center.y - 8.0),
                     egui::Align2::CENTER_BOTTOM,
                     "Brg",
-                    FontId::proportional(9.0),
+                    FontId::proportional(11.0),
                     BEARING_COLOR,
                 );
                 draw_torque_arc(painter, center, 1.0, BEARING_COLOR);
@@ -1600,7 +1600,7 @@ fn draw_force_elements(
                     Pos2::new(center.x, center.y - 8.0),
                     egui::Align2::CENTER_BOTTOM,
                     format!("[{:.1},{:.1}]", jl.angle_min, jl.angle_max),
-                    FontId::proportional(9.0),
+                    FontId::proportional(11.0),
                     JOINT_LIMIT_COLOR,
                 );
                 draw_torque_arc(painter, center, 1.0, JOINT_LIMIT_COLOR);
@@ -1616,7 +1616,7 @@ fn draw_force_elements(
                     Pos2::new(center.x, center.y - 8.0),
                     egui::Align2::CENTER_BOTTOM,
                     format!("M {:.1}Nm", m.stall_torque),
-                    FontId::proportional(9.0),
+                    FontId::proportional(11.0),
                     MOTOR_COLOR,
                 );
                 draw_torque_arc(painter, center, m.direction as f32, MOTOR_COLOR);
@@ -1787,7 +1787,7 @@ fn draw_external_force_arrow(
         Pos2::new(tail.x - 4.0, tail.y - 4.0),
         egui::Align2::RIGHT_BOTTOM,
         format!("{:.1} N", mag),
-        FontId::proportional(9.0),
+        FontId::proportional(11.0),
         EXT_FORCE_COLOR,
     );
 }
@@ -1891,7 +1891,7 @@ fn draw_force_arrow(painter: &egui::Painter, origin: Pos2, fx: f32, fy: f32) {
         Pos2::new(tip.x + 4.0, tip.y - 4.0),
         egui::Align2::LEFT_BOTTOM,
         format!("{:.2} N", mag),
-        FontId::proportional(9.0),
+        FontId::proportional(11.0),
         FORCE_ARROW_COLOR,
     );
 }
