@@ -134,16 +134,27 @@ In `load_sample()`, the current code does:
 This will capture expanded compound bodies in the blueprint, violating the
 invariant. The fix:
 
-- For `load_sample()`: Build the sample, snapshot to blueprint, then expand
-  compounds during rebuild (which loads from the blueprint)
-- For `rebuild()`: Load from blueprint (which has no compounds), expand during
-  build, never snapshot the expanded form
-- For undo/redo: Snapshots are blueprint-level — they never see compounds
+- **`load_sample()`**: Currently `build_sample()` returns an already-built
+  `Mechanism`. Refactor: `build_sample()` must also return (or be changed to
+  return) a `MechanismJson` as the pre-expansion blueprint. Concretely, call
+  `mechanism_to_json(&mech)` on the sample mechanism **before** compound
+  expansion runs, and store that as `self.blueprint`. Then `rebuild()` loads
+  from this clean blueprint and expansion happens inside
+  `load_mechanism_unbuilt_from_json`. The simplest approach: have `load_sample`
+  call `mechanism_to_json` first to capture the blueprint, then call
+  `self.rebuild()` which loads from the blueprint and handles expansion.
+- **`rebuild()`**: Loads from blueprint (which has no compounds), calls
+  `load_mechanism_unbuilt_from_json` which handles expansion during the build
+  phase. Never snapshots the expanded form.
+- **Undo/redo**: Snapshots are blueprint-level — they never see compounds.
 
 **Concrete implementation**: Move compound expansion into a new function
 `expand_compound_forces(mech: &mut Mechanism, forces: &[ForceElement])` called
 inside `load_mechanism_unbuilt_from_json` right before the force-add loop. The
-blueprint is already captured before this function runs.
+blueprint is already captured before this function runs. For `load_sample`,
+the key change is: snapshot the blueprint from the pre-expansion mechanism,
+then let `rebuild()` handle expansion via the normal
+`load_mechanism_unbuilt_from_json` path.
 
 ### 3. Zoom to Fit
 
