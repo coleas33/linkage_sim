@@ -86,6 +86,7 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
                 if ui.button("External Force").clicked() {
                     pending = Some(PendingForceAdd::Add(ForceElement::ExternalForce(ExternalForceElement {
                         body_id: body_id.clone(), local_point: [0.0, 0.0],
+                        local_point_name: None,
                         force: [0.0, -10.0], modulation: TimeModulation::Constant,
                     })));
                     ui.close();
@@ -107,23 +108,24 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
             if let Some((ref a, ref b)) = two_bodies(&selected_body, &connected_body) {
                 if ui.button("Linear Spring").clicked() {
                     pending = Some(PendingForceAdd::Add(ForceElement::LinearSpring(LinearSpringElement {
-                        body_a: a.clone(), point_a: [0.0, 0.0],
-                        body_b: b.clone(), point_b: [0.0, 0.0],
+                        body_a: a.clone(), point_a: [0.0, 0.0], point_a_name: None,
+                        body_b: b.clone(), point_b: [0.0, 0.0], point_b_name: None,
                         stiffness: 100.0, free_length: 0.1,
                     })));
                     ui.close();
                 }
                 if ui.button("Linear Damper").clicked() {
                     pending = Some(PendingForceAdd::Add(ForceElement::LinearDamper(LinearDamperElement {
-                        body_a: a.clone(), point_a: [0.0, 0.0],
-                        body_b: b.clone(), point_b: [0.0, 0.0], damping: 10.0,
+                        body_a: a.clone(), point_a: [0.0, 0.0], point_a_name: None,
+                        body_b: b.clone(), point_b: [0.0, 0.0], point_b_name: None,
+                        damping: 10.0,
                     })));
                     ui.close();
                 }
                 if ui.button("Gas Spring").clicked() {
                     pending = Some(PendingForceAdd::Add(ForceElement::GasSpring(GasSpringElement {
-                        body_a: a.clone(), point_a: [0.0, 0.0],
-                        body_b: b.clone(), point_b: [0.0, 0.0],
+                        body_a: a.clone(), point_a: [0.0, 0.0], point_a_name: None,
+                        body_b: b.clone(), point_b: [0.0, 0.0], point_b_name: None,
                         initial_force: 100.0, extended_length: 0.5, stroke: 0.2,
                         damping: 0.0, polytropic_exp: 1.0,
                     })));
@@ -131,8 +133,8 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
                 }
                 if ui.button("Linear Actuator").clicked() {
                     pending = Some(PendingForceAdd::Add(ForceElement::LinearActuator(LinearActuatorElement {
-                        body_a: a.clone(), point_a: [0.0, 0.0],
-                        body_b: b.clone(), point_b: [0.0, 0.0],
+                        body_a: a.clone(), point_a: [0.0, 0.0], point_a_name: None,
+                        body_b: b.clone(), point_b: [0.0, 0.0], point_b_name: None,
                         force: 100.0, speed_limit: 0.0,
                     })));
                     ui.close();

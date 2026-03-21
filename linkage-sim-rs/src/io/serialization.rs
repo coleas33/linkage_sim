@@ -1167,14 +1167,17 @@ mod tests {
         mech.add_force(ForceElement::LinearSpring(LinearSpringElement {
             body_a: "crank".into(),
             point_a: [0.5, 0.0],
+            point_a_name: None,
             body_b: "rocker".into(),
             point_b: [1.0, 0.0],
+            point_b_name: None,
             stiffness: 500.0,
             free_length: 0.3,
         }));
         mech.add_force(ForceElement::ExternalForce(ExternalForceElement {
             body_id: "crank".into(),
             local_point: [0.5, 0.0],
+            local_point_name: None,
             force: [10.0, -5.0],
             modulation: TimeModulation::Constant,
         }));

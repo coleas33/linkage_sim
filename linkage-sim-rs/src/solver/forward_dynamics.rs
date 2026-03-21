@@ -1203,8 +1203,10 @@ mod tests {
         mech.add_force(ForceElement::LinearSpring(LinearSpringElement {
             body_a: "bar_a".into(),
             point_a: [1.0, 0.0],
+            point_a_name: None,
             body_b: "bar_b".into(),
             point_b: [1.0, 0.0],
+            point_b_name: None,
             stiffness: spring_k,
             free_length,
         }));

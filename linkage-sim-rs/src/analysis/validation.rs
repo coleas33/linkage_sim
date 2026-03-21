@@ -557,16 +557,20 @@ mod tests {
         mech.add_force(ForceElement::LinearSpring(LinearSpringElement {
             body_a: "crank".into(),
             point_a: [0.0, 0.0],
+            point_a_name: None,
             body_b: "rocker".into(),
             point_b: [0.0, 0.0],
+            point_b_name: None,
             stiffness: 100.0,
             free_length: 1.0,
         }));
         mech.add_force(ForceElement::GasSpring(GasSpringElement {
             body_a: "crank".into(),
             point_a: [0.0, 0.0],
+            point_a_name: None,
             body_b: "coupler".into(),
             point_b: [0.0, 0.0],
+            point_b_name: None,
             initial_force: 200.0,
             extended_length: 0.5,
             stroke: 0.2,
@@ -585,8 +589,10 @@ mod tests {
         mech.add_force(ForceElement::LinearSpring(LinearSpringElement {
             body_a: "crank".into(),
             point_a: [0.0, 0.0],
+            point_a_name: None,
             body_b: "nonexistent_body".into(),
             point_b: [0.0, 0.0],
+            point_b_name: None,
             stiffness: 100.0,
             free_length: 1.0,
         }));
@@ -605,8 +611,10 @@ mod tests {
         mech.add_force(ForceElement::LinearSpring(LinearSpringElement {
             body_a: "ground".into(),
             point_a: [0.0, 0.0],
+            point_a_name: None,
             body_b: "crank".into(),
             point_b: [0.0, 0.0],
+            point_b_name: None,
             stiffness: 50.0,
             free_length: 0.5,
         }));
@@ -622,8 +630,10 @@ mod tests {
         mech.add_force(ForceElement::GasSpring(GasSpringElement {
             body_a: "crank".into(),
             point_a: [0.0, 0.0],
+            point_a_name: None,
             body_b: "coupler".into(),
             point_b: [0.0, 0.0],
+            point_b_name: None,
             initial_force: 200.0,
             extended_length: 0.5,
             stroke: 0.0,
@@ -643,8 +653,10 @@ mod tests {
         mech.add_force(ForceElement::LinearSpring(LinearSpringElement {
             body_a: "crank".into(),
             point_a: [0.0, 0.0],
+            point_a_name: None,
             body_b: "rocker".into(),
             point_b: [0.0, 0.0],
+            point_b_name: None,
             stiffness: -50.0,
             free_length: 1.0,
         }));
@@ -679,8 +691,10 @@ mod tests {
         mech.add_force(ForceElement::LinearDamper(LinearDamperElement {
             body_a: "crank".into(),
             point_a: [0.0, 0.0],
+            point_a_name: None,
             body_b: "rocker".into(),
             point_b: [0.0, 0.0],
+            point_b_name: None,
             damping: -5.0,
         }));
         mech.build().unwrap();
@@ -714,16 +728,20 @@ mod tests {
         mech.add_force(ForceElement::LinearSpring(LinearSpringElement {
             body_a: "ghost".into(),
             point_a: [0.0, 0.0],
+            point_a_name: None,
             body_b: "crank".into(),
             point_b: [0.0, 0.0],
+            point_b_name: None,
             stiffness: -10.0,
             free_length: 1.0,
         }));
         mech.add_force(ForceElement::GasSpring(GasSpringElement {
             body_a: "crank".into(),
             point_a: [0.0, 0.0],
+            point_a_name: None,
             body_b: "coupler".into(),
             point_b: [0.0, 0.0],
+            point_b_name: None,
             initial_force: 100.0,
             extended_length: 0.5,
             stroke: 0.0,

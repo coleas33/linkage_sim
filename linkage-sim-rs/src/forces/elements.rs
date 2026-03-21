@@ -186,10 +186,16 @@ pub struct LinearSpringElement {
     pub body_a: String,
     /// Attachment point in body A local coordinates.
     pub point_a: [f64; 2],
+    /// Optional named mount point reference for point A.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub point_a_name: Option<String>,
     /// Body B identifier.
     pub body_b: String,
     /// Attachment point in body B local coordinates.
     pub point_b: [f64; 2],
+    /// Optional named mount point reference for point B.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub point_b_name: Option<String>,
     /// Spring stiffness (N/m).
     pub stiffness: f64,
     /// Unstretched (free) length (m).
@@ -220,10 +226,16 @@ pub struct LinearDamperElement {
     pub body_a: String,
     /// Attachment point in body A local coordinates.
     pub point_a: [f64; 2],
+    /// Optional named mount point reference for point A.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub point_a_name: Option<String>,
     /// Body B identifier.
     pub body_b: String,
     /// Attachment point in body B local coordinates.
     pub point_b: [f64; 2],
+    /// Optional named mount point reference for point B.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub point_b_name: Option<String>,
     /// Damping coefficient (N·s/m).
     pub damping: f64,
 }
@@ -250,6 +262,9 @@ pub struct ExternalForceElement {
     pub body_id: String,
     /// Application point in body-local coordinates.
     pub local_point: [f64; 2],
+    /// Optional named mount point reference for local_point.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_point_name: Option<String>,
     /// Force vector in global coordinates (N).
     pub force: [f64; 2],
     /// Time modulation applied to the force vector.
@@ -281,10 +296,16 @@ pub struct GasSpringElement {
     pub body_a: String,
     /// Attachment point in body A local coordinates.
     pub point_a: [f64; 2],
+    /// Optional named mount point reference for point A.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub point_a_name: Option<String>,
     /// Body B identifier.
     pub body_b: String,
     /// Attachment point in body B local coordinates.
     pub point_b: [f64; 2],
+    /// Optional named mount point reference for point B.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub point_b_name: Option<String>,
     /// Force at the extended (nominal) length (N).
     pub initial_force: f64,
     /// Nominal extended length (m).
@@ -380,10 +401,16 @@ pub struct LinearActuatorElement {
     pub body_a: String,
     /// Attachment point in body A local coordinates.
     pub point_a: [f64; 2],
+    /// Optional named mount point reference for point A.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub point_a_name: Option<String>,
     /// Body B identifier.
     pub body_b: String,
     /// Attachment point in body B local coordinates.
     pub point_b: [f64; 2],
+    /// Optional named mount point reference for point B.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub point_b_name: Option<String>,
     /// Actuator force (N). Positive = extension/push apart.
     pub force: f64,
     /// Maximum extension rate (m/s). 0 = no limit.
@@ -1014,8 +1041,10 @@ mod tests {
         let spring = ForceElement::LinearSpring(LinearSpringElement {
             body_a: "bar1".into(),
             point_a: [1.0, 0.0], // tip of bar1
+            point_a_name: None,
             body_b: "bar2".into(),
             point_b: [0.0, 0.0], // base of bar2
+            point_b_name: None,
             stiffness: 500.0,
             free_length: 1.0,
         });
@@ -1041,8 +1070,10 @@ mod tests {
         let spring = ForceElement::LinearSpring(LinearSpringElement {
             body_a: "bar1".into(),
             point_a: [0.0, 0.0], // body origin
+            point_a_name: None,
             body_b: "bar2".into(),
             point_b: [0.0, 0.0], // body origin
+            point_b_name: None,
             stiffness: 100.0,
             free_length: 1.0,
         });
@@ -1091,6 +1122,7 @@ mod tests {
         let ext = ForceElement::ExternalForce(ExternalForceElement {
             body_id: "bar".into(),
             local_point: [0.5, 0.0], // CG
+            local_point_name: None,
             force: [10.0, -5.0],
             modulation: TimeModulation::Constant,
         });
@@ -1155,8 +1187,10 @@ mod tests {
             ForceElement::LinearSpring(LinearSpringElement {
                 body_a: "a".into(),
                 point_a: [0.0, 0.0],
+                point_a_name: None,
                 body_b: "b".into(),
                 point_b: [0.0, 0.0],
+                point_b_name: None,
                 stiffness: 1.0,
                 free_length: 1.0,
             })
@@ -1178,8 +1212,10 @@ mod tests {
         let elem = ForceElement::LinearSpring(LinearSpringElement {
             body_a: "crank".into(),
             point_a: [0.1, 0.0],
+            point_a_name: None,
             body_b: "rocker".into(),
             point_b: [-0.1, 0.0],
+            point_b_name: None,
             stiffness: 500.0,
             free_length: 0.2,
         });
@@ -1199,6 +1235,7 @@ mod tests {
         let elem = ForceElement::ExternalForce(ExternalForceElement {
             body_id: "bar".into(),
             local_point: [0.5, 0.0],
+            local_point_name: None,
             force: [10.0, -5.0],
             modulation: TimeModulation::Constant,
         });
@@ -1221,8 +1258,10 @@ mod tests {
         let gs = ForceElement::GasSpring(GasSpringElement {
             body_a: "bar1".into(),
             point_a: [0.0, 0.0],
+            point_a_name: None,
             body_b: "bar2".into(),
             point_b: [0.0, 0.0],
+            point_b_name: None,
             initial_force: 200.0,
             extended_length: 0.5,
             stroke: 0.2,
@@ -1252,8 +1291,10 @@ mod tests {
         let gs = ForceElement::GasSpring(GasSpringElement {
             body_a: "bar1".into(),
             point_a: [0.0, 0.0],
+            point_a_name: None,
             body_b: "bar2".into(),
             point_b: [0.0, 0.0],
+            point_b_name: None,
             initial_force: 200.0,
             extended_length: 0.5,
             stroke: 0.2,
@@ -1284,8 +1325,10 @@ mod tests {
         let gs = ForceElement::GasSpring(GasSpringElement {
             body_a: "bar1".into(),
             point_a: [0.0, 0.0],
+            point_a_name: None,
             body_b: "bar2".into(),
             point_b: [0.0, 0.0],
+            point_b_name: None,
             initial_force: 200.0,
             extended_length: 0.5,
             stroke: 0.2,
@@ -1314,8 +1357,10 @@ mod tests {
         let gs = ForceElement::GasSpring(GasSpringElement {
             body_a: "bar1".into(),
             point_a: [0.0, 0.0],
+            point_a_name: None,
             body_b: "bar2".into(),
             point_b: [0.0, 0.0],
+            point_b_name: None,
             initial_force: 150.0,
             extended_length: 0.5,
             stroke: 0.0, // degenerate: zero stroke
@@ -1577,8 +1622,10 @@ mod tests {
         let act = ForceElement::LinearActuator(LinearActuatorElement {
             body_a: "bar1".into(),
             point_a: [0.0, 0.0],
+            point_a_name: None,
             body_b: "bar2".into(),
             point_b: [0.0, 0.0],
+            point_b_name: None,
             force: 50.0,
             speed_limit: 0.0,
         });
@@ -1603,8 +1650,10 @@ mod tests {
         let act = ForceElement::LinearActuator(LinearActuatorElement {
             body_a: "bar1".into(),
             point_a: [0.0, 0.0],
+            point_a_name: None,
             body_b: "bar2".into(),
             point_b: [0.0, 0.0],
+            point_b_name: None,
             force: 50.0,
             speed_limit: 2.0,
         });
@@ -1628,8 +1677,10 @@ mod tests {
         let act = ForceElement::LinearActuator(LinearActuatorElement {
             body_a: "bar1".into(),
             point_a: [0.0, 0.0],
+            point_a_name: None,
             body_b: "bar2".into(),
             point_b: [0.0, 0.0],
+            point_b_name: None,
             force: 50.0,
             speed_limit: 2.0,
         });
@@ -1648,8 +1699,10 @@ mod tests {
         let elem = ForceElement::GasSpring(GasSpringElement {
             body_a: "link1".into(),
             point_a: [0.1, 0.0],
+            point_a_name: None,
             body_b: "link2".into(),
             point_b: [-0.1, 0.0],
+            point_b_name: None,
             initial_force: 200.0,
             extended_length: 0.5,
             stroke: 0.2,
@@ -1797,8 +1850,10 @@ mod tests {
         let elem = ForceElement::LinearActuator(LinearActuatorElement {
             body_a: "piston".into(),
             point_a: [0.0, 0.0],
+            point_a_name: None,
             body_b: "cylinder".into(),
             point_b: [0.5, 0.0],
+            point_b_name: None,
             force: 1000.0,
             speed_limit: 0.5,
         });
@@ -1835,8 +1890,10 @@ mod tests {
             ForceElement::GasSpring(GasSpringElement {
                 body_a: "a".into(),
                 point_a: [0.0, 0.0],
+                point_a_name: None,
                 body_b: "b".into(),
                 point_b: [0.0, 0.0],
+                point_b_name: None,
                 initial_force: 1.0,
                 extended_length: 1.0,
                 stroke: 0.5,
@@ -1888,8 +1945,10 @@ mod tests {
             ForceElement::LinearActuator(LinearActuatorElement {
                 body_a: "a".into(),
                 point_a: [0.0, 0.0],
+                point_a_name: None,
                 body_b: "b".into(),
                 point_b: [0.0, 0.0],
+                point_b_name: None,
                 force: 1.0,
                 speed_limit: 0.0,
             })
@@ -1940,6 +1999,7 @@ mod tests {
         let elem = ForceElement::ExternalForce(ExternalForceElement {
             body_id: "bar".into(),
             local_point: [0.0, 0.0],
+            local_point_name: None,
             force: [100.0, 0.0],
             modulation: TimeModulation::Sinusoidal {
                 omega: PI,
@@ -1970,6 +2030,7 @@ mod tests {
         let elem = ForceElement::ExternalForce(ExternalForceElement {
             body_id: "bar".into(),
             local_point: [0.0, 0.0],
+            local_point_name: None,
             force: [50.0, 0.0],
             modulation: TimeModulation::Step { t_on: 1.0 },
         });
@@ -1997,6 +2058,7 @@ mod tests {
         let elem = ForceElement::ExternalForce(ExternalForceElement {
             body_id: "bar".into(),
             local_point: [0.0, 0.0],
+            local_point_name: None,
             force: [100.0, 0.0],
             modulation: TimeModulation::Expression {
                 expr: "sin(2*pi*t)".into(),
@@ -2055,6 +2117,7 @@ mod tests {
         let elem = ForceElement::ExternalForce(ExternalForceElement {
             body_id: "bar".into(),
             local_point: [0.5, 0.0],
+            local_point_name: None,
             force: [10.0, -5.0],
             modulation: TimeModulation::Expression {
                 expr: "sin(2*pi*t)".into(),
@@ -2106,5 +2169,59 @@ mod tests {
         // After ramp: t=4.0 → factor = 1.0 → torque = 20
         let r2 = elem.evaluate(&state, &bodies, &q, &q_dot, 4.0);
         assert_abs_diff_eq!(r2[2], 20.0, epsilon = 1e-15);
+    }
+
+    #[test]
+    fn linear_spring_with_point_names_round_trips() {
+        let spring = LinearSpringElement {
+            body_a: "ground".to_string(),
+            point_a: [0.02, 0.01],
+            point_a_name: Some("M1".to_string()),
+            body_b: "crank".to_string(),
+            point_b: [0.0, 0.0],
+            point_b_name: Some("A".to_string()),
+            stiffness: 500.0,
+            free_length: 0.05,
+        };
+        let fe = ForceElement::LinearSpring(spring);
+        let json = serde_json::to_string(&fe).unwrap();
+        let loaded: ForceElement = serde_json::from_str(&json).unwrap();
+        if let ForceElement::LinearSpring(s) = loaded {
+            assert_eq!(s.point_a_name, Some("M1".to_string()));
+            assert_eq!(s.point_b_name, Some("A".to_string()));
+        } else {
+            panic!("wrong variant");
+        }
+    }
+
+    #[test]
+    fn linear_spring_without_point_names_defaults_to_none() {
+        let json = r#"{"type":"LinearSpring","body_a":"ground","point_a":[0.0,0.0],"body_b":"crank","point_b":[0.1,0.0],"stiffness":500.0,"free_length":0.05}"#;
+        let loaded: ForceElement = serde_json::from_str(json).unwrap();
+        if let ForceElement::LinearSpring(s) = loaded {
+            assert_eq!(s.point_a_name, None);
+            assert_eq!(s.point_b_name, None);
+        } else {
+            panic!("wrong variant");
+        }
+    }
+
+    #[test]
+    fn external_force_with_local_point_name_round_trips() {
+        let ef = ExternalForceElement {
+            body_id: "crank".to_string(),
+            local_point: [0.01, 0.0],
+            local_point_name: Some("A".to_string()),
+            force: [10.0, -5.0],
+            modulation: TimeModulation::Constant,
+        };
+        let fe = ForceElement::ExternalForce(ef);
+        let json = serde_json::to_string(&fe).unwrap();
+        let loaded: ForceElement = serde_json::from_str(&json).unwrap();
+        if let ForceElement::ExternalForce(e) = loaded {
+            assert_eq!(e.local_point_name, Some("A".to_string()));
+        } else {
+            panic!("wrong variant");
+        }
     }
 }

@@ -922,8 +922,10 @@ fn spring_affects_statics_driver_torque() {
     mech_spring.add_force(ForceElement::LinearSpring(LinearSpringElement {
         body_a: "crank".to_string(),
         point_a: [1.0, 0.0],   // crank tip B
+        point_a_name: None,
         body_b: "rocker".to_string(),
         point_b: [0.0, 0.0],   // rocker base D
+        point_b_name: None,
         stiffness: 1000.0,
         free_length: 0.5,      // much shorter than actual distance (~3-5 m)
     }));

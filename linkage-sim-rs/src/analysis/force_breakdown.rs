@@ -86,6 +86,7 @@ mod tests {
         mech.add_force(ForceElement::ExternalForce(ExternalForceElement {
             body_id: "bar".into(),
             local_point: [0.5, 0.0],
+            local_point_name: None,
             force: [100.0, 0.0],
             modulation: TimeModulation::Constant,
         }));
@@ -172,8 +173,10 @@ mod tests {
         mech.add_force(ForceElement::LinearSpring(LinearSpringElement {
             body_a: "bar".into(),
             point_a: [0.5, 0.0], // half-length point
+            point_a_name: None,
             body_b: "ground".into(),
             point_b: [1.0, 0.0], // ground point P
+            point_b_name: None,
             stiffness: 500.0,
             free_length: 0.5, // exactly the initial distance
         }));

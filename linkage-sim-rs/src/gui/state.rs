@@ -2051,8 +2051,10 @@ impl AppState {
                     crate::forces::elements::LinearSpringElement {
                         body_a: config.body_a.clone(),
                         point_a: Self::resolve_point_coords(&bp, &config.body_a, &config.point_a),
+                        point_a_name: None,
                         body_b: config.body_b.clone(),
                         point_b: Self::resolve_point_coords(&bp, &config.body_b, &config.point_b),
+                        point_b_name: None,
                         stiffness: k,
                         free_length: fl,
                     },
