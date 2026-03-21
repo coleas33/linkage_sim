@@ -179,6 +179,87 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                             }
                         }
                     }
+
+                    // ── Mount Points ──────────────────────────────────────
+                    if let Some(bp) = &state.blueprint {
+                        if let Some(body_json) = bp.bodies.get(&body_id) {
+                            ui.separator();
+                            egui::CollapsingHeader::new("Mount Points")
+                                .id_salt(format!("mount_points_{}", body_id))
+                                .default_open(true)
+                                .show(ui, |ui| {
+                                    let mut sorted_names: Vec<&String> =
+                                        body_json.mount_points.keys().collect();
+                                    sorted_names.sort();
+                                    for name in &sorted_names {
+                                        let pos = body_json.mount_points[*name];
+                                        ui.horizontal(|ui| {
+                                            ui.label(name.as_str());
+                                            let mut x = pos[0];
+                                            let mut y = pos[1];
+                                            if ui
+                                                .add(
+                                                    egui::DragValue::new(&mut x)
+                                                        .speed(0.001)
+                                                        .prefix("x: ")
+                                                        .suffix(" m"),
+                                                )
+                                                .changed()
+                                            {
+                                                pending =
+                                                    Some(PendingPropertyEdit::UpdateMountPointPosition {
+                                                        body_id: body_id.clone(),
+                                                        name: (*name).clone(),
+                                                        position: [x, pos[1]],
+                                                    });
+                                            }
+                                            if ui
+                                                .add(
+                                                    egui::DragValue::new(&mut y)
+                                                        .speed(0.001)
+                                                        .prefix("y: ")
+                                                        .suffix(" m"),
+                                                )
+                                                .changed()
+                                            {
+                                                pending =
+                                                    Some(PendingPropertyEdit::UpdateMountPointPosition {
+                                                        body_id: body_id.clone(),
+                                                        name: (*name).clone(),
+                                                        position: [pos[0], y],
+                                                    });
+                                            }
+                                            if ui.small_button("x").clicked() {
+                                                pending = Some(PendingPropertyEdit::DeleteMountPoint {
+                                                    body_id: body_id.clone(),
+                                                    name: (*name).clone(),
+                                                });
+                                            }
+                                        });
+                                    }
+                                    if ui.button("+ Add Mount Point").clicked() {
+                                        // Find next unused M<N> name, skipping collisions
+                                        // with both mount_points and attachment_points
+                                        let mut next_num = 1u32;
+                                        while body_json
+                                            .mount_points
+                                            .contains_key(&format!("M{}", next_num))
+                                            || body_json
+                                                .attachment_points
+                                                .contains_key(&format!("M{}", next_num))
+                                        {
+                                            next_num += 1;
+                                        }
+                                        let new_name = format!("M{}", next_num);
+                                        pending = Some(PendingPropertyEdit::AddMountPoint {
+                                            body_id: body_id.clone(),
+                                            name: new_name,
+                                            position: [body_json.cg_local[0], body_json.cg_local[1]],
+                                        });
+                                    }
+                                });
+                        }
+                    }
                 }
             }
         });
