@@ -772,6 +772,9 @@ pub struct AppState {
     pub status_message: Option<String>,
     /// Remaining display time for the status message (seconds).
     pub status_message_time: f64,
+    // ── Highlight ──────────────────────────────────────────────────────
+    /// Joint ID to visually highlight on the canvas (e.g. from panel hover).
+    pub highlight_joint: Option<String>,
 }
 
 /// Tracks placement state for the Add Body tool.
@@ -897,6 +900,7 @@ impl Default for AppState {
             recovery_path: Self::check_autosave_recovery(),
             status_message: None,
             status_message_time: 0.0,
+            highlight_joint: None,
         };
         state.rebuild();
         state

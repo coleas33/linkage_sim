@@ -81,7 +81,12 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
         .show(ui, |ui| {
             draw_load_case_selector(ui, state);
             if let Some(joint_id) = &state.driver_joint_id {
-                ui.label(format!("{} (right-click to change)", joint_id));
+                let label_response = ui.label(format!("{} (right-click to change)", joint_id));
+                if label_response.hovered() {
+                    state.highlight_joint = Some(joint_id.clone());
+                } else if state.highlight_joint.as_deref() == Some(joint_id.as_str()) {
+                    state.highlight_joint = None;
+                }
             }
             draw_driver_type_selector(ui, state);
         });

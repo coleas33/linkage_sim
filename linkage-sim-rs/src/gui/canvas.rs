@@ -34,6 +34,7 @@ const DEBUG_TEXT_COLOR: Color32 = Color32::from_rgb(150, 160, 180);
 const DEBUG_DIM_COLOR: Color32 = Color32::from_rgb(85, 90, 105);
 const NO_MECH_TEXT_COLOR: Color32 = Color32::from_rgb(90, 95, 115);
 const JOINT_CREATE_HIGHLIGHT: Color32 = Color32::from_rgb(50, 230, 100);
+const JOINT_HOVER_HIGHLIGHT: Color32 = Color32::from_rgb(100, 200, 255);
 const DIM_LABEL_COLOR: Color32 = Color32::from_rgb(170, 195, 130);
 
 // Force elements: semantic color coding
@@ -183,6 +184,9 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
 
     // Copy driver state before the immutable scope (lives on AppState, not Mechanism).
     let current_driver_joint = state.driver_joint_id.clone();
+
+    // Copy hover-highlight state for rendering.
+    let highlight_joint = state.highlight_joint.clone();
 
     // Copy joint-creation state for rendering highlights.
     let creating_joint_first = state.creating_joint.clone();
@@ -500,6 +504,8 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 matches!(selected, Some(SelectedEntity::Joint(s)) if s == joint.id());
             let is_driver =
                 current_driver_joint.as_deref() == Some(joint.id());
+            let is_highlighted =
+                highlight_joint.as_deref() == Some(joint.id());
             let color = if is_selected {
                 JOINT_SELECTED_COLOR
             } else if is_driver {
@@ -509,6 +515,17 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             };
 
             if joint.is_revolute() {
+                // Glow ring for panel hover highlight
+                if is_highlighted {
+                    painter.circle_filled(
+                        center, JOINT_RADIUS + 6.0,
+                        Color32::from_rgba_premultiplied(100, 200, 255, 60),
+                    );
+                    painter.circle_stroke(
+                        center, JOINT_RADIUS + 6.0,
+                        Stroke::new(1.5, JOINT_HOVER_HIGHLIGHT),
+                    );
+                }
                 // Glow ring for driver joint
                 if is_driver {
                     painter.circle_filled(
@@ -537,6 +554,11 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             } else if joint.is_prismatic() {
                 let half = JOINT_RADIUS;
                 let rect = Rect::from_center_size(center, Vec2::splat(half * 2.0));
+                if is_highlighted {
+                    let glow = rect.expand(6.0);
+                    painter.rect_filled(glow, 3.0, Color32::from_rgba_premultiplied(100, 200, 255, 60));
+                    painter.rect_stroke(glow, 3.0, Stroke::new(1.5, JOINT_HOVER_HIGHLIGHT), egui::StrokeKind::Middle);
+                }
                 if is_selected {
                     let glow = rect.expand(3.0);
                     painter.rect_filled(glow, 2.0, Color32::from_rgba_premultiplied(255, 180, 40, 50));

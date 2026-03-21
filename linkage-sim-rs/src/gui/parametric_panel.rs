@@ -244,15 +244,23 @@ pub fn draw_counterbalance_panel(ui: &mut egui::Ui, state: &mut AppState) {
         }
     });
 
-    // Free length range
+    // Free length range (converted to display units)
     ui.add_space(4.0);
+    let units = &state.display_units;
+    let len_suffix = units.length_suffix();
+    let mut l0_min_display = units.length(state.counterbalance_config.free_length_min);
+    let mut l0_max_display = units.length(state.counterbalance_config.free_length_max);
     ui.horizontal(|ui| {
         ui.label("L0 min:");
-        ui.add(egui::DragValue::new(&mut state.counterbalance_config.free_length_min).speed(0.001).suffix(" m"));
+        if ui.add(egui::DragValue::new(&mut l0_min_display).speed(0.1).suffix(len_suffix)).changed() {
+            state.counterbalance_config.free_length_min = state.display_units.length_to_si(l0_min_display);
+        }
     });
     ui.horizontal(|ui| {
         ui.label("L0 max:");
-        ui.add(egui::DragValue::new(&mut state.counterbalance_config.free_length_max).speed(0.001).suffix(" m"));
+        if ui.add(egui::DragValue::new(&mut l0_max_display).speed(0.1).suffix(len_suffix)).changed() {
+            state.counterbalance_config.free_length_max = state.display_units.length_to_si(l0_max_display);
+        }
     });
     ui.horizontal(|ui| {
         ui.label("L0 steps:");
@@ -274,7 +282,11 @@ pub fn draw_counterbalance_panel(ui: &mut egui::Ui, state: &mut AppState) {
         ui.separator();
         ui.strong("Results:");
         ui.label(format!("Optimal k = {:.1} N/m", result.best_k));
-        ui.label(format!("Optimal L0 = {:.4} m", result.best_free_length));
+        ui.label(format!(
+            "Optimal L0 = {:.4}{}",
+            state.display_units.length(result.best_free_length),
+            state.display_units.length_suffix()
+        ));
         ui.label(format!(
             "Torque P-P: {:.3} N*m \u{2192} {:.3} N*m ({:.0}% reduction)",
             result.baseline_peak_to_peak,
