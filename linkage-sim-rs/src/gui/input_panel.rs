@@ -373,19 +373,22 @@ fn draw_driver_type_selector(ui: &mut egui::Ui, state: &mut AppState) {
         let mut changed = false;
         ui.horizontal(|ui| {
             ui.label("f(t) =");
-            if ui.text_edit_singleline(&mut state.expr_buf).lost_focus() {
+            let response = ui.text_edit_singleline(&mut state.expr_buf);
+            if response.lost_focus() || response.changed() {
                 changed = true;
             }
         });
         ui.horizontal(|ui| {
             ui.label("f'(t) =");
-            if ui.text_edit_singleline(&mut state.expr_dot_buf).lost_focus() {
+            let response = ui.text_edit_singleline(&mut state.expr_dot_buf);
+            if response.lost_focus() || response.changed() {
                 changed = true;
             }
         });
         ui.horizontal(|ui| {
             ui.label("f''(t) =");
-            if ui.text_edit_singleline(&mut state.expr_ddot_buf).lost_focus() {
+            let response = ui.text_edit_singleline(&mut state.expr_ddot_buf);
+            if response.lost_focus() || response.changed() {
                 changed = true;
             }
         });

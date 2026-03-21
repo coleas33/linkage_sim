@@ -19,6 +19,14 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
     ui.horizontal(|ui| {
         ui.spacing_mut().button_padding = egui::vec2(10.0, 5.0);
 
+        // Show the current target body so the user knows where forces will be added
+        if let Some(ref body_id) = selected_body {
+            ui.colored_label(egui::Color32::from_rgb(120, 180, 255), format!("Target: {}", body_id));
+        } else {
+            ui.colored_label(egui::Color32::GRAY, "Target: (select a body)");
+        }
+        ui.separator();
+
         let torque_color = egui::Color32::from_rgb(100, 220, 140);
         let force_color = egui::Color32::from_rgb(255, 165, 80);
 
