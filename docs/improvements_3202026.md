@@ -104,29 +104,58 @@ The `CamFollowerJoint::gamma()` omits centripetal terms from the rotating direct
 
 ---
 
-## Additional Findings (Code Quality — Not Yet Prioritized)
+## Bugs Found in Second Review
 
-### DRY Violations in `state.rs`
-- Solve-position-then-update pattern copy-pasted 5 times
-- Driver-joint detection logic repeated 4 times
-- `save_to_file` / `write_json_to` near-duplicate
-- `compute_sweep_data` is 240 lines — should be broken up
+| # | Issue | Status |
+|---|---|---|
+| B1 | `restore_snapshot` omits `compute_forces`, `update_grashof`, `mark_sweep_dirty` after undo | [x] 4a51796 |
+| B2 | `restore_snapshot` divides by zero `driver_omega` — NaN propagation | [x] 4a51796 |
+| B3 | Gas spring produces zero force when `stroke == 0` | [x] 4a51796 |
 
-### DRY in Solver
-- Constraint projection block duplicated between `simulate` and `simulate_with_events` (forward_dynamics.rs)
+## Code Quality (Second Review)
+
+| # | Issue | Status |
+|---|---|---|
+| D1 | `save_to_file` / `write_json_to` duplication | [x] 5356972 — save delegates to write |
+| D2 | Driver-joint detection repeated 3 times | [x] 5356972 — extracted helper |
+| D3 | Dead code: `forces/gravity.rs` + `forces/assembly.rs` | [x] 5356972 — deleted |
+| D4 | Solve-position-then-update pattern copy-pasted 5 times | [ ] |
+| D5 | `fourbar_initial_guess` diverges across 3 test files | [ ] |
+
+## Force Validation + Tests (Second Review)
+
+| # | Issue | Status |
+|---|---|---|
+| F4 | No force element validation at build time | [x] 5356972 — `validate_force_elements()` + 8 tests |
+| T1 | No gas spring `stroke == 0` test | [x] 5356972 |
+| T3 | `GrashofType::ChangePoint` zero coverage | [x] 5356972 |
+| T4 | No compressed spring test | [ ] |
+
+## Documentation
+
+| # | Document | Status |
+|---|---|---|
+| Doc1 | WASM deployment guide | [x] b71a89f — `docs/WASM_DEPLOYMENT.md` |
+| Doc3 | Sample mechanism descriptions | [x] b71a89f — `docs/SAMPLES.md` |
+| Shortcuts | Keyboard & mouse reference | [x] b71a89f — `docs/SHORTCUTS.md` |
+| Doc2 | Force element equations reference | [ ] |
+| Doc4 | Parametric study user guide | [ ] |
+
+## Remaining (Lower Priority)
+
+### DRY
+- Solve-position-then-update pattern (5 copies in state.rs)
+- `fourbar_initial_guess` diverging test helpers
+- Constraint projection duplication in forward_dynamics.rs
 - Condition number computation inconsistent between statics.rs and inverse_dynamics.rs
 
-### DRY in Tests
-- `fourbar_initial_guess` duplicated across 3 test files with diverging implementations
-- `build_standard_fourbar` / `build_standard_fourbar_with_gravity` near-identical
-
-### Force Element Issues
-- Gas spring formula incorrect when `stroke == 0` (silent wrong physics)
-- No force element validation at build time (`validate_force_elements` doesn't exist)
-- `Gravity` struct in `gravity.rs` clones entire bodies map (possibly dead code)
-
-### Test Coverage Gaps
-- No compressed spring test
-- `GrashofType::ChangePoint` has zero coverage
-- Golden fixture lambda tolerance for 4-bar is 0.5 N·m vs 1e-4 for slider-crank
+### Tests
+- Compressed spring test
+- Golden fixture lambda tolerance inconsistency (4-bar 0.5 vs slider-crank 1e-4)
 - Undo tests don't verify `q` survives full cycle
+
+### Features
+- Cam follower GUI (math done, UI missing)
+- 8 more sample mechanisms (Watt, Stephenson, Roberts, etc.)
+- WASM autosave / persistent storage
+- Persistence module extraction (state.rs → persistence.rs)
