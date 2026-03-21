@@ -47,7 +47,7 @@ The `CamFollowerJoint::gamma()` omits centripetal terms from the rotating direct
 
 | Item | Location | Fix | Status |
 |---|---|---|---|
-| Expression re-parse every timestep | `forces/elements.rs:83–93` | Pre-compile at sim start | [ ] In progress |
+| Expression re-parse every timestep | `forces/elements.rs:83–93` | Pre-compile at sim start | [x] 73e5859 |
 | `all_constraints()` allocates Vec per call | `core/mechanism.rs:131` | Return `impl Iterator` with `.chain()` | [x] df07cdc |
 | Undo `Vec::remove(0)` is O(n) | `gui/undo.rs:56` | Replace with `VecDeque` | [x] df07cdc |
 
