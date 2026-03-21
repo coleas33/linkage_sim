@@ -622,8 +622,14 @@ impl eframe::App for LinkageApp {
                     .clicked()
                 {
                     self.state.playing = !self.state.playing;
-                    if self.state.playing && !self.state.loop_mode {
-                        self.state.animation_direction = 1.0;
+                    if self.state.playing {
+                        // Stop simulation playback — only one can drive the canvas.
+                        if let Some(sim) = &mut self.state.simulation {
+                            sim.playing = false;
+                        }
+                        if !self.state.loop_mode {
+                            self.state.animation_direction = 1.0;
+                        }
                     }
                 }
 

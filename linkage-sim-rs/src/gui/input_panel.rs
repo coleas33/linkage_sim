@@ -27,9 +27,15 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
                     .suffix("\u{00B0}")
                     .step_by(0.5),
             );
-            if response.dragged() && state.playing {
-                state.playing = false;
-                state.animation_direction = 1.0;
+            if response.dragged() {
+                if state.playing {
+                    state.playing = false;
+                    state.animation_direction = 1.0;
+                }
+                // Stop simulation playback — only one can drive the canvas.
+                if let Some(sim) = &mut state.simulation {
+                    sim.playing = false;
+                }
             }
             if (angle_deg - prev_angle).abs() > 1e-6 {
                 state.solve_at_angle(angle_deg.to_radians());
@@ -183,10 +189,14 @@ fn draw_simulation_controls(ui: &mut egui::Ui, state: &mut AppState) {
             if ui.button(play_label).clicked() {
                 if let Some(sim) = &mut state.simulation {
                     sim.playing = !sim.playing;
-                    // If resuming at the end, restart from beginning
-                    if sim.playing && sim.time_index >= sim.positions.len().saturating_sub(1) {
-                        sim.time_index = 0;
-                        sim.elapsed = 0.0;
+                    if sim.playing {
+                        // Stop kinematic animation — only one can drive the canvas.
+                        state.playing = false;
+                        // If resuming at the end, restart from beginning
+                        if sim.time_index >= sim.positions.len().saturating_sub(1) {
+                            sim.time_index = 0;
+                            sim.elapsed = 0.0;
+                        }
                     }
                 }
             }
