@@ -2888,7 +2888,11 @@ impl AppState {
 
         // Solve at the snapshot's driver angle, using the stored q as the initial guess.
         // Falls back to make_q() (all zeros) if the snapshot has no q data.
-        let t = (snapshot.driver_angle - snapshot.driver_theta_0) / snapshot.driver_omega;
+        let t = if snapshot.driver_omega.abs() > f64::EPSILON {
+            (snapshot.driver_angle - snapshot.driver_theta_0) / snapshot.driver_omega
+        } else {
+            0.0
+        };
         let q0 = if snapshot.q.len() == mech.state().n_coords() {
             DVector::from_vec(snapshot.q.clone())
         } else {
@@ -2929,7 +2933,10 @@ impl AppState {
         self.driver_theta_0 = snapshot.driver_theta_0;
         self.driver_joint_id = snapshot.driver_joint_id.clone();
         self.playing = false;
+        self.compute_forces(self.driver_angle);
+        self.update_grashof();
         self.compute_validation();
+        self.mark_sweep_dirty();
     }
 
     /// Push the current state onto the undo stack before an undoable action.

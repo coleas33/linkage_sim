@@ -759,6 +759,16 @@ fn evaluate_gas_spring(
 
     let unit = delta / current_length;
 
+    // Degenerate gas spring with zero stroke: acts as constant-force element
+    if g.stroke <= 0.0 {
+        let force_on_b = unit * g.initial_force;
+        let force_on_a = -force_on_b;
+        let mut total = DVector::zeros(state.n_coords());
+        total += point_force_to_q(state, &g.body_a, &pt_a_local, &force_on_a, q);
+        total += point_force_to_q(state, &g.body_b, &pt_b_local, &force_on_b, q);
+        return total;
+    }
+
     // Compression from extended position, clamped to [0, stroke]
     let compression = (g.extended_length - current_length).clamp(0.0, g.stroke);
 
