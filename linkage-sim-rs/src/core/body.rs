@@ -27,6 +27,8 @@ pub struct Body {
     pub cg_local: Vector2<f64>,
     /// Moment of inertia about z-axis through CG (kg·m²).
     pub izz_cg: f64,
+    /// Named points for force element attachment (not structural joints).
+    pub mount_points: HashMap<String, Vector2<f64>>,
     /// Named points tracked for output (path tracing) but not used for connections.
     pub coupler_points: HashMap<String, Vector2<f64>>,
 }
@@ -39,6 +41,7 @@ impl Body {
             mass: 0.0,
             cg_local: Vector2::zeros(),
             izz_cg: 0.0,
+            mount_points: HashMap::new(),
             coupler_points: HashMap::new(),
         }
     }
@@ -99,6 +102,35 @@ impl Body {
         self.izz_cg = new_izz;
     }
 
+    pub fn add_mount_point(&mut self, name: &str, x: f64, y: f64) -> Result<(), BodyError> {
+        if self.attachment_points.contains_key(name) {
+            return Err(BodyError::MountPointNameCollision {
+                point: name.to_string(),
+                body: self.id.clone(),
+            });
+        }
+        if self.mount_points.contains_key(name) {
+            return Err(BodyError::DuplicateMountPoint {
+                point: name.to_string(),
+                body: self.id.clone(),
+            });
+        }
+        self.mount_points.insert(name.to_string(), Vector2::new(x, y));
+        Ok(())
+    }
+
+    pub fn resolve_force_point(&self, name: &str) -> Result<&Vector2<f64>, BodyError> {
+        self.attachment_points
+            .get(name)
+            .or_else(|| self.mount_points.get(name))
+            .ok_or_else(|| BodyError::ForcePointNotFound {
+                point: name.to_string(),
+                body: self.id.clone(),
+                available_attachment: self.attachment_points.keys().cloned().collect(),
+                available_mount: self.mount_points.keys().cloned().collect(),
+            })
+    }
+
     /// Add a named coupler point for output tracking.
     pub fn add_coupler_point(
         &mut self,
@@ -133,6 +165,7 @@ pub fn make_ground(attachment_points: &[(&str, f64, f64)]) -> Body {
         mass: 0.0,
         cg_local: Vector2::zeros(),
         izz_cg: 0.0,
+        mount_points: HashMap::new(),
         coupler_points: HashMap::new(),
     }
 }
@@ -158,6 +191,7 @@ pub fn make_bar(
         mass,
         cg_local: Vector2::new(length / 2.0, 0.0),
         izz_cg,
+        mount_points: HashMap::new(),
         coupler_points: HashMap::new(),
     }
 }
@@ -174,6 +208,20 @@ pub enum BodyError {
     DuplicateAttachmentPoint { point: String, body: String },
     #[error("Coupler point '{point}' already exists on body '{body}'")]
     DuplicateCouplerPoint { point: String, body: String },
+    #[error("Mount point '{point}' already exists on body '{body}'")]
+    DuplicateMountPoint { point: String, body: String },
+    #[error("Mount point name '{point}' collides with attachment point on body '{body}'")]
+    MountPointNameCollision { point: String, body: String },
+    #[error(
+        "Force point '{point}' not found on body '{body}'. \
+         Attachment points: {available_attachment:?}, Mount points: {available_mount:?}"
+    )]
+    ForcePointNotFound {
+        point: String,
+        body: String,
+        available_attachment: Vec<String>,
+        available_mount: Vec<String>,
+    },
 }
 
 #[cfg(test)]
@@ -227,6 +275,54 @@ mod tests {
         let mut body = Body::new("test");
         body.add_coupler_point("C", 0.5, 0.3).unwrap();
         assert!(body.coupler_points.contains_key("C"));
+    }
+
+    #[test]
+    fn add_mount_point_works() {
+        let mut body = Body::new("test");
+        body.add_mount_point("M1", 0.3, 0.1).unwrap();
+        assert!(body.mount_points.contains_key("M1"));
+        let pt = &body.mount_points["M1"];
+        assert_abs_diff_eq!(pt.x, 0.3, epsilon = 1e-15);
+        assert_abs_diff_eq!(pt.y, 0.1, epsilon = 1e-15);
+    }
+
+    #[test]
+    fn duplicate_mount_point_rejected() {
+        let mut body = Body::new("test");
+        body.add_mount_point("M1", 0.3, 0.1).unwrap();
+        assert!(body.add_mount_point("M1", 0.5, 0.2).is_err());
+    }
+
+    #[test]
+    fn mount_point_name_collision_with_attachment_rejected() {
+        let mut body = Body::new("test");
+        body.add_attachment_point("A", 1.0, 2.0).unwrap();
+        assert!(body.add_mount_point("A", 0.5, 0.2).is_err());
+    }
+
+    #[test]
+    fn resolve_force_point_finds_attachment() {
+        let mut body = Body::new("test");
+        body.add_attachment_point("A", 1.0, 2.0).unwrap();
+        let pt = body.resolve_force_point("A").unwrap();
+        assert_abs_diff_eq!(pt.x, 1.0, epsilon = 1e-15);
+        assert_abs_diff_eq!(pt.y, 2.0, epsilon = 1e-15);
+    }
+
+    #[test]
+    fn resolve_force_point_finds_mount() {
+        let mut body = Body::new("test");
+        body.add_mount_point("M1", 0.3, 0.1).unwrap();
+        let pt = body.resolve_force_point("M1").unwrap();
+        assert_abs_diff_eq!(pt.x, 0.3, epsilon = 1e-15);
+        assert_abs_diff_eq!(pt.y, 0.1, epsilon = 1e-15);
+    }
+
+    #[test]
+    fn resolve_force_point_errors_on_missing() {
+        let body = Body::new("test");
+        assert!(body.resolve_force_point("nope").is_err());
     }
 
     // ── Point mass tests ──────────────────────────────────────────────

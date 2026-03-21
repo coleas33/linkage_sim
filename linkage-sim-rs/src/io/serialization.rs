@@ -430,6 +430,7 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
             } else {
                 body_json.izz_cg
             },
+            mount_points: HashMap::new(),
             coupler_points,
         };
         mech.add_body(body)

@@ -1236,6 +1236,7 @@ fn build_scotch_yoke(
         mass: 0.5,
         cg_local: nalgebra::Vector2::new(0.0, 0.0),
         izz_cg: 0.001,
+        mount_points: std::collections::HashMap::new(),
         coupler_points: std::collections::HashMap::new(),
     };
     slider.add_attachment_point("P", 0.0, 0.0).unwrap();
@@ -1298,6 +1299,7 @@ fn build_inverted_slider_crank(
         mass: 0.5,
         cg_local: nalgebra::Vector2::new(0.0, 0.0),
         izz_cg: 0.001,
+        mount_points: std::collections::HashMap::new(),
         coupler_points: std::collections::HashMap::new(),
     };
     slider.add_attachment_point("P", 0.0, 0.0).unwrap();
