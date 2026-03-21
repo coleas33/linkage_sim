@@ -403,6 +403,47 @@ impl SweepParameter {
             Self::DriverOmega => "Driver omega (rad/s)".to_string(),
         }
     }
+
+    /// Short unit suffix for DragValue inputs (e.g. " kg", " m").
+    pub fn unit_suffix(&self) -> &'static str {
+        match self {
+            Self::BodyMass(_) => " kg",
+            Self::BodyIzz(_) => " kg\u{b7}m\u{b2}",
+            Self::AttachmentX(_, _) | Self::AttachmentY(_, _) => " m",
+            Self::ForceParam(_, field) => match field.as_str() {
+                "stiffness" => " N/m",
+                "free_length" | "extended_length" | "stroke" => " m",
+                "free_angle" => " rad",
+                "damping" => " N\u{b7}s/m",
+                "initial_force" | "force" | "force_x" | "force_y" => " N",
+                "torque" | "stall_torque" | "constant_drag" => " N\u{b7}m",
+                "no_load_speed" | "speed_limit" => " rad/s",
+                "viscous_coeff" | "coulomb_coeff" => "",
+                _ => "",
+            },
+            Self::DriverOmega => " rad/s",
+        }
+    }
+
+    /// Whether this parameter represents a physical quantity that must be
+    /// strictly positive (mass, stiffness, etc.).
+    pub fn requires_positive(&self) -> bool {
+        match self {
+            Self::BodyMass(_) | Self::BodyIzz(_) => true,
+            Self::ForceParam(_, field) => matches!(
+                field.as_str(),
+                "stiffness"
+                    | "free_length"
+                    | "extended_length"
+                    | "stroke"
+                    | "damping"
+                    | "initial_force"
+                    | "no_load_speed"
+                    | "speed_limit"
+            ),
+            _ => false,
+        }
+    }
 }
 
 /// Which output metric to plot on the Y-axis of a parametric study.

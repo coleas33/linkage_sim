@@ -244,7 +244,7 @@ pub fn generate_svg_string(
         r##"<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="{:.0}" height="{:.0}" viewBox="0 0 {:.0} {:.0}">
 <style>
-  .body {{ stroke: #4080c0; stroke-width: 2.5; fill: none; stroke-linecap: round; }}
+  .body {{ stroke: #4696f0; stroke-width: 1.5; fill: #4696f0; fill-opacity: 0.25; stroke-linecap: round; stroke-linejoin: round; }}
   .joint-revolute {{ fill: none; stroke: #cccccc; stroke-width: 1.5; }}
   .joint-prismatic {{ fill: none; stroke: #cccccc; stroke-width: 1.5; }}
   .joint-fixed {{ fill: #999999; stroke: none; }}
@@ -283,12 +283,33 @@ pub fn generate_svg_string(
             .collect();
 
         if screen_points.len() >= 2 {
-            for pair in screen_points.windows(2) {
+            // Draw filled bars (matching canvas rendering) instead of hairlines.
+            // half_width is in SVG coordinates; scale factor maps world → SVG,
+            // and the canvas uses 8 px half-width at ~150 px/m. We use a fixed
+            // SVG-space half-width that looks proportional to the 800-wide SVG.
+            let half_w = 6.0_f64;
+            let draw_bar = |svg: &mut String, ax: f64, ay: f64, bx: f64, by: f64| {
+                let dx = bx - ax;
+                let dy = by - ay;
+                let len = (dx * dx + dy * dy).sqrt().max(1e-10);
+                let nx = -dy / len * half_w;
+                let ny = dx / len * half_w;
                 svg.push_str(&format!(
-                    r#"<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" class="body"/>
+                    r#"<polygon points="{:.2},{:.2} {:.2},{:.2} {:.2},{:.2} {:.2},{:.2}" class="body"/>
 "#,
-                    pair[0].0, pair[0].1, pair[1].0, pair[1].1
+                    ax + nx, ay + ny,
+                    bx + nx, by + ny,
+                    bx - nx, by - ny,
+                    ax - nx, ay - ny,
                 ));
+            };
+            for pair in screen_points.windows(2) {
+                draw_bar(&mut svg, pair[0].0, pair[0].1, pair[1].0, pair[1].1);
+            }
+            if screen_points.len() >= 3 {
+                let last = screen_points.last().unwrap();
+                let first = &screen_points[0];
+                draw_bar(&mut svg, last.0, last.1, first.0, first.1);
             }
         }
 

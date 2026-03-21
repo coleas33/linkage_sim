@@ -44,12 +44,14 @@ pub fn draw_parametric_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
     // ── Range inputs ────────────────────────────────────────────────
     ui.add_space(4.0);
+    let suffix = state.parametric_config.parameter.unit_suffix();
     ui.horizontal(|ui| {
         ui.label("Min:");
         ui.add(
             egui::DragValue::new(&mut state.parametric_config.min_value)
                 .speed(0.01)
-                .max_decimals(4),
+                .max_decimals(4)
+                .suffix(suffix),
         );
     });
     ui.horizontal(|ui| {
@@ -57,7 +59,8 @@ pub fn draw_parametric_panel(ui: &mut egui::Ui, state: &mut AppState) {
         ui.add(
             egui::DragValue::new(&mut state.parametric_config.max_value)
                 .speed(0.01)
-                .max_decimals(4),
+                .max_decimals(4)
+                .suffix(suffix),
         );
     });
     ui.horizontal(|ui| {
@@ -91,9 +94,22 @@ pub fn draw_parametric_panel(ui: &mut egui::Ui, state: &mut AppState) {
             }
         });
 
-    // ── Run button ──────────────────────────────────────────────────
+    // ── Run button (with validation) ─────────────────────────────────
     ui.add_space(8.0);
-    if ui.button("Run Study").clicked() {
+    let min = state.parametric_config.min_value;
+    let max = state.parametric_config.max_value;
+    let needs_positive = state.parametric_config.parameter.requires_positive();
+    let invalid_reason = if min >= max {
+        Some("Min must be less than Max")
+    } else if needs_positive && min <= 0.0 {
+        Some("Min must be positive for this quantity")
+    } else {
+        None
+    };
+    if let Some(reason) = invalid_reason {
+        ui.add_enabled(false, egui::Button::new("Run Study"))
+            .on_disabled_hover_text(reason);
+    } else if ui.button("Run Study").clicked() {
         state.run_parametric_study();
     }
 
