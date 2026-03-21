@@ -69,7 +69,7 @@ The `CamFollowerJoint::gamma()` omits centripetal terms from the rotating direct
 |---|---|---|---|
 | U4 | **Solver failure shows only a tiny red dot** | `canvas.rs` | [x] 14900bd — red banner overlay |
 | U5 | **"Draw Link" hint says click empty space works, but it doesn't** | `canvas.rs:921–946` | [x] 462b337 — corrected hint text |
-| U6 | **Parametric study inputs have no units and no validation** | `parametric_panel.rs:45–72` | [ ] |
+| U6 | **Parametric study inputs have no units and no validation** | `parametric_panel.rs:45–72` | [x] 1af4f57 — unit suffixes + validation |
 | U7 | **No "Fit to View" / zoom-to-fit** | `canvas.rs, state.rs` | [x] 14900bd — press F to fit |
 | U8 | **No unsaved-changes indicator** | `state.rs, mod.rs` | [x] 6d71f01 — title bar shows dirty state |
 | U9 | **Clicking on plots doesn't scrub mechanism angle** | `plot_panel.rs` | [ ] |
@@ -82,7 +82,7 @@ The `CamFollowerJoint::gamma()` omits centripetal terms from the rotating direct
 | U11 | **Counterbalance assistant uses raw SI** | `parametric_panel.rs:231–247` | [ ] |
 | U12 | **"Add Body" tool doesn't show point count** | `canvas.rs:723–752` | [x] 7a3055f — dynamic hint |
 | U13 | **Kinematic and simulation playback can run simultaneously** | `mod.rs, input_panel.rs` | [x] 7f1eed1 — mutually exclusive |
-| U14 | **Load case switching doesn't push undo** | `input_panel.rs:282–284` | [ ] |
+| U14 | **Load case switching doesn't push undo** | `input_panel.rs:282–284` | [x] Already implemented |
 | U15 | **Expression driver only applies on focus-lost** | `input_panel.rs:376–415` | [x] 415b0d2 — applies on change |
 
 ### Visual Quality & Polish
@@ -94,11 +94,11 @@ The `CamFollowerJoint::gamma()` omits centripetal terms from the rotating direct
 | V3 | **Link stroke width disagrees between preview and final** | `canvas.rs:57, 332` | [x] 462b337 — uses constant |
 | V4 | **Dimension labels: 10px font** — unreadable | `canvas.rs:378–391` | [x] 0fbef3a — 11px |
 | V5 | **Force magnitude labels 9px** — unreadable | `canvas.rs:1784–1894` | [x] 0fbef3a — 11px |
-| V6 | **SVG export uses hairlines, not filled bars** | `export.rs:247, 285–293` | [ ] |
+| V6 | **SVG export uses hairlines, not filled bars** | `export.rs:247, 285–293` | [x] 1af4f57 — polygon bars with fill |
 | V7 | **PNG rasterizer fills white before dark SVG** | `export.rs:413` | [x] 462b337 — dark fill |
 | V8 | **Rotary force elements render as floating text only** | `canvas.rs:1469–1621` | [ ] |
 | V9 | **Grid vanishes when zoomed out** instead of coarsening | `canvas.rs:1967–1970` | [x] 7a3055f — doubles spacing |
-| V10 | **Coupler trace dashes fixed in pixels** | `canvas.rs:255–274` | [ ] |
+| V10 | **Coupler trace dashes fixed in pixels** | `canvas.rs:255–274` | [x] 00fcc76 — zoom-scaled |
 | V11 | **HTML report timestamp is raw Unix seconds** | `export.rs:834–842` | [x] 7a3055f — formatted date |
 | V12 | **SVG body labels overlap joint circles** | `export.rs:296–304` | [x] 7f1eed1 — centroid placement |
 
