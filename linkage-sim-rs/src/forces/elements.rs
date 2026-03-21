@@ -1301,6 +1301,36 @@ mod tests {
         assert!(result[3] > 200.0); // force should be much larger than initial
     }
 
+    #[test]
+    fn gas_spring_stroke_zero_produces_initial_force() {
+        // A degenerate gas spring with stroke=0 should act as a constant-force
+        // element, producing initial_force magnitude (not zero).
+        let (state, bodies) = setup_two_bars();
+        let mut q = state.make_q();
+        state.set_pose("bar1", &mut q, 0.0, 0.0, 0.0);
+        state.set_pose("bar2", &mut q, 0.5, 0.0, 0.0);
+        let q_dot = DVector::zeros(state.n_coords());
+
+        let gs = ForceElement::GasSpring(GasSpringElement {
+            body_a: "bar1".into(),
+            point_a: [0.0, 0.0],
+            body_b: "bar2".into(),
+            point_b: [0.0, 0.0],
+            initial_force: 150.0,
+            extended_length: 0.5,
+            stroke: 0.0, // degenerate: zero stroke
+            damping: 0.0,
+            polytropic_exp: 1.0,
+        });
+
+        let result = gs.evaluate(&state, &bodies, &q, &q_dot, 0.0);
+
+        // stroke=0 → constant-force element with magnitude = initial_force
+        // Pushes apart along +x: bar1 gets -150, bar2 gets +150
+        assert_abs_diff_eq!(result[0], -150.0, epsilon = 1e-10); // bar1 Fx
+        assert_abs_diff_eq!(result[3], 150.0, epsilon = 1e-10); // bar2 Fx
+    }
+
     // ── Bearing Friction tests ───────────────────────────────────────────────
 
     #[test]

@@ -176,4 +176,19 @@ mod tests {
         assert!(result.is_grashof); // S+L == P+Q counts as Grashof
         assert!(result.is_change_point);
     }
+
+    #[test]
+    fn change_point_with_repeated_middle_lengths() {
+        // Links (1.0, 2.0, 2.0, 3.0) where S+L = P+Q exactly:
+        // sorted: [1,2,2,3] => S=1, L=3, P=2, Q=2
+        // S+L = 1+3 = 4, P+Q = 2+2 = 4 => change point
+        let result = check_grashof(1.0, 2.0, 2.0, 3.0, 1e-10);
+        assert_eq!(result.classification, GrashofType::ChangePoint);
+        assert!(result.is_grashof);
+        assert!(result.is_change_point);
+        assert_eq!(result.shortest, 1.0);
+        assert_eq!(result.longest, 3.0);
+        assert_eq!(result.grashof_sum, 4.0);
+        assert_eq!(result.other_sum, 4.0);
+    }
 }

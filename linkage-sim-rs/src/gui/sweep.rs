@@ -412,7 +412,7 @@ pub(crate) fn detect_fourbar_links(mech: &Mechanism) -> Option<(f64, f64, f64, f
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gui::samples::{build_sample, SampleMechanism};
+    use crate::gui::samples::SampleMechanism;
     use crate::gui::state::AppState;
 
     #[test]

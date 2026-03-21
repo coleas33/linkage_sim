@@ -7,6 +7,8 @@
 use nalgebra::DVector;
 
 use crate::core::mechanism::Mechanism;
+use crate::core::state::GROUND_ID;
+use crate::forces::elements::ForceElement;
 use crate::solver::assembly::assemble_jacobian;
 
 /// Result of a Grubler DOF calculation.
@@ -208,11 +210,91 @@ pub fn jacobian_rank_analysis(
     }
 }
 
+/// Validate force elements attached to a mechanism.
+///
+/// Checks:
+/// - All body IDs referenced by force elements exist in the mechanism.
+/// - Gas spring stroke > 0 (warns if not).
+/// - Spring stiffness >= 0 (linear and torsion).
+/// - Damper coefficient >= 0 (linear and rotary).
+///
+/// Returns a list of human-readable warning/error strings. An empty vector
+/// means all force elements pass validation.
+pub fn validate_force_elements(mech: &Mechanism) -> Vec<String> {
+    let bodies = mech.bodies();
+    let mut warnings = Vec::new();
+
+    for (i, force) in mech.forces().iter().enumerate() {
+        let label = format!("Force[{}] ({})", i, force.type_name());
+
+        // Check body ID references
+        for body_id in force.attached_body_ids() {
+            if body_id != GROUND_ID && !bodies.contains_key(body_id) {
+                warnings.push(format!(
+                    "{}: references unknown body '{}'",
+                    label, body_id
+                ));
+            }
+        }
+
+        // Element-specific checks
+        match force {
+            ForceElement::GasSpring(gs) => {
+                if gs.stroke <= 0.0 {
+                    warnings.push(format!(
+                        "{}: stroke ({}) <= 0; acts as constant-force element",
+                        label, gs.stroke
+                    ));
+                }
+            }
+            ForceElement::LinearSpring(s) => {
+                if s.stiffness < 0.0 {
+                    warnings.push(format!(
+                        "{}: stiffness ({}) is negative",
+                        label, s.stiffness
+                    ));
+                }
+            }
+            ForceElement::TorsionSpring(s) => {
+                if s.stiffness < 0.0 {
+                    warnings.push(format!(
+                        "{}: stiffness ({}) is negative",
+                        label, s.stiffness
+                    ));
+                }
+            }
+            ForceElement::LinearDamper(d) => {
+                if d.damping < 0.0 {
+                    warnings.push(format!(
+                        "{}: damping coefficient ({}) is negative",
+                        label, d.damping
+                    ));
+                }
+            }
+            ForceElement::RotaryDamper(d) => {
+                if d.damping < 0.0 {
+                    warnings.push(format!(
+                        "{}: damping coefficient ({}) is negative",
+                        label, d.damping
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    warnings
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::core::body::{make_bar, make_ground};
     use crate::core::mechanism::Mechanism;
+    use crate::forces::elements::{
+        GasSpringElement, LinearDamperElement, LinearSpringElement, RotaryDamperElement,
+        TorsionSpringElement,
+    };
     use crate::solver::kinematics::solve_position;
     use std::f64::consts::PI;
 
@@ -439,5 +521,220 @@ mod tests {
         // Threshold absurdly high — anything should be flagged
         let result = check_toggle(&mech, &pos.q, 0.0, 1e10);
         assert!(result.is_near_toggle);
+    }
+
+    // ── Force element validation tests ──────────────────────────────────────
+
+    fn build_fourbar_with_forces() -> Mechanism {
+        let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
+        let crank = make_bar("crank", "A", "B", 1.0, 0.0, 0.0);
+        let coupler = make_bar("coupler", "B", "C", 3.0, 0.0, 0.0);
+        let rocker = make_bar("rocker", "D", "C", 2.0, 0.0, 0.0);
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(crank).unwrap();
+        mech.add_body(coupler).unwrap();
+        mech.add_body(rocker).unwrap();
+
+        mech.add_revolute_joint("J1", "ground", "O2", "crank", "A")
+            .unwrap();
+        mech.add_revolute_joint("J2", "crank", "B", "coupler", "B")
+            .unwrap();
+        mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C")
+            .unwrap();
+        mech.add_revolute_joint("J4", "ground", "O4", "rocker", "D")
+            .unwrap();
+        mech.add_revolute_driver("D1", "ground", "crank", |t| t, |_t| 1.0, |_t| 0.0)
+            .unwrap();
+
+        mech
+    }
+
+    #[test]
+    fn validate_forces_no_warnings_for_valid_elements() {
+        let mut mech = build_fourbar_with_forces();
+        mech.add_force(ForceElement::LinearSpring(LinearSpringElement {
+            body_a: "crank".into(),
+            point_a: [0.0, 0.0],
+            body_b: "rocker".into(),
+            point_b: [0.0, 0.0],
+            stiffness: 100.0,
+            free_length: 1.0,
+        }));
+        mech.add_force(ForceElement::GasSpring(GasSpringElement {
+            body_a: "crank".into(),
+            point_a: [0.0, 0.0],
+            body_b: "coupler".into(),
+            point_b: [0.0, 0.0],
+            initial_force: 200.0,
+            extended_length: 0.5,
+            stroke: 0.2,
+            damping: 0.0,
+            polytropic_exp: 1.0,
+        }));
+        mech.build().unwrap();
+
+        let warnings = validate_force_elements(&mech);
+        assert!(warnings.is_empty(), "Expected no warnings, got: {:?}", warnings);
+    }
+
+    #[test]
+    fn validate_forces_unknown_body_id() {
+        let mut mech = build_fourbar_with_forces();
+        mech.add_force(ForceElement::LinearSpring(LinearSpringElement {
+            body_a: "crank".into(),
+            point_a: [0.0, 0.0],
+            body_b: "nonexistent_body".into(),
+            point_b: [0.0, 0.0],
+            stiffness: 100.0,
+            free_length: 1.0,
+        }));
+        mech.build().unwrap();
+
+        let warnings = validate_force_elements(&mech);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("nonexistent_body"));
+        assert!(warnings[0].contains("unknown body"));
+    }
+
+    #[test]
+    fn validate_forces_ground_body_is_valid() {
+        let mut mech = build_fourbar_with_forces();
+        // Referencing "ground" should NOT produce a warning
+        mech.add_force(ForceElement::LinearSpring(LinearSpringElement {
+            body_a: "ground".into(),
+            point_a: [0.0, 0.0],
+            body_b: "crank".into(),
+            point_b: [0.0, 0.0],
+            stiffness: 50.0,
+            free_length: 0.5,
+        }));
+        mech.build().unwrap();
+
+        let warnings = validate_force_elements(&mech);
+        assert!(warnings.is_empty(), "Expected no warnings, got: {:?}", warnings);
+    }
+
+    #[test]
+    fn validate_forces_gas_spring_zero_stroke_warns() {
+        let mut mech = build_fourbar_with_forces();
+        mech.add_force(ForceElement::GasSpring(GasSpringElement {
+            body_a: "crank".into(),
+            point_a: [0.0, 0.0],
+            body_b: "coupler".into(),
+            point_b: [0.0, 0.0],
+            initial_force: 200.0,
+            extended_length: 0.5,
+            stroke: 0.0,
+            damping: 0.0,
+            polytropic_exp: 1.0,
+        }));
+        mech.build().unwrap();
+
+        let warnings = validate_force_elements(&mech);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("stroke"));
+    }
+
+    #[test]
+    fn validate_forces_negative_spring_stiffness() {
+        let mut mech = build_fourbar_with_forces();
+        mech.add_force(ForceElement::LinearSpring(LinearSpringElement {
+            body_a: "crank".into(),
+            point_a: [0.0, 0.0],
+            body_b: "rocker".into(),
+            point_b: [0.0, 0.0],
+            stiffness: -50.0,
+            free_length: 1.0,
+        }));
+        mech.build().unwrap();
+
+        let warnings = validate_force_elements(&mech);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("stiffness"));
+        assert!(warnings[0].contains("negative"));
+    }
+
+    #[test]
+    fn validate_forces_negative_torsion_spring_stiffness() {
+        let mut mech = build_fourbar_with_forces();
+        mech.add_force(ForceElement::TorsionSpring(TorsionSpringElement {
+            body_i: "crank".into(),
+            body_j: "coupler".into(),
+            stiffness: -10.0,
+            free_angle: 0.0,
+        }));
+        mech.build().unwrap();
+
+        let warnings = validate_force_elements(&mech);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("stiffness"));
+        assert!(warnings[0].contains("negative"));
+    }
+
+    #[test]
+    fn validate_forces_negative_damper_coefficient() {
+        let mut mech = build_fourbar_with_forces();
+        mech.add_force(ForceElement::LinearDamper(LinearDamperElement {
+            body_a: "crank".into(),
+            point_a: [0.0, 0.0],
+            body_b: "rocker".into(),
+            point_b: [0.0, 0.0],
+            damping: -5.0,
+        }));
+        mech.build().unwrap();
+
+        let warnings = validate_force_elements(&mech);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("damping"));
+        assert!(warnings[0].contains("negative"));
+    }
+
+    #[test]
+    fn validate_forces_negative_rotary_damper_coefficient() {
+        let mut mech = build_fourbar_with_forces();
+        mech.add_force(ForceElement::RotaryDamper(RotaryDamperElement {
+            body_i: "crank".into(),
+            body_j: "coupler".into(),
+            damping: -3.0,
+        }));
+        mech.build().unwrap();
+
+        let warnings = validate_force_elements(&mech);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("damping"));
+        assert!(warnings[0].contains("negative"));
+    }
+
+    #[test]
+    fn validate_forces_multiple_issues() {
+        let mut mech = build_fourbar_with_forces();
+        // Unknown body + zero stroke + negative stiffness = 3 warnings
+        mech.add_force(ForceElement::LinearSpring(LinearSpringElement {
+            body_a: "ghost".into(),
+            point_a: [0.0, 0.0],
+            body_b: "crank".into(),
+            point_b: [0.0, 0.0],
+            stiffness: -10.0,
+            free_length: 1.0,
+        }));
+        mech.add_force(ForceElement::GasSpring(GasSpringElement {
+            body_a: "crank".into(),
+            point_a: [0.0, 0.0],
+            body_b: "coupler".into(),
+            point_b: [0.0, 0.0],
+            initial_force: 100.0,
+            extended_length: 0.5,
+            stroke: 0.0,
+            damping: 0.0,
+            polytropic_exp: 1.0,
+        }));
+        mech.build().unwrap();
+
+        let warnings = validate_force_elements(&mech);
+        // Force[0]: unknown body "ghost" + negative stiffness = 2
+        // Force[1]: zero stroke = 1
+        assert_eq!(warnings.len(), 3);
     }
 }

@@ -907,6 +907,22 @@ impl Default for AppState {
     }
 }
 
+/// Find the revolute joint that connects the driver body pair, if any.
+///
+/// Returns the joint ID as a `String`, or `None` if there is no driver
+/// or no matching revolute joint.
+fn detect_driver_joint_id(mech: &Mechanism) -> Option<String> {
+    let (a, b) = mech.driver_body_pair()?;
+    mech.joints()
+        .iter()
+        .find(|j| {
+            j.is_revolute()
+                && ((j.body_i_id() == a && j.body_j_id() == b)
+                    || (j.body_i_id() == b && j.body_j_id() == a))
+        })
+        .map(|j| j.id().to_string())
+}
+
 impl AppState {
     /// Reset to an empty mechanism (just ground body), clearing all state.
     pub fn new_empty_mechanism(&mut self) {
@@ -1013,19 +1029,7 @@ impl AppState {
         self.selected = None;
 
         // Detect which joint is currently driven
-        if let Some(mech) = &self.mechanism {
-            if let Some(pair) = mech.driver_body_pair() {
-                self.driver_joint_id = mech.joints().iter()
-                    .find(|j| {
-                        j.is_revolute()
-                            && ((j.body_i_id() == pair.0 && j.body_j_id() == pair.1)
-                                || (j.body_i_id() == pair.1 && j.body_j_id() == pair.0))
-                    })
-                    .map(|j| j.id().to_string());
-            } else {
-                self.driver_joint_id = None;
-            }
-        }
+        self.driver_joint_id = self.mechanism.as_ref().and_then(|m| detect_driver_joint_id(m));
         // Initialize default load case from current driver settings
         self.load_cases = if let Some(ref joint_id) = self.driver_joint_id {
             LoadCaseManager::new_default(joint_id, self.driver_omega, self.driver_theta_0)
@@ -1271,29 +1275,7 @@ impl AppState {
     ///
     /// Returns `Err` with a human-readable message on any failure.
     pub fn save_to_file(&mut self, path: &Path) -> Result<(), String> {
-        let mech = self
-            .mechanism
-            .as_ref()
-            .ok_or_else(|| "No mechanism loaded".to_string())?;
-
-        let mut json_struct = mechanism_to_json(mech).map_err(|e| e.to_string())?;
-
-        // Persist load cases into the JSON structure
-        json_struct.load_cases = self.load_cases.cases.clone();
-
-        // Preserve blueprint-only data that mechanism_to_json can't reconstruct:
-        // point masses are baked into mass/CG/Izz at build time, so copy them
-        // from the blueprint to ensure they persist through save/load.
-        if let Some(ref bp) = self.blueprint {
-            for (body_id, bp_body) in &bp.bodies {
-                if let Some(json_body) = json_struct.bodies.get_mut(body_id) {
-                    json_body.point_masses = bp_body.point_masses.clone();
-                }
-            }
-        }
-
-        let json = serde_json::to_string_pretty(&json_struct).map_err(|e| e.to_string())?;
-        std::fs::write(path, json).map_err(|e| format!("Failed to write file: {}", e))?;
+        self.write_json_to(path)?;
 
         self.last_save_path = Some(path.to_path_buf());
         self.dirty = false;
@@ -1346,8 +1328,7 @@ impl AppState {
         }
     }
 
-    /// Write mechanism JSON to an arbitrary path (for autosave — doesn't clear dirty flag).
-    #[cfg(feature = "native")]
+    /// Write mechanism JSON to an arbitrary path (doesn't clear dirty flag).
     fn write_json_to(&self, path: &Path) -> Result<(), String> {
         let mech = self
             .mechanism
@@ -1456,18 +1437,7 @@ impl AppState {
         };
 
         // Detect the driven joint ID.
-        let driver_joint_id = if let Some(pair) = mech.driver_body_pair() {
-            mech.joints()
-                .iter()
-                .find(|j| {
-                    j.is_revolute()
-                        && ((j.body_i_id() == pair.0 && j.body_j_id() == pair.1)
-                            || (j.body_i_id() == pair.1 && j.body_j_id() == pair.0))
-                })
-                .map(|j| j.id().to_string())
-        } else {
-            None
-        };
+        let driver_joint_id = detect_driver_joint_id(&mech);
 
         // Build a zero initial guess and solve at t=0.
         let q0 = mech.state().make_q();
@@ -1646,19 +1616,7 @@ impl AppState {
         }
 
         // Detect driven joint
-        if let Some(pair) = mech.driver_body_pair() {
-            self.driver_joint_id = mech
-                .joints()
-                .iter()
-                .find(|j| {
-                    j.is_revolute()
-                        && ((j.body_i_id() == pair.0 && j.body_j_id() == pair.1)
-                            || (j.body_i_id() == pair.1 && j.body_j_id() == pair.0))
-                })
-                .map(|j| j.id().to_string());
-        } else {
-            self.driver_joint_id = None;
-        }
+        self.driver_joint_id = detect_driver_joint_id(&mech);
 
         // Solve at current angle using last_good_q as initial guess
         let t = if self.driver_omega.abs() > f64::EPSILON {
