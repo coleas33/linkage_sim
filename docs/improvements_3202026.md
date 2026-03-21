@@ -78,8 +78,8 @@ The `CamFollowerJoint::gamma()` omits centripetal terms from the rotating direct
 
 | # | Issue | Location | Status |
 |---|---|---|---|
-| U10 | **Driver joint panel says "right-click to change" with no visual cue** | `input_panel.rs:78` | [ ] |
-| U11 | **Counterbalance assistant uses raw SI** | `parametric_panel.rs:231–247` | [ ] |
+| U10 | **Driver joint panel says "right-click to change" with no visual cue** | `input_panel.rs:78` | [x] cff1792 — hover highlight |
+| U11 | **Counterbalance assistant uses raw SI** | `parametric_panel.rs:231–247` | [x] cff1792 — display units |
 | U12 | **"Add Body" tool doesn't show point count** | `canvas.rs:723–752` | [x] 7a3055f — dynamic hint |
 | U13 | **Kinematic and simulation playback can run simultaneously** | `mod.rs, input_panel.rs` | [x] 7f1eed1 — mutually exclusive |
 | U14 | **Load case switching doesn't push undo** | `input_panel.rs:282–284` | [x] Already implemented |
