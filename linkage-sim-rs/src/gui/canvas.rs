@@ -28,6 +28,7 @@ const JOINT_SELECTED_COLOR: Color32 = Color32::from_rgb(255, 180, 40);
 const DRIVER_JOINT_COLOR: Color32 = Color32::from_rgb(80, 220, 130);
 const GROUND_MARKER_COLOR: Color32 = Color32::from_rgb(160, 145, 110);
 const ATTACHMENT_DOT_COLOR: Color32 = Color32::from_rgb(170, 185, 210);
+const MOUNT_POINT_COLOR: Color32 = Color32::from_rgb(224, 86, 253); // #e056fd magenta
 
 // Labels
 const DEBUG_TEXT_COLOR: Color32 = Color32::from_rgb(150, 160, 180);
@@ -62,6 +63,7 @@ const JOINT_STROKE_WIDTH: f32 = 2.0;
 const GROUND_MARKER_SIZE: f32 = 14.0;
 const HIT_RADIUS: f32 = 12.0;
 const ATTACHMENT_DOT_RADIUS: f32 = 3.5;
+const MOUNT_POINT_RADIUS: f32 = 4.0;
 const ZOOM_FACTOR: f32 = 1.12;
 const MIN_SCALE: f32 = 100.0;
 const MAX_SCALE: f32 = 100_000.0;
@@ -355,6 +357,14 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             // Draw small dots at each attachment point for visual clarity.
             for sp in &screen_points {
                 painter.circle_filled(*sp, ATTACHMENT_DOT_RADIUS, ATTACHMENT_DOT_COLOR);
+            }
+
+            // Draw mount points as diamonds
+            for (_name, local) in &body.mount_points {
+                let global = mech_state.body_point_global(body_id, local, q);
+                let sp = view.world_to_screen(global.x, global.y);
+                let screen_pos = Pos2::new(sp[0], sp[1]);
+                draw_diamond_marker(&painter, screen_pos, MOUNT_POINT_RADIUS, MOUNT_POINT_COLOR);
             }
 
             // Dimension labels: show link segment lengths at midpoints.
@@ -2084,6 +2094,20 @@ fn draw_ground_marker(painter: &egui::Painter, center: Pos2, size: f32, color: C
             Stroke::new(1.0, color),
         );
     }
+}
+
+fn draw_diamond_marker(painter: &egui::Painter, center: Pos2, radius: f32, color: Color32) {
+    let points = vec![
+        Pos2::new(center.x, center.y - radius),
+        Pos2::new(center.x + radius, center.y),
+        Pos2::new(center.x, center.y + radius),
+        Pos2::new(center.x - radius, center.y),
+    ];
+    painter.add(egui::Shape::convex_polygon(
+        points,
+        color,
+        egui::Stroke::new(1.5, Color32::WHITE),
+    ));
 }
 
 /// Draw a grid of lines on the canvas behind the mechanism.
