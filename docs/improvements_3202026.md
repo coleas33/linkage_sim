@@ -59,48 +59,48 @@ The `CamFollowerJoint::gamma()` omits centripetal terms from the rotating direct
 
 | # | Issue | Location | Impact |
 |---|---|---|---|
-| U1 | **Save/export completes silently** — no toast, no title change, no feedback at all. Errors go to `log::error!()` which is invisible. | `mod.rs:88–354` | Critical |
-| U2 | **Right-click drag (pan) conflicts with context menu** — short right-click opens menu, long right-click pans. No cursor change, no documented alternatives (Shift+drag, middle-click). | `canvas.rs:876–884, 1239–1390` | Critical |
-| U3 | **Force toolbar doesn't show which body it targets** — user can add forces without knowing they'll attach to the wrong body. | `force_toolbar.rs:142–169` | Critical |
+| U1 | **Save/export completes silently** | `mod.rs:88–354` | [x] 6d71f01 — green toast in status bar |
+| U2 | **Right-click drag (pan) conflicts with context menu** | `canvas.rs:876–884` | [ ] |
+| U3 | **Force toolbar doesn't show which body it targets** | `force_toolbar.rs:142–169` | [x] 415b0d2 — "Target: body" label |
 
 ### High-Impact UX
 
-| # | Issue | Location | Impact |
+| # | Issue | Location | Status |
 |---|---|---|---|
-| U4 | **Solver failure shows only a tiny red dot** — no explanation of what failed or what to try. Canvas freezes at last pose. | `state.rs:957–992, canvas.rs:161` | High |
-| U5 | **"Draw Link" hint says click empty space works, but it doesn't** — hint text is incorrect, confuses new users. | `canvas.rs:921–946` | High |
-| U6 | **Parametric study inputs have no units and no validation** — entering 0 for mass crashes statics solver silently. | `parametric_panel.rs:45–72` | High |
-| U7 | **No "Fit to View" / zoom-to-fit** — mechanism can be off-screen after load with no recovery shortcut. | `canvas.rs, mod.rs` | High |
-| U8 | **No unsaved-changes indicator** — `dirty` flag tracked but never shown. Users close window and lose work. | `state.rs:722, mod.rs` | High |
-| U9 | **Clicking on plots doesn't scrub mechanism angle** — plots are view-only, no bidirectional coupling. | `plot_panel.rs, input_panel.rs` | High |
+| U4 | **Solver failure shows only a tiny red dot** | `canvas.rs` | [x] 14900bd — red banner overlay |
+| U5 | **"Draw Link" hint says click empty space works, but it doesn't** | `canvas.rs:921–946` | [x] 462b337 — corrected hint text |
+| U6 | **Parametric study inputs have no units and no validation** | `parametric_panel.rs:45–72` | [ ] |
+| U7 | **No "Fit to View" / zoom-to-fit** | `canvas.rs, state.rs` | [x] 14900bd — press F to fit |
+| U8 | **No unsaved-changes indicator** | `state.rs, mod.rs` | [x] 6d71f01 — title bar shows dirty state |
+| U9 | **Clicking on plots doesn't scrub mechanism angle** | `plot_panel.rs` | [ ] |
 
 ### Medium-Impact UX
 
-| # | Issue | Location | Impact |
+| # | Issue | Location | Status |
 |---|---|---|---|
-| U10 | **Driver joint panel says "right-click to change" with no visual cue** for which canvas element to right-click. | `input_panel.rs:78` | Medium |
-| U11 | **Counterbalance assistant uses raw SI** even when display units are mm — inconsistent with rest of UI. | `parametric_panel.rs:231–247` | Medium |
-| U12 | **"Add Body" tool doesn't show point count** or minimum needed — double-click with 1 point silently does nothing. | `canvas.rs:723–752, 1091–1141` | Medium |
-| U13 | **Kinematic and simulation playback can run simultaneously** — produces confusing canvas motion. Should be mutually exclusive. | `mod.rs:587–603, input_panel.rs:175–220` | Medium |
-| U14 | **Load case switching doesn't push undo** — previous driver config lost with no recovery. | `input_panel.rs:282–284` | Medium |
-| U15 | **Expression driver only applies on focus-lost** — typing formula then clicking Play uses stale expression. | `input_panel.rs:376–415` | Medium |
+| U10 | **Driver joint panel says "right-click to change" with no visual cue** | `input_panel.rs:78` | [ ] |
+| U11 | **Counterbalance assistant uses raw SI** | `parametric_panel.rs:231–247` | [ ] |
+| U12 | **"Add Body" tool doesn't show point count** | `canvas.rs:723–752` | [ ] |
+| U13 | **Kinematic and simulation playback can run simultaneously** | `mod.rs, input_panel.rs` | [ ] |
+| U14 | **Load case switching doesn't push undo** | `input_panel.rs:282–284` | [ ] |
+| U15 | **Expression driver only applies on focus-lost** | `input_panel.rs:376–415` | [x] 415b0d2 — applies on change |
 
 ### Visual Quality & Polish
 
-| # | Issue | Location | Impact |
+| # | Issue | Location | Status |
 |---|---|---|---|
-| V1 | **Zoom step 1.04 is far too slow** — takes ~58 scroll ticks to double zoom. CAD tools use 1.10–1.15. | `canvas.rs:64` | High |
-| V2 | **Ground line clips at x +/- 10m** instead of spanning viewport. Looks like a physical boundary. | `canvas.rs:216–222` | High |
-| V3 | **Link stroke width disagrees between preview and final** — `BODY_STROKE_WIDTH=3.5` unused, actual polygon uses `1.5`. Link visually "snaps thinner" on drop. | `canvas.rs:57, 332` | High |
-| V4 | **Dimension labels: 10px offset, no background box, 10px font** — unreadable at many zoom levels. | `canvas.rs:378–391` | High |
-| V5 | **Force magnitude labels 9px with no background** — primary statics output is unreadable. | `canvas.rs:1784–1894` | High |
-| V6 | **SVG export uses hairlines, not filled bars** — export looks like stick diagram, not physical links. | `export.rs:247, 285–293` | High |
-| V7 | **PNG rasterizer fills white before dark SVG** — fragile, white bleeds through transparency. | `export.rs:413` | Medium |
-| V8 | **Rotary force elements render as floating text only** — no line to bodies, no icon distinguishing motor from spring. | `canvas.rs:1469–1621` | Medium |
-| V9 | **Grid vanishes when zoomed out** instead of coarsening to next level. | `canvas.rs:1967–1970` | Medium |
-| V10 | **Coupler trace dashes fixed in pixels** — don't scale with zoom. Nearly solid when zoomed in, invisible when zoomed out. | `canvas.rs:255–274` | Medium |
-| V11 | **HTML report timestamp is raw Unix seconds** — "Generated: Unix timestamp 1742478000". | `export.rs:834–842` | Medium |
-| V12 | **SVG body labels overlap joint circles** — placed 8px above first attachment point instead of centroid. | `export.rs:296–304` | Low |
+| V1 | **Zoom step 1.04 is far too slow** | `canvas.rs:64` | [x] 462b337 — changed to 1.12 |
+| V2 | **Ground line clips at x +/- 10m** | `canvas.rs:216–222` | [x] 462b337 — viewport-wide |
+| V3 | **Link stroke width disagrees between preview and final** | `canvas.rs:57, 332` | [x] 462b337 — uses constant |
+| V4 | **Dimension labels: 10px font** — unreadable | `canvas.rs:378–391` | [x] 0fbef3a — 11px |
+| V5 | **Force magnitude labels 9px** — unreadable | `canvas.rs:1784–1894` | [x] 0fbef3a — 11px |
+| V6 | **SVG export uses hairlines, not filled bars** | `export.rs:247, 285–293` | [ ] |
+| V7 | **PNG rasterizer fills white before dark SVG** | `export.rs:413` | [x] 462b337 — dark fill |
+| V8 | **Rotary force elements render as floating text only** | `canvas.rs:1469–1621` | [ ] |
+| V9 | **Grid vanishes when zoomed out** instead of coarsening | `canvas.rs:1967–1970` | [ ] |
+| V10 | **Coupler trace dashes fixed in pixels** | `canvas.rs:255–274` | [ ] |
+| V11 | **HTML report timestamp is raw Unix seconds** | `export.rs:834–842` | [ ] |
+| V12 | **SVG body labels overlap joint circles** | `export.rs:296–304` | [ ] |
 
 ---
 
