@@ -410,7 +410,9 @@ fn rasterize_svg_to_rgba(
     let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
         .ok_or_else(|| format!("Failed to create {}x{} pixmap", width, height))?;
 
-    pixmap.fill(resvg::tiny_skia::Color::WHITE);
+    // Fill with the dark background color to match the SVG canvas background
+    // and prevent white bleed-through on any transparent SVG elements.
+    pixmap.fill(resvg::tiny_skia::Color::from_rgba8(30, 30, 35, 255));
 
     // Scale uniformly to fit, centering the shorter axis.
     let sx = width as f32 / tree.size().width();

@@ -61,7 +61,7 @@ const JOINT_STROKE_WIDTH: f32 = 2.0;
 const GROUND_MARKER_SIZE: f32 = 14.0;
 const HIT_RADIUS: f32 = 12.0;
 const ATTACHMENT_DOT_RADIUS: f32 = 3.5;
-const ZOOM_FACTOR: f32 = 1.04;
+const ZOOM_FACTOR: f32 = 1.12;
 const MIN_SCALE: f32 = 100.0;
 const MAX_SCALE: f32 = 100_000.0;
 
@@ -211,10 +211,12 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         let view = &state.view;
         let selected = &state.selected;
 
-        // ── Ground line (y=0) ───────────────────────────────────────────
+        // ── Ground line (y=0) — spans full visible viewport ────────────
         {
-            let left = view.world_to_screen(-10.0, 0.0);
-            let right = view.world_to_screen(10.0, 0.0);
+            let world_left = view.screen_to_world(canvas_rect.left(), 0.0);
+            let world_right = view.screen_to_world(canvas_rect.right(), 0.0);
+            let left = view.world_to_screen(world_left[0], 0.0);
+            let right = view.world_to_screen(world_right[0], 0.0);
             painter.line_segment(
                 [Pos2::new(left[0], left[1]), Pos2::new(right[0], right[1])],
                 Stroke::new(1.0, GROUND_LINE_COLOR),
@@ -329,7 +331,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                     let shape = egui::epaint::PathShape::convex_polygon(
                         corners.to_vec(),
                         fill_color,
-                        Stroke::new(1.5, stroke_color),
+                        Stroke::new(BODY_STROKE_WIDTH, stroke_color),
                     );
                     p.add(shape);
                 };
@@ -726,7 +728,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             if state.draw_link_start.is_some() {
                 Some("Drag to set link length and direction, release to place (Esc to cancel)")
             } else {
-                Some("Click a point or empty space, then drag to draw a link (Esc to cancel)")
+                Some("Click an existing point to start drawing a link — use +Ground to place anchors first (Esc to cancel)")
             }
         }
         EditorTool::AddBody => {
