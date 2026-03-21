@@ -13,12 +13,12 @@ Deep review of the Rust application (`linkage-sim-rs/`, ~30K LOC) across archite
 
 | # | Issue | Location | Status |
 |---|---|---|---|
-| Q1 | `add_force_element` doesn't call `rebuild()` — added forces have no effect | `gui/state.rs:1795` | [ ] |
-| Q2 | `driver_joint_id` not cleared when `rebuild()` finds no driver | `gui/state.rs:1599` | [ ] |
-| Q3 | `update_grashof` not called in `load_from_file` | `gui/state.rs:~1499` | [ ] |
-| Q4 | `solve_augmented` silently returns zero vector on singular matrix | `solver/forward_dynamics.rs:160` | [ ] |
-| Q5 | Schema version is exact string equality — breaks forward compat | `io/serialization.rs:388` | [ ] |
-| Q6 | Expression modulation fallback to `1.0` on parse error | `forces/elements.rs:88` | [ ] |
+| Q1 | `add_force_element` doesn't call `rebuild()` — added forces have no effect | `gui/state.rs:1795` | [x] Already had rebuild() — false positive |
+| Q2 | `driver_joint_id` not cleared when `rebuild()` finds no driver | `gui/state.rs:1599` | [x] df07cdc |
+| Q3 | `update_grashof` not called in `load_from_file` | `gui/state.rs:~1499` | [x] df07cdc |
+| Q4 | `solve_augmented` silently returns zero vector on singular matrix | `solver/forward_dynamics.rs:160` | [x] df07cdc — returns Option, RK4 aborts early |
+| Q5 | Schema version is exact string equality — breaks forward compat | `io/serialization.rs:388` | [x] df07cdc — semver major comparison |
+| Q6 | Expression modulation fallback to `1.0` on parse error | `forces/elements.rs:88` | [x] df07cdc — fallback to 0.0 + log warning |
 
 ## Agreed Improvements
 
@@ -35,7 +35,7 @@ Replace panicking body-ID lookups with graceful error handling in:
 - `io/serialization.rs` — `joint_to_json` HashMap indexing
 - `analysis/energy.rs` — `compute_kinetic_energy`
 
-**Status:** [ ]
+**Status:** [x] df07cdc — helpers extracted, all expect() eliminated
 
 ### 3. Tests — Cam follower gamma FD test + fix math
 
@@ -48,8 +48,8 @@ The `CamFollowerJoint::gamma()` omits centripetal terms from the rotating direct
 | Item | Location | Fix | Status |
 |---|---|---|---|
 | Expression re-parse every timestep | `forces/elements.rs:83–93` | Pre-compile at sim start | [ ] |
-| `all_constraints()` allocates Vec per call | `core/mechanism.rs:131` | Return `impl Iterator` with `.chain()` | [ ] |
-| Undo `Vec::remove(0)` is O(n) | `gui/undo.rs:56` | Replace with `VecDeque` | [ ] |
+| `all_constraints()` allocates Vec per call | `core/mechanism.rs:131` | Return `impl Iterator` with `.chain()` | [x] df07cdc |
+| Undo `Vec::remove(0)` is O(n) | `gui/undo.rs:56` | Replace with `VecDeque` | [x] df07cdc |
 
 ---
 

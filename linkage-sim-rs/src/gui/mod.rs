@@ -10,10 +10,12 @@ mod parametric_panel;
 mod plot_panel;
 mod property_panel;
 pub mod samples;
+pub mod sweep;
 pub mod undo;
 
 use eframe::egui;
 pub use state::AppState;
+pub use sweep::SweepData;
 use samples::SampleMechanism;
 use state::{AngleUnit, EditorTool, LengthUnit, SelectedEntity};
 

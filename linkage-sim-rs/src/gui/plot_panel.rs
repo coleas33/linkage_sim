@@ -6,6 +6,7 @@ use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints, VLine};
 
 use super::state::{AppState, DisplayUnits};
+use super::sweep::SweepData;
 
 /// Selected plot tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,7 +164,7 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &AppState) {
 }
 
 /// Plot coupler point traces: x vs y, converted to display length units.
-fn draw_coupler_trace(ui: &mut egui::Ui, sweep: &super::state::SweepData, units: &DisplayUnits) {
+fn draw_coupler_trace(ui: &mut egui::Ui, sweep: &SweepData, units: &DisplayUnits) {
     let axis_label = units.length_axis_label();
     let plot = Plot::new("coupler_trace_plot")
         .data_aspect(1.0) // equal axis scaling
@@ -202,7 +203,7 @@ fn draw_coupler_trace(ui: &mut egui::Ui, sweep: &super::state::SweepData, units:
 /// Plot body angles vs driver angle, using the current display angle unit.
 fn draw_body_angles(
     ui: &mut egui::Ui,
-    sweep: &super::state::SweepData,
+    sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
 ) {
@@ -263,7 +264,7 @@ fn draw_body_angles(
 /// shown in the current display unit.
 fn draw_transmission_angle(
     ui: &mut egui::Ui,
-    sweep: &super::state::SweepData,
+    sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
 ) {
@@ -330,7 +331,7 @@ fn draw_transmission_angle(
 /// Plot driver torque (N*m) vs driver angle.
 fn draw_driver_torque(
     ui: &mut egui::Ui,
-    sweep: &super::state::SweepData,
+    sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
 ) {
@@ -378,7 +379,7 @@ fn draw_driver_torque(
 /// with optional statics torque overlay for comparison.
 fn draw_inverse_dynamics(
     ui: &mut egui::Ui,
-    sweep: &super::state::SweepData,
+    sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
 ) {
@@ -443,7 +444,7 @@ fn draw_inverse_dynamics(
 /// Plot energy (KE, PE, total) vs driver angle.
 fn draw_energy(
     ui: &mut egui::Ui,
-    sweep: &super::state::SweepData,
+    sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
 ) {
@@ -519,7 +520,7 @@ fn draw_energy(
 /// Plot mechanical advantage (dimensionless) vs driver angle.
 fn draw_mechanical_advantage(
     ui: &mut egui::Ui,
-    sweep: &super::state::SweepData,
+    sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
 ) {
@@ -581,7 +582,7 @@ fn draw_mechanical_advantage(
 /// is silently skipped).
 fn draw_joint_reactions(
     ui: &mut egui::Ui,
-    sweep: &super::state::SweepData,
+    sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
 ) {
@@ -643,7 +644,7 @@ fn draw_joint_reactions(
 /// standard palette. Only finite values are plotted.
 fn draw_coupler_velocity(
     ui: &mut egui::Ui,
-    sweep: &super::state::SweepData,
+    sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
 ) {
@@ -705,7 +706,7 @@ fn draw_coupler_velocity(
 /// standard palette. Only finite values are plotted.
 fn draw_coupler_acceleration(
     ui: &mut egui::Ui,
-    sweep: &super::state::SweepData,
+    sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
 ) {
@@ -767,7 +768,7 @@ fn draw_coupler_acceleration(
 /// angle unit before being drawn.
 fn draw_toggle_markers(
     plot_ui: &mut egui_plot::PlotUi,
-    sweep: &super::state::SweepData,
+    sweep: &SweepData,
     units: &DisplayUnits,
 ) {
     for (i, &toggle_deg) in sweep.toggle_angles.iter().enumerate() {

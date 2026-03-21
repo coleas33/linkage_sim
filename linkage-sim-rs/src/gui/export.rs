@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::Path;
 
 #[cfg(feature = "native")]
-use super::state::SweepData;
+use super::sweep::SweepData;
 #[cfg(feature = "native")]
 use crate::core::mechanism::Mechanism;
 
@@ -1419,7 +1419,7 @@ mod tests {
             .expect("solve should succeed");
         let q = if result.converged { result.q } else { q0 };
 
-        let (sweep, _) = crate::gui::state::compute_sweep_data(
+        let (sweep, _) = crate::gui::sweep::compute_sweep_data(
             &mech, &q, 2.0 * std::f64::consts::PI, 0.0, 9.81,
         );
 

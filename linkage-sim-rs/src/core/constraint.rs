@@ -755,24 +755,77 @@ impl Constraint for CamFollowerJoint {
         q_dot: &DVector<f64>,
         _t: f64,
     ) -> DVector<f64> {
-        // Simplified gamma — use finite differences on Jacobian*q_dot for robustness.
-        // For velocity-level terms: gamma = -(d/dt)(Phi_q) * q_dot
-        // Approximate as: -Phi_q_dot_contribution from centripetal/Coriolis + profile curvature
+        // Full gamma for Φ = diff · u − s(θ_i)
+        // where diff = pt_j − pt_i, u = A_i · dir.
+        //
+        // gamma = −d²Φ/dt² |_{q̈=0}
+        //       = −[d̈iff · u + 2 ḋiff · u̇ + diff · ü] + s″(θ_i) θ̇_i²
+        //
+        // At q̈ = 0:
+        //   ḋiff = ṙ_j + B_j s_j θ̇_j − ṙ_i − B_i s_i θ̇_i
+        //   d̈iff = −A_j s_j θ̇_j² + A_i s_i θ̇_i²   (centripetal only)
+        //   u̇   = B_i · dir · θ̇_i
+        //   ü   = −A_i · dir · θ̇_i²                  (centripetal only)
+
         let theta_i = if state.is_ground(&self.body_i_id_) { 0.0 }
             else { state.get_angle(&self.body_i_id_, q) };
-        let theta_i_dot = if state.is_ground(&self.body_i_id_) { 0.0 }
-            else {
-                let bi = state.get_index(&self.body_i_id_).unwrap();
-                q_dot[bi.theta_idx()]
-            };
+        let a_i = State::rotation_matrix(theta_i);
+        let b_i = State::rotation_matrix_derivative(theta_i);
+        let u_global = a_i * self.follower_dir;
 
-        // Profile curvature term: s''(theta_i) * theta_i_dot^2
+        let pt_i = state.body_point_global(&self.body_i_id_, &self.point_i_local, q);
+        let pt_j = state.body_point_global(&self.body_j_id_, &self.point_j_local, q);
+        let diff = pt_j - pt_i;
+
+        // Velocities for body_i (zero for ground)
+        let (theta_dot_i, r_dot_i) = if !state.is_ground(&self.body_i_id_) {
+            let bi = state.get_index(&self.body_i_id_).unwrap();
+            (
+                q_dot[bi.theta_idx()],
+                Vector2::new(q_dot[bi.x_idx()], q_dot[bi.y_idx()]),
+            )
+        } else {
+            (0.0, Vector2::zeros())
+        };
+
+        // Velocities for body_j (zero for ground)
+        let (theta_dot_j, r_dot_j) = if !state.is_ground(&self.body_j_id_) {
+            let bj = state.get_index(&self.body_j_id_).unwrap();
+            (
+                q_dot[bj.theta_idx()],
+                Vector2::new(q_dot[bj.x_idx()], q_dot[bj.y_idx()]),
+            )
+        } else {
+            (0.0, Vector2::zeros())
+        };
+
+        let theta_j = if state.is_ground(&self.body_j_id_) { 0.0 }
+            else { state.get_angle(&self.body_j_id_, q) };
+        let b_j = State::rotation_matrix_derivative(theta_j);
+        let a_j = State::rotation_matrix(theta_j);
+
+        // ḋiff = d(pt_j − pt_i)/dt
+        let d_dot = (r_dot_j + b_j * self.point_j_local * theta_dot_j)
+            - (r_dot_i + b_i * self.point_i_local * theta_dot_i);
+
+        // d̈iff at q̈=0 (centripetal terms only: −A·s·θ̇²)
+        let d_ddot = -(a_j * self.point_j_local) * theta_dot_j.powi(2)
+            + (a_i * self.point_i_local) * theta_dot_i.powi(2);
+
+        // u̇ = B_i · dir · θ̇_i
+        let u_dot = b_i * self.follower_dir * theta_dot_i;
+
+        // ü at q̈=0: −A_i · dir · θ̇_i²
+        let u_ddot = -(a_i * self.follower_dir) * theta_dot_i.powi(2);
+
+        // Profile curvature: s″(θ_i) · θ̇_i²
         let d2s = self.profile.second_derivative(theta_i);
 
-        // For a simplified model, gamma ≈ s''(theta) * theta_dot^2
-        // (the full gamma includes centripetal terms from the rotating direction vector,
-        //  but those are second-order corrections for typical cam-follower systems)
-        DVector::from_element(1, d2s * theta_i_dot * theta_i_dot)
+        // gamma = −[d̈iff · u + 2 ḋiff · u̇ + diff · ü] + s″θ̇²
+        let gamma = -(d_ddot.dot(&u_global) + 2.0 * d_dot.dot(&u_dot) + diff.dot(&u_ddot))
+            + d2s * theta_dot_i.powi(2);
+
+        DVector::from_element(1, gamma)
     }
 }
 
@@ -1454,6 +1507,112 @@ mod tests {
             0.0,
         )
         .unwrap();
+
+        assert_gamma_matches_fd(&joint, &state, &q, &q_dot, 0.0, 1e-5);
+    }
+
+    // -----------------------------------------------------------------
+    // Cam-follower gamma FD tests
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn cam_follower_gamma_fd_two_bodies() {
+        let state = two_body_state();
+        let mut q = state.make_q();
+        state.set_pose("crank", &mut q, 0.1, 0.2, 0.7);
+        state.set_pose("coupler", &mut q, 0.4, 0.3, 1.1);
+
+        let mut q_dot = state.make_q();
+        q_dot[0] = 0.15; // crank x_dot
+        q_dot[1] = -0.1; // crank y_dot
+        q_dot[2] = 3.5; // crank theta_dot
+        q_dot[3] = -0.2; // coupler x_dot
+        q_dot[4] = 0.25; // coupler y_dot
+        q_dot[5] = -1.5; // coupler theta_dot
+
+        // Use a harmonic profile so s'' is nonzero everywhere
+        let profile = CamProfile::Harmonic {
+            amplitude: 0.05,
+            frequency: 2.0,
+            phase: 0.3,
+            offset: 0.1,
+        };
+
+        let joint = make_cam_follower(
+            "CF1",
+            "crank",
+            "coupler",
+            Vector2::new(0.05, 0.02),
+            Vector2::new(-0.03, 0.01),
+            Vector2::new(1.0, 0.3),
+            profile,
+        );
+
+        assert_gamma_matches_fd(&joint, &state, &q, &q_dot, 0.0, 1e-5);
+    }
+
+    #[test]
+    fn cam_follower_gamma_fd_ground_to_body() {
+        let mut state = State::new();
+        state.register_body("follower").unwrap();
+        let mut q = state.make_q();
+        state.set_pose("follower", &mut q, 0.3, 0.1, 0.5);
+
+        let mut q_dot = state.make_q();
+        q_dot[0] = 0.4; // follower x_dot
+        q_dot[1] = -0.3; // follower y_dot
+        q_dot[2] = 2.0; // follower theta_dot
+
+        // Cam body is ground (theta_i = 0, constant), follower slides
+        let profile = CamProfile::Polynomial {
+            coefficients: vec![0.0, 0.1, -0.05],
+        };
+
+        let joint = make_cam_follower(
+            "CF_gnd",
+            "ground",
+            "follower",
+            Vector2::new(0.0, 0.0),
+            Vector2::new(0.0, 0.0),
+            Vector2::new(0.0, 1.0),
+            profile,
+        );
+
+        assert_gamma_matches_fd(&joint, &state, &q, &q_dot, 0.0, 1e-5);
+    }
+
+    #[test]
+    fn cam_follower_gamma_fd_cam_rotating() {
+        // Cam body rotates with nonzero angular velocity — exercises all terms
+        let state = two_body_state();
+        let mut q = state.make_q();
+        state.set_pose("crank", &mut q, 0.0, 0.0, 0.4);
+        state.set_pose("coupler", &mut q, 0.2, 0.15, 0.0);
+
+        let mut q_dot = state.make_q();
+        q_dot[0] = 0.1; // crank x_dot
+        q_dot[1] = 0.05; // crank y_dot
+        q_dot[2] = 4.0; // crank theta_dot (large — stresses centripetal terms)
+        q_dot[3] = 0.3; // coupler x_dot
+        q_dot[4] = -0.15; // coupler y_dot
+        q_dot[5] = 1.0; // coupler theta_dot
+
+        let profile = CamProfile::Harmonic {
+            amplitude: 0.08,
+            frequency: 3.0,
+            phase: 0.0,
+            offset: 0.0,
+        };
+
+        let joint = make_cam_follower(
+            "CF_rot",
+            "crank",
+            "coupler",
+            Vector2::new(0.1, 0.0),
+            Vector2::new(-0.05, 0.02),
+            Vector2::new(0.6, 0.8),
+            profile,
+        );
 
         assert_gamma_matches_fd(&joint, &state, &q, &q_dot, 0.0, 1e-5);
     }
