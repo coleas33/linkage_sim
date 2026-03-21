@@ -22,6 +22,10 @@ enum PendingPropertyEdit {
     UpdateForce { index: usize, force: ForceElement },
     LinkLength { body_id: String, point_a: String, point_b: String, length: f64 },
     SetEditorBody(String),
+    AddMountPoint { body_id: String, name: String, position: [f64; 2] },
+    DeleteMountPoint { body_id: String, name: String },
+    RenameMountPoint { body_id: String, old_name: String, new_name: String },
+    UpdateMountPointPosition { body_id: String, name: String, position: [f64; 2] },
 }
 
 /// Draw the property panel showing info about the selected entity.
@@ -258,6 +262,24 @@ fn apply_pending(state: &mut AppState, pending: Option<PendingPropertyEdit>) {
             }
             PendingPropertyEdit::SetEditorBody(body_id) => {
                 state.link_editor_body = Some(body_id);
+            }
+            PendingPropertyEdit::AddMountPoint { body_id, name, position } => {
+                state.add_mount_point(&body_id, &name, position);
+            }
+            PendingPropertyEdit::DeleteMountPoint { body_id, name } => {
+                let cleared = state.delete_mount_point(&body_id, &name);
+                if cleared > 0 {
+                    log::warn!(
+                        "Mount point '{}' removed — {} force ref(s) reverted to fixed coordinates",
+                        name, cleared
+                    );
+                }
+            }
+            PendingPropertyEdit::RenameMountPoint { body_id, old_name, new_name } => {
+                state.rename_mount_point(&body_id, &old_name, &new_name);
+            }
+            PendingPropertyEdit::UpdateMountPointPosition { body_id, name, position } => {
+                state.update_mount_point_position(&body_id, &name, position);
             }
         }
     }

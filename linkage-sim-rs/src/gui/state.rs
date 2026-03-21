@@ -1799,6 +1799,137 @@ impl AppState {
         self.rebuild();
     }
 
+    // ── Mount point CRUD ─────────────────────────────────────────────────
+
+    /// Add a named mount point to a body in the blueprint.
+    ///
+    /// Uses `entry(...).or_insert(...)` so existing names are not overwritten.
+    /// Pushes undo and rebuilds.
+    pub fn add_mount_point(&mut self, body_id: &str, name: &str, pos: [f64; 2]) {
+        self.push_undo();
+        {
+            let Some(bp) = &mut self.blueprint else { return };
+            if let Some(body) = bp.bodies.get_mut(body_id) {
+                body.mount_points.entry(name.to_string()).or_insert(pos);
+            }
+        }
+        self.rebuild();
+    }
+
+    /// Remove a named mount point from a body in the blueprint.
+    ///
+    /// Also clears any force element references to this mount point (setting
+    /// `point_X_name` to `None`). Returns the number of force references cleared.
+    /// Pushes undo and rebuilds.
+    pub fn delete_mount_point(&mut self, body_id: &str, name: &str) -> usize {
+        self.push_undo();
+        let cleared_count;
+        {
+            let Some(bp) = &mut self.blueprint else { return 0 };
+            if let Some(body) = bp.bodies.get_mut(body_id) {
+                body.mount_points.remove(name);
+            }
+            cleared_count = Self::clear_force_point_refs(&mut bp.forces, body_id, name);
+        }
+        self.rebuild();
+        cleared_count
+    }
+
+    /// Rename a mount point on a body in the blueprint.
+    ///
+    /// Also updates all force element references that named the old point.
+    /// Pushes undo and rebuilds.
+    pub fn rename_mount_point(&mut self, body_id: &str, old_name: &str, new_name: &str) {
+        self.push_undo();
+        {
+            let Some(bp) = &mut self.blueprint else { return };
+            if let Some(body) = bp.bodies.get_mut(body_id) {
+                if let Some(pos) = body.mount_points.remove(old_name) {
+                    body.mount_points.insert(new_name.to_string(), pos);
+                }
+            }
+            Self::rename_force_point_refs(&mut bp.forces, body_id, old_name, new_name);
+        }
+        self.rebuild();
+    }
+
+    /// Update the local position of a named mount point on a body.
+    ///
+    /// Continuous tweak — no undo snapshot pushed.
+    pub fn update_mount_point_position(&mut self, body_id: &str, name: &str, pos: [f64; 2]) {
+        {
+            let Some(bp) = &mut self.blueprint else { return };
+            if let Some(body) = bp.bodies.get_mut(body_id) {
+                if let Some(pt) = body.mount_points.get_mut(name) {
+                    *pt = pos;
+                }
+            }
+        }
+        self.rebuild();
+    }
+
+    // ── Mount point cascade helpers ──────────────────────────────────────
+
+    /// Clear `point_X_name` references on all force elements that point at
+    /// `(body_id, point_name)`. Returns the count of references cleared.
+    fn clear_force_point_refs(forces: &mut [ForceElement], body_id: &str, point_name: &str) -> usize {
+        let mut count = 0usize;
+        for force in forces.iter_mut() {
+            match force {
+                ForceElement::LinearSpring(s) => {
+                    if s.body_a == body_id && s.point_a_name.as_deref() == Some(point_name) { s.point_a_name = None; count += 1; }
+                    if s.body_b == body_id && s.point_b_name.as_deref() == Some(point_name) { s.point_b_name = None; count += 1; }
+                }
+                ForceElement::LinearDamper(d) => {
+                    if d.body_a == body_id && d.point_a_name.as_deref() == Some(point_name) { d.point_a_name = None; count += 1; }
+                    if d.body_b == body_id && d.point_b_name.as_deref() == Some(point_name) { d.point_b_name = None; count += 1; }
+                }
+                ForceElement::GasSpring(g) => {
+                    if g.body_a == body_id && g.point_a_name.as_deref() == Some(point_name) { g.point_a_name = None; count += 1; }
+                    if g.body_b == body_id && g.point_b_name.as_deref() == Some(point_name) { g.point_b_name = None; count += 1; }
+                }
+                ForceElement::LinearActuator(a) => {
+                    if a.body_a == body_id && a.point_a_name.as_deref() == Some(point_name) { a.point_a_name = None; count += 1; }
+                    if a.body_b == body_id && a.point_b_name.as_deref() == Some(point_name) { a.point_b_name = None; count += 1; }
+                }
+                ForceElement::ExternalForce(e) => {
+                    if e.body_id == body_id && e.local_point_name.as_deref() == Some(point_name) { e.local_point_name = None; count += 1; }
+                }
+                _ => {}
+            }
+        }
+        count
+    }
+
+    /// Update `point_X_name` references on all force elements that point at
+    /// `(body_id, old_name)` to use `new_name` instead.
+    fn rename_force_point_refs(forces: &mut [ForceElement], body_id: &str, old_name: &str, new_name: &str) {
+        for force in forces.iter_mut() {
+            match force {
+                ForceElement::LinearSpring(s) => {
+                    if s.body_a == body_id && s.point_a_name.as_deref() == Some(old_name) { s.point_a_name = Some(new_name.to_string()); }
+                    if s.body_b == body_id && s.point_b_name.as_deref() == Some(old_name) { s.point_b_name = Some(new_name.to_string()); }
+                }
+                ForceElement::LinearDamper(d) => {
+                    if d.body_a == body_id && d.point_a_name.as_deref() == Some(old_name) { d.point_a_name = Some(new_name.to_string()); }
+                    if d.body_b == body_id && d.point_b_name.as_deref() == Some(old_name) { d.point_b_name = Some(new_name.to_string()); }
+                }
+                ForceElement::GasSpring(g) => {
+                    if g.body_a == body_id && g.point_a_name.as_deref() == Some(old_name) { g.point_a_name = Some(new_name.to_string()); }
+                    if g.body_b == body_id && g.point_b_name.as_deref() == Some(old_name) { g.point_b_name = Some(new_name.to_string()); }
+                }
+                ForceElement::LinearActuator(a) => {
+                    if a.body_a == body_id && a.point_a_name.as_deref() == Some(old_name) { a.point_a_name = Some(new_name.to_string()); }
+                    if a.body_b == body_id && a.point_b_name.as_deref() == Some(old_name) { a.point_b_name = Some(new_name.to_string()); }
+                }
+                ForceElement::ExternalForce(e) => {
+                    if e.body_id == body_id && e.local_point_name.as_deref() == Some(old_name) { e.local_point_name = Some(new_name.to_string()); }
+                }
+                _ => {}
+            }
+        }
+    }
+
     /// Add a force element to the blueprint.
     ///
     /// Pushes undo, appends the element, and rebuilds.
