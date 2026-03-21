@@ -60,7 +60,7 @@ The `CamFollowerJoint::gamma()` omits centripetal terms from the rotating direct
 | # | Issue | Location | Impact |
 |---|---|---|---|
 | U1 | **Save/export completes silently** | `mod.rs:88–354` | [x] 6d71f01 — green toast in status bar |
-| U2 | **Right-click drag (pan) conflicts with context menu** | `canvas.rs:876–884` | [ ] |
+| U2 | **Right-click drag (pan) conflicts with context menu** | `canvas.rs:876–884` | [x] 030069a — drag guard |
 | U3 | **Force toolbar doesn't show which body it targets** | `force_toolbar.rs:142–169` | [x] 415b0d2 — "Target: body" label |
 
 ### High-Impact UX
@@ -72,7 +72,7 @@ The `CamFollowerJoint::gamma()` omits centripetal terms from the rotating direct
 | U6 | **Parametric study inputs have no units and no validation** | `parametric_panel.rs:45–72` | [x] 1af4f57 — unit suffixes + validation |
 | U7 | **No "Fit to View" / zoom-to-fit** | `canvas.rs, state.rs` | [x] 14900bd — press F to fit |
 | U8 | **No unsaved-changes indicator** | `state.rs, mod.rs` | [x] 6d71f01 — title bar shows dirty state |
-| U9 | **Clicking on plots doesn't scrub mechanism angle** | `plot_panel.rs` | [ ] |
+| U9 | **Clicking on plots doesn't scrub mechanism angle** | `plot_panel.rs` | [x] 8cfac1c — click-to-scrub |
 
 ### Medium-Impact UX
 
@@ -96,7 +96,7 @@ The `CamFollowerJoint::gamma()` omits centripetal terms from the rotating direct
 | V5 | **Force magnitude labels 9px** — unreadable | `canvas.rs:1784–1894` | [x] 0fbef3a — 11px |
 | V6 | **SVG export uses hairlines, not filled bars** | `export.rs:247, 285–293` | [x] 1af4f57 — polygon bars with fill |
 | V7 | **PNG rasterizer fills white before dark SVG** | `export.rs:413` | [x] 462b337 — dark fill |
-| V8 | **Rotary force elements render as floating text only** | `canvas.rs:1469–1621` | [ ] |
+| V8 | **Rotary force elements render as floating text only** | `canvas.rs:1469–1621` | [x] 030069a — letter badges + dashed lines |
 | V9 | **Grid vanishes when zoomed out** instead of coarsening | `canvas.rs:1967–1970` | [x] 7a3055f — doubles spacing |
 | V10 | **Coupler trace dashes fixed in pixels** | `canvas.rs:255–274` | [x] 00fcc76 — zoom-scaled |
 | V11 | **HTML report timestamp is raw Unix seconds** | `export.rs:834–842` | [x] 7a3055f — formatted date |
