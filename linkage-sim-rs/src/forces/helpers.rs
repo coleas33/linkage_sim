@@ -27,7 +27,10 @@ pub fn point_force_to_q(
         return result;
     }
 
-    let idx = state.get_index(body_id).unwrap();
+    let idx = match state.get_index(body_id) {
+        Ok(i) => i,
+        Err(_) => return result, // Unknown body — skip silently
+    };
     result[idx.x_idx()] = force_global.x;
     result[idx.y_idx()] = force_global.y;
 
@@ -47,7 +50,10 @@ pub fn body_torque_to_q(state: &State, body_id: &str, torque: f64) -> DVector<f6
         return result;
     }
 
-    let idx = state.get_index(body_id).unwrap();
+    let idx = match state.get_index(body_id) {
+        Ok(i) => i,
+        Err(_) => return result, // Unknown body — skip silently
+    };
     result[idx.theta_idx()] = torque;
 
     result
