@@ -689,7 +689,7 @@ fn draw_force_elements_panel(
         egui::CollapsingHeader::new(&header_label)
             .id_salt(format!("force_{}", bp_idx))
             .show(ui, |ui| {
-                draw_force_element_details(ui, bp_idx, force, pending);
+                draw_force_element_details(ui, bp_idx, force, bp, pending);
 
                 if ui.small_button("Remove").clicked() {
                     *pending = Some(PendingPropertyEdit::RemoveForce(bp_idx));
@@ -712,6 +712,7 @@ fn draw_force_element_details(
     ui: &mut egui::Ui,
     index: usize,
     force: &ForceElement,
+    blueprint: &crate::io::serialization::MechanismJson,
     pending: &mut Option<PendingPropertyEdit>,
 ) {
     match force {
@@ -762,17 +763,29 @@ fn draw_force_element_details(
                 }
             });
 
-            draw_point_fields(ui, "Pt A", &s.point_a, index, |pt| {
-                let mut updated = s.clone();
-                updated.point_a = pt;
-                ForceElement::LinearSpring(updated)
-            }, pending);
+            draw_point_picker(
+                ui, "Pt A", &s.body_a, &s.point_a, &s.point_a_name,
+                blueprint, index,
+                |name, coords| {
+                    let mut updated = s.clone();
+                    updated.point_a_name = name;
+                    updated.point_a = coords;
+                    ForceElement::LinearSpring(updated)
+                },
+                pending,
+            );
 
-            draw_point_fields(ui, "Pt B", &s.point_b, index, |pt| {
-                let mut updated = s.clone();
-                updated.point_b = pt;
-                ForceElement::LinearSpring(updated)
-            }, pending);
+            draw_point_picker(
+                ui, "Pt B", &s.body_b, &s.point_b, &s.point_b_name,
+                blueprint, index,
+                |name, coords| {
+                    let mut updated = s.clone();
+                    updated.point_b_name = name;
+                    updated.point_b = coords;
+                    ForceElement::LinearSpring(updated)
+                },
+                pending,
+            );
         }
 
         ForceElement::LinearDamper(d) => {
@@ -799,17 +812,29 @@ fn draw_force_element_details(
                 }
             });
 
-            draw_point_fields(ui, "Pt A", &d.point_a, index, |pt| {
-                let mut updated = d.clone();
-                updated.point_a = pt;
-                ForceElement::LinearDamper(updated)
-            }, pending);
+            draw_point_picker(
+                ui, "Pt A", &d.body_a, &d.point_a, &d.point_a_name,
+                blueprint, index,
+                |name, coords| {
+                    let mut updated = d.clone();
+                    updated.point_a_name = name;
+                    updated.point_a = coords;
+                    ForceElement::LinearDamper(updated)
+                },
+                pending,
+            );
 
-            draw_point_fields(ui, "Pt B", &d.point_b, index, |pt| {
-                let mut updated = d.clone();
-                updated.point_b = pt;
-                ForceElement::LinearDamper(updated)
-            }, pending);
+            draw_point_picker(
+                ui, "Pt B", &d.body_b, &d.point_b, &d.point_b_name,
+                blueprint, index,
+                |name, coords| {
+                    let mut updated = d.clone();
+                    updated.point_b_name = name;
+                    updated.point_b = coords;
+                    ForceElement::LinearDamper(updated)
+                },
+                pending,
+            );
         }
 
         ForceElement::ExternalForce(f) => {
@@ -846,11 +871,17 @@ fn draw_force_element_details(
                 }
             });
 
-            draw_point_fields(ui, "Local pt", &f.local_point, index, |pt| {
-                let mut updated = f.clone();
-                updated.local_point = pt;
-                ForceElement::ExternalForce(updated)
-            }, pending);
+            draw_point_picker(
+                ui, "Local pt", &f.body_id, &f.local_point, &f.local_point_name,
+                blueprint, index,
+                |name, coords| {
+                    let mut updated = f.clone();
+                    updated.local_point_name = name;
+                    updated.local_point = coords;
+                    ForceElement::ExternalForce(updated)
+                },
+                pending,
+            );
 
             draw_modulation_fields(ui, index, &f.modulation, |m| {
                 let mut updated = f.clone();
@@ -1066,17 +1097,29 @@ fn draw_force_element_details(
                 }
             });
 
-            draw_point_fields(ui, "Pt A", &gs.point_a, index, |pt| {
-                let mut updated = gs.clone();
-                updated.point_a = pt;
-                ForceElement::GasSpring(updated)
-            }, pending);
+            draw_point_picker(
+                ui, "Pt A", &gs.body_a, &gs.point_a, &gs.point_a_name,
+                blueprint, index,
+                |name, coords| {
+                    let mut updated = gs.clone();
+                    updated.point_a_name = name;
+                    updated.point_a = coords;
+                    ForceElement::GasSpring(updated)
+                },
+                pending,
+            );
 
-            draw_point_fields(ui, "Pt B", &gs.point_b, index, |pt| {
-                let mut updated = gs.clone();
-                updated.point_b = pt;
-                ForceElement::GasSpring(updated)
-            }, pending);
+            draw_point_picker(
+                ui, "Pt B", &gs.body_b, &gs.point_b, &gs.point_b_name,
+                blueprint, index,
+                |name, coords| {
+                    let mut updated = gs.clone();
+                    updated.point_b_name = name;
+                    updated.point_b = coords;
+                    ForceElement::GasSpring(updated)
+                },
+                pending,
+            );
         }
 
         ForceElement::BearingFriction(bf) => {
@@ -1423,17 +1466,29 @@ fn draw_force_element_details(
                 }
             });
 
-            draw_point_fields(ui, "Pt A", &la.point_a, index, |pt| {
-                let mut updated = la.clone();
-                updated.point_a = pt;
-                ForceElement::LinearActuator(updated)
-            }, pending);
+            draw_point_picker(
+                ui, "Pt A", &la.body_a, &la.point_a, &la.point_a_name,
+                blueprint, index,
+                |name, coords| {
+                    let mut updated = la.clone();
+                    updated.point_a_name = name;
+                    updated.point_a = coords;
+                    ForceElement::LinearActuator(updated)
+                },
+                pending,
+            );
 
-            draw_point_fields(ui, "Pt B", &la.point_b, index, |pt| {
-                let mut updated = la.clone();
-                updated.point_b = pt;
-                ForceElement::LinearActuator(updated)
-            }, pending);
+            draw_point_picker(
+                ui, "Pt B", &la.body_b, &la.point_b, &la.point_b_name,
+                blueprint, index,
+                |name, coords| {
+                    let mut updated = la.clone();
+                    updated.point_b_name = name;
+                    updated.point_b = coords;
+                    ForceElement::LinearActuator(updated)
+                },
+                pending,
+            );
         }
     }
 }
@@ -1638,6 +1693,90 @@ fn draw_modulation_fields(
                 );
             }
         }
+    }
+}
+
+/// Draw a named-point picker dropdown for a force attachment point.
+///
+/// Populates the dropdown with the body's attachment points and mount points
+/// from the blueprint (sorted by name). When a named point is selected both
+/// the name and its coordinates are written back. If "custom coords..." is
+/// selected the name is cleared and raw x/y DragValues are shown via
+/// `draw_point_fields`.
+#[allow(clippy::too_many_arguments)]
+fn draw_point_picker(
+    ui: &mut egui::Ui,
+    label: &str,
+    body_id: &str,
+    current_point: &[f64; 2],
+    current_name: &Option<String>,
+    blueprint: &crate::io::serialization::MechanismJson,
+    index: usize,
+    make_element: impl Fn(Option<String>, [f64; 2]) -> ForceElement,
+    pending: &mut Option<PendingPropertyEdit>,
+) {
+    let body_json = blueprint.bodies.get(body_id);
+
+    // Build sorted option list: attachment points first, then mount points.
+    let mut options: Vec<(String, String, [f64; 2])> = Vec::new();
+    if let Some(bj) = body_json {
+        let mut att_names: Vec<&String> = bj.attachment_points.keys().collect();
+        att_names.sort();
+        for name in att_names {
+            options.push((
+                name.clone(),
+                format!("{} (joint)", name),
+                bj.attachment_points[name],
+            ));
+        }
+        let mut mt_names: Vec<&String> = bj.mount_points.keys().collect();
+        mt_names.sort();
+        for name in mt_names {
+            options.push((
+                name.clone(),
+                format!("{} (mount)", name),
+                bj.mount_points[name],
+            ));
+        }
+    }
+
+    ui.horizontal(|ui| {
+        ui.label(format!("{}:", label));
+        let current_label = current_name
+            .as_ref()
+            .map(|n| n.as_str())
+            .unwrap_or("custom");
+        egui::ComboBox::from_id_salt(format!("{}-{}-{}", label, body_id, index))
+            .selected_text(current_label)
+            .show_ui(ui, |ui| {
+                for (name, display, coords) in &options {
+                    if ui
+                        .selectable_label(current_name.as_ref() == Some(name), display)
+                        .clicked()
+                    {
+                        *pending = Some(PendingPropertyEdit::UpdateForce {
+                            index,
+                            force: make_element(Some(name.clone()), *coords),
+                        });
+                    }
+                }
+                if ui
+                    .selectable_label(current_name.is_none(), "custom coords...")
+                    .clicked()
+                {
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: make_element(None, *current_point),
+                    });
+                }
+            });
+    });
+
+    // Show raw x/y editors only when no named point is selected.
+    if current_name.is_none() {
+        draw_point_fields(ui, label, current_point, index, |pt| {
+            make_element(None, pt)
+        }, pending);
     }
 }
 
