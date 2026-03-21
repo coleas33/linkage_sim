@@ -253,9 +253,11 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                     })
                     .collect();
 
-                // Draw as dashed line
-                let dash_len = 6.0f32;
-                let gap_len = 4.0f32;
+                // Draw as dashed line — scale with zoom so dashes stay
+                // proportional in world units (~5 mm dash, ~3 mm gap),
+                // clamped to reasonable pixel sizes.
+                let dash_len = (0.005 * view.scale).clamp(3.0, 15.0);
+                let gap_len  = (0.003 * view.scale).clamp(2.0, 10.0);
                 for pair in screen_pts.windows(2) {
                     let a = pair[0];
                     let b = pair[1];
