@@ -182,14 +182,35 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
     // ── Diagnostics (collapsed) ───────────────────────────────────────
     draw_diagnostics_section(ui, state);
 
-    // ── Driver torque & mechanical advantage ─────────────────────────
-    if let Some(torque) = state.force_results.driver_torque {
-        ui.separator();
-        ui.label(format!("Driver Torque: {:.4} N\u{00b7}m", torque));
-    }
-    if let Some(ma) = state.force_results.mechanical_advantage {
-        ui.label(format!("Mech. Advantage: {:.3}", ma));
-    }
+    // ── Joint Reactions (live, always visible) ──────────────────────
+    let react_color = egui::Color32::from_rgb(255, 100, 100);
+    egui::CollapsingHeader::new(
+        egui::RichText::new("\u{1F4CD} Joint Reactions").color(react_color),
+    )
+        .id_salt("joint_reactions_section")
+        .default_open(true)
+        .show(ui, |ui| {
+            if let Some(torque) = state.force_results.driver_torque {
+                ui.label(format!("Driver Torque: {:.4} N\u{00b7}m", torque));
+            } else {
+                ui.label("Driver Torque: \u{2014}");
+            }
+            if let Some(ma) = state.force_results.mechanical_advantage {
+                ui.label(format!("Mech. Advantage: {:.3}", ma));
+            }
+
+            if state.force_results.joint_reactions.is_empty() {
+                ui.label("No reaction data (need driver)");
+            } else {
+                let mut ids: Vec<&String> = state.force_results.joint_reactions.keys().collect();
+                ids.sort();
+                for jid in ids {
+                    let (fx, fy) = state.force_results.joint_reactions[jid];
+                    let mag = (fx * fx + fy * fy).sqrt();
+                    ui.label(format!("{}: {:.2} N  ({:.2}, {:.2})", jid, mag, fx, fy));
+                }
+            }
+        });
 
     // ── Force Elements section ─────────────────────────────────────────
     draw_force_elements_inner(ui, state, &mut pending);

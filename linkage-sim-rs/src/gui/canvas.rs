@@ -925,25 +925,23 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         if response.drag_started_by(egui::PointerButton::Primary) && !is_shift {
             if let Some(pos) = response.interact_pointer_pos() {
                 let snap_hit = find_nearest_attachment(pos);
-                let (world_pos, attachment) = if let Some(hit) = snap_hit {
-                    // Priority 1: snap to exact world position of existing point.
-                    (hit.world_pos, Some((hit.body_id.clone(), hit.point_name.clone())))
+                if let Some(hit) = snap_hit {
+                    // Snap to existing attachment point.
+                    state.draw_link_start = Some(DrawLinkStart {
+                        world_pos: hit.world_pos,
+                        attachment: Some((hit.body_id.clone(), hit.point_name.clone())),
+                    });
                 } else if let Some(seg_hit) = find_nearest_body_segment(pos, &body_segments, 8.0) {
-                    // Priority 2: snap to body segment — create new pivot.
+                    // Snap to body segment — create new pivot on that body.
                     let name = state.next_attachment_point_name(&seg_hit.body_id);
                     let [lx, ly] = state.world_to_body_local(&seg_hit.body_id, seg_hit.world_pos[0], seg_hit.world_pos[1]);
                     state.add_attachment_point_local_raw(&seg_hit.body_id, &name, lx, ly);
-                    (seg_hit.world_pos, Some((seg_hit.body_id.clone(), name)))
-                } else {
-                    let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
-                    let (sx, sy) = state.grid.snap_point(wx, wy);
-                    ([sx, sy], None)
-                };
-
-                state.draw_link_start = Some(DrawLinkStart {
-                    world_pos,
-                    attachment,
-                });
+                    state.draw_link_start = Some(DrawLinkStart {
+                        world_pos: seg_hit.world_pos,
+                        attachment: Some((seg_hit.body_id.clone(), name)),
+                    });
+                }
+                // If clicking on empty space, do NOT start — user must use +Ground tool first.
             }
         }
 
@@ -1046,12 +1044,15 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                     // Single undo snapshot for the entire compound operation.
                     state.push_undo();
 
-                    // Start connection: existing point or new ground pivot.
-                    let start_attach = start.attachment.clone().unwrap_or_else(|| {
-                        let name = state.next_ground_pivot_name();
-                        state.add_ground_pivot_raw(&name, sx, sy);
-                        (GROUND_ID.to_string(), name)
-                    });
+                    // Start connection must be an existing point (no auto-ground).
+                    let start_attach = match start.attachment.clone() {
+                        Some(a) => a,
+                        None => {
+                            // Should not happen since we guard on drag start,
+                            // but be safe.
+                            return;
+                        }
+                    };
 
                     // Create the body with endpoints at exact snap positions.
                     let body_id = state.next_body_id();
