@@ -46,17 +46,18 @@ Rejected alternatives:
 
 #### Body struct (`core/body.rs`)
 
-Add `mount_points` field:
+Add `mount_points` field (inserted after `izz_cg`, before `coupler_points` to
+match existing field ordering in the actual struct):
 
 ```rust
 pub struct Body {
     pub id: String,
     pub attachment_points: HashMap<String, Vector2<f64>>,  // joint connections
-    pub coupler_points: HashMap<String, Vector2<f64>>,     // tracing points
-    pub mount_points: HashMap<String, Vector2<f64>>,       // NEW: force mounts
     pub mass: f64,
     pub cg_local: Vector2<f64>,
     pub izz_cg: f64,
+    pub mount_points: HashMap<String, Vector2<f64>>,       // NEW: force mounts
+    pub coupler_points: HashMap<String, Vector2<f64>>,     // tracing points
 }
 ```
 
@@ -64,43 +65,73 @@ New methods:
 
 ```rust
 impl Body {
+    /// Add a named mount point for force attachment.
+    /// Rejects names that collide with attachment_points or existing mount_points.
     pub fn add_mount_point(&mut self, name: &str, x: f64, y: f64) -> Result<(), BodyError>;
+
+    /// Look up a named point from attachment_points or mount_points.
+    /// Since name uniqueness is enforced across both collections, lookup order
+    /// is irrelevant — a name can only exist in one collection. Searches both
+    /// and returns the match, or errors with available names from both.
     pub fn resolve_force_point(&self, name: &str) -> Result<&Vector2<f64>, BodyError>;
 }
 ```
 
-Update `make_ground()` and `make_bar()` to include `mount_points: HashMap::new()`.
+Update all struct literals that construct `Body`:
+- `Body::new()` — add `mount_points: HashMap::new()`
+- `make_ground()` — add `mount_points: HashMap::new()`
+- `make_bar()` — add `mount_points: HashMap::new()`
+- `load_mechanism_unbuilt_from_json()` in `serialization.rs` (line ~419-434) —
+  deserialize `mount_points` from `BodyJson` analogous to `coupler_points`
+
+New `BodyError` variants:
+- `DuplicateMountPoint { point, body }` — name already in mount_points
+- `MountPointNameCollision { point, body }` — name exists in attachment_points
+- `ForcePointNotFound { point, body, available_attachment, available_mount }` —
+  not found in either collection
 
 #### BodyJson (`io/serialization.rs`)
 
 ```rust
 pub struct BodyJson {
     pub attachment_points: HashMap<String, [f64; 2]>,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub coupler_points: HashMap<String, [f64; 2]>,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub mount_points: HashMap<String, [f64; 2]>,           // NEW
     pub mass: f64,
     pub cg_local: [f64; 2],
     pub izz_cg: f64,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub mount_points: HashMap<String, [f64; 2]>,           // NEW (before coupler_points, matching Body field order)
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub coupler_points: HashMap<String, [f64; 2]>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub point_masses: Vec<PointMassJson>,
 }
 ```
 
+**Critical:** `body_to_json()` (~line 219-243) must map
+`body.mount_points` → `BodyJson.mount_points` (same pattern as `coupler_points`).
+Without this, undo/redo snapshots (which serialize via `mechanism_to_json`) will
+silently drop all mount points, creating dangling `point_X_name` references on
+restore.
+
 #### Force elements (`forces/elements.rs`)
 
 Add `point_X_name: Option<String>` to the 5 elements that have point fields:
 
-| Element                 | New fields                                  |
-|-------------------------|---------------------------------------------|
-| `LinearSpringElement`   | `point_a_name`, `point_b_name`              |
-| `LinearDamperElement`   | `point_a_name`, `point_b_name`              |
-| `GasSpringElement`      | `point_a_name`, `point_b_name`              |
-| `LinearActuatorElement` | `point_a_name`, `point_b_name`              |
-| `ExternalForceElement`  | `local_point_name`                          |
+| Element                 | New fields                                  | Notes |
+|-------------------------|---------------------------------------------|-------|
+| `LinearSpringElement`   | `point_a_name`, `point_b_name`              | Caches into `point_a`, `point_b` |
+| `LinearDamperElement`   | `point_a_name`, `point_b_name`              | Caches into `point_a`, `point_b` |
+| `GasSpringElement`      | `point_a_name`, `point_b_name`              | Caches into `point_a`, `point_b` |
+| `LinearActuatorElement` | `point_a_name`, `point_b_name`              | Caches into `point_a`, `point_b` |
+| `ExternalForceElement`  | `local_point_name`                          | **Different field name** — mirrors existing `local_point`, not `point_a`. Caches into `local_point`. |
 
 All use `#[serde(default, skip_serializing_if = "Option::is_none")]`.
+
+Forces are serialized with their `point_X_name` field intact — no reverse
+coordinate lookup is needed. The existing `find_point_name` function in
+`serialization.rs` is used only for joints and is **not involved** in force
+serialization. However, `find_point_name` should also be updated to search
+`mount_points` for robustness.
 
 Untouched (no point fields): `TorsionSpringElement`, `RotaryDamperElement`,
 `BearingFrictionElement`, `JointLimitElement`, `MotorElement`, `GravityElement`.
@@ -109,42 +140,84 @@ Untouched (no point fields): `TorsionSpringElement`, `RotaryDamperElement`,
 
 Resolution happens once at mechanism **build time**, not per-frame.
 
-**`resolve_force_point`** searches `attachment_points` first (joint points take
-priority), then `mount_points`. Returns error with both collections listed if not
-found.
+**`resolve_force_point`** searches both `attachment_points` and `mount_points`.
+Since name uniqueness is enforced across both collections, a name can only exist
+in one — there is no priority ordering. Returns error listing available names
+from both collections if not found.
 
 **Name uniqueness** is enforced across `attachment_points` AND `mount_points` on
 the same body. `add_mount_point` rejects names that collide with either
 collection.
 
 **Caching:** When `point_a_name` is `Some`, the resolved coordinates are written
-back to `point_a` so the solver never does a HashMap lookup in the hot loop.
+back to `point_a` (or `local_point` for `ExternalForceElement`) so the solver
+never does a HashMap lookup in the hot loop.
 
 **Fallback:** When `point_a_name` is `None`, raw `point_a` coordinates are used
 directly (backward compatibility).
 
 ### 3. GUI Changes
 
+All GUI edits go through the `blueprint` → `rebuild()` path. Mount point edits
+mutate `blueprint.bodies[body_id].mount_points` in `BodyJson` form, then trigger
+mechanism rebuild — same pattern as all other property edits.
+
+#### New `PendingPropertyEdit` variants (`gui/state.rs`)
+
+- `AddMountPoint { body_id, name, position }` — adds to blueprint, triggers rebuild
+- `DeleteMountPoint { body_id, name }` — removes from blueprint, clears any force
+  `point_X_name` that references it (cascade), triggers rebuild
+- `RenameMountPoint { body_id, old_name, new_name }` — renames in blueprint,
+  updates any force `point_X_name` that references the old name (cascade),
+  triggers rebuild
+- `UpdateMountPointPosition { body_id, name, position }` — updates coords in
+  blueprint, triggers rebuild
+
+#### Mount point deletion/rename — dangling reference handling
+
+When a mount point is **deleted**, any force element with a matching
+`point_X_name` has the name **cleared to `None`** and falls back to its cached
+raw coordinates (which still hold the last resolved position). A warning toast is
+shown: "Mount point 'M1' removed — 2 force(s) reverted to fixed coordinates."
+
+When a mount point is **renamed**, any force element with the old name is
+**updated to the new name** automatically. No warning needed — this is seamless.
+
 #### Body editor (property_panel.rs)
 
 New "Mount Points" collapsible section below attachment points:
 - List existing mount points with name + x/y, each with delete button
 - "Add Mount Point" button — auto-names `M1`, `M2`, etc., places at body CG
-- Name editable inline, x/y via DragValue sliders
+- Name editable inline (triggers `RenameMountPoint` on commit)
+- x/y via DragValue sliders (triggers `UpdateMountPointPosition` on release)
 - Validation rejects duplicates across attachment_points + mount_points
 
 #### Force property panel (property_panel.rs)
 
 Replace raw x/y DragValues with **point picker dropdown**:
-- Lists all attachment_points + mount_points on the body, labeled with type
+- Lists all attachment_points (labeled "joint") + mount_points (labeled "mount")
+  on the body
 - "Custom coords..." option falls back to raw x/y DragValues
 - Selecting a named point sets `point_X_name = Some(...)` and caches coords
 - **Body dropdown** shows all bodies in mechanism (not just joint-connected)
 
 #### Force toolbar (force_toolbar.rs)
 
-- New forces default to first attachment point on each body (with name set)
-- "Other body" selection shows all bodies (not just joint-connected)
+The current `resolve_target_bodies` derives the second body by scanning joint
+topology — this is fundamentally incompatible with the "any body" requirement.
+Replace `connected_body` derivation with an **explicit second body picker
+dropdown** for two-body force elements:
+
+- Primary body: from Link Editor dropdown — **must now include ground** (the
+  current code filters ground out; this filter must be removed for force
+  creation). A gas spring between ground and a link is a common configuration.
+- Secondary body: new dropdown listing all bodies in the mechanism **including
+  ground**
+- Default selection: first joint-connected body (preserving current UX for common
+  case), but user can pick any body including ground
+- New forces default to `point_a: [0.0, 0.0]` / `point_b: [0.0, 0.0]` with
+  `point_a_name: None` / `point_b_name: None` (same as current behavior).
+  The user then selects named points via the property panel point picker.
 
 ### 4. Canvas Rendering (canvas.rs)
 
@@ -158,28 +231,41 @@ Replace raw x/y DragValues with **point picker dropdown**:
 
 Zero-migration approach — all new fields use serde defaults:
 
-- `mount_points` missing in JSON → `HashMap::new()`
-- `point_a_name` missing → `None` → uses raw `point_a` coords
+- `mount_points` missing in JSON → `HashMap::new()` (via `#[serde(default)]`)
+- `point_a_name` missing → `None` (via `#[serde(default)]`) → uses raw coords
 - No schema version bump needed (purely additive)
+
+**Save path:** `body_to_json()` must explicitly serialize `mount_points`.
+`mechanism_to_json()` calls `body_to_json()`, and the undo system snapshots via
+`mechanism_to_json()` — so this is the single chokepoint. Force elements are
+serialized with `point_X_name` intact via serde derive (no custom logic needed).
+
+**Round-trip invariant:** `mechanism_to_json(load_mechanism_unbuilt(json))` must
+preserve all mount points and force point names exactly.
 
 ### 6. Testing Strategy
 
 **Unit tests (body.rs):**
 - `add_mount_point` happy path
 - Duplicate rejection within mount_points
-- Cross-collection collision (name in attachment_points)
-- `resolve_force_point` from attachment_points, mount_points, priority, missing
+- Cross-collection collision (name already in attachment_points)
+- `resolve_force_point` from attachment_points
+- `resolve_force_point` from mount_points
+- `resolve_force_point` error on missing (lists both collections)
 
 **Unit tests (resolution):**
-- Named point resolves correctly
+- Named point resolves correctly and caches to raw field
 - Fallback to raw coords when name is None
-- Error on invalid name
+- Error on invalid name with descriptive message
+- `ExternalForceElement` resolution caches to `local_point` (not `point_a`)
 
 **Serialization round-trip tests:**
-- Body with mount_points round-trips
-- Force with point_a_name round-trips
-- Old JSON without new fields loads correctly
+- Body with mount_points round-trips through `body_to_json` → `BodyJson` → `Body`
+- Force with `point_a_name` round-trips
+- Old JSON without `mount_points` or `point_X_name` loads with correct defaults
 - Invalid name produces clear build-time error
+- Undo snapshot preserves mount points: serialize → deserialize → verify mount
+  points present and force `point_X_name` references still valid
 
 **Integration test:**
 - Full mechanism with mount-point-attached forces: build, solve kinematics,
@@ -189,10 +275,11 @@ Zero-migration approach — all new fields use serde defaults:
 
 | File | Change |
 |------|--------|
-| `linkage-sim-rs/src/core/body.rs` | Add `mount_points` field, `add_mount_point()`, `resolve_force_point()`, update constructors, new error variants, new tests |
-| `linkage-sim-rs/src/io/serialization.rs` | Add `mount_points` to `BodyJson`, update `Body`↔`BodyJson` conversion |
-| `linkage-sim-rs/src/forces/elements.rs` | Add `point_X_name` to 5 element structs |
+| `linkage-sim-rs/src/core/body.rs` | Add `mount_points` field, `add_mount_point()`, `resolve_force_point()`, update `Body::new()`, `make_ground()`, `make_bar()` constructors, new `BodyError` variants, new tests |
+| `linkage-sim-rs/src/io/serialization.rs` | Add `mount_points` to `BodyJson`, update `body_to_json()` and `load_mechanism_unbuilt_from_json()` Body struct literal, update `find_point_name()` to search mount_points |
+| `linkage-sim-rs/src/forces/elements.rs` | Add `point_X_name` to 5 element structs (`local_point_name` for ExternalForce) |
 | `linkage-sim-rs/src/forces/` (new or existing) | Force point resolution at build time |
-| `linkage-sim-rs/src/gui/property_panel.rs` | Mount point editor, point picker dropdown |
-| `linkage-sim-rs/src/gui/force_toolbar.rs` | Default to named points, any-body selection |
-| `linkage-sim-rs/src/gui/canvas.rs` | Diamond markers, mount point labels, selection |
+| `linkage-sim-rs/src/gui/state.rs` | New `PendingPropertyEdit` variants: `AddMountPoint`, `DeleteMountPoint`, `RenameMountPoint`, `UpdateMountPointPosition`; cascade logic for delete/rename |
+| `linkage-sim-rs/src/gui/property_panel.rs` | Mount point editor section, point picker dropdown for forces |
+| `linkage-sim-rs/src/gui/force_toolbar.rs` | Replace `resolve_target_bodies` connected-body derivation with explicit second body picker dropdown; remove ground exclusion filter; delete or invert existing test `resolve_target_bodies_ground_selection_excluded` (it asserts ground is invalid — now contradicts the design) |
+| `linkage-sim-rs/src/gui/canvas.rs` | Diamond markers for mount points, labels, selection hit-testing |
