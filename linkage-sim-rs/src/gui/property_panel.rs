@@ -15,6 +15,7 @@ use super::state::AppState;
 
 /// Pending edit collected during UI rendering, applied after all reads
 /// are done to avoid borrow conflicts.
+#[allow(dead_code)] // RenameMountPoint is wired but no UI triggers it yet
 enum PendingPropertyEdit {
     Mass { body_id: String, value: f64 },
     Izz { body_id: String, value: f64 },
