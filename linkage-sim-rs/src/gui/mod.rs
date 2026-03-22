@@ -17,7 +17,7 @@ use eframe::egui;
 pub use state::AppState;
 pub use sweep::SweepData;
 use samples::SampleMechanism;
-use state::{AngleUnit, EditorTool, LengthUnit, SelectedEntity};
+use state::{AngleUnit, EditorTool, LengthUnit, PlaceForceState, SelectedEntity};
 
 /// Top-level application struct for eframe.
 pub struct LinkageApp {
@@ -665,6 +665,13 @@ impl eframe::App for LinkageApp {
                 match force_add {
                     force_toolbar::PendingForceAdd::Add(force) => {
                         self.state.add_force_element(force);
+                    }
+                    force_toolbar::PendingForceAdd::EnterPlaceMode(template) => {
+                        self.state.active_tool = EditorTool::PlaceForce;
+                        self.state.place_force_state = Some(PlaceForceState {
+                            force_template: template,
+                            start: None,
+                        });
                     }
                 }
             }

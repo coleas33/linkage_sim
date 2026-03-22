@@ -8,6 +8,8 @@ use super::state::{AppState, SelectedEntity};
 /// Pending force addition from the toolbar.
 pub enum PendingForceAdd {
     Add(ForceElement),
+    /// Enter two-click placement mode with this force template.
+    EnterPlaceMode(ForceElement),
 }
 
 /// Draw the force toolbar ribbon. Returns a pending force addition if clicked.
@@ -103,42 +105,41 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
 
             ui.separator();
 
-            // Two-body elements
-            if let Some((ref a, ref b)) = two_bodies(&selected_body, &connected_body) {
-                if ui.button("Linear Spring").clicked() {
-                    pending = Some(PendingForceAdd::Add(ForceElement::LinearSpring(LinearSpringElement {
-                        body_a: a.clone(), point_a: [0.0, 0.0], point_a_name: None,
-                        body_b: b.clone(), point_b: [0.0, 0.0], point_b_name: None,
-                        stiffness: 100.0, free_length: 0.1,
-                    })));
-                    ui.close();
-                }
-                if ui.button("Linear Damper").clicked() {
-                    pending = Some(PendingForceAdd::Add(ForceElement::LinearDamper(LinearDamperElement {
-                        body_a: a.clone(), point_a: [0.0, 0.0], point_a_name: None,
-                        body_b: b.clone(), point_b: [0.0, 0.0], point_b_name: None,
-                        damping: 10.0,
-                    })));
-                    ui.close();
-                }
-                if ui.button("Gas Spring").clicked() {
-                    pending = Some(PendingForceAdd::Add(ForceElement::GasSpring(GasSpringElement {
-                        body_a: a.clone(), point_a: [0.0, 0.0], point_a_name: None,
-                        body_b: b.clone(), point_b: [0.0, 0.0], point_b_name: None,
-                        initial_force: 100.0, extended_length: 0.5, stroke: 0.2,
-                        damping: 0.0, polytropic_exp: 1.0,
-                    })));
-                    ui.close();
-                }
-                if ui.button("Linear Actuator").clicked() {
-                    pending = Some(PendingForceAdd::Add(ForceElement::LinearActuator(LinearActuatorElement {
-                        body_a: a.clone(), point_a: [0.0, 0.0], point_a_name: None,
-                        body_b: b.clone(), point_b: [0.0, 0.0], point_b_name: None,
-                        force: 100.0, speed_limit: 0.0,
-                    })));
-                    ui.close();
-                }
-            } else if selected_body.is_none() {
+            // Two-body elements — always visible; bodies are chosen via two-click placement
+            if ui.button("Linear Spring").clicked() {
+                pending = Some(PendingForceAdd::EnterPlaceMode(ForceElement::LinearSpring(LinearSpringElement {
+                    body_a: String::new(), point_a: [0.0, 0.0], point_a_name: None,
+                    body_b: String::new(), point_b: [0.0, 0.0], point_b_name: None,
+                    stiffness: 100.0, free_length: 0.1,
+                })));
+                ui.close();
+            }
+            if ui.button("Linear Damper").clicked() {
+                pending = Some(PendingForceAdd::EnterPlaceMode(ForceElement::LinearDamper(LinearDamperElement {
+                    body_a: String::new(), point_a: [0.0, 0.0], point_a_name: None,
+                    body_b: String::new(), point_b: [0.0, 0.0], point_b_name: None,
+                    damping: 10.0,
+                })));
+                ui.close();
+            }
+            if ui.button("Gas Spring").clicked() {
+                pending = Some(PendingForceAdd::EnterPlaceMode(ForceElement::GasSpring(GasSpringElement {
+                    body_a: String::new(), point_a: [0.0, 0.0], point_a_name: None,
+                    body_b: String::new(), point_b: [0.0, 0.0], point_b_name: None,
+                    initial_force: 100.0, extended_length: 0.5, stroke: 0.2,
+                    damping: 0.0, polytropic_exp: 1.0,
+                })));
+                ui.close();
+            }
+            if ui.button("Linear Actuator").clicked() {
+                pending = Some(PendingForceAdd::EnterPlaceMode(ForceElement::LinearActuator(LinearActuatorElement {
+                    body_a: String::new(), point_a: [0.0, 0.0], point_a_name: None,
+                    body_b: String::new(), point_b: [0.0, 0.0], point_b_name: None,
+                    force: 100.0, speed_limit: 0.0,
+                })));
+                ui.close();
+            }
+            if selected_body.is_none() {
                 ui.separator();
                 ui.label("Select a body for 2-body elements");
             }
