@@ -1822,21 +1822,54 @@ impl AppState {
     }
 
     /// Set mass property on a body in the blueprint.
+    ///
+    /// Mass does not affect the kinematic constraint equations, so a full
+    /// `rebuild()` is unnecessary. We update the blueprint **and** the live
+    /// mechanism directly, then recompute forces and mark the sweep dirty
+    /// (force/energy curves depend on mass).
     pub fn set_body_mass(&mut self, body_id: &str, mass: f64) {
+        self.push_undo();
         let Some(bp) = &mut self.blueprint else { return };
         if let Some(body) = bp.bodies.get_mut(body_id) {
             body.mass = mass;
         }
-        self.rebuild();
+        // Patch the live mechanism so we skip the full JSON roundtrip.
+        if let Some(mech) = &mut self.mechanism {
+            if let Some(body) = mech.body_mut(body_id) {
+                body.mass = mass;
+            }
+        }
+        self.recompute_dynamics();
     }
 
     /// Set moment of inertia on a body in the blueprint.
+    ///
+    /// Izz does not affect kinematics. Same lightweight update as `set_body_mass`.
     pub fn set_body_izz(&mut self, body_id: &str, izz: f64) {
+        self.push_undo();
         let Some(bp) = &mut self.blueprint else { return };
         if let Some(body) = bp.bodies.get_mut(body_id) {
             body.izz_cg = izz;
         }
-        self.rebuild();
+        if let Some(mech) = &mut self.mechanism {
+            if let Some(body) = mech.body_mut(body_id) {
+                body.izz_cg = izz;
+            }
+        }
+        self.recompute_dynamics();
+    }
+
+    /// Recompute force results and mark sweep dirty without rebuilding the
+    /// mechanism. Used after mass/inertia/gravity changes that don't alter
+    /// the kinematic structure.
+    fn recompute_dynamics(&mut self) {
+        let t = if self.driver_omega.abs() > f64::EPSILON {
+            (self.driver_angle - self.driver_theta_0) / self.driver_omega
+        } else {
+            0.0
+        };
+        self.compute_forces(t);
+        self.mark_sweep_dirty();
     }
 
     // ── Mount point CRUD ─────────────────────────────────────────────────
@@ -3758,6 +3791,88 @@ mod tests {
                 "trace for '{}' should not be empty",
                 key
             );
+        }
+    }
+
+    #[test]
+    fn mass_change_does_not_alter_coupler_traces() {
+        // Reproduces user report: load parallelogram, change mass on coupler,
+        // coupler trace should NOT change (mass doesn't affect kinematics).
+        // Test at multiple driver angles since the parallelogram is a change-point
+        // mechanism and the solver might be sensitive to initial guesses.
+        let test_angles: &[f64] = &[0.0, 0.5, 1.0, std::f64::consts::PI, 3.0, 5.0];
+
+        for &angle in test_angles {
+            let mut state = AppState::default();
+            state.load_sample(SampleMechanism::Parallelogram);
+
+            // Move the driver to a non-zero angle (simulates user dragging the slider).
+            if angle != 0.0 {
+                state.solve_at_angle(angle);
+            }
+
+            // Recompute sweep at this angle.
+            state.compute_sweep();
+            let sweep_before = state.sweep_data.as_ref().expect("sweep should exist");
+            let traces_before: std::collections::HashMap<String, Vec<[f64; 2]>> =
+                sweep_before.coupler_traces.clone();
+            assert!(!traces_before.is_empty(), "should have coupler traces");
+
+            // Change mass on the coupler (exactly what the user does).
+            state.set_body_mass("coupler", 5.0);
+            // Trigger sweep recomputation (in the GUI this happens after debounce).
+            state.compute_sweep();
+
+            let sweep_after = state.sweep_data.as_ref()
+                .expect("sweep should exist after mass change");
+
+            // Coupler trace positions must be identical — mass is irrelevant to kinematics.
+            assert_eq!(
+                traces_before.len(),
+                sweep_after.coupler_traces.len(),
+                "angle={:.2}: number of coupler traces changed",
+                angle,
+            );
+            for (key, trace_before) in &traces_before {
+                let trace_after = sweep_after
+                    .coupler_traces
+                    .get(key)
+                    .unwrap_or_else(|| panic!("missing trace key '{}' after mass change", key));
+                assert_eq!(
+                    trace_before.len(),
+                    trace_after.len(),
+                    "angle={:.2}: trace '{}' has different length",
+                    angle,
+                    key
+                );
+                let mut max_delta = 0.0_f64;
+                let mut worst_step = 0;
+                let mut divergences = Vec::new();
+                for (i, (pt_before, pt_after)) in
+                    trace_before.iter().zip(trace_after.iter()).enumerate()
+                {
+                    let dx = (pt_before[0] - pt_after[0]).abs();
+                    let dy = (pt_before[1] - pt_after[1]).abs();
+                    let d = dx.max(dy);
+                    if d > max_delta {
+                        max_delta = d;
+                        worst_step = i;
+                    }
+                    if d > 1e-6 {
+                        divergences.push(format!(
+                            "  step {}: before=({:.6}, {:.6}), after=({:.6}, {:.6}), delta=({:.2e}, {:.2e})",
+                            i, pt_before[0], pt_before[1], pt_after[0], pt_after[1], dx, dy
+                        ));
+                    }
+                }
+                if !divergences.is_empty() {
+                    panic!(
+                        "angle={:.2}: trace '{}' diverged significantly ({} steps > 1e-6, max_delta={:.2e} at step {})\n{}",
+                        angle, key, divergences.len(), max_delta, worst_step,
+                        divergences.join("\n")
+                    );
+                }
+            }
         }
     }
 

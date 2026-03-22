@@ -1455,10 +1455,11 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 .find(|(screen_pos, _)| pos.distance(*screen_pos) <= HIT_RADIUS)
                 .map(|(_, id)| id.clone());
 
-            // Attachment points first (priority over body area)
+            // Attachment points first (priority over body area);
+            // includes ground pivots so they get context-menu actions.
             let attachment_point = attachment_hit_targets
                 .iter()
-                .find(|h| h.body_id != GROUND_ID && pos.distance(h.screen_pos) <= HIT_RADIUS)
+                .find(|h| pos.distance(h.screen_pos) <= HIT_RADIUS)
                 .map(|h| (h.body_id.clone(), h.point_name.clone()));
 
             // Body area: only if no attachment point matched
@@ -1528,7 +1529,11 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             }
         } else if let Some((ref body_id, ref point_name)) = ctx_target.attachment_point {
             // ── Attachment point context menu ────────────────────────────
-            ui.label(format!("Point: {}.{}", body_id, point_name));
+            if body_id == GROUND_ID {
+                ui.label(format!("Ground Pivot: {}", point_name));
+            } else {
+                ui.label(format!("Point: {}.{}", body_id, point_name));
+            }
             ui.separator();
 
             ui.menu_button("Create Joint", |ui| {
@@ -1547,7 +1552,8 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 }
             });
 
-            if ui.button("Delete Pivot").clicked() {
+            let delete_label = if body_id == GROUND_ID { "Delete Ground Pivot" } else { "Delete Pivot" };
+            if ui.button(delete_label).clicked() {
                 state.remove_attachment_point(body_id, point_name);
                 ui.close();
             }
