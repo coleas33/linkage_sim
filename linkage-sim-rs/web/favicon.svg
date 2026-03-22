@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Four-bar linkage icon -->
+  <!-- Ground bar -->
+  <line x1="14" y1="48" x2="50" y2="48" stroke="#555" stroke-width="3" stroke-dasharray="4,3"/>
+  <!-- Link: ground-left to upper-left -->
+  <line x1="14" y1="48" x2="10" y2="20" stroke="#4fc3f7" stroke-width="4" stroke-linecap="round"/>
+  <!-- Link: upper-left to upper-right (coupler) -->
+  <line x1="10" y1="20" x2="52" y2="14" stroke="#ff8a65" stroke-width="4" stroke-linecap="round"/>
+  <!-- Link: upper-right to ground-right -->
+  <line x1="52" y1="14" x2="50" y2="48" stroke="#4fc3f7" stroke-width="4" stroke-linecap="round"/>
+  <!-- Pivot joints -->
+  <circle cx="14" cy="48" r="4" fill="#fff" stroke="#333" stroke-width="2"/>
+  <circle cx="50" cy="48" r="4" fill="#fff" stroke="#333" stroke-width="2"/>
+  <circle cx="10" cy="20" r="4" fill="#fff" stroke="#333" stroke-width="2"/>
+  <circle cx="52" cy="14" r="4" fill="#fff" stroke="#333" stroke-width="2"/>
+  <!-- Ground triangles -->
+  <polygon points="14,52 10,58 18,58" fill="#555"/>
+  <polygon points="50,52 46,58 54,58" fill="#555"/>
+</svg>
