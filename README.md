@@ -166,7 +166,7 @@ cd linkage-sim-rs
 Requires: `rustup target add wasm32-unknown-unknown` and `cargo install wasm-bindgen-cli`.
 Note: file dialogs, PNG/SVG/GIF/DXF export, autosave, and HTML reports are native-only. All analysis, editing, and plotting features work in the browser.
 
-**Live deployment:** Pushes to `main` auto-deploy to [colesorkness.com](https://colesorkness.com) via GitHub Actions + Vercel. See `.github/workflows/deploy-web.yml` for the CI pipeline.
+**Live deployment:** Pushes to `main` auto-deploy to [linkage.colesorkness.com](https://linkage.colesorkness.com) via GitHub Actions + Vercel. See `.github/workflows/deploy-web.yml` for the CI pipeline.
 
 **Interactive editor (shipped):** The GUI is now a full interactive editor, not just a visualization shell. Capabilities:
 - Create bodies, joints, and ground pivots via right-click context menu on the canvas
