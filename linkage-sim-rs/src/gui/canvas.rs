@@ -4,7 +4,7 @@ use eframe::egui::{self, Color32, FontId, Pos2, Rect, Stroke, Vec2};
 
 use crate::core::constraint::Constraint;
 use crate::core::state::GROUND_ID;
-use crate::forces::elements::ForceElement;
+use crate::forces::elements::*;
 use crate::gui::state::{
     AddBodyState, AppState, ContextMenuTarget, EditorTool, GridSettings,
     SelectedEntity, ViewTransform,
@@ -1004,6 +1004,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         state.creating_joint = None;
         state.draw_link_start = None;
         state.add_body_state = None;
+        state.place_force_state = None;
         state.active_tool = EditorTool::Select;
     }
 
@@ -1182,6 +1183,118 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         }
     }
 
+    // ── Interaction: Place Force tool ───────────────────────────────────
+    if state.active_tool == EditorTool::PlaceForce {
+        use crate::gui::state::PlaceForceStart;
+
+        // Highlight all snap targets while in placement mode.
+        for hit in &attachment_hit_targets {
+            painter.circle_stroke(
+                hit.screen_pos,
+                HIT_RADIUS,
+                Stroke::new(1.0, JOINT_CREATE_HIGHLIGHT.linear_multiply(0.3)),
+            );
+        }
+
+        // Preview line from start to cursor after first click.
+        if let Some(ref pf_state) = state.place_force_state {
+            if let Some(ref start) = pf_state.start {
+                if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+                    let [sx, sy] = start.world_pos;
+                    let snap_end = find_nearest_attachment(pos);
+                    let (ex, ey, end_snapped) = if let Some(hit) = snap_end {
+                        (hit.world_pos[0], hit.world_pos[1], true)
+                    } else {
+                        let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+                        (wx, wy, false)
+                    };
+
+                    let start_screen = state.view.world_to_screen(sx, sy);
+                    let end_screen = state.view.world_to_screen(ex, ey);
+
+                    let force_preview_color = Color32::from_rgb(255, 165, 80);
+                    painter.line_segment(
+                        [
+                            Pos2::new(start_screen[0], start_screen[1]),
+                            Pos2::new(end_screen[0], end_screen[1]),
+                        ],
+                        Stroke::new(2.0, force_preview_color),
+                    );
+                    painter.circle_filled(
+                        Pos2::new(start_screen[0], start_screen[1]),
+                        JOINT_RADIUS,
+                        force_preview_color,
+                    );
+                    let end_color = if end_snapped {
+                        JOINT_CREATE_HIGHLIGHT
+                    } else {
+                        force_preview_color
+                    };
+                    painter.circle_filled(
+                        Pos2::new(end_screen[0], end_screen[1]),
+                        JOINT_RADIUS,
+                        end_color,
+                    );
+                }
+            }
+        }
+
+        // Handle clicks.
+        if response.clicked() {
+            if let Some(pos) = response.interact_pointer_pos() {
+                let snap_hit = find_nearest_attachment(pos);
+
+                let (world_pos, body_id, point_name) = if let Some(hit) = snap_hit {
+                    (hit.world_pos, hit.body_id.clone(), Some(hit.point_name.clone()))
+                } else {
+                    let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+                    if let Some(seg_hit) = find_nearest_body_segment(pos, &body_segments, 8.0) {
+                        (seg_hit.world_pos, seg_hit.body_id.clone(), None)
+                    } else {
+                        ([wx, wy], GROUND_ID.to_string(), None)
+                    }
+                };
+
+                let has_start = state.place_force_state.as_ref()
+                    .map(|s| s.start.is_some())
+                    .unwrap_or(false);
+
+                if !has_start {
+                    // First click — record point A.
+                    if let Some(ref mut pf_state) = state.place_force_state {
+                        pf_state.start = Some(PlaceForceStart {
+                            world_pos,
+                            body_id,
+                            point_name,
+                        });
+                    }
+                } else {
+                    // Second click — create the force and exit tool.
+                    if let Some(pf_state) = state.place_force_state.take() {
+                        let start = pf_state.start.unwrap();
+
+                        let [la_x, la_y] = state.world_to_body_local(
+                            &start.body_id, start.world_pos[0], start.world_pos[1],
+                        );
+                        let [lb_x, lb_y] = state.world_to_body_local(
+                            &body_id, world_pos[0], world_pos[1],
+                        );
+
+                        let force = fill_force_template(
+                            &pf_state.force_template,
+                            &start.body_id, [la_x, la_y], start.point_name,
+                            &body_id, [lb_x, lb_y], point_name,
+                        );
+
+                        // add_force_element() calls push_undo() internally.
+                        state.add_force_element(force);
+                        state.active_tool = EditorTool::Select;
+                    }
+                }
+            }
+        }
+    }
+
     // ── Interaction: Add Body tool ──────────────────────────────────────
     if state.active_tool == EditorTool::AddBody {
         // Helper: check if placed points are ready to finalize (>= 2 points).
@@ -1283,6 +1396,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         && state.creating_joint.is_none()
         && state.active_tool != EditorTool::DrawLink
         && state.active_tool != EditorTool::AddBody
+        && state.active_tool != EditorTool::PlaceForce
         && response.clicked()
     {
         if let Some(pointer_pos) = response.interact_pointer_pos() {
@@ -1302,7 +1416,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                     // Handled by Add Body interaction section above.
                 }
                 EditorTool::PlaceForce => {
-                    // Will be handled in Task 4 (PlaceForce interaction handler).
+                    // Handled by PlaceForce interaction section above.
                 }
                 EditorTool::Select => {
                     let mut hit: Option<SelectedEntity> = None;
@@ -2077,6 +2191,37 @@ fn draw_force_arrow(painter: &egui::Painter, origin: Pos2, fx: f32, fy: f32) {
         FontId::proportional(11.0),
         FORCE_ARROW_COLOR,
     );
+}
+
+/// Fill a force element template with actual body IDs and point coordinates.
+fn fill_force_template(
+    template: &ForceElement,
+    body_a: &str, point_a: [f64; 2], point_a_name: Option<String>,
+    body_b: &str, point_b: [f64; 2], point_b_name: Option<String>,
+) -> ForceElement {
+    match template {
+        ForceElement::LinearSpring(s) => ForceElement::LinearSpring(LinearSpringElement {
+            body_a: body_a.to_string(), point_a, point_a_name,
+            body_b: body_b.to_string(), point_b, point_b_name,
+            ..s.clone()
+        }),
+        ForceElement::LinearDamper(d) => ForceElement::LinearDamper(LinearDamperElement {
+            body_a: body_a.to_string(), point_a, point_a_name,
+            body_b: body_b.to_string(), point_b, point_b_name,
+            ..d.clone()
+        }),
+        ForceElement::GasSpring(g) => ForceElement::GasSpring(GasSpringElement {
+            body_a: body_a.to_string(), point_a, point_a_name,
+            body_b: body_b.to_string(), point_b, point_b_name,
+            ..g.clone()
+        }),
+        ForceElement::LinearActuator(a) => ForceElement::LinearActuator(LinearActuatorElement {
+            body_a: body_a.to_string(), point_a, point_a_name,
+            body_b: body_b.to_string(), point_b, point_b_name,
+            ..a.clone()
+        }),
+        other => other.clone(),
+    }
 }
 
 /// Draw a ground-fixed marker: an inverted triangle with hatch lines below.
