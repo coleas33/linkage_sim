@@ -2220,7 +2220,7 @@ fn fill_force_template(
             body_b: body_b.to_string(), point_b, point_b_name,
             ..a.clone()
         }),
-        other => other.clone(),
+        _ => unreachable!("fill_force_template called with non-two-point force template"),
     }
 }
 
@@ -2358,5 +2358,103 @@ fn draw_grid(
             [Pos2::new(origin[0], rect.top()), Pos2::new(origin[0], rect.bottom())],
             Stroke::new(1.0, Color32::from_rgba_premultiplied(60, 180, 60, 100)),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fill_template_linear_spring() {
+        let template = ForceElement::LinearSpring(LinearSpringElement {
+            body_a: String::new(), point_a: [0.0, 0.0], point_a_name: None,
+            body_b: String::new(), point_b: [0.0, 0.0], point_b_name: None,
+            stiffness: 500.0, free_length: 0.1,
+        });
+        let result = fill_force_template(
+            &template,
+            "ground", [1.0, 2.0], Some("pin_a".to_string()),
+            "crank", [3.0, 4.0], None,
+        );
+        match result {
+            ForceElement::LinearSpring(s) => {
+                assert_eq!(s.body_a, "ground");
+                assert_eq!(s.body_b, "crank");
+                assert_eq!(s.point_a, [1.0, 2.0]);
+                assert_eq!(s.point_b, [3.0, 4.0]);
+                assert_eq!(s.point_a_name, Some("pin_a".to_string()));
+                assert!(s.point_b_name.is_none());
+                assert!((s.stiffness - 500.0).abs() < 1e-12);
+                assert!((s.free_length - 0.1).abs() < 1e-12);
+            }
+            _ => panic!("expected LinearSpring"),
+        }
+    }
+
+    #[test]
+    fn fill_template_linear_damper() {
+        let template = ForceElement::LinearDamper(LinearDamperElement {
+            body_a: String::new(), point_a: [0.0, 0.0], point_a_name: None,
+            body_b: String::new(), point_b: [0.0, 0.0], point_b_name: None,
+            damping: 42.0,
+        });
+        let result = fill_force_template(
+            &template, "a", [1.0, 0.0], None, "b", [0.0, 1.0], None,
+        );
+        match result {
+            ForceElement::LinearDamper(d) => {
+                assert_eq!(d.body_a, "a");
+                assert_eq!(d.body_b, "b");
+                assert!((d.damping - 42.0).abs() < 1e-12);
+            }
+            _ => panic!("expected LinearDamper"),
+        }
+    }
+
+    #[test]
+    fn fill_template_gas_spring() {
+        let template = ForceElement::GasSpring(GasSpringElement {
+            body_a: String::new(), point_a: [0.0, 0.0], point_a_name: None,
+            body_b: String::new(), point_b: [0.0, 0.0], point_b_name: None,
+            initial_force: 200.0, extended_length: 0.5, stroke: 0.2,
+            damping: 1.0, polytropic_exp: 1.3,
+        });
+        let result = fill_force_template(
+            &template, "frame", [0.1, 0.2], Some("mt".to_string()),
+            "arm", [0.3, 0.4], Some("mt2".to_string()),
+        );
+        match result {
+            ForceElement::GasSpring(g) => {
+                assert_eq!(g.body_a, "frame");
+                assert_eq!(g.body_b, "arm");
+                assert_eq!(g.point_a_name, Some("mt".to_string()));
+                assert_eq!(g.point_b_name, Some("mt2".to_string()));
+                assert!((g.initial_force - 200.0).abs() < 1e-12);
+                assert!((g.polytropic_exp - 1.3).abs() < 1e-12);
+            }
+            _ => panic!("expected GasSpring"),
+        }
+    }
+
+    #[test]
+    fn fill_template_linear_actuator() {
+        let template = ForceElement::LinearActuator(LinearActuatorElement {
+            body_a: String::new(), point_a: [0.0, 0.0], point_a_name: None,
+            body_b: String::new(), point_b: [0.0, 0.0], point_b_name: None,
+            force: 999.0, speed_limit: 0.5,
+        });
+        let result = fill_force_template(
+            &template, "g", [0.0, 0.0], None, "link", [1.0, 0.0], None,
+        );
+        match result {
+            ForceElement::LinearActuator(a) => {
+                assert_eq!(a.body_a, "g");
+                assert_eq!(a.body_b, "link");
+                assert!((a.force - 999.0).abs() < 1e-12);
+                assert!((a.speed_limit - 0.5).abs() < 1e-12);
+            }
+            _ => panic!("expected LinearActuator"),
+        }
     }
 }

@@ -139,10 +139,6 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
                 })));
                 ui.close();
             }
-            if selected_body.is_none() {
-                ui.separator();
-                ui.label("Select a body for 2-body elements");
-            }
         });
     });
 
