@@ -928,8 +928,14 @@ impl Default for AppState {
             autosave_timer: 0.0,
             last_save_path: None,
             dirty: false,
+            #[cfg(not(target_arch = "wasm32"))]
             recent_files: Self::load_recent_files(),
+            #[cfg(target_arch = "wasm32")]
+            recent_files: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             recovery_path: Self::check_autosave_recovery(),
+            #[cfg(target_arch = "wasm32")]
+            recovery_path: None,
             status_message: None,
             status_message_time: 0.0,
             highlight_joint: None,
@@ -1320,6 +1326,7 @@ impl AppState {
 
         self.last_save_path = Some(path.to_path_buf());
         self.dirty = false;
+        #[cfg(not(target_arch = "wasm32"))]
         self.add_recent_file(path);
         self.status_message = Some(format!("Saved: {}", path.display()));
         self.status_message_time = 3.0;
@@ -1390,9 +1397,10 @@ impl AppState {
         Ok(())
     }
 
-    // ── Recent files ─────────────────────────────────────────────────────
+    // ── Recent files (native only — no filesystem on WASM) ────────────
 
     /// Add a path to the recent files list (deduplicates, keeps max 5).
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn add_recent_file(&mut self, path: &Path) {
         let canonical = path.to_path_buf();
         self.recent_files.retain(|p| p != &canonical);
@@ -1402,6 +1410,7 @@ impl AppState {
     }
 
     /// Path to the recent files JSON in the user's temp directory.
+    #[cfg(not(target_arch = "wasm32"))]
     fn recent_files_path() -> std::path::PathBuf {
         let mut p = std::env::temp_dir();
         p.push("linkage_simulator_recent.json");
@@ -1409,6 +1418,7 @@ impl AppState {
     }
 
     /// Load recent files list from disk (returns empty Vec on any failure).
+    #[cfg(not(target_arch = "wasm32"))]
     fn load_recent_files() -> Vec<std::path::PathBuf> {
         let path = Self::recent_files_path();
         let Ok(json) = std::fs::read_to_string(&path) else {
@@ -1419,6 +1429,7 @@ impl AppState {
 
     /// Check for an autosave file in the temp directory on startup.
     /// Returns the path if a recoverable file exists (< 1 hour old).
+    #[cfg(not(target_arch = "wasm32"))]
     fn check_autosave_recovery() -> Option<std::path::PathBuf> {
         let mut p = std::env::temp_dir();
         p.push("linkage_simulator_autosave.json");
@@ -1439,6 +1450,7 @@ impl AppState {
     }
 
     /// Save recent files list to disk.
+    #[cfg(not(target_arch = "wasm32"))]
     fn save_recent_files(&self) {
         let path = Self::recent_files_path();
         if let Ok(json) = serde_json::to_string(&self.recent_files) {
@@ -1554,6 +1566,7 @@ impl AppState {
         self.last_save_path = Some(path.to_path_buf());
         self.dirty = false;
         self.autosave_timer = 0.0;
+        #[cfg(not(target_arch = "wasm32"))]
         self.add_recent_file(path);
 
         Ok(())
