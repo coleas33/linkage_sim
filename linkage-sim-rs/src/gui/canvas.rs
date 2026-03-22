@@ -364,12 +364,19 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 painter.circle_filled(*sp, ATTACHMENT_DOT_RADIUS, ATTACHMENT_DOT_COLOR);
             }
 
-            // Draw mount points as diamonds
-            for (_name, local) in &body.mount_points {
+            // Draw mount points as diamonds AND register as hit targets
+            for (name, local) in &body.mount_points {
                 let global = mech_state.body_point_global(body_id, local, q);
                 let sp = view.world_to_screen(global.x, global.y);
                 let screen_pos = Pos2::new(sp[0], sp[1]);
                 draw_diamond_marker(&painter, screen_pos, MOUNT_POINT_RADIUS, MOUNT_POINT_COLOR);
+
+                attachment_hit_targets.push(AttachmentHit {
+                    screen_pos,
+                    world_pos: [global.x, global.y],
+                    body_id: body_id.clone(),
+                    point_name: name.clone(),
+                });
             }
 
             // Dimension labels: show link segment lengths at midpoints.
