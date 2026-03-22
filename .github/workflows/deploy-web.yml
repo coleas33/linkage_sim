@@ -33,7 +33,7 @@ jobs:
           restore-keys: wasm-cargo-
 
       - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli@0.2.114
+        run: cargo install wasm-bindgen-cli@0.2.114 --force
 
       - name: Build WASM
         working-directory: linkage-sim-rs
