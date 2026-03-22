@@ -4,6 +4,7 @@ use nalgebra::DVector;
 use std::f64::consts::PI;
 
 use crate::core::body::{make_bar, make_ground, Body};
+use crate::forces::elements::{ForceElement, LinearActuatorElement};
 use crate::core::constraint::Constraint;
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
@@ -18,6 +19,7 @@ pub enum SampleMechanism {
     DoubleRocker,
     DoubleCrank,
     Parallelogram,
+    ParallelogramActuator,
     Chebyshev,
     TripleRocker,
     SixBarB1,
@@ -41,6 +43,7 @@ impl SampleMechanism {
             SampleMechanism::DoubleRocker => "Double-Rocker (5-3-4-7)",
             SampleMechanism::DoubleCrank => "Double-Crank (2-4-3.5-3)",
             SampleMechanism::Parallelogram => "Parallelogram (4-2-4-2)",
+            SampleMechanism::ParallelogramActuator => "Parallelogram + Actuator",
             SampleMechanism::Chebyshev => "Chebyshev (4-2-5-5)",
             SampleMechanism::TripleRocker => "Triple-Rocker (4-2-5-2)",
             SampleMechanism::SixBarB1 => "6-Bar B1 (Watt I)",
@@ -63,6 +66,7 @@ impl SampleMechanism {
             SampleMechanism::DoubleRocker,
             SampleMechanism::DoubleCrank,
             SampleMechanism::Parallelogram,
+            SampleMechanism::ParallelogramActuator,
             SampleMechanism::Chebyshev,
             SampleMechanism::TripleRocker,
             SampleMechanism::SixBarB1,
@@ -98,6 +102,7 @@ pub fn build_sample_with_driver(
         SampleMechanism::DoubleRocker => build_double_rocker_with_driver(driver_joint_id),
         SampleMechanism::DoubleCrank => build_double_crank_with_driver(driver_joint_id),
         SampleMechanism::Parallelogram => build_parallelogram_with_driver(driver_joint_id),
+        SampleMechanism::ParallelogramActuator => build_parallelogram_actuator(driver_joint_id),
         SampleMechanism::Chebyshev => build_chebyshev_with_driver(driver_joint_id),
         SampleMechanism::TripleRocker => build_triple_rocker_with_driver(driver_joint_id),
         SampleMechanism::SixBarB1 => build_sixbar_b1(driver_joint_id),
@@ -550,6 +555,73 @@ fn build_parallelogram_with_driver(
         0.0,
         driver_joint_id,
     )
+}
+
+/// Parallelogram 4-bar with a linear actuator driving the crank.
+///
+/// Same geometry as `Parallelogram` (d=4, a=2, b=4, c=2) but with:
+/// - A mount point "M" at the crank midpoint (1.0, 0.0) in crank-local coords
+/// - A new ground pivot "O_act" at (-1.0, -1.5) for the actuator base
+/// - A linear actuator from ground "O_act" to crank mount "M"
+///
+/// The actuator triggers compound force expansion (cylinder + rod bodies).
+fn build_parallelogram_actuator(
+    driver_joint_id: Option<&str>,
+) -> Result<(Mechanism, DVector<f64>), String> {
+    let o2 = (0.0_f64, 0.0_f64);
+    let o4 = (4.0_f64, 0.0_f64);
+
+    let mut ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
+    // Actuator base pivot — offset below and behind the crank pivot.
+    ground
+        .add_attachment_point("O_act", -1.0, -1.5)
+        .map_err(|e| e.to_string())?;
+
+    let mut crank = make_bar("crank", "A", "B", 2.0, 0.0, 0.0);
+    // Mount point at crank midpoint for the actuator.
+    crank
+        .add_mount_point("M", 1.0, 0.0)
+        .map_err(|e| e.to_string())?;
+
+    let mut coupler = make_bar("coupler", "B", "C", 4.0, 0.0, 0.0);
+    coupler.add_coupler_point("P", 2.0, 0.0).unwrap();
+    let rocker = make_bar("rocker", "C", "D", 2.0, 0.0, 0.0);
+
+    let mut mech = Mechanism::new();
+    mech.add_body(ground).unwrap();
+    mech.add_body(crank).unwrap();
+    mech.add_body(coupler).unwrap();
+    mech.add_body(rocker).unwrap();
+
+    mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+    mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+    mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+    mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
+
+    // Linear actuator: ground "O_act" → crank mount "M".
+    // Uses mount_point_name so compound expansion kicks in on serialization.
+    mech.add_force(ForceElement::LinearActuator(LinearActuatorElement {
+        body_a: "ground".to_string(),
+        point_a: [-1.0, -1.5],
+        point_a_name: Some("O_act".to_string()),
+        body_b: "crank".to_string(),
+        point_b: [1.0, 0.0],
+        point_b_name: Some("M".to_string()),
+        force: 50.0,
+        speed_limit: 0.0,
+    }));
+
+    let joint_id = driver_joint_id.unwrap_or("J1");
+    attach_driver_to_grounded_revolute_with_theta0(&mut mech, joint_id, "D1", 0.0)?;
+
+    mech.build().map_err(|e| e.to_string())?;
+
+    let q0 = fourbar_initial_q0(
+        mech.state(), o2, o4, 2.0, 4.0, 2.0, 0.0,
+        "crank", "coupler", "rocker",
+    );
+
+    Ok((mech, q0))
 }
 
 /// Chebyshev approximate straight-line 4-bar: d=4, a=2, b=5, c=5.
