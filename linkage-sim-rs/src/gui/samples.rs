@@ -1509,7 +1509,7 @@ mod tests {
 
     #[test]
     fn all_samples_listed() {
-        assert_eq!(SampleMechanism::all().len(), 17);
+        assert_eq!(SampleMechanism::all().len(), 18);
     }
 
     #[test]
