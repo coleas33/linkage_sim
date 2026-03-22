@@ -792,6 +792,13 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         EditorTool::AddGroundPivot => {
             Some("Click on canvas to place a ground pivot (Esc to cancel)".to_string())
         }
+        EditorTool::PlaceForce => {
+            if state.place_force_state.as_ref().and_then(|s| s.start.as_ref()).is_some() {
+                Some("Click a second point to place the force element (Esc to cancel)".to_string())
+            } else {
+                Some("Click a point to set the first attachment of the force element (Esc to cancel)".to_string())
+            }
+        }
         EditorTool::Select => None,
     };
     if let Some(ref hint) = hint_text {
@@ -1293,6 +1300,9 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 }
                 EditorTool::AddBody => {
                     // Handled by Add Body interaction section above.
+                }
+                EditorTool::PlaceForce => {
+                    // Will be handled in Task 4 (PlaceForce interaction handler).
                 }
                 EditorTool::Select => {
                     let mut hit: Option<SelectedEntity> = None;

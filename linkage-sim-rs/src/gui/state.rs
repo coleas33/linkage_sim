@@ -246,6 +246,8 @@ pub enum EditorTool {
     AddBody,
     /// Click canvas to place a new ground pivot.
     AddGroundPivot,
+    /// Two-click placement of a two-point force element.
+    PlaceForce,
 }
 
 // ── Context menu target ──────────────────────────────────────────────────────
@@ -714,6 +716,9 @@ pub struct AppState {
     // ── Add Body state ──────────────────────────────────────────────────
     /// Multi-click body placement state. None when not in AddBody mode.
     pub add_body_state: Option<AddBodyState>,
+    // ── Place Force state ───────────────────────────────────────────────
+    /// Two-click force placement state. None when not in PlaceForce mode.
+    pub place_force_state: Option<PlaceForceState>,
     // ── Diagnostics ─────────────────────────────────────────────────────
     /// Cached Grashof classification for 4-bar mechanisms.
     pub grashof_result: Option<GrashofResult>,
@@ -786,6 +791,27 @@ pub struct AppState {
 pub struct AddBodyState {
     /// Points placed so far: (name, world_position).
     pub points: Vec<(String, [f64; 2])>,
+}
+
+/// Tracks the state of a Place Force two-click interaction.
+#[derive(Debug, Clone)]
+pub struct PlaceForceState {
+    /// The force element template (type + default parameters).
+    /// Body IDs and point coordinates will be filled in by the clicks.
+    pub force_template: ForceElement,
+    /// Set after the first click.
+    pub start: Option<PlaceForceStart>,
+}
+
+/// First click of a Place Force interaction.
+#[derive(Debug, Clone)]
+pub struct PlaceForceStart {
+    /// World coordinates of point A.
+    pub world_pos: [f64; 2],
+    /// Body ID that point A belongs to.
+    pub body_id: String,
+    /// Named point (attachment or mount) if snapped, None for raw coords.
+    pub point_name: Option<String>,
 }
 
 /// Tracks the start of a Draw Link gesture.
@@ -864,6 +890,7 @@ impl Default for AppState {
             context_menu_target: ContextMenuTarget::default(),
             draw_link_start: None,
             add_body_state: None,
+            place_force_state: None,
             grashof_result: None,
             crank_recommendation: None,
             simulation: None,
