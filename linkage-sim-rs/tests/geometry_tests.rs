@@ -119,6 +119,14 @@ fn polygon_clip_rotated_partial() {
     assert_relative_eq!(polygon_area(&clipped), 0.5, epsilon = 1e-10);
 }
 
+#[test]
+fn clip_polygon_to_aabb_empty_input() {
+    let aabb_min = Vector2::new(-1.0, -1.0);
+    let aabb_max = Vector2::new(1.0, 1.0);
+    let clipped = clip_polygon_to_aabb(&[], &aabb_min, &aabb_max);
+    assert!(clipped.is_empty());
+}
+
 // ---------------------------------------------------------------------------
 // polygon_centroid
 // ---------------------------------------------------------------------------
@@ -152,6 +160,24 @@ fn polygon_centroid_of_clipped_region() {
     let c = polygon_centroid(&clipped);
     assert_relative_eq!(c.x, 0.75, epsilon = 1e-10);
     assert_relative_eq!(c.y, 0.5, epsilon = 1e-10);
+}
+
+#[test]
+fn polygon_centroid_degenerate() {
+    // Empty polygon returns origin.
+    let c = polygon_centroid(&[]);
+    assert_relative_eq!(c.x, 0.0, epsilon = 1e-12);
+    assert_relative_eq!(c.y, 0.0, epsilon = 1e-12);
+
+    // Collinear points (zero area) also return origin.
+    let collinear = vec![
+        Vector2::new(0.0, 0.0),
+        Vector2::new(1.0, 0.0),
+        Vector2::new(2.0, 0.0),
+    ];
+    let c = polygon_centroid(&collinear);
+    assert_relative_eq!(c.x, 0.0, epsilon = 1e-12);
+    assert_relative_eq!(c.y, 0.0, epsilon = 1e-12);
 }
 
 // ---------------------------------------------------------------------------
@@ -193,5 +219,25 @@ fn body_rect_to_world_90deg() {
     for (got, exp) in corners.iter().zip(expected.iter()) {
         assert_relative_eq!(got.x, exp.x, epsilon = 1e-10);
         assert_relative_eq!(got.y, exp.y, epsilon = 1e-10);
+    }
+}
+
+#[test]
+fn body_rect_to_world_with_nonzero_offset() {
+    // 0.4x0.2 rectangle at origin, no rotation, offset (0.5, 0.3).
+    // The offset shifts the local-frame rectangle before world transform,
+    // so corners become (offset.x +/- hw, offset.y +/- hh).
+    let offset = Vector2::new(0.5, 0.3);
+    let corners = body_rect_to_world(0.0, 0.0, 0.0, 0.4, 0.2, &offset);
+
+    let expected = [
+        Vector2::new(-0.2 + 0.5, -0.1 + 0.3), // (0.3, 0.2)
+        Vector2::new(0.2 + 0.5, -0.1 + 0.3),  // (0.7, 0.2)
+        Vector2::new(0.2 + 0.5, 0.1 + 0.3),   // (0.7, 0.4)
+        Vector2::new(-0.2 + 0.5, 0.1 + 0.3),  // (0.3, 0.4)
+    ];
+    for (got, exp) in corners.iter().zip(expected.iter()) {
+        assert_relative_eq!(got.x, exp.x, epsilon = 1e-12);
+        assert_relative_eq!(got.y, exp.y, epsilon = 1e-12);
     }
 }
