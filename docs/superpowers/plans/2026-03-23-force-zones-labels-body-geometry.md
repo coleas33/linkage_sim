@@ -586,7 +586,7 @@ use linkage_sim::forces::elements::{ForceElement, ForceZoneElement};
 fn force_zone_no_overlap_produces_zero_force() {
     let (mech, q) = build_test_mechanism();
     let state = mech.state();
-    let bodies = mech.bodies_map();
+    let bodies = mech.bodies();
 
     // Zone far away from the body
     let fz = ForceZoneElement {
@@ -1096,11 +1096,11 @@ if state.show_labels {
     let label_font = egui::FontId::monospace(10.0);
 
     // Body/link labels
-    for (body_id, body) in mechanism.bodies_map() {
+    for (body_id, body) in mechanism.bodies() {
         if body_id == "ground" { continue; }
-        if let Some(indices) = mechanism.state().body_indices(body_id) {
-            let bx = q[indices.0];
-            let by = q[indices.1];
+        if let Ok(bi) = mechanism.state().get_index(body_id) {
+            let bx = q[bi.x_idx()];
+            let by = q[bi.y_idx()];
             let pos = world_to_screen(bx, by, &view);
             let label_pos = egui::pos2(pos.x, pos.y - 12.0);
             painter.text(label_pos, egui::Align2::CENTER_BOTTOM, &body.label,
