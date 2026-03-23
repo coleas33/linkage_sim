@@ -34,6 +34,8 @@ pub label: String,  // user-editable display name (e.g., "Coupler", "Press Plate
 
 Bodies without geometry continue rendering as the existing blue bar. Bodies with geometry render the rectangle in addition to the bar.
 
+`Body.label` is `String` (non-optional, always present — bodies always have a name). Joint and ForceZone labels are `Option<String>` (auto-generated when `None`).
+
 ### Joint/Constraint Labels
 
 ```rust
@@ -61,16 +63,27 @@ Key decisions:
 - `zone_min`/`zone_max` are in **world space** (fixed in the ground frame)
 - `body_id` references the body whose `geometry` is tested for overlap
 - Bodies without geometry cannot be targeted by a ForceZone (validation error)
+- `ForceZone` is a single-body force element (acts against the world frame, like `ExternalForce`), not a two-body element like springs. Serde tagging follows the same `#[serde(tag = "type")]` pattern as other `ForceElement` variants.
+- Validation: `BodyGeometry` must have `width > 0` and `height > 0` (enforced at creation and deserialization). Zero-area geometry is rejected to prevent division by zero in overlap ratio computation.
 
 ### Crank Angle Limits
 
+New `SweepConfig` struct stored on `MechanismJson` (mechanism-level, not per-driver):
+
 ```rust
-// On driver or mechanism-level config:
-pub sweep_min: Option<f64>,  // radians
-pub sweep_max: Option<f64>,  // radians
+// In MechanismJson (top-level, persisted to JSON):
+pub sweep_config: Option<SweepConfig>,
+
+pub struct SweepConfig {
+    pub angle_min: f64,  // radians, default 0
+    pub angle_max: f64,  // radians, default 2π
+    pub enabled: bool,   // when false, full 360° sweep (ignore min/max)
+}
 ```
 
-When set, a `JointLimit` penalty force element is auto-created on the driver joint so forward dynamics also respects the bounds.
+This lives on `MechanismJson` because it is mechanism-global analysis config — there is one driver and one sweep range per mechanism. The sweep loop in `sweep.rs` reads `sweep_config` to determine the angle range instead of hardcoding `0..=360`.
+
+When `enabled` is true, a `JointLimit` penalty force element is auto-created on the driver joint so forward dynamics also respects the bounds. The `JointLimit` is ephemeral (created at build time, not persisted separately) — `SweepConfig` is the single source of truth. Stiffness and damping for the auto-created `JointLimit` use sensible defaults (e.g., 10,000 N·m/rad with critical damping) — tuned during implementation.
 
 ## Solver Integration
 
@@ -80,7 +93,7 @@ The ForceZone `apply()` method:
 
 1. **Transform body geometry to world frame**: Use the body's `(x, y, θ)` from state vector `q` to compute the 4 corners of the body rectangle in world coordinates.
 
-2. **Compute intersection area**: Clip the rotated body rectangle against the axis-aligned zone rectangle using Sutherland-Hodgman algorithm. Compute area via shoelace formula.
+2. **Compute intersection area**: Clip the rotated body rectangle against the axis-aligned zone rectangle using Sutherland-Hodgman algorithm. Compute area via shoelace formula. These are standalone utility functions (`polygon_clip()`, `polygon_area()`, and `polygon_centroid()`) — testable in isolation, not inlined into ForceZone.
 
 3. **Compute force scaling**: `ratio = intersection_area / body_total_area`. Continuous function — 0.0 outside, 1.0 fully inside, smooth ramp in between.
 
@@ -170,7 +183,7 @@ Because ForceZone contributes to Q, inverse dynamics automatically computes incr
 **Press plate** (on coupler body):
 - Geometry: 60mm wide x 15mm tall rectangle, centered on coupler midpoint
 - Mass: 0.5 kg
-- Inertia: auto-computed from rectangular plate formula
+- Inertia: computed from rectangular plate formula `(1/12)*m*(w^2+h^2)` in the sample builder code (one-time convenience, not a general auto-compute feature)
 
 **Force zone**:
 - Bounds: approximately x=[10mm, 30mm], y=[–5mm, 10mm] (tuned so plate enters/exits during downward stroke)
