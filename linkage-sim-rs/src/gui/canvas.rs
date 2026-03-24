@@ -1852,6 +1852,9 @@ fn draw_force_elements(
                 );
                 draw_torque_arc(painter, mid, m.direction as f32, MOTOR_COLOR);
             }
+            ForceElement::ForceZone(_) => {
+                // Rendering handled in Task 7 (force zone canvas rendering).
+            }
         }
     }
 }

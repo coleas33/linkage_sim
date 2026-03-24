@@ -418,6 +418,26 @@ pub struct LinearActuatorElement {
     pub speed_limit: f64,
 }
 
+/// A spatial force zone: applies a constant distributed force to a body
+/// proportional to the overlap area between the body's geometry and the zone.
+///
+/// The zone is an axis-aligned rectangle in world space. The body must have
+/// `BodyGeometry` set. Force is applied at the centroid of the overlap region.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForceZoneElement {
+    /// ID of the body whose geometry is tested for overlap.
+    pub body_id: String,
+    /// World-space bottom-left corner of the zone (meters).
+    pub zone_min: [f64; 2],
+    /// World-space top-right corner of the zone (meters).
+    pub zone_max: [f64; 2],
+    /// Constant force vector applied at full overlap (Newtons).
+    pub force: [f64; 2],
+    /// Optional display label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
 // ── ForceElement enum ────────────────────────────────────────────────────────
 
 /// A force element attached to one or two bodies in the mechanism.
@@ -436,6 +456,7 @@ pub enum ForceElement {
     JointLimit(JointLimitElement),
     Motor(MotorElement),
     LinearActuator(LinearActuatorElement),
+    ForceZone(ForceZoneElement),
 }
 
 impl ForceElement {
@@ -489,6 +510,7 @@ impl ForceElement {
             ForceElement::JointLimit(j) => evaluate_joint_limit(j, state, q, q_dot),
             ForceElement::Motor(m) => evaluate_motor(m, state, q_dot),
             ForceElement::LinearActuator(a) => evaluate_linear_actuator(a, state, q, q_dot),
+            ForceElement::ForceZone(fz) => evaluate_force_zone(fz, state, bodies, q),
         }
     }
 
@@ -547,6 +569,7 @@ impl ForceElement {
             ForceElement::JointLimit(_) => "Joint Limit",
             ForceElement::Motor(_) => "Motor",
             ForceElement::LinearActuator(_) => "Linear Actuator",
+            ForceElement::ForceZone(_) => "Force Zone",
         }
     }
 
@@ -633,6 +656,7 @@ impl ForceElement {
             ForceElement::JointLimit(j) => vec![&j.body_i, &j.body_j],
             ForceElement::Motor(m) => vec![&m.body_i, &m.body_j],
             ForceElement::LinearActuator(a) => vec![&a.body_a, &a.body_b],
+            ForceElement::ForceZone(fz) => vec![&fz.body_id],
         }
     }
 }
@@ -1044,6 +1068,69 @@ fn evaluate_linear_actuator(
     total += point_force_to_q(state, &a.body_a, &pt_a_local, &force_on_a, q);
     total += point_force_to_q(state, &a.body_b, &pt_b_local, &force_on_b, q);
     total
+}
+
+// ── Force zone evaluation ────────────────────────────────────────────────────
+
+fn evaluate_force_zone(
+    fz: &ForceZoneElement,
+    state: &State,
+    bodies: &HashMap<String, Body>,
+    q: &DVector<f64>,
+) -> DVector<f64> {
+    use crate::geometry::{body_rect_to_world, clip_polygon_to_aabb, polygon_area, polygon_centroid};
+
+    let n = state.n_coords();
+    let body = match bodies.get(&fz.body_id) {
+        Some(b) => b,
+        None => return DVector::zeros(n),
+    };
+    let geo = match &body.geometry {
+        Some(g) => g,
+        None => return DVector::zeros(n),
+    };
+
+    // Get body position from state vector via BodyIndex
+    let bi = match state.get_index(&fz.body_id) {
+        Ok(idx) => idx,
+        Err(_) => return DVector::zeros(n),
+    };
+    let bx = q[bi.x_idx()];
+    let by = q[bi.y_idx()];
+    let btheta = q[bi.theta_idx()];
+
+    // Transform body rectangle to world frame
+    let corners = body_rect_to_world(bx, by, btheta, geo.width, geo.height, &geo.offset);
+
+    // Clip against zone AABB
+    let zone_min = Vector2::new(fz.zone_min[0], fz.zone_min[1]);
+    let zone_max = Vector2::new(fz.zone_max[0], fz.zone_max[1]);
+    let clipped = clip_polygon_to_aabb(&corners, &zone_min, &zone_max);
+
+    let overlap_area = polygon_area(&clipped);
+    let body_area = geo.area();
+
+    if overlap_area < 1e-15 || body_area < 1e-15 {
+        return DVector::zeros(n);
+    }
+
+    let ratio = (overlap_area / body_area).min(1.0);
+    let force_global = Vector2::new(fz.force[0] * ratio, fz.force[1] * ratio);
+
+    // Apply force at the centroid of the overlap region
+    let centroid_world = polygon_centroid(&clipped);
+
+    // Convert world centroid to body-local point for point_force_to_q
+    let cos_t = btheta.cos();
+    let sin_t = btheta.sin();
+    let dx = centroid_world.x - bx;
+    let dy = centroid_world.y - by;
+    let local_point = Vector2::new(
+        cos_t * dx + sin_t * dy,
+        -sin_t * dx + cos_t * dy,
+    );
+
+    point_force_to_q(state, &fz.body_id, &local_point, &force_global, q)
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────

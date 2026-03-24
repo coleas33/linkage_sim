@@ -1423,6 +1423,41 @@ fn draw_force_element_details(
             });
         }
 
+        ForceElement::ForceZone(fz) => {
+            ui.label(format!("Body: {}", fz.body_id));
+
+            let mut fx = fz.force[0];
+            ui.horizontal(|ui| {
+                ui.label("Force X (N):");
+                if ui.add(egui::DragValue::new(&mut fx).speed(1.0).prefix("Fx: ")).changed() {
+                    let mut updated = fz.clone();
+                    updated.force[0] = fx;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::ForceZone(updated),
+                    });
+                }
+            });
+
+            let mut fy = fz.force[1];
+            ui.horizontal(|ui| {
+                ui.label("Force Y (N):");
+                if ui.add(egui::DragValue::new(&mut fy).speed(1.0).prefix("Fy: ")).changed() {
+                    let mut updated = fz.clone();
+                    updated.force[1] = fy;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::ForceZone(updated),
+                    });
+                }
+            });
+
+            ui.label(format!(
+                "Zone: ({:.3}, {:.3}) to ({:.3}, {:.3})",
+                fz.zone_min[0], fz.zone_min[1], fz.zone_max[0], fz.zone_max[1],
+            ));
+        }
+
         ForceElement::LinearActuator(la) => {
             ui.label(format!("Body A: {}  Body B: {}", la.body_a, la.body_b));
 
