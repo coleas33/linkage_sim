@@ -1157,6 +1157,61 @@ mod tests {
         }
     }
 
+    #[test]
+    fn serde_roundtrip_linear_actuator_with_stroke_limits() {
+        let elem = ForceElement::LinearActuator(LinearActuatorElement {
+            body_a: "a".into(),
+            point_a: [0.0, 0.0],
+            point_a_name: None,
+            body_b: "b".into(),
+            point_b: [1.0, 0.0],
+            point_b_name: None,
+            force: 100.0,
+            speed_limit: 0.0,
+            stroke_min: 0.2,
+            stroke_max: 0.8,
+            end_stop_stiffness: 5000.0,
+            end_stop_damping: 20.0,
+            end_stop_restitution: 0.3,
+        });
+        let json = serde_json::to_string(&elem).unwrap();
+        let round_tripped: ForceElement = serde_json::from_str(&json).unwrap();
+        match round_tripped {
+            ForceElement::LinearActuator(a) => {
+                assert_abs_diff_eq!(a.stroke_min, 0.2, epsilon = 1e-15);
+                assert_abs_diff_eq!(a.stroke_max, 0.8, epsilon = 1e-15);
+                assert_abs_diff_eq!(a.end_stop_stiffness, 5000.0, epsilon = 1e-15);
+                assert_abs_diff_eq!(a.end_stop_damping, 20.0, epsilon = 1e-15);
+                assert_abs_diff_eq!(a.end_stop_restitution, 0.3, epsilon = 1e-15);
+            }
+            _ => panic!("Expected LinearActuator"),
+        }
+    }
+
+    #[test]
+    fn serde_old_actuator_json_loads_with_default_stroke_limits() {
+        let json = r#"{
+            "type": "LinearActuator",
+            "body_a": "b1",
+            "point_a": [0.0, 0.0],
+            "body_b": "b2",
+            "point_b": [1.0, 0.0],
+            "force": 50.0,
+            "speed_limit": 0.0
+        }"#;
+        let elem: ForceElement = serde_json::from_str(json).unwrap();
+        match elem {
+            ForceElement::LinearActuator(a) => {
+                assert_abs_diff_eq!(a.stroke_min, 0.0, epsilon = 1e-15);
+                assert_abs_diff_eq!(a.stroke_max, 0.0, epsilon = 1e-15);
+                assert_abs_diff_eq!(a.end_stop_stiffness, 10000.0, epsilon = 1e-15);
+                assert_abs_diff_eq!(a.end_stop_damping, 10.0, epsilon = 1e-15);
+                assert_abs_diff_eq!(a.end_stop_restitution, 0.5, epsilon = 1e-15);
+            }
+            _ => panic!("Expected LinearActuator"),
+        }
+    }
+
     // ── Type name tests for new elements ─────────────────────────────────────
 
     #[test]
