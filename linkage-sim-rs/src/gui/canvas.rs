@@ -3,7 +3,8 @@
 use eframe::egui::{self, Color32, FontId, Pos2, Rect, Stroke, Vec2};
 
 use crate::core::constraint::Constraint;
-use crate::core::state::GROUND_ID;
+use crate::core::mechanism::Mechanism;
+use crate::core::state::{State, GROUND_ID};
 use crate::forces::elements::*;
 use crate::gui::state::{
     AddBodyState, AppState, ContextMenuTarget, EditorTool, GridSettings,
@@ -48,6 +49,9 @@ const ACTUATOR_COLOR: Color32 = Color32::from_rgb(255, 115, 55);
 const BEARING_COLOR: Color32 = Color32::from_rgb(190, 175, 95);
 const JOINT_LIMIT_COLOR: Color32 = Color32::from_rgb(215, 75, 75);
 const MOTOR_COLOR: Color32 = Color32::from_rgb(80, 220, 130);
+const FORCE_ZONE_COLOR: Color32 = Color32::from_rgb(255, 80, 80);
+const FORCE_ZONE_OVERLAP_FILL: Color32 = Color32::from_rgba_premultiplied(255, 200, 0, 50);
+const FORCE_ZONE_OVERLAP_STROKE: Color32 = Color32::from_rgb(255, 204, 0);
 
 // ── Sizing ──────────────────────────────────────────────────────────────────
 
@@ -1875,8 +1879,130 @@ fn draw_force_elements(
                 );
                 draw_torque_arc(painter, mid, m.direction as f32, MOTOR_COLOR);
             }
-            ForceElement::ForceZone(_) => {
-                // Rendering handled in Task 7 (force zone canvas rendering).
+            ForceElement::ForceZone(fz) => {
+                draw_force_zone(painter, fz, mech, mech_state, q, view);
+            }
+        }
+    }
+}
+
+/// Draw a force zone on the canvas: dashed red border, faint red fill, direction
+/// arrows, label, and (if the target body has geometry) a yellow overlap highlight.
+fn draw_force_zone(
+    painter: &egui::Painter,
+    fz: &ForceZoneElement,
+    mech: &Mechanism,
+    mech_state: &State,
+    q: &nalgebra::DVector<f64>,
+    view: &ViewTransform,
+) {
+    let zone_stroke = Stroke::new(2.0, FORCE_ZONE_COLOR);
+    let zone_fill = Color32::from_rgba_premultiplied(255, 80, 80, 30);
+
+    // Convert zone corners to screen space.
+    let min_sp = view.world_to_screen(fz.zone_min[0], fz.zone_min[1]);
+    let max_sp = view.world_to_screen(fz.zone_max[0], fz.zone_max[1]);
+    let s_min_x = min_sp[0].min(max_sp[0]);
+    let s_min_y = min_sp[1].min(max_sp[1]);
+    let s_max_x = min_sp[0].max(max_sp[0]);
+    let s_max_y = min_sp[1].max(max_sp[1]);
+
+    let tl = Pos2::new(s_min_x, s_min_y);
+    let tr = Pos2::new(s_max_x, s_min_y);
+    let br = Pos2::new(s_max_x, s_max_y);
+    let bl = Pos2::new(s_min_x, s_max_y);
+
+    // 1. Faint red fill.
+    painter.rect_filled(
+        Rect::from_min_max(tl, br),
+        0.0,
+        zone_fill,
+    );
+
+    // 2. Dashed red border (4 edges).
+    let dash = 6.0_f32;
+    let gap = 4.0_f32;
+    draw_dashed_line(painter, tl, tr, zone_stroke, dash, gap);
+    draw_dashed_line(painter, tr, br, zone_stroke, dash, gap);
+    draw_dashed_line(painter, br, bl, zone_stroke, dash, gap);
+    draw_dashed_line(painter, bl, tl, zone_stroke, dash, gap);
+
+    // 3. Force direction arrows: 3 evenly spaced inside the zone.
+    let fx = fz.force[0] as f32;
+    let fy = fz.force[1] as f32;
+    let fmag = (fx * fx + fy * fy).sqrt();
+    if fmag > 1e-9 {
+        // Unit direction in screen space (flip Y because screen Y is down).
+        let dir_x = fx / fmag;
+        let dir_y = -fy / fmag;
+
+        let zone_w = s_max_x - s_min_x;
+        let zone_h = s_max_y - s_min_y;
+        let arrow_len = (zone_w.min(zone_h) * 0.35).clamp(10.0, 40.0);
+        let head_len = 6.0_f32;
+        let head_angle = 0.44_f32;
+
+        for i in 0..3 {
+            let frac = (i as f32 + 1.0) / 4.0;
+            let cx = s_min_x + zone_w * frac;
+            let cy = s_min_y + zone_h * 0.5;
+
+            let half = arrow_len * 0.5;
+            let start = Pos2::new(cx - dir_x * half, cy - dir_y * half);
+            let tip = Pos2::new(cx + dir_x * half, cy + dir_y * half);
+
+            // Arrow shaft.
+            painter.line_segment([start, tip], Stroke::new(1.5, FORCE_ZONE_COLOR));
+
+            // Arrowhead: two small lines forming a V at the tip.
+            let back_x = -dir_x;
+            let back_y = -dir_y;
+            for sign in [-1.0_f32, 1.0] {
+                let cos_a = head_angle.cos();
+                let sin_a = head_angle.sin() * sign;
+                let hx = back_x * cos_a - back_y * sin_a;
+                let hy = back_x * sin_a + back_y * cos_a;
+                let head_pt = Pos2::new(tip.x + hx * head_len, tip.y + hy * head_len);
+                painter.line_segment([tip, head_pt], Stroke::new(1.5, FORCE_ZONE_COLOR));
+            }
+        }
+    }
+
+    // 4. Label above the zone.
+    let label_text = fz.label.as_deref().unwrap_or("Force Zone");
+    painter.text(
+        Pos2::new((s_min_x + s_max_x) * 0.5, s_min_y - 4.0),
+        egui::Align2::CENTER_BOTTOM,
+        label_text,
+        FontId::monospace(10.0),
+        FORCE_ZONE_COLOR,
+    );
+
+    // 5. Active overlap highlight: body geometry clipped to zone AABB.
+    if let Some(body) = mech.bodies().get(&fz.body_id) {
+        if let Some(ref geo) = body.geometry {
+            let (bx, by, btheta) = mech_state.get_pose(&fz.body_id, q);
+            let corners = crate::geometry::body_rect_to_world(
+                bx, by, btheta, geo.width, geo.height, &geo.offset,
+            );
+            let zone_min_v = nalgebra::Vector2::new(fz.zone_min[0], fz.zone_min[1]);
+            let zone_max_v = nalgebra::Vector2::new(fz.zone_max[0], fz.zone_max[1]);
+            let clipped = crate::geometry::clip_polygon_to_aabb(
+                &corners, &zone_min_v, &zone_max_v,
+            );
+            if clipped.len() >= 3 {
+                let screen_verts: Vec<Pos2> = clipped
+                    .iter()
+                    .map(|v| {
+                        let sp = view.world_to_screen(v.x, v.y);
+                        Pos2::new(sp[0], sp[1])
+                    })
+                    .collect();
+                painter.add(egui::epaint::PathShape::convex_polygon(
+                    screen_verts,
+                    FORCE_ZONE_OVERLAP_FILL,
+                    Stroke::new(1.0, FORCE_ZONE_OVERLAP_STROKE),
+                ));
             }
         }
     }
