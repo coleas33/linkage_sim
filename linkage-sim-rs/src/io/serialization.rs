@@ -113,6 +113,12 @@ pub struct BodyJson {
     /// composite mass, CG, and Izz via parallel axis theorem.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub point_masses: Vec<PointMassJson>,
+    /// User-editable display label (defaults to body ID if absent).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// Optional visual geometry for rendering and force zone overlap.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geometry: Option<crate::core::body::BodyGeometry>,
 }
 
 /// JSON representation of a joint constraint.
@@ -254,6 +260,8 @@ fn body_to_json(body: &Body) -> BodyJson {
         // at build time. When exporting from a built mechanism, the composite
         // properties are already baked in, so we emit an empty list.
         point_masses: Vec::new(),
+        label: Some(body.label.clone()),
+        geometry: body.geometry.clone(),
     }
 }
 
@@ -484,6 +492,8 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
             },
             mount_points,
             coupler_points,
+            label: body_json.label.clone().unwrap_or_else(|| body_id.clone()),
+            geometry: body_json.geometry.clone(),
         };
         mech.add_body(body)
             .map_err(|e| SerializationError::Build(e.to_string()))?;

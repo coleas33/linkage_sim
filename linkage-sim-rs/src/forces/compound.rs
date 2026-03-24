@@ -344,6 +344,8 @@ mod tests {
             mount_points,
             coupler_points: HashMap::new(),
             point_masses: Vec::new(),
+            label: None,
+            geometry: None,
         }
     }
 

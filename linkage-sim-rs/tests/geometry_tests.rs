@@ -1,10 +1,11 @@
-//! Tests for geometry utilities: polygon area, centroid, AABB clipping, and
-//! body-rectangle-to-world transformation.
+//! Tests for geometry utilities: polygon area, centroid, AABB clipping,
+//! body-rectangle-to-world transformation, and BodyGeometry validation.
 
 use approx::assert_relative_eq;
 use nalgebra::Vector2;
 use std::f64::consts::FRAC_PI_2;
 
+use linkage_sim_rs::core::body::BodyGeometry;
 use linkage_sim_rs::geometry::{
     body_rect_to_world, clip_polygon_to_aabb, polygon_area, polygon_centroid,
 };
@@ -240,4 +241,39 @@ fn body_rect_to_world_with_nonzero_offset() {
         assert_relative_eq!(got.x, exp.x, epsilon = 1e-12);
         assert_relative_eq!(got.y, exp.y, epsilon = 1e-12);
     }
+}
+
+// ---------------------------------------------------------------------------
+// BodyGeometry
+// ---------------------------------------------------------------------------
+
+#[test]
+fn body_geometry_valid() {
+    let geo = BodyGeometry::new(0.06, 0.015, Vector2::new(0.0, 0.0));
+    assert!(geo.is_ok());
+    let geo = geo.unwrap();
+    assert!((geo.width - 0.06).abs() < 1e-12);
+    assert!((geo.height - 0.015).abs() < 1e-12);
+    assert!((geo.area() - 0.0009).abs() < 1e-12);
+}
+
+#[test]
+fn body_geometry_rejects_zero_dimension() {
+    assert!(BodyGeometry::new(0.0, 0.015, Vector2::new(0.0, 0.0)).is_err());
+    assert!(BodyGeometry::new(0.06, 0.0, Vector2::new(0.0, 0.0)).is_err());
+    assert!(BodyGeometry::new(-0.01, 0.015, Vector2::new(0.0, 0.0)).is_err());
+}
+
+#[test]
+fn body_geometry_with_offset() {
+    let offset = Vector2::new(0.1, -0.05);
+    let geo = BodyGeometry::new(0.2, 0.1, offset).unwrap();
+    assert!((geo.offset.x - 0.1).abs() < 1e-12);
+    assert!((geo.offset.y - (-0.05)).abs() < 1e-12);
+    assert!((geo.area() - 0.02).abs() < 1e-12);
+}
+
+#[test]
+fn body_geometry_rejects_negative_height() {
+    assert!(BodyGeometry::new(0.06, -0.01, Vector2::new(0.0, 0.0)).is_err());
 }

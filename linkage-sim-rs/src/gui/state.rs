@@ -842,6 +842,8 @@ impl Default for AppState {
                         mount_points: HashMap::new(),
                         coupler_points: HashMap::new(),
                         point_masses: Vec::new(),
+                        label: None,
+                        geometry: None,
                     },
                 );
                 m
@@ -2383,6 +2385,8 @@ impl AppState {
             mount_points: HashMap::new(),
             coupler_points: HashMap::new(),
             point_masses: Vec::new(),
+            label: None,
+            geometry: None,
         });
         ground.attachment_points.insert(name.to_string(), [x, y]);
     }
@@ -2450,6 +2454,8 @@ impl AppState {
             mount_points: HashMap::new(),
             coupler_points: HashMap::new(),
             point_masses: Vec::new(),
+            label: None,
+            geometry: None,
         };
         bp.bodies.insert(body_id.to_string(), body);
     }
@@ -4736,6 +4742,8 @@ mod tests {
             mount_points: HashMap::new(),
             coupler_points: HashMap::new(),
             point_masses: Vec::new(),
+            label: None,
+            geometry: None,
         });
         let name = state.next_attachment_point_name("empty");
         assert_eq!(name, "A");
@@ -4757,6 +4765,8 @@ mod tests {
             mount_points: HashMap::new(),
             coupler_points: HashMap::new(),
             point_masses: Vec::new(),
+            label: None,
+            geometry: None,
         });
         let name = state.next_attachment_point_name("full");
         assert_eq!(name, "AA");
@@ -4804,6 +4814,8 @@ mod tests {
             mount_points: HashMap::new(),
             coupler_points: HashMap::new(),
             point_masses: Vec::new(),
+            label: None,
+            geometry: None,
         });
         state.add_revolute_joint_raw("ground", "O", "link", "A");
         let bp = state.blueprint.as_ref().unwrap();

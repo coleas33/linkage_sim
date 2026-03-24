@@ -14,6 +14,33 @@ use thiserror::Error;
 
 use crate::core::state::GROUND_ID;
 
+/// Visual rectangular geometry attached to a body.
+/// Used for force zone overlap computation and canvas rendering.
+/// Dimensions are in body-local frame, centered on `offset` from body origin.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BodyGeometry {
+    pub width: f64,            // meters, extent along body's local x-axis
+    pub height: f64,           // meters, extent along body's local y-axis
+    pub offset: Vector2<f64>,  // local-frame offset from body origin
+}
+
+impl BodyGeometry {
+    /// Create a new body geometry. Width and height must be > 0.
+    pub fn new(width: f64, height: f64, offset: Vector2<f64>) -> Result<Self, BodyError> {
+        if width <= 0.0 || height <= 0.0 {
+            return Err(BodyError::InvalidGeometry {
+                reason: format!("width ({}) and height ({}) must both be > 0", width, height),
+            });
+        }
+        Ok(Self { width, height, offset })
+    }
+
+    /// Total area of the rectangle (m^2).
+    pub fn area(&self) -> f64 {
+        self.width * self.height
+    }
+}
+
 /// A rigid body in the mechanism.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Body {
@@ -31,6 +58,11 @@ pub struct Body {
     pub mount_points: HashMap<String, Vector2<f64>>,
     /// Named points tracked for output (path tracing) but not used for connections.
     pub coupler_points: HashMap<String, Vector2<f64>>,
+    /// User-editable display label.
+    pub label: String,
+    /// Optional visual geometry for rendering and force zone overlap.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geometry: Option<BodyGeometry>,
 }
 
 impl Body {
@@ -43,6 +75,8 @@ impl Body {
             izz_cg: 0.0,
             mount_points: HashMap::new(),
             coupler_points: HashMap::new(),
+            label: id.to_string(),
+            geometry: None,
         }
     }
 
@@ -167,6 +201,8 @@ pub fn make_ground(attachment_points: &[(&str, f64, f64)]) -> Body {
         izz_cg: 0.0,
         mount_points: HashMap::new(),
         coupler_points: HashMap::new(),
+        label: "ground".to_string(),
+        geometry: None,
     }
 }
 
@@ -193,6 +229,8 @@ pub fn make_bar(
         izz_cg,
         mount_points: HashMap::new(),
         coupler_points: HashMap::new(),
+        label: body_id.to_string(),
+        geometry: None,
     }
 }
 
@@ -222,6 +260,8 @@ pub enum BodyError {
         available_attachment: Vec<String>,
         available_mount: Vec<String>,
     },
+    #[error("Invalid body geometry: {reason}")]
+    InvalidGeometry { reason: String },
 }
 
 #[cfg(test)]

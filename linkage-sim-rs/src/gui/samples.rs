@@ -1310,6 +1310,8 @@ fn build_scotch_yoke(
         izz_cg: 0.001,
         mount_points: std::collections::HashMap::new(),
         coupler_points: std::collections::HashMap::new(),
+        label: "slider".to_string(),
+        geometry: None,
     };
     slider.add_attachment_point("P", 0.0, 0.0).unwrap();
 
@@ -1373,6 +1375,8 @@ fn build_inverted_slider_crank(
         izz_cg: 0.001,
         mount_points: std::collections::HashMap::new(),
         coupler_points: std::collections::HashMap::new(),
+        label: "slider".to_string(),
+        geometry: None,
     };
     slider.add_attachment_point("P", 0.0, 0.0).unwrap();
     slider.add_attachment_point("Q", 0.0, 0.0).unwrap();
