@@ -6,9 +6,11 @@
 
 use eframe::egui;
 use meval;
+use nalgebra::Vector2;
 use crate::analysis::envelopes::compute_envelope;
 use crate::analysis::grashof::GrashofType;
 use crate::analysis::motor_sizing::check_motor_sizing;
+use crate::core::body::BodyGeometry;
 use crate::core::state::GROUND_ID;
 use crate::forces::elements::*;
 use super::state::AppState;
@@ -27,6 +29,13 @@ enum PendingPropertyEdit {
     DeleteMountPoint { body_id: String, name: String },
     RenameMountPoint { body_id: String, old_name: String, new_name: String },
     UpdateMountPointPosition { body_id: String, name: String, position: [f64; 2] },
+    AddGeometry { body_id: String, width: f64, height: f64 },
+    UpdateGeometryWidth { body_id: String, width: f64 },
+    UpdateGeometryHeight { body_id: String, height: f64 },
+    UpdateGeometryOffsetX { body_id: String, offset_x: f64 },
+    UpdateGeometryOffsetY { body_id: String, offset_y: f64 },
+    RemoveGeometry { body_id: String },
+    UpdateLabel { body_id: String, label: String },
 }
 
 /// Draw the property panel showing info about the selected entity.
@@ -95,6 +104,17 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                     let mech_state = mech.state();
                     let q = &state.q;
                     let units = &state.display_units;
+
+                    // ── Label ────────────────────────────────────────────
+                    if body_id != GROUND_ID {
+                        let mut label = body.label.clone();
+                        if ui.text_edit_singleline(&mut label).changed() {
+                            pending = Some(PendingPropertyEdit::UpdateLabel {
+                                body_id: body_id.clone(),
+                                label,
+                            });
+                        }
+                    }
 
                     if body_id != GROUND_ID {
                         let (x, y, theta) = mech_state.get_pose(&body_id, q);
@@ -177,6 +197,90 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                         body_id: body_id.clone(), value: izz,
                                     });
                                 }
+                            }
+                        }
+                    }
+
+                    // ── Body Geometry ─────────────────────────────────────
+                    if body_id != GROUND_ID {
+                        if let Some(bp) = &state.blueprint {
+                            if let Some(bp_body) = bp.bodies.get(&body_id) {
+                                egui::CollapsingHeader::new("Geometry")
+                                    .id_salt(format!("body_geometry_{}", body_id))
+                                    .default_open(false)
+                                    .show(ui, |ui| {
+                                        if let Some(ref geo) = bp_body.geometry {
+                                            // Width slider (mm display, m internal)
+                                            let mut width_mm = geo.width * 1e3;
+                                            let wr = ui.add(
+                                                egui::Slider::new(&mut width_mm, 1.0..=500.0)
+                                                    .text("Width (mm)")
+                                                    .clamping(egui::SliderClamping::Never)
+                                                    .logarithmic(true),
+                                            );
+                                            if wr.drag_stopped() || (wr.changed() && !wr.dragged()) {
+                                                pending = Some(PendingPropertyEdit::UpdateGeometryWidth {
+                                                    body_id: body_id.clone(),
+                                                    width: width_mm * 1e-3,
+                                                });
+                                            }
+
+                                            // Height slider (mm display, m internal)
+                                            let mut height_mm = geo.height * 1e3;
+                                            let hr = ui.add(
+                                                egui::Slider::new(&mut height_mm, 1.0..=500.0)
+                                                    .text("Height (mm)")
+                                                    .clamping(egui::SliderClamping::Never)
+                                                    .logarithmic(true),
+                                            );
+                                            if hr.drag_stopped() || (hr.changed() && !hr.dragged()) {
+                                                pending = Some(PendingPropertyEdit::UpdateGeometryHeight {
+                                                    body_id: body_id.clone(),
+                                                    height: height_mm * 1e-3,
+                                                });
+                                            }
+
+                                            // Offset X slider (mm display, m internal)
+                                            let mut ox_mm = geo.offset.x * 1e3;
+                                            let oxr = ui.add(
+                                                egui::Slider::new(&mut ox_mm, -250.0..=250.0)
+                                                    .text("Offset X (mm)"),
+                                            );
+                                            if oxr.drag_stopped() || (oxr.changed() && !oxr.dragged()) {
+                                                pending = Some(PendingPropertyEdit::UpdateGeometryOffsetX {
+                                                    body_id: body_id.clone(),
+                                                    offset_x: ox_mm * 1e-3,
+                                                });
+                                            }
+
+                                            // Offset Y slider (mm display, m internal)
+                                            let mut oy_mm = geo.offset.y * 1e3;
+                                            let oyr = ui.add(
+                                                egui::Slider::new(&mut oy_mm, -250.0..=250.0)
+                                                    .text("Offset Y (mm)"),
+                                            );
+                                            if oyr.drag_stopped() || (oyr.changed() && !oyr.dragged()) {
+                                                pending = Some(PendingPropertyEdit::UpdateGeometryOffsetY {
+                                                    body_id: body_id.clone(),
+                                                    offset_y: oy_mm * 1e-3,
+                                                });
+                                            }
+
+                                            if ui.button("Remove Geometry").clicked() {
+                                                pending = Some(PendingPropertyEdit::RemoveGeometry {
+                                                    body_id: body_id.clone(),
+                                                });
+                                            }
+                                        } else {
+                                            if ui.button("Add Geometry").clicked() {
+                                                pending = Some(PendingPropertyEdit::AddGeometry {
+                                                    body_id: body_id.clone(),
+                                                    width: 0.03,
+                                                    height: 0.01,
+                                                });
+                                            }
+                                        }
+                                    });
                             }
                         }
                     }
@@ -362,6 +466,121 @@ fn apply_pending(state: &mut AppState, pending: Option<PendingPropertyEdit>) {
             }
             PendingPropertyEdit::UpdateMountPointPosition { body_id, name, position } => {
                 state.update_mount_point_position(&body_id, &name, position);
+            }
+            PendingPropertyEdit::AddGeometry { body_id, width, height } => {
+                if let Some(bp) = &mut state.blueprint {
+                    if let Some(body) = bp.bodies.get_mut(&body_id) {
+                        body.geometry = Some(BodyGeometry {
+                            width,
+                            height,
+                            offset: Vector2::zeros(),
+                        });
+                    }
+                }
+                if let Some(mech) = &mut state.mechanism {
+                    if let Some(body) = mech.body_mut(&body_id) {
+                        body.geometry = Some(BodyGeometry {
+                            width,
+                            height,
+                            offset: Vector2::zeros(),
+                        });
+                    }
+                }
+                state.mark_sweep_dirty();
+            }
+            PendingPropertyEdit::UpdateGeometryWidth { body_id, width } => {
+                if let Some(bp) = &mut state.blueprint {
+                    if let Some(body) = bp.bodies.get_mut(&body_id) {
+                        if let Some(ref mut geo) = body.geometry {
+                            geo.width = width;
+                        }
+                    }
+                }
+                if let Some(mech) = &mut state.mechanism {
+                    if let Some(body) = mech.body_mut(&body_id) {
+                        if let Some(ref mut geo) = body.geometry {
+                            geo.width = width;
+                        }
+                    }
+                }
+                state.mark_sweep_dirty();
+            }
+            PendingPropertyEdit::UpdateGeometryHeight { body_id, height } => {
+                if let Some(bp) = &mut state.blueprint {
+                    if let Some(body) = bp.bodies.get_mut(&body_id) {
+                        if let Some(ref mut geo) = body.geometry {
+                            geo.height = height;
+                        }
+                    }
+                }
+                if let Some(mech) = &mut state.mechanism {
+                    if let Some(body) = mech.body_mut(&body_id) {
+                        if let Some(ref mut geo) = body.geometry {
+                            geo.height = height;
+                        }
+                    }
+                }
+                state.mark_sweep_dirty();
+            }
+            PendingPropertyEdit::UpdateGeometryOffsetX { body_id, offset_x } => {
+                if let Some(bp) = &mut state.blueprint {
+                    if let Some(body) = bp.bodies.get_mut(&body_id) {
+                        if let Some(ref mut geo) = body.geometry {
+                            geo.offset.x = offset_x;
+                        }
+                    }
+                }
+                if let Some(mech) = &mut state.mechanism {
+                    if let Some(body) = mech.body_mut(&body_id) {
+                        if let Some(ref mut geo) = body.geometry {
+                            geo.offset.x = offset_x;
+                        }
+                    }
+                }
+                state.mark_sweep_dirty();
+            }
+            PendingPropertyEdit::UpdateGeometryOffsetY { body_id, offset_y } => {
+                if let Some(bp) = &mut state.blueprint {
+                    if let Some(body) = bp.bodies.get_mut(&body_id) {
+                        if let Some(ref mut geo) = body.geometry {
+                            geo.offset.y = offset_y;
+                        }
+                    }
+                }
+                if let Some(mech) = &mut state.mechanism {
+                    if let Some(body) = mech.body_mut(&body_id) {
+                        if let Some(ref mut geo) = body.geometry {
+                            geo.offset.y = offset_y;
+                        }
+                    }
+                }
+                state.mark_sweep_dirty();
+            }
+            PendingPropertyEdit::RemoveGeometry { body_id } => {
+                if let Some(bp) = &mut state.blueprint {
+                    if let Some(body) = bp.bodies.get_mut(&body_id) {
+                        body.geometry = None;
+                    }
+                }
+                if let Some(mech) = &mut state.mechanism {
+                    if let Some(body) = mech.body_mut(&body_id) {
+                        body.geometry = None;
+                    }
+                }
+                state.mark_sweep_dirty();
+            }
+            PendingPropertyEdit::UpdateLabel { body_id, label } => {
+                if let Some(bp) = &mut state.blueprint {
+                    if let Some(body) = bp.bodies.get_mut(&body_id) {
+                        body.label = if label.is_empty() { None } else { Some(label.clone()) };
+                    }
+                }
+                if let Some(mech) = &mut state.mechanism {
+                    if let Some(body) = mech.body_mut(&body_id) {
+                        body.label = label;
+                    }
+                }
+                state.mark_sweep_dirty();
             }
         }
     }
