@@ -2,7 +2,7 @@
 
 use eframe::egui;
 use super::state::AppState;
-use crate::io::serialization::DriverJson;
+use crate::io::DriverJson;
 
 /// Draw the input panel with animation controls and load case management.
 pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {

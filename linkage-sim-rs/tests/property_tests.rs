@@ -10,7 +10,7 @@ use linkage_sim_rs::analysis::grashof::{check_grashof, GrashofType};
 use linkage_sim_rs::core::body::{make_bar, make_ground};
 use linkage_sim_rs::core::constraint::Constraint;
 use linkage_sim_rs::core::mechanism::Mechanism;
-use linkage_sim_rs::io::serialization::{load_mechanism, save_mechanism};
+use linkage_sim_rs::io::{load_mechanism, save_mechanism};
 use linkage_sim_rs::solver::assembly::{assemble_constraints, assemble_jacobian, assemble_phi_t};
 use linkage_sim_rs::solver::kinematics::{solve_position, solve_velocity};
 

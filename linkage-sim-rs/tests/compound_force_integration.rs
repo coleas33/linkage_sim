@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use linkage_sim_rs::core::constraint::Constraint;
 use linkage_sim_rs::forces::elements::ForceElement;
-use linkage_sim_rs::io::serialization::{
+use linkage_sim_rs::io::{
     load_mechanism_unbuilt, BodyJson, JointJson, MechanismJson, SCHEMA_VERSION,
 };
 
@@ -419,7 +419,7 @@ fn json_round_trip_preserves_compound_spring() {
 
     // Save the expanded mechanism back to JSON.
     let saved_json =
-        linkage_sim_rs::io::serialization::save_mechanism(&mech).expect("save should succeed");
+        linkage_sim_rs::io::save_mechanism(&mech).expect("save should succeed");
 
     // Reload and verify compound bodies survived the round-trip.
     let mech2 = load_mechanism_unbuilt(&saved_json).expect("reload should succeed");

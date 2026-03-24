@@ -17,7 +17,7 @@ use nalgebra::Vector2;
 use crate::core::body::Body;
 use crate::core::mechanism::Mechanism;
 use crate::forces::elements::ForceElement;
-use crate::io::serialization::BodyJson;
+use crate::io::BodyJson;
 
 // ── Analysis ─────────────────────────────────────────────────────────────────
 

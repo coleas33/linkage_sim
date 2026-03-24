@@ -3,7 +3,7 @@
 
 use linkage_sim_rs::forces::elements::ForceElement;
 use linkage_sim_rs::gui::samples::{build_sample, SampleMechanism};
-use linkage_sim_rs::io::serialization::{load_mechanism_unbuilt, save_mechanism};
+use linkage_sim_rs::io::{load_mechanism_unbuilt, save_mechanism};
 
 #[test]
 fn parallelogram_actuator_builds_and_solves() {
