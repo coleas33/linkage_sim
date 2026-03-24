@@ -240,6 +240,14 @@ Note: file dialogs, PNG/SVG/GIF/DXF export, autosave, and HTML reports are nativ
 - Deferred slider rebuild (only on release) for lag-free interaction
 - Ctrl+N new mechanism — **done** (File > New resets to empty canvas, preserves preferences)
 
+**Schema v1.1.0 features** (backward-compatible with v1.0.0 files):
+
+- Body geometry — optional rectangular visual shapes on links (width, height, offset)
+- Force zones — spatial regions applying distributed forces to bodies passing through them (wind, magnetic fields)
+- Element labels and hover tooltips — user-defined labels on bodies, joints, and force elements; visible on canvas hover
+- Crank angle limits — configurable sweep range (min/max angle) for partial-rotation analysis
+- Parallelogram Press sample mechanism — demonstrates body geometry, force zones, and labels
+
 ```
 linkage-sim-rs/
 ├── src/

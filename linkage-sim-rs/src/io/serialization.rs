@@ -20,7 +20,7 @@ use crate::forces::compound::{analyze_force, expand_compound_force, CompoundAnal
 use crate::forces::elements::ForceElement;
 
 /// Current schema version for the JSON format.
-pub const SCHEMA_VERSION: &str = "1.0.0";
+pub const SCHEMA_VERSION: &str = "1.1.0";
 
 /// Extract the major version number from a semver string (e.g., "1.2.3" → 1).
 /// Returns `None` if the string doesn't start with a valid integer.
