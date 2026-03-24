@@ -1643,7 +1643,39 @@ fn draw_force_element_details(
         }
 
         ForceElement::ForceZone(fz) => {
-            ui.label(format!("Body: {}", fz.body_id));
+            // Target body dropdown: list bodies that have geometry set.
+            let bodies_with_geom: Vec<String> = blueprint.bodies.iter()
+                .filter(|(id, b)| b.geometry.is_some() && id.as_str() != "ground")
+                .map(|(id, _)| id.clone())
+                .collect();
+
+            ui.horizontal(|ui| {
+                ui.label("Target body:");
+                let current_label = if fz.body_id.is_empty() { "(none)" } else { &fz.body_id };
+                egui::ComboBox::from_id_salt(format!("fz_body_{}", index))
+                    .selected_text(current_label)
+                    .show_ui(ui, |ui| {
+                        for body_id in &bodies_with_geom {
+                            if ui.selectable_label(fz.body_id == *body_id, body_id).clicked() {
+                                let mut updated = fz.clone();
+                                updated.body_id = body_id.clone();
+                                *pending = Some(PendingPropertyEdit::UpdateForce {
+                                    index,
+                                    force: ForceElement::ForceZone(updated),
+                                });
+                            }
+                        }
+                        // Allow clearing the body selection.
+                        if ui.selectable_label(fz.body_id.is_empty(), "(none)").clicked() {
+                            let mut updated = fz.clone();
+                            updated.body_id = String::new();
+                            *pending = Some(PendingPropertyEdit::UpdateForce {
+                                index,
+                                force: ForceElement::ForceZone(updated),
+                            });
+                        }
+                    });
+            });
 
             let mut fx = fz.force[0];
             ui.horizontal(|ui| {
@@ -1671,10 +1703,44 @@ fn draw_force_element_details(
                 }
             });
 
-            ui.label(format!(
-                "Zone: ({:.3}, {:.3}) to ({:.3}, {:.3})",
-                fz.zone_min[0], fz.zone_min[1], fz.zone_max[0], fz.zone_max[1],
-            ));
+            // Zone min/max as editable DragValues (displayed in mm, stored in m).
+            ui.label("Zone bounds (mm):");
+            let mut min_x_mm = fz.zone_min[0] * 1e3;
+            let mut min_y_mm = fz.zone_min[1] * 1e3;
+            let mut max_x_mm = fz.zone_max[0] * 1e3;
+            let mut max_y_mm = fz.zone_max[1] * 1e3;
+
+            let mut zone_changed = false;
+            ui.horizontal(|ui| {
+                ui.label("Min X:");
+                if ui.add(egui::DragValue::new(&mut min_x_mm).speed(1.0).suffix(" mm")).changed() {
+                    zone_changed = true;
+                }
+                ui.label("Min Y:");
+                if ui.add(egui::DragValue::new(&mut min_y_mm).speed(1.0).suffix(" mm")).changed() {
+                    zone_changed = true;
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label("Max X:");
+                if ui.add(egui::DragValue::new(&mut max_x_mm).speed(1.0).suffix(" mm")).changed() {
+                    zone_changed = true;
+                }
+                ui.label("Max Y:");
+                if ui.add(egui::DragValue::new(&mut max_y_mm).speed(1.0).suffix(" mm")).changed() {
+                    zone_changed = true;
+                }
+            });
+
+            if zone_changed {
+                let mut updated = fz.clone();
+                updated.zone_min = [min_x_mm * 1e-3, min_y_mm * 1e-3];
+                updated.zone_max = [max_x_mm * 1e-3, max_y_mm * 1e-3];
+                *pending = Some(PendingPropertyEdit::UpdateForce {
+                    index,
+                    force: ForceElement::ForceZone(updated),
+                });
+            }
         }
 
         ForceElement::LinearActuator(la) => {

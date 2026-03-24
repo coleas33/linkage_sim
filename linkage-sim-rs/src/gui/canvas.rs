@@ -8,8 +8,8 @@ use crate::core::mechanism::Mechanism;
 use crate::core::state::{State, GROUND_ID};
 use crate::forces::elements::*;
 use crate::gui::state::{
-    AddBodyState, AppState, ContextMenuTarget, EditorTool, GridSettings,
-    SelectedEntity, ViewTransform,
+    AddBodyState, AppState, ContextMenuTarget, EditorTool, ForceZoneDragState,
+    GridSettings, SelectedEntity, ViewTransform,
 };
 
 // ── Colors — CAD-inspired dark palette ───────────────────────────────────────
@@ -902,6 +902,13 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 Some("Click a point to set the first attachment of the force element (Esc to cancel)".to_string())
             }
         }
+        EditorTool::CreateForceZone => {
+            if state.creating_force_zone.is_some() {
+                Some("Drag to define the force zone rectangle, release to create (Esc to cancel)".to_string())
+            } else {
+                Some("Click and drag on the canvas to define a force zone rectangle (Esc to cancel)".to_string())
+            }
+        }
         EditorTool::Select => None,
     };
     if let Some(ref hint) = hint_text {
@@ -1159,6 +1166,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         state.draw_link_start = None;
         state.add_body_state = None;
         state.place_force_state = None;
+        state.creating_force_zone = None;
         state.active_tool = EditorTool::Select;
     }
 
@@ -1449,6 +1457,101 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         }
     }
 
+    // ── Interaction: Create Force Zone tool ─────────────────────────────
+    if state.active_tool == EditorTool::CreateForceZone {
+        // On drag start: record the starting world position.
+        if response.drag_started_by(egui::PointerButton::Primary) && !is_shift {
+            if let Some(pos) = response.interact_pointer_pos() {
+                let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+                let (gx, gy) = state.grid.snap_point(wx, wy);
+                state.creating_force_zone = Some(ForceZoneDragState {
+                    start_world: [gx, gy],
+                });
+            }
+        }
+
+        // Preview rectangle while dragging.
+        if let Some(ref fz_drag) = state.creating_force_zone {
+            if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+                let [sx, sy] = fz_drag.start_world;
+                let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+                let (gx, gy) = state.grid.snap_point(wx, wy);
+
+                let start_sp = state.view.world_to_screen(sx, sy);
+                let end_sp = state.view.world_to_screen(gx, gy);
+
+                let s_min_x = start_sp[0].min(end_sp[0]);
+                let s_min_y = start_sp[1].min(end_sp[1]);
+                let s_max_x = start_sp[0].max(end_sp[0]);
+                let s_max_y = start_sp[1].max(end_sp[1]);
+
+                let tl = Pos2::new(s_min_x, s_min_y);
+                let tr = Pos2::new(s_max_x, s_min_y);
+                let br = Pos2::new(s_max_x, s_max_y);
+                let bl = Pos2::new(s_min_x, s_max_y);
+
+                // Faint red fill preview.
+                let preview_fill = Color32::from_rgba_premultiplied(255, 80, 80, 20);
+                painter.rect_filled(
+                    Rect::from_min_max(tl, br),
+                    0.0,
+                    preview_fill,
+                );
+
+                // Dashed red border preview.
+                let preview_stroke = Stroke::new(2.0, FORCE_ZONE_COLOR);
+                let dash = 6.0_f32;
+                let gap = 4.0_f32;
+                draw_dashed_line(&painter, tl, tr, preview_stroke, dash, gap);
+                draw_dashed_line(&painter, tr, br, preview_stroke, dash, gap);
+                draw_dashed_line(&painter, br, bl, preview_stroke, dash, gap);
+                draw_dashed_line(&painter, bl, tl, preview_stroke, dash, gap);
+            }
+        }
+
+        // On drag release: create the force zone element.
+        if response.drag_stopped_by(egui::PointerButton::Primary) {
+            if let Some(fz_drag) = state.creating_force_zone.take() {
+                if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+                    let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+                    let (gx, gy) = state.grid.snap_point(wx, wy);
+
+                    let [sx, sy] = fz_drag.start_world;
+
+                    // Normalize so min < max.
+                    let zone_min = [sx.min(gx), sy.min(gy)];
+                    let zone_max = [sx.max(gx), sy.max(gy)];
+
+                    // Skip degenerate (zero-area) zones.
+                    let w = (zone_max[0] - zone_min[0]).abs();
+                    let h = (zone_max[1] - zone_min[1]).abs();
+                    if w > 1e-6 && h > 1e-6 {
+                        // Pick the first body that has geometry, or fall back to empty string.
+                        let target_body = state.blueprint.as_ref()
+                            .and_then(|bp| {
+                                bp.bodies.iter()
+                                    .find(|(id, b)| b.geometry.is_some() && id.as_str() != "ground")
+                                    .map(|(id, _)| id.clone())
+                            })
+                            .unwrap_or_default();
+
+                        let fz = ForceElement::ForceZone(ForceZoneElement {
+                            body_id: target_body,
+                            zone_min,
+                            zone_max,
+                            force: [0.0, -100.0],
+                            label: None,
+                        });
+
+                        state.add_force_element(fz);
+                    }
+
+                    state.active_tool = EditorTool::Select;
+                }
+            }
+        }
+    }
+
     // ── Interaction: Add Body tool ──────────────────────────────────────
     if state.active_tool == EditorTool::AddBody {
         // Helper: check if placed points are ready to finalize (>= 2 points).
@@ -1551,6 +1654,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         && state.active_tool != EditorTool::DrawLink
         && state.active_tool != EditorTool::AddBody
         && state.active_tool != EditorTool::PlaceForce
+        && state.active_tool != EditorTool::CreateForceZone
         && response.clicked()
     {
         if let Some(pointer_pos) = response.interact_pointer_pos() {
@@ -1571,6 +1675,9 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 }
                 EditorTool::PlaceForce => {
                     // Handled by PlaceForce interaction section above.
+                }
+                EditorTool::CreateForceZone => {
+                    // Handled by CreateForceZone drag interaction section above.
                 }
                 EditorTool::Select => {
                     let mut hit: Option<SelectedEntity> = None;

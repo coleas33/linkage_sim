@@ -674,6 +674,11 @@ impl eframe::App for LinkageApp {
                             start: None,
                         });
                     }
+                    force_toolbar::PendingForceAdd::EnterForceZoneMode => {
+                        self.state.active_tool = EditorTool::CreateForceZone;
+                        self.state.creating_force_zone = None;
+                        // Actual drag state gets set on mouse press in canvas.rs
+                    }
                 }
             }
         });

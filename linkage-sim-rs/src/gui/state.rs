@@ -248,6 +248,8 @@ pub enum EditorTool {
     AddGroundPivot,
     /// Two-click placement of a two-point force element.
     PlaceForce,
+    /// Drag-to-define force zone creation: click and drag a rectangle.
+    CreateForceZone,
 }
 
 // ── Context menu target ──────────────────────────────────────────────────────
@@ -727,6 +729,9 @@ pub struct AppState {
     // ── Place Force state ───────────────────────────────────────────────
     /// Two-click force placement state. None when not in PlaceForce mode.
     pub place_force_state: Option<PlaceForceState>,
+    // ── Force Zone creation state ────────────────────────────────────────
+    /// Drag-to-define force zone state. None when not in CreateForceZone mode.
+    pub creating_force_zone: Option<ForceZoneDragState>,
     // ── Diagnostics ─────────────────────────────────────────────────────
     /// Cached Grashof classification for 4-bar mechanisms.
     pub grashof_result: Option<GrashofResult>,
@@ -822,6 +827,13 @@ pub struct PlaceForceStart {
     pub point_name: Option<String>,
 }
 
+/// State for drag-to-define force zone creation on the canvas.
+#[derive(Debug, Clone)]
+pub struct ForceZoneDragState {
+    /// World coordinates of the drag start corner. Set on mouse press.
+    pub start_world: [f64; 2],
+}
+
 /// Tracks the start of a Draw Link gesture.
 #[derive(Debug, Clone)]
 pub struct DrawLinkStart {
@@ -906,6 +918,7 @@ impl Default for AppState {
             draw_link_start: None,
             add_body_state: None,
             place_force_state: None,
+            creating_force_zone: None,
             grashof_result: None,
             crank_recommendation: None,
             simulation: None,

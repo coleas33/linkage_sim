@@ -10,6 +10,8 @@ pub enum PendingForceAdd {
     Add(ForceElement),
     /// Enter two-click placement mode with this force template.
     EnterPlaceMode(ForceElement),
+    /// Enter drag-to-define force zone creation mode on the canvas.
+    EnterForceZoneMode,
 }
 
 /// Draw the force toolbar ribbon. Returns a pending force addition if clicked.
@@ -140,6 +142,14 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
                 ui.close();
             }
         });
+
+        // -- Spatial Forces -----------------------------------------------
+        ui.separator();
+        let zone_color = egui::Color32::from_rgb(255, 80, 80);
+        ui.colored_label(zone_color, "Spatial:");
+        if ui.button("Force Zone").clicked() {
+            pending = Some(PendingForceAdd::EnterForceZoneMode);
+        }
     });
 
     pending
