@@ -90,6 +90,7 @@ fn make_compound_spring_json() -> MechanismJson {
         drivers: HashMap::new(),
         load_cases: Vec::new(),
         forces: vec![spring],
+        sweep_config: None,
     }
 }
 
@@ -165,6 +166,7 @@ fn make_pure_spring_json() -> MechanismJson {
         drivers: HashMap::new(),
         load_cases: Vec::new(),
         forces: vec![spring],
+        sweep_config: None,
     }
 }
 

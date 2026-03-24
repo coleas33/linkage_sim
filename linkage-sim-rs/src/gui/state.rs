@@ -676,6 +676,12 @@ pub struct AppState {
     pub show_plots: bool,
     /// Whether sweep data needs recomputation (set by rebuild, gravity change, etc.).
     pub sweep_dirty: bool,
+    /// Sweep angle range minimum in degrees.
+    pub sweep_angle_min_deg: f64,
+    /// Sweep angle range maximum in degrees.
+    pub sweep_angle_max_deg: f64,
+    /// Whether the custom sweep range is enabled (false = full 360°).
+    pub sweep_range_enabled: bool,
     /// Timestamp (egui time in seconds) when sweep was last marked dirty (for debounce).
     pub sweep_dirty_since: Option<f64>,
     // ── Joint creation mode ──────────────────────────────────────────────
@@ -852,6 +858,7 @@ impl Default for AppState {
             drivers: HashMap::new(),
             load_cases: Vec::new(),
             forces: Vec::new(),
+            sweep_config: None,
         };
 
         let mut state = Self {
@@ -878,6 +885,9 @@ impl Default for AppState {
             sweep_data: None,
             show_plots: true,
             sweep_dirty: false,
+            sweep_angle_min_deg: 0.0,
+            sweep_angle_max_deg: 360.0,
+            sweep_range_enabled: false,
             sweep_dirty_since: None,
             creating_joint: None,
             validation_warnings: ValidationWarnings::default(),
@@ -2190,7 +2200,7 @@ impl AppState {
             // Use current q as initial guess when dimensions match
             let q0 = if self.q.len() == mech.state().n_coords() { self.q.clone() } else { mech.state().make_q() };
             let theta_0 = self.driver_theta_0;
-            let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0, self.gravity_magnitude);
+            let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0, self.gravity_magnitude, None);
 
             // Extract the selected metric
             metric_values.push(config.metric.extract(&sweep));
@@ -2230,7 +2240,7 @@ impl AppState {
             let Ok(mut mech) = load_mechanism_unbuilt_from_json(base_bp) else { return };
             if mech.build().is_err() { return; }
             let q0 = if q_init.len() == mech.state().n_coords() { q_init.clone() } else { mech.state().make_q() };
-            let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0, self.gravity_magnitude);
+            let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0, self.gravity_magnitude, None);
             sweep
         };
         let baseline_torques = baseline_sweep.driver_torques.clone().unwrap_or_default();
@@ -2289,7 +2299,7 @@ impl AppState {
                 }
 
                 let q0 = if q_init.len() == mech.state().n_coords() { q_init.clone() } else { mech.state().make_q() };
-                let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0, self.gravity_magnitude);
+                let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0, self.gravity_magnitude, None);
                 let pp = sweep.driver_torques.as_ref()
                     .and_then(|t| compute_envelope(t))
                     .map(|e| e.peak_to_peak)
@@ -3206,7 +3216,12 @@ impl AppState {
         let omega = self.driver_omega;
         let theta_0 = self.driver_theta_0;
 
-        let (data, q_zero) = compute_sweep_data(self.mechanism.as_ref().unwrap(), &q_start, omega, theta_0, self.gravity_magnitude);
+        let sweep_range = if self.sweep_range_enabled {
+            Some((self.sweep_angle_min_deg, self.sweep_angle_max_deg))
+        } else {
+            None
+        };
+        let (data, q_zero) = compute_sweep_data(self.mechanism.as_ref().unwrap(), &q_start, omega, theta_0, self.gravity_magnitude, sweep_range);
         self.sweep_data = Some(data);
         self.q_at_zero = q_zero;
     }

@@ -32,6 +32,27 @@ fn semver_major(version: &str) -> Option<u32> {
 // JSON schema types
 // ---------------------------------------------------------------------------
 
+/// Configuration for sweep analysis angle range.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SweepConfig {
+    /// Minimum sweep angle in radians.
+    pub angle_min: f64,
+    /// Maximum sweep angle in radians.
+    pub angle_max: f64,
+    /// When false, full 360° sweep regardless of min/max.
+    pub enabled: bool,
+}
+
+impl Default for SweepConfig {
+    fn default() -> Self {
+        Self {
+            angle_min: 0.0,
+            angle_max: 2.0 * std::f64::consts::PI,
+            enabled: false,
+        }
+    }
+}
+
 /// Top-level JSON representation of a mechanism.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MechanismJson {
@@ -49,6 +70,10 @@ pub struct MechanismJson {
     /// Backward-compatible: old files without this field default to an empty list.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forces: Vec<ForceElement>,
+    /// Sweep analysis angle range configuration.
+    /// Backward-compatible: old files without this field default to None (full 360°).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sweep_config: Option<SweepConfig>,
 }
 
 /// JSON representation of a load case — a named driver configuration.
@@ -382,6 +407,7 @@ pub fn mechanism_to_json(mech: &Mechanism) -> Result<MechanismJson, Serializatio
         drivers,
         load_cases: Vec::new(),
         forces: mech.forces().to_vec(),
+        sweep_config: None,
     })
 }
 

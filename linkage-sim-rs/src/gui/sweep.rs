@@ -66,18 +66,24 @@ pub(crate) fn compute_sweep_data(
     omega: f64,
     theta_0: f64,
     gravity_magnitude: f64,
+    sweep_range: Option<(f64, f64)>,
 ) -> (SweepData, DVector<f64>) {
+    let (start_deg, end_deg) = sweep_range.unwrap_or((0.0, 360.0));
+    let step = 1.0_f64;
+    let num_steps = ((end_deg - start_deg) / step).round() as i32;
+    let capacity = (num_steps.max(0) + 1) as usize;
+
     let mut data = SweepData {
-        angles_deg: Vec::with_capacity(361),
+        angles_deg: Vec::with_capacity(capacity),
         body_angles: HashMap::new(),
         coupler_traces: HashMap::new(),
         transmission_angles: None,
-        driver_torques: Some(Vec::with_capacity(361)),
-        kinetic_energy: Vec::with_capacity(361),
-        potential_energy: Vec::with_capacity(361),
-        total_energy: Vec::with_capacity(361),
-        inverse_dynamics_torques: Vec::with_capacity(361),
-        mechanical_advantage: Vec::with_capacity(361),
+        driver_torques: Some(Vec::with_capacity(capacity)),
+        kinetic_energy: Vec::with_capacity(capacity),
+        potential_energy: Vec::with_capacity(capacity),
+        total_energy: Vec::with_capacity(capacity),
+        inverse_dynamics_torques: Vec::with_capacity(capacity),
+        mechanical_advantage: Vec::with_capacity(capacity),
         joint_reaction_magnitudes: HashMap::new(),
         coupler_velocities: HashMap::new(),
         coupler_accelerations: HashMap::new(),
@@ -92,7 +98,7 @@ pub(crate) fn compute_sweep_data(
     let body_order: Vec<String> = mech.body_order().to_vec();
     for body_id in &body_order {
         data.body_angles
-            .insert(body_id.clone(), Vec::with_capacity(361));
+            .insert(body_id.clone(), Vec::with_capacity(capacity));
     }
 
     // Pre-allocate coupler trace vectors.
@@ -105,7 +111,7 @@ pub(crate) fn compute_sweep_data(
         for (point_name, local) in &body.coupler_points {
             let key = format!("{}.{}", body_id, point_name);
             coupler_keys.push((key.clone(), body_id.clone(), *local));
-            data.coupler_traces.insert(key, Vec::with_capacity(361));
+            data.coupler_traces.insert(key, Vec::with_capacity(capacity));
         }
         // Also trace attachment points on non-ground bodies (useful
         // for visualization even if no explicit coupler points exist).
@@ -113,7 +119,7 @@ pub(crate) fn compute_sweep_data(
             let key = format!("{}.{}", body_id, point_name);
             if !data.coupler_traces.contains_key(&key) {
                 coupler_keys.push((key.clone(), body_id.clone(), *local));
-                data.coupler_traces.insert(key, Vec::with_capacity(361));
+                data.coupler_traces.insert(key, Vec::with_capacity(capacity));
             }
         }
     }
@@ -122,14 +128,14 @@ pub(crate) fn compute_sweep_data(
     let mut coupler_vel_data: HashMap<String, Vec<f64>> = HashMap::new();
     let mut coupler_accel_data: HashMap<String, Vec<f64>> = HashMap::new();
     for (key, _, _) in &coupler_keys {
-        coupler_vel_data.insert(key.clone(), Vec::with_capacity(361));
-        coupler_accel_data.insert(key.clone(), Vec::with_capacity(361));
+        coupler_vel_data.insert(key.clone(), Vec::with_capacity(capacity));
+        coupler_accel_data.insert(key.clone(), Vec::with_capacity(capacity));
     }
 
     // Detect 4-bar link lengths for transmission angle.
     let fourbar_links = detect_fourbar_links(mech);
     if fourbar_links.is_some() {
-        data.transmission_angles = Some(Vec::with_capacity(361));
+        data.transmission_angles = Some(Vec::with_capacity(capacity));
     }
 
     // Detect driver/output body pair for mechanical advantage.
@@ -141,12 +147,12 @@ pub(crate) fn compute_sweep_data(
         output.map(|out| (driver.to_string(), out))
     });
 
-    // Sweep from 0 to 360 degrees in 1-degree steps.
+    // Sweep from start_deg to end_deg in 1-degree steps.
     let mut q = q_start.clone();
     let mut q_at_zero = q_start.clone();
 
-    for i in 0..=360 {
-        let angle_deg = i as f64;
+    for i in 0..=num_steps.max(0) {
+        let angle_deg = start_deg + i as f64 * step;
         let t = (angle_deg.to_radians() - theta_0) / omega;
 
         match solve_position(mech, &q, t, 1e-10, 50) {
@@ -204,7 +210,7 @@ pub(crate) fn compute_sweep_data(
                         if jr.n_equations > 1 {
                             reaction_data
                                 .entry(jr.joint_id.clone())
-                                .or_insert_with(|| Vec::with_capacity(361))
+                                .or_insert_with(|| Vec::with_capacity(capacity))
                                 .push(jr.resultant);
                         }
                     }
