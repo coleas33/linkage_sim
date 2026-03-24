@@ -913,6 +913,127 @@ fn draw_force_element_details(
                 }
             });
 
+            // ── Stroke Limits (collapsible) ──────────────────────────────
+            let limits_label = if la.stroke_min == 0.0 && la.stroke_max == 0.0 {
+                "Stroke Limits (disabled)"
+            } else if la.stroke_min > 0.0 && la.stroke_max > 0.0 && la.stroke_min >= la.stroke_max {
+                "Stroke Limits (min \u{2265} max, limits inactive)"
+            } else {
+                "Stroke Limits"
+            };
+            egui::CollapsingHeader::new(limits_label)
+                .default_open(la.stroke_max > 0.0)
+                .show(ui, |ui| {
+                    let mut stroke_min = la.stroke_min;
+                    ui.horizontal(|ui| {
+                        let min_hint = if la.stroke_min == 0.0 && la.stroke_max > 0.0 {
+                            "Min stroke (inactive):"
+                        } else {
+                            "Min stroke:"
+                        };
+                        ui.label(min_hint);
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut stroke_min)
+                                    .speed(0.001)
+                                    .range(0.0..=f64::MAX)
+                                    .suffix(" m"),
+                            )
+                            .changed()
+                        {
+                            let mut updated = la.clone();
+                            updated.stroke_min = stroke_min;
+                            *pending = Some(PendingPropertyEdit::UpdateForce {
+                                index,
+                                force: ForceElement::LinearActuator(updated),
+                            });
+                        }
+                    });
+
+                    let mut stroke_max = la.stroke_max;
+                    ui.horizontal(|ui| {
+                        ui.label("Max stroke:");
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut stroke_max)
+                                    .speed(0.001)
+                                    .range(0.0..=f64::MAX)
+                                    .suffix(" m"),
+                            )
+                            .changed()
+                        {
+                            let mut updated = la.clone();
+                            updated.stroke_max = stroke_max;
+                            *pending = Some(PendingPropertyEdit::UpdateForce {
+                                index,
+                                force: ForceElement::LinearActuator(updated),
+                            });
+                        }
+                    });
+
+                    let mut stiffness = la.end_stop_stiffness;
+                    ui.horizontal(|ui| {
+                        ui.label("Stiffness (k):");
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut stiffness)
+                                    .speed(100.0)
+                                    .range(0.0..=f64::MAX)
+                                    .suffix(" N/m"),
+                            )
+                            .changed()
+                        {
+                            let mut updated = la.clone();
+                            updated.end_stop_stiffness = stiffness;
+                            *pending = Some(PendingPropertyEdit::UpdateForce {
+                                index,
+                                force: ForceElement::LinearActuator(updated),
+                            });
+                        }
+                    });
+
+                    let mut damping = la.end_stop_damping;
+                    ui.horizontal(|ui| {
+                        ui.label("Damping (c):");
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut damping)
+                                    .speed(1.0)
+                                    .range(0.0..=f64::MAX)
+                                    .suffix(" N\u{00b7}s/m"),
+                            )
+                            .changed()
+                        {
+                            let mut updated = la.clone();
+                            updated.end_stop_damping = damping;
+                            *pending = Some(PendingPropertyEdit::UpdateForce {
+                                index,
+                                force: ForceElement::LinearActuator(updated),
+                            });
+                        }
+                    });
+
+                    let mut restitution = la.end_stop_restitution;
+                    ui.horizontal(|ui| {
+                        ui.label("Restitution (e):");
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut restitution)
+                                    .speed(0.01)
+                                    .range(0.0..=1.0),
+                            )
+                            .changed()
+                        {
+                            let mut updated = la.clone();
+                            updated.end_stop_restitution = restitution;
+                            *pending = Some(PendingPropertyEdit::UpdateForce {
+                                index,
+                                force: ForceElement::LinearActuator(updated),
+                            });
+                        }
+                    });
+                });
+
             draw_point_picker(
                 ui, "Pt A", &la.body_a, &la.point_a, &la.point_a_name,
                 blueprint, index,
