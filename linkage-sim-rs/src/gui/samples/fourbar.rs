@@ -416,6 +416,8 @@ pub(super) fn build_parallelogram_actuator(
         point_b_name: Some("M".to_string()),
         force: 50.0,
         speed_limit: 0.0,
+        stroke_min: 0.0, stroke_max: 0.0,
+        end_stop_stiffness: 10000.0, end_stop_damping: 10.0, end_stop_restitution: 0.5,
     }));
 
     let joint_id = driver_joint_id.unwrap_or("J1");

@@ -665,6 +665,8 @@ mod tests {
             point_b_name: None,
             force: 50.0,
             speed_limit: 0.0,
+            stroke_min: 0.0, stroke_max: 0.0,
+            end_stop_stiffness: 10000.0, end_stop_damping: 10.0, end_stop_restitution: 0.5,
         });
 
         let result = act.evaluate(&state, &bodies, &q, &q_dot, 0.0);
@@ -693,6 +695,8 @@ mod tests {
             point_b_name: None,
             force: 50.0,
             speed_limit: 2.0,
+            stroke_min: 0.0, stroke_max: 0.0,
+            end_stop_stiffness: 10000.0, end_stop_damping: 10.0, end_stop_restitution: 0.5,
         });
 
         let result = act.evaluate(&state, &bodies, &q, &q_dot, 0.0);
@@ -720,6 +724,8 @@ mod tests {
             point_b_name: None,
             force: 50.0,
             speed_limit: 2.0,
+            stroke_min: 0.0, stroke_max: 0.0,
+            end_stop_stiffness: 10000.0, end_stop_damping: 10.0, end_stop_restitution: 0.5,
         });
 
         let result = act.evaluate(&state, &bodies, &q, &q_dot, 0.0);
@@ -893,6 +899,8 @@ mod tests {
             point_b_name: None,
             force: 1000.0,
             speed_limit: 0.5,
+            stroke_min: 0.0, stroke_max: 0.0,
+            end_stop_stiffness: 10000.0, end_stop_damping: 10.0, end_stop_restitution: 0.5,
         });
         let json = serde_json::to_string(&elem).unwrap();
         assert!(json.contains("\"type\":\"LinearActuator\""));
@@ -988,6 +996,8 @@ mod tests {
                 point_b_name: None,
                 force: 1.0,
                 speed_limit: 0.0,
+                stroke_min: 0.0, stroke_max: 0.0,
+                end_stop_stiffness: 10000.0, end_stop_damping: 10.0, end_stop_restitution: 0.5,
             })
             .type_name(),
             "Linear Actuator"

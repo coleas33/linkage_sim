@@ -194,6 +194,8 @@ mod tests {
             body_a: String::new(), point_a: [0.0, 0.0], point_a_name: None,
             body_b: String::new(), point_b: [0.0, 0.0], point_b_name: None,
             force: 999.0, speed_limit: 0.5,
+            stroke_min: 0.0, stroke_max: 0.0,
+            end_stop_stiffness: 10000.0, end_stop_damping: 10.0, end_stop_restitution: 0.5,
         });
         let result = fill_force_template(
             &template, "g", [0.0, 0.0], None, "link", [1.0, 0.0], None,

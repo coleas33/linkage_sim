@@ -18,6 +18,12 @@ fn default_restitution() -> f64 {
 fn default_direction() -> f64 {
     1.0
 }
+fn default_end_stop_stiffness() -> f64 {
+    10000.0
+}
+fn default_end_stop_damping() -> f64 {
+    10.0
+}
 
 // ── Element data structs ─────────────────────────────────────────────────────
 
@@ -275,6 +281,21 @@ pub struct LinearActuatorElement {
     /// Maximum extension rate (m/s). 0 = no limit.
     #[serde(default)]
     pub speed_limit: f64,
+    /// Minimum stroke length (m). 0 = no min limit.
+    #[serde(default)]
+    pub stroke_min: f64,
+    /// Maximum stroke length (m). 0 = no max limit.
+    #[serde(default)]
+    pub stroke_max: f64,
+    /// End-stop penalty spring stiffness (N/m).
+    #[serde(default = "default_end_stop_stiffness")]
+    pub end_stop_stiffness: f64,
+    /// End-stop penalty damping (N·s/m).
+    #[serde(default = "default_end_stop_damping")]
+    pub end_stop_damping: f64,
+    /// End-stop coefficient of restitution [0,1].
+    #[serde(default = "default_restitution")]
+    pub end_stop_restitution: f64,
 }
 
 /// A spatial force zone: applies a constant distributed force to a body
