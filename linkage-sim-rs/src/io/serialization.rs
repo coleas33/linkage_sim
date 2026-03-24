@@ -158,6 +158,8 @@ pub enum JointJson {
         body_j: String,
         point_i: String,
         point_j: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
     },
     Fixed {
         body_i: String,
@@ -166,6 +168,8 @@ pub enum JointJson {
         point_j: String,
         #[serde(default)]
         delta_theta_0: f64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
     },
     Prismatic {
         body_i: String,
@@ -175,6 +179,8 @@ pub enum JointJson {
         axis_local_i: [f64; 2],
         #[serde(default)]
         delta_theta_0: f64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
     },
     /// Cam-follower joint with profile.
     CamFollower {
@@ -185,6 +191,8 @@ pub enum JointJson {
         follower_direction: [f64; 2],
         #[serde(flatten)]
         profile: crate::core::constraint::CamProfile,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
     },
     /// Marker for driver constraints. The closure is not serializable;
     /// users must re-attach the driver function after loading.
@@ -193,6 +201,8 @@ pub enum JointJson {
         body_j: String,
         #[serde(default)]
         note: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
     },
 }
 
@@ -308,6 +318,7 @@ fn joint_to_json(
                 body_j: body_j_id.to_string(),
                 point_i: find_point_name(body_i, j.point_i_local(), body_i_id)?,
                 point_j: find_point_name(body_j, j.point_j_local(), body_j_id)?,
+                label: None,
             })
         }
         JointConstraint::Fixed(j) => {
@@ -321,6 +332,7 @@ fn joint_to_json(
                 point_i: find_point_name(body_i, j.point_i_local(), body_i_id)?,
                 point_j: find_point_name(body_j, j.point_j_local(), body_j_id)?,
                 delta_theta_0: j.delta_theta_0(),
+                label: None,
             })
         }
         JointConstraint::Prismatic(j) => {
@@ -335,6 +347,7 @@ fn joint_to_json(
                 point_j: find_point_name(body_j, j.point_j_local(), body_j_id)?,
                 axis_local_i: [j.axis_local_i().x, j.axis_local_i().y],
                 delta_theta_0: j.delta_theta_0(),
+                label: None,
             })
         }
         JointConstraint::CamFollower(j) => {
@@ -349,6 +362,7 @@ fn joint_to_json(
                 point_j: find_point_name(body_j, &j.point_j_local, body_j_id)?,
                 follower_direction: [j.follower_dir.x, j.follower_dir.y],
                 profile: j.profile.clone(),
+                label: None,
             })
         }
     }
@@ -540,6 +554,7 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
                 body_j,
                 point_i,
                 point_j,
+                ..
             } => {
                 mech.add_revolute_joint(joint_id, body_i, point_i, body_j, point_j)
                     .map_err(|e| SerializationError::Build(e.to_string()))?;
@@ -550,6 +565,7 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
                 point_i,
                 point_j,
                 delta_theta_0,
+                ..
             } => {
                 mech.add_fixed_joint(
                     joint_id,
@@ -568,6 +584,7 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
                 point_j,
                 axis_local_i,
                 delta_theta_0,
+                ..
             } => {
                 mech.add_prismatic_joint(
                     joint_id,
@@ -587,6 +604,7 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
                 point_j,
                 follower_direction,
                 profile,
+                ..
             } => {
                 mech.add_cam_follower_joint(
                     joint_id,

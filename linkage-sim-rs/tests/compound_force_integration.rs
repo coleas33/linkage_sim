@@ -66,6 +66,7 @@ fn make_compound_spring_json() -> MechanismJson {
             body_j: "crank".to_string(),
             point_i: "O".to_string(),
             point_j: "O2".to_string(),
+            label: None,
         },
     );
 
@@ -143,6 +144,7 @@ fn make_pure_spring_json() -> MechanismJson {
             body_j: "crank".to_string(),
             point_i: "O".to_string(),
             point_j: "O2".to_string(),
+            label: None,
         },
     );
 

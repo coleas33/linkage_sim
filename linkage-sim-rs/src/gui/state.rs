@@ -2420,6 +2420,7 @@ impl AppState {
                 body_j: body_j.to_string(),
                 point_i: point_i.to_string(),
                 point_j: point_j.to_string(),
+                label: None,
             },
         );
     }
@@ -2631,6 +2632,7 @@ impl AppState {
                 point_j: point_j.to_string(),
                 axis_local_i: axis,
                 delta_theta_0: 0.0,
+                label: None,
             },
         );
         self.rebuild();
@@ -2655,6 +2657,7 @@ impl AppState {
                 point_i: point_i.to_string(),
                 point_j: point_j.to_string(),
                 delta_theta_0: 0.0,
+                label: None,
             },
         );
         self.rebuild();
