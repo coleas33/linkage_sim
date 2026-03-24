@@ -1101,13 +1101,16 @@ impl AppState {
         self.mechanism = Some(mech);
         self.current_sample = Some(sample);
 
-        // Set sweep range for samples that need a limited working stroke
+        // Pre-fill sweep range for samples with a natural working stroke,
+        // but leave disabled so the full coupler curve is visible on load.
+        // User can enable "Limit Sweep Range" to focus on the working stroke.
+        self.sweep_range_enabled = false;
         if sample == SampleMechanism::ParallelogramPress {
-            self.sweep_range_enabled = true;
             self.sweep_angle_min_deg = 150.0;
             self.sweep_angle_max_deg = 210.0;
         } else {
-            self.sweep_range_enabled = false;
+            self.sweep_angle_min_deg = 0.0;
+            self.sweep_angle_max_deg = 360.0;
         }
 
         self.selected = None;

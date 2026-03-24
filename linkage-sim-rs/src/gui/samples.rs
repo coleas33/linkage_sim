@@ -617,7 +617,7 @@ fn build_parallelogram_press(
         zone_min: [0.01, -0.005],
         zone_max: [0.03, 0.01],
         force: [0.0, -500.0],
-        label: Some("Press Zone".to_string()),
+        label: Some("Force Zone".to_string()),
     }));
 
     let joint_id = driver_joint_id.unwrap_or("J1");
