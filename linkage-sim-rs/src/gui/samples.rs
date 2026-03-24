@@ -3,8 +3,10 @@
 use nalgebra::DVector;
 use std::f64::consts::PI;
 
-use crate::core::body::{make_bar, make_ground, Body};
-use crate::forces::elements::{ForceElement, LinearActuatorElement};
+use nalgebra::Vector2;
+
+use crate::core::body::{make_bar, make_ground, Body, BodyGeometry};
+use crate::forces::elements::{ForceElement, ForceZoneElement, LinearActuatorElement};
 use crate::core::constraint::Constraint;
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
@@ -19,6 +21,7 @@ pub enum SampleMechanism {
     DoubleRocker,
     DoubleCrank,
     Parallelogram,
+    ParallelogramPress,
     ParallelogramActuator,
     Chebyshev,
     TripleRocker,
@@ -43,6 +46,7 @@ impl SampleMechanism {
             SampleMechanism::DoubleRocker => "Double-Rocker (5-3-4-7)",
             SampleMechanism::DoubleCrank => "Double-Crank (2-4-3.5-3)",
             SampleMechanism::Parallelogram => "Parallelogram (4-2-4-2)",
+            SampleMechanism::ParallelogramPress => "Parallelogram Press",
             SampleMechanism::ParallelogramActuator => "Parallelogram + Actuator",
             SampleMechanism::Chebyshev => "Chebyshev (4-2-5-5)",
             SampleMechanism::TripleRocker => "Triple-Rocker (4-2-5-2)",
@@ -66,6 +70,7 @@ impl SampleMechanism {
             SampleMechanism::DoubleRocker,
             SampleMechanism::DoubleCrank,
             SampleMechanism::Parallelogram,
+            SampleMechanism::ParallelogramPress,
             SampleMechanism::ParallelogramActuator,
             SampleMechanism::Chebyshev,
             SampleMechanism::TripleRocker,
@@ -102,6 +107,7 @@ pub fn build_sample_with_driver(
         SampleMechanism::DoubleRocker => build_double_rocker_with_driver(driver_joint_id),
         SampleMechanism::DoubleCrank => build_double_crank_with_driver(driver_joint_id),
         SampleMechanism::Parallelogram => build_parallelogram_with_driver(driver_joint_id),
+        SampleMechanism::ParallelogramPress => build_parallelogram_press(driver_joint_id),
         SampleMechanism::ParallelogramActuator => build_parallelogram_actuator(driver_joint_id),
         SampleMechanism::Chebyshev => build_chebyshev_with_driver(driver_joint_id),
         SampleMechanism::TripleRocker => build_triple_rocker_with_driver(driver_joint_id),
@@ -555,6 +561,84 @@ fn build_parallelogram_with_driver(
         0.0,
         driver_joint_id,
     )
+}
+
+/// Parallelogram 4-bar with a rectangular press plate on the coupler
+/// passing through a vertical force zone.
+///
+/// Demonstrates: body geometry, force zones, crank angle limits.
+/// Link lengths: ground=4, crank=2, coupler=4, rocker=2 (all x0.01m = cm scale)
+fn build_parallelogram_press(
+    driver_joint_id: Option<&str>,
+) -> Result<(Mechanism, DVector<f64>), String> {
+    let o2 = (0.0_f64, 0.0_f64);
+    let o4 = (0.04_f64, 0.0_f64);
+    let l_crank = 0.02_f64;
+    let l_coupler = 0.04_f64;
+    let l_rocker = 0.02_f64;
+
+    let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
+    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+
+    let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
+    coupler.label = "Coupler (Press Plate)".to_string();
+    coupler.geometry = Some(
+        BodyGeometry::new(0.06, 0.015, Vector2::new(0.02, 0.0))
+            .expect("valid geometry dimensions"),
+    );
+    // Mass for the press plate
+    let plate_mass = 0.5_f64;
+    let plate_w = 0.06_f64;
+    let plate_h = 0.015_f64;
+    coupler.mass = plate_mass;
+    coupler.izz_cg = (1.0 / 12.0) * plate_mass * (plate_w * plate_w + plate_h * plate_h);
+    coupler.add_coupler_point("P", 0.02, 0.0).unwrap();
+
+    let rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+
+    let mut mech = Mechanism::new();
+    mech.add_body(ground).unwrap();
+    mech.add_body(crank).unwrap();
+    mech.add_body(coupler).unwrap();
+    mech.add_body(rocker).unwrap();
+
+    mech.add_revolute_joint("J1", "ground", "O2", "crank", "A")
+        .unwrap();
+    mech.add_revolute_joint("J2", "crank", "B", "coupler", "B")
+        .unwrap();
+    mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C")
+        .unwrap();
+    mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4")
+        .unwrap();
+
+    // Force zone: vertical downward force in the working region
+    mech.add_force(ForceElement::ForceZone(ForceZoneElement {
+        body_id: "coupler".to_string(),
+        zone_min: [0.01, -0.005],
+        zone_max: [0.03, 0.01],
+        force: [0.0, -500.0],
+        label: Some("Press Zone".to_string()),
+    }));
+
+    let joint_id = driver_joint_id.unwrap_or("J1");
+    attach_driver_to_grounded_revolute_with_theta0(&mut mech, joint_id, "D1", 0.0)?;
+
+    mech.build().map_err(|e| e.to_string())?;
+
+    let q0 = fourbar_initial_q0(
+        mech.state(),
+        o2,
+        o4,
+        l_crank,
+        l_coupler,
+        l_rocker,
+        0.0,
+        "crank",
+        "coupler",
+        "rocker",
+    );
+
+    Ok((mech, q0))
 }
 
 /// Parallelogram 4-bar with a linear actuator driving the crank.
@@ -1490,6 +1574,17 @@ mod tests {
     }
 
     #[test]
+    fn parallelogram_press_sample_builds_and_solves() {
+        let (mech, q0) = build_sample(SampleMechanism::ParallelogramPress);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
+        assert!(
+            result.converged,
+            "parallelogram-press sample did not converge at t=0, residual = {}",
+            result.residual_norm
+        );
+    }
+
+    #[test]
     fn chebyshev_sample_builds_and_solves() {
         let (mech, q0) = build_sample(SampleMechanism::Chebyshev);
         let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
@@ -1513,7 +1608,7 @@ mod tests {
 
     #[test]
     fn all_samples_listed() {
-        assert_eq!(SampleMechanism::all().len(), 18);
+        assert_eq!(SampleMechanism::all().len(), 19);
     }
 
     #[test]
