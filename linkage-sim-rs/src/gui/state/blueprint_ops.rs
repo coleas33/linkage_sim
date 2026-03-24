@@ -135,6 +135,11 @@ pub(crate) fn set_force_field(force: &mut ForceElement, field: &str, value: f64)
         ForceElement::LinearActuator(e) => match field {
             "force" => { e.force = value; true }
             "speed_limit" => { e.speed_limit = value; true }
+            "stroke_min" => { e.stroke_min = value; true }
+            "stroke_max" => { e.stroke_max = value; true }
+            "end_stop_stiffness" => { e.end_stop_stiffness = value; true }
+            "end_stop_damping" => { e.end_stop_damping = value; true }
+            "end_stop_restitution" => { e.end_stop_restitution = value; true }
             _ => false,
         },
         _ => false,
@@ -154,7 +159,11 @@ pub(crate) fn force_sweepable_fields(force: &ForceElement) -> Vec<String> {
         ForceElement::ExternalTorque(_) => vec!["torque".into()],
         ForceElement::BearingFriction(_) => vec!["constant_drag".into(), "viscous_coeff".into(), "coulomb_coeff".into()],
         ForceElement::JointLimit(_) => vec!["stiffness".into()],
-        ForceElement::LinearActuator(_) => vec!["force".into(), "speed_limit".into()],
+        ForceElement::LinearActuator(_) => vec![
+            "force".into(), "speed_limit".into(),
+            "stroke_min".into(), "stroke_max".into(),
+            "end_stop_stiffness".into(), "end_stop_damping".into(), "end_stop_restitution".into(),
+        ],
         _ => Vec::new(),
     }
 }
