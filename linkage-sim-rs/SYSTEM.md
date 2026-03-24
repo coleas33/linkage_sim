@@ -37,8 +37,8 @@ linkage-sim-rs/src/
 │   ├── elements/                   (2,473)    Force element system
 │   │   ├── mod.rs                  (1,325)    Re-exports, tests (1,300+ lines of tests)
 │   │   ├── time_modulation.rs        (134)    TimeModulation enum, factor(), compile()
-│   │   ├── element_types.rs          (298)    13 element data structs + serde helpers
-│   │   ├── evaluation.rs             (483)    All evaluate_* functions, angular helpers
+│   │   ├── element_types.rs          (310)    13 element data structs + serde helpers (LinearActuator has stroke limits)
+│   │   ├── evaluation.rs             (510)    All evaluate_* functions, angular helpers, stroke limit penalty
 │   │   └── force_element.rs          (233)    ForceElement enum, dispatch impl
 │   └── compound.rs                   (558)    Compound force expansion (mount point → bodies)
 │
