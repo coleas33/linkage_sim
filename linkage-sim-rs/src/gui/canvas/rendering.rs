@@ -1116,6 +1116,49 @@ fn draw_force_elements(
                         FontId::proportional(11.0),
                         ACTUATOR_COLOR,
                     );
+
+                    // Draw stroke limit tick marks
+                    let limits_active = la.stroke_max > 0.0 && la.stroke_max > la.stroke_min;
+                    if limits_active {
+                        let perp = Vec2::new(-dir.y, dir.x);
+                        let tick_half = 6.0_f32;
+                        let tick_stroke = Stroke::new(1.5, ACTUATOR_COLOR);
+                        let scale = view.scale as f32;
+
+                        if la.stroke_min > 0.0 {
+                            let min_frac = (la.stroke_min as f32 * scale) / length;
+                            if min_frac > 0.0 && min_frac < 1.0 {
+                                let tick_pos = Pos2::new(
+                                    start.x + delta.x * min_frac,
+                                    start.y + delta.y * min_frac,
+                                );
+                                painter.line_segment(
+                                    [
+                                        Pos2::new(tick_pos.x + perp.x * tick_half, tick_pos.y + perp.y * tick_half),
+                                        Pos2::new(tick_pos.x - perp.x * tick_half, tick_pos.y - perp.y * tick_half),
+                                    ],
+                                    tick_stroke,
+                                );
+                            }
+                        }
+
+                        if la.stroke_max > 0.0 {
+                            let max_frac = (la.stroke_max as f32 * scale) / length;
+                            if max_frac > 0.0 && max_frac < 1.0 {
+                                let tick_pos = Pos2::new(
+                                    start.x + delta.x * max_frac,
+                                    start.y + delta.y * max_frac,
+                                );
+                                painter.line_segment(
+                                    [
+                                        Pos2::new(tick_pos.x + perp.x * tick_half, tick_pos.y + perp.y * tick_half),
+                                        Pos2::new(tick_pos.x - perp.x * tick_half, tick_pos.y - perp.y * tick_half),
+                                    ],
+                                    tick_stroke,
+                                );
+                            }
+                        }
+                    }
                 }
             }
             ForceElement::BearingFriction(bf) => {
