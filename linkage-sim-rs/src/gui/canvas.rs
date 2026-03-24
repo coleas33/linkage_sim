@@ -2,6 +2,7 @@
 
 use eframe::egui::{self, Color32, FontId, Pos2, Rect, Stroke, Vec2};
 
+use crate::core::body::Body;
 use crate::core::constraint::Constraint;
 use crate::core::mechanism::Mechanism;
 use crate::core::state::{State, GROUND_ID};
@@ -38,6 +39,9 @@ const NO_MECH_TEXT_COLOR: Color32 = Color32::from_rgb(90, 95, 115);
 const JOINT_CREATE_HIGHLIGHT: Color32 = Color32::from_rgb(50, 230, 100);
 const JOINT_HOVER_HIGHLIGHT: Color32 = Color32::from_rgb(100, 200, 255);
 const DIM_LABEL_COLOR: Color32 = Color32::from_rgb(170, 195, 130);
+
+// Canvas element labels (body names, joint IDs)
+const LABEL_COLOR: Color32 = Color32::from_gray(136); // #888
 
 // Force elements: semantic color coding
 const FORCE_ARROW_COLOR: Color32 = Color32::from_rgb(255, 80, 80);
@@ -641,6 +645,78 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             joint_hit_targets.push((center, joint.id().to_string()));
         }
 
+        // ── Labels pass: body and joint labels ─────────────────────────
+        if state.show_labels {
+            // Body labels: rendered near each non-ground body's CG.
+            for (body_id, body) in bodies.iter() {
+                if body_id == GROUND_ID {
+                    continue;
+                }
+                let cg_global = mech_state.body_point_global(body_id, &body.cg_local, q);
+                let cg_screen = view.world_to_screen(cg_global.x, cg_global.y);
+                painter.text(
+                    Pos2::new(cg_screen[0], cg_screen[1] - 12.0),
+                    egui::Align2::CENTER_BOTTOM,
+                    &body.label,
+                    FontId::monospace(10.0),
+                    LABEL_COLOR,
+                );
+            }
+
+            // Joint labels: auto-generated from type prefix + index, or from
+            // the blueprint label if one exists.
+            let bp_joints = state.blueprint.as_ref().map(|bp| &bp.joints);
+            let mut rev_idx = 0usize;
+            let mut pris_idx = 0usize;
+            let mut fix_idx = 0usize;
+            let mut cam_idx = 0usize;
+            for joint in joints {
+                // Look up the blueprint label for this joint.
+                let bp_label = bp_joints
+                    .and_then(|bj| bj.get(joint.id()))
+                    .and_then(|jj| match jj {
+                        crate::io::serialization::JointJson::Revolute { label, .. }
+                        | crate::io::serialization::JointJson::Fixed { label, .. }
+                        | crate::io::serialization::JointJson::Prismatic { label, .. }
+                        | crate::io::serialization::JointJson::CamFollower { label, .. }
+                        | crate::io::serialization::JointJson::RevoluteDriver { label, .. } => {
+                            label.as_deref()
+                        }
+                    });
+
+                let auto_label: String;
+                let display_label = if let Some(lbl) = bp_label {
+                    lbl
+                } else {
+                    auto_label = if joint.is_revolute() {
+                        rev_idx += 1;
+                        format!("R{}", rev_idx)
+                    } else if joint.is_prismatic() {
+                        pris_idx += 1;
+                        format!("P{}", pris_idx)
+                    } else if joint.is_fixed() {
+                        fix_idx += 1;
+                        format!("F{}", fix_idx)
+                    } else {
+                        cam_idx += 1;
+                        format!("C{}", cam_idx)
+                    };
+                    &auto_label
+                };
+
+                let global =
+                    mech_state.body_point_global(joint.body_i_id(), &joint.point_i_local(), q);
+                let sp = view.world_to_screen(global.x, global.y);
+                painter.text(
+                    Pos2::new(sp[0], sp[1] - JOINT_RADIUS - 4.0),
+                    egui::Align2::CENTER_BOTTOM,
+                    display_label,
+                    FontId::monospace(10.0),
+                    LABEL_COLOR,
+                );
+            }
+        }
+
         // ── Joint creation mode: highlight first selected point ─────────
         if let Some((ref cj_body, ref cj_point, _)) = creating_joint_first {
             // Find the screen position of the first-click attachment point.
@@ -861,55 +937,83 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     }
 
     // ── Hover tooltips ────────────────────────────────────────────────
-    // Show a tooltip when the mouse hovers over a body or joint.
+    // Show rich tooltips when the mouse hovers over a body, joint, or force zone.
     if let Some(hover_pos) = ui.input(|i| i.pointer.hover_pos()) {
         if canvas_rect.contains(hover_pos) && state.active_tool == EditorTool::Select {
-            let mut tooltip_text: Option<String> = None;
+            let mut shown_tooltip = false;
 
             // Check joints first (they're drawn on top)
-            for (jpos, jid) in &joint_hit_targets {
-                if jpos.distance(hover_pos) < HIT_RADIUS {
-                    if let Some(mech) = &state.mechanism {
-                        if let Some(joint) = mech.joints().iter().find(|j| j.id() == jid) {
-                            let jtype = if joint.is_revolute() {
-                                "Revolute"
-                            } else if joint.is_prismatic() {
-                                "Prismatic"
-                            } else {
-                                "Fixed"
-                            };
-                            tooltip_text = Some(format!(
-                                "{} ({}) \u{2014} {} \u{2194} {}",
-                                jid,
-                                jtype,
-                                joint.body_i_id(),
-                                joint.body_j_id()
-                            ));
+            if !shown_tooltip {
+                for (jpos, jid) in &joint_hit_targets {
+                    if jpos.distance(hover_pos) < HIT_RADIUS {
+                        if let Some(mech) = &state.mechanism {
+                            if let Some(joint) = mech.joints().iter().find(|j| j.id() == jid) {
+                                let joint_type_str = if joint.is_revolute() {
+                                    "Revolute"
+                                } else if joint.is_prismatic() {
+                                    "Prismatic"
+                                } else if joint.is_fixed() {
+                                    "Fixed"
+                                } else {
+                                    "Cam Follower"
+                                };
+
+                                // Try to get a label from the blueprint.
+                                let bp_label = state.blueprint.as_ref()
+                                    .and_then(|bp| bp.joints.get(jid.as_str()))
+                                    .and_then(|jj| match jj {
+                                        crate::io::serialization::JointJson::Revolute { label, .. }
+                                        | crate::io::serialization::JointJson::Fixed { label, .. }
+                                        | crate::io::serialization::JointJson::Prismatic { label, .. }
+                                        | crate::io::serialization::JointJson::CamFollower { label, .. }
+                                        | crate::io::serialization::JointJson::RevoluteDriver { label, .. } => {
+                                            label.as_deref()
+                                        }
+                                    });
+                                let display_label = bp_label.unwrap_or(jid.as_str());
+
+                                egui::Tooltip::always_open(
+                                    ui.ctx().clone(),
+                                    ui.layer_id(),
+                                    egui::Id::new("joint_tooltip"),
+                                    egui::PopupAnchor::Pointer,
+                                ).show(|ui: &mut egui::Ui| {
+                                    ui.label(egui::RichText::new(display_label).strong());
+                                    ui.label(format!("Type: {}", joint_type_str));
+                                    ui.label(format!("{} \u{2194} {}", joint.body_i_id(), joint.body_j_id()));
+                                    // Show reaction forces if available.
+                                    if let Some(&(fx, fy)) = state.force_results.joint_reactions.get(jid) {
+                                        ui.label(format!("Reaction: ({:.1}, {:.1}) N", fx, fy));
+                                    }
+                                });
+                                shown_tooltip = true;
+                            }
                         }
+                        break;
                     }
-                    break;
                 }
             }
 
             // Then check attachment points / body areas
-            if tooltip_text.is_none() {
+            if !shown_tooltip {
                 for hit in &attachment_hit_targets {
                     if hit.screen_pos.distance(hover_pos) < HIT_RADIUS {
                         if let Some(mech) = &state.mechanism {
                             if let Some(body) = mech.bodies().get(&hit.body_id) {
                                 if hit.body_id == GROUND_ID {
-                                    tooltip_text = Some(format!(
-                                        "Ground: {}",
-                                        hit.point_name
-                                    ));
+                                    egui::Tooltip::always_open(
+                                        ui.ctx().clone(),
+                                        ui.layer_id(),
+                                        egui::Id::new("body_tooltip"),
+                                        egui::PopupAnchor::Pointer,
+                                    ).show(|ui: &mut egui::Ui| {
+                                        ui.label(egui::RichText::new("Ground").strong());
+                                        ui.label(format!("Point: {}", hit.point_name));
+                                    });
                                 } else {
-                                    tooltip_text = Some(format!(
-                                        "{}: {} \u{2014} {:.3} kg",
-                                        hit.body_id,
-                                        hit.point_name,
-                                        body.mass
-                                    ));
+                                    show_body_tooltip(ui, body, &hit.body_id);
                                 }
+                                shown_tooltip = true;
                             }
                         }
                         break;
@@ -918,35 +1022,58 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             }
 
             // Then check body segments (link lines) -- wider radius for easier hover
-            if tooltip_text.is_none() {
+            if !shown_tooltip {
                 if let Some(seg_hit) = find_nearest_body_segment(hover_pos, &body_segments, LINK_HALF_WIDTH + 4.0) {
                     if let Some(mech) = &state.mechanism {
                         if let Some(body) = mech.bodies().get(&seg_hit.body_id) {
-                            tooltip_text = Some(format!(
-                                "{} \u{2014} {:.3} kg \u{2014} click to select",
-                                seg_hit.body_id,
-                                body.mass
-                            ));
+                            show_body_tooltip(ui, body, &seg_hit.body_id);
+                            shown_tooltip = true;
                         }
                     }
                 }
             }
 
-            if let Some(text) = tooltip_text {
-                // Paint tooltip as a text label near the cursor with a background box.
-                let tip_pos = Pos2::new(hover_pos.x + 14.0, hover_pos.y - 18.0);
-                let galley = painter.layout_no_wrap(
-                    text,
-                    FontId::proportional(11.0),
-                    Color32::from_rgb(220, 225, 235),
-                );
-                let text_rect = egui::Align2::LEFT_BOTTOM
-                    .anchor_size(tip_pos, galley.size());
-                let bg_rect = text_rect.expand(3.0);
-                painter.rect_filled(bg_rect, 3.0, Color32::from_rgba_premultiplied(30, 32, 40, 220));
-                painter.rect_stroke(bg_rect, 3.0, Stroke::new(1.0, Color32::from_rgb(60, 65, 80)), egui::StrokeKind::Outside);
-                painter.galley(text_rect.min, galley, Color32::PLACEHOLDER);
+            // Then check force zones
+            if !shown_tooltip {
+                if let Some(mech) = &state.mechanism {
+                    for elem in mech.forces() {
+                        if let ForceElement::ForceZone(fz) = elem {
+                            let min_sp = state.view.world_to_screen(fz.zone_min[0], fz.zone_min[1]);
+                            let max_sp = state.view.world_to_screen(fz.zone_max[0], fz.zone_max[1]);
+                            let s_min_x = min_sp[0].min(max_sp[0]);
+                            let s_min_y = min_sp[1].min(max_sp[1]);
+                            let s_max_x = min_sp[0].max(max_sp[0]);
+                            let s_max_y = min_sp[1].max(max_sp[1]);
+                            let zone_rect = Rect::from_min_max(
+                                Pos2::new(s_min_x, s_min_y),
+                                Pos2::new(s_max_x, s_max_y),
+                            );
+                            if zone_rect.contains(hover_pos) {
+                                let label = fz.label.as_deref().unwrap_or("Force Zone");
+                                egui::Tooltip::always_open(
+                                    ui.ctx().clone(),
+                                    ui.layer_id(),
+                                    egui::Id::new("fz_tooltip"),
+                                    egui::PopupAnchor::Pointer,
+                                ).show(|ui: &mut egui::Ui| {
+                                    ui.label(egui::RichText::new(label).strong());
+                                    ui.label(format!("Body: {}", fz.body_id));
+                                    ui.label(format!("Force: ({:.1}, {:.1}) N", fz.force[0], fz.force[1]));
+                                    ui.label(format!(
+                                        "Zone: ({:.1}, {:.1}) to ({:.1}, {:.1}) mm",
+                                        fz.zone_min[0] * 1e3, fz.zone_min[1] * 1e3,
+                                        fz.zone_max[0] * 1e3, fz.zone_max[1] * 1e3
+                                    ));
+                                });
+                                shown_tooltip = true;
+                                break;
+                            }
+                        }
+                    }
+                }
             }
+
+            let _ = shown_tooltip; // suppress unused warning
         }
     }
 
@@ -2517,6 +2644,34 @@ fn draw_grid(
             Stroke::new(1.0, Color32::from_rgba_premultiplied(60, 180, 60, 100)),
         );
     }
+}
+
+/// Rich tooltip for a body element, showing label, mass, inertia, geometry,
+/// and computed link length.
+fn show_body_tooltip(ui: &mut egui::Ui, body: &Body, body_id: &str) {
+    egui::Tooltip::always_open(
+        ui.ctx().clone(),
+        ui.layer_id(),
+        egui::Id::new("body_tooltip"),
+        egui::PopupAnchor::Pointer,
+    ).show(|ui: &mut egui::Ui| {
+        let display = if body.label.is_empty() { body_id } else { &body.label };
+        ui.label(egui::RichText::new(display).strong());
+        ui.label(format!("Mass: {:.3} kg", body.mass));
+        ui.label(format!("Izz: {:.6} kg\u{00b7}m\u{00b2}", body.izz_cg));
+        if let Some(ref geo) = body.geometry {
+            ui.label(format!(
+                "Geometry: {:.1} \u{00d7} {:.1} mm",
+                geo.width * 1e3,
+                geo.height * 1e3
+            ));
+        }
+        if body.attachment_points.len() == 2 {
+            let pts: Vec<_> = body.attachment_points.values().collect();
+            let length = (pts[0] - pts[1]).norm();
+            ui.label(format!("Length: {:.1} mm", length * 1e3));
+        }
+    });
 }
 
 #[cfg(test)]

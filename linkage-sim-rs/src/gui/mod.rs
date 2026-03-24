@@ -473,6 +473,7 @@ impl eframe::App for LinkageApp {
                     ui.checkbox(&mut self.state.show_parametric, "Parametric Study");
                     ui.checkbox(&mut self.state.show_forces, "Force Arrows");
                     ui.checkbox(&mut self.state.show_dimensions, "Link Dimensions");
+                    ui.checkbox(&mut self.state.show_labels, "Show Labels");
                     let enabled = self.state.gravity_magnitude > 0.0;
                     let mut check = enabled;
                     if ui.checkbox(&mut check, "Gravity").changed() {

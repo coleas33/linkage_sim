@@ -703,6 +703,8 @@ pub struct AppState {
     pub show_forces: bool,
     /// Whether to show link length dimensions on the canvas.
     pub show_dimensions: bool,
+    /// Whether to show body/joint labels on the canvas.
+    pub show_labels: bool,
     /// Gravity magnitude in m/s² (0 = disabled, 9.81 = Earth standard).
     pub gravity_magnitude: f64,
     // ── Load cases ──────────────────────────────────────────────────────
@@ -896,6 +898,7 @@ impl Default for AppState {
             force_results: ForceResults::default(),
             show_forces: true,
             show_dimensions: true,
+            show_labels: true,
             gravity_magnitude: 9.81,
             load_cases: LoadCaseManager::default(),
             active_tool: EditorTool::Select,
@@ -5013,6 +5016,12 @@ mod tests {
     fn show_dimensions_defaults_true() {
         let state = AppState::default();
         assert!(state.show_dimensions);
+    }
+
+    #[test]
+    fn show_labels_defaults_true() {
+        let state = AppState::default();
+        assert!(state.show_labels);
     }
 
     #[cfg(feature = "native")]
