@@ -381,17 +381,13 @@ pub fn evaluate_linear_actuator(
 ) -> DVector<f64> {
     let pt_a_local = Vector2::new(a.point_a[0], a.point_a[1]);
     let pt_b_local = Vector2::new(a.point_b[0], a.point_b[1]);
-
     let pt_a_global = state.body_point_global(&a.body_a, &pt_a_local, q);
     let pt_b_global = state.body_point_global(&a.body_b, &pt_b_local, q);
-
     let delta = pt_b_global - pt_a_global;
     let length = delta.norm();
-
     if length < 1e-15 {
         return DVector::zeros(state.n_coords());
     }
-
     let unit = delta / length;
 
     // Speed limiting: ramp force to zero as speed approaches limit
@@ -400,19 +396,33 @@ pub fn evaluate_linear_actuator(
         let v_b = state.body_point_velocity(&a.body_b, &pt_b_local, q, q_dot);
         let v_along = unit.dot(&(v_b - v_a));
         let speed_ratio = v_along.abs() / a.speed_limit;
-        if speed_ratio >= 1.0 {
-            0.0
-        } else {
-            a.force * (1.0 - speed_ratio)
-        }
+        if speed_ratio >= 1.0 { 0.0 } else { a.force * (1.0 - speed_ratio) }
     } else {
         a.force
     };
 
-    // Positive force = push apart (extension)
-    let force_on_b = unit * actual_force;
-    let force_on_a = -force_on_b;
+    let mut net_force_along_unit = actual_force;
 
+    // Stroke limit penalty forces (spring + damper at end stops)
+    let limits_active = a.stroke_max > 0.0 && a.stroke_max > a.stroke_min;
+    if limits_active {
+        let v_a = state.body_point_velocity(&a.body_a, &pt_a_local, q, q_dot);
+        let v_b = state.body_point_velocity(&a.body_b, &pt_b_local, q, q_dot);
+        let v_rel = unit.dot(&(v_b - v_a));
+
+        if a.stroke_min > 0.0 && length < a.stroke_min {
+            let penetration = a.stroke_min - length;
+            let damp = if v_rel < 0.0 { a.end_stop_damping } else { a.end_stop_damping * a.end_stop_restitution };
+            net_force_along_unit += a.end_stop_stiffness * penetration - damp * v_rel;
+        } else if a.stroke_max > 0.0 && length > a.stroke_max {
+            let penetration = length - a.stroke_max;
+            let damp = if v_rel > 0.0 { a.end_stop_damping } else { a.end_stop_damping * a.end_stop_restitution };
+            net_force_along_unit -= a.end_stop_stiffness * penetration + damp * v_rel;
+        }
+    }
+
+    let force_on_b = unit * net_force_along_unit;
+    let force_on_a = -force_on_b;
     let mut total = DVector::zeros(state.n_coords());
     total += point_force_to_q(state, &a.body_a, &pt_a_local, &force_on_a, q);
     total += point_force_to_q(state, &a.body_b, &pt_b_local, &force_on_b, q);

@@ -735,6 +735,236 @@ mod tests {
         assert_abs_diff_eq!(result[3], 25.0, epsilon = 1e-10); // bar2 pushed right
     }
 
+    // ── Actuator stroke limit tests ─────────────────────────────────────────
+
+    #[test]
+    fn actuator_stroke_no_penalty_within_limits() {
+        let (state, bodies) = setup_two_bars();
+        let mut q = state.make_q();
+        state.set_pose("bar1", &mut q, 0.0, 0.0, 0.0);
+        state.set_pose("bar2", &mut q, 1.0, 0.0, 0.0);
+        let q_dot = DVector::zeros(state.n_coords());
+
+        let act = ForceElement::LinearActuator(LinearActuatorElement {
+            body_a: "bar1".into(),
+            point_a: [0.0, 0.0],
+            point_a_name: None,
+            body_b: "bar2".into(),
+            point_b: [0.0, 0.0],
+            point_b_name: None,
+            force: 50.0,
+            speed_limit: 0.0,
+            stroke_min: 0.5, stroke_max: 1.5,
+            end_stop_stiffness: 10000.0, end_stop_damping: 10.0, end_stop_restitution: 0.5,
+        });
+
+        let result = act.evaluate(&state, &bodies, &q, &q_dot, 0.0);
+        // Within limits: normal force only, no penalty
+        assert_abs_diff_eq!(result[0], -50.0, epsilon = 1e-10);
+        assert_abs_diff_eq!(result[3], 50.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn actuator_stroke_min_stop_pushes_apart() {
+        let (state, bodies) = setup_two_bars();
+        let mut q = state.make_q();
+        state.set_pose("bar1", &mut q, 0.0, 0.0, 0.0);
+        state.set_pose("bar2", &mut q, 0.3, 0.0, 0.0);
+        let q_dot = DVector::zeros(state.n_coords());
+
+        let act = ForceElement::LinearActuator(LinearActuatorElement {
+            body_a: "bar1".into(),
+            point_a: [0.0, 0.0],
+            point_a_name: None,
+            body_b: "bar2".into(),
+            point_b: [0.0, 0.0],
+            point_b_name: None,
+            force: 0.0,
+            speed_limit: 0.0,
+            stroke_min: 0.5, stroke_max: 2.0,
+            end_stop_stiffness: 10000.0, end_stop_damping: 0.0, end_stop_restitution: 0.5,
+        });
+
+        let result = act.evaluate(&state, &bodies, &q, &q_dot, 0.0);
+        // penetration = 0.5 - 0.3 = 0.2, penalty = 10000 * 0.2 = 2000 push apart
+        assert_abs_diff_eq!(result[0], -2000.0, epsilon = 1e-8); // bar1 pushed left
+        assert_abs_diff_eq!(result[3], 2000.0, epsilon = 1e-8);  // bar2 pushed right
+    }
+
+    #[test]
+    fn actuator_stroke_max_stop_pulls_together() {
+        let (state, bodies) = setup_two_bars();
+        let mut q = state.make_q();
+        state.set_pose("bar1", &mut q, 0.0, 0.0, 0.0);
+        state.set_pose("bar2", &mut q, 1.7, 0.0, 0.0);
+        let q_dot = DVector::zeros(state.n_coords());
+
+        let act = ForceElement::LinearActuator(LinearActuatorElement {
+            body_a: "bar1".into(),
+            point_a: [0.0, 0.0],
+            point_a_name: None,
+            body_b: "bar2".into(),
+            point_b: [0.0, 0.0],
+            point_b_name: None,
+            force: 0.0,
+            speed_limit: 0.0,
+            stroke_min: 0.5, stroke_max: 1.5,
+            end_stop_stiffness: 10000.0, end_stop_damping: 0.0, end_stop_restitution: 0.5,
+        });
+
+        let result = act.evaluate(&state, &bodies, &q, &q_dot, 0.0);
+        // penetration = 1.7 - 1.5 = 0.2, penalty = -10000 * 0.2 = -2000 pull together
+        assert_abs_diff_eq!(result[0], 2000.0, epsilon = 1e-8);  // bar1 pulled right
+        assert_abs_diff_eq!(result[3], -2000.0, epsilon = 1e-8); // bar2 pulled left
+    }
+
+    #[test]
+    fn actuator_stroke_force_not_cut_at_limit() {
+        let (state, bodies) = setup_two_bars();
+        let mut q = state.make_q();
+        state.set_pose("bar1", &mut q, 0.0, 0.0, 0.0);
+        state.set_pose("bar2", &mut q, 1.7, 0.0, 0.0);
+        let q_dot = DVector::zeros(state.n_coords());
+
+        let act = ForceElement::LinearActuator(LinearActuatorElement {
+            body_a: "bar1".into(),
+            point_a: [0.0, 0.0],
+            point_a_name: None,
+            body_b: "bar2".into(),
+            point_b: [0.0, 0.0],
+            point_b_name: None,
+            force: 100.0,
+            speed_limit: 0.0,
+            stroke_min: 0.0, stroke_max: 1.5,
+            end_stop_stiffness: 10000.0, end_stop_damping: 0.0, end_stop_restitution: 0.5,
+        });
+
+        let result = act.evaluate(&state, &bodies, &q, &q_dot, 0.0);
+        // net on bar2 = actuator(100) + penalty(-2000) = -1900
+        assert_abs_diff_eq!(result[3], -1900.0, epsilon = 1e-8);
+        assert_abs_diff_eq!(result[0], 1900.0, epsilon = 1e-8);
+    }
+
+    #[test]
+    fn actuator_stroke_limits_disabled_when_both_zero() {
+        let (state, bodies) = setup_two_bars();
+        let mut q = state.make_q();
+        state.set_pose("bar1", &mut q, 0.0, 0.0, 0.0);
+        state.set_pose("bar2", &mut q, 100.0, 0.0, 0.0);
+        let q_dot = DVector::zeros(state.n_coords());
+
+        let act = ForceElement::LinearActuator(LinearActuatorElement {
+            body_a: "bar1".into(),
+            point_a: [0.0, 0.0],
+            point_a_name: None,
+            body_b: "bar2".into(),
+            point_b: [0.0, 0.0],
+            point_b_name: None,
+            force: 50.0,
+            speed_limit: 0.0,
+            stroke_min: 0.0, stroke_max: 0.0,
+            end_stop_stiffness: 10000.0, end_stop_damping: 10.0, end_stop_restitution: 0.5,
+        });
+
+        let result = act.evaluate(&state, &bodies, &q, &q_dot, 0.0);
+        // No limits active: normal force only
+        assert_abs_diff_eq!(result[0], -50.0, epsilon = 1e-10);
+        assert_abs_diff_eq!(result[3], 50.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn actuator_stroke_max_only_limit() {
+        let (state, bodies) = setup_two_bars();
+        let mut q = state.make_q();
+        state.set_pose("bar1", &mut q, 0.0, 0.0, 0.0);
+        state.set_pose("bar2", &mut q, 0.01, 0.0, 0.0);
+        let q_dot = DVector::zeros(state.n_coords());
+
+        let act = ForceElement::LinearActuator(LinearActuatorElement {
+            body_a: "bar1".into(),
+            point_a: [0.0, 0.0],
+            point_a_name: None,
+            body_b: "bar2".into(),
+            point_b: [0.0, 0.0],
+            point_b_name: None,
+            force: 0.0,
+            speed_limit: 0.0,
+            stroke_min: 0.0, stroke_max: 2.0,
+            end_stop_stiffness: 10000.0, end_stop_damping: 10.0, end_stop_restitution: 0.5,
+        });
+
+        let result = act.evaluate(&state, &bodies, &q, &q_dot, 0.0);
+        // Below max, no min set: no penalty
+        assert_abs_diff_eq!(result[0], 0.0, epsilon = 1e-10);
+        assert_abs_diff_eq!(result[3], 0.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn actuator_stroke_degenerate_equal_limits_inactive() {
+        let (state, bodies) = setup_two_bars();
+        let mut q = state.make_q();
+        state.set_pose("bar1", &mut q, 0.0, 0.0, 0.0);
+        state.set_pose("bar2", &mut q, 1.0, 0.0, 0.0);
+        let q_dot = DVector::zeros(state.n_coords());
+
+        let act = ForceElement::LinearActuator(LinearActuatorElement {
+            body_a: "bar1".into(),
+            point_a: [0.0, 0.0],
+            point_a_name: None,
+            body_b: "bar2".into(),
+            point_b: [0.0, 0.0],
+            point_b_name: None,
+            force: 50.0,
+            speed_limit: 0.0,
+            stroke_min: 1.0, stroke_max: 1.0,
+            end_stop_stiffness: 10000.0, end_stop_damping: 10.0, end_stop_restitution: 0.5,
+        });
+
+        let result = act.evaluate(&state, &bodies, &q, &q_dot, 0.0);
+        // Equal limits: inactive, normal force only
+        assert_abs_diff_eq!(result[0], -50.0, epsilon = 1e-10);
+        assert_abs_diff_eq!(result[3], 50.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn actuator_stroke_asymmetric_damping() {
+        let (state, bodies) = setup_two_bars();
+        let mut q = state.make_q();
+        state.set_pose("bar1", &mut q, 0.0, 0.0, 0.0);
+        state.set_pose("bar2", &mut q, 0.3, 0.0, 0.0);
+
+        // Case 1: v_rel = -1 (into the min stop)
+        let mut q_dot_into = DVector::zeros(state.n_coords());
+        q_dot_into[3] = -1.0; // bar2 moving toward bar1
+
+        let act = ForceElement::LinearActuator(LinearActuatorElement {
+            body_a: "bar1".into(),
+            point_a: [0.0, 0.0],
+            point_a_name: None,
+            body_b: "bar2".into(),
+            point_b: [0.0, 0.0],
+            point_b_name: None,
+            force: 0.0,
+            speed_limit: 0.0,
+            stroke_min: 0.5, stroke_max: 2.0,
+            end_stop_stiffness: 10000.0, end_stop_damping: 100.0, end_stop_restitution: 0.5,
+        });
+
+        let result_into = act.evaluate(&state, &bodies, &q, &q_dot_into, 0.0);
+
+        // Case 2: v_rel = +1 (away from the min stop)
+        let mut q_dot_away = DVector::zeros(state.n_coords());
+        q_dot_away[3] = 1.0; // bar2 moving away from bar1
+
+        let result_away = act.evaluate(&state, &bodies, &q, &q_dot_away, 0.0);
+
+        // Into stop: full damping, force_on_b should be larger (more positive, pushing apart)
+        // Away from stop: reduced damping (e * c), force_on_b should be smaller
+        assert!(result_into[3] > result_away[3],
+            "Force into stop ({}) should exceed force away from stop ({})",
+            result_into[3], result_away[3]);
+    }
+
     // ── Serde roundtrip tests for new elements ───────────────────────────────
 
     #[test]
