@@ -58,6 +58,10 @@ pub struct SweepData {
     pub coupler_accelerations: HashMap<String, Vec<f64>>,
     /// Angles (degrees) at which toggle/dead points were detected.
     pub toggle_angles: Vec<f64>,
+    /// Index range of the active sweep region within the full 0-360° data.
+    /// `None` means the full range is active (no sweep limit).
+    /// When `Some((start_idx, end_idx))`, both indices are inclusive.
+    pub active_range: Option<(usize, usize)>,
 }
 
 pub(crate) fn compute_sweep_data(
@@ -68,7 +72,10 @@ pub(crate) fn compute_sweep_data(
     gravity_magnitude: f64,
     sweep_range: Option<(f64, f64)>,
 ) -> (SweepData, DVector<f64>) {
-    let (start_deg, end_deg) = sweep_range.unwrap_or((0.0, 360.0));
+    // Always sweep full 0-360° regardless of sweep_range.
+    // The sweep_range is only used to compute active_range indices.
+    let start_deg = 0.0_f64;
+    let end_deg = 360.0_f64;
     let step = 1.0_f64;
     let num_steps = ((end_deg - start_deg) / step).round() as i32;
     let capacity = (num_steps.max(0) + 1) as usize;
@@ -88,6 +95,7 @@ pub(crate) fn compute_sweep_data(
         coupler_velocities: HashMap::new(),
         coupler_accelerations: HashMap::new(),
         toggle_angles: Vec::new(),
+        active_range: None, // computed after sweep loop
     };
 
     // Temporary accumulator for reaction data (filled during sweep,
@@ -304,6 +312,22 @@ pub(crate) fn compute_sweep_data(
     data.joint_reaction_magnitudes = reaction_data;
     data.coupler_velocities = coupler_vel_data;
     data.coupler_accelerations = coupler_accel_data;
+
+    // Compute active range indices from the sweep_range parameter.
+    // The full 0-360° data is always present; active_range marks the
+    // user-selected sub-range for highlighted rendering.
+    data.active_range = sweep_range.and_then(|(min_deg, max_deg)| {
+        if data.angles_deg.is_empty() {
+            return None;
+        }
+        let start_idx = data.angles_deg.iter().position(|&a| a >= min_deg).unwrap_or(0);
+        let end_idx = data
+            .angles_deg
+            .iter()
+            .rposition(|&a| a <= max_deg)
+            .unwrap_or(data.angles_deg.len().saturating_sub(1));
+        Some((start_idx, end_idx))
+    });
 
     (data, q_at_zero)
 }

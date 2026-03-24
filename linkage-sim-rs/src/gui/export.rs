@@ -981,6 +981,7 @@ mod tests {
             coupler_velocities,
             coupler_accelerations,
             toggle_angles: Vec::new(),
+            active_range: None,
         }
     }
 
@@ -1386,6 +1387,7 @@ mod tests {
             coupler_velocities: HashMap::new(),
             coupler_accelerations: HashMap::new(),
             toggle_angles: Vec::new(),
+            active_range: None,
         };
 
         let path = std::env::temp_dir().join("test_mechanism_empty.gif");

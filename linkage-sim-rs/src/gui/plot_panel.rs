@@ -208,6 +208,9 @@ fn detect_plot_click(plot_ui: &egui_plot::PlotUi) -> Option<f64> {
 }
 
 /// Plot coupler point traces: x vs y, converted to display length units.
+///
+/// When `sweep.active_range` is set, the full curve is drawn faded/dashed for
+/// context and the active sub-range is overdrawn solid.
 fn draw_coupler_trace(ui: &mut egui::Ui, sweep: &SweepData, units: &DisplayUnits) {
     let axis_label = units.length_axis_label();
     let plot = Plot::new("coupler_trace_plot")
@@ -229,16 +232,49 @@ fn draw_coupler_trace(ui: &mut egui::Ui, sweep: &SweepData, units: &DisplayUnits
                 continue;
             }
 
-            let points: PlotPoints = trace
-                .iter()
-                .map(|[x, y]| [units.length(*x), units.length(*y)])
-                .collect();
             let color = colors[color_idx % colors.len()];
-            plot_ui.line(
-                Line::new(key.as_str(), points)
-                    .color(color)
-                    .width(1.5),
-            );
+
+            if let Some((start, end)) = sweep.active_range {
+                // Full curve -- faded/dashed for context.
+                let full_points: PlotPoints = trace
+                    .iter()
+                    .map(|[x, y]| [units.length(*x), units.length(*y)])
+                    .collect();
+                let faded = egui::Color32::from_rgba_unmultiplied(
+                    color.r(), color.g(), color.b(), 60,
+                );
+                plot_ui.line(
+                    Line::new(format!("{} (full)", key), full_points)
+                        .color(faded)
+                        .style(egui_plot::LineStyle::Dashed { length: 4.0 })
+                        .width(0.75),
+                );
+
+                // Active range -- solid, full color.
+                let end_clamped = end.min(trace.len().saturating_sub(1));
+                if start <= end_clamped {
+                    let active_points: PlotPoints = trace[start..=end_clamped]
+                        .iter()
+                        .map(|[x, y]| [units.length(*x), units.length(*y)])
+                        .collect();
+                    plot_ui.line(
+                        Line::new(key.as_str(), active_points)
+                            .color(color)
+                            .width(2.0),
+                    );
+                }
+            } else {
+                // No range limit -- draw normally.
+                let points: PlotPoints = trace
+                    .iter()
+                    .map(|[x, y]| [units.length(*x), units.length(*y)])
+                    .collect();
+                plot_ui.line(
+                    Line::new(key.as_str(), points)
+                        .color(color)
+                        .width(1.5),
+                );
+            }
             color_idx += 1;
         }
     });
@@ -273,23 +309,24 @@ fn draw_body_angles(
 
         for body_id in body_ids {
             let angles = &sweep.body_angles[body_id];
-            let points: PlotPoints = sweep
+            // Body angles use y in display angle units, so we pass the
+            // converted y through the helper's (deg, y) pairs.
+            let pairs: Vec<(f64, f64)> = sweep
                 .angles_deg
                 .iter()
                 .zip(angles.iter())
-                // Sweep data is in degrees; convert both axes to display unit.
-                .map(|(&x_deg, &y_deg)| {
-                    let x = units.angle(x_deg.to_radians());
-                    let y = units.angle(y_deg.to_radians());
-                    [x, y]
-                })
+                .map(|(&x_deg, &y_deg)| (x_deg, units.angle(y_deg.to_radians())))
                 .collect();
 
             let color = colors[color_idx % colors.len()];
-            plot_ui.line(
-                Line::new(body_id.as_str(), points)
-                    .color(color)
-                    .width(1.5),
+            draw_angle_series_with_range(
+                plot_ui,
+                body_id.as_str(),
+                color,
+                1.5,
+                &pairs,
+                sweep,
+                units,
             );
             color_idx += 1;
         }
@@ -302,6 +339,7 @@ fn draw_body_angles(
         );
 
         draw_toggle_markers(plot_ui, sweep, units);
+        draw_range_boundary_markers(plot_ui, sweep, units);
         clicked_x = detect_plot_click(plot_ui);
     });
     clicked_x
@@ -339,18 +377,21 @@ fn draw_transmission_angle(
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
-        let points: PlotPoints = sweep
+        let pairs: Vec<(f64, f64)> = sweep
             .angles_deg
             .iter()
             .zip(ta.iter())
-            // x: driver angle in display unit; y: transmission angle always in degrees.
-            .map(|(&x_deg, &y)| [units.angle(x_deg.to_radians()), y])
+            .map(|(&x_deg, &y)| (x_deg, y))
             .collect();
 
-        plot_ui.line(
-            Line::new("Transmission Angle", points)
-                .color(egui::Color32::from_rgb(100, 200, 255))
-                .width(2.0),
+        draw_angle_series_with_range(
+            plot_ui,
+            "Transmission Angle",
+            egui::Color32::from_rgb(100, 200, 255),
+            2.0,
+            &pairs,
+            sweep,
+            units,
         );
 
         // Ideal zone: 40-140 degrees (y-axis stays in degrees always).
@@ -377,6 +418,7 @@ fn draw_transmission_angle(
         );
 
         draw_toggle_markers(plot_ui, sweep, units);
+        draw_range_boundary_markers(plot_ui, sweep, units);
         clicked_x = detect_plot_click(plot_ui);
     });
     clicked_x
@@ -408,17 +450,21 @@ fn draw_driver_torque(
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
-        let points: PlotPoints = sweep
+        let pairs: Vec<(f64, f64)> = sweep
             .angles_deg
             .iter()
             .zip(torques.iter())
-            .map(|(&x_deg, &y)| [units.angle(x_deg.to_radians()), y])
+            .map(|(&x_deg, &y)| (x_deg, y))
             .collect();
 
-        plot_ui.line(
-            Line::new("Driver Torque", points)
-                .color(egui::Color32::from_rgb(255, 150, 80))
-                .width(2.0),
+        draw_angle_series_with_range(
+            plot_ui,
+            "Driver Torque",
+            egui::Color32::from_rgb(255, 150, 80),
+            2.0,
+            &pairs,
+            sweep,
+            units,
         );
 
         // Vertical marker at current driver angle.
@@ -429,6 +475,7 @@ fn draw_driver_torque(
         );
 
         draw_toggle_markers(plot_ui, sweep, units);
+        draw_range_boundary_markers(plot_ui, sweep, units);
         clicked_x = detect_plot_click(plot_ui);
     });
     clicked_x
@@ -462,20 +509,25 @@ fn draw_inverse_dynamics(
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
         // Inverse dynamics torque (cyan).
-        let id_points: PlotPoints = sweep
+        let id_pairs: Vec<(f64, f64)> = sweep
             .angles_deg
             .iter()
             .zip(sweep.inverse_dynamics_torques.iter())
             .filter(|&(_, &t)| t.is_finite())
-            .map(|(&x_deg, &t)| [units.angle(x_deg.to_radians()), t])
+            .map(|(&x_deg, &t)| (x_deg, t))
             .collect();
-        plot_ui.line(
-            Line::new("Inverse Dynamics Torque", id_points)
-                .color(egui::Color32::from_rgb(100, 200, 255))
-                .width(2.0),
+        draw_angle_series_with_range(
+            plot_ui,
+            "Inverse Dynamics Torque",
+            egui::Color32::from_rgb(100, 200, 255),
+            2.0,
+            &id_pairs,
+            sweep,
+            units,
         );
 
         // Overlay statics torque if available (orange, dashed).
+        // This is always drawn dashed as a reference, so no faded/solid split.
         if let Some(statics_torques) = &sweep.driver_torques {
             let st_points: PlotPoints = sweep
                 .angles_deg
@@ -500,6 +552,7 @@ fn draw_inverse_dynamics(
         );
 
         draw_toggle_markers(plot_ui, sweep, units);
+        draw_range_boundary_markers(plot_ui, sweep, units);
         clicked_x = detect_plot_click(plot_ui);
     });
     clicked_x
@@ -532,45 +585,57 @@ fn draw_energy(
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
         // Kinetic energy
-        let ke_points: PlotPoints = sweep
+        let ke_pairs: Vec<(f64, f64)> = sweep
             .angles_deg
             .iter()
             .zip(sweep.kinetic_energy.iter())
             .filter(|&(_, &e)| e.is_finite())
-            .map(|(&x_deg, &e)| [units.angle(x_deg.to_radians()), e])
+            .map(|(&x_deg, &e)| (x_deg, e))
             .collect();
-        plot_ui.line(
-            Line::new("Kinetic Energy", ke_points)
-                .color(egui::Color32::from_rgb(255, 150, 80))
-                .width(2.0),
+        draw_angle_series_with_range(
+            plot_ui,
+            "Kinetic Energy",
+            egui::Color32::from_rgb(255, 150, 80),
+            2.0,
+            &ke_pairs,
+            sweep,
+            units,
         );
 
         // Potential energy
-        let pe_points: PlotPoints = sweep
+        let pe_pairs: Vec<(f64, f64)> = sweep
             .angles_deg
             .iter()
             .zip(sweep.potential_energy.iter())
             .filter(|&(_, &e)| e.is_finite())
-            .map(|(&x_deg, &e)| [units.angle(x_deg.to_radians()), e])
+            .map(|(&x_deg, &e)| (x_deg, e))
             .collect();
-        plot_ui.line(
-            Line::new("Potential Energy", pe_points)
-                .color(egui::Color32::from_rgb(100, 200, 255))
-                .width(2.0),
+        draw_angle_series_with_range(
+            plot_ui,
+            "Potential Energy",
+            egui::Color32::from_rgb(100, 200, 255),
+            2.0,
+            &pe_pairs,
+            sweep,
+            units,
         );
 
         // Total energy
-        let te_points: PlotPoints = sweep
+        let te_pairs: Vec<(f64, f64)> = sweep
             .angles_deg
             .iter()
             .zip(sweep.total_energy.iter())
             .filter(|&(_, &e)| e.is_finite())
-            .map(|(&x_deg, &e)| [units.angle(x_deg.to_radians()), e])
+            .map(|(&x_deg, &e)| (x_deg, e))
             .collect();
-        plot_ui.line(
-            Line::new("Total Energy", te_points)
-                .color(egui::Color32::from_rgb(120, 220, 120))
-                .width(2.0),
+        draw_angle_series_with_range(
+            plot_ui,
+            "Total Energy",
+            egui::Color32::from_rgb(120, 220, 120),
+            2.0,
+            &te_pairs,
+            sweep,
+            units,
         );
 
         // Vertical marker at current driver angle.
@@ -581,6 +646,7 @@ fn draw_energy(
         );
 
         draw_toggle_markers(plot_ui, sweep, units);
+        draw_range_boundary_markers(plot_ui, sweep, units);
         clicked_x = detect_plot_click(plot_ui);
     });
     clicked_x
@@ -612,18 +678,22 @@ fn draw_mechanical_advantage(
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
-        let points: PlotPoints = sweep
+        let pairs: Vec<(f64, f64)> = sweep
             .angles_deg
             .iter()
             .zip(sweep.mechanical_advantage.iter())
             .filter(|&(_, &ma)| ma.is_finite())
-            .map(|(&x_deg, &ma)| [units.angle(x_deg.to_radians()), ma])
+            .map(|(&x_deg, &ma)| (x_deg, ma))
             .collect();
 
-        plot_ui.line(
-            Line::new("Mechanical Advantage", points)
-                .color(egui::Color32::from_rgb(200, 150, 255))
-                .width(2.0),
+        draw_angle_series_with_range(
+            plot_ui,
+            "Mechanical Advantage",
+            egui::Color32::from_rgb(200, 150, 255),
+            2.0,
+            &pairs,
+            sweep,
+            units,
         );
 
         // Unity reference line (MA = 1).
@@ -644,6 +714,7 @@ fn draw_mechanical_advantage(
         );
 
         draw_toggle_markers(plot_ui, sweep, units);
+        draw_range_boundary_markers(plot_ui, sweep, units);
         clicked_x = detect_plot_click(plot_ui);
     });
     clicked_x
@@ -687,19 +758,23 @@ fn draw_joint_reactions(
 
         for joint_id in joint_ids {
             let magnitudes = &sweep.joint_reaction_magnitudes[joint_id];
-            let points: PlotPoints = sweep
+            let pairs: Vec<(f64, f64)> = sweep
                 .angles_deg
                 .iter()
                 .zip(magnitudes.iter())
                 .filter(|&(_, &m)| m.is_finite())
-                .map(|(&x_deg, &m)| [units.angle(x_deg.to_radians()), m])
+                .map(|(&x_deg, &m)| (x_deg, m))
                 .collect();
 
             let color = colors[color_idx % colors.len()];
-            plot_ui.line(
-                Line::new(joint_id.as_str(), points)
-                    .color(color)
-                    .width(1.5),
+            draw_angle_series_with_range(
+                plot_ui,
+                joint_id.as_str(),
+                color,
+                1.5,
+                &pairs,
+                sweep,
+                units,
             );
             color_idx += 1;
         }
@@ -712,6 +787,7 @@ fn draw_joint_reactions(
         );
 
         draw_toggle_markers(plot_ui, sweep, units);
+        draw_range_boundary_markers(plot_ui, sweep, units);
         clicked_x = detect_plot_click(plot_ui);
     });
     clicked_x
@@ -754,19 +830,23 @@ fn draw_coupler_velocity(
 
         for key in keys {
             let velocities = &sweep.coupler_velocities[key];
-            let points: PlotPoints = sweep
+            let pairs: Vec<(f64, f64)> = sweep
                 .angles_deg
                 .iter()
                 .zip(velocities.iter())
                 .filter(|&(_, &v)| v.is_finite())
-                .map(|(&x_deg, &v)| [units.angle(x_deg.to_radians()), v])
+                .map(|(&x_deg, &v)| (x_deg, v))
                 .collect();
 
             let color = colors[color_idx % colors.len()];
-            plot_ui.line(
-                Line::new(key.as_str(), points)
-                    .color(color)
-                    .width(1.5),
+            draw_angle_series_with_range(
+                plot_ui,
+                key.as_str(),
+                color,
+                1.5,
+                &pairs,
+                sweep,
+                units,
             );
             color_idx += 1;
         }
@@ -779,6 +859,7 @@ fn draw_coupler_velocity(
         );
 
         draw_toggle_markers(plot_ui, sweep, units);
+        draw_range_boundary_markers(plot_ui, sweep, units);
         clicked_x = detect_plot_click(plot_ui);
     });
     clicked_x
@@ -821,19 +902,23 @@ fn draw_coupler_acceleration(
 
         for key in keys {
             let accelerations = &sweep.coupler_accelerations[key];
-            let points: PlotPoints = sweep
+            let pairs: Vec<(f64, f64)> = sweep
                 .angles_deg
                 .iter()
                 .zip(accelerations.iter())
                 .filter(|&(_, &a)| a.is_finite())
-                .map(|(&x_deg, &a)| [units.angle(x_deg.to_radians()), a])
+                .map(|(&x_deg, &a)| (x_deg, a))
                 .collect();
 
             let color = colors[color_idx % colors.len()];
-            plot_ui.line(
-                Line::new(key.as_str(), points)
-                    .color(color)
-                    .width(1.5),
+            draw_angle_series_with_range(
+                plot_ui,
+                key.as_str(),
+                color,
+                1.5,
+                &pairs,
+                sweep,
+                units,
             );
             color_idx += 1;
         }
@@ -846,6 +931,7 @@ fn draw_coupler_acceleration(
         );
 
         draw_toggle_markers(plot_ui, sweep, units);
+        draw_range_boundary_markers(plot_ui, sweep, units);
         clicked_x = detect_plot_click(plot_ui);
     });
     clicked_x
@@ -867,6 +953,112 @@ fn draw_toggle_markers(
                 .color(egui::Color32::from_rgba_premultiplied(255, 60, 60, 100))
                 .style(egui_plot::LineStyle::Dashed { length: 3.0 })
                 .width(1.0),
+        );
+    }
+}
+
+/// Draw vertical boundary markers at the sweep range limits.
+///
+/// When `active_range` is set, draws faint white dashed VLines at the
+/// min and max angles of the active range.
+fn draw_range_boundary_markers(
+    plot_ui: &mut egui_plot::PlotUi,
+    sweep: &SweepData,
+    units: &DisplayUnits,
+) {
+    if let Some((start, end)) = sweep.active_range {
+        if let (Some(&min_deg), Some(&max_deg)) =
+            (sweep.angles_deg.get(start), sweep.angles_deg.get(end))
+        {
+            let min_display = units.angle(min_deg.to_radians());
+            let max_display = units.angle(max_deg.to_radians());
+            let boundary_color =
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 80);
+            plot_ui.vline(
+                VLine::new("range_min", min_display)
+                    .color(boundary_color)
+                    .style(egui_plot::LineStyle::Dashed { length: 3.0 })
+                    .width(1.0),
+            );
+            plot_ui.vline(
+                VLine::new("range_max", max_display)
+                    .color(boundary_color)
+                    .style(egui_plot::LineStyle::Dashed { length: 3.0 })
+                    .width(1.0),
+            );
+        }
+    }
+}
+
+/// Create a faded version of a color for out-of-range plot data.
+fn faded_color(color: egui::Color32) -> egui::Color32 {
+    egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 60)
+}
+
+/// Helper for angle-based plots: draws a single data series with faded/solid
+/// treatment when an active range is set.
+///
+/// - `name`: legend label for the series
+/// - `color`: full-opacity color for the active range
+/// - `width`: line width for the active (solid) portion
+/// - `x_deg_and_y`: iterator of `(angle_deg, y_value)` pairs for the full sweep
+/// - `convert_x`: function to convert angle in degrees to display x-value
+/// - `sweep`: used to read `active_range` and `angles_deg`
+///
+/// When `active_range` is `None`, draws normally. When set, draws the full
+/// curve faded/dashed and overdraws the active slice solid.
+fn draw_angle_series_with_range(
+    plot_ui: &mut egui_plot::PlotUi,
+    name: &str,
+    color: egui::Color32,
+    width: f32,
+    x_deg_and_y: &[(f64, f64)],
+    sweep: &SweepData,
+    units: &DisplayUnits,
+) {
+    if x_deg_and_y.is_empty() {
+        return;
+    }
+
+    let to_display = |deg: f64| units.angle(deg.to_radians());
+
+    if let Some((start, end)) = sweep.active_range {
+        // Full curve -- faded/dashed for context.
+        let full: PlotPoints = x_deg_and_y
+            .iter()
+            .map(|&(x_deg, y)| [to_display(x_deg), y])
+            .collect();
+        plot_ui.line(
+            Line::new(format!("{} (full)", name), full)
+                .color(faded_color(color))
+                .style(egui_plot::LineStyle::Dashed { length: 4.0 })
+                .width(width * 0.5),
+        );
+
+        // Active range -- solid.
+        // Use the degree boundaries to select the active subset.
+        let min_deg = sweep.angles_deg.get(start).copied().unwrap_or(0.0);
+        let max_deg = sweep.angles_deg.get(end).copied().unwrap_or(360.0);
+        let active: PlotPoints = x_deg_and_y
+            .iter()
+            .filter(|&&(x_deg, _)| x_deg >= min_deg && x_deg <= max_deg)
+            .map(|&(x_deg, y)| [to_display(x_deg), y])
+            .collect();
+        plot_ui.line(
+            Line::new(name, active)
+                .color(color)
+                .width(width),
+        );
+    } else {
+        // No range limit -- draw normally.
+        let pts: PlotPoints = x_deg_and_y
+            .iter()
+            .map(|&(x_deg, y)| [to_display(x_deg), y])
+            .collect();
+        plot_ui.line(
+            Line::new(name, pts)
+                .color(color)
+                .width(width),
         );
     }
 }

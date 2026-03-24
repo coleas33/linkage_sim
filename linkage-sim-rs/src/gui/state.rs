@@ -3246,40 +3246,17 @@ impl AppState {
 
         // Copy values we need from self before taking a reference to the mechanism,
         // to avoid borrow-checker conflicts between &self.mechanism and &mut self.sweep_data.
-        // Determine the sweep start angle
-        let sweep_start_deg = if self.sweep_range_enabled {
-            self.sweep_angle_min_deg
-        } else {
-            0.0
-        };
-
         let omega = self.driver_omega;
         let theta_0 = self.driver_theta_0;
 
-        // If we have a stored q_at_zero and the sweep starts at 0°, use it directly.
-        // Otherwise, solve for the sweep start angle from q_at_zero (or last_good_q as fallback).
-        let q_start = if !self.sweep_range_enabled && self.q_at_zero.len() == self.last_good_q.len() && self.q_at_zero.len() > 0 {
-            // Full sweep starting at 0° -- use stored q_at_zero which is known-good
+        // Always start the sweep at 0°. The sweep loop always does full 0-360°;
+        // the sweep_range is only used to compute active_range indices for rendering.
+        let q_start = if self.q_at_zero.len() == self.last_good_q.len() && self.q_at_zero.len() > 0 {
+            // Use stored q_at_zero which is known-good for 0°
             self.q_at_zero.clone()
         } else {
-            // Limited sweep or no stored q_at_zero -- solve for the start angle
-            let sweep_start_rad = sweep_start_deg.to_radians();
-            let t_start = if omega.abs() > f64::EPSILON {
-                (sweep_start_rad - theta_0) / omega
-            } else {
-                0.0
-            };
-            // Try from q_at_zero first (better guess), fall back to last_good_q
-            let base_q = if self.q_at_zero.len() == self.last_good_q.len() && self.q_at_zero.len() > 0 {
-                &self.q_at_zero
-            } else {
-                &self.last_good_q
-            };
-            let mech = self.mechanism.as_ref().unwrap();
-            match solve_position(mech, base_q, t_start, 1e-10, 50) {
-                Ok(result) if result.converged => result.q,
-                _ => self.last_good_q.clone(), // fallback
-            }
+            // No stored q_at_zero -- fall back to last_good_q
+            self.last_good_q.clone()
         };
 
         let sweep_range = if self.sweep_range_enabled {
