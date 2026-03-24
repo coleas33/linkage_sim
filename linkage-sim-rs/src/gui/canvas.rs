@@ -72,8 +72,8 @@ const GROUND_MARKER_SIZE: f32 = 14.0;
 const HIT_RADIUS: f32 = 12.0;
 const ATTACHMENT_DOT_RADIUS: f32 = 3.5;
 const MOUNT_POINT_RADIUS: f32 = 4.0;
-const ZOOM_FACTOR: f32 = 1.12;
-const MIN_SCALE: f32 = 100.0;
+const ZOOM_FACTOR: f32 = 1.05;
+const MIN_SCALE: f32 = 10.0;
 const MAX_SCALE: f32 = 100_000.0;
 
 /// An attachment point hit target: screen + world position, body ID, point name.
@@ -1138,11 +1138,10 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     if response.hovered() {
         let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
         if scroll_delta.abs() > 0.0 {
-            let factor = if scroll_delta > 0.0 {
-                ZOOM_FACTOR
-            } else {
-                1.0 / ZOOM_FACTOR
-            };
+            // Normalize: apply ZOOM_FACTOR once per ~50px of scroll delta
+            // so trackpads and mouse wheels feel consistent.
+            let ticks = (scroll_delta / 50.0).clamp(-3.0, 3.0);
+            let factor = ZOOM_FACTOR.powf(ticks);
             if let Some(pointer_pos) = ui.input(|i| i.pointer.hover_pos()) {
                 let old_scale = state.view.scale;
                 let new_scale = (old_scale * factor).clamp(MIN_SCALE, MAX_SCALE);
