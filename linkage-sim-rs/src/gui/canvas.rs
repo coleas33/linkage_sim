@@ -319,6 +319,29 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 .collect();
             let screen_points: Vec<Pos2> = point_positions.iter().map(|(sp, _)| *sp).collect();
 
+            // Draw body geometry rectangle (behind the link bar).
+            if let Some(ref geo) = body.geometry {
+                let pos = mech_state.get_position(body_id, q);
+                let theta = mech_state.get_angle(body_id, q);
+                let corners = crate::geometry::body_rect_to_world(
+                    pos.x, pos.y, theta, geo.width, geo.height, &geo.offset,
+                );
+                let screen_corners: Vec<Pos2> = corners
+                    .iter()
+                    .map(|c| {
+                        let sp = view.world_to_screen(c.x, c.y);
+                        Pos2::new(sp[0], sp[1])
+                    })
+                    .collect();
+                let geo_fill = Color32::from_rgba_premultiplied(64, 42, 0, 64);
+                let geo_stroke = Stroke::new(2.0, Color32::from_rgb(255, 165, 0));
+                painter.add(egui::epaint::PathShape::convex_polygon(
+                    screen_corners,
+                    geo_fill,
+                    geo_stroke,
+                ));
+            }
+
             // Draw links as rounded rectangles (bars) for visibility and click targets.
             if screen_points.len() >= 2 {
                 let fill_alpha = if is_selected { 80u8 } else { 40u8 };
