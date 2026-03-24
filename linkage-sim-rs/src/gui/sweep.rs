@@ -456,6 +456,97 @@ mod tests {
         assert!(a > 0.0 && b > 0.0 && c > 0.0 && d > 0.0);
     }
 
+    /// Reproduces bug: repeatedly toggling sweep range causes progressive degradation.
+    /// Each cycle should produce the same number of sweep angles (361 = full rotation).
+    #[test]
+    fn sweep_range_toggle_does_not_degrade() {
+        use crate::gui::samples::build_sample;
+
+        let (mech, q0) = build_sample(SampleMechanism::ParallelogramPress);
+        let omega = 2.0 * std::f64::consts::PI;
+        let theta_0 = 0.0;
+        let gravity = 9.81;
+
+        // Initial sweep
+        let (data1, q_zero1) = compute_sweep_data(&mech, &q0, omega, theta_0, gravity, None);
+        let count1 = data1.angles_deg.len();
+        assert!(count1 > 300, "Initial sweep should cover most of 360°, got {}", count1);
+
+        // Toggle ON
+        let (data2, q_zero2) = compute_sweep_data(&mech, &q_zero1, omega, theta_0, gravity, Some((150.0, 210.0)));
+        assert_eq!(data2.angles_deg.len(), count1, "Sweep 2 should have same count");
+
+        // Toggle OFF
+        let (data3, q_zero3) = compute_sweep_data(&mech, &q_zero2, omega, theta_0, gravity, None);
+        assert_eq!(data3.angles_deg.len(), count1, "Sweep 3 should have same count as sweep 1");
+
+        // Toggle ON
+        let (data4, q_zero4) = compute_sweep_data(&mech, &q_zero3, omega, theta_0, gravity, Some((150.0, 210.0)));
+        assert_eq!(data4.angles_deg.len(), count1, "Sweep 4 should have same count");
+
+        // Toggle OFF
+        let (data5, q_zero5) = compute_sweep_data(&mech, &q_zero4, omega, theta_0, gravity, None);
+        assert_eq!(data5.angles_deg.len(), count1, "Sweep 5 should have same count");
+
+        // Toggle ON
+        let (_data6, q_zero6) = compute_sweep_data(&mech, &q_zero5, omega, theta_0, gravity, Some((150.0, 210.0)));
+
+        // Toggle OFF
+        let (data7, _) = compute_sweep_data(&mech, &q_zero6, omega, theta_0, gravity, None);
+        assert_eq!(data7.angles_deg.len(), count1, "Sweep 7 should have same count");
+
+        // Also verify q_zero hasn't drifted
+        let diff = (&q_zero1 - &q_zero3).norm();
+        assert!(diff < 1e-6, "q_zero should be stable across toggles, drift = {}", diff);
+    }
+
+    /// Test using AppState.compute_sweep() — the real code path.
+    /// Simulates the user toggling "Limit Sweep Range" checkbox repeatedly,
+    /// including moving the driver angle slider between toggles.
+    #[test]
+    fn appstate_sweep_toggle_stable() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::ParallelogramPress);
+
+        // Initial sweep happens in load_sample
+        let count0 = state.sweep_data.as_ref().unwrap().angles_deg.len();
+        assert!(count0 > 300, "Initial sweep should be full, got {}", count0);
+
+        // Simulate toggling the checkbox 6 times
+        for cycle in 0..3 {
+            // Toggle ON
+            state.sweep_range_enabled = true;
+            state.sweep_angle_min_deg = 150.0;
+            state.sweep_angle_max_deg = 210.0;
+            state.compute_sweep();
+            let count_on = state.sweep_data.as_ref().unwrap().angles_deg.len();
+            assert_eq!(count_on, count0, "Cycle {} ON: expected {} angles, got {}", cycle, count0, count_on);
+
+            // Simulate user moving driver angle slider between toggles
+            state.driver_angle = (90.0 + cycle as f64 * 45.0).to_radians();
+            // In the real app, this would update last_good_q via position solve.
+            // Simulate that by solving at the new angle.
+            if let Some(mech) = &state.mechanism {
+                if let Ok(result) = crate::solver::kinematics::solve_position(
+                    mech, &state.last_good_q,
+                    (state.driver_angle - state.driver_theta_0) / state.driver_omega,
+                    1e-10, 50,
+                ) {
+                    if result.converged {
+                        state.q = result.q.clone();
+                        state.last_good_q = result.q;
+                    }
+                }
+            }
+
+            // Toggle OFF
+            state.sweep_range_enabled = false;
+            state.compute_sweep();
+            let count_off = state.sweep_data.as_ref().unwrap().angles_deg.len();
+            assert_eq!(count_off, count0, "Cycle {} OFF: expected {} angles, got {}", cycle, count0, count_off);
+        }
+    }
+
     #[test]
     fn detect_fourbar_links_returns_none_for_sixbar() {
         let mut state = AppState::default();
