@@ -3395,7 +3395,31 @@ impl AppState {
         let step_deg = self.animation_speed_deg_per_sec * dt * self.animation_direction;
         let mut new_angle_deg = self.driver_angle.to_degrees() + step_deg;
 
-        if self.loop_mode {
+        // Determine effective animation bounds.
+        let (anim_min, anim_max) = if self.sweep_range_enabled {
+            (self.sweep_angle_min_deg, self.sweep_angle_max_deg)
+        } else {
+            (0.0, 360.0)
+        };
+
+        if self.sweep_range_enabled {
+            // Bounce at sweep range limits in both loop and once modes.
+            if new_angle_deg >= anim_max {
+                new_angle_deg = anim_max;
+                if self.loop_mode {
+                    self.animation_direction *= -1.0;
+                } else {
+                    self.playing = false;
+                }
+            } else if new_angle_deg <= anim_min {
+                new_angle_deg = anim_min;
+                if self.loop_mode {
+                    self.animation_direction *= -1.0;
+                } else {
+                    self.playing = false;
+                }
+            }
+        } else if self.loop_mode {
             // Wrap around — reset initial guess to the solved q at angle 0
             // so the solver stays on the same assembly configuration branch.
             if new_angle_deg >= 360.0 {

@@ -20,10 +20,20 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
         .id_salt("crank_section")
         .default_open(true)
         .show(ui, |ui| {
+            // Determine slider range: clamp to sweep range when enabled.
+            let (slider_min, slider_max) = if state.sweep_range_enabled {
+                (state.sweep_angle_min_deg, state.sweep_angle_max_deg)
+            } else {
+                (0.0, 360.0)
+            };
+
             let mut angle_deg = state.driver_angle.to_degrees();
+            // Clamp current angle into the active range so the slider
+            // doesn't sit outside its bounds when the user enables the range.
+            angle_deg = angle_deg.clamp(slider_min, slider_max);
             let prev_angle = angle_deg;
             let response = ui.add(
-                egui::Slider::new(&mut angle_deg, 0.0..=360.0)
+                egui::Slider::new(&mut angle_deg, slider_min..=slider_max)
                     .suffix("\u{00B0}")
                     .step_by(0.5),
             );
@@ -48,6 +58,39 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
                     state.animation_direction = 1.0;
                 }
             });
+
+            // ── Sweep Range ────────────────────────────────────────
+            ui.separator();
+            let prev_enabled = state.sweep_range_enabled;
+            ui.checkbox(&mut state.sweep_range_enabled, "Limit Sweep Range");
+            if state.sweep_range_enabled != prev_enabled {
+                state.mark_sweep_dirty();
+            }
+            if state.sweep_range_enabled {
+                ui.horizontal(|ui| {
+                    ui.label("Min\u{00B0}:");
+                    let min_changed = ui.add(egui::DragValue::new(&mut state.sweep_angle_min_deg)
+                        .speed(0.5)
+                        .range(0.0..=360.0)
+                        .suffix("\u{00B0}")).changed();
+                    ui.label("Max\u{00B0}:");
+                    let max_changed = ui.add(egui::DragValue::new(&mut state.sweep_angle_max_deg)
+                        .speed(0.5)
+                        .range(0.0..=360.0)
+                        .suffix("\u{00B0}")).changed();
+
+                    if min_changed || max_changed {
+                        // Ensure min <= max
+                        if state.sweep_angle_min_deg > state.sweep_angle_max_deg {
+                            std::mem::swap(
+                                &mut state.sweep_angle_min_deg,
+                                &mut state.sweep_angle_max_deg,
+                            );
+                        }
+                        state.mark_sweep_dirty();
+                    }
+                });
+            }
         });
 
     // ── Gravity ──────────────────────────────────────────────────────
