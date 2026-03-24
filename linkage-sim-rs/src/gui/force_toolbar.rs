@@ -34,7 +34,7 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
         let force_color = egui::Color32::from_rgb(255, 165, 80);
 
         // -- Joint Torques dropdown --
-        ui.menu_button(
+        let jt_resp = ui.menu_button(
             egui::RichText::new("\u{2699} Joint Torques \u{25BC}").color(torque_color),
             |ui| {
             if let Some((ref a, ref b)) = two_bodies(&selected_body, &connected_body) {
@@ -79,9 +79,10 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
                 ui.label("Select a body first");
             }
         });
+        jt_resp.response.on_hover_text("Torque-based force elements applied at joints");
 
         // -- Link Forces dropdown --
-        ui.menu_button(
+        let lf_resp = ui.menu_button(
             egui::RichText::new("\u{2B06} Link Forces \u{25BC}").color(force_color),
             |ui| {
             // Single-body elements
@@ -142,6 +143,7 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
                 ui.close();
             }
         });
+        lf_resp.response.on_hover_text("Force elements applied between points on bodies");
 
         // -- Spatial Forces -----------------------------------------------
         ui.separator();

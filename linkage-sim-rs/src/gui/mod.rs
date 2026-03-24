@@ -174,7 +174,7 @@ impl eframe::App for LinkageApp {
         // --- Menu bar ---
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
-                ui.menu_button("\u{1F4C1} File", |ui| {
+                let file_resp = ui.menu_button("\u{1F4C1} File", |ui| {
                     if ui.button("\u{1F4C4} New  Ctrl+N")
                         .on_hover_text("Create a new empty mechanism (Ctrl+N)")
                         .clicked()
@@ -182,7 +182,7 @@ impl eframe::App for LinkageApp {
                         self.state.new_empty_mechanism();
                         ui.close();
                     }
-                    ui.menu_button("\u{1F4C2} Load Sample", |ui| {
+                    let load_sample_resp = ui.menu_button("\u{1F4C2} Load Sample", |ui| {
                         for sample in SampleMechanism::all() {
                             if ui.button(sample.label()).clicked() {
                                 self.state.load_sample(*sample);
@@ -190,6 +190,7 @@ impl eframe::App for LinkageApp {
                             }
                         }
                     });
+                    load_sample_resp.response.on_hover_text("Load a preset sample mechanism");
                     // ── Native-only file dialogs ──────────────────────
                     #[cfg(feature = "native")]
                     {
@@ -209,7 +210,7 @@ impl eframe::App for LinkageApp {
                             ui.close();
                         }
                         if !self.state.recent_files.is_empty() {
-                            ui.menu_button("Recent Files", |ui| {
+                            let recent_resp = ui.menu_button("Recent Files", |ui| {
                                 let mut load_path = None;
                                 for path in &self.state.recent_files {
                                     let label = path
@@ -231,6 +232,7 @@ impl eframe::App for LinkageApp {
                                     }
                                 }
                             });
+                            recent_resp.response.on_hover_text("Recently opened mechanism files");
                         }
                         if ui.button("\u{1F4BE} Save  Ctrl+S")
                             .on_hover_text("Save mechanism to the current file (Ctrl+S)")
@@ -464,7 +466,8 @@ impl eframe::App for LinkageApp {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
-                ui.menu_button("\u{270F} Edit", |ui| {
+                file_resp.response.on_hover_text("File operations: new, open, save, export");
+                let edit_resp = ui.menu_button("\u{270F} Edit", |ui| {
                     if ui
                         .add_enabled(self.state.can_undo(), egui::Button::new("\u{21A9} Undo  Ctrl+Z"))
                         .on_hover_text("Undo the last change (Ctrl+Z)")
@@ -482,7 +485,8 @@ impl eframe::App for LinkageApp {
                         ui.close();
                     }
                 });
-                ui.menu_button("\u{2753} Help", |ui| {
+                edit_resp.response.on_hover_text("Undo, redo, and editing operations");
+                let help_resp = ui.menu_button("\u{2753} Help", |ui| {
                     if ui.button("\u{2328} Keyboard Shortcuts")
                         .on_hover_text("Show all keyboard shortcuts")
                         .clicked()
@@ -491,7 +495,8 @@ impl eframe::App for LinkageApp {
                         ui.close();
                     }
                 });
-                ui.menu_button("\u{1F441} View", |ui| {
+                help_resp.response.on_hover_text("Keyboard shortcuts and help");
+                let view_resp = ui.menu_button("\u{1F441} View", |ui| {
                     ui.checkbox(&mut self.state.show_debug_overlay, "Debug Overlay")
                         .on_hover_text("Show solver status, body IDs, and attachment point names on the canvas");
                     ui.checkbox(&mut self.state.show_plots, "Plot Panel")
@@ -561,6 +566,7 @@ impl eframe::App for LinkageApp {
                         }
                     });
                 });
+                view_resp.response.on_hover_text("Toggle display options and visualization settings");
             });
         });
 
@@ -687,7 +693,7 @@ impl eframe::App for LinkageApp {
 
                 // ── Sample mechanism selector (purple) ──────────────
                 let sample_color = egui::Color32::from_rgb(180, 140, 255);
-                ui.menu_button(
+                let samples_resp = ui.menu_button(
                     egui::RichText::new("\u{1F4C2} Samples \u{25BC}").color(sample_color),
                     |ui| {
                         for sample in SampleMechanism::all() {
@@ -698,6 +704,7 @@ impl eframe::App for LinkageApp {
                         }
                     },
                 );
+                samples_resp.response.on_hover_text("Load a preset sample mechanism");
             });
         });
 
