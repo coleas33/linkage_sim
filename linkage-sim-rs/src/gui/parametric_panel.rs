@@ -109,7 +109,7 @@ pub fn draw_parametric_panel(ui: &mut egui::Ui, state: &mut AppState) {
     if let Some(reason) = invalid_reason {
         ui.add_enabled(false, egui::Button::new("Run Study"))
             .on_disabled_hover_text(reason);
-    } else if ui.button("Run Study").clicked() {
+    } else if ui.button("Run Study").on_hover_text("Sweep the selected parameter and compute the output metric at each step").clicked() {
         state.run_parametric_study();
     }
 
@@ -272,7 +272,7 @@ pub fn draw_counterbalance_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
     // Run button
     ui.add_space(8.0);
-    if ui.button("Optimize Counterbalance").clicked() {
+    if ui.button("Optimize Counterbalance").on_hover_text("Search for optimal spring k and free length to minimize driver torque ripple").clicked() {
         state.run_counterbalance_study();
     }
 

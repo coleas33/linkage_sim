@@ -38,27 +38,27 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
             egui::RichText::new("\u{2699} Joint Torques \u{25BC}").color(torque_color),
             |ui| {
             if let Some((ref a, ref b)) = two_bodies(&selected_body, &connected_body) {
-                if ui.button("Motor").clicked() {
+                if ui.button("Motor").on_hover_text("Add a DC motor with linear torque-speed curve between two bodies").clicked() {
                     pending = Some(PendingForceAdd::Add(ForceElement::Motor(MotorElement {
                         body_i: a.clone(), body_j: b.clone(),
                         stall_torque: 10.0, no_load_speed: 10.0, direction: 1.0,
                     })));
                     ui.close();
                 }
-                if ui.button("Torsion Spring").clicked() {
+                if ui.button("Torsion Spring").on_hover_text("Add a rotational spring between two bodies").clicked() {
                     pending = Some(PendingForceAdd::Add(ForceElement::TorsionSpring(TorsionSpringElement {
                         body_i: a.clone(), body_j: b.clone(),
                         stiffness: 10.0, free_angle: 0.0,
                     })));
                     ui.close();
                 }
-                if ui.button("Rotary Damper").clicked() {
+                if ui.button("Rotary Damper").on_hover_text("Add viscous rotational damping between two bodies").clicked() {
                     pending = Some(PendingForceAdd::Add(ForceElement::RotaryDamper(RotaryDamperElement {
                         body_i: a.clone(), body_j: b.clone(), damping: 5.0,
                     })));
                     ui.close();
                 }
-                if ui.button("Bearing Friction").clicked() {
+                if ui.button("Bearing Friction").on_hover_text("Add bearing friction (constant drag, viscous, Coulomb) at a joint").clicked() {
                     pending = Some(PendingForceAdd::Add(ForceElement::BearingFriction(BearingFrictionElement {
                         body_i: a.clone(), body_j: b.clone(),
                         constant_drag: 0.1, viscous_coeff: 0.01, coulomb_coeff: 0.0,
@@ -66,7 +66,7 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
                     })));
                     ui.close();
                 }
-                if ui.button("Joint Limit").clicked() {
+                if ui.button("Joint Limit").on_hover_text("Add angular travel limits with contact stiffness at a joint").clicked() {
                     pending = Some(PendingForceAdd::Add(ForceElement::JointLimit(JointLimitElement {
                         body_i: a.clone(), body_j: b.clone(),
                         angle_min: -std::f64::consts::FRAC_PI_2,
@@ -86,7 +86,7 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
             |ui| {
             // Single-body elements
             if let Some(ref body_id) = selected_body {
-                if ui.button("External Force").clicked() {
+                if ui.button("External Force").on_hover_text("Apply a constant or time-modulated force at a point on the selected body").clicked() {
                     pending = Some(PendingForceAdd::Add(ForceElement::ExternalForce(ExternalForceElement {
                         body_id: body_id.clone(), local_point: [0.0, 0.0],
                         local_point_name: None,
@@ -94,7 +94,7 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
                     })));
                     ui.close();
                 }
-                if ui.button("External Torque").clicked() {
+                if ui.button("External Torque").on_hover_text("Apply a constant or time-modulated torque to the selected body").clicked() {
                     pending = Some(PendingForceAdd::Add(ForceElement::ExternalTorque(ExternalTorqueElement {
                         body_id: body_id.clone(), torque: 1.0,
                         modulation: TimeModulation::Constant,
@@ -108,7 +108,7 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
             ui.separator();
 
             // Two-body elements — always visible; bodies are chosen via two-click placement
-            if ui.button("Linear Spring").clicked() {
+            if ui.button("Linear Spring").on_hover_text("Add a linear spring between two points (click two points to place)").clicked() {
                 pending = Some(PendingForceAdd::EnterPlaceMode(ForceElement::LinearSpring(LinearSpringElement {
                     body_a: String::new(), point_a: [0.0, 0.0], point_a_name: None,
                     body_b: String::new(), point_b: [0.0, 0.0], point_b_name: None,
@@ -116,7 +116,7 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
                 })));
                 ui.close();
             }
-            if ui.button("Linear Damper").clicked() {
+            if ui.button("Linear Damper").on_hover_text("Add a viscous linear damper between two points (click two points to place)").clicked() {
                 pending = Some(PendingForceAdd::EnterPlaceMode(ForceElement::LinearDamper(LinearDamperElement {
                     body_a: String::new(), point_a: [0.0, 0.0], point_a_name: None,
                     body_b: String::new(), point_b: [0.0, 0.0], point_b_name: None,
@@ -124,7 +124,7 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
                 })));
                 ui.close();
             }
-            if ui.button("Gas Spring").clicked() {
+            if ui.button("Gas Spring").on_hover_text("Add a gas spring with polytropic compression (click two points to place)").clicked() {
                 pending = Some(PendingForceAdd::EnterPlaceMode(ForceElement::GasSpring(GasSpringElement {
                     body_a: String::new(), point_a: [0.0, 0.0], point_a_name: None,
                     body_b: String::new(), point_b: [0.0, 0.0], point_b_name: None,
@@ -133,7 +133,7 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
                 })));
                 ui.close();
             }
-            if ui.button("Linear Actuator").clicked() {
+            if ui.button("Linear Actuator").on_hover_text("Add a linear actuator with constant force (click two points to place)").clicked() {
                 pending = Some(PendingForceAdd::EnterPlaceMode(ForceElement::LinearActuator(LinearActuatorElement {
                     body_a: String::new(), point_a: [0.0, 0.0], point_a_name: None,
                     body_b: String::new(), point_b: [0.0, 0.0], point_b_name: None,
@@ -147,7 +147,7 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
         ui.separator();
         let zone_color = egui::Color32::from_rgb(255, 80, 80);
         ui.colored_label(zone_color, "Spatial:");
-        if ui.button("Force Zone").clicked() {
+        if ui.button("Force Zone").on_hover_text("Define a rectangular spatial force zone (drag on canvas to create)").clicked() {
             pending = Some(PendingForceAdd::EnterForceZoneMode);
         }
     });

@@ -36,7 +36,7 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 egui::Slider::new(&mut angle_deg, slider_min..=slider_max)
                     .suffix("\u{00B0}")
                     .step_by(0.5),
-            );
+            ).on_hover_text("Drag to set the driver crank angle in degrees");
             if response.dragged() {
                 if state.playing {
                     state.playing = false;
@@ -53,7 +53,10 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
             ui.horizontal(|ui| {
                 let mode_label = if state.loop_mode { "\u{1F501} Loop" } else { "\u{27A1} Once" };
-                if ui.button(mode_label).clicked() {
+                if ui.button(mode_label)
+                    .on_hover_text("Toggle between continuous loop and single-pass animation")
+                    .clicked()
+                {
                     state.loop_mode = !state.loop_mode;
                     state.animation_direction = 1.0;
                 }
@@ -62,7 +65,8 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
             // ── Sweep Range ────────────────────────────────────────
             ui.separator();
             let prev_enabled = state.sweep_range_enabled;
-            ui.checkbox(&mut state.sweep_range_enabled, "Limit Sweep Range");
+            ui.checkbox(&mut state.sweep_range_enabled, "Limit Sweep Range")
+                .on_hover_text("Restrict the crank sweep to a custom angular range instead of full 360\u{00B0}");
             if state.sweep_range_enabled != prev_enabled {
                 state.mark_sweep_dirty();
             }
@@ -107,7 +111,7 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
                     .suffix(" m/s\u{00b2}")
                     .step_by(0.01)
                     .clamping(egui::SliderClamping::Always),
-            );
+            ).on_hover_text("Gravitational acceleration magnitude in m/s\u{00b2} (9.81 = 1g)");
             ui.label(format!("({:.2} g)", state.gravity_magnitude / 9.81));
             if (state.gravity_magnitude - prev_g).abs() > 1e-9 {
                 state.mark_sweep_dirty();
@@ -158,7 +162,7 @@ fn draw_simulation_controls(ui: &mut egui::Ui, state: &mut AppState) {
                 .speed(0.1)
                 .range(1.0..=30.0)
                 .suffix(" s"),
-        );
+        ).on_hover_text("Forward dynamics simulation duration in seconds");
 
         let sim_active = state.simulation.is_some();
         if ui
@@ -192,7 +196,7 @@ fn draw_simulation_controls(ui: &mut egui::Ui, state: &mut AppState) {
                 egui::Slider::new(&mut current_t, 0.0..=t_end)
                     .suffix(" s")
                     .step_by(t_end / 300.0),
-            );
+            ).on_hover_text("Scrub through the simulation timeline");
             if response.dragged() {
                 // Pause playback when scrubbing
                 if let Some(sim) = &mut state.simulation {
@@ -234,7 +238,10 @@ fn draw_simulation_controls(ui: &mut egui::Ui, state: &mut AppState) {
                 .map(|s| s.playing)
                 .unwrap_or(false);
             let play_label = if is_playing { "Pause" } else { "Play" };
-            if ui.button(play_label).clicked() {
+            if ui.button(play_label)
+                .on_hover_text("Play/pause simulation timeline playback")
+                .clicked()
+            {
                 if let Some(sim) = &mut state.simulation {
                     sim.playing = !sim.playing;
                     if sim.playing {
@@ -262,6 +269,7 @@ fn draw_simulation_controls(ui: &mut egui::Ui, state: &mut AppState) {
                         .range(0.1..=5.0)
                         .suffix("x"),
                 )
+                .on_hover_text("Simulation playback speed multiplier")
                 .changed()
             {
                 if let Some(sim) = &mut state.simulation {

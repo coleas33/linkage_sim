@@ -1776,6 +1776,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 };
                 if ui
                     .add_enabled(!is_current_driver, egui::Button::new(label))
+                    .on_hover_text("Make this grounded revolute joint the driven input")
                     .clicked()
                 {
                     state.pending_driver_reassignment = Some(joint_id.clone());
@@ -1783,7 +1784,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 }
             }
 
-            if ui.button("Delete Joint").clicked() {
+            if ui.button("Delete Joint").on_hover_text("Remove this joint and disconnect the bodies").clicked() {
                 state.remove_joint(joint_id);
                 ui.close();
             }
@@ -1798,22 +1799,22 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
 
             ui.menu_button("Create Joint", |ui| {
                 use super::state::PendingJointType;
-                if ui.button("Revolute").clicked() {
+                if ui.button("Revolute").on_hover_text("Create a pin joint allowing relative rotation").clicked() {
                     state.creating_joint = Some((body_id.clone(), point_name.clone(), PendingJointType::Revolute));
                     ui.close();
                 }
-                if ui.button("Prismatic").clicked() {
+                if ui.button("Prismatic").on_hover_text("Create a slider joint allowing linear translation").clicked() {
                     state.creating_joint = Some((body_id.clone(), point_name.clone(), PendingJointType::Prismatic));
                     ui.close();
                 }
-                if ui.button("Fixed").clicked() {
+                if ui.button("Fixed").on_hover_text("Create a rigid joint locking both bodies together").clicked() {
                     state.creating_joint = Some((body_id.clone(), point_name.clone(), PendingJointType::Fixed));
                     ui.close();
                 }
             });
 
             let delete_label = if body_id == GROUND_ID { "Delete Ground Pivot" } else { "Delete Pivot" };
-            if ui.button(delete_label).clicked() {
+            if ui.button(delete_label).on_hover_text("Remove this attachment point and any connected joints").clicked() {
                 state.remove_attachment_point(body_id, point_name);
                 ui.close();
             }
@@ -1827,7 +1828,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                         && ((joint.body_i_id() == *body_id) || (joint.body_j_id() == *body_id))
                         && current_driver_joint.as_deref() != Some(joint.id())
                     {
-                        if ui.button("Set as Driver").clicked() {
+                        if ui.button("Set as Driver").on_hover_text("Make this joint the driven input for kinematic analysis").clicked() {
                             state.pending_driver_reassignment = Some(joint.id().to_string());
                             ui.close();
                         }
@@ -1841,7 +1842,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
             ui.separator();
 
             if let Some([wx, wy]) = ctx_target.world_pos {
-                if ui.button("Add Pivot Here").clicked() {
+                if ui.button("Add Pivot Here").on_hover_text("Add a new attachment point on this link at the clicked location").clicked() {
                     let name = state.next_attachment_point_name(body_id);
                     let (sx, sy) = state.grid.snap_point(wx, wy);
                     state.add_attachment_point_to_body(body_id, &name, sx, sy);
@@ -1849,7 +1850,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
                 }
             }
 
-            if ui.button("Delete Body").clicked() {
+            if ui.button("Delete Body").on_hover_text("Remove this body and all its joints from the mechanism").clicked() {
                 state.remove_body(body_id);
                 state.selected = None;
                 ui.close();
@@ -1857,18 +1858,18 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         } else {
             // ── Empty canvas context menu ───────────────────────────────
             if let Some([wx, wy]) = ctx_target.world_pos {
-                if ui.button("Add Ground Pivot Here").clicked() {
+                if ui.button("Add Ground Pivot Here").on_hover_text("Place a fixed ground pivot at this canvas location").clicked() {
                     let name = state.next_ground_pivot_name();
                     state.add_ground_pivot(&name, wx, wy);
                     ui.close();
                 }
 
-                if ui.button("Draw Link").clicked() {
+                if ui.button("Draw Link").on_hover_text("Switch to Draw Link tool to create a new link").clicked() {
                     state.active_tool = EditorTool::DrawLink;
                     ui.close();
                 }
 
-                if ui.button("Start Body Here").clicked() {
+                if ui.button("Start Body Here").on_hover_text("Begin placing a new multi-point body at this location").clicked() {
                     let (sx, sy) = state.grid.snap_point(wx, wy);
                     let name = state.next_attachment_point_name("__pending__");
                     state.active_tool = EditorTool::AddBody;

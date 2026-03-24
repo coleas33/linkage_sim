@@ -8,10 +8,10 @@ pub fn draw_error_panel(ui: &mut egui::Ui, state: &mut AppState) {
     ui.horizontal(|ui| {
         ui.strong("Errors");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.small_button("Clear").clicked() {
+            if ui.small_button("Clear").on_hover_text("Clear all error messages").clicked() {
                 state.error_log.clear();
             }
-            if ui.small_button("Hide").clicked() {
+            if ui.small_button("Hide").on_hover_text("Hide the error panel").clicked() {
                 state.show_error_panel = false;
             }
         });

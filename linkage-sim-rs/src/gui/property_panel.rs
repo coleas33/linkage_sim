@@ -178,7 +178,7 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                         .text("mass").suffix(" kg")
                                         .clamping(egui::SliderClamping::Never)
                                         .logarithmic(true),
-                                );
+                                ).on_hover_text("Body mass in kg \u{2014} affects inertial loads and reaction forces");
                                 if mr.drag_stopped() || (mr.changed() && !mr.dragged()) {
                                     pending = Some(PendingPropertyEdit::Mass {
                                         body_id: body_id.clone(), value: mass,
@@ -191,7 +191,7 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                         .text("Izz").suffix(" kg\u{00b7}m\u{00b2}")
                                         .clamping(egui::SliderClamping::Never)
                                         .logarithmic(true),
-                                );
+                                ).on_hover_text("Moment of inertia about the CG in kg\u{00b7}m\u{00b2} \u{2014} affects angular acceleration");
                                 if ir.drag_stopped() || (ir.changed() && !ir.dragged()) {
                                     pending = Some(PendingPropertyEdit::Izz {
                                         body_id: body_id.clone(), value: izz,
@@ -217,7 +217,7 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                                     .text("Width (mm)")
                                                     .clamping(egui::SliderClamping::Never)
                                                     .logarithmic(true),
-                                            );
+                                            ).on_hover_text("Body rectangle width in mm (visual geometry for force zones)");
                                             if wr.drag_stopped() || (wr.changed() && !wr.dragged()) {
                                                 pending = Some(PendingPropertyEdit::UpdateGeometryWidth {
                                                     body_id: body_id.clone(),
@@ -232,7 +232,7 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                                     .text("Height (mm)")
                                                     .clamping(egui::SliderClamping::Never)
                                                     .logarithmic(true),
-                                            );
+                                            ).on_hover_text("Body rectangle height in mm (visual geometry for force zones)");
                                             if hr.drag_stopped() || (hr.changed() && !hr.dragged()) {
                                                 pending = Some(PendingPropertyEdit::UpdateGeometryHeight {
                                                     body_id: body_id.clone(),
@@ -245,7 +245,7 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                             let oxr = ui.add(
                                                 egui::Slider::new(&mut ox_mm, -250.0..=250.0)
                                                     .text("Offset X (mm)"),
-                                            );
+                                            ).on_hover_text("Horizontal offset of geometry rectangle from body origin in mm");
                                             if oxr.drag_stopped() || (oxr.changed() && !oxr.dragged()) {
                                                 pending = Some(PendingPropertyEdit::UpdateGeometryOffsetX {
                                                     body_id: body_id.clone(),
@@ -258,7 +258,7 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                             let oyr = ui.add(
                                                 egui::Slider::new(&mut oy_mm, -250.0..=250.0)
                                                     .text("Offset Y (mm)"),
-                                            );
+                                            ).on_hover_text("Vertical offset of geometry rectangle from body origin in mm");
                                             if oyr.drag_stopped() || (oyr.changed() && !oyr.dragged()) {
                                                 pending = Some(PendingPropertyEdit::UpdateGeometryOffsetY {
                                                     body_id: body_id.clone(),
@@ -266,13 +266,13 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                                 });
                                             }
 
-                                            if ui.button("Remove Geometry").clicked() {
+                                            if ui.button("Remove Geometry").on_hover_text("Remove the visual geometry rectangle from this body").clicked() {
                                                 pending = Some(PendingPropertyEdit::RemoveGeometry {
                                                     body_id: body_id.clone(),
                                                 });
                                             }
                                         } else {
-                                            if ui.button("Add Geometry").clicked() {
+                                            if ui.button("Add Geometry").on_hover_text("Attach a visual geometry rectangle to this body (required for force zones)").clicked() {
                                                 pending = Some(PendingPropertyEdit::AddGeometry {
                                                     body_id: body_id.clone(),
                                                     width: 0.03,
@@ -334,7 +334,7 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                                         position: [pos[0], y],
                                                     });
                                             }
-                                            if ui.small_button("x").clicked() {
+                                            if ui.small_button("x").on_hover_text("Delete this mount point").clicked() {
                                                 pending = Some(PendingPropertyEdit::DeleteMountPoint {
                                                     body_id: body_id.clone(),
                                                     name: (*name).clone(),
@@ -342,7 +342,7 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                             }
                                         });
                                     }
-                                    if ui.button("+ Add Mount Point").clicked() {
+                                    if ui.button("+ Add Mount Point").on_hover_text("Add a new force attachment mount point on this body").clicked() {
                                         // Find next unused M<N> name, skipping collisions
                                         // with both mount_points and attachment_points
                                         let mut next_num = 1u32;
@@ -911,7 +911,7 @@ fn draw_force_elements_panel(
             .show(ui, |ui| {
                 draw_force_element_details(ui, bp_idx, force, bp, pending);
 
-                if ui.small_button("Remove").clicked() {
+                if ui.small_button("Remove").on_hover_text("Delete this force element from the mechanism").clicked() {
                     *pending = Some(PendingPropertyEdit::RemoveForce(bp_idx));
                 }
             });

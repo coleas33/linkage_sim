@@ -175,7 +175,10 @@ impl eframe::App for LinkageApp {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("\u{1F4C1} File", |ui| {
-                    if ui.button("\u{1F4C4} New  Ctrl+N").clicked() {
+                    if ui.button("\u{1F4C4} New  Ctrl+N")
+                        .on_hover_text("Create a new empty mechanism (Ctrl+N)")
+                        .clicked()
+                    {
                         self.state.new_empty_mechanism();
                         ui.close();
                     }
@@ -191,7 +194,10 @@ impl eframe::App for LinkageApp {
                     #[cfg(feature = "native")]
                     {
                         ui.separator();
-                        if ui.button("\u{1F4C2} Open JSON...").clicked() {
+                        if ui.button("\u{1F4C2} Open JSON...")
+                            .on_hover_text("Load a mechanism from a JSON file")
+                            .clicked()
+                        {
                             if let Some(path) = rfd::FileDialog::new()
                                 .add_filter("JSON", &["json"])
                                 .pick_file()
@@ -226,7 +232,10 @@ impl eframe::App for LinkageApp {
                                 }
                             });
                         }
-                        if ui.button("\u{1F4BE} Save  Ctrl+S").clicked() {
+                        if ui.button("\u{1F4BE} Save  Ctrl+S")
+                            .on_hover_text("Save mechanism to the current file (Ctrl+S)")
+                            .clicked()
+                        {
                             if let Some(path) = self.state.last_save_path.clone() {
                                 if let Err(e) = self.state.save_to_file(&path) {
                                     log::error!("Save failed: {}", e);
@@ -242,7 +251,10 @@ impl eframe::App for LinkageApp {
                             }
                             ui.close();
                         }
-                        if ui.button("\u{1F4BE} Save As...  Ctrl+Shift+S").clicked() {
+                        if ui.button("\u{1F4BE} Save As...  Ctrl+Shift+S")
+                            .on_hover_text("Save mechanism to a new JSON file (Ctrl+Shift+S)")
+                            .clicked()
+                        {
                             if let Some(path) = rfd::FileDialog::new()
                                 .add_filter("JSON", &["json"])
                                 .set_file_name("mechanism.json")
@@ -260,6 +272,7 @@ impl eframe::App for LinkageApp {
                                 self.state.sweep_data.is_some(),
                                 egui::Button::new("Export Sweep CSV..."),
                             )
+                            .on_hover_text("Export sweep data (angles, torques, reactions) to CSV")
                             .clicked()
                         {
                             if let Some(path) = rfd::FileDialog::new()
@@ -280,6 +293,7 @@ impl eframe::App for LinkageApp {
                                 self.state.sweep_data.is_some(),
                                 egui::Button::new("Export Coupler CSV..."),
                             )
+                            .on_hover_text("Export coupler point trace coordinates to CSV")
                             .clicked()
                         {
                             if let Some(path) = rfd::FileDialog::new()
@@ -300,6 +314,7 @@ impl eframe::App for LinkageApp {
                                 self.state.mechanism.is_some(),
                                 egui::Button::new("Export SVG..."),
                             )
+                            .on_hover_text("Export mechanism as a scalable vector graphic")
                             .clicked()
                         {
                             if let Some(path) = rfd::FileDialog::new()
@@ -322,6 +337,7 @@ impl eframe::App for LinkageApp {
                                 self.state.mechanism.is_some(),
                                 egui::Button::new("Export PNG..."),
                             )
+                            .on_hover_text("Export mechanism as a PNG image (1920x1080)")
                             .clicked()
                         {
                             if let Some(path) = rfd::FileDialog::new()
@@ -349,6 +365,7 @@ impl eframe::App for LinkageApp {
                                     && self.state.mechanism.is_some(),
                                 egui::Button::new("Export GIF..."),
                             )
+                            .on_hover_text("Export an animated GIF of the full crank cycle")
                             .clicked()
                         {
                             if let Some(path) = rfd::FileDialog::new()
@@ -384,6 +401,7 @@ impl eframe::App for LinkageApp {
                                 self.state.mechanism.is_some(),
                                 egui::Button::new("Export DXF..."),
                             )
+                            .on_hover_text("Export mechanism geometry as a DXF drawing file")
                             .clicked()
                         {
                             if let Some(path) = rfd::FileDialog::new()
@@ -408,6 +426,7 @@ impl eframe::App for LinkageApp {
                                     && self.state.mechanism.is_some(),
                                 egui::Button::new("Generate Report (HTML)..."),
                             )
+                            .on_hover_text("Generate an HTML report with plots and analysis summary")
                             .clicked()
                         {
                             if let Some(path) = rfd::FileDialog::new()
@@ -441,13 +460,14 @@ impl eframe::App for LinkageApp {
                         }
                     }
                     ui.separator();
-                    if ui.button("Quit").clicked() {
+                    if ui.button("Quit").on_hover_text("Close the application").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
                 ui.menu_button("\u{270F} Edit", |ui| {
                     if ui
                         .add_enabled(self.state.can_undo(), egui::Button::new("\u{21A9} Undo  Ctrl+Z"))
+                        .on_hover_text("Undo the last change (Ctrl+Z)")
                         .clicked()
                     {
                         self.state.undo();
@@ -455,6 +475,7 @@ impl eframe::App for LinkageApp {
                     }
                     if ui
                         .add_enabled(self.state.can_redo(), egui::Button::new("\u{21AA} Redo  Ctrl+Y"))
+                        .on_hover_text("Redo the last undone change (Ctrl+Y)")
                         .clicked()
                     {
                         self.state.redo();
@@ -462,28 +483,43 @@ impl eframe::App for LinkageApp {
                     }
                 });
                 ui.menu_button("\u{2753} Help", |ui| {
-                    if ui.button("\u{2328} Keyboard Shortcuts").clicked() {
+                    if ui.button("\u{2328} Keyboard Shortcuts")
+                        .on_hover_text("Show all keyboard shortcuts")
+                        .clicked()
+                    {
                         self.state.show_shortcuts = true;
                         ui.close();
                     }
                 });
                 ui.menu_button("\u{1F441} View", |ui| {
-                    ui.checkbox(&mut self.state.show_debug_overlay, "Debug Overlay");
-                    ui.checkbox(&mut self.state.show_plots, "Plot Panel");
-                    ui.checkbox(&mut self.state.show_parametric, "Parametric Study");
-                    ui.checkbox(&mut self.state.show_forces, "Force Arrows");
-                    ui.checkbox(&mut self.state.show_dimensions, "Link Dimensions");
-                    ui.checkbox(&mut self.state.show_labels, "Show Labels");
+                    ui.checkbox(&mut self.state.show_debug_overlay, "Debug Overlay")
+                        .on_hover_text("Show solver status, body IDs, and attachment point names on the canvas");
+                    ui.checkbox(&mut self.state.show_plots, "Plot Panel")
+                        .on_hover_text("Show/hide the sweep data plot panel at the bottom");
+                    ui.checkbox(&mut self.state.show_parametric, "Parametric Study")
+                        .on_hover_text("Show/hide the parametric study panel on the right");
+                    ui.checkbox(&mut self.state.show_forces, "Force Arrows")
+                        .on_hover_text("Show/hide joint reaction force arrows and force element visuals on the canvas");
+                    ui.checkbox(&mut self.state.show_dimensions, "Link Dimensions")
+                        .on_hover_text("Show/hide link length dimensions on the canvas");
+                    ui.checkbox(&mut self.state.show_labels, "Show Labels")
+                        .on_hover_text("Show/hide body and joint labels on the canvas");
                     let enabled = self.state.gravity_magnitude > 0.0;
                     let mut check = enabled;
-                    if ui.checkbox(&mut check, "Gravity").changed() {
+                    if ui.checkbox(&mut check, "Gravity")
+                        .on_hover_text("Enable/disable gravitational acceleration (9.81 m/s\u{00b2})")
+                        .changed()
+                    {
                         self.state.gravity_magnitude = if check { 9.81 } else { 0.0 };
                         self.state.mark_sweep_dirty();
                     }
                     ui.separator();
                     ui.label("Units:");
                     let mut use_mm = self.state.display_units.length == LengthUnit::Millimeters;
-                    if ui.checkbox(&mut use_mm, "Millimeters").changed() {
+                    if ui.checkbox(&mut use_mm, "Millimeters")
+                        .on_hover_text("Display lengths in millimeters instead of meters")
+                        .changed()
+                    {
                         self.state.display_units.length = if use_mm {
                             LengthUnit::Millimeters
                         } else {
@@ -491,7 +527,10 @@ impl eframe::App for LinkageApp {
                         };
                     }
                     let mut use_deg = self.state.display_units.angle == AngleUnit::Degrees;
-                    if ui.checkbox(&mut use_deg, "Degrees").changed() {
+                    if ui.checkbox(&mut use_deg, "Degrees")
+                        .on_hover_text("Display angles in degrees instead of radians")
+                        .changed()
+                    {
                         self.state.display_units.angle = if use_deg {
                             AngleUnit::Degrees
                         } else {
@@ -500,8 +539,10 @@ impl eframe::App for LinkageApp {
                     }
                     ui.separator();
                     ui.label("Grid:");
-                    ui.checkbox(&mut self.state.grid.show_grid, "Show Grid");
-                    ui.checkbox(&mut self.state.grid.snap_enabled, "Snap to Grid");
+                    ui.checkbox(&mut self.state.grid.show_grid, "Show Grid")
+                        .on_hover_text("Show/hide the background grid on the canvas");
+                    ui.checkbox(&mut self.state.grid.snap_enabled, "Snap to Grid")
+                        .on_hover_text("Snap placed points to the nearest grid intersection");
                     ui.horizontal(|ui| {
                         ui.label("Spacing:");
                         let mut spacing_display =
@@ -640,7 +681,7 @@ impl eframe::App for LinkageApp {
                         .text("\u{00B0}/s")
                         .logarithmic(true)
                         .clamping(egui::SliderClamping::Always),
-                );
+                ).on_hover_text("Kinematic animation speed in degrees per second");
 
                 ui.separator();
 
@@ -850,10 +891,16 @@ impl eframe::App for LinkageApp {
                     ui.label("An autosave file was found from a previous session.");
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        if ui.button("Recover").clicked() {
+                        if ui.button("Recover")
+                            .on_hover_text("Load the autosaved mechanism from last session")
+                            .clicked()
+                        {
                             load = true;
                         }
-                        if ui.button("Discard").clicked() {
+                        if ui.button("Discard")
+                            .on_hover_text("Delete the autosave file and start fresh")
+                            .clicked()
+                        {
                             dismiss = true;
                         }
                     });
