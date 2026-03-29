@@ -9,7 +9,7 @@ use crate::forces::elements::{ForceElement, ForceZoneElement, LinearActuatorElem
 
 use super::helpers::{
     attach_driver_to_grounded_revolute_with_theta0, fourbar_initial_q0,
-    fourbar_rocker_angle_for_crank,
+    fourbar_rocker_angle_for_crank, make_ternary,
 };
 
 /// Grashof crank-rocker 4-bar linkage.
@@ -433,20 +433,61 @@ pub(super) fn build_parallelogram_actuator(
     Ok((mech, q0))
 }
 
-/// Chebyshev approximate straight-line 4-bar: d=4, a=2, b=5, c=5.
+/// Chebyshev lambda straight-line mechanism (cognate of the ordinary Chebyshev).
 ///
-/// Grashof condition: 2+5 < 5+4 → 7 < 9 ✓ (crank-rocker).
-/// Coupler midpoint traces an approximate horizontal straight line.
-/// Coupler point P at (2.5, 0) on coupler (midpoint).
+/// Proportions: A₀A : AB : B₀B : BM : A₀B₀ = 1 : 2.5 : 2.5 : 2.5 : 2
+/// With a=2: crank=2, coupler(AB)=5, rocker=5, extension(BM)=5, ground=4.
+///
+/// The 4-bar loop (ground=4, crank=2, AB=5, rocker=5) is identical to the
+/// ordinary Chebyshev. The difference: the coupler extends 5 units past
+/// the rocker joint to point M, which traces an approximate straight line.
+///
+/// Grashof: 2+5 < 5+4 → 7 < 9 ✓ (crank-rocker, full rotation).
 pub(super) fn build_chebyshev_with_driver(
     driver_joint_id: Option<&str>,
 ) -> Result<(Mechanism, DVector<f64>), String> {
-    build_standard_fourbar(
-        "crank", "coupler", "rocker",
-        4.0, 2.0, 5.0, 5.0, 2.5,
+    let o2 = (0.0_f64, 0.0_f64);
+    let o4 = (4.0_f64, 0.0_f64);
+
+    let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
+    let crank = make_bar("crank", "A", "B", 2.0, 0.0, 0.0);
+
+    // Lambda coupler: bar rendered from B(0,0) to M(10,0).
+    // C at (5,0) is the rocker attachment (intermediate on the bar).
+    // M at (10,0) is the straight-line tracing endpoint.
+    let mut coupler = make_bar("coupler", "B", "M", 10.0, 0.0, 0.0);
+    coupler
+        .add_attachment_point("C", 5.0, 0.0)
+        .map_err(|e| e.to_string())?;
+    coupler.add_coupler_point("M", 10.0, 0.0).unwrap();
+
+    let rocker = make_bar("rocker", "C", "D", 5.0, 0.0, 0.0);
+
+    let mut mech = Mechanism::new();
+    mech.add_body(ground).unwrap();
+    mech.add_body(crank).unwrap();
+    mech.add_body(coupler).unwrap();
+    mech.add_body(rocker).unwrap();
+
+    mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+    mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+    mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+    mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
+
+    let joint_id = driver_joint_id.unwrap_or("J1");
+    attach_driver_to_grounded_revolute_with_theta0(&mut mech, joint_id, "D1", 0.0)?;
+
+    mech.build().map_err(|e| e.to_string())?;
+
+    // The 4-bar loop uses AB=5 (B to C distance) as the coupler length.
+    let q0 = fourbar_initial_q0(
+        mech.state(), o2, o4,
+        2.0, 5.0, 5.0,
         0.0,
-        driver_joint_id,
-    )
+        "crank", "coupler", "rocker",
+    );
+
+    Ok((mech, q0))
 }
 
 /// Non-Grashof triple-rocker 4-bar: d=4, a=2, b=5, c=2.

@@ -343,4 +343,38 @@ mod tests {
             "RGBA buffer should be width * height * 4 bytes"
         );
     }
+
+    #[test]
+    #[cfg(feature = "native")]
+    fn export_chebyshev_lambda_pngs() {
+        use crate::gui::samples::{build_sample, SampleMechanism};
+        use crate::solver::kinematics::solve_position;
+
+        let (mech, q0) = build_sample(SampleMechanism::Chebyshev);
+
+        let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent().unwrap()
+            .join("docs").join("chebyshev_lambda");
+        std::fs::create_dir_all(&out_dir).expect("create output dir");
+
+        let omega = 1.0;
+        let theta_0 = 0.0;
+        let angles = [0, 45, 90, 135, 180, 225, 270, 315];
+        let mut q = q0.clone();
+
+        for deg in 0..=315 {
+            let t = ((deg as f64).to_radians() - theta_0) / omega;
+            if let Ok(result) = solve_position(&mech, &q, t, 1e-10, 50) {
+                if result.converged {
+                    q = result.q.clone();
+                    if angles.contains(&deg) {
+                        let path = out_dir.join(format!("chebyshev_lambda_{:03}deg.png", deg));
+                        export_mechanism_png(&path, &mech, &q, 1920, 1080)
+                            .expect(&format!("export at {}° should succeed", deg));
+                        eprintln!("Exported: {}", path.display());
+                    }
+                }
+            }
+        }
+    }
 }
