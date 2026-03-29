@@ -2102,3 +2102,28 @@
             );
         }
     }
+
+    #[test]
+    fn mounting_angle_rotates_gravity_vector() {
+        let mut state = AppState::default();
+        state.load_sample(crate::gui::samples::SampleMechanism::FourBar);
+        state.gravity_magnitude = 9.81;
+        state.mounting_angle = std::f64::consts::FRAC_PI_2; // 90°
+        state.rebuild();
+
+        let mech = state.mechanism.as_ref().unwrap();
+        let gravity_forces: Vec<_> = mech.forces().iter()
+            .filter_map(|f| match f {
+                crate::forces::elements::ForceElement::Gravity(g) => Some(g),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(gravity_forces.len(), 1);
+        let g = gravity_forces[0];
+        // At 90° mount, gravity should point in -x: (-9.81, ~0)
+        assert!((g.g_vector[0] - (-9.81)).abs() < 1e-6,
+            "g_x should be -9.81, got {}", g.g_vector[0]);
+        assert!(g.g_vector[1].abs() < 1e-6,
+            "g_y should be ~0, got {}", g.g_vector[1]);
+    }

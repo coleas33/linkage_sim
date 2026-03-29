@@ -198,6 +198,7 @@ pub fn mechanism_to_json(mech: &Mechanism) -> Result<MechanismJson, Serializatio
         load_cases: Vec::new(),
         forces: mech.forces().to_vec(),
         sweep_config: None,
+        mounting_angle: 0.0,
     })
 }
 

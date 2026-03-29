@@ -438,8 +438,10 @@ impl AppState {
         };
         let has_gravity = mech.forces().iter().any(|f| matches!(f, ForceElement::Gravity(_)));
         if self.gravity_magnitude > 0.0 {
+            let g = self.gravity_magnitude;
+            let theta = self.mounting_angle;
             let g_elem = GravityElement {
-                g_vector: [0.0, -self.gravity_magnitude],
+                g_vector: [-g * theta.sin(), -g * theta.cos()],
             };
             if has_gravity {
                 if let Some(idx) = mech

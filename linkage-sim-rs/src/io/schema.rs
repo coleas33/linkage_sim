@@ -8,6 +8,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::forces::elements::ForceElement;
 
+/// Returns true if the value is zero — used for `skip_serializing_if` on
+/// backward-compatible fields that default to 0.
+fn is_zero(v: &f64) -> bool {
+    *v == 0.0
+}
+
 /// Current schema version for the JSON format.
 pub const SCHEMA_VERSION: &str = "1.1.0";
 
@@ -59,6 +65,10 @@ pub struct MechanismJson {
     /// Backward-compatible: old files without this field default to None (full 360deg).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sweep_config: Option<SweepConfig>,
+    /// Mechanism mounting angle in radians. Rotates the mechanism relative to
+    /// gravity (0 = horizontal, positive = counterclockwise). Backward-compatible.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub mounting_angle: f64,
 }
 
 /// JSON representation of a load case -- a named driver configuration.

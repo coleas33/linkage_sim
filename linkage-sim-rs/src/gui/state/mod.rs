@@ -128,6 +128,8 @@ pub struct AppState {
     pub show_labels: bool,
     /// Gravity magnitude in m/s² (0 = disabled, 9.81 = Earth standard).
     pub gravity_magnitude: f64,
+    /// Mechanism mounting angle in radians (0 = horizontal).
+    pub mounting_angle: f64,
     // ── Load cases ──────────────────────────────────────────────────────
     /// Named driver configurations for comparing operating conditions.
     pub load_cases: LoadCaseManager,
@@ -292,6 +294,7 @@ impl Default for AppState {
             load_cases: Vec::new(),
             forces: Vec::new(),
             sweep_config: None,
+            mounting_angle: 0.0,
         };
 
         let mut state = Self {
@@ -331,6 +334,7 @@ impl Default for AppState {
             show_dimensions: true,
             show_labels: true,
             gravity_magnitude: 9.81,
+            mounting_angle: 0.0,
             load_cases: LoadCaseManager::default(),
             active_tool: EditorTool::Select,
             context_menu_target: ContextMenuTarget::default(),
@@ -575,10 +579,12 @@ impl AppState {
             return;
         }
 
-        // Sync gravity
+        // Sync gravity (rotated by mounting angle)
         if self.gravity_magnitude > 0.0 {
+            let g = self.gravity_magnitude;
+            let theta = self.mounting_angle;
             mech.add_force(ForceElement::Gravity(GravityElement {
-                g_vector: [0.0, -self.gravity_magnitude],
+                g_vector: [-g * theta.sin(), -g * theta.cos()],
             }));
         }
         // Copy non-gravity force elements from blueprint
