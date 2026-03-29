@@ -4,9 +4,7 @@ use std::path::Path;
 
 use crate::core::driver::DriverMeta;
 use crate::io::{load_mechanism_unbuilt, mechanism_to_json};
-use crate::solver::kinematics::solve_position;
-
-use super::{AppState, LoadCaseManager, SolverStatus};
+use super::{AppState, LoadCaseManager};
 use super::blueprint_ops::detect_driver_joint_id;
 
 impl AppState {
@@ -189,33 +187,7 @@ impl AppState {
 
         // Build a zero initial guess and solve at t=0.
         let q0 = mech.state().make_q();
-        let solve_result = solve_position(&mech, &q0, 0.0, 1e-10, 50);
-
-        match solve_result {
-            Ok(result) => {
-                self.solver_status = SolverStatus {
-                    converged: result.converged,
-                    residual_norm: result.residual_norm,
-                    iterations: result.iterations,
-                };
-                if result.converged {
-                    self.q = result.q.clone();
-                    self.last_good_q = result.q;
-                } else {
-                    self.q = q0.clone();
-                    self.last_good_q = q0;
-                }
-            }
-            Err(_) => {
-                self.solver_status = SolverStatus {
-                    converged: false,
-                    residual_norm: f64::NAN,
-                    iterations: 0,
-                };
-                self.q = q0.clone();
-                self.last_good_q = q0;
-            }
-        }
+        self.solve_and_update(&mech, &q0, 0.0, 1e-10, 50, Some(q0.clone()));
 
         self.driver_omega = driver_omega;
         self.driver_theta_0 = driver_theta_0;

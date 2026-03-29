@@ -200,6 +200,23 @@ fn project_constraints(
     q_proj
 }
 
+/// Project velocity to satisfy constraint velocity equation: Φ_q * q̇ + Φ_t = 0.
+/// Applies minimum-correction projection: q̇_new = q̇ - Φ_q⁺(Φ_q * q̇ + Φ_t).
+fn project_velocity(
+    mech: &Mechanism,
+    q: &DVector<f64>,
+    qd: &mut DVector<f64>,
+    t: f64,
+) {
+    let phi_q = assemble_jacobian(mech, q, t);
+    let phi_t = assemble_phi_t(mech, q, t);
+    let violation = &phi_q * &*qd + &phi_t;
+    let svd = phi_q.svd(true, true);
+    if let Ok(correction) = svd.solve(&violation, 1e-14) {
+        *qd -= correction;
+    }
+}
+
 /// Fixed-step RK4 integrator.
 ///
 /// Integrates y' = f(t, y) from t_start to t_end with step size h.
@@ -366,17 +383,7 @@ pub fn simulate(
                 cfg.max_project_iter,
             );
 
-            // Velocity projection: remove the constraint-violating component
-            // of velocity while preserving as much of the original velocity
-            // as possible. Minimum-correction approach:
-            //   q_dot_new = q_dot - Phi_q^+ * (Phi_q * q_dot + Phi_t)
-            let phi_q = assemble_jacobian(mech, &q_i, t_out[i]);
-            let phi_t = assemble_phi_t(mech, &q_i, t_out[i]);
-            let violation = &phi_q * &qd_i + &phi_t;
-            let svd = phi_q.svd(true, true);
-            if let Ok(correction) = svd.solve(&violation, 1e-14) {
-                qd_i -= correction;
-            }
+            project_velocity(mech, &q_i, &mut qd_i, t_out[i]);
         }
 
         let phi = assemble_constraints(mech, &q_i, t_out[i]);
@@ -558,13 +565,7 @@ pub fn simulate_with_events(
                 cfg.project_tol,
                 cfg.max_project_iter,
             );
-            let phi_q = assemble_jacobian(mech, &q_i, t_out[i]);
-            let phi_t = assemble_phi_t(mech, &q_i, t_out[i]);
-            let violation = &phi_q * &qd_i + &phi_t;
-            let svd = phi_q.svd(true, true);
-            if let Ok(correction) = svd.solve(&violation, 1e-14) {
-                qd_i -= correction;
-            }
+            project_velocity(mech, &q_i, &mut qd_i, t_out[i]);
         }
 
         let phi = assemble_constraints(mech, &q_i, t_out[i]);

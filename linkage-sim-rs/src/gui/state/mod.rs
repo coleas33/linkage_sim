@@ -12,6 +12,7 @@ mod entity_crud;
 mod driver_ops;
 mod undo_ops;
 mod file_io;
+mod solver_helpers;
 
 // Re-export all public items so external code can use `crate::gui::state::*`.
 pub use display_units::{LengthUnit, AngleUnit, DisplayUnits};
@@ -46,7 +47,6 @@ use crate::io::{
     load_mechanism_unbuilt_from_json, mechanism_to_json,
     BodyJson, MechanismJson,
 };
-use crate::solver::kinematics::solve_position;
 use crate::solver::forward_dynamics::{simulate, ForwardDynamicsConfig};
 
 // ── AppState ──────────────────────────────────────────────────────────────────
@@ -470,32 +470,7 @@ impl AppState {
         self.driver_omega = 2.0 * PI;
         self.driver_theta_0 = 0.0;
 
-        match solve_position(&mech, &q0, 0.0, 1e-10, 50) {
-            Ok(result) => {
-                self.solver_status = SolverStatus {
-                    converged: result.converged,
-                    residual_norm: result.residual_norm,
-                    iterations: result.iterations,
-                };
-
-                if result.converged {
-                    self.q = result.q.clone();
-                    self.last_good_q = result.q;
-                } else {
-                    self.q = q0.clone();
-                    self.last_good_q = q0;
-                }
-            }
-            Err(_) => {
-                self.solver_status = SolverStatus {
-                    converged: false,
-                    residual_norm: f64::NAN,
-                    iterations: 0,
-                };
-                self.q = q0.clone();
-                self.last_good_q = q0;
-            }
-        }
+        self.solve_and_update(&mech, &q0, 0.0, 1e-10, 50, Some(q0.clone()));
 
         self.driver_angle = self.driver_theta_0;
         self.q_at_zero = self.q.clone();
@@ -548,39 +523,25 @@ impl AppState {
     /// On failure, keeps `last_good_q` unchanged and reports the failure in
     /// `solver_status`.
     pub fn solve_at_angle(&mut self, angle_rad: f64) {
-        let Some(mech) = &self.mechanism else {
+        if self.mechanism.is_none() {
             return;
-        };
+        }
 
         // Convert driver angle to time using the constant-speed relationship:
         //   angle = theta_0 + omega * t  →  t = (angle - theta_0) / omega
         let t = (angle_rad - self.driver_theta_0) / self.driver_omega;
 
-        match solve_position(mech, &self.last_good_q, t, 1e-10, 50) {
-            Ok(result) => {
-                self.solver_status = SolverStatus {
-                    converged: result.converged,
-                    residual_norm: result.residual_norm,
-                    iterations: result.iterations,
-                };
+        // Clone the guess so we can pass &mut self to solve_and_update
+        // without conflicting with the borrow on self.mechanism.
+        let guess = self.last_good_q.clone();
+        // Temporarily take the mechanism to avoid the shared/mutable borrow conflict.
+        let mech = self.mechanism.take().unwrap();
+        let converged = self.solve_and_update(&mech, &guess, t, 1e-10, 50, None);
+        self.mechanism = Some(mech);
 
-                if result.converged {
-                    self.last_good_q = result.q.clone();
-                    self.q = result.q;
-                    self.driver_angle = angle_rad;
-                    self.compute_forces(t);
-                }
-                // On failure, q and driver_angle are NOT updated; the UI retains the
-                // last valid pose.
-            }
-            Err(_) => {
-                self.solver_status = SolverStatus {
-                    converged: false,
-                    residual_norm: f64::NAN,
-                    iterations: 0,
-                };
-                // On error, retain last valid pose.
-            }
+        if converged {
+            self.driver_angle = angle_rad;
+            self.compute_forces(t);
         }
     }
 

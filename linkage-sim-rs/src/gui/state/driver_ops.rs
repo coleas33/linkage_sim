@@ -7,9 +7,7 @@ use crate::io::{
     load_mechanism_unbuilt_from_json, mechanism_to_json,
     DriverJson,
 };
-use crate::solver::kinematics::solve_position;
-
-use super::{AppState, LoadCaseManager, SolverStatus};
+use super::{AppState, LoadCaseManager};
 use super::blueprint_ops::{
     joint_body_ids, generate_unique_id,
 };
@@ -27,31 +25,7 @@ impl AppState {
             match crate::gui::samples::build_sample_with_driver(sample, Some(joint_id)) {
                 Ok((mech, q0)) => {
                     self.driver_omega = 2.0 * PI;
-                    match solve_position(&mech, &q0, 0.0, 1e-10, 50) {
-                        Ok(result) => {
-                            self.solver_status = SolverStatus {
-                                converged: result.converged,
-                                residual_norm: result.residual_norm,
-                                iterations: result.iterations,
-                            };
-                            if result.converged {
-                                self.q = result.q.clone();
-                                self.last_good_q = result.q;
-                            } else {
-                                self.q = q0.clone();
-                                self.last_good_q = q0;
-                            }
-                        }
-                        Err(_) => {
-                            self.solver_status = SolverStatus {
-                                converged: false,
-                                residual_norm: f64::NAN,
-                                iterations: 0,
-                            };
-                            self.q = q0.clone();
-                            self.last_good_q = q0;
-                        }
-                    }
+                    self.solve_and_update(&mech, &q0, 0.0, 1e-10, 50, Some(q0.clone()));
                     self.driver_theta_0 = 0.0;
                     self.driver_angle = 0.0;
                     self.q_at_zero = self.q.clone();

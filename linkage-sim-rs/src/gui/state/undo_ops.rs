@@ -4,9 +4,7 @@ use nalgebra::DVector;
 
 use crate::gui::undo::MechanismSnapshot;
 use crate::io::{load_mechanism_unbuilt, mechanism_to_json};
-use crate::solver::kinematics::solve_position;
-
-use super::{AppState, SolverStatus};
+use super::AppState;
 
 impl AppState {
     /// Create a snapshot of the current mechanism document state.
@@ -53,31 +51,7 @@ impl AppState {
         } else {
             mech.state().make_q()
         };
-        match solve_position(&mech, &q0, t, 1e-10, 50) {
-            Ok(result) => {
-                self.solver_status = SolverStatus {
-                    converged: result.converged,
-                    residual_norm: result.residual_norm,
-                    iterations: result.iterations,
-                };
-                if result.converged {
-                    self.q = result.q.clone();
-                    self.last_good_q = result.q;
-                } else {
-                    self.q = q0.clone();
-                    self.last_good_q = q0;
-                }
-            }
-            Err(_) => {
-                self.solver_status = SolverStatus {
-                    converged: false,
-                    residual_norm: f64::NAN,
-                    iterations: 0,
-                };
-                self.q = q0.clone();
-                self.last_good_q = q0;
-            }
-        }
+        self.solve_and_update(&mech, &q0, t, 1e-10, 50, Some(q0.clone()));
 
         // Restore the blueprint from the snapshot JSON so it stays in sync.
         self.blueprint = serde_json::from_str(&snapshot.mechanism_json).ok();

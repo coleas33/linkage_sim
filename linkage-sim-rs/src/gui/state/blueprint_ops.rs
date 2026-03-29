@@ -14,7 +14,7 @@ use crate::io::{
     load_mechanism_unbuilt_from_json,
     DriverJson, JointJson, MechanismJson,
 };
-use crate::solver::kinematics::{solve_position, solve_velocity};
+use crate::solver::kinematics::solve_velocity;
 use crate::solver::statics::{
     extract_reactions, get_driver_reactions, get_joint_reactions, solve_statics,
 };
@@ -250,46 +250,22 @@ impl AppState {
 
         // Try solving with last_good_q if it has the right dimension
         let try_q = if self.last_good_q.len() == mech.state().n_coords() {
-            &self.last_good_q
+            self.last_good_q.clone()
         } else {
-            &mech.state().make_q()
+            mech.state().make_q()
         };
 
-        match solve_position(&mech, try_q, t, 1e-10, 50) {
-            Ok(result) => {
-                self.solver_status = SolverStatus {
-                    converged: result.converged,
-                    residual_norm: result.residual_norm,
-                    iterations: result.iterations,
-                };
-                if result.converged {
-                    self.q = result.q.clone();
-                    self.last_good_q = result.q;
-                }
-            }
-            Err(_) => {
-                // If solve fails with last_good_q, try from zeros
+        if !self.solve_and_update(&mech, &try_q, t, 1e-10, 50, None) {
+            // First attempt failed — a NaN residual means the solver errored
+            // (as opposed to converging to a loose solution), so retry from
+            // a zero initial guess with more iterations.
+            if self.solver_status.residual_norm.is_nan() {
                 let q0 = mech.state().make_q();
-                match solve_position(&mech, &q0, t, 1e-10, 100) {
-                    Ok(result) => {
-                        self.solver_status = SolverStatus {
-                            converged: result.converged,
-                            residual_norm: result.residual_norm,
-                            iterations: result.iterations,
-                        };
-                        if result.converged {
-                            self.q = result.q.clone();
-                            self.last_good_q = result.q;
-                        } else {
-                            self.q = q0;
-                        }
-                    }
-                    Err(_) => {
-                        self.solver_status = SolverStatus {
-                            converged: false,
-                            residual_norm: f64::NAN,
-                            iterations: 0,
-                        };
+                if !self.solve_and_update(&mech, &q0, t, 1e-10, 100, None) {
+                    // If the retry didn't converge either, reset q to
+                    // the zero guess so the display stays reasonable.
+                    if !self.solver_status.residual_norm.is_nan() {
+                        self.q = q0;
                     }
                 }
             }
