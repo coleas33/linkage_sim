@@ -47,7 +47,7 @@ impl SampleMechanism {
             SampleMechanism::Parallelogram => "Parallelogram (4-2-4-2)",
             SampleMechanism::ParallelogramPress => "Parallelogram Press",
             SampleMechanism::ParallelogramActuator => "Parallelogram + Actuator",
-            SampleMechanism::Chebyshev => "Chebyshev (4-2-5-5)",
+            SampleMechanism::Chebyshev => "Chebyshev Lambda (Straight-Line)",
             SampleMechanism::TripleRocker => "Triple-Rocker (4-2-5-2)",
             SampleMechanism::SixBarB1 => "6-Bar B1 (Watt I)",
             SampleMechanism::SixBarA1 => "6-Bar A1 (Chain A, binary ground)",
@@ -212,6 +212,61 @@ mod tests {
             result.converged,
             "chebyshev sample did not converge at t=0, residual = {}",
             result.residual_norm
+        );
+    }
+
+    #[test]
+    fn chebyshev_lambda_endpoint_traces_approximate_straight_line() {
+        use nalgebra::Vector2;
+        let (mech, q0) = build_sample(SampleMechanism::Chebyshev);
+        let state = mech.state();
+
+        // Grashof crank-rocker: sweep full 0-360°.
+        let omega = 1.0;
+        let theta_0 = 0.0;
+        let coupler_m = Vector2::new(10.0, 0.0); // M at coupler end
+
+        let mut trace: Vec<[f64; 2]> = Vec::new();
+        let mut q = q0.clone();
+        for deg in 0..=360 {
+            let angle_rad = (deg as f64).to_radians();
+            let t = (angle_rad - theta_0) / omega;
+            match solve_position(&mech, &q, t, 1e-10, 50) {
+                Ok(result) if result.converged => {
+                    q = result.q.clone();
+                    let global = state.body_point_global("coupler", &coupler_m, &q);
+                    trace.push([global.x, global.y]);
+                }
+                _ => {}
+            }
+        }
+
+        assert_eq!(trace.len(), 361, "Grashof mechanism should converge at all 361 angles");
+
+        // Find the straightest 30% contiguous window (avoids near-singular
+        // region at theta≈0° where M deviates from the straight line).
+        let window = trace.len() * 30 / 100;
+        let mut best_ratio = f64::MAX;
+        for start in 0..=(trace.len() - window) {
+            let w = &trace[start..start + window];
+            let y_mean: f64 = w.iter().map(|p| p[1]).sum::<f64>() / w.len() as f64;
+            let max_dev: f64 = w.iter().map(|p| (p[1] - y_mean).abs()).fold(0.0_f64, f64::max);
+            let x_range: f64 = w.iter().map(|p| p[0]).fold(f64::NEG_INFINITY, f64::max)
+                - w.iter().map(|p| p[0]).fold(f64::INFINITY, f64::min);
+            if x_range > 0.01 {
+                let ratio = max_dev / x_range;
+                if ratio < best_ratio {
+                    best_ratio = ratio;
+                }
+            }
+        }
+
+        // The lambda linkage is not perfectly straight — it's an approximate
+        // straight-line mechanism. Accept ~20% deviation in the best window.
+        assert!(
+            best_ratio < 0.20,
+            "Chebyshev lambda M trace: best straight section ratio={:.4} (want <0.20)",
+            best_ratio,
         );
     }
 

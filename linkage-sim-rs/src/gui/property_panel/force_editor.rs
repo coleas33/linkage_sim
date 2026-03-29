@@ -362,7 +362,7 @@ fn draw_force_element_details(
 
             let mut extended_length = gs.extended_length;
             ui.horizontal(|ui| {
-                ui.label("L\u{2091}\u{2093}\u{209c}:");
+                ui.label("L_ext:");
                 if ui
                     .add(
                         egui::DragValue::new(&mut extended_length)
@@ -577,7 +577,7 @@ fn draw_force_element_details(
 
             let mut v_threshold = bf.v_threshold;
             ui.horizontal(|ui| {
-                ui.label("v\u{209c}\u{2095}:");
+                ui.label("v_th:");
                 if ui
                     .add(
                         egui::DragValue::new(&mut v_threshold)
@@ -602,7 +602,7 @@ fn draw_force_element_details(
 
             let mut angle_min = jl.angle_min;
             ui.horizontal(|ui| {
-                ui.label("\u{03b8}\u{2098}\u{1d62}\u{2099}:");
+                ui.label("\u{03b8}_min:");
                 if ui
                     .add(
                         egui::DragValue::new(&mut angle_min)
@@ -622,7 +622,7 @@ fn draw_force_element_details(
 
             let mut angle_max = jl.angle_max;
             ui.horizontal(|ui| {
-                ui.label("\u{03b8}\u{2098}\u{2090}\u{2093}:");
+                ui.label("\u{03b8}_max:");
                 if ui
                     .add(
                         egui::DragValue::new(&mut angle_max)
@@ -708,7 +708,7 @@ fn draw_force_element_details(
 
             let mut stall_torque = m.stall_torque;
             ui.horizontal(|ui| {
-                ui.label("\u{03c4}\u{209b}:");
+                ui.label("\u{03c4}_s:");
                 if ui
                     .add(
                         egui::DragValue::new(&mut stall_torque)
@@ -894,7 +894,7 @@ fn draw_force_element_details(
 
             let mut speed_limit = la.speed_limit;
             ui.horizontal(|ui| {
-                ui.label("v\u{2098}\u{2090}\u{2093}:");
+                ui.label("v_max:");
                 if ui
                     .add(
                         egui::DragValue::new(&mut speed_limit)
