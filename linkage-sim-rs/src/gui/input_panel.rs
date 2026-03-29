@@ -118,6 +118,27 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
             }
         });
 
+    // ── Mounting Angle ────────────────────────────────────────────────
+    egui::CollapsingHeader::new(
+        egui::RichText::new("\u{2922} Mounting Angle").color(gravity_color),
+    )
+        .id_salt("mounting_angle_section")
+        .default_open(false)
+        .show(ui, |ui| {
+            let mut angle_deg = state.mounting_angle.to_degrees();
+            let prev_deg = angle_deg;
+            ui.add(
+                egui::Slider::new(&mut angle_deg, -180.0..=180.0)
+                    .suffix("\u{00B0}")
+                    .step_by(0.5),
+            ).on_hover_text("Rotate the mechanism mounting orientation in degrees");
+            if (angle_deg - prev_deg).abs() > 1e-6 {
+                state.mounting_angle = angle_deg.to_radians();
+                state.mark_sweep_dirty();
+                state.rebuild();
+            }
+        });
+
     // ── Driver ───────────────────────────────────────────────────────
     let driver_color = egui::Color32::from_rgb(100, 220, 140);
     egui::CollapsingHeader::new(

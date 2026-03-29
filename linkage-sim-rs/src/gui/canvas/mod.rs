@@ -26,6 +26,9 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         ui.allocate_painter(ui.available_size(), egui::Sense::click_and_drag());
     let canvas_rect = response.rect;
 
+    // Sync mounting angle into view transform so canvas rendering rotates.
+    state.view.mounting_angle = state.mounting_angle;
+
     if state.pending_fit_to_view {
         state.fit_to_view(canvas_rect.width(), canvas_rect.height());
         state.pending_fit_to_view = false;
