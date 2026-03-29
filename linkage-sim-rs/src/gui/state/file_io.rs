@@ -77,6 +77,7 @@ impl AppState {
             .ok_or_else(|| "No mechanism loaded".to_string())?;
         let mut json_struct = mechanism_to_json(mech).map_err(|e| e.to_string())?;
         json_struct.load_cases = self.load_cases.cases.clone();
+        json_struct.mounting_angle = self.mounting_angle;
         // Preserve blueprint point masses (baked into mass/CG/Izz at build time).
         if let Some(ref bp) = self.blueprint {
             for (body_id, bp_body) in &bp.bodies {
@@ -197,6 +198,11 @@ impl AppState {
         self.mechanism = Some(mech);
         self.current_sample = None;
         self.selected = None;
+
+        // Restore mounting angle from the blueprint.
+        if let Some(ref bp) = self.blueprint {
+            self.mounting_angle = bp.mounting_angle;
+        }
 
         // Restore load cases from the blueprint, or create a default one
         if let Some(ref bp) = self.blueprint {

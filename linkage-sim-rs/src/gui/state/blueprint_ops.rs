@@ -194,6 +194,12 @@ impl AppState {
     /// from fighting with mid-edit mechanism state.
     pub fn rebuild(&mut self) {
         self.playing = false;
+
+        // Sync mounting angle to blueprint before building so it persists in saves.
+        if let Some(ref mut bp) = self.blueprint {
+            bp.mounting_angle = self.mounting_angle;
+        }
+
         let Some(bp) = &self.blueprint else { return };
 
         // Build mechanism from blueprint

@@ -479,6 +479,9 @@ impl AppState {
         self.driver_angle = self.driver_theta_0;
         self.q_at_zero = self.q.clone();
 
+        // Samples always start at zero mounting angle.
+        self.mounting_angle = 0.0;
+
         // Create blueprint from the built mechanism
         self.blueprint = mechanism_to_json(&mech).ok();
 

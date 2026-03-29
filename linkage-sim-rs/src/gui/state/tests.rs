@@ -2127,3 +2127,47 @@
         assert!(g.g_vector[1].abs() < 1e-6,
             "g_y should be ~0, got {}", g.g_vector[1]);
     }
+
+    #[test]
+    fn mounting_angle_round_trips_through_json() {
+        let mut state = AppState::default();
+        state.load_sample(crate::gui::samples::SampleMechanism::FourBar);
+        state.mounting_angle = 0.5; // ~28.6 degrees
+
+        // Sync to blueprint via rebuild
+        state.rebuild();
+
+        // Verify blueprint has the angle
+        let bp = state.blueprint.as_ref().unwrap();
+        assert!((bp.mounting_angle - 0.5).abs() < 1e-10,
+            "blueprint should have mounting_angle 0.5, got {}", bp.mounting_angle);
+
+        // Serialize and deserialize
+        let json = serde_json::to_string(bp).unwrap();
+        assert!(json.contains("mounting_angle"),
+            "JSON should contain mounting_angle field");
+
+        let reloaded: crate::io::MechanismJson = serde_json::from_str(&json).unwrap();
+        assert!((reloaded.mounting_angle - 0.5).abs() < 1e-10,
+            "round-trip should preserve mounting_angle, got {}", reloaded.mounting_angle);
+    }
+
+    #[test]
+    fn mounting_angle_defaults_to_zero_for_old_files() {
+        // Simulate loading an old file that has no mounting_angle field.
+        let json = r#"{
+            "schema_version": "1.0.0",
+            "bodies": {
+                "ground": {
+                    "attachment_points": {},
+                    "mass": 0.0,
+                    "cg_local": [0.0, 0.0],
+                    "izz_cg": 0.0
+                }
+            },
+            "joints": {}
+        }"#;
+        let parsed: crate::io::MechanismJson = serde_json::from_str(json).unwrap();
+        assert!((parsed.mounting_angle - 0.0).abs() < 1e-10,
+            "missing mounting_angle should default to 0.0, got {}", parsed.mounting_angle);
+    }

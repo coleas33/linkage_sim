@@ -166,6 +166,7 @@ AppState (gui/state/mod.rs) ◄──── Central hub: owns mechanism, q, blue
 4. **SI internally, engineering units at GUI boundary.**
 5. **Drivers are constraints, not forces.** Lagrange multiplier = required effort.
 6. **Blueprint is the source of truth.** Mechanism is rebuilt from MechanismJson on edits.
+7. **Mounting angle** (`mounting_angle`, radians, default 0.0): stored on `MechanismJson` and `AppState`, synced via `rebuild()` and `file_io.rs`. Rotates the gravity vector in physics (`-g*sin(theta)`, `-g*cos(theta)`) and the canvas via `ViewTransform`. Backward-compatible in JSON (`#[serde(default)]`).
 
 ---
 
