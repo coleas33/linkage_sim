@@ -295,6 +295,190 @@ mod tests {
         );
     }
 
+    /// Sweep the crank 0-360 and compute the distance from the actuator base (O_act)
+    /// to coupler endpoint M at each angle. Reports the actual min/max stroke range
+    /// the actuator needs to cover the full mechanism travel.
+    ///
+    /// Uses the same actuator base position as the builder (y=0, ground level).
+    #[test]
+    fn actual_stroke_range() {
+        use nalgebra::Vector2;
+
+        // Same link dimensions as build_chebyshev_lambda_actuator
+        let o2 = (0.0_f64, 0.0_f64);
+        let o4 = (0.076_f64, 0.0_f64);
+        let l_crank = 0.0444_f64;
+        let l_coupler_ab = 0.0919_f64;
+        let l_rocker = 0.0919_f64;
+        let l_total_coupler = 0.1838_f64;
+
+        use crate::core::body::{make_bar, make_ground};
+
+        let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
+        let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+        let mut coupler = make_bar("coupler", "B", "M", l_total_coupler, 0.0, 0.0);
+        coupler.add_attachment_point("C", l_coupler_ab, 0.0).unwrap();
+        coupler.add_coupler_point("M", l_total_coupler, 0.0).unwrap();
+        let rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(crank).unwrap();
+        mech.add_body(coupler).unwrap();
+        mech.add_body(rocker).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+        mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+        mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+        mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
+        // Revolute driver on crank (1 rev/s = 2*PI rad/s), theta_0=0
+        mech.add_constant_speed_driver("D1", "ground", "crank", std::f64::consts::TAU, 0.0).unwrap();
+        mech.build().unwrap();
+
+        // Initial pose (above=true for +y orientation, matching the actuator sample)
+        let q0 = helpers::fourbar_initial_q0(
+            mech.state(), o2, o4, l_crank, l_coupler_ab, l_rocker, 0.0,
+            "crank", "coupler", "rocker", true,
+        );
+
+        let state = mech.state();
+        let coupler_m_local = Vector2::new(l_total_coupler, 0.0);
+
+        // Same actuator base as the builder: x=-0.05, y=0 (ground level)
+        let act_base_x = -0.05_f64;
+        let act_base_y = 0.0_f64;
+        let act_base = Vector2::new(act_base_x, act_base_y);
+
+        println!("O_act = ({:.6}, {:.6})", act_base_x, act_base_y);
+
+        let mut min_dist = f64::MAX;
+        let mut max_dist = f64::NEG_INFINITY;
+        let mut min_angle = 0.0_f64;
+        let mut max_angle = 0.0_f64;
+        let mut q = q0.clone();
+
+        for deg in 0..=360 {
+            let angle_rad = (deg as f64).to_radians();
+            // time = angle / omega, omega = 2*PI
+            let t = angle_rad / std::f64::consts::TAU;
+            match solve_position(&mech, &q, t, 1e-10, 100) {
+                Ok(result) if result.converged => {
+                    q = result.q.clone();
+                    let m_global = state.body_point_global("coupler", &coupler_m_local, &q);
+                    let dist = (m_global - act_base).norm();
+                    if dist < min_dist {
+                        min_dist = dist;
+                        min_angle = deg as f64;
+                    }
+                    if dist > max_dist {
+                        max_dist = dist;
+                        max_angle = deg as f64;
+                    }
+                    if deg % 30 == 0 {
+                        println!(
+                            "  theta={:>3} deg  M=({:.6}, {:.6})  dist={:.6} m ({:.2} mm)",
+                            deg, m_global.x, m_global.y, dist, dist * 1000.0,
+                        );
+                    }
+                }
+                Ok(result) => {
+                    println!("  theta={} deg: did NOT converge, residual={}", deg, result.residual_norm);
+                }
+                Err(e) => {
+                    println!("  theta={} deg: solver error: {}", deg, e);
+                }
+            }
+        }
+
+        println!("\n=== ACTUAL STROKE RANGE ===");
+        println!("  min distance = {:.6} m ({:.2} mm) at theta = {} deg", min_dist, min_dist * 1000.0, min_angle);
+        println!("  max distance = {:.6} m ({:.2} mm) at theta = {} deg", max_dist, max_dist * 1000.0, max_angle);
+        println!("  stroke range = {:.6} m ({:.2} mm)", max_dist - min_dist, (max_dist - min_dist) * 1000.0);
+
+        // Verify we got reasonable results (crank completed full revolution)
+        assert!(min_dist > 0.0, "min distance should be positive");
+        assert!(max_dist > min_dist, "max should exceed min");
+        // Stroke range should be substantial (~180mm+), not ~6mm
+        assert!(
+            max_dist - min_dist > 0.10,
+            "stroke range should be >100mm, got {:.2} mm",
+            (max_dist - min_dist) * 1000.0,
+        );
+    }
+
+    /// Verify the builder's stroke_min/stroke_max cover the full mechanism range.
+    #[test]
+    fn chebyshev_lambda_actuator_stroke_covers_full_range() {
+        use nalgebra::Vector2;
+        use crate::forces::elements::ForceElement;
+
+        let (mech, q0) = build_sample(SampleMechanism::ChebyshevLambdaActuator);
+        let state = mech.state();
+
+        // Extract actuator stroke limits from the force element.
+        let (stroke_min, stroke_max) = mech.forces().iter().find_map(|f| {
+            if let ForceElement::LinearActuator(act) = f {
+                Some((act.stroke_min, act.stroke_max))
+            } else {
+                None
+            }
+        }).expect("should have a LinearActuator force element");
+
+        println!("Builder stroke_min = {:.4} mm", stroke_min * 1000.0);
+        println!("Builder stroke_max = {:.4} mm", stroke_max * 1000.0);
+        println!("Builder stroke range = {:.4} mm", (stroke_max - stroke_min) * 1000.0);
+
+        // The stroke range should be substantial (>100mm), not ~6mm.
+        assert!(
+            stroke_max - stroke_min > 0.10,
+            "stroke range should be >100mm, got {:.2} mm",
+            (stroke_max - stroke_min) * 1000.0,
+        );
+
+        // Sweep the linear driver to verify the mechanism can be driven through
+        // its full range. The linear driver goes from length_0 outward at velocity.
+        let ld_meta = mech.linear_drivers().first()
+            .and_then(|ld| ld.meta())
+            .expect("should have linear driver meta");
+        let (velocity, length_0) = match ld_meta {
+            crate::core::driver::DriverMeta::LinearLength { velocity, length_0 } => (*velocity, *length_0),
+            other => panic!("Expected LinearLength meta, got {:?}", other),
+        };
+        println!("Linear driver: length_0={:.4} mm, velocity={:.4} mm/s",
+            length_0 * 1000.0, velocity * 1000.0);
+
+        // The velocity should drive from stroke_min to stroke_max in ~1 second.
+        let expected_velocity = stroke_max - stroke_min;
+        assert!(
+            (velocity - expected_velocity).abs() < 0.001,
+            "velocity should be ~{:.4} mm/s, got {:.4} mm/s",
+            expected_velocity * 1000.0, velocity * 1000.0,
+        );
+
+        // Verify solver converges at t=0.
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
+        assert!(result.converged, "should converge at t=0, residual={}", result.residual_norm);
+
+        // Verify actuator base is NOT at M's y-level (should be at y=0 for pivoting).
+        let coupler_m_local = Vector2::new(0.1838, 0.0);
+        let m_global = state.body_point_global("coupler", &coupler_m_local, &q0);
+        let act_point_a = mech.forces().iter().find_map(|f| {
+            if let ForceElement::LinearActuator(act) = f {
+                Some(act.point_a)
+            } else {
+                None
+            }
+        }).unwrap();
+
+        let y_offset = (m_global.y - act_point_a[1]).abs();
+        println!("Actuator base y={:.4}, M y={:.4}, offset={:.4} mm",
+            act_point_a[1] * 1000.0, m_global.y * 1000.0, y_offset * 1000.0);
+        assert!(
+            y_offset > 0.05,
+            "actuator base should be significantly offset from M's y for visible pivot, got {:.4} mm",
+            y_offset * 1000.0,
+        );
+    }
+
     #[test]
     fn chebyshev_lambda_actuator_trace_in_positive_y() {
         use nalgebra::Vector2;

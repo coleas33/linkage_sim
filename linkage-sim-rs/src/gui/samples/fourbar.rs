@@ -10,7 +10,7 @@ use crate::forces::elements::{ForceElement, ForceZoneElement, LinearActuatorElem
 
 use super::helpers::{
     attach_driver_to_grounded_revolute_with_theta0, fourbar_initial_q0,
-    fourbar_rocker_angle_for_crank, make_ternary,
+    fourbar_rocker_angle_for_crank,
 };
 
 /// Grashof crank-rocker 4-bar linkage.
@@ -512,11 +512,48 @@ pub(super) fn build_triple_rocker_with_driver(
     )
 }
 
+/// Compute the global position of coupler endpoint M for a given crank angle.
+///
+/// Solves the 4-bar loop closure analytically (above=true branch) and returns
+/// (mx, my) in global coordinates.
+fn chebyshev_lambda_m_position(
+    o2: (f64, f64),
+    o4: (f64, f64),
+    l_crank: f64,
+    l_coupler_ab: f64,
+    l_rocker: f64,
+    l_total_coupler: f64,
+    theta_crank: f64,
+) -> (f64, f64) {
+    let bx = o2.0 + l_crank * theta_crank.cos();
+    let by = o2.1 + l_crank * theta_crank.sin();
+    let dx = bx - o4.0;
+    let dy = by - o4.1;
+    let d = (dx * dx + dy * dy).sqrt();
+    let alpha = dy.atan2(dx);
+    let cos_beta = (d * d + l_rocker * l_rocker - l_coupler_ab * l_coupler_ab)
+        / (2.0 * d * l_rocker);
+    let cos_beta = cos_beta.clamp(-1.0, 1.0);
+    let beta = cos_beta.acos();
+    // above=true branch: alpha - beta + PI
+    let theta_rocker = alpha - beta + PI;
+    let cx = o4.0 - l_rocker * theta_rocker.cos();
+    let cy = o4.1 - l_rocker * theta_rocker.sin();
+    let theta_coupler = (cy - by).atan2(cx - bx);
+    let mx = bx + l_total_coupler * theta_coupler.cos();
+    let my = by + l_total_coupler * theta_coupler.sin();
+    (mx, my)
+}
+
 /// Chebyshev lambda linkage driven by a linear actuator.
 ///
 /// Custom proportions: ground=76mm, crank=44.4mm, coupler AB=91.9mm,
 /// rocker=91.9mm, extension BM=91.9mm. Flipped to +y orientation.
-/// Linear actuator parallel to the straight-line trace.
+///
+/// The actuator base is placed below and to the left of the mechanism
+/// (at ground level y=0) so the actuator pivots visibly as M traces its
+/// approximate straight line. Stroke limits are computed by sweeping the
+/// full 360-degree crank rotation to find the true min/max distance.
 pub(super) fn build_chebyshev_lambda_actuator(
     _driver_joint_id: Option<&str>,
 ) -> Result<(Mechanism, DVector<f64>), String> {
@@ -524,9 +561,9 @@ pub(super) fn build_chebyshev_lambda_actuator(
     let o2 = (0.0_f64, 0.0_f64);
     let o4 = (0.076_f64, 0.0_f64);
     let l_crank = 0.0444_f64;
-    let l_coupler_ab = 0.0919_f64; // B→C distance (4-bar loop coupler)
+    let l_coupler_ab = 0.0919_f64; // B->C distance (4-bar loop coupler)
     let l_rocker = 0.0919_f64;
-    let l_total_coupler = 0.1838_f64; // B→M (full lambda coupler)
+    let l_total_coupler = 0.1838_f64; // B->M (full lambda coupler)
     let theta_crank = 0.0_f64;
 
     // Lambda coupler: bar rendered from B(0,0) to M(l_total_coupler,0).
@@ -544,32 +581,16 @@ pub(super) fn build_chebyshev_lambda_actuator(
     let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
     let rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
 
-    // Compute M position at the initial crank angle (above=true) to place
-    // the actuator base at the same y-level as the trace.
-    // First, solve the 4-bar loop closure analytically.
-    let bx = o2.0 + l_crank * theta_crank.cos();
-    let by = o2.1 + l_crank * theta_crank.sin();
-    let dx = bx - o4.0;
-    let dy = by - o4.1;
-    let d = (dx * dx + dy * dy).sqrt();
-    let alpha = dy.atan2(dx);
-    let cos_beta = (d * d + l_rocker * l_rocker - l_coupler_ab * l_coupler_ab)
-        / (2.0 * d * l_rocker);
-    let cos_beta = cos_beta.clamp(-1.0, 1.0);
-    let beta = cos_beta.acos();
-    // above=true branch: alpha - beta + PI
-    let theta_rocker = alpha - beta + PI;
-    let cx = o4.0 - l_rocker * theta_rocker.cos();
-    let cy = o4.1 - l_rocker * theta_rocker.sin();
-    let theta_coupler = (cy - by).atan2(cx - bx);
+    // M position at the initial crank angle (used for length_0 below).
+    let (mx_0, my_0) = chebyshev_lambda_m_position(
+        o2, o4, l_crank, l_coupler_ab, l_rocker, l_total_coupler, theta_crank,
+    );
 
-    // M in global = B + R(theta_coupler) * (l_total_coupler, 0)
-    let mx = bx + l_total_coupler * theta_coupler.cos();
-    let my = by + l_total_coupler * theta_coupler.sin();
-
-    // Actuator base: to the left of the mechanism at M's y-level.
+    // Actuator base: to the left of the mechanism at ground level (y=0).
+    // Placing it at y=0 (well below M's ~0.14-0.18m trace) gives the actuator
+    // a significant angular sweep as M moves, producing visible pivot rotation.
     let act_base_x = -0.05_f64;
-    let act_base_y = my;
+    let act_base_y = 0.0_f64;
 
     let mut ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
     ground
@@ -589,6 +610,25 @@ pub(super) fn build_chebyshev_lambda_actuator(
 
     // NO revolute driver -- this mechanism is actuator-driven.
 
+    // Compute stroke limits by sweeping the full crank rotation (1-degree steps).
+    // The actuator length varies non-monotonically with crank angle, so we must
+    // check all angles to find the true extremes.
+    let mut stroke_min = f64::MAX;
+    let mut stroke_max = f64::NEG_INFINITY;
+    for deg in 0..360 {
+        let tc = (deg as f64).to_radians();
+        let (mx_i, my_i) = chebyshev_lambda_m_position(
+            o2, o4, l_crank, l_coupler_ab, l_rocker, l_total_coupler, tc,
+        );
+        let dist = ((mx_i - act_base_x).powi(2) + (my_i - act_base_y).powi(2)).sqrt();
+        if dist < stroke_min {
+            stroke_min = dist;
+        }
+        if dist > stroke_max {
+            stroke_max = dist;
+        }
+    }
+
     // Linear actuator force element between ground base and coupler M.
     mech.add_force(ForceElement::LinearActuator(LinearActuatorElement {
         body_a: "ground".to_string(),
@@ -599,52 +639,16 @@ pub(super) fn build_chebyshev_lambda_actuator(
         point_b_name: Some("M_mount".to_string()),
         force: 2225.0,
         speed_limit: 0.0,
-        stroke_min: 0.0, // filled in below after computing stroke range
-        stroke_max: 0.0,
+        stroke_min,
+        stroke_max,
         end_stop_stiffness: 10000.0,
         end_stop_damping: 10.0,
         end_stop_restitution: 0.5,
     }));
 
     // Linear driver: prescribe distance from actuator base to coupler M.
-    let length_0 = ((mx - act_base_x).powi(2) + (my - act_base_y).powi(2)).sqrt();
-
-    // Compute stroke limits from the mechanism geometry.
-    // Evaluate the actuator length at crank angle = PI (the other extreme)
-    // to find the full range of motion. Uses the same analytic loop-closure
-    // as the initial M computation above, just with theta_crank = PI.
-    let length_pi = {
-        let tc = PI;
-        let bx_pi = o2.0 + l_crank * tc.cos();
-        let by_pi = o2.1 + l_crank * tc.sin();
-        let dx_pi = bx_pi - o4.0;
-        let dy_pi = by_pi - o4.1;
-        let d_pi = (dx_pi * dx_pi + dy_pi * dy_pi).sqrt();
-        let alpha_pi = dy_pi.atan2(dx_pi);
-        let cos_beta_pi = (d_pi * d_pi + l_rocker * l_rocker - l_coupler_ab * l_coupler_ab)
-            / (2.0 * d_pi * l_rocker);
-        let cos_beta_pi = cos_beta_pi.clamp(-1.0, 1.0);
-        let beta_pi = cos_beta_pi.acos();
-        // above=true branch: alpha - beta + PI
-        let theta_rocker_pi = alpha_pi - beta_pi + PI;
-        let cx_pi = o4.0 - l_rocker * theta_rocker_pi.cos();
-        let cy_pi = o4.1 - l_rocker * theta_rocker_pi.sin();
-        let theta_coupler_pi = (cy_pi - by_pi).atan2(cx_pi - bx_pi);
-        let mx_pi = bx_pi + l_total_coupler * theta_coupler_pi.cos();
-        let my_pi = by_pi + l_total_coupler * theta_coupler_pi.sin();
-        ((mx_pi - act_base_x).powi(2) + (my_pi - act_base_y).powi(2)).sqrt()
-    };
-
-    let stroke_min = length_0.min(length_pi);
-    let stroke_max = length_0.max(length_pi);
-
-    // Patch the actuator stroke limits into the force element we just added.
-    for force in mech.forces_mut() {
-        if let ForceElement::LinearActuator(act) = force {
-            act.stroke_min = stroke_min;
-            act.stroke_max = stroke_max;
-        }
-    }
+    // length_0 = distance from O_act to M at the initial crank angle (theta=0).
+    let length_0 = ((mx_0 - act_base_x).powi(2) + (my_0 - act_base_y).powi(2)).sqrt();
 
     // Set velocity to cover the full stroke range in 1 second,
     // so the default sweep (velocity * 1.0s) covers the entire travel.
