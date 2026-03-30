@@ -165,7 +165,7 @@ The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forwa
 - Forward dynamics simulation with timeline scrubbing, playback speed control, and constraint drift display
 - PNG + SVG export (resvg-based rasterization, 1920x1080 default)
 - Diagnostics panel: Grashof classification, Jacobian conditioning, crank selection, motor sizing, torque envelopes
-- 17 sample mechanisms (8 four-bar + 5 six-bar + 4 specialty), JSON save/load, undo/redo
+- 20 sample mechanisms (8 four-bar + 5 six-bar + 7 specialty), JSON save/load, undo/redo
 - Animation playback with seamless 360-degree wrap (solver initial guess resets to cached angle-0 solution on wrap-around, preventing assembly-branch jumps)
 - Right-click driver reassignment on any grounded revolute joint
 - Gravity slider (0-100g / 0-981 m/s²) with real-time g-value display
@@ -271,17 +271,50 @@ Note: file dialogs, PNG/SVG/GIF/DXF export, autosave, and HTML reports are nativ
 - Crank angle limits — configurable sweep range (min/max angle) for partial-rotation analysis
 - Parallelogram Press sample mechanism — demonstrates body geometry, force zones, and labels
 
+**Recent additions** (post-Phase 6.8):
+
+*New features:*
+- Mounting angle — per-mechanism mounting angle (radians) rotates the mechanism relative to gravity. Stored in JSON (`mounting_angle` field, default 0.0), UI slider in input panel, canvas rotates visually, gravity vector rotates physically. Backward-compatible.
+- Ground pivot editing — drag ground pivots on canvas to reposition. Property panel shows editable X/Y coordinates plus ground link distance/angle controls.
+- Chebyshev Lambda mechanism — rebuilt Chebyshev sample as the lambda straight-line cognate. Same 4-bar loop (d=4, a=2, b=5, c=5) but coupler extends 5 units past rocker joint. Endpoint M traces approximate straight line.
+- Chebyshev Lambda + Actuator sample — custom proportions (ground=76mm, crank=44.4mm, coupler=91.9+91.9mm, rocker=91.9mm) with linear actuator force element and +y orientation.
+- Linear driver constraint — new `LinearDriver` type implementing the Constraint trait. Prescribes distance between two body points as d(t). Includes constant-velocity and cosine-oscillation factories. Available in the API (`linear_drivers` JSON array, default empty).
+- Force element equations reference — `docs/reference/FORCE_ELEMENTS.md` covering all 13 force types
+- Parametric study user guide — `docs/guides/PARAMETRIC_STUDIES.md`
+
+*Bug fixes:*
+- Unicode rendering — replaced all broken Unicode subscript labels (U+2090-U+209F) and emoji codepoints with ASCII equivalents. No more missing-glyph boxes in egui.
+- Scotch Yoke and Inverted Slider Crank — rebuilt with correct 3-body constraint topology (intermediate pin body). Were overconstrained (0/361 convergence), now 361/361.
+- Force zone deletion — sweep data now recomputes immediately on force add/remove/update (was stuck on stale data due to debounce-only path).
+
+*Code quality:*
+- DRY: `solve_and_update` — extracted 7 copies of solve-position-then-update pattern into single `AppState::solve_and_update()` helper (`gui/state/solver_helpers.rs`)
+- DRY: `project_velocity` — extracted duplicated velocity projection block in `forward_dynamics.rs`
+- DRY: `fourbar_initial_guess` — consolidated 4 diverging versions (2 broken stubs) into single canonical `fourbar_loop_closure` + `try_fourbar_initial_q0`
+- Condition number — extracted rank-aware computation into shared `solver/condition.rs`, used by both statics and inverse dynamics
+- Doc reorg — reorganized `docs/` into `architecture/`, `guides/`, `reference/`, `history/` subdirectories
+
+*Schema additions (backward-compatible):*
+- `mounting_angle` field (default 0.0)
+- `linear_drivers` array (default empty)
+
+*Samples updated (total: 20):*
+- Chebyshev renamed to Chebyshev Lambda (Straight-Line) with endpoint trace
+- New: Chebyshev Lambda + Actuator
+- Fixed: Scotch Yoke (3-body topology)
+- Fixed: Inverted Slider Crank (3-body topology)
+
 ```
 linkage-sim-rs/
 ├── src/
-│   ├── core/               # body, constraint, driver, mechanism, state
+│   ├── core/               # body, constraint, driver, mechanism, state, linear_driver
 │   ├── forces/             # elements (12 variants), gravity, helpers, assembly
-│   ├── solver/             # kinematics, statics, inverse_dynamics, forward_dynamics, assembly, events
+│   ├── solver/             # kinematics, statics, inverse_dynamics, forward_dynamics, assembly, events, condition
 │   ├── analysis/           # coupler, energy, envelopes, force_breakdown, grashof,
 │   │                       #   crank_selection, motor_sizing, transmission, validation, virtual_work
 │   ├── io/                 # serialization (serde JSON round-trip)
 │   ├── gui/                # mod, state, canvas, input_panel, property_panel, plot_panel,
-│   │                       #   samples, undo, export
+│   │                       #   samples, undo, export, state/solver_helpers
 │   ├── bin/                # linkage_gui
 │   └── lib.rs
 ├── tests/
