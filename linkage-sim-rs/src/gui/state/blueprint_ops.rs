@@ -341,11 +341,11 @@ impl AppState {
 
         self.mechanism = Some(mech);
 
-        // For cosine linear drivers, eagerly build the revolute sweep mechanism
-        // so that solve_at_angle / animation work immediately (before the
-        // lazy compute_sweep runs).
+        // For linear driver mechanisms, eagerly build the revolute sweep
+        // mechanism so that solve_at_angle / animation work immediately
+        // (before the lazy compute_sweep runs).
         self.sweep_mechanism = None;
-        if self.has_cosine_driver() {
+        if self.has_linear_driver() {
             if let Some((sweep_mech, _omega, _theta_0)) = self.build_revolute_sweep_mechanism() {
                 self.sweep_mechanism = Some(sweep_mech);
             }
@@ -1141,22 +1141,29 @@ impl AppState {
             None
         };
 
-        // For CosineStroke linear drivers, build a revolute-driven mechanism
-        // for the sweep. This avoids the branch-switching problem at the
-        // turnaround points of the cosine stroke.
-        let cosine_stroke_meta = mech.linear_drivers().first().and_then(|ld| {
-            use crate::core::driver::DriverMeta;
-            match ld.meta() {
-                Some(DriverMeta::CosineStroke { stroke_min, stroke_max, initial_length }) => {
-                    Some((*stroke_min, *stroke_max, *initial_length,
-                          ld.body_i_id().to_string(), ld.point_a(),
-                          ld.body_j_id().to_string(), ld.point_b()))
-                }
-                _ => None,
-            }
+        // For ANY linear driver, build a revolute-driven mechanism for the sweep.
+        // Actuator stroke is non-monotonic with crank angle, so a stroke-based
+        // sweep can't traverse the full mechanism range. A revolute sweep
+        // (angle 0-360) avoids branch-switching at turnaround points.
+        // Note: CosineStroke serializes as LinearLength in JSON, so after
+        // rebuild() the driver type is always LinearLength.
+        let linear_driver_meta = mech.linear_drivers().first().map(|ld| {
+            let stroke_min = self.sweep_stroke_min;
+            let stroke_max = self.sweep_stroke_max;
+            let initial_length = {
+                // Compute initial distance from the current q
+                let pa = mech.state().body_point_global(
+                    ld.body_i_id(), &nalgebra::Vector2::new(ld.point_a()[0], ld.point_a()[1]), &self.q);
+                let pb = mech.state().body_point_global(
+                    ld.body_j_id(), &nalgebra::Vector2::new(ld.point_b()[0], ld.point_b()[1]), &self.q);
+                (pb - pa).norm()
+            };
+            (stroke_min, stroke_max, initial_length,
+             ld.body_i_id().to_string(), ld.point_a(),
+             ld.body_j_id().to_string(), ld.point_b())
         });
 
-        if let Some((stroke_min, stroke_max, initial_length, body_a, point_a, body_b, point_b)) = cosine_stroke_meta {
+        if let Some((stroke_min, stroke_max, initial_length, body_a, point_a, body_b, point_b)) = linear_driver_meta {
             // Build a revolute-driven mechanism from the blueprint.
             if let Some(result) = self.build_revolute_sweep_mechanism() {
                 let (sweep_mech, rev_omega, rev_theta_0) = result;
@@ -1186,7 +1193,7 @@ impl AppState {
                 self.q_at_zero = q_zero;
             } else {
                 // Fallback: use the original cosine stroke sweep.
-                log::warn!("Could not build revolute-driven sweep mechanism; falling back to cosine stroke");
+                log::warn!("FALLBACK: Could not build revolute sweep mechanism, using cosine stroke");
                 let (data, q_zero) = compute_sweep_data(mech, &q_start, omega, theta_0, self.gravity_magnitude, sweep_range, None);
                 self.sweep_data = Some(data);
                 self.q_at_zero = q_zero;
@@ -1214,19 +1221,24 @@ impl AppState {
         let mut bp_clone = bp.clone();
         let ld_json = bp_clone.linear_drivers.drain(..).next()?;
 
-        // Find the first grounded revolute joint to use as the sweep driver.
-        // This is typically the crank joint (e.g. J1: ground-crank).
+        // Find a grounded revolute joint for the sweep driver.
+        // Sort joint IDs so we get deterministic ordering (J1 before J4).
+        // In a Grashof 4-bar, the crank joint (typically the lowest-numbered)
+        // is the one that can rotate 360°.
         let (driver_body_i, driver_body_j) = {
-            let mut found = None;
-            for (_joint_id, joint_json) in &bp_clone.joints {
-                if let JointJson::Revolute { body_i, body_j, .. } = joint_json {
-                    if body_i == GROUND_ID || body_j == GROUND_ID {
-                        found = Some((body_i.clone(), body_j.clone()));
-                        break;
+            let mut grounded_joints: Vec<_> = bp_clone.joints.iter()
+                .filter_map(|(jid, jj)| {
+                    if let JointJson::Revolute { body_i, body_j, .. } = jj {
+                        if body_i == GROUND_ID || body_j == GROUND_ID {
+                            return Some((jid.clone(), body_i.clone(), body_j.clone()));
+                        }
                     }
-                }
-            }
-            found?
+                    None
+                })
+                .collect();
+            grounded_joints.sort_by(|a, b| a.0.cmp(&b.0)); // sort by joint ID
+            let (_, bi, bj) = grounded_joints.into_iter().next()?;
+            (bi, bj)
         };
 
         // Add a constant-speed revolute driver to the blueprint clone.
