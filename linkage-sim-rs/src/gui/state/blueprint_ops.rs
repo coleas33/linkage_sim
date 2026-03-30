@@ -1214,20 +1214,13 @@ impl AppState {
         let mut bp_clone = bp.clone();
         let ld_json = bp_clone.linear_drivers.drain(..).next()?;
 
-        // Find a grounded revolute joint that connects to one of the
-        // linear driver's bodies. This joint's body pair becomes the
-        // revolute driver's body pair.
+        // Find the first grounded revolute joint to use as the sweep driver.
+        // This is typically the crank joint (e.g. J1: ground-crank).
         let (driver_body_i, driver_body_j) = {
-            let ld_bodies = [&ld_json.body_a, &ld_json.body_b];
             let mut found = None;
             for (_joint_id, joint_json) in &bp_clone.joints {
                 if let JointJson::Revolute { body_i, body_j, .. } = joint_json {
-                    // We want a joint where one side is ground and the other
-                    // is a body referenced by the linear driver.
-                    let is_grounded = body_i == GROUND_ID || body_j == GROUND_ID;
-                    let non_ground = if body_i == GROUND_ID { body_j } else { body_i };
-                    let touches_ld = ld_bodies.iter().any(|b| *b == non_ground);
-                    if is_grounded && touches_ld {
+                    if body_i == GROUND_ID || body_j == GROUND_ID {
                         found = Some((body_i.clone(), body_j.clone()));
                         break;
                     }
