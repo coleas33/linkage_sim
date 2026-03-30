@@ -29,7 +29,8 @@ linkage-sim-rs/src/
 │   │   ├── prismatic.rs             (208)    PrismaticJoint + make_prismatic_joint
 │   │   └── cam.rs                   (307)    CamProfile, CamFollowerJoint, spline helpers
 │   ├── driver.rs                     (418)    DriverConstraint (closure-based), DriverMeta
-│   └── mechanism.rs                  (750)    Mechanism: builder, body/joint/driver/force storage
+│   ├── linear_driver.rs              (441)    LinearDriver constraint: prescribed distance between two points
+│   └── mechanism.rs                  (860)    Mechanism: builder, body/joint/driver/force storage
 │
 ├── forces/                         (3,175 total)
 │   ├── mod.rs                          (3)    Module declarations
@@ -66,7 +67,7 @@ linkage-sim-rs/src/
 │
 ├── io/                             (1,598 total)
 │   ├── mod.rs                         (14)    Module declarations + re-exports
-│   ├── schema.rs                     (192)    MechanismJson, BodyJson, JointJson, DriverJson, SweepConfig
+│   ├── schema.rs                     (220)    MechanismJson, BodyJson, JointJson, DriverJson, LinearDriverJson, SweepConfig
 │   ├── to_json.rs                    (211)    mechanism_to_json, body_to_json, joint_to_json, save
 │   ├── from_json.rs                  (296)    load_mechanism_unbuilt, load_mechanism_unbuilt_from_json
 │   ├── error.rs                       (28)    SerializationError enum
@@ -94,7 +95,7 @@ linkage-sim-rs/src/
 │   │   ├── colors.rs                  (67)    Color and sizing constants
 │   │   ├── hit_testing.rs             (86)    AttachmentHit, SegmentHit, projection helpers
 │   │   ├── rendering.rs            (1,836)    Bodies, joints, forces, grid, tooltips, drawing primitives
-│   │   ├── interaction.rs            (712)    Pan, zoom, drag, tool modes, click selection
+│   │   ├── interaction.rs            (780+)   Pan, zoom, drag (incl. ground pivot dragging), tool modes, click selection
 │   │   └── context_menu.rs           (248)    Right-click menus for joints, bodies, canvas
 │   ├── property_panel/             (2,175)    Property editing panel
 │   │   ├── mod.rs                    (387)    draw_property_panel main coordinator
@@ -106,7 +107,7 @@ linkage-sim-rs/src/
 │   │   ├── helpers.rs                (219)    attach_driver, fourbar_initial_q0, continuation solver
 │   │   ├── fourbar.rs                (466)    10 four-bar variants
 │   │   ├── sixbar.rs                 (500)    5 six-bar variants
-│   │   └── special.rs               (232)    Quick-return, toggle clamp, scotch yoke, etc.
+│   │   └── special.rs               (300+)   Quick-return, toggle clamp, scotch yoke, Chebyshev lambda actuator
 │   ├── export/                     (1,577)    File export
 │   │   ├── mod.rs                     (20)    Re-exports
 │   │   ├── csv.rs                    (454)    CSV + coupler CSV export
@@ -164,7 +165,7 @@ AppState (gui/state/mod.rs) ◄──── Central hub: owns mechanism, q, blue
 2. **Constraint-first math.** `Φ(q,t) = 0` and `Φ_q` are the backbone.
 3. **Force elements are pluggable.** All return Q contributions via virtual work.
 4. **SI internally, engineering units at GUI boundary.**
-5. **Drivers are constraints, not forces.** Lagrange multiplier = required effort.
+5. **Drivers are constraints, not forces.** Lagrange multiplier = required effort. Both revolute drivers (prescribe angle) and linear drivers (prescribe distance between two points) are supported.
 6. **Blueprint is the source of truth.** Mechanism is rebuilt from MechanismJson on edits.
 7. **Mounting angle** (`mounting_angle`, radians, default 0.0): stored on `MechanismJson` and `AppState`, synced via `rebuild()` and `file_io.rs`. Rotates the gravity vector in physics (`-g*sin(theta)`, `-g*cos(theta)`) and the canvas via `ViewTransform`. Backward-compatible in JSON (`#[serde(default)]`).
 

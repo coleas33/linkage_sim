@@ -412,3 +412,29 @@ Both `ExternalForce` and `ExternalTorque` support a `modulation` field that scal
 | `Expression` | `expr` (string) | Arbitrary expression of `t`, e.g. `"1 - exp(-t/0.5)"` |
 
 The `Expression` variant uses the `meval` crate. Returns `0.0` if the expression fails to parse or produces a non-finite value.
+
+---
+
+## Linear Driver (Constraint, not a Force Element)
+
+**Source file**: `linkage-sim-rs/src/core/linear_driver.rs`
+
+The `LinearDriver` is a **constraint** (not a force element) that prescribes the distance between two body attachment points as a function of time. It is the translational analog of the `RevoluteDriver` (which prescribes relative angle).
+
+| Parameter | Type | Units | Description |
+|-----------|------|-------|-------------|
+| `body_a`, `body_b` | String | -- | Body identifiers |
+| `point_a`, `point_b` | [f64; 2] | m | Attachment points in body-local coords |
+| `velocity` | f64 | m/s | Constant extension rate |
+| `length_0` | f64 | m | Distance at t=0 |
+
+**Constraint equation:**
+
+```
+Phi = |P_b - P_a| - d(t) = 0
+d(t) = length_0 + velocity * t
+```
+
+The Lagrange multiplier lambda gives the required actuator force (N) along the line connecting the two points. When sweep mode is `Stroke`, the plot x-axis shows actuator stroke in mm and the effort plot shows actuator force in N.
+
+The `ChebyshevLambdaActuator` sample mechanism demonstrates a linear-driver-actuated Chebyshev straight-line linkage.
