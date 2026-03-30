@@ -304,6 +304,11 @@ Note: file dialogs, PNG/SVG/GIF/DXF export, autosave, and HTML reports are nativ
 - Fixed: Scotch Yoke (3-body topology)
 - Fixed: Inverted Slider Crank (3-body topology)
 
+**Planned improvements:**
+- Transmission angle ideal zone annotation — tooltip explaining 40-140 degree guideline for output quality
+- Parametric sweep comparison — save and compare multiple sweep results side-by-side
+- Driver torque sign annotation — clarify positive/negative torque convention on plots
+
 ```
 linkage-sim-rs/
 ├── src/
