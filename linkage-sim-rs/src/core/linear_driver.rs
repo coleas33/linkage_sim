@@ -219,6 +219,62 @@ pub fn constant_velocity_linear_driver(
     }
 }
 
+/// Create a cosine-oscillation linear driver for smooth full-cycle actuator sweep.
+///
+/// d(t) = mid + amplitude * cos(omega * t + phase)
+/// d'(t) = -amplitude * omega * sin(omega * t + phase)
+/// d''(t) = -amplitude * omega^2 * cos(omega * t + phase)
+///
+/// where:
+///   mid       = (stroke_min + stroke_max) / 2
+///   amplitude = (stroke_max - stroke_min) / 2
+///   omega     = 2 * PI (one full extend-retract cycle per unit time)
+///   phase     = acos((initial_length - mid) / amplitude), clamped to [-1, 1]
+///
+/// This smoothly sweeps the actuator through its full range (extend + retract)
+/// in one period. The function is C-infinity, so the solver tracks continuously
+/// without branch jumps at turnaround points.
+pub fn cosine_linear_driver(
+    id: &str,
+    body_a: &str,
+    point_a: [f64; 2],
+    body_b: &str,
+    point_b: [f64; 2],
+    stroke_min: f64,
+    stroke_max: f64,
+    initial_length: f64,
+) -> LinearDriver {
+    use std::f64::consts::PI;
+
+    let mid = (stroke_min + stroke_max) / 2.0;
+    let amp = (stroke_max - stroke_min) / 2.0;
+    let omega = 2.0 * PI;
+    // phase: cos(phase) = (initial_length - mid) / amp
+    let phase = if amp.abs() < 1e-15 {
+        0.0
+    } else {
+        ((initial_length - mid) / amp).clamp(-1.0, 1.0).acos()
+    };
+
+    LinearDriver {
+        id_: id.to_string(),
+        body_a_id_: body_a.to_string(),
+        point_a: Vector2::new(point_a[0], point_a[1]),
+        body_b_id_: body_b.to_string(),
+        point_b: Vector2::new(point_b[0], point_b[1]),
+        driver_fn: DriverFn {
+            f: Box::new(move |t| mid + amp * (omega * t + phase).cos()),
+            f_dot: Box::new(move |t| -amp * omega * (omega * t + phase).sin()),
+            f_ddot: Box::new(move |t| -amp * omega * omega * (omega * t + phase).cos()),
+        },
+        meta: Some(DriverMeta::CosineStroke {
+            stroke_min,
+            stroke_max,
+            initial_length,
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -447,5 +503,185 @@ mod tests {
             }
             other => panic!("Expected LinearLength meta, got {:?}", other),
         }
+    }
+
+    // ── Cosine driver tests ─────────────────────────────────────────
+
+    #[test]
+    fn cosine_driver_d_at_t0_equals_initial_length() {
+        let stroke_min = 0.8;
+        let stroke_max = 1.2;
+        let initial_length = 1.0;
+        let driver = cosine_linear_driver(
+            "LD1", "ground", [0.0, 0.0], "bar", [1.0, 0.0],
+            stroke_min, stroke_max, initial_length,
+        );
+
+        // d(0) should equal initial_length
+        let d_0 = (driver.driver_fn.f)(0.0);
+        assert_abs_diff_eq!(d_0, initial_length, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn cosine_driver_reaches_extremes() {
+        let stroke_min = 0.5;
+        let stroke_max = 1.5;
+        let initial_length = 1.0; // mid = 1.0, phase = PI/2
+        let driver = cosine_linear_driver(
+            "LD1", "ground", [0.0, 0.0], "bar", [1.0, 0.0],
+            stroke_min, stroke_max, initial_length,
+        );
+
+        // Sample d(t) over one full period to find min/max
+        let mut d_min = f64::MAX;
+        let mut d_max = f64::NEG_INFINITY;
+        for i in 0..=1000 {
+            let t = i as f64 / 1000.0;
+            let d = (driver.driver_fn.f)(t);
+            d_min = d_min.min(d);
+            d_max = d_max.max(d);
+        }
+        assert_abs_diff_eq!(d_min, stroke_min, epsilon = 1e-6);
+        assert_abs_diff_eq!(d_max, stroke_max, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn cosine_driver_d_returns_to_start_after_one_period() {
+        let stroke_min = 0.5;
+        let stroke_max = 1.5;
+        let initial_length = 0.8;
+        let driver = cosine_linear_driver(
+            "LD1", "ground", [0.0, 0.0], "bar", [1.0, 0.0],
+            stroke_min, stroke_max, initial_length,
+        );
+
+        let d_0 = (driver.driver_fn.f)(0.0);
+        let d_1 = (driver.driver_fn.f)(1.0); // t=1 is one full period
+        assert_abs_diff_eq!(d_0, d_1, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn cosine_driver_meta_stores_parameters() {
+        let driver = cosine_linear_driver(
+            "LD1", "ground", [0.0, 0.0], "bar", [1.0, 0.0],
+            0.5, 1.5, 1.0,
+        );
+        match driver.meta() {
+            Some(DriverMeta::CosineStroke { stroke_min, stroke_max, initial_length }) => {
+                assert_abs_diff_eq!(*stroke_min, 0.5, epsilon = 1e-15);
+                assert_abs_diff_eq!(*stroke_max, 1.5, epsilon = 1e-15);
+                assert_abs_diff_eq!(*initial_length, 1.0, epsilon = 1e-15);
+            }
+            other => panic!("Expected CosineStroke meta, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn cosine_driver_derivatives_correct() {
+        // Verify f'(t) and f''(t) via finite differences.
+        let stroke_min = 0.5;
+        let stroke_max = 1.5;
+        let initial_length = 0.8;
+        let driver = cosine_linear_driver(
+            "LD1", "ground", [0.0, 0.0], "bar", [1.0, 0.0],
+            stroke_min, stroke_max, initial_length,
+        );
+
+        let dt = 1e-7;
+        // Test at several time points
+        for &t in &[0.0, 0.1, 0.25, 0.5, 0.75, 0.9] {
+            let f_plus = (driver.driver_fn.f)(t + dt);
+            let f_minus = (driver.driver_fn.f)(t - dt);
+            let fd_dot = (f_plus - f_minus) / (2.0 * dt);
+            let analytical_dot = (driver.driver_fn.f_dot)(t);
+            assert!(
+                (analytical_dot - fd_dot).abs() < 1e-4,
+                "f'(t) mismatch at t={}: analytical={}, fd={}", t, analytical_dot, fd_dot,
+            );
+
+            let fd_plus = (driver.driver_fn.f_dot)(t + dt);
+            let fd_minus = (driver.driver_fn.f_dot)(t - dt);
+            let fd_ddot = (fd_plus - fd_minus) / (2.0 * dt);
+            let analytical_ddot = (driver.driver_fn.f_ddot)(t);
+            assert!(
+                (analytical_ddot - fd_ddot).abs() < 1e-3,
+                "f''(t) mismatch at t={}: analytical={}, fd={}", t, analytical_ddot, fd_ddot,
+            );
+        }
+    }
+
+    #[test]
+    fn cosine_driver_phi_t_correct() {
+        let (state, q) = test_state_and_q();
+        let driver = cosine_linear_driver(
+            "LD1", "ground", [0.0, 0.0], "bar", [1.0, 0.0],
+            0.8, 1.2, 1.0,
+        );
+
+        // phi_t should be -f'(t)
+        let t = 0.3;
+        let phi_t = driver.phi_t(&state, &q, t);
+        let f_dot = (driver.driver_fn.f_dot)(t);
+        assert_abs_diff_eq!(phi_t[0], -f_dot, epsilon = 1e-14);
+    }
+
+    #[test]
+    fn cosine_driver_gamma_is_correct() {
+        // Verify gamma via finite differences on phi_dot.
+        let mut state = State::new();
+        state.register_body("bar").unwrap();
+        let mut q = state.make_q();
+        state.set_pose("bar", &mut q, 0.0, 0.0, 0.7);
+
+        let mut q_dot = state.make_q();
+        q_dot[0] = 0.1;
+        q_dot[1] = -0.2;
+        q_dot[2] = 3.0;
+
+        let driver = cosine_linear_driver(
+            "LD1", "ground", [0.0, 0.0], "bar", [1.0, 0.0],
+            0.8, 1.2, 1.0,
+        );
+
+        let gamma_analytical = driver.gamma(&state, &q, &q_dot, 0.2);
+
+        let dt = 1e-7;
+        let t = 0.2;
+
+        let jac = driver.jacobian(&state, &q, t);
+        let phi_t_val = driver.phi_t(&state, &q, t);
+        let phi_dot = &jac * &q_dot + &phi_t_val;
+
+        let q_plus = &q + &q_dot * dt;
+        let t_plus = t + dt;
+        let jac_plus = driver.jacobian(&state, &q_plus, t_plus);
+        let phi_t_plus = driver.phi_t(&state, &q_plus, t_plus);
+        let phi_dot_plus = &jac_plus * &q_dot + &phi_t_plus;
+
+        let gamma_fd = -(&phi_dot_plus - &phi_dot) / dt;
+
+        assert_abs_diff_eq!(gamma_analytical[0], gamma_fd[0], epsilon = 1e-5);
+    }
+
+    #[test]
+    fn cosine_driver_at_stroke_min_initial_length() {
+        // When initial_length == stroke_min, phase should be PI
+        let driver = cosine_linear_driver(
+            "LD1", "ground", [0.0, 0.0], "bar", [1.0, 0.0],
+            0.5, 1.5, 0.5,
+        );
+        let d_0 = (driver.driver_fn.f)(0.0);
+        assert_abs_diff_eq!(d_0, 0.5, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn cosine_driver_at_stroke_max_initial_length() {
+        // When initial_length == stroke_max, phase should be 0
+        let driver = cosine_linear_driver(
+            "LD1", "ground", [0.0, 0.0], "bar", [1.0, 0.0],
+            0.5, 1.5, 1.5,
+        );
+        let d_0 = (driver.driver_fn.f)(0.0);
+        assert_abs_diff_eq!(d_0, 1.5, epsilon = 1e-12);
     }
 }

@@ -9,7 +9,7 @@ use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints, VLine};
 
 use super::state::{AngleUnit, AppState, DisplayUnits};
-use super::sweep::{SweepData, SweepMode};
+use super::sweep::SweepData;
 
 /// Selected plot tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,9 +68,10 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
         // Only show driver torque tab if data exists.
         let has_dt = sweep.driver_torques.is_some();
-        let torque_tab_label = match &sweep.sweep_mode {
-            SweepMode::Stroke { .. } => "Actuator Force",
-            _ => "Driver Torque",
+        let torque_tab_label = if sweep.sweep_mode.is_stroke() {
+            "Actuator Force"
+        } else {
+            "Driver Torque"
         };
         ui.add_enabled_ui(has_dt, |ui| {
             ui.selectable_value(
@@ -203,15 +204,14 @@ fn display_to_radians(display_angle: f64, units: &DisplayUnits) -> f64 {
 /// In angle mode this is `"Driver Angle (deg)"` or `"Driver Angle (rad)"`.
 /// In stroke mode this is `"Actuator Stroke (mm)"`.
 fn x_axis_label_for_sweep(sweep: &SweepData, units: &DisplayUnits) -> String {
-    match &sweep.sweep_mode {
-        SweepMode::Angle => {
-            let angle_label = match units.angle {
-                AngleUnit::Degrees => "deg",
-                AngleUnit::Radians => "rad",
-            };
-            format!("Driver Angle ({})", angle_label)
-        }
-        SweepMode::Stroke { .. } => "Actuator Stroke (mm)".to_string(),
+    if sweep.sweep_mode.is_stroke() {
+        "Actuator Stroke (mm)".to_string()
+    } else {
+        let angle_label = match units.angle {
+            AngleUnit::Degrees => "deg",
+            AngleUnit::Radians => "rad",
+        };
+        format!("Driver Angle ({})", angle_label)
     }
 }
 
@@ -220,9 +220,10 @@ fn x_axis_label_for_sweep(sweep: &SweepData, units: &DisplayUnits) -> String {
 /// In angle mode (revolute driver) this is `"Driver Torque (N*m)"`.
 /// In stroke mode (linear driver) this is `"Actuator Force (N)"`.
 fn driver_effort_y_label(sweep: &SweepData) -> &'static str {
-    match &sweep.sweep_mode {
-        SweepMode::Angle => "Driver Torque (N\u{00b7}m)",
-        SweepMode::Stroke { .. } => "Actuator Force (N)",
+    if sweep.sweep_mode.is_stroke() {
+        "Actuator Force (N)"
+    } else {
+        "Driver Torque (N\u{00b7}m)"
     }
 }
 
@@ -230,9 +231,10 @@ fn driver_effort_y_label(sweep: &SweepData) -> &'static str {
 ///
 /// In angle mode: `"Driver Torque"`. In stroke mode: `"Actuator Force"`.
 fn driver_effort_series_name(sweep: &SweepData) -> &'static str {
-    match &sweep.sweep_mode {
-        SweepMode::Angle => "Driver Torque",
-        SweepMode::Stroke { .. } => "Actuator Force",
+    if sweep.sweep_mode.is_stroke() {
+        "Actuator Force"
+    } else {
+        "Driver Torque"
     }
 }
 
@@ -556,7 +558,7 @@ fn draw_inverse_dynamics(
         // Overlay statics torque/force if available (orange, dashed).
         // This is always drawn dashed as a reference, so no faded/solid split.
         if let Some(statics_torques) = &sweep.driver_torques {
-            let is_stroke = matches!(&sweep.sweep_mode, SweepMode::Stroke { .. });
+            let is_stroke = sweep.sweep_mode.is_stroke();
             let st_points: PlotPoints = sweep
                 .angles_deg
                 .iter()
@@ -954,7 +956,7 @@ fn draw_toggle_markers(
     sweep: &SweepData,
     units: &DisplayUnits,
 ) {
-    let is_stroke = matches!(&sweep.sweep_mode, SweepMode::Stroke { .. });
+    let is_stroke = sweep.sweep_mode.is_stroke();
     for (i, &toggle_val) in sweep.toggle_angles.iter().enumerate() {
         let toggle_display = if is_stroke { toggle_val * 1000.0 } else { units.angle(toggle_val.to_radians()) };
         plot_ui.vline(
@@ -979,7 +981,7 @@ fn draw_range_boundary_markers(
         if let (Some(&min_val), Some(&max_val)) =
             (sweep.angles_deg.get(start), sweep.angles_deg.get(end))
         {
-            let is_stroke = matches!(&sweep.sweep_mode, SweepMode::Stroke { .. });
+            let is_stroke = sweep.sweep_mode.is_stroke();
             let min_display = if is_stroke { min_val * 1000.0 } else { units.angle(min_val.to_radians()) };
             let max_display = if is_stroke { max_val * 1000.0 } else { units.angle(max_val.to_radians()) };
             let boundary_color =
@@ -1033,7 +1035,7 @@ fn draw_angle_series_with_range(
         return;
     }
 
-    let is_stroke = matches!(&sweep.sweep_mode, SweepMode::Stroke { .. });
+    let is_stroke = sweep.sweep_mode.is_stroke();
     let to_display = |x: f64| -> f64 {
         if is_stroke { x * 1000.0 } else { units.angle(x.to_radians()) }
     };

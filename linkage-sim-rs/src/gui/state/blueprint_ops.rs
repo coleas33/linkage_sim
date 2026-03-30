@@ -247,17 +247,34 @@ impl AppState {
                 }
             }
         }
-        // Override with linear driver params when present (velocity -> omega,
-        // length_0 -> theta_0). This makes the time formula work for stroke values.
+        // Override with linear driver params when present.
+        // For constant-velocity: velocity -> omega, length_0 -> theta_0.
+        // For cosine: omega=2*PI, theta_0=phase.
         if let Some(ld) = mech.linear_drivers().first() {
             use crate::core::driver::DriverMeta;
-            if let Some(DriverMeta::LinearLength { velocity, length_0 }) = ld.meta() {
-                self.driver_omega = *velocity;
-                self.driver_theta_0 = *length_0;
-                // Initialize driver_stroke to length_0 if it hasn't been set yet
-                if self.driver_stroke == 0.0 {
-                    self.driver_stroke = *length_0;
+            match ld.meta() {
+                Some(DriverMeta::LinearLength { velocity, length_0 }) => {
+                    self.driver_omega = *velocity;
+                    self.driver_theta_0 = *length_0;
+                    if self.driver_stroke == 0.0 {
+                        self.driver_stroke = *length_0;
+                    }
                 }
+                Some(DriverMeta::CosineStroke { stroke_min, stroke_max, initial_length }) => {
+                    let mid = (stroke_min + stroke_max) / 2.0;
+                    let amp = (stroke_max - stroke_min) / 2.0;
+                    let phase = if amp.abs() < 1e-15 {
+                        0.0
+                    } else {
+                        ((initial_length - mid) / amp).clamp(-1.0, 1.0).acos()
+                    };
+                    self.driver_omega = 2.0 * std::f64::consts::PI;
+                    self.driver_theta_0 = phase;
+                    if self.driver_stroke == 0.0 {
+                        self.driver_stroke = *initial_length;
+                    }
+                }
+                _ => {}
             }
         }
 

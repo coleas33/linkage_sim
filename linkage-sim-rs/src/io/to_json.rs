@@ -184,10 +184,9 @@ pub fn mechanism_to_json(mech: &Mechanism) -> Result<MechanismJson, Serializatio
                     expr_dot: expr_dot.clone(),
                     expr_ddot: expr_ddot.clone(),
                 },
-                DriverMeta::LinearLength { .. } => {
+                DriverMeta::LinearLength { .. } | DriverMeta::CosineStroke { .. } => {
                     // Linear driver meta is not serialized via revolute driver path;
-                    // it will be handled by a dedicated linear_drivers section in
-                    // a future schema update.
+                    // it will be handled by a dedicated linear_drivers section.
                     continue;
                 }
             };
@@ -199,18 +198,37 @@ pub fn mechanism_to_json(mech: &Mechanism) -> Result<MechanismJson, Serializatio
     // Serialize linear drivers.
     let mut linear_drivers = Vec::new();
     for ld in mech.linear_drivers() {
-        if let Some(DriverMeta::LinearLength { velocity, length_0 }) = ld.meta() {
-            linear_drivers.push(LinearDriverJson {
-                id: ld.id().to_string(),
-                body_a: ld.body_i_id().to_string(),
-                point_a: ld.point_a(),
-                body_b: ld.body_j_id().to_string(),
-                point_b: ld.point_b(),
-                velocity: *velocity,
-                length_0: *length_0,
-            });
+        match ld.meta() {
+            Some(DriverMeta::LinearLength { velocity, length_0 }) => {
+                linear_drivers.push(LinearDriverJson {
+                    id: ld.id().to_string(),
+                    body_a: ld.body_i_id().to_string(),
+                    point_a: ld.point_a(),
+                    body_b: ld.body_j_id().to_string(),
+                    point_b: ld.point_b(),
+                    velocity: *velocity,
+                    length_0: *length_0,
+                });
+            }
+            Some(DriverMeta::CosineStroke { stroke_min, stroke_max, initial_length }) => {
+                // Serialize CosineStroke as a LinearLength with velocity derived
+                // from the stroke range (for backward compat with JSON schema).
+                // On deserialization, the sample builder will recreate the cosine form.
+                let velocity = stroke_max - stroke_min;
+                linear_drivers.push(LinearDriverJson {
+                    id: ld.id().to_string(),
+                    body_a: ld.body_i_id().to_string(),
+                    point_a: ld.point_a(),
+                    body_b: ld.body_j_id().to_string(),
+                    point_b: ld.point_b(),
+                    velocity,
+                    length_0: *initial_length,
+                });
+            }
+            _ => {
+                // Linear drivers without meta (general closures) are silently skipped.
+            }
         }
-        // Linear drivers without meta (general closures) are silently skipped.
     }
 
     Ok(MechanismJson {

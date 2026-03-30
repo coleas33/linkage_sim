@@ -492,10 +492,28 @@ impl AppState {
         self.driver_stroke = 0.0;
         if let Some(ld) = mech.linear_drivers().first() {
             use crate::core::driver::DriverMeta;
-            if let Some(DriverMeta::LinearLength { velocity, length_0 }) = ld.meta() {
-                self.driver_omega = *velocity;
-                self.driver_theta_0 = *length_0;
-                self.driver_stroke = *length_0;
+            match ld.meta() {
+                Some(DriverMeta::LinearLength { velocity, length_0 }) => {
+                    self.driver_omega = *velocity;
+                    self.driver_theta_0 = *length_0;
+                    self.driver_stroke = *length_0;
+                }
+                Some(DriverMeta::CosineStroke { stroke_min, stroke_max, initial_length }) => {
+                    // For cosine drivers, omega=2*PI and theta_0=phase so that
+                    // solve_at_angle(angle) gives t = (angle - phase) / (2*PI),
+                    // and d(t) = mid + amp * cos(angle).
+                    let mid = (stroke_min + stroke_max) / 2.0;
+                    let amp = (stroke_max - stroke_min) / 2.0;
+                    let phase = if amp.abs() < 1e-15 {
+                        0.0
+                    } else {
+                        ((initial_length - mid) / amp).clamp(-1.0, 1.0).acos()
+                    };
+                    self.driver_omega = 2.0 * PI;
+                    self.driver_theta_0 = phase;
+                    self.driver_stroke = *initial_length;
+                }
+                _ => {}
             }
         }
 
@@ -626,6 +644,30 @@ impl AppState {
         self.mechanism.as_ref()
             .map(|m| m.n_linear_drivers() > 0)
             .unwrap_or(false)
+    }
+
+    /// Returns true if the current mechanism uses a cosine-oscillation linear driver.
+    pub fn has_cosine_driver(&self) -> bool {
+        self.mechanism.as_ref()
+            .and_then(|m| m.linear_drivers().first())
+            .and_then(|ld| ld.meta())
+            .is_some_and(|m| matches!(m, crate::core::driver::DriverMeta::CosineStroke { .. }))
+    }
+
+    /// Compute the current actuator stroke (meters) from the driver angle for cosine drivers.
+    /// Returns None if this is not a cosine driver.
+    pub fn cosine_stroke_at_angle(&self, angle_rad: f64) -> Option<f64> {
+        self.mechanism.as_ref()
+            .and_then(|m| m.linear_drivers().first())
+            .and_then(|ld| ld.meta())
+            .and_then(|m| match m {
+                crate::core::driver::DriverMeta::CosineStroke { stroke_min, stroke_max, .. } => {
+                    let mid = (stroke_min + stroke_max) / 2.0;
+                    let amp = (stroke_max - stroke_min) / 2.0;
+                    Some(mid + amp * angle_rad.cos())
+                }
+                _ => None,
+            })
     }
 
     /// Returns true if a mechanism has been loaded.
@@ -782,7 +824,11 @@ impl AppState {
             return false;
         }
 
-        if self.has_linear_driver() {
+        if self.has_cosine_driver() {
+            // Cosine drivers use angle-based animation (0-360 degrees maps to
+            // one full extend-retract cycle).
+            self.step_animation_revolute(dt)
+        } else if self.has_linear_driver() {
             self.step_animation_linear(dt)
         } else {
             self.step_animation_revolute(dt)

@@ -23,13 +23,28 @@ use crate::solver::statics::{extract_reactions, get_driver_reactions, solve_stat
 pub enum SweepMode {
     /// Revolute driver: x-axis is angle in degrees (0-360).
     Angle,
-    /// Linear driver: x-axis is actuator stroke in meters.
+    /// Linear driver (constant velocity): x-axis is actuator stroke in meters.
     Stroke {
         driver_length_0: f64,
         stroke_start: f64,
         stroke_end: f64,
         velocity: f64,
     },
+    /// Cosine-oscillation linear driver: x-axis is actuator stroke in meters.
+    /// The driver sweeps smoothly through extend-retract in one period.
+    CosineStroke {
+        stroke_min: f64,
+        stroke_max: f64,
+        initial_length: f64,
+        phase: f64,
+    },
+}
+
+impl SweepMode {
+    /// Returns true if this is a stroke-based sweep (linear driver).
+    pub fn is_stroke(&self) -> bool {
+        matches!(self, SweepMode::Stroke { .. } | SweepMode::CosineStroke { .. })
+    }
 }
 
 /// Pre-computed sweep results for the full driver rotation (0-360 degrees).
@@ -92,54 +107,60 @@ pub(crate) fn compute_sweep_data(
 ) -> (SweepData, DVector<f64>) {
     // Detect whether the mechanism uses a linear driver (stroke mode)
     // or a revolute driver (angle mode).
-    let linear_driver_meta: Option<(f64, f64)> = mech
+    let linear_driver_meta = mech
         .linear_drivers()
         .first()
-        .and_then(|ld| ld.meta())
-        .and_then(|m| match m {
-            DriverMeta::LinearLength { velocity, length_0 } => Some((*velocity, *length_0)),
-            _ => None,
-        });
+        .and_then(|ld| ld.meta().cloned());
 
     let has_linear_driver = linear_driver_meta.is_some();
 
     // Determine sweep parameters based on driver type.
     // For revolute: sweep 0-360 degrees in 1-degree steps.
-    // For linear:   sweep from length_0 to length_end in equal steps.
-    //   The caller provides velocity and length_0 via the omega/theta_0 params.
-    //   We compute stroke_end from the sweep_range, or default to a reasonable
-    //   range of 361 steps over the stroke travel.
-    let (num_steps, sweep_mode) = if let Some((velocity, length_0)) = linear_driver_meta {
-        // For linear drivers, determine the stroke range.
-        // If sweep_range is provided, it contains (stroke_min, stroke_max) in meters.
-        // Otherwise, use a default range: stroke extends by |velocity| * 1 second
-        // (arbitrary but gives a meaningful default for interactive use).
-        let (stroke_start, stroke_end) = if let Some((s_min, s_max)) = sweep_range {
-            (s_min, s_max)
-        } else {
-            // Default: sweep from length_0 over 1 second of travel.
-            // The signed velocity determines the direction:
-            //   positive velocity => stroke increases over time
-            //   negative velocity => stroke decreases over time
-            // The sweep always follows natural time progression (t=0 to t=T).
-            let extent = if velocity.abs() > 1e-15 {
-                velocity * 1.0 // 1 second of travel (preserves sign)
+    // For cosine stroke: sweep time from 0 to 1 (one full extend-retract cycle).
+    // For linear (constant velocity): sweep stroke range with triangle wave.
+    let (num_steps, sweep_mode) = match &linear_driver_meta {
+        Some(DriverMeta::CosineStroke { stroke_min, stroke_max, initial_length }) => {
+            let mid = (stroke_min + stroke_max) / 2.0;
+            let amp = (stroke_max - stroke_min) / 2.0;
+            let phase = if amp.abs() < 1e-15 {
+                0.0
             } else {
-                0.01 // 10mm fallback
+                ((initial_length - mid) / amp).clamp(-1.0, 1.0).acos()
             };
-            (length_0, length_0 + extent)
-        };
-        let steps = 360_i32; // same resolution as angle sweep
-        let mode = SweepMode::Stroke {
-            driver_length_0: length_0,
-            stroke_start,
-            stroke_end,
-            velocity,
-        };
-        (steps, mode)
-    } else {
-        // Revolute driver: always sweep full 0-360°.
-        (360_i32, SweepMode::Angle)
+            let steps = 360_i32; // same resolution as angle sweep
+            let mode = SweepMode::CosineStroke {
+                stroke_min: *stroke_min,
+                stroke_max: *stroke_max,
+                initial_length: *initial_length,
+                phase,
+            };
+            (steps, mode)
+        }
+        Some(DriverMeta::LinearLength { velocity, length_0 }) => {
+            // For constant-velocity linear drivers, determine the stroke range.
+            let (stroke_start, stroke_end) = if let Some((s_min, s_max)) = sweep_range {
+                (s_min, s_max)
+            } else {
+                let extent = if velocity.abs() > 1e-15 {
+                    velocity * 1.0
+                } else {
+                    0.01
+                };
+                (*length_0, length_0 + extent)
+            };
+            let steps = 360_i32;
+            let mode = SweepMode::Stroke {
+                driver_length_0: *length_0,
+                stroke_start,
+                stroke_end,
+                velocity: *velocity,
+            };
+            (steps, mode)
+        }
+        _ => {
+            // Revolute driver: always sweep full 0-360°.
+            (360_i32, SweepMode::Angle)
+        }
     };
 
     let capacity = (num_steps.max(0) + 1) as usize;
@@ -223,13 +244,12 @@ pub(crate) fn compute_sweep_data(
     // Sweep loop: iterate over num_steps+1 positions.
     // In angle mode: 0-360 degrees in 1-degree steps.
     // In stroke mode: stroke_start to stroke_end in equal steps.
+    // In cosine mode: time from 0 to 1 (one full cosine cycle).
     let mut q = q_start.clone();
     let mut q_at_zero = q_start.clone();
 
-    // For stroke mode: warm up from driver_length_0 to stroke_start so the
-    // solver maintains the correct branch. The initial q_start is valid at
-    // length_0, not at stroke_start. Walking in small steps from length_0 to
-    // stroke_start uses continuation to keep the solver on the +y branch.
+    // For constant-velocity stroke mode: warm up from driver_length_0 to
+    // stroke_start so the solver maintains the correct branch.
     if let SweepMode::Stroke { driver_length_0, stroke_start: s0, velocity: vel, .. } = &sweep_mode {
         let warmup_steps = 50_usize;
         let mut q_warmup = q_start.clone();
@@ -244,6 +264,8 @@ pub(crate) fn compute_sweep_data(
         }
         q = q_warmup;
     }
+    // CosineStroke needs no warmup: t=0 corresponds to the initial_length
+    // (the solver starts at the right configuration).
 
     for i in 0..=num_steps.max(0) {
         // Compute the x-axis value and corresponding time t.
@@ -254,18 +276,25 @@ pub(crate) fn compute_sweep_data(
                 (angle_deg, t)
             }
             SweepMode::Stroke { driver_length_0, stroke_start: s0, stroke_end: s_end, velocity: vel } => {
-                // Triangle wave: first half extends (s0 → s_end), second half
-                // retracts (s_end → s0). This covers the full mechanism motion
-                // cycle for actuators whose length is non-monotonic in crank angle.
+                // Triangle wave: first half extends (s0 -> s_end), second half
+                // retracts (s_end -> s0).
                 let half = num_steps.max(1) / 2;
                 let stroke = if i <= half {
-                    // Extension phase
                     s0 + (s_end - s0) * i as f64 / half as f64
                 } else {
-                    // Retraction phase
                     s_end - (s_end - s0) * (i - half) as f64 / (num_steps.max(1) - half) as f64
                 };
                 let t = (stroke - driver_length_0) / vel;
+                (stroke, t)
+            }
+            SweepMode::CosineStroke { stroke_min, stroke_max, phase, .. } => {
+                // Cosine oscillation: t sweeps from 0 to 1 (one full period).
+                // The driver function d(t) = mid + amp * cos(2*PI*t + phase)
+                // naturally produces a smooth extend-retract cycle.
+                let t = i as f64 / num_steps.max(1) as f64;
+                let mid = (stroke_min + stroke_max) / 2.0;
+                let amp = (stroke_max - stroke_min) / 2.0;
+                let stroke = mid + amp * (2.0 * std::f64::consts::PI * t + phase).cos();
                 (stroke, t)
             }
         };

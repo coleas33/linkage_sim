@@ -434,24 +434,30 @@ mod tests {
             (stroke_max - stroke_min) * 1000.0,
         );
 
-        // Sweep the linear driver to verify the mechanism can be driven through
-        // its full range. The linear driver goes from length_0 outward at velocity.
+        // Sweep the cosine linear driver to verify the mechanism can be driven
+        // through its full range. The cosine driver oscillates between stroke_min
+        // and stroke_max over one period (t=0 to t=1).
         let ld_meta = mech.linear_drivers().first()
             .and_then(|ld| ld.meta())
             .expect("should have linear driver meta");
-        let (velocity, length_0) = match ld_meta {
-            crate::core::driver::DriverMeta::LinearLength { velocity, length_0 } => (*velocity, *length_0),
-            other => panic!("Expected LinearLength meta, got {:?}", other),
+        let (ld_stroke_min, ld_stroke_max, initial_length) = match ld_meta {
+            crate::core::driver::DriverMeta::CosineStroke { stroke_min, stroke_max, initial_length } =>
+                (*stroke_min, *stroke_max, *initial_length),
+            other => panic!("Expected CosineStroke meta, got {:?}", other),
         };
-        println!("Linear driver: length_0={:.4} mm, velocity={:.4} mm/s",
-            length_0 * 1000.0, velocity * 1000.0);
+        println!("Cosine driver: stroke_min={:.4} mm, stroke_max={:.4} mm, initial_length={:.4} mm",
+            ld_stroke_min * 1000.0, ld_stroke_max * 1000.0, initial_length * 1000.0);
 
-        // The velocity should drive from stroke_min to stroke_max in ~1 second.
-        let expected_velocity = stroke_max - stroke_min;
+        // The cosine driver stroke limits should match the computed stroke range.
         assert!(
-            (velocity - expected_velocity).abs() < 0.001,
-            "velocity should be ~{:.4} mm/s, got {:.4} mm/s",
-            expected_velocity * 1000.0, velocity * 1000.0,
+            (ld_stroke_min - stroke_min).abs() < 0.001,
+            "driver stroke_min should match force element, got {:.4} vs {:.4} mm",
+            ld_stroke_min * 1000.0, stroke_min * 1000.0,
+        );
+        assert!(
+            (ld_stroke_max - stroke_max).abs() < 0.001,
+            "driver stroke_max should match force element, got {:.4} vs {:.4} mm",
+            ld_stroke_max * 1000.0, stroke_max * 1000.0,
         );
 
         // Verify solver converges at t=0.

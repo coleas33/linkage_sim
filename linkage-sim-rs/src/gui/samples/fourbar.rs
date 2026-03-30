@@ -4,7 +4,7 @@ use nalgebra::{DVector, Vector2};
 use std::f64::consts::PI;
 
 use crate::core::body::{make_bar, make_ground, Body, BodyGeometry};
-use crate::core::linear_driver::constant_velocity_linear_driver;
+use crate::core::linear_driver::cosine_linear_driver;
 use crate::core::mechanism::Mechanism;
 use crate::forces::elements::{ForceElement, ForceZoneElement, LinearActuatorElement};
 
@@ -516,7 +516,7 @@ pub(super) fn build_triple_rocker_with_driver(
 ///
 /// Solves the 4-bar loop closure analytically (above=true branch) and returns
 /// (mx, my) in global coordinates.
-fn chebyshev_lambda_m_position(
+pub(super) fn chebyshev_lambda_m_position(
     o2: (f64, f64),
     o4: (f64, f64),
     l_crank: f64,
@@ -658,20 +658,19 @@ pub(super) fn build_chebyshev_lambda_actuator(
         end_stop_restitution: 0.5,
     }));
 
-    // Linear driver: prescribe distance from actuator base to coupler M.
+    // Cosine linear driver: prescribe distance from actuator base to coupler M.
+    // Uses a cosine oscillation to smoothly sweep the full extend-retract cycle.
     // length_0 = distance from O_act to M at the initial crank angle (theta=0).
     let length_0 = ((mx_0 - act_base_x).powi(2) + (my_0 - act_base_y).powi(2)).sqrt();
 
-    // Set velocity to cover the full stroke range in 1 second,
-    // so the default sweep (velocity * 1.0s) covers the entire travel.
-    let velocity = stroke_max - stroke_min;
-    let ld = constant_velocity_linear_driver(
+    let ld = cosine_linear_driver(
         "LD1",
         "ground",
         [act_base_x, act_base_y],
         "coupler",
         [l_total_coupler, 0.0],
-        velocity,
+        stroke_min,
+        stroke_max,
         length_0,
     );
     mech.add_linear_driver(ld).map_err(|e| e.to_string())?;

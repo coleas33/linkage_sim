@@ -15,6 +15,7 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
     // ── Crank Angle / Actuator Stroke ──────────────────────────────
     let accent = egui::Color32::from_rgb(80, 160, 255);
     let is_linear = state.has_linear_driver();
+    let is_cosine = state.has_cosine_driver();
     let section_label = if is_linear { "Actuator Stroke" } else { "Crank Angle" };
     egui::CollapsingHeader::new(
         egui::RichText::new(section_label).color(accent),
@@ -22,18 +23,52 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
         .id_salt("crank_section")
         .default_open(true)
         .show(ui, |ui| {
-            if is_linear {
-                // ── Linear driver: stroke slider in mm ──────────────
+            if is_cosine {
+                // ── Cosine driver: angle slider (0-360) showing stroke ──
+                // The cosine driver maps angle 0..2*PI to a full extend-retract
+                // cycle. The slider sweeps the angle; we display the stroke.
+                let (slider_min, slider_max) = (0.0_f64, 360.0_f64);
+
+                let mut angle_deg = state.driver_angle.to_degrees();
+                angle_deg = angle_deg.clamp(slider_min, slider_max);
+                let prev_angle = angle_deg;
+
+                // Show the current stroke as a label above the slider.
+                let current_stroke_mm = state.cosine_stroke_at_angle(angle_deg.to_radians())
+                    .unwrap_or(state.driver_stroke * 1000.0) * 1000.0;
+                ui.label(format!("Stroke: {:.1} mm", current_stroke_mm));
+
+                let response = ui.add(
+                    egui::Slider::new(&mut angle_deg, slider_min..=slider_max)
+                        .suffix("\u{00B0}")
+                        .step_by(0.5),
+                ).on_hover_text("Drag to sweep the actuator through its full extend-retract cycle");
+                if response.dragged() {
+                    if state.playing {
+                        state.playing = false;
+                        state.animation_direction = 1.0;
+                    }
+                    if let Some(sim) = &mut state.simulation {
+                        sim.playing = false;
+                    }
+                }
+                if (angle_deg - prev_angle).abs() > 1e-6 {
+                    state.solve_at_angle(angle_deg.to_radians());
+                    // Update driver_stroke to match the computed stroke
+                    if let Some(stroke) = state.cosine_stroke_at_angle(angle_deg.to_radians()) {
+                        state.driver_stroke = stroke;
+                    }
+                }
+            } else if is_linear {
+                // ── Constant-velocity linear driver: stroke slider in mm ──
                 let (slider_min_mm, slider_max_mm) = if state.sweep_range_enabled {
                     (state.sweep_stroke_min * 1000.0, state.sweep_stroke_max * 1000.0)
                 } else {
-                    // Default: full range from stroke limits or theta_0 ± reasonable range
+                    // Default: full range from stroke limits or theta_0 +/- reasonable range
                     let length_0_mm = state.driver_theta_0 * 1000.0;
                     let range_mm = if state.sweep_stroke_max > state.sweep_stroke_min {
-                        // Use configured stroke limits as full-range defaults
                         (state.sweep_stroke_min * 1000.0, state.sweep_stroke_max * 1000.0)
                     } else {
-                        // Fallback: center on initial length with ±50mm range
                         ((length_0_mm - 50.0).max(0.0), length_0_mm + 50.0)
                     };
                     range_mm
