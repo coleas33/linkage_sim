@@ -259,6 +259,8 @@ fn draw_coupler_trace(ui: &mut egui::Ui, sweep: &SweepData, units: &DisplayUnits
     let axis_label = units.length_axis_label();
     let plot = Plot::new("coupler_trace_plot")
         .data_aspect(1.0) // equal axis scaling
+        .allow_zoom(true)
+        .allow_drag(true)
         .x_axis_label(format!("X ({})", axis_label))
         .y_axis_label(format!("Y ({})", axis_label))
         .legend(egui_plot::Legend::default());
@@ -339,6 +341,8 @@ fn draw_body_angles(
         AngleUnit::Radians => "rad",
     };
     let plot = Plot::new("body_angles_plot")
+        .allow_zoom(true)
+        .allow_drag(true)
         .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label(format!("Body Angle ({})", angle_label))
         .legend(egui_plot::Legend::default());
@@ -410,6 +414,8 @@ fn draw_transmission_angle(
     let x_max = units.angle(2.0 * std::f64::consts::PI);
 
     let plot = Plot::new("transmission_angle_plot")
+        .allow_zoom(true)
+        .allow_drag(true)
         .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label("Transmission Angle (deg)")
         .legend(egui_plot::Legend::default());
@@ -478,6 +484,8 @@ fn draw_driver_torque(
     };
 
     let plot = Plot::new("driver_torque_plot")
+        .allow_zoom(true)
+        .allow_drag(true)
         .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label(driver_effort_y_label(sweep))
         .legend(egui_plot::Legend::default());
@@ -531,6 +539,8 @@ fn draw_inverse_dynamics(
     }
 
     let plot = Plot::new("inverse_dynamics_plot")
+        .allow_zoom(true)
+        .allow_drag(true)
         .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label(driver_effort_y_label(sweep))
         .legend(egui_plot::Legend::default());
@@ -607,6 +617,8 @@ fn draw_energy(
     }
 
     let plot = Plot::new("energy_plot")
+        .allow_zoom(true)
+        .allow_drag(true)
         .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label("Energy (J)")
         .legend(egui_plot::Legend::default());
@@ -696,6 +708,8 @@ fn draw_mechanical_advantage(
     }
 
     let plot = Plot::new("mechanical_advantage_plot")
+        .allow_zoom(true)
+        .allow_drag(true)
         .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label("Mechanical Advantage")
         .legend(egui_plot::Legend::default());
@@ -763,6 +777,8 @@ fn draw_joint_reactions(
     }
 
     let plot = Plot::new("joint_reactions_plot")
+        .allow_zoom(true)
+        .allow_drag(true)
         .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label("Reaction Force (N)")
         .legend(egui_plot::Legend::default());
@@ -830,6 +846,8 @@ fn draw_coupler_velocity(
     }
 
     let plot = Plot::new("coupler_velocity_plot")
+        .allow_zoom(true)
+        .allow_drag(true)
         .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label("Velocity (m/s)")
         .legend(egui_plot::Legend::default());
@@ -897,6 +915,8 @@ fn draw_coupler_acceleration(
     }
 
     let plot = Plot::new("coupler_acceleration_plot")
+        .allow_zoom(true)
+        .allow_drag(true)
         .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label("Acceleration (m/s\u{00b2})")
         .legend(egui_plot::Legend::default());
@@ -963,7 +983,7 @@ fn draw_toggle_markers(
             VLine::new(format!("toggle_{}", i), toggle_display)
                 .color(egui::Color32::from_rgba_premultiplied(255, 60, 60, 100))
                 .style(egui_plot::LineStyle::Dashed { length: 3.0 })
-                .width(1.0),
+                .width(2.5),
         );
     }
 }

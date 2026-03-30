@@ -129,11 +129,21 @@ pub fn draw_parametric_panel(ui: &mut egui::Ui, state: &mut AppState) {
         let x_label = result.config.parameter.label();
         let y_label = result.config.metric.label();
 
+        let total = result.metric_values.len();
+        let failed = result.metric_values.iter().filter(|v| v.is_nan()).count();
+        if failed > 0 {
+            ui.colored_label(
+                egui::Color32::from_rgb(255, 180, 60),
+                format!("{} of {} parameter values failed to converge", failed, total),
+            );
+        }
+
         Plot::new("parametric_plot")
             .x_axis_label(x_label.as_str())
             .y_axis_label(y_label)
             .height(200.0)
-            .allow_drag(false)
+            .allow_zoom(true)
+            .allow_drag(true)
             .show(ui, |plot_ui| {
                 let line = Line::new(
                     result.config.metric.label(),
@@ -310,7 +320,8 @@ pub fn draw_counterbalance_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 .x_axis_label("Driver angle (deg)")
                 .y_axis_label("Driver torque (N*m)")
                 .height(180.0)
-                .allow_drag(false)
+                .allow_zoom(true)
+                .allow_drag(true)
                 .show(ui, |plot_ui| {
                     plot_ui.line(Line::new("Baseline", PlotPoints::new(baseline_points)));
                     plot_ui.line(Line::new("Optimized", PlotPoints::new(optimized_points)));
