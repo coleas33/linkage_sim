@@ -43,8 +43,75 @@ pub fn handle_interaction(
     let is_shift = ui.input(|i| i.modifiers.shift);
     let mut is_panning = false;
 
+    // ── Interaction: ground pivot drag ─────────────────────────────────
+    // Start drag when pointer is near a ground attachment point in Select mode.
+    if state.active_tool == EditorTool::Select
+        && response.drag_started_by(egui::PointerButton::Primary)
+        && !is_shift
+    {
+        if let Some(pos) = response.interact_pointer_pos() {
+            // Only consider ground body attachment points.
+            let ground_hit = attachment_hit_targets
+                .iter()
+                .filter(|h| h.body_id == GROUND_ID)
+                .filter(|h| pos.distance(h.screen_pos) <= HIT_RADIUS)
+                .min_by(|a, b| {
+                    pos.distance(a.screen_pos)
+                        .partial_cmp(&pos.distance(b.screen_pos))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+            if let Some(hit) = ground_hit {
+                state.dragging_ground_pivot =
+                    Some((hit.point_name.clone(), hit.world_pos));
+            }
+        }
+    }
+
+    // During drag: draw a ghost marker at the cursor position.
+    if state.dragging_ground_pivot.is_some() {
+        if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+            let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+            let (gx, gy) = state.grid.snap_point(wx, wy);
+            let ghost_screen = state.view.world_to_screen(gx, gy);
+            let ghost_pos = Pos2::new(ghost_screen[0], ghost_screen[1]);
+            let half = GROUND_MARKER_SIZE * 0.5;
+            // Draw ghost X marker.
+            let ghost_color = GROUND_MARKER_COLOR.linear_multiply(0.6);
+            painter.line_segment(
+                [
+                    Pos2::new(ghost_pos.x - half, ghost_pos.y - half),
+                    Pos2::new(ghost_pos.x + half, ghost_pos.y + half),
+                ],
+                Stroke::new(2.5, ghost_color),
+            );
+            painter.line_segment(
+                [
+                    Pos2::new(ghost_pos.x + half, ghost_pos.y - half),
+                    Pos2::new(ghost_pos.x - half, ghost_pos.y + half),
+                ],
+                Stroke::new(2.5, ghost_color),
+            );
+        }
+    }
+
+    // On drag end: apply the ground pivot move and rebuild.
+    if state.dragging_ground_pivot.is_some()
+        && response.drag_stopped_by(egui::PointerButton::Primary)
+    {
+        if let Some((pivot_name, _start_pos)) = state.dragging_ground_pivot.take() {
+            if let Some(pos) = response.interact_pointer_pos() {
+                let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+                let (gx, gy) = state.grid.snap_point(wx, wy);
+                state.update_ground_pivot_position(&pivot_name, gx, gy);
+            }
+        }
+    }
+
+    let is_dragging_ground = state.dragging_ground_pivot.is_some();
+
     // Primary drag on empty space (Select mode) pans the view.
-    if response.dragged_by(egui::PointerButton::Primary) && !is_shift {
+    // Suppress panning when dragging a ground pivot.
+    if response.dragged_by(egui::PointerButton::Primary) && !is_shift && !is_dragging_ground {
         if state.active_tool == EditorTool::Select
             && state.draw_link_start.is_none()
         {
@@ -103,6 +170,7 @@ pub fn handle_interaction(
         state.add_body_state = None;
         state.place_force_state = None;
         state.creating_force_zone = None;
+        state.dragging_ground_pivot = None;
         state.active_tool = EditorTool::Select;
     }
 

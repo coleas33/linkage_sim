@@ -118,6 +118,22 @@ impl AppState {
         }
     }
 
+    // ── Update operations ────────────────────────────────────────────────
+
+    /// Move a ground attachment point to new coordinates.
+    ///
+    /// Pushes undo, updates the point in the blueprint, and rebuilds.
+    /// No-op if the blueprint or ground body is missing, or the point doesn't exist.
+    pub fn update_ground_pivot_position(&mut self, name: &str, x: f64, y: f64) {
+        self.push_undo();
+        let Some(bp) = &mut self.blueprint else { return };
+        let Some(ground) = bp.bodies.get_mut(GROUND_ID) else { return };
+        if ground.attachment_points.contains_key(name) {
+            ground.attachment_points.insert(name.to_string(), [x, y]);
+        }
+        self.rebuild();
+    }
+
     // ── Create / delete operations ──────────────────────────────────────
 
     /// Add a named attachment point to a body at a world-coordinate position.

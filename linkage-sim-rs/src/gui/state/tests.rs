@@ -653,6 +653,117 @@
     }
 
     #[test]
+    fn update_ground_pivot_position_rebuilds_mechanism() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // Find an existing ground pivot name.
+        let pivot_name = {
+            let ground = state
+                .blueprint
+                .as_ref()
+                .unwrap()
+                .bodies
+                .get("ground")
+                .unwrap();
+            ground
+                .attachment_points
+                .keys()
+                .next()
+                .unwrap()
+                .clone()
+        };
+
+        // Move it.
+        state.update_ground_pivot_position(&pivot_name, 1.0, 1.0);
+
+        // Verify blueprint updated.
+        let pt = state
+            .blueprint
+            .as_ref()
+            .unwrap()
+            .bodies
+            .get("ground")
+            .unwrap()
+            .attachment_points
+            .get(&pivot_name)
+            .unwrap();
+        assert!((pt[0] - 1.0).abs() < f64::EPSILON);
+        assert!((pt[1] - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn update_ground_pivot_position_is_undoable() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // Find an existing ground pivot name and record its position.
+        let (pivot_name, original_pos) = {
+            let ground = state
+                .blueprint
+                .as_ref()
+                .unwrap()
+                .bodies
+                .get("ground")
+                .unwrap();
+            let (name, pos) = ground
+                .attachment_points
+                .iter()
+                .next()
+                .unwrap();
+            (name.clone(), *pos)
+        };
+
+        state.update_ground_pivot_position(&pivot_name, 99.0, 99.0);
+        assert!(state.can_undo());
+
+        state.undo();
+        let pt = state
+            .blueprint
+            .as_ref()
+            .unwrap()
+            .bodies
+            .get("ground")
+            .unwrap()
+            .attachment_points
+            .get(&pivot_name)
+            .unwrap();
+        assert!((pt[0] - original_pos[0]).abs() < f64::EPSILON);
+        assert!((pt[1] - original_pos[1]).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn update_ground_pivot_position_noop_for_missing_point() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        let n_before = state
+            .blueprint
+            .as_ref()
+            .unwrap()
+            .bodies
+            .get("ground")
+            .unwrap()
+            .attachment_points
+            .len();
+
+        // Try to move a nonexistent pivot.
+        state.update_ground_pivot_position("NONEXISTENT", 1.0, 1.0);
+
+        // Count should not change (no new point inserted).
+        let n_after = state
+            .blueprint
+            .as_ref()
+            .unwrap()
+            .bodies
+            .get("ground")
+            .unwrap()
+            .attachment_points
+            .len();
+        assert_eq!(n_before, n_after);
+    }
+
+    #[test]
     fn add_body_with_points_creates_new_body_in_blueprint() {
         let mut state = AppState::default();
         state.load_sample(SampleMechanism::FourBar);

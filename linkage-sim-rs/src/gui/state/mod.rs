@@ -153,6 +153,9 @@ pub struct AppState {
     // ── Force Zone creation state ────────────────────────────────────────
     /// Drag-to-define force zone state. None when not in CreateForceZone mode.
     pub creating_force_zone: Option<ForceZoneDragState>,
+    // ── Ground pivot drag state ─────────────────────────────────────────
+    /// Ground pivot being dragged: (pivot_name, start_world_pos).
+    pub dragging_ground_pivot: Option<(String, [f64; 2])>,
     // ── Diagnostics ─────────────────────────────────────────────────────
     /// Cached Grashof classification for 4-bar mechanisms.
     pub grashof_result: Option<GrashofResult>,
@@ -342,6 +345,7 @@ impl Default for AppState {
             add_body_state: None,
             place_force_state: None,
             creating_force_zone: None,
+            dragging_ground_pivot: None,
             grashof_result: None,
             crank_recommendation: None,
             simulation: None,
