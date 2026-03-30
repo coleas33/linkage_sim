@@ -9,7 +9,7 @@ use crate::gui::state::{
     AddBodyState, AppState, ContextMenuTarget, EditorTool,
 };
 
-use super::colors::HIT_RADIUS;
+use super::colors::{HIT_RADIUS, HIT_RADIUS_MOBILE};
 use super::hit_testing::{find_nearest_body_segment, AttachmentHit, BodySegment};
 
 /// Capture the right-click target and show the context menu popup.
@@ -29,21 +29,22 @@ pub fn handle_context_menu(
     // Only trigger on a true click (not after a right-drag pan).
     if response.secondary_clicked() && !right_drag_ended {
         if let Some(pos) = response.interact_pointer_pos() {
+            let hit_radius = if state.is_mobile { HIT_RADIUS_MOBILE } else { HIT_RADIUS };
             let joint_id = joint_hit_targets
                 .iter()
-                .find(|(screen_pos, _)| pos.distance(*screen_pos) <= HIT_RADIUS)
+                .find(|(screen_pos, _)| pos.distance(*screen_pos) <= hit_radius)
                 .map(|(_, id)| id.clone());
 
             // Attachment points first (priority over body area);
             // includes ground pivots so they get context-menu actions.
             let attachment_point = attachment_hit_targets
                 .iter()
-                .find(|h| pos.distance(h.screen_pos) <= HIT_RADIUS)
+                .find(|h| pos.distance(h.screen_pos) <= hit_radius)
                 .map(|h| (h.body_id.clone(), h.point_name.clone()));
 
             // Body area: only if no attachment point matched
             let body_area = if attachment_point.is_none() {
-                find_nearest_body_segment(pos, body_segments, HIT_RADIUS)
+                find_nearest_body_segment(pos, body_segments, hit_radius)
                     .map(|hit| hit.body_id)
             } else {
                 None

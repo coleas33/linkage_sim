@@ -796,11 +796,12 @@ fn render_hover_tooltips(
     if let Some(hover_pos) = ui.input(|i| i.pointer.hover_pos()) {
         if canvas_rect.contains(hover_pos) && state.active_tool == EditorTool::Select {
             let mut shown_tooltip = false;
+            let hit_radius = if state.is_mobile { HIT_RADIUS_MOBILE } else { HIT_RADIUS };
 
             // Check joints first (they're drawn on top)
             if !shown_tooltip {
                 for (jpos, jid) in joint_hit_targets {
-                    if jpos.distance(hover_pos) < HIT_RADIUS {
+                    if jpos.distance(hover_pos) < hit_radius {
                         if let Some(mech) = &state.mechanism {
                             if let Some(joint) = mech.joints().iter().find(|j| j.id() == jid) {
                                 let joint_type_str = if joint.is_revolute() {
@@ -852,7 +853,7 @@ fn render_hover_tooltips(
             // Then check attachment points / body areas
             if !shown_tooltip {
                 for hit in attachment_hit_targets {
-                    if hit.screen_pos.distance(hover_pos) < HIT_RADIUS {
+                    if hit.screen_pos.distance(hover_pos) < hit_radius {
                         if let Some(mech) = &state.mechanism {
                             if let Some(body) = mech.bodies().get(&hit.body_id) {
                                 if hit.body_id == GROUND_ID {

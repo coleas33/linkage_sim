@@ -228,6 +228,8 @@ pub struct AppState {
     /// When true, `fit_to_view` is called on the next canvas frame and then
     /// cleared. Set after a mechanism is loaded so the view auto-fits.
     pub pending_fit_to_view: bool,
+    /// True when the screen is small enough for mobile layout.
+    pub is_mobile: bool,
 }
 
 /// Tracks placement state for the Add Body tool.
@@ -406,6 +408,7 @@ impl Default for AppState {
             status_message_time: 0.0,
             highlight_joint: None,
             pending_fit_to_view: false,
+            is_mobile: false,
         };
         state.rebuild();
         state

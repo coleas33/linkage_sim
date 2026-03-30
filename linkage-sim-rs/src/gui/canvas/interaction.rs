@@ -16,10 +16,11 @@ use super::rendering::{draw_dashed_line, fill_force_template};
 fn find_nearest_attachment<'a>(
     pos: Pos2,
     attachment_hit_targets: &'a [AttachmentHit],
+    hit_radius: f32,
 ) -> Option<&'a AttachmentHit> {
     attachment_hit_targets
         .iter()
-        .filter(|h| pos.distance(h.screen_pos) <= HIT_RADIUS)
+        .filter(|h| pos.distance(h.screen_pos) <= hit_radius)
         .min_by(|a, b| {
             pos.distance(a.screen_pos)
                 .partial_cmp(&pos.distance(b.screen_pos))
@@ -42,6 +43,7 @@ pub fn handle_interaction(
 ) -> bool {
     let is_shift = ui.input(|i| i.modifiers.shift);
     let mut is_panning = false;
+    let hit_radius = if state.is_mobile { HIT_RADIUS_MOBILE } else { HIT_RADIUS };
 
     // ── Interaction: ground pivot drag ─────────────────────────────────
     // Start drag when pointer is near a ground attachment point in Select mode.
@@ -54,7 +56,7 @@ pub fn handle_interaction(
             let ground_hit = attachment_hit_targets
                 .iter()
                 .filter(|h| h.body_id == GROUND_ID)
-                .filter(|h| pos.distance(h.screen_pos) <= HIT_RADIUS)
+                .filter(|h| pos.distance(h.screen_pos) <= hit_radius)
                 .min_by(|a, b| {
                     pos.distance(a.screen_pos)
                         .partial_cmp(&pos.distance(b.screen_pos))
@@ -186,13 +188,13 @@ pub fn handle_interaction(
     // ── Interaction: Draw Link tool ─────────────────────────────────────
     if state.active_tool == EditorTool::DrawLink {
         handle_draw_link(ui, painter, response, state, is_shift,
-                         attachment_hit_targets, body_segments);
+                         attachment_hit_targets, body_segments, hit_radius);
     }
 
     // ── Interaction: Place Force tool ───────────────────────────────────
     if state.active_tool == EditorTool::PlaceForce {
         handle_place_force(ui, painter, response, state,
-                           attachment_hit_targets, body_segments);
+                           attachment_hit_targets, body_segments, hit_radius);
     }
 
     // ── Interaction: Create Force Zone tool ─────────────────────────────
@@ -207,7 +209,7 @@ pub fn handle_interaction(
 
     // ── Interaction: Create Joint two-click flow ────────────────────────
     if state.creating_joint.is_some() && response.clicked() {
-        handle_create_joint(response, state, attachment_hit_targets);
+        handle_create_joint(response, state, attachment_hit_targets, hit_radius);
     }
 
     // ── Interaction: click for selection / ground pivot ──────────────────
@@ -219,7 +221,7 @@ pub fn handle_interaction(
         && state.active_tool != EditorTool::CreateForceZone
         && response.clicked()
     {
-        handle_click_selection(response, state, joint_hit_targets, attachment_hit_targets);
+        handle_click_selection(response, state, joint_hit_targets, attachment_hit_targets, hit_radius);
     }
 
     right_drag_ended
@@ -235,13 +237,14 @@ fn handle_draw_link(
     is_shift: bool,
     attachment_hit_targets: &[AttachmentHit],
     body_segments: &[BodySegment],
+    hit_radius: f32,
 ) {
     use crate::gui::state::DrawLinkStart;
 
     // Drag start: record start point, snapping to existing point if near one.
     if response.drag_started_by(egui::PointerButton::Primary) && !is_shift {
         if let Some(pos) = response.interact_pointer_pos() {
-            let snap_hit = find_nearest_attachment(pos, attachment_hit_targets);
+            let snap_hit = find_nearest_attachment(pos, attachment_hit_targets, hit_radius);
             if let Some(hit) = snap_hit {
                 // Snap to existing attachment point.
                 state.draw_link_start = Some(DrawLinkStart {
@@ -266,7 +269,7 @@ fn handle_draw_link(
     if let Some(ref start) = state.draw_link_start {
         if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
             let [sx, sy] = start.world_pos;
-            let snap_end = find_nearest_attachment(pos, attachment_hit_targets);
+            let snap_end = find_nearest_attachment(pos, attachment_hit_targets, hit_radius);
             let (ex, ey, end_snapped) = if let Some(hit) = snap_end {
                 (hit.world_pos[0], hit.world_pos[1], true)
             } else {
@@ -335,7 +338,7 @@ fn handle_draw_link(
             let [sx, sy] = start.world_pos;
 
             // Snap end to existing point, body segment, or grid.
-            let snap_end = find_nearest_attachment(pos, attachment_hit_targets);
+            let snap_end = find_nearest_attachment(pos, attachment_hit_targets, hit_radius);
             let (ex, ey, end_attach) = if let Some(hit) = snap_end {
                 // Priority 1: snap to existing attachment point.
                 (hit.world_pos[0], hit.world_pos[1],
@@ -414,6 +417,7 @@ fn handle_place_force(
     state: &mut AppState,
     attachment_hit_targets: &[AttachmentHit],
     body_segments: &[BodySegment],
+    hit_radius: f32,
 ) {
     use crate::gui::state::PlaceForceStart;
 
@@ -421,7 +425,7 @@ fn handle_place_force(
     for hit in attachment_hit_targets {
         painter.circle_stroke(
             hit.screen_pos,
-            HIT_RADIUS,
+            hit_radius,
             Stroke::new(1.0, JOINT_CREATE_HIGHLIGHT.linear_multiply(0.3)),
         );
     }
@@ -431,7 +435,7 @@ fn handle_place_force(
         if let Some(ref start) = pf_state.start {
             if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
                 let [sx, sy] = start.world_pos;
-                let snap_end = find_nearest_attachment(pos, attachment_hit_targets);
+                let snap_end = find_nearest_attachment(pos, attachment_hit_targets, hit_radius);
                 let (ex, ey, end_snapped) = if let Some(hit) = snap_end {
                     (hit.world_pos[0], hit.world_pos[1], true)
                 } else {
@@ -472,7 +476,7 @@ fn handle_place_force(
     // Handle clicks.
     if response.clicked() {
         if let Some(pos) = response.interact_pointer_pos() {
-            let snap_hit = find_nearest_attachment(pos, attachment_hit_targets);
+            let snap_hit = find_nearest_attachment(pos, attachment_hit_targets, hit_radius);
 
             let (world_pos, body_id, point_name) = if let Some(hit) = snap_hit {
                 (hit.world_pos, hit.body_id.clone(), Some(hit.point_name.clone()))
@@ -692,9 +696,10 @@ fn handle_create_joint(
     response: &egui::Response,
     state: &mut AppState,
     attachment_hit_targets: &[AttachmentHit],
+    hit_radius: f32,
 ) {
     if let Some(pos) = response.interact_pointer_pos() {
-        let second_hit = find_nearest_attachment(pos, attachment_hit_targets);
+        let second_hit = find_nearest_attachment(pos, attachment_hit_targets, hit_radius);
         if let Some(hit) = second_hit {
             let (first_body, first_point, joint_type) = state.creating_joint.clone().unwrap();
             let second_body = hit.body_id.clone();
@@ -740,6 +745,7 @@ fn handle_click_selection(
     state: &mut AppState,
     joint_hit_targets: &[(Pos2, String)],
     attachment_hit_targets: &[AttachmentHit],
+    hit_radius: f32,
 ) {
     if let Some(pointer_pos) = response.interact_pointer_pos() {
         let [wx, wy] = state.view.screen_to_world(pointer_pos.x, pointer_pos.y);
@@ -767,7 +773,7 @@ fn handle_click_selection(
                 let mut hit: Option<SelectedEntity> = None;
 
                 for (joint_screen, joint_id) in joint_hit_targets {
-                    if pointer_pos.distance(*joint_screen) <= HIT_RADIUS {
+                    if pointer_pos.distance(*joint_screen) <= hit_radius {
                         hit = Some(SelectedEntity::Joint(joint_id.clone()));
                         break;
                     }
@@ -775,7 +781,7 @@ fn handle_click_selection(
 
                 if hit.is_none() {
                     for ah in attachment_hit_targets {
-                        if pointer_pos.distance(ah.screen_pos) <= HIT_RADIUS {
+                        if pointer_pos.distance(ah.screen_pos) <= hit_radius {
                             hit = Some(SelectedEntity::Body(ah.body_id.clone()));
                             break;
                         }

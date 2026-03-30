@@ -185,6 +185,8 @@ impl eframe::App for LinkageApp {
             }
         }
 
+        self.state.is_mobile = self.is_mobile;
+
         // ── Auto-load sample on mobile ───────────────────────────────
         if self.is_mobile && self.state.mechanism.is_none() && self.state.current_sample.is_none() {
             self.state.load_sample(SampleMechanism::FourBar);
