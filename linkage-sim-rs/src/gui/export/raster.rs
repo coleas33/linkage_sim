@@ -270,6 +270,7 @@ mod tests {
             coupler_accelerations: HashMap::new(),
             toggle_angles: Vec::new(),
             active_range: None,
+            sweep_mode: crate::gui::sweep::SweepMode::Angle,
         };
 
         let path = std::env::temp_dir().join("test_mechanism_empty.gif");

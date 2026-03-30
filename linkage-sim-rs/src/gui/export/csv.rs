@@ -248,6 +248,7 @@ mod tests {
             coupler_accelerations,
             toggle_angles: Vec::new(),
             active_range: None,
+            sweep_mode: crate::gui::sweep::SweepMode::Angle,
         }
     }
 

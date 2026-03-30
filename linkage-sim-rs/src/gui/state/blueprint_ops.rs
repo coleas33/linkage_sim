@@ -1029,28 +1029,38 @@ impl AppState {
             self.sweep_data = None;
             return;
         }
-        // Guard: need at least one driver and one moving body for a meaningful sweep.
+        // Guard: need at least one driver (revolute or linear) and one moving body.
         {
             let mech = self.mechanism.as_ref().unwrap();
-            if mech.n_drivers() == 0 || mech.body_order().is_empty() {
+            if (mech.n_drivers() == 0 && mech.n_linear_drivers() == 0)
+                || mech.body_order().is_empty()
+            {
                 self.sweep_data = None;
                 return;
             }
         }
         self.sync_gravity();
 
-        // Copy values we need from self before taking a reference to the mechanism,
-        // to avoid borrow-checker conflicts between &self.mechanism and &mut self.sweep_data.
-        let omega = self.driver_omega;
-        let theta_0 = self.driver_theta_0;
+        // Detect linear driver and extract parameters for the sweep.
+        // For a revolute driver, omega and theta_0 come from AppState fields.
+        // For a linear driver, omega maps to velocity and theta_0 maps to length_0,
+        // read directly from the driver metadata.
+        let mech = self.mechanism.as_ref().unwrap();
+        let (omega, theta_0) = if let Some(ld) = mech.linear_drivers().first() {
+            use crate::core::driver::DriverMeta;
+            match ld.meta() {
+                Some(DriverMeta::LinearLength { velocity, length_0 }) => (*velocity, *length_0),
+                _ => (self.driver_omega, self.driver_theta_0),
+            }
+        } else {
+            (self.driver_omega, self.driver_theta_0)
+        };
 
-        // Always start the sweep at 0°. The sweep loop always does full 0-360°;
-        // the sweep_range is only used to compute active_range indices for rendering.
+        // Always start the sweep at t=0. For angle mode, q_at_zero is the known-good
+        // state at 0 degrees. For stroke mode, it's the state at the initial stroke.
         let q_start = if self.q_at_zero.len() == self.last_good_q.len() && self.q_at_zero.len() > 0 {
-            // Use stored q_at_zero which is known-good for 0°
             self.q_at_zero.clone()
         } else {
-            // No stored q_at_zero -- fall back to last_good_q
             self.last_good_q.clone()
         };
 
@@ -1059,7 +1069,7 @@ impl AppState {
         } else {
             None
         };
-        let (data, q_zero) = compute_sweep_data(self.mechanism.as_ref().unwrap(), &q_start, omega, theta_0, self.gravity_magnitude, sweep_range);
+        let (data, q_zero) = compute_sweep_data(mech, &q_start, omega, theta_0, self.gravity_magnitude, sweep_range);
         self.sweep_data = Some(data);
         self.q_at_zero = q_zero;
     }

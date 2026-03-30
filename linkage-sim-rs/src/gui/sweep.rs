@@ -9,6 +9,7 @@ use crate::analysis::transmission::{
     mechanical_advantage, transmission_angle_fourbar, VelocityCoord,
 };
 use crate::analysis::validation::check_toggle;
+use crate::core::driver::DriverMeta;
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
 use crate::solver::inverse_dynamics::solve_inverse_dynamics;
@@ -16,6 +17,19 @@ use crate::solver::kinematics::{solve_acceleration, solve_position, solve_veloci
 use crate::solver::statics::{extract_reactions, get_driver_reactions, solve_statics};
 
 // ── Sweep data ───────────────────────────────────────────────────────────────
+
+/// Whether the sweep was over a revolute driver angle or a linear driver stroke.
+#[derive(Debug, Clone)]
+pub enum SweepMode {
+    /// Revolute driver: x-axis is angle in degrees (0-360).
+    Angle,
+    /// Linear driver: x-axis is actuator stroke in meters.
+    Stroke {
+        length_0: f64,
+        length_end: f64,
+        velocity: f64,
+    },
+}
 
 /// Pre-computed sweep results for the full driver rotation (0-360 degrees).
 ///
@@ -62,6 +76,9 @@ pub struct SweepData {
     /// `None` means the full range is active (no sweep limit).
     /// When `Some((start_idx, end_idx))`, both indices are inclusive.
     pub active_range: Option<(usize, usize)>,
+    /// Whether this sweep was over angle (revolute driver) or stroke (linear driver).
+    /// Determines X-axis labelling in plots and CSV exports.
+    pub sweep_mode: SweepMode,
 }
 
 pub(crate) fn compute_sweep_data(
@@ -72,12 +89,57 @@ pub(crate) fn compute_sweep_data(
     gravity_magnitude: f64,
     sweep_range: Option<(f64, f64)>,
 ) -> (SweepData, DVector<f64>) {
-    // Always sweep full 0-360° regardless of sweep_range.
-    // The sweep_range is only used to compute active_range indices.
-    let start_deg = 0.0_f64;
-    let end_deg = 360.0_f64;
-    let step = 1.0_f64;
-    let num_steps = ((end_deg - start_deg) / step).round() as i32;
+    // Detect whether the mechanism uses a linear driver (stroke mode)
+    // or a revolute driver (angle mode).
+    let linear_driver_meta: Option<(f64, f64)> = mech
+        .linear_drivers()
+        .first()
+        .and_then(|ld| ld.meta())
+        .and_then(|m| match m {
+            DriverMeta::LinearLength { velocity, length_0 } => Some((*velocity, *length_0)),
+            _ => None,
+        });
+
+    let has_linear_driver = linear_driver_meta.is_some();
+
+    // Determine sweep parameters based on driver type.
+    // For revolute: sweep 0-360 degrees in 1-degree steps.
+    // For linear:   sweep from length_0 to length_end in equal steps.
+    //   The caller provides velocity and length_0 via the omega/theta_0 params.
+    //   We compute stroke_end from the sweep_range, or default to a reasonable
+    //   range of 361 steps over the stroke travel.
+    let (num_steps, sweep_mode) = if let Some((velocity, length_0)) = linear_driver_meta {
+        // For linear drivers, determine the stroke range.
+        // If sweep_range is provided, it contains (stroke_min, stroke_max) in meters.
+        // Otherwise, use a default range: stroke extends by |velocity| * 1 second
+        // (arbitrary but gives a meaningful default for interactive use).
+        let (stroke_start, stroke_end) = if let Some((s_min, s_max)) = sweep_range {
+            (s_min, s_max)
+        } else {
+            // Default: sweep from length_0 over 1 second of travel.
+            // The signed velocity determines the direction:
+            //   positive velocity => stroke increases over time
+            //   negative velocity => stroke decreases over time
+            // The sweep always follows natural time progression (t=0 to t=T).
+            let extent = if velocity.abs() > 1e-15 {
+                velocity * 1.0 // 1 second of travel (preserves sign)
+            } else {
+                0.01 // 10mm fallback
+            };
+            (length_0, length_0 + extent)
+        };
+        let steps = 360_i32; // same resolution as angle sweep
+        let mode = SweepMode::Stroke {
+            length_0: stroke_start,
+            length_end: stroke_end,
+            velocity,
+        };
+        (steps, mode)
+    } else {
+        // Revolute driver: always sweep full 0-360°.
+        (360_i32, SweepMode::Angle)
+    };
+
     let capacity = (num_steps.max(0) + 1) as usize;
 
     let mut data = SweepData {
@@ -96,6 +158,7 @@ pub(crate) fn compute_sweep_data(
         coupler_accelerations: HashMap::new(),
         toggle_angles: Vec::new(),
         active_range: None, // computed after sweep loop
+        sweep_mode: sweep_mode.clone(),
     };
 
     // Temporary accumulator for reaction data (filled during sweep,
@@ -155,13 +218,26 @@ pub(crate) fn compute_sweep_data(
         output.map(|out| (driver.to_string(), out))
     });
 
-    // Sweep from start_deg to end_deg in 1-degree steps.
+    // Sweep loop: iterate over num_steps+1 positions.
+    // In angle mode: 0-360 degrees in 1-degree steps.
+    // In stroke mode: stroke_start to stroke_end in equal steps.
     let mut q = q_start.clone();
     let mut q_at_zero = q_start.clone();
 
     for i in 0..=num_steps.max(0) {
-        let angle_deg = start_deg + i as f64 * step;
-        let t = (angle_deg.to_radians() - theta_0) / omega;
+        // Compute the x-axis value and corresponding time t.
+        let (x_value, t) = match &sweep_mode {
+            SweepMode::Angle => {
+                let angle_deg = i as f64 * 1.0; // 0, 1, 2, ... 360
+                let t = (angle_deg.to_radians() - theta_0) / omega;
+                (angle_deg, t)
+            }
+            SweepMode::Stroke { length_0: s0, length_end: s_end, velocity: vel } => {
+                let stroke = s0 + (s_end - s0) * i as f64 / num_steps.max(1) as f64;
+                let t = (stroke - s0) / vel;
+                (stroke, t)
+            }
+        };
 
         match solve_position(mech, &q, t, 1e-10, 50) {
             Ok(result) if result.converged => {
@@ -169,12 +245,12 @@ pub(crate) fn compute_sweep_data(
                 if i == 0 {
                     q_at_zero = q.clone();
                 }
-                data.angles_deg.push(angle_deg);
+                data.angles_deg.push(x_value);
 
                 // Toggle/dead-point detection.
                 let toggle = check_toggle(mech, &q, t, 1e-6);
                 if toggle.is_near_toggle {
-                    data.toggle_angles.push(angle_deg);
+                    data.toggle_angles.push(x_value);
                 }
 
                 let mech_state = mech.state();
@@ -197,9 +273,9 @@ pub(crate) fn compute_sweep_data(
                         .push([global.x, global.y]);
                 }
 
-                // Transmission angle (4-bar only).
+                // Transmission angle (4-bar only, angle mode only).
                 if let Some((a, b, c, d)) = fourbar_links {
-                    let theta_crank = angle_deg.to_radians();
+                    let theta_crank = x_value.to_radians();
                     let ta = transmission_angle_fourbar(a, b, c, d, theta_crank);
                     data.transmission_angles.as_mut().unwrap().push(ta.angle_deg);
                 }
@@ -314,20 +390,24 @@ pub(crate) fn compute_sweep_data(
     data.coupler_accelerations = coupler_accel_data;
 
     // Compute active range indices from the sweep_range parameter.
-    // The full 0-360° data is always present; active_range marks the
-    // user-selected sub-range for highlighted rendering.
-    data.active_range = sweep_range.and_then(|(min_deg, max_deg)| {
-        if data.angles_deg.is_empty() {
-            return None;
-        }
-        let start_idx = data.angles_deg.iter().position(|&a| a >= min_deg).unwrap_or(0);
-        let end_idx = data
-            .angles_deg
-            .iter()
-            .rposition(|&a| a <= max_deg)
-            .unwrap_or(data.angles_deg.len().saturating_sub(1));
-        Some((start_idx, end_idx))
-    });
+    // In angle mode, the full 0-360° data is always present; active_range marks
+    // the user-selected sub-range for highlighted rendering.
+    // In stroke mode, the sweep_range already defined the full sweep bounds,
+    // so active_range stays None (all data is active).
+    if !has_linear_driver {
+        data.active_range = sweep_range.and_then(|(min_val, max_val)| {
+            if data.angles_deg.is_empty() {
+                return None;
+            }
+            let start_idx = data.angles_deg.iter().position(|&a| a >= min_val).unwrap_or(0);
+            let end_idx = data
+                .angles_deg
+                .iter()
+                .rposition(|&a| a <= max_val)
+                .unwrap_or(data.angles_deg.len().saturating_sub(1));
+            Some((start_idx, end_idx))
+        });
+    }
 
     (data, q_at_zero)
 }
@@ -442,7 +522,7 @@ pub(crate) fn detect_fourbar_links(mech: &Mechanism) -> Option<(f64, f64, f64, f
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gui::samples::SampleMechanism;
+    use crate::gui::samples::{build_sample, SampleMechanism};
     use crate::gui::state::AppState;
 
     #[test]
@@ -460,8 +540,6 @@ mod tests {
     /// Each cycle should produce the same number of sweep angles (361 = full rotation).
     #[test]
     fn sweep_range_toggle_does_not_degrade() {
-        use crate::gui::samples::build_sample;
-
         let (mech, q0) = build_sample(SampleMechanism::ParallelogramPress);
         let omega = 2.0 * std::f64::consts::PI;
         let theta_0 = 0.0;
@@ -554,5 +632,147 @@ mod tests {
         let mech = state.mechanism.as_ref().unwrap();
         let links = detect_fourbar_links(mech);
         assert!(links.is_none(), "Should not detect 4-bar links for 6-bar");
+    }
+
+    /// Build a simple mechanism with a revolute joint + linear driver:
+    /// bar pinned to ground at O/A. A separate ground point P is offset from O.
+    /// The linear driver prescribes the distance from P to bar B.
+    ///
+    /// Geometry: ground has O=(0,0) and P=(0, -0.5) (below the pivot).
+    /// Bar has A=(0,0) and B=(0.1, 0), length 0.1m.
+    /// Bar starts at angle=60 degrees, so B=(0.05, 0.0866).
+    /// Distance from P=(0, -0.5) to B = sqrt(0.05^2 + 0.5866^2) ~= 0.5887m.
+    ///
+    /// The bar starts at a non-extremal angle to avoid the branch-point
+    /// singularity that occurs when P, O, B are collinear (at 0 or pi/2).
+    fn build_linear_driver_mech(velocity: f64, length_0: f64) -> (Mechanism, DVector<f64>) {
+        use crate::core::body::{make_bar, make_ground};
+        use crate::core::linear_driver::constant_velocity_linear_driver;
+
+        let ground = make_ground(&[("O", 0.0, 0.0), ("P", 0.0, -0.5)]);
+        let bar = make_bar("bar", "A", "B", 0.1, 1.0, 0.01);
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(bar).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O", "bar", "A").unwrap();
+
+        // Linear driver: prescribes distance from ground P=(0, -0.5) to bar B.
+        let ld = constant_velocity_linear_driver(
+            "LD1", "ground", [0.0, -0.5], "bar", [0.1, 0.0], velocity, length_0,
+        );
+        mech.add_linear_driver(ld).unwrap();
+        mech.build().unwrap();
+
+        // Set initial pose: bar at angle=pi/3 (60 deg).
+        // B global = (0.1*cos(60), 0.1*sin(60)) = (0.05, 0.0866).
+        // Distance from P=(0,-0.5) to B = sqrt(0.05^2 + 0.5866^2) ~= 0.5887m.
+        let mut q0 = mech.state().make_q();
+        mech.state().set_pose("bar", &mut q0, 0.0, 0.0, std::f64::consts::FRAC_PI_3);
+        (mech, q0)
+    }
+
+    /// Compute the initial distance from P to bar B at the starting angle.
+    fn initial_distance() -> f64 {
+        let theta = std::f64::consts::FRAC_PI_3;
+        let b_x = 0.1 * theta.cos();
+        let b_y = 0.1 * theta.sin();
+        ((b_x - 0.0_f64).powi(2) + (b_y - (-0.5_f64)).powi(2)).sqrt()
+    }
+
+    #[test]
+    fn linear_driver_position_solve_step_by_step() {
+        use crate::solver::kinematics::solve_position;
+
+        let length_0 = initial_distance(); // ~0.5887
+        let velocity = -0.01; // retracting
+        let (mech, q0) = build_linear_driver_mech(velocity, length_0);
+
+        // Step 0: t=0
+        let r0 = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
+        assert!(r0.converged, "Step 0 should converge, residual = {}", r0.residual_norm);
+
+        // Step 1: small time step
+        let t1 = 0.1; // prescribed distance = length_0 - 0.001
+        let r1 = solve_position(&mech, &r0.q, t1, 1e-10, 50);
+        assert!(r1.as_ref().is_ok(), "Step 1 should not error");
+        let r1 = r1.unwrap();
+        assert!(r1.converged, "Step 1 should converge, residual = {}", r1.residual_norm);
+    }
+
+    #[test]
+    fn sweep_stroke_mode_produces_data() {
+        // Bar pivoted at O, actuator from P=(0,-0.5) to bar B at 60 deg.
+        let length_0 = initial_distance(); // ~0.5887m
+        let velocity = -0.01; // retracting at 0.01 m/s
+        let (mech, q0) = build_linear_driver_mech(velocity, length_0);
+
+        // Sweep with default range (velocity * 1s = 0.1m extent)
+        let (data, _q_zero) = compute_sweep_data(&mech, &q0, velocity, length_0, 0.0, None);
+
+        // Should be in Stroke mode
+        assert!(
+            matches!(data.sweep_mode, SweepMode::Stroke { .. }),
+            "Expected Stroke mode, got {:?}", data.sweep_mode
+        );
+
+        // Should have data points (may not reach all 361 if solver diverges at extremes)
+        assert!(
+            data.angles_deg.len() > 10,
+            "Expected multiple sweep points, got {}", data.angles_deg.len()
+        );
+
+        // X-axis values should be stroke values (in meters), starting at length_0
+        let first = data.angles_deg.first().copied().unwrap();
+        assert!(
+            (first - length_0).abs() < 1e-10,
+            "First x-value should be length_0={}, got {}", length_0, first
+        );
+    }
+
+    #[test]
+    fn sweep_stroke_mode_with_explicit_range() {
+        let length_0 = initial_distance(); // ~0.5887m
+        let velocity = -0.01;
+        let (mech, q0) = build_linear_driver_mech(velocity, length_0);
+
+        // Explicit stroke range: small range below the initial distance
+        let stroke_min = length_0 - 0.005;
+        let stroke_max = length_0;
+        let (data, _) = compute_sweep_data(
+            &mech, &q0, velocity, length_0, 0.0, Some((stroke_min, stroke_max)),
+        );
+
+        assert!(matches!(data.sweep_mode, SweepMode::Stroke { .. }));
+        assert!(!data.angles_deg.is_empty(), "Sweep should have data");
+
+        let first = data.angles_deg.first().copied().unwrap();
+        let last = data.angles_deg.last().copied().unwrap();
+        assert!(
+            (first - stroke_min).abs() < 1e-10,
+            "First value should be stroke_min={}, got {}", stroke_min, first
+        );
+        assert!(
+            (last - stroke_max).abs() < 1e-10,
+            "Last value should be stroke_max={}, got {}", stroke_max, last
+        );
+    }
+
+    #[test]
+    fn sweep_angle_mode_unchanged_for_revolute_driver() {
+        // Verify angle mode still works correctly for revolute drivers.
+        let (mech, q0) = build_sample(SampleMechanism::FourBar);
+        let omega = 2.0 * std::f64::consts::PI;
+        let theta_0 = 0.0;
+
+        let (data, _) = compute_sweep_data(&mech, &q0, omega, theta_0, 0.0, None);
+
+        assert!(
+            matches!(data.sweep_mode, SweepMode::Angle),
+            "Expected Angle mode for revolute driver"
+        );
+        assert_eq!(data.angles_deg.len(), 361, "Full 0-360 sweep");
+        assert!((data.angles_deg[0] - 0.0).abs() < 1e-10);
+        assert!((data.angles_deg[360] - 360.0).abs() < 1e-10);
     }
 }

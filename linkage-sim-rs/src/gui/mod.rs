@@ -15,7 +15,7 @@ pub mod undo;
 
 use eframe::egui;
 pub use state::AppState;
-pub use sweep::SweepData;
+pub use sweep::{SweepData, SweepMode};
 use samples::SampleMechanism;
 use state::{AngleUnit, EditorTool, LengthUnit, PlaceForceState, SelectedEntity};
 
