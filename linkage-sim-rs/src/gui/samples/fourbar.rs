@@ -601,7 +601,7 @@ pub(super) fn build_chebyshev_lambda_actuator(
     // Actuator base: to the left of the mechanism, at the average M height.
     // This keeps the actuator roughly in line with M's straight-line trace
     // rather than down at ground level (y=0).
-    let act_base_x = -0.05_f64;
+    let act_base_x = -0.15_f64;
     let act_base_y = avg_my;
 
     let mut ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);

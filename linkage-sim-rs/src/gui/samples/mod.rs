@@ -299,7 +299,7 @@ mod tests {
     /// to coupler endpoint M at each angle. Reports the actual min/max stroke range
     /// the actuator needs to cover the full mechanism travel.
     ///
-    /// Uses the same actuator base position as the builder (y=0, ground level).
+    /// Uses the same actuator base position as the builder.
     #[test]
     fn actual_stroke_range() {
         use nalgebra::Vector2;
@@ -343,9 +343,18 @@ mod tests {
         let state = mech.state();
         let coupler_m_local = Vector2::new(l_total_coupler, 0.0);
 
-        // Same actuator base as the builder: x=-0.05, y=0 (ground level)
-        let act_base_x = -0.05_f64;
-        let act_base_y = 0.0_f64;
+        // Same actuator base as the builder: x=-0.15, y=avg_my.
+        // Extract the actual base position from the built mechanism to stay in
+        // sync with the builder rather than duplicating the avg_my computation.
+        let (mech_check, _) = super::build_sample(SampleMechanism::ChebyshevLambdaActuator);
+        let (act_base_x, act_base_y) = mech_check.forces().iter().find_map(|f| {
+            if let crate::forces::elements::ForceElement::LinearActuator(act) = f {
+                Some((act.point_a[0], act.point_a[1]))
+            } else {
+                None
+            }
+        }).expect("should have actuator");
+
         let act_base = Vector2::new(act_base_x, act_base_y);
 
         println!("O_act = ({:.6}, {:.6})", act_base_x, act_base_y);
