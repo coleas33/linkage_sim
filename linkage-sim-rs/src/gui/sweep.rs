@@ -3,6 +3,8 @@
 use nalgebra::DVector;
 use std::collections::HashMap;
 
+use nalgebra::Vector2;
+
 use crate::analysis::coupler::eval_coupler_point;
 use crate::analysis::energy::compute_energy_state_mech;
 use crate::analysis::transmission::{
@@ -15,6 +17,27 @@ use crate::core::state::GROUND_ID;
 use crate::solver::inverse_dynamics::solve_inverse_dynamics;
 use crate::solver::kinematics::{solve_acceleration, solve_position, solve_velocity};
 use crate::solver::statics::{extract_reactions, get_driver_reactions, solve_statics};
+
+// ── Linear driver info for revolute-driven sweep ────────────────────────────
+
+/// Describes a linear driver's attachment points so that the actuator stroke
+/// can be computed from a solved q vector during a revolute-driven sweep.
+///
+/// When a mechanism has a linear (actuator) driver, the sweep can get stuck at
+/// turnaround points because the solver always picks the nearest branch. To fix
+/// this, we build a temporary mechanism with a revolute driver instead, sweep
+/// 0-360 degrees monotonically, and compute the actuator stroke from the solved
+/// configuration at each step.
+#[derive(Debug, Clone)]
+pub struct LinearDriverInfo {
+    pub body_a: String,
+    pub point_a: Vector2<f64>,
+    pub body_b: String,
+    pub point_b: Vector2<f64>,
+    pub stroke_min: f64,
+    pub stroke_max: f64,
+    pub initial_length: f64,
+}
 
 // ── Sweep data ───────────────────────────────────────────────────────────────
 
@@ -104,62 +127,95 @@ pub(crate) fn compute_sweep_data(
     theta_0: f64,
     gravity_magnitude: f64,
     sweep_range: Option<(f64, f64)>,
+    revolute_sweep_info: Option<&LinearDriverInfo>,
 ) -> (SweepData, DVector<f64>) {
+    // When revolute_sweep_info is provided, the mechanism has already been
+    // rebuilt with a revolute driver (no linear driver). We sweep 0-360
+    // degrees and compute the actuator stroke from the solved q at each step.
+    let is_revolute_driven_stroke = revolute_sweep_info.is_some();
+
     // Detect whether the mechanism uses a linear driver (stroke mode)
     // or a revolute driver (angle mode).
-    let linear_driver_meta = mech
-        .linear_drivers()
-        .first()
-        .and_then(|ld| ld.meta().cloned());
+    let linear_driver_meta = if is_revolute_driven_stroke {
+        // The revolute-driven mechanism has no linear driver; use the
+        // passed-in info to set up CosineStroke mode for x-axis display.
+        None
+    } else {
+        mech
+            .linear_drivers()
+            .first()
+            .and_then(|ld| ld.meta().cloned())
+    };
 
-    let has_linear_driver = linear_driver_meta.is_some();
+    let has_linear_driver = linear_driver_meta.is_some() || is_revolute_driven_stroke;
 
     // Determine sweep parameters based on driver type.
     // For revolute: sweep 0-360 degrees in 1-degree steps.
     // For cosine stroke: sweep time from 0 to 1 (one full extend-retract cycle).
     // For linear (constant velocity): sweep stroke range with triangle wave.
-    let (num_steps, sweep_mode) = match &linear_driver_meta {
-        Some(DriverMeta::CosineStroke { stroke_min, stroke_max, initial_length }) => {
-            let mid = (stroke_min + stroke_max) / 2.0;
-            let amp = (stroke_max - stroke_min) / 2.0;
-            let phase = if amp.abs() < 1e-15 {
-                0.0
-            } else {
-                ((initial_length - mid) / amp).clamp(-1.0, 1.0).acos()
-            };
-            let steps = 360_i32; // same resolution as angle sweep
-            let mode = SweepMode::CosineStroke {
-                stroke_min: *stroke_min,
-                stroke_max: *stroke_max,
-                initial_length: *initial_length,
-                phase,
-            };
-            (steps, mode)
-        }
-        Some(DriverMeta::LinearLength { velocity, length_0 }) => {
-            // For constant-velocity linear drivers, determine the stroke range.
-            let (stroke_start, stroke_end) = if let Some((s_min, s_max)) = sweep_range {
-                (s_min, s_max)
-            } else {
-                let extent = if velocity.abs() > 1e-15 {
-                    velocity * 1.0
+    // For revolute-driven stroke: sweep 0-360 degrees, compute stroke from q.
+    let (num_steps, sweep_mode) = if let Some(info) = revolute_sweep_info {
+        // Revolute-driven sweep for linear driver mechanisms.
+        // We sweep angle 0-360 but report CosineStroke mode so the x-axis
+        // shows actuator stroke.
+        let mid = (info.stroke_min + info.stroke_max) / 2.0;
+        let amp = (info.stroke_max - info.stroke_min) / 2.0;
+        let phase = if amp.abs() < 1e-15 {
+            0.0
+        } else {
+            ((info.initial_length - mid) / amp).clamp(-1.0, 1.0).acos()
+        };
+        let mode = SweepMode::CosineStroke {
+            stroke_min: info.stroke_min,
+            stroke_max: info.stroke_max,
+            initial_length: info.initial_length,
+            phase,
+        };
+        (360_i32, mode)
+    } else {
+        match &linear_driver_meta {
+            Some(DriverMeta::CosineStroke { stroke_min, stroke_max, initial_length }) => {
+                let mid = (stroke_min + stroke_max) / 2.0;
+                let amp = (stroke_max - stroke_min) / 2.0;
+                let phase = if amp.abs() < 1e-15 {
+                    0.0
                 } else {
-                    0.01
+                    ((initial_length - mid) / amp).clamp(-1.0, 1.0).acos()
                 };
-                (*length_0, length_0 + extent)
-            };
-            let steps = 360_i32;
-            let mode = SweepMode::Stroke {
-                driver_length_0: *length_0,
-                stroke_start,
-                stroke_end,
-                velocity: *velocity,
-            };
-            (steps, mode)
-        }
-        _ => {
-            // Revolute driver: always sweep full 0-360°.
-            (360_i32, SweepMode::Angle)
+                let steps = 360_i32; // same resolution as angle sweep
+                let mode = SweepMode::CosineStroke {
+                    stroke_min: *stroke_min,
+                    stroke_max: *stroke_max,
+                    initial_length: *initial_length,
+                    phase,
+                };
+                (steps, mode)
+            }
+            Some(DriverMeta::LinearLength { velocity, length_0 }) => {
+                // For constant-velocity linear drivers, determine the stroke range.
+                let (stroke_start, stroke_end) = if let Some((s_min, s_max)) = sweep_range {
+                    (s_min, s_max)
+                } else {
+                    let extent = if velocity.abs() > 1e-15 {
+                        velocity * 1.0
+                    } else {
+                        0.01
+                    };
+                    (*length_0, length_0 + extent)
+                };
+                let steps = 360_i32;
+                let mode = SweepMode::Stroke {
+                    driver_length_0: *length_0,
+                    stroke_start,
+                    stroke_end,
+                    velocity: *velocity,
+                };
+                (steps, mode)
+            }
+            _ => {
+                // Revolute driver: always sweep full 0-360°.
+                (360_i32, SweepMode::Angle)
+            }
         }
     };
 
@@ -269,33 +325,46 @@ pub(crate) fn compute_sweep_data(
 
     for i in 0..=num_steps.max(0) {
         // Compute the x-axis value and corresponding time t.
-        let (x_value, t) = match &sweep_mode {
-            SweepMode::Angle => {
-                let angle_deg = i as f64 * 1.0; // 0, 1, 2, ... 360
-                let t = (angle_deg.to_radians() - theta_0) / omega;
-                (angle_deg, t)
-            }
-            SweepMode::Stroke { driver_length_0, stroke_start: s0, stroke_end: s_end, velocity: vel } => {
-                // Triangle wave: first half extends (s0 -> s_end), second half
-                // retracts (s_end -> s0).
-                let half = num_steps.max(1) / 2;
-                let stroke = if i <= half {
-                    s0 + (s_end - s0) * i as f64 / half as f64
-                } else {
-                    s_end - (s_end - s0) * (i - half) as f64 / (num_steps.max(1) - half) as f64
-                };
-                let t = (stroke - driver_length_0) / vel;
-                (stroke, t)
-            }
-            SweepMode::CosineStroke { stroke_min, stroke_max, phase, .. } => {
-                // Cosine oscillation: t sweeps from 0 to 1 (one full period).
-                // The driver function d(t) = mid + amp * cos(2*PI*t + phase)
-                // naturally produces a smooth extend-retract cycle.
-                let t = i as f64 / num_steps.max(1) as f64;
-                let mid = (stroke_min + stroke_max) / 2.0;
-                let amp = (stroke_max - stroke_min) / 2.0;
-                let stroke = mid + amp * (2.0 * std::f64::consts::PI * t + phase).cos();
-                (stroke, t)
+        //
+        // For revolute-driven stroke mode, we sweep angle 0-360 using the
+        // revolute driver's time formula. The x-axis value (stroke) is
+        // computed AFTER the solve from the solved q.
+        let (mut x_value, t) = if is_revolute_driven_stroke {
+            // Sweep angle monotonically 0-360 degrees using the revolute driver.
+            let angle_deg = i as f64 * 1.0;
+            let t = (angle_deg.to_radians() - theta_0) / omega;
+            // x_value is a placeholder; it will be replaced by the computed
+            // stroke after the solve succeeds.
+            (angle_deg, t)
+        } else {
+            match &sweep_mode {
+                SweepMode::Angle => {
+                    let angle_deg = i as f64 * 1.0; // 0, 1, 2, ... 360
+                    let t = (angle_deg.to_radians() - theta_0) / omega;
+                    (angle_deg, t)
+                }
+                SweepMode::Stroke { driver_length_0, stroke_start: s0, stroke_end: s_end, velocity: vel } => {
+                    // Triangle wave: first half extends (s0 -> s_end), second half
+                    // retracts (s_end -> s0).
+                    let half = num_steps.max(1) / 2;
+                    let stroke = if i <= half {
+                        s0 + (s_end - s0) * i as f64 / half as f64
+                    } else {
+                        s_end - (s_end - s0) * (i - half) as f64 / (num_steps.max(1) - half) as f64
+                    };
+                    let t = (stroke - driver_length_0) / vel;
+                    (stroke, t)
+                }
+                SweepMode::CosineStroke { stroke_min, stroke_max, phase, .. } => {
+                    // Cosine oscillation: t sweeps from 0 to 1 (one full period).
+                    // The driver function d(t) = mid + amp * cos(2*PI*t + phase)
+                    // naturally produces a smooth extend-retract cycle.
+                    let t = i as f64 / num_steps.max(1) as f64;
+                    let mid = (stroke_min + stroke_max) / 2.0;
+                    let amp = (stroke_max - stroke_min) / 2.0;
+                    let stroke = mid + amp * (2.0 * std::f64::consts::PI * t + phase).cos();
+                    (stroke, t)
+                }
             }
         };
 
@@ -305,6 +374,19 @@ pub(crate) fn compute_sweep_data(
                 if i == 0 {
                     q_at_zero = q.clone();
                 }
+
+                // For revolute-driven stroke mode, compute the actuator
+                // stroke from the solved q and use it as the x-axis value.
+                if let Some(info) = revolute_sweep_info {
+                    let p_a = mech.state().body_point_global(
+                        &info.body_a, &info.point_a, &q,
+                    );
+                    let p_b = mech.state().body_point_global(
+                        &info.body_b, &info.point_b, &q,
+                    );
+                    x_value = (p_b - p_a).norm();
+                }
+
                 data.angles_deg.push(x_value);
 
                 // Toggle/dead-point detection.
@@ -606,31 +688,31 @@ mod tests {
         let gravity = 9.81;
 
         // Initial sweep
-        let (data1, q_zero1) = compute_sweep_data(&mech, &q0, omega, theta_0, gravity, None);
+        let (data1, q_zero1) = compute_sweep_data(&mech, &q0, omega, theta_0, gravity, None, None);
         let count1 = data1.angles_deg.len();
         assert!(count1 > 300, "Initial sweep should cover most of 360°, got {}", count1);
 
         // Toggle ON
-        let (data2, q_zero2) = compute_sweep_data(&mech, &q_zero1, omega, theta_0, gravity, Some((150.0, 210.0)));
+        let (data2, q_zero2) = compute_sweep_data(&mech, &q_zero1, omega, theta_0, gravity, Some((150.0, 210.0)), None);
         assert_eq!(data2.angles_deg.len(), count1, "Sweep 2 should have same count");
 
         // Toggle OFF
-        let (data3, q_zero3) = compute_sweep_data(&mech, &q_zero2, omega, theta_0, gravity, None);
+        let (data3, q_zero3) = compute_sweep_data(&mech, &q_zero2, omega, theta_0, gravity, None, None);
         assert_eq!(data3.angles_deg.len(), count1, "Sweep 3 should have same count as sweep 1");
 
         // Toggle ON
-        let (data4, q_zero4) = compute_sweep_data(&mech, &q_zero3, omega, theta_0, gravity, Some((150.0, 210.0)));
+        let (data4, q_zero4) = compute_sweep_data(&mech, &q_zero3, omega, theta_0, gravity, Some((150.0, 210.0)), None);
         assert_eq!(data4.angles_deg.len(), count1, "Sweep 4 should have same count");
 
         // Toggle OFF
-        let (data5, q_zero5) = compute_sweep_data(&mech, &q_zero4, omega, theta_0, gravity, None);
+        let (data5, q_zero5) = compute_sweep_data(&mech, &q_zero4, omega, theta_0, gravity, None, None);
         assert_eq!(data5.angles_deg.len(), count1, "Sweep 5 should have same count");
 
         // Toggle ON
-        let (_data6, q_zero6) = compute_sweep_data(&mech, &q_zero5, omega, theta_0, gravity, Some((150.0, 210.0)));
+        let (_data6, q_zero6) = compute_sweep_data(&mech, &q_zero5, omega, theta_0, gravity, Some((150.0, 210.0)), None);
 
         // Toggle OFF
-        let (data7, _) = compute_sweep_data(&mech, &q_zero6, omega, theta_0, gravity, None);
+        let (data7, _) = compute_sweep_data(&mech, &q_zero6, omega, theta_0, gravity, None, None);
         assert_eq!(data7.angles_deg.len(), count1, "Sweep 7 should have same count");
 
         // Also verify q_zero hasn't drifted
@@ -768,7 +850,7 @@ mod tests {
         let (mech, q0) = build_linear_driver_mech(velocity, length_0);
 
         // Sweep with default range (velocity * 1s = 0.1m extent)
-        let (data, _q_zero) = compute_sweep_data(&mech, &q0, velocity, length_0, 0.0, None);
+        let (data, _q_zero) = compute_sweep_data(&mech, &q0, velocity, length_0, 0.0, None, None);
 
         // Should be in Stroke mode
         assert!(
@@ -800,7 +882,7 @@ mod tests {
         let stroke_min = length_0 - 0.005;
         let stroke_max = length_0;
         let (data, _) = compute_sweep_data(
-            &mech, &q0, velocity, length_0, 0.0, Some((stroke_min, stroke_max)),
+            &mech, &q0, velocity, length_0, 0.0, Some((stroke_min, stroke_max)), None,
         );
 
         assert!(matches!(data.sweep_mode, SweepMode::Stroke { .. }));
@@ -834,7 +916,7 @@ mod tests {
         let omega = 2.0 * std::f64::consts::PI;
         let theta_0 = 0.0;
 
-        let (data, _) = compute_sweep_data(&mech, &q0, omega, theta_0, 0.0, None);
+        let (data, _) = compute_sweep_data(&mech, &q0, omega, theta_0, 0.0, None, None);
 
         assert!(
             matches!(data.sweep_mode, SweepMode::Angle),

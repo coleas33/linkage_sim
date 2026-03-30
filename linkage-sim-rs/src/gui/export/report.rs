@@ -289,7 +289,7 @@ mod tests {
         let q = if result.converged { result.q } else { q0 };
 
         let (sweep, _) = crate::gui::sweep::compute_sweep_data(
-            &mech, &q, 2.0 * std::f64::consts::PI, 0.0, 9.81, None,
+            &mech, &q, 2.0 * std::f64::consts::PI, 0.0, 9.81, None, None,
         );
 
         let units = DisplayUnits::default();
