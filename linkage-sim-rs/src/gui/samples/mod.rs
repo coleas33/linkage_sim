@@ -458,7 +458,8 @@ mod tests {
         let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
         assert!(result.converged, "should converge at t=0, residual={}", result.residual_norm);
 
-        // Verify actuator base is NOT at M's y-level (should be at y=0 for pivoting).
+        // Verify actuator base is roughly in line with M's y-level
+        // (aligned with the straight-line trace, not at ground y=0).
         let coupler_m_local = Vector2::new(0.1838, 0.0);
         let m_global = state.body_point_global("coupler", &coupler_m_local, &q0);
         let act_point_a = mech.forces().iter().find_map(|f| {
@@ -472,9 +473,17 @@ mod tests {
         let y_offset = (m_global.y - act_point_a[1]).abs();
         println!("Actuator base y={:.4}, M y={:.4}, offset={:.4} mm",
             act_point_a[1] * 1000.0, m_global.y * 1000.0, y_offset * 1000.0);
+        // The base is at the average M y across all crank angles, so the
+        // offset from M at the initial crank angle should be moderate (not
+        // zero, since M varies, but well under 100mm).
         assert!(
-            y_offset > 0.05,
-            "actuator base should be significantly offset from M's y for visible pivot, got {:.4} mm",
+            act_point_a[1] > 0.05,
+            "actuator base should be above ground level (in line with trace), got y={:.4} mm",
+            act_point_a[1] * 1000.0,
+        );
+        assert!(
+            y_offset < 0.10,
+            "actuator base should be roughly in line with M's trace, offset={:.4} mm is too large",
             y_offset * 1000.0,
         );
     }

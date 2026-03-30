@@ -226,6 +226,25 @@ pub(crate) fn compute_sweep_data(
     let mut q = q_start.clone();
     let mut q_at_zero = q_start.clone();
 
+    // For stroke mode: warm up from driver_length_0 to stroke_start so the
+    // solver maintains the correct branch. The initial q_start is valid at
+    // length_0, not at stroke_start. Walking in small steps from length_0 to
+    // stroke_start uses continuation to keep the solver on the +y branch.
+    if let SweepMode::Stroke { driver_length_0, stroke_start: s0, velocity: vel, .. } = &sweep_mode {
+        let warmup_steps = 50_usize;
+        let mut q_warmup = q_start.clone();
+        for i in 1..=warmup_steps {
+            let s = driver_length_0 + (s0 - driver_length_0) * i as f64 / warmup_steps as f64;
+            let t = (s - driver_length_0) / vel;
+            if let Ok(result) = solve_position(mech, &q_warmup, t, 1e-10, 50) {
+                if result.converged {
+                    q_warmup = result.q;
+                }
+            }
+        }
+        q = q_warmup;
+    }
+
     for i in 0..=num_steps.max(0) {
         // Compute the x-axis value and corresponding time t.
         let (x_value, t) = match &sweep_mode {

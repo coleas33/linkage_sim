@@ -586,11 +586,23 @@ pub(super) fn build_chebyshev_lambda_actuator(
         o2, o4, l_crank, l_coupler_ab, l_rocker, l_total_coupler, theta_crank,
     );
 
-    // Actuator base: to the left of the mechanism at ground level (y=0).
-    // Placing it at y=0 (well below M's ~0.14-0.18m trace) gives the actuator
-    // a significant angular sweep as M moves, producing visible pivot rotation.
+    // Compute average M y-position across the full crank rotation so the
+    // actuator base is in line with the straight-line trace of M.
+    let mut y_sum = 0.0_f64;
+    for deg in 0..360 {
+        let tc = (deg as f64).to_radians();
+        let (_mx, my) = chebyshev_lambda_m_position(
+            o2, o4, l_crank, l_coupler_ab, l_rocker, l_total_coupler, tc,
+        );
+        y_sum += my;
+    }
+    let avg_my = y_sum / 360.0;
+
+    // Actuator base: to the left of the mechanism, at the average M height.
+    // This keeps the actuator roughly in line with M's straight-line trace
+    // rather than down at ground level (y=0).
     let act_base_x = -0.05_f64;
-    let act_base_y = 0.0_f64;
+    let act_base_y = avg_my;
 
     let mut ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
     ground
