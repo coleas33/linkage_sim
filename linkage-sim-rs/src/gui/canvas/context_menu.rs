@@ -162,6 +162,9 @@ fn show_attachment_menu(
             state.creating_joint = Some((body_id.to_string(), point_name.to_string(), PendingJointType::Fixed));
             ui.close();
         }
+        ui.separator();
+        ui.add_enabled(false, egui::Button::new("Cam Follower [WIP]"))
+            .on_hover_text("Cam-follower joint (available via JSON import only)");
     });
 
     let delete_label = if body_id == GROUND_ID { "Delete Ground Pivot" } else { "Delete Pivot" };
