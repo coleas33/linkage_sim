@@ -6,7 +6,6 @@ mod error_panel;
 mod export;
 mod force_toolbar;
 mod input_panel;
-pub mod mobile;
 mod parametric_panel;
 mod plot_panel;
 mod property_panel;
@@ -23,7 +22,6 @@ use state::{AngleUnit, EditorTool, LengthUnit, PlaceForceState, SelectedEntity};
 /// Top-level application struct for eframe.
 pub struct LinkageApp {
     state: AppState,
-    is_mobile: bool,
 }
 
 impl LinkageApp {
@@ -67,7 +65,6 @@ impl LinkageApp {
 
         Self {
             state: AppState::default(),
-            is_mobile: false,
         }
     }
 }
@@ -174,27 +171,7 @@ impl eframe::App for LinkageApp {
             self.state.reassign_driver(&joint_id);
         }
 
-        // ── Mobile layout detection ──────────────────────────────────
-        let was_mobile = self.is_mobile;
-        self.is_mobile = mobile::is_mobile(ctx);
-        if self.is_mobile != was_mobile {
-            if self.is_mobile {
-                mobile::apply_mobile_style(ctx);
-            } else {
-                mobile::apply_desktop_style(ctx);
-            }
-        }
-
-        self.state.is_mobile = self.is_mobile;
-
-        // ── Auto-load sample on mobile ───────────────────────────────
-        if self.is_mobile && self.state.mechanism.is_none() && self.state.current_sample.is_none() {
-            self.state.load_sample(SampleMechanism::FourBar);
-            self.state.playing = true;
-        }
-
         // --- Menu bar ---
-        if !self.is_mobile {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 let file_resp = ui.menu_button("File", |ui| {
@@ -592,7 +569,6 @@ impl eframe::App for LinkageApp {
                 view_resp.response.on_hover_text("Toggle display options and visualization settings");
             });
         });
-        } // end !is_mobile menu bar
 
         // ── Delete / Backspace shortcut ───────────────────────────────────
         if ctx.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
@@ -610,7 +586,6 @@ impl eframe::App for LinkageApp {
         }
 
         // --- Toolbar ---
-        if !self.is_mobile {
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().button_padding = egui::vec2(10.0, 5.0);
@@ -755,10 +730,8 @@ impl eframe::App for LinkageApp {
                 }
             }
         });
-        } // end !is_mobile toolbar + force toolbar
 
         // --- Status bar ---
-        if !self.is_mobile {
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 let dim = egui::Color32::from_rgb(140, 145, 160);
@@ -906,53 +879,11 @@ impl eframe::App for LinkageApp {
                     });
                 });
         }
-        } // end !is_mobile panels
 
         // --- Central canvas ---
         egui::CentralPanel::default().show(ctx, |ui| {
             canvas::draw_canvas(ui, &mut self.state);
         });
-
-        // ── Floating mobile controls ─────────────────────────────────
-        if self.is_mobile {
-            egui::Area::new(egui::Id::new("mobile_controls"))
-                .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -10.0))
-                .show(ctx, |ui| {
-                    egui::Frame::popup(&ctx.style()).show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            // Play/Pause
-                            if ui
-                                .button(if self.state.playing { "Pause" } else { "Play" })
-                                .clicked()
-                            {
-                                self.state.playing = !self.state.playing;
-                            }
-
-                            // Compact crank angle slider
-                            let mut angle_deg = self.state.driver_angle.to_degrees();
-                            if ui
-                                .add(
-                                    egui::Slider::new(&mut angle_deg, 0.0..=360.0)
-                                        .show_value(false),
-                                )
-                                .changed()
-                            {
-                                self.state.solve_at_angle(angle_deg.to_radians());
-                            }
-
-                            // Sample picker
-                            ui.menu_button("Samples", |ui| {
-                                for sample in SampleMechanism::all() {
-                                    if ui.button(sample.label()).clicked() {
-                                        self.state.load_sample(*sample);
-                                        ui.close();
-                                    }
-                                }
-                            });
-                        });
-                    });
-                });
-        }
 
         // ── Autosave recovery prompt ──────────────────────────────────
         if self.state.recovery_path.is_some() {
