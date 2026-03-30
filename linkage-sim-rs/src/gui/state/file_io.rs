@@ -177,6 +177,7 @@ impl AppState {
             match driver.meta() {
                 Some(DriverMeta::ConstantSpeed { omega, theta_0 }) => (*omega, *theta_0),
                 Some(DriverMeta::Expression { .. }) => (2.0 * std::f64::consts::PI, 0.0),
+                Some(DriverMeta::LinearLength { .. }) => (2.0 * std::f64::consts::PI, 0.0),
                 None => (2.0 * std::f64::consts::PI, 0.0),
             }
         } else {

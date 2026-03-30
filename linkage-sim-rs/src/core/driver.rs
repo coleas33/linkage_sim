@@ -35,6 +35,8 @@ pub enum DriverMeta {
         expr_dot: String,
         expr_ddot: String,
     },
+    /// A constant-velocity linear driver: d(t) = length_0 + velocity * t.
+    LinearLength { velocity: f64, length_0: f64 },
 }
 
 impl std::fmt::Debug for DriverFn {

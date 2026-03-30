@@ -184,6 +184,12 @@ pub fn mechanism_to_json(mech: &Mechanism) -> Result<MechanismJson, Serializatio
                     expr_dot: expr_dot.clone(),
                     expr_ddot: expr_ddot.clone(),
                 },
+                DriverMeta::LinearLength { .. } => {
+                    // Linear driver meta is not serialized via revolute driver path;
+                    // it will be handled by a dedicated linear_drivers section in
+                    // a future schema update.
+                    continue;
+                }
             };
             drivers.insert(id, driver_json);
         }

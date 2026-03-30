@@ -18,6 +18,7 @@ use crate::core::constraint::{
 use crate::core::driver::{
     constant_speed_driver, expression_driver, make_revolute_driver, RevoluteDriver,
 };
+use crate::core::linear_driver::LinearDriver;
 use crate::core::state::{State, GROUND_ID};
 use crate::forces::elements::ForceElement;
 
@@ -42,6 +43,7 @@ impl std::fmt::Debug for Mechanism {
             .field("bodies", &self.bodies.keys().collect::<Vec<_>>())
             .field("n_joints", &self.joints.len())
             .field("n_drivers", &self.drivers.len())
+            .field("n_linear_drivers", &self.linear_drivers.len())
             .field("n_forces", &self.forces.len())
             .field("built", &self.built)
             .finish()
@@ -52,6 +54,7 @@ pub struct Mechanism {
     bodies: HashMap<String, Body>,
     joints: Vec<JointConstraint>,
     drivers: Vec<RevoluteDriver>,
+    linear_drivers: Vec<LinearDriver>,
     forces: Vec<ForceElement>,
     state: State,
     built: bool,
@@ -69,6 +72,7 @@ impl Mechanism {
             bodies: HashMap::new(),
             joints: Vec::new(),
             drivers: Vec::new(),
+            linear_drivers: Vec::new(),
             forces: Vec::new(),
             state: State::new(),
             built: false,
@@ -129,16 +133,18 @@ impl Mechanism {
     pub fn n_constraints(&self) -> usize {
         let joint_eqs: usize = self.joints.iter().map(|j| j.n_equations()).sum();
         let driver_eqs: usize = self.drivers.iter().map(|d| d.n_equations()).sum();
-        joint_eqs + driver_eqs
+        let linear_driver_eqs: usize = self.linear_drivers.iter().map(|d| d.n_equations()).sum();
+        joint_eqs + driver_eqs + linear_driver_eqs
     }
 
-    /// Iterate over all constraints (joints + drivers) in order.
+    /// Iterate over all constraints (joints + revolute drivers + linear drivers) in order.
     /// Returns a zero-allocation iterator using chain.
     pub fn all_constraints(&self) -> impl Iterator<Item = &dyn Constraint> {
         self.joints
             .iter()
             .map(|j| j as &dyn Constraint)
             .chain(self.drivers.iter().map(|d| d as &dyn Constraint))
+            .chain(self.linear_drivers.iter().map(|d| d as &dyn Constraint))
     }
 
     /// Add a body to the mechanism.
@@ -321,6 +327,27 @@ impl Mechanism {
                 .map_err(MechanismError::InvalidJoint)?;
         self.drivers.push(driver);
         Ok(())
+    }
+
+    /// Add a linear driver constraint.
+    pub fn add_linear_driver(&mut self, driver: LinearDriver) -> Result<(), MechanismError> {
+        if self.built {
+            return Err(MechanismError::AlreadyBuilt("add linear driver"));
+        }
+        self.validate_body_exists(driver.body_i_id())?;
+        self.validate_body_exists(driver.body_j_id())?;
+        self.linear_drivers.push(driver);
+        Ok(())
+    }
+
+    /// Read-only access to all linear driver constraints.
+    pub fn linear_drivers(&self) -> &[LinearDriver] {
+        &self.linear_drivers
+    }
+
+    /// Number of linear drivers.
+    pub fn n_linear_drivers(&self) -> usize {
+        self.linear_drivers.len()
     }
 
     /// Finalize the mechanism: register moving bodies in the state vector.
@@ -746,5 +773,147 @@ mod tests {
             assert_eq!(start, idx.q_start);
             assert_eq!(end, idx.q_start + 3);
         }
+    }
+
+    #[test]
+    fn mechanism_with_linear_driver_builds_and_solves() {
+        // Build a 4-bar but replace the revolute driver with a linear driver.
+        // The linear driver prescribes the distance from ground O2 to bar B
+        // (the crank tip), which is always the crank length = 0.01.
+        use crate::core::linear_driver::constant_velocity_linear_driver;
+        use crate::solver::kinematics::solve_position;
+
+        let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 0.038, 0.0)]);
+        let crank = make_bar("crank", "A", "B", 0.01, 0.0, 0.0);
+        let coupler = make_bar("coupler", "B", "C", 0.04, 0.0, 0.0);
+        let rocker = make_bar("rocker", "C", "D", 0.03, 0.0, 0.0);
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(crank).unwrap();
+        mech.add_body(coupler).unwrap();
+        mech.add_body(rocker).unwrap();
+
+        mech.add_revolute_joint("J1", "ground", "O2", "crank", "A")
+            .unwrap();
+        mech.add_revolute_joint("J2", "crank", "B", "coupler", "B")
+            .unwrap();
+        mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C")
+            .unwrap();
+        mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4")
+            .unwrap();
+        // Revolute driver on crank to fix crank angle (gives 1 DOF removed)
+        mech.add_constant_speed_driver("D1", "ground", "crank", 2.0 * PI, 0.0)
+            .unwrap();
+
+        // Linear driver: prescribe distance from ground O2 to coupler C.
+        // At t=0, crank angle=0, the mechanism is in its reference config.
+        // We set a zero-velocity linear driver whose length_0 matches the
+        // initial distance, so it adds a valid (satisfied) constraint.
+        //
+        // We need to first figure out the coupler C position at t=0.
+        // crank at angle=0: A=(0,0), B=(0.01, 0).
+        // coupler with B at (0.01, 0), angle ~0: C at (0.01+0.04, 0) = (0.05, 0).
+        // Distance from O4=(0.038,0) to coupler C=(0.05,0) = 0.012.
+        // Rocker: C=(0.05,0), D at (0.05+0.03, 0)=(0.08, 0).
+        // But D must coincide with O4=(0.038, 0). So angle=0 is NOT the
+        // reference config. Let's just use the mechanism with 9 constraints
+        // (the revolute driver already makes it determinate) and add the
+        // linear driver as an EXTRA constraint (over-determined).
+        //
+        // Instead: build a simpler system -- slider on ground with a linear driver.
+        // Drop the above and build fresh.
+        drop(mech);
+
+        // Simple system: ground + bar, revolute at ground origin, linear
+        // driver prescribing distance from ground O to bar tip B.
+        // 1 body => 3 coords, 1 revolute => 2 eq, 1 linear driver => 1 eq.
+        // Total: 3 coords, 3 constraints => fully determined.
+        let ground = make_ground(&[("O", 0.0, 0.0)]);
+        let bar = make_bar("bar", "A", "B", 1.0, 0.0, 0.0);
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(bar).unwrap();
+
+        mech.add_revolute_joint("J1", "ground", "O", "bar", "A")
+            .unwrap();
+
+        // Linear driver: distance from ground O to bar B = 1.0 (constant).
+        let ld = constant_velocity_linear_driver(
+            "LD1", "ground", [0.0, 0.0], "bar", [1.0, 0.0], 0.0, 1.0,
+        );
+        mech.add_linear_driver(ld).unwrap();
+
+        mech.build().unwrap();
+
+        assert!(mech.is_built());
+        assert_eq!(mech.n_linear_drivers(), 1);
+        assert_eq!(mech.linear_drivers().len(), 1);
+        // 1 revolute (2 eq) + 1 linear driver (1 eq) = 3 constraints
+        assert_eq!(mech.n_constraints(), 3);
+        assert_eq!(mech.all_constraints().count(), 2); // 1 joint + 1 linear driver
+
+        // Set initial guess: bar at angle=0 => A=(0,0), B=(1,0).
+        // Distance O->B = 1.0, matching the driver.
+        let mut q0 = mech.state().make_q();
+        mech.state().set_pose("bar", &mut q0, 0.0, 0.0, 0.0);
+
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
+        assert!(
+            result.converged,
+            "Kinematic solver should converge; residual = {}",
+            result.residual_norm
+        );
+        assert!(result.residual_norm < 1e-10);
+    }
+
+    #[test]
+    fn mechanism_linear_driver_cannot_add_after_build() {
+        use crate::core::linear_driver::constant_velocity_linear_driver;
+
+        let ground = make_ground(&[("O", 0.0, 0.0)]);
+        let bar = make_bar("bar", "A", "B", 1.0, 0.0, 0.0);
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(bar).unwrap();
+        mech.build().unwrap();
+
+        let ld = constant_velocity_linear_driver(
+            "LD1", "ground", [0.0, 0.0], "bar", [1.0, 0.0], 0.0, 1.0,
+        );
+        assert!(mech.add_linear_driver(ld).is_err());
+    }
+
+    #[test]
+    fn mechanism_linear_driver_in_constraint_ranges() {
+        use crate::core::linear_driver::constant_velocity_linear_driver;
+
+        let ground = make_ground(&[("O", 0.0, 0.0)]);
+        let bar = make_bar("bar", "A", "B", 1.0, 0.0, 0.0);
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(bar).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O", "bar", "A")
+            .unwrap();
+
+        let ld = constant_velocity_linear_driver(
+            "LD1", "ground", [0.0, 0.0], "bar", [1.0, 0.0], 0.0, 1.0,
+        );
+        mech.add_linear_driver(ld).unwrap();
+        mech.build().unwrap();
+
+        let ranges = mech.constraint_ranges();
+        // J1: revolute, 2 equations, row 0
+        // LD1: linear driver, 1 equation, row 2
+        assert_eq!(ranges.len(), 2);
+        assert_eq!(ranges[0].constraint_id, "J1");
+        assert_eq!(ranges[0].row_start, 0);
+        assert_eq!(ranges[0].n_equations, 2);
+        assert_eq!(ranges[1].constraint_id, "LD1");
+        assert_eq!(ranges[1].row_start, 2);
+        assert_eq!(ranges[1].n_equations, 1);
     }
 }
