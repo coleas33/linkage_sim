@@ -6,6 +6,7 @@ mod error_panel;
 mod export;
 mod force_toolbar;
 mod input_panel;
+pub mod mobile;
 mod parametric_panel;
 mod plot_panel;
 mod property_panel;
