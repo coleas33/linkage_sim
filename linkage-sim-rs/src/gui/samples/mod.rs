@@ -651,4 +651,26 @@ mod tests {
             result.residual_norm
         );
     }
+
+    #[test]
+    fn scotch_yoke_full_sweep_convergence() {
+        use crate::gui::state::AppState;
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::ScotchYoke);
+        let sweep = state.sweep_data.as_ref().expect("sweep data");
+        let total = sweep.angles_deg.len();
+        eprintln!("ScotchYoke: {}/361 converged", total);
+        assert!(total > 300, "ScotchYoke should converge for most angles, got {}", total);
+    }
+
+    #[test]
+    fn inverted_slider_crank_full_sweep_convergence() {
+        use crate::gui::state::AppState;
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::InvertedSliderCrank);
+        let sweep = state.sweep_data.as_ref().expect("sweep data");
+        let total = sweep.angles_deg.len();
+        eprintln!("InvertedSliderCrank: {}/361 converged", total);
+        assert!(total > 300, "InvertedSliderCrank should converge for most angles, got {}", total);
+    }
 }
