@@ -8,6 +8,7 @@ use nalgebra::DVector;
 use crate::core::mechanism::Mechanism;
 use crate::error::LinkageError;
 use crate::solver::assembly::assemble_jacobian;
+use crate::solver::condition::rank_aware_condition_number;
 
 /// Result of a static force solve.
 #[derive(Debug, Clone)]
@@ -56,23 +57,8 @@ pub fn solve_statics(
     let svd_t = phi_q_t.clone().svd(true, true);
     let sv = &svd_t.singular_values;
 
-    let (condition_number, is_overconstrained) = if !sv.is_empty() && sv[0] > 0.0 {
-        let rank_tol = 1e-10 * sv[0];
-        let rank = sv.iter().filter(|&&s| s > rank_tol).count();
-        let sigma_min = if rank > 0 {
-            sv[rank.min(sv.len()) - 1]
-        } else {
-            0.0
-        };
-        let cond = if sigma_min > 0.0 {
-            sv[0] / sigma_min
-        } else {
-            f64::INFINITY
-        };
-        (cond, rank < m)
-    } else {
-        (f64::INFINITY, true)
-    };
+    let (condition_number, is_overconstrained) =
+        rank_aware_condition_number(sv.as_slice(), m);
 
     // Solve Φ_q^T · λ = rhs using the already-computed SVD
     let lambdas = svd_t

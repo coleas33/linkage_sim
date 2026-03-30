@@ -1,4 +1,5 @@
 pub mod assembly;
+pub mod condition;
 pub mod events;
 pub mod kinematics;
 pub mod statics;

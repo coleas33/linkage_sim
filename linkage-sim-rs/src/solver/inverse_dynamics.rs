@@ -13,6 +13,7 @@ use nalgebra::DVector;
 use crate::core::mechanism::Mechanism;
 use crate::error::LinkageError;
 use crate::solver::assembly::{assemble_jacobian, assemble_mass_matrix};
+use crate::solver::condition::rank_aware_condition_number;
 
 /// Result of an inverse dynamics solve.
 #[derive(Debug, Clone)]
@@ -25,7 +26,9 @@ pub struct InverseDynamicsResult {
     pub m_q_ddot: DVector<f64>,
     /// Residual: ||Phi_q^T * lambda - (Q - M*q_ddot)||.
     pub residual_norm: f64,
-    /// Condition number of Phi_q.
+    /// True if pseudoinverse was used (overconstrained system).
+    pub is_overconstrained: bool,
+    /// Condition number of Phi_q (rank-aware, filtering near-zero SVs).
     pub condition_number: f64,
 }
 
@@ -72,11 +75,9 @@ pub fn solve_inverse_dynamics(
     let svd_t = phi_q_t.clone().svd(true, true);
     let sv = &svd_t.singular_values;
 
-    let condition_number = if !sv.is_empty() && sv[sv.len() - 1] > 0.0 {
-        sv[0] / sv[sv.len() - 1]
-    } else {
-        f64::INFINITY
-    };
+    let m = phi_q.nrows(); // n_constraints
+    let (condition_number, is_overconstrained) =
+        rank_aware_condition_number(sv.as_slice(), m);
 
     // Solve Phi_q^T * lambda = rhs using the already-computed SVD
     let lambdas = svd_t
@@ -92,6 +93,7 @@ pub fn solve_inverse_dynamics(
         q_forces,
         m_q_ddot,
         residual_norm,
+        is_overconstrained,
         condition_number,
     })
 }
