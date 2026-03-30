@@ -25,8 +25,9 @@ pub enum SweepMode {
     Angle,
     /// Linear driver: x-axis is actuator stroke in meters.
     Stroke {
-        length_0: f64,
-        length_end: f64,
+        driver_length_0: f64,
+        stroke_start: f64,
+        stroke_end: f64,
         velocity: f64,
     },
 }
@@ -130,8 +131,9 @@ pub(crate) fn compute_sweep_data(
         };
         let steps = 360_i32; // same resolution as angle sweep
         let mode = SweepMode::Stroke {
-            length_0: stroke_start,
-            length_end: stroke_end,
+            driver_length_0: length_0,
+            stroke_start,
+            stroke_end,
             velocity,
         };
         (steps, mode)
@@ -232,9 +234,9 @@ pub(crate) fn compute_sweep_data(
                 let t = (angle_deg.to_radians() - theta_0) / omega;
                 (angle_deg, t)
             }
-            SweepMode::Stroke { length_0: s0, length_end: s_end, velocity: vel } => {
+            SweepMode::Stroke { driver_length_0, stroke_start: s0, stroke_end: s_end, velocity: vel } => {
                 let stroke = s0 + (s_end - s0) * i as f64 / num_steps.max(1) as f64;
-                let t = (stroke - s0) / vel;
+                let t = (stroke - driver_length_0) / vel;
                 (stroke, t)
             }
         };

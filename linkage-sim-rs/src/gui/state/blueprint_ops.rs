@@ -308,6 +308,20 @@ impl AppState {
             self.q_at_zero = self.q.clone();
         }
 
+        // Re-extract stroke range from actuator after build so the sweep
+        // UI always reflects the latest stroke limits.
+        self.sweep_stroke_min = 0.0;
+        self.sweep_stroke_max = 0.0;
+        for force in mech.forces() {
+            if let ForceElement::LinearActuator(act) = force {
+                if act.stroke_min > 0.0 || act.stroke_max > 0.0 {
+                    self.sweep_stroke_min = act.stroke_min;
+                    self.sweep_stroke_max = act.stroke_max;
+                    break;
+                }
+            }
+        }
+
         self.mechanism = Some(mech);
         self.compute_forces(t);
         self.update_grashof();
