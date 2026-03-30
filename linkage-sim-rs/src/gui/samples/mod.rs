@@ -1,7 +1,7 @@
 //! Hardcoded sample mechanism builders for the GUI.
 
 mod fourbar;
-mod helpers;
+pub mod helpers;
 mod sixbar;
 mod special;
 

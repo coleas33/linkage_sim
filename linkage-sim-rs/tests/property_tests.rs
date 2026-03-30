@@ -10,6 +10,7 @@ use linkage_sim_rs::analysis::grashof::{check_grashof, GrashofType};
 use linkage_sim_rs::core::body::{make_bar, make_ground};
 use linkage_sim_rs::core::constraint::Constraint;
 use linkage_sim_rs::core::mechanism::Mechanism;
+use linkage_sim_rs::gui::samples::helpers::try_fourbar_initial_q0;
 use linkage_sim_rs::io::{load_mechanism, save_mechanism};
 use linkage_sim_rs::solver::assembly::{assemble_constraints, assemble_jacobian, assemble_phi_t};
 use linkage_sim_rs::solver::kinematics::{solve_position, solve_velocity};
@@ -46,7 +47,8 @@ fn build_random_fourbar(ground_len: f64, crank_len: f64, coupler_len: f64, rocke
 }
 
 /// Compute a geometrically consistent initial guess for a 4-bar at the given
-/// crank angle. Uses the same triangle-closure approach as the sample builders.
+/// crank angle. Delegates to the canonical `try_fourbar_initial_q0` in the
+/// sample helpers module.
 ///
 /// Returns `None` if the triangle cannot close (geometry invalid at this angle).
 fn fourbar_initial_guess(
@@ -57,39 +59,19 @@ fn fourbar_initial_guess(
     rocker_len: f64,
     theta_crank: f64,
 ) -> Option<nalgebra::DVector<f64>> {
-    let state = mech.state();
-    let mut q0 = state.make_q();
-
-    // Crank tip B
-    let bx = crank_len * theta_crank.cos();
-    let by = crank_len * theta_crank.sin();
-    state.set_pose("crank", &mut q0, 0.0, 0.0, theta_crank);
-
-    // Distance from O4 to crank tip B
-    let dx = bx - ground_len;
-    let dy = by;
-    let d = (dx * dx + dy * dy).sqrt();
-
-    // Check triangle inequality: coupler and rocker must reach from B to O4
-    if d > coupler_len + rocker_len || d < (coupler_len - rocker_len).abs() {
-        return None;
-    }
-
-    let alpha = dy.atan2(dx);
-    let cos_beta = (d * d + rocker_len * rocker_len - coupler_len * coupler_len)
-        / (2.0 * d * rocker_len);
-    let cos_beta = cos_beta.clamp(-1.0, 1.0);
-    let beta = cos_beta.acos();
-
-    let theta_rocker = alpha + beta + PI;
-    let cx = ground_len - rocker_len * theta_rocker.cos();
-    let cy = -rocker_len * theta_rocker.sin();
-    state.set_pose("rocker", &mut q0, cx, cy, theta_rocker);
-
-    let theta_coupler = (cy - by).atan2(cx - bx);
-    state.set_pose("coupler", &mut q0, bx, by, theta_coupler);
-
-    Some(q0)
+    try_fourbar_initial_q0(
+        mech.state(),
+        (0.0, 0.0),
+        (ground_len, 0.0),
+        crank_len,
+        coupler_len,
+        rocker_len,
+        theta_crank,
+        "crank",
+        "coupler",
+        "rocker",
+        false,
+    )
 }
 
 // ---------------------------------------------------------------------------

@@ -13,6 +13,7 @@ use linkage_sim_rs::analysis::validation::{grubler_dof, jacobian_rank_analysis};
 use linkage_sim_rs::core::body::{make_bar, make_ground, Body};
 use linkage_sim_rs::core::mechanism::Mechanism;
 use linkage_sim_rs::forces::elements::{ForceElement, GravityElement};
+use linkage_sim_rs::gui::samples::helpers::fourbar_loop_closure;
 use linkage_sim_rs::solver::assembly::assemble_mass_matrix;
 use linkage_sim_rs::solver::inverse_dynamics::solve_inverse_dynamics;
 use linkage_sim_rs::solver::kinematics::{solve_acceleration, solve_position, solve_velocity};
@@ -77,15 +78,25 @@ fn build_standard_fourbar_with_gravity() -> Mechanism {
     mech
 }
 
-/// Create initial guess for the standard 4-bar at a given crank angle.
+/// Create initial guess for the standard 4-bar (ground=4, crank=1, coupler=3, rocker=2)
+/// at a given crank angle using the canonical loop-closure helper.
+///
+/// This mechanism uses the "test convention" where rocker body origin is at D
+/// (pinned to ground at O4), not at C. Uses `above=true` to match the
+/// assembly branch of the Python reference.
 fn fourbar_initial_guess(mech: &Mechanism, angle: f64) -> DVector<f64> {
+    let geom = fourbar_loop_closure(
+        (0.0, 0.0), (4.0, 0.0),
+        1.0, 3.0, 2.0,
+        angle, true,
+    ).expect("standard 4-bar geometry must close at this angle");
+
     let state = mech.state();
     let mut q = state.make_q();
-    state.set_pose("crank", &mut q, 0.0, 0.0, angle);
-    let bx = angle.cos();
-    let by = angle.sin();
-    state.set_pose("coupler", &mut q, bx, by, 0.0);
-    state.set_pose("rocker", &mut q, 4.0, 0.0, PI / 2.0);
+    state.set_pose("crank", &mut q, 0.0, 0.0, geom.theta_crank);
+    state.set_pose("coupler", &mut q, geom.bx, geom.by, geom.theta_coupler);
+    // Rocker origin at D=O4, angle from D toward C.
+    state.set_pose("rocker", &mut q, 4.0, 0.0, geom.theta_rocker_d_to_c);
     q
 }
 

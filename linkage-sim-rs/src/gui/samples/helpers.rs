@@ -29,7 +29,7 @@ pub fn attach_driver_to_grounded_revolute(
 ///
 /// `theta_0` should match the initial-guess angle of the driven body so that the
 /// driver constraint is satisfied at t = 0 without requiring the solver to correct it.
-pub(super) fn attach_driver_to_grounded_revolute_with_theta0(
+pub fn attach_driver_to_grounded_revolute_with_theta0(
     mech: &mut Mechanism,
     joint_id: &str,
     driver_id: &str,
@@ -73,7 +73,7 @@ pub(super) fn attach_driver_to_grounded_revolute_with_theta0(
 ///
 /// Uses the law of cosines on the diagonal from O2+crank_tip to O4 to find
 /// the rocker angle that closes the loop.
-pub(super) fn fourbar_rocker_angle_for_crank(
+pub fn fourbar_rocker_angle_for_crank(
     o2: (f64, f64),
     o4: (f64, f64),
     l_crank: f64,
@@ -120,6 +120,138 @@ pub(super) fn fourbar_rocker_angle_for_crank(
     alpha + beta + PI
 }
 
+/// Result of the 4-bar loop-closure geometry computation.
+///
+/// Contains all the computed positions and angles needed to set body poses
+/// for either rocker attachment convention.
+#[derive(Debug, Clone)]
+pub struct FourbarClosureResult {
+    /// Crank tip (point B) in world frame.
+    pub bx: f64,
+    pub by: f64,
+    /// Coupler-rocker joint (point C) in world frame.
+    pub cx: f64,
+    pub cy: f64,
+    /// Crank angle (same as input).
+    pub theta_crank: f64,
+    /// Coupler angle: direction from B to C.
+    pub theta_coupler: f64,
+    /// Rocker angle: direction from C to D (D = O4).
+    /// Use this when the rocker body origin is at C (sample convention).
+    pub theta_rocker_c_to_d: f64,
+    /// Rocker angle: direction from D to C (D = O4).
+    /// Use this when the rocker body origin is at D (test convention).
+    pub theta_rocker_d_to_c: f64,
+}
+
+/// Solve the 4-bar loop-closure geometry for a given crank angle.
+///
+/// Returns `None` if the triangle inequality is violated (the coupler
+/// and rocker cannot bridge from crank tip B to rocker pivot O4).
+///
+/// This is the pure geometry computation with no dependency on the `State`
+/// type. Both `fourbar_initial_q0` and test helpers build on this.
+pub fn fourbar_loop_closure(
+    o2: (f64, f64),
+    o4: (f64, f64),
+    l_crank: f64,
+    l_coupler: f64,
+    l_rocker: f64,
+    theta_crank: f64,
+    above: bool,
+) -> Option<FourbarClosureResult> {
+    // Crank tip (point B) in world frame.
+    let bx = o2.0 + l_crank * theta_crank.cos();
+    let by = o2.1 + l_crank * theta_crank.sin();
+
+    // Distance from O4 to crank tip B.
+    let dx = bx - o4.0;
+    let dy = by - o4.1;
+    let d = (dx * dx + dy * dy).sqrt();
+
+    // Triangle inequality check.
+    if d > l_coupler + l_rocker || d < (l_coupler - l_rocker).abs() {
+        return None;
+    }
+
+    let alpha = dy.atan2(dx);
+    let cos_beta = (d * d + l_rocker * l_rocker - l_coupler * l_coupler)
+        / (2.0 * d * l_rocker);
+    let cos_beta = cos_beta.clamp(-1.0, 1.0);
+    let beta = cos_beta.acos();
+
+    // Rocker angle C→D: direction from C toward D=O4.
+    // alpha + beta + PI places coupler below ground line (−y);
+    // alpha − beta + PI places coupler above ground line (+y).
+    let theta_rocker_c_to_d = if above {
+        alpha - beta + PI
+    } else {
+        alpha + beta + PI
+    };
+
+    let cx = o4.0 - l_rocker * theta_rocker_c_to_d.cos();
+    let cy = o4.1 - l_rocker * theta_rocker_c_to_d.sin();
+
+    // D→C direction is C→D + PI (opposite direction), normalized to (-PI, PI].
+    let theta_rocker_d_to_c = {
+        let raw = theta_rocker_c_to_d + PI;
+        let mut norm = raw % (2.0 * PI);
+        if norm > PI {
+            norm -= 2.0 * PI;
+        } else if norm <= -PI {
+            norm += 2.0 * PI;
+        }
+        norm
+    };
+
+    let theta_coupler = (cy - by).atan2(cx - bx);
+
+    Some(FourbarClosureResult {
+        bx,
+        by,
+        cx,
+        cy,
+        theta_crank,
+        theta_coupler,
+        theta_rocker_c_to_d,
+        theta_rocker_d_to_c,
+    })
+}
+
+/// Compute geometrically consistent initial poses for a 4-bar linkage
+/// given a crank angle. Returns `None` if the triangle inequality is
+/// violated (the coupler and rocker cannot reach from crank tip to O4).
+///
+/// This is the fallible version of [`fourbar_initial_q0`]; prefer this
+/// when the link lengths come from untrusted / randomized input.
+///
+/// Assumes the **sample convention**: rocker body origin at C (the
+/// coupler-rocker joint), with D at the ground pivot O4. For the
+/// opposite convention (origin at D), use [`fourbar_loop_closure`]
+/// directly.
+pub fn try_fourbar_initial_q0(
+    state: &crate::core::state::State,
+    o2: (f64, f64),
+    o4: (f64, f64),
+    l_crank: f64,
+    l_coupler: f64,
+    l_rocker: f64,
+    theta_crank: f64,
+    crank_id: &str,
+    coupler_id: &str,
+    rocker_id: &str,
+    above: bool,
+) -> Option<DVector<f64>> {
+    let geom = fourbar_loop_closure(o2, o4, l_crank, l_coupler, l_rocker, theta_crank, above)?;
+    let mut q0 = state.make_q();
+
+    state.set_pose(crank_id, &mut q0, o2.0, o2.1, geom.theta_crank);
+    state.set_pose(rocker_id, &mut q0, geom.cx, geom.cy, geom.theta_rocker_c_to_d);
+    state.set_pose(coupler_id, &mut q0, geom.bx, geom.by, geom.theta_coupler);
+
+    Some(q0)
+}
+
 /// Compute geometrically consistent initial poses for a 4-bar linkage
 /// given a crank angle.
 ///
@@ -127,7 +259,17 @@ pub(super) fn fourbar_rocker_angle_for_crank(
 /// solve the coupler/rocker positions via the loop closure triangle.
 ///
 /// `crank_id`, `coupler_id`, `rocker_id` are the body IDs in the mechanism.
-pub(super) fn fourbar_initial_q0(
+///
+/// Assumes the **sample convention**: rocker body origin at C (the
+/// coupler-rocker joint), with D at the ground pivot O4. For the
+/// opposite convention (origin at D), use [`fourbar_loop_closure`]
+/// directly.
+///
+/// # Panics
+/// Does not check the triangle inequality. If the geometry cannot close,
+/// the result will contain `NaN` angles. Use [`try_fourbar_initial_q0`]
+/// for a checked version.
+pub fn fourbar_initial_q0(
     state: &crate::core::state::State,
     o2: (f64, f64),
     o4: (f64, f64),
@@ -186,7 +328,7 @@ pub(super) fn fourbar_initial_q0(
 ///
 /// P1 is at the local origin (0,0). P2 and P3 are specified in body-local
 /// coordinates.
-pub(super) fn make_ternary(
+pub fn make_ternary(
     body_id: &str,
     p1: &str,
     p2: &str,
@@ -205,7 +347,7 @@ pub(super) fn make_ternary(
 /// well-conditioned) and step toward `t_end` over `n_steps` increments.
 ///
 /// Returns the converged q at `t_end`, or `None` if any step diverges.
-pub(super) fn solve_with_continuation(
+pub fn solve_with_continuation(
     mech: &Mechanism,
     q_start: &DVector<f64>,
     t_start: f64,
