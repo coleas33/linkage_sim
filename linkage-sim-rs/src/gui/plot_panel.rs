@@ -9,7 +9,7 @@ use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints, VLine};
 
 use super::state::{AngleUnit, AppState, DisplayUnits};
-use super::sweep::SweepData;
+use super::sweep::{SweepData, SweepMode};
 
 /// Selected plot tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,11 +68,15 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
         // Only show driver torque tab if data exists.
         let has_dt = sweep.driver_torques.is_some();
+        let torque_tab_label = match &sweep.sweep_mode {
+            SweepMode::Stroke { .. } => "Actuator Force",
+            _ => "Driver Torque",
+        };
         ui.add_enabled_ui(has_dt, |ui| {
             ui.selectable_value(
                 &mut selected_tab,
                 PlotTab::DriverTorque,
-                "Driver Torque",
+                torque_tab_label,
             );
         });
 
@@ -194,6 +198,44 @@ fn display_to_radians(display_angle: f64, units: &DisplayUnits) -> f64 {
     }
 }
 
+/// Return the x-axis label string for plots that sweep over the driver variable.
+///
+/// In angle mode this is `"Driver Angle (deg)"` or `"Driver Angle (rad)"`.
+/// In stroke mode this is `"Actuator Stroke (mm)"`.
+fn x_axis_label_for_sweep(sweep: &SweepData, units: &DisplayUnits) -> String {
+    match &sweep.sweep_mode {
+        SweepMode::Angle => {
+            let angle_label = match units.angle {
+                AngleUnit::Degrees => "deg",
+                AngleUnit::Radians => "rad",
+            };
+            format!("Driver Angle ({})", angle_label)
+        }
+        SweepMode::Stroke { .. } => "Actuator Stroke (mm)".to_string(),
+    }
+}
+
+/// Return the y-axis label for the driver effort plot.
+///
+/// In angle mode (revolute driver) this is `"Driver Torque (N*m)"`.
+/// In stroke mode (linear driver) this is `"Actuator Force (N)"`.
+fn driver_effort_y_label(sweep: &SweepData) -> &'static str {
+    match &sweep.sweep_mode {
+        SweepMode::Angle => "Driver Torque (N\u{00b7}m)",
+        SweepMode::Stroke { .. } => "Actuator Force (N)",
+    }
+}
+
+/// Return the series name for the driver effort in the plot legend.
+///
+/// In angle mode: `"Driver Torque"`. In stroke mode: `"Actuator Force"`.
+fn driver_effort_series_name(sweep: &SweepData) -> &'static str {
+    match &sweep.sweep_mode {
+        SweepMode::Angle => "Driver Torque",
+        SweepMode::Stroke { .. } => "Actuator Force",
+    }
+}
+
 /// Detect a click on the plot and return the X coordinate in plot space.
 ///
 /// Call this inside a `plot_ui` closure. Returns `Some(x)` when the user
@@ -289,13 +331,13 @@ fn draw_body_angles(
     current_driver_display: f64,
     units: &DisplayUnits,
 ) -> Option<f64> {
-    // Sweep stores angles in degrees; convert to display unit on the fly.
+    // Sweep stores angles in degrees (or stroke in meters); convert on the fly.
     let angle_label = match units.angle {
         AngleUnit::Degrees => "deg",
         AngleUnit::Radians => "rad",
     };
     let plot = Plot::new("body_angles_plot")
-        .x_axis_label(format!("Driver Angle ({})", angle_label))
+        .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label(format!("Body Angle ({})", angle_label))
         .legend(egui_plot::Legend::default());
 
@@ -362,16 +404,11 @@ fn draw_transmission_angle(
         return None;
     };
 
-    // The x-axis driver angle is shown in the current display angle unit.
-    let angle_label = match units.angle {
-        AngleUnit::Degrees => "deg",
-        AngleUnit::Radians => "rad",
-    };
     // The x-axis span in display units (0 to 2pi).
     let x_max = units.angle(2.0 * std::f64::consts::PI);
 
     let plot = Plot::new("transmission_angle_plot")
-        .x_axis_label(format!("Driver Angle ({})", angle_label))
+        .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label("Transmission Angle (deg)")
         .legend(egui_plot::Legend::default());
 
@@ -438,14 +475,9 @@ fn draw_driver_torque(
         return None;
     };
 
-    let angle_label = match units.angle {
-        AngleUnit::Degrees => "deg",
-        AngleUnit::Radians => "rad",
-    };
-
     let plot = Plot::new("driver_torque_plot")
-        .x_axis_label(format!("Driver Angle ({})", angle_label))
-        .y_axis_label("Driver Torque (N\u{00b7}m)")
+        .x_axis_label(x_axis_label_for_sweep(sweep, units))
+        .y_axis_label(driver_effort_y_label(sweep))
         .legend(egui_plot::Legend::default());
 
     let mut clicked_x: Option<f64> = None;
@@ -459,7 +491,7 @@ fn draw_driver_torque(
 
         draw_angle_series_with_range(
             plot_ui,
-            "Driver Torque",
+            driver_effort_series_name(sweep),
             egui::Color32::from_rgb(255, 150, 80),
             2.0,
             &pairs,
@@ -496,14 +528,9 @@ fn draw_inverse_dynamics(
         return None;
     }
 
-    let angle_label = match units.angle {
-        AngleUnit::Degrees => "deg",
-        AngleUnit::Radians => "rad",
-    };
-
     let plot = Plot::new("inverse_dynamics_plot")
-        .x_axis_label(format!("Driver Angle ({})", angle_label))
-        .y_axis_label("Driver Torque (N\u{00b7}m)")
+        .x_axis_label(x_axis_label_for_sweep(sweep, units))
+        .y_axis_label(driver_effort_y_label(sweep))
         .legend(egui_plot::Legend::default());
 
     let mut clicked_x: Option<f64> = None;
@@ -526,18 +553,23 @@ fn draw_inverse_dynamics(
             units,
         );
 
-        // Overlay statics torque if available (orange, dashed).
+        // Overlay statics torque/force if available (orange, dashed).
         // This is always drawn dashed as a reference, so no faded/solid split.
         if let Some(statics_torques) = &sweep.driver_torques {
+            let is_stroke = matches!(&sweep.sweep_mode, SweepMode::Stroke { .. });
             let st_points: PlotPoints = sweep
                 .angles_deg
                 .iter()
                 .zip(statics_torques.iter())
                 .filter(|&(_, &t)| t.is_finite())
-                .map(|(&x_deg, &t)| [units.angle(x_deg.to_radians()), t])
+                .map(|(&x, &t)| {
+                    let x_display = if is_stroke { x * 1000.0 } else { units.angle(x.to_radians()) };
+                    [x_display, t]
+                })
                 .collect();
+            let statics_label = if is_stroke { "Statics Force" } else { "Statics Torque" };
             plot_ui.line(
-                Line::new("Statics Torque", st_points)
+                Line::new(statics_label, st_points)
                     .color(egui::Color32::from_rgb(255, 150, 80))
                     .style(egui_plot::LineStyle::Dashed { length: 4.0 })
                     .width(1.5),
@@ -572,13 +604,8 @@ fn draw_energy(
         return None;
     }
 
-    let angle_label = match units.angle {
-        AngleUnit::Degrees => "deg",
-        AngleUnit::Radians => "rad",
-    };
-
     let plot = Plot::new("energy_plot")
-        .x_axis_label(format!("Driver Angle ({})", angle_label))
+        .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label("Energy (J)")
         .legend(egui_plot::Legend::default());
 
@@ -666,13 +693,8 @@ fn draw_mechanical_advantage(
         return None;
     }
 
-    let angle_label = match units.angle {
-        AngleUnit::Degrees => "deg",
-        AngleUnit::Radians => "rad",
-    };
-
     let plot = Plot::new("mechanical_advantage_plot")
-        .x_axis_label(format!("Driver Angle ({})", angle_label))
+        .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label("Mechanical Advantage")
         .legend(egui_plot::Legend::default());
 
@@ -738,13 +760,8 @@ fn draw_joint_reactions(
         return None;
     }
 
-    let angle_label = match units.angle {
-        AngleUnit::Degrees => "deg",
-        AngleUnit::Radians => "rad",
-    };
-
     let plot = Plot::new("joint_reactions_plot")
-        .x_axis_label(format!("Driver Angle ({})", angle_label))
+        .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label("Reaction Force (N)")
         .legend(egui_plot::Legend::default());
 
@@ -810,13 +827,8 @@ fn draw_coupler_velocity(
         return None;
     }
 
-    let angle_label = match units.angle {
-        AngleUnit::Degrees => "deg",
-        AngleUnit::Radians => "rad",
-    };
-
     let plot = Plot::new("coupler_velocity_plot")
-        .x_axis_label(format!("Driver Angle ({})", angle_label))
+        .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label("Velocity (m/s)")
         .legend(egui_plot::Legend::default());
 
@@ -882,13 +894,8 @@ fn draw_coupler_acceleration(
         return None;
     }
 
-    let angle_label = match units.angle {
-        AngleUnit::Degrees => "deg",
-        AngleUnit::Radians => "rad",
-    };
-
     let plot = Plot::new("coupler_acceleration_plot")
-        .x_axis_label(format!("Driver Angle ({})", angle_label))
+        .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label("Acceleration (m/s\u{00b2})")
         .legend(egui_plot::Legend::default());
 
@@ -940,14 +947,16 @@ fn draw_coupler_acceleration(
 /// Draw faint red dashed vertical lines at toggle/dead-point angles.
 ///
 /// Toggle angles are in degrees; they are converted to the current display
-/// angle unit before being drawn.
+/// angle unit before being drawn. In stroke mode, toggle angles are stored
+/// in meters and are converted to mm.
 fn draw_toggle_markers(
     plot_ui: &mut egui_plot::PlotUi,
     sweep: &SweepData,
     units: &DisplayUnits,
 ) {
-    for (i, &toggle_deg) in sweep.toggle_angles.iter().enumerate() {
-        let toggle_display = units.angle(toggle_deg.to_radians());
+    let is_stroke = matches!(&sweep.sweep_mode, SweepMode::Stroke { .. });
+    for (i, &toggle_val) in sweep.toggle_angles.iter().enumerate() {
+        let toggle_display = if is_stroke { toggle_val * 1000.0 } else { units.angle(toggle_val.to_radians()) };
         plot_ui.vline(
             VLine::new(format!("toggle_{}", i), toggle_display)
                 .color(egui::Color32::from_rgba_premultiplied(255, 60, 60, 100))
@@ -960,18 +969,19 @@ fn draw_toggle_markers(
 /// Draw vertical boundary markers at the sweep range limits.
 ///
 /// When `active_range` is set, draws faint white dashed VLines at the
-/// min and max angles of the active range.
+/// min and max angles (or stroke values) of the active range.
 fn draw_range_boundary_markers(
     plot_ui: &mut egui_plot::PlotUi,
     sweep: &SweepData,
     units: &DisplayUnits,
 ) {
     if let Some((start, end)) = sweep.active_range {
-        if let (Some(&min_deg), Some(&max_deg)) =
+        if let (Some(&min_val), Some(&max_val)) =
             (sweep.angles_deg.get(start), sweep.angles_deg.get(end))
         {
-            let min_display = units.angle(min_deg.to_radians());
-            let max_display = units.angle(max_deg.to_radians());
+            let is_stroke = matches!(&sweep.sweep_mode, SweepMode::Stroke { .. });
+            let min_display = if is_stroke { min_val * 1000.0 } else { units.angle(min_val.to_radians()) };
+            let max_display = if is_stroke { max_val * 1000.0 } else { units.angle(max_val.to_radians()) };
             let boundary_color =
                 egui::Color32::from_rgba_unmultiplied(255, 255, 255, 80);
             plot_ui.vline(
@@ -1007,6 +1017,9 @@ fn faded_color(color: egui::Color32) -> egui::Color32 {
 ///
 /// When `active_range` is `None`, draws normally. When set, draws the full
 /// curve faded/dashed and overdraws the active slice solid.
+///
+/// In angle mode, x values are in degrees and are converted to the display
+/// angle unit. In stroke mode, x values are in meters and are converted to mm.
 fn draw_angle_series_with_range(
     plot_ui: &mut egui_plot::PlotUi,
     name: &str,
@@ -1020,7 +1033,10 @@ fn draw_angle_series_with_range(
         return;
     }
 
-    let to_display = |deg: f64| units.angle(deg.to_radians());
+    let is_stroke = matches!(&sweep.sweep_mode, SweepMode::Stroke { .. });
+    let to_display = |x: f64| -> f64 {
+        if is_stroke { x * 1000.0 } else { units.angle(x.to_radians()) }
+    };
 
     if let Some((start, end)) = sweep.active_range {
         // Full curve -- faded/dashed for context.
