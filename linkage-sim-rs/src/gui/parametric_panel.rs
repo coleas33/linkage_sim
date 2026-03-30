@@ -138,17 +138,53 @@ pub fn draw_parametric_panel(ui: &mut egui::Ui, state: &mut AppState) {
             );
         }
 
+        // Collect saved sweep data before entering plot closure (avoid borrow conflict).
+        let saved_sweeps: Vec<(String, Vec<[f64; 2]>)> = state
+            .saved_parametric_sweeps
+            .iter()
+            .map(|(label, xs, ys)| {
+                let pts: Vec<[f64; 2]> = xs
+                    .iter()
+                    .zip(ys.iter())
+                    .filter(|(_, y)| y.is_finite())
+                    .map(|(x, y)| [*x, *y])
+                    .collect();
+                (label.clone(), pts)
+            })
+            .collect();
+
         Plot::new("parametric_plot")
             .x_axis_label(x_label.as_str())
             .y_axis_label(y_label)
             .height(200.0)
             .allow_zoom(true)
             .allow_drag(true)
+            .legend(egui_plot::Legend::default())
             .show(ui, |plot_ui| {
+                // Draw saved comparison sweeps as faded lines.
+                let palette = [
+                    egui::Color32::from_rgba_premultiplied(150, 150, 255, 90),
+                    egui::Color32::from_rgba_premultiplied(255, 150, 150, 90),
+                    egui::Color32::from_rgba_premultiplied(150, 255, 150, 90),
+                    egui::Color32::from_rgba_premultiplied(255, 255, 150, 90),
+                    egui::Color32::from_rgba_premultiplied(255, 150, 255, 90),
+                    egui::Color32::from_rgba_premultiplied(150, 255, 255, 90),
+                ];
+                for (i, (label, pts)) in saved_sweeps.iter().enumerate() {
+                    let color = palette[i % palette.len()];
+                    plot_ui.line(
+                        Line::new(label.as_str(), PlotPoints::new(pts.clone()))
+                            .color(color)
+                            .width(1.5),
+                    );
+                }
+
+                // Current result as solid line on top.
                 let line = Line::new(
                     result.config.metric.label(),
                     PlotPoints::new(points.clone()),
-                );
+                )
+                .width(2.0);
                 plot_ui.line(line);
             });
 
@@ -166,6 +202,39 @@ pub fn draw_parametric_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 ui.small(format!("Range: {:.4} to {:.4}", min, max));
             });
         }
+
+        // ── Save / Clear buttons ───────────────────────────────────────
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            if ui
+                .button("Save Result")
+                .on_hover_text("Save the current sweep result for comparison with future sweeps")
+                .clicked()
+            {
+                state.saved_parametric_counter += 1;
+                let label = format!("Sweep {}", state.saved_parametric_counter);
+                if let Some(ref r) = state.parametric_result {
+                    state.saved_parametric_sweeps.push((
+                        label,
+                        r.parameter_values.clone(),
+                        r.metric_values.clone(),
+                    ));
+                }
+            }
+            if !state.saved_parametric_sweeps.is_empty() {
+                if ui
+                    .button("Clear Saved")
+                    .on_hover_text("Remove all saved comparison sweeps")
+                    .clicked()
+                {
+                    state.saved_parametric_sweeps.clear();
+                }
+                ui.small(format!(
+                    "{} saved",
+                    state.saved_parametric_sweeps.len()
+                ));
+            }
+        });
     }
 }
 

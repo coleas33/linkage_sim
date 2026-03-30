@@ -184,6 +184,11 @@ pub struct AppState {
     pub show_parametric: bool,
     /// Active parametric study configuration (persists across panel close/open).
     pub parametric_config: ParametricStudyConfig,
+    /// Saved parametric sweep results for comparison overlay.
+    /// Each entry is a (label, parameter_values, metric_values) triple.
+    pub saved_parametric_sweeps: Vec<(String, Vec<f64>, Vec<f64>)>,
+    /// Auto-incrementing counter for naming saved parametric sweeps.
+    pub saved_parametric_counter: usize,
     /// Cached counterbalance study results.
     pub counterbalance_result: Option<CounterbalanceResult>,
     /// Active counterbalance configuration.
@@ -372,6 +377,8 @@ impl Default for AppState {
                 num_steps: 5,
                 metric: ParametricMetric::PeakDriverTorque,
             },
+            saved_parametric_sweeps: Vec::new(),
+            saved_parametric_counter: 0,
             counterbalance_result: None,
             counterbalance_config: CounterbalanceConfig {
                 body_a: GROUND_ID.to_string(),

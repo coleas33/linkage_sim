@@ -6,7 +6,7 @@
 //! that angle.
 
 use eframe::egui;
-use egui_plot::{Line, Plot, PlotPoints, VLine};
+use egui_plot::{Line, Plot, PlotPoint, PlotPoints, Text as PlotText, VLine};
 
 use super::state::{AngleUnit, AppState, DisplayUnits};
 use super::sweep::SweepData;
@@ -455,6 +455,27 @@ fn draw_transmission_angle(
                 .width(1.0),
         );
 
+        // Text annotations inside the plot labelling the poor output zones.
+        let text_x = x_max * 0.5;
+        plot_ui.text(
+            PlotText::new(
+                "poor_zone_low",
+                PlotPoint::new(text_x, 20.0),
+                "Poor output zone (< 40\u{00b0})",
+            )
+            .color(egui::Color32::from_rgb(255, 80, 80))
+            .anchor(egui::Align2::CENTER_CENTER),
+        );
+        plot_ui.text(
+            PlotText::new(
+                "poor_zone_high",
+                PlotPoint::new(text_x, 160.0),
+                "Poor output zone (> 140\u{00b0})",
+            )
+            .color(egui::Color32::from_rgb(255, 80, 80))
+            .anchor(egui::Align2::CENTER_CENTER),
+        );
+
         // Vertical marker at current driver angle (already in display units).
         plot_ui.vline(
             VLine::new("cursor", current_driver_display)
@@ -466,6 +487,14 @@ fn draw_transmission_angle(
         draw_range_boundary_markers(plot_ui, sweep, units);
         clicked_x = detect_plot_click(plot_ui);
     });
+
+    ui.add_space(2.0);
+    ui.small("Dashed lines at 40\u{00b0} and 140\u{00b0} mark the ideal transmission angle zone. Outside this range, output force quality degrades rapidly.")
+        .on_hover_text("The transmission angle is the angle between the coupler and the output link at their shared joint. \
+            Near 0\u{00b0} or 180\u{00b0} the mechanism approaches a singularity where input motion \
+            produces almost no output force. The 40\u{00b0}\u{2013}140\u{00b0} guideline represents \
+            the zone of acceptable force transmission for most applications.");
+
     clicked_x
 }
 
@@ -520,6 +549,15 @@ fn draw_driver_torque(
         draw_range_boundary_markers(plot_ui, sweep, units);
         clicked_x = detect_plot_click(plot_ui);
     });
+
+    ui.add_space(2.0);
+    let sign_label = if sweep.sweep_mode.is_stroke() {
+        "Positive = force required to extend actuator against load. Negative = mechanism assists motion."
+    } else {
+        "Positive = torque required to maintain prescribed motion (resisting load). Negative = mechanism assists motion."
+    };
+    ui.small(sign_label);
+
     clicked_x
 }
 
@@ -599,6 +637,15 @@ fn draw_inverse_dynamics(
         draw_range_boundary_markers(plot_ui, sweep, units);
         clicked_x = detect_plot_click(plot_ui);
     });
+
+    ui.add_space(2.0);
+    let id_sign_label = if sweep.sweep_mode.is_stroke() {
+        "Positive = force required to maintain prescribed motion including inertia effects. Negative = mechanism assists motion."
+    } else {
+        "Positive = torque required to maintain prescribed motion including inertia effects. Negative = mechanism assists motion."
+    };
+    ui.small(id_sign_label);
+
     clicked_x
 }
 
