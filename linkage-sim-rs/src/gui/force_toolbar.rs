@@ -35,7 +35,7 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
 
         // -- Joint Torques dropdown --
         let jt_resp = ui.menu_button(
-            egui::RichText::new("\u{2699} Joint Torques \u{25BC}").color(torque_color),
+            egui::RichText::new("Joint Torques \u{25BC}").color(torque_color),
             |ui| {
             if let Some((ref a, ref b)) = two_bodies(&selected_body, &connected_body) {
                 if ui.button("Motor").on_hover_text("Add a DC motor with linear torque-speed curve between two bodies").clicked() {
@@ -83,7 +83,7 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
 
         // -- Link Forces dropdown --
         let lf_resp = ui.menu_button(
-            egui::RichText::new("\u{2B06} Link Forces \u{25BC}").color(force_color),
+            egui::RichText::new("Link Forces \u{25BC}").color(force_color),
             |ui| {
             // Single-body elements
             if let Some(ref body_id) = selected_body {

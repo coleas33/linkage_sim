@@ -41,9 +41,9 @@ The target user is a mechanical engineer sizing actuators, selecting bearings, c
 
 The simulator is built on four foundational decisions documented in detail in `docs/`:
 
-1. **Body–constraint incidence model** — not a joint-node / link-edge graph. Bodies are first-class rigid objects with multiple attachment points. Joints are constraints between bodies. This handles ternary links, bell-cranks, and slider blocks without special cases. → `docs/ARCHITECTURE.md`
+1. **Body–constraint incidence model** — not a joint-node / link-edge graph. Bodies are first-class rigid objects with multiple attachment points. Joints are constraints between bodies. This handles ternary links, bell-cranks, and slider blocks without special cases. → `docs/architecture/ARCHITECTURE.md`
 
-2. **Constraint-first mathematics** — all analysis modes share one backbone: generalized coordinates `q`, constraint equations `Φ(q,t) = 0`, and the constraint Jacobian `Φ_q`. Kinematics, statics, and dynamics are layers on this foundation. → `docs/NUMERICAL_FORMULATION.md`
+2. **Constraint-first mathematics** — all analysis modes share one backbone: generalized coordinates `q`, constraint equations `Φ(q,t) = 0`, and the constraint Jacobian `Φ_q`. Kinematics, statics, and dynamics are layers on this foundation. → `docs/architecture/NUMERICAL_FORMULATION.md`
 
 3. **SI internally, engineering units in GUI** — solvers compute in m, kg, s, N, N·m, kg·m². The GUI converts to mm, N·mm, degrees at the display boundary. No conversion factors inside any solver.
 
@@ -53,16 +53,39 @@ The simulator is built on four foundational decisions documented in detail in `d
 
 ## Documentation
 
+### Architecture (how the system works)
+
 | Document | Contents |
 |---|---|
-| `docs/ARCHITECTURE.md` | Core data model: Body, JointConstraint, ForceElement, PointMass, Mechanism. Topology design, unit system, serialization, schema versioning. Friction model tiers. Coordinate representation abstraction for future reduced-coordinate support |
-| `docs/NUMERICAL_FORMULATION.md` | Generalized coordinate layout, constraint equations by joint type, prismatic joint conventions with 4 worked examples, driver treatment, force assembly into Q, Lagrange multiplier extraction, singularity analysis framework (existence/uniqueness/conditioning), reaction force post-processing. Branch management and assembly mode tracking. Dimensionless scaling strategy |
-| `docs/ANALYSIS_MODES.md` | Kinematic, static, inverse dynamic, and forward dynamic analysis. Solver methods, inputs, outputs, branch management integration, singularity reporting, and known numerical challenges for each mode |
-| `docs/ENGINEERING_OUTPUTS.md` | What the tool produces: joint reactions, input torque, mechanical advantage, transmission angle, coupler curves, result envelopes, load-path decomposition by source/body/joint, mechanism health panel, output coordinate frames, load case management |
-| `docs/VALIDATION.md` | Mechanism validation layers (topology, constraint rank, assembly). Constraint and loop diagnostics for actionable error reporting. Versioned benchmark suite with expected results including robustness/failure cases |
-| `docs/EXTENSIBILITY.md` | Three extension points (ForceElement, JointConstraint, conditional/switching). Coordinate representation extensions. Future components catalog. Design rules |
-| `docs/ROADMAP.md` | Development phases with deliverables and exit criteria (forward dynamics split into 4A smooth / 4B nonsmooth). Phase 6 prerequisites. Recommended build order for fastest path to useful tool |
-| `RUST_MIGRATION.md` | Python-first, Rust-second strategy. Port plan, golden test fixture strategy, module mapping, Rust crate dependencies, coding conventions for portability. Port completion summary and risk outcomes |
+| `docs/architecture/ARCHITECTURE.md` | Core data model: Body, JointConstraint, ForceElement, Mechanism. Topology, units, serialization, schema versioning |
+| `docs/architecture/NUMERICAL_FORMULATION.md` | Generalized coordinates, constraint equations, Jacobian, driver treatment, force assembly, Lagrange multipliers, singularity analysis |
+| `docs/architecture/ANALYSIS_MODES.md` | Kinematic, static, inverse dynamic, and forward dynamic analysis. Solver methods, inputs, outputs |
+| `docs/architecture/ENGINEERING_OUTPUTS.md` | Joint reactions, input torque, mechanical advantage, transmission angle, coupler curves, result envelopes |
+| `docs/architecture/VALIDATION.md` | Mechanism validation layers, constraint diagnostics, benchmark suite |
+| `docs/architecture/EXTENSIBILITY.md` | Extension points for ForceElement, JointConstraint, and switching forces |
+
+### Guides (how to use it)
+
+| Document | Contents |
+|---|---|
+| `docs/guides/SAMPLES.md` | Built-in sample mechanisms and their properties |
+| `docs/guides/SHORTCUTS.md` | Keyboard and mouse shortcuts reference |
+| `docs/guides/PARAMETRIC_STUDIES.md` | How to run parametric sweeps and compare results |
+| `docs/guides/WASM_DEPLOYMENT.md` | Building and deploying the web (WASM) version |
+
+### Reference
+
+| Document | Contents |
+|---|---|
+| `docs/reference/FORCE_ELEMENTS.md` | Equations and parameters for all 12 force element types |
+| `linkage-sim-rs/SYSTEM.md` | File map of all 92+ Rust source files |
+
+### History
+
+| Document | Contents |
+|---|---|
+| `docs/history/ROADMAP.md` | Original development phases and deliverables |
+| `docs/history/RUST_MIGRATION.md` | Python→Rust port strategy and completion summary |
 
 ---
 
@@ -71,7 +94,7 @@ The simulator is built on four foundational decisions documented in detail in `d
 | Layer | Choice | Rationale |
 |---|---|---|
 | Core solver (Phases 1–4) | Python + NumPy/SciPy | `fsolve` for constraints, `linalg` for linear systems, `solve_ivp` (Radau/BDF) for DAE |
-| Core solver (production) | Rust + nalgebra | **Port complete** — validated against Python golden fixtures (411 tests). All 12 force element types ported. See `RUST_MIGRATION.md` |
+| Core solver (production) | Rust + nalgebra | **Port complete** — validated against Python golden fixtures (411 tests). All 12 force element types ported. See `docs/history/RUST_MIGRATION.md` |
 | Expression evaluator | Python: `asteval` / Rust: `meval` | **Shipped.** User-defined driver expressions (e.g., `"pi/2 * sin(3*t)"`) with GUI editor, serializable to JSON |
 | GUI framework (Phase 5) | Rust: `egui` + `eframe` | 2D canvas, drag-and-drop, animation. Native + WebAssembly targets. WASM build infrastructure shipped (feature flags, web entry point) |
 | Plotting (development) | Matplotlib or Plotly | Engineering-quality plots during Python development |

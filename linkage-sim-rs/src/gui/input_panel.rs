@@ -100,7 +100,7 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
     // ── Gravity ──────────────────────────────────────────────────────
     let gravity_color = egui::Color32::from_rgb(200, 160, 80);
     egui::CollapsingHeader::new(
-        egui::RichText::new("\u{2B07} Gravity").color(gravity_color),
+        egui::RichText::new("Gravity").color(gravity_color),
     )
         .id_salt("gravity_section")
         .default_open(true)
@@ -120,7 +120,7 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
     // ── Mounting Angle ────────────────────────────────────────────────
     egui::CollapsingHeader::new(
-        egui::RichText::new("\u{2922} Mounting Angle").color(gravity_color),
+        egui::RichText::new("Mounting Angle").color(gravity_color),
     )
         .id_salt("mounting_angle_section")
         .default_open(false)
@@ -142,7 +142,7 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
     // ── Driver ───────────────────────────────────────────────────────
     let driver_color = egui::Color32::from_rgb(100, 220, 140);
     egui::CollapsingHeader::new(
-        egui::RichText::new("\u{2699} Driver").color(driver_color),
+        egui::RichText::new("Driver").color(driver_color),
     )
         .id_salt("driver_section")
         .default_open(true)

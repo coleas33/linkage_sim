@@ -41,7 +41,7 @@ pub(super) fn draw_force_elements_inner(
     ui.separator();
     let force_color = eframe::egui::Color32::from_rgb(255, 140, 60);
     eframe::egui::CollapsingHeader::new(
-        eframe::egui::RichText::new("\u{26A1} Force Elements").color(force_color),
+        eframe::egui::RichText::new("Force Elements").color(force_color),
     )
         .id_salt("force_elements_section")
         .default_open(true)

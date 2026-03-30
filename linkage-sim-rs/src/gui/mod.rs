@@ -467,9 +467,9 @@ impl eframe::App for LinkageApp {
                     }
                 });
                 file_resp.response.on_hover_text("File operations: new, open, save, export");
-                let edit_resp = ui.menu_button("\u{270F} Edit", |ui| {
+                let edit_resp = ui.menu_button("Edit", |ui| {
                     if ui
-                        .add_enabled(self.state.can_undo(), egui::Button::new("\u{21A9} Undo  Ctrl+Z"))
+                        .add_enabled(self.state.can_undo(), egui::Button::new("Undo  Ctrl+Z"))
                         .on_hover_text("Undo the last change (Ctrl+Z)")
                         .clicked()
                     {
@@ -477,7 +477,7 @@ impl eframe::App for LinkageApp {
                         ui.close();
                     }
                     if ui
-                        .add_enabled(self.state.can_redo(), egui::Button::new("\u{21AA} Redo  Ctrl+Y"))
+                        .add_enabled(self.state.can_redo(), egui::Button::new("Redo  Ctrl+Y"))
                         .on_hover_text("Redo the last undone change (Ctrl+Y)")
                         .clicked()
                     {
@@ -486,8 +486,8 @@ impl eframe::App for LinkageApp {
                     }
                 });
                 edit_resp.response.on_hover_text("Undo, redo, and editing operations");
-                let help_resp = ui.menu_button("\u{2753} Help", |ui| {
-                    if ui.button("\u{2328} Keyboard Shortcuts")
+                let help_resp = ui.menu_button("Help", |ui| {
+                    if ui.button("Keyboard Shortcuts")
                         .on_hover_text("Show all keyboard shortcuts")
                         .clicked()
                     {
@@ -612,9 +612,9 @@ impl eframe::App for LinkageApp {
 
                 let draw_active = tool == EditorTool::DrawLink || self.state.draw_link_start.is_some();
                 let draw_text = if draw_active {
-                    egui::RichText::new("\u{270F} Draw Link").color(tool_active_color).strong()
+                    egui::RichText::new("Draw Link").color(tool_active_color).strong()
                 } else {
-                    egui::RichText::new("\u{270F} Draw Link").color(tool_color)
+                    egui::RichText::new("Draw Link").color(tool_color)
                 };
                 if ui.add(egui::Button::new(draw_text))
                     .on_hover_text("Click and drag to draw a link")
@@ -627,9 +627,9 @@ impl eframe::App for LinkageApp {
 
                 let body_active = tool == EditorTool::AddBody || self.state.add_body_state.is_some();
                 let body_text = if body_active {
-                    egui::RichText::new("\u{2795} Body").color(tool_active_color).strong()
+                    egui::RichText::new("+ Body").color(tool_active_color).strong()
                 } else {
-                    egui::RichText::new("\u{2795} Body").color(tool_color)
+                    egui::RichText::new("+ Body").color(tool_color)
                 };
                 if ui.add(egui::Button::new(body_text))
                     .on_hover_text("Click to place points, double-click to finish")
@@ -641,9 +641,9 @@ impl eframe::App for LinkageApp {
                 }
 
                 let ground_text = if tool == EditorTool::AddGroundPivot {
-                    egui::RichText::new("\u{2693} Ground").color(tool_active_color).strong()
+                    egui::RichText::new("+ Ground").color(tool_active_color).strong()
                 } else {
-                    egui::RichText::new("\u{2693} Ground").color(tool_color)
+                    egui::RichText::new("+ Ground").color(tool_color)
                 };
                 if ui.add(egui::Button::new(ground_text))
                     .on_hover_text("Click canvas to place a ground pivot")
@@ -659,7 +659,7 @@ impl eframe::App for LinkageApp {
                 // ── Playback controls (green/yellow) ────────────────
                 let is_playing = self.state.playing;
                 let (label, color) = if is_playing {
-                    ("\u{23F8}  Pause", egui::Color32::from_rgb(240, 200, 60))
+                    ("Pause", egui::Color32::from_rgb(240, 200, 60))
                 } else {
                     ("\u{25B6}  Play", egui::Color32::from_rgb(60, 220, 90))
                 };
@@ -799,12 +799,12 @@ impl eframe::App for LinkageApp {
                     }
                     if warnings.missing_driver {
                         ui.colored_label(dim, "\u{2502}");
-                        ui.colored_label(warn, "\u{26A0} No driver");
+                        ui.colored_label(warn, "! No driver");
                     }
                     if !warnings.disconnected_bodies.is_empty() {
                         ui.colored_label(dim, "\u{2502}");
                         ui.colored_label(warn, format!(
-                            "\u{26A0} Disconnected: {}",
+                            "! Disconnected: {}",
                             warnings.disconnected_bodies.join(", ")
                         ));
                     }
