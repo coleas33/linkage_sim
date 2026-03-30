@@ -1216,13 +1216,12 @@ impl AppState {
             return None;
         }
 
-        // Build a mechanism from the blueprint WITHOUT linear drivers and
-        // WITHOUT the linear actuator force (which triggers compound body
-        // expansion, creating extra bodies that mismatch the main mechanism's q).
+        // Build a mechanism from the blueprint WITHOUT linear drivers but
+        // WITH the same forces (including LinearActuator). This ensures both
+        // the main and sweep mechanisms have identical body structure
+        // (compound body expansion produces the same extra bodies in both).
         let mut bp_clone = bp.clone();
         let _ld_json = bp_clone.linear_drivers.drain(..).next()?;
-        // Remove LinearActuator forces to prevent compound expansion
-        bp_clone.forces.retain(|f| !matches!(f, ForceElement::LinearActuator(_)));
 
         // Find a grounded revolute joint for the sweep driver.
         // Sort joint IDs so we get deterministic ordering (J1 before J4).

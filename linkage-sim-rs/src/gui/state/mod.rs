@@ -532,10 +532,18 @@ impl AppState {
         // Samples always start at zero mounting angle.
         self.mounting_angle = 0.0;
 
-        // Create blueprint from the built mechanism
+        // Create blueprint from the built mechanism.
+        let has_ld = mech.n_linear_drivers() > 0;
         self.blueprint = mechanism_to_json(&mech).ok();
-
         self.mechanism = Some(mech);
+
+        // For mechanisms with linear drivers, rebuild from the blueprint so
+        // compound body expansion (LinearActuator → cylinder+rod bodies)
+        // makes the main mechanism match the sweep mechanism's structure.
+        // Skip for other mechanisms to preserve non-Grashof initial configs.
+        if has_ld {
+            self.rebuild();
+        }
         self.current_sample = Some(sample);
 
         // Pre-fill sweep range for samples with a natural working stroke,
