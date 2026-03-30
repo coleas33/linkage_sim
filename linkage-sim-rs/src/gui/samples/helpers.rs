@@ -138,6 +138,7 @@ pub(super) fn fourbar_initial_q0(
     crank_id: &str,
     coupler_id: &str,
     rocker_id: &str,
+    above: bool,
 ) -> DVector<f64> {
     let mut q0 = state.make_q();
 
@@ -162,8 +163,14 @@ pub(super) fn fourbar_initial_q0(
     // Rocker angle: direction from C to D (C→D = rocker body axis).
     // C = O4 - R(rocker_angle) * (l_rocker, 0), so the rocker angle
     // points from C toward D=O4. From O4's perspective, C is at angle
-    // (alpha + beta) at distance l_rocker. So rocker_angle = alpha + beta + PI.
-    let theta_rocker = alpha + beta + PI;
+    // (alpha ± beta) at distance l_rocker. The sign of beta selects the
+    // assembly branch: alpha + beta + PI places the coupler below the
+    // ground line (−y); alpha − beta + PI places it above (+y).
+    let theta_rocker = if above {
+        alpha - beta + PI
+    } else {
+        alpha + beta + PI
+    };
     let cx = o4.0 - l_rocker * theta_rocker.cos();
     let cy = o4.1 - l_rocker * theta_rocker.sin();
     state.set_pose(rocker_id, &mut q0, cx, cy, theta_rocker);

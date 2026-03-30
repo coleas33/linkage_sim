@@ -85,7 +85,7 @@ pub(super) fn build_fourbar_with_driver(
     // Compute geometrically consistent initial poses from the crank angle.
     let q0 = fourbar_initial_q0(
         mech.state(), o2, o4, l_crank, l_coupler, l_rocker, theta_crank,
-        "crank", "coupler", "rocker",
+        "crank", "coupler", "rocker", false,
     );
 
     Ok((mech, q0))
@@ -217,6 +217,7 @@ fn build_standard_fourbar(
         crank_id,
         coupler_id,
         rocker_id,
+        false,
     );
 
     Ok((mech, q0))
@@ -359,6 +360,7 @@ pub(super) fn build_parallelogram_press(
         "crank",
         "coupler",
         "rocker",
+        false,
     );
 
     Ok((mech, q0))
@@ -427,7 +429,7 @@ pub(super) fn build_parallelogram_actuator(
 
     let q0 = fourbar_initial_q0(
         mech.state(), o2, o4, 2.0, 4.0, 2.0, 0.0,
-        "crank", "coupler", "rocker",
+        "crank", "coupler", "rocker", false,
     );
 
     Ok((mech, q0))
@@ -485,6 +487,7 @@ pub(super) fn build_chebyshev_with_driver(
         2.0, 5.0, 5.0,
         0.0,
         "crank", "coupler", "rocker",
+        false,
     );
 
     Ok((mech, q0))

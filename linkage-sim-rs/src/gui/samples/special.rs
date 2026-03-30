@@ -46,7 +46,7 @@ pub(super) fn build_quick_return(
 
     let q0 = fourbar_initial_q0(
         mech.state(), o2, o4, l_crank, l_coupler, l_rocker, 0.0,
-        "crank", "coupler", "rocker",
+        "crank", "coupler", "rocker", false,
     );
     Ok((mech, q0))
 }
@@ -88,7 +88,7 @@ pub(super) fn build_toggle_clamp(
 
     let q0 = fourbar_initial_q0(
         mech.state(), o2, o4, l_crank, l_coupler, l_rocker, 0.0,
-        "crank", "coupler", "rocker",
+        "crank", "coupler", "rocker", false,
     );
     Ok((mech, q0))
 }

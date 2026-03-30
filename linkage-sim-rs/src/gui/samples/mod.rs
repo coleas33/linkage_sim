@@ -282,6 +282,64 @@ mod tests {
     }
 
     #[test]
+    fn fourbar_initial_q0_above_places_joint_in_positive_y() {
+        // Build a standard Grashof 4-bar (same geometry as the FourBar sample).
+        let o2 = (0.0_f64, 0.0_f64);
+        let o4 = (0.038_f64, 0.0_f64);
+        let l_crank = 0.01_f64;
+        let l_coupler = 0.04_f64;
+        let l_rocker = 0.03_f64;
+        let theta_crank = 0.0_f64;
+
+        use crate::core::body::make_bar;
+        use crate::core::body::make_ground;
+
+        let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
+        let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+        let coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
+        let rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(crank).unwrap();
+        mech.add_body(coupler).unwrap();
+        mech.add_body(rocker).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+        mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+        mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+        mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
+        mech.add_constant_speed_driver("D1", "ground", "crank", std::f64::consts::TAU, 0.0).unwrap();
+        mech.build().unwrap();
+
+        let state = mech.state();
+
+        // above = false: coupler-rocker joint C should be below ground line (y < 0).
+        let q0_below = helpers::fourbar_initial_q0(
+            state, o2, o4, l_crank, l_coupler, l_rocker, theta_crank,
+            "crank", "coupler", "rocker", false,
+        );
+        let rocker_idx = state.get_index("rocker").unwrap();
+        let cy_below = q0_below[rocker_idx.y_idx()];
+        assert!(
+            cy_below < 0.0,
+            "above=false should place rocker origin C below ground line, got y={}",
+            cy_below,
+        );
+
+        // above = true: coupler-rocker joint C should be above ground line (y > 0).
+        let q0_above = helpers::fourbar_initial_q0(
+            state, o2, o4, l_crank, l_coupler, l_rocker, theta_crank,
+            "crank", "coupler", "rocker", true,
+        );
+        let cy_above = q0_above[rocker_idx.y_idx()];
+        assert!(
+            cy_above > 0.0,
+            "above=true should place rocker origin C above ground line, got y={}",
+            cy_above,
+        );
+    }
+
+    #[test]
     fn all_samples_listed() {
         assert_eq!(SampleMechanism::all().len(), 19);
     }
