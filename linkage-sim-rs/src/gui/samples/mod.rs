@@ -23,6 +23,7 @@ pub enum SampleMechanism {
     ParallelogramPress,
     ParallelogramActuator,
     Chebyshev,
+    ChebyshevLambdaActuator,
     TripleRocker,
     SixBarB1,
     SixBarA1,
@@ -48,6 +49,7 @@ impl SampleMechanism {
             SampleMechanism::ParallelogramPress => "Parallelogram Press",
             SampleMechanism::ParallelogramActuator => "Parallelogram + Actuator",
             SampleMechanism::Chebyshev => "Chebyshev Lambda (Straight-Line)",
+            SampleMechanism::ChebyshevLambdaActuator => "Chebyshev Lambda + Actuator",
             SampleMechanism::TripleRocker => "Triple-Rocker (4-2-5-2)",
             SampleMechanism::SixBarB1 => "6-Bar B1 (Watt I)",
             SampleMechanism::SixBarA1 => "6-Bar A1 (Chain A, binary ground)",
@@ -72,6 +74,7 @@ impl SampleMechanism {
             SampleMechanism::ParallelogramPress,
             SampleMechanism::ParallelogramActuator,
             SampleMechanism::Chebyshev,
+            SampleMechanism::ChebyshevLambdaActuator,
             SampleMechanism::TripleRocker,
             SampleMechanism::SixBarB1,
             SampleMechanism::SixBarA1,
@@ -109,6 +112,7 @@ pub fn build_sample_with_driver(
         SampleMechanism::ParallelogramPress => fourbar::build_parallelogram_press(driver_joint_id),
         SampleMechanism::ParallelogramActuator => fourbar::build_parallelogram_actuator(driver_joint_id),
         SampleMechanism::Chebyshev => fourbar::build_chebyshev_with_driver(driver_joint_id),
+        SampleMechanism::ChebyshevLambdaActuator => fourbar::build_chebyshev_lambda_actuator(driver_joint_id),
         SampleMechanism::TripleRocker => fourbar::build_triple_rocker_with_driver(driver_joint_id),
         SampleMechanism::SixBarB1 => sixbar::build_sixbar_b1(driver_joint_id),
         SampleMechanism::SixBarA1 => sixbar::build_sixbar_a1(driver_joint_id),
@@ -271,6 +275,41 @@ mod tests {
     }
 
     #[test]
+    fn chebyshev_lambda_actuator_builds_and_solves() {
+        let (mech, q0) = build_sample(SampleMechanism::ChebyshevLambdaActuator);
+        assert!(mech.is_built());
+        assert!(
+            mech.linear_drivers().len() == 1,
+            "should have one linear driver"
+        );
+        assert!(
+            mech.drivers().is_empty(),
+            "should have no revolute driver"
+        );
+        // Verify solver converges at initial state
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
+        assert!(
+            result.converged,
+            "should converge at t=0, residual = {}",
+            result.residual_norm
+        );
+    }
+
+    #[test]
+    fn chebyshev_lambda_actuator_trace_in_positive_y() {
+        use nalgebra::Vector2;
+        let (mech, q0) = build_sample(SampleMechanism::ChebyshevLambdaActuator);
+        let state = mech.state();
+        let coupler_m = Vector2::new(0.1838, 0.0); // M in coupler local coords
+        let m_global = state.body_point_global("coupler", &coupler_m, &q0);
+        assert!(
+            m_global.y > 0.0,
+            "M should be in +y, got y={}",
+            m_global.y
+        );
+    }
+
+    #[test]
     fn triple_rocker_sample_builds_and_solves() {
         let (mech, q0) = build_sample(SampleMechanism::TripleRocker);
         let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
@@ -341,7 +380,7 @@ mod tests {
 
     #[test]
     fn all_samples_listed() {
-        assert_eq!(SampleMechanism::all().len(), 19);
+        assert_eq!(SampleMechanism::all().len(), 20);
     }
 
     #[test]

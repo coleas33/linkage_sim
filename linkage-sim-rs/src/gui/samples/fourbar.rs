@@ -4,6 +4,7 @@ use nalgebra::{DVector, Vector2};
 use std::f64::consts::PI;
 
 use crate::core::body::{make_bar, make_ground, Body, BodyGeometry};
+use crate::core::linear_driver::constant_velocity_linear_driver;
 use crate::core::mechanism::Mechanism;
 use crate::forces::elements::{ForceElement, ForceZoneElement, LinearActuatorElement};
 
@@ -509,4 +510,133 @@ pub(super) fn build_triple_rocker_with_driver(
         PI / 2.0,
         driver_joint_id,
     )
+}
+
+/// Chebyshev lambda linkage driven by a linear actuator.
+///
+/// Custom proportions: ground=76mm, crank=44.4mm, coupler AB=91.9mm,
+/// rocker=91.9mm, extension BM=91.9mm. Flipped to +y orientation.
+/// Linear actuator parallel to the straight-line trace.
+pub(super) fn build_chebyshev_lambda_actuator(
+    _driver_joint_id: Option<&str>,
+) -> Result<(Mechanism, DVector<f64>), String> {
+    // Link lengths (meters).
+    let o2 = (0.0_f64, 0.0_f64);
+    let o4 = (0.076_f64, 0.0_f64);
+    let l_crank = 0.0444_f64;
+    let l_coupler_ab = 0.0919_f64; // B→C distance (4-bar loop coupler)
+    let l_rocker = 0.0919_f64;
+    let l_total_coupler = 0.1838_f64; // B→M (full lambda coupler)
+    let theta_crank = 0.0_f64;
+
+    // Lambda coupler: bar rendered from B(0,0) to M(l_total_coupler,0).
+    // C at (l_coupler_ab,0) is the rocker attachment (intermediate point).
+    // M at (l_total_coupler,0) is the straight-line tracing endpoint.
+    let mut coupler = make_bar("coupler", "B", "M", l_total_coupler, 0.0, 0.0);
+    coupler
+        .add_attachment_point("C", l_coupler_ab, 0.0)
+        .map_err(|e| e.to_string())?;
+    coupler
+        .add_mount_point("M_mount", l_total_coupler, 0.0)
+        .map_err(|e| e.to_string())?;
+    coupler.add_coupler_point("M", l_total_coupler, 0.0).unwrap();
+
+    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    let rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+
+    // Compute M position at the initial crank angle (above=true) to place
+    // the actuator base at the same y-level as the trace.
+    // First, solve the 4-bar loop closure analytically.
+    let bx = o2.0 + l_crank * theta_crank.cos();
+    let by = o2.1 + l_crank * theta_crank.sin();
+    let dx = bx - o4.0;
+    let dy = by - o4.1;
+    let d = (dx * dx + dy * dy).sqrt();
+    let alpha = dy.atan2(dx);
+    let cos_beta = (d * d + l_rocker * l_rocker - l_coupler_ab * l_coupler_ab)
+        / (2.0 * d * l_rocker);
+    let cos_beta = cos_beta.clamp(-1.0, 1.0);
+    let beta = cos_beta.acos();
+    // above=true branch: alpha - beta + PI
+    let theta_rocker = alpha - beta + PI;
+    let cx = o4.0 - l_rocker * theta_rocker.cos();
+    let cy = o4.1 - l_rocker * theta_rocker.sin();
+    let theta_coupler = (cy - by).atan2(cx - bx);
+
+    // M in global = B + R(theta_coupler) * (l_total_coupler, 0)
+    let mx = bx + l_total_coupler * theta_coupler.cos();
+    let my = by + l_total_coupler * theta_coupler.sin();
+
+    // Actuator base: to the left of the mechanism at M's y-level.
+    let act_base_x = -0.05_f64;
+    let act_base_y = my;
+
+    let mut ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
+    ground
+        .add_attachment_point("O_act", act_base_x, act_base_y)
+        .map_err(|e| e.to_string())?;
+
+    let mut mech = Mechanism::new();
+    mech.add_body(ground).unwrap();
+    mech.add_body(crank).unwrap();
+    mech.add_body(coupler).unwrap();
+    mech.add_body(rocker).unwrap();
+
+    mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+    mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+    mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+    mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
+
+    // NO revolute driver -- this mechanism is actuator-driven.
+
+    // Linear actuator force element between ground base and coupler M.
+    mech.add_force(ForceElement::LinearActuator(LinearActuatorElement {
+        body_a: "ground".to_string(),
+        point_a: [act_base_x, act_base_y],
+        point_a_name: Some("O_act".to_string()),
+        body_b: "coupler".to_string(),
+        point_b: [l_total_coupler, 0.0],
+        point_b_name: Some("M_mount".to_string()),
+        force: 50.0,
+        speed_limit: 0.0,
+        stroke_min: 0.0,
+        stroke_max: 0.0,
+        end_stop_stiffness: 10000.0,
+        end_stop_damping: 10.0,
+        end_stop_restitution: 0.5,
+    }));
+
+    // Linear driver: prescribe distance from actuator base to coupler M.
+    let length_0 = ((mx - act_base_x).powi(2) + (my - act_base_y).powi(2)).sqrt();
+    let velocity = 0.01_f64; // 0.01 m/s
+    let ld = constant_velocity_linear_driver(
+        "LD1",
+        "ground",
+        [act_base_x, act_base_y],
+        "coupler",
+        [l_total_coupler, 0.0],
+        velocity,
+        length_0,
+    );
+    mech.add_linear_driver(ld).map_err(|e| e.to_string())?;
+
+    mech.build().map_err(|e| e.to_string())?;
+
+    // Compute initial poses with above=true for +y orientation.
+    // Pass the 4-bar loop coupler length (l_coupler_ab), not the total coupler.
+    let q0 = fourbar_initial_q0(
+        mech.state(),
+        o2,
+        o4,
+        l_crank,
+        l_coupler_ab,
+        l_rocker,
+        theta_crank,
+        "crank",
+        "coupler",
+        "rocker",
+        true,
+    );
+
+    Ok((mech, q0))
 }
