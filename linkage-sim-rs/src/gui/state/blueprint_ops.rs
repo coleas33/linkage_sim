@@ -846,17 +846,20 @@ impl AppState {
 
     /// Add a force element to the blueprint.
     ///
-    /// Pushes undo, appends the element, and rebuilds.
+    /// Pushes undo, appends the element, rebuilds, and immediately recomputes
+    /// sweep data (bypassing the debounce used for continuous slider edits).
     pub fn add_force_element(&mut self, force: ForceElement) {
         self.push_undo();
         let Some(bp) = &mut self.blueprint else { return };
         bp.forces.push(force);
         self.rebuild();
+        self.compute_sweep();
     }
 
     /// Remove a force element from the blueprint by index.
     ///
-    /// Pushes undo, removes the element, and rebuilds.
+    /// Pushes undo, removes the element, rebuilds, and immediately recomputes
+    /// sweep data (bypassing the debounce used for continuous slider edits).
     /// No-op if `index` is out of bounds.
     pub fn remove_force_element(&mut self, index: usize) {
         self.push_undo();
@@ -866,6 +869,7 @@ impl AppState {
         }
         bp.forces.remove(index);
         self.rebuild();
+        self.compute_sweep();
     }
 
     /// Add a point mass to a body in the blueprint.
@@ -912,7 +916,8 @@ impl AppState {
     /// Replace a force element in the blueprint at the given index.
     ///
     /// Intended for continuous parameter tweaks (e.g. DragValue), so no undo
-    /// snapshot is pushed.
+    /// snapshot is pushed. Immediately recomputes sweep data to keep the
+    /// inverse dynamics torque plot in sync.
     /// No-op if `index` is out of bounds.
     pub fn update_force_element(&mut self, index: usize, force: ForceElement) {
         let Some(bp) = &mut self.blueprint else { return };
@@ -921,6 +926,7 @@ impl AppState {
         }
         bp.forces[index] = force;
         self.rebuild();
+        self.compute_sweep();
     }
 
     /// Enumerate all sweepable parameters from the current blueprint.
