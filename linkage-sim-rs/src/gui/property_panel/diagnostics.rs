@@ -32,7 +32,7 @@ pub(super) fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
     // Always show diagnostics when a mechanism is loaded (mass summary is
     // always available).
     egui::CollapsingHeader::new(
-        egui::RichText::new("\u{1F4CA} Diagnostics").color(egui::Color32::from_rgb(150, 160, 180)),
+        egui::RichText::new("Diagnostics").color(egui::Color32::from_rgb(150, 160, 180)),
     )
         .default_open(false)
         .show(ui, |ui| {

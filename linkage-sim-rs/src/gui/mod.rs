@@ -174,15 +174,15 @@ impl eframe::App for LinkageApp {
         // --- Menu bar ---
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
-                let file_resp = ui.menu_button("\u{1F4C1} File", |ui| {
-                    if ui.button("\u{1F4C4} New  Ctrl+N")
+                let file_resp = ui.menu_button("File", |ui| {
+                    if ui.button("New  Ctrl+N")
                         .on_hover_text("Create a new empty mechanism (Ctrl+N)")
                         .clicked()
                     {
                         self.state.new_empty_mechanism();
                         ui.close();
                     }
-                    let load_sample_resp = ui.menu_button("\u{1F4C2} Load Sample", |ui| {
+                    let load_sample_resp = ui.menu_button("Load Sample", |ui| {
                         for sample in SampleMechanism::all() {
                             if ui.button(sample.label()).clicked() {
                                 self.state.load_sample(*sample);
@@ -195,7 +195,7 @@ impl eframe::App for LinkageApp {
                     #[cfg(feature = "native")]
                     {
                         ui.separator();
-                        if ui.button("\u{1F4C2} Open JSON...")
+                        if ui.button("Open JSON...")
                             .on_hover_text("Load a mechanism from a JSON file")
                             .clicked()
                         {
@@ -234,7 +234,7 @@ impl eframe::App for LinkageApp {
                             });
                             recent_resp.response.on_hover_text("Recently opened mechanism files");
                         }
-                        if ui.button("\u{1F4BE} Save  Ctrl+S")
+                        if ui.button("Save  Ctrl+S")
                             .on_hover_text("Save mechanism to the current file (Ctrl+S)")
                             .clicked()
                         {
@@ -253,7 +253,7 @@ impl eframe::App for LinkageApp {
                             }
                             ui.close();
                         }
-                        if ui.button("\u{1F4BE} Save As...  Ctrl+Shift+S")
+                        if ui.button("Save As...  Ctrl+Shift+S")
                             .on_hover_text("Save mechanism to a new JSON file (Ctrl+Shift+S)")
                             .clicked()
                         {
@@ -496,7 +496,7 @@ impl eframe::App for LinkageApp {
                     }
                 });
                 help_resp.response.on_hover_text("Keyboard shortcuts and help");
-                let view_resp = ui.menu_button("\u{1F441} View", |ui| {
+                let view_resp = ui.menu_button("View", |ui| {
                     ui.checkbox(&mut self.state.show_debug_overlay, "Debug Overlay")
                         .on_hover_text("Show solver status, body IDs, and attachment point names on the canvas");
                     ui.checkbox(&mut self.state.show_plots, "Plot Panel")
@@ -597,9 +597,9 @@ impl eframe::App for LinkageApp {
                 let tool_active_color = egui::Color32::from_rgb(40, 120, 220);
 
                 let select_text = if tool == EditorTool::Select {
-                    egui::RichText::new("\u{1F5B1} Select").color(tool_active_color).strong()
+                    egui::RichText::new("Select").color(tool_active_color).strong()
                 } else {
-                    egui::RichText::new("\u{1F5B1} Select").color(tool_color)
+                    egui::RichText::new("Select").color(tool_color)
                 };
                 if ui.add(egui::Button::new(select_text))
                     .on_hover_text("Select entities on the canvas")
@@ -694,7 +694,7 @@ impl eframe::App for LinkageApp {
                 // ── Sample mechanism selector (purple) ──────────────
                 let sample_color = egui::Color32::from_rgb(180, 140, 255);
                 let samples_resp = ui.menu_button(
-                    egui::RichText::new("\u{1F4C2} Samples \u{25BC}").color(sample_color),
+                    egui::RichText::new("Samples \u{25BC}").color(sample_color),
                     |ui| {
                         for sample in SampleMechanism::all() {
                             if ui.button(sample.label()).clicked() {

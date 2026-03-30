@@ -56,7 +56,7 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
     let link_color = egui::Color32::from_rgb(70, 150, 240);
     egui::CollapsingHeader::new(
-        egui::RichText::new("\u{1F517} Link Editor").color(link_color),
+        egui::RichText::new("Link Editor").color(link_color),
     )
         .id_salt("link_editor")
         .default_open(true)
@@ -352,7 +352,7 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
     // ── Joint Reactions (live, always visible) ──────────────────────
     let react_color = egui::Color32::from_rgb(255, 100, 100);
     egui::CollapsingHeader::new(
-        egui::RichText::new("\u{1F4CD} Joint Reactions").color(react_color),
+        egui::RichText::new("Joint Reactions").color(react_color),
     )
         .id_salt("joint_reactions_section")
         .default_open(true)

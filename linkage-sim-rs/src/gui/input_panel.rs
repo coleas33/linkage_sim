@@ -15,7 +15,7 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
     // ── Crank Angle ──────────────────────────────────────────────────
     let accent = egui::Color32::from_rgb(80, 160, 255);
     egui::CollapsingHeader::new(
-        egui::RichText::new("\u{1F504} Crank Angle").color(accent),
+        egui::RichText::new("Crank Angle").color(accent),
     )
         .id_salt("crank_section")
         .default_open(true)
@@ -52,7 +52,7 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
             }
 
             ui.horizontal(|ui| {
-                let mode_label = if state.loop_mode { "\u{1F501} Loop" } else { "\u{27A1} Once" };
+                let mode_label = if state.loop_mode { "Loop" } else { "Once" };
                 if ui.button(mode_label)
                     .on_hover_text("Toggle between continuous loop and single-pass animation")
                     .clicked()
