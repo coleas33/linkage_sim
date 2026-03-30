@@ -30,6 +30,7 @@ pub(super) enum PendingPropertyEdit {
     UpdateGeometryOffsetY { body_id: String, offset_y: f64 },
     RemoveGeometry { body_id: String },
     UpdateLabel { body_id: String, label: String },
+    UpdateGroundPivot { name: String, x: f64, y: f64 },
 }
 
 /// Draw the force elements collapsible section.
@@ -204,6 +205,9 @@ pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropert
                     }
                 }
                 state.mark_sweep_dirty();
+            }
+            PendingPropertyEdit::UpdateGroundPivot { name, x, y } => {
+                state.update_ground_pivot_position(&name, x, y);
             }
         }
     }

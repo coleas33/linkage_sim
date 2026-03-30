@@ -63,6 +63,14 @@ impl DisplayUnits {
         }
     }
 
+    /// Convert display angle back to radians.
+    pub fn angle_to_si(&self, display: f64) -> f64 {
+        match self.angle {
+            AngleUnit::Radians => display,
+            AngleUnit::Degrees => display.to_radians(),
+        }
+    }
+
     /// Angle unit suffix string.
     pub fn angle_suffix(&self) -> &'static str {
         match self.angle {

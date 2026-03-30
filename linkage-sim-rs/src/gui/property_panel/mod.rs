@@ -346,6 +346,9 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
             }
         });
 
+    // ── Ground Pivots ─────────────────────────────────────────────────
+    draw_ground_pivots_section(ui, state, &mut pending);
+
     // ── Diagnostics (collapsed) ───────────────────────────────────────
     draw_diagnostics_section(ui, state);
 
@@ -384,4 +387,124 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
     // --- Apply any pending edits (mutable borrow now safe) ---
     apply_pending(state, pending);
+}
+
+/// Draw the "Ground Pivots" collapsing section with editable X/Y fields
+/// for each ground attachment point, plus distance & angle for the ground link.
+fn draw_ground_pivots_section(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    pending: &mut Option<PendingPropertyEdit>,
+) {
+    let Some(bp) = &state.blueprint else { return };
+    let Some(ground) = bp.bodies.get(GROUND_ID) else { return };
+    if ground.attachment_points.is_empty() {
+        return;
+    }
+
+    let units = &state.display_units;
+
+    let pivot_color = egui::Color32::from_rgb(180, 130, 220);
+    egui::CollapsingHeader::new(
+        egui::RichText::new("Ground Pivots").color(pivot_color),
+    )
+        .id_salt("ground_pivots_section")
+        .default_open(true)
+        .show(ui, |ui| {
+            // Sorted pivot names for stable ordering
+            let mut pivot_names: Vec<&String> = ground.attachment_points.keys().collect();
+            pivot_names.sort();
+
+            // ── Per-pivot X / Y editing ────────────────────────────────
+            for name in &pivot_names {
+                let pos = ground.attachment_points[*name];
+                ui.horizontal(|ui| {
+                    ui.label(format!("{}:", name));
+                    let mut x_display = units.length(pos[0]);
+                    let mut y_display = units.length(pos[1]);
+
+                    let xr = ui.add(
+                        egui::DragValue::new(&mut x_display)
+                            .speed(units.length(0.001))
+                            .prefix("X ")
+                            .suffix(units.length_suffix()),
+                    );
+                    if xr.drag_stopped() || (xr.changed() && !xr.dragged()) {
+                        *pending = Some(PendingPropertyEdit::UpdateGroundPivot {
+                            name: (*name).clone(),
+                            x: units.length_to_si(x_display),
+                            y: pos[1],
+                        });
+                    }
+
+                    let yr = ui.add(
+                        egui::DragValue::new(&mut y_display)
+                            .speed(units.length(0.001))
+                            .prefix("Y ")
+                            .suffix(units.length_suffix()),
+                    );
+                    if yr.drag_stopped() || (yr.changed() && !yr.dragged()) {
+                        *pending = Some(PendingPropertyEdit::UpdateGroundPivot {
+                            name: (*name).clone(),
+                            x: pos[0],
+                            y: units.length_to_si(y_display),
+                        });
+                    }
+                });
+            }
+
+            // ── Ground link distance & angle (when exactly 2 pivots) ──
+            if pivot_names.len() == 2 {
+                let pos_a = ground.attachment_points[pivot_names[0]];
+                let pos_b = ground.attachment_points[pivot_names[1]];
+
+                let dx = pos_b[0] - pos_a[0];
+                let dy = pos_b[1] - pos_a[1];
+                let distance = (dx * dx + dy * dy).sqrt();
+                let angle = dy.atan2(dx);
+
+                ui.separator();
+                ui.label(format!(
+                    "Ground Link: {} \u{2192} {}",
+                    pivot_names[0], pivot_names[1]
+                ));
+
+                let mut dist_display = units.length(distance);
+                let dr = ui.add(
+                    egui::DragValue::new(&mut dist_display)
+                        .speed(units.length(0.001))
+                        .prefix("Dist ")
+                        .suffix(units.length_suffix())
+                        .range(units.length(0.001)..=units.length(10.0)),
+                );
+                if dr.drag_stopped() || (dr.changed() && !dr.dragged()) {
+                    let new_dist = units.length_to_si(dist_display);
+                    let new_x = pos_a[0] + new_dist * angle.cos();
+                    let new_y = pos_a[1] + new_dist * angle.sin();
+                    *pending = Some(PendingPropertyEdit::UpdateGroundPivot {
+                        name: pivot_names[1].clone(),
+                        x: new_x,
+                        y: new_y,
+                    });
+                }
+
+                let mut angle_display = units.angle(angle);
+                let ar = ui.add(
+                    egui::DragValue::new(&mut angle_display)
+                        .speed(if matches!(units.angle, crate::gui::state::AngleUnit::Degrees) { 0.5 } else { 0.01 })
+                        .prefix("Angle ")
+                        .suffix(units.angle_suffix()),
+                );
+                if ar.drag_stopped() || (ar.changed() && !ar.dragged()) {
+                    let new_angle = units.angle_to_si(angle_display);
+                    let new_x = pos_a[0] + distance * new_angle.cos();
+                    let new_y = pos_a[1] + distance * new_angle.sin();
+                    *pending = Some(PendingPropertyEdit::UpdateGroundPivot {
+                        name: pivot_names[1].clone(),
+                        x: new_x,
+                        y: new_y,
+                    });
+                }
+            }
+        });
 }
