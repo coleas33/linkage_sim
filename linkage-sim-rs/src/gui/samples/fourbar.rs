@@ -597,9 +597,9 @@ pub(super) fn build_chebyshev_lambda_actuator(
         body_b: "coupler".to_string(),
         point_b: [l_total_coupler, 0.0],
         point_b_name: Some("M_mount".to_string()),
-        force: 50.0,
+        force: 2225.0,
         speed_limit: 0.0,
-        stroke_min: 0.0,
+        stroke_min: 0.0, // filled in below after computing stroke range
         stroke_max: 0.0,
         end_stop_stiffness: 10000.0,
         end_stop_damping: 10.0,
@@ -608,7 +608,47 @@ pub(super) fn build_chebyshev_lambda_actuator(
 
     // Linear driver: prescribe distance from actuator base to coupler M.
     let length_0 = ((mx - act_base_x).powi(2) + (my - act_base_y).powi(2)).sqrt();
-    let velocity = 0.01_f64; // 0.01 m/s
+
+    // Compute stroke limits from the mechanism geometry.
+    // Evaluate the actuator length at crank angle = PI (the other extreme)
+    // to find the full range of motion. Uses the same analytic loop-closure
+    // as the initial M computation above, just with theta_crank = PI.
+    let length_pi = {
+        let tc = PI;
+        let bx_pi = o2.0 + l_crank * tc.cos();
+        let by_pi = o2.1 + l_crank * tc.sin();
+        let dx_pi = bx_pi - o4.0;
+        let dy_pi = by_pi - o4.1;
+        let d_pi = (dx_pi * dx_pi + dy_pi * dy_pi).sqrt();
+        let alpha_pi = dy_pi.atan2(dx_pi);
+        let cos_beta_pi = (d_pi * d_pi + l_rocker * l_rocker - l_coupler_ab * l_coupler_ab)
+            / (2.0 * d_pi * l_rocker);
+        let cos_beta_pi = cos_beta_pi.clamp(-1.0, 1.0);
+        let beta_pi = cos_beta_pi.acos();
+        // above=true branch: alpha - beta + PI
+        let theta_rocker_pi = alpha_pi - beta_pi + PI;
+        let cx_pi = o4.0 - l_rocker * theta_rocker_pi.cos();
+        let cy_pi = o4.1 - l_rocker * theta_rocker_pi.sin();
+        let theta_coupler_pi = (cy_pi - by_pi).atan2(cx_pi - bx_pi);
+        let mx_pi = bx_pi + l_total_coupler * theta_coupler_pi.cos();
+        let my_pi = by_pi + l_total_coupler * theta_coupler_pi.sin();
+        ((mx_pi - act_base_x).powi(2) + (my_pi - act_base_y).powi(2)).sqrt()
+    };
+
+    let stroke_min = length_0.min(length_pi);
+    let stroke_max = length_0.max(length_pi);
+
+    // Patch the actuator stroke limits into the force element we just added.
+    for force in mech.forces_mut() {
+        if let ForceElement::LinearActuator(act) = force {
+            act.stroke_min = stroke_min;
+            act.stroke_max = stroke_max;
+        }
+    }
+
+    // Set velocity to cover the full stroke range in 1 second,
+    // so the default sweep (velocity * 1.0s) covers the entire travel.
+    let velocity = stroke_max - stroke_min;
     let ld = constant_velocity_linear_driver(
         "LD1",
         "ground",

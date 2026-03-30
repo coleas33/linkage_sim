@@ -1064,8 +1064,13 @@ impl AppState {
             self.last_good_q.clone()
         };
 
+        let has_linear_driver = mech.n_linear_drivers() > 0;
         let sweep_range = if self.sweep_range_enabled {
-            Some((self.sweep_angle_min_deg, self.sweep_angle_max_deg))
+            if has_linear_driver {
+                Some((self.sweep_stroke_min, self.sweep_stroke_max))
+            } else {
+                Some((self.sweep_angle_min_deg, self.sweep_angle_max_deg))
+            }
         } else {
             None
         };

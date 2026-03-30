@@ -64,36 +64,83 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
             // ── Sweep Range ────────────────────────────────────────
             ui.separator();
+            let has_linear_driver = state.mechanism.as_ref()
+                .map(|m| m.n_linear_drivers() > 0)
+                .unwrap_or(false);
             let prev_enabled = state.sweep_range_enabled;
-            ui.checkbox(&mut state.sweep_range_enabled, "Limit Sweep Range")
-                .on_hover_text("Restrict the crank sweep to a custom angular range instead of full 360\u{00B0}");
+            let sweep_label = if has_linear_driver {
+                "Limit Stroke Range"
+            } else {
+                "Limit Sweep Range"
+            };
+            let sweep_tooltip = if has_linear_driver {
+                "Restrict the actuator sweep to a custom stroke range"
+            } else {
+                "Restrict the crank sweep to a custom angular range instead of full 360\u{00B0}"
+            };
+            ui.checkbox(&mut state.sweep_range_enabled, sweep_label)
+                .on_hover_text(sweep_tooltip);
             if state.sweep_range_enabled != prev_enabled {
                 state.mark_sweep_dirty();
             }
             if state.sweep_range_enabled {
-                ui.horizontal(|ui| {
-                    ui.label("Min\u{00B0}:");
-                    let min_changed = ui.add(egui::DragValue::new(&mut state.sweep_angle_min_deg)
-                        .speed(0.5)
-                        .range(0.0..=360.0)
-                        .suffix("\u{00B0}")).changed();
-                    ui.label("Max\u{00B0}:");
-                    let max_changed = ui.add(egui::DragValue::new(&mut state.sweep_angle_max_deg)
-                        .speed(0.5)
-                        .range(0.0..=360.0)
-                        .suffix("\u{00B0}")).changed();
-
-                    if min_changed || max_changed {
-                        // Ensure min <= max
-                        if state.sweep_angle_min_deg > state.sweep_angle_max_deg {
-                            std::mem::swap(
-                                &mut state.sweep_angle_min_deg,
-                                &mut state.sweep_angle_max_deg,
-                            );
+                if has_linear_driver {
+                    // Stroke range controls (linear driver mode)
+                    ui.horizontal(|ui| {
+                        ui.label("Stroke min:");
+                        let mut min_mm = state.sweep_stroke_min * 1000.0;
+                        if ui.add(egui::DragValue::new(&mut min_mm)
+                            .suffix(" mm")
+                            .speed(0.1)).changed()
+                        {
+                            state.sweep_stroke_min = min_mm / 1000.0;
+                            state.mark_sweep_dirty();
                         }
-                        state.mark_sweep_dirty();
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Stroke max:");
+                        let mut max_mm = state.sweep_stroke_max * 1000.0;
+                        if ui.add(egui::DragValue::new(&mut max_mm)
+                            .suffix(" mm")
+                            .speed(0.1)).changed()
+                        {
+                            state.sweep_stroke_max = max_mm / 1000.0;
+                            state.mark_sweep_dirty();
+                        }
+                    });
+                    // Ensure min <= max
+                    if state.sweep_stroke_min > state.sweep_stroke_max {
+                        std::mem::swap(
+                            &mut state.sweep_stroke_min,
+                            &mut state.sweep_stroke_max,
+                        );
                     }
-                });
+                } else {
+                    // Angle range controls (revolute driver mode)
+                    ui.horizontal(|ui| {
+                        ui.label("Min\u{00B0}:");
+                        let min_changed = ui.add(egui::DragValue::new(&mut state.sweep_angle_min_deg)
+                            .speed(0.5)
+                            .range(0.0..=360.0)
+                            .suffix("\u{00B0}")).changed();
+                        ui.label("Max\u{00B0}:");
+                        let max_changed = ui.add(egui::DragValue::new(&mut state.sweep_angle_max_deg)
+                            .speed(0.5)
+                            .range(0.0..=360.0)
+                            .suffix("\u{00B0}")).changed();
+
+                        if min_changed || max_changed {
+                            // Ensure min <= max
+                            if state.sweep_angle_min_deg > state.sweep_angle_max_deg {
+                                std::mem::swap(
+                                    &mut state.sweep_angle_min_deg,
+                                    &mut state.sweep_angle_max_deg,
+                                );
+                            }
+                            state.mark_sweep_dirty();
+                        }
+                    });
+                }
             }
         });
 

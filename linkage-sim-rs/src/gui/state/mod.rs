@@ -103,6 +103,10 @@ pub struct AppState {
     pub sweep_angle_max_deg: f64,
     /// Whether the custom sweep range is enabled (false = full 360°).
     pub sweep_range_enabled: bool,
+    /// Sweep stroke range minimum in meters (used when linear driver is active).
+    pub sweep_stroke_min: f64,
+    /// Sweep stroke range maximum in meters (used when linear driver is active).
+    pub sweep_stroke_max: f64,
     /// Timestamp (egui time in seconds) when sweep was last marked dirty (for debounce).
     pub sweep_dirty_since: Option<f64>,
     // ── Joint creation mode ──────────────────────────────────────────────
@@ -328,6 +332,8 @@ impl Default for AppState {
             sweep_angle_min_deg: 0.0,
             sweep_angle_max_deg: 360.0,
             sweep_range_enabled: false,
+            sweep_stroke_min: 0.0,
+            sweep_stroke_max: 0.0,
             sweep_dirty_since: None,
             creating_joint: None,
             validation_warnings: ValidationWarnings::default(),
@@ -503,6 +509,22 @@ impl AppState {
         } else {
             self.sweep_angle_min_deg = 0.0;
             self.sweep_angle_max_deg = 360.0;
+        }
+
+        // Initialize stroke range from the first LinearActuator force element
+        // (if any) so the stroke sweep UI has sensible defaults.
+        self.sweep_stroke_min = 0.0;
+        self.sweep_stroke_max = 0.0;
+        if let Some(ref m) = self.mechanism {
+            for force in m.forces() {
+                if let ForceElement::LinearActuator(act) = force {
+                    if act.stroke_min > 0.0 || act.stroke_max > 0.0 {
+                        self.sweep_stroke_min = act.stroke_min;
+                        self.sweep_stroke_max = act.stroke_max;
+                        break;
+                    }
+                }
+            }
         }
 
         self.selected = None;
