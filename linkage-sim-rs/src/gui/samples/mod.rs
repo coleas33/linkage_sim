@@ -278,14 +278,19 @@ mod tests {
     fn chebyshev_lambda_actuator_builds_and_solves() {
         let (mech, q0) = build_sample(SampleMechanism::ChebyshevLambdaActuator);
         assert!(mech.is_built());
-        assert!(
-            mech.linear_drivers().len() == 1,
-            "should have one linear driver"
+        assert_eq!(
+            mech.n_drivers(), 1,
+            "should have one revolute driver"
         );
-        assert!(
-            mech.drivers().is_empty(),
-            "should have no revolute driver"
+        assert_eq!(
+            mech.n_linear_drivers(), 0,
+            "should have no linear driver"
         );
+        // Verify there is exactly one LinearActuator force element.
+        let actuator_count = mech.forces().iter()
+            .filter(|f| matches!(f, crate::forces::elements::ForceElement::LinearActuator(_)))
+            .count();
+        assert_eq!(actuator_count, 1, "should have one LinearActuator force element");
         // Verify solver converges at initial state
         let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
         assert!(
@@ -415,6 +420,9 @@ mod tests {
     }
 
     /// Verify the builder's stroke_min/stroke_max cover the full mechanism range.
+    /// The actuator is now a force element only (no linear driver), driven by a
+    /// standard revolute driver on J1. The stroke limits on the force element
+    /// should still be correct.
     #[test]
     fn chebyshev_lambda_actuator_stroke_covers_full_range() {
         use nalgebra::Vector2;
@@ -443,31 +451,9 @@ mod tests {
             (stroke_max - stroke_min) * 1000.0,
         );
 
-        // Sweep the cosine linear driver to verify the mechanism can be driven
-        // through its full range. The cosine driver oscillates between stroke_min
-        // and stroke_max over one period (t=0 to t=1).
-        let ld_meta = mech.linear_drivers().first()
-            .and_then(|ld| ld.meta())
-            .expect("should have linear driver meta");
-        let (ld_stroke_min, ld_stroke_max, initial_length) = match ld_meta {
-            crate::core::driver::DriverMeta::CosineStroke { stroke_min, stroke_max, initial_length } =>
-                (*stroke_min, *stroke_max, *initial_length),
-            other => panic!("Expected CosineStroke meta, got {:?}", other),
-        };
-        println!("Cosine driver: stroke_min={:.4} mm, stroke_max={:.4} mm, initial_length={:.4} mm",
-            ld_stroke_min * 1000.0, ld_stroke_max * 1000.0, initial_length * 1000.0);
-
-        // The cosine driver stroke limits should match the computed stroke range.
-        assert!(
-            (ld_stroke_min - stroke_min).abs() < 0.001,
-            "driver stroke_min should match force element, got {:.4} vs {:.4} mm",
-            ld_stroke_min * 1000.0, stroke_min * 1000.0,
-        );
-        assert!(
-            (ld_stroke_max - stroke_max).abs() < 0.001,
-            "driver stroke_max should match force element, got {:.4} vs {:.4} mm",
-            ld_stroke_max * 1000.0, stroke_max * 1000.0,
-        );
+        // Verify no linear drivers remain (revolute driver only).
+        assert_eq!(mech.n_linear_drivers(), 0, "should have no linear drivers");
+        assert_eq!(mech.n_drivers(), 1, "should have one revolute driver");
 
         // Verify solver converges at t=0.
         let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();

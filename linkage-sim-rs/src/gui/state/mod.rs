@@ -228,12 +228,6 @@ pub struct AppState {
     /// When true, `fit_to_view` is called on the next canvas frame and then
     /// cleared. Set after a mechanism is loaded so the view auto-fits.
     pub pending_fit_to_view: bool,
-    /// Revolute-driven copy of the mechanism for angle-based solving.
-    /// Used when the main mechanism has a linear driver (actuator) so that
-    /// `solve_at_angle` can sweep the full crank rotation without the solver
-    /// getting stuck at cosine-driver turnarounds.
-    /// `None` for mechanisms with revolute drivers.
-    pub sweep_mechanism: Option<Mechanism>,
 }
 
 /// Tracks placement state for the Add Body tool.
@@ -412,7 +406,6 @@ impl Default for AppState {
             status_message_time: 0.0,
             highlight_joint: None,
             pending_fit_to_view: false,
-            sweep_mechanism: None,
         };
         state.rebuild();
         state
@@ -492,37 +485,10 @@ impl AppState {
         let (mech, q0) = build_sample(sample);
 
         // Extract driver parameters from the sample before storing mechanism.
-        // For revolute drivers: omega=2π, theta_0=0 (all current samples).
-        // For linear drivers: override from metadata.
+        // All samples use revolute drivers: omega=2π, theta_0=0.
         self.driver_omega = 2.0 * PI;
         self.driver_theta_0 = 0.0;
         self.driver_stroke = 0.0;
-        if let Some(ld) = mech.linear_drivers().first() {
-            use crate::core::driver::DriverMeta;
-            match ld.meta() {
-                Some(DriverMeta::LinearLength { velocity, length_0 }) => {
-                    self.driver_omega = *velocity;
-                    self.driver_theta_0 = *length_0;
-                    self.driver_stroke = *length_0;
-                }
-                Some(DriverMeta::CosineStroke { stroke_min, stroke_max, initial_length }) => {
-                    // For cosine drivers, omega=2*PI and theta_0=phase so that
-                    // solve_at_angle(angle) gives t = (angle - phase) / (2*PI),
-                    // and d(t) = mid + amp * cos(angle).
-                    let mid = (stroke_min + stroke_max) / 2.0;
-                    let amp = (stroke_max - stroke_min) / 2.0;
-                    let phase = if amp.abs() < 1e-15 {
-                        0.0
-                    } else {
-                        ((initial_length - mid) / amp).clamp(-1.0, 1.0).acos()
-                    };
-                    self.driver_omega = 2.0 * PI;
-                    self.driver_theta_0 = phase;
-                    self.driver_stroke = *initial_length;
-                }
-                _ => {}
-            }
-        }
 
         self.solve_and_update(&mech, &q0, 0.0, 1e-10, 50, Some(q0.clone()));
 
@@ -533,17 +499,8 @@ impl AppState {
         self.mounting_angle = 0.0;
 
         // Create blueprint from the built mechanism.
-        let has_ld = mech.n_linear_drivers() > 0;
         self.blueprint = mechanism_to_json(&mech).ok();
         self.mechanism = Some(mech);
-
-        // For mechanisms with linear drivers, rebuild from the blueprint so
-        // compound body expansion (LinearActuator → cylinder+rod bodies)
-        // makes the main mechanism match the sweep mechanism's structure.
-        // Skip for other mechanisms to preserve non-Grashof initial configs.
-        if has_ld {
-            self.rebuild();
-        }
         self.current_sample = Some(sample);
 
         // Pre-fill sweep range for samples with a natural working stroke,
@@ -604,40 +561,19 @@ impl AppState {
     /// On failure, keeps `last_good_q` unchanged and reports the failure in
     /// `solver_status`.
     pub fn solve_at_angle(&mut self, angle_rad: f64) {
-        let use_sweep = self.sweep_mechanism.is_some();
-        let mech = if use_sweep {
-            self.sweep_mechanism.take().unwrap()
-        } else if self.mechanism.is_some() {
-            self.mechanism.take().unwrap()
-        } else {
+        let Some(mech) = self.mechanism.take() else {
             return;
         };
 
-        // For the revolute sweep mechanism: omega=2*PI, theta_0=0
-        // (set when building the mechanism in build_revolute_sweep_mechanism).
-        // For the main mechanism: use driver_omega / driver_theta_0.
-        let (omega, theta_0) = if use_sweep {
-            (std::f64::consts::TAU, 0.0)
-        } else {
-            (self.driver_omega, self.driver_theta_0)
-        };
-        let t = (angle_rad - theta_0) / omega;
+        let t = (angle_rad - self.driver_theta_0) / self.driver_omega;
 
         let guess = self.last_good_q.clone();
         let converged = self.solve_and_update(&mech, &guess, t, 1e-10, 50, None);
 
-        // Put the mechanism back in the correct slot.
-        if use_sweep {
-            self.sweep_mechanism = Some(mech);
-        } else {
-            self.mechanism = Some(mech);
-        }
+        self.mechanism = Some(mech);
 
         if converged {
             self.driver_angle = angle_rad;
-            // compute_forces uses self.mechanism and self.q — the q was
-            // updated by solve_and_update and is valid for both mechanisms
-            // (same bodies, same DOF structure).
             self.compute_forces(t);
         }
     }
@@ -675,30 +611,6 @@ impl AppState {
         self.mechanism.as_ref()
             .map(|m| m.n_linear_drivers() > 0)
             .unwrap_or(false)
-    }
-
-    /// Returns true if the current mechanism uses a cosine-oscillation linear driver.
-    pub fn has_cosine_driver(&self) -> bool {
-        self.mechanism.as_ref()
-            .and_then(|m| m.linear_drivers().first())
-            .and_then(|ld| ld.meta())
-            .is_some_and(|m| matches!(m, crate::core::driver::DriverMeta::CosineStroke { .. }))
-    }
-
-    /// Compute the current actuator stroke (meters) from the driver angle for cosine drivers.
-    /// Returns None if this is not a cosine driver.
-    pub fn cosine_stroke_at_angle(&self, angle_rad: f64) -> Option<f64> {
-        self.mechanism.as_ref()
-            .and_then(|m| m.linear_drivers().first())
-            .and_then(|ld| ld.meta())
-            .and_then(|m| match m {
-                crate::core::driver::DriverMeta::CosineStroke { stroke_min, stroke_max, .. } => {
-                    let mid = (stroke_min + stroke_max) / 2.0;
-                    let amp = (stroke_max - stroke_min) / 2.0;
-                    Some(mid + amp * angle_rad.cos())
-                }
-                _ => None,
-            })
     }
 
     /// Returns true if a mechanism has been loaded.
@@ -855,15 +767,7 @@ impl AppState {
             return false;
         }
 
-        if self.has_cosine_driver() {
-            // Cosine drivers use angle-based animation (0-360 degrees maps to
-            // one full extend-retract cycle).
-            self.step_animation_revolute(dt)
-        } else if self.has_linear_driver() {
-            self.step_animation_linear(dt)
-        } else {
-            self.step_animation_revolute(dt)
-        }
+        self.step_animation_revolute(dt)
     }
 
     /// Advance animation for a revolute driver (angle in degrees).
@@ -933,62 +837,6 @@ impl AppState {
         self.playing
     }
 
-    /// Advance animation for a linear driver (stroke in meters).
-    fn step_animation_linear(&mut self, dt: f64) -> bool {
-        // Convert animation speed from deg/s to m/s using a rough mapping:
-        // 360 deg/s maps to the full stroke range per second.
-        let stroke_range = if self.sweep_stroke_max > self.sweep_stroke_min {
-            self.sweep_stroke_max - self.sweep_stroke_min
-        } else {
-            0.050 // fallback: 50mm
-        };
-        let speed_m_per_sec = (self.animation_speed_deg_per_sec / 360.0) * stroke_range;
-        let step_m = speed_m_per_sec * dt * self.animation_direction;
-        let mut new_stroke = self.driver_stroke + step_m;
-
-        // Determine effective animation bounds in meters.
-        let (anim_min, anim_max) = if self.sweep_range_enabled {
-            (self.sweep_stroke_min, self.sweep_stroke_max)
-        } else if self.sweep_stroke_max > self.sweep_stroke_min {
-            (self.sweep_stroke_min, self.sweep_stroke_max)
-        } else {
-            // Fallback: center on initial length with ±25mm
-            let l0 = self.driver_theta_0;
-            ((l0 - 0.025).max(0.0), l0 + 0.025)
-        };
-
-        // Bounce at stroke limits (linear drivers always bounce, never wrap).
-        if new_stroke >= anim_max {
-            new_stroke = anim_max;
-            if self.loop_mode {
-                self.animation_direction *= -1.0;
-            } else {
-                self.playing = false;
-            }
-        } else if new_stroke <= anim_min {
-            new_stroke = anim_min;
-            if self.loop_mode {
-                self.animation_direction *= -1.0;
-            } else {
-                self.playing = false;
-            }
-        }
-
-        let prev_converged = self.solver_status.converged;
-        self.solve_at_stroke(new_stroke);
-
-        // Ping-pong: reverse direction on solver failure in loop mode
-        if self.loop_mode && !self.solver_status.converged && prev_converged {
-            self.animation_direction *= -1.0;
-        }
-
-        // Stop on failure in once mode
-        if !self.loop_mode && !self.solver_status.converged {
-            self.playing = false;
-        }
-
-        self.playing
-    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

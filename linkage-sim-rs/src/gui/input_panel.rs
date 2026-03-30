@@ -4,6 +4,7 @@ use eframe::egui;
 use super::state::AppState;
 use crate::io::DriverJson;
 
+
 /// Draw the input panel with animation controls and load case management.
 pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
     if !state.has_mechanism() {
@@ -12,89 +13,15 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
     ui.separator();
 
-    // ── Crank Angle / Actuator Stroke ──────────────────────────────
+    // ── Crank Angle ────────────────────────────────────────────────
     let accent = egui::Color32::from_rgb(80, 160, 255);
-    let is_linear = state.has_linear_driver();
-    let is_cosine = state.has_cosine_driver();
-    let section_label = if is_linear { "Actuator Stroke" } else { "Crank Angle" };
     egui::CollapsingHeader::new(
-        egui::RichText::new(section_label).color(accent),
+        egui::RichText::new("Crank Angle").color(accent),
     )
         .id_salt("crank_section")
         .default_open(true)
         .show(ui, |ui| {
-            if is_cosine {
-                // ── Cosine driver: angle slider (0-360) showing stroke ──
-                // The cosine driver maps angle 0..2*PI to a full extend-retract
-                // cycle. The slider sweeps the angle; we display the stroke.
-                let (slider_min, slider_max) = (0.0_f64, 360.0_f64);
-
-                let mut angle_deg = state.driver_angle.to_degrees();
-                angle_deg = angle_deg.clamp(slider_min, slider_max);
-                let prev_angle = angle_deg;
-
-                // Show the current stroke as a label above the slider.
-                let current_stroke_mm = state.cosine_stroke_at_angle(angle_deg.to_radians())
-                    .unwrap_or(state.driver_stroke * 1000.0) * 1000.0;
-                ui.label(format!("Stroke: {:.1} mm", current_stroke_mm));
-
-                let response = ui.add(
-                    egui::Slider::new(&mut angle_deg, slider_min..=slider_max)
-                        .suffix("\u{00B0}")
-                        .step_by(0.5),
-                ).on_hover_text("Drag to sweep the actuator through its full extend-retract cycle");
-                if response.dragged() {
-                    if state.playing {
-                        state.playing = false;
-                        state.animation_direction = 1.0;
-                    }
-                    if let Some(sim) = &mut state.simulation {
-                        sim.playing = false;
-                    }
-                }
-                if (angle_deg - prev_angle).abs() > 1e-6 {
-                    state.solve_at_angle(angle_deg.to_radians());
-                    // Update driver_stroke to match the computed stroke
-                    if let Some(stroke) = state.cosine_stroke_at_angle(angle_deg.to_radians()) {
-                        state.driver_stroke = stroke;
-                    }
-                }
-            } else if is_linear {
-                // ── Constant-velocity linear driver: stroke slider in mm ──
-                let (slider_min_mm, slider_max_mm) = if state.sweep_range_enabled {
-                    (state.sweep_stroke_min * 1000.0, state.sweep_stroke_max * 1000.0)
-                } else {
-                    // Default: full range from stroke limits or theta_0 +/- reasonable range
-                    let length_0_mm = state.driver_theta_0 * 1000.0;
-                    let range_mm = if state.sweep_stroke_max > state.sweep_stroke_min {
-                        (state.sweep_stroke_min * 1000.0, state.sweep_stroke_max * 1000.0)
-                    } else {
-                        ((length_0_mm - 50.0).max(0.0), length_0_mm + 50.0)
-                    };
-                    range_mm
-                };
-
-                let mut stroke_mm = state.driver_stroke * 1000.0;
-                stroke_mm = stroke_mm.clamp(slider_min_mm, slider_max_mm);
-                let prev_stroke = stroke_mm;
-                let response = ui.add(
-                    egui::Slider::new(&mut stroke_mm, slider_min_mm..=slider_max_mm)
-                        .suffix(" mm")
-                        .step_by(0.1),
-                ).on_hover_text("Drag to set the actuator stroke in millimeters");
-                if response.dragged() {
-                    if state.playing {
-                        state.playing = false;
-                        state.animation_direction = 1.0;
-                    }
-                    if let Some(sim) = &mut state.simulation {
-                        sim.playing = false;
-                    }
-                }
-                if (stroke_mm - prev_stroke).abs() > 1e-4 {
-                    state.solve_at_stroke(stroke_mm / 1000.0);
-                }
-            } else {
+            {
                 // ── Revolute driver: angle slider in degrees ────────
                 let (slider_min, slider_max) = if state.sweep_range_enabled {
                     (state.sweep_angle_min_deg, state.sweep_angle_max_deg)
@@ -138,79 +65,35 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
             // ── Sweep Range ────────────────────────────────────────
             ui.separator();
             let prev_enabled = state.sweep_range_enabled;
-            let sweep_label = if is_linear {
-                "Limit Stroke Range"
-            } else {
-                "Limit Sweep Range"
-            };
-            let sweep_tooltip = if is_linear {
-                "Restrict the actuator sweep to a custom stroke range"
-            } else {
-                "Restrict the crank sweep to a custom angular range instead of full 360\u{00B0}"
-            };
-            ui.checkbox(&mut state.sweep_range_enabled, sweep_label)
-                .on_hover_text(sweep_tooltip);
+            ui.checkbox(&mut state.sweep_range_enabled, "Limit Sweep Range")
+                .on_hover_text("Restrict the crank sweep to a custom angular range instead of full 360\u{00B0}");
             if state.sweep_range_enabled != prev_enabled {
                 state.mark_sweep_dirty();
             }
             if state.sweep_range_enabled {
-                if is_linear {
-                    // Stroke range controls (linear driver mode)
-                    ui.horizontal(|ui| {
-                        ui.label("Stroke min:");
-                        let mut min_mm = state.sweep_stroke_min * 1000.0;
-                        if ui.add(egui::DragValue::new(&mut min_mm)
-                            .suffix(" mm")
-                            .speed(0.1)).changed()
-                        {
-                            state.sweep_stroke_min = min_mm / 1000.0;
-                            state.mark_sweep_dirty();
-                        }
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Stroke max:");
-                        let mut max_mm = state.sweep_stroke_max * 1000.0;
-                        if ui.add(egui::DragValue::new(&mut max_mm)
-                            .suffix(" mm")
-                            .speed(0.1)).changed()
-                        {
-                            state.sweep_stroke_max = max_mm / 1000.0;
-                            state.mark_sweep_dirty();
-                        }
-                    });
-                    // Ensure min <= max
-                    if state.sweep_stroke_min > state.sweep_stroke_max {
-                        std::mem::swap(
-                            &mut state.sweep_stroke_min,
-                            &mut state.sweep_stroke_max,
-                        );
-                    }
-                } else {
-                    // Angle range controls (revolute driver mode)
-                    ui.horizontal(|ui| {
-                        ui.label("Min\u{00B0}:");
-                        let min_changed = ui.add(egui::DragValue::new(&mut state.sweep_angle_min_deg)
-                            .speed(0.5)
-                            .range(0.0..=360.0)
-                            .suffix("\u{00B0}")).changed();
-                        ui.label("Max\u{00B0}:");
-                        let max_changed = ui.add(egui::DragValue::new(&mut state.sweep_angle_max_deg)
-                            .speed(0.5)
-                            .range(0.0..=360.0)
-                            .suffix("\u{00B0}")).changed();
+                ui.horizontal(|ui| {
+                    ui.label("Min\u{00B0}:");
+                    let min_changed = ui.add(egui::DragValue::new(&mut state.sweep_angle_min_deg)
+                        .speed(0.5)
+                        .range(0.0..=360.0)
+                        .suffix("\u{00B0}")).changed();
+                    ui.label("Max\u{00B0}:");
+                    let max_changed = ui.add(egui::DragValue::new(&mut state.sweep_angle_max_deg)
+                        .speed(0.5)
+                        .range(0.0..=360.0)
+                        .suffix("\u{00B0}")).changed();
 
-                        if min_changed || max_changed {
-                            // Ensure min <= max
-                            if state.sweep_angle_min_deg > state.sweep_angle_max_deg {
-                                std::mem::swap(
-                                    &mut state.sweep_angle_min_deg,
-                                    &mut state.sweep_angle_max_deg,
-                                );
-                            }
-                            state.mark_sweep_dirty();
+                    if min_changed || max_changed {
+                        // Ensure min <= max
+                        if state.sweep_angle_min_deg > state.sweep_angle_max_deg {
+                            std::mem::swap(
+                                &mut state.sweep_angle_min_deg,
+                                &mut state.sweep_angle_max_deg,
+                            );
                         }
-                    });
-                }
+                        state.mark_sweep_dirty();
+                    }
+                });
             }
         });
 

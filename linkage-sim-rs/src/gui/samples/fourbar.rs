@@ -4,7 +4,6 @@ use nalgebra::{DVector, Vector2};
 use std::f64::consts::PI;
 
 use crate::core::body::{make_bar, make_ground, Body, BodyGeometry};
-use crate::core::linear_driver::cosine_linear_driver;
 use crate::core::mechanism::Mechanism;
 use crate::forces::elements::{ForceElement, ForceZoneElement, LinearActuatorElement};
 
@@ -545,7 +544,7 @@ pub(super) fn chebyshev_lambda_m_position(
     (mx, my)
 }
 
-/// Chebyshev lambda linkage driven by a linear actuator.
+/// Chebyshev lambda linkage with a linear actuator force element.
 ///
 /// Custom proportions: ground=76mm, crank=44.4mm, coupler AB=91.9mm,
 /// rocker=91.9mm, extension BM=91.9mm. Flipped to +y orientation.
@@ -554,6 +553,9 @@ pub(super) fn chebyshev_lambda_m_position(
 /// (at ground level y=0) so the actuator pivots visibly as M traces its
 /// approximate straight line. Stroke limits are computed by sweeping the
 /// full 360-degree crank rotation to find the true min/max distance.
+///
+/// Driven by a standard revolute driver on J1 (like all other samples).
+/// The LinearActuator is a force element only (not a driver constraint).
 pub(super) fn build_chebyshev_lambda_actuator(
     _driver_joint_id: Option<&str>,
 ) -> Result<(Mechanism, DVector<f64>), String> {
@@ -580,11 +582,6 @@ pub(super) fn build_chebyshev_lambda_actuator(
 
     let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
     let rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
-
-    // M position at the initial crank angle (used for length_0 below).
-    let (mx_0, my_0) = chebyshev_lambda_m_position(
-        o2, o4, l_crank, l_coupler_ab, l_rocker, l_total_coupler, theta_crank,
-    );
 
     // Compute average M y-position across the full crank rotation so the
     // actuator base is in line with the straight-line trace of M.
@@ -620,7 +617,8 @@ pub(super) fn build_chebyshev_lambda_actuator(
     mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
     mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
 
-    // NO revolute driver -- this mechanism is actuator-driven.
+    // Standard revolute driver on J1 (crank), like all other samples.
+    attach_driver_to_grounded_revolute_with_theta0(&mut mech, "J1", "D1", 0.0)?;
 
     // Compute stroke limits by sweeping the full crank rotation (1-degree steps).
     // The actuator length varies non-monotonically with crank angle, so we must
@@ -657,23 +655,6 @@ pub(super) fn build_chebyshev_lambda_actuator(
         end_stop_damping: 10.0,
         end_stop_restitution: 0.5,
     }));
-
-    // Cosine linear driver: prescribe distance from actuator base to coupler M.
-    // Uses a cosine oscillation to smoothly sweep the full extend-retract cycle.
-    // length_0 = distance from O_act to M at the initial crank angle (theta=0).
-    let length_0 = ((mx_0 - act_base_x).powi(2) + (my_0 - act_base_y).powi(2)).sqrt();
-
-    let ld = cosine_linear_driver(
-        "LD1",
-        "ground",
-        [act_base_x, act_base_y],
-        "coupler",
-        [l_total_coupler, 0.0],
-        stroke_min,
-        stroke_max,
-        length_0,
-    );
-    mech.add_linear_driver(ld).map_err(|e| e.to_string())?;
 
     mech.build().map_err(|e| e.to_string())?;
 

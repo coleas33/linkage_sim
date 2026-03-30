@@ -278,7 +278,7 @@ impl AppState {
             // Use current q as initial guess when dimensions match
             let q0 = if self.q.len() == mech.state().n_coords() { self.q.clone() } else { mech.state().make_q() };
             let theta_0 = self.driver_theta_0;
-            let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0, self.gravity_magnitude, None, None);
+            let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0, self.gravity_magnitude, None);
 
             // Extract the selected metric
             metric_values.push(config.metric.extract(&sweep));
@@ -318,7 +318,7 @@ impl AppState {
             let Ok(mut mech) = load_mechanism_unbuilt_from_json(base_bp) else { return };
             if mech.build().is_err() { return; }
             let q0 = if q_init.len() == mech.state().n_coords() { q_init.clone() } else { mech.state().make_q() };
-            let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0, self.gravity_magnitude, None, None);
+            let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0, self.gravity_magnitude, None);
             sweep
         };
         let baseline_torques = baseline_sweep.driver_torques.clone().unwrap_or_default();
@@ -377,7 +377,7 @@ impl AppState {
                 }
 
                 let q0 = if q_init.len() == mech.state().n_coords() { q_init.clone() } else { mech.state().make_q() };
-                let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0, self.gravity_magnitude, None, None);
+                let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0, self.gravity_magnitude, None);
                 let pp = sweep.driver_torques.as_ref()
                     .and_then(|t| compute_envelope(t))
                     .map(|e| e.peak_to_peak)

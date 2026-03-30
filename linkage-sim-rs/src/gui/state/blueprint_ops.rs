@@ -22,7 +22,7 @@ use crate::solver::statics::{
 use nalgebra::DVector;
 
 use super::{AppState, ForceResults, SolverStatus};
-use crate::gui::sweep::{compute_sweep_data, detect_fourbar_links, LinearDriverInfo};
+use crate::gui::sweep::{compute_sweep_data, detect_fourbar_links};
 
 // ── Blueprint helper functions ────────────────────────────────────────────────
 
@@ -227,10 +227,7 @@ impl AppState {
         }
 
         // Extract driver params from blueprint.
-        // For revolute drivers: omega = angular velocity, theta_0 = initial angle.
-        // For linear drivers: omega = velocity (m/s), theta_0 = initial length (m).
-        // This dual-use allows solve_at_angle/solve_at_stroke to share the same
-        // time formula: t = (value - theta_0) / omega.
+        // omega = angular velocity (rad/s), theta_0 = initial angle (rad).
         self.driver_omega = 2.0 * std::f64::consts::PI;
         self.driver_theta_0 = 0.0;
         // Check blueprint revolute drivers for actual values
@@ -247,49 +244,12 @@ impl AppState {
                 }
             }
         }
-        // Override with linear driver params when present.
-        // For constant-velocity: velocity -> omega, length_0 -> theta_0.
-        // For cosine: omega=2*PI, theta_0=phase.
-        if let Some(ld) = mech.linear_drivers().first() {
-            use crate::core::driver::DriverMeta;
-            match ld.meta() {
-                Some(DriverMeta::LinearLength { velocity, length_0 }) => {
-                    self.driver_omega = *velocity;
-                    self.driver_theta_0 = *length_0;
-                    if self.driver_stroke == 0.0 {
-                        self.driver_stroke = *length_0;
-                    }
-                }
-                Some(DriverMeta::CosineStroke { stroke_min, stroke_max, initial_length }) => {
-                    let mid = (stroke_min + stroke_max) / 2.0;
-                    let amp = (stroke_max - stroke_min) / 2.0;
-                    let phase = if amp.abs() < 1e-15 {
-                        0.0
-                    } else {
-                        ((initial_length - mid) / amp).clamp(-1.0, 1.0).acos()
-                    };
-                    self.driver_omega = 2.0 * std::f64::consts::PI;
-                    self.driver_theta_0 = phase;
-                    if self.driver_stroke == 0.0 {
-                        self.driver_stroke = *initial_length;
-                    }
-                }
-                _ => {}
-            }
-        }
-
         // Detect driven joint
         self.driver_joint_id = detect_driver_joint_id(&mech);
 
         // Solve at current position using last_good_q as initial guess.
-        // For linear drivers, use driver_stroke; for revolute, use driver_angle.
-        let driver_value = if mech.n_linear_drivers() > 0 {
-            self.driver_stroke
-        } else {
-            self.driver_angle
-        };
         let t = if self.driver_omega.abs() > f64::EPSILON {
-            (driver_value - self.driver_theta_0) / self.driver_omega
+            (self.driver_angle - self.driver_theta_0) / self.driver_omega
         } else {
             0.0
         };
@@ -340,16 +300,6 @@ impl AppState {
         }
 
         self.mechanism = Some(mech);
-
-        // For linear driver mechanisms, eagerly build the revolute sweep
-        // mechanism so that solve_at_angle / animation work immediately
-        // (before the lazy compute_sweep runs).
-        self.sweep_mechanism = None;
-        if self.has_linear_driver() {
-            if let Some((sweep_mech, _omega, _theta_0)) = self.build_revolute_sweep_mechanism() {
-                self.sweep_mechanism = Some(sweep_mech);
-            }
-        }
 
         self.compute_forces(t);
         self.update_grashof();
@@ -1089,177 +1039,40 @@ impl AppState {
     pub fn compute_sweep(&mut self) {
         self.sweep_dirty = false;
         self.sweep_dirty_since = None;
-        self.sweep_mechanism = None;
 
         if self.mechanism.is_none() {
             self.sweep_data = None;
             return;
         }
-        // Guard: need at least one driver (revolute or linear) and one moving body.
+        // Guard: need at least one driver and one moving body.
         {
             let mech = self.mechanism.as_ref().unwrap();
-            if (mech.n_drivers() == 0 && mech.n_linear_drivers() == 0)
-                || mech.body_order().is_empty()
-            {
+            if mech.n_drivers() == 0 || mech.body_order().is_empty() {
                 self.sweep_data = None;
                 return;
             }
         }
         self.sync_gravity();
 
-        // Detect linear driver and extract parameters for the sweep.
-        // For a revolute driver, omega and theta_0 come from AppState fields.
-        // For a linear driver, omega maps to velocity and theta_0 maps to length_0,
-        // read directly from the driver metadata.
         let mech = self.mechanism.as_ref().unwrap();
-        let (omega, theta_0) = if let Some(ld) = mech.linear_drivers().first() {
-            use crate::core::driver::DriverMeta;
-            match ld.meta() {
-                Some(DriverMeta::LinearLength { velocity, length_0 }) => (*velocity, *length_0),
-                _ => (self.driver_omega, self.driver_theta_0),
-            }
-        } else {
-            (self.driver_omega, self.driver_theta_0)
-        };
+        let omega = self.driver_omega;
+        let theta_0 = self.driver_theta_0;
 
-        // Always start the sweep at t=0. For angle mode, q_at_zero is the known-good
-        // state at 0 degrees. For stroke mode, it's the state at the initial stroke.
+        // Always start the sweep at t=0 with the known-good state at 0 degrees.
         let q_start = if self.q_at_zero.len() == self.last_good_q.len() && self.q_at_zero.len() > 0 {
             self.q_at_zero.clone()
         } else {
             self.last_good_q.clone()
         };
 
-        let has_linear_driver = mech.n_linear_drivers() > 0;
         let sweep_range = if self.sweep_range_enabled {
-            if has_linear_driver {
-                Some((self.sweep_stroke_min, self.sweep_stroke_max))
-            } else {
-                Some((self.sweep_angle_min_deg, self.sweep_angle_max_deg))
-            }
+            Some((self.sweep_angle_min_deg, self.sweep_angle_max_deg))
         } else {
             None
         };
 
-        // For ANY linear driver, build a revolute-driven mechanism for the sweep.
-        // Actuator stroke is non-monotonic with crank angle, so a stroke-based
-        // sweep can't traverse the full mechanism range. A revolute sweep
-        // (angle 0-360) avoids branch-switching at turnaround points.
-        // Note: CosineStroke serializes as LinearLength in JSON, so after
-        // rebuild() the driver type is always LinearLength.
-        let linear_driver_meta = mech.linear_drivers().first().map(|ld| {
-            let stroke_min = self.sweep_stroke_min;
-            let stroke_max = self.sweep_stroke_max;
-            let initial_length = {
-                // Compute initial distance from the current q
-                let pa = mech.state().body_point_global(
-                    ld.body_i_id(), &nalgebra::Vector2::new(ld.point_a()[0], ld.point_a()[1]), &self.q);
-                let pb = mech.state().body_point_global(
-                    ld.body_j_id(), &nalgebra::Vector2::new(ld.point_b()[0], ld.point_b()[1]), &self.q);
-                (pb - pa).norm()
-            };
-            (stroke_min, stroke_max, initial_length,
-             ld.body_i_id().to_string(), ld.point_a(),
-             ld.body_j_id().to_string(), ld.point_b())
-        });
-
-        if let Some((stroke_min, stroke_max, initial_length, body_a, point_a, body_b, point_b)) = linear_driver_meta {
-            // Build a revolute-driven mechanism from the blueprint.
-            if let Some(result) = self.build_revolute_sweep_mechanism() {
-                let (sweep_mech, rev_omega, rev_theta_0) = result;
-                // Store the revolute mechanism for solve_at_angle / animation.
-                self.sweep_mechanism = Some(sweep_mech);
-                let sweep_mech = self.sweep_mechanism.as_ref().unwrap();
-                let ld_info = LinearDriverInfo {
-                    body_a,
-                    point_a: nalgebra::Vector2::new(point_a[0], point_a[1]),
-                    body_b,
-                    point_b: nalgebra::Vector2::new(point_b[0], point_b[1]),
-                    stroke_min,
-                    stroke_max,
-                    initial_length,
-                };
-                // Use the revolute-driven mechanism's q_start.
-                let rev_q_start = if q_start.len() == sweep_mech.state().n_coords() {
-                    q_start
-                } else {
-                    sweep_mech.state().make_q()
-                };
-                let (data, q_zero) = compute_sweep_data(
-                    sweep_mech, &rev_q_start, rev_omega, rev_theta_0,
-                    self.gravity_magnitude, sweep_range, Some(&ld_info),
-                );
-                self.sweep_data = Some(data);
-                self.q_at_zero = q_zero;
-            } else {
-                // Fallback: use the original cosine stroke sweep.
-                log::warn!("FALLBACK: Could not build revolute sweep mechanism, using cosine stroke");
-                let (data, q_zero) = compute_sweep_data(mech, &q_start, omega, theta_0, self.gravity_magnitude, sweep_range, None);
-                self.sweep_data = Some(data);
-                self.q_at_zero = q_zero;
-            }
-        } else {
-            let (data, q_zero) = compute_sweep_data(mech, &q_start, omega, theta_0, self.gravity_magnitude, sweep_range, None);
-            self.sweep_data = Some(data);
-            self.q_at_zero = q_zero;
-        }
-    }
-
-    /// Build a temporary mechanism from the blueprint with the linear driver
-    /// replaced by a revolute driver. Returns `(mechanism, omega, theta_0)`.
-    ///
-    /// The revolute driver is placed on the first grounded revolute joint that
-    /// connects to a body referenced by the linear driver.
-    fn build_revolute_sweep_mechanism(&self) -> Option<(Mechanism, f64, f64)> {
-        let bp = self.blueprint.as_ref()?;
-        if bp.linear_drivers.is_empty() {
-            return None;
-        }
-
-        // Build a mechanism from the blueprint WITHOUT linear drivers but
-        // WITH the same forces (including LinearActuator). This ensures both
-        // the main and sweep mechanisms have identical body structure
-        // (compound body expansion produces the same extra bodies in both).
-        let mut bp_clone = bp.clone();
-        let _ld_json = bp_clone.linear_drivers.drain(..).next()?;
-
-        // Find a grounded revolute joint for the sweep driver.
-        // Sort joint IDs so we get deterministic ordering (J1 before J4).
-        // In a Grashof 4-bar, the crank joint (typically the lowest-numbered)
-        // is the one that can rotate 360°.
-        let (driver_body_i, driver_body_j) = {
-            let mut grounded_joints: Vec<_> = bp_clone.joints.iter()
-                .filter_map(|(jid, jj)| {
-                    if let JointJson::Revolute { body_i, body_j, .. } = jj {
-                        if body_i == GROUND_ID || body_j == GROUND_ID {
-                            return Some((jid.clone(), body_i.clone(), body_j.clone()));
-                        }
-                    }
-                    None
-                })
-                .collect();
-            grounded_joints.sort_by(|a, b| a.0.cmp(&b.0)); // sort by joint ID
-            let (_, bi, bj) = grounded_joints.into_iter().next()?;
-            (bi, bj)
-        };
-
-        // Add a constant-speed revolute driver to the blueprint clone.
-        let rev_omega = 2.0 * std::f64::consts::PI;
-        let rev_theta_0 = 0.0;
-        bp_clone.drivers.insert(
-            "_sweep_revolute_driver".to_string(),
-            DriverJson::ConstantSpeed {
-                body_i: driver_body_i,
-                body_j: driver_body_j,
-                omega: rev_omega,
-                theta_0: rev_theta_0,
-            },
-        );
-
-        // Build the mechanism from the modified blueprint.
-        let mut mech = load_mechanism_unbuilt_from_json(&bp_clone).ok()?;
-        mech.build().ok()?;
-
-        Some((mech, rev_omega, rev_theta_0))
+        let (data, q_zero) = compute_sweep_data(mech, &q_start, omega, theta_0, self.gravity_magnitude, sweep_range);
+        self.sweep_data = Some(data);
+        self.q_at_zero = q_zero;
     }
 }
