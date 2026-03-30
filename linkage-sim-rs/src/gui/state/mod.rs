@@ -228,6 +228,12 @@ pub struct AppState {
     /// When true, `fit_to_view` is called on the next canvas frame and then
     /// cleared. Set after a mechanism is loaded so the view auto-fits.
     pub pending_fit_to_view: bool,
+    /// Revolute-driven copy of the mechanism for angle-based solving.
+    /// Used when the main mechanism has a linear driver (actuator) so that
+    /// `solve_at_angle` can sweep the full crank rotation without the solver
+    /// getting stuck at cosine-driver turnarounds.
+    /// `None` for mechanisms with revolute drivers.
+    pub sweep_mechanism: Option<Mechanism>,
 }
 
 /// Tracks placement state for the Add Body tool.
@@ -406,6 +412,7 @@ impl Default for AppState {
             status_message_time: 0.0,
             highlight_joint: None,
             pending_fit_to_view: false,
+            sweep_mechanism: None,
         };
         state.rebuild();
         state
@@ -589,24 +596,40 @@ impl AppState {
     /// On failure, keeps `last_good_q` unchanged and reports the failure in
     /// `solver_status`.
     pub fn solve_at_angle(&mut self, angle_rad: f64) {
-        if self.mechanism.is_none() {
+        let use_sweep = self.sweep_mechanism.is_some();
+        let mech = if use_sweep {
+            self.sweep_mechanism.take().unwrap()
+        } else if self.mechanism.is_some() {
+            self.mechanism.take().unwrap()
+        } else {
             return;
-        }
+        };
 
-        // Convert driver angle to time using the constant-speed relationship:
-        //   angle = theta_0 + omega * t  →  t = (angle - theta_0) / omega
-        let t = (angle_rad - self.driver_theta_0) / self.driver_omega;
+        // For the revolute sweep mechanism: omega=2*PI, theta_0=0
+        // (set when building the mechanism in build_revolute_sweep_mechanism).
+        // For the main mechanism: use driver_omega / driver_theta_0.
+        let (omega, theta_0) = if use_sweep {
+            (std::f64::consts::TAU, 0.0)
+        } else {
+            (self.driver_omega, self.driver_theta_0)
+        };
+        let t = (angle_rad - theta_0) / omega;
 
-        // Clone the guess so we can pass &mut self to solve_and_update
-        // without conflicting with the borrow on self.mechanism.
         let guess = self.last_good_q.clone();
-        // Temporarily take the mechanism to avoid the shared/mutable borrow conflict.
-        let mech = self.mechanism.take().unwrap();
         let converged = self.solve_and_update(&mech, &guess, t, 1e-10, 50, None);
-        self.mechanism = Some(mech);
+
+        // Put the mechanism back in the correct slot.
+        if use_sweep {
+            self.sweep_mechanism = Some(mech);
+        } else {
+            self.mechanism = Some(mech);
+        }
 
         if converged {
             self.driver_angle = angle_rad;
+            // compute_forces uses self.mechanism and self.q — the q was
+            // updated by solve_and_update and is valid for both mechanisms
+            // (same bodies, same DOF structure).
             self.compute_forces(t);
         }
     }

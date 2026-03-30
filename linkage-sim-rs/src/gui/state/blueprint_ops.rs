@@ -340,6 +340,17 @@ impl AppState {
         }
 
         self.mechanism = Some(mech);
+
+        // For cosine linear drivers, eagerly build the revolute sweep mechanism
+        // so that solve_at_angle / animation work immediately (before the
+        // lazy compute_sweep runs).
+        self.sweep_mechanism = None;
+        if self.has_cosine_driver() {
+            if let Some((sweep_mech, _omega, _theta_0)) = self.build_revolute_sweep_mechanism() {
+                self.sweep_mechanism = Some(sweep_mech);
+            }
+        }
+
         self.compute_forces(t);
         self.update_grashof();
         self.compute_validation();
@@ -1078,6 +1089,7 @@ impl AppState {
     pub fn compute_sweep(&mut self) {
         self.sweep_dirty = false;
         self.sweep_dirty_since = None;
+        self.sweep_mechanism = None;
 
         if self.mechanism.is_none() {
             self.sweep_data = None;
@@ -1148,6 +1160,9 @@ impl AppState {
             // Build a revolute-driven mechanism from the blueprint.
             if let Some(result) = self.build_revolute_sweep_mechanism() {
                 let (sweep_mech, rev_omega, rev_theta_0) = result;
+                // Store the revolute mechanism for solve_at_angle / animation.
+                self.sweep_mechanism = Some(sweep_mech);
+                let sweep_mech = self.sweep_mechanism.as_ref().unwrap();
                 let ld_info = LinearDriverInfo {
                     body_a,
                     point_a: nalgebra::Vector2::new(point_a[0], point_a[1]),
@@ -1164,7 +1179,7 @@ impl AppState {
                     sweep_mech.state().make_q()
                 };
                 let (data, q_zero) = compute_sweep_data(
-                    &sweep_mech, &rev_q_start, rev_omega, rev_theta_0,
+                    sweep_mech, &rev_q_start, rev_omega, rev_theta_0,
                     self.gravity_magnitude, sweep_range, Some(&ld_info),
                 );
                 self.sweep_data = Some(data);
