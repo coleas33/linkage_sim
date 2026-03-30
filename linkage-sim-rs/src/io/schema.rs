@@ -69,6 +69,25 @@ pub struct MechanismJson {
     /// gravity (0 = horizontal, positive = counterclockwise). Backward-compatible.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub mounting_angle: f64,
+    /// Linear driver constraints (actuator stroke prescriptions).
+    /// Backward-compatible: old files without this field default to an empty list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub linear_drivers: Vec<LinearDriverJson>,
+}
+
+/// JSON representation of a linear driver constraint.
+///
+/// Prescribes the distance between two body points as a linear function of time:
+/// `d(t) = length_0 + velocity * t`. All values are in SI units (m, m/s).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinearDriverJson {
+    pub id: String,
+    pub body_a: String,
+    pub point_a: [f64; 2],
+    pub body_b: String,
+    pub point_b: [f64; 2],
+    pub velocity: f64,
+    pub length_0: f64,
 }
 
 /// JSON representation of a load case -- a named driver configuration.

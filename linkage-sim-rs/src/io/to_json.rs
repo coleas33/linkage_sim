@@ -196,6 +196,23 @@ pub fn mechanism_to_json(mech: &Mechanism) -> Result<MechanismJson, Serializatio
         // Drivers without metadata (general closures) are silently skipped.
     }
 
+    // Serialize linear drivers.
+    let mut linear_drivers = Vec::new();
+    for ld in mech.linear_drivers() {
+        if let Some(DriverMeta::LinearLength { velocity, length_0 }) = ld.meta() {
+            linear_drivers.push(LinearDriverJson {
+                id: ld.id().to_string(),
+                body_a: ld.body_i_id().to_string(),
+                point_a: ld.point_a(),
+                body_b: ld.body_j_id().to_string(),
+                point_b: ld.point_b(),
+                velocity: *velocity,
+                length_0: *length_0,
+            });
+        }
+        // Linear drivers without meta (general closures) are silently skipped.
+    }
+
     Ok(MechanismJson {
         schema_version: SCHEMA_VERSION.to_string(),
         bodies,
@@ -205,6 +222,7 @@ pub fn mechanism_to_json(mech: &Mechanism) -> Result<MechanismJson, Serializatio
         forces: mech.forces().to_vec(),
         sweep_config: None,
         mounting_angle: 0.0,
+        linear_drivers,
     })
 }
 

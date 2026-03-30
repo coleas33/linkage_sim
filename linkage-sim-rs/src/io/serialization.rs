@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use crate::core::body::{make_bar, make_ground, Body};
-    use crate::core::constraint::JointConstraint;
+    use crate::core::constraint::{Constraint, JointConstraint};
     use crate::core::mechanism::Mechanism;
     use crate::core::state::GROUND_ID;
     use crate::io::{
@@ -853,5 +853,102 @@ mod tests {
             "Expression driver with sin/cos did not converge: residual={}",
             result.residual_norm,
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Linear driver serialization
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn linear_driver_round_trips_through_json() {
+        use crate::core::linear_driver::constant_velocity_linear_driver;
+        use crate::core::driver::DriverMeta;
+
+        // Build a simple mechanism with a linear driver:
+        // ground has O at (0,0), bar has A at (0,0) and B at (1,0).
+        // Revolute joint at O-A, linear driver between ground (0,0) and bar B.
+        let ground = make_ground(&[("O", 0.0, 0.0), ("P", 0.0, 0.0)]);
+        let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
+        let coupler = make_bar("coupler", "B", "C", 3.0, 1.5, 0.05);
+        let rocker = make_bar("rocker", "D", "C", 2.0, 1.5, 0.02);
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(crank).unwrap();
+        mech.add_body(coupler).unwrap();
+        mech.add_body(rocker).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O", "crank", "A").unwrap();
+        mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+        mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+        mech.add_revolute_joint("J4", "ground", "P", "rocker", "D").unwrap();
+
+        let velocity = 0.05;
+        let length_0 = 1.0;
+        let driver = constant_velocity_linear_driver(
+            "LD1", "ground", [0.0, 0.0], "crank", [1.0, 0.0], velocity, length_0,
+        );
+        mech.add_linear_driver(driver).unwrap();
+        mech.build().unwrap();
+
+        assert_eq!(mech.n_linear_drivers(), 1);
+
+        // Serialize to JSON.
+        let json_str = save_mechanism(&mech).unwrap();
+        let json_struct: MechanismJson = serde_json::from_str(&json_str).unwrap();
+
+        // Verify the linear driver appears in the JSON.
+        assert_eq!(json_struct.linear_drivers.len(), 1);
+        let ld_json = &json_struct.linear_drivers[0];
+        assert_eq!(ld_json.id, "LD1");
+        assert_eq!(ld_json.body_a, "ground");
+        assert_eq!(ld_json.body_b, "crank");
+        assert_abs_diff_eq!(ld_json.point_a[0], 0.0, epsilon = 1e-15);
+        assert_abs_diff_eq!(ld_json.point_a[1], 0.0, epsilon = 1e-15);
+        assert_abs_diff_eq!(ld_json.point_b[0], 1.0, epsilon = 1e-15);
+        assert_abs_diff_eq!(ld_json.point_b[1], 0.0, epsilon = 1e-15);
+        assert_abs_diff_eq!(ld_json.velocity, velocity, epsilon = 1e-15);
+        assert_abs_diff_eq!(ld_json.length_0, length_0, epsilon = 1e-15);
+
+        // It should NOT appear in the revolute drivers map.
+        assert!(json_struct.drivers.is_empty(), "Linear driver should not appear in revolute drivers map");
+
+        // Deserialize and verify the mechanism has the linear driver.
+        let loaded = load_mechanism_unbuilt(&json_str).unwrap();
+        assert_eq!(loaded.n_linear_drivers(), 1);
+
+        let loaded_ld = &loaded.linear_drivers()[0];
+        assert_eq!(loaded_ld.id(), "LD1");
+        assert_eq!(loaded_ld.body_i_id(), "ground");
+        assert_eq!(loaded_ld.body_j_id(), "crank");
+        assert_abs_diff_eq!(loaded_ld.point_a()[0], 0.0, epsilon = 1e-15);
+        assert_abs_diff_eq!(loaded_ld.point_b()[0], 1.0, epsilon = 1e-15);
+
+        // Verify the meta round-tripped.
+        match loaded_ld.meta() {
+            Some(DriverMeta::LinearLength { velocity: v, length_0: l0 }) => {
+                assert_abs_diff_eq!(*v, velocity, epsilon = 1e-15);
+                assert_abs_diff_eq!(*l0, length_0, epsilon = 1e-15);
+            }
+            other => panic!("Expected LinearLength meta, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn old_json_without_linear_drivers_loads_cleanly() {
+        // Simulate a file from before linear_drivers existed.
+        let json = r#"{
+            "schema_version": "1.0.0",
+            "bodies": {
+                "ground": {
+                    "attachment_points": {"O": [0.0, 0.0]},
+                    "mass": 0.0, "cg_local": [0.0, 0.0], "izz_cg": 0.0
+                }
+            },
+            "joints": {}
+        }"#;
+
+        let loaded = load_mechanism(json).unwrap();
+        assert_eq!(loaded.n_linear_drivers(), 0);
+        assert!(loaded.is_built());
     }
 }

@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use nalgebra::Vector2;
 
 use crate::core::body::Body;
+use crate::core::linear_driver::constant_velocity_linear_driver;
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
 use crate::forces::compound::{analyze_force, expand_compound_force, CompoundAnalysis};
@@ -227,6 +228,21 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
                 .map_err(|e| SerializationError::Build(e.to_string()))?;
             }
         }
+    }
+
+    // Rebuild linear drivers
+    for ld_json in &json_struct.linear_drivers {
+        let driver = constant_velocity_linear_driver(
+            &ld_json.id,
+            &ld_json.body_a,
+            ld_json.point_a,
+            &ld_json.body_b,
+            ld_json.point_b,
+            ld_json.velocity,
+            ld_json.length_0,
+        );
+        mech.add_linear_driver(driver)
+            .map_err(|e| SerializationError::Build(e.to_string()))?;
     }
 
     // Restore force elements, resolving any named mount/attachment points

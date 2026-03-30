@@ -49,6 +49,16 @@ impl LinearDriver {
     pub fn meta(&self) -> Option<&DriverMeta> {
         self.meta.as_ref()
     }
+
+    /// Local-frame coordinates of point A on body A.
+    pub fn point_a(&self) -> [f64; 2] {
+        [self.point_a.x, self.point_a.y]
+    }
+
+    /// Local-frame coordinates of point B on body B.
+    pub fn point_b(&self) -> [f64; 2] {
+        [self.point_b.x, self.point_b.y]
+    }
 }
 
 impl Constraint for LinearDriver {
