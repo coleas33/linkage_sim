@@ -12,43 +12,81 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
     ui.separator();
 
-    // ── Crank Angle ──────────────────────────────────────────────────
+    // ── Crank Angle / Actuator Stroke ──────────────────────────────
     let accent = egui::Color32::from_rgb(80, 160, 255);
+    let is_linear = state.has_linear_driver();
+    let section_label = if is_linear { "Actuator Stroke" } else { "Crank Angle" };
     egui::CollapsingHeader::new(
-        egui::RichText::new("Crank Angle").color(accent),
+        egui::RichText::new(section_label).color(accent),
     )
         .id_salt("crank_section")
         .default_open(true)
         .show(ui, |ui| {
-            // Determine slider range: clamp to sweep range when enabled.
-            let (slider_min, slider_max) = if state.sweep_range_enabled {
-                (state.sweep_angle_min_deg, state.sweep_angle_max_deg)
-            } else {
-                (0.0, 360.0)
-            };
+            if is_linear {
+                // ── Linear driver: stroke slider in mm ──────────────
+                let (slider_min_mm, slider_max_mm) = if state.sweep_range_enabled {
+                    (state.sweep_stroke_min * 1000.0, state.sweep_stroke_max * 1000.0)
+                } else {
+                    // Default: full range from stroke limits or theta_0 ± reasonable range
+                    let length_0_mm = state.driver_theta_0 * 1000.0;
+                    let range_mm = if state.sweep_stroke_max > state.sweep_stroke_min {
+                        // Use configured stroke limits as full-range defaults
+                        (state.sweep_stroke_min * 1000.0, state.sweep_stroke_max * 1000.0)
+                    } else {
+                        // Fallback: center on initial length with ±50mm range
+                        ((length_0_mm - 50.0).max(0.0), length_0_mm + 50.0)
+                    };
+                    range_mm
+                };
 
-            let mut angle_deg = state.driver_angle.to_degrees();
-            // Clamp current angle into the active range so the slider
-            // doesn't sit outside its bounds when the user enables the range.
-            angle_deg = angle_deg.clamp(slider_min, slider_max);
-            let prev_angle = angle_deg;
-            let response = ui.add(
-                egui::Slider::new(&mut angle_deg, slider_min..=slider_max)
-                    .suffix("\u{00B0}")
-                    .step_by(0.5),
-            ).on_hover_text("Drag to set the driver crank angle in degrees");
-            if response.dragged() {
-                if state.playing {
-                    state.playing = false;
-                    state.animation_direction = 1.0;
+                let mut stroke_mm = state.driver_stroke * 1000.0;
+                stroke_mm = stroke_mm.clamp(slider_min_mm, slider_max_mm);
+                let prev_stroke = stroke_mm;
+                let response = ui.add(
+                    egui::Slider::new(&mut stroke_mm, slider_min_mm..=slider_max_mm)
+                        .suffix(" mm")
+                        .step_by(0.1),
+                ).on_hover_text("Drag to set the actuator stroke in millimeters");
+                if response.dragged() {
+                    if state.playing {
+                        state.playing = false;
+                        state.animation_direction = 1.0;
+                    }
+                    if let Some(sim) = &mut state.simulation {
+                        sim.playing = false;
+                    }
                 }
-                // Stop simulation playback — only one can drive the canvas.
-                if let Some(sim) = &mut state.simulation {
-                    sim.playing = false;
+                if (stroke_mm - prev_stroke).abs() > 1e-4 {
+                    state.solve_at_stroke(stroke_mm / 1000.0);
                 }
-            }
-            if (angle_deg - prev_angle).abs() > 1e-6 {
-                state.solve_at_angle(angle_deg.to_radians());
+            } else {
+                // ── Revolute driver: angle slider in degrees ────────
+                let (slider_min, slider_max) = if state.sweep_range_enabled {
+                    (state.sweep_angle_min_deg, state.sweep_angle_max_deg)
+                } else {
+                    (0.0, 360.0)
+                };
+
+                let mut angle_deg = state.driver_angle.to_degrees();
+                angle_deg = angle_deg.clamp(slider_min, slider_max);
+                let prev_angle = angle_deg;
+                let response = ui.add(
+                    egui::Slider::new(&mut angle_deg, slider_min..=slider_max)
+                        .suffix("\u{00B0}")
+                        .step_by(0.5),
+                ).on_hover_text("Drag to set the driver crank angle in degrees");
+                if response.dragged() {
+                    if state.playing {
+                        state.playing = false;
+                        state.animation_direction = 1.0;
+                    }
+                    if let Some(sim) = &mut state.simulation {
+                        sim.playing = false;
+                    }
+                }
+                if (angle_deg - prev_angle).abs() > 1e-6 {
+                    state.solve_at_angle(angle_deg.to_radians());
+                }
             }
 
             ui.horizontal(|ui| {
@@ -64,16 +102,13 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
             // ── Sweep Range ────────────────────────────────────────
             ui.separator();
-            let has_linear_driver = state.mechanism.as_ref()
-                .map(|m| m.n_linear_drivers() > 0)
-                .unwrap_or(false);
             let prev_enabled = state.sweep_range_enabled;
-            let sweep_label = if has_linear_driver {
+            let sweep_label = if is_linear {
                 "Limit Stroke Range"
             } else {
                 "Limit Sweep Range"
             };
-            let sweep_tooltip = if has_linear_driver {
+            let sweep_tooltip = if is_linear {
                 "Restrict the actuator sweep to a custom stroke range"
             } else {
                 "Restrict the crank sweep to a custom angular range instead of full 360\u{00B0}"
@@ -84,7 +119,7 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 state.mark_sweep_dirty();
             }
             if state.sweep_range_enabled {
-                if has_linear_driver {
+                if is_linear {
                     // Stroke range controls (linear driver mode)
                     ui.horizontal(|ui| {
                         ui.label("Stroke min:");

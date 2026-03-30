@@ -80,6 +80,9 @@ pub struct AppState {
     pub driver_omega: f64,
     /// Initial driver angle (rad) at t=0.
     pub driver_theta_0: f64,
+    /// Current actuator stroke in meters (for linear driver mode).
+    /// When a linear driver is active, this tracks the slider value instead of `driver_angle`.
+    pub driver_stroke: f64,
     // ── Animation ────────────────────────────────────────────────────────
     pub playing: bool,
     pub animation_speed_deg_per_sec: f64,
@@ -319,6 +322,7 @@ impl Default for AppState {
             current_sample: None,
             driver_omega: 2.0 * PI,
             driver_theta_0: 0.0,
+            driver_stroke: 0.0,
             playing: false,
             animation_speed_deg_per_sec: 90.0,
             loop_mode: true,
@@ -481,9 +485,19 @@ impl AppState {
         let (mech, q0) = build_sample(sample);
 
         // Extract driver parameters from the sample before storing mechanism.
-        // All current samples use omega=2π, theta_0=0.
+        // For revolute drivers: omega=2π, theta_0=0 (all current samples).
+        // For linear drivers: override from metadata.
         self.driver_omega = 2.0 * PI;
         self.driver_theta_0 = 0.0;
+        self.driver_stroke = 0.0;
+        if let Some(ld) = mech.linear_drivers().first() {
+            use crate::core::driver::DriverMeta;
+            if let Some(DriverMeta::LinearLength { velocity, length_0 }) = ld.meta() {
+                self.driver_omega = *velocity;
+                self.driver_theta_0 = *length_0;
+                self.driver_stroke = *length_0;
+            }
+        }
 
         self.solve_and_update(&mech, &q0, 0.0, 1e-10, 50, Some(q0.clone()));
 
@@ -577,6 +591,41 @@ impl AppState {
             self.driver_angle = angle_rad;
             self.compute_forces(t);
         }
+    }
+
+    /// Solve the position problem for the given actuator stroke (meters).
+    ///
+    /// For linear drivers, the time mapping is:
+    ///   length = length_0 + velocity * t  =>  t = (stroke - length_0) / velocity
+    /// Uses `driver_omega` (= velocity) and `driver_theta_0` (= length_0) which
+    /// are set by `rebuild()` when a linear driver is present.
+    pub fn solve_at_stroke(&mut self, stroke_m: f64) {
+        if self.mechanism.is_none() {
+            return;
+        }
+
+        let t = if self.driver_omega.abs() > f64::EPSILON {
+            (stroke_m - self.driver_theta_0) / self.driver_omega
+        } else {
+            0.0
+        };
+
+        let guess = self.last_good_q.clone();
+        let mech = self.mechanism.take().unwrap();
+        let converged = self.solve_and_update(&mech, &guess, t, 1e-10, 50, None);
+        self.mechanism = Some(mech);
+
+        if converged {
+            self.driver_stroke = stroke_m;
+            self.compute_forces(t);
+        }
+    }
+
+    /// Returns true if the current mechanism uses a linear driver (actuator).
+    pub fn has_linear_driver(&self) -> bool {
+        self.mechanism.as_ref()
+            .map(|m| m.n_linear_drivers() > 0)
+            .unwrap_or(false)
     }
 
     /// Returns true if a mechanism has been loaded.
@@ -733,6 +782,15 @@ impl AppState {
             return false;
         }
 
+        if self.has_linear_driver() {
+            self.step_animation_linear(dt)
+        } else {
+            self.step_animation_revolute(dt)
+        }
+    }
+
+    /// Advance animation for a revolute driver (angle in degrees).
+    fn step_animation_revolute(&mut self, dt: f64) -> bool {
         let step_deg = self.animation_speed_deg_per_sec * dt * self.animation_direction;
         let mut new_angle_deg = self.driver_angle.to_degrees() + step_deg;
 
@@ -784,6 +842,63 @@ impl AppState {
 
         let prev_converged = self.solver_status.converged;
         self.solve_at_angle(new_angle_deg.to_radians());
+
+        // Ping-pong: reverse direction on solver failure in loop mode
+        if self.loop_mode && !self.solver_status.converged && prev_converged {
+            self.animation_direction *= -1.0;
+        }
+
+        // Stop on failure in once mode
+        if !self.loop_mode && !self.solver_status.converged {
+            self.playing = false;
+        }
+
+        self.playing
+    }
+
+    /// Advance animation for a linear driver (stroke in meters).
+    fn step_animation_linear(&mut self, dt: f64) -> bool {
+        // Convert animation speed from deg/s to m/s using a rough mapping:
+        // 360 deg/s maps to the full stroke range per second.
+        let stroke_range = if self.sweep_stroke_max > self.sweep_stroke_min {
+            self.sweep_stroke_max - self.sweep_stroke_min
+        } else {
+            0.050 // fallback: 50mm
+        };
+        let speed_m_per_sec = (self.animation_speed_deg_per_sec / 360.0) * stroke_range;
+        let step_m = speed_m_per_sec * dt * self.animation_direction;
+        let mut new_stroke = self.driver_stroke + step_m;
+
+        // Determine effective animation bounds in meters.
+        let (anim_min, anim_max) = if self.sweep_range_enabled {
+            (self.sweep_stroke_min, self.sweep_stroke_max)
+        } else if self.sweep_stroke_max > self.sweep_stroke_min {
+            (self.sweep_stroke_min, self.sweep_stroke_max)
+        } else {
+            // Fallback: center on initial length with ±25mm
+            let l0 = self.driver_theta_0;
+            ((l0 - 0.025).max(0.0), l0 + 0.025)
+        };
+
+        // Bounce at stroke limits (linear drivers always bounce, never wrap).
+        if new_stroke >= anim_max {
+            new_stroke = anim_max;
+            if self.loop_mode {
+                self.animation_direction *= -1.0;
+            } else {
+                self.playing = false;
+            }
+        } else if new_stroke <= anim_min {
+            new_stroke = anim_min;
+            if self.loop_mode {
+                self.animation_direction *= -1.0;
+            } else {
+                self.playing = false;
+            }
+        }
+
+        let prev_converged = self.solver_status.converged;
+        self.solve_at_stroke(new_stroke);
 
         // Ping-pong: reverse direction on solver failure in loop mode
         if self.loop_mode && !self.solver_status.converged && prev_converged {

@@ -226,10 +226,14 @@ impl AppState {
             return;
         }
 
-        // Extract driver params from blueprint
+        // Extract driver params from blueprint.
+        // For revolute drivers: omega = angular velocity, theta_0 = initial angle.
+        // For linear drivers: omega = velocity (m/s), theta_0 = initial length (m).
+        // This dual-use allows solve_at_angle/solve_at_stroke to share the same
+        // time formula: t = (value - theta_0) / omega.
         self.driver_omega = 2.0 * std::f64::consts::PI;
         self.driver_theta_0 = 0.0;
-        // Check blueprint drivers for actual values
+        // Check blueprint revolute drivers for actual values
         if let Some(driver) = bp.drivers.values().next() {
             match driver {
                 DriverJson::ConstantSpeed { omega, theta_0, .. } => {
@@ -243,13 +247,32 @@ impl AppState {
                 }
             }
         }
+        // Override with linear driver params when present (velocity -> omega,
+        // length_0 -> theta_0). This makes the time formula work for stroke values.
+        if let Some(ld) = mech.linear_drivers().first() {
+            use crate::core::driver::DriverMeta;
+            if let Some(DriverMeta::LinearLength { velocity, length_0 }) = ld.meta() {
+                self.driver_omega = *velocity;
+                self.driver_theta_0 = *length_0;
+                // Initialize driver_stroke to length_0 if it hasn't been set yet
+                if self.driver_stroke == 0.0 {
+                    self.driver_stroke = *length_0;
+                }
+            }
+        }
 
         // Detect driven joint
         self.driver_joint_id = detect_driver_joint_id(&mech);
 
-        // Solve at current angle using last_good_q as initial guess
+        // Solve at current position using last_good_q as initial guess.
+        // For linear drivers, use driver_stroke; for revolute, use driver_angle.
+        let driver_value = if mech.n_linear_drivers() > 0 {
+            self.driver_stroke
+        } else {
+            self.driver_angle
+        };
         let t = if self.driver_omega.abs() > f64::EPSILON {
-            (self.driver_angle - self.driver_theta_0) / self.driver_omega
+            (driver_value - self.driver_theta_0) / self.driver_omega
         } else {
             0.0
         };
