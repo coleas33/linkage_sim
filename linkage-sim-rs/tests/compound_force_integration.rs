@@ -93,6 +93,7 @@ fn make_compound_spring_json() -> MechanismJson {
         forces: vec![spring],
         sweep_config: None,
         mounting_angle: 0.0,
+        linear_drivers: Vec::new(),
     }
 }
 
@@ -171,6 +172,7 @@ fn make_pure_spring_json() -> MechanismJson {
         forces: vec![spring],
         sweep_config: None,
         mounting_angle: 0.0,
+        linear_drivers: Vec::new(),
     }
 }
 
