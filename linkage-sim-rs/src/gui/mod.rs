@@ -469,7 +469,7 @@ impl eframe::App for LinkageApp {
                 file_resp.response.on_hover_text("File operations: new, open, save, export");
                 let edit_resp = ui.menu_button("Edit", |ui| {
                     if ui
-                        .add_enabled(self.state.can_undo(), egui::Button::new("Undo  Ctrl+Z"))
+                        .add_enabled(self.state.can_undo(), egui::Button::new("\u{21A9} Undo  Ctrl+Z"))
                         .on_hover_text("Undo the last change (Ctrl+Z)")
                         .clicked()
                     {
@@ -477,7 +477,7 @@ impl eframe::App for LinkageApp {
                         ui.close();
                     }
                     if ui
-                        .add_enabled(self.state.can_redo(), egui::Button::new("Redo  Ctrl+Y"))
+                        .add_enabled(self.state.can_redo(), egui::Button::new("\u{21AA} Redo  Ctrl+Y"))
                         .on_hover_text("Redo the last undone change (Ctrl+Y)")
                         .clicked()
                     {
@@ -694,7 +694,7 @@ impl eframe::App for LinkageApp {
                 // ── Sample mechanism selector (purple) ──────────────
                 let sample_color = egui::Color32::from_rgb(180, 140, 255);
                 let samples_resp = ui.menu_button(
-                    egui::RichText::new("Samples \u{25BC}").color(sample_color),
+                    egui::RichText::new("Samples v").color(sample_color),
                     |ui| {
                         for sample in SampleMechanism::all() {
                             if ui.button(sample.label()).clicked() {
