@@ -138,23 +138,32 @@ pub fn handle_interaction(
     // open it on release.
     let right_drag_ended = response.drag_stopped_by(egui::PointerButton::Secondary);
 
-    // ── Interaction: zoom toward mouse ──────────────────────────────────
+    // ── Interaction: zoom toward mouse / pinch-to-zoom ───────────────────
     if response.hovered() {
+        // Scroll-wheel zoom.
         let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
         if scroll_delta.abs() > 0.0 {
             // Normalize: apply ZOOM_FACTOR once per ~50px of scroll delta
             // so trackpads and mouse wheels feel consistent.
             let ticks = (scroll_delta / 50.0).clamp(-3.0, 3.0);
             let factor = ZOOM_FACTOR.powf(ticks);
-            if let Some(pointer_pos) = ui.input(|i| i.pointer.hover_pos()) {
-                let old_scale = state.view.scale;
-                let new_scale = (old_scale * factor).clamp(MIN_SCALE, MAX_SCALE);
-                let [wx, wy] = state.view.screen_to_world(pointer_pos.x, pointer_pos.y);
-                state.view.scale = new_scale;
-                let new_screen = state.view.world_to_screen(wx, wy);
-                state.view.offset[0] += pointer_pos.x - new_screen[0];
-                state.view.offset[1] += pointer_pos.y - new_screen[1];
-            }
+            let zoom_center = response.hover_pos().unwrap_or(canvas_rect.center());
+            let [wx, wy] = state.view.screen_to_world(zoom_center.x, zoom_center.y);
+            state.view.scale = (state.view.scale * factor).clamp(MIN_SCALE, MAX_SCALE);
+            let new_screen = state.view.world_to_screen(wx, wy);
+            state.view.offset[0] += zoom_center.x - new_screen[0];
+            state.view.offset[1] += zoom_center.y - new_screen[1];
+        }
+
+        // Pinch-to-zoom (touch devices and trackpad pinch gestures).
+        let zoom_delta = ui.input(|i| i.zoom_delta());
+        if zoom_delta != 1.0 {
+            let zoom_center = response.hover_pos().unwrap_or(canvas_rect.center());
+            let [wx, wy] = state.view.screen_to_world(zoom_center.x, zoom_center.y);
+            state.view.scale = (state.view.scale * zoom_delta).clamp(MIN_SCALE, MAX_SCALE);
+            let new_screen = state.view.world_to_screen(wx, wy);
+            state.view.offset[0] += zoom_center.x - new_screen[0];
+            state.view.offset[1] += zoom_center.y - new_screen[1];
         }
     }
 
