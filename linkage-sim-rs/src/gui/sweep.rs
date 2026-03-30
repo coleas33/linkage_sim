@@ -254,7 +254,17 @@ pub(crate) fn compute_sweep_data(
                 (angle_deg, t)
             }
             SweepMode::Stroke { driver_length_0, stroke_start: s0, stroke_end: s_end, velocity: vel } => {
-                let stroke = s0 + (s_end - s0) * i as f64 / num_steps.max(1) as f64;
+                // Triangle wave: first half extends (s0 → s_end), second half
+                // retracts (s_end → s0). This covers the full mechanism motion
+                // cycle for actuators whose length is non-monotonic in crank angle.
+                let half = num_steps.max(1) / 2;
+                let stroke = if i <= half {
+                    // Extension phase
+                    s0 + (s_end - s0) * i as f64 / half as f64
+                } else {
+                    // Retraction phase
+                    s_end - (s_end - s0) * (i - half) as f64 / (num_steps.max(1) - half) as f64
+                };
                 let t = (stroke - driver_length_0) / vel;
                 (stroke, t)
             }
@@ -773,9 +783,18 @@ mod tests {
             (first - stroke_min).abs() < 1e-10,
             "First value should be stroke_min={}, got {}", stroke_min, first
         );
+        // Triangle wave: sweep goes min → max → min, so last value returns to stroke_min.
         assert!(
-            (last - stroke_max).abs() < 1e-10,
-            "Last value should be stroke_max={}, got {}", stroke_max, last
+            (last - stroke_min).abs() < 1e-10,
+            "Last value should be stroke_min={} (triangle wave return), got {}", stroke_min, last
+        );
+
+        // Verify the midpoint reaches stroke_max.
+        let mid_idx = data.angles_deg.len() / 2;
+        let mid = data.angles_deg[mid_idx];
+        assert!(
+            (mid - stroke_max).abs() < 1e-10,
+            "Midpoint value should be stroke_max={}, got {}", stroke_max, mid
         );
     }
 
