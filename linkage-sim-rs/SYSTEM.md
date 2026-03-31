@@ -121,7 +121,8 @@ linkage-sim-rs/src/
 │   ├── parametric_panel.rs           (410)    Parametric study + counterbalance UI
 │   ├── undo.rs                       (258)    Undo/redo history stack
 │   ├── force_toolbar.rs              (230)    Force creation toolbar
-│   └── error_panel.rs                (33)    Error message display
+│   ├── error_panel.rs                (33)    Error message display
+│   └── tutorial.rs                   (309)    Interactive tutorial overlay (4-bar walkthrough)
 │
 └── bin/
     ├── linkage_gui.rs                 (18)    Native desktop entry point

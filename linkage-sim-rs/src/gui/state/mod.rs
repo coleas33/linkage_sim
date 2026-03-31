@@ -249,6 +249,9 @@ pub struct AppState {
     pub show_template_name_dialog: bool,
     /// Text buffer for template name input.
     pub template_name_buf: String,
+    // ── Tutorial ────────────────────────────────────────────────────
+    /// Interactive tutorial overlay state.
+    pub tutorial: crate::gui::tutorial::TutorialState,
 }
 
 /// Tracks placement state for the Add Body tool.
@@ -435,6 +438,7 @@ impl Default for AppState {
             saved_templates: Self::load_saved_templates(),
             show_template_name_dialog: false,
             template_name_buf: String::new(),
+            tutorial: crate::gui::tutorial::TutorialState::default(),
         };
         state.rebuild();
         state

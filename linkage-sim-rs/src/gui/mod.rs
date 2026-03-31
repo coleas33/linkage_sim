@@ -11,6 +11,7 @@ mod plot_panel;
 mod property_panel;
 pub mod samples;
 pub mod sweep;
+pub mod tutorial;
 pub mod undo;
 
 use eframe::egui;
@@ -537,6 +538,14 @@ impl eframe::App for LinkageApp {
                         .clicked()
                     {
                         self.state.show_shortcuts = true;
+                        ui.close();
+                    }
+                    if ui.button("Tutorial: Build a 4-Bar")
+                        .on_hover_text("Interactive step-by-step tutorial for building a 4-bar linkage")
+                        .clicked()
+                    {
+                        self.state.new_empty_mechanism();
+                        self.state.tutorial = tutorial::TutorialState::new_fourbar();
                         ui.close();
                     }
                 });
@@ -1086,6 +1095,11 @@ impl eframe::App for LinkageApp {
                             }
                         });
                 });
+        }
+
+        // ── Tutorial overlay ─────────────────────────────────────────────
+        if self.state.tutorial.active {
+            tutorial::draw_tutorial_overlay(ctx, &mut self.state);
         }
 
         // ── Autosave tick ────────────────────────────────────────────────
