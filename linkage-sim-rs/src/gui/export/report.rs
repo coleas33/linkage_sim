@@ -28,7 +28,9 @@ pub fn generate_html_report(
 
     let mut html = String::with_capacity(16_000);
     html.push_str("<!DOCTYPE html>\n<html><head><meta charset='utf-8'>\n");
-    html.push_str("<title>Linkage Mechanism Report</title>\n<style>\n");
+    html.push_str("<title>Linkage Mechanism Report</title>\n");
+    html.push_str("<script src='https://cdn.plot.ly/plotly-2.35.2.min.js'></script>\n");
+    html.push_str("<style>\n");
     html.push_str("body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #f8f9fa; color: #1a1a2e; }\n");
     html.push_str("h1 { color: #16213e; border-bottom: 2px solid #0f3460; padding-bottom: 8px; }\n");
     html.push_str("h2 { color: #0f3460; margin-top: 28px; }\n");
@@ -42,6 +44,7 @@ pub fn generate_html_report(
     html.push_str(".card { background: white; border: 1px solid #ddd; border-radius: 6px; padding: 12px; }\n");
     html.push_str(".card h3 { margin: 0 0 8px 0; font-size: 14px; color: #555; }\n");
     html.push_str(".card .value { font-size: 22px; font-weight: 700; color: #0f3460; }\n");
+    html.push_str(".plotly-chart { margin: 16px 0; }\n");
     html.push_str(".footer { margin-top: 30px; padding-top: 10px; border-top: 1px solid #ccc; font-size: 12px; color: #888; }\n");
     html.push_str("</style></head><body>\n");
 
@@ -138,6 +141,18 @@ pub fn generate_html_report(
             html.push_str(&format!("<div class='card'><h3>Max</h3><div class='value'>{:.3} N*m</div></div>\n", env.max_value));
             html.push_str("</div>\n");
         }
+        // Interactive torque plot
+        let angles_json = float_vec_to_json(&sweep.angles_deg);
+        let torques_json = float_vec_to_json(torques);
+        html.push_str("<div id='torque_plot' class='plotly-chart'></div>\n");
+        html.push_str("<script>\n");
+        html.push_str(&format!(
+            "Plotly.newPlot('torque_plot', [{{x:{},y:{},type:'scatter',name:'Driver Torque',line:{{color:'#0f3460'}}}}], \
+             {{title:'Driver Torque vs Crank Angle',xaxis:{{title:'Crank Angle (deg)'}},yaxis:{{title:'Torque (N*m)'}},\
+             margin:{{t:40,b:50,l:60,r:20}}}}, {{responsive:true}});\n",
+            angles_json, torques_json
+        ));
+        html.push_str("</script>\n");
     }
 
     // -- Transmission angle range ---------------------------------------------
@@ -158,6 +173,20 @@ pub fn generate_html_report(
                 html.push_str("<p style='color: #c62828;'><strong>Warning:</strong> Minimum transmission angle is below 40 degrees — poor force transmission in this region.</p>\n");
             }
         }
+        // Interactive transmission angle plot
+        let angles_json = float_vec_to_json(&sweep.angles_deg);
+        let ta_json = float_vec_to_json(ta);
+        html.push_str("<div id='transmission_plot' class='plotly-chart'></div>\n");
+        html.push_str("<script>\n");
+        html.push_str(&format!(
+            "Plotly.newPlot('transmission_plot', [{{x:{},y:{},type:'scatter',name:'Transmission Angle',line:{{color:'#1b7340'}}}}], \
+             {{title:'Transmission Angle vs Crank Angle',xaxis:{{title:'Crank Angle (deg)'}},yaxis:{{title:'Angle (deg)'}},\
+             margin:{{t:40,b:50,l:60,r:20}},shapes:[{{type:'line',x0:0,x1:360,y0:40,y1:40,\
+             line:{{color:'#c62828',dash:'dash',width:1}}}},{{type:'line',x0:0,x1:360,y0:90,y1:90,\
+             line:{{color:'#888',dash:'dot',width:1}}}}]}}, {{responsive:true}});\n",
+            angles_json, ta_json
+        ));
+        html.push_str("</script>\n");
     }
 
     // -- Joint reaction peaks -------------------------------------------------
@@ -166,8 +195,8 @@ pub fn generate_html_report(
         html.push_str("<table><tr><th>Joint</th><th>Peak Force (N)</th><th>Mean Force (N)</th></tr>\n");
         let mut jids: Vec<&String> = sweep.joint_reaction_magnitudes.keys().collect();
         jids.sort();
-        for jid in jids {
-            let vals = &sweep.joint_reaction_magnitudes[jid];
+        for jid in &jids {
+            let vals = &sweep.joint_reaction_magnitudes[*jid];
             if let Some(env) = compute_envelope(vals) {
                 html.push_str(&format!(
                     "<tr><td>{}</td><td>{:.3}</td><td>{:.3}</td></tr>\n",
@@ -176,6 +205,25 @@ pub fn generate_html_report(
             }
         }
         html.push_str("</table>\n");
+
+        // Interactive joint reactions plot
+        let angles_json = float_vec_to_json(&sweep.angles_deg);
+        let colors = ["#0f3460", "#c62828", "#1b7340", "#e65100", "#6a1b9a", "#00695c", "#4527a0", "#ad1457"];
+        html.push_str("<div id='reactions_plot' class='plotly-chart'></div>\n");
+        html.push_str("<script>\n");
+        html.push_str("Plotly.newPlot('reactions_plot', [\n");
+        for (i, jid) in jids.iter().enumerate() {
+            let vals = &sweep.joint_reaction_magnitudes[*jid];
+            let vals_json = float_vec_to_json(vals);
+            let color = colors[i % colors.len()];
+            let comma = if i + 1 < jids.len() { "," } else { "" };
+            html.push_str(&format!(
+                "  {{x:{},y:{},type:'scatter',name:'{}',line:{{color:'{}'}}}}{}\n",
+                angles_json, vals_json, jid, color, comma
+            ));
+        }
+        html.push_str("], {title:'Joint Reactions vs Crank Angle',xaxis:{title:'Crank Angle (deg)'},yaxis:{title:'Reaction Force (N)'},margin:{t:40,b:50,l:60,r:20}}, {responsive:true});\n");
+        html.push_str("</script>\n");
     }
 
     // -- Force element summary ------------------------------------------------
@@ -205,6 +253,50 @@ pub fn generate_html_report(
             html.push_str(&format!("<div class='card'><h3>Peak PE</h3><div class='value'>{:.4} J</div></div>\n", pe_env.max_value));
             html.push_str("</div>\n");
         }
+
+        // Interactive energy plot
+        let angles_json = float_vec_to_json(&sweep.angles_deg);
+        let ke_json = float_vec_to_json(&sweep.kinetic_energy);
+        let pe_json = float_vec_to_json(&sweep.potential_energy);
+        let te_json = float_vec_to_json(&sweep.total_energy);
+        html.push_str("<div id='energy_plot' class='plotly-chart'></div>\n");
+        html.push_str("<script>\n");
+        html.push_str(&format!(
+            "Plotly.newPlot('energy_plot', [\
+             {{x:{angles},y:{ke},type:'scatter',name:'Kinetic Energy',line:{{color:'#c62828'}}}},\
+             {{x:{angles},y:{pe},type:'scatter',name:'Potential Energy',line:{{color:'#1b7340'}}}},\
+             {{x:{angles},y:{te},type:'scatter',name:'Total Energy',line:{{color:'#0f3460',dash:'dash'}}}}], \
+             {{title:'Energy vs Crank Angle',xaxis:{{title:'Crank Angle (deg)'}},yaxis:{{title:'Energy (J)'}},\
+             margin:{{t:40,b:50,l:60,r:20}}}}, {{responsive:true}});\n",
+            angles = angles_json, ke = ke_json, pe = pe_json, te = te_json
+        ));
+        html.push_str("</script>\n");
+    }
+
+    // -- Coupler trace scatter plot -------------------------------------------
+    if !sweep.coupler_traces.is_empty() {
+        let colors = ["#0f3460", "#c62828", "#1b7340", "#e65100", "#6a1b9a", "#00695c"];
+        let mut trace_names: Vec<&String> = sweep.coupler_traces.keys().collect();
+        trace_names.sort();
+        html.push_str("<h2>Coupler Traces</h2>\n");
+        html.push_str("<div id='coupler_plot' class='plotly-chart'></div>\n");
+        html.push_str("<script>\n");
+        html.push_str("Plotly.newPlot('coupler_plot', [\n");
+        for (i, name) in trace_names.iter().enumerate() {
+            let pts = &sweep.coupler_traces[*name];
+            let xs: Vec<f64> = pts.iter().map(|p| p[0]).collect();
+            let ys: Vec<f64> = pts.iter().map(|p| p[1]).collect();
+            let xs_json = float_vec_to_json(&xs);
+            let ys_json = float_vec_to_json(&ys);
+            let color = colors[i % colors.len()];
+            let comma = if i + 1 < trace_names.len() { "," } else { "" };
+            html.push_str(&format!(
+                "  {{x:{},y:{},mode:'lines',name:'{}',line:{{color:'{}'}}}}{}\n",
+                xs_json, ys_json, name, color, comma
+            ));
+        }
+        html.push_str("], {title:'Coupler Point Traces',xaxis:{title:'X (m)',scaleanchor:'y'},yaxis:{title:'Y (m)'},margin:{t:40,b:50,l:60,r:20}}, {responsive:true});\n");
+        html.push_str("</script>\n");
     }
 
     // -- Footer ---------------------------------------------------------------
@@ -273,6 +365,28 @@ fn force_element_summary(fe: &crate::forces::elements::ForceElement) -> (&'stati
     }
 }
 
+/// Serialize a `Vec<f64>` to a JSON array string, replacing NaN/Infinity with null.
+///
+/// Plotly.js handles `null` gracefully (gaps in the trace) but not NaN.
+#[cfg(feature = "native")]
+fn float_vec_to_json(values: &[f64]) -> String {
+    let mut buf = String::with_capacity(values.len() * 8 + 2);
+    buf.push('[');
+    for (i, v) in values.iter().enumerate() {
+        if i > 0 {
+            buf.push(',');
+        }
+        if v.is_finite() {
+            // Use enough precision to avoid visible stairstepping in plots.
+            buf.push_str(&format!("{:.6}", v));
+        } else {
+            buf.push_str("null");
+        }
+    }
+    buf.push(']');
+    buf
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,5 +417,37 @@ mod tests {
         assert!(html.contains("Dimensions"), "should have dimensions table");
         assert!(html.contains("Mass Properties"), "should have mass properties table");
         assert!(html.contains("kg"), "should have mass units");
+        // Plotly integration
+        assert!(html.contains("plotly-2.35.2.min.js"), "should include plotly CDN");
+        assert!(html.contains("Plotly.newPlot"), "should have at least one plotly chart");
+        assert!(html.contains("energy_plot"), "should have energy plot div");
+    }
+
+    #[test]
+    fn float_vec_to_json_handles_nan_and_infinity() {
+        let vals = vec![1.0, f64::NAN, 2.5, f64::INFINITY, f64::NEG_INFINITY, 3.0];
+        let json = float_vec_to_json(&vals);
+        assert!(json.starts_with('['));
+        assert!(json.ends_with(']'));
+        // NaN and infinities should become null
+        assert!(json.contains("null"));
+        // Finite values should be present
+        assert!(json.contains("1.000000"));
+        assert!(json.contains("2.500000"));
+        assert!(json.contains("3.000000"));
+        // Count nulls: 3 (NaN, +Inf, -Inf)
+        assert_eq!(json.matches("null").count(), 3);
+    }
+
+    #[test]
+    fn float_vec_to_json_empty() {
+        let json = float_vec_to_json(&[]);
+        assert_eq!(json, "[]");
+    }
+
+    #[test]
+    fn float_vec_to_json_single_value() {
+        let json = float_vec_to_json(&[42.0]);
+        assert_eq!(json, "[42.000000]");
     }
 }

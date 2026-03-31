@@ -198,6 +198,14 @@ fn sanitize_filename(name: &str) -> String {
 mod tests {
     use super::*;
 
+    /// Create an AppState with an empty saved_templates list,
+    /// ignoring any templates persisted on disk from previous runs.
+    fn test_state() -> AppState {
+        let mut state = AppState::default();
+        state.saved_templates.clear();
+        state
+    }
+
     #[test]
     fn sanitize_filename_strips_special_chars() {
         assert_eq!(sanitize_filename("My Mech/v2"), "My Mech_v2");
@@ -207,7 +215,7 @@ mod tests {
 
     #[test]
     fn save_as_template_replaces_existing() {
-        let mut state = AppState::default();
+        let mut state = test_state();
         state.save_as_template("test");
         assert_eq!(state.saved_templates.len(), 1);
 
@@ -218,7 +226,7 @@ mod tests {
 
     #[test]
     fn save_and_load_template_roundtrip() {
-        let mut state = AppState::default();
+        let mut state = test_state();
         // Save current (empty) blueprint as a template.
         state.save_as_template("roundtrip");
         assert_eq!(state.saved_templates.len(), 1);
@@ -234,7 +242,7 @@ mod tests {
 
     #[test]
     fn delete_template_removes_entry() {
-        let mut state = AppState::default();
+        let mut state = test_state();
         state.save_as_template("a");
         state.save_as_template("b");
         assert_eq!(state.saved_templates.len(), 2);
@@ -246,7 +254,7 @@ mod tests {
 
     #[test]
     fn delete_template_out_of_bounds_is_noop() {
-        let mut state = AppState::default();
+        let mut state = test_state();
         state.save_as_template("only");
         state.delete_template(5); // out of bounds
         assert_eq!(state.saved_templates.len(), 1);
@@ -254,7 +262,7 @@ mod tests {
 
     #[test]
     fn load_template_invalid_index_is_noop() {
-        let mut state = AppState::default();
+        let mut state = test_state();
         // No templates exist; loading index 0 should not panic.
         state.load_template(0);
         assert!(state.status_message.is_none());
