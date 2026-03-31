@@ -243,6 +243,11 @@ pub fn handle_interaction(
         handle_create_force_zone(ui, painter, canvas_rect, response, state, is_shift);
     }
 
+    // ── Interaction: Place Mass tool ─────────────────────────────────────
+    if state.active_tool == EditorTool::PlaceMass {
+        handle_place_mass(response, state, body_segments);
+    }
+
     // ── Interaction: Add Body tool ──────────────────────────────────────
     if state.active_tool == EditorTool::AddBody {
         handle_add_body(ui, response, state);
@@ -260,6 +265,7 @@ pub fn handle_interaction(
         && state.active_tool != EditorTool::AddBody
         && state.active_tool != EditorTool::PlaceForce
         && state.active_tool != EditorTool::CreateForceZone
+        && state.active_tool != EditorTool::PlaceMass
         && response.clicked()
     {
         handle_click_selection(response, state, canvas_rect, joint_hit_targets, attachment_hit_targets);
@@ -690,6 +696,28 @@ fn handle_create_force_zone(
     }
 }
 
+// ── Place Mass tool ─────────────────────────────────────────────────────────
+
+fn handle_place_mass(
+    response: &egui::Response,
+    state: &mut AppState,
+    body_segments: &[BodySegment],
+) {
+    if response.clicked() {
+        if let Some(pos) = response.interact_pointer_pos() {
+            let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+
+            // Find nearest body segment within 30px
+            if let Some(seg_hit) = find_nearest_body_segment(pos, body_segments, 30.0) {
+                let body_id = &seg_hit.body_id;
+                let [lx, ly] = state.world_to_body_local(body_id, wx, wy);
+                state.add_point_mass(body_id, 1.0, [lx, ly]); // 1 kg default
+                state.active_tool = EditorTool::Select;
+            }
+        }
+    }
+}
+
 // ── Add Body tool ────────────────────────────────────────────────────────────
 
 fn handle_add_body(
@@ -848,6 +876,9 @@ fn handle_click_selection(
             }
             EditorTool::CreateForceZone => {
                 // Handled by CreateForceZone drag interaction section above.
+            }
+            EditorTool::PlaceMass => {
+                // Handled by PlaceMass interaction section above.
             }
             EditorTool::Select => {
                 let mut hit: Option<SelectedEntity> = None;

@@ -332,6 +332,30 @@ pub fn render_mechanism(
         }
     }
 
+    // ── Draw point masses from blueprint ───────────────────────────
+    if let Some(bp) = &state.blueprint {
+        let point_mass_color = gc(Color32::from_rgb(255, 200, 50));
+        for (body_id, bp_body) in &bp.bodies {
+            if body_id == GROUND_ID {
+                continue;
+            }
+            for pm in &bp_body.point_masses {
+                let local = nalgebra::Vector2::new(pm.local_pos[0], pm.local_pos[1]);
+                let global = mech_state.body_point_global(body_id, &local, q);
+                let sp = view.world_to_screen(global.x, global.y);
+                let screen_pos = Pos2::new(sp[0], sp[1]);
+                painter.circle_filled(screen_pos, 5.0, point_mass_color);
+                painter.text(
+                    screen_pos + Vec2::new(8.0, -8.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    format!("{:.2} kg", pm.mass),
+                    FontId::proportional(9.0),
+                    point_mass_color,
+                );
+            }
+        }
+    }
+
     // ── Draw ground markers and collect ground hit targets ──────────
     if let Some(ground) = bodies.get(GROUND_ID) {
         let mut ground_point_names: Vec<&String> =
@@ -753,6 +777,9 @@ pub fn render_overlays(
             } else {
                 Some("Click and drag on the canvas to define a force zone rectangle (Esc to cancel)".to_string())
             }
+        }
+        EditorTool::PlaceMass => {
+            Some("Click on a link to place a point mass (Esc to cancel)".to_string())
         }
         EditorTool::Select => None,
     };

@@ -718,6 +718,20 @@ impl eframe::App for LinkageApp {
                     self.state.add_body_state = None;
                 }
 
+                let mass_text = if tool == EditorTool::PlaceMass {
+                    egui::RichText::new("+ Mass").color(tool_active_color).strong()
+                } else {
+                    egui::RichText::new("+ Mass").color(tool_color)
+                };
+                if ui.add(egui::Button::new(mass_text))
+                    .on_hover_text("Click on a link to place a point mass")
+                    .clicked()
+                {
+                    self.state.active_tool = EditorTool::PlaceMass;
+                    self.state.draw_link_start = None;
+                    self.state.add_body_state = None;
+                }
+
                 ui.separator();
 
                 // ── Playback controls (green/yellow) ────────────────

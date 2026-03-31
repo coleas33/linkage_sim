@@ -51,6 +51,8 @@ pub enum EditorTool {
     PlaceForce,
     /// Drag-to-define force zone creation: click and drag a rectangle.
     CreateForceZone,
+    /// Click on a link to place a point mass at that position.
+    PlaceMass,
 }
 
 // ── Context menu target ──────────────────────────────────────────────────────
