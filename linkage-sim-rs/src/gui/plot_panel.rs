@@ -493,13 +493,6 @@ fn draw_transmission_angle(
         clicked_x = detect_plot_click(plot_ui);
     });
 
-    ui.add_space(2.0);
-    ui.small("Dashed lines at 40\u{00b0} and 140\u{00b0} mark the ideal transmission angle zone. Outside this range, output force quality degrades rapidly.")
-        .on_hover_text("The transmission angle is the angle between the coupler and the output link at their shared joint. \
-            Near 0\u{00b0} or 180\u{00b0} the mechanism approaches a singularity where input motion \
-            produces almost no output force. The 40\u{00b0}\u{2013}140\u{00b0} guideline represents \
-            the zone of acceptable force transmission for most applications.");
-
     clicked_x
 }
 
@@ -556,14 +549,6 @@ fn draw_driver_torque(
         draw_range_boundary_markers(plot_ui, sweep, units);
         clicked_x = detect_plot_click(plot_ui);
     });
-
-    ui.add_space(2.0);
-    let sign_label = if sweep.sweep_mode.is_stroke() {
-        "Positive = force required to extend actuator against load. Negative = mechanism assists motion."
-    } else {
-        "Positive = torque required to maintain prescribed motion (resisting load). Negative = mechanism assists motion."
-    };
-    ui.small(sign_label);
 
     clicked_x
 }
@@ -651,14 +636,6 @@ fn draw_inverse_dynamics(
         draw_range_boundary_markers(plot_ui, sweep, units);
         clicked_x = detect_plot_click(plot_ui);
     });
-
-    ui.add_space(2.0);
-    let id_sign_label = if sweep.sweep_mode.is_stroke() {
-        "Positive = force required to maintain prescribed motion including inertia effects. Negative = mechanism assists motion."
-    } else {
-        "Positive = torque required to maintain prescribed motion including inertia effects. Negative = mechanism assists motion."
-    };
-    ui.small(id_sign_label);
 
     clicked_x
 }
