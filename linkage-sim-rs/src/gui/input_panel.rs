@@ -14,7 +14,7 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
     ui.separator();
 
     // ── Crank Angle ────────────────────────────────────────────────
-    let accent = egui::Color32::from_rgb(80, 160, 255);
+    let accent = state.nc(egui::Color32::from_rgb(80, 160, 255));
     egui::CollapsingHeader::new(
         egui::RichText::new("Crank Angle").color(accent),
     )
@@ -98,7 +98,7 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
         });
 
     // ── Gravity ──────────────────────────────────────────────────────
-    let gravity_color = egui::Color32::from_rgb(200, 160, 80);
+    let gravity_color = state.nc(egui::Color32::from_rgb(200, 160, 80));
     egui::CollapsingHeader::new(
         egui::RichText::new("Gravity").color(gravity_color),
     )
@@ -140,7 +140,7 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
         });
 
     // ── Driver ───────────────────────────────────────────────────────
-    let driver_color = egui::Color32::from_rgb(100, 220, 140);
+    let driver_color = state.nc(egui::Color32::from_rgb(100, 220, 140));
     egui::CollapsingHeader::new(
         egui::RichText::new("Driver").color(driver_color),
     )
@@ -160,7 +160,7 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
         });
 
     // ── Simulation ───────────────────────────────────────────────────
-    let sim_color = egui::Color32::from_rgb(100, 180, 255);
+    let sim_color = state.nc(egui::Color32::from_rgb(100, 180, 255));
     egui::CollapsingHeader::new(
         egui::RichText::new("\u{23F1} Simulation").color(sim_color),
     )
@@ -482,7 +482,7 @@ fn draw_driver_type_selector(ui: &mut egui::Ui, state: &mut AppState) {
 
         // Show error if present
         if let Some(err) = &state.expr_error {
-            ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
+            ui.colored_label(state.nc(egui::Color32::from_rgb(220, 80, 80)), err);
         }
 
         if changed {

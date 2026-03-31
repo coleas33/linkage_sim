@@ -77,7 +77,7 @@ pub fn render_mechanism(
             if trace.len() < 2 {
                 continue;
             }
-            let color = trace_colors[color_idx % trace_colors.len()];
+            let color = gc(trace_colors[color_idx % trace_colors.len()]);
             color_idx += 1;
 
             let screen_pts: Vec<Pos2> = trace

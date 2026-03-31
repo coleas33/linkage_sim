@@ -41,7 +41,7 @@ pub(super) fn draw_force_elements_inner(
     pending: &mut Option<PendingPropertyEdit>,
 ) {
     ui.separator();
-    let force_color = eframe::egui::Color32::from_rgb(255, 140, 60);
+    let force_color = state.nc(eframe::egui::Color32::from_rgb(255, 140, 60));
     eframe::egui::CollapsingHeader::new(
         eframe::egui::RichText::new("Force Elements").color(force_color),
     )

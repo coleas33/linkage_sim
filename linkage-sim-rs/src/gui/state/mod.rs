@@ -451,6 +451,15 @@ impl Default for AppState {
 // ── Methods that remain in mod.rs (core solve/animation/sample loading) ──────
 
 impl AppState {
+    /// Convert a color to grayscale when Nathan Mode is active; pass-through otherwise.
+    pub fn nc(&self, c: eframe::egui::Color32) -> eframe::egui::Color32 {
+        if self.nathan_mode {
+            crate::gui::canvas::to_grayscale(c)
+        } else {
+            c
+        }
+    }
+
     /// Reset to an empty mechanism (just ground body), clearing all state.
     pub fn new_empty_mechanism(&mut self) {
         let fresh = AppState::default();

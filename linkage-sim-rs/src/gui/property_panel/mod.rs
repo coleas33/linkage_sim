@@ -54,7 +54,7 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
         pending = Some(PendingPropertyEdit::SetEditorBody(body_ids[0].clone()));
     }
 
-    let link_color = egui::Color32::from_rgb(70, 150, 240);
+    let link_color = state.nc(egui::Color32::from_rgb(70, 150, 240));
     egui::CollapsingHeader::new(
         egui::RichText::new("Link Editor").color(link_color),
     )
@@ -379,7 +379,7 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
     draw_diagnostics_section(ui, state);
 
     // ── Joint Reactions (live, always visible) ──────────────────────
-    let react_color = egui::Color32::from_rgb(255, 100, 100);
+    let react_color = state.nc(egui::Color32::from_rgb(255, 100, 100));
     egui::CollapsingHeader::new(
         egui::RichText::new("Joint Reactions").color(react_color),
     )
@@ -430,7 +430,7 @@ fn draw_ground_pivots_section(
 
     let units = &state.display_units;
 
-    let pivot_color = egui::Color32::from_rgb(180, 130, 220);
+    let pivot_color = state.nc(egui::Color32::from_rgb(180, 130, 220));
     egui::CollapsingHeader::new(
         egui::RichText::new("Ground Pivots").color(pivot_color),
     )

@@ -144,41 +144,42 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
     ui.separator();
 
     let current_driver_display = state.display_units.angle(state.driver_angle);
+    let nm = state.nathan_mode;
 
     // Each driver-angle-on-X-axis plot returns Some(x) when clicked, where x
     // is the X coordinate in display angle units. CouplerTrace (X vs Y) does
     // not participate in scrubbing.
     let clicked_display_angle: Option<f64> = match selected_tab {
         PlotTab::CouplerTrace => {
-            draw_coupler_trace(ui, sweep, &state.display_units);
+            draw_coupler_trace(ui, sweep, &state.display_units, nm);
             None
         }
         PlotTab::BodyAngles => {
-            draw_body_angles(ui, sweep, current_driver_display, &state.display_units)
+            draw_body_angles(ui, sweep, current_driver_display, &state.display_units, nm)
         }
         PlotTab::TransmissionAngle => {
-            draw_transmission_angle(ui, sweep, current_driver_display, &state.display_units)
+            draw_transmission_angle(ui, sweep, current_driver_display, &state.display_units, nm)
         }
         PlotTab::DriverTorque => {
-            draw_driver_torque(ui, sweep, current_driver_display, &state.display_units)
+            draw_driver_torque(ui, sweep, current_driver_display, &state.display_units, nm)
         }
         PlotTab::InverseDynamics => {
-            draw_inverse_dynamics(ui, sweep, current_driver_display, &state.display_units)
+            draw_inverse_dynamics(ui, sweep, current_driver_display, &state.display_units, nm)
         }
         PlotTab::Energy => {
-            draw_energy(ui, sweep, current_driver_display, &state.display_units)
+            draw_energy(ui, sweep, current_driver_display, &state.display_units, nm)
         }
         PlotTab::MechanicalAdvantage => {
-            draw_mechanical_advantage(ui, sweep, current_driver_display, &state.display_units)
+            draw_mechanical_advantage(ui, sweep, current_driver_display, &state.display_units, nm)
         }
         PlotTab::JointReactions => {
-            draw_joint_reactions(ui, sweep, current_driver_display, &state.display_units)
+            draw_joint_reactions(ui, sweep, current_driver_display, &state.display_units, nm)
         }
         PlotTab::CouplerVelocity => {
-            draw_coupler_velocity(ui, sweep, current_driver_display, &state.display_units)
+            draw_coupler_velocity(ui, sweep, current_driver_display, &state.display_units, nm)
         }
         PlotTab::CouplerAcceleration => {
-            draw_coupler_acceleration(ui, sweep, current_driver_display, &state.display_units)
+            draw_coupler_acceleration(ui, sweep, current_driver_display, &state.display_units, nm)
         }
     };
 
@@ -255,7 +256,7 @@ fn detect_plot_click(plot_ui: &egui_plot::PlotUi) -> Option<f64> {
 ///
 /// When `sweep.active_range` is set, the full curve is drawn faded/dashed for
 /// context and the active sub-range is overdrawn solid.
-fn draw_coupler_trace(ui: &mut egui::Ui, sweep: &SweepData, units: &DisplayUnits) {
+fn draw_coupler_trace(ui: &mut egui::Ui, sweep: &SweepData, units: &DisplayUnits, nathan_mode: bool) {
     let axis_label = units.length_axis_label();
     let plot = Plot::new("coupler_trace_plot")
         .data_aspect(1.0) // equal axis scaling
@@ -266,7 +267,7 @@ fn draw_coupler_trace(ui: &mut egui::Ui, sweep: &SweepData, units: &DisplayUnits
         .legend(egui_plot::Legend::default());
 
     plot.show(ui, |plot_ui| {
-        let colors = series_colors();
+        let colors = series_colors(nathan_mode);
         let mut color_idx = 0;
 
         let mut keys: Vec<&String> = sweep.coupler_traces.keys().collect();
@@ -334,6 +335,7 @@ fn draw_body_angles(
     sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
+    nathan_mode: bool,
 ) -> Option<f64> {
     // Sweep stores angles in degrees (or stroke in meters); convert on the fly.
     let angle_label = match units.angle {
@@ -349,7 +351,7 @@ fn draw_body_angles(
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
-        let colors = series_colors();
+        let colors = series_colors(nathan_mode);
         let mut color_idx = 0;
 
         let mut body_ids: Vec<&String> = sweep.body_angles.keys().collect();
@@ -375,6 +377,7 @@ fn draw_body_angles(
                 &pairs,
                 sweep,
                 units,
+                nathan_mode,
             );
             color_idx += 1;
         }
@@ -404,6 +407,7 @@ fn draw_transmission_angle(
     sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
+    nathan_mode: bool,
 ) -> Option<f64> {
     let Some(ta) = &sweep.transmission_angles else {
         ui.label("Transmission angle not available for this mechanism.");
@@ -437,6 +441,7 @@ fn draw_transmission_angle(
             &pairs,
             sweep,
             units,
+            nathan_mode,
         );
 
         // Ideal zone: 40-140 degrees (y-axis stays in degrees always).
@@ -506,6 +511,7 @@ fn draw_driver_torque(
     sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
+    nathan_mode: bool,
 ) -> Option<f64> {
     let Some(torques) = &sweep.driver_torques else {
         ui.label("Driver torque data not available.");
@@ -536,6 +542,7 @@ fn draw_driver_torque(
             &pairs,
             sweep,
             units,
+            nathan_mode,
         );
 
         // Vertical marker at current driver angle.
@@ -570,6 +577,7 @@ fn draw_inverse_dynamics(
     sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
+    nathan_mode: bool,
 ) -> Option<f64> {
     if sweep.inverse_dynamics_torques.is_empty() {
         ui.label("Inverse dynamics data not available.");
@@ -601,6 +609,7 @@ fn draw_inverse_dynamics(
             &id_pairs,
             sweep,
             units,
+            nathan_mode,
         );
 
         // Overlay statics torque/force if available (orange, dashed).
@@ -618,9 +627,14 @@ fn draw_inverse_dynamics(
                 })
                 .collect();
             let statics_label = if is_stroke { "Statics Force" } else { "Statics Torque" };
+            let statics_color = if nathan_mode {
+                crate::gui::canvas::to_grayscale(egui::Color32::from_rgb(255, 150, 80))
+            } else {
+                egui::Color32::from_rgb(255, 150, 80)
+            };
             plot_ui.line(
                 Line::new(statics_label, st_points)
-                    .color(egui::Color32::from_rgb(255, 150, 80))
+                    .color(statics_color)
                     .style(egui_plot::LineStyle::Dashed { length: 4.0 })
                     .width(1.5),
             );
@@ -657,6 +671,7 @@ fn draw_energy(
     sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
+    nathan_mode: bool,
 ) -> Option<f64> {
     if sweep.kinetic_energy.is_empty() {
         ui.label("Energy data not available (velocity solve needed).");
@@ -688,6 +703,7 @@ fn draw_energy(
             &ke_pairs,
             sweep,
             units,
+            nathan_mode,
         );
 
         // Potential energy
@@ -706,6 +722,7 @@ fn draw_energy(
             &pe_pairs,
             sweep,
             units,
+            nathan_mode,
         );
 
         // Total energy
@@ -724,6 +741,7 @@ fn draw_energy(
             &te_pairs,
             sweep,
             units,
+            nathan_mode,
         );
 
         // Vertical marker at current driver angle.
@@ -748,6 +766,7 @@ fn draw_mechanical_advantage(
     sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
+    nathan_mode: bool,
 ) -> Option<f64> {
     if sweep.mechanical_advantage.is_empty() {
         ui.label("Mechanical advantage data not available.");
@@ -779,6 +798,7 @@ fn draw_mechanical_advantage(
             &pairs,
             sweep,
             units,
+            nathan_mode,
         );
 
         // Unity reference line (MA = 1).
@@ -817,6 +837,7 @@ fn draw_joint_reactions(
     sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
+    nathan_mode: bool,
 ) -> Option<f64> {
     if sweep.joint_reaction_magnitudes.is_empty() {
         ui.label("Joint reaction data not available.");
@@ -832,7 +853,7 @@ fn draw_joint_reactions(
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
-        let colors = series_colors();
+        let colors = series_colors(nathan_mode);
         let mut color_idx = 0;
 
         let mut joint_ids: Vec<&String> = sweep.joint_reaction_magnitudes.keys().collect();
@@ -857,6 +878,7 @@ fn draw_joint_reactions(
                 &pairs,
                 sweep,
                 units,
+                nathan_mode,
             );
             color_idx += 1;
         }
@@ -886,6 +908,7 @@ fn draw_coupler_velocity(
     sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
+    nathan_mode: bool,
 ) -> Option<f64> {
     if sweep.coupler_velocities.is_empty() {
         ui.label("Coupler velocity data not available.");
@@ -901,7 +924,7 @@ fn draw_coupler_velocity(
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
-        let colors = series_colors();
+        let colors = series_colors(nathan_mode);
         let mut color_idx = 0;
 
         let mut keys: Vec<&String> = sweep.coupler_velocities.keys().collect();
@@ -926,6 +949,7 @@ fn draw_coupler_velocity(
                 &pairs,
                 sweep,
                 units,
+                nathan_mode,
             );
             color_idx += 1;
         }
@@ -955,6 +979,7 @@ fn draw_coupler_acceleration(
     sweep: &SweepData,
     current_driver_display: f64,
     units: &DisplayUnits,
+    nathan_mode: bool,
 ) -> Option<f64> {
     if sweep.coupler_accelerations.is_empty() {
         ui.label("Coupler acceleration data not available.");
@@ -970,7 +995,7 @@ fn draw_coupler_acceleration(
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
-        let colors = series_colors();
+        let colors = series_colors(nathan_mode);
         let mut color_idx = 0;
 
         let mut keys: Vec<&String> = sweep.coupler_accelerations.keys().collect();
@@ -995,6 +1020,7 @@ fn draw_coupler_acceleration(
                 &pairs,
                 sweep,
                 units,
+                nathan_mode,
             );
             color_idx += 1;
         }
@@ -1097,7 +1123,10 @@ fn draw_angle_series_with_range(
     x_deg_and_y: &[(f64, f64)],
     sweep: &SweepData,
     units: &DisplayUnits,
+    nathan_mode: bool,
 ) {
+    use crate::gui::canvas::to_grayscale;
+    let color = if nathan_mode { to_grayscale(color) } else { color };
     if x_deg_and_y.is_empty() {
         return;
     }
@@ -1149,8 +1178,11 @@ fn draw_angle_series_with_range(
 }
 
 /// A palette of distinguishable colors for plot series.
-fn series_colors() -> Vec<egui::Color32> {
-    vec![
+///
+/// When `nathan_mode` is true, all colors are converted to grayscale.
+fn series_colors(nathan_mode: bool) -> Vec<egui::Color32> {
+    use crate::gui::canvas::to_grayscale;
+    let raw = vec![
         egui::Color32::from_rgb(100, 200, 255), // light blue
         egui::Color32::from_rgb(255, 150, 80),  // orange
         egui::Color32::from_rgb(120, 220, 120), // green
@@ -1159,5 +1191,10 @@ fn series_colors() -> Vec<egui::Color32> {
         egui::Color32::from_rgb(255, 220, 100), // yellow
         egui::Color32::from_rgb(150, 200, 200), // teal
         egui::Color32::from_rgb(255, 150, 200), // pink
-    ]
+    ];
+    if nathan_mode {
+        raw.into_iter().map(to_grayscale).collect()
+    } else {
+        raw
+    }
 }

@@ -24,14 +24,14 @@ pub fn draw_force_toolbar(ui: &mut egui::Ui, state: &AppState) -> Option<Pending
 
         // Show the current target body so the user knows where forces will be added
         if let Some(ref body_id) = selected_body {
-            ui.colored_label(egui::Color32::from_rgb(120, 180, 255), format!("Target: {}", body_id));
+            ui.colored_label(state.nc(egui::Color32::from_rgb(120, 180, 255)), format!("Target: {}", body_id));
         } else {
             ui.colored_label(egui::Color32::GRAY, "Target: (select a body)");
         }
         ui.separator();
 
-        let torque_color = egui::Color32::from_rgb(100, 220, 140);
-        let force_color = egui::Color32::from_rgb(255, 165, 80);
+        let torque_color = state.nc(egui::Color32::from_rgb(100, 220, 140));
+        let force_color = state.nc(egui::Color32::from_rgb(255, 165, 80));
 
         // -- Joint Torques dropdown --
         let jt_resp = ui.menu_button(

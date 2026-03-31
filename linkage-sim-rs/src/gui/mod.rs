@@ -660,8 +660,8 @@ impl eframe::App for LinkageApp {
                 let tool = self.state.active_tool;
 
                 // ── Editor tools (blue accent) ──────────────────────
-                let tool_color = egui::Color32::from_rgb(80, 160, 255);
-                let tool_active_color = egui::Color32::from_rgb(40, 120, 220);
+                let tool_color = self.state.nc(egui::Color32::from_rgb(80, 160, 255));
+                let tool_active_color = self.state.nc(egui::Color32::from_rgb(40, 120, 220));
 
                 let select_text = if tool == EditorTool::Select {
                     egui::RichText::new("Select").color(tool_active_color).strong()
@@ -693,7 +693,7 @@ impl eframe::App for LinkageApp {
                 }
 
                 let body_text = egui::RichText::new("+ Body [WIP]").color(
-                    egui::Color32::from_rgb(120, 120, 120)
+                    self.state.nc(egui::Color32::from_rgb(120, 120, 120))
                 );
                 ui.add_enabled(false, egui::Button::new(body_text))
                     .on_hover_text("Multi-point body creation (coming soon — use Draw Link for bars)");
@@ -723,9 +723,9 @@ impl eframe::App for LinkageApp {
                 // ── Playback controls (green/yellow) ────────────────
                 let is_playing = self.state.playing;
                 let (label, color) = if is_playing {
-                    ("Pause", egui::Color32::from_rgb(240, 200, 60))
+                    ("Pause", self.state.nc(egui::Color32::from_rgb(240, 200, 60)))
                 } else {
-                    ("\u{25B6}  Play", egui::Color32::from_rgb(60, 220, 90))
+                    ("\u{25B6}  Play", self.state.nc(egui::Color32::from_rgb(60, 220, 90)))
                 };
                 if ui.add(egui::Button::new(
                     egui::RichText::new(label).color(color).strong().size(14.0)
@@ -756,7 +756,7 @@ impl eframe::App for LinkageApp {
                 ui.separator();
 
                 // ── Sample mechanism selector (purple) ──────────────
-                let sample_color = egui::Color32::from_rgb(180, 140, 255);
+                let sample_color = self.state.nc(egui::Color32::from_rgb(180, 140, 255));
                 let samples_resp = ui.menu_button(
                     egui::RichText::new("Samples v").color(sample_color),
                     |ui| {
@@ -798,12 +798,12 @@ impl eframe::App for LinkageApp {
         // --- Status bar ---
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                let dim = egui::Color32::from_rgb(140, 145, 160);
-                let bright = egui::Color32::from_rgb(200, 205, 220);
-                let green = egui::Color32::from_rgb(80, 200, 80);
-                let red = egui::Color32::from_rgb(220, 70, 70);
-                let blue = egui::Color32::from_rgb(100, 180, 255);
-                let warn = egui::Color32::from_rgb(255, 180, 50);
+                let dim = self.state.nc(egui::Color32::from_rgb(140, 145, 160));
+                let bright = self.state.nc(egui::Color32::from_rgb(200, 205, 220));
+                let green = self.state.nc(egui::Color32::from_rgb(80, 200, 80));
+                let red = self.state.nc(egui::Color32::from_rgb(220, 70, 70));
+                let blue = self.state.nc(egui::Color32::from_rgb(100, 180, 255));
+                let warn = self.state.nc(egui::Color32::from_rgb(255, 180, 50));
 
                 if let Some(sample) = self.state.current_sample {
                     ui.colored_label(bright, sample.label());
@@ -877,7 +877,7 @@ impl eframe::App for LinkageApp {
                         ui.separator();
                         let label = format!("{} error(s)", self.state.error_log.len());
                         if ui
-                            .colored_label(egui::Color32::from_rgb(220, 80, 80), &label)
+                            .colored_label(self.state.nc(egui::Color32::from_rgb(220, 80, 80)), &label)
                             .on_hover_text("Click to show error panel")
                             .clicked()
                         {
@@ -891,7 +891,7 @@ impl eframe::App for LinkageApp {
                 // ── Status toast (e.g. "Saved: foo.json") ──────────────
                 if let Some(ref msg) = self.state.status_message {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.colored_label(egui::Color32::from_rgb(100, 220, 100), msg);
+                        ui.colored_label(self.state.nc(egui::Color32::from_rgb(100, 220, 100)), msg);
                     });
                 }
             });
@@ -902,6 +902,7 @@ impl eframe::App for LinkageApp {
             egui::TopBottomPanel::bottom("plot_panel")
                 .resizable(true)
                 .default_height(250.0)
+                .height_range(100.0..=ctx.screen_rect().height() * 0.5)
                 .show(ctx, |ui| {
                     plot_panel::draw_plot_panel(ui, &mut self.state);
                 });
