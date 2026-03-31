@@ -816,14 +816,24 @@ fn handle_click_selection(
 
                 // Tutorial auto-zoom: after placing the first ground pivot,
                 // zoom out so ~120mm is visible, giving room for the second.
-                if state.tutorial.active && state.tutorial.step == 1 {
+                // Check tutorial.active on ANY step (user may not click Next).
+                if state.tutorial.active {
                     let count = state.blueprint.as_ref()
                         .and_then(|bp| bp.bodies.get("ground"))
                         .map(|g| g.attachment_points.len())
                         .unwrap_or(0);
                     if count == 1 {
                         // 0.12 m visible across the canvas width.
-                        state.view.scale = canvas_rect.width() / 0.12;
+                        let new_scale = canvas_rect.width() / 0.12;
+                        if new_scale < state.view.scale {
+                            state.view.scale = new_scale;
+                            // Center on the placed pivot
+                            let sp = state.view.world_to_screen(sx as f64, sy as f64);
+                            let cx = canvas_rect.center().x;
+                            let cy = canvas_rect.center().y;
+                            state.view.offset[0] += cx - sp[0];
+                            state.view.offset[1] += cy - sp[1];
+                        }
                     }
                 }
             }

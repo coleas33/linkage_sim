@@ -679,16 +679,13 @@ impl eframe::App for LinkageApp {
                     self.state.add_body_state = None;
                 }
 
-                let body_active = tool == EditorTool::AddBody || self.state.add_body_state.is_some();
-                let body_text = if body_active {
-                    egui::RichText::new("+ Body").color(tool_active_color).strong()
-                } else {
-                    egui::RichText::new("+ Body").color(tool_color)
-                };
-                if ui.add(egui::Button::new(body_text))
-                    .on_hover_text("Click to place points, double-click to finish")
-                    .clicked()
-                {
+                let body_text = egui::RichText::new("+ Body [WIP]").color(
+                    egui::Color32::from_rgb(120, 120, 120)
+                );
+                ui.add_enabled(false, egui::Button::new(body_text))
+                    .on_hover_text("Multi-point body creation (coming soon — use Draw Link for bars)");
+                if false {
+                    // Disabled — WIP. Original handler preserved for future use.
                     self.state.active_tool = EditorTool::AddBody;
                     self.state.draw_link_start = None;
                     self.state.add_body_state = None;
