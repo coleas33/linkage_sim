@@ -37,6 +37,21 @@ pub(crate) fn joint_body_ids(joint: &JointJson) -> (&str, &str) {
     }
 }
 
+/// Extract (body_i, point_i, body_j, point_j) from a JointJson.
+///
+/// Returns `None` for `RevoluteDriver` which has no point fields.
+pub(crate) fn joint_body_point_ids(joint: &JointJson) -> Option<(&str, &str, &str, &str)> {
+    match joint {
+        JointJson::Revolute { body_i, point_i, body_j, point_j, .. }
+        | JointJson::Fixed { body_i, point_i, body_j, point_j, .. }
+        | JointJson::Prismatic { body_i, point_i, body_j, point_j, .. }
+        | JointJson::CamFollower { body_i, point_i, body_j, point_j, .. } => {
+            Some((body_i.as_str(), point_i.as_str(), body_j.as_str(), point_j.as_str()))
+        }
+        JointJson::RevoluteDriver { .. } => None,
+    }
+}
+
 /// Returns true if the joint references the given (body_id, point_name) pair.
 ///
 /// Used by `remove_attachment_point` to cascade-delete joints that depend on

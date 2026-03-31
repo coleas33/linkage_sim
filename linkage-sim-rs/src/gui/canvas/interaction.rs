@@ -158,6 +158,33 @@ pub fn handle_interaction(
         }
     }
 
+    // ── Interaction: Arrow key nudge for selected entity ────────────────
+    if state.selected.is_some() && state.blueprint.is_some() {
+        let shift = ui.input(|i| i.modifiers.shift);
+        let base_step = state.grid.spacing_m;
+        let step = if shift { base_step * 10.0 } else { base_step };
+
+        let mut dx = 0.0_f64;
+        let mut dy = 0.0_f64;
+
+        if ui.input(|i| i.key_pressed(egui::Key::ArrowLeft))  { dx = -step; }
+        if ui.input(|i| i.key_pressed(egui::Key::ArrowRight)) { dx = step; }
+        if ui.input(|i| i.key_pressed(egui::Key::ArrowUp))    { dy = step; }
+        if ui.input(|i| i.key_pressed(egui::Key::ArrowDown))  { dy = -step; }
+
+        if dx != 0.0 || dy != 0.0 {
+            match &state.selected.clone() {
+                Some(SelectedEntity::Body(body_id)) => {
+                    state.nudge_body(body_id, dx, dy);
+                }
+                Some(SelectedEntity::Joint(joint_id)) => {
+                    state.nudge_joint(joint_id, dx, dy);
+                }
+                _ => {}
+            }
+        }
+    }
+
     // ── Interaction: Fit to View (F key) ────────────────────────────────
     if ui.input(|i| i.key_pressed(egui::Key::F)) {
         state.fit_to_view(canvas_rect.width(), canvas_rect.height());

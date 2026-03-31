@@ -6,7 +6,7 @@ use crate::core::state::GROUND_ID;
 use crate::io::{BodyJson, JointJson};
 
 use super::AppState;
-use super::blueprint_ops::{joint_body_ids, joint_references_point, driver_body_ids, generate_unique_id};
+use super::blueprint_ops::{joint_body_ids, joint_body_point_ids, joint_references_point, driver_body_ids, generate_unique_id};
 
 impl AppState {
     // ── Raw blueprint helpers (no undo / no rebuild) ──────────────────
@@ -132,6 +132,91 @@ impl AppState {
             ground.attachment_points.insert(name.to_string(), [x, y]);
         }
         self.rebuild();
+    }
+
+    /// Nudge all attachment points on a body by `(dx, dy)` in world coordinates.
+    ///
+    /// For the ground body, attachment points are already in world coordinates so
+    /// the delta is applied directly. For moving bodies the delta is rotated into
+    /// the body-local frame using the current pose before being applied.
+    ///
+    /// Pushes undo, mutates the blueprint, and rebuilds.
+    /// No-op if the blueprint or body is missing.
+    pub fn nudge_body(&mut self, body_id: &str, dx: f64, dy: f64) {
+        self.push_undo();
+        // For non-ground bodies we need to rotate the world-space delta into
+        // the body-local frame so that the attachment point offsets shift
+        // correctly.
+        let (local_dx, local_dy) = self.world_delta_to_local(body_id, dx, dy);
+        let Some(bp) = &mut self.blueprint else { return };
+        let Some(body) = bp.bodies.get_mut(body_id) else { return };
+        for point in body.attachment_points.values_mut() {
+            point[0] += local_dx;
+            point[1] += local_dy;
+        }
+        self.rebuild();
+    }
+
+    /// Nudge both attachment points of a joint by `(dx, dy)` in world coordinates.
+    ///
+    /// Each side of the joint is shifted independently using the appropriate
+    /// body-local delta. Ground-side points use world coordinates directly.
+    ///
+    /// Pushes undo, mutates the blueprint, and rebuilds.
+    /// No-op if the blueprint or joint is missing, or the joint has no point
+    /// fields (e.g. `RevoluteDriver`).
+    pub fn nudge_joint(&mut self, joint_id: &str, dx: f64, dy: f64) {
+        self.push_undo();
+
+        // Extract the four IDs we need before borrowing self.blueprint mutably.
+        let ids = {
+            let Some(bp) = &self.blueprint else { return };
+            let Some(joint) = bp.joints.get(joint_id) else { return };
+            let Some((bi, pi, bj, pj)) = joint_body_point_ids(joint) else { return };
+            (bi.to_string(), pi.to_string(), bj.to_string(), pj.to_string())
+        };
+        let (body_i, point_i, body_j, point_j) = ids;
+
+        // Convert world delta to each body's local frame.
+        let (di_x, di_y) = self.world_delta_to_local(&body_i, dx, dy);
+        let (dj_x, dj_y) = self.world_delta_to_local(&body_j, dx, dy);
+
+        let Some(bp) = &mut self.blueprint else { return };
+        if let Some(body) = bp.bodies.get_mut(&body_i) {
+            if let Some(pt) = body.attachment_points.get_mut(&point_i) {
+                pt[0] += di_x;
+                pt[1] += di_y;
+            }
+        }
+        if let Some(body) = bp.bodies.get_mut(&body_j) {
+            if let Some(pt) = body.attachment_points.get_mut(&point_j) {
+                pt[0] += dj_x;
+                pt[1] += dj_y;
+            }
+        }
+        self.rebuild();
+    }
+
+    /// Convert a world-space delta `(dx, dy)` into body-local coordinates.
+    ///
+    /// For the ground body (which stores points in world coordinates) this
+    /// returns the delta unchanged. For moving bodies the inverse rotation
+    /// of the current pose angle is applied.
+    fn world_delta_to_local(&self, body_id: &str, dx: f64, dy: f64) -> (f64, f64) {
+        if body_id == GROUND_ID {
+            return (dx, dy);
+        }
+        let theta = match &self.mechanism {
+            Some(mech) => match mech.state().get_index(body_id) {
+                Ok(idx) => self.q[idx.q_start + 2],
+                Err(_) => return (dx, dy),
+            },
+            None => return (dx, dy),
+        };
+        let cos_t = theta.cos();
+        let sin_t = theta.sin();
+        // Inverse rotation: A^T * [dx, dy]
+        (cos_t * dx + sin_t * dy, -sin_t * dx + cos_t * dy)
     }
 
     // ── Create / delete operations ──────────────────────────────────────
