@@ -902,7 +902,6 @@ impl eframe::App for LinkageApp {
             egui::TopBottomPanel::bottom("plot_panel")
                 .resizable(true)
                 .default_height(250.0)
-                .height_range(100.0..=ctx.screen_rect().height() * 0.5)
                 .show(ctx, |ui| {
                     plot_panel::draw_plot_panel(ui, &mut self.state);
                 });
