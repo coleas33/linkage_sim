@@ -264,7 +264,8 @@ fn draw_coupler_trace(ui: &mut egui::Ui, sweep: &SweepData, units: &DisplayUnits
         .allow_drag(false)
         .x_axis_label(format!("X ({})", axis_label))
         .y_axis_label(format!("Y ({})", axis_label))
-        .legend(egui_plot::Legend::default());
+        .legend(egui_plot::Legend::default())
+        .height(ui.available_height().max(50.0));
 
     plot.show(ui, |plot_ui| {
         let colors = series_colors(nathan_mode);
@@ -347,7 +348,8 @@ fn draw_body_angles(
         .allow_drag(false)
         .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label(format!("Body Angle ({})", angle_label))
-        .legend(egui_plot::Legend::default());
+        .legend(egui_plot::Legend::default())
+        .height(ui.available_height().max(50.0));
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -422,7 +424,8 @@ fn draw_transmission_angle(
         .allow_drag(false)
         .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label("Transmission Angle (deg)")
-        .legend(egui_plot::Legend::default());
+        .legend(egui_plot::Legend::default())
+        .height(ui.available_height().max(50.0));
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -516,7 +519,8 @@ fn draw_driver_torque(
         .allow_drag(false)
         .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label(driver_effort_y_label(sweep))
-        .legend(egui_plot::Legend::default());
+        .legend(egui_plot::Legend::default())
+        .height(ui.available_height().max(50.0));
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -574,7 +578,8 @@ fn draw_inverse_dynamics(
         .allow_drag(false)
         .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label(driver_effort_y_label(sweep))
-        .legend(egui_plot::Legend::default());
+        .legend(egui_plot::Legend::default())
+        .height(ui.available_height().max(50.0));
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -660,7 +665,8 @@ fn draw_energy(
         .allow_drag(false)
         .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label("Energy (J)")
-        .legend(egui_plot::Legend::default());
+        .legend(egui_plot::Legend::default())
+        .height(ui.available_height().max(50.0));
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -755,7 +761,8 @@ fn draw_mechanical_advantage(
         .allow_drag(false)
         .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label("Mechanical Advantage")
-        .legend(egui_plot::Legend::default());
+        .legend(egui_plot::Legend::default())
+        .height(ui.available_height().max(50.0));
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -826,7 +833,8 @@ fn draw_joint_reactions(
         .allow_drag(false)
         .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label("Reaction Force (N)")
-        .legend(egui_plot::Legend::default());
+        .legend(egui_plot::Legend::default())
+        .height(ui.available_height().max(50.0));
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -897,7 +905,8 @@ fn draw_coupler_velocity(
         .allow_drag(false)
         .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label("Velocity (m/s)")
-        .legend(egui_plot::Legend::default());
+        .legend(egui_plot::Legend::default())
+        .height(ui.available_height().max(50.0));
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -968,7 +977,8 @@ fn draw_coupler_acceleration(
         .allow_drag(false)
         .x_axis_label(x_axis_label_for_sweep(sweep, units))
         .y_axis_label("Acceleration (m/s\u{00b2})")
-        .legend(egui_plot::Legend::default());
+        .legend(egui_plot::Legend::default())
+        .height(ui.available_height().max(50.0));
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
