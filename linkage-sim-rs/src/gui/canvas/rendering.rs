@@ -41,6 +41,11 @@ pub fn render_mechanism(
     let view = &state.view;
     let selected = &state.selected;
 
+    // Nathan Mode: optional grayscale color transform for canvas elements.
+    let gc = |c: Color32| -> Color32 {
+        if state.nathan_mode { to_grayscale(c) } else { c }
+    };
+
     // ── Ground line (y=0) — spans full visible viewport ────────────
     {
         let world_left = view.screen_to_world(canvas_rect.left(), 0.0);
@@ -49,7 +54,7 @@ pub fn render_mechanism(
         let right = view.world_to_screen(world_right[0], 0.0);
         painter.line_segment(
             [Pos2::new(left[0], left[1]), Pos2::new(right[0], right[1])],
-            Stroke::new(1.0, GROUND_LINE_COLOR),
+            Stroke::new(1.0, gc(GROUND_LINE_COLOR)),
         );
     }
 
@@ -118,9 +123,9 @@ pub fn render_mechanism(
         let is_selected =
             matches!(selected, Some(SelectedEntity::Body(s)) if s == body_id);
         let color = if is_selected {
-            BODY_SELECTED_COLOR
+            gc(BODY_SELECTED_COLOR)
         } else {
-            BODY_COLOR
+            gc(BODY_COLOR)
         };
 
         // Collect attachment point positions, sorted by name for consistency.
@@ -374,11 +379,11 @@ pub fn render_mechanism(
         let is_highlighted =
             highlight_joint.as_deref() == Some(joint.id());
         let color = if is_selected {
-            JOINT_SELECTED_COLOR
+            gc(JOINT_SELECTED_COLOR)
         } else if is_driver {
-            DRIVER_JOINT_COLOR
+            gc(DRIVER_JOINT_COLOR)
         } else {
-            JOINT_COLOR
+            gc(JOINT_COLOR)
         };
 
         if joint.is_revolute() {
@@ -416,7 +421,7 @@ pub fn render_mechanism(
             );
             // Inner dot for driver joint
             if is_driver {
-                painter.circle_filled(center, 3.0, DRIVER_JOINT_COLOR);
+                painter.circle_filled(center, 3.0, gc(DRIVER_JOINT_COLOR));
             }
         } else if joint.is_prismatic() {
             let half = JOINT_RADIUS;
@@ -1850,10 +1855,15 @@ pub fn draw_grid(
     rect: Rect,
     view: &ViewTransform,
     grid: &GridSettings,
+    nathan_mode: bool,
 ) {
     if !grid.show_grid {
         return;
     }
+
+    let gc = |c: Color32| -> Color32 {
+        if nathan_mode { to_grayscale(c) } else { c }
+    };
 
     let mut spacing = grid.spacing_m;
     if spacing <= 0.0 {
@@ -1880,8 +1890,8 @@ pub fn draw_grid(
     let y_min_i = (world_bottom / spacing).floor() as i64;
     let y_max_i = (world_top / spacing).ceil() as i64;
 
-    let minor_stroke = Stroke::new(0.5, GRID_COLOR);
-    let major_stroke = Stroke::new(1.0, GRID_MAJOR_COLOR);
+    let minor_stroke = Stroke::new(0.5, gc(GRID_COLOR));
+    let major_stroke = Stroke::new(1.0, gc(GRID_MAJOR_COLOR));
 
     let label_color = Color32::from_rgba_premultiplied(120, 125, 140, 180);
     let label_font = FontId::proportional(9.0);

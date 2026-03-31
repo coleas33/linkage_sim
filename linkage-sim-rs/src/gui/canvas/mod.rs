@@ -36,7 +36,8 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     }
 
     // Fill background.
-    painter.rect_filled(canvas_rect, 0.0, BG_COLOR);
+    let bg = if state.nathan_mode { colors::to_grayscale(BG_COLOR) } else { BG_COLOR };
+    painter.rect_filled(canvas_rect, 0.0, bg);
 
     // ── No mechanism message ────────────────────────────────────────────
     if state.mechanism.is_none() {
@@ -63,7 +64,7 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     let mut body_segments: Vec<BodySegment> = Vec::new();
 
     // ── Draw grid behind everything ──────────────────────────────────────
-    rendering::draw_grid(&painter, canvas_rect, &state.view, &state.grid);
+    rendering::draw_grid(&painter, canvas_rect, &state.view, &state.grid, state.nathan_mode);
 
     // ── Render mechanism (immutable borrow scope) ────────────────────────
     let grounded_revolute_ids = rendering::render_mechanism(

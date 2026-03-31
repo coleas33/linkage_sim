@@ -72,6 +72,11 @@ impl LinkageApp {
 
 impl eframe::App for LinkageApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // ── Nathan Mode: override visuals to grayscale ──────────────
+        if self.state.nathan_mode {
+            apply_nathan_mode(ctx);
+        }
+
         // ── Update window title to show filename and dirty state ──────
         let title = if let Some(ref path) = self.state.last_save_path {
             let name = path.file_name().unwrap_or_default().to_string_lossy();
@@ -619,6 +624,14 @@ impl eframe::App for LinkageApp {
                                 self.state.display_units.length_to_si(spacing_display);
                         }
                     });
+                    ui.separator();
+                    if ui.checkbox(&mut self.state.nathan_mode, "Nathan Mode")
+                        .on_hover_text("Toggle grayscale mode")
+                        .changed() && !self.state.nathan_mode
+                    {
+                        // Restore normal visuals when turning off.
+                        restore_normal_visuals(ctx);
+                    }
                 });
                 view_resp.response.on_hover_text("Toggle display options and visualization settings");
             });
@@ -1105,4 +1118,65 @@ impl eframe::App for LinkageApp {
         #[cfg(target_arch = "wasm32")]
         self.state.tick_autosave(dt);
     }
+}
+
+// ── Nathan Mode helpers ─────────────────────────────────────────────────────
+
+/// Convert a color to grayscale using luminance weights.
+fn gray(c: egui::Color32) -> egui::Color32 {
+    let lum = (c.r() as f32 * 0.299 + c.g() as f32 * 0.587 + c.b() as f32 * 0.114) as u8;
+    egui::Color32::from_rgba_premultiplied(lum, lum, lum, c.a())
+}
+
+/// Override egui visuals with grayscale colors (Nathan Mode).
+fn apply_nathan_mode(ctx: &egui::Context) {
+    let mut v = egui::Visuals::dark();
+
+    v.widgets.noninteractive.bg_fill = gray(v.widgets.noninteractive.bg_fill);
+    v.widgets.noninteractive.fg_stroke.color = gray(v.widgets.noninteractive.fg_stroke.color);
+    v.widgets.inactive.bg_fill = gray(v.widgets.inactive.bg_fill);
+    v.widgets.inactive.fg_stroke.color = gray(v.widgets.inactive.fg_stroke.color);
+    v.widgets.hovered.bg_fill = gray(v.widgets.hovered.bg_fill);
+    v.widgets.hovered.fg_stroke.color = gray(v.widgets.hovered.fg_stroke.color);
+    v.widgets.active.bg_fill = gray(v.widgets.active.bg_fill);
+    v.widgets.active.fg_stroke.color = gray(v.widgets.active.fg_stroke.color);
+    v.widgets.open.bg_fill = gray(v.widgets.open.bg_fill);
+    v.widgets.open.fg_stroke.color = gray(v.widgets.open.fg_stroke.color);
+    v.selection.bg_fill = gray(v.selection.bg_fill);
+    v.selection.stroke.color = gray(v.selection.stroke.color);
+    v.hyperlink_color = gray(v.hyperlink_color);
+    v.window_fill = gray(v.window_fill);
+    v.panel_fill = gray(v.panel_fill);
+    v.extreme_bg_color = gray(v.extreme_bg_color);
+
+    ctx.set_visuals(v);
+}
+
+/// Restore the custom CAD-inspired dark visuals (mirrors `LinkageApp::new`).
+fn restore_normal_visuals(ctx: &egui::Context) {
+    let mut v = egui::Visuals::dark();
+
+    v.panel_fill = egui::Color32::from_rgb(30, 32, 38);
+    v.window_fill = egui::Color32::from_rgb(35, 37, 44);
+    v.extreme_bg_color = egui::Color32::from_rgb(20, 22, 28);
+    v.faint_bg_color = egui::Color32::from_rgb(38, 40, 48);
+
+    v.selection.bg_fill = egui::Color32::from_rgb(40, 100, 200);
+    v.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 160, 255));
+
+    v.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(42, 44, 52);
+    v.widgets.noninteractive.bg_stroke = egui::Stroke::new(0.5, egui::Color32::from_rgb(60, 62, 72));
+
+    v.widgets.inactive.bg_fill = egui::Color32::from_rgb(50, 52, 62);
+    v.widgets.inactive.bg_stroke = egui::Stroke::new(0.5, egui::Color32::from_rgb(70, 72, 82));
+
+    v.widgets.hovered.bg_fill = egui::Color32::from_rgb(60, 65, 80);
+    v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(100, 140, 220));
+
+    v.widgets.active.bg_fill = egui::Color32::from_rgb(40, 100, 200);
+    v.widgets.active.bg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 160, 255));
+
+    v.window_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(55, 58, 68));
+
+    ctx.set_visuals(v);
 }

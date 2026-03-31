@@ -47,6 +47,12 @@ pub const FORCE_ZONE_COLOR: Color32 = Color32::from_rgb(255, 80, 80);
 pub const FORCE_ZONE_OVERLAP_FILL: Color32 = Color32::from_rgba_premultiplied(255, 200, 0, 50);
 pub const FORCE_ZONE_OVERLAP_STROKE: Color32 = Color32::from_rgb(255, 204, 0);
 
+/// Convert a color to grayscale (for Nathan Mode).
+pub fn to_grayscale(c: Color32) -> Color32 {
+    let lum = (c.r() as f32 * 0.299 + c.g() as f32 * 0.587 + c.b() as f32 * 0.114) as u8;
+    Color32::from_rgba_premultiplied(lum, lum, lum, c.a())
+}
+
 // ── Sizing ──────────────────────────────────────────────────────────────────
 
 pub const FORCE_ARROW_WIDTH: f32 = 2.5;

@@ -252,6 +252,8 @@ pub struct AppState {
     // ── Tutorial ────────────────────────────────────────────────────
     /// Interactive tutorial overlay state.
     pub tutorial: crate::gui::tutorial::TutorialState,
+    /// Nathan Mode: grayscale everything.
+    pub nathan_mode: bool,
 }
 
 /// Tracks placement state for the Add Body tool.
@@ -439,6 +441,7 @@ impl Default for AppState {
             show_template_name_dialog: false,
             template_name_buf: String::new(),
             tutorial: crate::gui::tutorial::TutorialState::default(),
+            nathan_mode: false,
         };
         state.rebuild();
         state
