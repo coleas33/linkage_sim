@@ -70,8 +70,11 @@ impl AppState {
         }
     }
 
-    /// Write mechanism JSON to an arbitrary path (doesn't clear dirty flag).
-    fn write_json_to(&self, path: &Path) -> Result<(), String> {
+    /// Serialize the current mechanism to a pretty-printed JSON string.
+    ///
+    /// Includes load cases, mounting angle, and blueprint point masses.
+    /// Used by both native file writes and WASM localStorage autosave.
+    fn serialize_to_json_string(&self) -> Result<String, String> {
         let mech = self
             .mechanism
             .as_ref()
@@ -87,7 +90,12 @@ impl AppState {
                 }
             }
         }
-        let json = serde_json::to_string_pretty(&json_struct).map_err(|e| e.to_string())?;
+        serde_json::to_string_pretty(&json_struct).map_err(|e| e.to_string())
+    }
+
+    /// Write mechanism JSON to an arbitrary path (doesn't clear dirty flag).
+    fn write_json_to(&self, path: &Path) -> Result<(), String> {
+        let json = self.serialize_to_json_string()?;
         std::fs::write(path, json).map_err(|e| format!("Failed to write: {}", e))?;
         Ok(())
     }
@@ -153,24 +161,24 @@ impl AppState {
         }
     }
 
-    /// Load a mechanism from a JSON file, solve at t=0, and update all state.
+    /// Load a mechanism from a JSON string, solve at t=0, and update all state.
     ///
     /// After loading, the driver is restored from the JSON. If the file has no
     /// driver, the mechanism is loaded without one (the user can assign one via
     /// the Driver panel).
     ///
+    /// This is the shared implementation used by both `load_from_file` (native)
+    /// and WASM autosave recovery.
+    ///
     /// Returns `Err` with a human-readable message on any failure.
-    pub fn load_from_file(&mut self, path: &Path) -> Result<(), String> {
-        let json_str =
-            std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
-
+    pub fn load_from_json_str(&mut self, json_str: &str) -> Result<(), String> {
         // Parse JSON and store as blueprint before building
         let json_struct: crate::io::MechanismJson =
-            serde_json::from_str(&json_str).map_err(|e| e.to_string())?;
+            serde_json::from_str(json_str).map_err(|e| e.to_string())?;
         self.blueprint = Some(json_struct);
 
         let mut mech =
-            load_mechanism_unbuilt(&json_str).map_err(|e| e.to_string())?;
+            load_mechanism_unbuilt(json_str).map_err(|e| e.to_string())?;
         mech.build().map_err(|e| e.to_string())?;
 
         // Extract driver parameters before we move mech into self.
@@ -253,12 +261,100 @@ impl AppState {
         self.update_grashof();
         self.compute_sweep();
         self.compute_validation();
-        self.last_save_path = Some(path.to_path_buf());
         self.dirty = false;
         self.autosave_timer = 0.0;
+
+        Ok(())
+    }
+
+    /// Load a mechanism from a JSON file, solve at t=0, and update all state.
+    ///
+    /// After loading, the driver is restored from the JSON. If the file has no
+    /// driver, the mechanism is loaded without one (the user can assign one via
+    /// the Driver panel).
+    ///
+    /// Returns `Err` with a human-readable message on any failure.
+    pub fn load_from_file(&mut self, path: &Path) -> Result<(), String> {
+        let json_str =
+            std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
+
+        self.load_from_json_str(&json_str)?;
+
+        self.last_save_path = Some(path.to_path_buf());
         #[cfg(not(target_arch = "wasm32"))]
         self.add_recent_file(path);
 
         Ok(())
+    }
+
+    // ── WASM autosave (localStorage) ─────────────────────────────────────
+
+    /// Perform periodic autosave to localStorage on WASM.
+    ///
+    /// Called from the update loop with accumulated dt. Saves every 30 seconds
+    /// if there are unsaved changes and a mechanism is loaded.
+    #[cfg(target_arch = "wasm32")]
+    pub fn tick_autosave(&mut self, dt: f64) {
+        const AUTOSAVE_INTERVAL: f64 = 30.0;
+
+        if !self.dirty || self.mechanism.is_none() {
+            return;
+        }
+
+        self.autosave_timer += dt;
+        if self.autosave_timer < AUTOSAVE_INTERVAL {
+            return;
+        }
+        self.autosave_timer = 0.0;
+
+        match self.serialize_to_json_string() {
+            Ok(json) => {
+                Self::wasm_save_autosave(&json);
+                log::debug!("WASM autosaved to localStorage");
+            }
+            Err(e) => {
+                log::warn!("WASM autosave serialization failed: {}", e);
+            }
+        }
+    }
+
+    /// Save a JSON string to localStorage under the autosave key.
+    #[cfg(target_arch = "wasm32")]
+    fn wasm_save_autosave(json_str: &str) {
+        if let Some(window) = web_sys::window() {
+            if let Ok(Some(storage)) = window.local_storage() {
+                let _ = storage.set_item("linkage_autosave", json_str);
+            }
+        }
+    }
+
+    /// Load the autosave JSON string from localStorage, if present.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn wasm_load_autosave() -> Option<String> {
+        let window = web_sys::window()?;
+        let storage = window.local_storage().ok()??;
+        storage.get_item("linkage_autosave").ok()?
+    }
+
+    /// Remove the autosave entry from localStorage.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn wasm_clear_autosave() {
+        if let Some(window) = web_sys::window() {
+            if let Ok(Some(storage)) = window.local_storage() {
+                let _ = storage.remove_item("linkage_autosave");
+            }
+        }
+    }
+
+    /// Check localStorage for a recoverable autosave on WASM startup.
+    ///
+    /// Returns `true` if a non-empty autosave string is present.
+    /// Unlike native, there's no filesystem timestamp, so any existing
+    /// autosave is considered recoverable.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn check_wasm_autosave_recovery() -> bool {
+        Self::wasm_load_autosave()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false)
     }
 }

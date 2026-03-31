@@ -191,6 +191,51 @@ impl eframe::App for LinkageApp {
                         }
                     });
                     load_sample_resp.response.on_hover_text("Load a preset sample mechanism");
+                    // ── Templates ─────────────────────────────────────
+                    ui.separator();
+                    if ui
+                        .add_enabled(
+                            self.state.blueprint.is_some(),
+                            egui::Button::new("Save as Template..."),
+                        )
+                        .on_hover_text("Save the current mechanism as a reusable template")
+                        .clicked()
+                    {
+                        self.state.show_template_name_dialog = true;
+                        self.state.template_name_buf = String::new();
+                        ui.close();
+                    }
+                    if !self.state.saved_templates.is_empty() {
+                        let load_tpl_resp = ui.menu_button("Load Template", |ui| {
+                            let mut load_idx = None;
+                            for (i, (name, _)) in self.state.saved_templates.iter().enumerate() {
+                                if ui.button(name).clicked() {
+                                    load_idx = Some(i);
+                                    ui.close();
+                                }
+                            }
+                            if let Some(idx) = load_idx {
+                                self.state.load_template(idx);
+                            }
+                        });
+                        load_tpl_resp.response.on_hover_text("Load a saved mechanism template");
+
+                        let manage_tpl_resp = ui.menu_button("Manage Templates", |ui| {
+                            let mut delete_idx = None;
+                            for (i, (name, _)) in self.state.saved_templates.iter().enumerate() {
+                                ui.horizontal(|ui| {
+                                    ui.label(name);
+                                    if ui.small_button("Delete").clicked() {
+                                        delete_idx = Some(i);
+                                    }
+                                });
+                            }
+                            if let Some(idx) = delete_idx {
+                                self.state.delete_template(idx);
+                            }
+                        });
+                        manage_tpl_resp.response.on_hover_text("Delete saved templates");
+                    }
                     // ── Native-only file dialogs ──────────────────────
                     #[cfg(feature = "native")]
                     {
@@ -927,7 +972,86 @@ impl eframe::App for LinkageApp {
             }
         }
 
+        // ── WASM autosave recovery prompt ────────────────────────────────
+        #[cfg(target_arch = "wasm32")]
+        if self.state.wasm_has_recovery {
+            let mut dismiss = false;
+            let mut load = false;
+            egui::Window::new("Recover Unsaved Work?")
+                .collapsible(false)
+                .resizable(false)
+                .default_width(340.0)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.label("An autosave was found from a previous session.");
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Recover")
+                            .on_hover_text("Load the autosaved mechanism from last session")
+                            .clicked()
+                        {
+                            load = true;
+                        }
+                        if ui.button("Discard")
+                            .on_hover_text("Clear the autosave and start fresh")
+                            .clicked()
+                        {
+                            dismiss = true;
+                        }
+                    });
+                });
+            if load {
+                self.state.wasm_has_recovery = false;
+                if let Some(json_str) = AppState::wasm_load_autosave() {
+                    if let Err(e) = self.state.load_from_json_str(&json_str) {
+                        log::error!("Failed to recover WASM autosave: {}", e);
+                    }
+                }
+                // Clean up after loading.
+                AppState::wasm_clear_autosave();
+            } else if dismiss {
+                self.state.wasm_has_recovery = false;
+                AppState::wasm_clear_autosave();
+            }
+        }
+
         // ── Keyboard shortcuts window ────────────────────────────────────
+        // ── "Save as Template" name dialog ──────────────────────────────
+        if self.state.show_template_name_dialog {
+            let mut open = true;
+            egui::Window::new("Save as Template")
+                .collapsible(false)
+                .resizable(false)
+                .default_width(280.0)
+                .open(&mut open)
+                .show(ctx, |ui| {
+                    ui.label("Template name:");
+                    let response = ui.text_edit_singleline(&mut self.state.template_name_buf);
+                    // Auto-focus the text field on first frame.
+                    if response.gained_focus() || self.state.template_name_buf.is_empty() {
+                        response.request_focus();
+                    }
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        let name_valid = !self.state.template_name_buf.trim().is_empty();
+                        if ui.add_enabled(name_valid, egui::Button::new("Save")).clicked()
+                            || (name_valid
+                                && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                        {
+                            let name = self.state.template_name_buf.trim().to_string();
+                            self.state.save_as_template(&name);
+                            self.state.show_template_name_dialog = false;
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.state.show_template_name_dialog = false;
+                        }
+                    });
+                });
+            if !open {
+                self.state.show_template_name_dialog = false;
+            }
+        }
+
         if self.state.show_shortcuts {
             egui::Window::new("Keyboard Shortcuts")
                 .collapsible(false)
@@ -966,6 +1090,8 @@ impl eframe::App for LinkageApp {
 
         // ── Autosave tick ────────────────────────────────────────────────
         #[cfg(feature = "native")]
+        self.state.tick_autosave(dt);
+        #[cfg(target_arch = "wasm32")]
         self.state.tick_autosave(dt);
     }
 }

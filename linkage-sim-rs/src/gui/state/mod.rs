@@ -13,6 +13,7 @@ mod driver_ops;
 mod undo_ops;
 mod file_io;
 mod solver_helpers;
+mod templates;
 
 // Re-export all public items so external code can use `crate::gui::state::*`.
 pub use display_units::{LengthUnit, AngleUnit, DisplayUnits};
@@ -221,6 +222,9 @@ pub struct AppState {
     // ── Autosave recovery ───────────────────────────────────────────
     /// Path to a recoverable autosave file found on startup (if any).
     pub recovery_path: Option<std::path::PathBuf>,
+    /// Whether a WASM localStorage autosave was found on startup.
+    #[cfg(target_arch = "wasm32")]
+    pub wasm_has_recovery: bool,
     // ── Status toast ──────────────────────────────────────────────────
     /// Transient status message shown in the status bar (e.g. "Saved: foo.json").
     pub status_message: Option<String>,
@@ -233,6 +237,13 @@ pub struct AppState {
     /// When true, `fit_to_view` is called on the next canvas frame and then
     /// cleared. Set after a mechanism is loaded so the view auto-fits.
     pub pending_fit_to_view: bool,
+    // ── Templates ───────────────────────────────────────────────────────
+    /// Saved mechanism templates: (name, json_string) pairs.
+    pub saved_templates: Vec<(String, String)>,
+    /// Whether the "Save as Template" name-entry dialog is open.
+    pub show_template_name_dialog: bool,
+    /// Text buffer for template name input.
+    pub template_name_buf: String,
 }
 
 /// Tracks placement state for the Add Body tool.
@@ -409,10 +420,15 @@ impl Default for AppState {
             recovery_path: Self::check_autosave_recovery(),
             #[cfg(target_arch = "wasm32")]
             recovery_path: None,
+            #[cfg(target_arch = "wasm32")]
+            wasm_has_recovery: Self::check_wasm_autosave_recovery(),
             status_message: None,
             status_message_time: 0.0,
             highlight_joint: None,
             pending_fit_to_view: false,
+            saved_templates: Self::load_saved_templates(),
+            show_template_name_dialog: false,
+            template_name_buf: String::new(),
         };
         state.rebuild();
         state
@@ -427,13 +443,21 @@ impl AppState {
         let fresh = AppState::default();
         // Preserve user preferences across reset.
         let recent = std::mem::take(&mut self.recent_files);
+        let templates = std::mem::take(&mut self.saved_templates);
         let units = DisplayUnits {
             length: self.display_units.length,
             angle: self.display_units.angle,
         };
         *self = fresh;
         self.recent_files = recent;
+        self.saved_templates = templates;
         self.display_units = units;
+        // Clear WASM autosave so the recovery prompt doesn't reappear.
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.wasm_has_recovery = false;
+            Self::wasm_clear_autosave();
+        }
     }
 
     /// Compute view transform that fits all body attachment points in the canvas.
