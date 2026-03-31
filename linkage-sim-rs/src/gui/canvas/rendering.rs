@@ -582,6 +582,9 @@ pub fn render_overlays(
         draw_force_elements(painter, state, &state.view);
     }
 
+    // ── Alignment guides ────────────────────────────────────────────
+    draw_alignment_guides(painter, canvas_rect, state);
+
     // ── Add Body mode: render placed points and preview ─────────────
     if let Some(ref abs) = state.add_body_state {
         let placed_points: Vec<Pos2> = abs
@@ -1554,6 +1557,74 @@ fn draw_torque_arc(
         let hy = -tangent_x * sin_a + (-tangent_y) * cos_a;
         let head_pt = Pos2::new(tip.x + hx * head_len, tip.y + hy * head_len);
         painter.line_segment([tip, head_pt], stroke);
+    }
+}
+
+/// Draw alignment guide lines across the canvas for active snap guides.
+///
+/// Renders a dashed cyan line spanning the full visible canvas for each
+/// alignment guide, plus a small label at the guide's intersection with the
+/// nearest canvas edge.
+fn draw_alignment_guides(
+    painter: &egui::Painter,
+    canvas_rect: Rect,
+    state: &AppState,
+) {
+    use crate::gui::state::AlignmentAxis;
+
+    if state.alignment_guides.is_empty() {
+        return;
+    }
+
+    let guide_color = Color32::from_rgba_premultiplied(0, 200, 255, 120);
+    let guide_stroke = Stroke::new(1.0, guide_color);
+    let dash = 6.0_f32;
+    let gap = 4.0_f32;
+    let label_color = Color32::from_rgba_premultiplied(0, 200, 255, 180);
+
+    let view = &state.view;
+
+    for guide in &state.alignment_guides {
+        match guide.axis {
+            AlignmentAxis::Horizontal => {
+                // Horizontal guide: same y-value, line spans full canvas width.
+                let left_world = view.screen_to_world(canvas_rect.left(), 0.0);
+                let right_world = view.screen_to_world(canvas_rect.right(), 0.0);
+                let left_sp = view.world_to_screen(left_world[0], guide.world_value);
+                let right_sp = view.world_to_screen(right_world[0], guide.world_value);
+                let left_pos = Pos2::new(canvas_rect.left(), left_sp[1]);
+                let right_pos = Pos2::new(canvas_rect.right(), right_sp[1]);
+                draw_dashed_line(painter, left_pos, right_pos, guide_stroke, dash, gap);
+
+                // Label near the right edge.
+                painter.text(
+                    Pos2::new(canvas_rect.right() - 4.0, left_sp[1] - 2.0),
+                    egui::Align2::RIGHT_BOTTOM,
+                    &guide.label,
+                    FontId::proportional(10.0),
+                    label_color,
+                );
+            }
+            AlignmentAxis::Vertical => {
+                // Vertical guide: same x-value, line spans full canvas height.
+                let top_world = view.screen_to_world(0.0, canvas_rect.top());
+                let bot_world = view.screen_to_world(0.0, canvas_rect.bottom());
+                let top_sp = view.world_to_screen(guide.world_value, top_world[1]);
+                let bot_sp = view.world_to_screen(guide.world_value, bot_world[1]);
+                let top_pos = Pos2::new(top_sp[0], canvas_rect.top());
+                let bot_pos = Pos2::new(bot_sp[0], canvas_rect.bottom());
+                draw_dashed_line(painter, top_pos, bot_pos, guide_stroke, dash, gap);
+
+                // Label near the top edge.
+                painter.text(
+                    Pos2::new(top_sp[0] + 4.0, canvas_rect.top() + 2.0),
+                    egui::Align2::LEFT_TOP,
+                    &guide.label,
+                    FontId::proportional(10.0),
+                    label_color,
+                );
+            }
+        }
     }
 }
 

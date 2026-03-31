@@ -8,6 +8,7 @@ use crate::gui::state::{
     AddBodyState, AppState, EditorTool, ForceZoneDragState, SelectedEntity,
 };
 
+use super::alignment::compute_alignment_guides;
 use super::colors::*;
 use super::hit_testing::{find_nearest_body_segment, AttachmentHit, BodySegment};
 use super::rendering::{draw_dashed_line, fill_force_template};
@@ -43,6 +44,11 @@ pub fn handle_interaction(
     let is_shift = ui.input(|i| i.modifiers.shift);
     let mut is_panning = false;
 
+    // Clear alignment guides when no drag is active.
+    if state.dragging_ground_pivot.is_none() {
+        state.alignment_guides.clear();
+    }
+
     // ── Interaction: ground pivot drag ─────────────────────────────────
     // Start drag when pointer is near a ground attachment point in Select mode.
     if state.active_tool == EditorTool::Select
@@ -67,12 +73,22 @@ pub fn handle_interaction(
         }
     }
 
-    // During drag: draw a ghost marker at the cursor position.
+    // During drag: draw a ghost marker at the cursor position with alignment snapping.
     if state.dragging_ground_pivot.is_some() {
         if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
             let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
             let (gx, gy) = state.grid.snap_point(wx, wy);
-            let ghost_screen = state.view.world_to_screen(gx, gy);
+
+            // Compute alignment guides and snap to aligned points.
+            let snap_threshold = 10.0 / state.view.scale as f64;
+            let exclude_name = state.dragging_ground_pivot.as_ref().map(|(n, _)| n.as_str());
+            let mut guides = Vec::new();
+            let (sx, sy) = compute_alignment_guides(
+                state, gx, gy, exclude_name, snap_threshold, &mut guides,
+            );
+            state.alignment_guides = guides;
+
+            let ghost_screen = state.view.world_to_screen(sx, sy);
             let ghost_pos = Pos2::new(ghost_screen[0], ghost_screen[1]);
             let half = GROUND_MARKER_SIZE * 0.5;
             // Draw ghost X marker.
@@ -102,9 +118,18 @@ pub fn handle_interaction(
             if let Some(pos) = response.interact_pointer_pos() {
                 let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
                 let (gx, gy) = state.grid.snap_point(wx, wy);
-                state.update_ground_pivot_position(&pivot_name, gx, gy);
+
+                // Apply alignment snapping to the final position.
+                let snap_threshold = 10.0 / state.view.scale as f64;
+                let mut guides = Vec::new();
+                let (sx, sy) = compute_alignment_guides(
+                    state, gx, gy, Some(&pivot_name), snap_threshold, &mut guides,
+                );
+
+                state.update_ground_pivot_position(&pivot_name, sx, sy);
             }
         }
+        state.alignment_guides.clear();
     }
 
     let is_dragging_ground = state.dragging_ground_pivot.is_some();

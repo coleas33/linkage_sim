@@ -7,6 +7,7 @@
 //! - `interaction`: Drag, pan, zoom, tool modes, keyboard shortcuts
 //! - `context_menu`: Right-click menus for joints, bodies, canvas
 
+mod alignment;
 mod colors;
 mod context_menu;
 mod hit_testing;

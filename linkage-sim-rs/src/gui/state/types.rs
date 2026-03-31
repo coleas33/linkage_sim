@@ -2,6 +2,29 @@
 
 use std::collections::HashMap;
 
+// ── Alignment guides ─────────────────────────────────────────────────────────
+
+/// Axis for an alignment guide line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlignmentAxis {
+    /// Same y-value -- horizontal guide line.
+    Horizontal,
+    /// Same x-value -- vertical guide line.
+    Vertical,
+}
+
+/// A snap-alignment guide shown when a dragged point lines up with another
+/// attachment point horizontally or vertically.
+#[derive(Debug, Clone)]
+pub struct AlignmentGuide {
+    /// Whether this guide is horizontal (same y) or vertical (same x).
+    pub axis: AlignmentAxis,
+    /// The world coordinate value: y for Horizontal, x for Vertical.
+    pub world_value: f64,
+    /// Label of the aligned attachment point (e.g. "ground/A").
+    pub label: String,
+}
+
 /// Joint type for the two-click creation flow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PendingJointType {

@@ -23,6 +23,7 @@ pub use load_cases::{LoadCase, LoadCaseManager};
 pub use types::{
     PendingJointType, EditorTool, ContextMenuTarget, SelectedEntity,
     ValidationWarnings, SolverStatus, ForceResults,
+    AlignmentAxis, AlignmentGuide,
 };
 pub use parametric::{
     SweepParameter, ParametricMetric, ParametricStudyConfig, ParametricStudyResult,
@@ -164,6 +165,10 @@ pub struct AppState {
     // ── Ground pivot drag state ─────────────────────────────────────────
     /// Ground pivot being dragged: (pivot_name, start_world_pos).
     pub dragging_ground_pivot: Option<(String, [f64; 2])>,
+    // ── Alignment guides ───────────────────────────────────────────────
+    /// Active alignment guide lines shown during drag operations.
+    /// Cleared at the start of each frame when no drag is active.
+    pub alignment_guides: Vec<AlignmentGuide>,
     // ── Diagnostics ─────────────────────────────────────────────────────
     /// Cached Grashof classification for 4-bar mechanisms.
     pub grashof_result: Option<GrashofResult>,
@@ -373,6 +378,7 @@ impl Default for AppState {
             place_force_state: None,
             creating_force_zone: None,
             dragging_ground_pivot: None,
+            alignment_guides: Vec::new(),
             grashof_result: None,
             crank_recommendation: None,
             simulation: None,
