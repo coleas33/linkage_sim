@@ -31,6 +31,9 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     // Sync mounting angle into view transform so canvas rendering rotates.
     state.view.mounting_angle = state.mounting_angle;
 
+    // Adapt grid spacing to zoom level: finer grid as you zoom in (down to 0.1mm).
+    state.grid.spacing_m = state.grid.zoom_spacing(canvas_rect.width(), state.view.scale);
+
     if state.pending_fit_to_view {
         state.fit_to_view(canvas_rect.width(), canvas_rect.height());
         state.pending_fit_to_view = false;

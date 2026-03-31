@@ -21,7 +21,30 @@ impl Default for GridSettings {
     }
 }
 
+/// Clean spacing values for zoom-adaptive grid (down to 0.1mm).
+const CLEAN_SPACINGS: [f64; 16] = [
+    10.0, 5.0, 2.0, 1.0, 0.5, 0.2, 0.1,
+    0.05, 0.02, 0.01, 0.005, 0.002, 0.001,
+    0.0005, 0.0002, 0.0001,
+];
+
 impl GridSettings {
+    /// Compute the grid spacing from the current view scale.
+    /// Targets ~20 grid cells across the given screen width.
+    /// The snap and display grid always match.
+    pub fn zoom_spacing(&self, screen_width: f32, view_scale: f32) -> f64 {
+        if view_scale <= 0.0 || screen_width <= 0.0 {
+            return self.spacing_m;
+        }
+        let world_width = screen_width as f64 / view_scale as f64;
+        let raw = world_width / 20.0;
+        CLEAN_SPACINGS
+            .iter()
+            .copied()
+            .find(|&c| c <= raw)
+            .unwrap_or(0.0001)
+    }
+
     /// Snap a single world-coordinate value to the nearest grid point.
     ///
     /// Returns the value unchanged when snapping is disabled or spacing is

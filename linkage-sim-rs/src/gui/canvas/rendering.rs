@@ -1865,7 +1865,7 @@ pub fn draw_grid(
         if nathan_mode { to_grayscale(c) } else { c }
     };
 
-    let mut spacing = grid.spacing_m;
+    let spacing = grid.spacing_m;
     if spacing <= 0.0 {
         return;
     }
@@ -1874,15 +1874,12 @@ pub fn draw_grid(
     let [world_left, world_top] = view.screen_to_world(rect.left(), rect.top());
     let [world_right, world_bottom] = view.screen_to_world(rect.right(), rect.bottom());
 
-    // world_top > world_bottom because screen Y is flipped.
-    // Coarsen the grid by doubling the spacing until the line count fits.
-    loop {
-        let x_count = (world_right / spacing).ceil() as i64 - (world_left / spacing).floor() as i64;
-        let y_count = (world_top / spacing).ceil() as i64 - (world_bottom / spacing).floor() as i64;
-        if x_count + y_count <= 200 {
-            break;
-        }
-        spacing *= 2.0;
+    // Spacing is already zoom-adapted (set in draw_canvas each frame).
+    // Safety cap: if somehow too many lines, bail.
+    let x_count = (world_right / spacing).ceil() as i64 - (world_left / spacing).floor() as i64;
+    let y_count = (world_top / spacing).ceil() as i64 - (world_bottom / spacing).floor() as i64;
+    if x_count + y_count > 500 {
+        return;
     }
 
     let x_min_i = (world_left / spacing).floor() as i64;
@@ -1909,7 +1906,11 @@ pub fn draw_grid(
         // Distance label at major grid lines along the X axis.
         if i % 5 == 0 && i != 0 {
             let mm = wx * 1000.0;
-            let label = format!("{:.0}", mm);
+            let label = if spacing < 0.001 {
+                format!("{:.1}", mm)  // sub-mm: show 0.1mm precision
+            } else {
+                format!("{:.0}", mm)  // mm or coarser: whole numbers
+            };
             // Place label near the X axis (y=0), clamped to viewport.
             let origin_screen = view.world_to_screen(wx, 0.0);
             let label_y = origin_screen[1].clamp(rect.top() + 2.0, rect.bottom() - 12.0);
