@@ -262,7 +262,7 @@ pub fn handle_interaction(
         && state.active_tool != EditorTool::CreateForceZone
         && response.clicked()
     {
-        handle_click_selection(response, state, joint_hit_targets, attachment_hit_targets);
+        handle_click_selection(response, state, canvas_rect, joint_hit_targets, attachment_hit_targets);
     }
 
     right_drag_ended
@@ -800,6 +800,7 @@ fn handle_create_joint(
 fn handle_click_selection(
     response: &egui::Response,
     state: &mut AppState,
+    canvas_rect: egui::Rect,
     joint_hit_targets: &[(Pos2, String)],
     attachment_hit_targets: &[AttachmentHit],
 ) {
@@ -812,6 +813,19 @@ fn handle_click_selection(
                 let name = state.next_ground_pivot_name();
                 state.add_ground_pivot(&name, sx, sy);
                 // Stay in AddGroundPivot tool for placing multiple pivots.
+
+                // Tutorial auto-zoom: after placing the first ground pivot,
+                // zoom out so ~120mm is visible, giving room for the second.
+                if state.tutorial.active && state.tutorial.step == 1 {
+                    let count = state.blueprint.as_ref()
+                        .and_then(|bp| bp.bodies.get("ground"))
+                        .map(|g| g.attachment_points.len())
+                        .unwrap_or(0);
+                    if count == 1 {
+                        // 0.12 m visible across the canvas width.
+                        state.view.scale = canvas_rect.width() / 0.12;
+                    }
+                }
             }
             EditorTool::DrawLink => {
                 // Handled by drag section above.

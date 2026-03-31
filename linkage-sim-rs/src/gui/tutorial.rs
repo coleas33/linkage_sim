@@ -121,8 +121,10 @@ fn fourbar_steps() -> Vec<TutorialStep> {
         TutorialStep {
             title: "Place Ground Pivots",
             description: "1. Click '+ Ground' in the toolbar\n\
-                2. Click on the canvas to place a ground pivot\n\
-                3. Place a second ground pivot about 40mm to the right",
+                2. Click on the canvas to place the first ground pivot\n\
+                3. Click to the RIGHT to place the second pivot\n\
+                   (Grid labels show distance in mm \u{2014} aim for ~40mm apart)\n\
+                4. Positions can be adjusted later with arrow keys or the Ground Pivots panel",
             is_complete: |state| ground_attachment_count(state) >= 2,
         },
         TutorialStep {

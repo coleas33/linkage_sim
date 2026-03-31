@@ -1883,6 +1883,9 @@ pub fn draw_grid(
     let minor_stroke = Stroke::new(0.5, GRID_COLOR);
     let major_stroke = Stroke::new(1.0, GRID_MAJOR_COLOR);
 
+    let label_color = Color32::from_rgba_premultiplied(120, 125, 140, 180);
+    let label_font = FontId::proportional(9.0);
+
     // Vertical lines (every 5th is major).
     for i in x_min_i..=x_max_i {
         let wx = i as f64 * spacing;
@@ -1893,6 +1896,21 @@ pub fn draw_grid(
             [Pos2::new(top[0], top[1]), Pos2::new(bottom[0], bottom[1])],
             stroke,
         );
+        // Distance label at major grid lines along the X axis.
+        if i % 5 == 0 && i != 0 {
+            let mm = wx * 1000.0;
+            let label = format!("{:.0}", mm);
+            // Place label near the X axis (y=0), clamped to viewport.
+            let origin_screen = view.world_to_screen(wx, 0.0);
+            let label_y = origin_screen[1].clamp(rect.top() + 2.0, rect.bottom() - 12.0);
+            painter.text(
+                Pos2::new(origin_screen[0], label_y),
+                egui::Align2::CENTER_TOP,
+                &label,
+                label_font.clone(),
+                label_color,
+            );
+        }
     }
 
     // Horizontal lines (every 5th is major).
@@ -1905,6 +1923,21 @@ pub fn draw_grid(
             [Pos2::new(left[0], left[1]), Pos2::new(right[0], right[1])],
             stroke,
         );
+        // Distance label at major grid lines along the Y axis.
+        if i % 5 == 0 && i != 0 {
+            let mm = wy * 1000.0;
+            let label = format!("{:.0}", mm);
+            // Place label near the Y axis (x=0), clamped to viewport.
+            let origin_screen = view.world_to_screen(0.0, wy);
+            let label_x = origin_screen[0].clamp(rect.left() + 2.0, rect.right() - 24.0);
+            painter.text(
+                Pos2::new(label_x, origin_screen[1]),
+                egui::Align2::LEFT_CENTER,
+                &label,
+                label_font.clone(),
+                label_color,
+            );
+        }
     }
 
     // Origin crosshair (subtle red/green axis lines like CAD tools).
