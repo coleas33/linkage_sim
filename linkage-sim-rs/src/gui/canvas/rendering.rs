@@ -238,10 +238,13 @@ pub fn render_mechanism(
                 let dx = wp_b[0] - wp_a[0];
                 let dy = wp_b[1] - wp_a[1];
                 let dist_m = (dx * dx + dy * dy).sqrt();
+                let angle_rad = dy.atan2(dx);
                 let label = format!(
-                    "{:.1}{}",
+                    "{:.1}{}  {:.1}{}",
                     state.display_units.length(dist_m),
-                    state.display_units.length_suffix()
+                    state.display_units.length_suffix(),
+                    state.display_units.angle(angle_rad),
+                    state.display_units.angle_suffix()
                 );
                 let mid = Pos2::new(
                     (sp_a.x + sp_b.x) * 0.5,

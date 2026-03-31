@@ -1,6 +1,6 @@
 //! Canvas interaction: drag, pan, zoom, keyboard shortcuts, tool modes.
 
-use eframe::egui::{self, Color32, Pos2, Stroke};
+use eframe::egui::{self, Color32, FontId, Pos2, Stroke};
 
 use crate::core::state::GROUND_ID;
 use crate::forces::elements::*;
@@ -368,6 +368,25 @@ fn handle_draw_link(
                     Stroke::NONE,
                 ));
             }
+
+            // Live readout: length and angle near cursor while dragging.
+            let world_dx = ex - sx;
+            let world_dy = ey - sy;
+            let length_m = (world_dx * world_dx + world_dy * world_dy).sqrt();
+            let angle_rad = world_dy.atan2(world_dx);
+            let units = &state.display_units;
+            let readout = format!(
+                "{:.1}{}  {:.1}{}",
+                units.length(length_m), units.length_suffix(),
+                units.angle(angle_rad), units.angle_suffix()
+            );
+            painter.text(
+                Pos2::new(end_screen[0] + 15.0, end_screen[1] - 15.0),
+                egui::Align2::LEFT_BOTTOM,
+                &readout,
+                FontId::proportional(12.0),
+                Color32::WHITE,
+            );
         }
     }
 

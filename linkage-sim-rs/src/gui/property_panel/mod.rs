@@ -109,27 +109,35 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                     if pts.len() >= 2 && body_id != GROUND_ID {
                         ui.separator();
 
-                        let mut segments: Vec<(&str, &str, f64)> = Vec::new();
+                        // Collect segments: (name_a, name_b, length, angle_rad)
+                        let mut segments: Vec<(&str, &str, f64, f64)> = Vec::new();
                         for pair in pts.windows(2) {
                             let (na, pa) = &pair[0];
                             let (nb, pb) = &pair[1];
                             let dx = pb.x - pa.x;
                             let dy = pb.y - pa.y;
-                            segments.push((na.as_str(), nb.as_str(), (dx*dx+dy*dy).sqrt()));
+                            let len = (dx*dx+dy*dy).sqrt();
+                            let angle = dy.atan2(dx);
+                            segments.push((na.as_str(), nb.as_str(), len, angle));
                         }
                         if pts.len() >= 3 {
                             let (na, pa) = pts.last().unwrap();
                             let (nb, pb) = &pts[0];
                             let dx = pb.x - pa.x;
                             let dy = pb.y - pa.y;
-                            segments.push((na.as_str(), nb.as_str(), (dx*dx+dy*dy).sqrt()));
+                            let len = (dx*dx+dy*dy).sqrt();
+                            let angle = dy.atan2(dx);
+                            segments.push((na.as_str(), nb.as_str(), len, angle));
                         }
 
-                        for (na, nb, len) in &segments {
+                        for (na, nb, len, angle) in &segments {
+                            let seg_label = format!("{}\u{2192}{}", na, nb);
+
+                            // Length slider
                             let mut display_len = units.length(*len);
                             let lr = ui.add(
                                 egui::Slider::new(&mut display_len, units.length(0.001)..=units.length(2.0))
-                                    .text(format!("{}\u{2192}{}", na, nb))
+                                    .text(&seg_label)
                                     .suffix(units.length_suffix())
                                     .clamping(egui::SliderClamping::Never)
                                     .logarithmic(true),
@@ -139,6 +147,24 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                     body_id: body_id.clone(),
                                     point_a: na.to_string(), point_b: nb.to_string(),
                                     length: units.length_to_si(display_len),
+                                });
+                            }
+
+                            // Angle slider
+                            let mut display_angle = units.angle(*angle);
+                            let angle_speed = if matches!(units.angle, crate::gui::state::AngleUnit::Degrees) { 0.5 } else { 0.01 };
+                            let ar = ui.add(
+                                egui::Slider::new(&mut display_angle, units.angle(-std::f64::consts::PI)..=units.angle(std::f64::consts::PI))
+                                    .text(format!("{} angle", seg_label))
+                                    .suffix(units.angle_suffix())
+                                    .clamping(egui::SliderClamping::Never)
+                                    .step_by(angle_speed),
+                            );
+                            if ar.drag_stopped() || (ar.changed() && !ar.dragged()) {
+                                pending = Some(PendingPropertyEdit::LinkOrientation {
+                                    body_id: body_id.clone(),
+                                    point_a: na.to_string(), point_b: nb.to_string(),
+                                    angle_rad: units.angle_to_si(display_angle),
                                 });
                             }
                         }

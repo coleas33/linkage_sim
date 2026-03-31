@@ -18,6 +18,7 @@ pub(super) enum PendingPropertyEdit {
     RemoveForce(usize),
     UpdateForce { index: usize, force: ForceElement },
     LinkLength { body_id: String, point_a: String, point_b: String, length: f64 },
+    LinkOrientation { body_id: String, point_a: String, point_b: String, angle_rad: f64 },
     SetEditorBody(String),
     AddMountPoint { body_id: String, name: String, position: [f64; 2] },
     DeleteMountPoint { body_id: String, name: String },
@@ -69,6 +70,9 @@ pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropert
             }
             PendingPropertyEdit::LinkLength { body_id, point_a, point_b, length } => {
                 state.set_link_length(&body_id, &point_a, &point_b, length);
+            }
+            PendingPropertyEdit::LinkOrientation { body_id, point_a, point_b, angle_rad } => {
+                state.set_link_orientation(&body_id, &point_a, &point_b, angle_rad);
             }
             PendingPropertyEdit::SetEditorBody(body_id) => {
                 state.link_editor_body = Some(body_id);
