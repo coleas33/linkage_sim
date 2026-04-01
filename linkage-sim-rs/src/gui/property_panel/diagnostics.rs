@@ -36,6 +36,25 @@ pub(super) fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
     )
         .default_open(false)
         .show(ui, |ui| {
+            // ── Force zone geometry warnings ──────────────────────
+            if let Some(bp) = &state.blueprint {
+                for force in &bp.forces {
+                    if let ForceElement::ForceZone(fz) = force {
+                        if let Some(body) = bp.bodies.get(&fz.body_id) {
+                            if body.geometry.is_none() {
+                                ui.colored_label(
+                                    egui::Color32::from_rgb(255, 180, 60),
+                                    format!(
+                                        "Force zone targets '{}' which has no body geometry \u{2014} force will be zero. Add geometry in Link Editor.",
+                                        fz.body_id,
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
             // ── Mechanism mass summary ─────────────────────────────
             let total_mass: f64 = mech.bodies().values()
                 .filter(|b| b.id != GROUND_ID)
