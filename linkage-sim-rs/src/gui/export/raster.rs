@@ -99,11 +99,19 @@ pub fn export_mechanism_gif(
     encoder.set_repeat(Repeat::Infinite)
         .map_err(|e| format!("Failed to set GIF repeat: {}", e))?;
 
-    // Target ~72 frames for a smooth animation; skip steps if sweep is denser.
+    // Target ~72 frames per direction for smooth animation.
     let step_skip = (n_steps / 72).max(1);
+
+    // Build frame indices: forward (0→end) then reverse (end→0) for ping-pong loop.
+    let forward_indices: Vec<usize> = (0..n_steps).step_by(step_skip).collect();
+    let reverse_indices: Vec<usize> = forward_indices.iter().rev().skip(1).copied().collect();
+    let all_indices: Vec<usize> = forward_indices.into_iter()
+        .chain(reverse_indices.into_iter())
+        .collect();
+
     let mut q_guess = q_start.clone();
 
-    for i in (0..n_steps).step_by(step_skip) {
+    for &i in &all_indices {
         let angle_rad = sweep.angles_deg[i].to_radians();
         let t = (angle_rad - theta_0) / omega;
 
@@ -125,10 +133,7 @@ pub fn export_mechanism_gif(
                 }
                 q_guess = result.q;
             }
-            _ => {
-                // Skip frames that fail to converge; the animation will still
-                // be useful with the frames that do converge.
-            }
+            _ => {}
         }
     }
 
