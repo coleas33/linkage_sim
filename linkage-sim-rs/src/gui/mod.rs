@@ -579,51 +579,6 @@ impl eframe::App for LinkageApp {
                             ui.close();
                         }
                     }
-                    // ── Background image import ─────────────────────
-                    ui.separator();
-                    #[cfg(feature = "native")]
-                    {
-                        if ui.button("Import Background Image...")
-                            .on_hover_text("Load a photo or sketch as a canvas background for tracing")
-                            .clicked()
-                        {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("Images", &["png", "jpg", "jpeg", "bmp"])
-                                .pick_file()
-                            {
-                                match load_background_image(ctx, &path) {
-                                    Ok(bg) => {
-                                        self.state.background_image = Some(bg);
-                                        self.state.status_message = Some("Background image loaded".to_string());
-                                        self.state.status_message_time = 3.0;
-                                    }
-                                    Err(e) => {
-                                        log::error!("Failed to load background image: {}", e);
-                                        self.state.status_message = Some(format!("Image load failed: {}", e));
-                                        self.state.status_message_time = 4.0;
-                                    }
-                                }
-                            }
-                            ui.close();
-                        }
-                    }
-                    #[cfg(not(feature = "native"))]
-                    {
-                        ui.label(
-                            egui::RichText::new("Drag & drop an image onto the canvas to import")
-                                .small()
-                                .weak(),
-                        );
-                    }
-                    if self.state.background_image.is_some() {
-                        if ui.button("Remove Background Image")
-                            .on_hover_text("Remove the background image from the canvas")
-                            .clicked()
-                        {
-                            self.state.background_image = None;
-                            ui.close();
-                        }
-                    }
                     ui.separator();
                     if ui.button("Quit").on_hover_text("Close the application").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -738,48 +693,6 @@ impl eframe::App for LinkageApp {
                     });
                     ui.checkbox(&mut self.state.show_load_path, "Load Path (heat map)")
                         .on_hover_text("Color-code links by joint reaction force magnitude (blue=low, red=high)");
-                    ui.separator();
-                    // ── Background image controls ────────────────────
-                    if self.state.background_image.is_some() {
-                        ui.label("Background Image:");
-                        if let Some(ref mut bg) = self.state.background_image {
-                            ui.horizontal(|ui| {
-                                ui.label("Opacity:");
-                                ui.add(egui::Slider::new(&mut bg.opacity, 0.0..=1.0).fixed_decimals(2));
-                            });
-                            // Image display width in mm
-                            let img_width_m = bg.size_px[0] as f64 / bg.scale_px_per_m;
-                            let mut img_width_mm = img_width_m * 1000.0;
-                            ui.horizontal(|ui| {
-                                ui.label("Width:");
-                                if ui.add(
-                                    egui::DragValue::new(&mut img_width_mm)
-                                        .speed(1.0)
-                                        .range(1.0..=10000.0)
-                                        .suffix(" mm")
-                                ).changed() {
-                                    bg.scale_px_per_m = bg.size_px[0] as f64 / (img_width_mm / 1000.0);
-                                }
-                            });
-                            ui.horizontal(|ui| {
-                                if ui.small_button("\u{2212}").on_hover_text("Shrink 10%").clicked() {
-                                    bg.scale_px_per_m *= 1.1; // more px/m = smaller image
-                                }
-                                if ui.small_button("+").on_hover_text("Grow 10%").clicked() {
-                                    bg.scale_px_per_m *= 0.9; // fewer px/m = larger image
-                                }
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label("X offset (m):");
-                                ui.add(egui::DragValue::new(&mut bg.world_offset[0]).speed(0.01));
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label("Y offset (m):");
-                                ui.add(egui::DragValue::new(&mut bg.world_offset[1]).speed(0.01));
-                            });
-                        }
-                        ui.separator();
-                    }
                     if ui.checkbox(&mut self.state.nathan_mode, "Nathan Mode")
                         .on_hover_text("Toggle grayscale mode")
                         .changed() && !self.state.nathan_mode
@@ -789,6 +702,89 @@ impl eframe::App for LinkageApp {
                     }
                 });
                 view_resp.response.on_hover_text("Toggle display options and visualization settings");
+
+                // ── Image menu ──────────────────────────────────────────
+                let image_resp = ui.menu_button("Image", |ui| {
+                    #[cfg(feature = "native")]
+                    {
+                        if ui.button("Import Image...")
+                            .on_hover_text("Load a photo or sketch as a canvas background for tracing")
+                            .clicked()
+                        {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("Images", &["png", "jpg", "jpeg", "bmp"])
+                                .pick_file()
+                            {
+                                match load_background_image(ctx, &path) {
+                                    Ok(bg) => {
+                                        self.state.background_image = Some(bg);
+                                        self.state.status_message = Some("Background image loaded".to_string());
+                                        self.state.status_message_time = 3.0;
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to load background image: {}", e);
+                                        self.state.status_message = Some(format!("Image load failed: {}", e));
+                                        self.state.status_message_time = 4.0;
+                                    }
+                                }
+                            }
+                            ui.close();
+                        }
+                    }
+                    #[cfg(not(feature = "native"))]
+                    {
+                        ui.label(
+                            egui::RichText::new("Drag & drop an image onto the canvas")
+                                .small().weak(),
+                        );
+                    }
+                    if self.state.background_image.is_some() {
+                        if ui.button("Remove Image")
+                            .on_hover_text("Remove the background image")
+                            .clicked()
+                        {
+                            self.state.background_image = None;
+                            ui.close();
+                        }
+                        ui.separator();
+                        if let Some(ref mut bg) = self.state.background_image {
+                            ui.horizontal(|ui| {
+                                ui.label("Opacity:");
+                                ui.add(egui::Slider::new(&mut bg.opacity, 0.0..=1.0).fixed_decimals(2));
+                            });
+                            let img_width_m = bg.size_px[0] as f64 / bg.scale_px_per_m;
+                            let mut img_width_mm = img_width_m * 1000.0;
+                            ui.horizontal(|ui| {
+                                ui.label("Width:");
+                                if ui.add(
+                                    egui::DragValue::new(&mut img_width_mm)
+                                        .speed(1.0)
+                                        .range(1.0..=100000.0)
+                                        .suffix(" mm")
+                                ).changed() {
+                                    bg.scale_px_per_m = bg.size_px[0] as f64 / (img_width_mm / 1000.0);
+                                }
+                            });
+                            ui.horizontal(|ui| {
+                                if ui.small_button("\u{2212}").on_hover_text("Shrink 10%").clicked() {
+                                    bg.scale_px_per_m *= 1.1;
+                                }
+                                if ui.small_button("+").on_hover_text("Grow 10%").clicked() {
+                                    bg.scale_px_per_m *= 0.9;
+                                }
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("X:");
+                                ui.add(egui::DragValue::new(&mut bg.world_offset[0]).speed(0.001).suffix(" m"));
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("Y:");
+                                ui.add(egui::DragValue::new(&mut bg.world_offset[1]).speed(0.001).suffix(" m"));
+                            });
+                        }
+                    }
+                });
+                image_resp.response.on_hover_text("Background image import and controls");
             });
         });
 
