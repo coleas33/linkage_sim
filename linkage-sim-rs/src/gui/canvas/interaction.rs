@@ -738,12 +738,17 @@ fn handle_create_force_zone(
                 let w = (zone_max[0] - zone_min[0]).abs();
                 let h = (zone_max[1] - zone_min[1]).abs();
                 if w > 1e-6 && h > 1e-6 {
-                    // Pick the first body that has geometry, or fall back to empty string.
+                    // Pick the first non-ground body. auto_create_body_geometry
+                    // (called by add_force_element) will create geometry if needed.
                     let target_body = state.blueprint.as_ref()
                         .and_then(|bp| {
-                            bp.bodies.iter()
-                                .find(|(id, b)| b.geometry.is_some() && id.as_str() != "ground")
-                                .map(|(id, _)| id.clone())
+                            // Prefer a body whose geometry overlaps the zone; fall back
+                            // to the first non-ground body in sorted order.
+                            let mut ids: Vec<&String> = bp.bodies.keys()
+                                .filter(|id| id.as_str() != "ground")
+                                .collect();
+                            ids.sort();
+                            ids.first().map(|id| (*id).clone())
                         })
                         .unwrap_or_default();
 
