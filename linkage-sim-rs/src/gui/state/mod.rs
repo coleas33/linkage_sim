@@ -261,6 +261,10 @@ pub struct AppState {
     // ── Load path visualization ─────────────────────────────────────
     /// Whether to color-code links by joint reaction force magnitude.
     pub show_load_path: bool,
+    // ── Place Mass state ───────────────────────────────────────────
+    /// Body selected for point mass placement (phase 1 of PlaceMass tool).
+    /// When Some, the tool is in phase 2: click anywhere to place the mass.
+    pub place_mass_body: Option<String>,
 }
 
 /// Background image overlay for tracing mechanisms from photos/sketches.
@@ -465,6 +469,7 @@ impl Default for AppState {
             nathan_mode: false,
             background_image: None,
             show_load_path: false,
+            place_mass_body: None,
         };
         state.rebuild();
         state

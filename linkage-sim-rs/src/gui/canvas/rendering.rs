@@ -781,7 +781,11 @@ pub fn render_overlays(
             }
         }
         EditorTool::PlaceMass => {
-            Some("Click on a link to place a point mass (Esc to cancel)".to_string())
+            if let Some(ref body_id) = state.place_mass_body {
+                Some(format!("Click anywhere to place a point mass on '{}' (Esc to cancel)", body_id))
+            } else {
+                Some("Click a link to select the attachment body (Esc to cancel)".to_string())
+            }
         }
         EditorTool::Select => None,
     };

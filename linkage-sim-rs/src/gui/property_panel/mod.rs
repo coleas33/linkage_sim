@@ -204,6 +204,94 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                         }
                     }
 
+                    // ── Point Masses ─────────────────────────────────────
+                    if body_id != GROUND_ID {
+                        if let Some(bp) = &state.blueprint {
+                            if let Some(bp_body) = bp.bodies.get(&body_id) {
+                                if !bp_body.point_masses.is_empty() {
+                                    ui.separator();
+                                    let pm_color = state.nc(egui::Color32::from_rgb(255, 200, 50));
+                                    egui::CollapsingHeader::new(
+                                        egui::RichText::new(format!(
+                                            "Point Masses ({})", bp_body.point_masses.len()
+                                        )).color(pm_color),
+                                    )
+                                        .id_salt(format!("point_masses_{}", body_id))
+                                        .default_open(true)
+                                        .show(ui, |ui| {
+                                            let units = &state.display_units;
+                                            for (i, pm) in bp_body.point_masses.iter().enumerate() {
+                                                ui.horizontal(|ui| {
+                                                    ui.label(format!("#{}", i + 1));
+
+                                                    let mut mass_val = pm.mass;
+                                                    let mr = ui.add(
+                                                        egui::DragValue::new(&mut mass_val)
+                                                            .speed(0.01)
+                                                            .range(0.001..=1000.0)
+                                                            .prefix("m: ")
+                                                            .suffix(" kg"),
+                                                    ).on_hover_text("Point mass magnitude in kg");
+                                                    if mr.drag_stopped() || (mr.changed() && !mr.dragged()) {
+                                                        pending = Some(PendingPropertyEdit::UpdatePointMass {
+                                                            body_id: body_id.clone(),
+                                                            index: i,
+                                                            mass: mass_val,
+                                                            local_pos: pm.local_pos,
+                                                        });
+                                                    }
+                                                });
+                                                ui.horizontal(|ui| {
+                                                    ui.add_space(20.0);
+                                                    let mut x_display = units.length(pm.local_pos[0]);
+                                                    let xr = ui.add(
+                                                        egui::DragValue::new(&mut x_display)
+                                                            .speed(units.length(0.001))
+                                                            .prefix("X ")
+                                                            .suffix(units.length_suffix()),
+                                                    ).on_hover_text("Body-local X position");
+                                                    if xr.drag_stopped() || (xr.changed() && !xr.dragged()) {
+                                                        pending = Some(PendingPropertyEdit::UpdatePointMass {
+                                                            body_id: body_id.clone(),
+                                                            index: i,
+                                                            mass: pm.mass,
+                                                            local_pos: [units.length_to_si(x_display), pm.local_pos[1]],
+                                                        });
+                                                    }
+
+                                                    let mut y_display = units.length(pm.local_pos[1]);
+                                                    let yr = ui.add(
+                                                        egui::DragValue::new(&mut y_display)
+                                                            .speed(units.length(0.001))
+                                                            .prefix("Y ")
+                                                            .suffix(units.length_suffix()),
+                                                    ).on_hover_text("Body-local Y position");
+                                                    if yr.drag_stopped() || (yr.changed() && !yr.dragged()) {
+                                                        pending = Some(PendingPropertyEdit::UpdatePointMass {
+                                                            body_id: body_id.clone(),
+                                                            index: i,
+                                                            mass: pm.mass,
+                                                            local_pos: [pm.local_pos[0], units.length_to_si(y_display)],
+                                                        });
+                                                    }
+
+                                                    if ui.small_button("x")
+                                                        .on_hover_text("Remove this point mass")
+                                                        .clicked()
+                                                    {
+                                                        pending = Some(PendingPropertyEdit::RemovePointMass {
+                                                            body_id: body_id.clone(),
+                                                            index: i,
+                                                        });
+                                                    }
+                                                });
+                                            }
+                                        });
+                                }
+                            }
+                        }
+                    }
+
                     // ── Body Geometry ─────────────────────────────────────
                     if body_id != GROUND_ID {
                         if let Some(bp) = &state.blueprint {

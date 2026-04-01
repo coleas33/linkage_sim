@@ -223,6 +223,7 @@ pub fn handle_interaction(
         state.place_force_state = None;
         state.creating_force_zone = None;
         state.dragging_ground_pivot = None;
+        state.place_mass_body = None;
         state.active_tool = EditorTool::Select;
     }
 
@@ -245,7 +246,7 @@ pub fn handle_interaction(
 
     // ── Interaction: Place Mass tool ─────────────────────────────────────
     if state.active_tool == EditorTool::PlaceMass {
-        handle_place_mass(response, state, body_segments);
+        handle_place_mass(ui, painter, response, state, body_segments);
     }
 
     // ── Interaction: Add Body tool ──────────────────────────────────────
@@ -699,20 +700,65 @@ fn handle_create_force_zone(
 // ── Place Mass tool ─────────────────────────────────────────────────────────
 
 fn handle_place_mass(
+    ui: &mut egui::Ui,
+    painter: &egui::Painter,
     response: &egui::Response,
     state: &mut AppState,
     body_segments: &[BodySegment],
 ) {
-    if response.clicked() {
-        if let Some(pos) = response.interact_pointer_pos() {
-            let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+    let has_body = state.place_mass_body.is_some();
 
-            // Find nearest body segment within 30px
-            if let Some(seg_hit) = find_nearest_body_segment(pos, body_segments, 30.0) {
-                let body_id = &seg_hit.body_id;
-                let [lx, ly] = state.world_to_body_local(body_id, wx, wy);
-                state.add_point_mass(body_id, 1.0, [lx, ly]); // 1 kg default
+    if has_body {
+        // Phase 2: body is selected, draw preview and place on click.
+        if let Some(hover) = ui.input(|i| i.pointer.hover_pos()) {
+            let point_mass_color = Color32::from_rgb(255, 200, 50);
+            // Draw gold circle preview at cursor
+            painter.circle_filled(hover, 5.0, point_mass_color.linear_multiply(0.5));
+            painter.circle_stroke(hover, 7.0, Stroke::new(1.0, point_mass_color));
+        }
+
+        if response.clicked() {
+            if let Some(pos) = response.interact_pointer_pos() {
+                let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+                let body_id = state.place_mass_body.clone().unwrap();
+                let [lx, ly] = state.world_to_body_local(&body_id, wx, wy);
+                state.add_point_mass(&body_id, 1.0, [lx, ly]); // 1 kg default
+                state.place_mass_body = None;
                 state.active_tool = EditorTool::Select;
+                state.selected = Some(SelectedEntity::Body(body_id.clone()));
+                state.link_editor_body = Some(body_id);
+            }
+        }
+    } else {
+        // Phase 1: select a body by clicking near a link segment.
+        // Highlight nearest body segment on hover.
+        if let Some(hover) = ui.input(|i| i.pointer.hover_pos()) {
+            if let Some(seg_hit) = find_nearest_body_segment(hover, body_segments, 60.0) {
+                // Draw highlight on the hovered body segment
+                let highlight = Color32::from_rgb(255, 200, 50).linear_multiply(0.4);
+                painter.line_segment(
+                    [seg_hit.screen_pos, {
+                        // Re-find the segment endpoints for drawing
+                        let seg = body_segments.iter().find(|s| {
+                            s.body_id == seg_hit.body_id
+                        });
+                        if let Some(s) = seg {
+                            s.screen_b
+                        } else {
+                            seg_hit.screen_pos
+                        }
+                    }],
+                    Stroke::new(4.0, highlight),
+                );
+            }
+        }
+
+        if response.clicked() {
+            if let Some(pos) = response.interact_pointer_pos() {
+                // Find nearest body segment within 60px
+                if let Some(seg_hit) = find_nearest_body_segment(pos, body_segments, 60.0) {
+                    state.place_mass_body = Some(seg_hit.body_id.clone());
+                }
             }
         }
     }

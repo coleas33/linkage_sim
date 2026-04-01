@@ -21,6 +21,7 @@ pub use state::AppState;
 pub use state::file_io::{decode_mechanism_from_url, encode_mechanism_for_url};
 pub use sweep::{SweepData, SweepMode};
 use samples::SampleMechanism;
+use crate::core::state::GROUND_ID;
 use state::{AngleUnit, EditorTool, LengthUnit, PlaceForceState, SelectedEntity};
 
 /// Top-level application struct for eframe.
@@ -779,6 +780,7 @@ impl eframe::App for LinkageApp {
                     self.state.active_tool = EditorTool::Select;
                     self.state.draw_link_start = None;
                     self.state.add_body_state = None;
+                    self.state.place_mass_body = None;
                 }
 
                 let draw_active = tool == EditorTool::DrawLink || self.state.draw_link_start.is_some();
@@ -794,6 +796,7 @@ impl eframe::App for LinkageApp {
                     self.state.active_tool = EditorTool::DrawLink;
                     self.state.draw_link_start = None;
                     self.state.add_body_state = None;
+                    self.state.place_mass_body = None;
                 }
 
                 let body_text = egui::RichText::new("+ Body [WIP]").color(
@@ -828,12 +831,22 @@ impl eframe::App for LinkageApp {
                     egui::RichText::new("+ Mass").color(tool_color)
                 };
                 if ui.add(egui::Button::new(mass_text))
-                    .on_hover_text("Click on a link to place a point mass")
+                    .on_hover_text("Place a point mass on a body")
                     .clicked()
                 {
                     self.state.active_tool = EditorTool::PlaceMass;
                     self.state.draw_link_start = None;
                     self.state.add_body_state = None;
+                    // If a body is already selected, skip phase 1
+                    if let Some(SelectedEntity::Body(ref id)) = self.state.selected {
+                        if id != GROUND_ID {
+                            self.state.place_mass_body = Some(id.clone());
+                        } else {
+                            self.state.place_mass_body = None;
+                        }
+                    } else {
+                        self.state.place_mass_body = None;
+                    }
                 }
 
                 ui.separator();

@@ -32,6 +32,8 @@ pub(super) enum PendingPropertyEdit {
     RemoveGeometry { body_id: String },
     UpdateLabel { body_id: String, label: String },
     UpdateGroundPivot { name: String, x: f64, y: f64 },
+    UpdatePointMass { body_id: String, index: usize, mass: f64, local_pos: [f64; 2] },
+    RemovePointMass { body_id: String, index: usize },
 }
 
 /// Draw the force elements collapsible section.
@@ -212,6 +214,12 @@ pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropert
             }
             PendingPropertyEdit::UpdateGroundPivot { name, x, y } => {
                 state.update_ground_pivot_position(&name, x, y);
+            }
+            PendingPropertyEdit::UpdatePointMass { body_id, index, mass, local_pos } => {
+                state.update_point_mass(&body_id, index, mass, local_pos);
+            }
+            PendingPropertyEdit::RemovePointMass { body_id, index } => {
+                state.remove_point_mass(&body_id, index);
             }
         }
     }

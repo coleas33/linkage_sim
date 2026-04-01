@@ -915,6 +915,27 @@ impl AppState {
         }
     }
 
+    /// Update a point mass on a body in the blueprint by index.
+    ///
+    /// Continuous parameter tweak -- no undo snapshot pushed (caller should
+    /// push undo on drag-stop if desired).  Updates mass and/or local_pos,
+    /// then rebuilds.
+    pub fn update_point_mass(
+        &mut self,
+        body_id: &str,
+        index: usize,
+        mass: f64,
+        local_pos: [f64; 2],
+    ) {
+        let Some(bp) = &mut self.blueprint else { return };
+        let Some(body) = bp.bodies.get_mut(body_id) else { return };
+        if let Some(pm) = body.point_masses.get_mut(index) {
+            pm.mass = mass;
+            pm.local_pos = local_pos;
+        }
+        self.rebuild();
+    }
+
     /// Update the slide axis of a prismatic joint in the blueprint.
     ///
     /// Continuous parameter tweak — no undo snapshot pushed.
