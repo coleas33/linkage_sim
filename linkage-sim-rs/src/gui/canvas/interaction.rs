@@ -224,7 +224,74 @@ pub fn handle_interaction(
         state.creating_force_zone = None;
         state.dragging_ground_pivot = None;
         state.place_mass_body = None;
+        state.reassigning_point_mass = None;
+        state.repositioning_point_mass = None;
         state.active_tool = EditorTool::Select;
+    }
+
+    // ── Interaction: Reassign point mass to a different link ─────────────
+    if state.reassigning_point_mass.is_some() && response.clicked() {
+        if let Some(pos) = response.interact_pointer_pos() {
+            let hit = find_nearest_body_segment(pos, body_segments, 60.0);
+            if let Some(seg_hit) = hit {
+                let new_body_id = seg_hit.body_id.clone();
+                let (old_body_id, pm_index) = state.reassigning_point_mass.take().unwrap();
+                // Get the mass value and world position of the existing point mass
+                if let Some(bp) = &state.blueprint {
+                    if let Some(body) = bp.bodies.get(&old_body_id) {
+                        if let Some(pm) = body.point_masses.get(pm_index) {
+                            let mass_val = pm.mass;
+                            let [wx, wy] = {
+                                let lx = pm.local_pos[0];
+                                let ly = pm.local_pos[1];
+                                // Convert old body-local to world
+                                if old_body_id == "ground" {
+                                    [lx, ly]
+                                } else if let Some(mech) = &state.mechanism {
+                                    if let Ok(idx) = mech.state().get_index(&old_body_id) {
+                                        let bx = state.q[idx.q_start];
+                                        let by = state.q[idx.q_start + 1];
+                                        let theta = state.q[idx.q_start + 2];
+                                        let ct = theta.cos();
+                                        let st = theta.sin();
+                                        [bx + ct * lx - st * ly, by + st * lx + ct * ly]
+                                    } else { [lx, ly] }
+                                } else { [lx, ly] }
+                            };
+                            // Remove from old body, add to new body
+                            state.remove_point_mass(&old_body_id, pm_index);
+                            let [nlx, nly] = state.world_to_body_local(&new_body_id, wx, wy);
+                            state.add_point_mass(&new_body_id, mass_val, [nlx, nly]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Interaction: Reposition point mass via mouse click ──────────────
+    if state.repositioning_point_mass.is_some() && response.clicked() {
+        if let Some(pos) = response.interact_pointer_pos() {
+            let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+            let (body_id, pm_index) = state.repositioning_point_mass.take().unwrap();
+            let [lx, ly] = state.world_to_body_local(&body_id, wx as f64, wy as f64);
+            // Get current mass value
+            let mass_val = state.blueprint.as_ref()
+                .and_then(|bp| bp.bodies.get(&body_id))
+                .and_then(|b| b.point_masses.get(pm_index))
+                .map(|pm| pm.mass)
+                .unwrap_or(1.0);
+            state.update_point_mass(&body_id, pm_index, mass_val, [lx, ly]);
+        }
+    }
+
+    // Show preview and hint for reassign/reposition modes
+    if state.reassigning_point_mass.is_some() || state.repositioning_point_mass.is_some() {
+        if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+            let preview_color = egui::Color32::from_rgba_premultiplied(255, 200, 50, 128);
+            painter.circle_filled(pos, 6.0, preview_color);
+            painter.circle_stroke(pos, 6.0, egui::Stroke::new(1.5, egui::Color32::from_rgb(255, 200, 50)));
+        }
     }
 
     // ── Interaction: Draw Link tool ─────────────────────────────────────

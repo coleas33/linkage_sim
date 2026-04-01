@@ -787,7 +787,15 @@ pub fn render_overlays(
                 Some("Click a link to select the attachment body (Esc to cancel)".to_string())
             }
         }
-        EditorTool::Select => None,
+        EditorTool::Select => {
+            if state.reassigning_point_mass.is_some() {
+                Some("Click a link to move the point mass to that body (Esc to cancel)".to_string())
+            } else if state.repositioning_point_mass.is_some() {
+                Some("Click anywhere to reposition the point mass (Esc to cancel)".to_string())
+            } else {
+                None
+            }
+        }
     };
     if let Some(ref hint) = hint_text {
         painter.text(

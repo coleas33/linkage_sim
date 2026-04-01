@@ -285,6 +285,27 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                                         });
                                                     }
                                                 });
+                                                ui.horizontal(|ui| {
+                                                    ui.add_space(20.0);
+                                                    if ui.small_button("Move to Link")
+                                                        .on_hover_text("Click a different link to reassign this mass")
+                                                        .clicked()
+                                                    {
+                                                        pending = Some(PendingPropertyEdit::ReassignPointMass {
+                                                            body_id: body_id.clone(),
+                                                            index: i,
+                                                        });
+                                                    }
+                                                    if ui.small_button("Reposition")
+                                                        .on_hover_text("Click on the canvas to move this mass")
+                                                        .clicked()
+                                                    {
+                                                        pending = Some(PendingPropertyEdit::RepositionPointMass {
+                                                            body_id: body_id.clone(),
+                                                            index: i,
+                                                        });
+                                                    }
+                                                });
                                             }
                                         });
                                 }

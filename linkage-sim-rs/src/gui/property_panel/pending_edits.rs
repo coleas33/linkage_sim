@@ -34,6 +34,10 @@ pub(super) enum PendingPropertyEdit {
     UpdateGroundPivot { name: String, x: f64, y: f64 },
     UpdatePointMass { body_id: String, index: usize, mass: f64, local_pos: [f64; 2] },
     RemovePointMass { body_id: String, index: usize },
+    /// Enter mode to reassign a point mass to a different body.
+    ReassignPointMass { body_id: String, index: usize },
+    /// Enter mode to reposition a point mass via mouse click.
+    RepositionPointMass { body_id: String, index: usize },
 }
 
 /// Draw the force elements collapsible section.
@@ -220,6 +224,16 @@ pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropert
             }
             PendingPropertyEdit::RemovePointMass { body_id, index } => {
                 state.remove_point_mass(&body_id, index);
+            }
+            PendingPropertyEdit::ReassignPointMass { body_id, index } => {
+                state.reassigning_point_mass = Some((body_id, index));
+                state.repositioning_point_mass = None;
+                state.active_tool = crate::gui::state::EditorTool::Select;
+            }
+            PendingPropertyEdit::RepositionPointMass { body_id, index } => {
+                state.repositioning_point_mass = Some((body_id, index));
+                state.reassigning_point_mass = None;
+                state.active_tool = crate::gui::state::EditorTool::Select;
             }
         }
     }

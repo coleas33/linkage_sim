@@ -265,6 +265,12 @@ pub struct AppState {
     /// Body selected for point mass placement (phase 1 of PlaceMass tool).
     /// When Some, the tool is in phase 2: click anywhere to place the mass.
     pub place_mass_body: Option<String>,
+    /// Point mass being reassigned to a different link. (body_id, index)
+    /// When Some, next link click moves the mass to that body.
+    pub reassigning_point_mass: Option<(String, usize)>,
+    /// Point mass being repositioned via mouse click. (body_id, index)
+    /// When Some, next canvas click updates the mass position.
+    pub repositioning_point_mass: Option<(String, usize)>,
 }
 
 /// Background image overlay for tracing mechanisms from photos/sketches.
@@ -470,6 +476,8 @@ impl Default for AppState {
             background_image: None,
             show_load_path: true,
             place_mass_body: None,
+            reassigning_point_mass: None,
+            repositioning_point_mass: None,
         };
         state.rebuild();
         state
