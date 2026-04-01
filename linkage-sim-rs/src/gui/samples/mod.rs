@@ -12,7 +12,7 @@ use crate::core::mechanism::Mechanism;
 pub use helpers::attach_driver_to_grounded_revolute;
 
 /// Named sample mechanisms available in the GUI.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SampleMechanism {
     FourBar,
     SliderCrank,

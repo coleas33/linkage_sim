@@ -1,6 +1,6 @@
 # Sample Mechanisms
 
-All samples are available under **File > Load Sample** in the GUI. Each demonstrates a specific linkage type or analysis feature.
+All samples are available under **File > Load Sample** in the GUI, or via the **Samples** button in the toolbar. Each demonstrates a specific linkage type or analysis feature. On the native desktop build, the sample gallery displays rendered SVG thumbnails alongside each mechanism name for visual identification. Thumbnails are generated at startup from the SVG export pipeline and cached for the session. On the WASM build, thumbnails are not available (text-only labels).
 
 ## Four-Bar Linkages
 

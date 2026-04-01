@@ -13,7 +13,7 @@ use super::svg::generate_svg_string;
 /// This is the shared rasterization core used by both PNG export and GIF
 /// frame generation. Requires the `native` feature (depends on `resvg`).
 #[cfg(feature = "native")]
-fn rasterize_svg_to_rgba(
+pub(crate) fn rasterize_svg_to_rgba(
     svg_str: &str,
     width: u32,
     height: u32,

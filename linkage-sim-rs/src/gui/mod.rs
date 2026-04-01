@@ -14,6 +14,8 @@ pub mod sweep;
 pub mod tutorial;
 pub mod undo;
 
+use std::collections::HashMap;
+
 use eframe::egui;
 pub use state::AppState;
 pub use sweep::{SweepData, SweepMode};
@@ -23,6 +25,8 @@ use state::{AngleUnit, EditorTool, LengthUnit, PlaceForceState, SelectedEntity};
 /// Top-level application struct for eframe.
 pub struct LinkageApp {
     state: AppState,
+    /// Cached thumbnail textures for the sample mechanism gallery (native only).
+    sample_thumbnails: HashMap<SampleMechanism, egui::TextureHandle>,
 }
 
 impl LinkageApp {
@@ -64,8 +68,11 @@ impl LinkageApp {
         style.spacing.button_padding = egui::vec2(8.0, 4.0);
         cc.egui_ctx.set_style(style);
 
+        let sample_thumbnails = generate_sample_thumbnails(&cc.egui_ctx);
+
         Self {
             state: AppState::default(),
+            sample_thumbnails,
         }
     }
 
@@ -202,7 +209,7 @@ impl eframe::App for LinkageApp {
                         ui.close();
                     }
                     let load_sample_resp = ui.menu_button("Load Sample", |ui| {
-                        draw_sample_menu(ui, &mut self.state);
+                        draw_sample_menu(ui, &mut self.state, &self.sample_thumbnails);
                     });
                     load_sample_resp.response.on_hover_text("Load a preset sample mechanism");
                     // ── Templates ─────────────────────────────────────
@@ -870,7 +877,7 @@ impl eframe::App for LinkageApp {
                 let samples_resp = ui.menu_button(
                     egui::RichText::new("Samples v").color(sample_color),
                     |ui| {
-                        draw_sample_menu(ui, &mut self.state);
+                        draw_sample_menu(ui, &mut self.state, &self.sample_thumbnails);
                     },
                 );
                 samples_resp.response.on_hover_text("Load a preset sample mechanism");
@@ -1286,13 +1293,70 @@ fn restore_normal_visuals(ctx: &egui::Context) {
     ctx.set_visuals(v);
 }
 
+// ── Sample thumbnail generation ─────────────────────────────────────────────
+
+/// Generate thumbnail textures for all sample mechanisms.
+///
+/// Builds each sample, renders it as SVG, rasterizes to RGBA via resvg, and
+/// uploads to the egui texture manager. Samples that fail to render are silently
+/// skipped (the gallery will show text-only for those entries).
+///
+/// On WASM (no `native` feature), returns an empty map — thumbnails are not
+/// available without resvg.
+#[cfg(feature = "native")]
+fn generate_sample_thumbnails(
+    ctx: &egui::Context,
+) -> HashMap<SampleMechanism, egui::TextureHandle> {
+    use samples::build_sample;
+    use export::{generate_svg_string, rasterize_svg_to_rgba};
+
+    const THUMB_W: u32 = 120;
+    const THUMB_H: u32 = 80;
+
+    let mut thumbnails = HashMap::new();
+    for sample in SampleMechanism::all() {
+        let (mech, q0) = build_sample(*sample);
+        let svg = match generate_svg_string(&mech, &q0) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let rgba = match rasterize_svg_to_rgba(&svg, THUMB_W, THUMB_H) {
+            Ok(buf) => buf,
+            Err(_) => continue,
+        };
+        let image = egui::ColorImage::from_rgba_unmultiplied(
+            [THUMB_W as usize, THUMB_H as usize],
+            &rgba,
+        );
+        let texture = ctx.load_texture(
+            format!("sample_thumb_{:?}", sample),
+            image,
+            egui::TextureOptions::LINEAR,
+        );
+        thumbnails.insert(*sample, texture);
+    }
+    thumbnails
+}
+
+#[cfg(not(feature = "native"))]
+fn generate_sample_thumbnails(
+    _ctx: &egui::Context,
+) -> HashMap<SampleMechanism, egui::TextureHandle> {
+    HashMap::new()
+}
+
 // ── Sample gallery menu ─────────────────────────────────────────────────────
 
-/// Draw the sample mechanism menu with categories and descriptions.
+/// Draw the sample mechanism menu with categories, thumbnails, and descriptions.
 ///
 /// Samples are grouped by category (4-bar, 6-bar, specialty) with separator
-/// headers. Each sample shows its label and a tooltip with a brief description.
-fn draw_sample_menu(ui: &mut egui::Ui, state: &mut AppState) {
+/// headers. Each sample shows a small thumbnail (when available) alongside its
+/// label, with a tooltip containing a brief description.
+fn draw_sample_menu(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    thumbnails: &HashMap<SampleMechanism, egui::TextureHandle>,
+) {
     let mut last_category: Option<&str> = None;
     for sample in SampleMechanism::all() {
         let cat = sample.category();
@@ -1303,11 +1367,20 @@ fn draw_sample_menu(ui: &mut egui::Ui, state: &mut AppState) {
             ui.label(egui::RichText::new(cat).small().weak());
             last_category = Some(cat);
         }
-        if ui
-            .button(sample.label())
-            .on_hover_text(sample.description())
-            .clicked()
-        {
+        let clicked = ui
+            .horizontal(|ui| {
+                if let Some(tex) = thumbnails.get(sample) {
+                    ui.image(egui::load::SizedTexture::new(
+                        tex.id(),
+                        egui::vec2(60.0, 40.0),
+                    ));
+                }
+                ui.button(sample.label())
+                    .on_hover_text(sample.description())
+                    .clicked()
+            })
+            .inner;
+        if clicked {
             state.load_sample(*sample);
             ui.close();
         }

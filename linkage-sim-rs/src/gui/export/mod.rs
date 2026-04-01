@@ -15,6 +15,8 @@ pub use dxf::{export_mechanism_dxf, generate_dxf_string};
 #[cfg(feature = "native")]
 pub use raster::{export_mechanism_gif, export_mechanism_png};
 #[cfg(feature = "native")]
+pub(crate) use raster::rasterize_svg_to_rgba;
+#[cfg(feature = "native")]
 pub use report::generate_html_report;
 #[cfg(feature = "native")]
 pub use svg::{export_mechanism_svg, generate_svg_string};

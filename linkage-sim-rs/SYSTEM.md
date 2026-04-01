@@ -102,7 +102,7 @@ linkage-sim-rs/src/
 │   │   ├── pending_edits.rs          (210)    PendingPropertyEdit enum + apply_pending
 │   │   ├── diagnostics.rs            (305)    Diagnostics section + motor sizing
 │   │   └── force_editor.rs         (1,273)    Per-force-type parameter editors
-│   ├── samples/                    (2,500+)   Sample mechanism builders (28 total)
+│   ├── samples/                    (2,500+)   Sample mechanism builders (28 total, with thumbnails)
 │   │   ├── mod.rs                    (400+)   SampleMechanism enum, build_sample dispatch, tests
 │   │   ├── helpers.rs                (219)    attach_driver, fourbar_initial_q0, continuation solver
 │   │   ├── fourbar.rs                (570+)   12 four-bar variants (incl. Hoeken, Roberts)
