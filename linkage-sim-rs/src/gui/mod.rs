@@ -638,8 +638,8 @@ impl eframe::App for LinkageApp {
                         .on_hover_text("Show solver status, body IDs, and attachment point names on the canvas");
                     ui.checkbox(&mut self.state.show_plots, "Plot Panel")
                         .on_hover_text("Show/hide the sweep data plot panel at the bottom");
-                    ui.checkbox(&mut self.state.show_parametric, "Parametric Study")
-                        .on_hover_text("Show/hide the parametric study panel on the right");
+                    ui.add_enabled(false, egui::Checkbox::new(&mut self.state.show_parametric, "Parametric Study [WIP]"))
+                        .on_hover_text("Parametric study panel (coming soon)");
                     ui.checkbox(&mut self.state.show_forces, "Force Arrows")
                         .on_hover_text("Show/hide joint reaction force arrows and force element visuals on the canvas");
                     ui.checkbox(&mut self.state.show_dimensions, "Link Dimensions")

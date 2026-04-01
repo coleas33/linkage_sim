@@ -468,7 +468,7 @@ impl Default for AppState {
             tutorial: crate::gui::tutorial::TutorialState::default(),
             nathan_mode: false,
             background_image: None,
-            show_load_path: false,
+            show_load_path: true,
             place_mass_body: None,
         };
         state.rebuild();
