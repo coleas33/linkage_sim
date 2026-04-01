@@ -67,7 +67,7 @@ pub async fn start() {
 /// or `None` if no parameter exists or decoding fails.
 #[cfg(target_arch = "wasm32")]
 fn extract_url_mechanism_param() -> Option<String> {
-    use linkage_sim_rs::gui::state::file_io::decode_mechanism_from_url;
+    use linkage_sim_rs::gui::decode_mechanism_from_url;
 
     let window = web_sys::window()?;
     let location = window.location();

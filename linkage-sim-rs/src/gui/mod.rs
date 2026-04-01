@@ -18,6 +18,7 @@ use std::collections::HashMap;
 
 use eframe::egui;
 pub use state::AppState;
+pub use state::file_io::{decode_mechanism_from_url, encode_mechanism_for_url};
 pub use sweep::{SweepData, SweepMode};
 use samples::SampleMechanism;
 use state::{AngleUnit, EditorTool, LengthUnit, PlaceForceState, SelectedEntity};
