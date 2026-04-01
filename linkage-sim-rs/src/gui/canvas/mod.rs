@@ -70,6 +70,9 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     // ── Draw grid behind everything ──────────────────────────────────────
     rendering::draw_grid(&painter, canvas_rect, &state.view, &state.grid, state.nathan_mode);
 
+    // ── Draw background image (behind mechanism, above grid) ────────────
+    rendering::draw_background_image(&painter, canvas_rect, state);
+
     // ── Render mechanism (immutable borrow scope) ────────────────────────
     let grounded_revolute_ids = rendering::render_mechanism(
         &painter,

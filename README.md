@@ -165,7 +165,7 @@ The full solver port (Phases 1–4: kinematics, statics, inverse dynamics, forwa
 - Forward dynamics simulation with timeline scrubbing, playback speed control, and constraint drift display
 - PNG + SVG export (resvg-based rasterization, 1920x1080 default)
 - Diagnostics panel: Grashof classification, Jacobian conditioning, crank selection, motor sizing, torque envelopes
-- 20 sample mechanisms (8 four-bar + 5 six-bar + 7 specialty), JSON save/load, undo/redo
+- 28 sample mechanisms (11 four-bar + 7 six-bar + 10 specialty), JSON save/load, undo/redo
 - Animation playback with seamless 360-degree wrap (solver initial guess resets to cached angle-0 solution on wrap-around, preventing assembly-branch jumps)
 - Right-click driver reassignment on any grounded revolute joint
 - Gravity slider (0-100g / 0-981 m/s²) with real-time g-value display
@@ -298,11 +298,12 @@ Note: file dialogs, PNG/SVG/GIF/DXF export, autosave, and HTML reports are nativ
 - `mounting_angle` field (default 0.0)
 - `linear_drivers` array (default empty)
 
-*Samples updated (total: 20):*
+*Samples updated (total: 28):*
 - Chebyshev renamed to Chebyshev Lambda (Straight-Line) with endpoint trace
 - New: Chebyshev Lambda + Actuator
 - Fixed: Scotch Yoke (3-body topology)
 - Fixed: Inverted Slider Crank (3-body topology)
+- New (Phase 7): Hoeken, Roberts, Offset Slider-Crank, Whitworth Quick-Return, Bell Crank, Coupler Curve (figure-8), Watt II, Pantograph
 
 **Plot & analysis improvements:**
 - Plot zoom/pan — all plots support drag-to-pan and pinch/scroll-to-zoom
@@ -311,6 +312,42 @@ Note: file dialogs, PNG/SVG/GIF/DXF export, autosave, and HTML reports are nativ
 - Transmission angle ideal zone annotation — "Poor output zone" labels at 40°/140° with explanatory tooltip
 - Parametric sweep comparison — save named results, overlay as faded lines for side-by-side comparison
 - Driver torque sign convention — labels on torque and inverse dynamics plots explaining positive/negative meaning
+
+**Latest features:**
+
+*Sharing & collaboration:*
+- Share via URL — File > Share via URL compresses the mechanism JSON (deflate + base64url), copies a link to clipboard. The WASM deployment at linkage.colesorkness.com reads the `?m=` URL parameter on startup to load the shared mechanism. Typical URLs are 2-4 KB for standard mechanisms.
+
+*Canvas enhancements:*
+- Image trace overlay — File > Import Background Image (native only) loads a PNG/JPEG photo or sketch as a translucent canvas background. Adjustable opacity, scale (px/m), and X/Y offset via View menu. Useful for reverse-engineering real mechanisms from photographs.
+- Load path visualization — View > Load Path (heat map) color-codes links by joint reaction force magnitude using a blue-cyan-green-yellow-red gradient. Blue indicates low loads, red indicates high loads. Normalized across all joints so relative load distribution is visible at a glance.
+- Zoom-adaptive grid — grid spacing automatically adjusts to zoom level, showing finer grid lines as you zoom in (down to 0.1mm)
+- Alignment guides — snap guides appear during drag operations to help align joints and pivots
+
+*Sample gallery:*
+- Visual sample gallery — the Samples dropdown (toolbar and File > Load Sample) groups mechanisms by category (4-Bar, 6-Bar, Specialty) with separator headers. Each sample shows a tooltip description explaining what the mechanism demonstrates.
+- 28 total samples: 11 four-bar, 7 six-bar, 10 specialty mechanisms
+- Interactive tutorial: Help > Tutorial: Build a 4-Bar walks through creating a mechanism step-by-step
+
+**Future Roadmap:**
+
+*Sharing & Collaboration:*
+- Share via URL — encode mechanism into a URL parameter for zero-friction sharing via the web version (**shipped**)
+- Image trace overlay — import a photo/sketch, overlay on canvas, trace linkages on top to reverse-engineer real mechanisms (**shipped**, native only)
+
+*Analysis:*
+- Tolerance / sensitivity analysis — Monte Carlo analysis with dimensional tolerances, showing coupler curve envelopes and torque spread
+- Mechanism health report — one-page pre-flight checklist: toggle points, torque spikes, transmission angle warnings, bearing loads
+- Load path visualization — color-code links by instantaneous load during animation (red=high, blue=low) (**shipped**)
+
+*Workflow:*
+- Motion profile editor — trapezoidal/S-curve acceleration profiles replacing constant-speed driver
+- Bill of materials export — table of all links, joints, forces exportable as CSV/PDF
+- Visual sample gallery — thumbnail SVG previews in the sample picker (**shipped** as categorized dropdown with descriptions)
+
+*Advanced:*
+- Natural language builder — describe a mechanism in words, auto-generate link lengths
+- Coupler curve matching / synthesis — draw desired output path, find 4-bar proportions that approximate it
 
 ```
 linkage-sim-rs/

@@ -1,4 +1,4 @@
-//! File I/O operations: save, load, autosave, recent files.
+//! File I/O operations: save, load, autosave, recent files, share via URL.
 
 use std::path::Path;
 
@@ -8,7 +8,50 @@ use crate::io::{load_mechanism_unbuilt, mechanism_to_json};
 use super::{AppState, LoadCaseManager};
 use super::blueprint_ops::detect_driver_joint_id;
 
+// ── Share via URL helpers (compress + base64 encode) ─────────────────────────
+
+/// Compress a JSON string with deflate and then base64url-encode it.
+/// This produces a URL-safe string suitable for `?m=` parameter.
+pub fn encode_mechanism_for_url(json_str: &str) -> String {
+    use base64::Engine;
+    use flate2::write::DeflateEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::best());
+    encoder.write_all(json_str.as_bytes()).unwrap_or_default();
+    let compressed = encoder.finish().unwrap_or_default();
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&compressed)
+}
+
+/// Decode a URL-safe base64 string back to the mechanism JSON.
+/// Reverses `encode_mechanism_for_url`: base64-decode then deflate-decompress.
+pub fn decode_mechanism_from_url(encoded: &str) -> Result<String, String> {
+    use base64::Engine;
+    use flate2::read::DeflateDecoder;
+    use std::io::Read;
+
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(encoded)
+        .map_err(|e| format!("Base64 decode error: {}", e))?;
+    let mut decoder = DeflateDecoder::new(&bytes[..]);
+    let mut json_str = String::new();
+    decoder
+        .read_to_string(&mut json_str)
+        .map_err(|e| format!("Deflate decompress error: {}", e))?;
+    Ok(json_str)
+}
+
 impl AppState {
+    /// Generate a share URL encoding the current mechanism.
+    ///
+    /// Returns the full URL string, or an error if no mechanism is loaded.
+    pub fn generate_share_url(&self) -> Result<String, String> {
+        let json_str = self.serialize_to_json_string()?;
+        let encoded = encode_mechanism_for_url(&json_str);
+        Ok(format!("https://linkage.colesorkness.com/?m={}", encoded))
+    }
+
     /// Serialize the current mechanism to a JSON file at the given path.
     ///
     /// Load cases are included in the saved JSON so they persist across
@@ -356,5 +399,49 @@ impl AppState {
         Self::wasm_load_autosave()
             .map(|s| !s.is_empty())
             .unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn share_url_encode_decode_roundtrip() {
+        let json = r#"{"schema_version":"1.0.0","bodies":{},"joints":{},"drivers":{}}"#;
+        let encoded = encode_mechanism_for_url(json);
+        // Encoded should be URL-safe (no +, /, or = padding with URL_SAFE_NO_PAD).
+        assert!(!encoded.contains('+'), "encoded contains '+': not URL-safe");
+        assert!(!encoded.contains('/'), "encoded contains '/': not URL-safe");
+        let decoded = decode_mechanism_from_url(&encoded).expect("decode failed");
+        assert_eq!(decoded, json);
+    }
+
+    #[test]
+    fn share_url_compressed_is_shorter_than_json() {
+        // A realistic-ish JSON payload.
+        let json = r#"{"schema_version":"1.0.0","bodies":{"ground":{"attachment_points":{"A":[0.0,0.0],"B":[0.1,0.0]},"mass":0.0,"cg_local":[0.0,0.0],"izz_cg":0.0}},"joints":{},"drivers":{},"load_cases":[],"forces":[],"mounting_angle":0.0,"linear_drivers":[]}"#;
+        let encoded = encode_mechanism_for_url(json);
+        // Deflate + base64 should be shorter than raw base64 of the JSON.
+        assert!(
+            encoded.len() < json.len(),
+            "encoded ({}) not shorter than raw JSON ({})",
+            encoded.len(),
+            json.len()
+        );
+    }
+
+    #[test]
+    fn decode_invalid_base64_returns_error() {
+        let result = decode_mechanism_from_url("!!!not_valid_base64!!!");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decode_valid_base64_but_not_deflate_returns_error() {
+        use base64::Engine;
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"not compressed data");
+        let result = decode_mechanism_from_url(&encoded);
+        assert!(result.is_err());
     }
 }

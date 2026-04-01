@@ -11,7 +11,7 @@ mod blueprint_ops;
 mod entity_crud;
 mod driver_ops;
 mod undo_ops;
-mod file_io;
+pub mod file_io;
 mod solver_helpers;
 mod templates;
 
@@ -34,6 +34,7 @@ pub use simulation::SimulationState;
 // Re-export blueprint helper functions used in tests and other modules.
 pub(crate) use blueprint_ops::detect_driver_joint_id;
 
+use eframe::egui;
 use nalgebra::DVector;
 use std::collections::HashMap;
 use std::f64::consts::PI;
@@ -254,6 +255,26 @@ pub struct AppState {
     pub tutorial: crate::gui::tutorial::TutorialState,
     /// Nathan Mode: grayscale everything.
     pub nathan_mode: bool,
+    // ── Background image overlay ────────────────────────────────────
+    /// Optional background image for tracing real-world mechanisms.
+    pub background_image: Option<BackgroundImage>,
+    // ── Load path visualization ─────────────────────────────────────
+    /// Whether to color-code links by joint reaction force magnitude.
+    pub show_load_path: bool,
+}
+
+/// Background image overlay for tracing mechanisms from photos/sketches.
+pub struct BackgroundImage {
+    /// The egui texture handle for the loaded image.
+    pub texture: egui::TextureHandle,
+    /// World-space position of the image center (meters).
+    pub world_offset: [f64; 2],
+    /// Scale factor: pixels per meter in world space.
+    pub scale_px_per_m: f64,
+    /// Opacity (0.0 = transparent, 1.0 = fully opaque).
+    pub opacity: f32,
+    /// Original image dimensions in pixels.
+    pub size_px: [usize; 2],
 }
 
 /// Tracks placement state for the Add Body tool.
@@ -442,6 +463,8 @@ impl Default for AppState {
             template_name_buf: String::new(),
             tutorial: crate::gui::tutorial::TutorialState::default(),
             nathan_mode: false,
+            background_image: None,
+            show_load_path: false,
         };
         state.rebuild();
         state

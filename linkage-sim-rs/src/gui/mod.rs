@@ -68,6 +68,19 @@ impl LinkageApp {
             state: AppState::default(),
         }
     }
+
+    /// Load a mechanism from a shared URL's JSON string.
+    ///
+    /// Called from the WASM entry point when a `?m=` parameter was decoded.
+    pub fn load_shared_mechanism(&mut self, json_str: &str) {
+        if let Err(e) = self.state.load_from_json_str(json_str) {
+            log::error!("Failed to load shared mechanism: {}", e);
+        } else {
+            self.state.pending_fit_to_view = true;
+            self.state.status_message = Some("Loaded mechanism from shared URL".to_string());
+            self.state.status_message_time = 4.0;
+        }
+    }
 }
 
 impl eframe::App for LinkageApp {
@@ -189,12 +202,7 @@ impl eframe::App for LinkageApp {
                         ui.close();
                     }
                     let load_sample_resp = ui.menu_button("Load Sample", |ui| {
-                        for sample in SampleMechanism::all() {
-                            if ui.button(sample.label()).clicked() {
-                                self.state.load_sample(*sample);
-                                ui.close();
-                            }
-                        }
+                        draw_sample_menu(ui, &mut self.state);
                     });
                     load_sample_resp.response.on_hover_text("Load a preset sample mechanism");
                     // ── Templates ─────────────────────────────────────
@@ -241,6 +249,30 @@ impl eframe::App for LinkageApp {
                             }
                         });
                         manage_tpl_resp.response.on_hover_text("Delete saved templates");
+                    }
+                    // ── Share via URL ─────────────────────────────────
+                    ui.separator();
+                    if ui
+                        .add_enabled(
+                            self.state.mechanism.is_some(),
+                            egui::Button::new("Share via URL"),
+                        )
+                        .on_hover_text("Copy a shareable URL to the clipboard (loads in the web version)")
+                        .clicked()
+                    {
+                        match self.state.generate_share_url() {
+                            Ok(url) => {
+                                ui.ctx().copy_text(url.clone());
+                                self.state.status_message = Some(format!("Share URL copied ({} chars)", url.len()));
+                                self.state.status_message_time = 4.0;
+                            }
+                            Err(e) => {
+                                log::error!("Share URL generation failed: {}", e);
+                                self.state.status_message = Some(format!("Share failed: {}", e));
+                                self.state.status_message_time = 4.0;
+                            }
+                        }
+                        ui.close();
                     }
                     // ── Native-only file dialogs ──────────────────────
                     #[cfg(feature = "native")]
@@ -512,6 +544,43 @@ impl eframe::App for LinkageApp {
                             ui.close();
                         }
                     }
+                    // ── Background image import (native only) ────────
+                    #[cfg(feature = "native")]
+                    {
+                        ui.separator();
+                        if ui.button("Import Background Image...")
+                            .on_hover_text("Load a photo or sketch as a canvas background for tracing")
+                            .clicked()
+                        {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("Images", &["png", "jpg", "jpeg", "bmp"])
+                                .pick_file()
+                            {
+                                match load_background_image(ctx, &path) {
+                                    Ok(bg) => {
+                                        self.state.background_image = Some(bg);
+                                        self.state.status_message = Some("Background image loaded".to_string());
+                                        self.state.status_message_time = 3.0;
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to load background image: {}", e);
+                                        self.state.status_message = Some(format!("Image load failed: {}", e));
+                                        self.state.status_message_time = 4.0;
+                                    }
+                                }
+                            }
+                            ui.close();
+                        }
+                        if self.state.background_image.is_some() {
+                            if ui.button("Remove Background Image")
+                                .on_hover_text("Remove the background image from the canvas")
+                                .clicked()
+                            {
+                                self.state.background_image = None;
+                                ui.close();
+                            }
+                        }
+                    }
                     ui.separator();
                     if ui.button("Quit").on_hover_text("Close the application").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -624,7 +693,34 @@ impl eframe::App for LinkageApp {
                                 self.state.display_units.length_to_si(spacing_display);
                         }
                     });
+                    ui.checkbox(&mut self.state.show_load_path, "Load Path (heat map)")
+                        .on_hover_text("Color-code links by joint reaction force magnitude (blue=low, red=high)");
                     ui.separator();
+                    // ── Background image controls ────────────────────
+                    if self.state.background_image.is_some() {
+                        ui.label("Background Image:");
+                        if let Some(ref mut bg) = self.state.background_image {
+                            ui.horizontal(|ui| {
+                                ui.label("Opacity:");
+                                ui.add(egui::Slider::new(&mut bg.opacity, 0.0..=1.0).fixed_decimals(2));
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("Scale (px/m):");
+                                ui.add(egui::DragValue::new(&mut bg.scale_px_per_m)
+                                    .speed(10.0)
+                                    .range(1.0..=100000.0));
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("X offset (m):");
+                                ui.add(egui::DragValue::new(&mut bg.world_offset[0]).speed(0.01));
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("Y offset (m):");
+                                ui.add(egui::DragValue::new(&mut bg.world_offset[1]).speed(0.01));
+                            });
+                        }
+                        ui.separator();
+                    }
                     if ui.checkbox(&mut self.state.nathan_mode, "Nathan Mode")
                         .on_hover_text("Toggle grayscale mode")
                         .changed() && !self.state.nathan_mode
@@ -774,12 +870,7 @@ impl eframe::App for LinkageApp {
                 let samples_resp = ui.menu_button(
                     egui::RichText::new("Samples v").color(sample_color),
                     |ui| {
-                        for sample in SampleMechanism::all() {
-                            if ui.button(sample.label()).clicked() {
-                                self.state.load_sample(*sample);
-                                ui.close();
-                            }
-                        }
+                        draw_sample_menu(ui, &mut self.state);
                     },
                 );
                 samples_resp.response.on_hover_text("Load a preset sample mechanism");
@@ -1193,4 +1284,64 @@ fn restore_normal_visuals(ctx: &egui::Context) {
     v.window_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(55, 58, 68));
 
     ctx.set_visuals(v);
+}
+
+// ── Sample gallery menu ─────────────────────────────────────────────────────
+
+/// Draw the sample mechanism menu with categories and descriptions.
+///
+/// Samples are grouped by category (4-bar, 6-bar, specialty) with separator
+/// headers. Each sample shows its label and a tooltip with a brief description.
+fn draw_sample_menu(ui: &mut egui::Ui, state: &mut AppState) {
+    let mut last_category: Option<&str> = None;
+    for sample in SampleMechanism::all() {
+        let cat = sample.category();
+        if last_category != Some(cat) {
+            if last_category.is_some() {
+                ui.separator();
+            }
+            ui.label(egui::RichText::new(cat).small().weak());
+            last_category = Some(cat);
+        }
+        if ui
+            .button(sample.label())
+            .on_hover_text(sample.description())
+            .clicked()
+        {
+            state.load_sample(*sample);
+            ui.close();
+        }
+    }
+}
+
+// ── Background image loading ────────────────────────────────────────────────
+
+/// Load an image file and create an egui texture from it.
+///
+/// Uses the `image` crate to decode PNG/JPEG, converts to RGBA, and uploads
+/// to the egui texture manager. Returns a `BackgroundImage` with sensible
+/// defaults (centered at origin, 1000 px/m scale, 30% opacity).
+#[cfg(feature = "native")]
+fn load_background_image(
+    ctx: &egui::Context,
+    path: &std::path::Path,
+) -> Result<state::BackgroundImage, String> {
+    let img = image::open(path).map_err(|e| format!("Image decode error: {}", e))?;
+    let rgba = img.to_rgba8();
+    let (w, h) = (rgba.width() as usize, rgba.height() as usize);
+    let color_image = egui::ColorImage::from_rgba_unmultiplied([w, h], rgba.as_raw());
+    let texture = ctx.load_texture(
+        path.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "background".to_string()),
+        color_image,
+        egui::TextureOptions::LINEAR,
+    );
+    Ok(state::BackgroundImage {
+        texture,
+        world_offset: [0.0, 0.0],
+        scale_px_per_m: 1000.0, // default: 1000 px = 1 m
+        opacity: 0.3,
+        size_px: [w, h],
+    })
 }

@@ -80,6 +80,76 @@ impl SampleMechanism {
         }
     }
 
+    /// Short description of the mechanism for the sample gallery tooltip.
+    pub fn description(&self) -> &'static str {
+        match self {
+            SampleMechanism::FourBar => "Classic Grashof 4-bar with full crank rotation",
+            SampleMechanism::SliderCrank => "Rotary-to-linear motion converter (piston engine)",
+            SampleMechanism::CrankRocker => "4-bar with one full crank and one oscillating rocker",
+            SampleMechanism::DoubleRocker => "4-bar where both input and output oscillate",
+            SampleMechanism::DoubleCrank => "4-bar where both links make full rotations",
+            SampleMechanism::Parallelogram => "Equal opposite links, parallel motion output",
+            SampleMechanism::ParallelogramPress => "Press mechanism with body geometry and force zones",
+            SampleMechanism::ParallelogramActuator => "Parallelogram with linear actuator force element",
+            SampleMechanism::Chebyshev => "Lambda straight-line cognate, coupler traces near-linear path",
+            SampleMechanism::ChebyshevLambdaActuator => "Chebyshev lambda with custom proportions and actuator",
+            SampleMechanism::TripleRocker => "Non-Grashof 4-bar, all links oscillate",
+            SampleMechanism::SixBarB1 => "Watt I topology: two 4-bar loops sharing a ternary link",
+            SampleMechanism::SixBarA1 => "Stephenson chain A with binary ground link",
+            SampleMechanism::SixBarA2 => "Stephenson chain A with ternary ground link",
+            SampleMechanism::SixBarB2 => "Watt chain B with shared-binary coupler",
+            SampleMechanism::SixBarB3 => "Watt chain B with exclusive-binary coupler",
+            SampleMechanism::QuickReturn => "Crank-shaper with fast return stroke for machining",
+            SampleMechanism::ToggleClamp => "4-bar near toggle for high mechanical advantage clamping",
+            SampleMechanism::ScotchYoke => "Pure sinusoidal linear motion from rotary input",
+            SampleMechanism::InvertedSliderCrank => "Slider-crank with slider on the crank, not the frame",
+            SampleMechanism::Hoeken => "Approximate straight-line coupler path (Hoeken proportions)",
+            SampleMechanism::Roberts => "Roberts straight-line mechanism with symmetric coupler",
+            SampleMechanism::OffsetSliderCrank => "Slider-crank with offset pivot for asymmetric stroke",
+            SampleMechanism::WhitworthQuickReturn => "Slotted-link quick-return for shaper machines",
+            SampleMechanism::BellCrank => "90-degree force/motion redirect via ternary link",
+            SampleMechanism::PeaucellierLipkin => "Generates a figure-8 coupler curve path",
+            SampleMechanism::WattII => "Watt type II 6-bar with output on floating link",
+            SampleMechanism::Pantograph => "Scales and copies motion to a remote output point",
+        }
+    }
+
+    /// Category label for grouping in the sample gallery.
+    pub fn category(&self) -> &'static str {
+        match self {
+            SampleMechanism::FourBar
+            | SampleMechanism::SliderCrank
+            | SampleMechanism::CrankRocker
+            | SampleMechanism::DoubleRocker
+            | SampleMechanism::DoubleCrank
+            | SampleMechanism::Parallelogram
+            | SampleMechanism::ParallelogramPress
+            | SampleMechanism::ParallelogramActuator
+            | SampleMechanism::Chebyshev
+            | SampleMechanism::ChebyshevLambdaActuator
+            | SampleMechanism::TripleRocker => "4-Bar Mechanisms",
+
+            SampleMechanism::SixBarB1
+            | SampleMechanism::SixBarA1
+            | SampleMechanism::SixBarA2
+            | SampleMechanism::SixBarB2
+            | SampleMechanism::SixBarB3
+            | SampleMechanism::WattII
+            | SampleMechanism::Pantograph => "6-Bar Mechanisms",
+
+            SampleMechanism::QuickReturn
+            | SampleMechanism::ToggleClamp
+            | SampleMechanism::ScotchYoke
+            | SampleMechanism::InvertedSliderCrank
+            | SampleMechanism::Hoeken
+            | SampleMechanism::Roberts
+            | SampleMechanism::OffsetSliderCrank
+            | SampleMechanism::WhitworthQuickReturn
+            | SampleMechanism::BellCrank
+            | SampleMechanism::PeaucellierLipkin => "Specialty Mechanisms",
+        }
+    }
+
     pub fn all() -> &'static [SampleMechanism] {
         &[
             SampleMechanism::FourBar,
@@ -792,6 +862,44 @@ mod tests {
             result.converged,
             "Pantograph sample did not converge at t=0, residual = {}",
             result.residual_norm
+        );
+    }
+
+    #[test]
+    fn all_samples_have_descriptions() {
+        for sample in SampleMechanism::all() {
+            let desc = sample.description();
+            assert!(
+                !desc.is_empty(),
+                "{:?} has empty description",
+                sample
+            );
+            assert!(
+                desc.len() > 10,
+                "{:?} description too short: '{}'",
+                sample, desc
+            );
+        }
+    }
+
+    #[test]
+    fn all_samples_have_categories() {
+        for sample in SampleMechanism::all() {
+            let cat = sample.category();
+            assert!(
+                !cat.is_empty(),
+                "{:?} has empty category",
+                sample
+            );
+        }
+    }
+
+    #[test]
+    fn sample_count_is_28() {
+        assert_eq!(
+            SampleMechanism::all().len(),
+            28,
+            "Expected 28 sample mechanisms"
         );
     }
 }

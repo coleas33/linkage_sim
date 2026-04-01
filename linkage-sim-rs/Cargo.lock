@@ -1774,6 +1774,8 @@ dependencies = [
  "num-traits",
  "png 0.18.1",
  "tiff",
+ "zune-core 0.5.1",
+ "zune-jpeg 0.5.13",
 ]
 
 [[package]]
@@ -2023,11 +2025,15 @@ name = "linkage-sim-rs"
 version = "0.1.0"
 dependencies = [
  "approx",
+ "base64",
  "dirs",
  "eframe",
  "egui_plot",
  "env_logger",
+ "flate2",
  "gif",
+ "image",
+ "js-sys",
  "log",
  "meval",
  "nalgebra",

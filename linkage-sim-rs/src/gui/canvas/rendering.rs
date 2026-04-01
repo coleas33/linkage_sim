@@ -124,6 +124,8 @@ pub fn render_mechanism(
             matches!(selected, Some(SelectedEntity::Body(s)) if s == body_id);
         let color = if is_selected {
             gc(BODY_SELECTED_COLOR)
+        } else if let Some(lp_color) = load_path_color_for_body(body_id, mech, state) {
+            gc(lp_color)
         } else {
             gc(BODY_COLOR)
         };
@@ -1872,6 +1874,132 @@ pub fn draw_diamond_marker(painter: &egui::Painter, center: Pos2, radius: f32, c
     ));
 }
 
+// ── Background image rendering ──────────────────────────────────────────────
+
+/// Draw the background image overlay on the canvas (behind mechanism, above grid).
+///
+/// The image is positioned in world coordinates using the `BackgroundImage`
+/// offset and scale settings, and drawn with the configured opacity.
+pub fn draw_background_image(
+    painter: &egui::Painter,
+    canvas_rect: Rect,
+    state: &AppState,
+) {
+    let Some(ref bg) = state.background_image else {
+        return;
+    };
+    if bg.opacity <= 0.0 {
+        return;
+    }
+
+    let view = &state.view;
+
+    // Compute image world-space dimensions from pixel size and scale.
+    let img_w_world = bg.size_px[0] as f64 / bg.scale_px_per_m;
+    let img_h_world = bg.size_px[1] as f64 / bg.scale_px_per_m;
+
+    // Image corners in world space (centered at offset).
+    let left = bg.world_offset[0] - img_w_world / 2.0;
+    let top = bg.world_offset[1] + img_h_world / 2.0;
+    let right = bg.world_offset[0] + img_w_world / 2.0;
+    let bottom = bg.world_offset[1] - img_h_world / 2.0;
+
+    // Convert to screen coordinates.
+    let tl = view.world_to_screen(left, top);
+    let br = view.world_to_screen(right, bottom);
+    let screen_rect = Rect::from_min_max(
+        Pos2::new(tl[0], tl[1]),
+        Pos2::new(br[0], br[1]),
+    );
+
+    // Skip if entirely off-screen.
+    if !canvas_rect.intersects(screen_rect) {
+        return;
+    }
+
+    // Draw the image with opacity via tint alpha.
+    let alpha = (bg.opacity * 255.0).clamp(0.0, 255.0) as u8;
+    let tint = Color32::from_rgba_unmultiplied(255, 255, 255, alpha);
+    painter.image(
+        bg.texture.id(),
+        screen_rect,
+        Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)),
+        tint,
+    );
+}
+
+// ── Load path visualization helpers ─────────────────────────────────────────
+
+/// Map a normalized value [0, 1] to a blue-cyan-green-yellow-red heat gradient.
+///
+/// Used by the load path visualization to color-code links by force magnitude.
+pub fn heat_color(t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    // 5-stop gradient: blue -> cyan -> green -> yellow -> red
+    let (r, g, b) = if t < 0.25 {
+        let s = t / 0.25;
+        (0.0, s, 1.0)                         // blue -> cyan
+    } else if t < 0.5 {
+        let s = (t - 0.25) / 0.25;
+        (0.0, 1.0, 1.0 - s)                   // cyan -> green
+    } else if t < 0.75 {
+        let s = (t - 0.5) / 0.25;
+        (s, 1.0, 0.0)                         // green -> yellow
+    } else {
+        let s = (t - 0.75) / 0.25;
+        (1.0, 1.0 - s, 0.0)                   // yellow -> red
+    };
+    Color32::from_rgb(
+        (r * 255.0) as u8,
+        (g * 255.0) as u8,
+        (b * 255.0) as u8,
+    )
+}
+
+/// Compute the load path color for a body based on the maximum joint reaction
+/// force magnitude at its attachment points.
+///
+/// Returns `None` if load path visualization is disabled or there are no
+/// reaction forces available for this body's joints.
+fn load_path_color_for_body(
+    body_id: &str,
+    mech: &Mechanism,
+    state: &AppState,
+) -> Option<Color32> {
+    if !state.show_load_path {
+        return None;
+    }
+    if state.force_results.joint_reactions.is_empty() {
+        return None;
+    }
+
+    // Find the maximum force magnitude across ALL joints (for normalization).
+    let global_max = state
+        .force_results
+        .joint_reactions
+        .values()
+        .map(|(fx, fy)| (fx * fx + fy * fy).sqrt())
+        .fold(0.0_f64, f64::max);
+
+    if global_max < 1e-12 {
+        return None;
+    }
+
+    // Find the maximum force magnitude at joints connected to this body.
+    let mut body_max = 0.0_f64;
+    for joint in mech.joints() {
+        if joint.body_i_id() == body_id || joint.body_j_id() == body_id {
+            if let Some(&(fx, fy)) = state.force_results.joint_reactions.get(joint.id()) {
+                let mag = (fx * fx + fy * fy).sqrt();
+                body_max = body_max.max(mag);
+            }
+        }
+    }
+
+    let t = (body_max / global_max) as f32;
+    Some(heat_color(t))
+}
+
 /// Draw a grid of lines on the canvas behind the mechanism.
 ///
 /// Lines are drawn at multiples of `grid.spacing_m` in world coordinates.
@@ -2021,4 +2149,55 @@ pub fn show_body_tooltip(ui: &mut egui::Ui, body: &Body, body_id: &str) {
             ui.label(format!("Length: {:.1} mm", length * 1e3));
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn heat_color_blue_at_zero() {
+        let c = heat_color(0.0);
+        assert_eq!(c, Color32::from_rgb(0, 0, 255));
+    }
+
+    #[test]
+    fn heat_color_red_at_one() {
+        let c = heat_color(1.0);
+        assert_eq!(c, Color32::from_rgb(255, 0, 0));
+    }
+
+    #[test]
+    fn heat_color_green_at_half() {
+        let c = heat_color(0.5);
+        assert_eq!(c, Color32::from_rgb(0, 255, 0));
+    }
+
+    #[test]
+    fn heat_color_clamps_out_of_range() {
+        let below = heat_color(-1.0);
+        let above = heat_color(2.0);
+        assert_eq!(below, Color32::from_rgb(0, 0, 255));
+        assert_eq!(above, Color32::from_rgb(255, 0, 0));
+    }
+
+    #[test]
+    fn heat_color_transitions_are_smooth() {
+        // Check that adjacent samples don't have huge jumps.
+        let steps = 100;
+        for i in 0..steps {
+            let t1 = i as f32 / steps as f32;
+            let t2 = (i + 1) as f32 / steps as f32;
+            let c1 = heat_color(t1);
+            let c2 = heat_color(t2);
+            let dr = (c1.r() as i32 - c2.r() as i32).unsigned_abs();
+            let dg = (c1.g() as i32 - c2.g() as i32).unsigned_abs();
+            let db = (c1.b() as i32 - c2.b() as i32).unsigned_abs();
+            assert!(
+                dr <= 12 && dg <= 12 && db <= 12,
+                "Large color jump at t={:.3}: {:?} -> {:?}",
+                t1, c1, c2
+            );
+        }
+    }
 }
