@@ -240,9 +240,47 @@ impl AppState {
         // Detect the driven joint ID.
         let driver_joint_id = detect_driver_joint_id(&mech);
 
-        // Build a zero initial guess and solve at t=0.
+        // Try to solve at t=0. Start with a zero guess; if that fails, try
+        // multiple starting angles with continuation to handle mechanisms that
+        // need a specific initial configuration (e.g., above/below branch).
         let q0 = mech.state().make_q();
-        self.solve_and_update(&mech, &q0, 0.0, 1e-10, 50, Some(q0.clone()));
+        let mut converged = self.solve_and_update(&mech, &q0, 0.0, 1e-10, 50, Some(q0.clone()));
+
+        if !converged {
+            // Try solving at several angles and continuing to t=0.
+            use crate::solver::kinematics::solve_position;
+            let try_angles = [
+                std::f64::consts::FRAC_PI_4,
+                std::f64::consts::FRAC_PI_2,
+                std::f64::consts::PI,
+                -std::f64::consts::FRAC_PI_4,
+            ];
+            for &start_angle in &try_angles {
+                let t_start = (start_angle - driver_theta_0) / driver_omega;
+                let q_zero = mech.state().make_q();
+                if let Ok(result) = solve_position(&mech, &q_zero, t_start, 1e-10, 100) {
+                    if result.converged {
+                        // Continuation: step from start_angle back to t=0
+                        let steps = 20;
+                        let mut q_cont = result.q;
+                        let mut cont_ok = true;
+                        for i in 1..=steps {
+                            let t = t_start * (1.0 - i as f64 / steps as f64);
+                            match solve_position(&mech, &q_cont, t, 1e-10, 100) {
+                                Ok(r) if r.converged => q_cont = r.q,
+                                _ => { cont_ok = false; break; }
+                            }
+                        }
+                        if cont_ok {
+                            converged = self.solve_and_update(
+                                &mech, &q_cont, 0.0, 1e-10, 50, Some(q_cont.clone()),
+                            );
+                            if converged { break; }
+                        }
+                    }
+                }
+            }
+        }
 
         self.driver_omega = driver_omega;
         self.driver_theta_0 = driver_theta_0;
