@@ -676,3 +676,114 @@ pub(super) fn build_chebyshev_lambda_actuator(
 
     Ok((mech, q0))
 }
+
+/// Hoeken straight-line mechanism (4-bar).
+///
+/// An approximate straight-line mechanism with a coupler point that traces
+/// a nearly straight path over a significant portion of the crank rotation.
+/// Different proportions and coupler point location from the Chebyshev lambda.
+///
+/// Proportions (Hoeken ratios): ground=1, crank=0.25, coupler=1, rocker=1
+/// Coupler point at 2.5*crank from the crank-coupler joint along the coupler.
+///
+/// Scaled: ground=100mm, crank=25mm, coupler=100mm, rocker=100mm
+/// Coupler point at (62.5mm, 0) in coupler-local coords.
+///
+/// Grashof: 0.025+0.100 < 0.100+0.100 -> 0.125 < 0.200 (crank-rocker, full rotation).
+pub(super) fn build_hoeken_with_driver(
+    driver_joint_id: Option<&str>,
+) -> Result<(Mechanism, DVector<f64>), String> {
+    let o2 = (0.0_f64, 0.0_f64);
+    let o4 = (0.100_f64, 0.0_f64); // ground = 100mm
+    let l_crank = 0.025_f64;
+    let l_coupler = 0.100_f64;
+    let l_rocker = 0.100_f64;
+
+    let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
+    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
+    // Hoeken coupler point at 2.5 * crank length from B along coupler
+    coupler.add_coupler_point("P", 0.0625, 0.0).unwrap();
+    let rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+
+    let mut mech = Mechanism::new();
+    mech.add_body(ground).unwrap();
+    mech.add_body(crank).unwrap();
+    mech.add_body(coupler).unwrap();
+    mech.add_body(rocker).unwrap();
+
+    mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+    mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+    mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+    mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
+
+    let joint_id = driver_joint_id.unwrap_or("J1");
+    attach_driver_to_grounded_revolute_with_theta0(&mut mech, joint_id, "D1", 0.0)?;
+
+    mech.build().map_err(|e| e.to_string())?;
+
+    let q0 = fourbar_initial_q0(
+        mech.state(), o2, o4, l_crank, l_coupler, l_rocker, 0.0,
+        "crank", "coupler", "rocker", false,
+    );
+
+    Ok((mech, q0))
+}
+
+/// Roberts straight-line mechanism (4-bar).
+///
+/// An approximate straight-line 4-bar cognate of the Chebyshev mechanism
+/// (Roberts-Chebyshev theorem). Uses proportions derived from the Roberts
+/// cognate construction.
+///
+/// Proportions: ground=2, crank=rocker=sqrt(2), coupler=2
+/// Coupler point at midpoint, offset perpendicular for straight-line trace.
+///
+/// Scaled by 30mm: ground=60mm, crank=rocker=42.43mm, coupler=60mm.
+///
+/// Grashof: 0.04243+0.06 < 0.06+0.04243 -> 0.10243 < 0.10243 (change-point,
+/// special Grashof). The shortest + longest equals the sum of the other two,
+/// so this is a borderline Grashof mechanism with full crank rotation.
+pub(super) fn build_roberts_with_driver(
+    driver_joint_id: Option<&str>,
+) -> Result<(Mechanism, DVector<f64>), String> {
+    // Roberts proportions: ground=2, crank=rocker=sqrt(2), coupler=2
+    // Scaled by 30mm: ground=60mm, crank=rocker=42.43mm, coupler=60mm
+    let scale = 0.030_f64;
+    let o2 = (0.0_f64, 0.0_f64);
+    let l_ground = 2.0 * scale;
+    let o4 = (l_ground, 0.0_f64);
+    let l_crank = std::f64::consts::SQRT_2 * scale;
+    let l_coupler = 2.0 * scale;
+    let l_rocker = std::f64::consts::SQRT_2 * scale;
+
+    let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
+    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
+    // Coupler point at midpoint, offset perpendicular for straight-line trace
+    coupler.add_coupler_point("P", l_coupler / 2.0, -l_coupler / 4.0).unwrap();
+    let rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+
+    let mut mech = Mechanism::new();
+    mech.add_body(ground).unwrap();
+    mech.add_body(crank).unwrap();
+    mech.add_body(coupler).unwrap();
+    mech.add_body(rocker).unwrap();
+
+    mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+    mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+    mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+    mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
+
+    let joint_id = driver_joint_id.unwrap_or("J1");
+    attach_driver_to_grounded_revolute_with_theta0(&mut mech, joint_id, "D1", 0.0)?;
+
+    mech.build().map_err(|e| e.to_string())?;
+
+    let q0 = fourbar_initial_q0(
+        mech.state(), o2, o4, l_crank, l_coupler, l_rocker, 0.0,
+        "crank", "coupler", "rocker", false,
+    );
+
+    Ok((mech, q0))
+}

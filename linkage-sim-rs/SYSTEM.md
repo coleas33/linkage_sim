@@ -102,12 +102,12 @@ linkage-sim-rs/src/
 │   │   ├── pending_edits.rs          (210)    PendingPropertyEdit enum + apply_pending
 │   │   ├── diagnostics.rs            (305)    Diagnostics section + motor sizing
 │   │   └── force_editor.rs         (1,273)    Per-force-type parameter editors
-│   ├── samples/                    (1,725)    Sample mechanism builders
-│   │   ├── mod.rs                    (308)    SampleMechanism enum, build_sample dispatch, tests
+│   ├── samples/                    (2,500+)   Sample mechanism builders (28 total)
+│   │   ├── mod.rs                    (400+)   SampleMechanism enum, build_sample dispatch, tests
 │   │   ├── helpers.rs                (219)    attach_driver, fourbar_initial_q0, continuation solver
-│   │   ├── fourbar.rs                (466)    10 four-bar variants
-│   │   ├── sixbar.rs                 (500)    5 six-bar variants
-│   │   └── special.rs               (300+)   Quick-return, toggle clamp, scotch yoke, Chebyshev lambda actuator
+│   │   ├── fourbar.rs                (570+)   12 four-bar variants (incl. Hoeken, Roberts)
+│   │   ├── sixbar.rs                 (700+)   7 six-bar variants (incl. Watt II, Pantograph)
+│   │   └── special.rs               (620+)   Slider-crank variants, bell crank, coupler curve, yoke mechanisms
 │   ├── export/                     (1,577)    File export
 │   │   ├── mod.rs                     (20)    Re-exports
 │   │   ├── csv.rs                    (454)    CSV + coupler CSV export
@@ -187,7 +187,7 @@ After:   92 files,  0 files > 1,500 lines (excl. test-only),  largest impl = 1,3
 | `core/constraint.rs` (1,619) | 1 file | 7 files (trait, helpers, revolute, fixed, prismatic, cam, mod) | Done |
 | `forces/elements.rs` (2,443) | 1 file | 5 files (time_mod, types, eval, force_element, mod) | Done |
 | `gui/export.rs` (1,512) | 1 file | 6 files (csv, svg, raster, dxf, report, mod) | Done |
-| `gui/samples.rs` (1,688) | 1 file | 5 files (fourbar, sixbar, special, helpers, mod) | Done |
+| `gui/samples.rs` (2,500+) | 1 file | 5 files (fourbar, sixbar, special, helpers, mod) | Done |
 | `gui/property_panel.rs` (2,143) | 1 file | 4 files (pending_edits, diagnostics, force_editor, mod) | Done |
 | `gui/canvas.rs` (2,880) | 1 file | 6 files (colors, hit_testing, rendering, interaction, context_menu, mod) | Done |
 | `gui/state.rs` (5,725) | 1 file | 14 files (display_units, grid, view_transform, load_cases, types, parametric, simulation, blueprint_ops, entity_crud, driver_ops, file_io, undo_ops, tests, mod) | Done |

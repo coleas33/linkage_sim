@@ -498,3 +498,196 @@ pub(super) fn build_sixbar_b3(
 
     Ok((mech, q0))
 }
+
+// ---------------------------------------------------------------------------
+// Watt II -- 6-bar Watt type-II mechanism
+// ---------------------------------------------------------------------------
+
+/// 6-bar Watt type-II mechanism.
+///
+/// Topology: Two ternary links (T1 and T2) are each grounded, connected
+/// through a binary link B1. Additional binary links B2 and B3 close
+/// the kinematic chain.
+///
+/// Ground pivots: O2=(0,0), O4=(2.0,0)
+/// T1 (grounded at O2): ternary with P1(origin), P2(0.8,0), P3(0.4,0.4)
+/// T2 (grounded at O4): ternary with Q1(origin), Q2(0.8,0), Q3(0.4,0.4)
+/// B1: binary link connecting T1.P2 to T2.Q2 (length 2.0)
+/// B2: binary link (length 1.5)
+/// B3: binary link (length 1.5)
+///
+/// Joints (7):
+///   J1: ground-T1 (at O2)
+///   J2: ground-T2 (at O4)
+///   J3: T1.P2 - B1.A (ternary arm to coupler)
+///   J4: B1.B - T2.Q2 (coupler to other ternary)
+///   J5: T1.P3 - B2.A
+///   J6: T2.Q3 - B3.A
+///   J7: B2.B - B3.B (closes the chain)
+///
+/// Driver on J1 (ground-T1).
+pub(super) fn build_watt_ii(
+    driver_joint_id: Option<&str>,
+) -> Result<(Mechanism, DVector<f64>), String> {
+    let ground = make_ground(&[
+        ("O2", 0.0, 0.0),
+        ("O4", 2.0, 0.0),
+    ]);
+    let t1 = make_ternary("t1", "P1", "P2", "P3", (0.8, 0.0), (0.4, 0.4));
+    let t2 = make_ternary("t2", "Q1", "Q2", "Q3", (0.8, 0.0), (0.4, 0.4));
+    let mut b1 = make_bar("b1", "A", "B", 2.0, 0.0, 0.0);
+    b1.add_coupler_point("CP", 1.0, 0.0).unwrap();
+    let b2 = make_bar("b2", "A", "B", 1.5, 0.0, 0.0);
+    let b3 = make_bar("b3", "A", "B", 1.5, 0.0, 0.0);
+
+    let mut mech = Mechanism::new();
+    mech.add_body(ground).unwrap();
+    mech.add_body(t1).unwrap();
+    mech.add_body(t2).unwrap();
+    mech.add_body(b1).unwrap();
+    mech.add_body(b2).unwrap();
+    mech.add_body(b3).unwrap();
+
+    mech.add_revolute_joint("J1", "ground", "O2", "t1", "P1").unwrap();
+    mech.add_revolute_joint("J2", "ground", "O4", "t2", "Q1").unwrap();
+    mech.add_revolute_joint("J3", "t1", "P2", "b1", "A").unwrap();
+    mech.add_revolute_joint("J4", "b1", "B", "t2", "Q2").unwrap();
+    mech.add_revolute_joint("J5", "t1", "P3", "b2", "A").unwrap();
+    mech.add_revolute_joint("J6", "t2", "Q3", "b3", "A").unwrap();
+    mech.add_revolute_joint("J7", "b2", "B", "b3", "B").unwrap();
+
+    let joint_id = driver_joint_id.unwrap_or("J1");
+    attach_driver_to_grounded_revolute_with_theta0(&mut mech, joint_id, "D1", 0.0)?;
+
+    mech.build().map_err(|e| e.to_string())?;
+
+    // Initial guess: T1 at small angle, then solve via continuation.
+    let state = mech.state();
+    let q0 = watt_ii_find_initial(state, &mech)?;
+
+    Ok((mech, q0))
+}
+
+/// Compute geometric initial guess for the Watt II six-bar.
+fn watt_ii_find_initial(
+    state: &crate::core::state::State,
+    mech: &Mechanism,
+) -> Result<DVector<f64>, String> {
+    for &angle in &[0.3, 0.5, 0.2, 0.8, 0.15, 1.0, 1.2, 0.1] {
+        let mut q = state.make_q();
+
+        // T1 at O2=(0,0), rotated by angle
+        state.set_pose("t1", &mut q, 0.0, 0.0, angle);
+        let ct1 = angle.cos();
+        let st1 = angle.sin();
+
+        // T1 attachment points in global
+        let p2x = 0.8 * ct1;
+        let p2y = 0.8 * st1;
+        let p3x = 0.4 * ct1 - 0.4 * st1;
+        let p3y = 0.4 * st1 + 0.4 * ct1;
+
+        // T2 at O4=(2,0), try a small negative angle
+        let t2_angle = -angle * 0.5;
+        state.set_pose("t2", &mut q, 2.0, 0.0, t2_angle);
+        let ct2 = t2_angle.cos();
+        let st2 = t2_angle.sin();
+
+        let q2x = 2.0 + 0.8 * ct2;
+        let q2y = 0.8 * st2;
+        let q3x = 2.0 + 0.4 * ct2 - 0.4 * st2;
+        let q3y = 0.4 * st2 + 0.4 * ct2;
+
+        // B1: connects P2 to Q2
+        let theta_b1 = (q2y - p2y).atan2(q2x - p2x);
+        state.set_pose("b1", &mut q, p2x, p2y, theta_b1);
+
+        // B2 and B3 meet at a common point. Aim both toward the midpoint
+        // of P3 and Q3 (approximately where they should meet).
+        let mid_x = (p3x + q3x) / 2.0;
+        let mid_y = (p3y + q3y) / 2.0 + 0.5; // offset upward for better guess
+        let theta_b2 = (mid_y - p3y).atan2(mid_x - p3x);
+        state.set_pose("b2", &mut q, p3x, p3y, theta_b2);
+
+        let theta_b3 = (mid_y - q3y).atan2(mid_x - q3x);
+        state.set_pose("b3", &mut q, q3x, q3y, theta_b3);
+
+        if let Ok(result) = solve_position(mech, &q, angle, 1e-10, 200) {
+            if result.converged {
+                if let Some(q0) = solve_with_continuation(
+                    mech, &result.q, angle, 0.0, 20,
+                ) {
+                    return Ok(q0);
+                }
+            }
+        }
+    }
+    Err("WattII: could not find converging initial guess at any starting angle".to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Pantograph -- 5-bar motion-scaling mechanism
+// ---------------------------------------------------------------------------
+
+/// Pantograph mechanism (5-bar, motion scaling).
+///
+/// A classic mechanism used for scaling drawings and motion. The pantograph
+/// uses a parallelogram sub-chain to produce an output point that traces a
+/// scaled copy of the input point's path.
+///
+/// Topology: Ground + 4 moving bodies (binary links forming a parallelogram
+/// with an extension arm).
+///
+/// Ground pivots: O=(0,0)
+/// Link1 (input arm): grounded at O, length 2.0
+/// Link2 (parallel bar): connects Link1 midpoint to Link3, length 1.5
+/// Link3 (output arm): grounded at O, length 3.0 (passes through O, extends beyond)
+/// Link4 (parallel bar): connects Link1 end to Link3 midpoint, length 1.5
+///
+/// Simplified as a 4-bar with extension:
+///   Ground pivot at (0,0), second ground pivot at (0.05, 0)
+///   Crank: 0.030m, Coupler: 0.050m, Rocker: 0.030m
+///   Coupler point extends to (0.075, 0) for 1.5x scaling
+///
+/// Grashof: 0.030+0.050 < 0.050+0.030 -> 0.080 < 0.080 (change-point parallelogram).
+pub(super) fn build_pantograph(
+    driver_joint_id: Option<&str>,
+) -> Result<(Mechanism, DVector<f64>), String> {
+    let o2 = (0.0_f64, 0.0_f64);
+    let o4 = (0.050_f64, 0.0_f64);
+    let l_crank = 0.030_f64;
+    let l_coupler = 0.050_f64;
+    let l_rocker = 0.030_f64;
+
+    let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
+    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    // Coupler with extension point P at 1.5x coupler length for scaling
+    let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
+    coupler.add_coupler_point("P", 0.075, 0.0).unwrap();
+    let rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+
+    let mut mech = Mechanism::new();
+    mech.add_body(ground).unwrap();
+    mech.add_body(crank).unwrap();
+    mech.add_body(coupler).unwrap();
+    mech.add_body(rocker).unwrap();
+
+    mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+    mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+    mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+    mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
+
+    let joint_id = driver_joint_id.unwrap_or("J1");
+
+    use super::helpers::fourbar_initial_q0;
+    attach_driver_to_grounded_revolute_with_theta0(&mut mech, joint_id, "D1", 0.0)?;
+
+    mech.build().map_err(|e| e.to_string())?;
+
+    let q0 = fourbar_initial_q0(
+        mech.state(), o2, o4, l_crank, l_coupler, l_rocker, 0.0,
+        "crank", "coupler", "rocker", false,
+    );
+
+    Ok((mech, q0))
+}

@@ -35,6 +35,15 @@ pub enum SampleMechanism {
     ToggleClamp,
     ScotchYoke,
     InvertedSliderCrank,
+    // Phase 7 additions (classic mechanisms)
+    Hoeken,
+    Roberts,
+    OffsetSliderCrank,
+    WhitworthQuickReturn,
+    BellCrank,
+    PeaucellierLipkin,
+    WattII,
+    Pantograph,
 }
 
 impl SampleMechanism {
@@ -60,6 +69,14 @@ impl SampleMechanism {
             SampleMechanism::ToggleClamp => "Toggle Clamp (4-bar near-toggle)",
             SampleMechanism::ScotchYoke => "Scotch Yoke (pure sinusoidal)",
             SampleMechanism::InvertedSliderCrank => "Inverted Slider-Crank",
+            SampleMechanism::Hoeken => "Hoeken Straight-Line",
+            SampleMechanism::Roberts => "Roberts Straight-Line",
+            SampleMechanism::OffsetSliderCrank => "Offset Slider-Crank",
+            SampleMechanism::WhitworthQuickReturn => "Whitworth Quick-Return",
+            SampleMechanism::BellCrank => "Bell Crank (90\u{00b0} redirect)",
+            SampleMechanism::PeaucellierLipkin => "Coupler Curve (figure-8)",
+            SampleMechanism::WattII => "6-Bar Watt II",
+            SampleMechanism::Pantograph => "Pantograph (motion scaling)",
         }
     }
 
@@ -85,6 +102,14 @@ impl SampleMechanism {
             SampleMechanism::ToggleClamp,
             SampleMechanism::ScotchYoke,
             SampleMechanism::InvertedSliderCrank,
+            SampleMechanism::Hoeken,
+            SampleMechanism::Roberts,
+            SampleMechanism::OffsetSliderCrank,
+            SampleMechanism::WhitworthQuickReturn,
+            SampleMechanism::BellCrank,
+            SampleMechanism::PeaucellierLipkin,
+            SampleMechanism::WattII,
+            SampleMechanism::Pantograph,
         ]
     }
 }
@@ -123,6 +148,14 @@ pub fn build_sample_with_driver(
         SampleMechanism::ToggleClamp => special::build_toggle_clamp(driver_joint_id),
         SampleMechanism::ScotchYoke => special::build_scotch_yoke(driver_joint_id),
         SampleMechanism::InvertedSliderCrank => special::build_inverted_slider_crank(driver_joint_id),
+        SampleMechanism::Hoeken => fourbar::build_hoeken_with_driver(driver_joint_id),
+        SampleMechanism::Roberts => fourbar::build_roberts_with_driver(driver_joint_id),
+        SampleMechanism::OffsetSliderCrank => special::build_offset_slider_crank(driver_joint_id),
+        SampleMechanism::WhitworthQuickReturn => special::build_whitworth_quick_return(driver_joint_id),
+        SampleMechanism::BellCrank => special::build_bell_crank(driver_joint_id),
+        SampleMechanism::PeaucellierLipkin => special::build_peaucellier_lipkin(driver_joint_id),
+        SampleMechanism::WattII => sixbar::build_watt_ii(driver_joint_id),
+        SampleMechanism::Pantograph => sixbar::build_pantograph(driver_joint_id),
     }
 }
 
@@ -574,7 +607,7 @@ mod tests {
 
     #[test]
     fn all_samples_listed() {
-        assert_eq!(SampleMechanism::all().len(), 20);
+        assert_eq!(SampleMechanism::all().len(), 28);
     }
 
     #[test]
@@ -672,5 +705,93 @@ mod tests {
         let total = sweep.angles_deg.len();
         eprintln!("InvertedSliderCrank: {}/361 converged", total);
         assert!(total > 300, "InvertedSliderCrank should converge for most angles, got {}", total);
+    }
+
+    #[test]
+    fn hoeken_sample_builds_and_solves() {
+        let (mech, q0) = build_sample(SampleMechanism::Hoeken);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
+        assert!(
+            result.converged,
+            "Hoeken sample did not converge at t=0, residual = {}",
+            result.residual_norm
+        );
+    }
+
+    #[test]
+    fn roberts_sample_builds_and_solves() {
+        let (mech, q0) = build_sample(SampleMechanism::Roberts);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
+        assert!(
+            result.converged,
+            "Roberts sample did not converge at t=0, residual = {}",
+            result.residual_norm
+        );
+    }
+
+    #[test]
+    fn offset_slider_crank_sample_builds_and_solves() {
+        let (mech, q0) = build_sample(SampleMechanism::OffsetSliderCrank);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
+        assert!(
+            result.converged,
+            "Offset slider-crank sample did not converge at t=0, residual = {}",
+            result.residual_norm
+        );
+    }
+
+    #[test]
+    fn whitworth_quick_return_sample_builds_and_solves() {
+        let (mech, q0) = build_sample(SampleMechanism::WhitworthQuickReturn);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
+        assert!(
+            result.converged,
+            "Whitworth quick-return sample did not converge at t=0, residual = {}",
+            result.residual_norm
+        );
+    }
+
+    #[test]
+    fn bell_crank_sample_builds_and_solves() {
+        let (mech, q0) = build_sample(SampleMechanism::BellCrank);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 100).unwrap();
+        assert!(
+            result.converged,
+            "Bell crank sample did not converge at t=0, residual = {}",
+            result.residual_norm
+        );
+    }
+
+    #[test]
+    fn peaucellier_lipkin_sample_builds_and_solves() {
+        let (mech, q0) = build_sample(SampleMechanism::PeaucellierLipkin);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 100).unwrap();
+        assert!(
+            result.converged,
+            "Peaucellier-Lipkin sample did not converge at t=0, residual = {}",
+            result.residual_norm
+        );
+    }
+
+    #[test]
+    fn watt_ii_sample_builds_and_solves() {
+        let (mech, q0) = build_sample(SampleMechanism::WattII);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 100).unwrap();
+        assert!(
+            result.converged,
+            "Watt II sample did not converge at t=0, residual = {}",
+            result.residual_norm
+        );
+    }
+
+    #[test]
+    fn pantograph_sample_builds_and_solves() {
+        let (mech, q0) = build_sample(SampleMechanism::Pantograph);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 50).unwrap();
+        assert!(
+            result.converged,
+            "Pantograph sample did not converge at t=0, residual = {}",
+            result.residual_norm
+        );
     }
 }
