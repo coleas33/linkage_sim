@@ -747,40 +747,12 @@ impl eframe::App for LinkageApp {
                             ui.close();
                         }
                         ui.separator();
-                        if let Some(ref mut bg) = self.state.background_image {
-                            ui.horizontal(|ui| {
-                                ui.label("Opacity:");
-                                ui.add(egui::Slider::new(&mut bg.opacity, 0.0..=1.0).fixed_decimals(2));
-                            });
-                            let img_width_m = bg.size_px[0] as f64 / bg.scale_px_per_m;
-                            let mut img_width_mm = img_width_m * 1000.0;
-                            ui.horizontal(|ui| {
-                                ui.label("Width:");
-                                if ui.add(
-                                    egui::DragValue::new(&mut img_width_mm)
-                                        .speed(1.0)
-                                        .range(1.0..=100000.0)
-                                        .suffix(" mm")
-                                ).changed() {
-                                    bg.scale_px_per_m = bg.size_px[0] as f64 / (img_width_mm / 1000.0);
-                                }
-                            });
-                            ui.horizontal(|ui| {
-                                if ui.small_button("\u{2212}").on_hover_text("Shrink 10%").clicked() {
-                                    bg.scale_px_per_m *= 1.1;
-                                }
-                                if ui.small_button("+").on_hover_text("Grow 10%").clicked() {
-                                    bg.scale_px_per_m *= 0.9;
-                                }
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label("X:");
-                                ui.add(egui::DragValue::new(&mut bg.world_offset[0]).speed(0.001).suffix(" m"));
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label("Y:");
-                                ui.add(egui::DragValue::new(&mut bg.world_offset[1]).speed(0.001).suffix(" m"));
-                            });
+                        if ui.button("Image Settings...")
+                            .on_hover_text("Open image controls (opacity, size, position)")
+                            .clicked()
+                        {
+                            self.state.show_image_settings = true;
+                            ui.close();
                         }
                     }
                 });
@@ -1120,6 +1092,62 @@ impl eframe::App for LinkageApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             canvas::draw_canvas(ui, &mut self.state);
         });
+
+        // ── Image Settings floating window ───────────────────────────
+        // Shown when the user clicks "Image Settings..." in the Image menu.
+        // Uses a persistent window so +/- buttons and sliders don't close on click.
+        if self.state.show_image_settings && self.state.background_image.is_some() {
+            egui::Window::new("Image Settings")
+                .open(&mut self.state.show_image_settings)
+                .resizable(false)
+                .default_width(260.0)
+                .show(ctx, |ui| {
+                    if let Some(ref mut bg) = self.state.background_image {
+                        ui.horizontal(|ui| {
+                            ui.label("Opacity:");
+                            ui.add(egui::Slider::new(&mut bg.opacity, 0.0..=1.0).fixed_decimals(2));
+                        });
+                        let img_width_m = bg.size_px[0] as f64 / bg.scale_px_per_m;
+                        let mut img_width_mm = img_width_m * 1000.0;
+                        ui.horizontal(|ui| {
+                            ui.label("Width:");
+                            if ui.add(
+                                egui::DragValue::new(&mut img_width_mm)
+                                    .speed(1.0)
+                                    .range(1.0..=100000.0)
+                                    .suffix(" mm")
+                            ).changed() {
+                                bg.scale_px_per_m = bg.size_px[0] as f64 / (img_width_mm / 1000.0);
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("Resize:");
+                            if ui.button("Shrink 10%").on_hover_text("Decrease image size by 10%").clicked() {
+                                bg.scale_px_per_m *= 1.1;
+                            }
+                            if ui.button("Grow 10%").on_hover_text("Increase image size by 10%").clicked() {
+                                bg.scale_px_per_m *= 0.9;
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("X:");
+                            ui.add(egui::DragValue::new(&mut bg.world_offset[0]).speed(0.001).suffix(" m"));
+                            ui.label("Y:");
+                            ui.add(egui::DragValue::new(&mut bg.world_offset[1]).speed(0.001).suffix(" m"));
+                        });
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new("Tip: Hold Ctrl and drag on canvas to move image")
+                                .small()
+                                .weak(),
+                        );
+                    }
+                });
+        }
+        // Close image settings if the image was removed.
+        if self.state.background_image.is_none() {
+            self.state.show_image_settings = false;
+        }
 
         // ── Autosave recovery prompt ──────────────────────────────────
         if self.state.recovery_path.is_some() {

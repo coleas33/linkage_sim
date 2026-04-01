@@ -42,7 +42,20 @@ pub fn handle_interaction(
     body_segments: &[BodySegment],
 ) -> bool {
     let is_shift = ui.input(|i| i.modifiers.shift);
+    let is_ctrl = ui.input(|i| i.modifiers.ctrl);
     let mut is_panning = false;
+
+    // ── Interaction: Ctrl+drag to move background image ───────────────
+    if state.background_image.is_some()
+        && response.dragged_by(egui::PointerButton::Primary)
+        && is_ctrl
+    {
+        let delta = response.drag_delta();
+        if let Some(ref mut bg) = state.background_image {
+            bg.world_offset[0] += delta.x as f64 / state.view.scale as f64;
+            bg.world_offset[1] -= delta.y as f64 / state.view.scale as f64;
+        }
+    }
 
     // Clear alignment guides when no drag is active.
     if state.dragging_ground_pivot.is_none() {
@@ -135,8 +148,9 @@ pub fn handle_interaction(
     let is_dragging_ground = state.dragging_ground_pivot.is_some();
 
     // Primary drag on empty space (Select mode) pans the view.
-    // Suppress panning when dragging a ground pivot.
-    if response.dragged_by(egui::PointerButton::Primary) && !is_shift && !is_dragging_ground {
+    // Suppress panning when dragging a ground pivot or Ctrl+dragging the background image.
+    let is_ctrl_dragging_image = is_ctrl && state.background_image.is_some();
+    if response.dragged_by(egui::PointerButton::Primary) && !is_shift && !is_dragging_ground && !is_ctrl_dragging_image {
         if state.active_tool == EditorTool::Select
             && state.draw_link_start.is_none()
         {

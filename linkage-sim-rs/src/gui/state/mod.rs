@@ -258,6 +258,8 @@ pub struct AppState {
     // ── Background image overlay ────────────────────────────────────
     /// Optional background image for tracing real-world mechanisms.
     pub background_image: Option<BackgroundImage>,
+    /// Whether the Image Settings floating window is open.
+    pub show_image_settings: bool,
     // ── Load path visualization ─────────────────────────────────────
     /// Whether to color-code links by joint reaction force magnitude.
     pub show_load_path: bool,
@@ -474,6 +476,7 @@ impl Default for AppState {
             tutorial: crate::gui::tutorial::TutorialState::default(),
             nathan_mode: false,
             background_image: None,
+            show_image_settings: false,
             show_load_path: true,
             place_mass_body: None,
             reassigning_point_mass: None,
