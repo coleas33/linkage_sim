@@ -79,7 +79,7 @@ pub struct ContextMenuTarget {
 // ── Selection ─────────────────────────────────────────────────────────────────
 
 /// Which entity in the mechanism is currently selected for inspection.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SelectedEntity {
     Body(String),
     Joint(String),

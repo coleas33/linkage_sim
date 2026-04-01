@@ -198,7 +198,7 @@ pub fn handle_interaction(
     }
 
     // ── Interaction: Arrow key nudge for selected entity ────────────────
-    if state.selected.is_some() && state.blueprint.is_some() {
+    if (state.selected.is_some() || !state.multi_selected.is_empty()) && state.blueprint.is_some() {
         let shift = ui.input(|i| i.modifiers.shift);
         let base_step = state.grid.spacing_m;
         let step = if shift { base_step * 10.0 } else { base_step };
@@ -212,14 +212,26 @@ pub fn handle_interaction(
         if ui.input(|i| i.key_pressed(egui::Key::ArrowDown))  { dy = -step; }
 
         if dx != 0.0 || dy != 0.0 {
-            match &state.selected.clone() {
-                Some(SelectedEntity::Body(body_id)) => {
-                    state.nudge_body(body_id, dx, dy);
+            if !state.multi_selected.is_empty() {
+                // Nudge all multi-selected items.
+                let items: Vec<_> = state.multi_selected.clone();
+                for entity in &items {
+                    match entity {
+                        SelectedEntity::Body(body_id) => state.nudge_body(body_id, dx, dy),
+                        SelectedEntity::Joint(joint_id) => state.nudge_joint(joint_id, dx, dy),
+                        _ => {}
+                    }
                 }
-                Some(SelectedEntity::Joint(joint_id)) => {
-                    state.nudge_joint(joint_id, dx, dy);
+            } else {
+                match &state.selected.clone() {
+                    Some(SelectedEntity::Body(body_id)) => {
+                        state.nudge_body(body_id, dx, dy);
+                    }
+                    Some(SelectedEntity::Joint(joint_id)) => {
+                        state.nudge_joint(joint_id, dx, dy);
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         }
     }
@@ -350,7 +362,7 @@ pub fn handle_interaction(
         && state.active_tool != EditorTool::PlaceMass
         && response.clicked()
     {
-        handle_click_selection(response, state, canvas_rect, joint_hit_targets, attachment_hit_targets);
+        handle_click_selection(response, state, canvas_rect, joint_hit_targets, attachment_hit_targets, is_shift);
     }
 
     right_drag_ended
@@ -963,6 +975,7 @@ fn handle_click_selection(
     canvas_rect: egui::Rect,
     joint_hit_targets: &[(Pos2, String)],
     attachment_hit_targets: &[AttachmentHit],
+    is_shift: bool,
 ) {
     if let Some(pointer_pos) = response.interact_pointer_pos() {
         let [wx, wy] = state.view.screen_to_world(pointer_pos.x, pointer_pos.y);
@@ -1031,7 +1044,22 @@ fn handle_click_selection(
                     }
                 }
 
-                state.selected = hit;
+                if is_shift {
+                    // Shift+click: toggle item in multi_selected.
+                    if let Some(entity) = hit {
+                        if let Some(pos) = state.multi_selected.iter().position(|e| *e == entity) {
+                            state.multi_selected.remove(pos);
+                        } else {
+                            state.multi_selected.push(entity.clone());
+                        }
+                        // Set primary selection to last-added for property panel.
+                        state.selected = Some(entity);
+                    }
+                } else {
+                    // Normal click: clear multi-selection, set single selection.
+                    state.multi_selected.clear();
+                    state.selected = hit;
+                }
             }
         }
     }

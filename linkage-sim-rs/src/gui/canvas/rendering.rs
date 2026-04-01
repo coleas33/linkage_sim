@@ -121,7 +121,8 @@ pub fn render_mechanism(
         }
 
         let is_selected =
-            matches!(selected, Some(SelectedEntity::Body(s)) if s == body_id);
+            matches!(selected, Some(SelectedEntity::Body(s)) if s == body_id)
+            || state.multi_selected.iter().any(|e| matches!(e, SelectedEntity::Body(s) if s == body_id));
         let color = if is_selected {
             gc(BODY_SELECTED_COLOR)
         } else if let Some(lp_color) = load_path_color_for_body(body_id, mech, state) {
@@ -399,7 +400,8 @@ pub fn render_mechanism(
         let center = Pos2::new(sp[0], sp[1]);
 
         let is_selected =
-            matches!(selected, Some(SelectedEntity::Joint(s)) if s == joint.id());
+            matches!(selected, Some(SelectedEntity::Joint(s)) if s == joint.id())
+            || state.multi_selected.iter().any(|e| matches!(e, SelectedEntity::Joint(s) if s == joint.id()));
         let is_driver =
             current_driver_joint.as_deref() == Some(joint.id());
         let is_highlighted =

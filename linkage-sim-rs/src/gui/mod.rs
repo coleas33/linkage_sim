@@ -29,6 +29,12 @@ pub struct LinkageApp {
     state: AppState,
     /// Cached thumbnail textures for the sample mechanism gallery (native only).
     sample_thumbnails: HashMap<SampleMechanism, egui::TextureHandle>,
+    /// Whether demo mode is active (auto-cycling through samples).
+    demo_mode: bool,
+    /// Accumulated time in the current demo sample (seconds).
+    demo_timer: f64,
+    /// Index into SampleMechanism::all() for the current demo sample.
+    demo_sample_index: usize,
 }
 
 impl LinkageApp {
@@ -75,6 +81,9 @@ impl LinkageApp {
         Self {
             state: AppState::default(),
             sample_thumbnails,
+            demo_mode: false,
+            demo_timer: 0.0,
+            demo_sample_index: 0,
         }
     }
 
@@ -217,6 +226,25 @@ impl eframe::App for LinkageApp {
             ctx.request_repaint();
         }
         if self.state.step_animation(dt) {
+            ctx.request_repaint();
+        }
+
+        // ── Demo mode: auto-cycle through samples ────────────────────
+        if self.demo_mode {
+            self.demo_timer += dt;
+            if self.demo_timer > 5.0 {
+                self.demo_timer = 0.0;
+                let all = SampleMechanism::all();
+                self.demo_sample_index = (self.demo_sample_index + 1) % all.len();
+                let sample = all[self.demo_sample_index];
+                self.state.load_sample(sample);
+                self.state.playing = true;
+                self.state.pending_fit_to_view = true;
+            }
+            // Any click or Escape stops demo mode.
+            if ctx.input(|i| i.pointer.any_click() || i.key_pressed(egui::Key::Escape)) {
+                self.demo_mode = false;
+            }
             ctx.request_repaint();
         }
 
@@ -762,15 +790,28 @@ impl eframe::App for LinkageApp {
 
         // ── Delete / Backspace shortcut ───────────────────────────────────
         if ctx.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
-            match self.state.selected.take() {
-                Some(SelectedEntity::Body(id)) => {
-                    self.state.remove_body(&id);
+            if !self.state.multi_selected.is_empty() {
+                // Delete all multi-selected items.
+                let items: Vec<_> = self.state.multi_selected.drain(..).collect();
+                for entity in items {
+                    match entity {
+                        SelectedEntity::Body(id) => self.state.remove_body(&id),
+                        SelectedEntity::Joint(id) => self.state.remove_joint(&id),
+                        _ => {}
+                    }
                 }
-                Some(SelectedEntity::Joint(id)) => {
-                    self.state.remove_joint(&id);
-                }
-                other => {
-                    self.state.selected = other;
+                self.state.selected = None;
+            } else {
+                match self.state.selected.take() {
+                    Some(SelectedEntity::Body(id)) => {
+                        self.state.remove_body(&id);
+                    }
+                    Some(SelectedEntity::Joint(id)) => {
+                        self.state.remove_joint(&id);
+                    }
+                    other => {
+                        self.state.selected = other;
+                    }
                 }
             }
         }
@@ -1090,8 +1131,85 @@ impl eframe::App for LinkageApp {
 
         // --- Central canvas ---
         egui::CentralPanel::default().show(ctx, |ui| {
-            canvas::draw_canvas(ui, &mut self.state);
+            // Determine if the workspace is effectively empty (just ground body,
+            // no real mechanism content) and no tutorial is active.
+            let is_empty_workspace = !self.state.tutorial.active
+                && self.state.current_sample.is_none()
+                && !self.demo_mode
+                && self.state.blueprint.as_ref().map_or(true, |bp| {
+                    bp.bodies.len() <= 1 && bp.joints.is_empty()
+                });
+
+            if is_empty_workspace {
+                // ── Welcome screen ──────────────────────────────────────
+                let center = ui.min_rect().center();
+                egui::Area::new(egui::Id::new("welcome_screen"))
+                    .fixed_pos(egui::pos2(
+                        center.x - 160.0,
+                        center.y - 120.0,
+                    ))
+                    .show(ui.ctx(), |ui| {
+                        egui::Frame::popup(ui.ctx().style().as_ref()).show(ui, |ui| {
+                            ui.set_min_width(300.0);
+                            ui.vertical_centered(|ui| {
+                                ui.heading("Linkage Simulator");
+                                ui.add_space(10.0);
+                                ui.label("Get started:");
+                                ui.add_space(6.0);
+                                if ui.button("Load a Sample Mechanism").clicked() {
+                                    self.state.load_sample(SampleMechanism::FourBar);
+                                    self.state.pending_fit_to_view = true;
+                                }
+                                if ui.button("Start Tutorial").clicked() {
+                                    self.state.new_empty_mechanism();
+                                    self.state.tutorial = tutorial::TutorialState::new_fourbar();
+                                }
+                                if ui.button("New Empty Mechanism").clicked() {
+                                    self.state.new_empty_mechanism();
+                                    // Switch to AddGroundPivot so the user can start placing immediately.
+                                    self.state.active_tool = state::EditorTool::AddGroundPivot;
+                                }
+                                ui.add_space(4.0);
+                                if ui.button("Watch Demo").clicked() {
+                                    self.demo_mode = true;
+                                    self.demo_timer = 0.0;
+                                    self.demo_sample_index = 0;
+                                    let sample = SampleMechanism::all()[0];
+                                    self.state.load_sample(sample);
+                                    self.state.playing = true;
+                                    self.state.pending_fit_to_view = true;
+                                }
+                                ui.add_space(5.0);
+                                ui.label(
+                                    egui::RichText::new("Or drag & drop a JSON file to open")
+                                        .small()
+                                        .weak(),
+                                );
+                            });
+                        });
+                    });
+            } else {
+                canvas::draw_canvas(ui, &mut self.state);
+            }
         });
+
+        // ── Demo mode banner overlay ────────────────────────────────────
+        if self.demo_mode {
+            egui::Area::new(egui::Id::new("demo_banner"))
+                .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 8.0))
+                .interactable(false)
+                .show(ctx, |ui| {
+                    egui::Frame::popup(ui.ctx().style().as_ref())
+                        .fill(egui::Color32::from_rgba_premultiplied(30, 30, 30, 200))
+                        .show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new("Demo Mode -- press Escape to stop")
+                                    .color(egui::Color32::from_rgb(255, 220, 100))
+                                    .size(14.0),
+                            );
+                        });
+                });
+        }
 
         // ── Image Settings floating window ───────────────────────────
         // Shown when the user clicks "Image Settings..." in the Image menu.

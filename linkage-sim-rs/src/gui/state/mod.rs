@@ -73,6 +73,8 @@ pub struct AppState {
     pub solver_status: SolverStatus,
     /// Currently selected entity (for the property panel).
     pub selected: Option<SelectedEntity>,
+    /// Multiple selected entities for batch operations (Shift+click).
+    pub multi_selected: Vec<SelectedEntity>,
     /// View / zoom transform.
     pub view: ViewTransform,
     /// Show the debug overlay (defaults true in debug builds).
@@ -376,6 +378,7 @@ impl Default for AppState {
             q_at_zero: DVector::zeros(0),
             solver_status: SolverStatus::default(),
             selected: None,
+            multi_selected: Vec::new(),
             view: ViewTransform::default(),
             show_debug_overlay: cfg!(debug_assertions),
             current_sample: None,
