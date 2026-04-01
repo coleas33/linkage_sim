@@ -38,6 +38,8 @@ pub(super) enum PendingPropertyEdit {
     ReassignPointMass { body_id: String, index: usize },
     /// Enter mode to reposition a point mass via mouse click.
     RepositionPointMass { body_id: String, index: usize },
+    /// Uniformly scale the entire mechanism by a factor.
+    ScaleMechanism { factor: f64 },
 }
 
 /// Draw the force elements collapsible section.
@@ -234,6 +236,9 @@ pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropert
                 state.repositioning_point_mass = Some((body_id, index));
                 state.reassigning_point_mass = None;
                 state.active_tool = crate::gui::state::EditorTool::Select;
+            }
+            PendingPropertyEdit::ScaleMechanism { factor } => {
+                state.scale_mechanism(factor);
             }
         }
     }

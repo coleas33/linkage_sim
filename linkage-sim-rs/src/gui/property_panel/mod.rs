@@ -484,6 +484,9 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
     // ── Ground Pivots ─────────────────────────────────────────────────
     draw_ground_pivots_section(ui, state, &mut pending);
 
+    // ── Scale Mechanism ──────────────────────────────────────────────
+    draw_scale_mechanism_section(ui, state, &mut pending);
+
     // ── Diagnostics (collapsed) ───────────────────────────────────────
     draw_diagnostics_section(ui, state);
 
@@ -640,6 +643,57 @@ fn draw_ground_pivots_section(
                         y: new_y,
                     });
                 }
+            }
+        });
+}
+
+/// Draw the "Scale Mechanism" collapsing section with preset buttons
+/// and a custom percentage input.
+fn draw_scale_mechanism_section(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    pending: &mut Option<PendingPropertyEdit>,
+) {
+    if state.blueprint.is_none() {
+        return;
+    }
+
+    let scale_color = state.nc(egui::Color32::from_rgb(120, 200, 140));
+    egui::CollapsingHeader::new(
+        egui::RichText::new("Scale Mechanism").color(scale_color),
+    )
+        .id_salt("scale_mechanism_section")
+        .default_open(false)
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                if ui.button("50%").on_hover_text("Shrink to half size").clicked() {
+                    *pending = Some(PendingPropertyEdit::ScaleMechanism { factor: 0.5 });
+                }
+                if ui.button("75%").on_hover_text("Shrink to 75%").clicked() {
+                    *pending = Some(PendingPropertyEdit::ScaleMechanism { factor: 0.75 });
+                }
+                if ui.button("150%").on_hover_text("Enlarge to 150%").clicked() {
+                    *pending = Some(PendingPropertyEdit::ScaleMechanism { factor: 1.5 });
+                }
+                if ui.button("200%").on_hover_text("Enlarge to double size").clicked() {
+                    *pending = Some(PendingPropertyEdit::ScaleMechanism { factor: 2.0 });
+                }
+            });
+
+            // Custom percentage via DragValue (applied on lost_focus / Enter)
+            let id = ui.id().with("scale_pct_custom");
+            let mut scale_pct: f64 = ui.data_mut(|d| *d.get_temp_mut_or(id, 100.0));
+            let response = ui.add(
+                egui::DragValue::new(&mut scale_pct)
+                    .suffix("%")
+                    .speed(1.0)
+                    .range(1.0..=1000.0)
+            ).on_hover_text("Type a percentage and press Enter to scale the mechanism");
+            ui.data_mut(|d| *d.get_temp_mut_or(id, 100.0) = scale_pct);
+            if response.lost_focus() && (scale_pct - 100.0).abs() > 0.01 {
+                *pending = Some(PendingPropertyEdit::ScaleMechanism { factor: scale_pct / 100.0 });
+                // Reset to 100% after applying
+                ui.data_mut(|d| *d.get_temp_mut_or(id, 100.0) = 100.0);
             }
         });
 }

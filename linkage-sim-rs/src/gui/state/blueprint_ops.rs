@@ -1166,4 +1166,94 @@ impl AppState {
         self.sweep_data = Some(data);
         self.q_at_zero = q_zero;
     }
+
+    /// Scale the entire mechanism by a uniform factor.
+    ///
+    /// Multiplies all attachment point coordinates, mount points, coupler points,
+    /// point mass positions, body geometry, and force element positions by `factor`.
+    /// Factor > 1 = enlarge, < 1 = shrink.
+    pub fn scale_mechanism(&mut self, factor: f64) {
+        if factor <= 0.0 || !factor.is_finite() || (factor - 1.0).abs() < 1e-12 {
+            return;
+        }
+        self.push_undo();
+        let Some(bp) = &mut self.blueprint else { return };
+
+        // Scale all body points
+        for body in bp.bodies.values_mut() {
+            for pt in body.attachment_points.values_mut() {
+                pt[0] *= factor;
+                pt[1] *= factor;
+            }
+            for pt in body.mount_points.values_mut() {
+                pt[0] *= factor;
+                pt[1] *= factor;
+            }
+            for pt in body.coupler_points.values_mut() {
+                pt[0] *= factor;
+                pt[1] *= factor;
+            }
+            for pm in &mut body.point_masses {
+                pm.local_pos[0] *= factor;
+                pm.local_pos[1] *= factor;
+            }
+            body.cg_local[0] *= factor;
+            body.cg_local[1] *= factor;
+            if let Some(ref mut geo) = body.geometry {
+                geo.width *= factor;
+                geo.height *= factor;
+                geo.offset.x *= factor;
+                geo.offset.y *= factor;
+            }
+        }
+
+        // Scale force element positions and length parameters
+        for force in &mut bp.forces {
+            match force {
+                ForceElement::LinearSpring(s) => {
+                    s.point_a[0] *= factor; s.point_a[1] *= factor;
+                    s.point_b[0] *= factor; s.point_b[1] *= factor;
+                    s.free_length *= factor;
+                }
+                ForceElement::LinearDamper(d) => {
+                    d.point_a[0] *= factor; d.point_a[1] *= factor;
+                    d.point_b[0] *= factor; d.point_b[1] *= factor;
+                }
+                ForceElement::GasSpring(g) => {
+                    g.point_a[0] *= factor; g.point_a[1] *= factor;
+                    g.point_b[0] *= factor; g.point_b[1] *= factor;
+                    g.extended_length *= factor;
+                    g.stroke *= factor;
+                }
+                ForceElement::LinearActuator(a) => {
+                    a.point_a[0] *= factor; a.point_a[1] *= factor;
+                    a.point_b[0] *= factor; a.point_b[1] *= factor;
+                    a.stroke_min *= factor;
+                    a.stroke_max *= factor;
+                }
+                ForceElement::ExternalForce(e) => {
+                    e.local_point[0] *= factor;
+                    e.local_point[1] *= factor;
+                }
+                ForceElement::ForceZone(fz) => {
+                    fz.zone_min[0] *= factor; fz.zone_min[1] *= factor;
+                    fz.zone_max[0] *= factor; fz.zone_max[1] *= factor;
+                }
+                // Gravity, torsion springs, rotary dampers, bearing friction,
+                // joint limits, motors, and external torques don't have
+                // position/length data that needs scaling.
+                _ => {}
+            }
+        }
+
+        // Scale linear driver points and lengths
+        for ld in &mut bp.linear_drivers {
+            ld.point_a[0] *= factor; ld.point_a[1] *= factor;
+            ld.point_b[0] *= factor; ld.point_b[1] *= factor;
+            ld.length_0 *= factor;
+        }
+
+        self.rebuild();
+        self.pending_fit_to_view = true;
+    }
 }

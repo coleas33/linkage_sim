@@ -747,11 +747,27 @@ impl eframe::App for LinkageApp {
                                 ui.label("Opacity:");
                                 ui.add(egui::Slider::new(&mut bg.opacity, 0.0..=1.0).fixed_decimals(2));
                             });
+                            // Image display width in mm
+                            let img_width_m = bg.size_px[0] as f64 / bg.scale_px_per_m;
+                            let mut img_width_mm = img_width_m * 1000.0;
                             ui.horizontal(|ui| {
-                                ui.label("Scale (px/m):");
-                                ui.add(egui::DragValue::new(&mut bg.scale_px_per_m)
-                                    .speed(10.0)
-                                    .range(1.0..=100000.0));
+                                ui.label("Width:");
+                                if ui.add(
+                                    egui::DragValue::new(&mut img_width_mm)
+                                        .speed(1.0)
+                                        .range(1.0..=10000.0)
+                                        .suffix(" mm")
+                                ).changed() {
+                                    bg.scale_px_per_m = bg.size_px[0] as f64 / (img_width_mm / 1000.0);
+                                }
+                            });
+                            ui.horizontal(|ui| {
+                                if ui.small_button("\u{2212}").on_hover_text("Shrink 10%").clicked() {
+                                    bg.scale_px_per_m *= 1.1; // more px/m = smaller image
+                                }
+                                if ui.small_button("+").on_hover_text("Grow 10%").clicked() {
+                                    bg.scale_px_per_m *= 0.9; // fewer px/m = larger image
+                                }
                             });
                             ui.horizontal(|ui| {
                                 ui.label("X offset (m):");
