@@ -40,6 +40,10 @@ pub(super) enum PendingPropertyEdit {
     RepositionPointMass { body_id: String, index: usize },
     /// Uniformly scale the entire mechanism by a factor.
     ScaleMechanism { factor: f64 },
+    /// Undo the last action.
+    Undo,
+    /// Redo the last undone action.
+    Redo,
 }
 
 /// Draw the force elements collapsible section.
@@ -239,6 +243,12 @@ pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropert
             }
             PendingPropertyEdit::ScaleMechanism { factor } => {
                 state.scale_mechanism(factor);
+            }
+            PendingPropertyEdit::Undo => {
+                state.undo();
+            }
+            PendingPropertyEdit::Redo => {
+                state.redo();
             }
         }
     }

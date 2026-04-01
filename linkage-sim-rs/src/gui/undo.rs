@@ -92,6 +92,16 @@ impl UndoHistory {
         self.undo_stack.clear();
         self.redo_stack.clear();
     }
+
+    /// Number of states available for undo.
+    pub fn undo_count(&self) -> usize {
+        self.undo_stack.len()
+    }
+
+    /// Number of states available for redo.
+    pub fn redo_count(&self) -> usize {
+        self.redo_stack.len()
+    }
 }
 
 #[cfg(test)]

@@ -1,0 +1,265 @@
+//! Mechanism Health Report section of the property panel.
+//!
+//! A collapsible pre-flight checklist showing status indicators
+//! (green/yellow/red) for Grashof classification, toggle points,
+//! transmission angle, peak torque, peak joint reactions, Jacobian
+//! conditioning, and constraint violations.
+
+use eframe::egui;
+use crate::analysis::envelopes::compute_envelope;
+use crate::analysis::grashof::GrashofType;
+use crate::gui::state::AppState;
+
+/// Color for OK / green status indicators.
+const COLOR_OK: egui::Color32 = egui::Color32::from_rgb(80, 200, 120);
+/// Color for warning / yellow status indicators.
+const COLOR_WARN: egui::Color32 = egui::Color32::from_rgb(255, 200, 60);
+/// Color for problem / red status indicators.
+const COLOR_RED: egui::Color32 = egui::Color32::from_rgb(255, 80, 80);
+
+/// Draw the "Mechanism Health" collapsible section.
+///
+/// Shows a compact pre-flight checklist of mechanism quality indicators.
+/// Items without data (e.g., transmission angle for non-4-bar mechanisms)
+/// are silently omitted.
+pub(super) fn draw_health_section(ui: &mut egui::Ui, state: &AppState) {
+    if state.mechanism.is_none() {
+        return;
+    }
+
+    let health_color = state.nc(egui::Color32::from_rgb(80, 200, 120));
+    egui::CollapsingHeader::new(
+        egui::RichText::new("Mechanism Health").color(health_color),
+    )
+    .id_salt("health_section")
+    .default_open(true)
+    .show(ui, |ui| {
+        let mut any_shown = false;
+
+        // 1. Grashof classification
+        if let Some(ref gr) = state.grashof_result {
+            any_shown = true;
+            draw_grashof_indicator(ui, state, gr);
+        }
+
+        // 2. Toggle/dead points
+        if let Some(ref sweep) = state.sweep_data {
+            if any_shown { ui.separator(); }
+            any_shown = true;
+            draw_toggle_indicator(ui, state, &sweep.toggle_angles);
+        }
+
+        // 3. Transmission angle (4-bar only)
+        if let Some(ref sweep) = state.sweep_data {
+            if let Some(ref trans_angles) = sweep.transmission_angles {
+                if any_shown { ui.separator(); }
+                any_shown = true;
+                draw_transmission_angle_indicator(ui, state, trans_angles);
+            }
+        }
+
+        // 4. Peak driver torque
+        if let Some(ref sweep) = state.sweep_data {
+            if let Some(ref torques) = sweep.driver_torques {
+                if let Some(env) = compute_envelope(torques) {
+                    if any_shown { ui.separator(); }
+                    any_shown = true;
+                    draw_torque_indicator(ui, state, &env);
+                }
+            }
+        }
+
+        // 5. Peak joint reactions
+        if let Some(ref sweep) = state.sweep_data {
+            if !sweep.joint_reaction_magnitudes.is_empty() {
+                if any_shown { ui.separator(); }
+                any_shown = true;
+                draw_peak_reactions_indicator(ui, state, &sweep.joint_reaction_magnitudes);
+            }
+        }
+
+        // 6. Jacobian conditioning
+        if let Some(kappa) = state.force_results.condition_number {
+            if any_shown { ui.separator(); }
+            any_shown = true;
+            draw_conditioning_indicator(ui, state, kappa);
+        }
+
+        // 7. Constraint violations
+        {
+            if any_shown { ui.separator(); }
+            #[allow(unused_assignments)]
+            { any_shown = true; }
+            draw_residual_indicator(ui, state);
+        }
+    });
+}
+
+/// Grashof classification indicator.
+fn draw_grashof_indicator(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    gr: &crate::analysis::grashof::GrashofResult,
+) {
+    let (label, color) = match gr.classification {
+        GrashofType::CrankRocker => ("Crank-Rocker (Grashof)", state.nc(COLOR_OK)),
+        GrashofType::DoubleCrank => ("Double-Crank (Grashof)", state.nc(COLOR_OK)),
+        GrashofType::DoubleRocker => ("Double-Rocker (Grashof)", state.nc(COLOR_OK)),
+        GrashofType::ChangePoint => ("Change-Point", state.nc(COLOR_WARN)),
+        GrashofType::NonGrashof => ("Non-Grashof", state.nc(COLOR_WARN)),
+    };
+
+    ui.horizontal(|ui| {
+        ui.label("Grashof:");
+        ui.colored_label(color, label);
+    });
+}
+
+/// Toggle/dead-point indicator.
+fn draw_toggle_indicator(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    toggle_angles: &[f64],
+) {
+    ui.horizontal(|ui| {
+        ui.label("Toggle points:");
+        if toggle_angles.is_empty() {
+            ui.colored_label(state.nc(COLOR_OK), "None");
+        } else {
+            // Check if any toggle angles fall within the active sweep range
+            let in_range = has_toggles_in_range(state, toggle_angles);
+            let color = if in_range {
+                state.nc(COLOR_RED)
+            } else {
+                state.nc(COLOR_WARN)
+            };
+
+            let angle_strs: Vec<String> = toggle_angles
+                .iter()
+                .map(|a| format!("{:.0}\u{00b0}", a))
+                .collect();
+            ui.colored_label(color, angle_strs.join(", "));
+        }
+    });
+}
+
+/// Check whether any toggle angles fall within the active sweep range.
+fn has_toggles_in_range(state: &AppState, toggle_angles: &[f64]) -> bool {
+    if !state.sweep_range_enabled {
+        // Full 360 -- all toggles are in range
+        return !toggle_angles.is_empty();
+    }
+    let min_deg = state.sweep_angle_min_deg;
+    let max_deg = state.sweep_angle_max_deg;
+    toggle_angles.iter().any(|&a| a >= min_deg && a <= max_deg)
+}
+
+/// Transmission angle indicator (4-bar only).
+fn draw_transmission_angle_indicator(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    trans_angles: &[f64],
+) {
+    if let Some(env) = compute_envelope(trans_angles) {
+        let min_ta = env.min_value;
+        let (label, color) = if min_ta >= 40.0 {
+            (format!("Min: {:.0}\u{00b0} (OK)", min_ta), state.nc(COLOR_OK))
+        } else {
+            (format!("Min: {:.0}\u{00b0} (POOR)", min_ta), state.nc(COLOR_RED))
+        };
+
+        ui.horizontal(|ui| {
+            ui.label("Transmission \u{2220}:");
+            ui.colored_label(color, label);
+        });
+    }
+}
+
+/// Peak driver torque indicator.
+fn draw_torque_indicator(
+    ui: &mut egui::Ui,
+    _state: &AppState,
+    env: &crate::analysis::envelopes::SignalEnvelope,
+) {
+    ui.horizontal(|ui| {
+        ui.label("Driver torque:");
+        ui.label(format!(
+            "Peak {:.3} N\u{00b7}m / RMS {:.3} N\u{00b7}m",
+            env.max_value.abs().max(env.min_value.abs()),
+            env.rms,
+        ));
+    });
+}
+
+/// Peak joint reaction indicator.
+fn draw_peak_reactions_indicator(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    reactions: &std::collections::HashMap<String, Vec<f64>>,
+) {
+    // Find the joint with the highest peak reaction force
+    let mut worst_joint = String::new();
+    let mut worst_peak = 0.0_f64;
+
+    for (jid, magnitudes) in reactions {
+        if let Some(env) = compute_envelope(magnitudes) {
+            if env.max_value > worst_peak {
+                worst_peak = env.max_value;
+                worst_joint = jid.clone();
+            }
+        }
+    }
+
+    if worst_peak > 0.0 {
+        let color = if worst_peak < 100.0 {
+            state.nc(COLOR_OK)
+        } else if worst_peak < 1000.0 {
+            state.nc(COLOR_WARN)
+        } else {
+            state.nc(COLOR_RED)
+        };
+
+        ui.horizontal(|ui| {
+            ui.label("Peak reaction:");
+            ui.colored_label(
+                color,
+                format!("{:.1} N at {}", worst_peak, worst_joint),
+            );
+        });
+    }
+}
+
+/// Jacobian conditioning indicator.
+fn draw_conditioning_indicator(ui: &mut egui::Ui, state: &AppState, kappa: f64) {
+    let (label, color) = if kappa < 1e4 {
+        ("Well-conditioned".to_string(), state.nc(COLOR_OK))
+    } else if kappa < 1e8 {
+        (format!("Moderate (\u{03ba}={:.1e})", kappa), state.nc(COLOR_WARN))
+    } else {
+        (format!("Near-singular (\u{03ba}={:.1e})", kappa), state.nc(COLOR_RED))
+    };
+
+    ui.horizontal(|ui| {
+        ui.label("Jacobian:");
+        ui.colored_label(color, label);
+    });
+}
+
+/// Constraint residual / solver status indicator.
+fn draw_residual_indicator(ui: &mut egui::Ui, state: &AppState) {
+    let status = &state.solver_status;
+    let norm = status.residual_norm;
+
+    let (label, color) = if !status.converged {
+        (format!("NOT CONVERGED (res={:.2e})", norm), state.nc(COLOR_RED))
+    } else if norm < 1e-8 {
+        (format!("OK (res={:.1e})", norm), state.nc(COLOR_OK))
+    } else {
+        (format!("Marginal (res={:.2e})", norm), state.nc(COLOR_WARN))
+    };
+
+    ui.horizontal(|ui| {
+        ui.label("Constraints:");
+        ui.colored_label(color, label);
+    });
+}

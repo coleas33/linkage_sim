@@ -15,6 +15,9 @@ use crate::gui::state::AppState;
 use pending_edits::{PendingPropertyEdit, apply_pending, draw_force_elements_inner};
 use diagnostics::draw_diagnostics_section;
 
+mod health;
+mod undo_panel;
+
 /// Draw the property panel showing info about the selected entity.
 ///
 /// Mass and inertia fields are editable via `DragValue` widgets when a
@@ -44,6 +47,9 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
             ui.small(format!("{:.2} kg", total_mass));
         });
     }
+
+    // ── Mechanism Health ──────────────────────────────────────────────
+    health::draw_health_section(ui, state);
 
     // ── Link Editor (always visible, dropdown to pick body) ───────────
     let body_ids: Vec<String> = mech.body_order().to_vec();
@@ -522,6 +528,9 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
     // ── Force Elements section ─────────────────────────────────────────
     draw_force_elements_inner(ui, state, &mut pending);
+
+    // ── Undo History section ─────────────────────────────────────────
+    undo_panel::draw_undo_section(ui, state, &mut pending);
 
     // --- Apply any pending edits (mutable borrow now safe) ---
     apply_pending(state, pending);
