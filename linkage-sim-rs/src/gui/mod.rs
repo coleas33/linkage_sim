@@ -123,6 +123,32 @@ impl eframe::App for LinkageApp {
             }
         }
 
+        // ── Drag-and-drop image import (works on native + WASM) ────────
+        let dropped_files = ctx.input(|i| i.raw.dropped_files.clone());
+        for file in &dropped_files {
+            if let Some(bytes) = &file.bytes {
+                let name = file
+                    .name
+                    .as_str();
+                let label = if name.is_empty() { "dropped_image" } else { name };
+                match load_background_image_from_bytes(ctx, label, bytes) {
+                    Ok(bg) => {
+                        self.state.background_image = Some(bg);
+                        self.state.status_message =
+                            Some("Background image loaded (drag & drop)".to_string());
+                        self.state.status_message_time = 3.0;
+                    }
+                    Err(e) => {
+                        log::error!("Failed to load dropped image: {}", e);
+                        self.state.status_message =
+                            Some(format!("Image load failed: {}", e));
+                        self.state.status_message_time = 4.0;
+                    }
+                }
+                break; // Only process the first dropped file
+            }
+        }
+
         // ── Keyboard shortcuts ────────────────────────────────────────
         if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Z) && !i.modifiers.shift) {
             self.state.undo();
@@ -553,10 +579,10 @@ impl eframe::App for LinkageApp {
                             ui.close();
                         }
                     }
-                    // ── Background image import (native only) ────────
+                    // ── Background image import ─────────────────────
+                    ui.separator();
                     #[cfg(feature = "native")]
                     {
-                        ui.separator();
                         if ui.button("Import Background Image...")
                             .on_hover_text("Load a photo or sketch as a canvas background for tracing")
                             .clicked()
@@ -580,14 +606,22 @@ impl eframe::App for LinkageApp {
                             }
                             ui.close();
                         }
-                        if self.state.background_image.is_some() {
-                            if ui.button("Remove Background Image")
-                                .on_hover_text("Remove the background image from the canvas")
-                                .clicked()
-                            {
-                                self.state.background_image = None;
-                                ui.close();
-                            }
+                    }
+                    #[cfg(not(feature = "native"))]
+                    {
+                        ui.label(
+                            egui::RichText::new("Drag & drop an image onto the canvas to import")
+                                .small()
+                                .weak(),
+                        );
+                    }
+                    if self.state.background_image.is_some() {
+                        if ui.button("Remove Background Image")
+                            .on_hover_text("Remove the background image from the canvas")
+                            .clicked()
+                        {
+                            self.state.background_image = None;
+                            ui.close();
                         }
                     }
                     ui.separator();
@@ -1388,10 +1422,32 @@ fn draw_sample_menu(
                         tex.id(),
                         egui::vec2(60.0, 40.0),
                     ));
+                } else {
+                    // Show a colored category badge when no thumbnail is available
+                    let badge_color = match cat {
+                        "4-Bar Mechanisms" => egui::Color32::from_rgb(80, 160, 255),
+                        "6-Bar Mechanisms" => egui::Color32::from_rgb(100, 220, 140),
+                        _ => egui::Color32::from_rgb(255, 165, 80),
+                    };
+                    let badge_text = match cat {
+                        "4-Bar Mechanisms" => "[4B]",
+                        "6-Bar Mechanisms" => "[6B]",
+                        _ => "[SP]",
+                    };
+                    ui.colored_label(badge_color, badge_text);
                 }
-                ui.button(sample.label())
-                    .on_hover_text(sample.description())
-                    .clicked()
+                ui.vertical(|ui| {
+                    let btn_clicked = ui.button(sample.label())
+                        .on_hover_text(sample.description())
+                        .clicked();
+                    ui.label(
+                        egui::RichText::new(sample.description())
+                            .small()
+                            .weak(),
+                    );
+                    btn_clicked
+                })
+                .inner
             })
             .inner;
         if clicked {
@@ -1403,27 +1459,25 @@ fn draw_sample_menu(
 
 // ── Background image loading ────────────────────────────────────────────────
 
-/// Load an image file and create an egui texture from it.
+/// Decode an in-memory image (PNG/JPEG) and create an egui texture from it.
 ///
-/// Uses the `image` crate to decode PNG/JPEG, converts to RGBA, and uploads
-/// to the egui texture manager. Returns a `BackgroundImage` with sensible
-/// defaults (centered at origin, 1000 px/m scale, 30% opacity).
-#[cfg(feature = "native")]
-fn load_background_image(
+/// Uses the `image` crate to decode, converts to RGBA, and uploads to the egui
+/// texture manager. Returns a `BackgroundImage` with sensible defaults
+/// (centered at origin, 1000 px/m scale, 30% opacity).
+///
+/// This works on both native and WASM targets, since the `image` crate is
+/// a pure-Rust dependency available everywhere.
+fn load_background_image_from_bytes(
     ctx: &egui::Context,
-    path: &std::path::Path,
+    name: &str,
+    bytes: &[u8],
 ) -> Result<state::BackgroundImage, String> {
-    let img = image::open(path).map_err(|e| format!("Image decode error: {}", e))?;
+    let img = image::load_from_memory(bytes)
+        .map_err(|e| format!("Image decode error: {}", e))?;
     let rgba = img.to_rgba8();
     let (w, h) = (rgba.width() as usize, rgba.height() as usize);
     let color_image = egui::ColorImage::from_rgba_unmultiplied([w, h], rgba.as_raw());
-    let texture = ctx.load_texture(
-        path.file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "background".to_string()),
-        color_image,
-        egui::TextureOptions::LINEAR,
-    );
+    let texture = ctx.load_texture(name, color_image, egui::TextureOptions::LINEAR);
     Ok(state::BackgroundImage {
         texture,
         world_offset: [0.0, 0.0],
@@ -1431,4 +1485,20 @@ fn load_background_image(
         opacity: 0.3,
         size_px: [w, h],
     })
+}
+
+/// Load an image file from disk and create an egui texture from it.
+///
+/// Reads the file and delegates to [`load_background_image_from_bytes`].
+#[cfg(feature = "native")]
+fn load_background_image(
+    ctx: &egui::Context,
+    path: &std::path::Path,
+) -> Result<state::BackgroundImage, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("File read error: {}", e))?;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "background".to_string());
+    load_background_image_from_bytes(ctx, &name, &bytes)
 }
