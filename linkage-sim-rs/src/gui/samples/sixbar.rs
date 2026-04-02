@@ -8,7 +8,8 @@ use crate::core::mechanism::Mechanism;
 use crate::solver::kinematics::solve_position;
 
 use super::helpers::{
-    attach_driver_to_grounded_revolute_with_theta0, make_ternary, solve_with_continuation,
+    attach_driver_to_grounded_revolute_with_theta0, make_ternary, set_bar_mass,
+    set_ternary_mass, solve_with_continuation,
 };
 
 // ---------------------------------------------------------------------------
@@ -33,12 +34,17 @@ pub(super) fn build_sixbar_b1(
         ("O4", 2.5, 0.5),
         ("O6", 3.5, 0.0),
     ]);
-    let crank = make_bar("crank", "A", "B", 1.5, 0.0, 0.0);
+    let mut crank = make_bar("crank", "A", "B", 1.5, 0.0, 0.0);
+    set_bar_mass(&mut crank, 1.5);
     let mut ternary = make_ternary("ternary", "P1", "P2", "P3", (3.0, 0.0), (1.5, 1.0));
     ternary.add_coupler_point("CP", 1.5, 0.0).unwrap();
-    let rocker4 = make_bar("rocker4", "R4A", "R4B", 2.5, 0.0, 0.0);
-    let link5 = make_bar("link5", "L5A", "L5B", 2.5, 0.0, 0.0);
-    let output6 = make_bar("output6", "R6A", "R6B", 2.5, 0.0, 0.0);
+    set_ternary_mass(&mut ternary, (3.0, 0.0), (1.5, 1.0));
+    let mut rocker4 = make_bar("rocker4", "R4A", "R4B", 2.5, 0.0, 0.0);
+    set_bar_mass(&mut rocker4, 2.5);
+    let mut link5 = make_bar("link5", "L5A", "L5B", 2.5, 0.0, 0.0);
+    set_bar_mass(&mut link5, 2.5);
+    let mut output6 = make_bar("output6", "R6A", "R6B", 2.5, 0.0, 0.0);
+    set_bar_mass(&mut output6, 2.5);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -151,10 +157,15 @@ pub(super) fn build_sixbar_a1(
     let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 2.0, 0.0)]);
     let mut t1 = make_ternary("t1", "P1", "P2", "P3", (1.5, 0.0), (0.8, 0.6));
     t1.add_coupler_point("CP", 0.75, 0.3).unwrap();
-    let b2 = make_bar("b2", "B2A", "B2B", 2.0, 0.0, 0.0);
-    let t2 = make_ternary("t2", "Q1", "Q2", "Q3", (1.5, 0.0), (0.8, 0.6));
-    let b3 = make_bar("b3", "B3A", "B3B", 2.0, 0.0, 0.0);
-    let b4 = make_bar("b4", "B4A", "B4B", 2.0, 0.0, 0.0);
+    set_ternary_mass(&mut t1, (1.5, 0.0), (0.8, 0.6));
+    let mut b2 = make_bar("b2", "B2A", "B2B", 2.0, 0.0, 0.0);
+    set_bar_mass(&mut b2, 2.0);
+    let mut t2 = make_ternary("t2", "Q1", "Q2", "Q3", (1.5, 0.0), (0.8, 0.6));
+    set_ternary_mass(&mut t2, (1.5, 0.0), (0.8, 0.6));
+    let mut b3 = make_bar("b3", "B3A", "B3B", 2.0, 0.0, 0.0);
+    set_bar_mass(&mut b3, 2.0);
+    let mut b4 = make_bar("b4", "B4A", "B4B", 2.0, 0.0, 0.0);
+    set_bar_mass(&mut b4, 2.0);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -243,12 +254,17 @@ pub(super) fn build_sixbar_a2(
         ("O4", 4.5, 0.0),
         ("O6", 2.8, 0.0),
     ]);
-    let b1 = make_bar("b1", "B1A", "B1B", 1.0, 0.0, 0.0);
-    let b2 = make_bar("b2", "B2A", "B2B", 1.5, 0.0, 0.0);
+    let mut b1 = make_bar("b1", "B1A", "B1B", 1.0, 0.0, 0.0);
+    set_bar_mass(&mut b1, 1.0);
+    let mut b2 = make_bar("b2", "B2A", "B2B", 1.5, 0.0, 0.0);
+    set_bar_mass(&mut b2, 1.5);
     let mut t2 = make_ternary("t2", "Q1", "Q2", "Q3", (2.5, 0.0), (1.5, 1.0));
     t2.add_coupler_point("CP", 1.25, 0.5).unwrap();
-    let b3 = make_bar("b3", "B3A", "B3B", 2.5, 0.0, 0.0);
-    let b4 = make_bar("b4", "B4A", "B4B", 2.5, 0.0, 0.0);
+    set_ternary_mass(&mut t2, (2.5, 0.0), (1.5, 1.0));
+    let mut b3 = make_bar("b3", "B3A", "B3B", 2.5, 0.0, 0.0);
+    set_bar_mass(&mut b3, 2.5);
+    let mut b4 = make_bar("b4", "B4A", "B4B", 2.5, 0.0, 0.0);
+    set_bar_mass(&mut b4, 2.5);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -332,10 +348,15 @@ pub(super) fn build_sixbar_b2(
     let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 1.8, 0.0)]);
     let mut t1 = make_ternary("t1", "P1", "P2", "P3", (0.5, 0.0), (0.25, 0.25));
     t1.add_coupler_point("CP", 0.25, 0.125).unwrap();
-    let b2 = make_bar("b2", "B2A", "B2B", 2.0, 0.0, 0.0);
-    let t2 = make_ternary("t2", "Q1", "Q2", "Q3", (1.5, 0.0), (0.8, -0.6));
-    let b3 = make_bar("b3", "B3A", "B3B", 2.0, 0.0, 0.0);
-    let b4 = make_bar("b4", "B4A", "B4B", 2.0, 0.0, 0.0);
+    set_ternary_mass(&mut t1, (0.5, 0.0), (0.25, 0.25));
+    let mut b2 = make_bar("b2", "B2A", "B2B", 2.0, 0.0, 0.0);
+    set_bar_mass(&mut b2, 2.0);
+    let mut t2 = make_ternary("t2", "Q1", "Q2", "Q3", (1.5, 0.0), (0.8, -0.6));
+    set_ternary_mass(&mut t2, (1.5, 0.0), (0.8, -0.6));
+    let mut b3 = make_bar("b3", "B3A", "B3B", 2.0, 0.0, 0.0);
+    set_bar_mass(&mut b3, 2.0);
+    let mut b4 = make_bar("b4", "B4A", "B4B", 2.0, 0.0, 0.0);
+    set_bar_mass(&mut b4, 2.0);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -425,10 +446,15 @@ pub(super) fn build_sixbar_b3(
     let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 2.5, 0.0)]);
     let mut t1 = make_ternary("t1", "P1", "P2", "P3", (1.0, 0.0), (0.5, 0.5));
     t1.add_coupler_point("CP", 0.5, 0.25).unwrap();
-    let b1 = make_bar("b1", "B1A", "B1B", 2.0, 0.0, 0.0);
-    let t2 = make_ternary("t2", "Q1", "Q2", "Q3", (1.5, 0.0), (0.8, -0.6));
-    let b2 = make_bar("b2", "B2A", "B2B", 2.0, 0.0, 0.0);
-    let b4 = make_bar("b4", "B4A", "B4B", 2.0, 0.0, 0.0);
+    set_ternary_mass(&mut t1, (1.0, 0.0), (0.5, 0.5));
+    let mut b1 = make_bar("b1", "B1A", "B1B", 2.0, 0.0, 0.0);
+    set_bar_mass(&mut b1, 2.0);
+    let mut t2 = make_ternary("t2", "Q1", "Q2", "Q3", (1.5, 0.0), (0.8, -0.6));
+    set_ternary_mass(&mut t2, (1.5, 0.0), (0.8, -0.6));
+    let mut b2 = make_bar("b2", "B2A", "B2B", 2.0, 0.0, 0.0);
+    set_bar_mass(&mut b2, 2.0);
+    let mut b4 = make_bar("b4", "B4A", "B4B", 2.0, 0.0, 0.0);
+    set_bar_mass(&mut b4, 2.0);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -533,12 +559,17 @@ pub(super) fn build_watt_ii(
         ("O2", 0.0, 0.0),
         ("O4", 2.0, 0.0),
     ]);
-    let t1 = make_ternary("t1", "P1", "P2", "P3", (0.8, 0.0), (0.4, 0.4));
-    let t2 = make_ternary("t2", "Q1", "Q2", "Q3", (0.8, 0.0), (0.4, 0.4));
+    let mut t1 = make_ternary("t1", "P1", "P2", "P3", (0.8, 0.0), (0.4, 0.4));
+    set_ternary_mass(&mut t1, (0.8, 0.0), (0.4, 0.4));
+    let mut t2 = make_ternary("t2", "Q1", "Q2", "Q3", (0.8, 0.0), (0.4, 0.4));
+    set_ternary_mass(&mut t2, (0.8, 0.0), (0.4, 0.4));
     let mut b1 = make_bar("b1", "A", "B", 2.0, 0.0, 0.0);
     b1.add_coupler_point("CP", 1.0, 0.0).unwrap();
-    let b2 = make_bar("b2", "A", "B", 1.5, 0.0, 0.0);
-    let b3 = make_bar("b3", "A", "B", 1.5, 0.0, 0.0);
+    set_bar_mass(&mut b1, 2.0);
+    let mut b2 = make_bar("b2", "A", "B", 1.5, 0.0, 0.0);
+    set_bar_mass(&mut b2, 1.5);
+    let mut b3 = make_bar("b3", "A", "B", 1.5, 0.0, 0.0);
+    set_bar_mass(&mut b3, 1.5);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -660,11 +691,14 @@ pub(super) fn build_pantograph(
     let l_rocker = 0.030_f64;
 
     let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
-    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    set_bar_mass(&mut crank, l_crank);
     // Coupler with extension point P at 1.5x coupler length for scaling
     let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
     coupler.add_coupler_point("P", 0.075, 0.0).unwrap();
-    let rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+    set_bar_mass(&mut coupler, l_coupler);
+    let mut rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+    set_bar_mass(&mut rocker, l_rocker);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();

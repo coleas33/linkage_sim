@@ -9,7 +9,7 @@ use crate::forces::elements::{ForceElement, ForceZoneElement, LinearActuatorElem
 
 use super::helpers::{
     attach_driver_to_grounded_revolute_with_theta0, fourbar_initial_q0,
-    fourbar_rocker_angle_for_crank,
+    fourbar_rocker_angle_for_crank, set_bar_mass,
 };
 
 /// Grashof crank-rocker 4-bar linkage.
@@ -33,9 +33,12 @@ pub(super) fn build_fourbar_with_driver(
     let l_rocker = 0.03_f64;
 
     let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
-    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
-    let coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
-    let rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
+    let mut rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+    set_bar_mass(&mut crank, l_crank);
+    set_bar_mass(&mut coupler, l_coupler);
+    set_bar_mass(&mut rocker, l_rocker);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -101,11 +104,14 @@ pub(super) fn build_slider_crank_with_driver(
     driver_joint_id: Option<&str>,
 ) -> Result<(Mechanism, DVector<f64>), String> {
     let ground = make_ground(&[("O2", 0.0, 0.0), ("rail", 0.0, 0.0)]);
-    let crank = make_bar("crank", "A", "B", 0.01, 0.0, 0.0);
-    let coupler = make_bar("coupler", "B", "C", 0.04, 0.0, 0.0);
+    let mut crank = make_bar("crank", "A", "B", 0.01, 0.0, 0.0);
+    let mut coupler = make_bar("coupler", "B", "C", 0.04, 0.0, 0.0);
+    set_bar_mass(&mut crank, 0.01);
+    set_bar_mass(&mut coupler, 0.04);
 
     let mut slider = Body::new("slider");
     slider.add_attachment_point("C", 0.0, 0.0).unwrap();
+    super::helpers::set_slider_mass(&mut slider);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -174,12 +180,15 @@ fn build_standard_fourbar(
     let o4 = (l_ground, 0.0_f64);
 
     let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
-    let crank = make_bar(crank_id, "A", "B", l_crank, 0.0, 0.0);
+    let mut crank = make_bar(crank_id, "A", "B", l_crank, 0.0, 0.0);
     let mut coupler = make_bar(coupler_id, "B", "C", l_coupler, 0.0, 0.0);
     coupler
         .add_coupler_point("P", coupler_point_x, 0.0)
         .unwrap();
-    let rocker = make_bar(rocker_id, "C", "D", l_rocker, 0.0, 0.0);
+    let mut rocker = make_bar(rocker_id, "C", "D", l_rocker, 0.0, 0.0);
+    set_bar_mass(&mut crank, l_crank);
+    set_bar_mass(&mut coupler, l_coupler);
+    set_bar_mass(&mut rocker, l_rocker);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -302,7 +311,8 @@ pub(super) fn build_parallelogram_press(
     let l_rocker = 0.02_f64;
 
     let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
-    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    set_bar_mass(&mut crank, l_crank);
 
     let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
     coupler.label = "Coupler (Press Plate)".to_string();
@@ -318,7 +328,8 @@ pub(super) fn build_parallelogram_press(
     coupler.izz_cg = (1.0 / 12.0) * plate_mass * (plate_w * plate_w + plate_h * plate_h);
     coupler.add_coupler_point("P", 0.02, 0.0).unwrap();
 
-    let rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+    let mut rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+    set_bar_mass(&mut rocker, l_rocker);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -391,10 +402,13 @@ pub(super) fn build_parallelogram_actuator(
     crank
         .add_mount_point("M", 1.0, 0.0)
         .map_err(|e| e.to_string())?;
+    set_bar_mass(&mut crank, 2.0);
 
     let mut coupler = make_bar("coupler", "B", "C", 4.0, 0.0, 0.0);
     coupler.add_coupler_point("P", 2.0, 0.0).unwrap();
-    let rocker = make_bar("rocker", "C", "D", 2.0, 0.0, 0.0);
+    set_bar_mass(&mut coupler, 4.0);
+    let mut rocker = make_bar("rocker", "C", "D", 2.0, 0.0, 0.0);
+    set_bar_mass(&mut rocker, 2.0);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -452,7 +466,8 @@ pub(super) fn build_chebyshev_with_driver(
     let o4 = (4.0_f64, 0.0_f64);
 
     let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
-    let crank = make_bar("crank", "A", "B", 2.0, 0.0, 0.0);
+    let mut crank = make_bar("crank", "A", "B", 2.0, 0.0, 0.0);
+    set_bar_mass(&mut crank, 2.0);
 
     // Lambda coupler: bar rendered from B(0,0) to M(10,0).
     // C at (5,0) is the rocker attachment (intermediate on the bar).
@@ -462,8 +477,10 @@ pub(super) fn build_chebyshev_with_driver(
         .add_attachment_point("C", 5.0, 0.0)
         .map_err(|e| e.to_string())?;
     coupler.add_coupler_point("M", 10.0, 0.0).unwrap();
+    set_bar_mass(&mut coupler, 10.0);
 
-    let rocker = make_bar("rocker", "C", "D", 5.0, 0.0, 0.0);
+    let mut rocker = make_bar("rocker", "C", "D", 5.0, 0.0, 0.0);
+    set_bar_mass(&mut rocker, 5.0);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -579,9 +596,12 @@ pub(super) fn build_chebyshev_lambda_actuator(
         .add_mount_point("M_mount", l_total_coupler, 0.0)
         .map_err(|e| e.to_string())?;
     coupler.add_coupler_point("M", l_total_coupler, 0.0).unwrap();
+    set_bar_mass(&mut coupler, l_total_coupler);
 
-    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
-    let rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    set_bar_mass(&mut crank, l_crank);
+    let mut rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+    set_bar_mass(&mut rocker, l_rocker);
 
     // Compute average M y-position across the full crank rotation so the
     // actuator base is in line with the straight-line trace of M.
@@ -700,11 +720,14 @@ pub(super) fn build_hoeken_with_driver(
     let l_rocker = 0.100_f64;
 
     let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
-    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
     let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
     // Hoeken coupler point at 2.5 * crank length from B along coupler
     coupler.add_coupler_point("P", 0.0625, 0.0).unwrap();
-    let rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+    let mut rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+    set_bar_mass(&mut crank, l_crank);
+    set_bar_mass(&mut coupler, l_coupler);
+    set_bar_mass(&mut rocker, l_rocker);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -758,11 +781,14 @@ pub(super) fn build_roberts_with_driver(
     let l_rocker = std::f64::consts::SQRT_2 * scale;
 
     let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
-    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
     let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
     // Coupler point at midpoint, offset perpendicular for straight-line trace
     coupler.add_coupler_point("P", l_coupler / 2.0, -l_coupler / 4.0).unwrap();
-    let rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+    let mut rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+    set_bar_mass(&mut crank, l_crank);
+    set_bar_mass(&mut coupler, l_coupler);
+    set_bar_mass(&mut rocker, l_rocker);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();

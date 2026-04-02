@@ -6,7 +6,10 @@ use crate::core::body::{make_bar, make_ground, Body};
 use crate::core::mechanism::Mechanism;
 use crate::solver::kinematics::solve_position;
 
-use super::helpers::{attach_driver_to_grounded_revolute_with_theta0, fourbar_initial_q0};
+use super::helpers::{
+    attach_driver_to_grounded_revolute_with_theta0, fourbar_initial_q0, set_bar_mass,
+    set_slider_mass, set_ternary_mass,
+};
 
 /// Quick-return mechanism (crank-shaper).
 ///
@@ -25,9 +28,12 @@ pub(super) fn build_quick_return(
     let l_rocker = 0.045;
 
     let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
-    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
-    let coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
-    let rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
+    let mut rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+    set_bar_mass(&mut crank, l_crank);
+    set_bar_mass(&mut coupler, l_coupler);
+    set_bar_mass(&mut rocker, l_rocker);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -67,9 +73,12 @@ pub(super) fn build_toggle_clamp(
     let l_rocker = 0.020;
 
     let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
-    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
-    let coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
-    let rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
+    let mut rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+    set_bar_mass(&mut crank, l_crank);
+    set_bar_mass(&mut coupler, l_coupler);
+    set_bar_mass(&mut rocker, l_rocker);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -115,15 +124,18 @@ pub(super) fn build_scotch_yoke(
         ("O", 0.0, 0.0),       // crank pivot
         ("rail", 0.0, 0.0),    // slider rail anchor
     ]);
-    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    set_bar_mass(&mut crank, l_crank);
 
     // Pin body: small intermediate body at crank tip, rides in the yoke slot
     let mut pin = Body::new("pin");
     pin.add_attachment_point("P", 0.0, 0.0).unwrap();
+    set_slider_mass(&mut pin);
 
     // Slider body: translates vertically on the rail
     let mut slider = Body::new("slider");
     slider.add_attachment_point("S", 0.0, 0.0).unwrap();
+    set_slider_mass(&mut slider);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -191,14 +203,17 @@ pub(super) fn build_inverted_slider_crank(
     let l_guide = 0.06; // guide long enough that the crank pin always reaches it
 
     let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
-    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    set_bar_mass(&mut crank, l_crank);
 
     // Pin body: intermediate body at crank tip, slides along the guide
     let mut pin = Body::new("pin");
     pin.add_attachment_point("P", 0.0, 0.0).unwrap();
+    set_slider_mass(&mut pin);
 
     // Guide (rocker): a bar that pivots at O4; crank pin slides along it
-    let guide = make_bar("guide", "C", "D", l_guide, 0.0, 0.0);
+    let mut guide = make_bar("guide", "C", "D", l_guide, 0.0, 0.0);
+    set_bar_mass(&mut guide, l_guide);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -276,11 +291,14 @@ pub(super) fn build_offset_slider_crank(
         ("O", 0.0, 0.0),         // crank pivot
         ("rail", 0.0, offset),    // slider rail anchor at offset height
     ]);
-    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
-    let coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
+    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
+    set_bar_mass(&mut crank, l_crank);
+    set_bar_mass(&mut coupler, l_coupler);
 
     let mut slider = Body::new("slider");
     slider.add_attachment_point("C", 0.0, 0.0).unwrap();
+    set_slider_mass(&mut slider);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -349,14 +367,17 @@ pub(super) fn build_whitworth_quick_return(
     let l_lever = 0.060;
 
     let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
-    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    set_bar_mass(&mut crank, l_crank);
 
     // Pin body: intermediate body at crank tip, slides along the lever slot
     let mut pin = Body::new("pin");
     pin.add_attachment_point("P", 0.0, 0.0).unwrap();
+    set_slider_mass(&mut pin);
 
     // Lever (slotted rocker): pivots at O4, crank pin slides along it
-    let lever = make_bar("lever", "C", "D", l_lever, 0.0, 0.0);
+    let mut lever = make_bar("lever", "C", "D", l_lever, 0.0, 0.0);
+    set_bar_mass(&mut lever, l_lever);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -470,8 +491,10 @@ pub(super) fn build_bell_crank(
         ("O_input", o_input.0, o_input.1),
         ("O_bell", o_bell.0, o_bell.1),
     ]);
-    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
-    let coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
+    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    set_bar_mass(&mut crank, l_crank);
+    let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
+    set_bar_mass(&mut coupler, l_coupler);
 
     let mut bell_rocker = make_ternary(
         "bell_rocker", "P1", "P2", "P3",
@@ -479,6 +502,7 @@ pub(super) fn build_bell_crank(
     );
     // Coupler point at output arm tip to show the 90-degree redirect
     bell_rocker.add_coupler_point("CP", 0.0, bell_arm_v).unwrap();
+    set_ternary_mass(&mut bell_rocker, (bell_arm_h, 0.0), (0.0, bell_arm_v));
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();
@@ -583,11 +607,14 @@ pub(super) fn build_peaucellier_lipkin(
     let l_rocker = 0.060_f64;      // 60mm
 
     let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
-    let crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
+    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
     let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
     // Coupler point at offset for interesting trace
     coupler.add_coupler_point("P", l_coupler / 2.0, l_coupler / 3.0).unwrap();
-    let rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+    let mut rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
+    set_bar_mass(&mut crank, l_crank);
+    set_bar_mass(&mut coupler, l_coupler);
+    set_bar_mass(&mut rocker, l_rocker);
 
     let mut mech = Mechanism::new();
     mech.add_body(ground).unwrap();

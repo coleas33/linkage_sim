@@ -1,6 +1,6 @@
 //! Shared helper functions for sample mechanism builders.
 
-use nalgebra::DVector;
+use nalgebra::{DVector, Vector2};
 use std::f64::consts::PI;
 
 use crate::core::body::Body;
@@ -8,6 +8,42 @@ use crate::core::constraint::Constraint;
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
 use crate::solver::kinematics::solve_position;
+
+/// Set mass properties for a sample bar body: 1 kg uniform rod of the given length.
+///
+/// - `mass` = 1.0 kg
+/// - `cg_local` = midpoint of the bar (length/2, 0)
+/// - `izz_cg` = m * L^2 / 12  (uniform rod about its center)
+pub fn set_bar_mass(body: &mut Body, length: f64) {
+    body.mass = 1.0;
+    body.cg_local = Vector2::new(length / 2.0, 0.0);
+    body.izz_cg = length * length / 12.0; // m * L^2 / 12 with m = 1
+}
+
+/// Set mass properties for a sample ternary body: 1 kg, CG at centroid of
+/// the three attachment points, Izz from the bounding-circle radius.
+///
+/// `p2_local` and `p3_local` are the body-local coordinates of the second
+/// and third attachment points (P1 is assumed at the origin).
+pub fn set_ternary_mass(body: &mut Body, p2_local: (f64, f64), p3_local: (f64, f64)) {
+    let cx = (p2_local.0 + p3_local.0) / 3.0;
+    let cy = (p2_local.1 + p3_local.1) / 3.0;
+    // Characteristic length: max distance from origin to any attachment point.
+    let d2 = (p2_local.0 * p2_local.0 + p2_local.1 * p2_local.1).sqrt();
+    let d3 = (p3_local.0 * p3_local.0 + p3_local.1 * p3_local.1).sqrt();
+    let l_char = d2.max(d3);
+    body.mass = 1.0;
+    body.cg_local = Vector2::new(cx, cy);
+    body.izz_cg = l_char * l_char / 12.0; // m * L^2 / 12 with m = 1
+}
+
+/// Set mass properties for a sample slider body: 1 kg point mass at origin.
+pub fn set_slider_mass(body: &mut Body) {
+    body.mass = 1.0;
+    // CG at origin (single attachment point), Izz ~ 0 for a compact block.
+    body.cg_local = Vector2::new(0.0, 0.0);
+    body.izz_cg = 0.0;
+}
 
 /// Attach a constant-speed driver to a grounded revolute joint.
 ///

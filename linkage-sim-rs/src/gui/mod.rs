@@ -246,6 +246,12 @@ impl eframe::App for LinkageApp {
                 self.state.load_sample(sample);
                 self.state.driver_angle = 0.0;
                 self.state.solve_at_angle(0.0);
+                // Snapshot the solved state so the animation solver has a
+                // good initial guess.  Without this, last_good_q may be
+                // stale from a previous (differently-dimensioned) mechanism
+                // and the solver fails on the first frame, stopping playback.
+                self.state.last_good_q = self.state.q.clone();
+                self.state.q_at_zero = self.state.q.clone();
                 self.state.playing = true;
                 self.state.loop_mode = true;
                 self.state.animation_direction = 1.0;
