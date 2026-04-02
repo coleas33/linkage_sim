@@ -568,7 +568,7 @@ impl AppState {
         let scale_y = canvas_height as f64 / (h * (1.0 + 2.0 * margin));
         let scale = scale_x.min(scale_y) as f32;
 
-        self.view.scale = scale.clamp(100.0, 100_000.0);
+        self.view.scale = scale.clamp(10.0, 100_000.0);
         self.view.offset = [
             canvas_width / 2.0 - (cx as f32) * self.view.scale,
             canvas_height / 2.0 + (cy as f32) * self.view.scale,

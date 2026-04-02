@@ -241,12 +241,15 @@ impl eframe::App for LinkageApp {
             if should_advance {
                 self.demo_timer = 0.2; // skip past the first-frame check
                 let all = SampleMechanism::all();
+                let sample = all[self.demo_sample_index % all.len()];
                 self.demo_sample_index = (self.demo_sample_index + 1) % all.len();
-                let sample = all[self.demo_sample_index];
                 self.state.load_sample(sample);
+                self.state.driver_angle = 0.0;
+                self.state.solve_at_angle(0.0);
                 self.state.playing = true;
-                self.state.loop_mode = true; // ensure animation loops
+                self.state.loop_mode = true;
                 self.state.animation_direction = 1.0;
+                self.state.animation_speed_deg_per_sec = 90.0;
                 // Fit to view: set pending for 2 frames to handle layout changes
                 self.state.pending_fit_to_view = true;
             }
