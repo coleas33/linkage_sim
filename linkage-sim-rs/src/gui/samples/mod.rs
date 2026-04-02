@@ -44,6 +44,7 @@ pub enum SampleMechanism {
     PeaucellierLipkin,
     WattII,
     Pantograph,
+    Strandbeest,
 }
 
 impl SampleMechanism {
@@ -77,6 +78,7 @@ impl SampleMechanism {
             SampleMechanism::PeaucellierLipkin => "Coupler Curve (figure-8)",
             SampleMechanism::WattII => "6-Bar Watt II",
             SampleMechanism::Pantograph => "Pantograph (motion scaling)",
+            SampleMechanism::Strandbeest => "Strandbeest (Jansen Walking)",
         }
     }
 
@@ -111,6 +113,7 @@ impl SampleMechanism {
             SampleMechanism::PeaucellierLipkin => "Generates a figure-8 coupler curve path",
             SampleMechanism::WattII => "Watt type II 6-bar with output on floating link",
             SampleMechanism::Pantograph => "Scales and copies motion to a remote output point",
+            SampleMechanism::Strandbeest => "Theo Jansen's walking mechanism \u{2014} crank rotation produces a foot path with flat ground contact",
         }
     }
 
@@ -146,7 +149,8 @@ impl SampleMechanism {
             | SampleMechanism::OffsetSliderCrank
             | SampleMechanism::WhitworthQuickReturn
             | SampleMechanism::BellCrank
-            | SampleMechanism::PeaucellierLipkin => "Specialty Mechanisms",
+            | SampleMechanism::PeaucellierLipkin
+            | SampleMechanism::Strandbeest => "Specialty Mechanisms",
         }
     }
 
@@ -180,6 +184,7 @@ impl SampleMechanism {
             SampleMechanism::PeaucellierLipkin,
             SampleMechanism::WattII,
             SampleMechanism::Pantograph,
+            SampleMechanism::Strandbeest,
         ]
     }
 }
@@ -226,6 +231,7 @@ pub fn build_sample_with_driver(
         SampleMechanism::PeaucellierLipkin => special::build_peaucellier_lipkin(driver_joint_id),
         SampleMechanism::WattII => sixbar::build_watt_ii(driver_joint_id),
         SampleMechanism::Pantograph => sixbar::build_pantograph(driver_joint_id),
+        SampleMechanism::Strandbeest => special::build_strandbeest(driver_joint_id),
     }
 }
 
@@ -677,7 +683,7 @@ mod tests {
 
     #[test]
     fn all_samples_listed() {
-        assert_eq!(SampleMechanism::all().len(), 28);
+        assert_eq!(SampleMechanism::all().len(), 29);
     }
 
     #[test]
@@ -866,6 +872,32 @@ mod tests {
     }
 
     #[test]
+    fn strandbeest_sample_builds_and_solves() {
+        let (mech, q0) = build_sample(SampleMechanism::Strandbeest);
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 100).unwrap();
+        assert!(
+            result.converged,
+            "Strandbeest sample did not converge at t=0, residual = {}",
+            result.residual_norm
+        );
+    }
+
+    #[test]
+    fn strandbeest_full_sweep_convergence() {
+        use crate::gui::state::AppState;
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::Strandbeest);
+        let sweep = state.sweep_data.as_ref().expect("sweep data");
+        let total = sweep.angles_deg.len();
+        eprintln!("Strandbeest: {}/361 converged", total);
+        assert!(
+            total > 300,
+            "Strandbeest should converge for most angles, got {}",
+            total
+        );
+    }
+
+    #[test]
     fn all_samples_have_descriptions() {
         for sample in SampleMechanism::all() {
             let desc = sample.description();
@@ -895,11 +927,11 @@ mod tests {
     }
 
     #[test]
-    fn sample_count_is_28() {
+    fn sample_count_is_29() {
         assert_eq!(
             SampleMechanism::all().len(),
-            28,
-            "Expected 28 sample mechanisms"
+            29,
+            "Expected 29 sample mechanisms"
         );
     }
 }

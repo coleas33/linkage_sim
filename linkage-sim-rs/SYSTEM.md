@@ -102,12 +102,12 @@ linkage-sim-rs/src/
 │   │   ├── pending_edits.rs          (210)    PendingPropertyEdit enum + apply_pending
 │   │   ├── diagnostics.rs            (305)    Diagnostics section + motor sizing
 │   │   └── force_editor.rs         (1,273)    Per-force-type parameter editors
-│   ├── samples/                    (2,500+)   Sample mechanism builders (28 total, with thumbnails)
+│   ├── samples/                    (2,500+)   Sample mechanism builders (29 total, with thumbnails)
 │   │   ├── mod.rs                    (400+)   SampleMechanism enum, build_sample dispatch, tests
 │   │   ├── helpers.rs                (219)    attach_driver, fourbar_initial_q0, continuation solver
 │   │   ├── fourbar.rs                (570+)   12 four-bar variants (incl. Hoeken, Roberts)
 │   │   ├── sixbar.rs                 (700+)   7 six-bar variants (incl. Watt II, Pantograph)
-│   │   └── special.rs               (620+)   Slider-crank variants, bell crank, coupler curve, yoke mechanisms
+│   │   └── special.rs              (1,000+)   Slider-crank variants, bell crank, yoke, Strandbeest walking
 │   ├── export/                     (1,577)    File export
 │   │   ├── mod.rs                     (20)    Re-exports
 │   │   ├── csv.rs                    (454)    CSV + coupler CSV export
