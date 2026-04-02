@@ -526,31 +526,42 @@ impl AppState {
 
     /// Compute view transform that fits all body attachment points in the canvas.
     pub fn fit_to_view(&mut self, canvas_width: f32, canvas_height: f32) {
-        let Some(ref mech) = self.mechanism else {
+        if canvas_width < 1.0 || canvas_height < 1.0 {
             return;
-        };
-        let q = &self.q;
-        let sim_state = mech.state();
+        }
 
         let mut x_min = f64::INFINITY;
         let mut x_max = f64::NEG_INFINITY;
         let mut y_min = f64::INFINITY;
         let mut y_max = f64::NEG_INFINITY;
 
-        for (body_id, body) in mech.bodies() {
-            for pt in body.attachment_points.values() {
-                let global = sim_state.body_point_global(body_id, pt, q);
-                x_min = x_min.min(global.x);
-                x_max = x_max.max(global.x);
-                y_min = y_min.min(global.y);
-                y_max = y_max.max(global.y);
+        // Include all body attachment + mount points at current pose
+        if let Some(ref mech) = self.mechanism {
+            let q = &self.q;
+            let sim_state = mech.state();
+            for (body_id, body) in mech.bodies() {
+                for pt in body.attachment_points.values() {
+                    let g = sim_state.body_point_global(body_id, pt, q);
+                    x_min = x_min.min(g.x); x_max = x_max.max(g.x);
+                    y_min = y_min.min(g.y); y_max = y_max.max(g.y);
+                }
+                for pt in body.mount_points.values() {
+                    let g = sim_state.body_point_global(body_id, pt, q);
+                    x_min = x_min.min(g.x); x_max = x_max.max(g.x);
+                    y_min = y_min.min(g.y); y_max = y_max.max(g.y);
+                }
             }
-            for pt in body.mount_points.values() {
-                let global = sim_state.body_point_global(body_id, pt, q);
-                if global.x < x_min { x_min = global.x; }
-                if global.x > x_max { x_max = global.x; }
-                if global.y < y_min { y_min = global.y; }
-                if global.y > y_max { y_max = global.y; }
+        }
+
+        // Include coupler trace bounds from sweep data (covers full motion range)
+        if let Some(ref sweep) = self.sweep_data {
+            for trace in sweep.coupler_traces.values() {
+                for &[tx, ty] in trace {
+                    if tx.is_finite() && ty.is_finite() {
+                        x_min = x_min.min(tx); x_max = x_max.max(tx);
+                        y_min = y_min.min(ty); y_max = y_max.max(ty);
+                    }
+                }
             }
         }
 
@@ -558,9 +569,9 @@ impl AppState {
             return;
         }
 
-        let margin = 0.15; // 15% margin on each side
-        let w = (x_max - x_min).max(0.01);
-        let h = (y_max - y_min).max(0.01);
+        let margin = 0.20; // 20% margin on each side
+        let w = (x_max - x_min).max(0.001);
+        let h = (y_max - y_min).max(0.001);
         let cx = (x_min + x_max) / 2.0;
         let cy = (y_min + y_max) / 2.0;
 
@@ -568,7 +579,8 @@ impl AppState {
         let scale_y = canvas_height as f64 / (h * (1.0 + 2.0 * margin));
         let scale = scale_x.min(scale_y) as f32;
 
-        self.view.scale = scale.clamp(10.0, 100_000.0);
+        // No lower clamp — let the mechanism be as small as needed to fit
+        self.view.scale = scale.clamp(0.1, 100_000.0);
         self.view.offset = [
             canvas_width / 2.0 - (cx as f32) * self.view.scale,
             canvas_height / 2.0 + (cy as f32) * self.view.scale,
