@@ -520,9 +520,13 @@ fn handle_draw_link(
                 (seg_hit.world_pos[0], seg_hit.world_pos[1],
                  Some((seg_hit.body_id.clone(), name)))
             } else {
-                let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
-                let (gx, gy) = state.grid.snap_point(wx, wy);
-                (gx, gy, None)
+                // No snap target — link would float in space.
+                // Reject and show a message.
+                state.status_message = Some(
+                    "Release near an existing point or link to connect. Use + Ground to place anchors first.".to_string()
+                );
+                state.status_message_time = 3.0;
+                return;
             };
 
             // Minimum drag distance: 10px.
