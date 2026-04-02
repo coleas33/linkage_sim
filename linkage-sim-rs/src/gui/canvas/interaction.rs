@@ -18,9 +18,18 @@ fn find_nearest_attachment<'a>(
     pos: Pos2,
     attachment_hit_targets: &'a [AttachmentHit],
 ) -> Option<&'a AttachmentHit> {
+    find_nearest_attachment_radius(pos, attachment_hit_targets, HIT_RADIUS)
+}
+
+/// Find the nearest attachment point within a custom screen-pixel radius.
+fn find_nearest_attachment_radius<'a>(
+    pos: Pos2,
+    attachment_hit_targets: &'a [AttachmentHit],
+    radius: f32,
+) -> Option<&'a AttachmentHit> {
     attachment_hit_targets
         .iter()
-        .filter(|h| pos.distance(h.screen_pos) <= HIT_RADIUS)
+        .filter(|h| pos.distance(h.screen_pos) <= radius)
         .min_by(|a, b| {
             pos.distance(a.screen_pos)
                 .partial_cmp(&pos.distance(b.screen_pos))
@@ -496,8 +505,9 @@ fn handle_draw_link(
         if let Some(pos) = response.interact_pointer_pos() {
             let [sx, sy] = start.world_pos;
 
-            // Snap end to existing point, body segment, or grid.
-            let snap_end = find_nearest_attachment(pos, attachment_hit_targets);
+            // Snap end to existing point (tight 6px radius to avoid teleporting),
+            // body segment, or grid.
+            let snap_end = find_nearest_attachment_radius(pos, attachment_hit_targets, 6.0);
             let (ex, ey, end_attach) = if let Some(hit) = snap_end {
                 // Priority 1: snap to existing attachment point.
                 (hit.world_pos[0], hit.world_pos[1],

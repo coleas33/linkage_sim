@@ -1161,11 +1161,8 @@ impl eframe::App for LinkageApp {
             // Determine if the workspace is effectively empty (just ground body,
             // no real mechanism content) and no tutorial is active.
             let is_empty_workspace = !self.state.tutorial.active
-                && self.state.current_sample.is_none()
                 && !self.demo_mode
-                && self.state.blueprint.as_ref().map_or(true, |bp| {
-                    bp.bodies.len() <= 1 && bp.joints.is_empty()
-                });
+                && self.state.mechanism.is_none();
 
             if is_empty_workspace {
                 // ── Welcome screen ──────────────────────────────────────
