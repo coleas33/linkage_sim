@@ -232,17 +232,28 @@ impl eframe::App for LinkageApp {
         // ── Demo mode: auto-cycle through samples ────────────────────
         if self.demo_mode {
             self.demo_timer += dt;
-            if self.demo_timer > 5.0 {
-                self.demo_timer = 0.0;
+            // Load first sample immediately on demo start, then every 5 seconds
+            let should_advance = if self.demo_timer < 0.1 && self.state.mechanism.is_none() {
+                true // first frame of demo: load immediately
+            } else {
+                self.demo_timer > 5.0
+            };
+            if should_advance {
+                self.demo_timer = 0.2; // skip past the first-frame check
                 let all = SampleMechanism::all();
                 self.demo_sample_index = (self.demo_sample_index + 1) % all.len();
                 let sample = all[self.demo_sample_index];
                 self.state.load_sample(sample);
                 self.state.playing = true;
+                // Fit to view on the NEXT frame (canvas rect needs to be established)
                 self.state.pending_fit_to_view = true;
             }
-            // Any click or Escape stops demo mode.
-            if ctx.input(|i| i.pointer.any_click() || i.key_pressed(egui::Key::Escape)) {
+            // Escape stops demo mode. Skip click detection for the first 0.5s
+            // to avoid the "Watch Demo" button click from immediately stopping it.
+            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.demo_mode = false;
+            }
+            if self.demo_timer > 0.5 && ctx.input(|i| i.pointer.any_click()) {
                 self.demo_mode = false;
             }
             ctx.request_repaint();
