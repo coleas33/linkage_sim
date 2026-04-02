@@ -1162,7 +1162,16 @@ impl eframe::App for LinkageApp {
             // no real mechanism content) and no tutorial is active.
             let is_empty_workspace = !self.state.tutorial.active
                 && !self.demo_mode
-                && self.state.mechanism.is_none();
+                && self.state.current_sample.is_none()
+                && self.state.blueprint.as_ref().map_or(true, |bp| {
+                    // Show welcome when only ground body exists with no attachment
+                    // points (fresh state). Once the user adds a ground pivot or
+                    // loads anything, the welcome disappears.
+                    let ground_pts = bp.bodies.get("ground")
+                        .map(|g| g.attachment_points.len())
+                        .unwrap_or(0);
+                    bp.bodies.len() <= 1 && bp.joints.is_empty() && ground_pts == 0
+                });
 
             if is_empty_workspace {
                 // ── Welcome screen ──────────────────────────────────────
