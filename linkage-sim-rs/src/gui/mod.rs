@@ -205,6 +205,13 @@ impl eframe::App for LinkageApp {
             self.state.new_empty_mechanism();
         }
 
+        // Ctrl+V — hint that image paste is not yet supported.
+        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::V)) {
+            self.state.status_message =
+                Some("Image paste not supported yet \u{2014} drag & drop an image onto the canvas instead.".to_string());
+            self.state.status_message_time = 4.0;
+        }
+
         // ── Debounced sweep recomputation ──────────────────────────────
         if self.state.sweep_dirty {
             let now = ctx.input(|i| i.time);
@@ -1595,6 +1602,9 @@ fn draw_sample_menu(
     state: &mut AppState,
     thumbnails: &HashMap<SampleMechanism, egui::TextureHandle>,
 ) {
+    egui::ScrollArea::vertical()
+        .max_height(400.0)
+        .show(ui, |ui| {
     let mut last_category: Option<&str> = None;
     for sample in SampleMechanism::all() {
         let cat = sample.category();
@@ -1645,6 +1655,7 @@ fn draw_sample_menu(
             ui.close();
         }
     }
+        }); // end ScrollArea
 }
 
 // ── Background image loading ────────────────────────────────────────────────

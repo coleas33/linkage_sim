@@ -400,7 +400,7 @@ fn handle_draw_link(
                     world_pos: hit.world_pos,
                     attachment: Some((hit.body_id.clone(), hit.point_name.clone())),
                 });
-            } else if let Some(seg_hit) = find_nearest_body_segment(pos, body_segments, 8.0) {
+            } else if let Some(seg_hit) = find_nearest_body_segment(pos, body_segments, 20.0) {
                 // Snap to body segment -- create new pivot on that body.
                 let name = state.next_attachment_point_name(&seg_hit.body_id);
                 let [lx, ly] = state.world_to_body_local(&seg_hit.body_id, seg_hit.world_pos[0], seg_hit.world_pos[1]);
@@ -429,7 +429,7 @@ fn handle_draw_link(
 
             // Check for segment snap when no point snap is active.
             let segment_snap = if !end_snapped {
-                find_nearest_body_segment(pos, body_segments, 8.0)
+                find_nearest_body_segment(pos, body_segments, 20.0)
             } else {
                 None
             };
@@ -511,7 +511,7 @@ fn handle_draw_link(
                 // Priority 1: snap to existing attachment point.
                 (hit.world_pos[0], hit.world_pos[1],
                  Some((hit.body_id.clone(), hit.point_name.clone())))
-            } else if let Some(seg_hit) = find_nearest_body_segment(pos, body_segments, 8.0) {
+            } else if let Some(seg_hit) = find_nearest_body_segment(pos, body_segments, 20.0) {
                 // Priority 2: snap to body segment -- create new pivot.
                 let name = state.next_attachment_point_name(&seg_hit.body_id);
                 let [lx, ly] = state.world_to_body_local(&seg_hit.body_id, seg_hit.world_pos[0], seg_hit.world_pos[1]);
@@ -649,7 +649,7 @@ fn handle_place_force(
                 (hit.world_pos, hit.body_id.clone(), Some(hit.point_name.clone()))
             } else {
                 let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
-                if let Some(seg_hit) = find_nearest_body_segment(pos, body_segments, 8.0) {
+                if let Some(seg_hit) = find_nearest_body_segment(pos, body_segments, 20.0) {
                     (seg_hit.world_pos, seg_hit.body_id.clone(), None)
                 } else {
                     ([wx, wy], GROUND_ID.to_string(), None)
