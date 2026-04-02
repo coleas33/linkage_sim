@@ -97,17 +97,17 @@ pub(super) fn build_fourbar_with_driver(
 /// Slider-crank linkage with a prismatic joint.
 ///
 /// Link lengths (meters):
-/// - crank:   0.01 m
-/// - coupler: 0.04 m
+/// - crank:   0.05 m (50mm)
+/// - coupler: 0.20 m (200mm)
 /// - slider:  translates along X axis from ground/rail
 pub(super) fn build_slider_crank_with_driver(
     driver_joint_id: Option<&str>,
 ) -> Result<(Mechanism, DVector<f64>), String> {
     let ground = make_ground(&[("O2", 0.0, 0.0), ("rail", 0.0, 0.0)]);
-    let mut crank = make_bar("crank", "A", "B", 0.01, 0.0, 0.0);
-    let mut coupler = make_bar("coupler", "B", "C", 0.04, 0.0, 0.0);
-    set_bar_mass(&mut crank, 0.01);
-    set_bar_mass(&mut coupler, 0.04);
+    let mut crank = make_bar("crank", "A", "B", 0.05, 0.0, 0.0);
+    let mut coupler = make_bar("coupler", "B", "C", 0.20, 0.0, 0.0);
+    set_bar_mass(&mut crank, 0.05);
+    set_bar_mass(&mut coupler, 0.20);
 
     let mut slider = Body::new("slider");
     slider.add_attachment_point("C", 0.0, 0.0).unwrap();
@@ -145,9 +145,9 @@ pub(super) fn build_slider_crank_with_driver(
 
     let state = mech.state();
     let mut q0 = state.make_q();
-    state.set_pose("crank", &mut q0, 0.005, 0.0, 0.0);
-    state.set_pose("coupler", &mut q0, 0.025, 0.0, 0.0);
-    state.set_pose("slider", &mut q0, 0.05, 0.0, 0.0);
+    state.set_pose("crank", &mut q0, 0.025, 0.0, 0.0);
+    state.set_pose("coupler", &mut q0, 0.125, 0.0, 0.0);
+    state.set_pose("slider", &mut q0, 0.25, 0.0, 0.0);
 
     Ok((mech, q0))
 }

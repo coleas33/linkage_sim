@@ -505,9 +505,8 @@ fn handle_draw_link(
         if let Some(pos) = response.interact_pointer_pos() {
             let [sx, sy] = start.world_pos;
 
-            // Snap end to existing point (tight 6px radius to avoid teleporting),
-            // body segment, or grid.
-            let snap_end = find_nearest_attachment_radius(pos, attachment_hit_targets, 6.0);
+            // Snap end to existing point, body segment, or grid.
+            let snap_end = find_nearest_attachment(pos, attachment_hit_targets);
             let (ex, ey, end_attach) = if let Some(hit) = snap_end {
                 // Priority 1: snap to existing attachment point.
                 (hit.world_pos[0], hit.world_pos[1],
