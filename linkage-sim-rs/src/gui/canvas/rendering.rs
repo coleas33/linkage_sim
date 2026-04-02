@@ -892,7 +892,7 @@ fn render_hover_tooltips(
                                     ui.label(format!("{} \u{2194} {}", joint.body_i_id(), joint.body_j_id()));
                                     // Show reaction forces if available.
                                     if let Some(&(fx, fy)) = state.force_results.joint_reactions.get(jid) {
-                                        ui.label(format!("Reaction: ({:.1}, {:.1}) N", fx, fy));
+                                        ui.label(format!("Reaction: ({:.0}, {:.0}) N", fx, fy));
                                     }
                                 });
                                 shown_tooltip = true;
@@ -1554,7 +1554,7 @@ fn draw_external_force_arrow(
     painter.text(
         Pos2::new(tail.x - 4.0, tail.y - 4.0),
         egui::Align2::RIGHT_BOTTOM,
-        format!("{:.1} N", mag),
+        format!("{:.0} N", mag),
         FontId::proportional(11.0),
         EXT_FORCE_COLOR,
     );
@@ -1798,7 +1798,7 @@ fn draw_force_arrow(painter: &egui::Painter, origin: Pos2, fx: f32, fy: f32) {
     painter.text(
         Pos2::new(tip.x + 4.0, tip.y - 4.0),
         egui::Align2::LEFT_BOTTOM,
-        format!("{:.2} N", mag),
+        format!("{:.0} N", mag),
         FontId::proportional(11.0),
         FORCE_ARROW_COLOR,
     );

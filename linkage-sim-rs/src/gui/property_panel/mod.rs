@@ -521,7 +521,7 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 for jid in ids {
                     let (fx, fy) = state.force_results.joint_reactions[jid];
                     let mag = (fx * fx + fy * fy).sqrt();
-                    ui.label(format!("{}: {:.2} N  ({:.2}, {:.2})", jid, mag, fx, fy));
+                    ui.label(format!("{}: {:.0} N  ({:.0}, {:.0})", jid, mag, fx, fy));
                 }
             }
         });
