@@ -245,7 +245,14 @@ impl eframe::App for LinkageApp {
                 let sample = all[self.demo_sample_index];
                 self.state.load_sample(sample);
                 self.state.playing = true;
-                // Fit to view on the NEXT frame (canvas rect needs to be established)
+                self.state.loop_mode = true; // ensure animation loops
+                self.state.animation_direction = 1.0;
+                // Fit to view: set pending for 2 frames to handle layout changes
+                self.state.pending_fit_to_view = true;
+            }
+            // Keep re-triggering fit for the first few frames after a sample loads
+            // (canvas rect may change as panels settle)
+            if self.demo_timer > 0.2 && self.demo_timer < 0.6 {
                 self.state.pending_fit_to_view = true;
             }
             // Escape stops demo mode. Skip click detection for the first 0.5s
