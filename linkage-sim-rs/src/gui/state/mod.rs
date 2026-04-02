@@ -522,6 +522,18 @@ impl AppState {
             self.wasm_has_recovery = false;
             Self::wasm_clear_autosave();
         }
+
+        // Create a ground-only mechanism so the canvas shows (ready for editing).
+        let ground = crate::core::body::make_ground(&[]);
+        let mut mech = crate::core::mechanism::Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.build().unwrap();
+        self.q = mech.state().make_q();
+        self.last_good_q = self.q.clone();
+        self.q_at_zero = self.q.clone();
+        self.blueprint = crate::io::mechanism_to_json(&mech).ok();
+        self.mechanism = Some(mech);
+        self.pending_fit_to_view = true;
     }
 
     /// Compute view transform that fits all body attachment points in the canvas.
