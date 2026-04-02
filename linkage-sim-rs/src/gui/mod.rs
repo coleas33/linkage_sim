@@ -232,12 +232,7 @@ impl eframe::App for LinkageApp {
         // ── Demo mode: auto-cycle through samples ────────────────────
         if self.demo_mode {
             self.demo_timer += dt;
-            // Load first sample immediately on demo start, then every 5 seconds
-            let should_advance = if self.demo_timer < 0.1 && self.state.mechanism.is_none() {
-                true // first frame of demo: load immediately
-            } else {
-                self.demo_timer > 5.0
-            };
+            let should_advance = self.demo_timer > 5.0;
             if should_advance {
                 self.demo_timer = 0.2; // skip past the first-frame check
                 let all = SampleMechanism::all();
@@ -1200,12 +1195,21 @@ impl eframe::App for LinkageApp {
                                 ui.add_space(4.0);
                                 if ui.button("Watch Demo").clicked() {
                                     self.demo_mode = true;
-                                    self.demo_timer = 0.0;
                                     self.demo_sample_index = 0;
+                                    // Load first sample immediately with full init
                                     let sample = SampleMechanism::all()[0];
                                     self.state.load_sample(sample);
+                                    self.state.driver_angle = 0.0;
+                                    self.state.solve_at_angle(0.0);
+                                    self.state.last_good_q = self.state.q.clone();
+                                    self.state.q_at_zero = self.state.q.clone();
                                     self.state.playing = true;
+                                    self.state.loop_mode = true;
+                                    self.state.animation_direction = 1.0;
                                     self.state.pending_fit_to_view = true;
+                                    // Start index at 1 so first demo advance loads SliderCrank
+                                    self.demo_sample_index = 1;
+                                    self.demo_timer = 0.2;
                                 }
                                 ui.add_space(5.0);
                                 ui.label(
