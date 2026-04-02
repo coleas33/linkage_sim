@@ -262,6 +262,9 @@ pub struct AppState {
     pub background_image: Option<BackgroundImage>,
     /// Whether the Image Settings floating window is open.
     pub show_image_settings: bool,
+    // ── Welcome screen ──────────────────────────────────────────────
+    /// When true, the welcome screen is dismissed (user started working).
+    pub dismiss_welcome: bool,
     // ── Load path visualization ─────────────────────────────────────
     /// Whether to color-code links by joint reaction force magnitude.
     pub show_load_path: bool,
@@ -480,6 +483,7 @@ impl Default for AppState {
             nathan_mode: false,
             background_image: None,
             show_image_settings: false,
+            dismiss_welcome: false,
             show_load_path: true,
             place_mass_body: None,
             reassigning_point_mass: None,

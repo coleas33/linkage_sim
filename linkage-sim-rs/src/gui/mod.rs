@@ -1160,17 +1160,12 @@ impl eframe::App for LinkageApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             // Determine if the workspace is effectively empty (just ground body,
             // no real mechanism content) and no tutorial is active.
-            let is_empty_workspace = !self.state.tutorial.active
+            let is_empty_workspace = !self.state.dismiss_welcome
+                && !self.state.tutorial.active
                 && !self.demo_mode
                 && self.state.current_sample.is_none()
-                && self.state.blueprint.as_ref().map_or(true, |bp| {
-                    // Show welcome when only ground body exists with no attachment
-                    // points (fresh state). Once the user adds a ground pivot or
-                    // loads anything, the welcome disappears.
-                    let ground_pts = bp.bodies.get("ground")
-                        .map(|g| g.attachment_points.len())
-                        .unwrap_or(0);
-                    bp.bodies.len() <= 1 && bp.joints.is_empty() && ground_pts == 0
+                && self.state.mechanism.as_ref().map_or(true, |m| {
+                    m.body_order().is_empty() // no moving bodies
                 });
 
             if is_empty_workspace {
@@ -1199,7 +1194,7 @@ impl eframe::App for LinkageApp {
                                 }
                                 if ui.button("New Empty Mechanism").clicked() {
                                     self.state.new_empty_mechanism();
-                                    // Switch to AddGroundPivot so the user can start placing immediately.
+                                    self.state.dismiss_welcome = true;
                                     self.state.active_tool = state::EditorTool::AddGroundPivot;
                                 }
                                 ui.add_space(4.0);
