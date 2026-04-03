@@ -790,10 +790,7 @@ impl eframe::App for LinkageApp {
                     }
                     #[cfg(not(feature = "native"))]
                     {
-                        ui.label(
-                            egui::RichText::new("Drag & drop an image onto the canvas")
-                                .small().weak(),
-                        );
+                        ui.label("Drag & drop an image onto the canvas");
                     }
                     if self.state.background_image.is_some() {
                         if ui.button("Remove Image")
@@ -853,15 +850,18 @@ impl eframe::App for LinkageApp {
                 let tool = self.state.active_tool;
 
                 // ── Editor tools (blue accent) ──────────────────────
-                let tool_color = self.state.nc(egui::Color32::from_rgb(80, 160, 255));
-                let tool_active_color = self.state.nc(egui::Color32::from_rgb(40, 120, 220));
+                let tool_color = self.state.nc(egui::Color32::from_rgb(140, 180, 230));
+                let tool_active_bg = self.state.nc(egui::Color32::from_rgb(40, 100, 200));
+                let tool_active_text = egui::Color32::WHITE;
 
-                let select_text = if tool == EditorTool::Select {
-                    egui::RichText::new("Select").color(tool_active_color).strong()
+                let select_active = tool == EditorTool::Select;
+                let select_btn = if select_active {
+                    egui::Button::new(egui::RichText::new("Select").color(tool_active_text).strong().size(14.0))
+                        .fill(tool_active_bg)
                 } else {
-                    egui::RichText::new("Select").color(tool_color)
+                    egui::Button::new(egui::RichText::new("Select").color(tool_color))
                 };
-                if ui.add(egui::Button::new(select_text))
+                if ui.add(select_btn)
                     .on_hover_text("Select entities on the canvas")
                     .clicked()
                 {
@@ -872,12 +872,13 @@ impl eframe::App for LinkageApp {
                 }
 
                 let draw_active = tool == EditorTool::DrawLink || self.state.draw_link_start.is_some();
-                let draw_text = if draw_active {
-                    egui::RichText::new("Draw Link").color(tool_active_color).strong()
+                let draw_btn = if draw_active {
+                    egui::Button::new(egui::RichText::new("Draw Link").color(tool_active_text).strong().size(14.0))
+                        .fill(tool_active_bg)
                 } else {
-                    egui::RichText::new("Draw Link").color(tool_color)
+                    egui::Button::new(egui::RichText::new("Draw Link").color(tool_color))
                 };
-                if ui.add(egui::Button::new(draw_text))
+                if ui.add(draw_btn)
                     .on_hover_text("Click and drag to draw a link")
                     .clicked()
                 {
@@ -888,12 +889,13 @@ impl eframe::App for LinkageApp {
                 }
 
                 let is_adding_jp = self.state.adding_joint_point.is_some();
-                let jp_text = if is_adding_jp {
-                    egui::RichText::new("+ Joint Point").color(tool_active_color).strong()
+                let jp_btn = if is_adding_jp {
+                    egui::Button::new(egui::RichText::new("+ Joint Point").color(tool_active_text).strong().size(14.0))
+                        .fill(tool_active_bg)
                 } else {
-                    egui::RichText::new("+ Joint Point").color(tool_color)
+                    egui::Button::new(egui::RichText::new("+ Joint Point").color(tool_color))
                 };
-                if ui.add(egui::Button::new(jp_text))
+                if ui.add(jp_btn)
                     .on_hover_text("Add a new attachment point to the selected body (creates ternary/quaternary shapes)")
                     .clicked()
                 {
@@ -917,12 +919,18 @@ impl eframe::App for LinkageApp {
                     }
                 }
 
-                let ground_text = if tool == EditorTool::AddGroundPivot {
-                    egui::RichText::new("+ Ground").color(tool_active_color).strong()
+                let ground_active = tool == EditorTool::AddGroundPivot;
+                let ground_text = if ground_active {
+                    egui::RichText::new("+ Ground").color(tool_active_text).strong().size(14.0)
                 } else {
                     egui::RichText::new("+ Ground").color(tool_color)
                 };
-                if ui.add(egui::Button::new(ground_text))
+                let ground_btn = if ground_active {
+                    egui::Button::new(ground_text).fill(tool_active_bg)
+                } else {
+                    egui::Button::new(ground_text)
+                };
+                if ui.add(ground_btn)
                     .on_hover_text("Click canvas to place a ground pivot")
                     .clicked()
                 {
@@ -931,12 +939,18 @@ impl eframe::App for LinkageApp {
                     self.state.add_body_state = None;
                 }
 
-                let mass_text = if tool == EditorTool::PlaceMass {
-                    egui::RichText::new("+ Mass").color(tool_active_color).strong()
+                let mass_active = tool == EditorTool::PlaceMass;
+                let mass_text = if mass_active {
+                    egui::RichText::new("+ Mass").color(tool_active_text).strong().size(14.0)
                 } else {
                     egui::RichText::new("+ Mass").color(tool_color)
                 };
-                if ui.add(egui::Button::new(mass_text))
+                let mass_btn = if mass_active {
+                    egui::Button::new(mass_text).fill(tool_active_bg)
+                } else {
+                    egui::Button::new(mass_text)
+                };
+                if ui.add(mass_btn)
                     .on_hover_text("Place a point mass on a body")
                     .clicked()
                 {
