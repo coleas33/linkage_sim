@@ -261,6 +261,7 @@ pub fn handle_interaction(
         state.place_mass_body = None;
         state.reassigning_point_mass = None;
         state.repositioning_point_mass = None;
+        state.adding_joint_point = None;
         state.active_tool = EditorTool::Select;
     }
 
@@ -320,6 +321,32 @@ pub fn handle_interaction(
         }
     }
 
+    // ── Interaction: Add joint point to a body ────────────────────────────
+    if let Some(ref body_id) = state.adding_joint_point.clone() {
+        if response.clicked() {
+            if let Some(pos) = response.interact_pointer_pos() {
+                let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+                let (gx, gy) = state.grid.snap_point(wx, wy);
+                let [lx, ly] = state.world_to_body_local(body_id, gx as f64, gy as f64);
+                let name = state.next_attachment_point_name(body_id);
+                state.push_undo();
+                if let Some(bp) = &mut state.blueprint {
+                    if let Some(body) = bp.bodies.get_mut(body_id) {
+                        body.attachment_points.insert(name, [lx, ly]);
+                    }
+                }
+                state.rebuild();
+                state.adding_joint_point = None;
+            }
+        }
+        // Show preview dot at cursor
+        if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+            let preview_color = Color32::from_rgba_premultiplied(80, 200, 120, 180);
+            painter.circle_filled(pos, 5.0, preview_color);
+            painter.circle_stroke(pos, 5.0, Stroke::new(1.5, Color32::from_rgb(80, 200, 120)));
+        }
+    }
+
     // Show preview and hint for reassign/reposition modes
     if state.reassigning_point_mass.is_some() || state.repositioning_point_mass.is_some() {
         if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
@@ -364,6 +391,7 @@ pub fn handle_interaction(
     // ── Interaction: click for selection / ground pivot ──────────────────
     if state.draw_link_start.is_none()
         && state.creating_joint.is_none()
+        && state.adding_joint_point.is_none()
         && state.active_tool != EditorTool::DrawLink
         && state.active_tool != EditorTool::AddBody
         && state.active_tool != EditorTool::PlaceForce

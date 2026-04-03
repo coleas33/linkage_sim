@@ -108,6 +108,18 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                         ));
                     }
 
+                    // ── Add Joint Point ──────────────────────────────────
+                    if body_id != GROUND_ID {
+                        let is_placing = state.adding_joint_point.as_deref() == Some(body_id.as_str());
+                        let btn_text = if is_placing { "Placing Joint Point..." } else { "Add Joint Point" };
+                        if ui.add_enabled(!is_placing, egui::Button::new(btn_text))
+                            .on_hover_text("Click on the canvas to place a new revolute joint point on this body")
+                            .clicked()
+                        {
+                            pending = Some(PendingPropertyEdit::AddJointPoint { body_id: body_id.clone() });
+                        }
+                    }
+
                     // ── Geometry: lengths + orientations ──────────────────
                     let mut pts: Vec<_> = body.attachment_points.iter().collect();
                     pts.sort_by_key(|(name, _)| name.as_str());

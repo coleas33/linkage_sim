@@ -44,6 +44,8 @@ pub(super) enum PendingPropertyEdit {
     Undo,
     /// Redo the last undone action.
     Redo,
+    /// Enter canvas placement mode to add a new attachment point to a body.
+    AddJointPoint { body_id: String },
 }
 
 /// Draw the force elements collapsible section.
@@ -249,6 +251,12 @@ pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropert
             }
             PendingPropertyEdit::Redo => {
                 state.redo();
+            }
+            PendingPropertyEdit::AddJointPoint { body_id } => {
+                state.adding_joint_point = Some(body_id);
+                state.reassigning_point_mass = None;
+                state.repositioning_point_mass = None;
+                state.active_tool = crate::gui::state::EditorTool::Select;
             }
         }
     }

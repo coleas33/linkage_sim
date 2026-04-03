@@ -278,6 +278,9 @@ pub struct AppState {
     /// Point mass being repositioned via mouse click. (body_id, index)
     /// When Some, next canvas click updates the mass position.
     pub repositioning_point_mass: Option<(String, usize)>,
+    /// Body to add a new attachment point to. Set when user clicks "Add Joint Point".
+    /// When Some, next canvas click places a new attachment point on this body.
+    pub adding_joint_point: Option<String>,
 }
 
 /// Background image overlay for tracing mechanisms from photos/sketches.
@@ -488,6 +491,7 @@ impl Default for AppState {
             place_mass_body: None,
             reassigning_point_mass: None,
             repositioning_point_mass: None,
+            adding_joint_point: None,
         };
         state.rebuild();
         state

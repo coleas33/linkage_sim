@@ -790,7 +790,9 @@ pub fn render_overlays(
             }
         }
         EditorTool::Select => {
-            if state.reassigning_point_mass.is_some() {
+            if let Some(ref bid) = state.adding_joint_point {
+                Some(format!("Click to place a new joint point on '{}' (Esc to cancel)", bid))
+            } else if state.reassigning_point_mass.is_some() {
                 Some("Click a link to move the point mass to that body (Esc to cancel)".to_string())
             } else if state.repositioning_point_mass.is_some() {
                 Some("Click anywhere to reposition the point mass (Esc to cancel)".to_string())

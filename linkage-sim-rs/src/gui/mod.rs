@@ -887,16 +887,34 @@ impl eframe::App for LinkageApp {
                     self.state.place_mass_body = None;
                 }
 
-                let body_text = egui::RichText::new("+ Body [WIP]").color(
-                    self.state.nc(egui::Color32::from_rgb(120, 120, 120))
-                );
-                ui.add_enabled(false, egui::Button::new(body_text))
-                    .on_hover_text("Multi-point body creation (coming soon — use Draw Link for bars)");
-                if false {
-                    // Disabled — WIP. Original handler preserved for future use.
-                    self.state.active_tool = EditorTool::AddBody;
-                    self.state.draw_link_start = None;
-                    self.state.add_body_state = None;
+                let is_adding_jp = self.state.adding_joint_point.is_some();
+                let jp_text = if is_adding_jp {
+                    egui::RichText::new("+ Joint Point").color(tool_active_color).strong()
+                } else {
+                    egui::RichText::new("+ Joint Point").color(tool_color)
+                };
+                if ui.add(egui::Button::new(jp_text))
+                    .on_hover_text("Add a new attachment point to the selected body (creates ternary/quaternary shapes)")
+                    .clicked()
+                {
+                    // Use the link editor body, or the selected body, or show a message
+                    let target_body = self.state.link_editor_body.clone()
+                        .or_else(|| match &self.state.selected {
+                            Some(crate::gui::state::SelectedEntity::Body(bid)) => {
+                                if bid != GROUND_ID { Some(bid.clone()) } else { None }
+                            }
+                            _ => None,
+                        });
+                    if let Some(bid) = target_body {
+                        self.state.adding_joint_point = Some(bid);
+                        self.state.active_tool = EditorTool::Select;
+                        self.state.draw_link_start = None;
+                        self.state.add_body_state = None;
+                        self.state.place_mass_body = None;
+                    } else {
+                        self.state.status_message = Some("Select a body first".to_string());
+                        self.state.status_message_time = 3.0;
+                    }
                 }
 
                 let ground_text = if tool == EditorTool::AddGroundPivot {
