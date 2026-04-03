@@ -158,7 +158,7 @@ pub fn draw_parametric_panel(ui: &mut egui::Ui, state: &mut AppState) {
             .y_axis_label(y_label)
             .height(200.0)
             .allow_zoom(true)
-            .allow_drag(false)
+            .allow_drag(true)
             .legend(egui_plot::Legend::default())
             .show(ui, |plot_ui| {
                 // Draw saved comparison sweeps as faded lines.
@@ -390,7 +390,7 @@ pub fn draw_counterbalance_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 .y_axis_label("Driver torque (N*m)")
                 .height(180.0)
                 .allow_zoom(true)
-                .allow_drag(false)
+                .allow_drag(true)
                 .show(ui, |plot_ui| {
                     plot_ui.line(Line::new("Baseline", PlotPoints::new(baseline_points)));
                     plot_ui.line(Line::new("Optimized", PlotPoints::new(optimized_points)));
