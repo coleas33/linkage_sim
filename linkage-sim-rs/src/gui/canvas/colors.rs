@@ -34,7 +34,7 @@ pub const DIM_LABEL_COLOR: Color32 = Color32::from_rgb(170, 195, 130);
 pub const LABEL_COLOR: Color32 = Color32::from_gray(136); // #888
 
 // Force elements: semantic color coding
-pub const FORCE_ARROW_COLOR: Color32 = Color32::from_rgb(255, 80, 80);
+pub const FORCE_ARROW_COLOR: Color32 = Color32::from_rgb(255, 220, 60); // yellow — visible against red force zones
 pub const SPRING_COLOR: Color32 = Color32::from_rgb(50, 200, 110);
 pub const DAMPER_COLOR: Color32 = Color32::from_rgb(90, 145, 255);
 pub const EXT_FORCE_COLOR: Color32 = Color32::from_rgb(255, 160, 30);
