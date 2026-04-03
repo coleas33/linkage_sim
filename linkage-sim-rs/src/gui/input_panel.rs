@@ -84,13 +84,6 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
                         .suffix("\u{00B0}")).changed();
 
                     if min_changed || max_changed {
-                        // Ensure min <= max
-                        if state.sweep_angle_min_deg > state.sweep_angle_max_deg {
-                            std::mem::swap(
-                                &mut state.sweep_angle_min_deg,
-                                &mut state.sweep_angle_max_deg,
-                            );
-                        }
                         state.mark_sweep_dirty();
                     }
                 });
