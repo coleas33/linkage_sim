@@ -196,10 +196,55 @@ All force elements are editable in the GUI property panel and rendered on the ca
 
 ### Demo Mode
 
-- Auto-cycles through all 28 sample mechanisms with animation
+- Auto-cycles through all 29 sample mechanisms with animation
 - 5-second dwell time per sample
 - Banner overlay: "Demo Mode -- press Escape to stop"
 - Click or Escape to exit demo mode
+
+### Actuator Sizing
+
+- **Actuator force plot** -- required actuator force (N) vs crank angle via power balance (F = T × omega / dL_dt)
+- **Statics + inverse dynamics curves** -- solid line (statics, quasi-static) and dashed line (with inertia, includes acceleration effects)
+- **Actuator stroke display** -- Health Report shows stroke (max-min length), min/max actuator length, peak forces from both methods
+- **Force zone overlap feedback** -- Diagnostics shows per-zone overlap percentage and applied force magnitude at current configuration
+- **CSV export** includes `actuator_force_N`, `actuator_force_id_N`, `actuator_length_m` columns
+- **HTML report** includes Actuator Force Envelope section with interactive Plotly chart
+
+### Mechanism Building
+
+- **Add Joint Point tool** -- click anywhere to add attachment points to existing bodies, creating ternary/quaternary shapes
+- **Place Mass tool** -- two-phase workflow: select body, click to place. Move to Link and Reposition buttons. Preview circle at cursor.
+- **Scale Mechanism** -- uniform scale with 50%/75%/150%/200% presets and custom percentage input
+- **Arrow key nudge** -- select joint/body, arrow keys move by grid step, Shift+arrow = 10x
+- **Angle/length constraints** -- live readout during Draw Link drag, editable angle slider per segment in property panel
+- **Wider body segment hit** -- 20px radius for easier link attachment to existing bodies
+
+### Image Overlay
+
+- **Dedicated Image menu** in the menu bar
+- **Drag-and-drop import** on web (WASM) + native file picker on desktop
+- **Image Settings window** -- persistent floating panel with opacity, width (mm), shrink/grow buttons, X/Y position
+- **Ctrl+drag to move** image on canvas
+- **Auto-geometry for force zones** -- body geometry created automatically when force zones are added
+
+### Additional Fixes & Polish
+
+- **Active tool highlight** -- blue filled background with white text on selected tool button
+- **Force arrows yellow** -- visible against red force zone boundaries
+- **Reaction forces rounded** to nearest Newton in all displays
+- **Sweep range min/max** no longer swap when editing
+- **Plot double-click to reset** zoom, with hint text
+- **Scrollable sample dropdown** for 29 samples
+- **Floating link rejection** -- link not created if endpoint doesn't snap, with guidance message
+- **Robust URL loading** -- tries multiple starting angles with continuation when zero guess fails
+- **Share URL preserves crank angle** -- mechanism loads at the exact configuration the sharer was viewing
+- **GIF export** plays forward then reverse for smooth ping-pong loop
+- **Strandbeest (Jansen Walking)** -- 8-bar sample, 361/361 convergence, 29th sample
+- **1kg mass on all sample bodies** with computed CG and Izz
+- **SolidWorks import guide** (`docs/guides/SOLIDWORKS_IMPORT.md`)
+- **Mechanism Health Report** -- green/yellow/red indicators for Grashof, toggles, transmission angle, peak torque, peak reactions, conditioning, convergence
+- **Undo History panel** -- visual timeline with undo/redo buttons
+- **Nathan Mode** -- grayscale toggle in View menu
 
 ---
 
@@ -211,12 +256,24 @@ All force elements are editable in the GUI property panel and rendered on the ca
 
 ## Planned / Future
 
+### Actuator Sizing & Power
+
+- **Required power curve** -- P = F x v at each crank angle. Shows peak power for motor/pump sizing. Critical for selecting electric motors or hydraulic power units.
+- **Actuator speed plot** -- dL/dt (extension/retraction rate) at each angle. Actuators have speed limits that must not be exceeded. Already computed internally, just needs display.
+- **Force margin visualization** -- User enters actuator rated force (e.g., 5000 N). Plot shows margin (rated - required) at each angle. Red zones where actuator is undersized. Simple go/no-go for actuator selection.
+- **Hydraulic cylinder calculator** -- Given required force + system pressure, compute bore diameter. Given bore + pressure, overlay available force line on the actuator force plot. Most industrial actuators are hydraulic.
+- **Output force at a specific point** -- "What force does my mechanism produce at THIS point in THIS direction?" Direct readout instead of indirect computation via force zones.
+- **Motion profile editor** -- Replace constant-speed driver with trapezoidal/S-curve acceleration profiles. Required actuator force is much higher during acceleration phases. Standard in industrial automation.
+- **Duty cycle / RMS analysis** -- For cyclic mechanisms, show RMS force over one complete cycle. Critical for electric actuator thermal sizing and fatigue life.
+- **Spring counterbalance for actuators** -- "What spring parameters minimize peak actuator force?" Extend existing counterbalance assistant to work with linear actuator mechanisms.
+- **Safety factor overlay** -- Color-code the force plot by ratio of required/rated: green (<50%), yellow (50-80%), red (>80%). Visual pass/fail across the full stroke.
+- **Actuator datasheet overlay** -- Import a CSV of force-vs-stroke for a specific commercial actuator. Overlay on the required force plot to verify capability at every position.
+
 ### Engineering Tools
 
 - **Measurement tool** -- on-canvas distance/angle measurement between arbitrary points
 - **Auto mass from geometry/density** -- compute mass and inertia from link dimensions and material density
 - **Mirror mechanism** -- reflect a mechanism across an axis to create symmetric designs
-- **Actuator catalog matching** -- recommend commercial actuators (cylinders, motors) based on computed loads
 - **Tolerance analysis** -- Monte Carlo analysis with dimensional tolerances, showing coupler curve envelopes and torque spread
 - **Coupler curve synthesis** -- draw desired output path, find 4-bar proportions that approximate it
 
@@ -231,11 +288,8 @@ All force elements are editable in the GUI property panel and rendered on the ca
 
 ### Workflow
 
-- **Welcome screen** -- centered panel with quick-start actions when no mechanism is loaded (implemented)
 - **Better onboarding (first-use tooltips)** -- contextual hints that appear on first launch and dismiss after use
-- **Demo mode (auto-cycle samples)** -- automatically cycle through samples with animation for demonstrations (implemented)
 - **Keyboard shortcut reference improvements** -- searchable shortcut list, printable cheat sheet
-- **Motion profile editor** -- trapezoidal/S-curve acceleration profiles replacing constant-speed driver
 - **Bill of materials export** -- table of all links, joints, forces exportable as CSV/PDF
 
 ### Analysis
@@ -245,16 +299,17 @@ All force elements are editable in the GUI property panel and rendered on the ca
 - **Velocity/acceleration arrows on canvas** -- visualize coupler point kinematics as animated arrows
 - **Force balance indicator** -- show net force/moment balance status for static equilibrium verification
 - **Animation keyframe markers** -- mark specific crank angles on the timeline for reference
-- **Mechanism health report** -- one-page pre-flight checklist: toggle points, torque spikes, transmission angle warnings, bearing loads
 
 ### Export / Sharing
 
 - **QR code sharing** -- encode mechanism URL as a QR code for easy sharing on mobile
 - **Export to STEP/IGES (CAD import)** -- generate 3D CAD interchange files from 2D mechanism geometry
 - **Include health report in HTML export** -- embed the mechanism health report in the HTML export
+- **Ctrl+V paste images from clipboard** -- platform-specific clipboard image access
 
 ### Polish
 
 - **Mechanism complexity badge** -- visual indicator of mechanism complexity (number of bodies, joints, DOF)
 - **Natural language builder** -- describe a mechanism in words, auto-generate link lengths
+- **Mobile support** -- responsive layout for phones/tablets (3 commits saved in git, ready to cherry-pick)
 - **Mobile support** -- responsive layout and touch interactions for tablets and phones
