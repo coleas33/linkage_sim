@@ -70,6 +70,17 @@ pub(super) fn draw_health_section(ui: &mut egui::Ui, state: &AppState) {
             }
         }
 
+        // 4b. Peak profile torque (when a non-constant motion profile is active)
+        if let Some(ref sweep) = state.sweep_data {
+            if let Some(ref prof_torques) = sweep.profile_torques {
+                if let Some(env) = compute_envelope(prof_torques) {
+                    if any_shown { ui.separator(); }
+                    any_shown = true;
+                    draw_profile_torque_indicator(ui, state, &env);
+                }
+            }
+        }
+
         // 5. Peak joint reactions
         if let Some(ref sweep) = state.sweep_data {
             if !sweep.joint_reaction_magnitudes.is_empty() {
@@ -215,6 +226,22 @@ fn draw_torque_indicator(
 ) {
     ui.horizontal(|ui| {
         ui.label("Driver torque:");
+        ui.label(format!(
+            "Peak {:.3} N\u{00b7}m / RMS {:.3} N\u{00b7}m",
+            env.max_value.abs().max(env.min_value.abs()),
+            env.rms,
+        ));
+    });
+}
+
+/// Profile torque indicator (trapezoidal motion profile).
+fn draw_profile_torque_indicator(
+    ui: &mut egui::Ui,
+    _state: &AppState,
+    env: &crate::analysis::envelopes::SignalEnvelope,
+) {
+    ui.horizontal(|ui| {
+        ui.label("Profile torque:");
         ui.label(format!(
             "Peak {:.3} N\u{00b7}m / RMS {:.3} N\u{00b7}m",
             env.max_value.abs().max(env.min_value.abs()),

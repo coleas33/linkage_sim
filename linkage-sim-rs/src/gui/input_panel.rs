@@ -1,7 +1,7 @@
 //! Angle slider, playback controls, load case selector, and solver status display.
 
 use eframe::egui;
-use super::state::AppState;
+use super::state::{AppState, MotionProfile};
 use crate::io::DriverJson;
 
 
@@ -150,6 +150,7 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 }
             }
             draw_driver_type_selector(ui, state);
+            draw_motion_profile_selector(ui, state);
         });
 
     // ── Simulation ───────────────────────────────────────────────────
@@ -494,6 +495,122 @@ fn draw_driver_type_selector(ui: &mut egui::Ui, state: &mut AppState) {
                 Err(e) => {
                     state.expr_error = Some(e);
                 }
+            }
+        }
+    }
+}
+
+/// Draw a combo box for selecting the driver motion profile (Constant Speed vs
+/// Trapezoidal) and, when Trapezoidal is selected, sliders for accel/decel
+/// fractions.
+fn draw_motion_profile_selector(ui: &mut egui::Ui, state: &mut AppState) {
+    // Only relevant when a mechanism with a driver exists.
+    let Some(bp) = &state.blueprint else { return };
+    if bp.drivers.is_empty() {
+        return;
+    }
+
+    ui.separator();
+    ui.strong("Motion Profile");
+
+    let selected_text = match state.motion_profile {
+        MotionProfile::ConstantSpeed => "Constant Speed",
+        MotionProfile::Trapezoidal { .. } => "Trapezoidal",
+    };
+
+    egui::ComboBox::from_id_salt("motion_profile")
+        .selected_text(selected_text)
+        .show_ui(ui, |ui| {
+            if ui
+                .selectable_label(
+                    matches!(state.motion_profile, MotionProfile::ConstantSpeed),
+                    "Constant Speed",
+                )
+                .clicked()
+                && !matches!(state.motion_profile, MotionProfile::ConstantSpeed)
+            {
+                state.motion_profile = MotionProfile::ConstantSpeed;
+                state.mark_sweep_dirty();
+            }
+            if ui
+                .selectable_label(
+                    matches!(state.motion_profile, MotionProfile::Trapezoidal { .. }),
+                    "Trapezoidal",
+                )
+                .clicked()
+                && !matches!(state.motion_profile, MotionProfile::Trapezoidal { .. })
+            {
+                state.motion_profile = MotionProfile::Trapezoidal {
+                    accel_fraction: 0.25,
+                    decel_fraction: 0.25,
+                };
+                state.mark_sweep_dirty();
+            }
+        });
+
+    if let MotionProfile::Trapezoidal { accel_fraction, decel_fraction } = state.motion_profile {
+        // Copy values out so sliders can work without holding a borrow on state.
+        let mut af = accel_fraction;
+        let mut df = decel_fraction;
+        let mut changed = false;
+
+        ui.horizontal(|ui| {
+            ui.label("Accel:");
+            if ui
+                .add(
+                    egui::Slider::new(&mut af, 0.05..=0.45)
+                        .fixed_decimals(2)
+                        .step_by(0.01),
+                )
+                .on_hover_text("Fraction of cycle spent accelerating")
+                .changed()
+            {
+                changed = true;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("Decel:");
+            if ui
+                .add(
+                    egui::Slider::new(&mut df, 0.05..=0.45)
+                        .fixed_decimals(2)
+                        .step_by(0.01),
+                )
+                .on_hover_text("Fraction of cycle spent decelerating")
+                .changed()
+            {
+                changed = true;
+            }
+        });
+
+        // Write back and mark dirty if changed.
+        if changed {
+            state.motion_profile = MotionProfile::Trapezoidal {
+                accel_fraction: af,
+                decel_fraction: df,
+            };
+            state.mark_sweep_dirty();
+        }
+
+        // Show computed peak omega for reference.
+        let cruise_frac = 1.0 - af - df;
+        if cruise_frac > 0.0 && state.driver_omega.abs() > 1e-15 {
+            let total_angle = 2.0 * std::f64::consts::PI;
+            let cycle_time = total_angle / state.driver_omega;
+            let denom = 0.5 * af * cycle_time
+                + cruise_frac * cycle_time
+                + 0.5 * df * cycle_time;
+            if denom.abs() > 1e-15 {
+                let omega_peak = total_angle / denom;
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Peak: {:.1} rad/s ({:.0} RPM)",
+                        omega_peak,
+                        omega_peak * 60.0 / (2.0 * std::f64::consts::PI)
+                    ))
+                    .small()
+                    .weak(),
+                );
             }
         }
     }

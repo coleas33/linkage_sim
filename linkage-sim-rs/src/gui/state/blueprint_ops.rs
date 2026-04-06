@@ -22,7 +22,7 @@ use crate::solver::statics::{
 use nalgebra::DVector;
 
 use super::{AppState, ForceResults, SolverStatus};
-use crate::gui::sweep::{compute_sweep_data, detect_fourbar_links};
+use crate::gui::sweep::{apply_motion_profile, compute_sweep_data, detect_fourbar_links};
 
 // ── Blueprint helper functions ────────────────────────────────────────────────
 
@@ -1162,7 +1162,8 @@ impl AppState {
             None
         };
 
-        let (data, q_zero) = compute_sweep_data(mech, &q_start, omega, theta_0, self.gravity_magnitude, sweep_range);
+        let (mut data, q_zero) = compute_sweep_data(mech, &q_start, omega, theta_0, self.gravity_magnitude, sweep_range);
+        apply_motion_profile(&mut data, omega, self.motion_profile);
         self.sweep_data = Some(data);
         self.q_at_zero = q_zero;
     }

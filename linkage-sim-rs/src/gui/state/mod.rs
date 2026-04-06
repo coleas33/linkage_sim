@@ -34,6 +34,32 @@ pub use simulation::SimulationState;
 // Re-export blueprint helper functions used in tests and other modules.
 pub(crate) use blueprint_ops::detect_driver_joint_id;
 
+// ── Motion Profile ──────────────────────────────────────────────────────────
+
+/// Selects how the driver angular velocity varies over one sweep cycle.
+///
+/// `ConstantSpeed` (the default) uses a fixed omega throughout the cycle.
+/// `Trapezoidal` accelerates from rest, cruises, then decelerates to rest,
+/// producing realistic inertial loads for motor sizing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MotionProfile {
+    /// Constant angular velocity (existing default behaviour).
+    ConstantSpeed,
+    /// Trapezoidal velocity profile: ramp up, cruise, ramp down.
+    Trapezoidal {
+        /// Fraction of the cycle spent accelerating (0.05 .. 0.45).
+        accel_fraction: f64,
+        /// Fraction of the cycle spent decelerating (0.05 .. 0.45).
+        decel_fraction: f64,
+    },
+}
+
+impl Default for MotionProfile {
+    fn default() -> Self {
+        MotionProfile::ConstantSpeed
+    }
+}
+
 use eframe::egui;
 use nalgebra::DVector;
 use std::collections::HashMap;
@@ -284,6 +310,9 @@ pub struct AppState {
     /// User-specified actuator rated force (N) for margin/safety factor display.
     /// When 0.0, the margin overlay is disabled.
     pub actuator_rated_force: f64,
+    // ── Motion profile ────────────────────────────────────────────────
+    /// Driver velocity profile for sweep analysis (constant speed vs trapezoidal).
+    pub motion_profile: MotionProfile,
 }
 
 /// Background image overlay for tracing mechanisms from photos/sketches.
@@ -496,6 +525,7 @@ impl Default for AppState {
             repositioning_point_mass: None,
             adding_joint_point: None,
             actuator_rated_force: 0.0,
+            motion_profile: MotionProfile::default(),
         };
         state.rebuild();
         state

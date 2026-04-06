@@ -702,6 +702,27 @@ fn draw_inverse_dynamics(
             );
         }
 
+        // Overlay profile torque if a non-constant motion profile is active (green).
+        if let Some(ref profile_torques) = sweep.profile_torques {
+            let prof_pairs: Vec<(f64, f64)> = sweep
+                .angles_deg
+                .iter()
+                .zip(profile_torques.iter())
+                .filter(|&(_, &t)| t.is_finite())
+                .map(|(&x_deg, &t)| (x_deg, t))
+                .collect();
+            draw_angle_series_with_range(
+                plot_ui,
+                "Profile Torque",
+                egui::Color32::from_rgb(120, 220, 120),
+                2.0,
+                &prof_pairs,
+                sweep,
+                units,
+                nathan_mode,
+            );
+        }
+
         // Vertical marker at current driver angle.
         plot_ui.vline(
             VLine::new("cursor", current_driver_display)

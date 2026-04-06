@@ -117,8 +117,8 @@ linkage-sim-rs/src/
 │   │   ├── dxf.rs                    (132)    DXF generation + export
 │   │   └── report.rs                 (307)    HTML report generation
 │   ├── plot_panel.rs               (1,300)    12-tab sweep data plots (incl. Actuator Force, Output Force)
-│   ├── sweep.rs                      (620)    SweepData, compute_sweep_data, 4-bar detection, actuator force/ID/length, output force
-│   ├── input_panel.rs                (486)    Driver controls, animation, sweep range
+│   ├── sweep.rs                      (820)    SweepData, compute_sweep_data, 4-bar detection, actuator force/ID/length, output force, trapezoidal motion profile
+│   ├── input_panel.rs                (610)    Driver controls, animation, sweep range, motion profile selector
 │   ├── parametric_panel.rs           (410)    Parametric study + counterbalance UI
 │   ├── undo.rs                       (258)    Undo/redo history stack
 │   ├── force_toolbar.rs              (230)    Force creation toolbar
@@ -152,6 +152,7 @@ AppState (gui/state/mod.rs) ◄──── Central hub: owns mechanism, q, blue
     │       │
     │       ▼
     ├──► Sweep Data (gui/sweep.rs) ── computed for all 360° at each rebuild
+    │       + motion profile overlay (trapezoidal: rescales inertial torques)
     │       │
     │       ▼
     └──► Rendering:
@@ -170,6 +171,7 @@ AppState (gui/state/mod.rs) ◄──── Central hub: owns mechanism, q, blue
 5. **Drivers are constraints, not forces.** Lagrange multiplier = required effort. Both revolute drivers (prescribe angle) and linear drivers (prescribe distance between two points) are supported.
 6. **Blueprint is the source of truth.** Mechanism is rebuilt from MechanismJson on edits.
 7. **Mounting angle** (`mounting_angle`, radians, default 0.0): stored on `MechanismJson` and `AppState`, synced via `rebuild()` and `file_io.rs`. Rotates the gravity vector in physics (`-g*sin(theta)`, `-g*cos(theta)`) and the canvas via `ViewTransform`. Backward-compatible in JSON (`#[serde(default)]`).
+8. **Motion profiles are post-processing, not solver changes.** The sweep always runs with the constant-speed driver. `apply_motion_profile()` rescales inertial torques using the profile's omega(theta) and alpha(theta), computing `T_profile = T_statics + (omega_p/omega)^2 * T_inertia + I_eff * alpha_p`. This keeps the solver clean and the profile layer additive. Profiles: ConstantSpeed (noop), Trapezoidal (accel/cruise/decel fractions). Actuator stroke limits (`min_stroke`, `max_stroke`, `Option<f64>`) on `LinearActuator` force elements constrain piston travel; tick marks are rendered on the canvas and violations flagged in the health panel.
 
 ---
 

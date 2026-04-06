@@ -16,6 +16,8 @@ use crate::solver::inverse_dynamics::solve_inverse_dynamics;
 use crate::solver::kinematics::{solve_acceleration, solve_position, solve_velocity};
 use crate::solver::statics::{extract_reactions, get_driver_reactions, solve_statics};
 
+use super::state::MotionProfile;
+
 // ── Sweep data ───────────────────────────────────────────────────────────────
 
 /// Sweep mode. Currently only angle-based sweeps are supported (all mechanisms
@@ -105,6 +107,18 @@ pub struct SweepData {
     /// on the output (= force_zone.force * overlap_ratio) at each crank angle.
     /// `None` when no ForceZone force element is present.
     pub output_forces: Option<Vec<f64>>,
+    /// Driver torque with the active motion profile applied (N*m).
+    /// For ConstantSpeed this equals `inverse_dynamics_torques`.
+    /// For Trapezoidal it rescales inertial contributions by the profile's
+    /// omega(theta) and adds alpha(theta) inertial loads.
+    /// `None` when the profile is ConstantSpeed (no extra data needed).
+    pub profile_torques: Option<Vec<f64>>,
+    /// Profile angular velocity (rad/s) at each sweep angle.
+    /// `None` when ConstantSpeed.
+    pub profile_omega: Option<Vec<f64>>,
+    /// Profile angular acceleration (rad/s^2) at each sweep angle.
+    /// `None` when ConstantSpeed.
+    pub profile_alpha: Option<Vec<f64>>,
     /// Angles (degrees) at which toggle/dead points were detected.
     pub toggle_angles: Vec<f64>,
     /// Index range of the active sweep region within the full 0-360° data.
@@ -204,6 +218,9 @@ pub(crate) fn compute_sweep_data(
         } else {
             None
         },
+        profile_torques: None,
+        profile_omega: None,
+        profile_alpha: None,
         toggle_angles: Vec::new(),
         active_range: None, // computed after sweep loop
         sweep_mode: sweep_mode.clone(),
@@ -533,6 +550,205 @@ pub(crate) fn compute_sweep_data(
     (data, q_at_zero)
 }
 
+// ── Trapezoidal motion profile ──────────────────────────────────────────────
+
+/// Compute (omega_profile, alpha_profile) for a trapezoidal velocity profile
+/// at a given fraction [0, 1] of the sweep cycle.
+///
+/// The profile ramps from 0 to `omega_peak` during the accel phase, holds
+/// `omega_peak` during the cruise phase, and ramps back to 0 during decel.
+/// `omega_peak` is chosen so that the area under the velocity curve equals
+/// `total_angle` (2*pi for a full revolution).
+///
+/// Returns `(omega_at_fraction, alpha_at_fraction)`.
+fn trapezoidal_profile_at(
+    fraction: f64,
+    total_angle: f64,
+    cycle_time: f64,
+    accel_frac: f64,
+    decel_frac: f64,
+) -> (f64, f64) {
+    let cruise_frac = 1.0 - accel_frac - decel_frac;
+    debug_assert!(cruise_frac >= 0.0);
+
+    let t_accel = accel_frac * cycle_time;
+    let t_cruise = cruise_frac * cycle_time;
+    let t_decel = decel_frac * cycle_time;
+
+    // Area under trapezoidal velocity curve = total_angle
+    // = 0.5 * omega_peak * t_accel + omega_peak * t_cruise + 0.5 * omega_peak * t_decel
+    // = omega_peak * (0.5*t_accel + t_cruise + 0.5*t_decel)
+    let denom = 0.5 * t_accel + t_cruise + 0.5 * t_decel;
+    if denom.abs() < 1e-15 {
+        return (0.0, 0.0);
+    }
+    let omega_peak = total_angle / denom;
+
+    let t = fraction * cycle_time;
+    if t < t_accel {
+        // Acceleration phase: omega ramps linearly from 0 to omega_peak.
+        let alpha = omega_peak / t_accel;
+        let omega = alpha * t;
+        (omega, alpha)
+    } else if t < t_accel + t_cruise {
+        // Cruise phase: constant omega_peak, zero acceleration.
+        (omega_peak, 0.0)
+    } else {
+        // Deceleration phase: omega ramps linearly from omega_peak to 0.
+        let alpha = -omega_peak / t_decel;
+        let t_in_decel = t - t_accel - t_cruise;
+        let omega = omega_peak + alpha * t_in_decel;
+        (omega.max(0.0), alpha)
+    }
+}
+
+/// Map a crank angle (radians, relative to the sweep start) to a cycle fraction
+/// under a trapezoidal profile.
+///
+/// For a trapezoidal velocity profile, the angle-to-fraction mapping is
+/// piecewise quadratic. Given a target angle, we solve for the cycle fraction
+/// by inverting the angle(t) curve numerically (bisection, since angle(t) is
+/// monotonically increasing).
+fn angle_to_fraction_trapezoidal(
+    angle_rad: f64,
+    total_angle: f64,
+    accel_frac: f64,
+    decel_frac: f64,
+) -> f64 {
+    if total_angle.abs() < 1e-15 {
+        return 0.0;
+    }
+    // Normalise: what fraction of total_angle is this?
+    let target_frac = (angle_rad / total_angle).clamp(0.0, 1.0);
+
+    let cruise_frac = (1.0 - accel_frac - decel_frac).max(0.0);
+
+    // Angle accumulated by the end of each phase (as fraction of total_angle).
+    // Using cycle_time = 1 for simplicity since we only need fractions.
+    let denom = 0.5 * accel_frac + cruise_frac + 0.5 * decel_frac;
+    if denom.abs() < 1e-15 {
+        return target_frac;
+    }
+    let omega_peak_norm = 1.0 / denom; // normalised omega_peak
+
+    // With cycle_time = 1: theta(t) during accel = 0.5 * alpha * t^2
+    // where alpha = omega_peak_norm / accel_frac
+    // At t = accel_frac: theta = 0.5 * (omega_peak_norm/accel_frac) * accel_frac^2 = 0.5 * omega_peak_norm * accel_frac
+    let theta_end_accel = 0.5 * omega_peak_norm * accel_frac;
+
+    // Angle at end of cruise phase:
+    let theta_end_cruise = theta_end_accel + omega_peak_norm * cruise_frac;
+
+    // Total should be total_angle (normalised to 1):
+    // theta_end_decel = theta_end_cruise + 0.5 * omega_peak_norm * decel_frac = 1.0
+
+    let target_theta = target_frac; // normalised angle [0,1]
+
+    if target_theta <= theta_end_accel {
+        // In accel phase: theta = 0.5 * alpha * t^2, alpha = omega_peak_norm / accel_frac
+        // t = sqrt(2 * theta / alpha) = sqrt(2 * theta * accel_frac / omega_peak_norm)
+        if omega_peak_norm < 1e-15 {
+            return 0.0;
+        }
+        let t = (2.0 * target_theta * accel_frac / omega_peak_norm).sqrt();
+        t.clamp(0.0, 1.0)
+    } else if target_theta <= theta_end_cruise {
+        // In cruise phase: theta = theta_end_accel + omega_peak_norm * (t - accel_frac)
+        // t = accel_frac + (theta - theta_end_accel) / omega_peak_norm
+        let t = accel_frac + (target_theta - theta_end_accel) / omega_peak_norm;
+        t.clamp(0.0, 1.0)
+    } else {
+        // In decel phase: theta = theta_end_cruise + omega_peak_norm * dt - 0.5 * a * dt^2
+        // where dt = t - (accel_frac + cruise_frac), a = omega_peak_norm / decel_frac.
+        // Rearranging: (a/2) * dt^2 - omega_peak_norm * dt + delta_theta = 0
+        let a = omega_peak_norm / decel_frac.max(1e-15);
+        let half_a = 0.5 * a;
+        let delta_theta = target_theta - theta_end_cruise;
+        let discriminant = omega_peak_norm * omega_peak_norm - 4.0 * half_a * delta_theta;
+        let dt = if discriminant < 0.0 {
+            decel_frac // fallback: end of cycle
+        } else {
+            // Take the smaller root (first time we reach this angle).
+            (omega_peak_norm - discriminant.sqrt()) / (2.0 * half_a)
+        };
+        let t = accel_frac + cruise_frac + dt.clamp(0.0, decel_frac);
+        t.clamp(0.0, 1.0)
+    }
+}
+
+/// Apply a motion profile to existing sweep data, computing profile-adjusted
+/// torques, angular velocities, and angular accelerations.
+///
+/// For `ConstantSpeed` this is a no-op (profile fields stay `None`).
+/// For `Trapezoidal`, the inverse dynamics torque is rescaled at each sweep
+/// angle to reflect the varying omega and alpha of the profile.
+pub(crate) fn apply_motion_profile(data: &mut SweepData, omega: f64, profile: MotionProfile) {
+    match profile {
+        MotionProfile::ConstantSpeed => {
+            data.profile_torques = None;
+            data.profile_omega = None;
+            data.profile_alpha = None;
+        }
+        MotionProfile::Trapezoidal { accel_fraction, decel_fraction } => {
+            let n = data.angles_deg.len();
+            if n == 0 || omega.abs() < 1e-15 {
+                return;
+            }
+
+            let total_angle = 2.0 * std::f64::consts::PI;
+            let cycle_time = total_angle / omega;
+
+            let mut prof_omega = Vec::with_capacity(n);
+            let mut prof_alpha = Vec::with_capacity(n);
+            let mut prof_torques = Vec::with_capacity(n);
+
+            for i in 0..n {
+                let angle_rad = data.angles_deg[i].to_radians();
+                // Map this angle to a cycle fraction via the trapezoidal profile.
+                let frac = angle_to_fraction_trapezoidal(
+                    angle_rad, total_angle, accel_fraction, decel_fraction,
+                );
+                let (omega_p, alpha_p) = trapezoidal_profile_at(
+                    frac, total_angle, cycle_time, accel_fraction, decel_fraction,
+                );
+                prof_omega.push(omega_p);
+                prof_alpha.push(alpha_p);
+
+                // Compute profile torque from constant-speed sweep data:
+                // T_profile = T_statics + (omega_p / omega)^2 * T_inertia_const + I_eff * alpha_p
+                // where T_inertia_const = T_id_const - T_statics
+                // and I_eff = T_inertia_const / omega^2
+                let id_torque = if i < data.inverse_dynamics_torques.len() {
+                    data.inverse_dynamics_torques[i]
+                } else {
+                    f64::NAN
+                };
+                let statics_torque = data.driver_torques
+                    .as_ref()
+                    .and_then(|t| t.get(i).copied())
+                    .unwrap_or(f64::NAN);
+
+                if id_torque.is_finite() && statics_torque.is_finite() {
+                    let t_inertia = id_torque - statics_torque;
+                    let omega_ratio = omega_p / omega;
+                    // I_eff = T_inertia / omega^2
+                    let i_eff = t_inertia / (omega * omega);
+                    let t_profile = statics_torque
+                        + t_inertia * omega_ratio * omega_ratio
+                        + i_eff * alpha_p;
+                    prof_torques.push(t_profile);
+                } else {
+                    prof_torques.push(f64::NAN);
+                }
+            }
+
+            data.profile_omega = Some(prof_omega);
+            data.profile_alpha = Some(prof_alpha);
+            data.profile_torques = Some(prof_torques);
+        }
+    }
+}
+
 /// Try to detect a classic 4-bar linkage and return (crank, coupler, rocker,
 /// ground) link lengths for transmission angle computation.
 ///
@@ -837,5 +1053,243 @@ mod tests {
         assert_eq!(data.angles_deg.len(), 361, "Full 0-360 sweep");
         assert!((data.angles_deg[0] - 0.0).abs() < 1e-10);
         assert!((data.angles_deg[360] - 360.0).abs() < 1e-10);
+    }
+
+    // ── Trapezoidal motion profile tests ────────────────────────────────
+
+    #[test]
+    fn trapezoidal_profile_symmetric_integrates_to_total_angle() {
+        // A symmetric trapezoidal profile (25% accel, 50% cruise, 25% decel)
+        // should sweep exactly 2*PI radians over one cycle.
+        let total_angle = 2.0 * std::f64::consts::PI;
+        let omega = 2.0 * std::f64::consts::PI; // 1 rev/s
+        let cycle_time = total_angle / omega; // 1.0 s
+        let accel_frac = 0.25;
+        let decel_frac = 0.25;
+
+        // Numerically integrate omega(t) over the cycle using many small steps.
+        let n = 10_000;
+        let dt = 1.0 / n as f64;
+        let mut integrated_angle = 0.0;
+        for i in 0..n {
+            let frac = (i as f64 + 0.5) * dt;
+            let (omega_p, _alpha_p) = trapezoidal_profile_at(
+                frac, total_angle, cycle_time, accel_frac, decel_frac,
+            );
+            integrated_angle += omega_p * (dt * cycle_time);
+        }
+        assert!(
+            (integrated_angle - total_angle).abs() < 1e-4,
+            "Integrated angle should be 2*PI, got {}",
+            integrated_angle
+        );
+    }
+
+    #[test]
+    fn trapezoidal_profile_zero_at_endpoints() {
+        let total_angle = 2.0 * std::f64::consts::PI;
+        let cycle_time = 1.0;
+        let accel_frac = 0.25;
+        let decel_frac = 0.25;
+
+        let (omega_start, alpha_start) = trapezoidal_profile_at(
+            0.0, total_angle, cycle_time, accel_frac, decel_frac,
+        );
+        assert!(omega_start.abs() < 1e-12, "Omega at start should be 0");
+        assert!(alpha_start > 0.0, "Alpha at start should be positive (accelerating)");
+
+        let (omega_end, alpha_end) = trapezoidal_profile_at(
+            1.0, total_angle, cycle_time, accel_frac, decel_frac,
+        );
+        assert!(omega_end.abs() < 1e-6, "Omega at end should be ~0, got {}", omega_end);
+        assert!(alpha_end < 0.0, "Alpha at end should be negative (decelerating)");
+    }
+
+    #[test]
+    fn trapezoidal_profile_cruise_phase_constant() {
+        let total_angle = 2.0 * std::f64::consts::PI;
+        let cycle_time = 1.0;
+        let accel_frac = 0.2;
+        let decel_frac = 0.2;
+
+        // Sample several points in the cruise phase (0.2 .. 0.8).
+        let (omega_a, alpha_a) = trapezoidal_profile_at(
+            0.3, total_angle, cycle_time, accel_frac, decel_frac,
+        );
+        let (omega_b, alpha_b) = trapezoidal_profile_at(
+            0.5, total_angle, cycle_time, accel_frac, decel_frac,
+        );
+        let (omega_c, alpha_c) = trapezoidal_profile_at(
+            0.7, total_angle, cycle_time, accel_frac, decel_frac,
+        );
+
+        assert!((omega_a - omega_b).abs() < 1e-10, "Cruise omega should be constant");
+        assert!((omega_b - omega_c).abs() < 1e-10, "Cruise omega should be constant");
+        assert!(alpha_a.abs() < 1e-10, "Cruise alpha should be 0");
+        assert!(alpha_b.abs() < 1e-10, "Cruise alpha should be 0");
+        assert!(alpha_c.abs() < 1e-10, "Cruise alpha should be 0");
+    }
+
+    #[test]
+    fn angle_to_fraction_roundtrip() {
+        // For several fractions, compute the angle at that fraction, then
+        // map back to fraction via angle_to_fraction_trapezoidal and verify roundtrip.
+        let total_angle = 2.0 * std::f64::consts::PI;
+        let cycle_time = 1.0;
+        let accel_frac = 0.3;
+        let decel_frac = 0.2;
+
+        for &frac in &[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0] {
+            // Integrate omega from 0 to frac to get the angle.
+            let n = 5000;
+            let dt = frac / n as f64;
+            let mut angle = 0.0;
+            for i in 0..n {
+                let f = (i as f64 + 0.5) * dt;
+                let (omega_p, _) = trapezoidal_profile_at(
+                    f, total_angle, cycle_time, accel_frac, decel_frac,
+                );
+                angle += omega_p * dt * cycle_time;
+            }
+            // Now map back.
+            let recovered_frac = angle_to_fraction_trapezoidal(
+                angle, total_angle, accel_frac, decel_frac,
+            );
+            assert!(
+                (recovered_frac - frac).abs() < 0.01,
+                "Roundtrip failed at frac={}: angle={}, recovered={}",
+                frac, angle, recovered_frac
+            );
+        }
+    }
+
+    #[test]
+    fn apply_motion_profile_constant_speed_is_noop() {
+        let mut data = SweepData {
+            angles_deg: vec![0.0, 90.0, 180.0, 270.0, 360.0],
+            body_angles: HashMap::new(),
+            coupler_traces: HashMap::new(),
+            transmission_angles: None,
+            driver_torques: Some(vec![1.0, 2.0, 1.5, 0.5, 1.0]),
+            kinetic_energy: vec![],
+            potential_energy: vec![],
+            total_energy: vec![],
+            inverse_dynamics_torques: vec![1.5, 2.5, 2.0, 1.0, 1.5],
+            mechanical_advantage: vec![],
+            joint_reaction_magnitudes: HashMap::new(),
+            coupler_velocities: HashMap::new(),
+            coupler_accelerations: HashMap::new(),
+            actuator_forces: None,
+            actuator_forces_id: None,
+            actuator_lengths: None,
+            actuator_speeds: None,
+            actuator_power: None,
+            actuator_power_id: None,
+            output_forces: None,
+            profile_torques: None,
+            profile_omega: None,
+            profile_alpha: None,
+            toggle_angles: Vec::new(),
+            active_range: None,
+            sweep_mode: SweepMode::Angle,
+        };
+
+        apply_motion_profile(&mut data, 2.0 * std::f64::consts::PI, MotionProfile::ConstantSpeed);
+        assert!(data.profile_torques.is_none());
+        assert!(data.profile_omega.is_none());
+        assert!(data.profile_alpha.is_none());
+    }
+
+    #[test]
+    fn apply_motion_profile_trapezoidal_produces_data() {
+        let mut data = SweepData {
+            angles_deg: (0..=360).map(|i| i as f64).collect(),
+            body_angles: HashMap::new(),
+            coupler_traces: HashMap::new(),
+            transmission_angles: None,
+            driver_torques: Some((0..=360).map(|i| (i as f64).to_radians().sin()).collect()),
+            kinetic_energy: vec![],
+            potential_energy: vec![],
+            total_energy: vec![],
+            inverse_dynamics_torques: (0..=360).map(|i| (i as f64).to_radians().sin() * 1.2).collect(),
+            mechanical_advantage: vec![],
+            joint_reaction_magnitudes: HashMap::new(),
+            coupler_velocities: HashMap::new(),
+            coupler_accelerations: HashMap::new(),
+            actuator_forces: None,
+            actuator_forces_id: None,
+            actuator_lengths: None,
+            actuator_speeds: None,
+            actuator_power: None,
+            actuator_power_id: None,
+            output_forces: None,
+            profile_torques: None,
+            profile_omega: None,
+            profile_alpha: None,
+            toggle_angles: Vec::new(),
+            active_range: None,
+            sweep_mode: SweepMode::Angle,
+        };
+
+        let omega = 2.0 * std::f64::consts::PI;
+        let profile = MotionProfile::Trapezoidal {
+            accel_fraction: 0.25,
+            decel_fraction: 0.25,
+        };
+        apply_motion_profile(&mut data, omega, profile);
+
+        let torques = data.profile_torques.as_ref().expect("profile_torques should be Some");
+        assert_eq!(torques.len(), 361);
+
+        let omegas = data.profile_omega.as_ref().expect("profile_omega should be Some");
+        assert_eq!(omegas.len(), 361);
+
+        let alphas = data.profile_alpha.as_ref().expect("profile_alpha should be Some");
+        assert_eq!(alphas.len(), 361);
+
+        // At 0 degrees, omega should be near zero (start of accel phase).
+        assert!(omegas[0] < 1.0, "Omega at 0 deg should be small, got {}", omegas[0]);
+
+        // At 180 degrees (mid-cycle), omega should be near peak (cruise phase).
+        let peak_omega = omegas.iter().cloned().fold(0.0_f64, f64::max);
+        assert!(
+            (omegas[180] - peak_omega).abs() / peak_omega < 0.1,
+            "Omega at 180 deg should be near peak"
+        );
+
+        // Alpha should be positive at the start (accelerating) and negative at the end.
+        assert!(alphas[0] > 0.0, "Alpha at 0 deg should be positive");
+        assert!(alphas[360] < 0.0, "Alpha at 360 deg should be negative");
+    }
+
+    #[test]
+    fn trapezoidal_profile_on_fourbar_sweep() {
+        // End-to-end test: compute sweep data for a 4-bar, then apply
+        // trapezoidal profile and verify profile torques have same length.
+        let (mech, q0) = build_sample(SampleMechanism::FourBar);
+        let omega = 2.0 * std::f64::consts::PI;
+        let theta_0 = 0.0;
+
+        let (mut data, _) = compute_sweep_data(&mech, &q0, omega, theta_0, 9.81, None);
+        let n = data.angles_deg.len();
+        assert!(n > 300, "FourBar should produce a full sweep");
+
+        apply_motion_profile(
+            &mut data,
+            omega,
+            MotionProfile::Trapezoidal {
+                accel_fraction: 0.2,
+                decel_fraction: 0.3,
+            },
+        );
+
+        let prof = data.profile_torques.as_ref().unwrap();
+        assert_eq!(prof.len(), n, "Profile torques length should match sweep length");
+
+        // At least some values should differ from the constant-speed ID torques
+        // (unless inertia is zero, which it's not for FourBar).
+        let differs = prof.iter().zip(data.inverse_dynamics_torques.iter())
+            .any(|(p, c)| p.is_finite() && c.is_finite() && (p - c).abs() > 1e-12);
+        assert!(differs, "Profile torques should differ from constant-speed ID torques");
     }
 }
