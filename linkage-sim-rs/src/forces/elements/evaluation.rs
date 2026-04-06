@@ -491,3 +491,48 @@ pub fn evaluate_force_zone(
 
     point_force_to_q(state, &fz.body_id, &local_point, &force_global, q)
 }
+
+/// Compute the overlap ratio for a force zone at the current configuration.
+///
+/// Returns a value in [0.0, 1.0] representing the fraction of the target body's
+/// geometry that lies within the force zone. Returns 0.0 if the body has no
+/// geometry or is not found.
+pub fn force_zone_overlap_ratio(
+    fz: &ForceZoneElement,
+    state: &State,
+    bodies: &HashMap<String, Body>,
+    q: &DVector<f64>,
+) -> f64 {
+    use crate::geometry::{body_rect_to_world, clip_polygon_to_aabb, polygon_area};
+
+    let body = match bodies.get(&fz.body_id) {
+        Some(b) => b,
+        None => return 0.0,
+    };
+    let geo = match &body.geometry {
+        Some(g) => g,
+        None => return 0.0,
+    };
+
+    let bi = match state.get_index(&fz.body_id) {
+        Ok(idx) => idx,
+        Err(_) => return 0.0,
+    };
+    let bx = q[bi.x_idx()];
+    let by = q[bi.y_idx()];
+    let btheta = q[bi.theta_idx()];
+
+    let corners = body_rect_to_world(bx, by, btheta, geo.width, geo.height, &geo.offset);
+    let zone_min = Vector2::new(fz.zone_min[0], fz.zone_min[1]);
+    let zone_max = Vector2::new(fz.zone_max[0], fz.zone_max[1]);
+    let clipped = clip_polygon_to_aabb(&corners, &zone_min, &zone_max);
+
+    let overlap_area = polygon_area(&clipped);
+    let body_area = geo.area();
+
+    if body_area < 1e-15 {
+        return 0.0;
+    }
+
+    (overlap_area / body_area).min(1.0)
+}

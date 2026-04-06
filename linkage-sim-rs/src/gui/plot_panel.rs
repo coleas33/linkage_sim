@@ -1070,6 +1070,7 @@ fn draw_actuator_force(
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
+        // Statics-based actuator force (solid line).
         let pairs: Vec<(f64, f64)> = sweep
             .angles_deg
             .iter()
@@ -1080,7 +1081,7 @@ fn draw_actuator_force(
 
         draw_angle_series_with_range(
             plot_ui,
-            "Required Actuator Force",
+            "Statics",
             egui::Color32::from_rgb(255, 100, 100),
             2.0,
             &pairs,
@@ -1088,6 +1089,35 @@ fn draw_actuator_force(
             units,
             nathan_mode,
         );
+
+        // Inverse dynamics actuator force (dashed overlay, includes inertia).
+        if let Some(ref id_forces) = sweep.actuator_forces_id {
+            let is_stroke = sweep.sweep_mode.is_stroke();
+            let id_points: PlotPoints = sweep
+                .angles_deg
+                .iter()
+                .zip(id_forces.iter())
+                .filter(|&(_, &f)| f.is_finite())
+                .map(|(&x, &f)| {
+                    let x_display = if is_stroke { x * 1000.0 } else { units.angle(x.to_radians()) };
+                    [x_display, f]
+                })
+                .collect();
+            let id_color = if nathan_mode {
+                crate::gui::canvas::to_grayscale(egui::Color32::from_rgb(100, 200, 255))
+            } else {
+                egui::Color32::from_rgb(100, 200, 255)
+            };
+            plot_ui.line(
+                Line::new("With Inertia", id_points)
+                    .color(id_color)
+                    .style(egui_plot::LineStyle::Dashed { length: 4.0 })
+                    .width(1.5),
+            );
+        }
+
+        // Stroke annotation: show min/max actuator length and peak forces.
+        draw_actuator_stroke_annotation(plot_ui, sweep, units);
 
         // Vertical marker at current driver angle.
         plot_ui.vline(
@@ -1102,6 +1132,54 @@ fn draw_actuator_force(
     });
 
     clicked_x
+}
+
+/// Draw a text annotation on the actuator force plot with stroke and peak force info.
+///
+/// Shows min/max actuator length, stroke, and peak forces from both statics
+/// and inverse dynamics. Placed in the top-left corner of the plot.
+fn draw_actuator_stroke_annotation(
+    plot_ui: &mut egui_plot::PlotUi,
+    sweep: &SweepData,
+    _units: &DisplayUnits,
+) {
+    // Compute peak forces for the annotation.
+    let peak_statics = sweep.actuator_forces.as_ref().and_then(|f| {
+        f.iter()
+            .filter(|v| v.is_finite())
+            .map(|v| v.abs())
+            .fold(None, |max: Option<f64>, v| Some(max.map_or(v, |m| m.max(v))))
+    });
+    let peak_id = sweep.actuator_forces_id.as_ref().and_then(|f| {
+        f.iter()
+            .filter(|v| v.is_finite())
+            .map(|v| v.abs())
+            .fold(None, |max: Option<f64>, v| Some(max.map_or(v, |m| m.max(v))))
+    });
+
+    let mut lines: Vec<String> = Vec::new();
+    if let Some(ps) = peak_statics {
+        let label = match peak_id {
+            Some(pi) => format!("Peak: {:.0} N (statics) / {:.0} N (inertia)", ps, pi),
+            None => format!("Peak: {:.0} N", ps),
+        };
+        lines.push(label);
+    }
+
+    if lines.is_empty() {
+        return;
+    }
+
+    let text = lines.join("\n");
+    // Place at top-left of plot using the first data point as anchor.
+    let bounds = plot_ui.plot_bounds();
+    let x_pos = bounds.min()[0] + (bounds.max()[0] - bounds.min()[0]) * 0.02;
+    let y_pos = bounds.max()[1] - (bounds.max()[1] - bounds.min()[1]) * 0.02;
+    plot_ui.text(
+        PlotText::new("actuator_annotation", PlotPoint::new(x_pos, y_pos), text)
+            .anchor(egui::Align2::LEFT_TOP)
+            .color(egui::Color32::from_rgba_premultiplied(200, 200, 200, 180)),
+    );
 }
 
 /// Draw faint red dashed vertical lines at toggle/dead-point angles.

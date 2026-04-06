@@ -9,6 +9,7 @@ use eframe::egui;
 use crate::analysis::envelopes::compute_envelope;
 use crate::analysis::grashof::GrashofType;
 use crate::gui::state::AppState;
+use crate::gui::sweep::SweepData;
 
 /// Color for OK / green status indicators.
 const COLOR_OK: egui::Color32 = egui::Color32::from_rgb(80, 200, 120);
@@ -78,14 +79,23 @@ pub(super) fn draw_health_section(ui: &mut egui::Ui, state: &AppState) {
             }
         }
 
-        // 6. Jacobian conditioning
+        // 6. Actuator stroke and peak force
+        if let Some(ref sweep) = state.sweep_data {
+            if sweep.actuator_forces.is_some() || sweep.actuator_lengths.is_some() {
+                if any_shown { ui.separator(); }
+                any_shown = true;
+                draw_actuator_stroke_indicator(ui, state, sweep);
+            }
+        }
+
+        // 7. Jacobian conditioning
         if let Some(kappa) = state.force_results.condition_number {
             if any_shown { ui.separator(); }
             any_shown = true;
             draw_conditioning_indicator(ui, state, kappa);
         }
 
-        // 7. Constraint violations
+        // 8. Constraint violations
         {
             if any_shown { ui.separator(); }
             #[allow(unused_assignments)]
@@ -243,6 +253,60 @@ fn draw_conditioning_indicator(ui: &mut egui::Ui, state: &AppState, kappa: f64) 
         ui.label("Jacobian:");
         ui.colored_label(color, label);
     });
+}
+
+/// Actuator stroke and peak force indicator.
+///
+/// Shows the actuator stroke (max - min length) in mm and peak force from both
+/// statics and inverse dynamics analyses.
+fn draw_actuator_stroke_indicator(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    sweep: &SweepData,
+) {
+    let units = &state.display_units;
+
+    // Compute min/max actuator length from sweep data.
+    if let Some(ref lengths) = sweep.actuator_lengths {
+        let finite_lengths: Vec<f64> = lengths.iter().copied().filter(|v| v.is_finite()).collect();
+        if let (Some(&min_len), Some(&max_len)) = (
+            finite_lengths.iter().min_by(|a, b| a.partial_cmp(b).unwrap()),
+            finite_lengths.iter().max_by(|a, b| a.partial_cmp(b).unwrap()),
+        ) {
+            let stroke = max_len - min_len;
+            ui.horizontal(|ui| {
+                ui.label("Actuator stroke:");
+                ui.colored_label(
+                    state.nc(COLOR_OK),
+                    format!(
+                        "{:.1}{} (min: {:.1}{}, max: {:.1}{})",
+                        units.length(stroke), units.length_suffix(),
+                        units.length(min_len), units.length_suffix(),
+                        units.length(max_len), units.length_suffix(),
+                    ),
+                );
+            });
+        }
+    }
+
+    // Compute peak actuator forces.
+    let peak_statics = sweep.actuator_forces.as_ref().and_then(|f| {
+        compute_envelope(f).map(|env| env.max_value.abs().max(env.min_value.abs()))
+    });
+    let peak_id = sweep.actuator_forces_id.as_ref().and_then(|f| {
+        compute_envelope(f).map(|env| env.max_value.abs().max(env.min_value.abs()))
+    });
+
+    if let Some(ps) = peak_statics {
+        ui.horizontal(|ui| {
+            ui.label("Peak actuator force:");
+            let label = match peak_id {
+                Some(pi) => format!("{:.0} N (statics) / {:.0} N (inertia)", ps, pi),
+                None => format!("{:.0} N", ps),
+            };
+            ui.colored_label(state.nc(COLOR_OK), label);
+        });
+    }
 }
 
 /// Constraint residual / solver status indicator.

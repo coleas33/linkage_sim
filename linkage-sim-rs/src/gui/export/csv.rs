@@ -49,10 +49,18 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
     if has_inv_dyn {
         headers.push("inverse_dynamics_torque_Nm".to_string());
     }
-    // Actuator force column (present only when a LinearActuator force element exists).
+    // Actuator columns (present only when a LinearActuator force element exists).
     let has_actuator = sweep.actuator_forces.is_some();
     if has_actuator {
         headers.push("actuator_force_N".to_string());
+    }
+    let has_actuator_id = sweep.actuator_forces_id.is_some();
+    if has_actuator_id {
+        headers.push("actuator_force_id_N".to_string());
+    }
+    let has_actuator_len = sweep.actuator_lengths.is_some();
+    if has_actuator_len {
+        headers.push("actuator_length_m".to_string());
     }
     // Joint reaction magnitude columns (sorted by joint ID).
     let mut reaction_ids: Vec<&String> = sweep.joint_reaction_magnitudes.keys().collect();
@@ -107,6 +115,16 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
         if has_actuator {
             if let Some(ref forces) = sweep.actuator_forces {
                 row.push(format!("{:.6}", forces.get(i).copied().unwrap_or(f64::NAN)));
+            }
+        }
+        if has_actuator_id {
+            if let Some(ref forces) = sweep.actuator_forces_id {
+                row.push(format!("{:.6}", forces.get(i).copied().unwrap_or(f64::NAN)));
+            }
+        }
+        if has_actuator_len {
+            if let Some(ref lengths) = sweep.actuator_lengths {
+                row.push(format!("{:.6}", lengths.get(i).copied().unwrap_or(f64::NAN)));
             }
         }
         for jid in &reaction_ids {
@@ -257,6 +275,8 @@ mod tests {
             coupler_velocities,
             coupler_accelerations,
             actuator_forces: None,
+            actuator_forces_id: None,
+            actuator_lengths: None,
             toggle_angles: Vec::new(),
             active_range: None,
             sweep_mode: crate::gui::sweep::SweepMode::Angle,

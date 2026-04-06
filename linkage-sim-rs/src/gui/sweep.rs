@@ -79,6 +79,15 @@ pub struct SweepData {
     /// F_actuator = driver_torque * omega / (dL/dt).
     /// `None` when no LinearActuator force element is present.
     pub actuator_forces: Option<Vec<f64>>,
+    /// Required actuator force from inverse dynamics (includes inertial loads).
+    /// More accurate than statics-based `actuator_forces` at high speed.
+    /// Uses the same power-balance formula but with the inverse dynamics torque.
+    /// `None` when no LinearActuator force element is present.
+    pub actuator_forces_id: Option<Vec<f64>>,
+    /// Actuator length (m) at each sweep angle.
+    /// Distance between actuator attachment points A and B.
+    /// `None` when no LinearActuator force element is present.
+    pub actuator_lengths: Option<Vec<f64>>,
     /// Angles (degrees) at which toggle/dead points were detected.
     pub toggle_angles: Vec<f64>,
     /// Index range of the active sweep region within the full 0-360° data.
@@ -134,6 +143,16 @@ pub(crate) fn compute_sweep_data(
         coupler_velocities: HashMap::new(),
         coupler_accelerations: HashMap::new(),
         actuator_forces: if actuator_info.is_some() {
+            Some(Vec::with_capacity(capacity))
+        } else {
+            None
+        },
+        actuator_forces_id: if actuator_info.is_some() {
+            Some(Vec::with_capacity(capacity))
+        } else {
+            None
+        },
+        actuator_lengths: if actuator_info.is_some() {
             Some(Vec::with_capacity(capacity))
         } else {
             None
@@ -241,6 +260,17 @@ pub(crate) fn compute_sweep_data(
                         .get_mut(key)
                         .unwrap()
                         .push([global.x, global.y]);
+                }
+
+                // Actuator length (position-only, no velocity needed).
+                if let Some(ref act_info) = actuator_info {
+                    let (ref body_a, ref pt_a, ref body_b, ref pt_b) = *act_info;
+                    let local_a = nalgebra::Vector2::new(pt_a[0], pt_a[1]);
+                    let local_b = nalgebra::Vector2::new(pt_b[0], pt_b[1]);
+                    let p_a = mech_state.body_point_global(body_a, &local_a, &q);
+                    let p_b = mech_state.body_point_global(body_b, &local_b, &q);
+                    let act_length = (p_b - p_a).norm();
+                    data.actuator_lengths.as_mut().unwrap().push(act_length);
                 }
 
                 // Transmission angle (4-bar only).
@@ -358,8 +388,19 @@ pub(crate) fn compute_sweep_data(
                                 f64::NAN // singular -- actuator perpendicular to motion
                             };
                             data.actuator_forces.as_mut().unwrap().push(actuator_force);
+
+                            // Inverse dynamics actuator force: same formula but
+                            // using the ID torque (includes inertial loads).
+                            let id_torque = *data.inverse_dynamics_torques.last().unwrap_or(&f64::NAN);
+                            let id_force = if dl_dt.abs() > 1e-12 && id_torque.is_finite() {
+                                id_torque * omega / dl_dt
+                            } else {
+                                f64::NAN
+                            };
+                            data.actuator_forces_id.as_mut().unwrap().push(id_force);
                         } else {
                             data.actuator_forces.as_mut().unwrap().push(f64::NAN);
+                            data.actuator_forces_id.as_mut().unwrap().push(f64::NAN);
                         }
                     }
                 } else {
@@ -378,6 +419,7 @@ pub(crate) fn compute_sweep_data(
                     // No velocity solve -- push NaN for actuator force.
                     if actuator_info.is_some() {
                         data.actuator_forces.as_mut().unwrap().push(f64::NAN);
+                        data.actuator_forces_id.as_mut().unwrap().push(f64::NAN);
                     }
                 }
             }

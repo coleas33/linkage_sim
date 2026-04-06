@@ -55,6 +55,39 @@ pub(super) fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
                 }
             }
 
+            // ── Force zone applied force readout ──────────────────
+            if let Some(bp) = &state.blueprint {
+                let mech_state = mech.state();
+                let mech_bodies = mech.bodies();
+                for (i, force) in bp.forces.iter().enumerate() {
+                    if let ForceElement::ForceZone(fz) = force {
+                        let ratio = crate::forces::elements::force_zone_overlap_ratio(
+                            fz, mech_state, mech_bodies, &state.q,
+                        );
+                        let force_mag = (fz.force[0].powi(2) + fz.force[1].powi(2)).sqrt();
+                        let applied_mag = force_mag * ratio;
+                        let label_name = fz.label.as_deref().unwrap_or(&fz.body_id);
+                        if applied_mag < 1e-6 {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(255, 180, 60),
+                                format!(
+                                    "Force zone #{}: 0 N applied (0% overlap with '{}')",
+                                    i + 1, label_name,
+                                ),
+                            );
+                        } else {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(100, 200, 100),
+                                format!(
+                                    "Force zone #{}: {:.0} N applied to '{}' ({:.0}% overlap)",
+                                    i + 1, applied_mag, label_name, ratio * 100.0,
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+
             // ── Mechanism mass summary ─────────────────────────────
             let total_mass: f64 = mech.bodies().values()
                 .filter(|b| b.id != GROUND_ID)

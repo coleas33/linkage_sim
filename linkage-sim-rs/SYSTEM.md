@@ -39,7 +39,7 @@ linkage-sim-rs/src/
 │   │   ├── mod.rs                  (1,325)    Re-exports, tests (1,300+ lines of tests)
 │   │   ├── time_modulation.rs        (134)    TimeModulation enum, factor(), compile()
 │   │   ├── element_types.rs          (310)    13 element data structs + serde helpers (LinearActuator has stroke limits)
-│   │   ├── evaluation.rs             (510)    All evaluate_* functions, angular helpers, stroke limit penalty
+│   │   ├── evaluation.rs             (550)    All evaluate_* functions, angular helpers, stroke limit penalty, force_zone_overlap_ratio
 │   │   └── force_element.rs          (233)    ForceElement enum, dispatch impl
 │   └── compound.rs                   (558)    Compound force expansion (mount point → bodies)
 │
@@ -100,7 +100,8 @@ linkage-sim-rs/src/
 │   ├── property_panel/             (2,175)    Property editing panel
 │   │   ├── mod.rs                    (387)    draw_property_panel main coordinator
 │   │   ├── pending_edits.rs          (210)    PendingPropertyEdit enum + apply_pending
-│   │   ├── diagnostics.rs            (305)    Diagnostics section + motor sizing
+│   │   ├── health.rs                 (330)    Mechanism Health section (Grashof, toggle, torque, reactions, actuator stroke)
+│   │   ├── diagnostics.rs            (360)    Diagnostics section + motor sizing + force zone feedback
 │   │   └── force_editor.rs         (1,273)    Per-force-type parameter editors
 │   ├── samples/                    (2,500+)   Sample mechanism builders (29 total, with thumbnails)
 │   │   ├── mod.rs                    (400+)   SampleMechanism enum, build_sample dispatch, tests
@@ -115,8 +116,8 @@ linkage-sim-rs/src/
 │   │   ├── raster.rs                 (346)    PNG rasterization + GIF animation
 │   │   ├── dxf.rs                    (132)    DXF generation + export
 │   │   └── report.rs                 (307)    HTML report generation
-│   ├── plot_panel.rs               (1,140)    11-tab sweep data plots (incl. Actuator Force)
-│   ├── sweep.rs                      (580)    SweepData, compute_sweep_data, 4-bar detection, actuator force
+│   ├── plot_panel.rs               (1,230)    11-tab sweep data plots (incl. Actuator Force with statics + inertia curves)
+│   ├── sweep.rs                      (600)    SweepData, compute_sweep_data, 4-bar detection, actuator force/ID/length
 │   ├── input_panel.rs                (486)    Driver controls, animation, sweep range
 │   ├── parametric_panel.rs           (410)    Parametric study + counterbalance UI
 │   ├── undo.rs                       (258)    Undo/redo history stack
