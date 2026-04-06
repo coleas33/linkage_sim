@@ -47,7 +47,14 @@ impl AppState {
     ///
     /// Returns the full URL string, or an error if no mechanism is loaded.
     pub fn generate_share_url(&self) -> Result<String, String> {
-        let json_str = self.serialize_to_json_string()?;
+        // Include the driver angle in the JSON so the mechanism loads at the
+        // same configuration the user was viewing (not just angle 0).
+        let mut json_str = self.serialize_to_json_string()?;
+        // Inject driver_angle into the JSON before encoding.
+        if let Ok(mut val) = serde_json::from_str::<serde_json::Value>(&json_str) {
+            val["_driver_angle"] = serde_json::Value::from(self.driver_angle);
+            json_str = serde_json::to_string(&val).unwrap_or(json_str);
+        }
         let encoded = encode_mechanism_for_url(&json_str);
         Ok(format!("https://linkage.colesorkness.com/?m={}", encoded))
     }
@@ -240,11 +247,17 @@ impl AppState {
         // Detect the driven joint ID.
         let driver_joint_id = detect_driver_joint_id(&mech);
 
-        // Try to solve at t=0. Start with a zero guess; if that fails, try
-        // multiple starting angles with continuation to handle mechanisms that
-        // need a specific initial configuration (e.g., above/below branch).
+        // Check for embedded driver angle (from share URL).
+        let shared_angle: Option<f64> = serde_json::from_str::<serde_json::Value>(json_str)
+            .ok()
+            .and_then(|v| v.get("_driver_angle").and_then(|a| a.as_f64()));
+
+        // Solve at the shared angle (if present) or t=0.
+        let target_angle = shared_angle.unwrap_or(driver_theta_0);
+        let target_t = (target_angle - driver_theta_0) / driver_omega;
+
         let q0 = mech.state().make_q();
-        let mut converged = self.solve_and_update(&mech, &q0, 0.0, 1e-10, 50, Some(q0.clone()));
+        let mut converged = self.solve_and_update(&mech, &q0, target_t, 1e-10, 50, Some(q0.clone()));
 
         if !converged {
             // Try solving at several angles and continuing to t=0.
@@ -260,12 +273,13 @@ impl AppState {
                 let q_zero = mech.state().make_q();
                 if let Ok(result) = solve_position(&mech, &q_zero, t_start, 1e-10, 100) {
                     if result.converged {
-                        // Continuation: step from start_angle back to t=0
+                        // Continuation: step from start_angle to target angle
                         let steps = 20;
                         let mut q_cont = result.q;
                         let mut cont_ok = true;
                         for i in 1..=steps {
-                            let t = t_start * (1.0 - i as f64 / steps as f64);
+                            let frac = i as f64 / steps as f64;
+                            let t = t_start + (target_t - t_start) * frac;
                             match solve_position(&mech, &q_cont, t, 1e-10, 100) {
                                 Ok(r) if r.converged => q_cont = r.q,
                                 _ => { cont_ok = false; break; }
@@ -273,7 +287,7 @@ impl AppState {
                         }
                         if cont_ok {
                             converged = self.solve_and_update(
-                                &mech, &q_cont, 0.0, 1e-10, 50, Some(q_cont.clone()),
+                                &mech, &q_cont, target_t, 1e-10, 50, Some(q_cont.clone()),
                             );
                             if converged { break; }
                         }
@@ -284,7 +298,7 @@ impl AppState {
 
         self.driver_omega = driver_omega;
         self.driver_theta_0 = driver_theta_0;
-        self.driver_angle = driver_theta_0;
+        self.driver_angle = target_angle;
         self.q_at_zero = self.q.clone();
         self.driver_joint_id = driver_joint_id;
         // Initialize stroke range from the first LinearActuator force element
