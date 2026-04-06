@@ -6,7 +6,7 @@
 //! that angle.
 
 use eframe::egui;
-use egui_plot::{Line, Plot, PlotPoint, PlotPoints, Text as PlotText, VLine};
+use egui_plot::{HLine, Line, Plot, PlotPoint, PlotPoints, Points, Text as PlotText, VLine};
 
 use super::state::{AngleUnit, AppState, DisplayUnits};
 use super::sweep::SweepData;
@@ -218,7 +218,20 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
             draw_coupler_acceleration(ui, sweep, current_driver_display, &state.display_units, nm)
         }
         PlotTab::ActuatorForce => {
-            draw_actuator_force(ui, sweep, current_driver_display, &state.display_units, nm)
+            // Rated force input above the plot.
+            ui.horizontal(|ui| {
+                ui.label("Rated Force:");
+                ui.add(egui::DragValue::new(&mut state.actuator_rated_force)
+                    .speed(10.0)
+                    .range(0.0..=1e6)
+                    .suffix(" N"));
+                if state.actuator_rated_force > 0.0 {
+                    if ui.small_button("Clear").clicked() {
+                        state.actuator_rated_force = 0.0;
+                    }
+                }
+            });
+            draw_actuator_force(ui, sweep, current_driver_display, &state.display_units, nm, state.actuator_rated_force)
         }
         PlotTab::ActuatorSpeed => {
             draw_actuator_speed(ui, sweep, current_driver_display, &state.display_units, nm)
@@ -1082,11 +1095,19 @@ fn draw_actuator_force(
     current_driver_display: f64,
     units: &DisplayUnits,
     nathan_mode: bool,
+    actuator_rated_force: f64,
 ) -> Option<f64> {
     let Some(forces) = &sweep.actuator_forces else {
         ui.label("Actuator force data not available (no LinearActuator in mechanism).");
         return None;
     };
+
+    // Rated force input above the plot.
+    // Note: actuator_rated_force is passed by value; the DragValue writes
+    // through the mutable reference on the *caller's* copy inside
+    // draw_plot_panel which owns `state`.  We re-read the value each frame.
+    // Because this function doesn't own state mutably, we render the input
+    // in the caller instead (see draw_plot_panel).
 
     let plot = Plot::new("actuator_force_plot")
         .allow_zoom(true)
@@ -1142,6 +1163,83 @@ fn draw_actuator_force(
                     .style(egui_plot::LineStyle::Dashed { length: 4.0 })
                     .width(1.5),
             );
+        }
+
+        // ── Force Margin Visualization (Feature 4) ──────────────────────
+        // When the user has entered a rated force, draw horizontal reference
+        // lines and safety-factor color-coded scatter overlay.
+        if actuator_rated_force > 0.0 {
+            let rated = actuator_rated_force;
+
+            // Horizontal rated force line (positive / tension).
+            let rated_color = if nathan_mode {
+                crate::gui::canvas::to_grayscale(egui::Color32::from_rgb(80, 200, 80))
+            } else {
+                egui::Color32::from_rgb(80, 200, 80)
+            };
+            plot_ui.hline(
+                HLine::new("Rated Force", rated)
+                    .color(rated_color)
+                    .style(egui_plot::LineStyle::Dashed { length: 6.0 })
+                    .width(2.0),
+            );
+
+            // Horizontal rated force line (negative / compression).
+            plot_ui.hline(
+                HLine::new("Rated (compression)", -rated)
+                    .color(rated_color)
+                    .style(egui_plot::LineStyle::Dashed { length: 6.0 })
+                    .width(2.0),
+            );
+
+            // ── Safety Factor Overlay (Feature 5) ───────────────────────
+            // Color-code the force data by utilization ratio |F| / rated.
+            let is_stroke = sweep.sweep_mode.is_stroke();
+            let to_display = |x_deg: f64| -> f64 {
+                if is_stroke { x_deg * 1000.0 } else { units.angle(x_deg.to_radians()) }
+            };
+
+            let mut green_pts: Vec<[f64; 2]> = Vec::new();
+            let mut yellow_pts: Vec<[f64; 2]> = Vec::new();
+            let mut red_pts: Vec<[f64; 2]> = Vec::new();
+
+            for &(x_deg, f) in &pairs {
+                let ratio = f.abs() / rated;
+                let pt = [to_display(x_deg), f];
+                if ratio >= 0.8 {
+                    red_pts.push(pt);
+                } else if ratio >= 0.5 {
+                    yellow_pts.push(pt);
+                } else {
+                    green_pts.push(pt);
+                }
+            }
+
+            let apply_nm = |c: egui::Color32| -> egui::Color32 {
+                if nathan_mode { crate::gui::canvas::to_grayscale(c) } else { c }
+            };
+
+            if !green_pts.is_empty() {
+                plot_ui.points(
+                    Points::new("< 50% rated", green_pts)
+                        .radius(3.0)
+                        .color(apply_nm(egui::Color32::GREEN)),
+                );
+            }
+            if !yellow_pts.is_empty() {
+                plot_ui.points(
+                    Points::new("50-80% rated", yellow_pts)
+                        .radius(3.0)
+                        .color(apply_nm(egui::Color32::YELLOW)),
+                );
+            }
+            if !red_pts.is_empty() {
+                plot_ui.points(
+                    Points::new("> 80% rated", red_pts)
+                        .radius(3.0)
+                        .color(apply_nm(egui::Color32::from_rgb(255, 60, 60))),
+                );
+            }
         }
 
         // Stroke annotation: show min/max actuator length and peak forces.

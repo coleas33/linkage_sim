@@ -281,6 +281,9 @@ pub struct AppState {
     /// Body to add a new attachment point to. Set when user clicks "Add Joint Point".
     /// When Some, next canvas click places a new attachment point on this body.
     pub adding_joint_point: Option<String>,
+    /// User-specified actuator rated force (N) for margin/safety factor display.
+    /// When 0.0, the margin overlay is disabled.
+    pub actuator_rated_force: f64,
 }
 
 /// Background image overlay for tracing mechanisms from photos/sketches.
@@ -492,6 +495,7 @@ impl Default for AppState {
             reassigning_point_mass: None,
             repositioning_point_mass: None,
             adding_joint_point: None,
+            actuator_rated_force: 0.0,
         };
         state.rebuild();
         state

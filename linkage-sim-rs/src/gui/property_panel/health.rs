@@ -97,6 +97,19 @@ pub(super) fn draw_health_section(ui: &mut egui::Ui, state: &AppState) {
             }
         }
 
+        // 6c. Actuator utilization (when rated force is set)
+        if let Some(ref sweep) = state.sweep_data {
+            if state.actuator_rated_force > 0.0 {
+                if let Some(ref forces) = sweep.actuator_forces {
+                    if any_shown { ui.separator(); }
+                    any_shown = true;
+                    draw_actuator_utilization_indicator(
+                        ui, state, forces, &sweep.angles_deg, state.actuator_rated_force,
+                    );
+                }
+            }
+        }
+
         // 7. Jacobian conditioning
         if let Some(kappa) = state.force_results.condition_number {
             if any_shown { ui.separator(); }
@@ -390,4 +403,57 @@ fn draw_residual_indicator(ui: &mut egui::Ui, state: &AppState) {
         ui.label("Constraints:");
         ui.colored_label(color, label);
     });
+}
+
+/// Actuator utilization indicator (shown when rated force > 0).
+///
+/// Displays peak utilization percentage and the angle range where the
+/// actuator exceeds 80% of its rated capacity.
+fn draw_actuator_utilization_indicator(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    forces: &[f64],
+    angles_deg: &[f64],
+    rated: f64,
+) {
+    // Compute peak utilization.
+    let peak_abs = forces
+        .iter()
+        .filter(|f| f.is_finite())
+        .map(|f| f.abs())
+        .fold(0.0_f64, f64::max);
+    let peak_pct = (peak_abs / rated) * 100.0;
+
+    let (pct_label, color) = if peak_pct < 50.0 {
+        (format!("{:.0}% peak", peak_pct), state.nc(COLOR_OK))
+    } else if peak_pct < 80.0 {
+        (format!("{:.0}% peak", peak_pct), state.nc(COLOR_WARN))
+    } else {
+        (format!("{:.0}% peak", peak_pct), state.nc(COLOR_RED))
+    };
+
+    ui.horizontal(|ui| {
+        ui.label("Actuator utilization:");
+        ui.colored_label(color, pct_label);
+    });
+
+    // Find contiguous angle ranges exceeding 80% rated.
+    let exceeding: Vec<f64> = angles_deg
+        .iter()
+        .zip(forces.iter())
+        .filter(|&(_, &f)| f.is_finite() && f.abs() / rated >= 0.8)
+        .map(|(&a, _)| a)
+        .collect();
+
+    if !exceeding.is_empty() {
+        let min_angle = exceeding.first().copied().unwrap_or(0.0);
+        let max_angle = exceeding.last().copied().unwrap_or(0.0);
+        ui.horizontal(|ui| {
+            ui.label("Exceeding 80%:");
+            ui.colored_label(
+                state.nc(COLOR_RED),
+                format!("{:.0}\u{00b0} to {:.0}\u{00b0}", min_angle, max_angle),
+            );
+        });
+    }
 }
