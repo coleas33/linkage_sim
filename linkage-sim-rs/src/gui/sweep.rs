@@ -88,6 +88,18 @@ pub struct SweepData {
     /// Distance between actuator attachment points A and B.
     /// `None` when no LinearActuator force element is present.
     pub actuator_lengths: Option<Vec<f64>>,
+    /// Actuator extension rate (m/s) at each sweep angle.
+    /// Computed as dL/dt from the velocity of the actuator attachment points.
+    /// `None` when no LinearActuator force element is present.
+    pub actuator_speeds: Option<Vec<f64>>,
+    /// Required actuator power (W) at each sweep angle. P = F_actuator * dL/dt.
+    /// Uses the statics-based actuator force.
+    /// `None` when no LinearActuator force element is present.
+    pub actuator_power: Option<Vec<f64>>,
+    /// Required actuator power (W) from inverse dynamics. P = F_actuator_id * dL/dt.
+    /// Uses the inverse-dynamics actuator force (includes inertial loads).
+    /// `None` when no LinearActuator force element is present.
+    pub actuator_power_id: Option<Vec<f64>>,
     /// Angles (degrees) at which toggle/dead points were detected.
     pub toggle_angles: Vec<f64>,
     /// Index range of the active sweep region within the full 0-360° data.
@@ -153,6 +165,21 @@ pub(crate) fn compute_sweep_data(
             None
         },
         actuator_lengths: if actuator_info.is_some() {
+            Some(Vec::with_capacity(capacity))
+        } else {
+            None
+        },
+        actuator_speeds: if actuator_info.is_some() {
+            Some(Vec::with_capacity(capacity))
+        } else {
+            None
+        },
+        actuator_power: if actuator_info.is_some() {
+            Some(Vec::with_capacity(capacity))
+        } else {
+            None
+        },
+        actuator_power_id: if actuator_info.is_some() {
             Some(Vec::with_capacity(capacity))
         } else {
             None
@@ -398,9 +425,25 @@ pub(crate) fn compute_sweep_data(
                                 f64::NAN
                             };
                             data.actuator_forces_id.as_mut().unwrap().push(id_force);
+
+                            // Actuator extension rate (m/s).
+                            data.actuator_speeds.as_mut().unwrap().push(dl_dt);
+
+                            // Actuator power: P = F * v (statics and ID).
+                            let power_statics = actuator_force * dl_dt;
+                            data.actuator_power.as_mut().unwrap().push(
+                                if power_statics.is_finite() { power_statics } else { f64::NAN }
+                            );
+                            let power_id = id_force * dl_dt;
+                            data.actuator_power_id.as_mut().unwrap().push(
+                                if power_id.is_finite() { power_id } else { f64::NAN }
+                            );
                         } else {
                             data.actuator_forces.as_mut().unwrap().push(f64::NAN);
                             data.actuator_forces_id.as_mut().unwrap().push(f64::NAN);
+                            data.actuator_speeds.as_mut().unwrap().push(f64::NAN);
+                            data.actuator_power.as_mut().unwrap().push(f64::NAN);
+                            data.actuator_power_id.as_mut().unwrap().push(f64::NAN);
                         }
                     }
                 } else {
@@ -416,10 +459,13 @@ pub(crate) fn compute_sweep_data(
                         coupler_accel_data.get_mut(key).unwrap().push(f64::NAN);
                     }
 
-                    // No velocity solve -- push NaN for actuator force.
+                    // No velocity solve -- push NaN for actuator force, speed, power.
                     if actuator_info.is_some() {
                         data.actuator_forces.as_mut().unwrap().push(f64::NAN);
                         data.actuator_forces_id.as_mut().unwrap().push(f64::NAN);
+                        data.actuator_speeds.as_mut().unwrap().push(f64::NAN);
+                        data.actuator_power.as_mut().unwrap().push(f64::NAN);
+                        data.actuator_power_id.as_mut().unwrap().push(f64::NAN);
                     }
                 }
             }

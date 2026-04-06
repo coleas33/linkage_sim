@@ -62,6 +62,18 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
     if has_actuator_len {
         headers.push("actuator_length_m".to_string());
     }
+    let has_actuator_speed = sweep.actuator_speeds.is_some();
+    if has_actuator_speed {
+        headers.push("actuator_speed_m_s".to_string());
+    }
+    let has_actuator_power = sweep.actuator_power.is_some();
+    if has_actuator_power {
+        headers.push("actuator_power_W".to_string());
+    }
+    let has_actuator_power_id = sweep.actuator_power_id.is_some();
+    if has_actuator_power_id {
+        headers.push("actuator_power_id_W".to_string());
+    }
     // Joint reaction magnitude columns (sorted by joint ID).
     let mut reaction_ids: Vec<&String> = sweep.joint_reaction_magnitudes.keys().collect();
     reaction_ids.sort();
@@ -125,6 +137,21 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
         if has_actuator_len {
             if let Some(ref lengths) = sweep.actuator_lengths {
                 row.push(format!("{:.6}", lengths.get(i).copied().unwrap_or(f64::NAN)));
+            }
+        }
+        if has_actuator_speed {
+            if let Some(ref speeds) = sweep.actuator_speeds {
+                row.push(format!("{:.6}", speeds.get(i).copied().unwrap_or(f64::NAN)));
+            }
+        }
+        if has_actuator_power {
+            if let Some(ref power) = sweep.actuator_power {
+                row.push(format!("{:.6}", power.get(i).copied().unwrap_or(f64::NAN)));
+            }
+        }
+        if has_actuator_power_id {
+            if let Some(ref power) = sweep.actuator_power_id {
+                row.push(format!("{:.6}", power.get(i).copied().unwrap_or(f64::NAN)));
             }
         }
         for jid in &reaction_ids {
@@ -277,6 +304,9 @@ mod tests {
             actuator_forces: None,
             actuator_forces_id: None,
             actuator_lengths: None,
+            actuator_speeds: None,
+            actuator_power: None,
+            actuator_power_id: None,
             toggle_angles: Vec::new(),
             active_range: None,
             sweep_mode: crate::gui::sweep::SweepMode::Angle,

@@ -88,6 +88,15 @@ pub(super) fn draw_health_section(ui: &mut egui::Ui, state: &AppState) {
             }
         }
 
+        // 6b. RMS actuator force, power, and peak speed
+        if let Some(ref sweep) = state.sweep_data {
+            if sweep.actuator_forces.is_some() {
+                if any_shown { ui.separator(); }
+                any_shown = true;
+                draw_actuator_rms_indicators(ui, state, sweep);
+            }
+        }
+
         // 7. Jacobian conditioning
         if let Some(kappa) = state.force_results.condition_number {
             if any_shown { ui.separator(); }
@@ -305,6 +314,61 @@ fn draw_actuator_stroke_indicator(
                 None => format!("{:.0} N", ps),
             };
             ui.colored_label(state.nc(COLOR_OK), label);
+        });
+    }
+}
+
+/// RMS actuator force, RMS actuator power, and peak actuator speed indicators.
+///
+/// Displays duty-cycle summary statistics computed from the full sweep:
+/// - RMS actuator force from statics (and inverse dynamics if available)
+/// - RMS actuator power from statics
+/// - Peak actuator speed in mm/s
+fn draw_actuator_rms_indicators(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    sweep: &SweepData,
+) {
+    // RMS Actuator Force
+    let rms_statics = sweep.actuator_forces.as_ref().and_then(|f| {
+        compute_envelope(f).map(|env| env.rms)
+    });
+    let rms_id = sweep.actuator_forces_id.as_ref().and_then(|f| {
+        compute_envelope(f).map(|env| env.rms)
+    });
+
+    if let Some(rms_s) = rms_statics {
+        ui.horizontal(|ui| {
+            ui.label("RMS actuator force:");
+            let label = match rms_id {
+                Some(rms_i) => format!("{:.0} N (statics) / {:.0} N (with inertia)", rms_s, rms_i),
+                None => format!("{:.0} N", rms_s),
+            };
+            ui.colored_label(state.nc(COLOR_OK), label);
+        });
+    }
+
+    // RMS Actuator Power
+    let rms_power = sweep.actuator_power.as_ref().and_then(|p| {
+        compute_envelope(p).map(|env| env.rms)
+    });
+
+    if let Some(rms_p) = rms_power {
+        ui.horizontal(|ui| {
+            ui.label("RMS actuator power:");
+            ui.colored_label(state.nc(COLOR_OK), format!("{:.1} W", rms_p));
+        });
+    }
+
+    // Peak Actuator Speed (convert m/s to mm/s for display)
+    let peak_speed = sweep.actuator_speeds.as_ref().and_then(|s| {
+        compute_envelope(s).map(|env| env.max_value.abs().max(env.min_value.abs()))
+    });
+
+    if let Some(ps) = peak_speed {
+        ui.horizontal(|ui| {
+            ui.label("Peak actuator speed:");
+            ui.colored_label(state.nc(COLOR_OK), format!("{:.1} mm/s", ps * 1000.0));
         });
     }
 }

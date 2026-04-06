@@ -25,6 +25,8 @@ enum PlotTab {
     CouplerVelocity,
     CouplerAcceleration,
     ActuatorForce,
+    ActuatorSpeed,
+    ActuatorPower,
 }
 
 /// Draw the plot panel with tabbed plots.
@@ -148,6 +150,26 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 "Actuator Force",
             );
         });
+
+        // Only show actuator speed tab when actuator speed data exists.
+        let has_as = sweep.actuator_speeds.as_ref().map_or(false, |v| !v.is_empty());
+        ui.add_enabled_ui(has_as, |ui| {
+            ui.selectable_value(
+                &mut selected_tab,
+                PlotTab::ActuatorSpeed,
+                "Actuator Speed",
+            );
+        });
+
+        // Only show actuator power tab when actuator power data exists.
+        let has_ap = sweep.actuator_power.as_ref().map_or(false, |v| !v.is_empty());
+        ui.add_enabled_ui(has_ap, |ui| {
+            ui.selectable_value(
+                &mut selected_tab,
+                PlotTab::ActuatorPower,
+                "Actuator Power",
+            );
+        });
     });
 
     ui.memory_mut(|mem| mem.data.insert_temp(tab_id, selected_tab));
@@ -197,6 +219,12 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
         }
         PlotTab::ActuatorForce => {
             draw_actuator_force(ui, sweep, current_driver_display, &state.display_units, nm)
+        }
+        PlotTab::ActuatorSpeed => {
+            draw_actuator_speed(ui, sweep, current_driver_display, &state.display_units, nm)
+        }
+        PlotTab::ActuatorPower => {
+            draw_actuator_power(ui, sweep, current_driver_display, &state.display_units, nm)
         }
     };
 
@@ -1134,36 +1162,37 @@ fn draw_actuator_force(
     clicked_x
 }
 
-/// Draw a text annotation on the actuator force plot with stroke and peak force info.
+/// Draw a text annotation on the actuator force plot with peak/RMS force info.
 ///
-/// Shows min/max actuator length, stroke, and peak forces from both statics
-/// and inverse dynamics. Placed in the top-left corner of the plot.
+/// Shows peak and RMS actuator forces from both statics and inverse dynamics.
+/// Placed in the top-left corner of the plot.
 fn draw_actuator_stroke_annotation(
     plot_ui: &mut egui_plot::PlotUi,
     sweep: &SweepData,
     _units: &DisplayUnits,
 ) {
-    // Compute peak forces for the annotation.
-    let peak_statics = sweep.actuator_forces.as_ref().and_then(|f| {
-        f.iter()
-            .filter(|v| v.is_finite())
-            .map(|v| v.abs())
-            .fold(None, |max: Option<f64>, v| Some(max.map_or(v, |m| m.max(v))))
-    });
-    let peak_id = sweep.actuator_forces_id.as_ref().and_then(|f| {
-        f.iter()
-            .filter(|v| v.is_finite())
-            .map(|v| v.abs())
-            .fold(None, |max: Option<f64>, v| Some(max.map_or(v, |m| m.max(v))))
-    });
+    use crate::analysis::envelopes::compute_envelope;
+
+    let env_statics = sweep.actuator_forces.as_ref().and_then(|f| compute_envelope(f));
+    let env_id = sweep.actuator_forces_id.as_ref().and_then(|f| compute_envelope(f));
 
     let mut lines: Vec<String> = Vec::new();
-    if let Some(ps) = peak_statics {
-        let label = match peak_id {
-            Some(pi) => format!("Peak: {:.0} N (statics) / {:.0} N (inertia)", ps, pi),
-            None => format!("Peak: {:.0} N", ps),
+    if let Some(ref es) = env_statics {
+        let peak = es.max_value.abs().max(es.min_value.abs());
+        let peak_label = match &env_id {
+            Some(ei) => {
+                let peak_id = ei.max_value.abs().max(ei.min_value.abs());
+                format!("Peak: {:.0} N (statics) / {:.0} N (inertia)", peak, peak_id)
+            }
+            None => format!("Peak: {:.0} N", peak),
         };
-        lines.push(label);
+        lines.push(peak_label);
+
+        let rms_label = match &env_id {
+            Some(ei) => format!("RMS: {:.0} N (statics) / {:.0} N (inertia)", es.rms, ei.rms),
+            None => format!("RMS: {:.0} N", es.rms),
+        };
+        lines.push(rms_label);
     }
 
     if lines.is_empty() {
@@ -1180,6 +1209,157 @@ fn draw_actuator_stroke_annotation(
             .anchor(egui::Align2::LEFT_TOP)
             .color(egui::Color32::from_rgba_premultiplied(200, 200, 200, 180)),
     );
+}
+
+/// Plot actuator extension rate (mm/s) vs driver angle.
+///
+/// Only available when a LinearActuator force element is present.
+///
+/// Returns the clicked X coordinate (display angle units) if the user clicked.
+fn draw_actuator_speed(
+    ui: &mut egui::Ui,
+    sweep: &SweepData,
+    current_driver_display: f64,
+    units: &DisplayUnits,
+    nathan_mode: bool,
+) -> Option<f64> {
+    let Some(speeds) = &sweep.actuator_speeds else {
+        ui.label("Actuator speed data not available (no LinearActuator in mechanism).");
+        return None;
+    };
+
+    let plot = Plot::new("actuator_speed_plot")
+        .allow_zoom(true)
+        .allow_drag(true)
+        .x_axis_label(x_axis_label_for_sweep(sweep, units))
+        .y_axis_label("Actuator Speed (mm/s)")
+        .legend(egui_plot::Legend::default())
+        .height(ui.available_height().max(50.0));
+
+    let mut clicked_x: Option<f64> = None;
+    plot.show(ui, |plot_ui| {
+        // Convert m/s to mm/s for display.
+        let pairs: Vec<(f64, f64)> = sweep
+            .angles_deg
+            .iter()
+            .zip(speeds.iter())
+            .filter(|&(_, &s)| s.is_finite())
+            .map(|(&x_deg, &s)| (x_deg, s * 1000.0))
+            .collect();
+
+        draw_angle_series_with_range(
+            plot_ui,
+            "Actuator Speed",
+            egui::Color32::from_rgb(120, 220, 120),
+            2.0,
+            &pairs,
+            sweep,
+            units,
+            nathan_mode,
+        );
+
+        // Vertical marker at current driver angle.
+        plot_ui.vline(
+            VLine::new("cursor", current_driver_display)
+                .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
+                .width(1.0),
+        );
+
+        draw_toggle_markers(plot_ui, sweep, units);
+        draw_range_boundary_markers(plot_ui, sweep, units);
+        clicked_x = detect_plot_click(plot_ui);
+    });
+
+    clicked_x
+}
+
+/// Plot required actuator power (W) vs driver angle.
+///
+/// Shows both statics-based power (solid) and inverse-dynamics power (dashed).
+/// Only available when a LinearActuator force element is present.
+///
+/// Returns the clicked X coordinate (display angle units) if the user clicked.
+fn draw_actuator_power(
+    ui: &mut egui::Ui,
+    sweep: &SweepData,
+    current_driver_display: f64,
+    units: &DisplayUnits,
+    nathan_mode: bool,
+) -> Option<f64> {
+    let Some(power) = &sweep.actuator_power else {
+        ui.label("Actuator power data not available (no LinearActuator in mechanism).");
+        return None;
+    };
+
+    let plot = Plot::new("actuator_power_plot")
+        .allow_zoom(true)
+        .allow_drag(true)
+        .x_axis_label(x_axis_label_for_sweep(sweep, units))
+        .y_axis_label("Power (W)")
+        .legend(egui_plot::Legend::default())
+        .height(ui.available_height().max(50.0));
+
+    let mut clicked_x: Option<f64> = None;
+    plot.show(ui, |plot_ui| {
+        // Statics-based power (solid line).
+        let pairs: Vec<(f64, f64)> = sweep
+            .angles_deg
+            .iter()
+            .zip(power.iter())
+            .filter(|&(_, &p)| p.is_finite())
+            .map(|(&x_deg, &p)| (x_deg, p))
+            .collect();
+
+        draw_angle_series_with_range(
+            plot_ui,
+            "Statics",
+            egui::Color32::from_rgb(255, 100, 100),
+            2.0,
+            &pairs,
+            sweep,
+            units,
+            nathan_mode,
+        );
+
+        // Inverse dynamics power (dashed overlay, includes inertia).
+        if let Some(ref id_power) = sweep.actuator_power_id {
+            let is_stroke = sweep.sweep_mode.is_stroke();
+            let id_points: PlotPoints = sweep
+                .angles_deg
+                .iter()
+                .zip(id_power.iter())
+                .filter(|&(_, &p)| p.is_finite())
+                .map(|(&x, &p)| {
+                    let x_display = if is_stroke { x * 1000.0 } else { units.angle(x.to_radians()) };
+                    [x_display, p]
+                })
+                .collect();
+            let id_color = if nathan_mode {
+                crate::gui::canvas::to_grayscale(egui::Color32::from_rgb(100, 200, 255))
+            } else {
+                egui::Color32::from_rgb(100, 200, 255)
+            };
+            plot_ui.line(
+                Line::new("With Inertia", id_points)
+                    .color(id_color)
+                    .style(egui_plot::LineStyle::Dashed { length: 4.0 })
+                    .width(1.5),
+            );
+        }
+
+        // Vertical marker at current driver angle.
+        plot_ui.vline(
+            VLine::new("cursor", current_driver_display)
+                .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
+                .width(1.0),
+        );
+
+        draw_toggle_markers(plot_ui, sweep, units);
+        draw_range_boundary_markers(plot_ui, sweep, units);
+        clicked_x = detect_plot_click(plot_ui);
+    });
+
+    clicked_x
 }
 
 /// Draw faint red dashed vertical lines at toggle/dead-point angles.
