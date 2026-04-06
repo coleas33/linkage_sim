@@ -11,7 +11,7 @@ use crate::analysis::transmission::{
 use crate::analysis::validation::check_toggle;
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
-use crate::forces::elements::ForceElement;
+use crate::forces::elements::{force_zone_overlap_ratio, ForceElement};
 use crate::solver::inverse_dynamics::solve_inverse_dynamics;
 use crate::solver::kinematics::{solve_acceleration, solve_position, solve_velocity};
 use crate::solver::statics::{extract_reactions, get_driver_reactions, solve_statics};
@@ -100,6 +100,11 @@ pub struct SweepData {
     /// Uses the inverse-dynamics actuator force (includes inertial loads).
     /// `None` when no LinearActuator force element is present.
     pub actuator_power_id: Option<Vec<f64>>,
+    /// Output force magnitude (N) at each sweep angle.
+    /// Computed from force zone overlap: the net force the mechanism exerts
+    /// on the output (= force_zone.force * overlap_ratio) at each crank angle.
+    /// `None` when no ForceZone force element is present.
+    pub output_forces: Option<Vec<f64>>,
     /// Angles (degrees) at which toggle/dead points were detected.
     pub toggle_angles: Vec<f64>,
     /// Index range of the active sweep region within the full 0-360° data.
@@ -139,6 +144,16 @@ pub(crate) fn compute_sweep_data(
                 None
             }
         });
+
+    // Collect all ForceZone elements for output force computation.
+    let force_zones: Vec<_> = mech.forces().iter().filter_map(|f| {
+        if let ForceElement::ForceZone(fz) = f {
+            Some(fz.clone())
+        } else {
+            None
+        }
+    }).collect();
+    let has_force_zones = !force_zones.is_empty();
 
     let mut data = SweepData {
         angles_deg: Vec::with_capacity(capacity),
@@ -180,6 +195,11 @@ pub(crate) fn compute_sweep_data(
             None
         },
         actuator_power_id: if actuator_info.is_some() {
+            Some(Vec::with_capacity(capacity))
+        } else {
+            None
+        },
+        output_forces: if has_force_zones {
             Some(Vec::with_capacity(capacity))
         } else {
             None
@@ -298,6 +318,19 @@ pub(crate) fn compute_sweep_data(
                     let p_b = mech_state.body_point_global(body_b, &local_b, &q);
                     let act_length = (p_b - p_a).norm();
                     data.actuator_lengths.as_mut().unwrap().push(act_length);
+                }
+
+                // Output force from force zone overlap (position-only).
+                if has_force_zones {
+                    let mech_bodies = mech.bodies();
+                    let mut total_force_mag = 0.0_f64;
+                    for fz in &force_zones {
+                        let ratio = force_zone_overlap_ratio(fz, mech_state, mech_bodies, &q);
+                        let fx = fz.force[0] * ratio;
+                        let fy = fz.force[1] * ratio;
+                        total_force_mag += (fx * fx + fy * fy).sqrt();
+                    }
+                    data.output_forces.as_mut().unwrap().push(total_force_mag);
                 }
 
                 // Transmission angle (4-bar only).

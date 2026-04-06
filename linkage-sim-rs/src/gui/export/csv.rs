@@ -74,6 +74,11 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
     if has_actuator_power_id {
         headers.push("actuator_power_id_W".to_string());
     }
+    // Output force column (present only when a ForceZone force element exists).
+    let has_output_force = sweep.output_forces.is_some();
+    if has_output_force {
+        headers.push("output_force_N".to_string());
+    }
     // Joint reaction magnitude columns (sorted by joint ID).
     let mut reaction_ids: Vec<&String> = sweep.joint_reaction_magnitudes.keys().collect();
     reaction_ids.sort();
@@ -152,6 +157,11 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
         if has_actuator_power_id {
             if let Some(ref power) = sweep.actuator_power_id {
                 row.push(format!("{:.6}", power.get(i).copied().unwrap_or(f64::NAN)));
+            }
+        }
+        if has_output_force {
+            if let Some(ref forces) = sweep.output_forces {
+                row.push(format!("{:.6}", forces.get(i).copied().unwrap_or(f64::NAN)));
             }
         }
         for jid in &reaction_ids {
@@ -307,6 +317,7 @@ mod tests {
             actuator_speeds: None,
             actuator_power: None,
             actuator_power_id: None,
+            output_forces: None,
             toggle_angles: Vec::new(),
             active_range: None,
             sweep_mode: crate::gui::sweep::SweepMode::Angle,

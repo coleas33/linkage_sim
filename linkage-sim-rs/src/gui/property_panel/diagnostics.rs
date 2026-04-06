@@ -233,6 +233,17 @@ pub(super) fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
                         ui.label(format!("RMS: {:.3} N\u{00b7}m", env.rms));
                     }
                 }
+
+                // Output force envelope (from force zone overlap).
+                if let Some(ref output_forces) = sweep.output_forces {
+                    if let Some(env) = compute_envelope(output_forces) {
+                        ui.label(format!(
+                            "Output Force: {:.1} to {:.1} N",
+                            env.min_value, env.max_value
+                        ));
+                        ui.label(format!("RMS: {:.1} N", env.rms));
+                    }
+                }
             }
 
             // ── Force contributions ────────────────────────────────

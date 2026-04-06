@@ -116,8 +116,8 @@ linkage-sim-rs/src/
 │   │   ├── raster.rs                 (346)    PNG rasterization + GIF animation
 │   │   ├── dxf.rs                    (132)    DXF generation + export
 │   │   └── report.rs                 (307)    HTML report generation
-│   ├── plot_panel.rs               (1,230)    11-tab sweep data plots (incl. Actuator Force with statics + inertia curves)
-│   ├── sweep.rs                      (600)    SweepData, compute_sweep_data, 4-bar detection, actuator force/ID/length
+│   ├── plot_panel.rs               (1,300)    12-tab sweep data plots (incl. Actuator Force, Output Force)
+│   ├── sweep.rs                      (620)    SweepData, compute_sweep_data, 4-bar detection, actuator force/ID/length, output force
 │   ├── input_panel.rs                (486)    Driver controls, animation, sweep range
 │   ├── parametric_panel.rs           (410)    Parametric study + counterbalance UI
 │   ├── undo.rs                       (258)    Undo/redo history stack
@@ -202,5 +202,5 @@ After:   92 files,  0 files > 1,500 lines (excl. test-only),  largest impl = 1,3
 | `solver/forward_dynamics.rs` | 1,379 | BDF-2 integrator — math-heavy, tightly coupled |
 | `forces/elements/mod.rs` | 1,325 | Tests only (1,300 lines of element tests) |
 | `gui/property_panel/force_editor.rs` | 1,273 | 13 force type editors — repetitive but cohesive |
-| `gui/plot_panel.rs` | 1,140 | 11 plot tabs (incl. Actuator Force) — repetitive but cohesive |
+| `gui/plot_panel.rs` | 1,210 | 12 plot tabs (incl. Actuator Force, Output Force) — repetitive but cohesive |
 | `gui/state/blueprint_ops.rs` | 1,073 | Rebuild + all blueprint mutation — tightly coupled |

@@ -27,6 +27,7 @@ enum PlotTab {
     ActuatorForce,
     ActuatorSpeed,
     ActuatorPower,
+    OutputForce,
 }
 
 /// Draw the plot panel with tabbed plots.
@@ -170,6 +171,16 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 "Actuator Power",
             );
         });
+
+        // Only show output force tab when force zone data exists.
+        let has_of = sweep.output_forces.as_ref().map_or(false, |v| !v.is_empty());
+        ui.add_enabled_ui(has_of, |ui| {
+            ui.selectable_value(
+                &mut selected_tab,
+                PlotTab::OutputForce,
+                "Output Force",
+            );
+        });
     });
 
     ui.memory_mut(|mem| mem.data.insert_temp(tab_id, selected_tab));
@@ -238,6 +249,9 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
         }
         PlotTab::ActuatorPower => {
             draw_actuator_power(ui, sweep, current_driver_display, &state.display_units, nm)
+        }
+        PlotTab::OutputForce => {
+            draw_output_force(ui, sweep, current_driver_display, &state.display_units, nm)
         }
     };
 
@@ -1444,6 +1458,69 @@ fn draw_actuator_power(
                     .width(1.5),
             );
         }
+
+        // Vertical marker at current driver angle.
+        plot_ui.vline(
+            VLine::new("cursor", current_driver_display)
+                .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
+                .width(1.0),
+        );
+
+        draw_toggle_markers(plot_ui, sweep, units);
+        draw_range_boundary_markers(plot_ui, sweep, units);
+        clicked_x = detect_plot_click(plot_ui);
+    });
+
+    clicked_x
+}
+
+/// Plot output force (N) vs driver angle.
+///
+/// Shows the net force zone applied force at each crank angle. The output
+/// force is the force the mechanism exerts at the output link, computed from
+/// force zone overlap at each position.
+///
+/// Returns the clicked X coordinate (display angle units) if the user clicked.
+fn draw_output_force(
+    ui: &mut egui::Ui,
+    sweep: &SweepData,
+    current_driver_display: f64,
+    units: &DisplayUnits,
+    nathan_mode: bool,
+) -> Option<f64> {
+    let Some(forces) = &sweep.output_forces else {
+        ui.label("Output force data not available (no ForceZone in mechanism).");
+        return None;
+    };
+
+    let plot = Plot::new("output_force_plot")
+        .allow_zoom(true)
+        .allow_drag(true)
+        .x_axis_label(x_axis_label_for_sweep(sweep, units))
+        .y_axis_label("Output Force (N)")
+        .legend(egui_plot::Legend::default())
+        .height(ui.available_height().max(50.0));
+
+    let mut clicked_x: Option<f64> = None;
+    plot.show(ui, |plot_ui| {
+        let pairs: Vec<(f64, f64)> = sweep
+            .angles_deg
+            .iter()
+            .zip(forces.iter())
+            .filter(|&(_, &f)| f.is_finite())
+            .map(|(&x_deg, &f)| (x_deg, f))
+            .collect();
+
+        draw_angle_series_with_range(
+            plot_ui,
+            "Output Force",
+            egui::Color32::from_rgb(255, 180, 60),
+            2.0,
+            &pairs,
+            sweep,
+            units,
+            nathan_mode,
+        );
 
         // Vertical marker at current driver angle.
         plot_ui.vline(
