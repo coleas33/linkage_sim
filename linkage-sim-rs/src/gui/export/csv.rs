@@ -49,6 +49,11 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
     if has_inv_dyn {
         headers.push("inverse_dynamics_torque_Nm".to_string());
     }
+    // Actuator force column (present only when a LinearActuator force element exists).
+    let has_actuator = sweep.actuator_forces.is_some();
+    if has_actuator {
+        headers.push("actuator_force_N".to_string());
+    }
     // Joint reaction magnitude columns (sorted by joint ID).
     let mut reaction_ids: Vec<&String> = sweep.joint_reaction_magnitudes.keys().collect();
     reaction_ids.sort();
@@ -98,6 +103,11 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
         }
         if has_inv_dyn {
             row.push(format!("{:.6}", sweep.inverse_dynamics_torques.get(i).copied().unwrap_or(f64::NAN)));
+        }
+        if has_actuator {
+            if let Some(ref forces) = sweep.actuator_forces {
+                row.push(format!("{:.6}", forces.get(i).copied().unwrap_or(f64::NAN)));
+            }
         }
         for jid in &reaction_ids {
             let val = sweep.joint_reaction_magnitudes[*jid]
@@ -246,6 +256,7 @@ mod tests {
             joint_reaction_magnitudes,
             coupler_velocities,
             coupler_accelerations,
+            actuator_forces: None,
             toggle_angles: Vec::new(),
             active_range: None,
             sweep_mode: crate::gui::sweep::SweepMode::Angle,

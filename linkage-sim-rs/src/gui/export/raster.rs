@@ -273,6 +273,7 @@ mod tests {
             joint_reaction_magnitudes: HashMap::new(),
             coupler_velocities: HashMap::new(),
             coupler_accelerations: HashMap::new(),
+            actuator_forces: None,
             toggle_angles: Vec::new(),
             active_range: None,
             sweep_mode: crate::gui::sweep::SweepMode::Angle,

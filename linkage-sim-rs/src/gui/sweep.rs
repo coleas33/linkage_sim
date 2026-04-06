@@ -11,6 +11,7 @@ use crate::analysis::transmission::{
 use crate::analysis::validation::check_toggle;
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
+use crate::forces::elements::ForceElement;
 use crate::solver::inverse_dynamics::solve_inverse_dynamics;
 use crate::solver::kinematics::{solve_acceleration, solve_position, solve_velocity};
 use crate::solver::statics::{extract_reactions, get_driver_reactions, solve_statics};
@@ -73,6 +74,11 @@ pub struct SweepData {
     /// Coupler point acceleration magnitudes over the sweep.
     /// Key: trace name, Value: acceleration magnitude (m/s^2) at each step.
     pub coupler_accelerations: HashMap<String, Vec<f64>>,
+    /// Required actuator force (N) at each sweep angle.
+    /// Computed from driver torque and actuator velocity via power balance:
+    /// F_actuator = driver_torque * omega / (dL/dt).
+    /// `None` when no LinearActuator force element is present.
+    pub actuator_forces: Option<Vec<f64>>,
     /// Angles (degrees) at which toggle/dead points were detected.
     pub toggle_angles: Vec<f64>,
     /// Index range of the active sweep region within the full 0-360° data.
@@ -98,6 +104,21 @@ pub(crate) fn compute_sweep_data(
 
     let capacity = (num_steps.max(0) + 1) as usize;
 
+    // Detect the first LinearActuator force element for actuator force computation.
+    let actuator_info: Option<(String, [f64; 2], String, [f64; 2])> =
+        mech.forces().iter().find_map(|f| {
+            if let ForceElement::LinearActuator(act) = f {
+                Some((
+                    act.body_a.clone(),
+                    act.point_a,
+                    act.body_b.clone(),
+                    act.point_b,
+                ))
+            } else {
+                None
+            }
+        });
+
     let mut data = SweepData {
         angles_deg: Vec::with_capacity(capacity),
         body_angles: HashMap::new(),
@@ -112,6 +133,11 @@ pub(crate) fn compute_sweep_data(
         joint_reaction_magnitudes: HashMap::new(),
         coupler_velocities: HashMap::new(),
         coupler_accelerations: HashMap::new(),
+        actuator_forces: if actuator_info.is_some() {
+            Some(Vec::with_capacity(capacity))
+        } else {
+            None
+        },
         toggle_angles: Vec::new(),
         active_range: None, // computed after sweep loop
         sweep_mode: sweep_mode.clone(),
@@ -225,12 +251,14 @@ pub(crate) fn compute_sweep_data(
                 }
 
                 // Driver torque and joint reactions from statics solve.
+                let driver_torque_val;
                 if let Ok(statics) = solve_statics(mech, &q, t) {
                     let reactions = extract_reactions(mech, &statics);
                     let torque = get_driver_reactions(&reactions)
                         .first()
                         .map(|r| r.effort)
                         .unwrap_or(0.0);
+                    driver_torque_val = torque;
                     data.driver_torques.as_mut().unwrap().push(torque);
 
                     // Per-joint reaction magnitudes.
@@ -243,6 +271,7 @@ pub(crate) fn compute_sweep_data(
                         }
                     }
                 } else {
+                    driver_torque_val = 0.0;
                     data.driver_torques.as_mut().unwrap().push(0.0);
 
                     // Push NaN for all tracked joints when statics fails.
@@ -307,6 +336,32 @@ pub(crate) fn compute_sweep_data(
                             coupler_accel_data.get_mut(key).unwrap().push(f64::NAN);
                         }
                     }
+
+                    // Actuator force from power balance:
+                    // F_actuator = driver_torque * omega / dL_dt
+                    if let Some(ref act_info) = actuator_info {
+                        let (ref body_a, ref pt_a, ref body_b, ref pt_b) = *act_info;
+                        let local_a = nalgebra::Vector2::new(pt_a[0], pt_a[1]);
+                        let local_b = nalgebra::Vector2::new(pt_b[0], pt_b[1]);
+                        let p_a = mech_state.body_point_global(body_a, &local_a, &q);
+                        let p_b = mech_state.body_point_global(body_b, &local_b, &q);
+                        let d_vec = p_b - p_a;
+                        let length = d_vec.norm();
+                        if length > 1e-12 {
+                            let unit = d_vec / length;
+                            let v_a = mech_state.body_point_velocity(body_a, &local_a, &q, &q_dot);
+                            let v_b = mech_state.body_point_velocity(body_b, &local_b, &q, &q_dot);
+                            let dl_dt = (v_b - v_a).dot(&unit);
+                            let actuator_force = if dl_dt.abs() > 1e-12 {
+                                driver_torque_val * omega / dl_dt
+                            } else {
+                                f64::NAN // singular -- actuator perpendicular to motion
+                            };
+                            data.actuator_forces.as_mut().unwrap().push(actuator_force);
+                        } else {
+                            data.actuator_forces.as_mut().unwrap().push(f64::NAN);
+                        }
+                    }
                 } else {
                     data.kinetic_energy.push(f64::NAN);
                     data.potential_energy.push(f64::NAN);
@@ -318,6 +373,11 @@ pub(crate) fn compute_sweep_data(
                     for (key, _, _) in &coupler_keys {
                         coupler_vel_data.get_mut(key).unwrap().push(f64::NAN);
                         coupler_accel_data.get_mut(key).unwrap().push(f64::NAN);
+                    }
+
+                    // No velocity solve -- push NaN for actuator force.
+                    if actuator_info.is_some() {
+                        data.actuator_forces.as_mut().unwrap().push(f64::NAN);
                     }
                 }
             }

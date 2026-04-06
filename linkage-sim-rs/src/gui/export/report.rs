@@ -155,6 +155,32 @@ pub fn generate_html_report(
         html.push_str("</script>\n");
     }
 
+    // -- Actuator force envelope -------------------------------------------------
+    if let Some(ref act_forces) = sweep.actuator_forces {
+        if let Some(env) = compute_envelope(act_forces) {
+            html.push_str("<h2>Actuator Force Envelope</h2>\n");
+            html.push_str("<div class='summary'>\n");
+            html.push_str(&format!("<div class='card'><h3>Peak (abs)</h3><div class='value'>{:.3} N</div></div>\n",
+                env.max_value.abs().max(env.min_value.abs())));
+            html.push_str(&format!("<div class='card'><h3>RMS</h3><div class='value'>{:.3} N</div></div>\n", env.rms));
+            html.push_str(&format!("<div class='card'><h3>Min</h3><div class='value'>{:.3} N</div></div>\n", env.min_value));
+            html.push_str(&format!("<div class='card'><h3>Max</h3><div class='value'>{:.3} N</div></div>\n", env.max_value));
+            html.push_str("</div>\n");
+        }
+        // Interactive actuator force plot
+        let angles_json = float_vec_to_json(&sweep.angles_deg);
+        let forces_json = float_vec_to_json(act_forces);
+        html.push_str("<div id='actuator_force_plot' class='plotly-chart'></div>\n");
+        html.push_str("<script>\n");
+        html.push_str(&format!(
+            "Plotly.newPlot('actuator_force_plot', [{{x:{},y:{},type:'scatter',name:'Actuator Force',line:{{color:'#c62828'}}}}], \
+             {{title:'Required Actuator Force vs Crank Angle',xaxis:{{title:'Crank Angle (deg)'}},yaxis:{{title:'Force (N)'}},\
+             margin:{{t:40,b:50,l:60,r:20}}}}, {{responsive:true}});\n",
+            angles_json, forces_json
+        ));
+        html.push_str("</script>\n");
+    }
+
     // -- Transmission angle range ---------------------------------------------
     if let Some(ref ta) = sweep.transmission_angles {
         if let Some(env) = compute_envelope(ta) {

@@ -24,6 +24,7 @@ enum PlotTab {
     JointReactions,
     CouplerVelocity,
     CouplerAcceleration,
+    ActuatorForce,
 }
 
 /// Draw the plot panel with tabbed plots.
@@ -137,6 +138,16 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 "Coupler Accel.",
             );
         });
+
+        // Only show actuator force tab when a LinearActuator is present.
+        let has_af = sweep.actuator_forces.as_ref().map_or(false, |v| !v.is_empty());
+        ui.add_enabled_ui(has_af, |ui| {
+            ui.selectable_value(
+                &mut selected_tab,
+                PlotTab::ActuatorForce,
+                "Actuator Force",
+            );
+        });
     });
 
     ui.memory_mut(|mem| mem.data.insert_temp(tab_id, selected_tab));
@@ -183,6 +194,9 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
         }
         PlotTab::CouplerAcceleration => {
             draw_coupler_acceleration(ui, sweep, current_driver_display, &state.display_units, nm)
+        }
+        PlotTab::ActuatorForce => {
+            draw_actuator_force(ui, sweep, current_driver_display, &state.display_units, nm)
         }
     };
 
@@ -1026,6 +1040,67 @@ fn draw_coupler_acceleration(
         draw_range_boundary_markers(plot_ui, sweep, units);
         clicked_x = detect_plot_click(plot_ui);
     });
+    clicked_x
+}
+
+/// Plot required actuator force (N) vs driver angle.
+///
+/// Only available when a LinearActuator force element is present.
+///
+/// Returns the clicked X coordinate (display angle units) if the user clicked.
+fn draw_actuator_force(
+    ui: &mut egui::Ui,
+    sweep: &SweepData,
+    current_driver_display: f64,
+    units: &DisplayUnits,
+    nathan_mode: bool,
+) -> Option<f64> {
+    let Some(forces) = &sweep.actuator_forces else {
+        ui.label("Actuator force data not available (no LinearActuator in mechanism).");
+        return None;
+    };
+
+    let plot = Plot::new("actuator_force_plot")
+        .allow_zoom(true)
+        .allow_drag(true)
+        .x_axis_label(x_axis_label_for_sweep(sweep, units))
+        .y_axis_label("Actuator Force (N)")
+        .legend(egui_plot::Legend::default())
+        .height(ui.available_height().max(50.0));
+
+    let mut clicked_x: Option<f64> = None;
+    plot.show(ui, |plot_ui| {
+        let pairs: Vec<(f64, f64)> = sweep
+            .angles_deg
+            .iter()
+            .zip(forces.iter())
+            .filter(|&(_, &f)| f.is_finite())
+            .map(|(&x_deg, &f)| (x_deg, f))
+            .collect();
+
+        draw_angle_series_with_range(
+            plot_ui,
+            "Required Actuator Force",
+            egui::Color32::from_rgb(255, 100, 100),
+            2.0,
+            &pairs,
+            sweep,
+            units,
+            nathan_mode,
+        );
+
+        // Vertical marker at current driver angle.
+        plot_ui.vline(
+            VLine::new("cursor", current_driver_display)
+                .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 100))
+                .width(1.0),
+        );
+
+        draw_toggle_markers(plot_ui, sweep, units);
+        draw_range_boundary_markers(plot_ui, sweep, units);
+        clicked_x = detect_plot_click(plot_ui);
+    });
+
     clicked_x
 }
 
