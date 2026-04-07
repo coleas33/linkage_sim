@@ -1277,9 +1277,6 @@ fn draw_actuator_force(
             }
         }
 
-        // Stroke annotation: show min/max actuator length and peak forces.
-        draw_actuator_stroke_annotation(plot_ui, sweep, units);
-
         // Vertical marker at current driver angle.
         plot_ui.vline(
             VLine::new("cursor", current_driver_display)
