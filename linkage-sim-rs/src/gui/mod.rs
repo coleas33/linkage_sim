@@ -311,6 +311,18 @@ impl eframe::App for LinkageApp {
                         self.state.template_name_buf = String::new();
                         ui.close();
                     }
+                    if ui
+                        .add_enabled(
+                            self.state.blueprint.is_some(),
+                            egui::Button::new("Save as Sample..."),
+                        )
+                        .on_hover_text("Add this mechanism to the Samples dropdown")
+                        .clicked()
+                    {
+                        self.state.show_custom_sample_dialog = true;
+                        self.state.custom_sample_name_buf = String::new();
+                        ui.close();
+                    }
                     if !self.state.saved_templates.is_empty() {
                         let load_tpl_resp = ui.menu_button("Load Template", |ui| {
                             let mut load_idx = None;
@@ -1460,6 +1472,42 @@ impl eframe::App for LinkageApp {
             }
         }
 
+        // ── "Save as Sample" name dialog ────────────────────────────────
+        if self.state.show_custom_sample_dialog {
+            let mut open = true;
+            egui::Window::new("Save as Sample")
+                .collapsible(false)
+                .resizable(false)
+                .default_width(280.0)
+                .open(&mut open)
+                .show(ctx, |ui| {
+                    ui.label("Sample name:");
+                    let response = ui.text_edit_singleline(&mut self.state.custom_sample_name_buf);
+                    // Auto-focus the text field on first frame.
+                    if response.gained_focus() || self.state.custom_sample_name_buf.is_empty() {
+                        response.request_focus();
+                    }
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        let name_valid = !self.state.custom_sample_name_buf.trim().is_empty();
+                        if ui.add_enabled(name_valid, egui::Button::new("Save")).clicked()
+                            || (name_valid
+                                && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                        {
+                            let name = self.state.custom_sample_name_buf.trim().to_string();
+                            self.state.save_as_custom_sample(&name);
+                            self.state.show_custom_sample_dialog = false;
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.state.show_custom_sample_dialog = false;
+                        }
+                    });
+                });
+            if !open {
+                self.state.show_custom_sample_dialog = false;
+            }
+        }
+
         if self.state.show_shortcuts {
             egui::Window::new("Keyboard Shortcuts")
                 .collapsible(false)
@@ -1685,6 +1733,35 @@ fn draw_sample_menu(
         if clicked {
             state.load_sample(*sample);
             ui.close();
+        }
+    }
+
+    // ── My Samples (user-saved custom samples) ──────────────────────
+    if !state.custom_samples.is_empty() {
+        ui.separator();
+        ui.label(egui::RichText::new("My Samples").small().weak());
+        let mut delete_idx = None;
+        let mut load_idx = None;
+        for (i, (name, _json)) in state.custom_samples.iter().enumerate() {
+            ui.horizontal(|ui| {
+                if ui.button(name).clicked() {
+                    load_idx = Some(i);
+                }
+                if ui
+                    .small_button("\u{2715}")
+                    .on_hover_text("Remove from samples")
+                    .clicked()
+                {
+                    delete_idx = Some(i);
+                }
+            });
+        }
+        if let Some(idx) = load_idx {
+            state.load_custom_sample(idx);
+            ui.close();
+        }
+        if let Some(idx) = delete_idx {
+            state.delete_custom_sample(idx);
         }
     }
         }); // end ScrollArea

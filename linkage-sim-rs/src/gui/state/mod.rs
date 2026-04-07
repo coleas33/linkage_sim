@@ -278,6 +278,14 @@ pub struct AppState {
     pub show_template_name_dialog: bool,
     /// Text buffer for template name input.
     pub template_name_buf: String,
+    // ── Custom samples ──────────────────────────────────────────────────
+    /// User's custom samples (promoted templates) shown in the Samples dropdown.
+    /// Each entry is (name, json_string). Persisted alongside templates.
+    pub custom_samples: Vec<(String, String)>,
+    /// Whether the "Save as Sample" name-entry dialog is open.
+    pub show_custom_sample_dialog: bool,
+    /// Text buffer for custom sample name input.
+    pub custom_sample_name_buf: String,
     // ── Tutorial ────────────────────────────────────────────────────
     /// Interactive tutorial overlay state.
     pub tutorial: crate::gui::tutorial::TutorialState,
@@ -514,6 +522,9 @@ impl Default for AppState {
             saved_templates: Self::load_saved_templates(),
             show_template_name_dialog: false,
             template_name_buf: String::new(),
+            custom_samples: Self::load_saved_custom_samples(),
+            show_custom_sample_dialog: false,
+            custom_sample_name_buf: String::new(),
             tutorial: crate::gui::tutorial::TutorialState::default(),
             nathan_mode: false,
             background_image: None,
@@ -550,6 +561,7 @@ impl AppState {
         // Preserve user preferences across reset.
         let recent = std::mem::take(&mut self.recent_files);
         let templates = std::mem::take(&mut self.saved_templates);
+        let custom_samples = std::mem::take(&mut self.custom_samples);
         let units = DisplayUnits {
             length: self.display_units.length,
             angle: self.display_units.angle,
@@ -557,6 +569,7 @@ impl AppState {
         *self = fresh;
         self.recent_files = recent;
         self.saved_templates = templates;
+        self.custom_samples = custom_samples;
         self.display_units = units;
         // Clear WASM autosave so the recovery prompt doesn't reappear.
         #[cfg(target_arch = "wasm32")]
