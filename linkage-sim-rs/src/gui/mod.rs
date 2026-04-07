@@ -689,6 +689,13 @@ impl eframe::App for LinkageApp {
                         self.state.tutorial = tutorial::TutorialState::new_fourbar();
                         ui.close();
                     }
+                    if ui.button("Tutorial: Actuator Sizing")
+                        .on_hover_text("Learn how to size a linear actuator using force, speed, and power analysis")
+                        .clicked()
+                    {
+                        self.state.tutorial = tutorial::TutorialState::new_actuator_sizing();
+                        ui.close();
+                    }
                 });
                 help_resp.response.on_hover_text("Keyboard shortcuts and help");
                 let view_resp = ui.menu_button("View", |ui| {

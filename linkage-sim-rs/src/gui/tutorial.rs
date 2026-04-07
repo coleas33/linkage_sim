@@ -6,7 +6,10 @@
 
 use eframe::egui;
 
-use super::state::AppState;
+use crate::forces::elements::ForceElement;
+
+use super::samples::SampleMechanism;
+use super::state::{AppState, MotionProfile};
 
 // ── Tutorial data structures ─────────────────────────────────────────────────
 
@@ -50,6 +53,15 @@ impl TutorialState {
             active: true,
             step: 0,
             steps: fourbar_steps(),
+        }
+    }
+
+    /// Create the "Actuator Sizing" tutorial sequence.
+    pub fn new_actuator_sizing() -> Self {
+        Self {
+            active: true,
+            step: 0,
+            steps: actuator_sizing_steps(),
         }
     }
 
@@ -163,11 +175,154 @@ fn fourbar_steps() -> Vec<TutorialStep> {
     ]
 }
 
+// ── Actuator sizing tutorial steps ───────────────────────────────────────────
+
+fn actuator_sizing_steps() -> Vec<TutorialStep> {
+    vec![
+        TutorialStep {
+            title: "Actuator Sizing Tutorial",
+            description: "This tutorial teaches you how to size a linear actuator \
+                for a mechanism.\n\n\
+                You'll learn to:\n\
+                - Set up an output load (force zone)\n\
+                - Read required actuator force, speed, and power\n\
+                - Check safety margins\n\
+                - Compare motion profiles\n\n\
+                Click Next to begin.",
+            is_complete: |_| true,
+        },
+        TutorialStep {
+            title: "Step 1: Load the Mechanism",
+            description: "Load the 'Custom 6-Bar Press' from the Samples dropdown.\n\n\
+                This is a 6-bar linkage with a linear actuator and force zone \
+                already configured.",
+            is_complete: |state| {
+                state.current_sample == Some(SampleMechanism::Custom6Bar)
+            },
+        },
+        TutorialStep {
+            title: "Step 2: Set Actuator Force to Zero",
+            description: "In the sidebar, expand 'Force Elements' and find the \
+                Linear Actuator.\n\n\
+                Set its force to 0 N.\n\n\
+                This tells the solver to COMPUTE the required force instead of \
+                applying a fixed value.",
+            is_complete: |state| {
+                state.blueprint.as_ref().map_or(false, |bp| {
+                    bp.forces.iter().any(|f| {
+                        if let ForceElement::LinearActuator(a) = f {
+                            a.force.abs() < 1.0
+                        } else {
+                            false
+                        }
+                    })
+                })
+            },
+        },
+        TutorialStep {
+            title: "Step 3: Position the Force Zone",
+            description: "The force zone represents your output load.\n\n\
+                Check the Diagnostics section \u{2014} if it shows '0% overlap', \
+                the zone doesn't cover the output link.\n\n\
+                Drag the crank angle slider to find where the output link passes \
+                through the zone. Adjust the zone position if needed.\n\n\
+                The zone should show green 'X N applied' in Diagnostics.",
+            // Manual step \u{2014} always completable (force zone overlap is hard
+            // to check without evaluating the mechanism at the current angle).
+            is_complete: |_| true,
+        },
+        TutorialStep {
+            title: "Step 4: Read the Actuator Force Plot",
+            description: "Click the 'Actuator Force' tab in the bottom plot panel.\n\n\
+                This shows the required actuator force (N) at each crank angle.\n\n\
+                - Red solid line = statics (quasi-static)\n\
+                - Blue dashed line = with inertia (includes acceleration)\n\n\
+                The peak force is what your actuator must handle.",
+            is_complete: |_| true,
+        },
+        TutorialStep {
+            title: "Step 5: Check Speed and Power",
+            description: "Click the 'Actuator Speed' tab to see extension rate (mm/s).\n\n\
+                Click 'Actuator Power' tab to see required power (W).\n\n\
+                These determine your motor/pump sizing:\n\
+                - Peak speed \u{2192} actuator speed rating\n\
+                - Peak power \u{2192} motor power rating\n\
+                - RMS power \u{2192} continuous duty rating",
+            is_complete: |_| true,
+        },
+        TutorialStep {
+            title: "Step 6: Enter Rated Force",
+            description: "In the Actuator Force plot, find the 'Rated Force' input \
+                field.\n\n\
+                Enter your actuator's maximum rated force (N).\n\n\
+                The plot will show:\n\
+                - Green dashed lines at +/- rated force\n\
+                - Green dots = under 50% capacity\n\
+                - Yellow dots = 50\u{2013}80% capacity\n\
+                - Red dots = over 80% (danger zone)\n\n\
+                The Health Report shows peak utilization %.",
+            is_complete: |state| state.actuator_rated_force > 0.0,
+        },
+        TutorialStep {
+            title: "Step 7: Check the Health Report",
+            description: "In the sidebar, expand 'Mechanism Health'.\n\n\
+                Look for:\n\
+                - Actuator Stroke: total travel (mm)\n\
+                - Peak Actuator Force: statics vs with inertia\n\
+                - RMS Force and Power\n\
+                - Utilization %\n\
+                - Angles exceeding 80% capacity\n\n\
+                This is your actuator sizing summary.",
+            is_complete: |_| true,
+        },
+        TutorialStep {
+            title: "Step 8: Try a Motion Profile",
+            description: "In the Driver section, change Motion Profile to \
+                'Trapezoidal'.\n\n\
+                Adjust the accel/decel fractions.\n\n\
+                Watch the Inverse Dynamics plot \u{2014} the green 'Profile Torque' \
+                line shows how acceleration phases increase the required effort.\n\n\
+                For high-speed mechanisms, this can double the peak force!",
+            is_complete: |state| {
+                matches!(state.motion_profile, MotionProfile::Trapezoidal { .. })
+            },
+        },
+        TutorialStep {
+            title: "Step 9: Export Results",
+            description: "File > Export CSV to get force/speed/power data for every \
+                angle.\n\n\
+                File > Export HTML Report for a professional summary with \
+                interactive plots.\n\n\
+                The CSV includes columns:\n\
+                - actuator_force_N\n\
+                - actuator_force_id_N (with inertia)\n\
+                - actuator_speed_m_s\n\
+                - actuator_power_W",
+            is_complete: |_| true,
+        },
+        TutorialStep {
+            title: "Tutorial Complete!",
+            description: "You've learned to size a linear actuator:\n\n\
+                1. Set actuator force to 0 (compute mode)\n\
+                2. Position the output load (force zone)\n\
+                3. Read force, speed, power from plots\n\
+                4. Check safety margins with rated force\n\
+                5. Compare motion profiles\n\
+                6. Export results\n\n\
+                Tip: Use the Parametric Study to sweep a design parameter and \
+                see how it affects actuator force.",
+            is_complete: |_| true,
+        },
+    ]
+}
+
 // ── Overlay rendering ────────────────────────────────────────────────────────
 
 /// Draw the tutorial overlay panel when a tutorial is active.
 ///
 /// This is a floating `egui::Window` anchored near the top-right corner.
+/// The overlay features a progress bar, styled title, color-coded completion
+/// indicator, and accent-colored navigation buttons.
 pub fn draw_tutorial_overlay(ctx: &egui::Context, state: &mut AppState) {
     if !state.tutorial.active {
         return;
@@ -190,13 +345,33 @@ pub fn draw_tutorial_overlay(ctx: &egui::Context, state: &mut AppState) {
     let mut should_advance = false;
     let mut should_go_back = false;
 
+    let accent = egui::Color32::from_rgb(80, 160, 255);
+    let bar_bg = egui::Color32::from_rgb(60, 60, 70);
+
     egui::Window::new("Tutorial")
         .collapsible(false)
         .resizable(false)
-        .default_width(320.0)
+        .min_width(350.0)
+        .default_width(370.0)
         .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 50.0))
         .show(ctx, |ui| {
-            // Step counter
+            // ── Progress bar ─────────────────────────────────────────
+            let progress = (current as f32 + 1.0) / total as f32;
+            let bar_response = ui.allocate_rect(
+                egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), 4.0)),
+                egui::Sense::hover(),
+            );
+            ui.painter()
+                .rect_filled(bar_response.rect, 2.0, bar_bg);
+            let filled_rect = egui::Rect::from_min_size(
+                bar_response.rect.min,
+                egui::vec2(bar_response.rect.width() * progress, 4.0),
+            );
+            ui.painter().rect_filled(filled_rect, 2.0, accent);
+
+            ui.add_space(6.0);
+
+            // ── Step counter ─────────────────────────────────────────
             ui.label(
                 egui::RichText::new(format!("Step {} of {}", current + 1, total))
                     .small()
@@ -205,17 +380,24 @@ pub fn draw_tutorial_overlay(ctx: &egui::Context, state: &mut AppState) {
 
             ui.add_space(4.0);
 
-            // Title
-            ui.label(egui::RichText::new(title).strong().size(16.0));
+            // ── Title ────────────────────────────────────────────────
+            let title_text = if step_complete {
+                egui::RichText::new(format!("\u{2705} {}", title))
+                    .strong()
+                    .size(16.0)
+            } else {
+                egui::RichText::new(title).strong().size(16.0)
+            };
+            ui.label(title_text);
 
             ui.add_space(6.0);
 
-            // Description
+            // ── Description ──────────────────────────────────────────
             ui.label(description);
 
             ui.add_space(10.0);
 
-            // Completion indicator
+            // ── Completion indicator ─────────────────────────────────
             if step_complete {
                 ui.label(
                     egui::RichText::new("Step complete!")
@@ -225,10 +407,18 @@ pub fn draw_tutorial_overlay(ctx: &egui::Context, state: &mut AppState) {
                 ui.add_space(4.0);
             }
 
-            // Navigation buttons
+            // ── Navigation buttons ───────────────────────────────────
             ui.horizontal(|ui| {
-                if current > 0 && ui.button("Back").clicked() {
-                    should_go_back = true;
+                // Back button: subtle styling
+                if current > 0 {
+                    let back_btn = egui::Button::new(
+                        egui::RichText::new("Back")
+                            .color(egui::Color32::LIGHT_GRAY),
+                    )
+                    .fill(egui::Color32::TRANSPARENT);
+                    if ui.add(back_btn).clicked() {
+                        should_go_back = true;
+                    }
                 }
 
                 let next_text = if current + 1 >= total {
@@ -242,7 +432,7 @@ pub fn draw_tutorial_overlay(ctx: &egui::Context, state: &mut AppState) {
                         egui::RichText::new(next_text)
                             .color(egui::Color32::WHITE),
                     )
-                    .fill(egui::Color32::from_rgb(40, 120, 80))
+                    .fill(accent)
                 } else {
                     egui::Button::new(next_text)
                 };
@@ -254,8 +444,9 @@ pub fn draw_tutorial_overlay(ctx: &egui::Context, state: &mut AppState) {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
                         .small_button(
-                            egui::RichText::new("Close Tutorial")
-                                .color(egui::Color32::LIGHT_GRAY),
+                            egui::RichText::new("Close")
+                                .small()
+                                .color(egui::Color32::GRAY),
                         )
                         .clicked()
                     {
@@ -419,5 +610,121 @@ mod tests {
         let state = AppState::default();
         // Default state has only the "ground" body.
         assert_eq!(moving_body_count(&state), 0);
+    }
+
+    // ── Actuator sizing tutorial tests ───────────────────────────────
+
+    #[test]
+    fn new_actuator_sizing_starts_active_at_step_zero() {
+        let tutorial = TutorialState::new_actuator_sizing();
+        assert!(tutorial.active);
+        assert_eq!(tutorial.step, 0);
+        // 9 numbered steps + welcome intro + completion summary = 11
+        assert_eq!(tutorial.steps.len(), 11);
+    }
+
+    #[test]
+    fn actuator_sizing_welcome_is_always_complete() {
+        let state = AppState::default();
+        let tutorial = TutorialState::new_actuator_sizing();
+        assert!(
+            (tutorial.steps[0].is_complete)(&state),
+            "Welcome step should always be completable"
+        );
+    }
+
+    #[test]
+    fn actuator_sizing_step_titles_are_unique() {
+        let steps = actuator_sizing_steps();
+        let titles: Vec<&str> = steps.iter().map(|s| s.title).collect();
+        for (i, title) in titles.iter().enumerate() {
+            for (j, other) in titles.iter().enumerate() {
+                if i != j {
+                    assert_ne!(
+                        title, other,
+                        "Duplicate step title: '{}' at indices {} and {}",
+                        title, i, j
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn actuator_sizing_advance_through_all_steps() {
+        let mut tutorial = TutorialState::new_actuator_sizing();
+        let total = tutorial.steps.len();
+        for i in 0..total {
+            assert!(tutorial.active, "Should still be active at step {}", i);
+            assert_eq!(tutorial.step, i);
+            tutorial.advance();
+        }
+        assert!(!tutorial.active, "Should deactivate after the last step");
+    }
+
+    #[test]
+    fn actuator_sizing_load_mechanism_step_detects_custom_6bar() {
+        let mut state = AppState::default();
+        let steps = actuator_sizing_steps();
+        // Step 1: "Load the Mechanism"
+        assert!(
+            !(steps[1].is_complete)(&state),
+            "Should not be complete without loading the sample"
+        );
+        state.current_sample = Some(SampleMechanism::Custom6Bar);
+        assert!(
+            (steps[1].is_complete)(&state),
+            "Should be complete with Custom6Bar loaded"
+        );
+    }
+
+    #[test]
+    fn actuator_sizing_rated_force_step_detects_nonzero() {
+        let mut state = AppState::default();
+        let steps = actuator_sizing_steps();
+        // Step 6: "Enter Rated Force"
+        assert!(
+            !(steps[6].is_complete)(&state),
+            "Should not be complete with zero rated force"
+        );
+        state.actuator_rated_force = 500.0;
+        assert!(
+            (steps[6].is_complete)(&state),
+            "Should be complete with nonzero rated force"
+        );
+    }
+
+    #[test]
+    fn actuator_sizing_motion_profile_step_detects_trapezoidal() {
+        let mut state = AppState::default();
+        let steps = actuator_sizing_steps();
+        // Step 8: "Try a Motion Profile"
+        assert!(
+            !(steps[8].is_complete)(&state),
+            "Should not be complete with default (ConstantSpeed) profile"
+        );
+        state.motion_profile = MotionProfile::Trapezoidal {
+            accel_fraction: 0.25,
+            decel_fraction: 0.25,
+        };
+        assert!(
+            (steps[8].is_complete)(&state),
+            "Should be complete with Trapezoidal profile"
+        );
+    }
+
+    #[test]
+    fn actuator_sizing_no_titles_overlap_with_fourbar() {
+        let fourbar = fourbar_steps();
+        let actuator = actuator_sizing_steps();
+        let fourbar_titles: Vec<&str> = fourbar.iter().map(|s| s.title).collect();
+        let actuator_titles: Vec<&str> = actuator.iter().map(|s| s.title).collect();
+        for title in &actuator_titles {
+            assert!(
+                !fourbar_titles.contains(title),
+                "Actuator sizing title '{}' collides with a 4-bar tutorial title",
+                title
+            );
+        }
     }
 }
