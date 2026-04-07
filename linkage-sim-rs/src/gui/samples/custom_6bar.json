@@ -1,0 +1,271 @@
+{
+  "schema_version": "1.1.0",
+  "bodies": {
+    "ground": {
+      "attachment_points": {
+        "P2": [
+          -0.4095118789672852,
+          0.013064735412597657
+        ],
+        "P1": [
+          -0.25003200531005865,
+          -0.09145314788818358
+        ]
+      },
+      "mass": 0.0,
+      "cg_local": [
+        0.0,
+        0.0
+      ],
+      "izz_cg": 0.0,
+      "label": "ground"
+    },
+    "body_3": {
+      "attachment_points": {
+        "A": [
+          0.0,
+          0.0
+        ],
+        "B": [
+          -0.006827369326446954,
+          -0.04150373782389456
+        ]
+      },
+      "mass": 1.0,
+      "cg_local": [
+        -0.003413684663223477,
+        -0.02075186891194728
+      ],
+      "izz_cg": 0.01,
+      "label": "body_3"
+    },
+    "body_6": {
+      "attachment_points": {
+        "B": [
+          0.131347639778684,
+          -0.021605620998882344
+        ],
+        "A": [
+          0.0,
+          0.0
+        ]
+      },
+      "mass": 1.0,
+      "cg_local": [
+        0.065673819889342,
+        -0.010802810499441172
+      ],
+      "izz_cg": 0.01,
+      "label": "body_6"
+    },
+    "body_2": {
+      "attachment_points": {
+        "A": [
+          0.0,
+          0.0
+        ],
+        "B": [
+          0.1883123931884765,
+          -0.10812194824218752
+        ]
+      },
+      "mass": 1.0,
+      "cg_local": [
+        0.09415619659423828,
+        -0.05406097412109376
+      ],
+      "izz_cg": 0.01,
+      "label": "body_2"
+    },
+    "body_5": {
+      "attachment_points": {
+        "A": [
+          0.0,
+          0.0
+        ],
+        "C": [
+          -0.054153374358491296,
+          -0.012952792179480496
+        ],
+        "B": [
+          -0.18520966411284467,
+          -0.04429977480265554
+        ]
+      },
+      "mass": 1.0,
+      "cg_local": [
+        -0.09260483205642234,
+        -0.02214988740132777
+      ],
+      "izz_cg": 0.01,
+      "label": "body_5"
+    },
+    "body_4": {
+      "attachment_points": {
+        "A": [
+          0.0,
+          0.0
+        ],
+        "B": [
+          0.2718462099360594,
+          -0.10122195387560956
+        ]
+      },
+      "mass": 1.0,
+      "cg_local": [
+        0.1359231049680297,
+        -0.05061097693780479
+      ],
+      "izz_cg": 0.01,
+      "label": "body_4"
+    },
+    "body_1": {
+      "attachment_points": {
+        "B": [
+          0.15182123565673827,
+          0.06081859588623048
+        ],
+        "A": [
+          0.0,
+          0.0
+        ]
+      },
+      "mass": 1.0,
+      "cg_local": [
+        0.07591061782836914,
+        0.03040929794311524
+      ],
+      "izz_cg": 0.01,
+      "label": "body_1",
+      "geometry": {
+        "width": 0.15182123565673827,
+        "height": 0.02277318534851074,
+        "offset": [
+          0.07591061782836914,
+          0.03040929794311524
+        ]
+      }
+    }
+  },
+  "joints": {
+    "J2": {
+      "type": "revolute",
+      "body_i": "body_1",
+      "body_j": "body_2",
+      "point_i": "B",
+      "point_j": "A"
+    },
+    "J3": {
+      "type": "revolute",
+      "body_i": "body_2",
+      "body_j": "body_3",
+      "point_i": "A",
+      "point_j": "A"
+    },
+    "J4": {
+      "type": "revolute",
+      "body_i": "body_3",
+      "body_j": "body_4",
+      "point_i": "B",
+      "point_j": "A"
+    },
+    "J8": {
+      "type": "revolute",
+      "body_i": "body_4",
+      "body_j": "body_6",
+      "point_i": "B",
+      "point_j": "B"
+    },
+    "J5": {
+      "type": "revolute",
+      "body_i": "body_2",
+      "body_j": "body_5",
+      "point_i": "B",
+      "point_j": "A"
+    },
+    "J6": {
+      "type": "revolute",
+      "body_i": "ground",
+      "body_j": "body_5",
+      "point_i": "P1",
+      "point_j": "B"
+    },
+    "J1": {
+      "type": "revolute",
+      "body_i": "ground",
+      "body_j": "body_1",
+      "point_i": "P2",
+      "point_j": "A"
+    },
+    "J7": {
+      "type": "revolute",
+      "body_i": "body_5",
+      "body_j": "body_6",
+      "point_i": "C",
+      "point_j": "A"
+    }
+  },
+  "drivers": {
+    "D1": {
+      "type": "constant_speed",
+      "body_i": "ground",
+      "body_j": "body_5",
+      "omega": 6.283185307179586,
+      "theta_0": 0.0
+    }
+  },
+  "load_cases": [
+    {
+      "name": "Default",
+      "driver_joint_id": "J6",
+      "omega": 6.283185307179586,
+      "theta_0": 0.0
+    }
+  ],
+  "forces": [
+    {
+      "type": "Gravity",
+      "g_vector": [
+        -0.0,
+        -9.81
+      ]
+    },
+    {
+      "type": "LinearActuator",
+      "body_a": "body_5",
+      "point_a": [
+        -0.054153374358491296,
+        -0.012952792179480496
+      ],
+      "point_a_name": "C",
+      "body_b": "ground",
+      "point_b": [
+        0.508864164352417,
+        -0.06449004262685776
+      ],
+      "force": -22000.0,
+      "speed_limit": 0.0,
+      "stroke_min": 0.0,
+      "stroke_max": 0.0,
+      "end_stop_stiffness": 10000.0,
+      "end_stop_damping": 10.0,
+      "end_stop_restitution": 0.5
+    },
+    {
+      "type": "ForceZone",
+      "body_id": "body_1",
+      "zone_min": [
+        -0.6,
+        -0.12
+      ],
+      "zone_max": [
+        -0.46,
+        0.12
+      ],
+      "force": [
+        0.0,
+        1200.0
+      ]
+    }
+  ]
+}

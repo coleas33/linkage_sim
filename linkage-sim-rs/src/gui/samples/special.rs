@@ -1024,3 +1024,36 @@ struct JansenConfig {
     l1: (f64, f64),
     l2: (f64, f64),
 }
+
+/// Custom 6-bar press mechanism with linear actuator and force zone.
+///
+/// Loaded from an embedded JSON blueprint (decoded from a user's share URL).
+/// The mechanism is a 6-bar linkage with 8 revolute joints, a linear actuator
+/// force element, and a force zone on the output link.
+pub(super) fn build_custom_6bar(
+    _driver_joint_id: Option<&str>,
+) -> Result<(Mechanism, DVector<f64>), String> {
+    use crate::io::load_mechanism_unbuilt;
+
+    let json = include_str!("custom_6bar.json");
+
+    let mut mech = load_mechanism_unbuilt(json).map_err(|e| e.to_string())?;
+    mech.build().map_err(|e| e.to_string())?;
+
+    let q0 = mech.state().make_q();
+    match solve_position(&mech, &q0, 0.0, 1e-10, 100) {
+        Ok(result) if result.converged => Ok((mech, result.q)),
+        Ok(result) => {
+            // Fall back to zero-vector initial guess if solver didn't converge
+            log::warn!(
+                "Custom 6-bar: initial solve did not converge (residual={}), using zero q0",
+                result.residual_norm
+            );
+            Ok((mech, q0))
+        }
+        Err(e) => {
+            log::warn!("Custom 6-bar: initial solve error ({}), using zero q0", e);
+            Ok((mech, q0))
+        }
+    }
+}

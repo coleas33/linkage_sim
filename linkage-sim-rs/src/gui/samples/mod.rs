@@ -45,6 +45,7 @@ pub enum SampleMechanism {
     WattII,
     Pantograph,
     Strandbeest,
+    Custom6Bar,
 }
 
 impl SampleMechanism {
@@ -79,6 +80,7 @@ impl SampleMechanism {
             SampleMechanism::WattII => "6-Bar Watt II",
             SampleMechanism::Pantograph => "Pantograph (motion scaling)",
             SampleMechanism::Strandbeest => "Strandbeest (Jansen Walking)",
+            SampleMechanism::Custom6Bar => "Custom 6-Bar Press",
         }
     }
 
@@ -114,6 +116,7 @@ impl SampleMechanism {
             SampleMechanism::WattII => "Watt type II 6-bar with output on floating link",
             SampleMechanism::Pantograph => "Scales and copies motion to a remote output point",
             SampleMechanism::Strandbeest => "Theo Jansen's walking mechanism \u{2014} crank rotation produces a foot path with flat ground contact",
+            SampleMechanism::Custom6Bar => "6-bar press mechanism with linear actuator and force zone",
         }
     }
 
@@ -150,7 +153,8 @@ impl SampleMechanism {
             | SampleMechanism::WhitworthQuickReturn
             | SampleMechanism::BellCrank
             | SampleMechanism::PeaucellierLipkin
-            | SampleMechanism::Strandbeest => "Specialty Mechanisms",
+            | SampleMechanism::Strandbeest
+            | SampleMechanism::Custom6Bar => "Specialty Mechanisms",
         }
     }
 
@@ -185,6 +189,7 @@ impl SampleMechanism {
             SampleMechanism::WattII,
             SampleMechanism::Pantograph,
             SampleMechanism::Strandbeest,
+            SampleMechanism::Custom6Bar,
         ]
     }
 }
@@ -232,6 +237,7 @@ pub fn build_sample_with_driver(
         SampleMechanism::WattII => sixbar::build_watt_ii(driver_joint_id),
         SampleMechanism::Pantograph => sixbar::build_pantograph(driver_joint_id),
         SampleMechanism::Strandbeest => special::build_strandbeest(driver_joint_id),
+        SampleMechanism::Custom6Bar => special::build_custom_6bar(driver_joint_id),
     }
 }
 
@@ -683,7 +689,7 @@ mod tests {
 
     #[test]
     fn all_samples_listed() {
-        assert_eq!(SampleMechanism::all().len(), 29);
+        assert_eq!(SampleMechanism::all().len(), 30);
     }
 
     #[test]
@@ -927,11 +933,23 @@ mod tests {
     }
 
     #[test]
-    fn sample_count_is_29() {
+    fn sample_count_is_30() {
         assert_eq!(
             SampleMechanism::all().len(),
-            29,
-            "Expected 29 sample mechanisms"
+            30,
+            "Expected 30 sample mechanisms"
+        );
+    }
+
+    #[test]
+    fn custom_6bar_sample_builds_and_solves() {
+        let (mech, q0) = build_sample(SampleMechanism::Custom6Bar);
+        assert!(mech.is_built());
+        let result = solve_position(&mech, &q0, 0.0, 1e-10, 100).unwrap();
+        assert!(
+            result.converged,
+            "Custom 6-bar sample did not converge at t=0, residual = {}",
+            result.residual_norm
         );
     }
 }
