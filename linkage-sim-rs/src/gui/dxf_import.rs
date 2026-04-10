@@ -935,11 +935,13 @@ fn compute_bounding_box(state: &super::state::AppState, indices: &[usize]) -> Op
 }
 
 /// Create a body with BodyGeometry (force zone shape) from the bounding
-/// box of selected DXF entities. Equivalent to the Link Editor's
-/// "Add Geometry" button but supports arbitrary shapes via bounding box.
-/// The body has a single attachment point at the geometry center — use
-/// Fixed joint to rigidly attach it to a link.
+/// box of selected DXF entities PLUS attachment points at every unique
+/// line endpoint and circle center in the selection. The attachment
+/// points let you create a Fixed joint connecting this body to a link
+/// at a matching pivot position. Auto-detects joints if any of the
+/// attachment points coincide with existing link attachment points.
 fn convert_selected_to_rigid_geometry(state: &mut super::state::AppState, indices: &[usize]) {
+    // Bounding box for the BodyGeometry
     let bbox = match compute_bounding_box(state, indices) {
         Some(b) => b,
         None => {
@@ -951,14 +953,17 @@ fn convert_selected_to_rigid_geometry(state: &mut super::state::AppState, indice
     let (xmin, ymin, xmax, ymax) = bbox;
     let width = xmax - xmin;
     let height = ymax - ymin;
-    let cx = (xmin + xmax) / 2.0;
-    let cy = (ymin + ymax) / 2.0;
+    let gx = (xmin + xmax) / 2.0; // geometry center
+    let gy = (ymin + ymax) / 2.0;
 
     if width <= 0.0 || height <= 0.0 {
         state.status_message = Some("Selection has zero extent — select entities with area".to_string());
         state.status_message_time = 3.0;
         return;
     }
+
+    // Attachment points at every unique endpoint / circle center
+    let pts_world = collect_selected_points(state, indices);
 
     state.push_undo();
 
@@ -978,20 +983,27 @@ fn convert_selected_to_rigid_geometry(state: &mut super::state::AppState, indice
     }
     let body_id = format!("shape_{}", next_n);
 
-    // Body local frame = world frame (pose 0,0,0). One attachment point
-    // at the geometry center. BodyGeometry offset points from body origin
-    // (at world 0,0) to the geometry center.
+    // Body local frame = world frame (pose 0,0,0). Attachment points stored
+    // as world coords. BodyGeometry offset from body origin (world 0,0)
+    // points at the geometry center.
     let mut attachment_points = HashMap::new();
-    attachment_points.insert("A".to_string(), [cx, cy]);
+    let names = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
+    for (i, pt) in pts_world.iter().enumerate() {
+        let name = if i < names.len() { names[i].to_string() } else { format!("P{}", i) };
+        attachment_points.insert(name, *pt);
+    }
+    // Always include a "CENTER" attachment point at the geometry center,
+    // useful for Fixed-jointing the shape to a link at its CG.
+    attachment_points.insert("CENTER".to_string(), [gx, gy]);
 
     // Moment of inertia for a rectangle about its CG
     let mass = 1.0;
     let izz = mass * (width * width + height * height) / 12.0;
 
     bp.bodies.insert(body_id.clone(), BodyJson {
-        attachment_points,
+        attachment_points: attachment_points.clone(),
         mass,
-        cg_local: [cx, cy],
+        cg_local: [gx, gy],
         izz_cg: izz,
         mount_points: HashMap::new(),
         coupler_points: HashMap::new(),
@@ -1000,16 +1012,89 @@ fn convert_selected_to_rigid_geometry(state: &mut super::state::AppState, indice
         geometry: Some(BodyGeometry {
             width,
             height,
-            offset: nalgebra::Vector2::new(cx, cy),
+            offset: nalgebra::Vector2::new(gx, gy),
         }),
     });
 
+    // Auto-detect Fixed joints: if any of this body's attachment points
+    // coincide (within JOINT_TOL) with an existing body's attachment point
+    // in world space, create a Fixed joint between them. This is how the
+    // rigid geometry gets welded to a link automatically.
+    let mech = state.mechanism.as_ref();
+    let q = &state.q;
+    let mut auto_joints: Vec<(String, String, String, String)> = Vec::new();
+    if let Some(mech) = mech {
+        for (new_pt_name, new_pt_local) in &attachment_points {
+            // shape body is at pose (0,0,0) so local == world
+            let target = [new_pt_local[0], new_pt_local[1]];
+            for (other_body_id, other_body) in bp.bodies.iter() {
+                if other_body_id == &body_id || other_body_id == "ground" {
+                    continue;
+                }
+                for (other_pt_name, other_pt_local) in &other_body.attachment_points {
+                    let local_vec = nalgebra::Vector2::new(other_pt_local[0], other_pt_local[1]);
+                    let world = mech.state().body_point_global(other_body_id, &local_vec, q);
+                    let dist = ((world.x - target[0]).powi(2) + (world.y - target[1]).powi(2)).sqrt();
+                    if dist < JOINT_TOL {
+                        auto_joints.push((
+                            body_id.clone(),
+                            new_pt_name.clone(),
+                            other_body_id.clone(),
+                            other_pt_name.clone(),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    // Add the auto-detected Fixed joints (one per matching pair). Fixed
+    // joints remove 3 DOF, so only the FIRST match becomes a Fixed joint;
+    // additional matches become Revolute joints to avoid over-constraining.
+    let n_joints_before = bp.joints.len();
+    for (idx, (bi, pi, bj, pj)) in auto_joints.iter().enumerate() {
+        let joint_kind = if idx == 0 {
+            JointJson::Fixed {
+                body_i: bi.clone(),
+                body_j: bj.clone(),
+                point_i: pi.clone(),
+                point_j: pj.clone(),
+                delta_theta_0: 0.0,
+                label: None,
+            }
+        } else {
+            JointJson::Revolute {
+                body_i: bi.clone(),
+                body_j: bj.clone(),
+                point_i: pi.clone(),
+                point_j: pj.clone(),
+                label: None,
+            }
+        };
+        let mut n = n_joints_before + 1 + idx;
+        let mut joint_id = format!("J{}", n);
+        while bp.joints.contains_key(&joint_id) {
+            n += 1;
+            joint_id = format!("J{}", n);
+        }
+        bp.joints.insert(joint_id, joint_kind);
+    }
+
     state.rebuild();
 
-    state.status_message = Some(format!(
-        "Added rigid geometry body '{}' ({:.0}x{:.0} mm). Use Fixed joint to attach it to a link. Set as force zone target in the Force Toolbar.",
-        body_id, width * 1000.0, height * 1000.0
-    ));
+    let n_auto = auto_joints.len();
+    let msg = if n_auto > 0 {
+        format!(
+            "Added '{}' ({:.0}x{:.0} mm) with {} attachment points and auto-created {} joint(s) to matching link points.",
+            body_id, width * 1000.0, height * 1000.0, attachment_points.len(), n_auto
+        )
+    } else {
+        format!(
+            "Added '{}' ({:.0}x{:.0} mm) with {} attachment points. Use Fixed joint to attach it to a link (no matching link points were detected automatically).",
+            body_id, width * 1000.0, height * 1000.0, attachment_points.len()
+        )
+    };
+    state.status_message = Some(msg);
     state.status_message_time = 6.0;
 }
 
