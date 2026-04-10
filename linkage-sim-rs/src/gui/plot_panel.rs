@@ -197,6 +197,21 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
         ui.separator();
         ui.label(egui::RichText::new("Scroll to zoom, double-click to reset, click to scrub").small().weak())
             .on_hover_text("Scroll the mouse wheel to zoom in/out on the plot. Click and drag to pan. Double-click to reset the view. Single-click on any driver-angle plot to scrub the mechanism to that angle (the white vertical cursor follows your click).");
+
+        // Explainer for the "(full)" suffix shown in legends when the
+        // user has enabled a sweep range. The (full) curve is the
+        // entire 0-360 sweep drawn faded/dashed behind the active
+        // range, and the solid curve is the selected sub-range.
+        if sweep.active_range.is_some() {
+            ui.separator();
+            ui.label(egui::RichText::new("ⓘ (full) = context").small().weak())
+                .on_hover_text(
+                    "When sweep range is enabled, each series is drawn twice:\n\
+                     \u{2022} SOLID = the active sub-range you selected (e.g., J5)\n\
+                     \u{2022} FADED DASHED = the full 0-360\u{b0} sweep for context (e.g., J5 (full))\n\n\
+                     Both show the same data \u{2014} the dashed curve just shows what happens outside your active range. Disable 'Limit sweep range' in the sidebar to see only one curve per series."
+                );
+        }
     });
 
     let current_driver_display = state.display_units.angle(state.driver_angle);

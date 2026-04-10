@@ -1167,11 +1167,43 @@ fn draw_force_elements(
                             Stroke::new(2.0, ACTUATOR_COLOR),
                         );
                     }
-                    // Force magnitude label.
+                    // Force magnitude label. If the actuator's stored force
+                    // is zero (sizing mode — the user wants the solver to
+                    // back-calculate what force is needed), look up the
+                    // computed actuator force at the current driver angle
+                    // from the sweep data instead of showing "0 N".
+                    let display_force = if la.force.abs() < 1e-12 {
+                        state.sweep_data.as_ref().and_then(|sweep| {
+                            let forces = sweep.actuator_forces.as_ref()?;
+                            if forces.is_empty() || sweep.angles_deg.is_empty() {
+                                return None;
+                            }
+                            // Find nearest angle index to the current driver angle
+                            let current_deg = state.driver_angle.to_degrees().rem_euclid(360.0);
+                            let idx = sweep.angles_deg
+                                .iter()
+                                .enumerate()
+                                .min_by(|(_, a), (_, b)| {
+                                    (*a - current_deg).abs()
+                                        .partial_cmp(&(*b - current_deg).abs())
+                                        .unwrap_or(std::cmp::Ordering::Equal)
+                                })
+                                .map(|(i, _)| i)?;
+                            let f = forces.get(idx).copied()?;
+                            if f.is_finite() { Some(f) } else { None }
+                        })
+                    } else {
+                        None
+                    };
+
+                    let label = match display_force {
+                        Some(f) => format!("{:.0} N (computed)", f),
+                        None => format!("{:.0} N", la.force),
+                    };
                     painter.text(
                         Pos2::new(mid.x, mid.y - 10.0),
                         egui::Align2::CENTER_BOTTOM,
-                        format!("{:.0} N", la.force),
+                        label,
                         FontId::proportional(11.0),
                         ACTUATOR_COLOR,
                     );
