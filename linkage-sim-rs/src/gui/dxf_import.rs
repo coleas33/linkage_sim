@@ -88,14 +88,25 @@ impl DxfOverlay {
 
 // ── DXF parsing ─────────────────────────────────────────────────────────────
 
-/// Parse a DXF file from bytes into a DxfOverlay.
+/// Parse a DXF file from a filesystem path.
 ///
 /// `scale` converts raw DXF coordinates to meters (e.g., 0.001 for mm).
 #[cfg(feature = "native")]
 pub fn parse_dxf_file(path: &std::path::Path, scale: f64) -> Result<DxfOverlay, String> {
     let drawing = dxf::Drawing::load_file(path)
         .map_err(|e| format!("Failed to parse DXF: {}", e))?;
+    parse_dxf_drawing(drawing, scale)
+}
 
+/// Parse a DXF file from raw bytes (works on native + WASM).
+pub fn parse_dxf_bytes(bytes: &[u8], scale: f64) -> Result<DxfOverlay, String> {
+    let mut reader = std::io::Cursor::new(bytes);
+    let drawing = dxf::Drawing::load(&mut reader)
+        .map_err(|e| format!("Failed to parse DXF: {}", e))?;
+    parse_dxf_drawing(drawing, scale)
+}
+
+fn parse_dxf_drawing(drawing: dxf::Drawing, scale: f64) -> Result<DxfOverlay, String> {
     let mut entities = Vec::new();
     let mut snap_circles = Vec::new();
     let mut idx = 0usize;

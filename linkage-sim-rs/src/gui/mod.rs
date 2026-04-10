@@ -133,26 +133,48 @@ impl eframe::App for LinkageApp {
             }
         }
 
-        // ── Drag-and-drop image import (works on native + WASM) ────────
+        // ── Drag-and-drop file import (works on native + WASM) ─────────
+        // Supports images (background overlay) and DXF (CAD import).
         let dropped_files = ctx.input(|i| i.raw.dropped_files.clone());
         for file in &dropped_files {
             if let Some(bytes) = &file.bytes {
-                let name = file
-                    .name
-                    .as_str();
-                let label = if name.is_empty() { "dropped_image" } else { name };
-                match load_background_image_from_bytes(ctx, label, bytes) {
-                    Ok(bg) => {
-                        self.state.background_image = Some(bg);
-                        self.state.status_message =
-                            Some("Background image loaded (drag & drop)".to_string());
-                        self.state.status_message_time = 3.0;
+                let name = file.name.as_str();
+                let lower = name.to_lowercase();
+                if lower.ends_with(".dxf") {
+                    // DXF import
+                    match dxf_import::parse_dxf_bytes(bytes, 0.001) {
+                        Ok(overlay) => {
+                            let n_ent = overlay.entities.len();
+                            let n_circ = overlay.snap_circles.len();
+                            self.state.dxf_overlay = Some(overlay);
+                            self.state.status_message = Some(format!(
+                                "DXF loaded: {} entities, {} circles (drag & drop). Click 'New Body' in the DXF panel to assign bodies.",
+                                n_ent, n_circ
+                            ));
+                            self.state.status_message_time = 5.0;
+                        }
+                        Err(e) => {
+                            log::error!("DXF import failed: {}", e);
+                            self.state.status_message = Some(format!("DXF import failed: {}", e));
+                            self.state.status_message_time = 4.0;
+                        }
                     }
-                    Err(e) => {
-                        log::error!("Failed to load dropped image: {}", e);
-                        self.state.status_message =
-                            Some(format!("Image load failed: {}", e));
-                        self.state.status_message_time = 4.0;
+                } else {
+                    // Image import
+                    let label = if name.is_empty() { "dropped_image" } else { name };
+                    match load_background_image_from_bytes(ctx, label, bytes) {
+                        Ok(bg) => {
+                            self.state.background_image = Some(bg);
+                            self.state.status_message =
+                                Some("Background image loaded (drag & drop)".to_string());
+                            self.state.status_message_time = 3.0;
+                        }
+                        Err(e) => {
+                            log::error!("Failed to load dropped image: {}", e);
+                            self.state.status_message =
+                                Some(format!("Image load failed: {}", e));
+                            self.state.status_message_time = 4.0;
+                        }
                     }
                 }
                 break; // Only process the first dropped file
@@ -610,6 +632,17 @@ impl eframe::App for LinkageApp {
                                 }
                             }
                             ui.close();
+                        }
+                    }
+                    #[cfg(not(feature = "native"))]
+                    {
+                        ui.separator();
+                        ui.label("Drag & drop a .dxf file onto the canvas to import CAD geometry");
+                        if self.state.dxf_overlay.is_some() {
+                            if ui.button("Clear DXF Overlay").clicked() {
+                                self.state.dxf_overlay = None;
+                                ui.close();
+                            }
                         }
                     }
                     #[cfg(feature = "native")]
