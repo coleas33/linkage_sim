@@ -338,6 +338,7 @@ enum DxfAction {
     ConvertSelectedToSingleBody(Vec<usize>),
     ConvertSelectedToGround(Vec<usize>),
     ConvertAllLinesToLinks,
+    DeleteSelected(Vec<usize>),
     ClearOverlay,
 }
 
@@ -417,6 +418,18 @@ pub fn draw_dxf_panel(ui: &mut egui::Ui, state: &mut super::state::AppState) {
             }
         }
     });
+    if !overlay.selected_entities.is_empty() {
+        let del_label = format!("Delete Selected ({})", overlay.selected_entities.len());
+        if ui.add(egui::Button::new(del_label)
+            .fill(egui::Color32::from_rgb(160, 60, 60)))
+            .on_hover_text("Remove the selected lines/circles from the DXF overlay. Does not affect the mechanism.")
+            .clicked()
+        {
+            action = Some(DxfAction::DeleteSelected(
+                overlay.selected_entities.iter().copied().collect(),
+            ));
+        }
+    }
 
     let n_selected = overlay.selected_entities.len();
     let n_selected_lines = overlay.entities.iter()
@@ -493,6 +506,18 @@ pub fn draw_dxf_panel(ui: &mut egui::Ui, state: &mut super::state::AppState) {
                         .collect()
                 ).unwrap_or_default();
                 convert_selected_lines_to_links(state, &all_line_indices);
+            }
+            DxfAction::DeleteSelected(indices) => {
+                if let Some(overlay) = state.dxf_overlay.as_mut() {
+                    let to_remove: std::collections::HashSet<usize> = indices.iter().copied().collect();
+                    let n_before = overlay.entities.len();
+                    overlay.entities.retain(|e| !to_remove.contains(&e.index));
+                    overlay.snap_circles.retain(|sc| !to_remove.contains(&sc.entity_index));
+                    overlay.selected_entities.clear();
+                    let n_deleted = n_before - overlay.entities.len();
+                    state.status_message = Some(format!("Deleted {} DXF entities", n_deleted));
+                    state.status_message_time = 3.0;
+                }
             }
             DxfAction::ClearOverlay => {
                 state.dxf_overlay = None;
@@ -662,18 +687,19 @@ fn convert_selected_lines_to_links(state: &mut super::state::AppState, line_indi
         ground_cluster_name.insert(ci, format!("P{}", i + 1));
     }
 
-    // Create a body for each selected line
+    // Create a body for each selected line.
+    // Body local frame = world frame (body at position (0,0,0)), so attachment
+    // points are stored in world coordinates. This preserves the original DXF
+    // layout when the mechanism loads.
     for (li, (_ei, p1, p2)) in lines.iter().enumerate() {
         let body_id = format!("link_{}", li + 1);
-        // Local frame: p1 is origin, p2 is at B in local coords
-        let local_b = [p2[0] - p1[0], p2[1] - p1[1]];
-        let cg = [local_b[0] / 2.0, local_b[1] / 2.0];
-        let length = (local_b[0].powi(2) + local_b[1].powi(2)).sqrt();
+        let cg = [(p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0];
+        let length = ((p2[0] - p1[0]).powi(2) + (p2[1] - p1[1]).powi(2)).sqrt();
         let izz = (1.0 / 12.0) * length.powi(2); // uniform rod about CG
 
         let mut pts = serde_json::Map::new();
-        pts.insert("A".to_string(), serde_json::json!([0.0, 0.0]));
-        pts.insert("B".to_string(), serde_json::json!([local_b[0], local_b[1]]));
+        pts.insert("A".to_string(), serde_json::json!([p1[0], p1[1]]));
+        pts.insert("B".to_string(), serde_json::json!([p2[0], p2[1]]));
 
         bodies_json.insert(body_id.clone(), serde_json::json!({
             "attachment_points": pts,
@@ -796,26 +822,27 @@ fn convert_selected_to_single_body(state: &mut super::state::AppState, indices: 
         return;
     }
 
-    // First point is body origin, others are local offsets
-    let origin = pts_world[0];
+    // Body local frame = world frame (body at position (0,0,0)), so attachment
+    // points store their world coordinates directly. This preserves the DXF
+    // layout when the body is added to an existing mechanism.
     let mut attachment_points = serde_json::Map::new();
     let names = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
     for (i, pt) in pts_world.iter().enumerate() {
         let name = if i < names.len() { names[i].to_string() } else { format!("P{}", i) };
-        attachment_points.insert(name, serde_json::json!([pt[0] - origin[0], pt[1] - origin[1]]));
+        attachment_points.insert(name, serde_json::json!([pt[0], pt[1]]));
     }
 
-    // CG = centroid of attachment points in local frame
-    let cg_x: f64 = pts_world.iter().map(|p| p[0] - origin[0]).sum::<f64>() / pts_world.len() as f64;
-    let cg_y: f64 = pts_world.iter().map(|p| p[1] - origin[1]).sum::<f64>() / pts_world.len() as f64;
+    // CG = centroid in world coords (= local since body origin = world origin)
+    let cg_x: f64 = pts_world.iter().map(|p| p[0]).sum::<f64>() / pts_world.len() as f64;
+    let cg_y: f64 = pts_world.iter().map(|p| p[1]).sum::<f64>() / pts_world.len() as f64;
 
-    // Estimate characteristic length for inertia
+    // Estimate characteristic length for inertia: furthest point from CG
     let mut max_r_sq = 0.0_f64;
     for pt in &pts_world {
-        let r_sq = (pt[0] - origin[0] - cg_x).powi(2) + (pt[1] - origin[1] - cg_y).powi(2);
+        let r_sq = (pt[0] - cg_x).powi(2) + (pt[1] - cg_y).powi(2);
         if r_sq > max_r_sq { max_r_sq = r_sq; }
     }
-    let izz = 1.0 * max_r_sq.max(0.0001);
+    let izz = max_r_sq.max(0.0001);
 
     // Figure out a unique body name
     let next_id = state.mechanism.as_ref()
