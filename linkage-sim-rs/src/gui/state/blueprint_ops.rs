@@ -94,46 +94,6 @@ pub(crate) fn generate_unique_id<V>(prefix: &str, map: &HashMap<String, V>) -> S
     }
 }
 
-// ── Auto-geometry for force zones ────────────────────────────────────────────
-
-/// Create rectangular body geometry from the body's attachment points when none
-/// exists.  Force zones produce zero force when the target body has no geometry,
-/// so this avoids a silent failure.
-///
-/// The rectangle spans the bounding box of the body's attachment points along
-/// the local x-axis, with a height of 15% of the link length (minimum 5 mm).
-/// No-op if the body already has geometry or has fewer than 2 attachment points.
-fn auto_create_body_geometry(bp: &mut MechanismJson, body_id: &str) {
-    let Some(body) = bp.bodies.get_mut(body_id) else { return };
-    if body.geometry.is_some() { return; }
-    if body.attachment_points.len() < 2 { return; }
-
-    let mut x_min = f64::INFINITY;
-    let mut x_max = f64::NEG_INFINITY;
-    let mut y_min = f64::INFINITY;
-    let mut y_max = f64::NEG_INFINITY;
-    for pt in body.attachment_points.values() {
-        x_min = x_min.min(pt[0]);
-        x_max = x_max.max(pt[0]);
-        y_min = y_min.min(pt[1]);
-        y_max = y_max.max(pt[1]);
-    }
-
-    let width = (x_max - x_min).max(0.01); // at least 10 mm
-    let height = (width * 0.15).max(0.005); // 15% of width, at least 5 mm
-    let cx = (x_min + x_max) / 2.0;
-    let cy = (y_min + y_max) / 2.0;
-
-    // Use BodyGeometry::new which validates width/height > 0.
-    if let Ok(geom) = crate::core::body::BodyGeometry::new(
-        width,
-        height,
-        nalgebra::Vector2::new(cx, cy),
-    ) {
-        body.geometry = Some(geom);
-    }
-}
-
 // ── Force field helpers ──────────────────────────────────────────────────────
 
 /// Set a single scalar field on a force element by field name. Returns true if successful.
@@ -903,18 +863,9 @@ impl AppState {
     ///
     /// Pushes undo, appends the element, rebuilds, and immediately recomputes
     /// sweep data (bypassing the debounce used for continuous slider edits).
-    ///
-    /// When adding a `ForceZone`, auto-creates body geometry for the target
-    /// body if it has none (force zones produce zero force without geometry).
     pub fn add_force_element(&mut self, force: ForceElement) {
         self.push_undo();
         let Some(bp) = &mut self.blueprint else { return };
-
-        // Auto-create geometry for force zone targets so the zone isn't silently inert.
-        if let ForceElement::ForceZone(ref fz) = force {
-            auto_create_body_geometry(bp, &fz.body_id);
-        }
-
         bp.forces.push(force);
         self.rebuild();
         self.compute_sweep();

@@ -808,8 +808,11 @@ fn handle_create_force_zone(
                 let w = (zone_max[0] - zone_min[0]).abs();
                 let h = (zone_max[1] - zone_min[1]).abs();
                 if w > 1e-6 && h > 1e-6 {
-                    // Pick the first non-ground body. auto_create_body_geometry
-                    // (called by add_force_element) will create geometry if needed.
+                    // Pick the first non-ground body as the zone's target. The
+                    // user can change it later via the force element editor.
+                    // Note: zones need BodyGeometry on the target body to
+                    // produce force — create geometry via the Link Editor or
+                    // DXF import's Rigid Geometry button.
                     let target_body = state.blueprint.as_ref()
                         .and_then(|bp| {
                             // Prefer a body whose geometry overlaps the zone; fall back
@@ -1039,9 +1042,37 @@ fn handle_click_selection(
 
         match state.active_tool {
             EditorTool::AddGroundPivot => {
-                let (sx, sy) = state.grid.snap_point(wx, wy);
-                let name = state.next_ground_pivot_name();
-                state.add_ground_pivot(&name, sx, sy);
+                // If the click is near an existing unconnected attachment
+                // point, snap to it exactly and create a revolute joint
+                // between the new ground pivot and that attachment point.
+                let hit = attachment_hit_targets
+                    .iter()
+                    .filter(|ah| ah.body_id != GROUND_ID)
+                    .find(|ah| pointer_pos.distance(ah.screen_pos) <= HIT_RADIUS);
+
+                let (sx, sy) = if let Some(ah) = hit {
+                    let name = state.next_ground_pivot_name();
+                    state.push_undo();
+                    state.add_ground_pivot_raw(&name, ah.world_pos[0], ah.world_pos[1]);
+                    state.add_revolute_joint_raw(
+                        GROUND_ID,
+                        &name,
+                        &ah.body_id,
+                        &ah.point_name,
+                    );
+                    state.rebuild();
+                    state.status_message = Some(format!(
+                        "Ground pivot '{}' created at {}/{} with revolute joint",
+                        name, ah.body_id, ah.point_name
+                    ));
+                    state.status_message_time = 3.0;
+                    (ah.world_pos[0], ah.world_pos[1])
+                } else {
+                    let (gx, gy) = state.grid.snap_point(wx, wy);
+                    let name = state.next_ground_pivot_name();
+                    state.add_ground_pivot(&name, gx, gy);
+                    (gx, gy)
+                };
                 // Stay in AddGroundPivot tool for placing multiple pivots.
 
                 // Tutorial auto-zoom: after placing the first ground pivot,
