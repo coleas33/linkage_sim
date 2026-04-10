@@ -53,6 +53,8 @@ pub enum EditorTool {
     CreateForceZone,
     /// Click on a link to place a point mass at that position.
     PlaceMass,
+    /// Drag on canvas to draw body geometry for the selected body.
+    DrawBodyGeometry,
 }
 
 // ── Context menu target ──────────────────────────────────────────────────────
