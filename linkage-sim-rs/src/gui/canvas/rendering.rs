@@ -789,6 +789,9 @@ pub fn render_overlays(
                 Some("Click a link to select the attachment body (Esc to cancel)".to_string())
             }
         }
+        EditorTool::DrawBodyGeometry => {
+            Some("Draw body geometry mode (Esc to cancel)".to_string())
+        }
         EditorTool::Select => {
             if let Some(ref bid) = state.adding_joint_point {
                 Some(format!("Click to place a new joint point on '{}' (Esc to cancel)", bid))

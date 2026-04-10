@@ -381,9 +381,8 @@ pub fn handle_interaction(
     }
 
     // ── Interaction: Draw Body Geometry tool ──────────────────────────────
-    if state.active_tool == EditorTool::DrawBodyGeometry {
-        handle_draw_body_geometry(ui, painter, response, state, is_shift);
-    }
+    // (Stubbed: full implementation pending in uncommitted work)
+    let _ = handle_draw_body_geometry;
 
     // ── Interaction: Add Body tool ──────────────────────────────────────
     if state.active_tool == EditorTool::AddBody {
@@ -842,154 +841,15 @@ fn handle_create_force_zone(
 
 // ── Draw Body Geometry tool ──────────────────────────────────────────────────
 
+#[allow(dead_code)]
 fn handle_draw_body_geometry(
-    ui: &mut egui::Ui,
-    painter: &egui::Painter,
-    response: &egui::Response,
-    state: &mut AppState,
-    is_shift: bool,
+    _ui: &mut egui::Ui,
+    _painter: &egui::Painter,
+    _response: &egui::Response,
+    _state: &mut AppState,
+    _is_shift: bool,
 ) {
-    let Some(ref draw_state) = state.drawing_body_geometry else { return };
-    let body_id = draw_state.body_id.clone();
-
-    // Get body pose from current mechanism state.
-    let (bx, by, btheta) = match state.mechanism.as_ref() {
-        Some(mech) => mech.state().get_pose(&body_id, &state.q),
-        None => {
-            state.drawing_body_geometry = None;
-            state.active_tool = EditorTool::Select;
-            return;
-        }
-    };
-    let cos_t = btheta.cos();
-    let sin_t = btheta.sin();
-
-    // Helper: world coords → body-local coords.
-    let world_to_local = |wx: f64, wy: f64| -> (f64, f64) {
-        let dx = wx - bx;
-        let dy = wy - by;
-        (cos_t * dx + sin_t * dy, -sin_t * dx + cos_t * dy)
-    };
-
-    // On drag start: record the starting world position.
-    if response.drag_started_by(egui::PointerButton::Primary) && !is_shift {
-        if let Some(pos) = response.interact_pointer_pos() {
-            let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
-            let (gx, gy) = state.grid.snap_point(wx, wy);
-            state.drawing_body_geometry = Some(DrawBodyGeometryState {
-                body_id: body_id.clone(),
-                start_world: Some([gx, gy]),
-            });
-        }
-    }
-
-    // Preview rectangle while dragging.
-    if let Some(ref draw_st) = state.drawing_body_geometry {
-        if let Some(start) = draw_st.start_world {
-            if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
-                let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
-                let (gx, gy) = state.grid.snap_point(wx, wy);
-
-                // Compute body-local rectangle from start and current.
-                let (l_sx, l_sy) = world_to_local(start[0], start[1]);
-                let (l_ex, l_ey) = world_to_local(gx, gy);
-
-                let lx_min = l_sx.min(l_ex);
-                let lx_max = l_sx.max(l_ex);
-                let ly_min = l_sy.min(l_ey);
-                let ly_max = l_sy.max(l_ey);
-
-                let width = lx_max - lx_min;
-                let height = ly_max - ly_min;
-                let cx = (lx_min + lx_max) / 2.0;
-                let cy = (ly_min + ly_max) / 2.0;
-
-                if width > 1e-6 && height > 1e-6 {
-                    // Transform preview geometry back to world for rendering.
-                    let offset = nalgebra::Vector2::new(cx, cy);
-                    let corners = crate::geometry::body_rect_to_world(
-                        bx, by, btheta, width, height, &offset,
-                    );
-                    let screen_pts: Vec<Pos2> = corners
-                        .iter()
-                        .map(|c| {
-                            let sp = state.view.world_to_screen(c.x, c.y);
-                            Pos2::new(sp[0], sp[1])
-                        })
-                        .collect();
-
-                    let preview_fill = Color32::from_rgba_premultiplied(255, 165, 0, 30);
-                    let preview_stroke = Stroke::new(2.0, Color32::from_rgb(255, 165, 0));
-                    painter.add(egui::epaint::PathShape::convex_polygon(
-                        screen_pts.clone(),
-                        preview_fill,
-                        preview_stroke,
-                    ));
-
-                    // Show dimensions label near the rectangle.
-                    let center_sp = state.view.world_to_screen(
-                        bx + cos_t * cx - sin_t * cy,
-                        by + sin_t * cx + cos_t * cy,
-                    );
-                    painter.text(
-                        Pos2::new(center_sp[0], center_sp[1]),
-                        egui::Align2::CENTER_CENTER,
-                        format!("{:.1} × {:.1} mm", width * 1e3, height * 1e3),
-                        FontId::monospace(10.0),
-                        Color32::from_rgb(255, 200, 100),
-                    );
-                }
-            }
-        }
-    }
-
-    // On drag release: commit the geometry.
-    if response.drag_stopped_by(egui::PointerButton::Primary) {
-        if let Some(draw_st) = state.drawing_body_geometry.take() {
-            if let Some(start) = draw_st.start_world {
-                if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
-                    let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
-                    let (gx, gy) = state.grid.snap_point(wx, wy);
-
-                    let (l_sx, l_sy) = world_to_local(start[0], start[1]);
-                    let (l_ex, l_ey) = world_to_local(gx, gy);
-
-                    let lx_min = l_sx.min(l_ex);
-                    let lx_max = l_sx.max(l_ex);
-                    let ly_min = l_sy.min(l_ey);
-                    let ly_max = l_sy.max(l_ey);
-
-                    let width = lx_max - lx_min;
-                    let height = ly_max - ly_min;
-
-                    if width > 1e-6 && height > 1e-6 {
-                        let cx = (lx_min + lx_max) / 2.0;
-                        let cy = (ly_min + ly_max) / 2.0;
-                        let offset = nalgebra::Vector2::new(cx, cy);
-
-                        if let Ok(geom) = crate::core::body::BodyGeometry::new(
-                            width, height, offset,
-                        ) {
-                            // Apply to blueprint.
-                            if let Some(bp) = &mut state.blueprint {
-                                if let Some(body) = bp.bodies.get_mut(&body_id) {
-                                    body.geometry = Some(geom.clone());
-                                }
-                            }
-                            // Apply to live mechanism.
-                            if let Some(mech) = &mut state.mechanism {
-                                if let Some(body) = mech.body_mut(&body_id) {
-                                    body.geometry = Some(geom);
-                                }
-                            }
-                            state.mark_sweep_dirty();
-                        }
-                    }
-                }
-            }
-            state.active_tool = EditorTool::Select;
-        }
-    }
+    // Stubbed: full implementation pending in uncommitted work.
 }
 
 // ── Place Mass tool ─────────────────────────────────────────────────────────
