@@ -988,9 +988,24 @@ fn handle_create_joint(
     attachment_hit_targets: &[AttachmentHit],
 ) {
     if let Some(pos) = response.interact_pointer_pos() {
-        let second_hit = find_nearest_attachment(pos, attachment_hit_targets);
+        let (first_body, first_point, joint_type) = state.creating_joint.clone().unwrap();
+
+        // Find the nearest attachment EXCLUDING the first selected point.
+        // When two bodies share a world position (coincident pivots), the
+        // naive nearest-search can return the same point the user already
+        // selected as the first click. Filter it out so the user can pick
+        // the second body's overlapping point.
+        let second_hit = attachment_hit_targets
+            .iter()
+            .filter(|h| pos.distance(h.screen_pos) <= HIT_RADIUS)
+            .filter(|h| !(h.body_id == first_body && h.point_name == first_point))
+            .min_by(|a, b| {
+                pos.distance(a.screen_pos)
+                    .partial_cmp(&pos.distance(b.screen_pos))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
         if let Some(hit) = second_hit {
-            let (first_body, first_point, joint_type) = state.creating_joint.clone().unwrap();
             let second_body = hit.body_id.clone();
             let second_point = hit.point_name.clone();
 
