@@ -889,7 +889,7 @@ impl eframe::App for LinkageApp {
                     self.state.draw_link_start = None;
                     self.state.add_body_state = None;
                     self.state.place_mass_body = None;
-                    self.state.drawing_body_geometry = None;
+
                 }
 
                 let draw_active = tool == EditorTool::DrawLink || self.state.draw_link_start.is_some();
@@ -907,7 +907,7 @@ impl eframe::App for LinkageApp {
                     self.state.draw_link_start = None;
                     self.state.add_body_state = None;
                     self.state.place_mass_body = None;
-                    self.state.drawing_body_geometry = None;
+
                 }
 
                 let is_adding_jp = self.state.adding_joint_point.is_some();
@@ -956,7 +956,7 @@ impl eframe::App for LinkageApp {
                     self.state.draw_link_start = None;
                     self.state.add_body_state = Some(crate::gui::state::AddBodyState { points: Vec::new() });
                     self.state.place_mass_body = None;
-                    self.state.drawing_body_geometry = None;
+
                 }
 
                 let ground_active = tool == EditorTool::AddGroundPivot;
