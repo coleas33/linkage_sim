@@ -467,12 +467,13 @@ pub fn draw_dxf_panel(ui: &mut egui::Ui, state: &mut super::state::AppState) {
         ));
     }
 
-    // Create a rigid geometry body: like the force zone geometry created by
-    // the Link Editor's "Add Geometry" button, but using the selected DXF
-    // entities' bounding box. The body has ONE attachment point at the
-    // geometry center — use Fixed joint to rigidly attach it to a link.
-    if ui.add_enabled(n_selected >= 1, egui::Button::new(format!("→ Rigid Geometry ({})", n_selected)))
-        .on_hover_text("Create a new body with BodyGeometry (force zone shape) from the bounding box of selected entities. The body has a single attachment point at the center. Use Fixed joint to rigidly attach it to a link. Good for press plates, tools, and force zone targets.")
+    // Add BodyGeometry (force zone shape) to the currently-selected link
+    // using the DXF selection's bounding box. Equivalent to the Link
+    // Editor's "Add Geometry" button but sized from the DXF. Does NOT
+    // create a new body — the geometry is added directly to the selected
+    // link and moves rigidly with it.
+    if ui.add_enabled(n_selected >= 1, egui::Button::new(format!("→ Add Geometry to Selected Link ({})", n_selected)))
+        .on_hover_text("Add BodyGeometry (force zone shape) from the DXF bounding box to the currently-selected link. Select a link on the canvas first. The geometry is rigidly attached to the link and moves with it, just like the Link Editor's Add Geometry button but sized from the DXF.")
         .clicked()
     {
         action = Some(DxfAction::ConvertSelectedToRigidGeometry(
@@ -934,12 +935,34 @@ fn compute_bounding_box(state: &super::state::AppState, indices: &[usize]) -> Op
     if found { Some((xmin, ymin, xmax, ymax)) } else { None }
 }
 
-/// Create a body with BodyGeometry (force zone shape) from the bounding
-/// box of selected DXF entities. The body has a single attachment point
-/// "CENTER" at the geometry centroid. To fix this body to a link, use
-/// Create Joint → Fixed: right-click the CENTER attachment point, select
-/// Create Joint → Fixed, then click a link's attachment point.
+/// Set BodyGeometry on an existing link from the bounding box of selected
+/// DXF entities. Equivalent to the Link Editor's "Add Geometry" button,
+/// but with dimensions computed from the DXF selection instead of a
+/// manual rectangle draw.
+///
+/// Uses the currently-selected body (from the link editor or selection).
+/// Does NOT create a new body, add joints, or modify attachment points —
+/// it just sets the target link's `geometry` field.
 fn convert_selected_to_rigid_geometry(state: &mut super::state::AppState, indices: &[usize]) {
+    // 1. Determine the target body from current selection
+    let target_body = state.link_editor_body.clone()
+        .or_else(|| match &state.selected {
+            Some(super::state::SelectedEntity::Body(bid)) if bid != "ground" => Some(bid.clone()),
+            _ => None,
+        });
+
+    let target_body = match target_body {
+        Some(b) => b,
+        None => {
+            state.status_message = Some(
+                "Select a link first (click it on the canvas), then click → Add Geometry to attach the DXF shape to that link.".to_string()
+            );
+            state.status_message_time = 5.0;
+            return;
+        }
+    };
+
+    // 2. Compute the bounding box of the DXF selection in world coords
     let bbox = match compute_bounding_box(state, indices) {
         Some(b) => b,
         None => {
@@ -951,8 +974,8 @@ fn convert_selected_to_rigid_geometry(state: &mut super::state::AppState, indice
     let (xmin, ymin, xmax, ymax) = bbox;
     let width = xmax - xmin;
     let height = ymax - ymin;
-    let gx = (xmin + xmax) / 2.0;
-    let gy = (ymin + ymax) / 2.0;
+    let cx_world = (xmin + xmax) / 2.0;
+    let cy_world = (ymin + ymax) / 2.0;
 
     if width <= 0.0 || height <= 0.0 {
         state.status_message = Some("Selection has zero extent — select entities with area".to_string());
@@ -960,53 +983,48 @@ fn convert_selected_to_rigid_geometry(state: &mut super::state::AppState, indice
         return;
     }
 
-    state.push_undo();
-
-    let bp = match state.blueprint.as_mut() {
-        Some(b) => b,
-        None => {
-            state.status_message = Some("No mechanism blueprint".to_string());
-            state.status_message_time = 3.0;
-            return;
-        }
+    // 3. Convert the bounding box center from world to the target body's
+    //    local frame, so the geometry moves with the body as it articulates.
+    let offset_local = {
+        let mech = match state.mechanism.as_ref() {
+            Some(m) => m,
+            None => {
+                state.status_message = Some("Mechanism not built — try again after building".to_string());
+                state.status_message_time = 3.0;
+                return;
+            }
+        };
+        let (bx, by, btheta) = mech.state().get_pose(&target_body, &state.q);
+        let cos_t = btheta.cos();
+        let sin_t = btheta.sin();
+        let dx = cx_world - bx;
+        let dy = cy_world - by;
+        // Inverse rotation: world → local
+        nalgebra::Vector2::new(
+            cos_t * dx + sin_t * dy,
+            -sin_t * dx + cos_t * dy,
+        )
     };
 
-    // Find next unique body ID
-    let mut next_n = 1;
-    while bp.bodies.contains_key(&format!("shape_{}", next_n)) {
-        next_n += 1;
+    // 4. Push undo and set the target body's geometry directly on the
+    //    blueprint. No new body, no new joints.
+    state.push_undo();
+
+    if let Some(bp) = state.blueprint.as_mut() {
+        if let Some(body) = bp.bodies.get_mut(&target_body) {
+            body.geometry = Some(BodyGeometry {
+                width,
+                height,
+                offset: offset_local,
+            });
+        }
     }
-    let body_id = format!("shape_{}", next_n);
-
-    // Body local frame = world frame (pose 0,0,0). Single attachment point
-    // at the geometry center for Fixed-jointing to a link.
-    let mut attachment_points = HashMap::new();
-    attachment_points.insert("CENTER".to_string(), [gx, gy]);
-
-    let mass = 1.0;
-    let izz = mass * (width * width + height * height) / 12.0;
-
-    bp.bodies.insert(body_id.clone(), BodyJson {
-        attachment_points,
-        mass,
-        cg_local: [gx, gy],
-        izz_cg: izz,
-        mount_points: HashMap::new(),
-        coupler_points: HashMap::new(),
-        point_masses: Vec::new(),
-        label: Some(body_id.clone()),
-        geometry: Some(BodyGeometry {
-            width,
-            height,
-            offset: nalgebra::Vector2::new(gx, gy),
-        }),
-    });
 
     state.rebuild();
 
     state.status_message = Some(format!(
-        "Added rigid geometry '{}' ({:.0}x{:.0} mm). To fix it to a link: right-click the CENTER point, Create Joint → Fixed, then click the link's attachment point.",
-        body_id, width * 1000.0, height * 1000.0
+        "Added {:.0}x{:.0} mm geometry to '{}' from DXF selection (rigidly attached — moves with the link).",
+        width * 1000.0, height * 1000.0, target_body
     ));
     state.status_message_time = 6.0;
 }
