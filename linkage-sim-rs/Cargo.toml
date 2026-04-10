@@ -6,7 +6,7 @@ description = "Planar linkage mechanism simulator — Rust port of the validated
 
 [features]
 default = ["native"]
-native = ["dep:rfd", "dep:resvg", "dep:gif", "dep:open", "dep:dirs"]
+native = ["dep:rfd", "dep:resvg", "dep:gif", "dep:open", "dep:dirs", "dep:dxf"]
 
 [dependencies]
 nalgebra = { version = "0.33", features = ["serde-serialize"] }
@@ -28,6 +28,7 @@ resvg = { version = "0.44", optional = true }
 gif = { version = "0.13", optional = true }
 open = { version = "5", optional = true }
 dirs = { version = "5", optional = true }
+dxf = { version = "0.6", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

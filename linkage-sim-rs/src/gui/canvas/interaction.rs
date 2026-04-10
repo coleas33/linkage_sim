@@ -5,7 +5,8 @@ use eframe::egui::{self, Color32, FontId, Pos2, Stroke};
 use crate::core::state::GROUND_ID;
 use crate::forces::elements::*;
 use crate::gui::state::{
-    AddBodyState, AppState, EditorTool, ForceZoneDragState, SelectedEntity,
+    AddBodyState, AppState, DrawBodyGeometryState, EditorTool, ForceZoneDragState,
+    SelectedEntity,
 };
 
 use super::alignment::compute_alignment_guides;
@@ -257,6 +258,7 @@ pub fn handle_interaction(
         state.add_body_state = None;
         state.place_force_state = None;
         state.creating_force_zone = None;
+        state.drawing_body_geometry = None;
         state.dragging_ground_pivot = None;
         state.place_mass_body = None;
         state.reassigning_point_mass = None;
@@ -378,6 +380,11 @@ pub fn handle_interaction(
         handle_place_mass(ui, painter, response, state, body_segments);
     }
 
+    // ── Interaction: Draw Body Geometry tool ──────────────────────────────
+    if state.active_tool == EditorTool::DrawBodyGeometry {
+        handle_draw_body_geometry(ui, painter, response, state, is_shift);
+    }
+
     // ── Interaction: Add Body tool ──────────────────────────────────────
     if state.active_tool == EditorTool::AddBody {
         handle_add_body(ui, response, state);
@@ -397,6 +404,7 @@ pub fn handle_interaction(
         && state.active_tool != EditorTool::PlaceForce
         && state.active_tool != EditorTool::CreateForceZone
         && state.active_tool != EditorTool::PlaceMass
+        && state.active_tool != EditorTool::DrawBodyGeometry
         && response.clicked()
     {
         handle_click_selection(response, state, canvas_rect, joint_hit_targets, attachment_hit_targets, is_shift);
@@ -832,6 +840,158 @@ fn handle_create_force_zone(
     }
 }
 
+// ── Draw Body Geometry tool ──────────────────────────────────────────────────
+
+fn handle_draw_body_geometry(
+    ui: &mut egui::Ui,
+    painter: &egui::Painter,
+    response: &egui::Response,
+    state: &mut AppState,
+    is_shift: bool,
+) {
+    let Some(ref draw_state) = state.drawing_body_geometry else { return };
+    let body_id = draw_state.body_id.clone();
+
+    // Get body pose from current mechanism state.
+    let (bx, by, btheta) = match state.mechanism.as_ref() {
+        Some(mech) => mech.state().get_pose(&body_id, &state.q),
+        None => {
+            state.drawing_body_geometry = None;
+            state.active_tool = EditorTool::Select;
+            return;
+        }
+    };
+    let cos_t = btheta.cos();
+    let sin_t = btheta.sin();
+
+    // Helper: world coords → body-local coords.
+    let world_to_local = |wx: f64, wy: f64| -> (f64, f64) {
+        let dx = wx - bx;
+        let dy = wy - by;
+        (cos_t * dx + sin_t * dy, -sin_t * dx + cos_t * dy)
+    };
+
+    // On drag start: record the starting world position.
+    if response.drag_started_by(egui::PointerButton::Primary) && !is_shift {
+        if let Some(pos) = response.interact_pointer_pos() {
+            let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+            let (gx, gy) = state.grid.snap_point(wx, wy);
+            state.drawing_body_geometry = Some(DrawBodyGeometryState {
+                body_id: body_id.clone(),
+                start_world: Some([gx, gy]),
+            });
+        }
+    }
+
+    // Preview rectangle while dragging.
+    if let Some(ref draw_st) = state.drawing_body_geometry {
+        if let Some(start) = draw_st.start_world {
+            if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+                let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+                let (gx, gy) = state.grid.snap_point(wx, wy);
+
+                // Compute body-local rectangle from start and current.
+                let (l_sx, l_sy) = world_to_local(start[0], start[1]);
+                let (l_ex, l_ey) = world_to_local(gx, gy);
+
+                let lx_min = l_sx.min(l_ex);
+                let lx_max = l_sx.max(l_ex);
+                let ly_min = l_sy.min(l_ey);
+                let ly_max = l_sy.max(l_ey);
+
+                let width = lx_max - lx_min;
+                let height = ly_max - ly_min;
+                let cx = (lx_min + lx_max) / 2.0;
+                let cy = (ly_min + ly_max) / 2.0;
+
+                if width > 1e-6 && height > 1e-6 {
+                    // Transform preview geometry back to world for rendering.
+                    let offset = nalgebra::Vector2::new(cx, cy);
+                    let corners = crate::geometry::body_rect_to_world(
+                        bx, by, btheta, width, height, &offset,
+                    );
+                    let screen_pts: Vec<Pos2> = corners
+                        .iter()
+                        .map(|c| {
+                            let sp = state.view.world_to_screen(c.x, c.y);
+                            Pos2::new(sp[0], sp[1])
+                        })
+                        .collect();
+
+                    let preview_fill = Color32::from_rgba_premultiplied(255, 165, 0, 30);
+                    let preview_stroke = Stroke::new(2.0, Color32::from_rgb(255, 165, 0));
+                    painter.add(egui::epaint::PathShape::convex_polygon(
+                        screen_pts.clone(),
+                        preview_fill,
+                        preview_stroke,
+                    ));
+
+                    // Show dimensions label near the rectangle.
+                    let center_sp = state.view.world_to_screen(
+                        bx + cos_t * cx - sin_t * cy,
+                        by + sin_t * cx + cos_t * cy,
+                    );
+                    painter.text(
+                        Pos2::new(center_sp[0], center_sp[1]),
+                        egui::Align2::CENTER_CENTER,
+                        format!("{:.1} × {:.1} mm", width * 1e3, height * 1e3),
+                        FontId::monospace(10.0),
+                        Color32::from_rgb(255, 200, 100),
+                    );
+                }
+            }
+        }
+    }
+
+    // On drag release: commit the geometry.
+    if response.drag_stopped_by(egui::PointerButton::Primary) {
+        if let Some(draw_st) = state.drawing_body_geometry.take() {
+            if let Some(start) = draw_st.start_world {
+                if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+                    let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+                    let (gx, gy) = state.grid.snap_point(wx, wy);
+
+                    let (l_sx, l_sy) = world_to_local(start[0], start[1]);
+                    let (l_ex, l_ey) = world_to_local(gx, gy);
+
+                    let lx_min = l_sx.min(l_ex);
+                    let lx_max = l_sx.max(l_ex);
+                    let ly_min = l_sy.min(l_ey);
+                    let ly_max = l_sy.max(l_ey);
+
+                    let width = lx_max - lx_min;
+                    let height = ly_max - ly_min;
+
+                    if width > 1e-6 && height > 1e-6 {
+                        let cx = (lx_min + lx_max) / 2.0;
+                        let cy = (ly_min + ly_max) / 2.0;
+                        let offset = nalgebra::Vector2::new(cx, cy);
+
+                        if let Ok(geom) = crate::core::body::BodyGeometry::new(
+                            width, height, offset,
+                        ) {
+                            // Apply to blueprint.
+                            if let Some(bp) = &mut state.blueprint {
+                                if let Some(body) = bp.bodies.get_mut(&body_id) {
+                                    body.geometry = Some(geom.clone());
+                                }
+                            }
+                            // Apply to live mechanism.
+                            if let Some(mech) = &mut state.mechanism {
+                                if let Some(body) = mech.body_mut(&body_id) {
+                                    body.geometry = Some(geom);
+                                }
+                            }
+                            state.mark_sweep_dirty();
+                        }
+                    }
+                }
+            }
+            state.active_tool = EditorTool::Select;
+        }
+    }
+}
+
 // ── Place Mass tool ─────────────────────────────────────────────────────────
 
 fn handle_place_mass(
@@ -1062,40 +1222,64 @@ fn handle_click_selection(
             EditorTool::PlaceMass => {
                 // Handled by PlaceMass interaction section above.
             }
+            EditorTool::DrawBodyGeometry => {
+                // Handled by DrawBodyGeometry drag interaction section above.
+            }
             EditorTool::Select => {
-                let mut hit: Option<SelectedEntity> = None;
-
-                for (joint_screen, joint_id) in joint_hit_targets {
-                    if pointer_pos.distance(*joint_screen) <= HIT_RADIUS {
-                        hit = Some(SelectedEntity::Joint(joint_id.clone()));
-                        break;
+                // DXF assignment mode: clicks toggle entity selection
+                let dxf_handled = if let Some(ref mut overlay) = state.dxf_overlay {
+                    if overlay.assigning {
+                        let [wx, wy] = state.view.screen_to_world(pointer_pos.x, pointer_pos.y);
+                        let threshold = 15.0 / state.view.scale as f64;
+                        if let Some(idx) = crate::gui::dxf_import::hit_test_dxf_entity(overlay, wx, wy, threshold) {
+                            if overlay.selected_entities.contains(&idx) {
+                                overlay.selected_entities.remove(&idx);
+                            } else {
+                                overlay.selected_entities.insert(idx);
+                            }
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
                     }
-                }
+                } else {
+                    false
+                };
 
-                if hit.is_none() {
-                    for ah in attachment_hit_targets {
-                        if pointer_pos.distance(ah.screen_pos) <= HIT_RADIUS {
-                            hit = Some(SelectedEntity::Body(ah.body_id.clone()));
+                if !dxf_handled {
+                    let mut hit: Option<SelectedEntity> = None;
+
+                    for (joint_screen, joint_id) in joint_hit_targets {
+                        if pointer_pos.distance(*joint_screen) <= HIT_RADIUS {
+                            hit = Some(SelectedEntity::Joint(joint_id.clone()));
                             break;
                         }
                     }
-                }
 
-                if is_shift {
-                    // Shift+click: toggle item in multi_selected.
-                    if let Some(entity) = hit {
-                        if let Some(pos) = state.multi_selected.iter().position(|e| *e == entity) {
-                            state.multi_selected.remove(pos);
-                        } else {
-                            state.multi_selected.push(entity.clone());
+                    if hit.is_none() {
+                        for ah in attachment_hit_targets {
+                            if pointer_pos.distance(ah.screen_pos) <= HIT_RADIUS {
+                                hit = Some(SelectedEntity::Body(ah.body_id.clone()));
+                                break;
+                            }
                         }
-                        // Set primary selection to last-added for property panel.
-                        state.selected = Some(entity);
                     }
-                } else {
-                    // Normal click: clear multi-selection, set single selection.
-                    state.multi_selected.clear();
-                    state.selected = hit;
+
+                    if is_shift {
+                        if let Some(entity) = hit {
+                            if let Some(pos) = state.multi_selected.iter().position(|e| *e == entity) {
+                                state.multi_selected.remove(pos);
+                            } else {
+                                state.multi_selected.push(entity.clone());
+                            }
+                            state.selected = Some(entity);
+                        }
+                    } else {
+                        state.multi_selected.clear();
+                        state.selected = hit;
+                    }
                 }
             }
         }

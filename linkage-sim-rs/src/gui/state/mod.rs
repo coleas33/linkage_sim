@@ -191,6 +191,9 @@ pub struct AppState {
     // ── Force Zone creation state ────────────────────────────────────────
     /// Drag-to-define force zone state. None when not in CreateForceZone mode.
     pub creating_force_zone: Option<ForceZoneDragState>,
+    // ── Draw Body Geometry state ─────────────────────────────────────────
+    /// Drag-to-draw body geometry state. None when not in DrawBodyGeometry mode.
+    pub drawing_body_geometry: Option<DrawBodyGeometryState>,
     // ── Ground pivot drag state ─────────────────────────────────────────
     /// Ground pivot being dragged: (pivot_name, start_world_pos).
     pub dragging_ground_pivot: Option<(String, [f64; 2])>,
@@ -296,6 +299,9 @@ pub struct AppState {
     pub background_image: Option<BackgroundImage>,
     /// Whether the Image Settings floating window is open.
     pub show_image_settings: bool,
+    // ── DXF overlay ────────────────────────────────────────────────────
+    /// Optional DXF overlay for importing CAD geometry.
+    pub dxf_overlay: Option<super::dxf_import::DxfOverlay>,
     // ── Welcome screen ──────────────────────────────────────────────
     /// When true, the welcome screen is dismissed (user started working).
     pub dismiss_welcome: bool,
@@ -370,6 +376,16 @@ pub struct PlaceForceStart {
 pub struct ForceZoneDragState {
     /// World coordinates of the drag start corner. Set on mouse press.
     pub start_world: [f64; 2],
+}
+
+/// State for draw-body-geometry tool: drag on canvas to define a rectangle
+/// in body-local space for the target body.
+#[derive(Debug, Clone)]
+pub struct DrawBodyGeometryState {
+    /// Which body is receiving the geometry.
+    pub body_id: String,
+    /// World coordinates of the drag start. None while waiting for first click.
+    pub start_world: Option<[f64; 2]>,
 }
 
 /// Tracks the start of a Draw Link gesture.
@@ -464,6 +480,7 @@ impl Default for AppState {
             add_body_state: None,
             place_force_state: None,
             creating_force_zone: None,
+            drawing_body_geometry: None,
             dragging_ground_pivot: None,
             alignment_guides: Vec::new(),
             grashof_result: None,
@@ -529,6 +546,7 @@ impl Default for AppState {
             nathan_mode: false,
             background_image: None,
             show_image_settings: false,
+            dxf_overlay: None,
             dismiss_welcome: false,
             show_load_path: true,
             place_mass_body: None,

@@ -73,6 +73,9 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
     // ── Draw background image (behind mechanism, above grid) ────────────
     rendering::draw_background_image(&painter, canvas_rect, state);
 
+    // ── Draw DXF overlay (behind mechanism, above background image) ─────
+    crate::gui::dxf_import::draw_dxf_overlay(&painter, canvas_rect, state);
+
     // ── Render mechanism (immutable borrow scope) ────────────────────────
     let grounded_revolute_ids = rendering::render_mechanism(
         &painter,

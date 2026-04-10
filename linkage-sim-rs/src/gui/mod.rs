@@ -2,6 +2,7 @@
 
 mod state;
 mod canvas;
+pub mod dxf_import;
 mod error_panel;
 mod export;
 mod force_toolbar;
@@ -392,6 +393,34 @@ impl eframe::App for LinkageApp {
                             {
                                 if let Err(e) = self.state.load_from_file(&path) {
                                     log::error!("Failed to load mechanism: {}", e);
+                                }
+                            }
+                            ui.close();
+                        }
+                        if ui.button("Import DXF...")
+                            .on_hover_text("Import CAD geometry from a DXF file as a snappable overlay")
+                            .clicked()
+                        {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("DXF", &["dxf"])
+                                .pick_file()
+                            {
+                                match dxf_import::parse_dxf_file(&path, 0.001) {
+                                    Ok(overlay) => {
+                                        let n_ent = overlay.entities.len();
+                                        let n_circ = overlay.snap_circles.len();
+                                        self.state.dxf_overlay = Some(overlay);
+                                        self.state.status_message = Some(format!(
+                                            "DXF loaded: {} entities, {} circles (snap targets). Use tools to build or assign bodies.",
+                                            n_ent, n_circ
+                                        ));
+                                        self.state.status_message_time = 5.0;
+                                    }
+                                    Err(e) => {
+                                        log::error!("DXF import failed: {}", e);
+                                        self.state.status_message = Some(format!("DXF import failed: {}", e));
+                                        self.state.status_message_time = 4.0;
+                                    }
                                 }
                             }
                             ui.close();
@@ -1212,6 +1241,10 @@ impl eframe::App for LinkageApp {
                     property_panel::draw_property_panel(ui, &mut self.state);
                     ui.add_space(20.0);
                     input_panel::draw_input_panel(ui, &mut self.state);
+                    if self.state.dxf_overlay.is_some() {
+                        ui.add_space(20.0);
+                        dxf_import::draw_dxf_panel(ui, &mut self.state);
+                    }
                 });
             });
 
