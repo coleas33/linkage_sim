@@ -1086,9 +1086,10 @@ fn handle_click_selection(
                 // Handled by DrawBodyGeometry drag interaction section above.
             }
             EditorTool::Select => {
-                // DXF assignment mode: clicks toggle entity selection
+                // DXF overlay: clicks toggle entity selection when the
+                // overlay is loaded and visible (no mode gate required).
                 let dxf_handled = if let Some(ref mut overlay) = state.dxf_overlay {
-                    if overlay.assigning {
+                    if overlay.visible {
                         let [wx, wy] = state.view.screen_to_world(pointer_pos.x, pointer_pos.y);
                         let threshold = 15.0 / state.view.scale as f64;
                         if let Some(idx) = crate::gui::dxf_import::hit_test_dxf_entity(overlay, wx, wy, threshold) {

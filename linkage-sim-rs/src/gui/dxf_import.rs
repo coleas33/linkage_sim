@@ -331,8 +331,23 @@ pub fn draw_dxf_overlay(
 
 // ── Assignment panel (sidebar) ──────────────────────────────────────────────
 
+/// Deferred action from the DXF panel, executed after the mutable overlay
+/// borrow ends.
+enum DxfAction {
+    ConvertSelectedToLinks(Vec<usize>),
+    ConvertSelectedToSingleBody(Vec<usize>),
+    ConvertSelectedToGround(Vec<usize>),
+    ConvertAllLinesToLinks,
+    ClearOverlay,
+}
+
 /// Draw the DXF import settings and body assignment panel.
 pub fn draw_dxf_panel(ui: &mut egui::Ui, state: &mut super::state::AppState) {
+    // First phase: draw UI with mutable overlay borrow. Record any actions
+    // that need to run after the borrow is released.
+    let mut action: Option<DxfAction> = None;
+
+    {
     let overlay = match state.dxf_overlay.as_mut() {
         Some(o) => o,
         None => return,
@@ -384,76 +399,105 @@ pub fn draw_dxf_panel(ui: &mut egui::Ui, state: &mut super::state::AppState) {
     let n_arcs = overlay.entities.iter().filter(|e| matches!(e.kind, DxfEntityKind::Arc { .. })).count();
     ui.label(format!("{} lines, {} circles, {} arcs", n_lines, n_circles, n_arcs));
 
-    // ── Body assignment ─────────────────────────────────────────────────
+    // ── Interactive selection + conversion ──────────────────────────────
     ui.separator();
-    ui.heading("Body Assignment");
+    ui.heading("Convert to Mechanism");
+    ui.label("Click DXF lines/circles on the canvas to select. Shift-click for more. Then use a button below.");
+    ui.label(format!("Selected: {}", overlay.selected_entities.len()));
 
-    // Show existing assignments
-    for (i, assignment) in overlay.assignments.iter().enumerate() {
-        let label = if assignment.is_ground {
-            format!("{} (ground) - {} entities", assignment.name, assignment.entity_indices.len())
-        } else {
-            format!("{} - {} entities", assignment.name, assignment.entity_indices.len())
-        };
-        ui.label(label);
-        // Placeholder for per-assignment controls (toggle ground, delete, etc.)
-        let _ = i;
-    }
-
-    if overlay.assigning {
-        ui.label(format!("Selecting entities for: {}", overlay.next_body_name));
-        ui.label(format!("{} selected", overlay.selected_entities.len()));
-        ui.horizontal(|ui| {
-            if ui.button("Finish Body").clicked() && !overlay.selected_entities.is_empty() {
-                let assignment = BodyAssignment {
-                    name: overlay.next_body_name.clone(),
-                    entity_indices: overlay.selected_entities.iter().copied().collect(),
-                    is_ground: false,
-                };
-                overlay.assignments.push(assignment);
-                overlay.selected_entities.clear();
-                // Auto-increment name
-                let n = overlay.assignments.len() + 1;
-                overlay.next_body_name = format!("body_{}", n);
-                overlay.assigning = false;
-            }
-            if ui.button("Cancel").clicked() {
-                overlay.selected_entities.clear();
-                overlay.assigning = false;
-            }
-        });
-    } else {
-        if ui.button("New Body").clicked() {
-            overlay.assigning = true;
+    ui.horizontal(|ui| {
+        if ui.button("Deselect All").clicked() {
             overlay.selected_entities.clear();
         }
-    }
-
-    // Mark last assignment as ground
-    if !overlay.assignments.is_empty() {
-        let last = overlay.assignments.len() - 1;
-        let is_ground = overlay.assignments[last].is_ground;
-        let label = if is_ground { "Unmark Ground" } else { "Mark Last as Ground" };
-        if ui.button(label).clicked() {
-            overlay.assignments[last].is_ground = !is_ground;
+        if ui.button("Select All Lines").clicked() {
+            for e in &overlay.entities {
+                if matches!(e.kind, DxfEntityKind::Line { .. }) {
+                    overlay.selected_entities.insert(e.index);
+                }
+            }
         }
-    }
+    });
 
-    // Build mechanism from assignments
+    let n_selected = overlay.selected_entities.len();
+    let n_selected_lines = overlay.entities.iter()
+        .filter(|e| overlay.selected_entities.contains(&e.index) && matches!(e.kind, DxfEntityKind::Line { .. }))
+        .count();
+
     ui.separator();
-    let can_build = overlay.assignments.len() >= 2
-        && overlay.assignments.iter().any(|a| a.is_ground);
-    if ui.add_enabled(can_build, egui::Button::new("Build Mechanism"))
-        .on_hover_text("Create mechanism from body assignments. Need at least 2 bodies with one marked as ground.")
+    ui.label("Convert selected:");
+
+    // Convert each selected line to its own 2-point body (link)
+    let can_lines = n_selected_lines > 0;
+    if ui.add_enabled(can_lines, egui::Button::new(format!("→ Links ({} lines)", n_selected_lines)))
+        .on_hover_text("Each selected line becomes its own 2-point body. Shared endpoints between selected lines become revolute joints automatically.")
         .clicked()
     {
-        build_mechanism_from_assignments(state);
+        action = Some(DxfAction::ConvertSelectedToLinks(
+            overlay.selected_entities.iter().copied().collect(),
+        ));
+    }
+
+    // Group all selected lines into a single multi-point body (ternary+ link)
+    if ui.add_enabled(n_selected >= 1, egui::Button::new(format!("→ Single Body ({} entities)", n_selected)))
+        .on_hover_text("All selected entities become ONE rigid body. Good for ternary links or irregular shapes. Unique endpoints become attachment points.")
+        .clicked()
+    {
+        action = Some(DxfAction::ConvertSelectedToSingleBody(
+            overlay.selected_entities.iter().copied().collect(),
+        ));
+    }
+
+    // Mark selected entity endpoints as ground
+    if ui.add_enabled(n_selected >= 1, egui::Button::new("→ Ground Pivots"))
+        .on_hover_text("Endpoints and circle centers of selected entities become fixed ground pivots.")
+        .clicked()
+    {
+        action = Some(DxfAction::ConvertSelectedToGround(
+            overlay.selected_entities.iter().copied().collect(),
+        ));
+    }
+
+    // Auto-convert everything at once
+    ui.separator();
+    if ui.button("Auto: All Lines → Links")
+        .on_hover_text("One-click: convert every DXF line into a link. Skip the selection step.")
+        .clicked()
+    {
+        action = Some(DxfAction::ConvertAllLinesToLinks);
     }
 
     // Clear overlay
     ui.separator();
     if ui.button("Clear DXF Overlay").clicked() {
-        state.dxf_overlay = None;
+        action = Some(DxfAction::ClearOverlay);
+    }
+    } // end of mutable overlay borrow
+
+    // Second phase: execute deferred action with full state access
+    if let Some(act) = action {
+        match act {
+            DxfAction::ConvertSelectedToLinks(indices) => {
+                convert_selected_lines_to_links(state, &indices);
+            }
+            DxfAction::ConvertSelectedToSingleBody(indices) => {
+                convert_selected_to_single_body(state, &indices);
+            }
+            DxfAction::ConvertSelectedToGround(indices) => {
+                convert_selected_to_ground(state, &indices);
+            }
+            DxfAction::ConvertAllLinesToLinks => {
+                let all_line_indices: Vec<usize> = state.dxf_overlay.as_ref().map(|o|
+                    o.entities.iter()
+                        .filter(|e| matches!(e.kind, DxfEntityKind::Line { .. }))
+                        .map(|e| e.index)
+                        .collect()
+                ).unwrap_or_default();
+                convert_selected_lines_to_links(state, &all_line_indices);
+            }
+            DxfAction::ClearOverlay => {
+                state.dxf_overlay = None;
+            }
+        }
     }
 }
 
@@ -490,7 +534,32 @@ fn rescale_overlay(overlay: &mut DxfOverlay, new_scale: f64) {
 // ── Build mechanism from assignments ────────────────────────────────────────
 
 /// Convert body assignments into a MechanismJson and load it.
-fn build_mechanism_from_assignments(state: &mut super::state::AppState) {
+// ── Conversion helpers ──────────────────────────────────────────────────────
+
+const JOINT_TOL: f64 = 0.002; // 2mm tolerance for "same point"
+
+/// Snap a line endpoint to the nearest circle center within tolerance.
+fn snap_to_circle(overlay: &DxfOverlay, pt: [f64; 2]) -> [f64; 2] {
+    let ox = overlay.offset[0];
+    let oy = overlay.offset[1];
+    let mut best_dist = JOINT_TOL;
+    let mut best = pt;
+    for sc in &overlay.snap_circles {
+        let cx = sc.center[0] + ox;
+        let cy = sc.center[1] + oy;
+        let d = ((pt[0] - cx).powi(2) + (pt[1] - cy).powi(2)).sqrt();
+        if d < best_dist {
+            best_dist = d;
+            best = [cx, cy];
+        }
+    }
+    best
+}
+
+/// Convert selected DXF lines into individual 2-point bodies (links).
+/// Shared endpoints between lines become revolute joints. Endpoints that
+/// match nothing else are kept as free attachment points (e.g. for ground).
+fn convert_selected_lines_to_links(state: &mut super::state::AppState, line_indices: &[usize]) {
     let overlay = match &state.dxf_overlay {
         Some(o) => o,
         None => return,
@@ -499,143 +568,172 @@ fn build_mechanism_from_assignments(state: &mut super::state::AppState) {
     let ox = overlay.offset[0];
     let oy = overlay.offset[1];
 
-    // For each assignment, collect circle centers as attachment points
-    // and determine body position (first circle = origin).
-    let mut bodies_json = serde_json::Map::new();
-    let mut body_circles: HashMap<String, Vec<[f64; 2]>> = HashMap::new();
-
-    let joint_tolerance = 0.0005; // 0.5mm tolerance for matching joint positions
-
-    for assignment in &overlay.assignments {
-        let mut circles_world: Vec<[f64; 2]> = Vec::new();
-        for &ei in &assignment.entity_indices {
-            if let Some(entity) = overlay.entities.iter().find(|e| e.index == ei) {
-                if let DxfEntityKind::Circle { cx, cy, .. } = &entity.kind {
-                    circles_world.push([*cx + ox, *cy + oy]);
-                }
+    // Collect each selected line's endpoints (snapped to circles if near)
+    let mut lines: Vec<(usize, [f64; 2], [f64; 2])> = Vec::new();
+    for &idx in line_indices {
+        if let Some(entity) = overlay.entities.iter().find(|e| e.index == idx) {
+            if let DxfEntityKind::Line { x1, y1, x2, y2 } = &entity.kind {
+                let p1 = snap_to_circle(overlay, [*x1 + ox, *y1 + oy]);
+                let p2 = snap_to_circle(overlay, [*x2 + ox, *y2 + oy]);
+                lines.push((idx, p1, p2));
             }
         }
-
-        if circles_world.is_empty() {
-            // No circles -> collect line endpoints as attachment points
-            for &ei in &assignment.entity_indices {
-                if let Some(entity) = overlay.entities.iter().find(|e| e.index == ei) {
-                    if let DxfEntityKind::Line { x1, y1, x2, y2 } = &entity.kind {
-                        let p1 = [*x1 + ox, *y1 + oy];
-                        let p2 = [*x2 + ox, *y2 + oy];
-                        if !circles_world.iter().any(|c| (c[0]-p1[0]).abs() < joint_tolerance && (c[1]-p1[1]).abs() < joint_tolerance) {
-                            circles_world.push(p1);
-                        }
-                        if !circles_world.iter().any(|c| (c[0]-p2[0]).abs() < joint_tolerance && (c[1]-p2[1]).abs() < joint_tolerance) {
-                            circles_world.push(p2);
-                        }
-                    }
-                }
-            }
-        }
-
-        if circles_world.is_empty() {
-            continue;
-        }
-
-        // For ground: attachment points are in world coordinates
-        // For moving bodies: first circle = body origin, rest are local offsets
-        let body_id = if assignment.is_ground {
-            "ground".to_string()
-        } else {
-            assignment.name.clone()
-        };
-
-        let mut attachment_points = serde_json::Map::new();
-        let names = ["A", "B", "C", "D", "E", "F", "G", "H"];
-
-        if assignment.is_ground {
-            for (i, pt) in circles_world.iter().enumerate() {
-                let name = if i < names.len() { format!("P{}", i + 1) } else { format!("P{}", i + 1) };
-                attachment_points.insert(name, serde_json::json!([pt[0], pt[1]]));
-            }
-        } else {
-            // First circle is body origin
-            let origin = circles_world[0];
-            for (i, pt) in circles_world.iter().enumerate() {
-                let name = if i < names.len() { names[i].to_string() } else { format!("P{}", i) };
-                let local = [pt[0] - origin[0], pt[1] - origin[1]];
-                attachment_points.insert(name, serde_json::json!([local[0], local[1]]));
-            }
-        }
-
-        // Compute CG and mass
-        let n = circles_world.len() as f64;
-        let cg_x: f64 = circles_world.iter().map(|c| c[0]).sum::<f64>() / n;
-        let cg_y: f64 = circles_world.iter().map(|c| c[1]).sum::<f64>() / n;
-        let (cg_local, mass) = if assignment.is_ground {
-            ([0.0, 0.0], 0.0)
-        } else {
-            let origin = circles_world[0];
-            ([cg_x - origin[0], cg_y - origin[1]], 1.0)
-        };
-
-        let body_json = serde_json::json!({
-            "attachment_points": attachment_points,
-            "mass": mass,
-            "cg_local": cg_local,
-            "izz_cg": if assignment.is_ground { 0.0 } else { 0.01 },
-            "label": body_id,
-        });
-        bodies_json.insert(body_id.clone(), body_json);
-        body_circles.insert(body_id, circles_world);
     }
 
-    // Auto-detect joints: circles from different bodies at same position
+    if lines.is_empty() {
+        state.status_message = Some("No lines selected to convert".to_string());
+        state.status_message_time = 3.0;
+        return;
+    }
+
+    // Find shared endpoints: cluster all endpoints within JOINT_TOL of each other
+    let mut all_points: Vec<[f64; 2]> = Vec::new();
+    for (_, p1, p2) in &lines {
+        all_points.push(*p1);
+        all_points.push(*p2);
+    }
+
+    // Cluster into unique positions
+    let mut cluster_centers: Vec<[f64; 2]> = Vec::new();
+    let mut point_to_cluster: Vec<usize> = Vec::new();
+    for pt in &all_points {
+        let mut found_cluster = None;
+        for (ci, cc) in cluster_centers.iter().enumerate() {
+            let d = ((pt[0] - cc[0]).powi(2) + (pt[1] - cc[1]).powi(2)).sqrt();
+            if d < JOINT_TOL {
+                found_cluster = Some(ci);
+                break;
+            }
+        }
+        if let Some(ci) = found_cluster {
+            point_to_cluster.push(ci);
+        } else {
+            point_to_cluster.push(cluster_centers.len());
+            cluster_centers.push(*pt);
+        }
+    }
+
+    // Count how many line endpoints land on each cluster
+    let mut cluster_count = vec![0usize; cluster_centers.len()];
+    for &ci in &point_to_cluster {
+        cluster_count[ci] += 1;
+    }
+
+    // Determine ground pivots: clusters with only one endpoint become free ends.
+    // We pick the leftmost/bottom-most single-endpoint clusters and use them
+    // as ground pivots, so the mechanism has something fixed. Clusters with
+    // 2+ endpoints become revolute joints between bodies.
+    let mut ground_clusters: Vec<usize> = cluster_count.iter().enumerate()
+        .filter(|(_, c)| **c == 1)
+        .map(|(i, _)| i)
+        .collect();
+    // If nothing qualifies, no ground — user can assign later.
+    ground_clusters.sort_by(|a, b| {
+        let pa = cluster_centers[*a];
+        let pb = cluster_centers[*b];
+        pa[0].partial_cmp(&pb[0]).unwrap_or(std::cmp::Ordering::Equal)
+            .then(pa[1].partial_cmp(&pb[1]).unwrap_or(std::cmp::Ordering::Equal))
+    });
+
+    // Build bodies (one per line)
+    let mut bodies_json = serde_json::Map::new();
+    let mut line_body_ids: Vec<String> = Vec::with_capacity(lines.len());
+
+    // Ground body with all single-endpoint clusters as attachment points
+    let mut ground_pts = serde_json::Map::new();
+    for (i, &ci) in ground_clusters.iter().enumerate() {
+        let cc = cluster_centers[ci];
+        ground_pts.insert(format!("P{}", i + 1), serde_json::json!([cc[0], cc[1]]));
+    }
+    // Always include a ground body (even if empty — user can add pivots)
+    if !ground_pts.is_empty() {
+        bodies_json.insert("ground".to_string(), serde_json::json!({
+            "attachment_points": ground_pts,
+            "mass": 0.0,
+            "cg_local": [0.0, 0.0],
+            "izz_cg": 0.0,
+            "label": "ground",
+        }));
+    }
+
+    // Map cluster index -> ground point name (if ground)
+    let mut ground_cluster_name: HashMap<usize, String> = HashMap::new();
+    for (i, &ci) in ground_clusters.iter().enumerate() {
+        ground_cluster_name.insert(ci, format!("P{}", i + 1));
+    }
+
+    // Create a body for each selected line
+    for (li, (_ei, p1, p2)) in lines.iter().enumerate() {
+        let body_id = format!("link_{}", li + 1);
+        // Local frame: p1 is origin, p2 is at B in local coords
+        let local_b = [p2[0] - p1[0], p2[1] - p1[1]];
+        let cg = [local_b[0] / 2.0, local_b[1] / 2.0];
+        let length = (local_b[0].powi(2) + local_b[1].powi(2)).sqrt();
+        let izz = (1.0 / 12.0) * length.powi(2); // uniform rod about CG
+
+        let mut pts = serde_json::Map::new();
+        pts.insert("A".to_string(), serde_json::json!([0.0, 0.0]));
+        pts.insert("B".to_string(), serde_json::json!([local_b[0], local_b[1]]));
+
+        bodies_json.insert(body_id.clone(), serde_json::json!({
+            "attachment_points": pts,
+            "mass": 1.0,
+            "cg_local": cg,
+            "izz_cg": izz,
+            "label": body_id,
+        }));
+        line_body_ids.push(body_id);
+    }
+
+    // Build joints from clusters
     let mut joints_json = serde_json::Map::new();
     let mut joint_count = 0;
-    let body_ids: Vec<String> = body_circles.keys().cloned().collect();
 
-    for i in 0..body_ids.len() {
-        for j in (i + 1)..body_ids.len() {
-            let id_a = &body_ids[i];
-            let id_b = &body_ids[j];
-            let circles_a = &body_circles[id_a];
-            let circles_b = &body_circles[id_b];
+    for (ci, &count) in cluster_count.iter().enumerate() {
+        // Collect all (line_body_id, point_name) that land on this cluster
+        let mut members: Vec<(String, &'static str)> = Vec::new();
+        for (li, _) in lines.iter().enumerate() {
+            let p1_cluster = point_to_cluster[li * 2];
+            let p2_cluster = point_to_cluster[li * 2 + 1];
+            if p1_cluster == ci {
+                members.push((line_body_ids[li].clone(), "A"));
+            }
+            if p2_cluster == ci {
+                members.push((line_body_ids[li].clone(), "B"));
+            }
+        }
 
-            for (ai, ca) in circles_a.iter().enumerate() {
-                for (bi, cb) in circles_b.iter().enumerate() {
-                    let dist = ((ca[0] - cb[0]).powi(2) + (ca[1] - cb[1]).powi(2)).sqrt();
-                    if dist < joint_tolerance {
-                        joint_count += 1;
-                        let joint_id = format!("J{}", joint_count);
-
-                        // Find the point names
-                        let names_a = ["A", "B", "C", "D", "E", "F", "G", "H"];
-                        let point_a = if id_a == "ground" {
-                            format!("P{}", ai + 1)
-                        } else if ai < names_a.len() {
-                            names_a[ai].to_string()
-                        } else {
-                            format!("P{}", ai)
-                        };
-                        let point_b = if id_b == "ground" {
-                            format!("P{}", bi + 1)
-                        } else if bi < names_a.len() {
-                            names_a[bi].to_string()
-                        } else {
-                            format!("P{}", bi)
-                        };
-
-                        joints_json.insert(joint_id, serde_json::json!({
-                            "type": "revolute",
-                            "body_i": id_a,
-                            "body_j": id_b,
-                            "point_i": point_a,
-                            "point_j": point_b,
-                        }));
-                    }
+        if count == 1 {
+            // Single endpoint → joint to ground (if ground_clusters contains ci)
+            if let Some(gname) = ground_cluster_name.get(&ci) {
+                let (body_id, point) = &members[0];
+                joint_count += 1;
+                joints_json.insert(format!("J{}", joint_count), serde_json::json!({
+                    "type": "revolute",
+                    "body_i": "ground",
+                    "body_j": body_id,
+                    "point_i": gname,
+                    "point_j": point,
+                }));
+            }
+        } else {
+            // Multiple endpoints → connect them pairwise (chain all to first)
+            if members.len() >= 2 {
+                let (first_body, first_pt) = &members[0];
+                for (other_body, other_pt) in &members[1..] {
+                    joint_count += 1;
+                    joints_json.insert(format!("J{}", joint_count), serde_json::json!({
+                        "type": "revolute",
+                        "body_i": first_body,
+                        "body_j": other_body,
+                        "point_i": first_pt,
+                        "point_j": other_pt,
+                    }));
                 }
             }
         }
     }
 
-    // Build MechanismJson
     let mechanism_json = serde_json::json!({
         "schema_version": "1.1.0",
         "bodies": bodies_json,
@@ -645,12 +743,221 @@ fn build_mechanism_from_assignments(state: &mut super::state::AppState) {
     });
 
     let json_str = serde_json::to_string_pretty(&mechanism_json).unwrap_or_default();
-    let _ = state.load_from_json_str(&json_str);
-    state.status_message = Some(format!(
-        "Built mechanism: {} bodies, {} joints. Right-click a grounded joint to set driver.",
-        body_circles.len(), joint_count
-    ));
-    state.status_message_time = 5.0;
+    let n_bodies = line_body_ids.len();
+    match state.load_from_json_str(&json_str) {
+        Ok(_) => {
+            state.status_message = Some(format!(
+                "Converted {} lines → {} links, {} joints, {} ground pivots. Right-click a grounded joint to set driver.",
+                n_bodies, n_bodies, joint_count, ground_clusters.len()
+            ));
+        }
+        Err(e) => {
+            state.status_message = Some(format!("Mechanism build failed: {}", e));
+        }
+    }
+    state.status_message_time = 6.0;
+}
+
+/// Convert all selected entities into a single multi-point body.
+fn convert_selected_to_single_body(state: &mut super::state::AppState, indices: &[usize]) {
+    let overlay = match &state.dxf_overlay {
+        Some(o) => o,
+        None => return,
+    };
+    let ox = overlay.offset[0];
+    let oy = overlay.offset[1];
+
+    // Collect all unique endpoints from selected entities
+    let mut pts_world: Vec<[f64; 2]> = Vec::new();
+    let mut add_pt = |pts: &mut Vec<[f64; 2]>, p: [f64; 2]| {
+        let snapped = snap_to_circle(overlay, p);
+        if !pts.iter().any(|q| ((q[0]-snapped[0]).powi(2)+(q[1]-snapped[1]).powi(2)).sqrt() < JOINT_TOL) {
+            pts.push(snapped);
+        }
+    };
+    for &idx in indices {
+        if let Some(entity) = overlay.entities.iter().find(|e| e.index == idx) {
+            match &entity.kind {
+                DxfEntityKind::Line { x1, y1, x2, y2 } => {
+                    add_pt(&mut pts_world, [*x1 + ox, *y1 + oy]);
+                    add_pt(&mut pts_world, [*x2 + ox, *y2 + oy]);
+                }
+                DxfEntityKind::Circle { cx, cy, .. } => {
+                    add_pt(&mut pts_world, [*cx + ox, *cy + oy]);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if pts_world.len() < 2 {
+        state.status_message = Some("Need at least 2 unique points to make a body".to_string());
+        state.status_message_time = 3.0;
+        return;
+    }
+
+    // First point is body origin, others are local offsets
+    let origin = pts_world[0];
+    let mut attachment_points = serde_json::Map::new();
+    let names = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
+    for (i, pt) in pts_world.iter().enumerate() {
+        let name = if i < names.len() { names[i].to_string() } else { format!("P{}", i) };
+        attachment_points.insert(name, serde_json::json!([pt[0] - origin[0], pt[1] - origin[1]]));
+    }
+
+    // CG = centroid of attachment points in local frame
+    let cg_x: f64 = pts_world.iter().map(|p| p[0] - origin[0]).sum::<f64>() / pts_world.len() as f64;
+    let cg_y: f64 = pts_world.iter().map(|p| p[1] - origin[1]).sum::<f64>() / pts_world.len() as f64;
+
+    // Estimate characteristic length for inertia
+    let mut max_r_sq = 0.0_f64;
+    for pt in &pts_world {
+        let r_sq = (pt[0] - origin[0] - cg_x).powi(2) + (pt[1] - origin[1] - cg_y).powi(2);
+        if r_sq > max_r_sq { max_r_sq = r_sq; }
+    }
+    let izz = 1.0 * max_r_sq.max(0.0001);
+
+    // Figure out a unique body name
+    let next_id = state.mechanism.as_ref()
+        .map(|m| m.bodies().len() + 1)
+        .unwrap_or(1);
+    let body_id = format!("link_{}", next_id);
+
+    let body_json = serde_json::json!({
+        "attachment_points": attachment_points,
+        "mass": 1.0,
+        "cg_local": [cg_x, cg_y],
+        "izz_cg": izz,
+        "label": body_id,
+    });
+
+    // If there's already a mechanism, add to it. Otherwise create a new one
+    // with just this body plus a ground.
+    let current_json = state.blueprint.as_ref().and_then(|b| serde_json::to_value(b).ok());
+    let mut mechanism_json = match current_json {
+        Some(v) => v,
+        None => serde_json::json!({
+            "schema_version": "1.1.0",
+            "bodies": { "ground": {
+                "attachment_points": {},
+                "mass": 0.0,
+                "cg_local": [0.0, 0.0],
+                "izz_cg": 0.0,
+                "label": "ground",
+            }},
+            "joints": {},
+            "drivers": {},
+            "forces": [],
+        }),
+    };
+
+    if let Some(bodies) = mechanism_json.get_mut("bodies").and_then(|v| v.as_object_mut()) {
+        bodies.insert(body_id.clone(), body_json);
+    }
+
+    let json_str = serde_json::to_string_pretty(&mechanism_json).unwrap_or_default();
+    match state.load_from_json_str(&json_str) {
+        Ok(_) => {
+            state.status_message = Some(format!(
+                "Added '{}' as a single body with {} attachment points. Use Draw Link or + Joint Point to connect.",
+                body_id, pts_world.len()
+            ));
+        }
+        Err(e) => {
+            state.status_message = Some(format!("Mechanism build failed: {}", e));
+        }
+    }
+    state.status_message_time = 6.0;
+}
+
+/// Mark the endpoints of selected entities as ground pivots.
+fn convert_selected_to_ground(state: &mut super::state::AppState, indices: &[usize]) {
+    let overlay = match &state.dxf_overlay {
+        Some(o) => o,
+        None => return,
+    };
+    let ox = overlay.offset[0];
+    let oy = overlay.offset[1];
+
+    let mut pivot_pts: Vec<[f64; 2]> = Vec::new();
+    let mut add_pt = |pts: &mut Vec<[f64; 2]>, p: [f64; 2]| {
+        let snapped = snap_to_circle(overlay, p);
+        if !pts.iter().any(|q| ((q[0]-snapped[0]).powi(2)+(q[1]-snapped[1]).powi(2)).sqrt() < JOINT_TOL) {
+            pts.push(snapped);
+        }
+    };
+    for &idx in indices {
+        if let Some(entity) = overlay.entities.iter().find(|e| e.index == idx) {
+            match &entity.kind {
+                DxfEntityKind::Line { x1, y1, x2, y2 } => {
+                    add_pt(&mut pivot_pts, [*x1 + ox, *y1 + oy]);
+                    add_pt(&mut pivot_pts, [*x2 + ox, *y2 + oy]);
+                }
+                DxfEntityKind::Circle { cx, cy, .. } => {
+                    add_pt(&mut pivot_pts, [*cx + ox, *cy + oy]);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if pivot_pts.is_empty() {
+        state.status_message = Some("No entities selected".to_string());
+        state.status_message_time = 3.0;
+        return;
+    }
+
+    // Add to existing ground body (or create new mechanism with just ground)
+    let current_json = state.blueprint.as_ref().and_then(|b| serde_json::to_value(b).ok());
+    let mut mechanism_json = match current_json {
+        Some(v) => v,
+        None => serde_json::json!({
+            "schema_version": "1.1.0",
+            "bodies": { "ground": {
+                "attachment_points": {},
+                "mass": 0.0,
+                "cg_local": [0.0, 0.0],
+                "izz_cg": 0.0,
+                "label": "ground",
+            }},
+            "joints": {},
+            "drivers": {},
+            "forces": [],
+        }),
+    };
+
+    let added_count = pivot_pts.len();
+    if let Some(bodies) = mechanism_json.get_mut("bodies").and_then(|v| v.as_object_mut()) {
+        // Get or create ground body
+        if !bodies.contains_key("ground") {
+            bodies.insert("ground".to_string(), serde_json::json!({
+                "attachment_points": {},
+                "mass": 0.0,
+                "cg_local": [0.0, 0.0],
+                "izz_cg": 0.0,
+                "label": "ground",
+            }));
+        }
+        if let Some(ground) = bodies.get_mut("ground").and_then(|v| v.as_object_mut()) {
+            if let Some(att) = ground.get_mut("attachment_points").and_then(|v| v.as_object_mut()) {
+                let start_idx = att.len();
+                for (i, pt) in pivot_pts.iter().enumerate() {
+                    att.insert(format!("P{}", start_idx + i + 1), serde_json::json!([pt[0], pt[1]]));
+                }
+            }
+        }
+    }
+
+    let json_str = serde_json::to_string_pretty(&mechanism_json).unwrap_or_default();
+    match state.load_from_json_str(&json_str) {
+        Ok(_) => {
+            state.status_message = Some(format!("Added {} ground pivots from selected entities", added_count));
+        }
+        Err(e) => {
+            state.status_message = Some(format!("Failed to add pivots: {}", e));
+        }
+    }
+    state.status_message_time = 4.0;
 }
 
 // ── Hit-testing for entity selection ────────────────────────────────────────
