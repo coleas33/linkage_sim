@@ -565,9 +565,68 @@ pub(crate) fn compute_sweep_data(
                 }
             }
             _ => {
-                // Solver failed at this angle -- stop sweep.
-                // The mechanism likely cannot complete a full rotation.
-                break;
+                // Solver failed at this angle. For non-Grashof mechanisms
+                // that only oscillate in a limited range, failed angles are
+                // expected — they lie outside the reachable motion range.
+                // Instead of aborting the sweep, push NaN for every data
+                // channel so the data vectors stay aligned. Plots will show
+                // gaps where the mechanism can't reach.
+                data.angles_deg.push(angle_deg);
+
+                // Body angles.
+                for body_id in &body_order {
+                    data.body_angles
+                        .get_mut(body_id)
+                        .unwrap()
+                        .push(f64::NAN);
+                }
+
+                // Coupler traces and velocities/accelerations.
+                for (key, _, _) in &coupler_keys {
+                    data.coupler_traces
+                        .get_mut(key)
+                        .unwrap()
+                        .push([f64::NAN, f64::NAN]);
+                    coupler_vel_data.get_mut(key).unwrap().push(f64::NAN);
+                    coupler_accel_data.get_mut(key).unwrap().push(f64::NAN);
+                }
+
+                // Transmission angle (4-bar only).
+                if data.transmission_angles.is_some() {
+                    data.transmission_angles.as_mut().unwrap().push(f64::NAN);
+                }
+
+                // Driver torque & joint reactions.
+                data.driver_torques.as_mut().unwrap().push(f64::NAN);
+                for values in reaction_data.values_mut() {
+                    values.push(f64::NAN);
+                }
+
+                // Energy / mechanical advantage / inverse dynamics.
+                data.kinetic_energy.push(f64::NAN);
+                data.potential_energy.push(f64::NAN);
+                data.total_energy.push(f64::NAN);
+                data.inverse_dynamics_torques.push(f64::NAN);
+                data.mechanical_advantage.push(f64::NAN);
+
+                // Actuator data.
+                if actuator_info.is_some() {
+                    data.actuator_forces.as_mut().unwrap().push(f64::NAN);
+                    data.actuator_forces_id.as_mut().unwrap().push(f64::NAN);
+                    data.actuator_speeds.as_mut().unwrap().push(f64::NAN);
+                    data.actuator_power.as_mut().unwrap().push(f64::NAN);
+                    data.actuator_power_id.as_mut().unwrap().push(f64::NAN);
+                    data.actuator_lengths.as_mut().unwrap().push(f64::NAN);
+                }
+
+                // Output force from force zones.
+                if has_force_zones {
+                    data.output_forces.as_mut().unwrap().push(f64::NAN);
+                }
+
+                // Don't update `q` — keep the last-good configuration as
+                // the initial guess for the next angle attempt.
+                // Continue the sweep (don't break).
             }
         }
     }

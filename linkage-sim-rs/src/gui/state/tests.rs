@@ -380,21 +380,36 @@
 
     #[test]
     fn compute_sweep_partial_for_non_crank() {
-        // Double-rocker cannot complete full 360 rotation.
+        // Double-rocker cannot complete full 360 rotation. The sweep should
+        // still return 361 angle entries (one per degree) so data vectors
+        // stay aligned across all channels, but some angles will have NaN
+        // values where the position solver couldn't find a configuration.
         let mut state = AppState::default();
         state.load_sample(SampleMechanism::DoubleRocker);
         let sweep = state.sweep_data.as_ref().unwrap();
 
-        // Should have fewer than 361 points.
-        assert!(
-            sweep.angles_deg.len() < 361,
-            "Double-rocker sweep should stop before 360, got {} points",
-            sweep.angles_deg.len()
+        // Should have full 361 points (NaN-padded for unreachable angles).
+        assert_eq!(
+            sweep.angles_deg.len(),
+            361,
+            "Sweep should have 361 angle entries (NaN-padded for unreachable angles)"
         );
-        // But should have at least some data.
+
+        // At least some body angles should be NaN (unreachable config), and
+        // at least some should be finite (reachable config), proving it's
+        // a non-Grashof mechanism handled gracefully.
+        let (_body_id, angles) = sweep.body_angles.iter().next().expect("has body angles");
+        let n_nan = angles.iter().filter(|a| a.is_nan()).count();
+        let n_finite = angles.iter().filter(|a| a.is_finite()).count();
         assert!(
-            !sweep.angles_deg.is_empty(),
-            "Sweep should have at least some points"
+            n_nan > 0,
+            "Double-rocker should have unreachable angles (NaN), got {} NaN out of {}",
+            n_nan, angles.len()
+        );
+        assert!(
+            n_finite > 0,
+            "Double-rocker should have some reachable angles, got {} finite out of {}",
+            n_finite, angles.len()
         );
     }
 
