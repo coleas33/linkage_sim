@@ -124,6 +124,13 @@ fn show_joint_menu(
             state.pending_driver_reassignment = Some(joint_id.to_string());
             ui.close();
         }
+    } else {
+        // Show a disabled option so users see that Set as Driver exists
+        // and understand why it's not available for this joint.
+        ui.add_enabled(false, egui::Button::new("Set as Driver"))
+            .on_hover_text(
+                "Only grounded revolute joints can be drivers. Use the + Ground tool to ground a link, then right-click the grounded joint and select Set as Driver."
+            );
     }
 
     if ui.button("Delete Joint").on_hover_text("Remove this joint and disconnect the bodies").clicked() {
@@ -173,21 +180,35 @@ fn show_attachment_menu(
         ui.close();
     }
 
-    // Set as Driver: only if this body belongs to a grounded revolute joint.
-    if let Some(mech) = &state.mechanism {
-        let grounded = mech.grounded_revolute_joint_ids();
-        for joint in mech.joints() {
-            if joint.is_revolute()
-                && grounded.contains(&joint.id().to_string())
-                && ((joint.body_i_id() == body_id) || (joint.body_j_id() == body_id))
-                && current_driver_joint.as_deref() != Some(joint.id())
-            {
-                if ui.button("Set as Driver").on_hover_text("Make this joint the driven input for kinematic analysis").clicked() {
-                    state.pending_driver_reassignment = Some(joint.id().to_string());
-                    ui.close();
+    // Set as Driver: show if this body belongs to a grounded revolute joint.
+    // Otherwise show a disabled version with guidance so the user knows
+    // the feature exists and how to enable it.
+    if body_id != GROUND_ID {
+        let mut found_grounded_joint: Option<String> = None;
+        if let Some(mech) = &state.mechanism {
+            let grounded = mech.grounded_revolute_joint_ids();
+            for joint in mech.joints() {
+                if joint.is_revolute()
+                    && grounded.contains(&joint.id().to_string())
+                    && ((joint.body_i_id() == body_id) || (joint.body_j_id() == body_id))
+                    && current_driver_joint.as_deref() != Some(joint.id())
+                {
+                    found_grounded_joint = Some(joint.id().to_string());
+                    break;
                 }
-                break;
             }
+        }
+
+        if let Some(joint_id) = found_grounded_joint {
+            if ui.button("Set as Driver").on_hover_text("Make this joint the driven input for kinematic analysis").clicked() {
+                state.pending_driver_reassignment = Some(joint_id);
+                ui.close();
+            }
+        } else {
+            ui.add_enabled(false, egui::Button::new("Set as Driver"))
+                .on_hover_text(
+                    "This body has no grounded revolute joint. Use the + Ground tool to click a free endpoint of a link to ground it, then come back and right-click to set the driver."
+                );
         }
     }
 }
