@@ -6,6 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::core::body::BodyGeometry;
 use crate::forces::elements::{ForceElement, LinearActuatorElement};
 use crate::io::schema::{BodyJson, JointJson};
 
@@ -338,7 +339,8 @@ pub fn draw_dxf_overlay(
 /// borrow ends.
 enum DxfAction {
     ConvertSelectedToLinks(Vec<usize>),
-    ConvertSelectedToSingleBody(Vec<usize>),
+    ConvertSelectedToMultiJointBody(Vec<usize>),
+    ConvertSelectedToRigidGeometry(Vec<usize>),
     ConvertSelectedToGround(Vec<usize>),
     ConvertSelectedLineToActuator(Vec<usize>),
     ConvertAllLinesToLinks,
@@ -454,13 +456,26 @@ pub fn draw_dxf_panel(ui: &mut egui::Ui, state: &mut super::state::AppState) {
         ));
     }
 
-    // Group all selected entities into a single multi-point rigid body.
-    // The body has no joints — user can attach it via Fixed joint later.
-    if ui.add_enabled(n_selected >= 1, egui::Button::new(format!("→ Body, no joints ({})", n_selected)))
-        .on_hover_text("All selected entities become ONE rigid body with attachment points at every unique endpoint. The body has no joints — rigidly attach it to another link later using the Fixed joint. Good for press plates, tools, or irregular ternary shapes.")
+    // Group all selected entities into ONE multi-point body (appears as a
+    // ternary/quaternary link with joints at every endpoint).
+    if ui.add_enabled(n_selected >= 1, egui::Button::new(format!("→ Multi-joint Body ({})", n_selected)))
+        .on_hover_text("All selected entities become ONE rigid body with attachment points at every unique endpoint. Appears as a ternary/quaternary link — the attachment points become joint locations.")
         .clicked()
     {
-        action = Some(DxfAction::ConvertSelectedToSingleBody(
+        action = Some(DxfAction::ConvertSelectedToMultiJointBody(
+            overlay.selected_entities.iter().copied().collect(),
+        ));
+    }
+
+    // Create a rigid geometry body: like the force zone geometry created by
+    // the Link Editor's "Add Geometry" button, but using the selected DXF
+    // entities' bounding box. The body has ONE attachment point at the
+    // geometry center — use Fixed joint to rigidly attach it to a link.
+    if ui.add_enabled(n_selected >= 1, egui::Button::new(format!("→ Rigid Geometry ({})", n_selected)))
+        .on_hover_text("Create a new body with BodyGeometry (force zone shape) from the bounding box of selected entities. The body has a single attachment point at the center. Use Fixed joint to rigidly attach it to a link. Good for press plates, tools, and force zone targets.")
+        .clicked()
+    {
+        action = Some(DxfAction::ConvertSelectedToRigidGeometry(
             overlay.selected_entities.iter().copied().collect(),
         ));
     }
@@ -477,7 +492,7 @@ pub fn draw_dxf_panel(ui: &mut egui::Ui, state: &mut super::state::AppState) {
 
     // Convert a single selected line to a Linear Actuator
     if ui.add_enabled(n_selected_lines >= 1, egui::Button::new("→ Linear Actuator"))
-        .on_hover_text("Convert one selected DXF line into a LinearActuator force element. The line endpoints are snapped to the nearest existing body attachment points. Build your mechanism first before adding the actuator.")
+        .on_hover_text("Convert one selected DXF line into a LinearActuator force element. The line endpoints snap to the nearest existing body attachment points (ground preferred). If no body point is near an endpoint, a new ground pivot is created there automatically.")
         .clicked()
     {
         action = Some(DxfAction::ConvertSelectedLineToActuator(
@@ -507,8 +522,11 @@ pub fn draw_dxf_panel(ui: &mut egui::Ui, state: &mut super::state::AppState) {
             DxfAction::ConvertSelectedToLinks(indices) => {
                 convert_selected_lines_to_links(state, &indices);
             }
-            DxfAction::ConvertSelectedToSingleBody(indices) => {
+            DxfAction::ConvertSelectedToMultiJointBody(indices) => {
                 convert_selected_to_single_body(state, &indices);
+            }
+            DxfAction::ConvertSelectedToRigidGeometry(indices) => {
+                convert_selected_to_rigid_geometry(state, &indices);
             }
             DxfAction::ConvertSelectedToGround(indices) => {
                 convert_selected_to_ground(state, &indices);
@@ -862,6 +880,139 @@ fn convert_selected_to_single_body(state: &mut super::state::AppState, indices: 
     state.status_message_time = 6.0;
 }
 
+/// Compute the world-space bounding box of selected entities.
+/// Includes line endpoints and circle/arc full extents.
+fn compute_bounding_box(state: &super::state::AppState, indices: &[usize]) -> Option<(f64, f64, f64, f64)> {
+    let overlay = state.dxf_overlay.as_ref()?;
+    let ox = overlay.offset[0];
+    let oy = overlay.offset[1];
+    let mut xmin = f64::INFINITY;
+    let mut xmax = f64::NEG_INFINITY;
+    let mut ymin = f64::INFINITY;
+    let mut ymax = f64::NEG_INFINITY;
+    let mut found = false;
+
+    for &idx in indices {
+        if let Some(entity) = overlay.entities.iter().find(|e| e.index == idx) {
+            match &entity.kind {
+                DxfEntityKind::Line { x1, y1, x2, y2 } => {
+                    let (wx1, wy1, wx2, wy2) = (*x1 + ox, *y1 + oy, *x2 + ox, *y2 + oy);
+                    xmin = xmin.min(wx1.min(wx2));
+                    xmax = xmax.max(wx1.max(wx2));
+                    ymin = ymin.min(wy1.min(wy2));
+                    ymax = ymax.max(wy1.max(wy2));
+                    found = true;
+                }
+                DxfEntityKind::Circle { cx, cy, radius } => {
+                    let (wcx, wcy) = (*cx + ox, *cy + oy);
+                    xmin = xmin.min(wcx - radius);
+                    xmax = xmax.max(wcx + radius);
+                    ymin = ymin.min(wcy - radius);
+                    ymax = ymax.max(wcy + radius);
+                    found = true;
+                }
+                DxfEntityKind::Arc { cx, cy, radius, .. } => {
+                    let (wcx, wcy) = (*cx + ox, *cy + oy);
+                    xmin = xmin.min(wcx - radius);
+                    xmax = xmax.max(wcx + radius);
+                    ymin = ymin.min(wcy - radius);
+                    ymax = ymax.max(wcy + radius);
+                    found = true;
+                }
+                DxfEntityKind::Point { x, y } => {
+                    let (wx, wy) = (*x + ox, *y + oy);
+                    xmin = xmin.min(wx);
+                    xmax = xmax.max(wx);
+                    ymin = ymin.min(wy);
+                    ymax = ymax.max(wy);
+                    found = true;
+                }
+            }
+        }
+    }
+
+    if found { Some((xmin, ymin, xmax, ymax)) } else { None }
+}
+
+/// Create a body with BodyGeometry (force zone shape) from the bounding
+/// box of selected DXF entities. Equivalent to the Link Editor's
+/// "Add Geometry" button but supports arbitrary shapes via bounding box.
+/// The body has a single attachment point at the geometry center — use
+/// Fixed joint to rigidly attach it to a link.
+fn convert_selected_to_rigid_geometry(state: &mut super::state::AppState, indices: &[usize]) {
+    let bbox = match compute_bounding_box(state, indices) {
+        Some(b) => b,
+        None => {
+            state.status_message = Some("No geometry in selection".to_string());
+            state.status_message_time = 3.0;
+            return;
+        }
+    };
+    let (xmin, ymin, xmax, ymax) = bbox;
+    let width = xmax - xmin;
+    let height = ymax - ymin;
+    let cx = (xmin + xmax) / 2.0;
+    let cy = (ymin + ymax) / 2.0;
+
+    if width <= 0.0 || height <= 0.0 {
+        state.status_message = Some("Selection has zero extent — select entities with area".to_string());
+        state.status_message_time = 3.0;
+        return;
+    }
+
+    state.push_undo();
+
+    let bp = match state.blueprint.as_mut() {
+        Some(b) => b,
+        None => {
+            state.status_message = Some("No mechanism blueprint".to_string());
+            state.status_message_time = 3.0;
+            return;
+        }
+    };
+
+    // Find next unique body ID
+    let mut next_n = 1;
+    while bp.bodies.contains_key(&format!("shape_{}", next_n)) {
+        next_n += 1;
+    }
+    let body_id = format!("shape_{}", next_n);
+
+    // Body local frame = world frame (pose 0,0,0). One attachment point
+    // at the geometry center. BodyGeometry offset points from body origin
+    // (at world 0,0) to the geometry center.
+    let mut attachment_points = HashMap::new();
+    attachment_points.insert("A".to_string(), [cx, cy]);
+
+    // Moment of inertia for a rectangle about its CG
+    let mass = 1.0;
+    let izz = mass * (width * width + height * height) / 12.0;
+
+    bp.bodies.insert(body_id.clone(), BodyJson {
+        attachment_points,
+        mass,
+        cg_local: [cx, cy],
+        izz_cg: izz,
+        mount_points: HashMap::new(),
+        coupler_points: HashMap::new(),
+        point_masses: Vec::new(),
+        label: Some(body_id.clone()),
+        geometry: Some(BodyGeometry {
+            width,
+            height,
+            offset: nalgebra::Vector2::new(cx, cy),
+        }),
+    });
+
+    state.rebuild();
+
+    state.status_message = Some(format!(
+        "Added rigid geometry body '{}' ({:.0}x{:.0} mm). Use Fixed joint to attach it to a link. Set as force zone target in the Force Toolbar.",
+        body_id, width * 1000.0, height * 1000.0
+    ));
+    state.status_message_time = 6.0;
+}
+
 /// Mark the endpoints of selected entities as ground pivots.
 /// **Additive**: adds to the existing ground body.
 fn convert_selected_to_ground(state: &mut super::state::AppState, indices: &[usize]) {
@@ -942,18 +1093,45 @@ fn convert_selected_line_to_actuator(state: &mut super::state::AppState, indices
         }
     };
 
-    // Phase 2: find nearest body attachment points to each endpoint (in world frame)
+    // Phase 2: find nearest body attachment point to each endpoint.
+    //
+    // Strategy:
+    //   1. Look for any body point within SNAP_TOL meters (10 mm) — prefer
+    //      ground if multiple hits.
+    //   2. If nothing found for an endpoint, fall back to creating a new
+    //      ground pivot at that endpoint position.
+    const SNAP_TOL: f64 = 0.010;
+
     let find_nearest = |target: [f64; 2]| -> Option<(String, String, [f64; 2])> {
         let mech = state.mechanism.as_ref()?;
         let bp = state.blueprint.as_ref()?;
         let q = &state.q;
+
+        // Pass 1: ground body (preferred)
+        if let Some(ground) = bp.bodies.get("ground") {
+            let mut best: Option<(f64, String, [f64; 2])> = None;
+            for (point_name, local_pt) in &ground.attachment_points {
+                let local_vec = nalgebra::Vector2::new(local_pt[0], local_pt[1]);
+                let world = mech.state().body_point_global("ground", &local_vec, q);
+                let dist = ((world.x - target[0]).powi(2) + (world.y - target[1]).powi(2)).sqrt();
+                if dist < SNAP_TOL && (best.is_none() || dist < best.as_ref().unwrap().0) {
+                    best = Some((dist, point_name.clone(), *local_pt));
+                }
+            }
+            if let Some((_, name, lpt)) = best {
+                return Some(("ground".to_string(), name, lpt));
+            }
+        }
+
+        // Pass 2: any other body
         let mut best: Option<(f64, String, String, [f64; 2])> = None;
         for (body_id, body_json) in &bp.bodies {
+            if body_id == "ground" { continue; }
             for (point_name, local_pt) in &body_json.attachment_points {
                 let local_vec = nalgebra::Vector2::new(local_pt[0], local_pt[1]);
                 let world = mech.state().body_point_global(body_id, &local_vec, q);
                 let dist = ((world.x - target[0]).powi(2) + (world.y - target[1]).powi(2)).sqrt();
-                if best.is_none() || dist < best.as_ref().unwrap().0 {
+                if dist < SNAP_TOL && (best.is_none() || dist < best.as_ref().unwrap().0) {
                     best = Some((dist, body_id.clone(), point_name.clone(), *local_pt));
                 }
             }
@@ -961,25 +1139,54 @@ fn convert_selected_line_to_actuator(state: &mut super::state::AppState, indices
         best.map(|(_, bid, pname, lpt)| (bid, pname, lpt))
     };
 
-    let attach_a = find_nearest(p1);
-    let attach_b = find_nearest(p2);
+    let mut attach_a = find_nearest(p1);
+    let mut attach_b = find_nearest(p2);
 
-    let ((body_a, name_a, local_a), (body_b, name_b, local_b)) = match (attach_a, attach_b) {
-        (Some(a), Some(b)) => (a, b),
-        _ => {
-            state.status_message = Some("Could not find body attachment points near the line. Build your mechanism first so the actuator has something to attach to.".to_string());
-            state.status_message_time = 5.0;
-            return;
+    state.push_undo();
+
+    // Auto-create a ground pivot for any endpoint that didn't find a match.
+    let mut create_ground_pivot = |world_pt: [f64; 2]| -> (String, String, [f64; 2]) {
+        if let Some(bp) = state.blueprint.as_mut() {
+            let ground = bp.bodies.entry("ground".to_string()).or_insert_with(|| BodyJson {
+                attachment_points: HashMap::new(),
+                mass: 0.0,
+                cg_local: [0.0, 0.0],
+                izz_cg: 0.0,
+                mount_points: HashMap::new(),
+                coupler_points: HashMap::new(),
+                point_masses: Vec::new(),
+                label: Some("ground".to_string()),
+                geometry: None,
+            });
+            // Unique name (Pn)
+            let mut n = ground.attachment_points.len() + 1;
+            loop {
+                let name = format!("P{}", n);
+                if !ground.attachment_points.contains_key(&name) {
+                    ground.attachment_points.insert(name.clone(), world_pt);
+                    return ("ground".to_string(), name, world_pt);
+                }
+                n += 1;
+            }
         }
+        ("ground".to_string(), "P1".to_string(), world_pt)
     };
 
-    if body_a == body_b {
+    if attach_a.is_none() {
+        attach_a = Some(create_ground_pivot(p1));
+    }
+    if attach_b.is_none() {
+        attach_b = Some(create_ground_pivot(p2));
+    }
+
+    let (body_a, name_a, local_a) = attach_a.unwrap();
+    let (body_b, name_b, local_b) = attach_b.unwrap();
+
+    if body_a == body_b && body_a != "ground" {
         state.status_message = Some("Actuator endpoints resolved to the same body — select a line that spans two different bodies".to_string());
         state.status_message_time = 4.0;
         return;
     }
-
-    state.push_undo();
 
     // Phase 3: add the LinearActuator force element
     let actuator = LinearActuatorElement {
