@@ -761,6 +761,7 @@ impl eframe::App for LinkageApp {
                                     .range(0.001..=100.0)
                                     .suffix(self.state.display_units.length_suffix()),
                             )
+                            .on_hover_text("Distance between grid lines. When 'Snap to Grid' is enabled, placed points will snap to the nearest multiple of this value. Set to 0 for auto-spacing based on zoom level.")
                             .changed()
                         {
                             self.state.grid.spacing_m =
@@ -770,7 +771,7 @@ impl eframe::App for LinkageApp {
                     ui.checkbox(&mut self.state.show_load_path, "Load Path (heat map)")
                         .on_hover_text("Color-code links by joint reaction force magnitude (blue=low, red=high)");
                     if ui.checkbox(&mut self.state.nathan_mode, "Nathan Mode")
-                        .on_hover_text("Toggle grayscale mode")
+                        .on_hover_text("Render all plot series and UI colors in grayscale. Useful for accessibility or when preparing figures for print.")
                         .changed() && !self.state.nathan_mode
                     {
                         // Restore normal visuals when turning off.
@@ -881,13 +882,14 @@ impl eframe::App for LinkageApp {
                     egui::Button::new(egui::RichText::new("Select").color(tool_color))
                 };
                 if ui.add(select_btn)
-                    .on_hover_text("Select entities on the canvas")
+                    .on_hover_text("Select mode: click a link, joint, or body to select it. Drag empty space to pan the canvas. Shift+click to multi-select. Press Delete/Backspace to remove the selected entity. (Shortcut: Escape returns here from any tool)")
                     .clicked()
                 {
                     self.state.active_tool = EditorTool::Select;
                     self.state.draw_link_start = None;
                     self.state.add_body_state = None;
                     self.state.place_mass_body = None;
+                    self.state.drawing_body_geometry = None;
                 }
 
                 let draw_active = tool == EditorTool::DrawLink || self.state.draw_link_start.is_some();
@@ -898,13 +900,14 @@ impl eframe::App for LinkageApp {
                     egui::Button::new(egui::RichText::new("Draw Link").color(tool_color))
                 };
                 if ui.add(draw_btn)
-                    .on_hover_text("Click and drag to draw a link")
+                    .on_hover_text("Draw Link: click an existing attachment point to start, then drag to set link length and direction. Release to place. If you click empty space on the ground, a new ground pivot is created automatically. Creates revolute joints at both ends if connecting to existing points.")
                     .clicked()
                 {
                     self.state.active_tool = EditorTool::DrawLink;
                     self.state.draw_link_start = None;
                     self.state.add_body_state = None;
                     self.state.place_mass_body = None;
+                    self.state.drawing_body_geometry = None;
                 }
 
                 let is_adding_jp = self.state.adding_joint_point.is_some();
@@ -936,6 +939,24 @@ impl eframe::App for LinkageApp {
                         self.state.status_message = Some("Select a body first".to_string());
                         self.state.status_message_time = 3.0;
                     }
+                }
+
+                let body_active = tool == EditorTool::AddBody || self.state.add_body_state.is_some();
+                let body_btn = if body_active {
+                    egui::Button::new(egui::RichText::new("+ Body").color(tool_active_text).strong().size(14.0))
+                        .fill(tool_active_bg)
+                } else {
+                    egui::Button::new(egui::RichText::new("+ Body").color(tool_color))
+                };
+                if ui.add(body_btn)
+                    .on_hover_text("Create a multi-point body: click to place attachment points, then press Enter or double-click to finish. Esc to cancel.")
+                    .clicked()
+                {
+                    self.state.active_tool = EditorTool::AddBody;
+                    self.state.draw_link_start = None;
+                    self.state.add_body_state = Some(crate::gui::state::AddBodyState { points: Vec::new() });
+                    self.state.place_mass_body = None;
+                    self.state.drawing_body_geometry = None;
                 }
 
                 let ground_active = tool == EditorTool::AddGroundPivot;
@@ -1237,21 +1258,33 @@ impl eframe::App for LinkageApp {
                                 ui.add_space(10.0);
                                 ui.label("Get started:");
                                 ui.add_space(6.0);
-                                if ui.button("Load a Sample Mechanism").clicked() {
+                                if ui.button("Load a Sample Mechanism")
+                                    .on_hover_text("Load the classic 4-bar linkage sample. You can switch to other samples from the Samples dropdown in the toolbar.")
+                                    .clicked()
+                                {
                                     self.state.load_sample(SampleMechanism::FourBar);
                                     self.state.pending_fit_to_view = true;
                                 }
-                                if ui.button("Start Tutorial").clicked() {
+                                if ui.button("Start Tutorial")
+                                    .on_hover_text("Step-by-step interactive tutorial that walks you through building a 4-bar linkage from scratch, adding joints, links, forces, and analyzing the mechanism.")
+                                    .clicked()
+                                {
                                     self.state.new_empty_mechanism();
                                     self.state.tutorial = tutorial::TutorialState::new_fourbar();
                                 }
-                                if ui.button("New Empty Mechanism").clicked() {
+                                if ui.button("New Empty Mechanism")
+                                    .on_hover_text("Start with a blank canvas. You'll be placed in the 'Add Ground Pivot' tool so you can start placing ground attachment points immediately.")
+                                    .clicked()
+                                {
                                     self.state.new_empty_mechanism();
                                     self.state.dismiss_welcome = true;
                                     self.state.active_tool = state::EditorTool::AddGroundPivot;
                                 }
                                 ui.add_space(4.0);
-                                if ui.button("Watch Demo").clicked() {
+                                if ui.button("Watch Demo")
+                                    .on_hover_text("Auto-play through all sample mechanisms, cycling every few seconds. Press Escape or click anywhere to stop the demo.")
+                                    .clicked()
+                                {
                                     self.demo_mode = true;
                                     self.demo_sample_index = 0;
                                     // Load first sample immediately with full init
@@ -1313,7 +1346,8 @@ impl eframe::App for LinkageApp {
                     if let Some(ref mut bg) = self.state.background_image {
                         ui.horizontal(|ui| {
                             ui.label("Opacity:");
-                            ui.add(egui::Slider::new(&mut bg.opacity, 0.0..=1.0).fixed_decimals(2));
+                            ui.add(egui::Slider::new(&mut bg.opacity, 0.0..=1.0).fixed_decimals(2))
+                                .on_hover_text("Transparency of the background image. 0 = fully transparent, 1 = fully opaque. Lower values make it easier to see mechanism geometry on top of the image.");
                         });
                         let img_width_m = bg.size_px[0] as f64 / bg.scale_px_per_m;
                         let mut img_width_mm = img_width_m * 1000.0;
@@ -1324,7 +1358,8 @@ impl eframe::App for LinkageApp {
                                     .speed(1.0)
                                     .range(1.0..=100000.0)
                                     .suffix(" mm")
-                            ).changed() {
+                            ).on_hover_text("Real-world width of the background image in millimeters. Set this to match the known dimension of an object in the image so that the mechanism overlays at the correct scale.")
+                            .changed() {
                                 bg.scale_px_per_m = bg.size_px[0] as f64 / (img_width_mm / 1000.0);
                             }
                         });
@@ -1338,10 +1373,12 @@ impl eframe::App for LinkageApp {
                             }
                         });
                         ui.horizontal(|ui| {
-                            ui.label("X:");
-                            ui.add(egui::DragValue::new(&mut bg.world_offset[0]).speed(0.001).suffix(" m"));
-                            ui.label("Y:");
-                            ui.add(egui::DragValue::new(&mut bg.world_offset[1]).speed(0.001).suffix(" m"));
+                            ui.label("X:").on_hover_text("Horizontal offset of the image center in world coordinates (meters)");
+                            ui.add(egui::DragValue::new(&mut bg.world_offset[0]).speed(0.001).suffix(" m"))
+                                .on_hover_text("Horizontal position of the image center in world space. Drag to adjust, or hold Ctrl and drag on the canvas.");
+                            ui.label("Y:").on_hover_text("Vertical offset of the image center in world coordinates (meters)");
+                            ui.add(egui::DragValue::new(&mut bg.world_offset[1]).speed(0.001).suffix(" m"))
+                                .on_hover_text("Vertical position of the image center in world space. Drag to adjust, or hold Ctrl and drag on the canvas.");
                         });
                         ui.add_space(4.0);
                         ui.label(
