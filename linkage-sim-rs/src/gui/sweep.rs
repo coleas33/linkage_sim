@@ -11,10 +11,15 @@ use crate::analysis::transmission::{
 use crate::analysis::validation::check_toggle;
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
-use crate::forces::elements::{force_zone_overlap_ratio, ForceElement};
+use crate::forces::elements::{
+    evaluate_linear_actuator, force_zone_overlap_ratio, ForceElement, LinearActuatorElement,
+};
+use crate::solver::assembly::assemble_jacobian;
 use crate::solver::inverse_dynamics::solve_inverse_dynamics;
 use crate::solver::kinematics::{solve_acceleration, solve_position, solve_velocity};
-use crate::solver::statics::{extract_reactions, get_driver_reactions, solve_statics};
+use crate::solver::statics::{
+    extract_reactions, get_driver_reactions, solve_statics, JointReaction, StaticSolveResult,
+};
 
 use super::state::MotionProfile;
 
@@ -145,18 +150,17 @@ pub(crate) fn compute_sweep_data(
     let capacity = (num_steps.max(0) + 1) as usize;
 
     // Detect the first LinearActuator force element for actuator force computation.
-    let actuator_info: Option<(String, [f64; 2], String, [f64; 2])> =
+    let actuator_element: Option<LinearActuatorElement> =
         mech.forces().iter().find_map(|f| {
             if let ForceElement::LinearActuator(act) = f {
-                Some((
-                    act.body_a.clone(),
-                    act.point_a,
-                    act.body_b.clone(),
-                    act.point_b,
-                ))
+                Some(act.clone())
             } else {
                 None
             }
+        });
+    let actuator_info: Option<(String, [f64; 2], String, [f64; 2])> =
+        actuator_element.as_ref().map(|act| {
+            (act.body_a.clone(), act.point_a, act.body_b.clone(), act.point_b)
         });
 
     // Collect all ForceZone elements for output force computation.
@@ -358,6 +362,11 @@ pub(crate) fn compute_sweep_data(
                 }
 
                 // Driver torque and joint reactions from statics solve.
+                // Reactions are deferred: if a LinearActuator is present, we
+                // re-solve statics with the computed actuator force so that
+                // joint reactions reflect the actuator as the prime mover.
+                let mut pending_reactions: Option<Vec<JointReaction>> = None;
+                let mut statics_q_forces: Option<DVector<f64>> = None;
                 if let Ok(statics) = solve_statics(mech, &q, t) {
                     let reactions = extract_reactions(mech, &statics);
                     let torque = get_driver_reactions(&reactions)
@@ -365,23 +374,10 @@ pub(crate) fn compute_sweep_data(
                         .map(|r| r.effort)
                         .unwrap_or(0.0);
                     data.driver_torques.as_mut().unwrap().push(torque);
-
-                    // Per-joint reaction magnitudes.
-                    for jr in &reactions {
-                        if jr.n_equations > 1 {
-                            reaction_data
-                                .entry(jr.joint_id.clone())
-                                .or_insert_with(|| Vec::with_capacity(capacity))
-                                .push(jr.resultant);
-                        }
-                    }
+                    statics_q_forces = Some(statics.q_forces);
+                    pending_reactions = Some(reactions);
                 } else {
                     data.driver_torques.as_mut().unwrap().push(0.0);
-
-                    // Push NaN for all tracked joints when statics fails.
-                    for values in reaction_data.values_mut() {
-                        values.push(f64::NAN);
-                    }
                 }
 
                 // Velocity solve for energy and mechanical advantage.
@@ -514,6 +510,57 @@ pub(crate) fn compute_sweep_data(
                         data.actuator_speeds.as_mut().unwrap().push(f64::NAN);
                         data.actuator_power.as_mut().unwrap().push(f64::NAN);
                         data.actuator_power_id.as_mut().unwrap().push(f64::NAN);
+                    }
+                }
+
+                // ── Two-pass reaction solve ─────────────────────────────
+                // If a LinearActuator is present and we computed its required
+                // force, re-solve statics with that force applied.  This makes
+                // joint reactions reflect the actuator as the prime mover
+                // (driver torque drops to ~0, load flows through actuator).
+                if let (Some(q_forces), Some(act_elem)) =
+                    (&statics_q_forces, &actuator_element)
+                {
+                    let act_force = data.actuator_forces.as_ref()
+                        .and_then(|v| v.last().copied())
+                        .unwrap_or(f64::NAN);
+                    if act_force.is_finite() && act_force.abs() > 1e-12 {
+                        let mut act_mod = act_elem.clone();
+                        act_mod.force = act_force;
+                        let q_dot_zero = DVector::zeros(mech.state().n_coords());
+                        let q_actuator = evaluate_linear_actuator(
+                            &act_mod, mech.state(), &q, &q_dot_zero,
+                        );
+                        let q_new = q_forces + &q_actuator;
+                        let phi_q = assemble_jacobian(mech, &q, t);
+                        let rhs = -&q_new;
+                        if let Ok(lambdas) = phi_q.transpose().svd(true, true).solve(&rhs, 1e-14) {
+                            let result2 = StaticSolveResult {
+                                lambdas,
+                                q_forces: q_new,
+                                residual_norm: 0.0,
+                                is_overconstrained: false,
+                                condition_number: 0.0,
+                            };
+                            pending_reactions = Some(extract_reactions(mech, &result2));
+                        }
+                    }
+                }
+
+                // Push the final reactions (pass-2 if available, else pass-1).
+                if let Some(reactions) = &pending_reactions {
+                    for jr in reactions {
+                        if jr.n_equations > 1 {
+                            reaction_data
+                                .entry(jr.joint_id.clone())
+                                .or_insert_with(|| Vec::with_capacity(capacity))
+                                .push(jr.resultant);
+                        }
+                    }
+                } else {
+                    // Statics failed -- push NaN for all tracked joints.
+                    for values in reaction_data.values_mut() {
+                        values.push(f64::NAN);
                     }
                 }
             }
