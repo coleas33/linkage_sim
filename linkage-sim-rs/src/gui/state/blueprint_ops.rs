@@ -1107,8 +1107,19 @@ impl AppState {
             self.last_good_q.clone()
         };
 
+        // Sanitize the sweep range: swap min/max if inverted, and skip
+        // the range entirely if min == max (no-op range). This makes the
+        // sweep resilient to users mid-edit of the min/max values.
         let sweep_range = if self.sweep_range_enabled {
-            Some((self.sweep_angle_min_deg, self.sweep_angle_max_deg))
+            let min = self.sweep_angle_min_deg;
+            let max = self.sweep_angle_max_deg;
+            if (max - min).abs() < 1e-6 {
+                None
+            } else if min > max {
+                Some((max, min))
+            } else {
+                Some((min, max))
+            }
         } else {
             None
         };

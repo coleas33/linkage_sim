@@ -73,17 +73,27 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
             if state.sweep_range_enabled {
                 ui.horizontal(|ui| {
                     ui.label("Min\u{00B0}:");
-                    let min_changed = ui.add(egui::DragValue::new(&mut state.sweep_angle_min_deg)
+                    let min_resp = ui.add(egui::DragValue::new(&mut state.sweep_angle_min_deg)
                         .speed(0.5)
                         .range(0.0..=360.0)
-                        .suffix("\u{00B0}")).changed();
+                        .suffix("\u{00B0}"))
+                        .on_hover_text("Start angle of the sweep range in degrees. All plots and analysis will only cover angles from this value to the max. Useful for focusing on the mechanism's working range.");
                     ui.label("Max\u{00B0}:");
-                    let max_changed = ui.add(egui::DragValue::new(&mut state.sweep_angle_max_deg)
+                    let max_resp = ui.add(egui::DragValue::new(&mut state.sweep_angle_max_deg)
                         .speed(0.5)
                         .range(0.0..=360.0)
-                        .suffix("\u{00B0}")).changed();
+                        .suffix("\u{00B0}"))
+                        .on_hover_text("End angle of the sweep range in degrees. The sweep computes positions and forces at evenly-spaced angles from min to max. Set to less than 360\u{b0} to exclude portions of the cycle where the mechanism locks up or is not useful.");
 
-                    if min_changed || max_changed {
+                    // Only recompute the sweep when the user FINISHES editing
+                    // (drag ended, field lost focus, or Enter pressed). This
+                    // prevents transient inverted ranges while the user is
+                    // mid-typing a new value.
+                    let min_done = min_resp.drag_stopped()
+                        || min_resp.lost_focus();
+                    let max_done = max_resp.drag_stopped()
+                        || max_resp.lost_focus();
+                    if min_done || max_done {
                         state.mark_sweep_dirty();
                     }
                 });
