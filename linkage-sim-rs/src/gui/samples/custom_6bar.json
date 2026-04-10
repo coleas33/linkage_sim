@@ -37,7 +37,15 @@
         -0.02075186891194728
       ],
       "izz_cg": 0.01,
-      "label": "body_3"
+      "label": "body_3",
+      "geometry": {
+        "width": 0.08,
+        "height": 0.04,
+        "offset": [
+          -0.003414,
+          -0.020752
+        ]
+      }
     },
     "body_6": {
       "attachment_points": {
@@ -136,15 +144,7 @@
         0.03040929794311524
       ],
       "izz_cg": 0.01,
-      "label": "body_1",
-      "geometry": {
-        "width": 0.15182123565673827,
-        "height": 0.02277318534851074,
-        "offset": [
-          0.07591061782836914,
-          0.03040929794311524
-        ]
-      }
+      "label": "body_1"
     }
   },
   "joints": {
@@ -243,7 +243,7 @@
         0.508864164352417,
         -0.06449004262685776
       ],
-      "force": -22000.0,
+      "force": 0.0,
       "speed_limit": 0.0,
       "stroke_min": 0.0,
       "stroke_max": 0.0,
@@ -253,7 +253,7 @@
     },
     {
       "type": "ForceZone",
-      "body_id": "body_1",
+      "body_id": "body_3",
       "zone_min": [
         -0.6,
         -0.12

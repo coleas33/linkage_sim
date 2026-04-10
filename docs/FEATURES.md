@@ -35,7 +35,7 @@ All force elements are editable in the GUI property panel and rendered on the ca
 
 ### Rust Solver Kernel
 
-- Full solver port (Phases 1-4: kinematics, statics, inverse dynamics, forward dynamics) validated against Python golden fixtures (411 tests)
+- Full solver port (Phases 1-4: kinematics, statics, inverse dynamics, forward dynamics) validated against Python golden fixtures (644 tests)
 - `ForceElement` enum with 12 variants covering all Python force elements
 - Expression evaluator: user-defined driver expressions (e.g., `"pi/2 * sin(3*t)"`) with GUI editor, serializable to JSON
 
@@ -49,7 +49,7 @@ All force elements are editable in the GUI property panel and rendered on the ca
 - DXF export (mechanism geometry)
 - HTML report generation (plots and analysis summary)
 - Diagnostics panel: Grashof classification, Jacobian conditioning, crank selection, motor sizing, torque envelopes
-- 28 sample mechanisms (11 four-bar + 7 six-bar + 10 specialty), JSON save/load, undo/redo
+- 30 sample mechanisms (11 four-bar + 7 six-bar + 12 specialty), JSON save/load, undo/redo
 - Animation playback with seamless 360-degree wrap (solver initial guess resets to cached angle-0 solution)
 - Right-click driver reassignment on any grounded revolute joint
 - Gravity slider (0-100g / 0-981 m/s^2) with real-time g-value display
@@ -178,7 +178,7 @@ All force elements are editable in the GUI property panel and rendered on the ca
 ### Sample Gallery
 
 - Visual sample gallery: Samples dropdown groups mechanisms by category (4-Bar, 6-Bar, Specialty) with separator headers and tooltip descriptions
-- 28 total samples: 11 four-bar, 7 six-bar, 10 specialty mechanisms
+- 30 total samples: 11 four-bar, 7 six-bar, 12 specialty mechanisms
 - Interactive tutorial: Help > Tutorial: Build a 4-Bar
 
 ### Multi-select
@@ -196,7 +196,7 @@ All force elements are editable in the GUI property panel and rendered on the ca
 
 ### Demo Mode
 
-- Auto-cycles through all 29 sample mechanisms with animation
+- Auto-cycles through all 30 sample mechanisms with animation
 - 5-second dwell time per sample
 - Banner overlay: "Demo Mode -- press Escape to stop"
 - Click or Escape to exit demo mode
@@ -234,23 +234,21 @@ All force elements are editable in the GUI property panel and rendered on the ca
 - **Reaction forces rounded** to nearest Newton in all displays
 - **Sweep range min/max** no longer swap when editing
 - **Plot double-click to reset** zoom, with hint text
-- **Scrollable sample dropdown** for 29 samples
+- **Scrollable sample dropdown** for 30 samples
 - **Floating link rejection** -- link not created if endpoint doesn't snap, with guidance message
 - **Robust URL loading** -- tries multiple starting angles with continuation when zero guess fails
 - **Share URL preserves crank angle** -- mechanism loads at the exact configuration the sharer was viewing
 - **GIF export** plays forward then reverse for smooth ping-pong loop
-- **Strandbeest (Jansen Walking)** -- 8-bar sample, 361/361 convergence, 29th sample
+- **Strandbeest (Jansen Walking)** -- 8-bar sample, 361/361 convergence
+- **Custom 6-Bar Press** -- 6-bar press mechanism with linear actuator and force zone (30th sample)
 - **1kg mass on all sample bodies** with computed CG and Izz
 - **SolidWorks import guide** (`docs/guides/SOLIDWORKS_IMPORT.md`)
 - **Mechanism Health Report** -- green/yellow/red indicators for Grashof, toggles, transmission angle, peak torque, peak reactions, conditioning, convergence
 - **Undo History panel** -- visual timeline with undo/redo buttons
 - **Nathan Mode** -- grayscale toggle in View menu
-
----
-
-## In Progress
-
-(Nothing currently in progress)
+- **Trapezoidal motion profile** -- configurable accel/decel ramps replacing constant-speed driver, with profile torque overlay showing inertial load spikes during acceleration phases
+- **My Samples** -- promote user mechanisms to the Samples dropdown for quick access
+- **Actuator sizing tutorial** -- interactive overlay guiding users through actuator force analysis workflow
 
 ---
 
@@ -263,7 +261,7 @@ All force elements are editable in the GUI property panel and rendered on the ca
 - **Force margin visualization** -- User enters actuator rated force (e.g., 5000 N). Plot shows margin (rated - required) at each angle. Red zones where actuator is undersized. Simple go/no-go for actuator selection.
 - **Hydraulic cylinder calculator** -- Given required force + system pressure, compute bore diameter. Given bore + pressure, overlay available force line on the actuator force plot. Most industrial actuators are hydraulic.
 - **Output force at a specific point** -- "What force does my mechanism produce at THIS point in THIS direction?" Direct readout instead of indirect computation via force zones.
-- **Motion profile editor** -- Replace constant-speed driver with trapezoidal/S-curve acceleration profiles. Required actuator force is much higher during acceleration phases. Standard in industrial automation.
+- **~~Motion profile editor~~** -- ~~Replace constant-speed driver with trapezoidal/S-curve acceleration profiles.~~ **Shipped** (trapezoidal profile with torque overlay). Remaining: S-curve profiles.
 - **Duty cycle / RMS analysis** -- For cyclic mechanisms, show RMS force over one complete cycle. Critical for electric actuator thermal sizing and fatigue life.
 - **Spring counterbalance for actuators** -- "What spring parameters minimize peak actuator force?" Extend existing counterbalance assistant to work with linear actuator mechanisms.
 - **Safety factor overlay** -- Color-code the force plot by ratio of required/rated: green (<50%), yellow (50-80%), red (>80%). Visual pass/fail across the full stroke.

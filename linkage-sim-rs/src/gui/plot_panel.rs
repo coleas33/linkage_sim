@@ -56,18 +56,20 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
         .memory(|mem| mem.data.get_temp::<PlotTab>(tab_id))
         .unwrap_or(PlotTab::CouplerTrace);
 
-    ui.horizontal(|ui| {
-        ui.selectable_value(&mut selected_tab, PlotTab::CouplerTrace, "Coupler Trace");
-        ui.selectable_value(&mut selected_tab, PlotTab::BodyAngles, "Body Angles");
+    ui.horizontal_wrapped(|ui| {
+        ui.selectable_value(&mut selected_tab, PlotTab::CouplerTrace, "Coupler Trace")
+            .on_hover_text("X-Y path traced by each coupler point over one full crank revolution. Use this to visualize the output motion path of the mechanism. Does not scrub on click.");
+        ui.selectable_value(&mut selected_tab, PlotTab::BodyAngles, "Body Angles")
+            .on_hover_text("Orientation of each moving body vs. driver angle. Shows how each link rotates as the crank turns. Click on the plot to scrub the mechanism to that angle.");
 
-        // Only show transmission angle tab if data exists.
+        // Only show transmission angle tab if data exists (4-bar only).
         let has_ta = sweep.transmission_angles.is_some();
         ui.add_enabled_ui(has_ta, |ui| {
             ui.selectable_value(
                 &mut selected_tab,
                 PlotTab::TransmissionAngle,
                 "Transmission Angle",
-            );
+            ).on_hover_text("Angle between the coupler and output link at the driven joint. Ideal range is 40\u{b0}\u{2013}140\u{b0}; outside that range the mechanism transmits force poorly. Dashed lines mark the poor-transmission thresholds. Only available for 4-bar linkages.");
         });
 
         // Only show driver torque tab if data exists.
@@ -77,12 +79,17 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
         } else {
             "Driver Torque"
         };
+        let torque_tab_tip = if sweep.sweep_mode.is_stroke() {
+            "Force required by the linear actuator at each stroke position, computed from static equilibrium (no inertia). Positive = extending, negative = retracting."
+        } else {
+            "Torque required at the driver joint to hold the mechanism in static equilibrium at each crank angle. Includes gravity and all applied forces but not inertia effects."
+        };
         ui.add_enabled_ui(has_dt, |ui| {
             ui.selectable_value(
                 &mut selected_tab,
                 PlotTab::DriverTorque,
                 torque_tab_label,
-            );
+            ).on_hover_text(torque_tab_tip);
         });
 
         // Only show inverse dynamics tab if data exists.
@@ -92,13 +99,14 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 &mut selected_tab,
                 PlotTab::InverseDynamics,
                 "Inv. Dynamics",
-            );
+            ).on_hover_text("Driver torque including inertia effects (mass, acceleration, Coriolis). Shows the actual torque needed to drive the mechanism at the specified speed. Overlays the statics-only torque for comparison. If a motion profile is active, the profile torque is shown in green.");
         });
 
         // Only show energy tab if data exists.
         let has_energy = !sweep.kinetic_energy.is_empty();
         ui.add_enabled_ui(has_energy, |ui| {
-            ui.selectable_value(&mut selected_tab, PlotTab::Energy, "Energy");
+            ui.selectable_value(&mut selected_tab, PlotTab::Energy, "Energy")
+                .on_hover_text("Kinetic energy (from link velocities and inertias), gravitational potential energy, and their sum vs. driver angle. Useful for identifying energy storage opportunities (flywheels, counterbalances).");
         });
 
         // Only show mechanical advantage tab if data exists.
@@ -109,7 +117,7 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 &mut selected_tab,
                 PlotTab::MechanicalAdvantage,
                 "Mech. Advantage",
-            );
+            ).on_hover_text("Ratio of output velocity to input velocity (velocity-based mechanical advantage). Values > 1 mean the output moves faster than the input; values < 1 mean force amplification. Dashed line at MA = 1 for reference. Singularities appear as spikes near toggle positions.");
         });
 
         // Only show joint reactions tab if data exists.
@@ -119,7 +127,7 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 &mut selected_tab,
                 PlotTab::JointReactions,
                 "Joint Reactions",
-            );
+            ).on_hover_text("Magnitude of the constraint reaction force at each joint vs. driver angle, from the statics solution. Use this to size bearings and pins \u{2014} the peak value determines the required load rating.");
         });
 
         // Only show coupler velocity tab if data exists.
@@ -129,7 +137,7 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 &mut selected_tab,
                 PlotTab::CouplerVelocity,
                 "Coupler Vel.",
-            );
+            ).on_hover_text("Speed (magnitude of velocity vector) of each coupler point vs. driver angle. Depends on the driver speed setting. Useful for checking output velocity requirements and identifying dwell regions.");
         });
 
         // Only show coupler acceleration tab if data exists.
@@ -139,7 +147,7 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 &mut selected_tab,
                 PlotTab::CouplerAcceleration,
                 "Coupler Accel.",
-            );
+            ).on_hover_text("Acceleration magnitude of each coupler point vs. driver angle. High acceleration peaks indicate shock loads and inertia forces. Depends on the driver speed setting.");
         });
 
         // Only show actuator force tab when a LinearActuator is present.
@@ -149,7 +157,7 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 &mut selected_tab,
                 PlotTab::ActuatorForce,
                 "Actuator Force",
-            );
+            ).on_hover_text("Force in the linear actuator vs. driver angle. Red line = statics only (no inertia); cyan dashed = with inertia. Positive = tension (extending), negative = compression (retracting). If a rated force is entered, a green safe-zone band is shown.");
         });
 
         // Only show actuator speed tab when actuator speed data exists.
@@ -159,7 +167,7 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 &mut selected_tab,
                 PlotTab::ActuatorSpeed,
                 "Actuator Speed",
-            );
+            ).on_hover_text("Extension/retraction speed of the linear actuator in mm/s vs. driver angle. Use this to verify the actuator's speed rating is not exceeded at any point in the cycle.");
         });
 
         // Only show actuator power tab when actuator power data exists.
@@ -169,7 +177,7 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 &mut selected_tab,
                 PlotTab::ActuatorPower,
                 "Actuator Power",
-            );
+            ).on_hover_text("Mechanical power (Force \u{d7} Speed) delivered by the linear actuator in Watts vs. driver angle. Red = statics only; cyan dashed = with inertia. Peak power determines the motor/pump sizing requirement.");
         });
 
         // Only show output force tab when force zone data exists.
@@ -179,7 +187,7 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 &mut selected_tab,
                 PlotTab::OutputForce,
                 "Output Force",
-            );
+            ).on_hover_text("Total force magnitude applied by all Force Zone elements at each driver angle. A Force Zone applies its full load whenever any part of the target body's geometry enters the zone (binary: full force or zero). Shows when and where in the cycle the mechanism encounters external loads.");
         });
     });
 
@@ -187,7 +195,8 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
     ui.horizontal(|ui| {
         ui.separator();
-        ui.label(egui::RichText::new("Scroll to zoom, double-click to reset").small().weak());
+        ui.label(egui::RichText::new("Scroll to zoom, double-click to reset, click to scrub").small().weak())
+            .on_hover_text("Scroll the mouse wheel to zoom in/out on the plot. Click and drag to pan. Double-click to reset the view. Single-click on any driver-angle plot to scrub the mechanism to that angle (the white vertical cursor follows your click).");
     });
 
     let current_driver_display = state.display_units.angle(state.driver_angle);
@@ -231,13 +240,14 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
         PlotTab::ActuatorForce => {
             // Rated force input above the plot.
             ui.horizontal(|ui| {
-                ui.label("Rated Force:");
+                ui.label("Rated Force:").on_hover_text("Enter the actuator's maximum rated force from its datasheet. When set, a green band is drawn on the plot showing the safe operating region, and any portion of the cycle that exceeds the rating is highlighted in red.");
                 ui.add(egui::DragValue::new(&mut state.actuator_rated_force)
                     .speed(10.0)
                     .range(0.0..=1e6)
-                    .suffix(" N"));
+                    .suffix(" N"))
+                    .on_hover_text("Maximum continuous force rating of the actuator in Newtons. Set to 0 to hide the safety band.");
                 if state.actuator_rated_force > 0.0 {
-                    if ui.small_button("Clear").clicked() {
+                    if ui.small_button("Clear").on_hover_text("Reset rated force to 0 and hide the safety band overlay").clicked() {
                         state.actuator_rated_force = 0.0;
                     }
                 }
@@ -1162,6 +1172,7 @@ fn draw_actuator_force(
             .filter(|&(_, &f)| f.is_finite())
             .map(|(&x_deg, &f)| (x_deg, f))
             .collect();
+        let pairs = filter_actuator_outliers(pairs);
 
         draw_angle_series_with_range(
             plot_ui,
@@ -1176,13 +1187,19 @@ fn draw_actuator_force(
 
         // Inverse dynamics actuator force (dashed overlay, includes inertia).
         if let Some(ref id_forces) = sweep.actuator_forces_id {
-            let is_stroke = sweep.sweep_mode.is_stroke();
-            let id_points: PlotPoints = sweep
+            let id_pairs: Vec<(f64, f64)> = sweep
                 .angles_deg
                 .iter()
                 .zip(id_forces.iter())
                 .filter(|&(_, &f)| f.is_finite())
-                .map(|(&x, &f)| {
+                .map(|(&x_deg, &f)| (x_deg, f))
+                .collect();
+            let id_pairs = filter_actuator_outliers(id_pairs);
+
+            let is_stroke = sweep.sweep_mode.is_stroke();
+            let id_points: PlotPoints = id_pairs
+                .iter()
+                .map(|&(x, f)| {
                     let x_display = if is_stroke { x * 1000.0 } else { units.angle(x.to_radians()) };
                     [x_display, f]
                 })
@@ -1691,6 +1708,28 @@ fn draw_angle_series_with_range(
                 .width(width),
         );
     }
+}
+
+/// Filter extreme outliers from actuator force data using Tukey's fence method.
+///
+/// Near singularities the actuator force diverges (F = T*omega/dl_dt as dl_dt -> 0).
+/// Even with a NaN threshold on dl_dt, values just above the threshold can be
+/// orders of magnitude larger than the useful data, blowing out the Y-axis and
+/// causing lag when zooming. This removes values beyond Q1 - 10*IQR .. Q3 + 10*IQR
+/// (very conservative — only clips extreme spikes, preserves genuine peaks).
+fn filter_actuator_outliers(pairs: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
+    if pairs.len() < 10 {
+        return pairs;
+    }
+    let mut ys: Vec<f64> = pairs.iter().map(|(_, y)| *y).collect();
+    ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let n = ys.len();
+    let q1 = ys[n / 4];
+    let q3 = ys[3 * n / 4];
+    let iqr = (q3 - q1).max(1.0); // floor at 1 N to avoid zero IQR
+    let lo = q1 - 10.0 * iqr;
+    let hi = q3 + 10.0 * iqr;
+    pairs.into_iter().filter(|(_, y)| *y >= lo && *y <= hi).collect()
 }
 
 /// A palette of distinguishable colors for plot series.

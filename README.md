@@ -78,7 +78,7 @@ The simulator is built on four foundational decisions documented in detail in `d
 | Document | Contents |
 |---|---|
 | `docs/reference/FORCE_ELEMENTS.md` | Equations and parameters for all 12 force element types |
-| `linkage-sim-rs/SYSTEM.md` | File map of all 92+ Rust source files |
+| `linkage-sim-rs/SYSTEM.md` | File map of all 100 Rust source files |
 
 ### History
 
@@ -94,7 +94,7 @@ The simulator is built on four foundational decisions documented in detail in `d
 | Layer | Choice | Rationale |
 |---|---|---|
 | Core solver (Phases 1–4) | Python + NumPy/SciPy | `fsolve` for constraints, `linalg` for linear systems, `solve_ivp` (Radau/BDF) for DAE |
-| Core solver (production) | Rust + nalgebra | **Port complete** — validated against Python golden fixtures (411 tests). All 12 force element types ported. See `docs/history/RUST_MIGRATION.md` |
+| Core solver (production) | Rust + nalgebra | **Port complete** — validated against Python golden fixtures (644 tests). All 12 force element types ported. See `docs/history/RUST_MIGRATION.md` |
 | Expression evaluator | Python: `asteval` / Rust: `meval` | **Shipped.** User-defined driver expressions (e.g., `"pi/2 * sin(3*t)"`) with GUI editor, serializable to JSON |
 | GUI framework (Phase 5) | Rust: `egui` + `eframe` | 2D canvas, drag-and-drop, animation. Native + WebAssembly targets. WASM build infrastructure shipped (feature flags, web entry point) |
 | Plotting (development) | Matplotlib or Plotly | Engineering-quality plots during Python development |
@@ -153,15 +153,35 @@ linkage-sim/
 │   ├── test_reactions.py      # Reaction force post-processing
 │   └── test_units.py          # Unit conversion round-trips
 ├── docs/                       # Architecture & design documentation
-├── README.md                   # This file
-└── DESIGN_PRINCIPLES.md        # Short reference card of invariants
+└── README.md                   # This file
 ```
 
 ### Rust solver kernel (`linkage-sim-rs/`)
 
-The full solver port (Phases 1-4: kinematics, statics, inverse dynamics, forward dynamics) is complete in Rust, validated against Python golden fixtures (411 tests). Phase 5 GUI built with egui/eframe. 28 sample mechanisms, full interactive editor, 12 force element types, 10 plot tabs, forward dynamics simulation, PNG/SVG/GIF/DXF/CSV/HTML export.
+The full solver port (Phases 1-4: kinematics, statics, inverse dynamics, forward dynamics) is complete in Rust, validated against Python golden fixtures (644 tests). Phase 5 GUI built with egui/eframe. See [`docs/FEATURES.md`](docs/FEATURES.md) for the complete feature list and roadmap.
 
-See [`docs/FEATURES.md`](docs/FEATURES.md) for the complete feature list and roadmap.
+**What's shipped in the GUI:**
+
+- **30 sample mechanisms** (11 four-bar + 7 six-bar + 12 specialty), visual sample gallery with category headers and tooltip descriptions
+- **My Samples**: promote user mechanisms to the Samples dropdown
+- **Full interactive editor**: create bodies, joints, and ground pivots via right-click context menu; drag ground pivots to reposition; Draw Link tool with body-aware snapping; multi-point body creation; prismatic and fixed joint creation
+- **12 force element types** all editable in the property panel and rendered on the canvas, with categorized toolbar ribbon (Joint Torques / Link Forces dropdowns)
+- **10 plot tabs**: coupler trace, body angles, transmission angle, driver torque, inverse dynamics, energy (KE/PE/total), mechanical advantage, joint reactions, coupler velocity, coupler acceleration
+- **Actuator sizing**: actuator force plot (statics + inverse dynamics curves), stroke display in Health Report, force zone overlap diagnostics
+- **Trapezoidal motion profile** with profile torque overlay for realistic acceleration/deceleration analysis
+- **Parametric sweep**: full 360-degree driver rotation sweeps, parameter studies (mass, inertia, attachment points, force parameters, driver speed), save and overlay named results for side-by-side comparison
+- **Forward dynamics simulation** with timeline scrubbing, playback speed control, and constraint drift display
+- **Mechanism Health Report**: green/yellow/red indicators for Grashof classification, toggles, transmission angle, peak torque, peak reactions, Jacobian conditioning, convergence
+- **Mounting angle**: per-mechanism gravity rotation with UI slider and canvas visualization
+- **Load path visualization**: color-coded links by joint reaction force magnitude
+- **Share via URL**: compress mechanism JSON (deflate + base64url), shareable link preserves crank angle
+- **Image trace overlay**: import background PNG/JPEG with adjustable opacity, scale, and offset
+- **Export**: PNG, SVG, GIF (ping-pong loop), DXF, CSV, HTML report with interactive Plotly charts
+- **Welcome screen** with quick-start buttons; interactive tutorial (Help > Tutorial: Build a 4-Bar); demo mode auto-cycling all samples
+- **Multi-select** (Shift+click), arrow-key nudge, Scale Mechanism tool, undo/redo with visual history panel
+- **Autosave** (every 30s) with recovery prompt on startup; recent files menu
+- **Professional dark theme** with CAD-convention canvas (major/minor grid, origin crosshair, zoom-adaptive spacing, alignment guides)
+- **WebAssembly build** — all analysis, editing, and plotting features work in the browser
 
 **Run natively:** `cd linkage-sim-rs && cargo run --bin linkage-gui`
 
@@ -185,14 +205,20 @@ linkage-sim-rs/
 │   ├── analysis/           # coupler, energy, envelopes, force_breakdown, grashof,
 │   │                       #   crank_selection, motor_sizing, transmission, validation, virtual_work
 │   ├── io/                 # serialization (serde JSON round-trip)
-│   ├── gui/                # mod, state, canvas, input_panel, property_panel, plot_panel,
-│   │                       #   samples, undo, export, state/solver_helpers
+│   ├── gui/                # mod, state/, canvas/, property_panel/, samples/, export/,
+│   │                       #   input_panel, plot_panel, parametric_panel, sweep,
+│   │                       #   force_toolbar, tutorial, undo, error_panel
 │   ├── bin/                # linkage_gui
 │   └── lib.rs
 ├── tests/
-│   ├── golden_fixtures.rs   # Integration tests against Python golden data
-│   ├── property_tests.rs    # Proptest: random mechanism generation, invariant checks
-│   └── singular_behavior.rs # Near-singularity tolerance tests
+│   ├── golden_fixtures.rs           # Integration tests against Python golden data
+│   ├── property_tests.rs            # Proptest: random mechanism generation, invariant checks
+│   ├── singular_behavior.rs         # Near-singularity tolerance tests
+│   ├── compound_force_integration.rs # Multi-force-element compound scenarios
+│   ├── force_zone_tests.rs          # Spatial force zone application and overlap
+│   ├── geometry_tests.rs            # Body geometry and attachment point math
+│   ├── mount_point_integration.rs   # Named mount point resolution
+│   └── parallelogram_actuator_sample.rs # Actuator-driven sample validation
 ├── data/
 │   └── golden/             # JSON fixtures exported from Python
 └── Cargo.toml

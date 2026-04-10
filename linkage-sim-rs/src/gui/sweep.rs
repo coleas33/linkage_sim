@@ -358,14 +358,12 @@ pub(crate) fn compute_sweep_data(
                 }
 
                 // Driver torque and joint reactions from statics solve.
-                let driver_torque_val;
                 if let Ok(statics) = solve_statics(mech, &q, t) {
                     let reactions = extract_reactions(mech, &statics);
                     let torque = get_driver_reactions(&reactions)
                         .first()
                         .map(|r| r.effort)
                         .unwrap_or(0.0);
-                    driver_torque_val = torque;
                     data.driver_torques.as_mut().unwrap().push(torque);
 
                     // Per-joint reaction magnitudes.
@@ -378,7 +376,6 @@ pub(crate) fn compute_sweep_data(
                         }
                     }
                 } else {
-                    driver_torque_val = 0.0;
                     data.driver_torques.as_mut().unwrap().push(0.0);
 
                     // Push NaN for all tracked joints when statics fails.
@@ -459,17 +456,18 @@ pub(crate) fn compute_sweep_data(
                             let v_a = mech_state.body_point_velocity(body_a, &local_a, &q, &q_dot);
                             let v_b = mech_state.body_point_velocity(body_b, &local_b, &q, &q_dot);
                             let dl_dt = (v_b - v_a).dot(&unit);
-                            let actuator_force = if dl_dt.abs() > 1e-12 {
-                                driver_torque_val * omega / dl_dt
+                            let driver_torque = *data.driver_torques.as_ref().unwrap().last().unwrap_or(&0.0);
+                            let actuator_force = if dl_dt.abs() > 1e-6 {
+                                driver_torque * omega / dl_dt
                             } else {
-                                f64::NAN // singular -- actuator perpendicular to motion
+                                f64::NAN // singular -- actuator nearly perpendicular to motion
                             };
                             data.actuator_forces.as_mut().unwrap().push(actuator_force);
 
                             // Inverse dynamics actuator force: same formula but
                             // using the ID torque (includes inertial loads).
                             let id_torque = *data.inverse_dynamics_torques.last().unwrap_or(&f64::NAN);
-                            let id_force = if dl_dt.abs() > 1e-12 && id_torque.is_finite() {
+                            let id_force = if dl_dt.abs() > 1e-6 && id_torque.is_finite() {
                                 id_torque * omega / dl_dt
                             } else {
                                 f64::NAN
