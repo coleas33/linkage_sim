@@ -444,6 +444,43 @@ fn draw_driver_type_selector(ui: &mut egui::Ui, state: &mut AppState) {
         return;
     }
 
+    // Speed editor (constant-speed mode only). Edits the driver's
+    // angular velocity omega in RPM. Used for inverse dynamics
+    // (inertial loads scale with omega^2) and for the playback timescale.
+    // Static force calculations are correctly independent of speed.
+    let mut apply_new_omega: Option<f64> = None;
+    if !is_expression {
+        let current_omega = state.driver_omega;
+        let current_theta_0 = state.driver_theta_0;
+        ui.horizontal(|ui| {
+            ui.label("Speed:");
+            let mut rpm = current_omega * 60.0 / (2.0 * std::f64::consts::PI);
+            let rpm_resp = ui.add(
+                egui::DragValue::new(&mut rpm)
+                    .speed(1.0)
+                    .range(-10000.0..=10000.0)
+                    .suffix(" RPM"),
+            ).on_hover_text(
+                "Driver angular velocity in RPM. Statics are independent of this \
+                 value (by design). Inverse dynamics inertial loads scale with \
+                 omega squared. Negative = reverse rotation."
+            );
+            ui.label(format!("({:.2} rad/s)", current_omega));
+            if rpm_resp.drag_stopped() || rpm_resp.lost_focus() {
+                let new_omega = rpm * 2.0 * std::f64::consts::PI / 60.0;
+                if (new_omega - current_omega).abs() > 1e-9 {
+                    apply_new_omega = Some(new_omega);
+                }
+            }
+            let _ = current_theta_0;
+        });
+    }
+    if let Some(new_omega) = apply_new_omega {
+        let theta_0 = state.driver_theta_0;
+        state.set_constant_speed_driver(new_omega, theta_0);
+        return;
+    }
+
     // Show expression editor when in expression mode
     if is_expression {
         // Sync buffers from blueprint on first render (if empty)

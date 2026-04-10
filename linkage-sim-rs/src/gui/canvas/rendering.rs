@@ -510,13 +510,10 @@ pub fn render_mechanism(
             );
         }
 
-        // Joint labels: auto-generated from type prefix + index, or from
-        // the blueprint label if one exists.
+        // Joint labels: use explicit blueprint label if set, otherwise
+        // use the joint's actual ID (e.g. "J1", "J2") so the canvas
+        // matches the IDs shown in plot legends, diagnostics, and JSON.
         let bp_joints = state.blueprint.as_ref().map(|bp| &bp.joints);
-        let mut rev_idx = 0usize;
-        let mut pris_idx = 0usize;
-        let mut fix_idx = 0usize;
-        let mut cam_idx = 0usize;
         for joint in joints {
             // Look up the blueprint label for this joint.
             let bp_label = bp_joints
@@ -531,25 +528,7 @@ pub fn render_mechanism(
                     }
                 });
 
-            let auto_label: String;
-            let display_label = if let Some(lbl) = bp_label {
-                lbl
-            } else {
-                auto_label = if joint.is_revolute() {
-                    rev_idx += 1;
-                    format!("R{}", rev_idx)
-                } else if joint.is_prismatic() {
-                    pris_idx += 1;
-                    format!("P{}", pris_idx)
-                } else if joint.is_fixed() {
-                    fix_idx += 1;
-                    format!("F{}", fix_idx)
-                } else {
-                    cam_idx += 1;
-                    format!("C{}", cam_idx)
-                };
-                &auto_label
-            };
+            let display_label = bp_label.unwrap_or_else(|| joint.id());
 
             let global =
                 mech_state.body_point_global(joint.body_i_id(), &joint.point_i_local(), q);
