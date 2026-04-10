@@ -39,32 +39,13 @@
       "izz_cg": 0.01,
       "label": "body_3",
       "geometry": {
-        "width": 0.08,
-        "height": 0.04,
+        "width": 0.11,
+        "height": 0.10,
         "offset": [
-          -0.003414,
-          -0.020752
+          -0.120,
+          0.020
         ]
       }
-    },
-    "body_6": {
-      "attachment_points": {
-        "B": [
-          0.131347639778684,
-          -0.021605620998882344
-        ],
-        "A": [
-          0.0,
-          0.0
-        ]
-      },
-      "mass": 1.0,
-      "cg_local": [
-        0.065673819889342,
-        -0.010802810499441172
-      ],
-      "izz_cg": 0.01,
-      "label": "body_6"
     },
     "body_2": {
       "attachment_points": {
@@ -98,14 +79,18 @@
         "B": [
           -0.18520966411284467,
           -0.04429977480265554
+        ],
+        "D": [
+          0.077190,
+          -0.034584
         ]
       },
-      "mass": 1.0,
+      "mass": 2.0,
       "cg_local": [
-        -0.09260483205642234,
-        -0.02214988740132777
+        -0.040543,
+        -0.022959
       ],
-      "izz_cg": 0.01,
+      "izz_cg": 0.02,
       "label": "body_5"
     },
     "body_4": {
@@ -172,9 +157,9 @@
     "J8": {
       "type": "revolute",
       "body_i": "body_4",
-      "body_j": "body_6",
+      "body_j": "body_5",
       "point_i": "B",
-      "point_j": "B"
+      "point_j": "D"
     },
     "J5": {
       "type": "revolute",
@@ -195,13 +180,6 @@
       "body_i": "ground",
       "body_j": "body_1",
       "point_i": "P2",
-      "point_j": "A"
-    },
-    "J7": {
-      "type": "revolute",
-      "body_i": "body_5",
-      "body_j": "body_6",
-      "point_i": "C",
       "point_j": "A"
     }
   },
@@ -255,8 +233,8 @@
       "type": "ForceZone",
       "body_id": "body_3",
       "zone_min": [
-        -0.6,
-        -0.12
+        -0.9,
+        -0.3
       ],
       "zone_max": [
         -0.46,
