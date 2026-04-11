@@ -5,6 +5,37 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-10 — Code quality: mutate_and_rebuild helper + Plotly extraction
+
+**What:**
+- Added `AppState::mutate_and_rebuild(|s| ...)` in `gui/state/undo_ops.rs`.
+  Encodes the "push_undo + mutate + rebuild" invariant documented in
+  `04-memory.yaml` as a single helper method. Skipping the helper is still
+  possible but now there's a canonical way to get the pattern right.
+- Converted all 12 mutation helpers in `gui/state/entity_crud.rs` to use it
+  (update_ground_pivot_position, nudge_body, nudge_joint,
+  add_attachment_point_to_body, remove_attachment_point, add_ground_pivot,
+  add_body_with_points, remove_body, add_revolute_joint, add_prismatic_joint,
+  add_fixed_joint, remove_joint). `blueprint_ops.rs` (10 sites) and
+  `driver_ops.rs` (5 sites) still use the raw pattern — migrate later.
+- Added `add_plotly_line_chart()` and `add_plotly_multi_chart()` helpers in
+  `gui/export/report.rs`. Converted the 3 simple single-series chart sites
+  (torque, actuator force, transmission angle with 40°/90° shapes) to use
+  the helper. The multi-series plots (joint reactions, energy, coupler
+  traces) still have inline loops — migrate later if patterns converge.
+
+**Why:** Two of the "top 5 code quality issues" from the 2026-04-10 audit.
+The undo helper enforces an invariant that future AI sessions are explicitly
+told to protect; the Plotly helper removes ~60 lines of duplicated boilerplate.
+
+Context: the audit also flagged "19 panics in force element setters" and a
+"1475-line impl block in forces/elements/mod.rs" — both were false alarms.
+The panics were all in `#[cfg(test)]` assertion code, and the 1620-line
+`forces/elements/mod.rs` is almost entirely tests (production code is in
+sub-modules totaling ~1087 lines). See 04-memory.yaml lessons_learned.
+
+---
+
 ## 2026-04-10 — Modularize rendering and plot_panel
 
 **What:** Split two of the largest GUI files:

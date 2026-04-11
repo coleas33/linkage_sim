@@ -29,6 +29,16 @@ risks:
     any new conversion flow must do the same (push_undo + mutate + rebuild).
 
 recent_decisions:
+  - 2026-04-10: Added AppState::mutate_and_rebuild(|s| ...) helper in
+    gui/state/undo_ops.rs that encodes the push_undo + rebuild invariant.
+    Converted all 12 mutation helpers in entity_crud.rs to use it.
+    blueprint_ops.rs and driver_ops.rs still use the raw pattern (15 sites);
+    migrate opportunistically, no rush — the raw pattern still works.
+  - 2026-04-10: Added add_plotly_line_chart() and add_plotly_multi_chart()
+    helpers to gui/export/report.rs. Converted 3 simple single-series chart
+    sites (torque, actuator force, transmission angle) to use the helper.
+    The multi-series plots (joint reactions, energy, coupler traces) still
+    have inline loops — migrate later if patterns converge.
   - 2026-04-10: rendering.rs split into rendering/{mod,primitives,force_render}.rs
   - 2026-04-10: plot_panel.rs split into plot_panel/{mod,mechanics,dynamics,actuator,coupler}.rs
   - 2026-04-10: DXF import "Add Geometry to Selected Link" sets body.geometry
@@ -65,3 +75,9 @@ lessons_learned:
   - Uncommitted local changes in working tree can break deploys. After any
     edit in src/gui/, ALWAYS verify WASM build succeeds before pushing.
   - The dxf crate pulls uuid, which needs features = ["js"] for WASM.
+  - forces/elements/mod.rs is 1620 lines but almost entirely #[cfg(test)]
+    test code. Production code lives in element_types.rs, evaluation.rs,
+    force_element.rs, time_modulation.rs submodules. A prior code-quality
+    scan mis-reported this as a "1475-line impl block with 19 panics" —
+    the panics are all in tests (standard Rust assertion pattern), not
+    production. Do not chase this as a refactor target.

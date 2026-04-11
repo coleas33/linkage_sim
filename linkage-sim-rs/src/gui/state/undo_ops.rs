@@ -78,6 +78,24 @@ impl AppState {
         }
     }
 
+    /// Run `op` as an undoable mutation: push an undo snapshot, run `op`,
+    /// then rebuild the mechanism. This is the canonical pattern for every
+    /// blueprint mutation — using this helper ensures neither step is
+    /// forgotten.
+    ///
+    /// The invariant documented in `docs/ai/04-memory.yaml` says:
+    /// *Every state mutation that changes the blueprint MUST call push_undo()
+    /// BEFORE the mutation and rebuild() AFTER.*
+    /// This helper encodes that invariant so new mutations can't get it wrong.
+    pub fn mutate_and_rebuild<F>(&mut self, op: F)
+    where
+        F: FnOnce(&mut Self),
+    {
+        self.push_undo();
+        op(self);
+        self.rebuild();
+    }
+
     /// Undo the last action: restore the previous mechanism state.
     pub fn undo(&mut self) {
         let Some(current) = self.take_snapshot() else {

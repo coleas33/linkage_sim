@@ -122,16 +122,15 @@ impl AppState {
 
     /// Move a ground attachment point to new coordinates.
     ///
-    /// Pushes undo, updates the point in the blueprint, and rebuilds.
-    /// No-op if the blueprint or ground body is missing, or the point doesn't exist.
+    /// Undoable; rebuilds after. No-op if the blueprint, ground body, or point is missing.
     pub fn update_ground_pivot_position(&mut self, name: &str, x: f64, y: f64) {
-        self.push_undo();
-        let Some(bp) = &mut self.blueprint else { return };
-        let Some(ground) = bp.bodies.get_mut(GROUND_ID) else { return };
-        if ground.attachment_points.contains_key(name) {
-            ground.attachment_points.insert(name.to_string(), [x, y]);
-        }
-        self.rebuild();
+        self.mutate_and_rebuild(|s| {
+            let Some(bp) = &mut s.blueprint else { return };
+            let Some(ground) = bp.bodies.get_mut(GROUND_ID) else { return };
+            if ground.attachment_points.contains_key(name) {
+                ground.attachment_points.insert(name.to_string(), [x, y]);
+            }
+        });
     }
 
     /// Nudge all attachment points on a body by `(dx, dy)` in world coordinates.
@@ -143,18 +142,17 @@ impl AppState {
     /// Pushes undo, mutates the blueprint, and rebuilds.
     /// No-op if the blueprint or body is missing.
     pub fn nudge_body(&mut self, body_id: &str, dx: f64, dy: f64) {
-        self.push_undo();
-        // For non-ground bodies we need to rotate the world-space delta into
-        // the body-local frame so that the attachment point offsets shift
-        // correctly.
+        // Compute rotation before we enter the closure so we don't borrow
+        // self twice inside it.
         let (local_dx, local_dy) = self.world_delta_to_local(body_id, dx, dy);
-        let Some(bp) = &mut self.blueprint else { return };
-        let Some(body) = bp.bodies.get_mut(body_id) else { return };
-        for point in body.attachment_points.values_mut() {
-            point[0] += local_dx;
-            point[1] += local_dy;
-        }
-        self.rebuild();
+        self.mutate_and_rebuild(|s| {
+            let Some(bp) = &mut s.blueprint else { return };
+            let Some(body) = bp.bodies.get_mut(body_id) else { return };
+            for point in body.attachment_points.values_mut() {
+                point[0] += local_dx;
+                point[1] += local_dy;
+            }
+        });
     }
 
     /// Nudge both attachment points of a joint by `(dx, dy)` in world coordinates.
@@ -166,35 +164,35 @@ impl AppState {
     /// No-op if the blueprint or joint is missing, or the joint has no point
     /// fields (e.g. `RevoluteDriver`).
     pub fn nudge_joint(&mut self, joint_id: &str, dx: f64, dy: f64) {
-        self.push_undo();
-
-        // Extract the four IDs we need before borrowing self.blueprint mutably.
-        let ids = {
+        // Extract the four IDs and local deltas up front so the closure
+        // doesn't need two borrows of self.
+        let Some(ids) = ({
             let Some(bp) = &self.blueprint else { return };
             let Some(joint) = bp.joints.get(joint_id) else { return };
-            let Some((bi, pi, bj, pj)) = joint_body_point_ids(joint) else { return };
-            (bi.to_string(), pi.to_string(), bj.to_string(), pj.to_string())
-        };
+            joint_body_point_ids(joint).map(|(bi, pi, bj, pj)| {
+                (bi.to_string(), pi.to_string(), bj.to_string(), pj.to_string())
+            })
+        }) else { return };
         let (body_i, point_i, body_j, point_j) = ids;
 
-        // Convert world delta to each body's local frame.
         let (di_x, di_y) = self.world_delta_to_local(&body_i, dx, dy);
         let (dj_x, dj_y) = self.world_delta_to_local(&body_j, dx, dy);
 
-        let Some(bp) = &mut self.blueprint else { return };
-        if let Some(body) = bp.bodies.get_mut(&body_i) {
-            if let Some(pt) = body.attachment_points.get_mut(&point_i) {
-                pt[0] += di_x;
-                pt[1] += di_y;
+        self.mutate_and_rebuild(|s| {
+            let Some(bp) = &mut s.blueprint else { return };
+            if let Some(body) = bp.bodies.get_mut(&body_i) {
+                if let Some(pt) = body.attachment_points.get_mut(&point_i) {
+                    pt[0] += di_x;
+                    pt[1] += di_y;
+                }
             }
-        }
-        if let Some(body) = bp.bodies.get_mut(&body_j) {
-            if let Some(pt) = body.attachment_points.get_mut(&point_j) {
-                pt[0] += dj_x;
-                pt[1] += dj_y;
+            if let Some(body) = bp.bodies.get_mut(&body_j) {
+                if let Some(pt) = body.attachment_points.get_mut(&point_j) {
+                    pt[0] += dj_x;
+                    pt[1] += dj_y;
+                }
             }
-        }
-        self.rebuild();
+        });
     }
 
     /// Convert a world-space delta `(dx, dy)` into body-local coordinates.
@@ -233,78 +231,72 @@ impl AppState {
         world_x: f64,
         world_y: f64,
     ) {
-        self.push_undo();
         let [lx, ly] = self.world_to_body_local(body_id, world_x, world_y);
-        self.add_attachment_point_local_raw(body_id, name, lx, ly);
-        self.rebuild();
+        self.mutate_and_rebuild(|s| s.add_attachment_point_local_raw(body_id, name, lx, ly));
     }
 
     /// Remove a named attachment point from a body.
     ///
     /// Cascades: any joint that references `(body_id, point_name)` is also
-    /// removed. Pushes undo and rebuilds.
+    /// removed. Undoable; rebuilds after.
     /// No-op if the body or point does not exist, or there is no blueprint.
     pub fn remove_attachment_point(&mut self, body_id: &str, point_name: &str) {
-        self.push_undo();
-        let Some(bp) = &mut self.blueprint else { return };
-        if let Some(body) = bp.bodies.get_mut(body_id) {
-            body.attachment_points.remove(point_name);
-        }
-        bp.joints
-            .retain(|_id, joint| !joint_references_point(joint, body_id, point_name));
-        self.rebuild();
+        self.mutate_and_rebuild(|s| {
+            let Some(bp) = &mut s.blueprint else { return };
+            if let Some(body) = bp.bodies.get_mut(body_id) {
+                body.attachment_points.remove(point_name);
+            }
+            bp.joints
+                .retain(|_id, joint| !joint_references_point(joint, body_id, point_name));
+        });
     }
 
     /// Add a new ground pivot (attachment point on the ground body).
     ///
-    /// Pushes undo, adds the point, and rebuilds.
+    /// Undoable; rebuilds after.
     pub fn add_ground_pivot(&mut self, name: &str, x: f64, y: f64) {
-        self.push_undo();
-        self.add_ground_pivot_raw(name, x, y);
-        self.rebuild();
+        self.mutate_and_rebuild(|s| s.add_ground_pivot_raw(name, x, y));
     }
 
     /// Add a new body from N world-coordinate points.
     ///
     /// Auto-generates a body ID via `next_body_id()`. The first point becomes
-    /// local (0, 0); CG is at the centroid. Pushes undo, adds the body, and rebuilds.
+    /// local (0, 0); CG is at the centroid. Undoable; rebuilds after.
     ///
     /// Returns the generated body ID.
     pub fn add_body_with_points(&mut self, points: &[(String, [f64; 2])]) -> String {
-        self.push_undo();
         let body_id = self.next_body_id();
-        self.add_body_with_points_raw(&body_id, points);
-        self.rebuild();
+        let id_for_closure = body_id.clone();
+        self.mutate_and_rebuild(|s| s.add_body_with_points_raw(&id_for_closure, points));
         body_id
     }
 
     /// Remove a body and all joints/drivers that reference it.
     ///
-    /// Pushes undo, removes the body and cascading references, and rebuilds.
+    /// Undoable; rebuilds after.
     pub fn remove_body(&mut self, body_id: &str) {
-        self.push_undo();
-        let Some(bp) = &mut self.blueprint else { return };
+        self.mutate_and_rebuild(|s| {
+            let Some(bp) = &mut s.blueprint else { return };
 
-        bp.bodies.remove(body_id);
+            bp.bodies.remove(body_id);
 
-        // Remove joints that reference this body.
-        bp.joints.retain(|_id, joint| {
-            let (bi, bj) = joint_body_ids(joint);
-            bi != body_id && bj != body_id
+            // Remove joints that reference this body.
+            bp.joints.retain(|_id, joint| {
+                let (bi, bj) = joint_body_ids(joint);
+                bi != body_id && bj != body_id
+            });
+
+            // Remove drivers that reference this body.
+            bp.drivers.retain(|_id, driver| {
+                let (bi, bj) = driver_body_ids(driver);
+                bi != body_id && bj != body_id
+            });
         });
-
-        // Remove drivers that reference this body.
-        bp.drivers.retain(|_id, driver| {
-            let (bi, bj) = driver_body_ids(driver);
-            bi != body_id && bj != body_id
-        });
-
-        self.rebuild();
     }
 
     /// Add a revolute joint between two body attachment points.
     ///
-    /// Generates a unique joint ID. Pushes undo, adds joint, and rebuilds.
+    /// Generates a unique joint ID. Undoable; rebuilds after.
     pub fn add_revolute_joint(
         &mut self,
         body_i: &str,
@@ -312,9 +304,7 @@ impl AppState {
         body_j: &str,
         point_j: &str,
     ) {
-        self.push_undo();
-        self.add_revolute_joint_raw(body_i, point_i, body_j, point_j);
-        self.rebuild();
+        self.mutate_and_rebuild(|s| s.add_revolute_joint_raw(body_i, point_i, body_j, point_j));
     }
 
     /// Add a prismatic joint between two bodies at the given attachment points.
@@ -328,45 +318,41 @@ impl AppState {
         body_j: &str,
         point_j: &str,
     ) {
-        self.push_undo();
-        let Some(bp) = &mut self.blueprint else { return };
+        self.mutate_and_rebuild(|s| {
+            let Some(bp) = &mut s.blueprint else { return };
 
-        // Compute default axis from the direction between the two points.
-        // Use the blueprint coordinates (local frame of body_i).
-        let axis = if let (Some(bi), Some(bj)) = (bp.bodies.get(body_i), bp.bodies.get(body_j)) {
-            if let (Some(pi), Some(pj)) = (
-                bi.attachment_points.get(point_i),
-                bj.attachment_points.get(point_j),
-            ) {
-                let dx = pj[0] - pi[0];
-                let dy = pj[1] - pi[1];
-                let len = (dx * dx + dy * dy).sqrt();
-                if len > 1e-12 {
-                    [dx / len, dy / len]
+            // Compute default axis from the direction between the two points
+            // (in the blueprint / local frame of body_i).
+            let axis = if let (Some(bi), Some(bj)) = (bp.bodies.get(body_i), bp.bodies.get(body_j)) {
+                if let (Some(pi), Some(pj)) = (
+                    bi.attachment_points.get(point_i),
+                    bj.attachment_points.get(point_j),
+                ) {
+                    let dx = pj[0] - pi[0];
+                    let dy = pj[1] - pi[1];
+                    let len = (dx * dx + dy * dy).sqrt();
+                    if len > 1e-12 { [dx / len, dy / len] } else { [1.0, 0.0] }
                 } else {
                     [1.0, 0.0]
                 }
             } else {
                 [1.0, 0.0]
-            }
-        } else {
-            [1.0, 0.0]
-        };
+            };
 
-        let joint_id = generate_unique_id("J", &bp.joints);
-        bp.joints.insert(
-            joint_id,
-            JointJson::Prismatic {
-                body_i: body_i.to_string(),
-                body_j: body_j.to_string(),
-                point_i: point_i.to_string(),
-                point_j: point_j.to_string(),
-                axis_local_i: axis,
-                delta_theta_0: 0.0,
-                label: None,
-            },
-        );
-        self.rebuild();
+            let joint_id = generate_unique_id("J", &bp.joints);
+            bp.joints.insert(
+                joint_id,
+                JointJson::Prismatic {
+                    body_i: body_i.to_string(),
+                    body_j: body_j.to_string(),
+                    point_i: point_i.to_string(),
+                    point_j: point_j.to_string(),
+                    axis_local_i: axis,
+                    delta_theta_0: 0.0,
+                    label: None,
+                },
+            );
+        });
     }
 
     /// Add a fixed joint between two bodies at the given attachment points.
@@ -377,31 +363,30 @@ impl AppState {
         body_j: &str,
         point_j: &str,
     ) {
-        self.push_undo();
-        let Some(bp) = &mut self.blueprint else { return };
-        let joint_id = generate_unique_id("J", &bp.joints);
-        bp.joints.insert(
-            joint_id,
-            JointJson::Fixed {
-                body_i: body_i.to_string(),
-                body_j: body_j.to_string(),
-                point_i: point_i.to_string(),
-                point_j: point_j.to_string(),
-                delta_theta_0: 0.0,
-                label: None,
-            },
-        );
-        self.rebuild();
+        self.mutate_and_rebuild(|s| {
+            let Some(bp) = &mut s.blueprint else { return };
+            let joint_id = generate_unique_id("J", &bp.joints);
+            bp.joints.insert(
+                joint_id,
+                JointJson::Fixed {
+                    body_i: body_i.to_string(),
+                    body_j: body_j.to_string(),
+                    point_i: point_i.to_string(),
+                    point_j: point_j.to_string(),
+                    delta_theta_0: 0.0,
+                    label: None,
+                },
+            );
+        });
     }
 
-    /// Remove a joint by ID.
-    ///
-    /// Pushes undo, removes the joint, and rebuilds.
+    /// Remove a joint by ID. Undoable; rebuilds after.
     pub fn remove_joint(&mut self, joint_id: &str) {
-        self.push_undo();
-        let Some(bp) = &mut self.blueprint else { return };
-        bp.joints.remove(joint_id);
-        self.rebuild();
+        self.mutate_and_rebuild(|s| {
+            if let Some(bp) = &mut s.blueprint {
+                bp.joints.remove(joint_id);
+            }
+        });
     }
 
     /// Generate a unique body ID (e.g. "body_1", "body_2", ...).

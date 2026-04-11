@@ -144,15 +144,13 @@ pub fn generate_html_report(
         // Interactive torque plot
         let angles_json = float_vec_to_json(&sweep.angles_deg);
         let torques_json = float_vec_to_json(torques);
-        html.push_str("<div id='torque_plot' class='plotly-chart'></div>\n");
-        html.push_str("<script>\n");
-        html.push_str(&format!(
-            "Plotly.newPlot('torque_plot', [{{x:{},y:{},type:'scatter',name:'Driver Torque',line:{{color:'#0f3460'}}}}], \
-             {{title:'Driver Torque vs Crank Angle',xaxis:{{title:'Crank Angle (deg)'}},yaxis:{{title:'Torque (N*m)'}},\
-             margin:{{t:40,b:50,l:60,r:20}}}}, {{responsive:true}});\n",
-            angles_json, torques_json
-        ));
-        html.push_str("</script>\n");
+        add_plotly_line_chart(
+            &mut html, "torque_plot",
+            "Driver Torque vs Crank Angle",
+            &angles_json, &torques_json,
+            "Driver Torque", "Torque (N*m)", "#0f3460",
+            None,
+        );
     }
 
     // -- Actuator force envelope -------------------------------------------------
@@ -170,15 +168,13 @@ pub fn generate_html_report(
         // Interactive actuator force plot
         let angles_json = float_vec_to_json(&sweep.angles_deg);
         let forces_json = float_vec_to_json(act_forces);
-        html.push_str("<div id='actuator_force_plot' class='plotly-chart'></div>\n");
-        html.push_str("<script>\n");
-        html.push_str(&format!(
-            "Plotly.newPlot('actuator_force_plot', [{{x:{},y:{},type:'scatter',name:'Actuator Force',line:{{color:'#c62828'}}}}], \
-             {{title:'Required Actuator Force vs Crank Angle',xaxis:{{title:'Crank Angle (deg)'}},yaxis:{{title:'Force (N)'}},\
-             margin:{{t:40,b:50,l:60,r:20}}}}, {{responsive:true}});\n",
-            angles_json, forces_json
-        ));
-        html.push_str("</script>\n");
+        add_plotly_line_chart(
+            &mut html, "actuator_force_plot",
+            "Required Actuator Force vs Crank Angle",
+            &angles_json, &forces_json,
+            "Actuator Force", "Force (N)", "#c62828",
+            None,
+        );
     }
 
     // -- Transmission angle range ---------------------------------------------
@@ -199,20 +195,20 @@ pub fn generate_html_report(
                 html.push_str("<p style='color: #c62828;'><strong>Warning:</strong> Minimum transmission angle is below 40 degrees — poor force transmission in this region.</p>\n");
             }
         }
-        // Interactive transmission angle plot
+        // Interactive transmission angle plot (with 40°/90° reference lines)
         let angles_json = float_vec_to_json(&sweep.angles_deg);
         let ta_json = float_vec_to_json(ta);
-        html.push_str("<div id='transmission_plot' class='plotly-chart'></div>\n");
-        html.push_str("<script>\n");
-        html.push_str(&format!(
-            "Plotly.newPlot('transmission_plot', [{{x:{},y:{},type:'scatter',name:'Transmission Angle',line:{{color:'#1b7340'}}}}], \
-             {{title:'Transmission Angle vs Crank Angle',xaxis:{{title:'Crank Angle (deg)'}},yaxis:{{title:'Angle (deg)'}},\
-             margin:{{t:40,b:50,l:60,r:20}},shapes:[{{type:'line',x0:0,x1:360,y0:40,y1:40,\
-             line:{{color:'#c62828',dash:'dash',width:1}}}},{{type:'line',x0:0,x1:360,y0:90,y1:90,\
-             line:{{color:'#888',dash:'dot',width:1}}}}]}}, {{responsive:true}});\n",
-            angles_json, ta_json
-        ));
-        html.push_str("</script>\n");
+        let shapes = "[{type:'line',x0:0,x1:360,y0:40,y1:40,\
+                       line:{color:'#c62828',dash:'dash',width:1}},\
+                       {type:'line',x0:0,x1:360,y0:90,y1:90,\
+                       line:{color:'#888',dash:'dot',width:1}}]";
+        add_plotly_line_chart(
+            &mut html, "transmission_plot",
+            "Transmission Angle vs Crank Angle",
+            &angles_json, &ta_json,
+            "Transmission Angle", "Angle (deg)", "#1b7340",
+            Some(shapes),
+        );
     }
 
     // -- Joint reaction peaks -------------------------------------------------
@@ -332,6 +328,85 @@ pub fn generate_html_report(
     html.push_str("</body></html>\n");
 
     Ok(html)
+}
+
+// ── Plotly helpers ──────────────────────────────────────────────────────────
+
+/// Emit a single-series Plotly line chart vs. crank angle into `html`.
+///
+/// `x_data` and `y_data` must be pre-serialized JSON arrays (use
+/// `float_vec_to_json`). `extra_shapes` is an optional JSON array of shape
+/// objects for reference lines (e.g. the 40°/90° markers on the transmission
+/// angle plot).
+fn add_plotly_line_chart(
+    html: &mut String,
+    plot_id: &str,
+    title: &str,
+    x_data: &str,
+    y_data: &str,
+    series_name: &str,
+    y_label: &str,
+    color: &str,
+    extra_shapes: Option<&str>,
+) {
+    html.push_str(&format!("<div id='{}' class='plotly-chart'></div>\n", plot_id));
+    html.push_str("<script>\n");
+    let shapes_clause = match extra_shapes {
+        Some(s) => format!(",shapes:{}", s),
+        None => String::new(),
+    };
+    html.push_str(&format!(
+        "Plotly.newPlot('{}', [{{x:{},y:{},type:'scatter',name:'{}',line:{{color:'{}'}}}}], \
+         {{title:'{}',xaxis:{{title:'Crank Angle (deg)'}},yaxis:{{title:'{}'}},\
+         margin:{{t:40,b:50,l:60,r:20}}{}}}, {{responsive:true}});\n",
+        plot_id, x_data, y_data, series_name, color, title, y_label, shapes_clause
+    ));
+    html.push_str("</script>\n");
+}
+
+/// Emit a multi-series Plotly line chart into `html`.
+///
+/// Each `(name, data_json, color, dash)` tuple becomes one scatter trace.
+/// `dash` is an optional line style string (e.g. "dash", "dot"); pass None
+/// for a solid line. X-axis and Y-axis labels are supplied as literal
+/// strings so the caller can pick units (e.g. "X (m)" for coupler traces).
+///
+/// If `equal_aspect` is true, the Y axis uses scaleanchor='x' to force
+/// 1:1 pixel ratio (used by coupler trace plots).
+fn add_plotly_multi_chart(
+    html: &mut String,
+    plot_id: &str,
+    title: &str,
+    x_axis_label: &str,
+    y_axis_label: &str,
+    series: &[(&str, String, &str, Option<&str>)],
+    equal_aspect: bool,
+    x_data_for_all: Option<&str>,
+) {
+    html.push_str(&format!("<div id='{}' class='plotly-chart'></div>\n", plot_id));
+    html.push_str("<script>\n");
+    html.push_str(&format!("Plotly.newPlot('{}', [\n", plot_id));
+    for (i, (name, y_json, color, dash)) in series.iter().enumerate() {
+        let comma = if i + 1 < series.len() { "," } else { "" };
+        let dash_clause = match dash {
+            Some(d) => format!(",dash:'{}'", d),
+            None => String::new(),
+        };
+        // For multi-series time plots (reactions, energy) all series share
+        // one X vector; for XY plots (coupler) each series has its own X.
+        let x_expr = x_data_for_all.unwrap_or("null /* per-series x provided */");
+        html.push_str(&format!(
+            "  {{x:{},y:{},type:'scatter',mode:'lines',name:'{}',line:{{color:'{}'{}}}}}{}\n",
+            x_expr, y_json, name, color, dash_clause, comma
+        ));
+    }
+    let y_scale = if equal_aspect { ",scaleanchor:'x'" } else { "" };
+    html.push_str(&format!(
+        "], {{title:'{}',xaxis:{{title:'{}'}},yaxis:{{title:'{}'{}}},\
+         margin:{{t:40,b:50,l:60,r:20}}}}, {{responsive:true}});\n",
+        title, x_axis_label, y_axis_label, y_scale
+    ));
+    html.push_str("</script>\n");
 }
 
 /// Get current timestamp as a formatted string.
