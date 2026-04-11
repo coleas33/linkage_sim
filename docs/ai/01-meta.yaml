@@ -1,0 +1,33 @@
+project: linkage-simulation
+repo: https://github.com/coleas33/linkage_sim
+deployment: https://linkage.colesorkness.com
+stack:
+  language: Rust (2024 edition)
+  gui: eframe + egui + egui_plot
+  math: nalgebra
+  wasm: wasm-bindgen + JS bindings
+  ci: GitHub Actions -> Vercel
+
+branch: main
+merge_strategy: direct pushes to main; Vercel auto-deploys WASM on every push
+commit_style: conventional (feat:, fix:, docs:, refactor:) with Co-Authored-By footer
+
+active_mode: build-and-ship
+active_focus: Custom 6-Bar press workflow (DXF -> links -> actuator -> analysis)
+
+coordination:
+  before_work: read all docs/ai/*.yaml
+  after_work: update docs/ai/04-memory.yaml (if issues/risks changed) and docs/ai/05-update-tracker.md (if the change is meaningful)
+  do_not: modify memory.yaml/tracker on read-only investigations
+
+user_preferences:
+  - DRY; flag repetition aggressively
+  - Well-tested code; prefer too many tests over too few
+  - Engineered enough: not fragile, not over-abstracted
+  - Bias toward handling edge cases
+  - Explicit > clever
+  - Present options with pros/cons + opinionated recommendation for BIG changes
+  - Never use emojis unless explicitly requested
+
+rendering:
+  markdown: Claude Code monospace; file_path:line_number for references; owner/repo#N for PRs/issues

@@ -78,7 +78,7 @@ The simulator is built on four foundational decisions documented in detail in `d
 | Document | Contents |
 |---|---|
 | `docs/reference/FORCE_ELEMENTS.md` | Equations and parameters for all 12 force element types |
-| `linkage-sim-rs/SYSTEM.md` | File map of all 100 Rust source files |
+| `linkage-sim-rs/SYSTEM.md` | File map of all 107 Rust source files |
 
 ### History
 

@@ -1,8 +1,8 @@
 # Linkage Simulation — Rust Codebase System Guide
 
-**Date**: 2026-03-24
+**Date**: 2026-04-10
 **Schema Version**: 1.1.0
-**Total**: 92 Rust source files, 33,103 lines
+**Total**: 107 Rust source files, 45,941 lines
 
 This document maps the system for AI-assisted development. Every module, file, and data flow is documented so an agent can navigate, modify, and refactor with confidence.
 
@@ -94,7 +94,10 @@ linkage-sim-rs/src/
 │   │   ├── mod.rs                    (211)    draw_canvas entry point + tests
 │   │   ├── colors.rs                  (67)    Color and sizing constants
 │   │   ├── hit_testing.rs             (86)    AttachmentHit, SegmentHit, projection helpers
-│   │   ├── rendering.rs            (1,836)    Bodies, joints, forces, grid, tooltips, drawing primitives
+│   │   ├── rendering/              (2,270)    Split: main render pass + primitives + force rendering
+│   │   │   ├── mod.rs              (1,236)    render_mechanism, render_overlays, tooltips, grid, background image
+│   │   │   ├── primitives.rs         (508)    Spring/damper/arrow/arc/marker drawing helpers, alignment guides
+│   │   │   └── force_render.rs       (526)    Force element visualization + load-path heat map
 │   │   ├── interaction.rs            (780+)   Pan, zoom, drag (incl. ground pivot dragging), tool modes, click selection
 │   │   └── context_menu.rs           (248)    Right-click menus for joints, bodies, canvas
 │   ├── property_panel/             (2,175)    Property editing panel
@@ -116,7 +119,12 @@ linkage-sim-rs/src/
 │   │   ├── raster.rs                 (346)    PNG rasterization + GIF animation
 │   │   ├── dxf.rs                    (132)    DXF generation + export
 │   │   └── report.rs                 (307)    HTML report generation
-│   ├── plot_panel.rs               (1,300)    12-tab sweep data plots (incl. Actuator Force, Output Force)
+│   ├── plot_panel/                 (1,817)    Split: 14-tab sweep data plots
+│   │   ├── mod.rs                    (539)    PlotTab enum, draw_plot_panel dispatcher, shared helpers
+│   │   ├── mechanics.rs              (324)    Body angles, transmission angle, mech advantage, joint reactions
+│   │   ├── dynamics.rs               (275)    Driver torque, inverse dynamics, energy
+│   │   ├── actuator.rs               (390)    Actuator force (with outlier filter), speed, power
+│   │   └── coupler.rs                (289)    Coupler trace/velocity/acceleration, output force
 │   ├── sweep.rs                      (820)    SweepData, compute_sweep_data, 4-bar detection, actuator force/ID/length, output force, trapezoidal motion profile
 │   ├── input_panel.rs                (610)    Driver controls, animation, sweep range, motion profile selector
 │   ├── parametric_panel.rs           (410)    Parametric study + counterbalance UI
@@ -194,15 +202,20 @@ After:   92 files,  0 files > 1,500 lines (excl. test-only),  largest impl = 1,3
 | `gui/property_panel.rs` (2,143) | 1 file | 4 files (pending_edits, diagnostics, force_editor, mod) | Done |
 | `gui/canvas.rs` (2,880) | 1 file | 6 files (colors, hit_testing, rendering, interaction, context_menu, mod) | Done |
 | `gui/state.rs` (5,725) | 1 file | 14 files (display_units, grid, view_transform, load_cases, types, parametric, simulation, blueprint_ops, entity_crud, driver_ops, file_io, undo_ops, tests, mod) | Done |
+| `gui/canvas/rendering.rs` (2,233) | 1 file | 3 files (mod, primitives, force_render) | Done 2026-04-10 |
+| `gui/plot_panel.rs` (1,770) | 1 file | 5 files (mod, mechanics, dynamics, actuator, coupler) | Done 2026-04-10 |
 
 ### Remaining large files (not split — at natural size)
 
 | File | Lines | Reason |
 |------|-------|--------|
-| `gui/state/tests.rs` | 2,104 | Test-only file, acceptable |
-| `gui/canvas/rendering.rs` | 1,836 | Drawing primitives — cohesive, all rendering |
-| `solver/forward_dynamics.rs` | 1,379 | BDF-2 integrator — math-heavy, tightly coupled |
-| `forces/elements/mod.rs` | 1,325 | Tests only (1,300 lines of element tests) |
-| `gui/property_panel/force_editor.rs` | 1,273 | 13 force type editors — repetitive but cohesive |
-| `gui/plot_panel.rs` | 1,210 | 12 plot tabs (incl. Actuator Force, Output Force) — repetitive but cohesive |
-| `gui/state/blueprint_ops.rs` | 1,073 | Rebuild + all blueprint mutation — tightly coupled |
+| `gui/state/tests.rs` | 2,299 | Test-only file, acceptable |
+| `gui/mod.rs` | 1,924 | LinkageApp + update loop + menu bar + dialog rendering; candidate for dialog extraction |
+| `forces/elements/mod.rs` | 1,620 | Enum dispatch + tests — splitting creates cross-module enum coupling |
+| `gui/property_panel/force_editor.rs` | 1,429 | 12 force type editors — repetitive but cohesive |
+| `gui/sweep.rs` | 1,399 | Motion profiles + 4-bar detection + sweep assembly — tightly coupled algorithm |
+| `solver/forward_dynamics.rs` | 1,380 | BDF-2 integrator with constraint projection — math-heavy, tightly coupled |
+| `gui/dxf_import.rs` | 1,286 | Data model + parser + rendering + assignment panel; parser extraction candidate |
+| `gui/canvas/rendering/mod.rs` | 1,236 | Main render pass after primitives/force_render extraction |
+| `gui/state/blueprint_ops.rs` | 1,222 | Rebuild + all blueprint mutation — tightly coupled state helpers |
+| `gui/canvas/interaction.rs` | 1,194 | 8 tool handlers + dispatcher; candidate for tools/ split |

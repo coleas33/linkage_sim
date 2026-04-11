@@ -1,0 +1,127 @@
+layout:
+  root: linkage-sim-rs/
+  source: src/
+  tests: tests/
+  data: data/ (golden fixtures)
+  docs: ../docs/
+
+modules:
+  core:
+    bodies: src/core/body.rs
+    constraint: src/core/constraint/ (mod.rs + revolute, prismatic, fixed, cam, trait_def)
+    driver: src/core/driver.rs
+    linear_driver: src/core/linear_driver.rs
+    mechanism: src/core/mechanism.rs
+    state: src/core/state.rs
+
+  forces:
+    elements: src/forces/elements/ (element_types.rs, evaluation.rs, force_element.rs, time_modulation.rs, mod.rs)
+    helpers: src/forces/helpers.rs
+    compound: src/forces/compound.rs
+
+  solver:
+    assembly: src/solver/assembly.rs
+    kinematics: src/solver/kinematics.rs
+    statics: src/solver/statics.rs
+    inverse_dynamics: src/solver/inverse_dynamics.rs
+    forward_dynamics: src/solver/forward_dynamics.rs
+    events: src/solver/events.rs
+    condition: src/solver/condition.rs
+
+  analysis:
+    path: src/analysis/
+    files: [validation, grashof, transmission, coupler, energy, envelopes, motor_sizing, virtual_work, crank_selection, force_breakdown]
+
+  io:
+    path: src/io/
+    files: [schema, serialization, to_json]
+
+  geometry:
+    path: src/geometry/
+    responsibility: low-level 2D geometry helpers (polygon clipping, body_rect_to_world, centroid)
+
+  gui:
+    path: src/gui/
+
+gui_submodules:
+  canvas:
+    path: src/gui/canvas/
+    files:
+      mod: canvas/mod.rs (top-level canvas orchestration)
+      interaction: canvas/interaction.rs (drag, pan, zoom, tool handlers)
+      rendering:
+        mod: canvas/rendering/mod.rs (main render pass, overlays, tooltips, grid, background image)
+        primitives: canvas/rendering/primitives.rs (springs, dampers, arrows, arcs, markers, alignment guides)
+        force_render: canvas/rendering/force_render.rs (force element visualization + load-path heat map)
+      hit_testing: canvas/hit_testing.rs
+      colors: canvas/colors.rs
+      context_menu: canvas/context_menu.rs
+      alignment: canvas/alignment.rs
+
+  state:
+    path: src/gui/state/
+    files: [mod, blueprint_ops, driver_ops, entity_crud, file_io, grid, load_cases, parametric, simulation, solver_helpers, templates, types, undo_ops, view_transform, display_units, tests]
+
+  property_panel:
+    path: src/gui/property_panel/
+    files: [mod, diagnostics, force_editor, health, pending_edits, undo_panel]
+
+  plot_panel:
+    path: src/gui/plot_panel/
+    files:
+      mod: plot_panel/mod.rs (PlotTab enum, dispatcher, shared helpers)
+      mechanics: plot_panel/mechanics.rs (body angles, transmission, MA, joint reactions)
+      dynamics: plot_panel/dynamics.rs (driver torque, inverse dynamics, energy)
+      actuator: plot_panel/actuator.rs (force, speed, power)
+      coupler: plot_panel/coupler.rs (trace, velocity, acceleration, output force)
+
+  samples:
+    path: src/gui/samples/
+    files: [mod, fourbar, sixbar, special, helpers, custom_6bar.json]
+
+  export:
+    path: src/gui/export/
+    files: [mod, svg, dxf, csv, raster, report]
+
+  other_top_level_gui:
+    - mod.rs (LinkageApp + update + menu bar)
+    - input_panel.rs
+    - plot_panel/ (split module)
+    - parametric_panel.rs
+    - force_toolbar.rs
+    - error_panel.rs
+    - tutorial.rs
+    - undo.rs
+    - sweep.rs
+    - dxf_import.rs
+
+entry_points:
+  native_bin: src/bin/linkage_gui.rs (uses native feature)
+  wasm_bin: src/bin/linkage_web.rs (WASM build)
+  library: src/lib.rs
+
+feature_flags:
+  default: [native]
+  native: [rfd, resvg, gif, open, dirs]
+
+where_things_belong:
+  add_new_force_element:
+    - src/forces/elements/element_types.rs (add struct)
+    - src/forces/elements/evaluation.rs (add evaluate_ fn)
+    - src/forces/elements/force_element.rs (add enum variant + dispatch)
+    - src/gui/canvas/rendering/force_render.rs (add visualization arm)
+    - src/gui/property_panel/force_editor.rs (add editor UI)
+
+  add_new_plot_tab:
+    - src/gui/plot_panel/mod.rs (add to PlotTab enum, dispatcher, tab button)
+    - src/gui/plot_panel/{mechanics,dynamics,actuator,coupler}.rs (add draw_ fn)
+    - src/gui/sweep.rs (compute + store data in SweepData)
+
+  add_new_interactive_tool:
+    - src/gui/state/types.rs (add EditorTool variant)
+    - src/gui/canvas/interaction.rs (add handler)
+    - src/gui/mod.rs (add toolbar button)
+
+  add_new_sample_mechanism:
+    - src/gui/samples/{fourbar,sixbar,special}.rs (add builder fn)
+    - src/gui/samples/mod.rs (add SampleMechanism variant + all() + name/description/category)

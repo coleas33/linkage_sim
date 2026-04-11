@@ -1,0 +1,76 @@
+what_it_is: |
+  Planar multibody linkage simulator for engineering analysis.
+  Given a mechanism defined as rigid bodies connected by joints, it computes
+  kinematics (positions/velocities/accelerations), static force balance
+  (joint reactions, required input effort), inverse dynamics (with inertia),
+  and forward dynamics (time-domain simulation). Ships a Rust + egui GUI
+  (native + WASM) with 30 sample mechanisms, 14 plot tabs, DXF import,
+  sweep + parametric analysis, and HTML/CSV/SVG/GIF/DXF export.
+
+architecture_invariants:
+  - body-constraint incidence model (bodies are first-class; joints are
+    constraints between them; no special-case code per mechanism type)
+  - constraint-first mathematics: Phi(q,t)=0, Phi_q Jacobian, Lagrange
+    multipliers. Every analysis mode layers on this one backbone.
+  - SI internally (m, kg, s, N, N*m), engineering units at the GUI boundary
+  - force elements are pluggable; each returns a Q contribution. Solvers
+    never change when adding smooth elements.
+  - drivers are constraints (add rows to Phi), not force elements
+
+major_subsystems:
+  core:
+    path: linkage-sim-rs/src/core/
+    responsibility: Body, constraint (revolute/prismatic/fixed/cam/driver),
+      mechanism assembly, state vector management
+    key_files: [body.rs, constraint/mod.rs, mechanism.rs, state.rs, driver.rs, linear_driver.rs]
+
+  forces:
+    path: linkage-sim-rs/src/forces/
+    responsibility: 12 force element types (gravity, springs, dampers,
+      gas spring, bearing friction, joint limit, motor, linear actuator,
+      external force/torque, force zone) + evaluation to generalized Q
+    key_files: [elements/element_types.rs, elements/evaluation.rs, helpers.rs]
+
+  solver:
+    path: linkage-sim-rs/src/solver/
+    responsibility: kinematics (position NR, velocity, acceleration),
+      statics (Phi_q^T lambda = -Q), inverse dynamics, forward dynamics
+      (RK4 + Baumgarte stabilization), assembly (Jacobian, mass matrix)
+    key_files: [kinematics.rs, statics.rs, inverse_dynamics.rs, forward_dynamics.rs, assembly.rs, condition.rs]
+
+  analysis:
+    path: linkage-sim-rs/src/analysis/
+    responsibility: validation (Grubler, Jacobian rank), Grashof,
+      transmission angle, coupler trace, energy, envelopes, motor sizing,
+      virtual work, crank selection, force breakdown
+    key_files: [validation.rs, grashof.rs, transmission.rs, coupler.rs, energy.rs, virtual_work.rs]
+
+  io:
+    path: linkage-sim-rs/src/io/
+    responsibility: JSON serialization (serde), schema versioning,
+      mechanism blueprint round-trip
+    key_files: [schema.rs, serialization.rs, to_json.rs]
+
+  gui:
+    path: linkage-sim-rs/src/gui/
+    responsibility: all user-facing interaction. Split into multiple
+      sub-modules (see 03-structure.yaml)
+
+dataflow_on_user_change: |
+  user edit -> state.blueprint mutation -> state.push_undo() -> state.rebuild()
+    -> Mechanism::build() -> solve_position() -> state.q updated
+    -> compute_sweep() (debounced) -> sweep_data updated -> plots/canvas redraw
+
+two_pass_statics_for_actuators: |
+  For mechanisms with a LinearActuator force element, statics is solved twice:
+  1) With actuator force=0, read back driver_torque T.
+  2) Compute F_actuator = T*omega/dL_dt via power balance.
+  3) Re-solve statics with F_actuator injected into Q. Joint reactions now
+     reflect the actuator as the prime mover (driver torque drops to ~0).
+
+current_statuses:
+  solver: Rust port complete; 644 tests pass against Python golden fixtures
+  gui: Phase 5 complete; 14 plot tabs; 30 sample mechanisms
+  dxf_import: works native + WASM via drag-drop; selection-based conversions
+  actuator_workflow: two-pass solve gives correct reactions with actuator loads
+  non_grashof_sweep: NaN-padded across unreachable angles; playback ping-pongs
