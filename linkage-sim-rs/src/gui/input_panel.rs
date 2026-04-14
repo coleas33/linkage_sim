@@ -24,7 +24,9 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
             {
                 // ── Revolute driver: angle slider in degrees ────────
                 let (slider_min, slider_max) = if state.sweep_range_enabled {
-                    (state.sweep_angle_min_deg, state.sweep_angle_max_deg)
+                    let a = state.sweep_angle_min_deg;
+                    let b = state.sweep_angle_max_deg;
+                    if a <= b { (a, b) } else { (b, a) }
                 } else {
                     (0.0, 360.0)
                 };

@@ -250,40 +250,40 @@ fn draw_profile_torque_indicator(
     });
 }
 
-/// Peak joint reaction indicator.
+/// Peak joint reaction indicator — lists all joints sorted by peak force.
 fn draw_peak_reactions_indicator(
     ui: &mut egui::Ui,
     state: &AppState,
     reactions: &std::collections::HashMap<String, Vec<f64>>,
 ) {
-    // Find the joint with the highest peak reaction force
-    let mut worst_joint = String::new();
-    let mut worst_peak = 0.0_f64;
+    // Collect peak reaction for each joint.
+    let mut peaks: Vec<(String, f64)> = reactions
+        .iter()
+        .filter_map(|(jid, magnitudes)| {
+            compute_envelope(magnitudes).map(|env| (jid.clone(), env.max_value))
+        })
+        .filter(|(_, peak)| *peak > 0.0)
+        .collect();
 
-    for (jid, magnitudes) in reactions {
-        if let Some(env) = compute_envelope(magnitudes) {
-            if env.max_value > worst_peak {
-                worst_peak = env.max_value;
-                worst_joint = jid.clone();
-            }
-        }
+    if peaks.is_empty() {
+        return;
     }
 
-    if worst_peak > 0.0 {
-        let color = if worst_peak < 100.0 {
+    // Sort by peak force descending (worst first).
+    peaks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    ui.label("Joint reactions (peak):");
+    for (jid, peak) in &peaks {
+        let color = if *peak < 100.0 {
             state.nc(COLOR_OK)
-        } else if worst_peak < 1000.0 {
+        } else if *peak < 1000.0 {
             state.nc(COLOR_WARN)
         } else {
             state.nc(COLOR_RED)
         };
-
         ui.horizontal(|ui| {
-            ui.label("Peak reaction:");
-            ui.colored_label(
-                color,
-                format!("{:.1} N at {}", worst_peak, worst_joint),
-            );
+            ui.label(format!("  {}:", jid));
+            ui.colored_label(color, format!("{:.1} N", peak));
         });
     }
 }

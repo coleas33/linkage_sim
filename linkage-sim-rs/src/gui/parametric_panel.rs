@@ -52,7 +52,7 @@ pub fn draw_parametric_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 .speed(0.01)
                 .max_decimals(4)
                 .suffix(suffix),
-        );
+        ).on_hover_text("Lower bound of the parameter sweep range. The study will evaluate the mechanism at evenly-spaced values from this minimum to the maximum.");
     });
     ui.horizontal(|ui| {
         ui.label("Max:");
@@ -61,13 +61,14 @@ pub fn draw_parametric_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 .speed(0.01)
                 .max_decimals(4)
                 .suffix(suffix),
-        );
+        ).on_hover_text("Upper bound of the parameter sweep range. Choose a range that covers the design space you want to explore.");
     });
     ui.horizontal(|ui| {
         ui.label("Steps:");
         let mut steps = state.parametric_config.num_steps as i32;
         if ui
             .add(egui::DragValue::new(&mut steps).range(2..=50))
+            .on_hover_text("Number of evenly-spaced parameter values to evaluate between min and max. More steps = smoother curve but slower computation. 10\u{2013}20 steps is usually sufficient.")
             .changed()
         {
             state.parametric_config.num_steps = steps.max(2) as usize;
@@ -309,16 +310,21 @@ pub fn draw_counterbalance_panel(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         ui.label("k min:");
-        ui.add(egui::DragValue::new(&mut state.counterbalance_config.k_min).speed(1.0).suffix(" N/m"));
+        ui.add(egui::DragValue::new(&mut state.counterbalance_config.k_min).speed(1.0).suffix(" N/m"))
+            .on_hover_text("Minimum spring stiffness to test (N/m). The optimizer will search for the best stiffness value in the range [k_min, k_max].");
     });
     ui.horizontal(|ui| {
         ui.label("k max:");
-        ui.add(egui::DragValue::new(&mut state.counterbalance_config.k_max).speed(1.0).suffix(" N/m"));
+        ui.add(egui::DragValue::new(&mut state.counterbalance_config.k_max).speed(1.0).suffix(" N/m"))
+            .on_hover_text("Maximum spring stiffness to test (N/m). Larger ranges explore more design space but take longer to compute.");
     });
     ui.horizontal(|ui| {
         ui.label("k steps:");
         let mut s = state.counterbalance_config.k_steps as i32;
-        if ui.add(egui::DragValue::new(&mut s).range(2..=30)).changed() {
+        if ui.add(egui::DragValue::new(&mut s).range(2..=30))
+            .on_hover_text("Number of stiffness values to evaluate between k_min and k_max. More steps = finer search but slower.")
+            .changed()
+        {
             state.counterbalance_config.k_steps = s.max(2) as usize;
         }
     });
@@ -331,20 +337,29 @@ pub fn draw_counterbalance_panel(ui: &mut egui::Ui, state: &mut AppState) {
     let mut l0_max_display = units.length(state.counterbalance_config.free_length_max);
     ui.horizontal(|ui| {
         ui.label("L0 min:");
-        if ui.add(egui::DragValue::new(&mut l0_min_display).speed(0.1).suffix(len_suffix)).changed() {
+        if ui.add(egui::DragValue::new(&mut l0_min_display).speed(0.1).suffix(len_suffix))
+            .on_hover_text("Minimum free (unstretched) length of the counterbalance spring. The optimizer searches over free length and stiffness simultaneously to minimize torque ripple.")
+            .changed()
+        {
             state.counterbalance_config.free_length_min = state.display_units.length_to_si(l0_min_display);
         }
     });
     ui.horizontal(|ui| {
         ui.label("L0 max:");
-        if ui.add(egui::DragValue::new(&mut l0_max_display).speed(0.1).suffix(len_suffix)).changed() {
+        if ui.add(egui::DragValue::new(&mut l0_max_display).speed(0.1).suffix(len_suffix))
+            .on_hover_text("Maximum free (unstretched) length of the counterbalance spring. A wider range covers more of the design space.")
+            .changed()
+        {
             state.counterbalance_config.free_length_max = state.display_units.length_to_si(l0_max_display);
         }
     });
     ui.horizontal(|ui| {
         ui.label("L0 steps:");
         let mut s = state.counterbalance_config.free_length_steps as i32;
-        if ui.add(egui::DragValue::new(&mut s).range(1..=20)).changed() {
+        if ui.add(egui::DragValue::new(&mut s).range(1..=20))
+            .on_hover_text("Number of free length values to evaluate. The total search grid is k_steps \u{d7} L0_steps evaluations.")
+            .changed()
+        {
             state.counterbalance_config.free_length_steps = s.max(1) as usize;
         }
     });

@@ -142,6 +142,7 @@ pub struct PointMassJson {
 pub struct BodyJson {
     pub attachment_points: HashMap<String, [f64; 2]>,
     pub mass: f64,
+    #[serde(alias = "ch_local")]
     pub cg_local: [f64; 2],
     pub izz_cg: f64,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]

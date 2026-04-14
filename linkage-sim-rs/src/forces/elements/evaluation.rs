@@ -467,14 +467,13 @@ pub fn evaluate_force_zone(
     let clipped = clip_polygon_to_aabb(&corners, &zone_min, &zone_max);
 
     let overlap_area = polygon_area(&clipped);
-    let body_area = geo.area();
 
-    if overlap_area < 1e-15 || body_area < 1e-15 {
+    if overlap_area < 1e-15 {
         return DVector::zeros(n);
     }
 
-    let ratio = (overlap_area / body_area).min(1.0);
-    let force_global = Vector2::new(fz.force[0] * ratio, fz.force[1] * ratio);
+    // Binary overlap: any contact → full force.
+    let force_global = Vector2::new(fz.force[0], fz.force[1]);
 
     // Apply force at the centroid of the overlap region
     let centroid_world = polygon_centroid(&clipped);
@@ -492,11 +491,10 @@ pub fn evaluate_force_zone(
     point_force_to_q(state, &fz.body_id, &local_point, &force_global, q)
 }
 
-/// Compute the overlap ratio for a force zone at the current configuration.
+/// Check whether any part of a force zone's target body overlaps the zone.
 ///
-/// Returns a value in [0.0, 1.0] representing the fraction of the target body's
-/// geometry that lies within the force zone. Returns 0.0 if the body has no
-/// geometry or is not found.
+/// Returns 1.0 if any part of the body geometry intersects the zone, 0.0
+/// otherwise. Binary semantics: partial overlap applies the full force.
 pub fn force_zone_overlap_ratio(
     fz: &ForceZoneElement,
     state: &State,
@@ -528,11 +526,10 @@ pub fn force_zone_overlap_ratio(
     let clipped = clip_polygon_to_aabb(&corners, &zone_min, &zone_max);
 
     let overlap_area = polygon_area(&clipped);
-    let body_area = geo.area();
 
-    if body_area < 1e-15 {
-        return 0.0;
+    if overlap_area < 1e-15 {
+        0.0
+    } else {
+        1.0
     }
-
-    (overlap_area / body_area).min(1.0)
 }

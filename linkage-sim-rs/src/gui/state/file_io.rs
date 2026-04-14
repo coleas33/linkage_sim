@@ -53,6 +53,11 @@ impl AppState {
         // Inject driver_angle into the JSON before encoding.
         if let Ok(mut val) = serde_json::from_str::<serde_json::Value>(&json_str) {
             val["_driver_angle"] = serde_json::Value::from(self.driver_angle);
+            if self.sweep_range_enabled {
+                val["_sweep_range_enabled"] = serde_json::Value::from(true);
+                val["_sweep_angle_min"] = serde_json::Value::from(self.sweep_angle_min_deg);
+                val["_sweep_angle_max"] = serde_json::Value::from(self.sweep_angle_max_deg);
+            }
             json_str = serde_json::to_string(&val).unwrap_or(json_str);
         }
         let encoded = encode_mechanism_for_url(&json_str);
@@ -247,10 +252,23 @@ impl AppState {
         // Detect the driven joint ID.
         let driver_joint_id = detect_driver_joint_id(&mech);
 
-        // Check for embedded driver angle (from share URL).
-        let shared_angle: Option<f64> = serde_json::from_str::<serde_json::Value>(json_str)
-            .ok()
+        // Check for embedded driver angle and sweep range (from share URL).
+        let shared_json: Option<serde_json::Value> =
+            serde_json::from_str::<serde_json::Value>(json_str).ok();
+        let shared_angle: Option<f64> = shared_json
+            .as_ref()
             .and_then(|v| v.get("_driver_angle").and_then(|a| a.as_f64()));
+        if let Some(ref val) = shared_json {
+            if val.get("_sweep_range_enabled").and_then(|v| v.as_bool()).unwrap_or(false) {
+                self.sweep_range_enabled = true;
+                if let Some(min) = val.get("_sweep_angle_min").and_then(|v| v.as_f64()) {
+                    self.sweep_angle_min_deg = min;
+                }
+                if let Some(max) = val.get("_sweep_angle_max").and_then(|v| v.as_f64()) {
+                    self.sweep_angle_max_deg = max;
+                }
+            }
+        }
 
         // Solve at the shared angle (if present) or t=0.
         let target_angle = shared_angle.unwrap_or(driver_theta_0);

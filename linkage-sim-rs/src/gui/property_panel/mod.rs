@@ -396,17 +396,22 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                                 });
                                             }
 
-                                            if ui.button("Remove Geometry").on_hover_text("Remove the visual geometry rectangle from this body").clicked() {
-                                                pending = Some(PendingPropertyEdit::RemoveGeometry {
-                                                    body_id: body_id.clone(),
-                                                });
-                                            }
+                                            ui.horizontal(|ui| {
+                                                if ui.button("Redraw").on_hover_text("Drag on canvas to redefine this body's geometry rectangle").clicked() {
+                                                    pending = Some(PendingPropertyEdit::EnterDrawGeometryMode {
+                                                        body_id: body_id.clone(),
+                                                    });
+                                                }
+                                                if ui.button("Remove").on_hover_text("Remove the visual geometry rectangle from this body").clicked() {
+                                                    pending = Some(PendingPropertyEdit::RemoveGeometry {
+                                                        body_id: body_id.clone(),
+                                                    });
+                                                }
+                                            });
                                         } else {
-                                            if ui.button("Add Geometry").on_hover_text("Attach a visual geometry rectangle to this body (required for force zones)").clicked() {
-                                                pending = Some(PendingPropertyEdit::AddGeometry {
+                                            if ui.button("Draw Geometry").on_hover_text("Drag on canvas to define a geometry rectangle for this body (required for force zones)").clicked() {
+                                                pending = Some(PendingPropertyEdit::EnterDrawGeometryMode {
                                                     body_id: body_id.clone(),
-                                                    width: 0.03,
-                                                    height: 0.01,
                                                 });
                                             }
                                         }

@@ -77,6 +77,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" N/m"),
                     )
+                    .on_hover_text("Spring stiffness (N/m). Force = k \u{d7} (current_length \u{2212} free_length). Higher values produce a stiffer spring that resists extension/compression more strongly.")
                     .changed()
                 {
                     let mut updated = s.clone();
@@ -98,6 +99,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" m"),
                     )
+                    .on_hover_text("Free (unstretched) length of the spring in meters. The spring produces zero force when the distance between its attachment points equals this value. Shorter = spring is pre-loaded in tension; longer = pre-loaded in compression.")
                     .changed()
                 {
                     let mut updated = s.clone();
@@ -147,6 +149,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" N\u{00b7}s/m"),
                     )
+                    .on_hover_text("Viscous damping coefficient (N\u{b7}s/m). Force = c \u{d7} extension_rate. Opposes relative velocity between the two attachment points. Higher values dissipate energy faster.")
                     .changed()
                 {
                     let mut updated = d.clone();
@@ -192,6 +195,7 @@ fn draw_force_element_details(
                 ui.label("Fx:");
                 if ui
                     .add(egui::DragValue::new(&mut fx).speed(0.1).suffix(" N"))
+                    .on_hover_text("Horizontal component of the applied force in Newtons (world X-axis). Positive = rightward.")
                     .changed()
                 {
                     let mut updated = f.clone();
@@ -206,6 +210,7 @@ fn draw_force_element_details(
                 ui.label("Fy:");
                 if ui
                     .add(egui::DragValue::new(&mut fy).speed(0.1).suffix(" N"))
+                    .on_hover_text("Vertical component of the applied force in Newtons (world Y-axis). Positive = upward.")
                     .changed()
                 {
                     let mut updated = f.clone();
@@ -248,6 +253,7 @@ fn draw_force_element_details(
                             .speed(0.1)
                             .suffix(" N\u{00b7}m"),
                     )
+                    .on_hover_text("Pure torque applied to this body in N\u{b7}m. Positive = counter-clockwise. This torque acts directly on the body's rotational DOF, not through an attachment point.")
                     .changed()
                 {
                     let mut updated = t.clone();
@@ -279,6 +285,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" N\u{00b7}m/rad"),
                     )
+                    .on_hover_text("Torsion spring stiffness (N\u{b7}m/rad). Torque = k \u{d7} (relative_angle \u{2212} free_angle). Acts on the relative angle between bodies I and J at their shared joint.")
                     .changed()
                 {
                     let mut updated = s.clone();
@@ -299,6 +306,7 @@ fn draw_force_element_details(
                             .speed(0.01)
                             .suffix(" rad"),
                     )
+                    .on_hover_text("Free (unloaded) angle of the torsion spring in radians. The spring produces zero torque when the relative angle between bodies I and J equals this value.")
                     .changed()
                 {
                     let mut updated = s.clone();
@@ -324,6 +332,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" N\u{00b7}m\u{00b7}s/rad"),
                     )
+                    .on_hover_text("Rotary viscous damping coefficient (N\u{b7}m\u{b7}s/rad). Torque = c \u{d7} relative_angular_velocity. Opposes relative rotation between bodies I and J at their shared joint.")
                     .changed()
                 {
                     let mut updated = d.clone();
@@ -349,6 +358,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" N"),
                     )
+                    .on_hover_text("Force at full extension (fully extended position) in Newtons. This is the minimum force the gas spring produces. Gas springs produce more force as they compress (shorter length = higher pressure = more force).")
                     .changed()
                 {
                     let mut updated = gs.clone();
@@ -370,6 +380,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" m"),
                     )
+                    .on_hover_text("Fully extended (maximum) length of the gas spring in meters, measured between the two attachment points. At this length, the spring produces the initial force F\u{2080}.")
                     .changed()
                 {
                     let mut updated = gs.clone();
@@ -391,6 +402,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" m"),
                     )
+                    .on_hover_text("Available stroke (travel) of the gas spring in meters. The compressed length = extended_length \u{2212} stroke. The force increases as the spring compresses from extended to compressed position.")
                     .changed()
                 {
                     let mut updated = gs.clone();
@@ -412,6 +424,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" N\u{00b7}s/m"),
                     )
+                    .on_hover_text("Viscous damping coefficient of the gas spring (N\u{b7}s/m). Adds a velocity-dependent force that opposes extension/compression. Set to 0 for an ideal (frictionless) gas spring.")
                     .changed()
                 {
                     let mut updated = gs.clone();
@@ -432,6 +445,7 @@ fn draw_force_element_details(
                             .speed(0.01)
                             .range(0.0..=f64::MAX),
                     )
+                    .on_hover_text("Polytropic exponent controlling the force-vs-compression curve. n=1.0 = isothermal (slow), n=1.4 = adiabatic (fast). Higher values make the force increase more steeply as the spring compresses. Typical gas springs use n \u{2248} 1.1\u{2013}1.3.")
                     .changed()
                 {
                     let mut updated = gs.clone();
@@ -481,6 +495,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" N\u{00b7}m"),
                     )
+                    .on_hover_text("Constant friction torque (N\u{b7}m) that always opposes rotation at the joint, regardless of speed or load. Models seal drag or preload friction.")
                     .changed()
                 {
                     let mut updated = bf.clone();
@@ -502,6 +517,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" N\u{00b7}m\u{00b7}s/rad"),
                     )
+                    .on_hover_text("Speed-dependent friction coefficient (N\u{b7}m\u{b7}s/rad). Friction torque contribution = viscous_coeff \u{d7} angular_velocity. Models lubricated bearing drag.")
                     .changed()
                 {
                     let mut updated = bf.clone();
@@ -522,6 +538,7 @@ fn draw_force_element_details(
                             .speed(0.001)
                             .range(0.0..=f64::MAX),
                     )
+                    .on_hover_text("Coulomb friction coefficient (dimensionless). Friction torque = \u{b5} \u{d7} radial_load \u{d7} pin_radius. Models dry sliding contact friction at the joint pin.")
                     .changed()
                 {
                     let mut updated = bf.clone();
@@ -543,6 +560,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" m"),
                     )
+                    .on_hover_text("Joint pin radius in meters. Used with the Coulomb coefficient to compute friction torque: T_friction = \u{b5} \u{d7} F_radial \u{d7} pin_radius.")
                     .changed()
                 {
                     let mut updated = bf.clone();
@@ -564,6 +582,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" N"),
                     )
+                    .on_hover_text("Estimated radial load on the joint pin in Newtons. Used to compute Coulomb friction. For more accurate results, use the actual joint reaction force from the statics solution.")
                     .changed()
                 {
                     let mut updated = bf.clone();
@@ -585,6 +604,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" rad/s"),
                     )
+                    .on_hover_text("Velocity threshold for the Coulomb friction smoothing function (rad/s). Below this speed, the friction torque transitions smoothly to zero to avoid numerical discontinuities. Typical values: 0.01\u{2013}0.1 rad/s.")
                     .changed()
                 {
                     let mut updated = bf.clone();
@@ -609,6 +629,7 @@ fn draw_force_element_details(
                             .speed(0.01)
                             .suffix(" rad"),
                     )
+                    .on_hover_text("Minimum allowed relative angle between bodies I and J in radians. When the joint angle drops below this limit, a stiff restoring torque pushes it back.")
                     .changed()
                 {
                     let mut updated = jl.clone();
@@ -629,6 +650,7 @@ fn draw_force_element_details(
                             .speed(0.01)
                             .suffix(" rad"),
                     )
+                    .on_hover_text("Maximum allowed relative angle between bodies I and J in radians. When the joint angle exceeds this limit, a stiff restoring torque pushes it back.")
                     .changed()
                 {
                     let mut updated = jl.clone();
@@ -650,6 +672,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" N\u{00b7}m/rad"),
                     )
+                    .on_hover_text("End-stop stiffness (N\u{b7}m/rad). Controls how stiffly the joint resists penetration past the angular limits. Higher values = harder stop.")
                     .changed()
                 {
                     let mut updated = jl.clone();
@@ -671,6 +694,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" N\u{00b7}m\u{00b7}s/rad"),
                     )
+                    .on_hover_text("End-stop damping (N\u{b7}m\u{b7}s/rad). Dissipates energy when the joint hits an angular limit, preventing oscillation. Set to a fraction of 2\u{d7}\u{221a}(k\u{d7}I) for critical damping.")
                     .changed()
                 {
                     let mut updated = jl.clone();
@@ -691,6 +715,7 @@ fn draw_force_element_details(
                             .speed(0.01)
                             .range(0.0..=1.0),
                     )
+                    .on_hover_text("Coefficient of restitution at the angular end-stops (0\u{2013}1). 0 = perfectly inelastic (no bounce), 1 = perfectly elastic. Controls how much kinetic energy is retained after hitting a joint limit.")
                     .changed()
                 {
                     let mut updated = jl.clone();
@@ -716,6 +741,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" N\u{00b7}m"),
                     )
+                    .on_hover_text("Stall torque (N\u{b7}m). Maximum torque the motor can produce at zero speed. The motor follows a linear torque-speed curve: torque = \u{3c4}_s \u{d7} (1 \u{2212} \u{3c9}/\u{3c9}\u{2080}).")
                     .changed()
                 {
                     let mut updated = m.clone();
@@ -737,6 +763,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" rad/s"),
                     )
+                    .on_hover_text("No-load speed (rad/s). Maximum angular velocity of the motor when no external torque is applied. The motor produces zero torque at this speed.")
                     .changed()
                 {
                     let mut updated = m.clone();
@@ -756,6 +783,7 @@ fn draw_force_element_details(
                         egui::DragValue::new(&mut direction)
                             .speed(0.1),
                     )
+                    .on_hover_text("Motor direction multiplier. +1 = counter-clockwise, \u{2212}1 = clockwise. Scales the applied torque to set the intended rotation direction.")
                     .changed()
                 {
                     let mut updated = m.clone();
@@ -776,7 +804,7 @@ fn draw_force_element_details(
                 .collect();
 
             ui.horizontal(|ui| {
-                ui.label("Target body:");
+                ui.label("Target body:").on_hover_text("Body whose geometry elements will receive the zone force when their centroid is inside the zone bounds.");
                 let current_label = if fz.body_id.is_empty() { "(none)" } else { &fz.body_id };
                 egui::ComboBox::from_id_salt(format!("fz_body_{}", index))
                     .selected_text(current_label)
@@ -806,7 +834,7 @@ fn draw_force_element_details(
             let mut fx = fz.force[0];
             ui.horizontal(|ui| {
                 ui.label("Force X (N):");
-                if ui.add(egui::DragValue::new(&mut fx).speed(1.0).prefix("Fx: ")).changed() {
+                if ui.add(egui::DragValue::new(&mut fx).speed(1.0).prefix("Fx: ")).on_hover_text("Horizontal force component (N) applied to geometry elements inside the zone. Positive = rightward.").changed() {
                     let mut updated = fz.clone();
                     updated.force[0] = fx;
                     *pending = Some(PendingPropertyEdit::UpdateForce {
@@ -819,7 +847,7 @@ fn draw_force_element_details(
             let mut fy = fz.force[1];
             ui.horizontal(|ui| {
                 ui.label("Force Y (N):");
-                if ui.add(egui::DragValue::new(&mut fy).speed(1.0).prefix("Fy: ")).changed() {
+                if ui.add(egui::DragValue::new(&mut fy).speed(1.0).prefix("Fy: ")).on_hover_text("Vertical force component (N) applied to geometry elements inside the zone. Positive = upward.").changed() {
                     let mut updated = fz.clone();
                     updated.force[1] = fy;
                     *pending = Some(PendingPropertyEdit::UpdateForce {
@@ -839,21 +867,21 @@ fn draw_force_element_details(
             let mut zone_changed = false;
             ui.horizontal(|ui| {
                 ui.label("Min X:");
-                if ui.add(egui::DragValue::new(&mut min_x_mm).speed(1.0).suffix(" mm")).changed() {
+                if ui.add(egui::DragValue::new(&mut min_x_mm).speed(1.0).suffix(" mm")).on_hover_text("Minimum X coordinate of the force zone in mm. The zone applies forces to geometry elements whose centroid falls within this bounding box.").changed() {
                     zone_changed = true;
                 }
                 ui.label("Min Y:");
-                if ui.add(egui::DragValue::new(&mut min_y_mm).speed(1.0).suffix(" mm")).changed() {
+                if ui.add(egui::DragValue::new(&mut min_y_mm).speed(1.0).suffix(" mm")).on_hover_text("Minimum Y coordinate of the force zone in mm.").changed() {
                     zone_changed = true;
                 }
             });
             ui.horizontal(|ui| {
                 ui.label("Max X:");
-                if ui.add(egui::DragValue::new(&mut max_x_mm).speed(1.0).suffix(" mm")).changed() {
+                if ui.add(egui::DragValue::new(&mut max_x_mm).speed(1.0).suffix(" mm")).on_hover_text("Maximum X coordinate of the force zone in mm.").changed() {
                     zone_changed = true;
                 }
                 ui.label("Max Y:");
-                if ui.add(egui::DragValue::new(&mut max_y_mm).speed(1.0).suffix(" mm")).changed() {
+                if ui.add(egui::DragValue::new(&mut max_y_mm).speed(1.0).suffix(" mm")).on_hover_text("Maximum Y coordinate of the force zone in mm.").changed() {
                     zone_changed = true;
                 }
             });
@@ -881,6 +909,7 @@ fn draw_force_element_details(
                             .speed(1.0)
                             .suffix(" N"),
                     )
+                    .on_hover_text("Constant axial force applied by the actuator in Newtons. Positive = tension (pulling points together), negative = compression (pushing apart). Set to 0 to solve for the required actuator force from statics.")
                     .changed()
                 {
                     let mut updated = la.clone();
@@ -902,6 +931,7 @@ fn draw_force_element_details(
                             .range(0.0..=f64::MAX)
                             .suffix(" m/s"),
                     )
+                    .on_hover_text("Maximum extension/retraction speed of the actuator in m/s. Set to 0 for unlimited speed.")
                     .changed()
                 {
                     let mut updated = la.clone();
@@ -939,6 +969,7 @@ fn draw_force_element_details(
                                     .range(0.0..=f64::MAX)
                                     .suffix(" m"),
                             )
+                            .on_hover_text("Minimum actuator length (fully retracted) in meters. Set to 0 to disable the lower stroke limit.")
                             .changed()
                         {
                             let mut updated = la.clone();
@@ -960,6 +991,7 @@ fn draw_force_element_details(
                                     .range(0.0..=f64::MAX)
                                     .suffix(" m"),
                             )
+                            .on_hover_text("Maximum actuator length (fully extended) in meters. Set to 0 to disable the upper stroke limit.")
                             .changed()
                         {
                             let mut updated = la.clone();
@@ -981,6 +1013,7 @@ fn draw_force_element_details(
                                     .range(0.0..=f64::MAX)
                                     .suffix(" N/m"),
                             )
+                            .on_hover_text("Stiffness of virtual end-stop springs at the stroke limits (N/m). Prevents the actuator from exceeding its stroke range.")
                             .changed()
                         {
                             let mut updated = la.clone();
@@ -1002,6 +1035,7 @@ fn draw_force_element_details(
                                     .range(0.0..=f64::MAX)
                                     .suffix(" N\u{00b7}s/m"),
                             )
+                            .on_hover_text("Damping of virtual end-stop contact (N\u{b7}s/m). Prevents oscillation at stroke limits.")
                             .changed()
                         {
                             let mut updated = la.clone();
@@ -1022,6 +1056,7 @@ fn draw_force_element_details(
                                     .speed(0.01)
                                     .range(0.0..=1.0),
                             )
+                            .on_hover_text("Coefficient of restitution at stroke end-stops (0\u{2013}1). 0 = perfectly inelastic (no bounce), 1 = perfectly elastic.")
                             .changed()
                         {
                             let mut updated = la.clone();

@@ -5,6 +5,32 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-12 — Modularize gui/mod.rs and gui/sweep.rs
+
+**What:** Four refactorings, zero behavior change:
+
+1. **Menu bar extraction:** `gui/mod.rs` (1925 lines) → extracted File/Edit/Help/View/Image
+   menus + sample gallery into `gui/menu_bar.rs` (703 lines). `mod.rs` dropped to 1147 lines.
+
+2. **Sweep submodule:** `gui/sweep.rs` (1399 lines) → `gui/sweep/` directory:
+   - `mod.rs` (1003 lines): SweepData, compute_sweep_data, push_nan_row helper
+   - `motion_profile.rs` (317 lines): trapezoidal velocity profile + tests
+   - `fourbar.rs` (110 lines): 4-bar linkage detection
+
+3. **Theme DRY fix:** Extracted `gui/theme.rs` (83 lines) with `cad_dark_visuals()`,
+   `apply_nathan_mode()`, `restore_normal_visuals()`. Eliminates duplicated color
+   constants between `LinkageApp::new()` and `restore_normal_visuals()`.
+
+4. **push_nan_row helper:** Replaces 55 lines of channel-by-channel NaN pushes in
+   the sweep solver-failure branch with a single function call.
+
+**Test results:** 565 lib/integration tests pass. Pre-existing linear_driver doctest
+still fails (not related).
+
+**Breaking changes:** None. All public APIs re-exported from new `mod.rs` files.
+
+---
+
 ## 2026-04-10 — Code quality: mutate_and_rebuild helper + Plotly extraction
 
 **What:**

@@ -46,6 +46,8 @@ pub(super) enum PendingPropertyEdit {
     Redo,
     /// Enter canvas placement mode to add a new attachment point to a body.
     AddJointPoint { body_id: String },
+    /// Enter draw-body-geometry mode: user drags on canvas to define geometry.
+    EnterDrawGeometryMode { body_id: String },
 }
 
 /// Draw the force elements collapsible section.
@@ -257,6 +259,16 @@ pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropert
                 state.reassigning_point_mass = None;
                 state.repositioning_point_mass = None;
                 state.active_tool = crate::gui::state::EditorTool::Select;
+            }
+            PendingPropertyEdit::EnterDrawGeometryMode { body_id } => {
+                state.drawing_body_geometry = Some(
+                    crate::gui::state::DrawBodyGeometryState {
+                        body_id,
+                        start_world: None,
+                    },
+                );
+                state.active_tool = crate::gui::state::EditorTool::DrawBodyGeometry;
+                state.status_message = Some("Drag on canvas to draw body geometry".to_string());
             }
         }
     }

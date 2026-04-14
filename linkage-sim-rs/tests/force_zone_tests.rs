@@ -98,7 +98,7 @@ fn force_zone_partial_overlap_scales_force() {
 
     // Partial overlap: zone covers only the right half of the body geometry.
     // Body geometry spans x=[0.02, 0.08]. Zone x starts at 0.05 => covers [0.05, 0.08]
-    // which is half the width (0.03 out of 0.06), so overlap ratio ~ 0.5.
+    // which is partial overlap. With binary semantics, this still applies the full force.
     let fz_partial = ForceZoneElement {
         body_id: "bar".to_string(),
         zone_min: [0.05, -1.0],
@@ -108,7 +108,8 @@ fn force_zone_partial_overlap_scales_force() {
     };
     let partial = ForceElement::ForceZone(fz_partial).evaluate(state, bodies, &q, &q_dot, 0.0);
 
-    // The partial force magnitude should be roughly half the full magnitude
+    // Binary overlap: any contact applies full force, so partial should be
+    // comparable to full (small difference from different application point).
     let full_norm = full.norm();
     let partial_norm = partial.norm();
     assert!(
@@ -121,9 +122,12 @@ fn force_zone_partial_overlap_scales_force() {
         "Partial overlap force should be non-zero, got: {}",
         partial_norm,
     );
+    // Both should apply essentially the same force magnitude (within 5%).
+    let diff = (partial_norm - full_norm).abs() / full_norm;
     assert!(
-        partial_norm < full_norm * 0.9,
-        "Partial overlap ({}) should produce less force than full ({})",
+        diff < 0.05,
+        "Partial and full overlap forces should be similar (diff {:.1}%): partial={}, full={}",
+        diff * 100.0,
         partial_norm,
         full_norm,
     );

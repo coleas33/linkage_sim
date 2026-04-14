@@ -17,8 +17,12 @@ active_focus: Custom 6-Bar press workflow (DXF -> links -> actuator -> analysis)
 
 coordination:
   before_work: read all docs/ai/*.yaml
-  after_work: update docs/ai/04-memory.yaml (if issues/risks changed) and docs/ai/05-update-tracker.md (if the change is meaningful)
-  do_not: modify memory.yaml/tracker on read-only investigations
+  after_work:
+    - update 02-system.yaml if invariants/limitations/risks/lessons changed
+    - update 04-memory.yaml if open questions or active issues changed
+    - update 05-update-tracker.md if the change is meaningful
+    - update 03-structure.yaml if module layout changed
+  do_not: modify docs/ai/ on read-only investigations
 
 user_preferences:
   - DRY; flag repetition aggressively

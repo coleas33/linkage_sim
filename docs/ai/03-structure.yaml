@@ -83,8 +83,17 @@ gui_submodules:
     path: src/gui/export/
     files: [mod, svg, dxf, csv, raster, report]
 
+  sweep:
+    path: src/gui/sweep/
+    files:
+      mod: sweep/mod.rs (SweepData, compute_sweep_data, push_nan_row helper)
+      motion_profile: sweep/motion_profile.rs (trapezoidal velocity profile, apply_motion_profile)
+      fourbar: sweep/fourbar.rs (4-bar linkage detection for transmission angle)
+
   other_top_level_gui:
-    - mod.rs (LinkageApp + update + menu bar)
+    - mod.rs (LinkageApp + update loop orchestration)
+    - menu_bar.rs (File/Edit/Help/View/Image menus + sample gallery)
+    - theme.rs (CAD dark visuals, Nathan Mode grayscale)
     - input_panel.rs
     - plot_panel/ (split module)
     - parametric_panel.rs
@@ -92,7 +101,6 @@ gui_submodules:
     - error_panel.rs
     - tutorial.rs
     - undo.rs
-    - sweep.rs
     - dxf_import.rs
 
 entry_points:
@@ -115,12 +123,12 @@ where_things_belong:
   add_new_plot_tab:
     - src/gui/plot_panel/mod.rs (add to PlotTab enum, dispatcher, tab button)
     - src/gui/plot_panel/{mechanics,dynamics,actuator,coupler}.rs (add draw_ fn)
-    - src/gui/sweep.rs (compute + store data in SweepData)
+    - src/gui/sweep/mod.rs (compute + store data in SweepData)
 
   add_new_interactive_tool:
     - src/gui/state/types.rs (add EditorTool variant)
     - src/gui/canvas/interaction.rs (add handler)
-    - src/gui/mod.rs (add toolbar button)
+    - src/gui/mod.rs (add toolbar button) or src/gui/menu_bar.rs (add menu item)
 
   add_new_sample_mechanism:
     - src/gui/samples/{fourbar,sixbar,special}.rs (add builder fn)

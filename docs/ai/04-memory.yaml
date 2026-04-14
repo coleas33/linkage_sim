@@ -1,3 +1,7 @@
+# Transient project state — open questions and active issues.
+# Stable knowledge (invariants, limitations, risks, lessons) lives in 02-system.yaml.
+# Completed decisions live in 05-update-tracker.md.
+
 active_issues: []
 
 open_questions:
@@ -6,78 +10,3 @@ open_questions:
     actuator-driven mechanisms can use a LinearDriver constraint instead of
     relying on the two-pass statics back-calculation? LinearDriver exists in
     core/linear_driver.rs but has no GUI wiring yet.
-
-known_limitations:
-  - Custom 6-Bar sample is overconstrained when body_5/body_6 are merged.
-    Documented in the sample JSON; solver uses SVD pseudo-inverse so it
-    still works if geometry is compatible.
-  - DXF body_rect_to_world forces body-local-frame geometry. Bodies added
-    via DXF "Add Geometry to Selected Link" button use the world center
-    transformed into local coords; if the target body is rotated at import
-    time the geometry rectangle inherits that rotation.
-  - Forward dynamics doctests for linear_driver (src/core/linear_driver.rs
-    line 7) fail to parse as Rust code. Pre-existing; not blocking.
-
-risks:
-  - Non-Grashof sweeps return 361 NaN-padded data points. Any analysis code
-    that doesn't tolerate NaN (e.g. envelopes, statistics) must filter it.
-    The plot layer filters NaN; CSV/HTML export needs verification.
-  - Two-pass statics solve adds an extra SVD per sweep angle. For 361-angle
-    sweeps with complex mechanisms this roughly doubles the sweep time.
-  - load_from_json_str is destructive (replaces entire mechanism). DXF
-    conversion functions were migrated to additive blueprint mutation;
-    any new conversion flow must do the same (push_undo + mutate + rebuild).
-
-recent_decisions:
-  - 2026-04-10: Added AppState::mutate_and_rebuild(|s| ...) helper in
-    gui/state/undo_ops.rs that encodes the push_undo + rebuild invariant.
-    Converted all 12 mutation helpers in entity_crud.rs to use it.
-    blueprint_ops.rs and driver_ops.rs still use the raw pattern (15 sites);
-    migrate opportunistically, no rush — the raw pattern still works.
-  - 2026-04-10: Added add_plotly_line_chart() and add_plotly_multi_chart()
-    helpers to gui/export/report.rs. Converted 3 simple single-series chart
-    sites (torque, actuator force, transmission angle) to use the helper.
-    The multi-series plots (joint reactions, energy, coupler traces) still
-    have inline loops — migrate later if patterns converge.
-  - 2026-04-10: rendering.rs split into rendering/{mod,primitives,force_render}.rs
-  - 2026-04-10: plot_panel.rs split into plot_panel/{mod,mechanics,dynamics,actuator,coupler}.rs
-  - 2026-04-10: DXF import "Add Geometry to Selected Link" sets body.geometry
-    directly (like Link Editor) instead of creating a new body
-  - 2026-04-10: sweep no longer breaks on unreachable angles; pushes NaN
-    across all channels and continues (supports non-Grashof / oscillating mechanisms)
-  - 2026-04-10: two-pass statics solve in sweep for actuator-driven mechanisms
-  - 2026-04-10: force zone creation no longer auto-creates BodyGeometry
-  - 2026-04-10: +Ground tool snaps to unconnected link endpoints and creates
-    the revolute joint automatically
-  - 2026-04-10: joint creation excludes first-clicked point to handle
-    coincident pivots between multi-joint body and link
-  - 2026-04-10: canvas joint labels show joint.id() instead of R1/R2 auto
-  - 2026-04-10: driver speed editor (RPM) added to input panel
-  - 2026-04-10: plot legends moved to LeftTop to avoid blocking right-side data
-  - 2026-04-10: computed actuator force displayed on canvas when force=0
-
-invariants_to_protect:
-  - All DXF-created bodies use local=world frame (attachment points in
-    world coords, body pose 0,0,0) so they render correctly without needing
-    joint constraints to fix position. If you change this, you must update
-    the conversion functions AND the force-zone geometry offset computation.
-  - Sweep data vectors MUST stay at length 361 (angles 0-360 inclusive)
-    even when position solve fails. Plot consumers rely on this alignment.
-  - Every state mutation that changes the blueprint MUST call push_undo()
-    BEFORE the mutation and rebuild() AFTER. Skipping push_undo loses undo
-    history; skipping rebuild leaves mechanism out of sync with blueprint.
-
-lessons_learned:
-  - rfd file dialogs are native-only. WASM file import uses drag-and-drop
-    via egui raw.dropped_files — handle both paths for any new import flow.
-  - DragValue::changed() fires on every keystroke. Use drag_stopped() ||
-    lost_focus() to defer expensive rebuilds until the user finishes editing.
-  - Uncommitted local changes in working tree can break deploys. After any
-    edit in src/gui/, ALWAYS verify WASM build succeeds before pushing.
-  - The dxf crate pulls uuid, which needs features = ["js"] for WASM.
-  - forces/elements/mod.rs is 1620 lines but almost entirely #[cfg(test)]
-    test code. Production code lives in element_types.rs, evaluation.rs,
-    force_element.rs, time_modulation.rs submodules. A prior code-quality
-    scan mis-reported this as a "1475-line impl block with 19 panics" —
-    the panics are all in tests (standard Rust assertion pattern), not
-    production. Do not chase this as a refactor target.

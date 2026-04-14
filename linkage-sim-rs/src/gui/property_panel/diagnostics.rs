@@ -61,17 +61,16 @@ pub(super) fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
                 let mech_bodies = mech.bodies();
                 for (i, force) in bp.forces.iter().enumerate() {
                     if let ForceElement::ForceZone(fz) = force {
-                        let ratio = crate::forces::elements::force_zone_overlap_ratio(
+                        let in_zone = crate::forces::elements::force_zone_overlap_ratio(
                             fz, mech_state, mech_bodies, &state.q,
-                        );
+                        ) > 0.5;
                         let force_mag = (fz.force[0].powi(2) + fz.force[1].powi(2)).sqrt();
-                        let applied_mag = force_mag * ratio;
                         let label_name = fz.label.as_deref().unwrap_or(&fz.body_id);
-                        if applied_mag < 1e-6 {
+                        if !in_zone {
                             ui.colored_label(
                                 egui::Color32::from_rgb(255, 180, 60),
                                 format!(
-                                    "Force zone #{}: 0 N applied (0% overlap with '{}')",
+                                    "Force zone #{}: 0 N applied (body '{}' outside zone)",
                                     i + 1, label_name,
                                 ),
                             );
@@ -79,8 +78,8 @@ pub(super) fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
                             ui.colored_label(
                                 egui::Color32::from_rgb(100, 200, 100),
                                 format!(
-                                    "Force zone #{}: {:.0} N applied to '{}' ({:.0}% overlap)",
-                                    i + 1, applied_mag, label_name, ratio * 100.0,
+                                    "Force zone #{}: {:.0} N applied to '{}' (in zone)",
+                                    i + 1, force_mag, label_name,
                                 ),
                             );
                         }

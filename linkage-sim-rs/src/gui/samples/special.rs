@@ -1040,20 +1040,46 @@ pub(super) fn build_custom_6bar(
     let mut mech = load_mechanism_unbuilt(json).map_err(|e| e.to_string())?;
     mech.build().map_err(|e| e.to_string())?;
 
+    // Extract driver omega/theta_0 for time↔angle conversion.
+    let (omega, theta_0) = mech.drivers().first()
+        .and_then(|d| d.meta())
+        .map(|m| match m {
+            crate::core::driver::DriverMeta::ConstantSpeed { omega, theta_0 } => (*omega, *theta_0),
+            _ => (2.0 * std::f64::consts::PI, 0.0),
+        })
+        .unwrap_or((2.0 * std::f64::consts::PI, 0.0));
+
     let q0 = mech.state().make_q();
-    match solve_position(&mech, &q0, 0.0, 1e-10, 100) {
-        Ok(result) if result.converged => Ok((mech, result.q)),
-        Ok(result) => {
-            // Fall back to zero-vector initial guess if solver didn't converge
-            log::warn!(
-                "Custom 6-bar: initial solve did not converge (residual={}), using zero q0",
-                result.residual_norm
-            );
-            Ok((mech, q0))
-        }
-        Err(e) => {
-            log::warn!("Custom 6-bar: initial solve error ({}), using zero q0", e);
-            Ok((mech, q0))
+
+    // Try multiple starting angles — this mechanism is non-Grashof and
+    // only assemblable in a limited range.
+    let try_angles_deg: [f64; 8] = [217.0, 180.0, 200.0, 240.0, 150.0, 270.0, 90.0, 0.0];
+    for angle_deg in try_angles_deg {
+        let angle_rad = angle_deg.to_radians();
+        let t = (angle_rad - theta_0) / omega;
+        if let Ok(result) = solve_position(&mech, &q0, t, 1e-10, 100) {
+            if result.converged {
+                // Continue from this angle to t=0 for a clean starting state.
+                let steps = 40;
+                let mut q = result.q.clone();
+                let mut ok = true;
+                for i in 1..=steps {
+                    let frac = i as f64 / steps as f64;
+                    let t_step = t * (1.0 - frac);
+                    match solve_position(&mech, &q, t_step, 1e-10, 100) {
+                        Ok(r) if r.converged => q = r.q,
+                        _ => { ok = false; break; }
+                    }
+                }
+                if ok {
+                    return Ok((mech, q));
+                }
+                // If continuation to t=0 failed, return at the solved angle.
+                return Ok((mech, result.q));
+            }
         }
     }
+
+    log::warn!("Custom 6-bar: no starting angle converged, using zero q0");
+    Ok((mech, q0))
 }
