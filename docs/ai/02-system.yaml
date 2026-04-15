@@ -73,8 +73,12 @@ invariants_to_protect:
     world coords, body pose 0,0,0) so they render correctly without needing
     joint constraints to fix position. If you change this, you must update
     the conversion functions AND the force-zone geometry offset computation.
-  - Sweep data vectors MUST stay at length 361 (angles 0-360 inclusive)
-    even when position solve fails. Plot consumers rely on this alignment.
+  - Within one sweep, ALL data channels (angles_deg, body_angles,
+    coupler_traces, reactions, etc.) must share the same length. Solver
+    failures push NaN rows via push_nan_row() so the alignment survives.
+    The length itself is 361 only for full-range sweeps (0..=360); a
+    custom range sweeps literally min..=max in 1° steps, so length is
+    max-min+1. Plot consumers key off angles_deg, not a fixed count.
   - Every state mutation that changes the blueprint MUST call push_undo()
     BEFORE the mutation and rebuild() AFTER. Skipping push_undo loses undo
     history; skipping rebuild leaves mechanism out of sync with blueprint.
@@ -85,16 +89,17 @@ known_limitations:
     Documented in the sample JSON; solver uses SVD pseudo-inverse so it
     still works if geometry is compatible.
   - DXF body_rect_to_world forces body-local-frame geometry. Bodies added
-    via DXF "Add Geometry to Selected Link" button use the world center
-    transformed into local coords; if the target body is rotated at import
-    time the geometry rectangle inherits that rotation.
+    via DXF "Add Geometry to Link" button (target picked from the popup)
+    use the world center transformed into local coords; if the target body
+    is rotated at import time the geometry rectangle inherits that rotation.
   - Forward dynamics doctests for linear_driver (src/core/linear_driver.rs
     line 7) fail to parse as Rust code. Pre-existing; not blocking.
 
 risks:
-  - Non-Grashof sweeps return 361 NaN-padded data points. Any analysis code
-    that doesn't tolerate NaN (e.g. envelopes, statistics) must filter it.
-    The plot layer filters NaN; CSV/HTML export needs verification.
+  - Non-Grashof sweeps NaN-pad every data channel for every unreachable
+    angle. Analysis code that doesn't tolerate NaN (envelopes, statistics)
+    must filter it. The plot layer filters NaN; CSV/HTML export needs
+    verification. Sample count = 361 for full sweeps, max-min+1 for range.
   - Two-pass statics solve adds an extra SVD per sweep angle. For 361-angle
     sweeps with complex mechanisms this roughly doubles the sweep time.
   - load_from_json_str is destructive (replaces entire mechanism). DXF

@@ -132,9 +132,12 @@ pub struct SweepData {
     pub profile_alpha: Option<Vec<f64>>,
     /// Angles (degrees) at which toggle/dead points were detected.
     pub toggle_angles: Vec<f64>,
-    /// Index range of the active sweep region within the full 0-360° data.
-    /// `None` means the full range is active (no sweep limit).
-    /// When `Some((start_idx, end_idx))`, both indices are inclusive.
+    /// Index range of an "active" sub-slice within the sweep data, used
+    /// by plots to render a faded full-cycle context curve plus a solid
+    /// highlighted sub-range. Always `None` under the current sweep
+    /// behaviour (the sweep covers exactly the user's range, so the
+    /// whole dataset is the active portion). Kept as an `Option` to
+    /// preserve the plot rendering code path without behavioural change.
     pub active_range: Option<(usize, usize)>,
     /// Whether this sweep was over angle (revolute driver) or stroke (linear driver).
     /// Determines X-axis labelling in plots and CSV exports.
@@ -149,11 +152,18 @@ pub(crate) fn compute_sweep_data(
     gravity_magnitude: f64,
     sweep_range: Option<(f64, f64)>,
 ) -> (SweepData, DVector<f64>) {
-    // All mechanisms use revolute drivers: sweep 0-360 degrees in 1-degree steps.
-    let num_steps = 360_i32;
+    // When a custom range is active the sweep runs literally from min to
+    // max in 1-degree steps (e.g. 200..=365 = 166 samples with display
+    // angles 200, 201, ..., 365). When no range is active the sweep
+    // covers the full cycle 0..=360 (361 samples). Angles in radians are
+    // passed straight to `solve_position`; the solver doesn't require
+    // modular arithmetic, so "angle 365" yields the same physical q as
+    // "angle 5" but preserves a contiguous X-axis on plots.
+    let (start_angle_deg, end_angle_deg) = sweep_range.unwrap_or((0.0, 360.0));
+    let num_steps = ((end_angle_deg - start_angle_deg).round() as i32).max(0);
     let sweep_mode = SweepMode::Angle;
 
-    let capacity = (num_steps.max(0) + 1) as usize;
+    let capacity = (num_steps + 1) as usize;
 
     // Detect the first LinearActuator force element for actuator force computation.
     let actuator_element: Option<LinearActuatorElement> =
@@ -293,18 +303,24 @@ pub(crate) fn compute_sweep_data(
         output.map(|out| (driver.to_string(), out))
     });
 
-    // Sweep loop: iterate over num_steps+1 positions (0-360 degrees).
+    // Sweep loop: iterate over num_steps+1 positions from start_angle_deg
+    // to end_angle_deg in 1-degree increments.
     let mut q = q_start.clone();
     let mut q_at_zero = q_start.clone();
 
-    for i in 0..=num_steps.max(0) {
-        let angle_deg = i as f64; // 0, 1, 2, ... 360
+    for i in 0..=num_steps {
+        let angle_deg = start_angle_deg + i as f64;
         let t = (angle_deg.to_radians() - theta_0) / omega;
 
         match solve_position(mech, &q, t, 1e-10, 50) {
             Ok(result) if result.converged => {
                 q = result.q.clone();
-                if i == 0 {
+                // Update q_at_zero only when the sweep actually visits
+                // angle 0 as its first sample. For range-limited sweeps
+                // that start elsewhere (e.g. 200..=365) we leave the
+                // caller-supplied q_at_zero untouched so later full
+                // sweeps re-seed from the correct angle-0 configuration.
+                if i == 0 && start_angle_deg.abs() < 0.5 {
                     q_at_zero = q.clone();
                 }
 
@@ -592,21 +608,11 @@ pub(crate) fn compute_sweep_data(
     data.coupler_velocities = coupler_vel_data;
     data.coupler_accelerations = coupler_accel_data;
 
-    // Compute active range indices from the sweep_range parameter.
-    // The full 0-360 degree data is always present; active_range marks
-    // the user-selected sub-range for highlighted rendering.
-    data.active_range = sweep_range.and_then(|(min_val, max_val)| {
-        if data.angles_deg.is_empty() {
-            return None;
-        }
-        let start_idx = data.angles_deg.iter().position(|&a| a >= min_val).unwrap_or(0);
-        let end_idx = data
-            .angles_deg
-            .iter()
-            .rposition(|&a| a <= max_val)
-            .unwrap_or(data.angles_deg.len().saturating_sub(1));
-        Some((start_idx, end_idx))
-    });
+    // `active_range` used to mark a sub-slice of the full 0-360 sweep
+    // for "faded context + solid active" rendering. Now that the sweep
+    // IS the user's range (when enabled), the whole dataset is the
+    // active range — plots render it solid with no faded overlay.
+    data.active_range = None;
 
     (data, q_at_zero)
 }
@@ -688,61 +694,90 @@ mod tests {
         assert!(a > 0.0 && b > 0.0 && c > 0.0 && d > 0.0);
     }
 
-    /// Reproduces bug: repeatedly toggling sweep range causes progressive degradation.
-    /// Each cycle should produce the same number of sweep angles (361 = full rotation).
+    /// Reproduces bug: repeatedly toggling sweep range causes progressive
+    /// degradation. Full sweeps (range=None) should consistently cover the
+    /// same count; range sweeps should produce `max-min+1` samples.
     #[test]
     fn sweep_range_toggle_does_not_degrade() {
         let (mech, q0) = build_sample(SampleMechanism::ParallelogramPress);
         let omega = 2.0 * std::f64::consts::PI;
         let theta_0 = 0.0;
         let gravity = 9.81;
+        let range = (150.0, 210.0);
+        let range_len = (range.1 - range.0) as usize + 1; // 61
 
         // Initial sweep
         let (data1, q_zero1) = compute_sweep_data(&mech, &q0, omega, theta_0, gravity, None);
-        let count1 = data1.angles_deg.len();
-        assert!(count1 > 300, "Initial sweep should cover most of 360°, got {}", count1);
+        let count_full = data1.angles_deg.len();
+        assert!(count_full > 300, "Initial sweep should cover most of 360°, got {}", count_full);
 
-        // Toggle ON
-        let (data2, q_zero2) = compute_sweep_data(&mech, &q_zero1, omega, theta_0, gravity, Some((150.0, 210.0)));
-        assert_eq!(data2.angles_deg.len(), count1, "Sweep 2 should have same count");
+        // Toggle ON — sweep literally covers 150..=210
+        let (data2, q_zero2) = compute_sweep_data(&mech, &q_zero1, omega, theta_0, gravity, Some(range));
+        assert_eq!(data2.angles_deg.len(), range_len, "ON sweep should cover exactly {} angles", range_len);
 
-        // Toggle OFF
+        // Toggle OFF — back to full count
         let (data3, q_zero3) = compute_sweep_data(&mech, &q_zero2, omega, theta_0, gravity, None);
-        assert_eq!(data3.angles_deg.len(), count1, "Sweep 3 should have same count as sweep 1");
+        assert_eq!(data3.angles_deg.len(), count_full, "OFF sweep should match original full count");
 
-        // Toggle ON
-        let (data4, q_zero4) = compute_sweep_data(&mech, &q_zero3, omega, theta_0, gravity, Some((150.0, 210.0)));
-        assert_eq!(data4.angles_deg.len(), count1, "Sweep 4 should have same count");
+        // Toggle ON/OFF a few more times
+        let (data4, q_zero4) = compute_sweep_data(&mech, &q_zero3, omega, theta_0, gravity, Some(range));
+        assert_eq!(data4.angles_deg.len(), range_len);
 
-        // Toggle OFF
         let (data5, q_zero5) = compute_sweep_data(&mech, &q_zero4, omega, theta_0, gravity, None);
-        assert_eq!(data5.angles_deg.len(), count1, "Sweep 5 should have same count");
+        assert_eq!(data5.angles_deg.len(), count_full);
 
-        // Toggle ON
-        let (_data6, q_zero6) = compute_sweep_data(&mech, &q_zero5, omega, theta_0, gravity, Some((150.0, 210.0)));
+        let (_data6, q_zero6) = compute_sweep_data(&mech, &q_zero5, omega, theta_0, gravity, Some(range));
 
-        // Toggle OFF
         let (data7, _) = compute_sweep_data(&mech, &q_zero6, omega, theta_0, gravity, None);
-        assert_eq!(data7.angles_deg.len(), count1, "Sweep 7 should have same count");
+        assert_eq!(data7.angles_deg.len(), count_full, "Final OFF sweep should still match original full count");
 
-        // Also verify q_zero hasn't drifted
+        // q_zero drift check (only meaningful across full sweeps)
         let diff = (&q_zero1 - &q_zero3).norm();
         assert!(diff < 1e-6, "q_zero should be stable across toggles, drift = {}", diff);
     }
 
+    /// Verify that a sweep range extending past 360° (the "wrap" case the
+    /// user originally ran into) produces a contiguous display-angle axis
+    /// and the expected sample count.
+    #[test]
+    fn sweep_range_can_wrap_past_360() {
+        let (mech, q0) = build_sample(SampleMechanism::ParallelogramPress);
+        let omega = 2.0 * std::f64::consts::PI;
+        let theta_0 = 0.0;
+        let gravity = 9.81;
+
+        let (data, _) =
+            compute_sweep_data(&mech, &q0, omega, theta_0, gravity, Some((200.0, 365.0)));
+
+        // 200..=365 inclusive in 1-degree steps = 166 samples
+        assert_eq!(data.angles_deg.len(), 166);
+        assert!((data.angles_deg.first().unwrap() - 200.0).abs() < 1e-9);
+        assert!((data.angles_deg.last().unwrap() - 365.0).abs() < 1e-9);
+        // X-axis is strictly monotonic (no wrap to 0)
+        for pair in data.angles_deg.windows(2) {
+            assert!(pair[1] > pair[0], "angles_deg must be monotonic for contiguous X-axis");
+        }
+        // active_range is None whenever the range is custom — the full
+        // dataset IS the active range.
+        assert!(data.active_range.is_none());
+    }
+
     /// Test using AppState.compute_sweep() — the real code path.
     /// Simulates the user toggling "Limit Sweep Range" checkbox repeatedly,
-    /// including moving the driver angle slider between toggles.
+    /// including moving the driver angle slider between toggles. With the
+    /// new semantics, range-ON sweep covers exactly `max-min+1` samples;
+    /// range-OFF sweep covers the full cycle (stable count across toggles).
     #[test]
     fn appstate_sweep_toggle_stable() {
         let mut state = AppState::default();
         state.load_sample(SampleMechanism::ParallelogramPress);
 
-        // Initial sweep happens in load_sample
-        let count0 = state.sweep_data.as_ref().unwrap().angles_deg.len();
-        assert!(count0 > 300, "Initial sweep should be full, got {}", count0);
+        // Initial sweep happens in load_sample (range disabled -> full count)
+        let count_full = state.sweep_data.as_ref().unwrap().angles_deg.len();
+        assert!(count_full > 300, "Initial sweep should be full, got {}", count_full);
 
-        // Simulate toggling the checkbox 6 times
+        let range_len = (210 - 150) + 1; // 61 samples for 150..=210
+
         for cycle in 0..3 {
             // Toggle ON
             state.sweep_range_enabled = true;
@@ -750,12 +785,10 @@ mod tests {
             state.sweep_angle_max_deg = 210.0;
             state.compute_sweep();
             let count_on = state.sweep_data.as_ref().unwrap().angles_deg.len();
-            assert_eq!(count_on, count0, "Cycle {} ON: expected {} angles, got {}", cycle, count0, count_on);
+            assert_eq!(count_on, range_len, "Cycle {} ON: expected {} angles, got {}", cycle, range_len, count_on);
 
             // Simulate user moving driver angle slider between toggles
             state.driver_angle = (90.0 + cycle as f64 * 45.0).to_radians();
-            // In the real app, this would update last_good_q via position solve.
-            // Simulate that by solving at the new angle.
             if let Some(mech) = &state.mechanism {
                 if let Ok(result) = crate::solver::kinematics::solve_position(
                     mech, &state.last_good_q,
@@ -773,7 +806,7 @@ mod tests {
             state.sweep_range_enabled = false;
             state.compute_sweep();
             let count_off = state.sweep_data.as_ref().unwrap().angles_deg.len();
-            assert_eq!(count_off, count0, "Cycle {} OFF: expected {} angles, got {}", cycle, count0, count_off);
+            assert_eq!(count_off, count_full, "Cycle {} OFF: expected {} angles, got {}", cycle, count_full, count_off);
         }
     }
 

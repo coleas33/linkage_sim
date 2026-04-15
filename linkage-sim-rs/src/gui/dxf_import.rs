@@ -340,7 +340,9 @@ pub fn draw_dxf_overlay(
 enum DxfAction {
     ConvertSelectedToLinks(Vec<usize>),
     ConvertSelectedToMultiJointBody(Vec<usize>),
-    ConvertSelectedToRigidGeometry(Vec<usize>),
+    /// Snapshot the DXF selection and open the "pick target link" popup;
+    /// the popup calls `convert_selected_to_rigid_geometry` on apply.
+    OpenRigidGeometryTargetDialog(Vec<usize>),
     ConvertSelectedToGround(Vec<usize>),
     ConvertSelectedLineToActuator(Vec<usize>),
     ConvertAllLinesToLinks,
@@ -467,16 +469,15 @@ pub fn draw_dxf_panel(ui: &mut egui::Ui, state: &mut super::state::AppState) {
         ));
     }
 
-    // Add BodyGeometry (force zone shape) to the currently-selected link
-    // using the DXF selection's bounding box. Equivalent to the Link
-    // Editor's "Add Geometry" button but sized from the DXF. Does NOT
-    // create a new body — the geometry is added directly to the selected
-    // link and moves rigidly with it.
-    if ui.add_enabled(n_selected >= 1, egui::Button::new(format!("→ Add Geometry to Selected Link ({})", n_selected)))
-        .on_hover_text("Add BodyGeometry (force zone shape) from the DXF bounding box to the currently-selected link. Select a link on the canvas first. The geometry is rigidly attached to the link and moves with it, just like the Link Editor's Add Geometry button but sized from the DXF.")
+    // Add BodyGeometry (force zone shape) to a link chosen in a popup.
+    // The popup lists every non-ground link; clicking one attaches the
+    // DXF bounding-box geometry to that link rigidly. No new body, no
+    // new joints — just sets the target link's `geometry` field.
+    if ui.add_enabled(n_selected >= 1, egui::Button::new(format!("→ Add Geometry to Link ({})", n_selected)))
+        .on_hover_text("Open a popup to pick which link the DXF bounding-box geometry attaches to. The geometry is rigidly attached to the chosen link and moves with it, just like the Link Editor's Add Geometry button but sized from the DXF.")
         .clicked()
     {
-        action = Some(DxfAction::ConvertSelectedToRigidGeometry(
+        action = Some(DxfAction::OpenRigidGeometryTargetDialog(
             overlay.selected_entities.iter().copied().collect(),
         ));
     }
@@ -526,8 +527,9 @@ pub fn draw_dxf_panel(ui: &mut egui::Ui, state: &mut super::state::AppState) {
             DxfAction::ConvertSelectedToMultiJointBody(indices) => {
                 convert_selected_to_single_body(state, &indices);
             }
-            DxfAction::ConvertSelectedToRigidGeometry(indices) => {
-                convert_selected_to_rigid_geometry(state, &indices);
+            DxfAction::OpenRigidGeometryTargetDialog(indices) => {
+                state.dxf_geometry_pending_indices = indices;
+                state.show_dxf_geometry_target_dialog = true;
             }
             DxfAction::ConvertSelectedToGround(indices) => {
                 convert_selected_to_ground(state, &indices);
@@ -560,6 +562,104 @@ pub fn draw_dxf_panel(ui: &mut egui::Ui, state: &mut super::state::AppState) {
                 state.dxf_overlay = None;
             }
         }
+    }
+}
+
+/// Popup shown after clicking "→ Add Geometry to Link". Lists every
+/// non-ground body; clicking one attaches the DXF bounding-box geometry
+/// to that link rigidly and closes the dialog. Escape / window-close
+/// cancels without touching the blueprint.
+///
+/// Must be called from the root `Context` (not a panel `Ui`) because it
+/// draws a floating `egui::Window`. `LinkageApp::update` is the canonical
+/// call site, alongside the other dialogs.
+pub fn draw_geometry_target_dialog(ctx: &egui::Context, state: &mut super::state::AppState) {
+    if !state.show_dxf_geometry_target_dialog {
+        return;
+    }
+
+    // Collect non-ground body IDs from the mechanism (preserves display
+    // order used by the Link Editor). If the mechanism isn't built yet
+    // there's nothing to pick; close and bail.
+    let body_ids: Vec<String> = match state.mechanism.as_ref() {
+        Some(mech) => mech
+            .body_order()
+            .iter()
+            .filter(|b| b.as_str() != crate::core::state::GROUND_ID)
+            .cloned()
+            .collect(),
+        None => {
+            state.show_dxf_geometry_target_dialog = false;
+            state.dxf_geometry_pending_indices.clear();
+            state.status_message =
+                Some("Mechanism not built — try again after building".to_string());
+            state.status_message_time = 3.0;
+            return;
+        }
+    };
+
+    // Resolve labels from the blueprint for friendlier display text.
+    let labels: Vec<(String, String)> = body_ids
+        .iter()
+        .map(|bid| {
+            let label = state
+                .blueprint
+                .as_ref()
+                .and_then(|bp| bp.bodies.get(bid))
+                .and_then(|b| b.label.clone())
+                .unwrap_or_else(|| bid.clone());
+            (bid.clone(), label)
+        })
+        .collect();
+
+    let mut open = true;
+    let mut chosen: Option<String> = None;
+    let mut cancel = false;
+
+    egui::Window::new("Attach DXF Geometry to Link")
+        .collapsible(false)
+        .resizable(false)
+        .default_width(280.0)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            if body_ids.is_empty() {
+                ui.label("No links available — create a link first.");
+                ui.add_space(4.0);
+                if ui.button("Close").clicked() {
+                    cancel = true;
+                }
+                return;
+            }
+
+            ui.label("Click a link to attach the DXF geometry:");
+            ui.add_space(4.0);
+
+            for (bid, label) in &labels {
+                let text = if label == bid {
+                    bid.clone()
+                } else {
+                    format!("{}  ({})", label, bid)
+                };
+                if ui.selectable_label(false, text).clicked() {
+                    chosen = Some(bid.clone());
+                }
+            }
+
+            ui.add_space(6.0);
+            if ui.button("Cancel").clicked()
+                || ui.input(|i| i.key_pressed(egui::Key::Escape))
+            {
+                cancel = true;
+            }
+        });
+
+    if let Some(bid) = chosen {
+        let indices = std::mem::take(&mut state.dxf_geometry_pending_indices);
+        state.show_dxf_geometry_target_dialog = false;
+        convert_selected_to_rigid_geometry(state, &indices, bid);
+    } else if cancel || !open {
+        state.show_dxf_geometry_target_dialog = false;
+        state.dxf_geometry_pending_indices.clear();
     }
 }
 
@@ -940,29 +1040,15 @@ fn compute_bounding_box(state: &super::state::AppState, indices: &[usize]) -> Op
 /// but with dimensions computed from the DXF selection instead of a
 /// manual rectangle draw.
 ///
-/// Uses the currently-selected body (from the link editor or selection).
+/// `target_body` is chosen by the user in the "pick target link" popup.
 /// Does NOT create a new body, add joints, or modify attachment points —
 /// it just sets the target link's `geometry` field.
-fn convert_selected_to_rigid_geometry(state: &mut super::state::AppState, indices: &[usize]) {
-    // 1. Determine the target body from current selection
-    let target_body = state.link_editor_body.clone()
-        .or_else(|| match &state.selected {
-            Some(super::state::SelectedEntity::Body(bid)) if bid != "ground" => Some(bid.clone()),
-            _ => None,
-        });
-
-    let target_body = match target_body {
-        Some(b) => b,
-        None => {
-            state.status_message = Some(
-                "Select a link first (click it on the canvas), then click → Add Geometry to attach the DXF shape to that link.".to_string()
-            );
-            state.status_message_time = 5.0;
-            return;
-        }
-    };
-
-    // 2. Compute the bounding box of the DXF selection in world coords
+fn convert_selected_to_rigid_geometry(
+    state: &mut super::state::AppState,
+    indices: &[usize],
+    target_body: String,
+) {
+    // 1. Compute the bounding box of the DXF selection in world coords
     let bbox = match compute_bounding_box(state, indices) {
         Some(b) => b,
         None => {
@@ -983,7 +1069,7 @@ fn convert_selected_to_rigid_geometry(state: &mut super::state::AppState, indice
         return;
     }
 
-    // 3. Convert the bounding box center from world to the target body's
+    // 2. Convert the bounding box center from world to the target body's
     //    local frame, so the geometry moves with the body as it articulates.
     let offset_local = {
         let mech = match state.mechanism.as_ref() {
@@ -1006,7 +1092,7 @@ fn convert_selected_to_rigid_geometry(state: &mut super::state::AppState, indice
         )
     };
 
-    // 4. Push undo and set the target body's geometry directly on the
+    // 3. Push undo and set the target body's geometry directly on the
     //    blueprint. No new body, no new joints.
     state.push_undo();
 

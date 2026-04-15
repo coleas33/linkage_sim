@@ -23,10 +23,12 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
         .show(ui, |ui| {
             {
                 // ── Revolute driver: angle slider in degrees ────────
+                // When the sweep range is enabled we honour min/max as-is so
+                // the user can sweep across the 0/360 seam (e.g. 200 -> 365).
+                // `sweep_angle_max_deg >= sweep_angle_min_deg` is enforced by
+                // the DragValue edit path below.
                 let (slider_min, slider_max) = if state.sweep_range_enabled {
-                    let a = state.sweep_angle_min_deg;
-                    let b = state.sweep_angle_max_deg;
-                    if a <= b { (a, b) } else { (b, a) }
+                    (state.sweep_angle_min_deg, state.sweep_angle_max_deg)
                 } else {
                     (0.0, 360.0)
                 };
@@ -77,15 +79,15 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
                     ui.label("Min\u{00B0}:");
                     let min_resp = ui.add(egui::DragValue::new(&mut state.sweep_angle_min_deg)
                         .speed(0.5)
-                        .range(0.0..=360.0)
+                        .range(0.0..=720.0)
                         .suffix("\u{00B0}"))
-                        .on_hover_text("Start angle of the sweep range in degrees. All plots and analysis will only cover angles from this value to the max. Useful for focusing on the mechanism's working range.");
+                        .on_hover_text("Start angle of the sweep range in degrees. All plots and analysis cover angles from this value to the max. Values above 360\u{b0} are allowed so you can sweep across the 0/360 seam (e.g. 200\u{b0} to 365\u{b0}).");
                     ui.label("Max\u{00B0}:");
                     let max_resp = ui.add(egui::DragValue::new(&mut state.sweep_angle_max_deg)
                         .speed(0.5)
-                        .range(0.0..=360.0)
+                        .range(0.0..=720.0)
                         .suffix("\u{00B0}"))
-                        .on_hover_text("End angle of the sweep range in degrees. The sweep computes positions and forces at evenly-spaced angles from min to max. Set to less than 360\u{b0} to exclude portions of the cycle where the mechanism locks up or is not useful.");
+                        .on_hover_text("End angle of the sweep range in degrees. Must be \u{2265} min. Set max above 360\u{b0} to sweep across the 0/360 seam (e.g. max = 365\u{b0} means sweep past 360\u{b0} into the next cycle).");
 
                     // Only recompute the sweep when the user FINISHES editing
                     // (drag ended, field lost focus, or Enter pressed). This
@@ -96,6 +98,12 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
                     let max_done = max_resp.drag_stopped()
                         || max_resp.lost_focus();
                     if min_done || max_done {
+                        // Enforce max >= min on commit so downstream code can
+                        // assume a well-ordered range. If inverted, snap max
+                        // up to min (preserves the user's min intent).
+                        if state.sweep_angle_max_deg < state.sweep_angle_min_deg {
+                            state.sweep_angle_max_deg = state.sweep_angle_min_deg;
+                        }
                         state.mark_sweep_dirty();
                     }
                 });

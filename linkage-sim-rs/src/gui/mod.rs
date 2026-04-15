@@ -1034,6 +1034,9 @@ impl eframe::App for LinkageApp {
                 });
         }
 
+        // ── DXF "Attach Geometry to Link" picker popup ───────────────────
+        dxf_import::draw_geometry_target_dialog(ctx, &mut self.state);
+
         // ── Tutorial overlay ─────────────────────────────────────────────
         if self.state.tutorial.active {
             tutorial::draw_tutorial_overlay(ctx, &mut self.state);

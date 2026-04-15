@@ -5,6 +5,75 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-15 — Sweep range can cross the 0/360 seam
+
+**What:**
+- Sweep range min/max DragValue clamps relaxed from `0..=360` to
+  `0..=720`. Users can now sweep ranges that cross the cycle seam
+  (e.g. `200° → 365°`) which previously was impossible.
+- `compute_sweep_data` rewritten so range-enabled sweeps iterate
+  literally `min..=max` in 1° steps (e.g. 200..=365 = 166 samples with
+  display angles 200, 201, …, 365). Range-disabled sweeps still cover
+  0..=360 (361 samples) unchanged.
+- Solver receives the display angle in radians directly — it doesn't
+  require `mod 2π`, so "angle 365°" produces the same physical q as
+  "angle 5°" while preserving a contiguous, monotonic plot X-axis.
+- `SweepData::active_range` is now always `None` (the sweep IS the
+  range). Plots render the active curve solid with no faded-context
+  overlay. The field is retained to keep the plot render path stable.
+- `q_at_zero` only updates when the sweep visits angle 0 (start ≈ 0).
+  Custom-range sweeps leave the caller-supplied `q_at_zero` untouched
+  so subsequent full sweeps re-seed from the correct angle-0 q.
+- Commit-time enforcement: if user leaves max < min, max snaps up to
+  min. Cleared the blueprint_ops swap-if-inverted fallback.
+
+**Why:** User's press workflow has a stroke that spans the mechanism's
+0°/360° transition. Without wrap support the "working range" of many
+press linkages can't be expressed as a single contiguous sweep.
+
+**Test results:** 566 lib tests pass (two old toggle-stability tests
+updated; one new test `sweep_range_can_wrap_past_360` added). Native +
+wasm32 `cargo check` clean.
+
+**Breaking changes:** The length-361 invariant on `SweepData` vectors
+no longer holds for range-enabled sweeps. Channel-length alignment
+(all channels share the same length within a sweep) IS still enforced.
+`02-system.yaml invariants_to_protect` updated.
+
+---
+
+## 2026-04-15 — DXF Add Geometry uses a link-picker popup
+
+**What:**
+- Renamed the DXF sidebar button "→ Add Geometry to Selected Link" to
+  "→ Add Geometry to Link". Clicking it no longer requires pre-selecting
+  a body; instead it opens a modal popup listing every non-ground body.
+- Clicking a body name in the popup applies immediately (no Apply button)
+  and closes the dialog. Escape or the close button cancels.
+- New state fields `show_dxf_geometry_target_dialog` +
+  `dxf_geometry_pending_indices` in `AppState`. The DXF entity indices
+  are snapshotted when the popup opens, so later overlay edits cannot
+  desync the target.
+- New `DxfAction::OpenRigidGeometryTargetDialog` variant replaces the
+  previous `ConvertSelectedToRigidGeometry` direct dispatch.
+- `convert_selected_to_rigid_geometry` signature changed to take an
+  explicit `target_body: String` (auto-resolution from `link_editor_body`
+  / `state.selected` removed; the popup supplies it instead).
+- New `draw_geometry_target_dialog(ctx, state)` rendered from
+  `LinkageApp::update` beside the other dialog windows.
+
+**Why:** Users had to remember to click a link on the canvas before
+clicking the button; otherwise they got a toast asking them to do so.
+The popup makes the flow explicit — every click of the button opens a
+picker — eliminating the "nothing selected" error path entirely.
+
+**Test results:** 565 lib tests pass; native + wasm32 `cargo check` clean.
+
+**Breaking changes:** None at the API level. The button label changed
+from "Add Geometry to Selected Link" to "Add Geometry to Link".
+
+---
+
 ## 2026-04-12 — Modularize gui/mod.rs and gui/sweep.rs
 
 **What:** Four refactorings, zero behavior change:

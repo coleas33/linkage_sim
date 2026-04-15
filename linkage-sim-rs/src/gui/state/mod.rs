@@ -302,6 +302,11 @@ pub struct AppState {
     // ── DXF overlay ────────────────────────────────────────────────────
     /// Optional DXF overlay for importing CAD geometry.
     pub dxf_overlay: Option<super::dxf_import::DxfOverlay>,
+    /// Whether the "pick target link" popup for DXF → Add Geometry is open.
+    pub show_dxf_geometry_target_dialog: bool,
+    /// DXF entity indices captured when the popup opened. The overlay's
+    /// live selection may change before the user picks a link, so we snapshot.
+    pub dxf_geometry_pending_indices: Vec<usize>,
     // ── Welcome screen ──────────────────────────────────────────────
     /// When true, the welcome screen is dismissed (user started working).
     pub dismiss_welcome: bool,
@@ -547,6 +552,8 @@ impl Default for AppState {
             background_image: None,
             show_image_settings: false,
             dxf_overlay: None,
+            show_dxf_geometry_target_dialog: false,
+            dxf_geometry_pending_indices: Vec::new(),
             dismiss_welcome: false,
             show_load_path: true,
             place_mass_body: None,
