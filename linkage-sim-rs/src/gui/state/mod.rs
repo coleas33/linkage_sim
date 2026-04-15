@@ -777,6 +777,121 @@ impl AppState {
         }
     }
 
+    /// Try flipping the mechanism's assembly configuration onto the
+    /// alternate branch. Useful when adjusting sweep limits makes the
+    /// solver jump to a config the user didn't want.
+    ///
+    /// Strategy: reflect every non-ground non-driver body pose across
+    /// the line joining the two farthest-apart ground pivots (or the
+    /// x-axis if there are fewer than 2 ground pivots), then re-solve
+    /// at the current driver angle with the reflected q as the initial
+    /// guess. The driver body is left untouched because its angle is
+    /// locked by the driver constraint.
+    ///
+    /// On convergence to a pose that differs from the current q, the
+    /// state is updated and the sweep is marked dirty. On convergence
+    /// to the same pose, a status message notes "same branch". On
+    /// non-convergence, the state is left unchanged and an error toast
+    /// is shown.
+    pub fn flip_assembly_branch(&mut self) {
+        let Some(mech) = self.mechanism.take() else {
+            self.status_message = Some("No mechanism to flip".to_string());
+            self.status_message_time = 3.0;
+            return;
+        };
+
+        // 1. Find reflection axis from ground pivots.
+        let ground_pivots: Vec<[f64; 2]> = mech
+            .bodies()
+            .get(GROUND_ID)
+            .map(|g| {
+                g.attachment_points
+                    .values()
+                    .map(|v| [v.x, v.y])
+                    .collect()
+            })
+            .unwrap_or_default();
+        let (axis_origin, axis_angle) = if ground_pivots.len() >= 2 {
+            // Pick the two farthest-apart ground pivots as the axis.
+            let mut best_sq = 0.0_f64;
+            let mut best = (ground_pivots[0], ground_pivots[1]);
+            for i in 0..ground_pivots.len() {
+                for j in (i + 1)..ground_pivots.len() {
+                    let dx = ground_pivots[j][0] - ground_pivots[i][0];
+                    let dy = ground_pivots[j][1] - ground_pivots[i][1];
+                    let d_sq = dx * dx + dy * dy;
+                    if d_sq > best_sq {
+                        best_sq = d_sq;
+                        best = (ground_pivots[i], ground_pivots[j]);
+                    }
+                }
+            }
+            let (a, b) = best;
+            let angle = (b[1] - a[1]).atan2(b[0] - a[0]);
+            (nalgebra::Vector2::new(a[0], a[1]), angle)
+        } else {
+            // Fallback: reflect across the world x-axis.
+            (nalgebra::Vector2::zeros(), 0.0)
+        };
+
+        // 2. Identify the driver body so we skip reflecting it (its
+        //    angle is locked by the driver constraint).
+        let driver_body: Option<String> =
+            mech.driver_body_pair().map(|(_, d)| d.to_string());
+
+        // 3. Build a reflected initial guess from the current q.
+        let mut q_guess = self.q.clone();
+        let mech_state = mech.state();
+        let two_alpha = 2.0 * axis_angle;
+        let (sin_2a, cos_2a) = two_alpha.sin_cos();
+
+        for bid in mech.body_order() {
+            if bid == GROUND_ID || Some(bid) == driver_body.as_ref() {
+                continue;
+            }
+            let (x, y, theta) = mech_state.get_pose(bid, &self.q);
+            let dx = x - axis_origin.x;
+            let dy = y - axis_origin.y;
+            // Reflection of (dx, dy) across a line through origin at
+            // angle α: (dx*cos 2α + dy*sin 2α, dx*sin 2α − dy*cos 2α)
+            let x_new = axis_origin.x + dx * cos_2a + dy * sin_2a;
+            let y_new = axis_origin.y + dx * sin_2a - dy * cos_2a;
+            let theta_new = two_alpha - theta;
+            mech_state.set_pose(bid, &mut q_guess, x_new, y_new, theta_new);
+        }
+
+        // 4. Re-solve at the current driver angle with the reflected
+        //    guess. solve_and_update handles status + q bookkeeping.
+        let q_before = self.q.clone();
+        let t = (self.driver_angle - self.driver_theta_0) / self.driver_omega;
+        let converged = self.solve_and_update(&mech, &q_guess, t, 1e-10, 50, None);
+
+        self.mechanism = Some(mech);
+
+        if !converged {
+            self.status_message = Some(
+                "Branch flip failed to converge — try a different crank angle first".to_string(),
+            );
+            self.status_message_time = 4.0;
+            return;
+        }
+
+        // 5. Decide if we actually moved to a different branch.
+        let diff = (&self.q - &q_before).norm();
+        if diff < 1e-6 {
+            self.status_message = Some(
+                "Flip returned the same configuration (mechanism may only have one branch)"
+                    .to_string(),
+            );
+            self.status_message_time = 4.0;
+        } else {
+            self.mark_sweep_dirty();
+            self.compute_forces(t);
+            self.status_message = Some("Flipped to alternate assembly branch".to_string());
+            self.status_message_time = 3.0;
+        }
+    }
+
     /// Solve the position problem for the given actuator stroke (meters).
     ///
     /// For linear drivers, the time mapping is:

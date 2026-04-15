@@ -2297,3 +2297,36 @@
         assert!((parsed.mounting_angle - 0.0).abs() < 1e-10,
             "missing mounting_angle should default to 0.0, got {}", parsed.mounting_angle);
     }
+
+    #[test]
+    fn flip_assembly_branch_lands_on_alternate_config() {
+        // 4-bar crank rockers have two valid assembly branches. Flipping
+        // across the ground line must converge and produce a q that
+        // differs from the original by more than numerical noise.
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        // Move off the symmetric start so the two branches are distinct.
+        state.solve_at_angle(45f64.to_radians());
+        assert!(state.solver_status.converged, "setup must converge");
+        let q_before = state.q.clone();
+
+        state.flip_assembly_branch();
+
+        assert!(state.solver_status.converged, "flip must converge");
+        let diff = (&state.q - &q_before).norm();
+        assert!(diff > 1e-3, "flip must produce a distinctly different q, got drift={}", diff);
+    }
+
+    #[test]
+    fn flip_assembly_branch_noops_without_mechanism() {
+        // A freshly built AppState has a tiny ground-only mechanism with
+        // no non-ground bodies to reflect. The call should leave state
+        // essentially unchanged and not panic.
+        let mut state = AppState::default();
+        let q_before = state.q.clone();
+        state.flip_assembly_branch();
+        // q is either unchanged OR equal to a re-solved version of the
+        // same ground-only config; either way norm difference is ~0.
+        let diff = (&state.q - &q_before).norm();
+        assert!(diff < 1e-9, "flip on ground-only must not move anything, got drift={}", diff);
+    }

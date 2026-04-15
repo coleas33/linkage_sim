@@ -22,13 +22,40 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
         .default_open(true)
         .show(ui, |ui| {
             {
+                // ── Label: what is the crank angle? ────────────────
+                // The slider value is the driver constraint's f(t) =
+                // θⱼ − θᵢ (driven body vs. partner). For a ground-
+                // mounted driver, partner = ground and zero crank
+                // angle means the driver body's local +X is aligned
+                // with world +X. Showing this explicitly so users
+                // aren't left guessing which body the slider drives.
+                if let Some(mech) = state.mechanism.as_ref() {
+                    if let Some((partner, driver)) = mech.driver_body_pair() {
+                        let reference_label = if partner == crate::core::state::GROUND_ID {
+                            "world".to_string()
+                        } else {
+                            partner.to_string()
+                        };
+                        ui.small(
+                            egui::RichText::new(format!(
+                                "Driver: {} relative to {} (0\u{00B0} = {} +X)",
+                                driver, partner, reference_label
+                            ))
+                            .color(egui::Color32::from_rgb(150, 150, 160)),
+                        );
+                    }
+                }
+
                 // ── Revolute driver: angle slider in degrees ────────
-                // When the sweep range is enabled we honour min/max as-is so
-                // the user can sweep across the 0/360 seam (e.g. 200 -> 365).
-                // `sweep_angle_max_deg >= sweep_angle_min_deg` is enforced by
-                // the DragValue edit path below.
+                // During a DragValue edit the user can transiently push
+                // `max < min`; `f64::clamp` panics if min > max, so we
+                // sort here for the slider's display range only. The
+                // sweep computation reads the values directly and the
+                // DragValue path enforces `max >= min` on commit.
                 let (slider_min, slider_max) = if state.sweep_range_enabled {
-                    (state.sweep_angle_min_deg, state.sweep_angle_max_deg)
+                    let a = state.sweep_angle_min_deg;
+                    let b = state.sweep_angle_max_deg;
+                    if a <= b { (a, b) } else { (b, a) }
                 } else {
                     (0.0, 360.0)
                 };
@@ -63,6 +90,16 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 {
                     state.loop_mode = !state.loop_mode;
                     state.animation_direction = 1.0;
+                }
+                if ui.button("Flip Branch")
+                    .on_hover_text(
+                        "Debug: reflect the mechanism across its ground line and re-solve \
+                         to land on the alternate assembly branch. Useful when adjusting the \
+                         sweep range causes the solver to jump configurations.",
+                    )
+                    .clicked()
+                {
+                    state.flip_assembly_branch();
                 }
             });
 

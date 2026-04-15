@@ -5,6 +5,61 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-15 — Crank angle label + canvas indicator
+
+**What:**
+- Added a small grey subtitle above the Crank Angle slider reading
+  `Driver: <driven> relative to <partner> (0° = <ref> +X)`. Pulls body
+  names from `mech.driver_body_pair()`. Makes explicit that the slider
+  value is the driver constraint's f(t) = θⱼ − θᵢ.
+- Added `draw_crank_angle_indicator` in `canvas/rendering/mod.rs`:
+  renders an orange arc at the driver's revolute pivot spanning from
+  the partner body's +X reference to the driver body's current
+  orientation, with a perpendicular tick at the zero mark and a
+  midpoint label showing the angle in the current display units.
+  Skips silently when the driver isn't revolute or the connecting
+  joint can't be identified.
+
+**Why:** The slider label "Crank Angle" didn't say which body rotated
+relative to what, or where 0° pointed. Now both the input panel and
+the canvas answer that question at a glance.
+
+**Test results:** 568 lib tests pass (no new tests — overlay is
+render-only); native + wasm32 `cargo check` clean.
+
+---
+
+## 2026-04-15 — Flip-branch button + slider crash fix
+
+**What:**
+- New `AppState::flip_assembly_branch()` method reflects non-ground
+  non-driver body poses across the line joining the two farthest-apart
+  ground pivots (fallback: world x-axis when < 2 pivots exist), then
+  re-solves at the current driver angle. On solver convergence it
+  updates `q`, `last_good_q`, marks the sweep dirty, and recomputes
+  forces. Status toast reports whether the flip actually changed the
+  assembly or landed on the same branch.
+- New `Flip Branch` button in the Crank Angle section (next to the
+  Loop/Once toggle). Hover text describes the debug use-case.
+- Fixed panic in `input_panel.rs`: the sweep-range slider's
+  `f64::clamp(slider_min, slider_max)` panicked when the user typed a
+  max below the current min mid-edit. Slider bounds are now
+  defensively sorted; sweep computation still reads the raw values
+  (commit-time enforcement already guarantees `max >= min`).
+
+**Why:** Adjusting the sweep range can occasionally kick the solver
+onto the other assembly branch (common with parallelogram-style or
+change-point mechanisms). The Flip Branch button gives the user a
+one-click way to jump back. The slider crash was a regression from
+removing the auto-swap in the previous commit.
+
+**Test results:** 568 lib tests pass (two new:
+`flip_assembly_branch_lands_on_alternate_config`,
+`flip_assembly_branch_noops_without_mechanism`); native + wasm32
+`cargo check` clean.
+
+---
+
 ## 2026-04-15 — Sweep range can cross the 0/360 seam
 
 **What:**

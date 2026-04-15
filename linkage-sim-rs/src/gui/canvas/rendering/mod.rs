@@ -667,6 +667,12 @@ pub fn render_overlays(
         }
     }
 
+    // ── Crank-angle indicator ────────────────────────────────────────
+    // Visualises the driver constraint's prescribed angle (θⱼ − θᵢ) as
+    // an arc at the driver pivot so users can see exactly what the
+    // "Crank Angle" slider controls.
+    draw_crank_angle_indicator(painter, state);
+
     // ── Gravity indicator ─────────────────────────────────────────────
     if state.gravity_magnitude > 0.0 {
         let indicator_x = canvas_rect.left() + 20.0;
@@ -829,6 +835,115 @@ pub fn render_overlays(
 
     // ── Hover tooltips ────────────────────────────────────────────────
     render_hover_tooltips(ui, canvas_rect, state, joint_hit_targets, attachment_hit_targets, body_segments);
+}
+
+/// Draw an arc + reference tick at the driver's pivot showing the
+/// current crank angle (the driver constraint's θⱼ − θᵢ) measured
+/// from the partner body's local +X axis. For ground-mounted drivers
+/// (the common case) the reference is world +X.
+///
+/// No-op if the mechanism has no driver, the driver isn't revolute,
+/// or the connecting revolute joint can't be identified. The arc is
+/// rendered in a distinct orange so it doesn't blend with joint
+/// glyphs or force arrows.
+fn draw_crank_angle_indicator(painter: &egui::Painter, state: &AppState) {
+    use crate::core::constraint::JointConstraint;
+
+    let Some(mech) = state.mechanism.as_ref() else { return };
+    let Some((partner, driver)) = mech.driver_body_pair() else { return };
+
+    // Locate the revolute joint that connects driver and partner so we
+    // know where to anchor the arc in world coordinates.
+    let mut partner_anchor: Option<(String, nalgebra::Vector2<f64>)> = None;
+    for joint in mech.joints() {
+        if let JointConstraint::Revolute(rev) = joint {
+            let bi = rev.body_i_id();
+            let bj = rev.body_j_id();
+            if bi == partner && bj == driver {
+                partner_anchor = Some((bi.to_string(), *rev.point_i_local()));
+                break;
+            }
+            if bi == driver && bj == partner {
+                partner_anchor = Some((bj.to_string(), *rev.point_j_local()));
+                break;
+            }
+        }
+    }
+    let Some((partner_body, partner_local)) = partner_anchor else { return };
+
+    let mech_state = mech.state();
+    let pivot_world = mech_state.body_point_global(&partner_body, &partner_local, &state.q);
+    let partner_theta = mech_state.get_angle(&partner_body, &state.q);
+    let driver_theta = mech_state.get_angle(driver, &state.q);
+    let crank_angle = driver_theta - partner_theta;
+
+    let pivot_screen = state.view.world_to_screen(pivot_world.x, pivot_world.y);
+    let center = Pos2::new(pivot_screen[0], pivot_screen[1]);
+
+    // Screen Y is inverted (+Y points down), so we negate sin terms.
+    let point_at = |radius: f32, theta: f64| -> Pos2 {
+        Pos2::new(
+            center.x + radius * (theta.cos() as f32),
+            center.y - radius * (theta.sin() as f32),
+        )
+    };
+
+    let color = state.nc(Color32::from_rgb(255, 190, 80));
+    let faint = Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 140);
+    let radius: f32 = 34.0;
+
+    // Reference tick in the partner frame's +X direction (world +X when
+    // partner is ground). Small dashed stub so it reads as "zero".
+    painter.line_segment(
+        [center, point_at(radius, partner_theta)],
+        Stroke::new(1.0, faint),
+    );
+
+    // Small tick mark perpendicular at the tip of the reference line
+    // to emphasise it as the zero reference.
+    let tick_tip = point_at(radius, partner_theta);
+    let perp_dir = partner_theta + std::f64::consts::FRAC_PI_2;
+    let perp_half = 4.0_f32;
+    painter.line_segment(
+        [
+            Pos2::new(
+                tick_tip.x + perp_half * (perp_dir.cos() as f32),
+                tick_tip.y - perp_half * (perp_dir.sin() as f32),
+            ),
+            Pos2::new(
+                tick_tip.x - perp_half * (perp_dir.cos() as f32),
+                tick_tip.y + perp_half * (perp_dir.sin() as f32),
+            ),
+        ],
+        Stroke::new(1.0, faint),
+    );
+
+    // Arc sweeping from reference (partner_theta) to driver orientation,
+    // spanning crank_angle radians. Segment count scales with magnitude
+    // so large angles still look smooth.
+    let segments = ((crank_angle.abs() / 0.1).ceil() as usize).clamp(8, 96);
+    let stroke = Stroke::new(1.5, color);
+    let mut prev = point_at(radius, partner_theta);
+    for i in 1..=segments {
+        let frac = i as f64 / segments as f64;
+        let a = partner_theta + crank_angle * frac;
+        let pt = point_at(radius, a);
+        painter.line_segment([prev, pt], stroke);
+        prev = pt;
+    }
+
+    // Angle label at the midpoint of the arc, in display units.
+    let mid_theta = partner_theta + crank_angle * 0.5;
+    let label_pos = point_at(radius + 14.0, mid_theta);
+    let units = &state.display_units;
+    let label = format!("{:.1}{}", units.angle(crank_angle), units.angle_suffix());
+    painter.text(
+        label_pos,
+        egui::Align2::CENTER_CENTER,
+        label,
+        FontId::proportional(11.0),
+        color,
+    );
 }
 
 /// Show rich tooltips when the mouse hovers over a body, joint, or force zone.
