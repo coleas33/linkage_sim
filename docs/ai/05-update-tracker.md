@@ -5,6 +5,42 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-23 — Driver omega floor + disabled + Body ribbon button
+
+**What:**
+- New constant `MIN_DRIVER_OMEGA_ABS = 0.01` (rad/s ≈ 0.1 RPM) and helper
+  `clamp_driver_omega` in `src/core/driver.rs`. Applied at three
+  boundaries:
+  1. `set_constant_speed_driver` (GUI Speed DragValue) — typing 0 RPM
+     now snaps to 0.1 RPM instead of freezing the mechanism.
+  2. `load_mechanism_unbuilt_from_json` — legacy files written with
+     omega=0 are rescued at load time.
+  3. `solve_at_angle` — belt-and-braces zero guard mirroring the other
+     callsites (blueprint_ops, file_io, undo_ops).
+- Top-ribbon "+ Body" button is now disabled with hover text redirecting
+  users to the Link Editor ("To add a rigid body, use the Link Editor
+  in the property panel..."). The Link Editor exposes mass, inertia,
+  mount/coupler points, and geometry together, which is the desired
+  canonical flow.
+
+**Why:** User reported the animation would hang at low speeds. Root
+cause was the driver closure capturing omega=0: `f(t) = theta_0 + 0*t`
+freezes the constraint at `theta_0`, and `solve_at_angle` separately
+divides by `driver_omega`. Every entry point that writes omega now
+clamps above the floor. 0.01 rad/s ≈ 1 revolution per 10 minutes, so
+anything slower is kinematically indistinguishable from a static
+mechanism; users who truly want "paused" should use Play/Pause.
+
+Separately, "+ Body" in the top ribbon was a shortcut whose flow
+diverged from the Link Editor's full-featured body creation. Disabling
+it pushes users to the canonical path.
+
+**Test results:** 572 lib tests pass (+2 new:
+`step_animation_advances_at_slow_speed` and
+`set_constant_speed_driver_rejects_tiny_omega`).
+
+---
+
 ## 2026-04-23 — Slower animation + share URL embeds speed and crank limits
 
 **What:**

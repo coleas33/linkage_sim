@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use nalgebra::Vector2;
 
 use crate::core::body::Body;
+use crate::core::driver::clamp_driver_omega;
 use crate::core::linear_driver::constant_velocity_linear_driver;
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
@@ -212,7 +213,11 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
                 omega,
                 theta_0,
             } => {
-                mech.add_constant_speed_driver(driver_id, body_i, body_j, *omega, *theta_0)
+                // Clamp omega to the minimum magnitude so legacy files
+                // saved with omega=0 (or hand-edited JSON) still produce
+                // animatable mechanisms.
+                let safe_omega = clamp_driver_omega(*omega);
+                mech.add_constant_speed_driver(driver_id, body_i, body_j, safe_omega, *theta_0)
                     .map_err(|e| SerializationError::Build(e.to_string()))?;
             }
             DriverJson::Expression {

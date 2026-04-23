@@ -764,7 +764,16 @@ impl AppState {
             return;
         };
 
-        let t = (angle_rad - self.driver_theta_0) / self.driver_omega;
+        // Guard against omega==0 driving t to infinity. Other solver
+        // callsites (blueprint_ops, file_io, undo_ops) use the same
+        // pattern. Clamping at UI / load boundaries should keep
+        // `driver_omega` above `MIN_DRIVER_OMEGA_ABS`; this is defense
+        // in depth.
+        let t = if self.driver_omega.abs() > f64::EPSILON {
+            (angle_rad - self.driver_theta_0) / self.driver_omega
+        } else {
+            0.0
+        };
 
         let guess = self.last_good_q.clone();
         let converged = self.solve_and_update(&mech, &guess, t, 1e-10, 50, None);

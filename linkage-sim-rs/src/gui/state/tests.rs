@@ -55,6 +55,63 @@
     }
 
     #[test]
+    fn step_animation_advances_at_slow_speed() {
+        // At 0.5 deg/s (the slider's new floor), 600 frames at 1/60 s should
+        // advance the crank by about 5 deg. Regression test for the user
+        // report that "anything less than 15 deg/s doesn't move".
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.playing = true;
+        state.animation_speed_deg_per_sec = 0.5;
+
+        let angle_before = state.driver_angle;
+        for _ in 0..600 {
+            state.step_animation(1.0 / 60.0);
+        }
+        let advanced_deg = (state.driver_angle - angle_before).to_degrees();
+        assert!(
+            (advanced_deg - 5.0).abs() < 0.5,
+            "at 0.5 deg/s after 10 s expected ~5 deg of advance, got {:.3}",
+            advanced_deg
+        );
+    }
+
+    #[test]
+    fn set_constant_speed_driver_rejects_tiny_omega() {
+        // Typing 0 in the RPM DragValue used to freeze the animation: the
+        // driver closure captured omega=0, so f(t) = theta_0 forever and
+        // solve_at_angle divided by zero. The UI entry point now clamps
+        // to the minimum magnitude.
+        use crate::core::driver::MIN_DRIVER_OMEGA_ABS;
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.set_constant_speed_driver(0.0, 0.0);
+        assert!(
+            state.driver_omega.abs() >= MIN_DRIVER_OMEGA_ABS - 1e-12,
+            "expected driver_omega clamped to >= {}, got {}",
+            MIN_DRIVER_OMEGA_ABS,
+            state.driver_omega
+        );
+
+        // Negative sign must be preserved.
+        state.set_constant_speed_driver(-1e-6, 0.0);
+        assert!(
+            state.driver_omega < 0.0,
+            "negative-sign omega should remain negative after clamp"
+        );
+
+        // And after the clamp, solve_at_angle must actually advance the
+        // driver angle — no stuck animation.
+        state.solve_at_angle(std::f64::consts::FRAC_PI_6);
+        assert!(state.solver_status.converged);
+        assert!(
+            (state.driver_angle - std::f64::consts::FRAC_PI_6).abs() < 1e-6,
+            "driver_angle should have reached the requested angle after clamp"
+        );
+    }
+
+    #[test]
     fn step_animation_noop_when_paused() {
         let mut state = AppState::default();
         state.load_sample(SampleMechanism::FourBar);

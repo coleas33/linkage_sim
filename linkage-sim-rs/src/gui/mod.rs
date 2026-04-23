@@ -383,23 +383,19 @@ impl eframe::App for LinkageApp {
                     }
                 }
 
-                let body_active = tool == EditorTool::AddBody || self.state.add_body_state.is_some();
-                let body_btn = if body_active {
-                    egui::Button::new(egui::RichText::new("+ Body").color(tool_active_text).strong().size(14.0))
-                        .fill(tool_active_bg)
-                } else {
-                    egui::Button::new(egui::RichText::new("+ Body").color(tool_color))
-                };
-                if ui.add(body_btn)
-                    .on_hover_text("Create a multi-point body: click to place attachment points, then press Enter or double-click to finish. Esc to cancel.")
-                    .clicked()
-                {
-                    self.state.active_tool = EditorTool::AddBody;
-                    self.state.draw_link_start = None;
-                    self.state.add_body_state = Some(crate::gui::state::AddBodyState { points: Vec::new() });
-                    self.state.place_mass_body = None;
-
-                }
+                // + Body is disabled in the top ribbon — the correct entry
+                // point for creating rigid bodies is the Link Editor, which
+                // exposes mass, inertia, mount/coupler points, and geometry
+                // in one place. The ribbon button is left visible (rather
+                // than removed) so its hover text can redirect users who
+                // look for it here.
+                ui.add_enabled(
+                    false,
+                    egui::Button::new(egui::RichText::new("+ Body").color(tool_color)),
+                )
+                .on_hover_text(
+                    "To add a rigid body, use the Link Editor in the property panel (right side). Draw links with + Link, then edit mass, points, and geometry there.",
+                );
 
                 let ground_active = tool == EditorTool::AddGroundPivot;
                 let ground_text = if ground_active {

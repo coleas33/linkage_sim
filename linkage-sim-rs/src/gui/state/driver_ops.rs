@@ -2,6 +2,7 @@
 
 use std::f64::consts::PI;
 
+use crate::core::driver::clamp_driver_omega;
 use crate::forces::elements::ForceElement;
 use crate::io::{
     load_mechanism_unbuilt_from_json, mechanism_to_json,
@@ -150,6 +151,11 @@ impl AppState {
             }
         };
 
+        // Reject omega near zero: the mechanism would freeze at theta_0
+        // because the driver closure captures omega and solve_at_angle
+        // divides by it. See `clamp_driver_omega` docs.
+        let safe_omega = clamp_driver_omega(omega);
+
         self.push_undo();
         let bp = self.blueprint.as_mut().unwrap();
         bp.drivers.insert(
@@ -157,11 +163,11 @@ impl AppState {
             DriverJson::ConstantSpeed {
                 body_i,
                 body_j,
-                omega,
+                omega: safe_omega,
                 theta_0,
             },
         );
-        self.driver_omega = omega;
+        self.driver_omega = safe_omega;
         self.driver_theta_0 = theta_0;
         self.rebuild();
     }

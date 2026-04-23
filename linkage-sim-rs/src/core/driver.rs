@@ -170,6 +170,36 @@ pub fn make_revolute_driver(
     }
 }
 
+/// Minimum magnitude for a constant-speed driver's angular velocity
+/// (rad/s). Input values whose magnitude is below this floor are clamped
+/// by [`clamp_driver_omega`] before they are captured into the driver
+/// closure or written into the blueprint.
+///
+/// Why a floor: the driver's kinematic evaluation is
+/// `f(t) = theta_0 + omega * t`, and the GUI parameterizes time as
+/// `t = (angle - theta_0) / omega`. When `omega` is zero the forward
+/// mapping freezes at `theta_0` regardless of `t`, and the inverse
+/// mapping divides by zero. Both failures manifest as "animation stops
+/// advancing", so we reject values in that neighborhood up front.
+///
+/// 0.01 rad/s ≈ 0.1 RPM — one revolution per ~10 minutes. Anything
+/// slower is kinematically indistinguishable from a static mechanism,
+/// so users who truly want "paused" should use the Play/Pause toggle.
+pub const MIN_DRIVER_OMEGA_ABS: f64 = 0.01;
+
+/// Clamp a driver angular velocity to at least [`MIN_DRIVER_OMEGA_ABS`]
+/// in magnitude, preserving the caller's sign (direction of rotation).
+/// Zero maps to `+MIN_DRIVER_OMEGA_ABS`.
+pub fn clamp_driver_omega(omega: f64) -> f64 {
+    if omega.abs() >= MIN_DRIVER_OMEGA_ABS {
+        omega
+    } else if omega < 0.0 {
+        -MIN_DRIVER_OMEGA_ABS
+    } else {
+        MIN_DRIVER_OMEGA_ABS
+    }
+}
+
 /// Create a revolute driver with constant angular velocity.
 ///
 /// f(t) = theta_0 + omega * t
