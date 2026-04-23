@@ -5,6 +5,27 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-23 — Suppress blank console window on Windows release builds
+
+**What:** Added
+`#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`
+to the top of `linkage-sim-rs/src/bin/linkage_gui.rs`. In release builds
+the resulting `linkage-gui.exe` is linked with the Windows GUI subsystem,
+so launching it from the LinkageSuite launcher (or from Explorer) no
+longer spawns an empty black console alongside the egui window.
+
+**Why:** Rust's default bin subsystem on Windows is CONSOLE. Without the
+attribute, Windows allocates a console for every GUI-only binary, which
+appears as a blank terminal next to the simulator. Debug builds
+intentionally keep the console so `cargo run`, `env_logger::init()`, and
+panic backtraces still print to stdout.
+
+**Test results:** `cargo check --bin linkage-gui` clean. No behavior
+change to the library or WASM bin (`linkage_web.rs` is web-only and
+doesn't need the attribute).
+
+---
+
 ## 2026-04-15 — Crank angle label + canvas indicator
 
 **What:**
