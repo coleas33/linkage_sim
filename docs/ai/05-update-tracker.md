@@ -5,6 +5,39 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-23 — Ground-pivot discoverability + DXF geometry error fix
+
+**What:**
+- Right-click context menu on a joint or attachment point now shows an
+  inline amber tip ("Needs a ground pivot — use the + Ground tool...")
+  directly under the disabled "Set as Driver" button whenever the
+  mechanism has zero grounded revolute joints. Previously the hint was
+  only visible by hovering the disabled button, which new users missed.
+  Implemented in `gui/canvas/context_menu.rs` for both `show_joint_menu`
+  and `show_attachment_menu`.
+- DXF "Add Geometry to Link" now emits an accurate error toast when the
+  chosen target body doesn't exist in the blueprint (e.g. synthetic
+  compound-expansion bodies like `force_0_cyl` / `force_0_rod` which
+  live on the `Mechanism` but not in `state.blueprint.bodies`).
+  Previously the blueprint write silently no-op'd and the status toast
+  falsely reported success. Fix in
+  `gui/dxf_import.rs::convert_selected_to_rigid_geometry`.
+
+**Why:** A user building a press mechanism from scratch couldn't find
+their way to adding a driver — the mechanism had no ground pivots yet,
+and the only hint was a hover tooltip on a disabled menu item. The
+inline tip directs the user at the + Ground tool immediately.
+
+Separately, while diagnosing the same report, the DXF geometry flow was
+found to claim success even when the target body wasn't user-editable.
+Surfacing the real error keeps the user from chasing a ghost.
+
+**Test results:** `cargo check --bin linkage-gui` clean. Context-menu
+change is render-only; DXF change is a defensive early-return that
+triggers only when the blueprint lacks the target body.
+
+---
+
 ## 2026-04-23 — Suppress blank console window on Windows release builds
 
 **What:** Added

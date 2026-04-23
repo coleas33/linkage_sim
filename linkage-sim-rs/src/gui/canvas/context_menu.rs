@@ -131,6 +131,20 @@ fn show_joint_menu(
             .on_hover_text(
                 "Only grounded revolute joints can be drivers. Use the + Ground tool to ground a link, then right-click the grounded joint and select Set as Driver."
             );
+
+        // When the mechanism has no grounded revolute joints at all, surface
+        // the requirement inline so the user doesn't have to hover the
+        // disabled button to discover it.
+        if grounded_revolute_ids.is_empty() {
+            ui.add_space(2.0);
+            ui.small(
+                egui::RichText::new(
+                    "Needs a ground pivot \u{2014} use the + Ground tool, then right-click the new pivot to ground this link."
+                )
+                .italics()
+                .color(egui::Color32::from_rgb(230, 180, 90)),
+            );
+        }
     }
 
     if ui.button("Delete Joint").on_hover_text("Remove this joint and disconnect the bodies").clicked() {
@@ -185,8 +199,10 @@ fn show_attachment_menu(
     // the feature exists and how to enable it.
     if body_id != GROUND_ID {
         let mut found_grounded_joint: Option<String> = None;
+        let mut no_grounded_revolutes = true;
         if let Some(mech) = &state.mechanism {
             let grounded = mech.grounded_revolute_joint_ids();
+            no_grounded_revolutes = grounded.is_empty();
             for joint in mech.joints() {
                 if joint.is_revolute()
                     && grounded.contains(&joint.id().to_string())
@@ -209,6 +225,19 @@ fn show_attachment_menu(
                 .on_hover_text(
                     "This body has no grounded revolute joint. Use the + Ground tool to click a free endpoint of a link to ground it, then come back and right-click to set the driver."
                 );
+
+            // When the whole mechanism has no grounded revolutes, show the
+            // requirement inline rather than hiding it behind a hover.
+            if no_grounded_revolutes {
+                ui.add_space(2.0);
+                ui.small(
+                    egui::RichText::new(
+                        "Needs a ground pivot \u{2014} use the + Ground tool, then right-click the new pivot to ground this link."
+                    )
+                    .italics()
+                    .color(egui::Color32::from_rgb(230, 180, 90)),
+                );
+            }
         }
     }
 }

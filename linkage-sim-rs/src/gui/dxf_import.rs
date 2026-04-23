@@ -1094,6 +1094,24 @@ fn convert_selected_to_rigid_geometry(
 
     // 3. Push undo and set the target body's geometry directly on the
     //    blueprint. No new body, no new joints.
+    //
+    // If the target isn't in the blueprint (e.g. a synthetic compound body
+    // like `force_N_cyl`), bail with an explanatory error instead of
+    // silently dropping the write.
+    let blueprint_has_target = state
+        .blueprint
+        .as_ref()
+        .map(|bp| bp.bodies.contains_key(&target_body))
+        .unwrap_or(false);
+    if !blueprint_has_target {
+        state.status_message = Some(format!(
+            "Cannot attach geometry to '{}' \u{2014} it's a synthetic body from compound-force expansion, not a user-created link.",
+            target_body
+        ));
+        state.status_message_time = 5.0;
+        return;
+    }
+
     state.push_undo();
 
     if let Some(bp) = state.blueprint.as_mut() {
