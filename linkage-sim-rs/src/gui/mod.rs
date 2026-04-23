@@ -480,7 +480,7 @@ impl eframe::App for LinkageApp {
 
                 // Speed control (compact)
                 ui.add(
-                    egui::Slider::new(&mut self.state.animation_speed_deg_per_sec, 10.0..=720.0)
+                    egui::Slider::new(&mut self.state.animation_speed_deg_per_sec, 0.5..=720.0)
                         .text("\u{00B0}/s")
                         .logarithmic(true)
                         .clamping(egui::SliderClamping::Always),

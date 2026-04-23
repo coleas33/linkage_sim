@@ -48,16 +48,22 @@ impl AppState {
     /// Returns the full URL string, or an error if no mechanism is loaded.
     pub fn generate_share_url(&self) -> Result<String, String> {
         // Include the driver angle in the JSON so the mechanism loads at the
-        // same configuration the user was viewing (not just angle 0).
+        // same configuration the user was viewing (not just angle 0). Also
+        // embed playback speed and crank-angle limits so share URLs
+        // round-trip the user's full animation setup. `driver_omega` rides
+        // along in the standard `drivers` JSON map, so no dedicated override
+        // is needed here.
         let mut json_str = self.serialize_to_json_string()?;
-        // Inject driver_angle into the JSON before encoding.
         if let Ok(mut val) = serde_json::from_str::<serde_json::Value>(&json_str) {
             val["_driver_angle"] = serde_json::Value::from(self.driver_angle);
-            if self.sweep_range_enabled {
-                val["_sweep_range_enabled"] = serde_json::Value::from(true);
-                val["_sweep_angle_min"] = serde_json::Value::from(self.sweep_angle_min_deg);
-                val["_sweep_angle_max"] = serde_json::Value::from(self.sweep_angle_max_deg);
-            }
+            val["_animation_speed_deg_per_sec"] =
+                serde_json::Value::from(self.animation_speed_deg_per_sec);
+            // Sweep range is embedded unconditionally so the user's current
+            // crank-angle limits transfer whether or not the range toggle
+            // is currently active on the source side.
+            val["_sweep_range_enabled"] = serde_json::Value::from(self.sweep_range_enabled);
+            val["_sweep_angle_min"] = serde_json::Value::from(self.sweep_angle_min_deg);
+            val["_sweep_angle_max"] = serde_json::Value::from(self.sweep_angle_max_deg);
             json_str = serde_json::to_string(&val).unwrap_or(json_str);
         }
         let encoded = encode_mechanism_for_url(&json_str);
@@ -259,14 +265,22 @@ impl AppState {
             .as_ref()
             .and_then(|v| v.get("_driver_angle").and_then(|a| a.as_f64()));
         if let Some(ref val) = shared_json {
-            if val.get("_sweep_range_enabled").and_then(|v| v.as_bool()).unwrap_or(false) {
-                self.sweep_range_enabled = true;
-                if let Some(min) = val.get("_sweep_angle_min").and_then(|v| v.as_f64()) {
-                    self.sweep_angle_min_deg = min;
-                }
-                if let Some(max) = val.get("_sweep_angle_max").and_then(|v| v.as_f64()) {
-                    self.sweep_angle_max_deg = max;
-                }
+            // Sweep range: min/max always restore when present; the toggle
+            // restores whatever the source side had.
+            if let Some(enabled) = val.get("_sweep_range_enabled").and_then(|v| v.as_bool()) {
+                self.sweep_range_enabled = enabled;
+            }
+            if let Some(min) = val.get("_sweep_angle_min").and_then(|v| v.as_f64()) {
+                self.sweep_angle_min_deg = min;
+            }
+            if let Some(max) = val.get("_sweep_angle_max").and_then(|v| v.as_f64()) {
+                self.sweep_angle_max_deg = max;
+            }
+            if let Some(speed) = val
+                .get("_animation_speed_deg_per_sec")
+                .and_then(|v| v.as_f64())
+            {
+                self.animation_speed_deg_per_sec = speed;
             }
         }
 
@@ -513,5 +527,86 @@ mod tests {
         let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"not compressed data");
         let result = decode_mechanism_from_url(&encoded);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn share_url_round_trips_speed_and_crank_limits() {
+        use crate::gui::samples::SampleMechanism;
+        use crate::gui::state::AppState;
+
+        let mut src = AppState::default();
+        src.load_sample(SampleMechanism::FourBar);
+        src.animation_speed_deg_per_sec = 7.25;
+        src.sweep_range_enabled = true;
+        src.sweep_angle_min_deg = 45.0;
+        src.sweep_angle_max_deg = 225.0;
+
+        let url = src.generate_share_url().expect("generate_share_url failed");
+        // URL should look like ".../?m=<payload>".
+        let encoded = url
+            .split("?m=")
+            .nth(1)
+            .expect("share URL missing ?m= parameter");
+        let decoded_json = decode_mechanism_from_url(encoded).expect("decode failed");
+
+        // Raw JSON should contain the new override fields.
+        assert!(
+            decoded_json.contains("_animation_speed_deg_per_sec"),
+            "decoded JSON missing animation speed field"
+        );
+        assert!(
+            decoded_json.contains("_sweep_angle_min"),
+            "decoded JSON missing sweep_angle_min field (should embed regardless of toggle)"
+        );
+
+        // And load_from_json_str should restore all three values on a fresh state.
+        let mut dst = AppState::default();
+        dst.load_from_json_str(&decoded_json)
+            .expect("load_from_json_str failed");
+        assert!(
+            (dst.animation_speed_deg_per_sec - 7.25).abs() < 1e-9,
+            "animation speed not restored: got {}",
+            dst.animation_speed_deg_per_sec
+        );
+        assert!(dst.sweep_range_enabled, "sweep_range_enabled not restored");
+        assert!(
+            (dst.sweep_angle_min_deg - 45.0).abs() < 1e-9,
+            "sweep_angle_min not restored: got {}",
+            dst.sweep_angle_min_deg
+        );
+        assert!(
+            (dst.sweep_angle_max_deg - 225.0).abs() < 1e-9,
+            "sweep_angle_max not restored: got {}",
+            dst.sweep_angle_max_deg
+        );
+    }
+
+    #[test]
+    fn share_url_embeds_crank_limits_even_when_range_disabled() {
+        use crate::gui::samples::SampleMechanism;
+        use crate::gui::state::AppState;
+
+        let mut src = AppState::default();
+        src.load_sample(SampleMechanism::FourBar);
+        src.sweep_range_enabled = false;
+        src.sweep_angle_min_deg = 10.0;
+        src.sweep_angle_max_deg = 350.0;
+
+        let url = src.generate_share_url().expect("generate_share_url failed");
+        let encoded = url.split("?m=").nth(1).expect("share URL missing ?m=");
+        let decoded_json = decode_mechanism_from_url(encoded).expect("decode failed");
+
+        // Limits embed unconditionally so users can flip the toggle on later.
+        assert!(decoded_json.contains("_sweep_angle_min"));
+        assert!(decoded_json.contains("_sweep_angle_max"));
+
+        let mut dst = AppState::default();
+        dst.load_from_json_str(&decoded_json).expect("load failed");
+        assert!(
+            !dst.sweep_range_enabled,
+            "sweep_range_enabled should stay off after round-trip"
+        );
+        assert!((dst.sweep_angle_min_deg - 10.0).abs() < 1e-9);
+        assert!((dst.sweep_angle_max_deg - 350.0).abs() < 1e-9);
     }
 }

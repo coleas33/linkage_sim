@@ -5,6 +5,37 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-23 — Slower animation + share URL embeds speed and crank limits
+
+**What:**
+- Top-toolbar animation speed slider lower bound dropped from 10.0 to
+  0.5 °/s (`src/gui/mod.rs:483`). The log scale previously compressed
+  10–30 °/s into a sliver of screen, making the slider feel like it
+  refused to slow the animation past ~15 °/s. Users can now genuinely
+  crawl the kinematics for debugging.
+- Share URLs now embed `_animation_speed_deg_per_sec` and the sweep
+  range (`_sweep_range_enabled`, `_sweep_angle_min/_max`)
+  unconditionally — previously the sweep range was only written when
+  the toggle was on, so a recipient would land in 0..360 animation
+  bounds even when the sender had a narrower working range configured.
+  `driver_omega` rides along in the standard `drivers` JSON map (no
+  dedicated override needed).
+- `load_from_json_str` restores all four fields on the receiving side
+  (`src/gui/state/file_io.rs`).
+
+**Why:** User reported "anything less than 15 deg/s doesn't move" and
+"URL sharing doesn't embed speed or crank-angle limits". First was a
+slider floor, not an animation-math bug; second was a real
+serialization gap.
+
+**Test results:** Two new unit tests
+(`share_url_round_trips_speed_and_crank_limits`,
+`share_url_embeds_crank_limits_even_when_range_disabled`) verify the
+round-trip including the "toggle off, limits still embedded" case. 568
+lib tests pass.
+
+---
+
 ## 2026-04-23 — Ground-pivot discoverability + DXF geometry error fix
 
 **What:**
