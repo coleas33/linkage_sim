@@ -5,6 +5,35 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-24 — Delete body also strips referencing forces + diagnostics relocated
+
+**What:**
+- `AppState::remove_body` (`src/gui/state/entity_crud.rs`) now also
+  retains-out force elements whose `attached_body_ids()` reference the
+  deleted body. Previously a LinearActuator (or any spring/damper/etc.)
+  attached to the deleted link stayed in the blueprint, and the next
+  rebuild tried to resolve its attachment points on a missing body,
+  freezing the GUI. New regression test
+  `remove_body_cascades_to_force_elements` loads the
+  ParallelogramActuator sample (which has a crank-attached linear
+  actuator), removes the crank, and asserts no force still references
+  it.
+- Moved the debug `dt / fps / step` readout from the top toolbar
+  (where it wrapped off-screen on narrow viewports) to the bottom
+  status bar. Still gated on the View → Debug Overlay toggle, but
+  always visible next to the angle / torque / DOF readouts.
+
+**Why:** User reported "Cannot delete link 1, it's the last link but
+has an actuator attached at the end joint, tool freezes, delete
+actuator with it if needed" — which is the cascade gap described
+above. Also reported they couldn't see the diagnostics line with
+Debug Overlay on, so it's been relocated to a guaranteed-visible
+spot.
+
+**Test results:** 573 lib tests pass (+1 new cascade test).
+
+---
+
 ## 2026-04-24 — Context menu Set-Driver submenu + frame-time diagnostics
 
 **What:**

@@ -482,31 +482,6 @@ impl eframe::App for LinkageApp {
                         .clamping(egui::SliderClamping::Always),
                 ).on_hover_text("Kinematic animation speed in degrees per second");
 
-                // Frame-time diagnostics for debugging slow-speed animation.
-                // Only rendered when the Debug Overlay is enabled (View menu).
-                // Shows the reported dt, derived FPS, and the per-frame angle
-                // step so the user can see what the animation pipeline is
-                // actually doing.
-                if self.state.show_debug_overlay {
-                    let dt = ctx.input(|i| i.stable_dt) as f64;
-                    let fps = if dt > 0.0 { 1.0 / dt } else { 0.0 };
-                    let step_deg = self.state.animation_speed_deg_per_sec
-                        * dt
-                        * self.state.animation_direction;
-                    ui.separator();
-                    ui.small(
-                        egui::RichText::new(format!(
-                            "dt={:.1}ms  fps={:.0}  step={:.3}\u{00B0}/frame",
-                            dt * 1000.0,
-                            fps,
-                            step_deg,
-                        ))
-                        .color(egui::Color32::from_rgb(150, 150, 170)),
-                    ).on_hover_text(
-                        "Animation pipeline diagnostics. dt is egui's stable_dt. step is per-frame driver-angle delta.",
-                    );
-                }
-
                 ui.separator();
 
                 // ── Sample mechanism selector (purple) ──────────────
@@ -632,6 +607,50 @@ impl eframe::App for LinkageApp {
                         {
                             self.state.show_error_panel = !self.state.show_error_panel;
                         }
+                    }
+
+                    // Frame-time diagnostics (visible only with Debug
+                    // Overlay on — View menu). Placed in the bottom
+                    // status bar so it's always reachable regardless of
+                    // top-toolbar wrapping. Includes the solver-status
+                    // flag so we can tell whether the mechanism is
+                    // actually advancing (converged) or stuck (fail)
+                    // at a given step.
+                    if self.state.show_debug_overlay {
+                        let dt = ctx.input(|i| i.stable_dt) as f64;
+                        let fps = if dt > 0.0 { 1.0 / dt } else { 0.0 };
+                        let step_deg = self.state.animation_speed_deg_per_sec
+                            * dt
+                            * self.state.animation_direction;
+                        let solver_tag = if self.state.solver_status.converged {
+                            "OK"
+                        } else {
+                            "FAIL"
+                        };
+                        ui.colored_label(dim, "\u{2502}");
+                        let solver_color = if self.state.solver_status.converged {
+                            green
+                        } else {
+                            red
+                        };
+                        ui.colored_label(
+                            bright,
+                            format!(
+                                "dt={:.1}ms fps={:.0} step={:.3}\u{00B0}",
+                                dt * 1000.0,
+                                fps,
+                                step_deg,
+                            ),
+                        )
+                        .on_hover_text(
+                            "Animation pipeline diagnostics. dt is egui's stable_dt, fps = 1/dt, step = speed*dt*direction (the per-frame driver-angle delta).",
+                        );
+                        ui.colored_label(solver_color, format!("solver={}", solver_tag))
+                            .on_hover_text(format!(
+                                "Kinematic solver status. residual={:.1e}, iterations={}. If 'FAIL' while playing, driver_angle does not advance so the mechanism appears frozen.",
+                                self.state.solver_status.residual_norm,
+                                self.state.solver_status.iterations,
+                            ));
                     }
                 } else {
                     ui.label("No mechanism loaded");

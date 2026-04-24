@@ -1082,6 +1082,44 @@
         );
     }
 
+    #[test]
+    fn remove_body_cascades_to_force_elements() {
+        // ParallelogramActuator has a LinearActuator force element
+        // attached to `crank`. Removing `crank` must also strip the
+        // actuator from the blueprint — otherwise the rebuild tries to
+        // resolve the actuator's attachment point on a missing body and
+        // freezes the GUI.
+        use crate::forces::elements::ForceElement;
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::ParallelogramActuator);
+
+        let forces_before = state.blueprint.as_ref().unwrap().forces.len();
+        let had_actuator_on_crank = state
+            .blueprint
+            .as_ref()
+            .unwrap()
+            .forces
+            .iter()
+            .any(|f| {
+                matches!(f, ForceElement::LinearActuator(_))
+                    && f.attached_body_ids().contains(&"crank")
+            });
+        assert!(had_actuator_on_crank, "sample should start with a crank-attached actuator");
+        assert!(forces_before > 0);
+
+        state.remove_body("crank");
+
+        let bp = state.blueprint.as_ref().unwrap();
+        for f in &bp.forces {
+            assert!(
+                !f.attached_body_ids().contains(&"crank"),
+                "force element still references deleted body: {:?}",
+                f
+            );
+        }
+    }
+
     // ── Grid snap tests ──────────────────────────────────────────────────
 
     #[test]

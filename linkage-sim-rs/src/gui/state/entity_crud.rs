@@ -271,7 +271,7 @@ impl AppState {
         body_id
     }
 
-    /// Remove a body and all joints/drivers that reference it.
+    /// Remove a body and all joints/drivers/forces that reference it.
     ///
     /// Undoable; rebuilds after.
     pub fn remove_body(&mut self, body_id: &str) {
@@ -291,6 +291,14 @@ impl AppState {
                 let (bi, bj) = driver_body_ids(driver);
                 bi != body_id && bj != body_id
             });
+
+            // Remove force elements (LinearActuator, spring, damper,
+            // ExternalForce, etc.) that reference this body. Leaving them
+            // behind would dangle on a missing body id and freeze the
+            // solver at the next rebuild (compound-force expansion
+            // in io/from_json.rs looks up the target body's attachment
+            // points unconditionally).
+            bp.forces.retain(|f| !f.attached_body_ids().contains(&body_id));
         });
     }
 
