@@ -302,7 +302,11 @@ pub struct LinearActuatorElement {
 /// proportional to the overlap area between the body's geometry and the zone.
 ///
 /// The zone is an axis-aligned rectangle in world space. The body must have
-/// `BodyGeometry` set. Force is applied at the centroid of the overlap region.
+/// `BodyGeometry` set. When `body_local_app_point` is `None`, the force is
+/// applied at the centroid of the zone-geometry overlap polygon, projected
+/// into the body's local frame each frame. When `Some`, the force is
+/// applied at that fixed body-local point, letting the user pin the
+/// application location to a specific contact point.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForceZoneElement {
     /// ID of the body whose geometry is tested for overlap.
@@ -316,4 +320,9 @@ pub struct ForceZoneElement {
     /// Optional display label.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// Optional override for the application point, in body-local
+    /// coordinates (meters). When `Some`, replaces the auto-computed
+    /// overlap centroid. See struct-level docs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_local_app_point: Option<[f64; 2]>,
 }

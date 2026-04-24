@@ -157,10 +157,113 @@ pub fn handle_interaction(
 
     let is_dragging_ground = state.dragging_ground_pivot.is_some();
 
+    // ── Interaction: force-zone application-point drag ─────────────────
+    // Start drag: in Select mode, if the user presses primary near the
+    // current app point of any ForceZone, start dragging it. The
+    // threshold matches attachment-point hit radius so the feel is
+    // consistent with other marker drags.
+    if state.active_tool == EditorTool::Select
+        && response.drag_started_by(egui::PointerButton::Primary)
+        && !is_shift
+        && state.dragging_force_zone_app_point.is_none()
+        && !is_dragging_ground
+    {
+        if let Some(pos) = response.interact_pointer_pos() {
+            if let Some(mech) = state.mechanism.as_ref() {
+                let mech_state = mech.state();
+                let q = &state.q;
+                for (idx, f) in mech.forces().iter().enumerate() {
+                    if let crate::forces::elements::ForceElement::ForceZone(fz) = f {
+                        if let Some(world) = super::rendering::force_zone_app_point_world(
+                            fz, mech, mech_state, q,
+                        ) {
+                            let sp = state.view.world_to_screen(world.x, world.y);
+                            let screen_pos = egui::Pos2::new(sp[0], sp[1]);
+                            if pos.distance(screen_pos) <= HIT_RADIUS {
+                                state.dragging_force_zone_app_point = Some(idx);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // During drag: draw a ghost crosshair at the pointer so the user
+    // sees where the application point will land on release.
+    if let Some(idx) = state.dragging_force_zone_app_point {
+        if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+            let ghost = pos;
+            let half = 8.0_f32;
+            let color = eframe::egui::Color32::from_rgb(255, 165, 80);
+            let stroke = eframe::egui::Stroke::new(2.0, color);
+            painter.line_segment(
+                [
+                    eframe::egui::Pos2::new(ghost.x - half, ghost.y),
+                    eframe::egui::Pos2::new(ghost.x + half, ghost.y),
+                ],
+                stroke,
+            );
+            painter.line_segment(
+                [
+                    eframe::egui::Pos2::new(ghost.x, ghost.y - half),
+                    eframe::egui::Pos2::new(ghost.x, ghost.y + half),
+                ],
+                stroke,
+            );
+            painter.circle_filled(ghost, 3.5, color);
+        }
+        let _ = idx; // idx used on drag-stop
+    }
+
+    // On drag end: convert pointer world coords into the target body's
+    // local frame and commit via update_force_element.
+    if state.dragging_force_zone_app_point.is_some()
+        && response.drag_stopped_by(egui::PointerButton::Primary)
+    {
+        let idx = state.dragging_force_zone_app_point.take().unwrap();
+        if let Some(pos) = response.interact_pointer_pos() {
+            let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+            if let Some(mech) = state.mechanism.as_ref() {
+                if let Some(crate::forces::elements::ForceElement::ForceZone(fz)) =
+                    mech.forces().get(idx)
+                {
+                    let mech_state = mech.state();
+                    let q = &state.q;
+                    let (bx, by, btheta) =
+                        mech_state.get_pose(&fz.body_id, q);
+                    let cos_t = btheta.cos();
+                    let sin_t = btheta.sin();
+                    let dx = wx - bx;
+                    let dy = wy - by;
+                    let local = [
+                        cos_t * dx + sin_t * dy,
+                        -sin_t * dx + cos_t * dy,
+                    ];
+                    let mut updated = fz.clone();
+                    updated.body_local_app_point = Some(local);
+                    state.update_force_element(
+                        idx,
+                        crate::forces::elements::ForceElement::ForceZone(updated),
+                    );
+                }
+            }
+        }
+    }
+
+    let is_dragging_force_zone_ap = state.dragging_force_zone_app_point.is_some();
+
     // Primary drag on empty space (Select mode) pans the view.
-    // Suppress panning when dragging a ground pivot or Ctrl+dragging the background image.
+    // Suppress panning when dragging a ground pivot, force-zone app point,
+    // or Ctrl+dragging the background image.
     let is_ctrl_dragging_image = is_ctrl && state.background_image.is_some();
-    if response.dragged_by(egui::PointerButton::Primary) && !is_shift && !is_dragging_ground && !is_ctrl_dragging_image {
+    if response.dragged_by(egui::PointerButton::Primary)
+        && !is_shift
+        && !is_dragging_ground
+        && !is_dragging_force_zone_ap
+        && !is_ctrl_dragging_image
+    {
         if state.active_tool == EditorTool::Select
             && state.draw_link_start.is_none()
         {
@@ -260,6 +363,7 @@ pub fn handle_interaction(
         state.creating_force_zone = None;
         state.drawing_body_geometry = None;
         state.dragging_ground_pivot = None;
+        state.dragging_force_zone_app_point = None;
         state.place_mass_body = None;
         state.reassigning_point_mass = None;
         state.repositioning_point_mass = None;
@@ -831,6 +935,7 @@ fn handle_create_force_zone(
                         zone_max,
                         force: [0.0, -100.0],
                         label: None,
+                        body_local_app_point: None,
                     });
 
                     state.add_force_element(fz);

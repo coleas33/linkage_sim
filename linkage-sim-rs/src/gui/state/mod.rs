@@ -197,6 +197,11 @@ pub struct AppState {
     // ── Ground pivot drag state ─────────────────────────────────────────
     /// Ground pivot being dragged: (pivot_name, start_world_pos).
     pub dragging_ground_pivot: Option<(String, [f64; 2])>,
+    // ── Force zone application-point drag state ─────────────────────────
+    /// Force zone whose application point is being dragged. Holds the
+    /// index into the mechanism's force list. The body id is resolved on
+    /// drag-end so we don't need to carry it across frames.
+    pub dragging_force_zone_app_point: Option<usize>,
     // ── Alignment guides ───────────────────────────────────────────────
     /// Active alignment guide lines shown during drag operations.
     /// Cleared at the start of each frame when no drag is active.
@@ -487,6 +492,7 @@ impl Default for AppState {
             creating_force_zone: None,
             drawing_body_geometry: None,
             dragging_ground_pivot: None,
+            dragging_force_zone_app_point: None,
             alignment_guides: Vec::new(),
             grashof_result: None,
             crank_recommendation: None,

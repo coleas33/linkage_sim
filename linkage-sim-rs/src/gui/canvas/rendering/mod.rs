@@ -19,7 +19,7 @@ mod force_render;
 
 // Re-export from submodules so external callers do not need to know the layout.
 pub use primitives::{draw_dashed_line, draw_ground_marker, draw_diamond_marker, fill_force_template};
-pub use force_render::heat_color;
+pub use force_render::{force_zone_app_point_world, heat_color};
 
 use primitives::{draw_alignment_guides, draw_force_arrow, draw_rotary_badge};
 use force_render::{draw_force_elements, load_path_color_for_body};

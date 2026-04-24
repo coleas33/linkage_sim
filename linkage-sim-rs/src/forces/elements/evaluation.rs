@@ -475,18 +475,23 @@ pub fn evaluate_force_zone(
     // Binary overlap: any contact → full force.
     let force_global = Vector2::new(fz.force[0], fz.force[1]);
 
-    // Apply force at the centroid of the overlap region
-    let centroid_world = polygon_centroid(&clipped);
-
-    // Convert world centroid to body-local point for point_force_to_q
-    let cos_t = btheta.cos();
-    let sin_t = btheta.sin();
-    let dx = centroid_world.x - bx;
-    let dy = centroid_world.y - by;
-    let local_point = Vector2::new(
-        cos_t * dx + sin_t * dy,
-        -sin_t * dx + cos_t * dy,
-    );
+    // Application point: either the user-pinned body-local override, or
+    // the centroid of the overlap polygon projected into body-local
+    // coords. The override is useful when the actual contact point isn't
+    // the overlap centroid (e.g., a specific contact pad location).
+    let local_point = if let Some(lp) = fz.body_local_app_point {
+        Vector2::new(lp[0], lp[1])
+    } else {
+        let centroid_world = polygon_centroid(&clipped);
+        let cos_t = btheta.cos();
+        let sin_t = btheta.sin();
+        let dx = centroid_world.x - bx;
+        let dy = centroid_world.y - by;
+        Vector2::new(
+            cos_t * dx + sin_t * dy,
+            -sin_t * dx + cos_t * dy,
+        )
+    };
 
     point_force_to_q(state, &fz.body_id, &local_point, &force_global, q)
 }

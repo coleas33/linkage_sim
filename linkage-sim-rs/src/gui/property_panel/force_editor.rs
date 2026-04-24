@@ -895,6 +895,66 @@ fn draw_force_element_details(
                     force: ForceElement::ForceZone(updated),
                 });
             }
+
+            // Application-point override: auto-centroid vs user-pinned.
+            ui.separator();
+            ui.label("Application point:");
+            let mut locked = fz.body_local_app_point.is_some();
+            if ui
+                .checkbox(&mut locked, "Lock to body-local point")
+                .on_hover_text(
+                    "Unchecked: force applies at the overlap centroid (auto). Checked: force applies at a fixed point on the body — pin it to the real contact location.",
+                )
+                .changed()
+            {
+                let mut updated = fz.clone();
+                updated.body_local_app_point = if locked {
+                    // Seed the override with the current centroid so the
+                    // force doesn't jump when locking.
+                    fz.body_local_app_point.or(Some([0.0, 0.0]))
+                } else {
+                    None
+                };
+                *pending = Some(PendingPropertyEdit::UpdateForce {
+                    index,
+                    force: ForceElement::ForceZone(updated),
+                });
+            }
+
+            if let Some(lp) = fz.body_local_app_point {
+                let mut lx_mm = lp[0] * 1e3;
+                let mut ly_mm = lp[1] * 1e3;
+                let mut ap_changed = false;
+                ui.horizontal(|ui| {
+                    ui.label("Local X:");
+                    if ui.add(egui::DragValue::new(&mut lx_mm).speed(1.0).suffix(" mm")).on_hover_text("Application point X in body-local coordinates (mm).").changed() {
+                        ap_changed = true;
+                    }
+                    ui.label("Local Y:");
+                    if ui.add(egui::DragValue::new(&mut ly_mm).speed(1.0).suffix(" mm")).on_hover_text("Application point Y in body-local coordinates (mm).").changed() {
+                        ap_changed = true;
+                    }
+                });
+                if ui.button("Reset to auto (overlap centroid)")
+                    .on_hover_text("Clear the locked application point and revert to the auto-computed overlap centroid each frame.")
+                    .clicked()
+                {
+                    let mut updated = fz.clone();
+                    updated.body_local_app_point = None;
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::ForceZone(updated),
+                    });
+                }
+                if ap_changed {
+                    let mut updated = fz.clone();
+                    updated.body_local_app_point = Some([lx_mm * 1e-3, ly_mm * 1e-3]);
+                    *pending = Some(PendingPropertyEdit::UpdateForce {
+                        index,
+                        force: ForceElement::ForceZone(updated),
+                    });
+                }
+            }
         }
 
         ForceElement::LinearActuator(la) => {

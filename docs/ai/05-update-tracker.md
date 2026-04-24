@@ -5,6 +5,46 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-24 — Force zone application point: visualize + draggable override
+
+**What:**
+- `ForceZoneElement` gets a new optional field
+  `body_local_app_point: Option<[f64; 2]>`. When `None`, the solver
+  uses the overlap centroid as before. When `Some`, the force applies
+  at the pinned body-local point, letting the user model contact at a
+  specific location rather than an area-averaged centroid.
+  (`src/forces/elements/element_types.rs`,
+  `src/forces/elements/evaluation.rs`.)
+- Canvas now renders a crosshair + "F" label at the active application
+  point — faint yellow for the auto-centroid, brighter orange for a
+  pinned override (labelled "F (locked)"). Uses a shared helper
+  `force_zone_app_point_world` in
+  `src/gui/canvas/rendering/force_render.rs`.
+- Left-drag on the marker in Select mode enters an app-point drag. A
+  ghost crosshair follows the pointer; on release the pointer world
+  position is converted to the target body's local frame and written
+  to the override, committing via `update_force_element`. Escape
+  cancels the drag mid-gesture.
+- Force editor for `ForceZone` grows an "Application point" section
+  with a `Lock to body-local point` checkbox, Local X/Y DragValues
+  (mm), and a `Reset to auto (overlap centroid)` button.
+
+**Why:** User wanted to see where the force is actually applied and
+pin it to the real contact point. Overlap centroid is correct for
+distributed contact but wrong for a specific contact pad — the
+override lets the user enforce the physical contact location without
+abandoning the zone's "trigger on contact" semantics.
+
+**Schema compatibility:** `serde(default, skip_serializing_if =
+"Option::is_none")` — old files load cleanly with
+`body_local_app_point = None`, and files saved without an override
+don't grow the field.
+
+**Test results:** 573 lib tests pass unchanged. JSON round-trip and
+sample-builders updated to include the new field explicitly.
+
+---
+
 ## 2026-04-24 — Delete body also strips referencing forces + diagnostics relocated
 
 **What:**
