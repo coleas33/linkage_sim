@@ -5,6 +5,35 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-24 — Context menu Set-Driver submenu + frame-time diagnostics
+
+**What:**
+- Right-click context menus on joints and attachment points now offer
+  a `Set Driver to \u{2026}` submenu whenever *any* grounded revolute
+  exists in the mechanism, not only when the clicked element is itself
+  the grounded one. Previously users right-clicked a non-grounded
+  joint, saw `Set as Driver` disabled with only a hover tooltip, and
+  reported it as "grayed out, can't add a driver". The submenu lists
+  every grounded revolute with the current driver labeled `(current)`,
+  so the action is always reachable from any joint.
+  (`src/gui/canvas/context_menu.rs`.)
+- Top toolbar shows a compact `dt=16.7ms  fps=60  step=0.083°/frame`
+  diagnostics line next to the speed slider when the Debug Overlay is
+  enabled (View menu). Intended to narrow down the user's "no motion
+  under 15 °/s" report on the WASM build — if the reported dt or step
+  is out of whack, the issue is in the browser/egui frame pipeline, not
+  the animation math.
+
+**Why:** User said "I couldn't add a driver because the selection was
+grayed out before". The previous UX required right-clicking the right
+*specific* element; the submenu decouples discovery from precision.
+Frame-time readout gives us an observable signal to diagnose the
+low-speed animation-freeze complaint without guesswork.
+
+**Test results:** 572 lib tests pass unchanged.
+
+---
+
 ## 2026-04-24 — Link Editor delete button + Driver panel picker
 
 **What:**

@@ -124,27 +124,49 @@ fn show_joint_menu(
             state.pending_driver_reassignment = Some(joint_id.to_string());
             ui.close();
         }
-    } else {
-        // Show a disabled option so users see that Set as Driver exists
-        // and understand why it's not available for this joint.
+    } else if grounded_revolute_ids.is_empty() {
+        // No grounded revolutes anywhere in the mechanism — show the
+        // disabled stub plus the amber inline hint so the requirement
+        // is visible without hovering.
         ui.add_enabled(false, egui::Button::new("Set as Driver"))
             .on_hover_text(
                 "Only grounded revolute joints can be drivers. Use the + Ground tool to ground a link, then right-click the grounded joint and select Set as Driver."
             );
-
-        // When the mechanism has no grounded revolute joints at all, surface
-        // the requirement inline so the user doesn't have to hover the
-        // disabled button to discover it.
-        if grounded_revolute_ids.is_empty() {
-            ui.add_space(2.0);
-            ui.small(
-                egui::RichText::new(
-                    "Needs a ground pivot \u{2014} use the + Ground tool, then right-click the new pivot to ground this link."
-                )
-                .italics()
-                .color(egui::Color32::from_rgb(230, 180, 90)),
-            );
-        }
+        ui.add_space(2.0);
+        ui.small(
+            egui::RichText::new(
+                "Needs a ground pivot \u{2014} use the + Ground tool, then right-click the new pivot to ground this link."
+            )
+            .italics()
+            .color(egui::Color32::from_rgb(230, 180, 90)),
+        );
+    } else {
+        // Grounded revolutes exist elsewhere — offer a submenu to pick
+        // any of them as the driver. Previously this showed a disabled
+        // Set as Driver button with only a hover tip, which users
+        // reported as "grayed out, can't add driver".
+        ui.menu_button("Set Driver to \u{2026}", |ui| {
+            for gid in grounded_revolute_ids {
+                let is_current = current_driver_joint.as_deref() == Some(gid.as_str());
+                let label = if is_current {
+                    format!("{} (current)", gid)
+                } else {
+                    gid.clone()
+                };
+                if ui
+                    .add_enabled(!is_current, egui::Button::new(label))
+                    .on_hover_text("Make this grounded revolute the driven input")
+                    .clicked()
+                {
+                    state.pending_driver_reassignment = Some(gid.clone());
+                    ui.close();
+                }
+            }
+        })
+        .response
+        .on_hover_text(
+            "This joint isn't grounded, but other grounded revolutes exist. Pick one to drive.",
+        );
     }
 
     if ui.button("Delete Joint").on_hover_text("Remove this joint and disconnect the bodies").clicked() {
@@ -220,24 +242,49 @@ fn show_attachment_menu(
                 state.pending_driver_reassignment = Some(joint_id);
                 ui.close();
             }
-        } else {
+        } else if no_grounded_revolutes {
             ui.add_enabled(false, egui::Button::new("Set as Driver"))
                 .on_hover_text(
                     "This body has no grounded revolute joint. Use the + Ground tool to click a free endpoint of a link to ground it, then come back and right-click to set the driver."
                 );
-
-            // When the whole mechanism has no grounded revolutes, show the
-            // requirement inline rather than hiding it behind a hover.
-            if no_grounded_revolutes {
-                ui.add_space(2.0);
-                ui.small(
-                    egui::RichText::new(
-                        "Needs a ground pivot \u{2014} use the + Ground tool, then right-click the new pivot to ground this link."
-                    )
-                    .italics()
-                    .color(egui::Color32::from_rgb(230, 180, 90)),
-                );
-            }
+            ui.add_space(2.0);
+            ui.small(
+                egui::RichText::new(
+                    "Needs a ground pivot \u{2014} use the + Ground tool, then right-click the new pivot to ground this link."
+                )
+                .italics()
+                .color(egui::Color32::from_rgb(230, 180, 90)),
+            );
+        } else {
+            // Grounded revolutes exist elsewhere — offer a submenu to pick
+            // any of them, matching the joint-menu behavior.
+            let grounded_ids: Vec<String> = state
+                .mechanism
+                .as_ref()
+                .map(|m| m.grounded_revolute_joint_ids())
+                .unwrap_or_default();
+            ui.menu_button("Set Driver to \u{2026}", |ui| {
+                for gid in &grounded_ids {
+                    let is_current = current_driver_joint.as_deref() == Some(gid.as_str());
+                    let label = if is_current {
+                        format!("{} (current)", gid)
+                    } else {
+                        gid.clone()
+                    };
+                    if ui
+                        .add_enabled(!is_current, egui::Button::new(label))
+                        .on_hover_text("Make this grounded revolute the driven input")
+                        .clicked()
+                    {
+                        state.pending_driver_reassignment = Some(gid.clone());
+                        ui.close();
+                    }
+                }
+            })
+            .response
+            .on_hover_text(
+                "This point isn't on a grounded link, but other grounded revolutes exist. Pick one to drive.",
+            );
         }
     }
 }

@@ -482,6 +482,31 @@ impl eframe::App for LinkageApp {
                         .clamping(egui::SliderClamping::Always),
                 ).on_hover_text("Kinematic animation speed in degrees per second");
 
+                // Frame-time diagnostics for debugging slow-speed animation.
+                // Only rendered when the Debug Overlay is enabled (View menu).
+                // Shows the reported dt, derived FPS, and the per-frame angle
+                // step so the user can see what the animation pipeline is
+                // actually doing.
+                if self.state.show_debug_overlay {
+                    let dt = ctx.input(|i| i.stable_dt) as f64;
+                    let fps = if dt > 0.0 { 1.0 / dt } else { 0.0 };
+                    let step_deg = self.state.animation_speed_deg_per_sec
+                        * dt
+                        * self.state.animation_direction;
+                    ui.separator();
+                    ui.small(
+                        egui::RichText::new(format!(
+                            "dt={:.1}ms  fps={:.0}  step={:.3}\u{00B0}/frame",
+                            dt * 1000.0,
+                            fps,
+                            step_deg,
+                        ))
+                        .color(egui::Color32::from_rgb(150, 150, 170)),
+                    ).on_hover_text(
+                        "Animation pipeline diagnostics. dt is egui's stable_dt. step is per-frame driver-angle delta.",
+                    );
+                }
+
                 ui.separator();
 
                 // ── Sample mechanism selector (purple) ──────────────
