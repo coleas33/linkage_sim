@@ -205,6 +205,8 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 } else if state.highlight_joint.as_deref() == Some(joint_id.as_str()) {
                     state.highlight_joint = None;
                 }
+            } else {
+                draw_no_driver_picker(ui, state);
             }
             draw_driver_type_selector(ui, state);
             draw_motion_profile_selector(ui, state);
@@ -358,6 +360,45 @@ fn draw_simulation_controls(ui: &mut egui::Ui, state: &mut AppState) {
             }
         });
     }
+}
+
+/// Driver picker shown when the mechanism has no active driver.
+///
+/// Lists the grounded revolute joints and lets the user pick one to
+/// become the driven input. If no grounded revolute joint exists, shows
+/// an inline hint pointing at the + Ground tool (matching the canvas
+/// context-menu copy) so the user always has a visible path forward.
+fn draw_no_driver_picker(ui: &mut egui::Ui, state: &mut AppState) {
+    let Some(mech) = state.mechanism.as_ref() else { return };
+    let grounded = mech.grounded_revolute_joint_ids();
+
+    if grounded.is_empty() {
+        ui.small(
+            egui::RichText::new(
+                "No driver \u{2014} add a ground pivot with the + Ground tool, then pick one of its joints here.",
+            )
+            .italics()
+            .color(egui::Color32::from_rgb(230, 180, 90)),
+        );
+        return;
+    }
+
+    ui.horizontal(|ui| {
+        ui.label("No driver. Set:");
+        egui::ComboBox::from_id_salt("driver_picker")
+            .selected_text("(pick a joint)")
+            .show_ui(ui, |ui| {
+                for joint_id in &grounded {
+                    if ui.selectable_label(false, joint_id).clicked() {
+                        state.pending_driver_reassignment = Some(joint_id.clone());
+                    }
+                }
+            })
+            .response
+            .on_hover_text(
+                "Grounded revolute joints can be driven. Picking one sets it as the mechanism's input and rebuilds.",
+            );
+    });
 }
 
 /// Draw the load case selector: ComboBox for switching, +/- buttons, and

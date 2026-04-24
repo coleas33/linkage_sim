@@ -5,6 +5,39 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-24 — Link Editor delete button + Driver panel picker
+
+**What:**
+- `Delete` button in the Link Editor header row
+  (`src/gui/property_panel/mod.rs`). Shown next to the body-label edit
+  field for any non-ground body. Red text, hover text
+  "Delete this link and all joints connected to it". Wired through a
+  new `PendingPropertyEdit::DeleteBody` variant that calls
+  `state.remove_body` and clears `selected` + `link_editor_body`.
+- Driver section now shows a `ComboBox` picker when the mechanism has
+  no driver but at least one grounded revolute joint exists
+  (`src/gui/input_panel.rs` — new `draw_no_driver_picker`). Selecting
+  a joint writes to `pending_driver_reassignment`, which the frame
+  pipeline already consumes to call `reassign_driver`.
+- When NO grounded revolute joint exists, the Driver section shows the
+  same amber "Needs a ground pivot…" hint the right-click context
+  menu uses, so the discoverability path is consistent across
+  surfaces.
+
+**Why:** User reported "We have no way to delete links…also can't add
+driver even with ground points". Decoding their shared URL confirmed
+two grounded revolute joints (J5, J6) and an empty drivers map — the
+data was correct, but the only path to set a driver was the canvas
+right-click menu, which the user wasn't discovering. A dedicated
+picker in the Driver panel makes the action visible where the user
+expects it. Same reasoning for Delete: the canvas right-click menu
+had it, but the Link Editor (where users already look to edit a link)
+didn't.
+
+**Test results:** 572 lib tests pass unchanged.
+
+---
+
 ## 2026-04-23 — Driver omega floor + disabled + Body ribbon button
 
 **What:**

@@ -88,15 +88,32 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                     let q = &state.q;
                     let units = &state.display_units;
 
-                    // ── Label ────────────────────────────────────────────
+                    // ── Label + Delete ───────────────────────────────────
                     if body_id != GROUND_ID {
-                        let mut label = body.label.clone();
-                        if ui.text_edit_singleline(&mut label).changed() {
-                            pending = Some(PendingPropertyEdit::UpdateLabel {
-                                body_id: body_id.clone(),
-                                label,
-                            });
-                        }
+                        ui.horizontal(|ui| {
+                            let mut label = body.label.clone();
+                            if ui.text_edit_singleline(&mut label).changed() {
+                                pending = Some(PendingPropertyEdit::UpdateLabel {
+                                    body_id: body_id.clone(),
+                                    label,
+                                });
+                            }
+                            let delete_btn = egui::Button::new(
+                                egui::RichText::new("Delete")
+                                    .color(egui::Color32::from_rgb(255, 120, 120)),
+                            );
+                            if ui
+                                .add(delete_btn)
+                                .on_hover_text(
+                                    "Delete this link and all joints connected to it",
+                                )
+                                .clicked()
+                            {
+                                pending = Some(PendingPropertyEdit::DeleteBody {
+                                    body_id: body_id.clone(),
+                                });
+                            }
+                        });
                     }
 
                     if body_id != GROUND_ID {

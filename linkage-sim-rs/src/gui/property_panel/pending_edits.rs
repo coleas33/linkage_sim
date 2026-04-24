@@ -48,6 +48,8 @@ pub(super) enum PendingPropertyEdit {
     AddJointPoint { body_id: String },
     /// Enter draw-body-geometry mode: user drags on canvas to define geometry.
     EnterDrawGeometryMode { body_id: String },
+    /// Delete a body and all joints connected to it.
+    DeleteBody { body_id: String },
 }
 
 /// Draw the force elements collapsible section.
@@ -269,6 +271,15 @@ pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropert
                 );
                 state.active_tool = crate::gui::state::EditorTool::DrawBodyGeometry;
                 state.status_message = Some("Drag on canvas to draw body geometry".to_string());
+            }
+            PendingPropertyEdit::DeleteBody { body_id } => {
+                // Mirror the canvas context menu: clear selection + Link
+                // Editor focus so the UI doesn't point at a missing body.
+                state.remove_body(&body_id);
+                state.selected = None;
+                if state.link_editor_body.as_deref() == Some(body_id.as_str()) {
+                    state.link_editor_body = None;
+                }
             }
         }
     }
