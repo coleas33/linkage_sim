@@ -114,6 +114,17 @@ pub struct AppState {
     /// Current actuator stroke in meters (for linear driver mode).
     /// When a linear driver is active, this tracks the slider value instead of `driver_angle`.
     pub driver_stroke: f64,
+    /// Display-angle offset α (rad) for the driver body. Applied to all
+    /// user-visible crank-angle surfaces (slider, sweep range DragValues,
+    /// canvas indicator arc, plot x-axes) so that `visible = θ_driver +
+    /// α` matches the orientation of the driver body's primary axis on
+    /// canvas. `θ_driver` is the solver's body-frame rotation, which
+    /// equals the visible bar angle only when the body's local A→B
+    /// vector happens to lie along +X — true for sample-built bodies,
+    /// generally false for DXF imports. Recomputed on every rebuild.
+    /// Zero when there is no driver, no grounded pivot on the driver,
+    /// or the driver body has fewer than two attachment points.
+    pub driver_display_offset: f64,
     // ── Animation ────────────────────────────────────────────────────────
     pub playing: bool,
     pub animation_speed_deg_per_sec: f64,
@@ -457,6 +468,7 @@ impl Default for AppState {
             driver_omega: 2.0 * PI,
             driver_theta_0: 0.0,
             driver_stroke: 0.0,
+            driver_display_offset: 0.0,
             playing: false,
             animation_speed_deg_per_sec: 90.0,
             loop_mode: true,
@@ -756,11 +768,66 @@ impl AppState {
         self.update_grashof();
         self.compute_sweep();
         self.compute_validation();
+        self.recompute_driver_display_offset();
         self.pending_fit_to_view = true;
     }
 
     /// Solve the position problem for the given driver angle (radians).
     ///
+    /// Recompute `driver_display_offset` from the current mechanism.
+    ///
+    /// Finds the driver body, locates its grounded revolute pivot, and
+    /// returns the angle (in the body's local frame) from that grounded
+    /// pivot to the driver's farthest other attachment point. This is
+    /// the angle by which the visible bar direction leads the body's
+    /// internal θ. See `driver_display_offset` field docs.
+    pub fn recompute_driver_display_offset(&mut self) {
+        self.driver_display_offset = self.compute_driver_display_offset();
+    }
+
+    fn compute_driver_display_offset(&self) -> f64 {
+        use crate::core::constraint::{Constraint, JointConstraint};
+        use crate::core::state::GROUND_ID;
+
+        let Some(mech) = self.mechanism.as_ref() else { return 0.0 };
+        let Some((_partner, driver)) = mech.driver_body_pair() else { return 0.0 };
+        let Some(body) = mech.bodies().get(driver) else { return 0.0 };
+
+        // Find the grounded revolute joint on the driver body and
+        // record the driver's local attachment point for that joint.
+        let mut anchor_local: Option<nalgebra::Vector2<f64>> = None;
+        for joint in mech.joints() {
+            if let JointConstraint::Revolute(rev) = joint {
+                if rev.body_i_id() == driver && rev.body_j_id() == GROUND_ID {
+                    anchor_local = Some(*rev.point_i_local());
+                    break;
+                }
+                if rev.body_j_id() == driver && rev.body_i_id() == GROUND_ID {
+                    anchor_local = Some(*rev.point_j_local());
+                    break;
+                }
+            }
+        }
+        let Some(anchor) = anchor_local else { return 0.0 };
+
+        // Farthest other attachment point in the driver's local frame.
+        let mut best: Option<(f64, nalgebra::Vector2<f64>)> = None;
+        for pt in body.attachment_points.values() {
+            let dx = pt.x - anchor.x;
+            let dy = pt.y - anchor.y;
+            let d2 = dx * dx + dy * dy;
+            if d2 < 1e-12 {
+                continue;
+            }
+            if best.as_ref().map_or(true, |(prev_d2, _)| d2 > *prev_d2) {
+                best = Some((d2, *pt));
+            }
+        }
+        let Some((_, far)) = best else { return 0.0 };
+
+        (far.y - anchor.y).atan2(far.x - anchor.x)
+    }
+
     /// Uses `last_good_q` as the initial guess for Newton-Raphson.
     /// On success, updates both `q` and `last_good_q`.
     /// On failure, keeps `last_good_q` unchanged and reports the failure in

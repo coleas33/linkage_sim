@@ -5,6 +5,44 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-24 — Crank angle display matches visible bar orientation
+
+**What:**
+- New `AppState::driver_display_offset` (rad), recomputed on every
+  `rebuild` / `load_sample` / `load_from_json_str` / `reassign_driver`.
+  It equals the angle from the driver body's grounded-pivot local
+  coord to its farthest other attachment point, i.e. the local A→B
+  direction. Zero for sample-built mechanisms (A at (0,0), B at
+  (len, 0)); nonzero for DXF imports whose sketch wasn't drawn along
+  +X. (`src/gui/state/mod.rs` + rebuild / load / driver paths.)
+- Every user-visible angle surface now shows `body_frame_θ + offset`:
+  Crank Angle slider (`src/gui/input_panel.rs`), sweep-range min/max
+  DragValues (same file), plot X-axes + current-angle cursor +
+  click-to-scrub (`src/gui/plot_panel/mod.rs`), and the canvas
+  crank-angle indicator arc (`src/gui/canvas/rendering/mod.rs`). The
+  solver, sweep data, JSON schema, and share URLs keep body-frame θ
+  as the source of truth — the offset is applied only at the display
+  boundary.
+- Plot dispatcher clones `SweepData` per frame with shifted
+  `angles_deg` and `toggle_angles`; every individual plot function
+  remained unchanged. The clone is cheap relative to the redraw and
+  keeps the 20+ plot call sites consistent without modification.
+
+**Why:** User reported the Crank Angle slider showed near 0° while the
+visible link sat ~15° above horizontal (and 53° looked almost vertical
+instead of at 90°). Diagnosis: the slider showed the driver body's
+internal θ. For sample-built bodies that equals the visible bar
+direction (because local A→B lies on +X), but DXF imports preserve
+world coords as local coords so the A→B direction has an arbitrary
+offset α. Display now reads `θ + α` so the slider tracks the
+orientation the user actually sees on canvas.
+
+**Test results:** 575 lib tests pass (+2 new:
+`driver_display_offset_zero_for_sample_builders`,
+`driver_display_offset_picks_up_rotated_crank`).
+
+---
+
 ## 2026-04-24 — Force zone application point: visualize + draggable override
 
 **What:**

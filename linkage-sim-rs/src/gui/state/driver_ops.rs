@@ -44,6 +44,7 @@ impl AppState {
                     self.pending_driver_reassignment = None;
                     self.mark_sweep_dirty();
                     self.compute_validation();
+                    self.recompute_driver_display_offset();
                     return;
                 }
                 Err(msg) => {

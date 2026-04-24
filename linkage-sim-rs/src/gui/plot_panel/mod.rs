@@ -221,7 +221,17 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
         }
     });
 
-    let current_driver_display = state.display_units.angle(state.driver_angle);
+    // Display-angle offset: make the plot X-axis (and the current-angle
+    // cursor) match the Crank Angle slider, which shows the visible bar
+    // direction. Internal sweep_data.angles_deg stays body-frame for
+    // consumers that use it as an index (e.g. force_render, raster).
+    let offset_rad = state.driver_display_offset;
+    let offset_deg = offset_rad.to_degrees();
+    let display_sweep = sweep_in_display_frame(sweep, offset_deg);
+    let sweep = &display_sweep;
+
+    let current_driver_display =
+        state.display_units.angle(state.driver_angle + offset_rad);
     let nm = state.nathan_mode;
 
     // Each driver-angle-on-X-axis plot returns Some(x) when clicked, where x
@@ -287,11 +297,32 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
         }
     };
 
-    // Scrub the mechanism to the clicked angle.
+    // Scrub the mechanism to the clicked angle. The click is in display
+    // frame, so subtract the driver-display offset before solving.
     if let Some(display_angle) = clicked_display_angle {
-        let angle_rad = display_to_radians(display_angle, &state.display_units);
+        let angle_rad = display_to_radians(display_angle, &state.display_units)
+            - offset_rad;
         state.solve_at_angle(angle_rad);
     }
+}
+
+/// Return a copy of `SweepData` whose `angles_deg` and `toggle_angles`
+/// are in display frame (body-frame θ + `offset_deg`). All other
+/// channels are carried through unchanged. The full clone is cheap
+/// enough for a per-frame panel redraw and keeps plot-rendering code
+/// path simple.
+fn sweep_in_display_frame(sweep: &SweepData, offset_deg: f64) -> SweepData {
+    if offset_deg.abs() < 1e-12 {
+        return sweep.clone();
+    }
+    let mut shifted = sweep.clone();
+    for a in &mut shifted.angles_deg {
+        *a += offset_deg;
+    }
+    for a in &mut shifted.toggle_angles {
+        *a += offset_deg;
+    }
+    shifted
 }
 
 /// Convert a display-unit angle back to radians.

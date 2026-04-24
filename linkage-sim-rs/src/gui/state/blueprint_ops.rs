@@ -319,6 +319,7 @@ impl AppState {
         self.compute_forces(t);
         self.update_grashof();
         self.compute_validation();
+        self.recompute_driver_display_offset();
         self.mark_sweep_dirty();
     }
 

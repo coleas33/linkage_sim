@@ -388,6 +388,7 @@ impl AppState {
         self.update_grashof();
         self.compute_sweep();
         self.compute_validation();
+        self.recompute_driver_display_offset();
         self.dirty = false;
         self.autosave_timer = 0.0;
 

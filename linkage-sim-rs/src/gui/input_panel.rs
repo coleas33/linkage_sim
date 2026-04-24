@@ -47,27 +47,30 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 }
 
                 // ── Revolute driver: angle slider in degrees ────────
-                // During a DragValue edit the user can transiently push
-                // `max < min`; `f64::clamp` panics if min > max, so we
-                // sort here for the slider's display range only. The
-                // sweep computation reads the values directly and the
-                // DragValue path enforces `max >= min` on commit.
+                // Display uses `θ_driver + driver_display_offset` so the
+                // slider value matches the visible bar direction on
+                // canvas. Sample-built bodies have offset = 0 (their
+                // local A→B lies on +X), DXF imports generally don't.
+                // Input inverts the offset before storing. Sweep range
+                // DragValues (below) use the same transform.
+                let offset_deg = state.driver_display_offset.to_degrees();
                 let (slider_min, slider_max) = if state.sweep_range_enabled {
-                    let a = state.sweep_angle_min_deg;
-                    let b = state.sweep_angle_max_deg;
+                    let a = state.sweep_angle_min_deg + offset_deg;
+                    let b = state.sweep_angle_max_deg + offset_deg;
                     if a <= b { (a, b) } else { (b, a) }
                 } else {
-                    (0.0, 360.0)
+                    (0.0 + offset_deg, 360.0 + offset_deg)
                 };
 
-                let mut angle_deg = state.driver_angle.to_degrees();
-                angle_deg = angle_deg.clamp(slider_min, slider_max);
-                let prev_angle = angle_deg;
+                let mut display_angle_deg =
+                    state.driver_angle.to_degrees() + offset_deg;
+                display_angle_deg = display_angle_deg.clamp(slider_min, slider_max);
+                let prev_display_angle = display_angle_deg;
                 let response = ui.add(
-                    egui::Slider::new(&mut angle_deg, slider_min..=slider_max)
+                    egui::Slider::new(&mut display_angle_deg, slider_min..=slider_max)
                         .suffix("\u{00B0}")
                         .step_by(0.5),
-                ).on_hover_text("Drag to set the driver crank angle in degrees");
+                ).on_hover_text("Drag to set the driver crank angle in degrees. Matches the visible bar orientation on canvas.");
                 if response.dragged() {
                     if state.playing {
                         state.playing = false;
@@ -77,8 +80,10 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
                         sim.playing = false;
                     }
                 }
-                if (angle_deg - prev_angle).abs() > 1e-6 {
-                    state.solve_at_angle(angle_deg.to_radians());
+                if (display_angle_deg - prev_display_angle).abs() > 1e-6 {
+                    let body_angle_rad =
+                        display_angle_deg.to_radians() - state.driver_display_offset;
+                    state.solve_at_angle(body_angle_rad);
                 }
             }
 
@@ -113,18 +118,29 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
             }
             if state.sweep_range_enabled {
                 ui.horizontal(|ui| {
+                    // The stored min/max are in body-frame θ so plot X
+                    // axes and sweep data stay consistent with the
+                    // driver constraint. The UI here shows and accepts
+                    // DISPLAY angles (body + offset) so the user sees
+                    // the same numbers as the Crank Angle slider.
+                    let offset_deg = state.driver_display_offset.to_degrees();
+
+                    let mut min_display = state.sweep_angle_min_deg + offset_deg;
+                    let mut max_display = state.sweep_angle_max_deg + offset_deg;
+                    let display_range = (0.0 + offset_deg)..=(720.0 + offset_deg);
+
                     ui.label("Min\u{00B0}:");
-                    let min_resp = ui.add(egui::DragValue::new(&mut state.sweep_angle_min_deg)
+                    let min_resp = ui.add(egui::DragValue::new(&mut min_display)
                         .speed(0.5)
-                        .range(0.0..=720.0)
+                        .range(display_range.clone())
                         .suffix("\u{00B0}"))
-                        .on_hover_text("Start angle of the sweep range in degrees. All plots and analysis cover angles from this value to the max. Values above 360\u{b0} are allowed so you can sweep across the 0/360 seam (e.g. 200\u{b0} to 365\u{b0}).");
+                        .on_hover_text("Start angle of the sweep range in display degrees (matches the Crank Angle slider). All plots and analysis cover angles from this value to the max. Values above 360\u{b0} are allowed so you can sweep across the 0/360 seam.");
                     ui.label("Max\u{00B0}:");
-                    let max_resp = ui.add(egui::DragValue::new(&mut state.sweep_angle_max_deg)
+                    let max_resp = ui.add(egui::DragValue::new(&mut max_display)
                         .speed(0.5)
-                        .range(0.0..=720.0)
+                        .range(display_range)
                         .suffix("\u{00B0}"))
-                        .on_hover_text("End angle of the sweep range in degrees. Must be \u{2265} min. Set max above 360\u{b0} to sweep across the 0/360 seam (e.g. max = 365\u{b0} means sweep past 360\u{b0} into the next cycle).");
+                        .on_hover_text("End angle of the sweep range in display degrees. Must be \u{2265} min. Set above 360\u{b0} to sweep across the 0/360 seam.");
 
                     // Only recompute the sweep when the user FINISHES editing
                     // (drag ended, field lost focus, or Enter pressed). This
@@ -134,10 +150,11 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
                         || min_resp.lost_focus();
                     let max_done = max_resp.drag_stopped()
                         || max_resp.lost_focus();
+                    if min_resp.changed() || max_resp.changed() {
+                        state.sweep_angle_min_deg = min_display - offset_deg;
+                        state.sweep_angle_max_deg = max_display - offset_deg;
+                    }
                     if min_done || max_done {
-                        // Enforce max >= min on commit so downstream code can
-                        // assume a well-ordered range. If inverted, snap max
-                        // up to min (preserves the user's min intent).
                         if state.sweep_angle_max_deg < state.sweep_angle_min_deg {
                             state.sweep_angle_max_deg = state.sweep_angle_min_deg;
                         }

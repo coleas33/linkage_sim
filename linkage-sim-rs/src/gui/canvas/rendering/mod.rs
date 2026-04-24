@@ -875,7 +875,11 @@ fn draw_crank_angle_indicator(painter: &egui::Painter, state: &AppState) {
     let pivot_world = mech_state.body_point_global(&partner_body, &partner_local, &state.q);
     let partner_theta = mech_state.get_angle(&partner_body, &state.q);
     let driver_theta = mech_state.get_angle(driver, &state.q);
-    let crank_angle = driver_theta - partner_theta;
+    // The arc sweeps in display frame so its endpoint points along the
+    // visible bar direction, not the body's internal +X. See
+    // `AppState::driver_display_offset` docs. Partner side stays at the
+    // body-frame reference because we don't compute an offset for it.
+    let crank_angle = (driver_theta + state.driver_display_offset) - partner_theta;
 
     let pivot_screen = state.view.world_to_screen(pivot_world.x, pivot_world.y);
     let center = Pos2::new(pivot_screen[0], pivot_screen[1]);

@@ -55,6 +55,48 @@
     }
 
     #[test]
+    fn driver_display_offset_zero_for_sample_builders() {
+        // Sample-built bodies place attachment points at local (0,0) and
+        // (len, 0), so the A→B direction lies on +X and the offset is 0.
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        assert!(
+            state.driver_display_offset.abs() < 1e-9,
+            "sample FourBar should have zero display offset, got {}",
+            state.driver_display_offset
+        );
+    }
+
+    #[test]
+    fn driver_display_offset_picks_up_rotated_crank() {
+        // Move the crank's far attachment point so the A→B vector sits
+        // at a known angle (+30°) in local coords. The display offset
+        // should track to match. This simulates what a DXF-imported
+        // crank looks like when the sketch was drawn at an angle.
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        // FourBar's crank has attachment points A (grounded) and B.
+        // Place B at (len * cos(30°), len * sin(30°)) keeping the
+        // length at 2.0 (the sample default).
+        let new_bx = 2.0_f64 * 30f64.to_radians().cos();
+        let new_by = 2.0_f64 * 30f64.to_radians().sin();
+        if let Some(bp) = state.blueprint.as_mut() {
+            if let Some(crank) = bp.bodies.get_mut("crank") {
+                crank.attachment_points.insert(
+                    "B".to_string(),
+                    [new_bx, new_by],
+                );
+            }
+        }
+        state.rebuild();
+        assert!(
+            (state.driver_display_offset - 30f64.to_radians()).abs() < 1e-6,
+            "offset should be ~30° for a crank rotated 30° in local frame, got {:.6} rad",
+            state.driver_display_offset
+        );
+    }
+
+    #[test]
     fn step_animation_advances_at_slow_speed() {
         // At 0.5 deg/s (the slider's new floor), 600 frames at 1/60 s should
         // advance the crank by about 5 deg. Regression test for the user
