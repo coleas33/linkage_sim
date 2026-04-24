@@ -1171,9 +1171,16 @@ impl AppState {
         let step_deg = self.animation_speed_deg_per_sec * dt * self.animation_direction;
         let mut new_angle_deg = self.driver_angle.to_degrees() + step_deg;
 
-        // Determine effective animation bounds.
+        // Determine effective animation bounds in body-frame θ. The
+        // stored sweep_angle_min/max are DISPLAY frame, so subtract
+        // the driver display offset before comparing to the body-frame
+        // driver_angle. The no-range case stays body-frame [0, 360).
         let (anim_min, anim_max) = if self.sweep_range_enabled {
-            (self.sweep_angle_min_deg, self.sweep_angle_max_deg)
+            let offset_deg = self.driver_display_offset.to_degrees();
+            (
+                self.sweep_angle_min_deg - offset_deg,
+                self.sweep_angle_max_deg - offset_deg,
+            )
         } else {
             (0.0, 360.0)
         };

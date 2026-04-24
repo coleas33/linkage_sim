@@ -5,6 +5,39 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-24 — Sweep range stored in display frame (follow-up)
+
+**What:** The initial crank-angle-offset patch shifted the Crank Angle
+slider to display frame but kept `sweep_angle_min_deg` /
+`sweep_angle_max_deg` as body-frame values, then added/subtracted the
+offset at the UI edges. That produced a jarring slider range (e.g.
+`41°..61°` for a DXF-imported crank with α=41°) and sweep-range
+DragValues that couldn't accept `0` as min.
+
+Semantic cutover: `sweep_angle_min_deg` and `sweep_angle_max_deg` are
+now stored in DISPLAY frame directly.
+
+- Slider range: clean `[0, 360]` when sweep range is off; exactly the
+  user's `[min, max]` when on. No more offset-shifted ranges.
+- Sweep-range DragValues accept `0..=720` display degrees, matching
+  the Crank Angle slider they sit below.
+- `compute_sweep` subtracts the offset to produce body-frame
+  `(min, max)` for `compute_sweep_data`.
+- `step_animation_revolute` subtracts the offset for the ping-pong
+  bounds when sweep range is on.
+- `has_toggles_in_range` (health panel) subtracts the offset for the
+  body-frame comparison.
+
+**Schema note:** `_sweep_angle_min` / `_sweep_angle_max` in share URLs
+are now display-frame (matches the `_animation_speed_deg_per_sec`
+semantic). Old URLs load with body-frame values that get interpreted
+as display — the sweep range visually shifts by α on first load. This
+is a one-time migration side-effect; subsequent saves are clean.
+
+**Test results:** 575 lib tests pass unchanged.
+
+---
+
 ## 2026-04-24 — Crank angle display matches visible bar orientation
 
 **What:**

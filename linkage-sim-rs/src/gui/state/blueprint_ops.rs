@@ -1108,16 +1108,20 @@ impl AppState {
             self.last_good_q.clone()
         };
 
-        // Sanitize the sweep range: skip entirely if min == max (no-op
-        // range). `max >= min` is enforced by the edit commit path in
-        // input_panel.rs, so we don't handle the inverted case here.
+        // Sanitize the sweep range. The stored min/max are in display
+        // frame (match the Crank Angle slider); the sweep solver
+        // iterates body-frame θ, so subtract the driver display offset
+        // before passing the range through. Skip entirely if min == max
+        // (no-op range). `max >= min` is enforced by the edit commit
+        // path in input_panel.rs.
         let sweep_range = if self.sweep_range_enabled {
-            let min = self.sweep_angle_min_deg;
-            let max = self.sweep_angle_max_deg;
-            if (max - min).abs() < 1e-6 {
+            let min_display = self.sweep_angle_min_deg;
+            let max_display = self.sweep_angle_max_deg;
+            if (max_display - min_display).abs() < 1e-6 {
                 None
             } else {
-                Some((min, max))
+                let offset_deg = self.driver_display_offset.to_degrees();
+                Some((min_display - offset_deg, max_display - offset_deg))
             }
         } else {
             None

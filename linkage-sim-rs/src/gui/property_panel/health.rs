@@ -187,13 +187,18 @@ fn draw_toggle_indicator(
 }
 
 /// Check whether any toggle angles fall within the active sweep range.
+///
+/// `toggle_angles` are in body-frame (same as SweepData.angles_deg).
+/// The stored sweep_angle_min/max are display-frame — convert them to
+/// body frame here so the comparison is consistent.
 fn has_toggles_in_range(state: &AppState, toggle_angles: &[f64]) -> bool {
     if !state.sweep_range_enabled {
         // Full 360 -- all toggles are in range
         return !toggle_angles.is_empty();
     }
-    let min_deg = state.sweep_angle_min_deg;
-    let max_deg = state.sweep_angle_max_deg;
+    let offset_deg = state.driver_display_offset.to_degrees();
+    let min_deg = state.sweep_angle_min_deg - offset_deg;
+    let max_deg = state.sweep_angle_max_deg - offset_deg;
     toggle_angles.iter().any(|&a| a >= min_deg && a <= max_deg)
 }
 
