@@ -1104,10 +1104,13 @@ impl AppState {
             self.sweep_data = None;
             return;
         }
-        // Guard: need at least one driver and one moving body.
+        // Guard: need at least one driver (revolute or linear) and one
+        // moving body. Linear-driver-only mechanisms wouldn't pass the
+        // old `n_drivers() == 0` check because that counts revolutes.
         {
             let mech = self.mechanism.as_ref().unwrap();
-            if mech.n_drivers() == 0 || mech.body_order().is_empty() {
+            let total_drivers = mech.n_drivers() + mech.n_linear_drivers();
+            if total_drivers == 0 || mech.body_order().is_empty() {
                 self.sweep_data = None;
                 return;
             }
@@ -1125,20 +1128,22 @@ impl AppState {
             self.last_good_q.clone()
         };
 
-        // Sanitize the sweep range. The stored min/max are in display
-        // frame (match the Crank Angle slider); the sweep solver
-        // iterates body-frame θ, so subtract the driver display offset
-        // before passing the range through. Skip entirely if min == max
-        // (no-op range). `max >= min` is enforced by the edit commit
-        // path in input_panel.rs.
+        // Sanitize the sweep range. Semantics depend on driver type:
+        //   Revolute: stored min/max are display-frame degrees; subtract
+        //             the driver display offset to get body-frame θ
+        //             (deg), which compute_sweep_data iterates.
+        //   Linear:   stored min/max are mm (R5's stroke UI repurposes
+        //             the same field); convert to m for the solver.
         let sweep_range = if self.sweep_range_enabled {
-            let min_display = self.sweep_angle_min_deg;
-            let max_display = self.sweep_angle_max_deg;
-            if (max_display - min_display).abs() < 1e-6 {
+            let min_raw = self.sweep_angle_min_deg;
+            let max_raw = self.sweep_angle_max_deg;
+            if (max_raw - min_raw).abs() < 1e-6 {
                 None
+            } else if self.driver_kind == DriverKind::Linear {
+                Some((min_raw * 1e-3, max_raw * 1e-3))
             } else {
                 let offset_deg = self.driver_display_offset.to_degrees();
-                Some((min_display - offset_deg, max_display - offset_deg))
+                Some((min_raw - offset_deg, max_raw - offset_deg))
             }
         } else {
             None

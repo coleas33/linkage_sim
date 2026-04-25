@@ -31,20 +31,31 @@ use super::state::MotionProfile;
 
 // ── Sweep data ───────────────────────────────────────────────────────────────
 
-/// Sweep mode. Currently only angle-based sweeps are supported (all mechanisms
-/// use revolute drivers). The enum is retained for API compatibility and future
-/// use.
+/// Sweep mode — selects how `compute_sweep_data` parameterises the
+/// sweep and how plots interpret `SweepData.angles_deg`.
+///
+/// In Angle mode `angles_deg` carries degrees and the X-axis label
+/// reads "Driver Angle"; in Stroke mode `angles_deg` carries metres
+/// (despite the field name) and the X-axis label reads "Actuator
+/// Stroke (mm)" — plot consumers branch on `is_stroke()` to format
+/// the values correctly. The field name predates the multi-mode
+/// design and is kept to avoid touching ~30 read sites; treat
+/// `angles_deg` as "the X-axis values for this sweep" rather than
+/// "degrees".
 #[derive(Debug, Clone)]
 pub enum SweepMode {
-    /// Revolute driver: x-axis is angle in degrees (0-360).
+    /// Revolute driver: X-axis is angle (degrees, 0-360 default).
     Angle,
+    /// Linear driver: X-axis is actuator stroke (metres in
+    /// `angles_deg`, displayed in mm by plot consumers via the
+    /// is_stroke branch).
+    Stroke,
 }
 
 impl SweepMode {
-    /// Returns true if this is a stroke-based sweep (linear driver).
-    /// Always false now that all mechanisms use revolute drivers.
+    /// Returns true for stroke-based (linear driver) sweeps.
     pub fn is_stroke(&self) -> bool {
-        false
+        matches!(self, SweepMode::Stroke)
     }
 }
 
@@ -152,16 +163,35 @@ pub(crate) fn compute_sweep_data(
     gravity_magnitude: f64,
     sweep_range: Option<(f64, f64)>,
 ) -> (SweepData, DVector<f64>) {
-    // When a custom range is active the sweep runs literally from min to
-    // max in 1-degree steps (e.g. 200..=365 = 166 samples with display
-    // angles 200, 201, ..., 365). When no range is active the sweep
-    // covers the full cycle 0..=360 (361 samples). Angles in radians are
-    // passed straight to `solve_position`; the solver doesn't require
-    // modular arithmetic, so "angle 365" yields the same physical q as
-    // "angle 5" but preserves a contiguous X-axis on plots.
-    let (start_angle_deg, end_angle_deg) = sweep_range.unwrap_or((0.0, 360.0));
-    let num_steps = ((end_angle_deg - start_angle_deg).round() as i32).max(0);
-    let sweep_mode = SweepMode::Angle;
+    // Detect whether this sweep should iterate angle (revolute driver)
+    // or stroke (linear driver). When linear drivers are present the
+    // X-axis is stroke in metres; sweep_range is interpreted as
+    // (start_m, end_m) and step granularity is 1 mm (matches the user's
+    // mm-frame Stroke slider). When no linear driver is present the
+    // X-axis is angle in degrees as before. The default range when
+    // sweep_range is None depends on mode: 0..=360° for angle, or the
+    // length_0 ± 100 mm window for stroke.
+    let is_stroke = mech.n_linear_drivers() > 0;
+    let sweep_mode = if is_stroke {
+        SweepMode::Stroke
+    } else {
+        SweepMode::Angle
+    };
+    let (start_x, end_x) = sweep_range.unwrap_or_else(|| {
+        if is_stroke {
+            (theta_0 - 0.1, theta_0 + 0.1) // ±100 mm around length_0
+        } else {
+            (0.0, 360.0)
+        }
+    });
+    let step_size = if is_stroke { 0.001 } else { 1.0 }; // 1 mm or 1 deg
+    let num_steps = (((end_x - start_x) / step_size).round() as i32).max(0);
+
+    // Aliases used below — the iteration variable carries degrees in
+    // angle mode and metres in stroke mode. SweepData.angles_deg stores
+    // them as-is and plot consumers branch on sweep_mode.is_stroke().
+    let start_angle_deg = start_x;
+    let _end_angle_deg = end_x;
 
     let capacity = (num_steps + 1) as usize;
 
@@ -309,8 +339,21 @@ pub(crate) fn compute_sweep_data(
     let mut q_at_zero = q_start.clone();
 
     for i in 0..=num_steps {
-        let angle_deg = start_angle_deg + i as f64;
-        let t = (angle_deg.to_radians() - theta_0) / omega;
+        // X is degrees (angle mode) or metres (stroke mode); see comment
+        // at the top of the function.
+        let x_value = start_angle_deg + (i as f64) * step_size;
+        let t = if is_stroke {
+            // f(t) = length_0 + velocity * t  =>  t = (x - length_0) / velocity
+            // (omega = velocity, theta_0 = length_0 in linear mode).
+            if omega.abs() > f64::EPSILON {
+                (x_value - theta_0) / omega
+            } else {
+                0.0
+            }
+        } else {
+            (x_value.to_radians() - theta_0) / omega
+        };
+        let angle_deg = x_value;
 
         match solve_position(mech, &q, t, 1e-10, 50) {
             Ok(result) if result.converged => {
@@ -901,6 +944,54 @@ mod tests {
         assert_eq!(data.angles_deg.len(), 361, "Full 0-360 sweep");
         assert!((data.angles_deg[0] - 0.0).abs() < 1e-10);
         assert!((data.angles_deg[360] - 360.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn sweep_stroke_mode_for_linear_driver() {
+        // A mechanism with a linear driver should sweep in stroke mode:
+        // SweepMode::Stroke, X-axis values in metres, default range
+        // length_0 ± 100mm in 1mm steps (201 samples).
+        let length_0 = 0.5;
+        let velocity = 0.01; // 10 mm/s
+        let (mech, q0) = build_linear_driver_mech(velocity, length_0);
+
+        let (data, _) = compute_sweep_data(&mech, &q0, velocity, length_0, 0.0, None);
+
+        assert!(
+            matches!(data.sweep_mode, SweepMode::Stroke),
+            "Expected Stroke mode for linear driver"
+        );
+        assert_eq!(
+            data.angles_deg.len(),
+            201,
+            "Default stroke sweep covers ±100 mm in 1mm steps (201 samples)"
+        );
+        // Values should be in metres, centred on length_0.
+        assert!((data.angles_deg[0] - (length_0 - 0.1)).abs() < 1e-9);
+        assert!((data.angles_deg[100] - length_0).abs() < 1e-9);
+        assert!((data.angles_deg[200] - (length_0 + 0.1)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn sweep_stroke_mode_with_explicit_range() {
+        // Caller-supplied range (in metres) should be honoured directly.
+        let length_0 = 0.5;
+        let velocity = 0.005;
+        let (mech, q0) = build_linear_driver_mech(velocity, length_0);
+
+        let (data, _) = compute_sweep_data(
+            &mech,
+            &q0,
+            velocity,
+            length_0,
+            0.0,
+            Some((length_0 - 0.05, length_0 + 0.05)), // ±50 mm
+        );
+
+        assert!(matches!(data.sweep_mode, SweepMode::Stroke));
+        assert_eq!(data.angles_deg.len(), 101, "±50 mm in 1mm steps = 101 samples");
+        assert!((data.angles_deg[0] - 0.45).abs() < 1e-9);
+        assert!((data.angles_deg[100] - 0.55).abs() < 1e-9);
     }
 
 

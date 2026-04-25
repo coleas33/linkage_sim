@@ -221,17 +221,27 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
         }
     });
 
-    // Display-angle offset: make the plot X-axis (and the current-angle
-    // cursor) match the Crank Angle slider, which shows the visible bar
-    // direction. Internal sweep_data.angles_deg stays body-frame for
-    // consumers that use it as an index (e.g. force_render, raster).
+    // X-axis transform: in Angle mode, shift sweep angles by the
+    // driver_display_offset so the plot X-axis matches the visible bar
+    // direction (the Crank Angle slider). In Stroke mode, the X-axis
+    // already tracks the actuator stroke (m, plotted as mm) and the
+    // offset is zero by construction (R6).
     let offset_rad = state.driver_display_offset;
     let offset_deg = offset_rad.to_degrees();
     let display_sweep = sweep_in_display_frame(sweep, offset_deg);
     let sweep = &display_sweep;
 
-    let current_driver_display =
-        state.display_units.angle(state.driver_angle + offset_rad);
+    // Current-position cursor on plot X-axis. For linear drivers the
+    // current X is the actuator stroke (m); plots multiply by 1000 to
+    // display in mm. For revolute drivers it's the body-frame θ in
+    // display units, with the offset added.
+    let current_driver_display = if sweep.sweep_mode.is_stroke() {
+        // Stroke value in metres; the plot consumers handle the
+        // metres→mm conversion via their is_stroke branch.
+        state.driver_stroke
+    } else {
+        state.display_units.angle(state.driver_angle + offset_rad)
+    };
     let nm = state.nathan_mode;
 
     // Each driver-angle-on-X-axis plot returns Some(x) when clicked, where x
@@ -297,22 +307,29 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
         }
     };
 
-    // Scrub the mechanism to the clicked angle. The click is in display
-    // frame, so subtract the driver-display offset before solving.
-    if let Some(display_angle) = clicked_display_angle {
-        let angle_rad = display_to_radians(display_angle, &state.display_units)
-            - offset_rad;
-        state.solve_at_angle(angle_rad);
+    // Scrub the mechanism to the clicked X-coord. In Angle mode the
+    // click is a display-frame angle; subtract the offset to recover
+    // body-frame θ. In Stroke mode the click is in mm; convert to m
+    // and call solve_at_stroke.
+    if let Some(clicked_x) = clicked_display_angle {
+        if display_sweep.sweep_mode.is_stroke() {
+            state.solve_at_stroke(clicked_x * 1e-3);
+        } else {
+            let angle_rad = display_to_radians(clicked_x, &state.display_units)
+                - offset_rad;
+            state.solve_at_angle(angle_rad);
+        }
     }
 }
 
 /// Return a copy of `SweepData` whose `angles_deg` and `toggle_angles`
-/// are in display frame (body-frame θ + `offset_deg`). All other
-/// channels are carried through unchanged. The full clone is cheap
-/// enough for a per-frame panel redraw and keeps plot-rendering code
-/// path simple.
+/// are in display frame (body-frame θ + `offset_deg`). Only applied to
+/// angle-mode sweeps — stroke-mode `angles_deg` carry metres and the
+/// driver_display_offset (an angle quantity) is meaningless there. The
+/// full clone is cheap enough for a per-frame panel redraw and keeps
+/// plot-rendering code path simple.
 fn sweep_in_display_frame(sweep: &SweepData, offset_deg: f64) -> SweepData {
-    if offset_deg.abs() < 1e-12 {
+    if sweep.sweep_mode.is_stroke() || offset_deg.abs() < 1e-12 {
         return sweep.clone();
     }
     let mut shifted = sweep.clone();
