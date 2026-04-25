@@ -66,6 +66,25 @@ use std::collections::HashMap;
 use std::f64::consts::PI;
 
 use crate::analysis::grashof::GrashofResult;
+
+/// Discriminant for the active driver type. The field-level docs on
+/// `AppState::driver_kind` describe the per-variant meaning of the
+/// `driver_omega`/`driver_theta_0`/`driver_stroke` scalars.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DriverKind {
+    /// No driver — the mechanism is statically posed and animation is a no-op.
+    None,
+    /// Revolute driver: angle-controlled (slider is the crank angle).
+    Revolute,
+    /// Linear driver: stroke-controlled (slider is the actuator length).
+    Linear,
+}
+
+impl Default for DriverKind {
+    fn default() -> Self {
+        DriverKind::None
+    }
+}
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
 use crate::forces::elements::{ForceElement, GravityElement};
@@ -107,12 +126,29 @@ pub struct AppState {
     pub show_debug_overlay: bool,
     /// Which sample is currently loaded.
     pub current_sample: Option<SampleMechanism>,
-    /// Angular velocity of the driver (rad/s).
+    /// Driver kind discriminant. When `Revolute`, the `driver_angle`,
+    /// `driver_omega` (rad/s), and `driver_theta_0` (rad) fields below
+    /// are meaningful; `driver_stroke` is unused. When `Linear`,
+    /// `driver_omega` carries velocity (m/s), `driver_theta_0` carries
+    /// initial length (m), and `driver_stroke` (m) is the slider's
+    /// current value; `driver_angle` is unused. When `None`, none of
+    /// the four are meaningful. The `DriverKind` enum exists so
+    /// dispatch points (animation step, solve_at_*, plot labelling)
+    /// can match exhaustively instead of relying on
+    /// `mechanism.has_linear_driver()`-style probes after the fact.
+    /// Per-variant field semantics are deliberately overloaded for now
+    /// to keep this refactor focused on dispatch correctness — a later
+    /// pass can collapse the four scalars into an enum-with-payload if
+    /// the overloading proves too brittle.
+    pub driver_kind: DriverKind,
+    /// Angular velocity of the driver (rad/s) for revolute drivers,
+    /// or linear velocity (m/s) for linear drivers. See `driver_kind`.
     pub driver_omega: f64,
-    /// Initial driver angle (rad) at t=0.
+    /// Initial driver progress at t=0. Radians for revolute,
+    /// meters (length_0) for linear. See `driver_kind`.
     pub driver_theta_0: f64,
-    /// Current actuator stroke in meters (for linear driver mode).
-    /// When a linear driver is active, this tracks the slider value instead of `driver_angle`.
+    /// Current actuator stroke in meters (linear driver only). See
+    /// `driver_kind`.
     pub driver_stroke: f64,
     /// Display-angle offset α (rad) for the driver body. Applied to all
     /// user-visible crank-angle surfaces (slider, sweep range DragValues,
@@ -468,6 +504,7 @@ impl Default for AppState {
             driver_omega: 2.0 * PI,
             driver_theta_0: 0.0,
             driver_stroke: 0.0,
+            driver_kind: DriverKind::None,
             driver_display_offset: 0.0,
             playing: false,
             animation_speed_deg_per_sec: 90.0,
@@ -702,7 +739,12 @@ impl AppState {
         let (mech, q0) = build_sample(sample);
 
         // Extract driver parameters from the sample before storing mechanism.
-        // All samples use revolute drivers: omega=2π, theta_0=0.
+        // Samples currently all use revolute drivers (the
+        // ChebyshevLambdaActuator sample has a LinearDriver but
+        // load_sample is reset to revolute defaults; rebuild() will
+        // re-detect from the built mechanism's blueprint and update
+        // driver_kind appropriately).
+        self.driver_kind = DriverKind::Revolute;
         self.driver_omega = 2.0 * PI;
         self.driver_theta_0 = 0.0;
         self.driver_stroke = 0.0;
@@ -789,6 +831,14 @@ impl AppState {
         use crate::core::constraint::{Constraint, JointConstraint};
         use crate::core::state::GROUND_ID;
 
+        // The display offset only makes sense for revolute drivers —
+        // linear drivers parameterise in stroke (m), not angle (rad),
+        // so adding a radian offset to a stroke is meaningless. Return
+        // 0 for linear/none drivers; downstream consumers should also
+        // gate on `driver_kind` before applying the offset.
+        if self.driver_kind != DriverKind::Revolute {
+            return 0.0;
+        }
         let Some(mech) = self.mechanism.as_ref() else { return 0.0 };
         let Some((_partner, driver)) = mech.driver_body_pair() else { return 0.0 };
         let Some(body) = mech.bodies().get(driver) else { return 0.0 };
@@ -1163,7 +1213,76 @@ impl AppState {
             return false;
         }
 
-        self.step_animation_revolute(dt)
+        match self.driver_kind {
+            DriverKind::Revolute => self.step_animation_revolute(dt),
+            DriverKind::Linear => self.step_animation_linear(dt),
+            DriverKind::None => {
+                self.playing = false;
+                false
+            }
+        }
+    }
+
+    /// Advance animation for a linear driver (stroke in metres).
+    ///
+    /// Mirrors `step_animation_revolute` but operates on actuator
+    /// stroke. Without an explicit sweep range, the stroke pings
+    /// between the actuator's `stroke_min` / `stroke_max` (cached on
+    /// `self.sweep_stroke_min/max` after rebuild). With the sweep
+    /// range enabled, the stored `sweep_angle_min/max_deg` are
+    /// reinterpreted as **stroke values in mm** (display frame); we
+    /// convert to metres for the bounce check and ping-pong / stop
+    /// at the limits exactly like the revolute path.
+    fn step_animation_linear(&mut self, dt: f64) -> bool {
+        // Use the ANIMATION_SPEED slider (deg/s for revolute) as
+        // mm/s here so the same control feels consistent. 1 deg/s
+        // → 1 mm/s. The user can dial 0.5..720 like before.
+        let step_m = (self.animation_speed_deg_per_sec * 1e-3) * dt * self.animation_direction;
+        let mut new_stroke = self.driver_stroke + step_m;
+
+        let (anim_min, anim_max) = if self.sweep_range_enabled {
+            // Display values stored in mm; convert to m for stroke.
+            (
+                self.sweep_angle_min_deg * 1e-3,
+                self.sweep_angle_max_deg * 1e-3,
+            )
+        } else if self.sweep_stroke_max > self.sweep_stroke_min {
+            (self.sweep_stroke_min, self.sweep_stroke_max)
+        } else {
+            // No stroke limits known — give a reasonable ±10 cm window
+            // around the initial length so the actuator doesn't shoot
+            // off forever.
+            (self.driver_theta_0 - 0.1, self.driver_theta_0 + 0.1)
+        };
+
+        if new_stroke >= anim_max {
+            new_stroke = anim_max;
+            if self.loop_mode {
+                self.animation_direction *= -1.0;
+            } else {
+                self.playing = false;
+            }
+        } else if new_stroke <= anim_min {
+            new_stroke = anim_min;
+            if self.loop_mode {
+                self.animation_direction *= -1.0;
+            } else {
+                self.playing = false;
+            }
+        }
+
+        let prev_converged = self.solver_status.converged;
+        self.solve_at_stroke(new_stroke);
+
+        // Match the revolute path's ping-pong-on-failure behaviour.
+        if self.loop_mode && !self.solver_status.converged && prev_converged {
+            self.animation_direction *= -1.0;
+        }
+        if !self.loop_mode && !self.solver_status.converged {
+            self.playing = false;
+        }
+
+        self.playing
     }
 
     /// Advance animation for a revolute driver (angle in degrees).

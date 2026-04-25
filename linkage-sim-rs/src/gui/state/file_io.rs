@@ -333,6 +333,25 @@ impl AppState {
         self.driver_angle = target_angle;
         self.q_at_zero = self.q.clone();
         self.driver_joint_id = driver_joint_id;
+        // Driver kind detection: linear takes priority over revolute
+        // when both are present in the blueprint, matching rebuild().
+        self.driver_kind = if let Some(ref bp) = self.blueprint {
+            if !bp.linear_drivers.is_empty() {
+                let ld = &bp.linear_drivers[0];
+                self.driver_omega = ld.velocity;
+                self.driver_theta_0 = ld.length_0;
+                if !self.driver_stroke.is_finite() || self.driver_stroke == 0.0 {
+                    self.driver_stroke = ld.length_0;
+                }
+                super::DriverKind::Linear
+            } else if !bp.drivers.is_empty() {
+                super::DriverKind::Revolute
+            } else {
+                super::DriverKind::None
+            }
+        } else {
+            super::DriverKind::None
+        };
         // Initialize stroke range from the first LinearActuator force element
         // (if any) so the stroke sweep UI has sensible defaults.
         self.sweep_stroke_min = 0.0;

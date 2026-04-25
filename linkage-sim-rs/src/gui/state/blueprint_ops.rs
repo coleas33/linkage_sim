@@ -21,7 +21,7 @@ use crate::solver::statics::{
 
 use nalgebra::DVector;
 
-use super::{AppState, ForceResults, SolverStatus};
+use super::{AppState, DriverKind, ForceResults, SolverStatus};
 use crate::gui::sweep::{apply_motion_profile, compute_sweep_data, detect_fourbar_links};
 
 // ── Blueprint helper functions ────────────────────────────────────────────────
@@ -241,12 +241,25 @@ impl AppState {
             return;
         }
 
-        // Extract driver params from blueprint.
-        // omega = angular velocity (rad/s), theta_0 = initial angle (rad).
-        self.driver_omega = 2.0 * std::f64::consts::PI;
-        self.driver_theta_0 = 0.0;
-        // Check blueprint revolute drivers for actual values
-        if let Some(driver) = bp.drivers.values().next() {
+        // Extract driver params from blueprint. Linear drivers take
+        // priority over revolute when both are present (a mechanism
+        // shouldn't have both, but if a stale revolute driver lingers
+        // alongside a linear one, the linear semantic wins so the
+        // animation/sweep dispatch is correct).
+        if let Some(ld) = bp.linear_drivers.first() {
+            // Linear driver: omega field carries velocity (m/s),
+            // theta_0 carries length_0 (m), driver_stroke is the
+            // current slider value initialised to length_0.
+            self.driver_kind = DriverKind::Linear;
+            self.driver_omega = ld.velocity;
+            self.driver_theta_0 = ld.length_0;
+            if !self.driver_stroke.is_finite() {
+                self.driver_stroke = ld.length_0;
+            }
+        } else if let Some(driver) = bp.drivers.values().next() {
+            self.driver_kind = DriverKind::Revolute;
+            self.driver_omega = 2.0 * std::f64::consts::PI;
+            self.driver_theta_0 = 0.0;
             match driver {
                 DriverJson::ConstantSpeed { omega, theta_0, .. } => {
                     self.driver_omega = *omega;
@@ -258,6 +271,10 @@ impl AppState {
                     // mapping (omega=2*pi means 1 rev/s, theta_0=0).
                 }
             }
+        } else {
+            self.driver_kind = DriverKind::None;
+            self.driver_omega = 2.0 * std::f64::consts::PI;
+            self.driver_theta_0 = 0.0;
         }
         // Detect driven joint
         self.driver_joint_id = detect_driver_joint_id(&mech);

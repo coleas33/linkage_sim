@@ -1,7 +1,7 @@
 //! Angle slider, playback controls, load case selector, and solver status display.
 
 use eframe::egui;
-use super::state::{AppState, MotionProfile};
+use super::state::{AppState, DriverKind, MotionProfile};
 use crate::io::DriverJson;
 
 
@@ -13,6 +13,11 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
     ui.separator();
 
+    // Revolute / no-driver: show the Crank Angle slider + sweep range.
+    // Linear: show a parallel Actuator Stroke section instead.
+    if state.driver_kind == DriverKind::Linear {
+        draw_actuator_stroke_section(ui, state);
+    } else {
     // ── Crank Angle ────────────────────────────────────────────────
     let accent = state.nc(egui::Color32::from_rgb(80, 160, 255));
     egui::CollapsingHeader::new(
@@ -157,6 +162,7 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 });
             }
         });
+    } // end Crank Angle / Stroke dispatch
 
     // ── Gravity ──────────────────────────────────────────────────────
     let gravity_color = state.nc(egui::Color32::from_rgb(200, 160, 80));
@@ -232,6 +238,100 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
         .default_open(false)
         .show(ui, |ui| {
             draw_simulation_controls(ui, state);
+        });
+}
+
+/// Actuator Stroke slider + stroke sweep range for linear drivers.
+///
+/// Mirror of the Crank Angle section, but the slider is in millimetres
+/// and operates on `driver_stroke` (m) directly. No display offset is
+/// applied (linear drivers don't have an angle-frame offset).
+fn draw_actuator_stroke_section(ui: &mut egui::Ui, state: &mut AppState) {
+    let accent = state.nc(egui::Color32::from_rgb(80, 160, 255));
+    egui::CollapsingHeader::new(
+        egui::RichText::new("Actuator Stroke").color(accent),
+    )
+        .id_salt("stroke_section")
+        .default_open(true)
+        .show(ui, |ui| {
+            ui.small(
+                egui::RichText::new(
+                    "Linear driver: slider sets the actuator stroke in mm.",
+                )
+                .color(egui::Color32::from_rgb(150, 150, 160)),
+            );
+
+            // Slider bounds in mm. With sweep range enabled use the
+            // user's [min, max]; otherwise fall back to the actuator's
+            // stroke_min/stroke_max (cached on rebuild) or a window
+            // around length_0 if no actuator hint was found.
+            let (slider_min_mm, slider_max_mm) = if state.sweep_range_enabled {
+                let a = state.sweep_angle_min_deg;
+                let b = state.sweep_angle_max_deg;
+                if a <= b { (a, b) } else { (b, a) }
+            } else if state.sweep_stroke_max > state.sweep_stroke_min {
+                (state.sweep_stroke_min * 1e3, state.sweep_stroke_max * 1e3)
+            } else {
+                let l0_mm = state.driver_theta_0 * 1e3;
+                (l0_mm - 100.0, l0_mm + 100.0)
+            };
+
+            let mut stroke_mm = state.driver_stroke * 1e3;
+            stroke_mm = stroke_mm.clamp(slider_min_mm, slider_max_mm);
+            let prev_stroke_mm = stroke_mm;
+            let resp = ui.add(
+                egui::Slider::new(&mut stroke_mm, slider_min_mm..=slider_max_mm)
+                    .suffix(" mm")
+                    .step_by(0.1),
+            ).on_hover_text("Drag to set actuator stroke in mm. Updates the mechanism kinematics by re-solving at the new stroke.");
+            if resp.dragged() {
+                if state.playing {
+                    state.playing = false;
+                    state.animation_direction = 1.0;
+                }
+                if let Some(sim) = &mut state.simulation {
+                    sim.playing = false;
+                }
+            }
+            if (stroke_mm - prev_stroke_mm).abs() > 1e-6 {
+                state.solve_at_stroke(stroke_mm * 1e-3);
+            }
+
+            // Sweep range (mm). Stored in sweep_angle_min_deg/max_deg
+            // by repurposing the field for stroke mode — no separate
+            // field is required because only one of the two modes is
+            // active at a time.
+            ui.separator();
+            let prev_enabled = state.sweep_range_enabled;
+            ui.checkbox(&mut state.sweep_range_enabled, "Limit Sweep Range")
+                .on_hover_text("Restrict the stroke sweep to a custom range instead of the full actuator stroke window.");
+            if state.sweep_range_enabled != prev_enabled {
+                state.mark_sweep_dirty();
+            }
+            if state.sweep_range_enabled {
+                ui.horizontal(|ui| {
+                    ui.label("Min:");
+                    let min_resp = ui.add(egui::DragValue::new(&mut state.sweep_angle_min_deg)
+                        .speed(0.5)
+                        .range(0.0..=10000.0)
+                        .suffix(" mm"))
+                        .on_hover_text("Sweep range min stroke in mm.");
+                    ui.label("Max:");
+                    let max_resp = ui.add(egui::DragValue::new(&mut state.sweep_angle_max_deg)
+                        .speed(0.5)
+                        .range(0.0..=10000.0)
+                        .suffix(" mm"))
+                        .on_hover_text("Sweep range max stroke in mm. Must be \u{2265} min.");
+                    let min_done = min_resp.drag_stopped() || min_resp.lost_focus();
+                    let max_done = max_resp.drag_stopped() || max_resp.lost_focus();
+                    if min_done || max_done {
+                        if state.sweep_angle_max_deg < state.sweep_angle_min_deg {
+                            state.sweep_angle_max_deg = state.sweep_angle_min_deg;
+                        }
+                        state.mark_sweep_dirty();
+                    }
+                });
+            }
         });
 }
 
