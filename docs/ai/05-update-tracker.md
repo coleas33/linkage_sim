@@ -5,6 +5,71 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-24 — LinearDriver GUI feature: stroke-driven sweeps
+
+**What:** Wired the dormant LinearDriver pipeline end-to-end so a user
+can convert a `LinearActuator` force element into a kinematic
+`LinearDriver` constraint and run stroke-driven analysis. Six
+preparatory refactors plus the conversion UI:
+
+- **R1 — `DriverKind` discriminant.** New enum on `AppState`
+  (`None` / `Revolute` / `Linear`). Documents the per-variant meaning
+  of the existing `driver_omega` / `driver_theta_0` / `driver_stroke`
+  scalars (rad+rad/s vs m+m/s) and unblocks dispatch without ripping
+  out 150+ usages of the four scalars. Follow-up R1b (deferred) can
+  collapse them into payload on the variants.
+- **R2 — `rebuild()` reads `linear_drivers`.** Sets `driver_kind =
+  Linear` when the blueprint has any linear driver, populating
+  velocity/length_0 and seeding `driver_stroke`. Falls back to
+  Revolute if `bp.drivers` is non-empty, otherwise None.
+  `load_from_json_str` applies the same detection.
+- **R3 — `step_animation` dispatch.** Matches `driver_kind` and
+  delegates to `step_animation_revolute` (existing) or new
+  `step_animation_linear` (mirrors revolute but moves stroke in
+  metres). The animation slider's "deg/s" doubles as "mm/s" in
+  Linear mode for a consistent feel.
+- **R4 — `SweepMode::Stroke`.** `compute_sweep_data` detects via
+  `mech.n_linear_drivers()` and iterates 1 mm steps; default range
+  is `length_0 ± 100 mm`. `compute_sweep` guard counts linear
+  drivers; sweep-range field is interpreted as mm in Linear mode and
+  converted to metres for the solver. Plot dispatcher's offset shift
+  is a no-op for stroke sweeps; click-to-scrub branches between
+  `solve_at_angle` and `solve_at_stroke`.
+- **R5 — Driver-section UI dispatch.** `draw_input_panel` shows the
+  Crank Angle section for Revolute/None, the new Actuator Stroke
+  section for Linear (mm slider + mm sweep-range DragValues). The
+  `sweep_angle_min/max_deg` field is repurposed for stroke (mm) when
+  in Linear mode — only one driver mode is active at a time.
+- **R6 — Display-offset gate.** `compute_driver_display_offset`
+  returns 0 when `driver_kind != Revolute`; the angle-frame offset
+  has no meaning for stroke values. Plot dispatcher's
+  `sweep_in_display_frame` is also a no-op for stroke sweeps.
+
+- **Conversion UI.** `LinearActuator` force editor gets a `Set as
+  Linear Driver` button. `AppState::convert_actuator_to_linear_driver`
+  removes any revolute drivers, strips the actuator force element,
+  and adds a `LinearDriverJson` with `length_0 = current stroke` so
+  the pose doesn't jump on takeover. Default velocity 10 mm/s.
+
+**Why:** User wanted stroke-driven analysis for press mechanisms.
+`LinearActuator` was a force element (apply force, find equilibrium),
+which is the wrong abstraction for "sweep stroke and read out
+required force". `LinearDriver` is the right one but had no GUI entry
+point and dormant solver wiring.
+
+**Test results:** 578 lib tests pass (+3 new:
+`sweep_stroke_mode_for_linear_driver`,
+`sweep_stroke_mode_with_explicit_range`,
+`convert_actuator_to_linear_driver_switches_mode`).
+
+**Migration note:** Existing files with revolute drivers continue to
+work unchanged. Sample mechanisms (FourBar, ChebyshevLambdaActuator
+with its LinearActuator force, etc.) all load in Revolute mode by
+default; user opts into Linear mode via the Set as Linear Driver
+button.
+
+---
+
 ## 2026-04-24 — Sweep range stored in display frame (follow-up)
 
 **What:** The initial crank-angle-offset patch shifted the Crank Angle

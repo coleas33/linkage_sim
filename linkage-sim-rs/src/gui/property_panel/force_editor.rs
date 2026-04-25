@@ -1152,6 +1152,22 @@ fn draw_force_element_details(
                 },
                 pending,
             );
+
+            // Convert this actuator into a LinearDriver constraint so
+            // the mechanism can be analyzed in stroke-driven mode.
+            // Removes any revolute drivers and the actuator force
+            // element itself; the kinematic stroke is then commanded
+            // by the constraint at f(t) = length_0 + velocity * t.
+            ui.separator();
+            if ui
+                .button("Set as Linear Driver")
+                .on_hover_text(
+                    "Convert this actuator into a kinematic LinearDriver so the slider commands stroke directly. Replaces any revolute driver. The current stroke becomes length_0 so the pose doesn't jump.",
+                )
+                .clicked()
+            {
+                *pending = Some(PendingPropertyEdit::ConvertActuatorToLinearDriver { index });
+            }
         }
     }
 }

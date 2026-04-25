@@ -173,6 +173,93 @@ impl AppState {
         self.rebuild();
     }
 
+    /// Convert a `LinearActuator` force element into a `LinearDriver`
+    /// constraint so the mechanism can be analyzed in stroke-driven
+    /// mode. Removes any revolute drivers (a mechanism only has one
+    /// active driver kind), removes the original force element, and
+    /// adds a `LinearDriverJson` targeting the same body/point pair.
+    /// Initial `length_0` is the actuator's current world length so
+    /// the constraint matches the existing pose at t=0; default
+    /// velocity is 10 mm/s. Pushes undo + rebuilds.
+    ///
+    /// No-op if the index doesn't reference a `LinearActuator`.
+    pub fn convert_actuator_to_linear_driver(&mut self, index: usize) {
+        // Snapshot the actuator's body/point info from the BUILT
+        // mechanism so we can use the resolved local coordinates that
+        // the LinearActuator/Mechanism expansion produced.
+        let actuator_info = {
+            let Some(mech) = self.mechanism.as_ref() else { return };
+            let Some(force) = mech.forces().get(index) else { return };
+            let crate::forces::elements::ForceElement::LinearActuator(act) = force else {
+                return;
+            };
+            (
+                act.body_a.clone(),
+                act.point_a,
+                act.body_b.clone(),
+                act.point_b,
+            )
+        };
+        let (body_a, point_a, body_b, point_b) = actuator_info;
+
+        // Compute current world distance between the two attachment
+        // points so the new driver's f(0) = length_0 matches the
+        // existing pose. Avoids a sudden jump when the constraint
+        // takes over.
+        let length_0 = {
+            let mech = self.mechanism.as_ref().unwrap();
+            let mech_state = mech.state();
+            let pa = mech_state.body_point_global(
+                &body_a,
+                &nalgebra::Vector2::new(point_a[0], point_a[1]),
+                &self.q,
+            );
+            let pb = mech_state.body_point_global(
+                &body_b,
+                &nalgebra::Vector2::new(point_b[0], point_b[1]),
+                &self.q,
+            );
+            ((pb.x - pa.x).powi(2) + (pb.y - pa.y).powi(2)).sqrt()
+        };
+
+        self.push_undo();
+        let bp = match self.blueprint.as_mut() {
+            Some(bp) => bp,
+            None => return,
+        };
+
+        bp.drivers.clear();
+        // Remove all LinearActuator force elements that match this
+        // body pair (the converter ate one of them; clean up any
+        // stale duplicates). Keep all other forces.
+        bp.forces.retain(|f| {
+            !matches!(
+                f,
+                crate::forces::elements::ForceElement::LinearActuator(act)
+                    if act.body_a == body_a && act.body_b == body_b
+            )
+        });
+
+        let existing_ids: std::collections::HashMap<String, ()> = bp
+            .linear_drivers
+            .iter()
+            .map(|ld| (ld.id.clone(), ()))
+            .collect();
+        let id = generate_unique_id("LD", &existing_ids);
+        bp.linear_drivers.push(crate::io::LinearDriverJson {
+            id,
+            body_a,
+            point_a,
+            body_b,
+            point_b,
+            velocity: 0.01, // 10 mm/s default; user can edit later
+            length_0,
+        });
+
+        self.driver_stroke = length_0;
+        self.rebuild();
+    }
+
     // ── Load case operations ──────────────────────────────────────────────
 
     /// Add a new load case by copying the current driver settings.

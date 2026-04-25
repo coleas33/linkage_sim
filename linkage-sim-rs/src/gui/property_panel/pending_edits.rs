@@ -50,6 +50,12 @@ pub(super) enum PendingPropertyEdit {
     EnterDrawGeometryMode { body_id: String },
     /// Delete a body and all joints connected to it.
     DeleteBody { body_id: String },
+    /// Convert a `LinearActuator` force element at the given index into
+    /// a `LinearDriver` constraint. Removes the original force element,
+    /// strips any revolute drivers, and adds a new linear driver
+    /// targeting the same body/point pair so stroke-driven analysis
+    /// becomes available.
+    ConvertActuatorToLinearDriver { index: usize },
 }
 
 /// Draw the force elements collapsible section.
@@ -280,6 +286,9 @@ pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropert
                 if state.link_editor_body.as_deref() == Some(body_id.as_str()) {
                     state.link_editor_body = None;
                 }
+            }
+            PendingPropertyEdit::ConvertActuatorToLinearDriver { index } => {
+                state.convert_actuator_to_linear_driver(index);
             }
         }
     }

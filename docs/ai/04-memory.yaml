@@ -6,7 +6,13 @@ active_issues: []
 
 open_questions:
   - |
-    Should the tool expose a "driver type: linear" option in the GUI so
-    actuator-driven mechanisms can use a LinearDriver constraint instead of
-    relying on the two-pass statics back-calculation? LinearDriver exists in
-    core/linear_driver.rs but has no GUI wiring yet.
+    Follow-up R1b (deferred): `driver_omega`, `driver_theta_0`, and
+    `driver_stroke` on `AppState` are dual-purpose scalars — for revolute
+    drivers omega = rad/s and theta_0 = rad; for linear drivers omega =
+    velocity (m/s) and theta_0 = length_0 (m). Documented inline with
+    the `driver_kind` discriminant added in 2026-04-24's LinearDriver
+    work, but the implicit overloading is brittle. Future cleanup:
+    collapse the four scalars into payload on `DriverKind::Revolute {
+    angle, omega, theta_0 }` / `DriverKind::Linear { stroke, velocity,
+    length_0 }`. Touches ~150 read sites; defer until the GUI feature
+    has been exercised by users and the dispatch boundary is stable.

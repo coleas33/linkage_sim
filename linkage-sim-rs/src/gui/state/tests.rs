@@ -97,6 +97,51 @@
     }
 
     #[test]
+    fn convert_actuator_to_linear_driver_switches_mode() {
+        // ParallelogramActuator has a LinearActuator force element
+        // and a revolute driver. After conversion, the mechanism
+        // should have a LinearDriver, no revolute driver, and the
+        // GUI dispatch should report Linear mode.
+        use crate::forces::elements::ForceElement;
+        use crate::gui::state::DriverKind;
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::ParallelogramActuator);
+        assert_eq!(state.driver_kind, DriverKind::Revolute);
+
+        // Find the LinearActuator force index.
+        let act_index = state
+            .mechanism
+            .as_ref()
+            .unwrap()
+            .forces()
+            .iter()
+            .position(|f| matches!(f, ForceElement::LinearActuator(_)))
+            .expect("sample should have a linear actuator");
+
+        state.convert_actuator_to_linear_driver(act_index);
+
+        assert_eq!(
+            state.driver_kind,
+            DriverKind::Linear,
+            "post-convert driver_kind should be Linear"
+        );
+        let mech = state.mechanism.as_ref().unwrap();
+        assert_eq!(mech.n_drivers(), 0, "revolute driver should be removed");
+        assert_eq!(
+            mech.n_linear_drivers(),
+            1,
+            "exactly one linear driver should be added"
+        );
+        // length_0 should be the actuator's pre-conversion length, so
+        // driver_stroke is set to that value (no pose jump).
+        assert!(
+            state.driver_stroke > 0.0,
+            "driver_stroke should be initialised to the current actuator length"
+        );
+    }
+
+    #[test]
     fn step_animation_advances_at_slow_speed() {
         // At 0.5 deg/s (the slider's new floor), 600 frames at 1/60 s should
         // advance the crank by about 5 deg. Regression test for the user
