@@ -404,6 +404,10 @@ pub struct AppState {
     /// the active trajectory `ControlTarget` instead of doing normal selection.
     /// Cleared after consumption.
     pub pending_canvas_pick: Option<PendingCanvasPickKind>,
+    /// Most recent click-to-scrub time (seconds) on the trajectory plot.
+    /// Persists across recomputes — it's a UX state for the visible cursor,
+    /// not derived from sweep_data.
+    pub last_trajectory_scrub_t: Option<f64>,
 }
 
 /// Background image overlay for tracing mechanisms from photos/sketches.
@@ -638,6 +642,7 @@ impl Default for AppState {
             trajectory_severity: crate::solver::inverse_kinematics::Severity::Analysis,
             sweep_mode: crate::gui::sweep::SweepMode::Angle,
             pending_canvas_pick: None,
+            last_trajectory_scrub_t: None,
         };
         state.rebuild();
         state

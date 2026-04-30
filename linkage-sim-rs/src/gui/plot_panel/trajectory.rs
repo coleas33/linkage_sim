@@ -78,6 +78,7 @@ pub(super) fn render(state: &mut AppState, ui: &mut egui::Ui) {
     // immutable borrow of `state.sweep_data` ends (we need `&mut state` to
     // call solve_for_trajectory_target).
     let mut clicked_t: Option<f64> = None;
+    let scrub_t_for_cursor = state.last_trajectory_scrub_t;
     Plot::new("trajectory_main")
         .allow_zoom(true)
         .allow_drag(true)
@@ -123,6 +124,16 @@ pub(super) fn render(state: &mut AppState, ui: &mut egui::Ui) {
                     .color(egui::Color32::from_rgba_unmultiplied(255, 100, 100, 160))
                     .width(1.0),
             );
+
+            // Persistent click-to-scrub cursor at the most recently clicked
+            // time. Gold/yellow distinguishes from the red failure bands.
+            if let Some(t_cur) = scrub_t_for_cursor {
+                plot_ui.vline(
+                    VLine::new("scrub_cursor", t_cur)
+                        .color(egui::Color32::from_rgba_premultiplied(255, 215, 0, 200))
+                        .style(egui_plot::LineStyle::Solid),
+                );
+            }
 
             clicked_t = super::detect_plot_click(plot_ui);
         });
@@ -184,6 +195,8 @@ pub(super) fn render(state: &mut AppState, ui: &mut egui::Ui) {
     // Now resolve the click into (target, h) and drive the canvas pose.
     if let Some(t_raw) = clicked_t {
         let t_clicked = t_raw.clamp(0.0, duration);
+        // Persist the cursor position so the VLine renders next frame.
+        state.last_trajectory_scrub_t = Some(t_clicked);
         // Pull target+h out of the trajectory sweep mode and drop the borrow
         // before calling the &mut self method.
         let payload = if let SweepMode::Trajectory { target, trajectory, .. } = &state.sweep_mode {
