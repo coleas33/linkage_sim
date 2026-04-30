@@ -22,7 +22,8 @@
 linkage-sim-rs/src/solver/inverse_kinematics/
   mod.rs                — public re-exports (~30 LoC)
   severity.rs           — Severity enum, InverseSolveStatus (~80 LoC)
-  control_target.rs     — ControlTarget enum + evaluate/gradient/hessian/constructors (~250 LoC)
+  control_target.rs     — ControlTarget enum + evaluate/gradient/hessian/constructors (~580 LoC incl. tests)
+  test_helpers.rs       — shared #[cfg(test)] fixtures: build_fourbar, solve_at (~50 LoC)
   solver.rs             — solve_for_target outer Newton + bisection fallback + workspace probe (~250 LoC)
   derivatives.rs        — inverse_velocity, inverse_acceleration_fd (~120 LoC)
 
@@ -607,7 +608,87 @@ git commit -m "feat(traj): add ControlTarget::Angle with evaluate/gradient/hessi
 ## Task 1.5 — `ControlTarget::WorldX` and `WorldY` variants
 
 **Files:**
+- Create: `linkage-sim-rs/src/solver/inverse_kinematics/test_helpers.rs` (Step 0)
+- Modify: `linkage-sim-rs/src/solver/inverse_kinematics/mod.rs` (Step 0)
 - Modify: `linkage-sim-rs/src/solver/inverse_kinematics/control_target.rs`
+
+- [ ] **Step 0: Hoist `build_fourbar` and `solve_at` to a shared test-helpers module**
+
+This prevents Tasks 1.5–1.7 (and Tasks 1.10+) from duplicating the same fixture 4-5 times.
+
+Create `linkage-sim-rs/src/solver/inverse_kinematics/test_helpers.rs`:
+
+```rust
+//! Shared `#[cfg(test)]` test fixtures used by `control_target`, `solver`,
+//! and `derivatives` test modules. The 4-bar mechanism + warm-start `q` it
+//! produces is the canonical test linkage for inverse-kinematics unit tests.
+
+#![cfg(test)]
+
+use nalgebra::DVector;
+use std::f64::consts::PI;
+
+use crate::core::body::{make_bar, make_ground};
+use crate::core::mechanism::Mechanism;
+use crate::solver::kinematics::solve_position;
+
+/// Build a standard 4-bar (crank/coupler/rocker on ground) with constant-speed
+/// driver at `omega = 2π`. Same linkage used in `solver/kinematics.rs` tests.
+pub fn build_fourbar() -> Mechanism {
+    let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 0.038, 0.0)]);
+    let crank = make_bar("crank", "A", "B", 0.01, 0.0, 0.0);
+    let coupler = make_bar("coupler", "B", "C", 0.04, 0.0, 0.0);
+    let rocker = make_bar("rocker", "C", "D", 0.03, 0.0, 0.0);
+
+    let mut mech = Mechanism::new();
+    mech.add_body(ground).unwrap();
+    mech.add_body(crank).unwrap();
+    mech.add_body(coupler).unwrap();
+    mech.add_body(rocker).unwrap();
+    mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+    mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+    mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+    mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
+    mech.add_constant_speed_driver("D1", "ground", "crank", 2.0 * PI, 0.0).unwrap();
+    mech.build().unwrap();
+    mech
+}
+
+/// Solve the standard 4-bar at trajectory time `t` and return the converged `q`.
+pub fn solve_at(mech: &Mechanism, t: f64) -> DVector<f64> {
+    let state = mech.state();
+    let mut q0 = state.make_q();
+    state.set_pose("crank", &mut q0, 0.005, 0.0, 0.0);
+    state.set_pose("coupler", &mut q0, 0.025, 0.0, 0.0);
+    state.set_pose("rocker", &mut q0, 0.04, 0.005, 0.5);
+    let res = solve_position(mech, &q0, t, 1e-10, 50).unwrap();
+    assert!(res.converged);
+    res.q
+}
+```
+
+Add to `linkage-sim-rs/src/solver/inverse_kinematics/mod.rs`:
+
+```rust
+#[cfg(test)]
+pub(crate) mod test_helpers;
+```
+
+In `linkage-sim-rs/src/solver/inverse_kinematics/control_target.rs`, **delete** the inline `build_fourbar` and `solve_at` functions from the test module, and replace with:
+
+```rust
+use super::test_helpers::{build_fourbar, solve_at};
+```
+
+(at the top of the `#[cfg(test)] mod tests { ... }` block, after the existing `use super::*;`).
+
+Run `cargo test --lib solver::inverse_kinematics::control_target::tests` to verify the existing 3 tests still pass via the shared helpers.
+
+Commit:
+```
+git add linkage-sim-rs/src/solver/inverse_kinematics/
+git commit -m "refactor(traj): hoist test helpers to shared test_helpers module"
+```
 
 - [ ] **Step 1: Add failing tests**
 
@@ -1120,6 +1201,24 @@ git commit -m "feat(traj): add ControlTarget::Distance variant"
     }
 
     #[test]
+    #[should_panic(expected = "ground")]
+    fn angle_constructor_rejects_ground() {
+        let _ = ControlTarget::angle("ground");
+    }
+
+    #[test]
+    #[should_panic(expected = "ground")]
+    fn world_x_constructor_rejects_ground() {
+        let _ = ControlTarget::world_x("ground", [0.0, 0.0]);
+    }
+
+    #[test]
+    #[should_panic(expected = "ground")]
+    fn distance_constructor_rejects_ground() {
+        let _ = ControlTarget::distance("ground", [0.0, 0.0], [0.0, 0.0]);
+    }
+
+    #[test]
     fn unit_labels() {
         assert_eq!(
             ControlTarget::Angle { body_id: "x".into() }.unit_label(),
@@ -1152,55 +1251,67 @@ Expected: FAIL on missing methods.
 Append to the `impl ControlTarget` block:
 
 ```rust
-    /// Construct an `Angle` variant.
+    /// Construct an `Angle` variant. Panics if `body_id` is `"ground"` (ground
+    /// has fixed θ = 0; controlling its angle would be a degenerate target).
     pub fn angle(body_id: impl Into<String>) -> Self {
-        ControlTarget::Angle { body_id: body_id.into() }
+        let body_id = body_id.into();
+        assert!(body_id != "ground", "ControlTarget::angle cannot target ground (θ is fixed)");
+        ControlTarget::Angle { body_id }
     }
 
-    /// Construct a `WorldX` variant.
+    /// Construct a `WorldX` variant. Panics if `body_id` is `"ground"` (ground
+    /// is at fixed origin; observable would be the constant `local_pt[0]`).
     pub fn world_x(body_id: impl Into<String>, local_pt: [f64; 2]) -> Self {
+        let body_id = body_id.into();
+        assert!(body_id != "ground", "ControlTarget::world_x cannot target ground (pose is fixed)");
         ControlTarget::WorldX {
-            body_id: body_id.into(),
+            body_id,
             local_pt,
         }
     }
 
-    /// Construct a `WorldY` variant.
+    /// Construct a `WorldY` variant. Panics if `body_id` is `"ground"`.
     pub fn world_y(body_id: impl Into<String>, local_pt: [f64; 2]) -> Self {
+        let body_id = body_id.into();
+        assert!(body_id != "ground", "ControlTarget::world_y cannot target ground (pose is fixed)");
         ControlTarget::WorldY {
-            body_id: body_id.into(),
+            body_id,
             local_pt,
         }
     }
 
     /// Construct a `Projection` variant. `axis_dir` is normalized in place;
-    /// panics if `axis_dir` has zero length.
+    /// panics if `axis_dir` has zero length or `body_id` is `"ground"`.
     pub fn projection(
         body_id: impl Into<String>,
         local_pt: [f64; 2],
         axis_origin: [f64; 2],
         axis_dir: [f64; 2],
     ) -> Self {
+        let body_id = body_id.into();
+        assert!(body_id != "ground", "ControlTarget::projection cannot target ground (pose is fixed)");
         let dir = nalgebra::Vector2::new(axis_dir[0], axis_dir[1]);
         let n = dir.norm();
         assert!(n > 1e-12, "ControlTarget::projection axis_dir must be non-zero");
         let unit = dir / n;
         ControlTarget::Projection {
-            body_id: body_id.into(),
+            body_id,
             local_pt,
             axis_origin,
             axis_dir: [unit.x, unit.y],
         }
     }
 
-    /// Construct a `Distance` variant.
+    /// Construct a `Distance` variant. Panics if `body_id` is `"ground"`.
     pub fn distance(
         body_id: impl Into<String>,
         local_pt: [f64; 2],
         ref_pt: [f64; 2],
     ) -> Self {
+        let body_id = body_id.into();
+        assert!(body_id != "ground", "ControlTarget::distance cannot target ground (pose is fixed)");
         ControlTarget::Distance {
-            body_id: body_id.into(),
+            body_id,
             local_pt,
             ref_pt,
         }
