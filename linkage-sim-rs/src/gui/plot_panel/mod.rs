@@ -9,7 +9,7 @@ use eframe::egui;
 use egui_plot::{HLine, Line, Plot, PlotPoint, PlotPoints, Points, Text as PlotText, VLine};
 
 use super::state::{AngleUnit, AppState, DisplayUnits};
-use super::sweep::SweepData;
+use super::sweep::{SweepData, SweepMode};
 
 /// Selected plot tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +36,7 @@ mod actuator;
 mod coupler;
 mod dynamics;
 mod mechanics;
+mod trajectory;
 
 /// Draw the plot panel with tabbed plots.
 ///
@@ -51,6 +52,15 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
         ui.label("No sweep data available.");
         return;
     };
+
+    // Trajectory mode bypasses the forward-sweep tabs entirely: the X-axis
+    // is time, and the data lives in target_values/achieved_values/u_values
+    // rather than angles_deg. Dispatch before the angles_deg guard since
+    // trajectory sweeps populate angles_deg as empty.
+    if matches!(state.sweep_mode, SweepMode::Trajectory { .. }) {
+        trajectory::render(state, sweep, ui);
+        return;
+    }
 
     if sweep.angles_deg.is_empty() {
         ui.label("Sweep produced no data (solver failed at all angles).");
