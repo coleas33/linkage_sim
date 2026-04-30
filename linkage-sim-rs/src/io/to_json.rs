@@ -241,6 +241,7 @@ pub fn mechanism_to_json(mech: &Mechanism) -> Result<MechanismJson, Serializatio
         sweep_config: None,
         mounting_angle: 0.0,
         linear_drivers,
+        sweep_state: None,
     })
 }
 

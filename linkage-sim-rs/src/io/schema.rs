@@ -73,6 +73,24 @@ pub struct MechanismJson {
     /// Backward-compatible: old files without this field default to an empty list.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub linear_drivers: Vec<LinearDriverJson>,
+    /// GUI sweep state (mode, trajectory severity). Persisted so reload preserves
+    /// the user's analysis configuration. Backward-compatible: old files default
+    /// to None which loaders interpret as Angle / Analysis defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sweep_state: Option<SweepStateJson>,
+}
+
+/// Serializable container for GUI sweep mode + trajectory severity. Held as
+/// `serde_json::Value` for `sweep_mode` to avoid a cyclic import between
+/// `io::schema` and `gui::sweep::SweepMode` (gui already depends on io).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SweepStateJson {
+    /// Sweep mode (Angle / Stroke / Trajectory) serialized as opaque JSON.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sweep_mode: Option<serde_json::Value>,
+    /// Trajectory severity: "Strict" or "Analysis".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trajectory_severity: Option<String>,
 }
 
 /// JSON representation of a linear driver constraint.

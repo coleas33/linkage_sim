@@ -151,6 +151,18 @@ impl AppState {
                 }
             }
         }
+        // Persist GUI sweep state (mode + trajectory severity) so reload
+        // preserves the user's analysis configuration.
+        json_struct.sweep_state = Some(crate::io::schema::SweepStateJson {
+            sweep_mode: serde_json::to_value(&self.sweep_mode).ok(),
+            trajectory_severity: Some(
+                match self.trajectory_severity {
+                    crate::solver::inverse_kinematics::Severity::Strict => "Strict",
+                    crate::solver::inverse_kinematics::Severity::Analysis => "Analysis",
+                }
+                .to_string(),
+            ),
+        });
         serde_json::to_string_pretty(&json_struct).map_err(|e| e.to_string())
     }
 
@@ -236,6 +248,25 @@ impl AppState {
         // Parse JSON and store as blueprint before building
         let json_struct: crate::io::MechanismJson =
             serde_json::from_str(json_str).map_err(|e| e.to_string())?;
+
+        // Restore GUI sweep state (mode + trajectory severity) if present.
+        // Backward-compatible: missing field → leave defaults (Angle / Analysis).
+        if let Some(state_json) = json_struct.sweep_state.as_ref() {
+            if let Some(mode_value) = state_json.sweep_mode.as_ref() {
+                if let Ok(mode) = serde_json::from_value::<crate::gui::sweep::SweepMode>(
+                    mode_value.clone(),
+                ) {
+                    self.sweep_mode = mode;
+                }
+            }
+            if let Some(sev_str) = state_json.trajectory_severity.as_ref() {
+                self.trajectory_severity = match sev_str.as_str() {
+                    "Strict" => crate::solver::inverse_kinematics::Severity::Strict,
+                    _ => crate::solver::inverse_kinematics::Severity::Analysis,
+                };
+            }
+        }
+
         self.blueprint = Some(json_struct);
 
         let mut mech =

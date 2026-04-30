@@ -496,6 +496,7 @@ impl Default for AppState {
             sweep_config: None,
             mounting_angle: 0.0,
             linear_drivers: Vec::new(),
+            sweep_state: None,
         };
 
         let mut state = Self {
