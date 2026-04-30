@@ -5,6 +5,93 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-30 — Trajectory-mode position control: Stage 3 (UI surface) shipped
+
+**What:** Stage 3 surfaces Stage 2's `compute_trajectory` backend through the
+GUI. New `Trajectory` option in the SweepMode dropdown switches the input
+panel to a trajectory-specific UI (target picker + profile editor + severity
+toggle), and the plot panel renders a time-axis view with click-to-scrub
+that drives the canvas mechanism through the back-solved trajectory.
+
+- **`gui/state/trajectory_ops.rs`** — new `AppState::solve_for_trajectory_target(target, h)`
+  sibling to `solve_at_angle` / `solve_at_stroke`. Calls `solve_for_target`
+  in `Severity::Analysis` and updates `self.q` on success, leaving state
+  unchanged on failure. Used by click-to-scrub.
+- **`gui/trajectory_panel/`** (3 files):
+  - `mod.rs` — top-level dispatcher. Three `CollapsingHeader` sections:
+    Target observable → Profile → Solve options (severity radio toggle:
+    Analysis vs Strict).
+  - `target_picker.rs` — `ControlTarget` variant picker (5 variants:
+    `Angle`, `WorldX`, `WorldY`, `Distance`, `Projection`) with the
+    relevant body / point / axis fields per variant + live `g(q)` readout
+    on the current pose so the user can see where they are before
+    choosing the target value.
+  - `profile_input.rs` — `TrajectoryProfile` editor: shape selector
+    (currently trapezoidal), `start` / `end` / `duration` /
+    `accel_frac` / `decel_frac` fields, `n_samples` slider, and an
+    inline `h(t)` preview plot.
+- **`SweepMode` dropdown extended** in `gui/input_panel.rs` — `Angle` /
+  `Stroke` / `Trajectory` options. Selecting `Trajectory` constructs a
+  default `SweepMode::Trajectory { target: Angle{driver}, profile:
+  default, severity: Analysis, n_samples: 64 }` and routes the input
+  panel to `trajectory_panel::draw` instead of the angle/stroke
+  controls.
+- **`AppState` new fields** (`gui/state/mod.rs`): `sweep_mode:
+  SweepMode` (replaces ad-hoc `is_stroke_sweep` checks), `trajectory_severity:
+  Severity`. Both default to `Angle` / `Analysis`.
+- **`gui/state/blueprint_ops.rs::compute_sweep`** — branches on
+  `state.sweep_mode`. `SweepMode::Trajectory` dispatches to the
+  Stage 2 `compute_trajectory` for revolute drivers (the integration
+  deferred from Stage 2). Linear-driver path is TODO and falls back
+  to the existing `compute_sweep_data` so users still get a sweep
+  curve.
+- **`gui/plot_panel/trajectory.rs`** (new) — time-axis plot rendering.
+  Main plot stacks target(t) (orange) + achieved(t) (cyan) on the
+  primary axis; residual(t) and u(t) are stacked in separate panels.
+  Failure-band overlays paint regions where
+  `inverse_solve_status != Converged`. Click-to-scrub on the main
+  plot calls `state.solve_for_trajectory_target(&target, h)` to
+  drive the canvas mechanism to the clicked sample's pose.
+- **`gui/plot_panel/mod.rs`** — early-return dispatch when
+  `sweep_mode.is_trajectory()`: `trajectory::render(state, ui)`
+  bypasses the forward-sweep tabs (the trajectory X-axis is time, not
+  driver angle, so the existing tabs don't apply).
+- **Minor refactor:** `empty_trajectory_sweep_data` promoted to
+  `pub(crate)` so `compute_sweep` in blueprint_ops can construct an
+  empty `SweepData` shell before calling `compute_trajectory` to fill
+  it.
+
+**Why:** Stages 1 and 2 shipped the math and the per-sample analysis
+loop, but the trajectory-mode pipeline was unreachable from the UI.
+Stage 3 wires it through: dropdown → input panel → compute → plot →
+click-to-scrub. The user can now define a desired output trace, see
+the back-solved actuator input alongside it, and scrub the canvas
+mechanism through the trajectory by clicking the time-axis plot.
+
+**Test count:** 617 lib tests pass (unchanged from Stage 2). UI is
+integration-only — existing solver tests and `TrajectoryProfile` /
+`SweepData` unit tests cover the math; manual GUI verification is
+deferred to user.
+
+**Open follow-ups:**
+- Persist `sweep_mode` and `trajectory_severity` through save/load.
+  Both fields are in-memory only at the moment, so reopening a
+  document drops the trajectory configuration.
+- Linear-driver dispatch in `compute_sweep`. Currently the
+  `SweepMode::Trajectory` branch checks `driver_kind == Revolute`
+  and falls through to the angle/stroke `compute_sweep_data` path
+  for linear-driver mechanisms.
+- Display-frame vs body-frame conversion of `u_range` in the
+  trajectory dispatch. The forward-sweep path subtracts
+  `driver_display_offset` to get body-frame θ; the trajectory
+  dispatch currently does not. Confirm correct frame.
+- Per-frame body velocity / acceleration readouts. Stage 1 noted
+  that `solve_velocity` / `solve_acceleration` are not currently
+  called per-frame; trajectory mode might benefit from them for
+  diagnostics.
+
+---
+
 ## 2026-04-30 — Trajectory-mode position control: Stage 2 (sweep extension) shipped
 
 **What:** Stage 2 wires the Stage 1 inverse-kinematics solver into the
