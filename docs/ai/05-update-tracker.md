@@ -5,6 +5,35 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-30 — Trajectory-mode position control: Stage 4 (polish + CSV + docs) — feature shipped
+
+**What:**
+- CSV export wired for trajectory mode in `gui/export/csv.rs::write_trajectory_csv`. v1 superset column layout: `t_seconds, target_value, achieved_value, residual, u, u_dot, u_ddot, F_actuator_N, driver_torque_Nm, status`. Status text format like `Reachability:0.0920->0.0870`, `Singularity:1.5e-7`, etc.
+- "From joint" helper in target picker (`gui/trajectory_panel/target_picker.rs::draw_point_input_with_joint_helper`) — populates body-local point coords from existing joints on the chosen body.
+- Failure-band hover tooltips: rendered as a `ui.collapsing("⚠ N failure(s)")` summary below the trajectory plot, with one line per failed sample showing `t={:.3}s: <status payload>`. Cleaner than per-band tooltips per egui_plot 0.33 limitations.
+- `docs/FEATURES.md` — user-facing entry under "Trajectory-mode position control" with use case, how-to, failure handling, math reference cross-link.
+- `docs/ai/04-memory.yaml` — 9 deferred items added to `open_questions`: SCurve, click-to-set canvas, keyframe input, CSV-table import, firmware adapter, analytic acceleration, sweep_mode persistence, linear-driver dispatch, u_range frame conversion.
+
+**Why:** Closes the trajectory-mode feature. v1 ships with full forward + inverse pipeline, GUI activation, CSV export, plot rendering, and click-to-scrub. Polish items deferred to follow-up tasks per the spec.
+
+**Test results:** 619 lib tests pass (+2 from Stage 3 baseline; +9 cumulative across Stage 4: 2 CSV + 7 from earlier Stage 4 substages).
+
+**Commits in Stage 4:**
+- 0ce97af — CSV export
+- 28028eb — From-joint helper
+- bab31f0 — Failure-band tooltip summary
+- f325484 — User-facing FEATURES.md + deferred items in 04-memory.yaml
+- (plus this final wrap entry)
+
+**Known limitations / follow-ups (tracked in 04-memory.yaml):**
+- sweep_mode/trajectory_severity not persisted through save/load
+- Linear-driver trajectory dispatch is TODO
+- u_range display-frame vs body-frame conversion (subtle bug; needs verification on a DXF-imported mechanism)
+- F_actuator_N column always NaN until compute_trajectory wires actuator force computation
+- v2 features (SCurve, keyframes, CSV import) deferred until users ask
+
+---
+
 ## 2026-04-30 — Trajectory-mode position control: Stage 3 (UI surface) shipped
 
 **What:** Stage 3 surfaces Stage 2's `compute_trajectory` backend through the
