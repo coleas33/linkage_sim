@@ -30,7 +30,12 @@ pub struct WorkspaceProbe {
 /// `u_0` is the initial driver value (= θ_0 for revolute, = L_0 for linear). The mapping
 /// from `u` to the mechanism's `t`-frame is `t = (u − u_0) / nominal_rate`.
 ///
-/// Returns an error if any forward solve fails.
+/// Returns `Err(LinkageError)` if any forward solve fails with a hard error
+/// (e.g., `SvdSolveFailed`, `MechanismNotBuilt`). Samples that merely fail to
+/// converge (Newton hit `max_iter` without reaching tolerance) are silently
+/// skipped — they appear as gaps in `u_samples`/`g_samples`. If *every* sample
+/// fails to converge, `g_samples` is empty and `g_min`/`g_max` will be
+/// `+∞`/`-∞` sentinels; callers should detect this case explicitly.
 pub fn workspace_probe(
     mech: &Mechanism,
     q_seed: &DVector<f64>,
@@ -90,7 +95,10 @@ mod tests {
         let probe = workspace_probe(
             &mech, &q0, 0.0, 2.0 * PI, 0.0, 2.0 * PI, &target, 16,
         ).unwrap();
-        assert!(probe.u_samples.len() >= 14, "got {} samples", probe.u_samples.len());
+        // Fully-rotating canonical 4-bar should converge at all 16 samples; loosening
+        // this would mask a regression. If a future linkage variant genuinely traverses
+        // a non-convergent region, that test should use its own (looser) bound.
+        assert_eq!(probe.u_samples.len(), 16, "all samples should converge for a fully-rotating crank");
         // crank angle should span roughly [-π/2, +3π/2] modulo 2π
         // simple check: g_max − g_min ≈ 2π (or close to it for full revolution)
         assert!(probe.g_max - probe.g_min > PI);
