@@ -103,6 +103,16 @@ invariants_to_protect:
     solve_at_stroke. Mechanism::driver_row() centralizes the
     n_constraints() - 1 assumption that the driver is the last constraint
     row.
+  - compute_trajectory_uses_phi_t_override — compute_trajectory in
+    gui/sweep/mod.rs overrides Φ_t and γ on the driver row to substitute
+    back-solved u_dot/u_ddot rather than the constant-speed driver's
+    nominal rate. Constraint code in core/ remains constant-speed-
+    parameterized; the override is two lines per sample.
+  - compute_trajectory_dispatch_deferred_to_stage_3 — SweepMode::Trajectory
+    variant exists but compute_sweep_data does not yet dispatch to
+    compute_trajectory. Stage 3 introduces state.sweep_mode and wires the
+    AppState::compute_sweep dispatcher to branch on it. Until then,
+    compute_trajectory is reachable from code/tests but not from the UI.
 
 known_limitations:
   - Custom 6-Bar sample is overconstrained when body_5/body_6 are merged.

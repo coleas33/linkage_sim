@@ -5,6 +5,70 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-30 — Trajectory-mode position control: Stage 2 (sweep extension) shipped
+
+**What:** Stage 2 wires the Stage 1 inverse-kinematics solver into the
+sweep pipeline. Adds a `compute_trajectory` sibling to `compute_sweep_data`
+that, given a `TrajectoryProfile` describing the desired output trace
+`h(t)`, back-solves the actuator input `u(t)` per sample and runs the
+existing per-sample force/energy/reaction analyses unchanged.
+
+- **`TrajectoryProfile` struct** (`gui/state/types.rs`) — composes the
+  existing `MotionProfile` shape (trapezoidal velocity ramp) with absolute
+  units (`start`, `end`, `duration`). Implements
+  `evaluate(t) -> (h, h_dot, h_ddot)` and `sample_times(n)` for uniform
+  sampling across `[0, duration]`.
+- **`SweepData` trajectory time-series fields** (`gui/sweep/mod.rs`) —
+  6 new `Option<Vec<f64>>` fields (`target_values`, `achieved_values`,
+  `tracking_residual`, `u_values`, `u_dot_values`, `u_ddot_values`)
+  plus `Option<Vec<InverseSolveStatus>>` for diagnostics. All carry
+  `#[serde(default, skip_serializing_if = "Option::is_none")]` so existing
+  saved snapshots load cleanly. SweepData / SweepMode / InverseSolveStatus
+  gain Serialize/Deserialize derives.
+- **`SweepMode::Trajectory { target, profile, severity, n_samples }`
+  variant** joining `Angle` and `Stroke`. `is_trajectory()` accessor
+  added; existing `is_stroke()` consumers in plot panels unchanged.
+- **`compute_trajectory` per-sample loop** (`gui/sweep/mod.rs`) — for each
+  sample time `t_k`: evaluates the profile, calls `solve_for_target` to
+  back-solve `u_k`, computes `u_dot_k` / `u_ddot_k` via
+  `inverse_velocity` / `inverse_acceleration_fd`, then invokes the same
+  `solve_statics` / `solve_inverse_dynamics` /
+  `compute_energy_state_mech` calls used by `compute_sweep_data`. The
+  driver row of `Φ_t` and `γ` is overridden with the back-solved
+  `u_dot_k` / `u_ddot_k` (two lines per sample) so the constant-speed
+  constraint code in `core/` remains untouched. On
+  `Severity::Analysis` failures the output is re-evaluated from the
+  partial `q` so time-series channels remain length-matched.
+- **Refactor fold-in:** `Mechanism::driver_row()` helper centralizes the
+  `n_constraints() - 1` driver-last-row assumption (Task 1.10 review
+  item, applied at the Φ_t / γ override site).
+- **Test count:** +1 integration test
+  (`compute_trajectory_populates_all_trajectory_fields`) verifying field
+  population, target tracking, and `Converged` status across all samples.
+  Total lib tests: 617 pass (was 614 after Stage 1; +3 across Stage 2
+  tasks).
+- **Stage 2 GUI activation: NONE.** `compute_trajectory` is reachable
+  from code and tests but not from the UI. `compute_sweep_data` does
+  not yet dispatch to it. Stage 3 introduces `state.sweep_mode` and
+  wires `AppState::compute_sweep` to branch on the variant.
+
+**Why:** Stage 1 shipped the inverse solver in isolation. Stage 2
+threads it through the per-sample analysis pipeline so a full trajectory
+produces the same plottable channels as a forward sweep (joint
+reactions, driver torque, energies, etc.) — without ripping up the
+constant-speed-parameterized constraint code. The Φ_t / γ driver-row
+override is the minimal seam.
+
+**Migration note:** No GUI changes shipped in Stage 2; users see no
+difference yet. Stage 3 adds the trajectory-mode UI surface (target
+picker, profile editor, severity toggle, mode switcher) and dispatches
+`AppState::compute_sweep` to the right backend.
+
+**Test results:** 617 lib tests pass (+1 new
+`compute_trajectory_populates_all_trajectory_fields`).
+
+---
+
 ## 2026-04-30 — Trajectory-mode position control: Stage 1 (solver layer) shipped
 
 **What:** New `solver/inverse_kinematics/` subtree (6 files) implements the
