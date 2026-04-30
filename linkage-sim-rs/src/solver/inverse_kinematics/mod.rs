@@ -7,6 +7,8 @@
 //! See: docs/superpowers/specs/2026-04-29-linkage-equations-reference.md §8
 //! See: docs/superpowers/specs/2026-04-29-trajectory-position-control-design.md
 
+pub mod control_target;
 pub mod severity;
 
+pub use control_target::ControlTarget;
 pub use severity::{InverseSolveStatus, Severity};
