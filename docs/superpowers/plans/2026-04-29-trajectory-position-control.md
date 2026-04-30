@@ -329,7 +329,8 @@ Append to the `LinkageError` enum (before the closing `}` on line 59):
     // -- Trajectory-mode failures --
     /// Target value is outside the reachable workspace.
     #[error(
-        "Trajectory unreachable at target = {target:.4} (workspace [{min:.4}, {max:.4}])."
+        "Trajectory unreachable at target = {target:.4} \
+         (workspace [{min:.4}, {max:.4}], closest reachable = {achieved_clamp:.4})."
     )]
     TrajectoryUnreachable {
         target: f64,
@@ -362,12 +363,10 @@ impl From<crate::solver::inverse_kinematics::InverseSolveStatus> for LinkageErro
         use crate::solver::inverse_kinematics::InverseSolveStatus;
         match status {
             InverseSolveStatus::Converged => {
-                // Caller bug: shouldn't convert a Converged status to an error.
-                // Use a representative numerical error.
-                LinkageError::TrajectoryNonConvergent {
-                    iterations: 0,
-                    residual: 0.0,
-                }
+                unreachable!(
+                    "LinkageError::from(InverseSolveStatus::Converged) — caller bug; \
+                     convert only failure variants"
+                );
             }
             InverseSolveStatus::Reachability {
                 target,
