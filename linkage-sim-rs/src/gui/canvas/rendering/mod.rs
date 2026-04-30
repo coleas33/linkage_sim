@@ -609,6 +609,11 @@ pub fn render_overlays(
         draw_force_elements(painter, state, &state.view);
     }
 
+    // ── Equation overlay (View ▸ Show equations) ─────────────────────
+    if state.show_equation_overlay {
+        draw_equation_overlay(painter, canvas_rect, state, joint_hit_targets);
+    }
+
     // ── Alignment guides ────────────────────────────────────────────
     draw_alignment_guides(painter, canvas_rect, state);
 
@@ -948,6 +953,205 @@ fn draw_crank_angle_indicator(painter: &egui::Painter, state: &AppState) {
         FontId::proportional(11.0),
         color,
     );
+}
+
+/// Draw the equation-overlay labels: per-joint Φ tag + per-body q vector.
+///
+/// Active only when `state.show_equation_overlay` is true. Uses the existing
+/// `joint_hit_targets` (which were populated during `render_mechanism`) for
+/// joint anchor positions to avoid recomputing world transforms. Bodies are
+/// labeled at their CG. Drivers get an orange highlight; other constraint
+/// kinds use kind-specific colors so different joint types are scannable.
+///
+/// Performance: `joint_hit_targets` already iterated all joints; this pass
+/// iterates them again (cheap). Body iteration is one pass over
+/// `mech.bodies()`. Each label is one egui text-paint call. Total cost on a
+/// 6-bar mechanism is well under 1 ms.
+fn draw_equation_overlay(
+    painter: &egui::Painter,
+    canvas_rect: Rect,
+    state: &AppState,
+    joint_hit_targets: &[(Pos2, String)],
+) {
+    use crate::gui::eq_rendering::{kind_at, EqKind};
+
+    let Some(mech) = state.mechanism.as_ref() else { return };
+    let view = &state.view;
+    let mech_state = mech.state();
+    let q = &state.q;
+
+    // ── Per-joint constraint tags ─────────────────────────────────────
+    // joint_hit_targets contains (screen_pos, joint_id) pairs in mech.joints()
+    // order, which lines up with the first n_joints constraint indices.
+    for (i, (screen_pos, joint_id)) in joint_hit_targets.iter().enumerate() {
+        if !canvas_rect.contains(*screen_pos) {
+            continue;
+        }
+        let Some(kind) = kind_at(mech, i) else { continue };
+        let label = format!("{}: {}", joint_id, kind.short_label());
+        let color = kind_overlay_color(state, kind);
+        // Place label below-right of the joint glyph so the joint marker
+        // stays readable.
+        let pos = Pos2::new(screen_pos.x + 8.0, screen_pos.y + 8.0);
+        draw_pill_label(painter, pos, &label, color, egui::Align2::LEFT_TOP);
+    }
+
+    // ── Driver tag at the driver pivot ────────────────────────────────
+    // Drivers don't have hit targets in joint_hit_targets, so render their
+    // tag at the partner-pivot world location (same anchor that
+    // draw_crank_angle_indicator uses). For linear drivers, anchor between
+    // the two attachment points.
+    let n_joints = mech.joints().len();
+    for (drv_idx, drv) in mech.drivers().iter().enumerate() {
+        let constr_idx = n_joints + drv_idx;
+        let id_label = drv.id();
+        // Find the joint that connects the driver's two bodies (best-effort).
+        let mut anchor: Option<Pos2> = None;
+        for joint in mech.joints() {
+            if joint.is_revolute() {
+                let bi = joint.body_i_id();
+                let bj = joint.body_j_id();
+                if (bi == drv.body_i_id() && bj == drv.body_j_id())
+                    || (bi == drv.body_j_id() && bj == drv.body_i_id())
+                {
+                    let global = mech_state.body_point_global(
+                        joint.body_i_id(),
+                        &joint.point_i_local(),
+                        q,
+                    );
+                    let sp = view.world_to_screen(global.x, global.y);
+                    anchor = Some(Pos2::new(sp[0], sp[1]));
+                    break;
+                }
+            }
+        }
+        if let Some(anchor) = anchor {
+            if canvas_rect.contains(anchor) {
+                let Some(kind) = kind_at(mech, constr_idx) else { continue };
+                let label = render_driver_overlay_label(id_label, drv.meta());
+                let color = kind_overlay_color(state, kind);
+                let pos = Pos2::new(anchor.x - 8.0, anchor.y - 24.0);
+                draw_pill_label(painter, pos, &label, color, egui::Align2::RIGHT_TOP);
+            }
+        }
+    }
+
+    // Linear drivers: label at the midpoint of P_a–P_b in world space.
+    let n_rev_drivers = mech.drivers().len();
+    for (drv_idx, drv) in mech.linear_drivers().iter().enumerate() {
+        let constr_idx = n_joints + n_rev_drivers + drv_idx;
+        let pa_local = nalgebra::Vector2::new(drv.point_a()[0], drv.point_a()[1]);
+        let pb_local = nalgebra::Vector2::new(drv.point_b()[0], drv.point_b()[1]);
+        let pa = mech_state.body_point_global(drv.body_i_id(), &pa_local, q);
+        let pb = mech_state.body_point_global(drv.body_j_id(), &pb_local, q);
+        let mid_x = (pa.x + pb.x) * 0.5;
+        let mid_y = (pa.y + pb.y) * 0.5;
+        let sp = view.world_to_screen(mid_x, mid_y);
+        let anchor = Pos2::new(sp[0], sp[1]);
+        if !canvas_rect.contains(anchor) {
+            continue;
+        }
+        let Some(kind) = kind_at(mech, constr_idx) else { continue };
+        let label = render_driver_overlay_label(drv.id(), drv.meta());
+        let color = kind_overlay_color(state, kind);
+        draw_pill_label(painter, anchor, &label, color, egui::Align2::CENTER_BOTTOM);
+    }
+
+    // ── Per-body q labels ─────────────────────────────────────────────
+    for (body_id, body) in mech.bodies().iter() {
+        if body_id == GROUND_ID {
+            continue;
+        }
+        let (x, y, theta) = mech_state.get_pose(body_id, q);
+        let cg_global = mech_state.body_point_global(body_id, &body.cg_local, q);
+        let cg_screen = view.world_to_screen(cg_global.x, cg_global.y);
+        let anchor = Pos2::new(cg_screen[0], cg_screen[1] + 14.0);
+        if !canvas_rect.contains(anchor) {
+            continue;
+        }
+        let units = &state.display_units;
+        let label = format!(
+            "q_{} = ({:.3}, {:.3}, {:.1}{})",
+            body_id,
+            units.length(x),
+            units.length(y),
+            units.angle(theta),
+            units.angle_suffix(),
+        );
+        let color = state.nc(Color32::from_rgb(180, 200, 230));
+        draw_pill_label(
+            painter,
+            anchor,
+            &label,
+            color,
+            egui::Align2::CENTER_TOP,
+        );
+    }
+}
+
+/// Color for an `EqKind` overlay tag. Routed through `state.nc()` for
+/// Nathan-Mode grayscale support.
+fn kind_overlay_color(state: &AppState, kind: crate::gui::eq_rendering::EqKind) -> Color32 {
+    use crate::gui::eq_rendering::EqKind;
+    let raw = match kind {
+        EqKind::Revolute => Color32::from_rgb(80, 160, 255),
+        EqKind::Prismatic => Color32::from_rgb(180, 130, 255),
+        EqKind::Fixed => Color32::from_rgb(220, 220, 220),
+        EqKind::CamFollower => Color32::from_rgb(100, 220, 140),
+        EqKind::RevoluteDriver | EqKind::LinearDriver => {
+            Color32::from_rgb(255, 190, 80)
+        }
+    };
+    state.nc(raw)
+}
+
+/// Build the driver's overlay label including a short parameterization hint.
+fn render_driver_overlay_label(
+    id: &str,
+    meta: Option<&crate::core::driver::DriverMeta>,
+) -> String {
+    use crate::core::driver::DriverMeta;
+    match meta {
+        Some(DriverMeta::ConstantSpeed { omega, theta_0 }) => {
+            format!("{}: θ = {:.2} + {:.2}·t", id, theta_0, omega)
+        }
+        Some(DriverMeta::Expression { expr, .. }) => {
+            format!("{}: f(t) = {}", id, expr)
+        }
+        Some(DriverMeta::LinearLength { velocity, length_0 }) => {
+            format!("{}: L = {:.3} + {:.3}·t", id, length_0, velocity)
+        }
+        Some(DriverMeta::CosineStroke { .. }) => format!("{}: cosine stroke", id),
+        None => format!("{}: f(t)", id),
+    }
+}
+
+/// Draw a small text label with a faint background pill so it stays legible
+/// over geometry. `align` controls where `pos` sits relative to the text rect.
+fn draw_pill_label(
+    painter: &egui::Painter,
+    pos: Pos2,
+    text: &str,
+    color: Color32,
+    align: egui::Align2,
+) {
+    let font = FontId::proportional(10.0);
+    let galley = painter.layout_no_wrap(text.to_string(), font.clone(), color);
+    let size = galley.size();
+    let text_min = match align {
+        egui::Align2::LEFT_TOP => pos,
+        egui::Align2::RIGHT_TOP => Pos2::new(pos.x - size.x, pos.y),
+        egui::Align2::LEFT_BOTTOM => Pos2::new(pos.x, pos.y - size.y),
+        egui::Align2::RIGHT_BOTTOM => Pos2::new(pos.x - size.x, pos.y - size.y),
+        egui::Align2::CENTER_TOP => Pos2::new(pos.x - size.x * 0.5, pos.y),
+        egui::Align2::CENTER_BOTTOM => Pos2::new(pos.x - size.x * 0.5, pos.y - size.y),
+        _ => Pos2::new(pos.x - size.x * 0.5, pos.y - size.y * 0.5),
+    };
+    let pad = egui::vec2(3.0, 1.0);
+    let rect = Rect::from_min_size(text_min, size).expand2(pad);
+    let bg = Color32::from_rgba_unmultiplied(20, 22, 30, 200);
+    painter.rect_filled(rect, 3.0, bg);
+    painter.galley(text_min, galley, Color32::PLACEHOLDER);
 }
 
 /// Show rich tooltips when the mouse hovers over a body, joint, or force zone.

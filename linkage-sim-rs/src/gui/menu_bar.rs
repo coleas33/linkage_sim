@@ -517,6 +517,8 @@ pub(crate) fn draw_menu_bar(
                         .on_hover_text("Show/hide link length dimensions on the canvas");
                     ui.checkbox(&mut state.show_labels, "Show Labels")
                         .on_hover_text("Show/hide body and joint labels on the canvas");
+                    ui.checkbox(&mut state.show_equation_overlay, "Show equations")
+                        .on_hover_text("Overlay loop-equation tags Φ_J* and per-body q vectors on the canvas. Toggle off to hide.");
                     let enabled = state.gravity_magnitude > 0.0;
                     let mut check = enabled;
                     if ui.checkbox(&mut check, "Gravity")
