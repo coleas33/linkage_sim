@@ -50,13 +50,27 @@ pub fn draw(state: &mut AppState, ui: &mut egui::Ui) {
 
     let current_kind = target_kind_label(target);
     let mut new_kind = current_kind;
-    egui::ComboBox::from_label("Observable")
-        .selected_text(new_kind)
-        .show_ui(ui, |ui| {
-            for kind in &["Angle", "WorldX", "WorldY", "Projection", "Distance"] {
-                ui.selectable_value(&mut new_kind, kind, *kind);
-            }
-        });
+    // Disable the Observable selector entirely when the mechanism has no
+    // non-ground bodies — without an eligible body the variant-switch
+    // handler below would assign an empty body_id and the picker would
+    // silently desync from the active mechanism. Surface a yellow hint so
+    // the user understands why the dropdown is greyed.
+    let body_ids_empty = body_ids.is_empty();
+    ui.add_enabled_ui(!body_ids_empty, |ui| {
+        egui::ComboBox::from_label("Observable")
+            .selected_text(new_kind)
+            .show_ui(ui, |ui| {
+                for kind in &["Angle", "WorldX", "WorldY", "Projection", "Distance"] {
+                    ui.selectable_value(&mut new_kind, kind, *kind);
+                }
+            });
+    });
+    if body_ids_empty {
+        ui.colored_label(
+            egui::Color32::from_rgb(220, 180, 60),
+            "\u{26A0} No non-ground bodies in the mechanism. Add a body to enable trajectory targets.",
+        );
+    }
 
     if new_kind != current_kind {
         let body = body_ids.first().cloned().unwrap_or_default();
