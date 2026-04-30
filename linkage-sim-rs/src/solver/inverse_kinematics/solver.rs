@@ -132,20 +132,35 @@ pub fn solve_for_target(
     max_iter: usize,
     n_probe: usize,
 ) -> Result<InverseSolveResult, LinkageError> {
-    let _ = severity; // failure-mode bubbling is added in Task 1.11
     assert!(nominal_rate.abs() > 1e-12, "nominal_rate must be non-zero");
 
-    // 1. Workspace probe — used for warm-start bracket + reachability check.
+    // 1. Workspace probe.
     let probe = workspace_probe(
         mech, q_seed, u_range.0, u_range.1, u_0, nominal_rate, target, n_probe,
     )?;
 
-    // Task 1.9 review fold-in: handle the edge case where every probe sample failed.
     if probe.g_samples.is_empty() {
         return Err(LinkageError::SvdSolveFailed);
     }
 
-    // 2. Bracket: find u_seed in the probe whose g is closest to h.
+    // 2a. Reachability check. Slack accommodates probe granularity: between
+    // adjacent samples `g` can vary by up to ~|g_max - g_min| × (1 / n_probe),
+    // so a fraction of the workspace span is the appropriate scale (much
+    // larger than mere FP noise).
+    let workspace_span = (probe.g_max - probe.g_min).abs();
+    let reachability_slack = (1e-3 * workspace_span).max(1e-9);
+    if h < probe.g_min - reachability_slack || h > probe.g_max + reachability_slack {
+        let achieved_clamp = h.clamp(probe.g_min, probe.g_max);
+        let status = InverseSolveStatus::Reachability {
+            target: h,
+            achieved_clamp,
+            workspace_min: Some(probe.g_min),
+            workspace_max: Some(probe.g_max),
+        };
+        return classify_or_fail(severity, status, q_seed.clone(), 0.0);
+    }
+
+    // 2b. Bracket: find u_seed in the probe whose g is closest to h.
     let mut closest_idx = 0usize;
     let mut closest_diff = f64::INFINITY;
     for (i, g_i) in probe.g_samples.iter().enumerate() {
@@ -157,7 +172,7 @@ pub fn solve_for_target(
     }
     let u_seed = probe.u_samples[closest_idx];
 
-    // 3. Forward solve at u_seed for the warm-start q.
+    // 3. Forward solve at u_seed.
     let mut u_k = u_seed;
     let t_mech_seed = (u_seed - u_0) / nominal_rate;
     let mut q_k = solve_position(mech, q_seed, t_mech_seed, 1e-10, 50)?.q;
@@ -166,18 +181,17 @@ pub fn solve_for_target(
 
     // 4. Outer Newton.
     let mut iterations = 0usize;
-    let mut residual = (target.evaluate(mech, &q_k) - h).abs();
     let mut achieved = target.evaluate(mech, &q_k);
+    let mut residual = (achieved - h).abs();
+    let mut converged = residual < tol;
+    let branch_threshold = 0.5 * max_body_length(mech);
 
     for k in 1..=max_iter {
         iterations = k;
-        achieved = target.evaluate(mech, &q_k);
-        residual = (achieved - h).abs();
-        if residual < tol {
+        if converged {
             break;
         }
 
-        // Compute dq/du.
         let t_mech_k = (u_k - u_0) / nominal_rate;
         let phi_q = assemble_jacobian(mech, &q_k, t_mech_k);
         let mut phi_u = DVector::zeros(mech.n_constraints());
@@ -185,32 +199,38 @@ pub fn solve_for_target(
         let svd = phi_q.svd(true, true);
         let dq_du = svd.solve(&-phi_u, 1e-14)
             .map_err(|_| LinkageError::SvdSolveFailed)?;
-
-        // r'(u) = ∇g · dq/du
         let grad = target.gradient(mech, &q_k);
         let r_prime = grad.dot(&dq_du);
 
-        if r_prime.abs() < 1e-15 {
-            // Defer singularity handling to Task 1.11; for now treat as non-convergence.
-            break;
+        let grad_norm = grad.norm();
+        let dqdu_norm = dq_du.norm();
+        let eps_singularity = 1e-6 * (grad_norm * dqdu_norm).max(1e-12);
+        if r_prime.abs() < eps_singularity {
+            let status = InverseSolveStatus::Singularity { dg_du: r_prime };
+            return classify_or_fail(severity, status, q_k, u_k);
         }
 
-        // Newton step.
-        u_k -= (achieved - h) / r_prime;
-        // Clamp to u_range
-        u_k = u_k.clamp(u_range.0, u_range.1);
+        u_k = (u_k - (achieved - h) / r_prime).clamp(u_range.0, u_range.1);
 
+        let q_prev = q_k.clone();
         let t_mech_next = (u_k - u_0) / nominal_rate;
-        q_k = solve_position(mech, &q_k, t_mech_next, 1e-10, 50)?.q;
+        q_k = solve_position(mech, &q_prev, t_mech_next, 1e-10, 50)?.q;
+
+        let delta_norm = body_translation_delta(mech, &q_k, &q_prev);
+        if delta_norm > branch_threshold {
+            let status = InverseSolveStatus::BranchJump { delta_q_norm: delta_norm };
+            return classify_or_fail(severity, status, q_prev, u_k);
+        }
+
+        achieved = target.evaluate(mech, &q_k);
+        residual = (achieved - h).abs();
+        converged = residual < tol;
     }
 
-    achieved = target.evaluate(mech, &q_k);
-    residual = (achieved - h).abs();
-    let status = if residual < tol {
-        InverseSolveStatus::Converged
-    } else {
-        InverseSolveStatus::NonConvergent { iterations, residual }
-    };
+    if !converged {
+        let s = InverseSolveStatus::NonConvergent { iterations, residual };
+        return classify_or_fail(severity, s, q_k, u_k);
+    }
 
     Ok(InverseSolveResult {
         u: u_k,
@@ -218,8 +238,74 @@ pub fn solve_for_target(
         achieved,
         residual,
         iterations,
-        status,
+        status: InverseSolveStatus::Converged,
     })
+}
+
+/// In `Strict` mode, convert a non-`Converged` status to `Err(LinkageError::...)`.
+/// In `Analysis` mode, return an `InverseSolveResult` populated with the failure status.
+fn classify_or_fail(
+    severity: Severity,
+    status: InverseSolveStatus,
+    partial_q: DVector<f64>,
+    partial_u: f64,
+) -> Result<InverseSolveResult, LinkageError> {
+    match severity {
+        Severity::Strict => Err(LinkageError::from(status)),
+        Severity::Analysis => {
+            // Achieved/residual fields are zero in failure cases — caller can
+            // recompute from partial_q if needed for diagnostic display.
+            Ok(InverseSolveResult {
+                u: partial_u,
+                q: partial_q,
+                achieved: 0.0,
+                residual: 0.0,
+                iterations: 0,
+                status,
+            })
+        }
+    }
+}
+
+fn max_body_length(mech: &Mechanism) -> f64 {
+    use crate::core::state::GROUND_ID;
+    let mut max_len = 0.0_f64;
+    for (id, body) in mech.bodies() {
+        if id == GROUND_ID {
+            continue;
+        }
+        // Approximate body extent as 2 × max joint distance from CG. We use
+        // |cg_local| as a proxy; the simulator's bars store length in their
+        // BlueprintBody. For trajectory purposes this is a heuristic only.
+        let cg = body.cg_local;
+        let extent = (cg.x * cg.x + cg.y * cg.y).sqrt() * 2.0;
+        if extent > max_len {
+            max_len = extent;
+        }
+    }
+    // Floor: at least 1 cm to avoid tiny mechanisms being too sensitive.
+    max_len.max(0.01)
+}
+
+/// Translational-only ‖Δq‖ for branch-jump detection.
+///
+/// The state vector q mixes meters (x, y) and radians (θ) per body, so a raw
+/// ‖q_k − q_{k-1}‖ is unit-mismatched against `branch_jump_threshold` (which
+/// is in meters). This helper extracts only the (x, y) components per body,
+/// giving a true translational displacement comparable to body length.
+///
+/// See: docs/superpowers/specs/2026-04-29-trajectory-position-control-design.md §6.7
+fn body_translation_delta(mech: &Mechanism, q_a: &DVector<f64>, q_b: &DVector<f64>) -> f64 {
+    let state = mech.state();
+    let mut sum_sq = 0.0_f64;
+    for body_id in mech.body_order() {
+        if let Ok((start, _)) = state.body_coord_range(body_id) {
+            let dx = q_a[start] - q_b[start];
+            let dy = q_a[start + 1] - q_b[start + 1];
+            sum_sq += dx * dx + dy * dy;
+        }
+    }
+    sum_sq.sqrt()
 }
 
 #[cfg(test)]
@@ -292,5 +378,36 @@ mod tests {
         ).unwrap();
         assert!(matches!(res.status, InverseSolveStatus::Converged));
         assert_abs_diff_eq!(res.achieved, h, epsilon = 1e-7);
+    }
+
+    #[test]
+    fn reachability_failure_in_analysis_mode() {
+        let mech = build_fourbar();
+        let q0 = solve_at(&mech, 0.0);
+        let target = ControlTarget::angle("crank");
+        // Crank angle = 100 rad is unreachable in [0, 2π]
+        let h = 100.0;
+        let res = solve_for_target(
+            &mech, &q0, &target, h,
+            Severity::Analysis,
+            (0.0, 2.0 * PI), 0.0, 2.0 * PI,
+            1e-8, 50, 64,
+        ).unwrap();
+        assert!(matches!(res.status, InverseSolveStatus::Reachability { .. }));
+    }
+
+    #[test]
+    fn reachability_failure_in_strict_mode_returns_err() {
+        let mech = build_fourbar();
+        let q0 = solve_at(&mech, 0.0);
+        let target = ControlTarget::angle("crank");
+        let h = 100.0;
+        let res = solve_for_target(
+            &mech, &q0, &target, h,
+            Severity::Strict,
+            (0.0, 2.0 * PI), 0.0, 2.0 * PI,
+            1e-8, 50, 64,
+        );
+        assert!(matches!(res, Err(LinkageError::TrajectoryUnreachable { .. })));
     }
 }
