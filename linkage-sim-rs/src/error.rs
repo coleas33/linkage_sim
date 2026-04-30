@@ -60,7 +60,8 @@ pub enum LinkageError {
     // -- Trajectory-mode failures --
     /// Target value is outside the reachable workspace.
     #[error(
-        "Trajectory unreachable at target = {target:.4} (workspace [{min:.4}, {max:.4}])."
+        "Trajectory unreachable at target = {target:.4} \
+         (workspace [{min:.4}, {max:.4}], closest reachable = {achieved_clamp:.4})."
     )]
     TrajectoryUnreachable {
         target: f64,
@@ -90,12 +91,10 @@ impl From<crate::solver::inverse_kinematics::InverseSolveStatus> for LinkageErro
         use crate::solver::inverse_kinematics::InverseSolveStatus;
         match status {
             InverseSolveStatus::Converged => {
-                // Caller bug: shouldn't convert a Converged status to an error.
-                // Use a representative numerical error.
-                LinkageError::TrajectoryNonConvergent {
-                    iterations: 0,
-                    residual: 0.0,
-                }
+                unreachable!(
+                    "LinkageError::from(InverseSolveStatus::Converged) — caller bug; \
+                     convert only failure variants"
+                );
             }
             InverseSolveStatus::Reachability {
                 target,
@@ -152,5 +151,27 @@ mod tests {
         let status = InverseSolveStatus::Singularity { dg_du: 1e-9 };
         let err: LinkageError = status.into();
         assert!(matches!(err, LinkageError::TrajectorySingular { .. }));
+    }
+
+    #[test]
+    #[should_panic(expected = "caller bug")]
+    fn from_converged_status_panics_as_contract_violation() {
+        let status = InverseSolveStatus::Converged;
+        let _err: LinkageError = status.into();
+    }
+
+    #[test]
+    fn unreachable_error_message_includes_achieved_clamp() {
+        let status = InverseSolveStatus::Reachability {
+            target: 0.092,
+            achieved_clamp: 0.087,
+            workspace_min: Some(-0.05),
+            workspace_max: Some(0.087),
+        };
+        let err: LinkageError = status.into();
+        let msg = format!("{}", err);
+        assert!(msg.contains("0.0920"), "missing target in: {}", msg);
+        assert!(msg.contains("0.0870"), "missing achieved_clamp/max in: {}", msg);
+        assert!(msg.contains("closest reachable"), "missing label in: {}", msg);
     }
 }
