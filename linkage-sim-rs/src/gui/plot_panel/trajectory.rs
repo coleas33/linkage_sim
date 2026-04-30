@@ -42,7 +42,7 @@ pub(super) fn render(state: &mut AppState, ui: &mut egui::Ui) {
         data.u_values.as_ref(),
     ) else {
         ui.label(
-            "No trajectory data yet — switch to Trajectory mode and click Compute.",
+            "No trajectory data yet \u{2014} switch to Trajectory mode and click Compute trajectory.",
         );
         return;
     };

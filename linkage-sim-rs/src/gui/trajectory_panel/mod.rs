@@ -35,6 +35,31 @@ pub fn draw(state: &mut AppState, ui: &mut egui::Ui) {
         .show(ui, |ui| {
             draw_severity_toggle(state, ui);
         });
+
+    // Explicit recompute trigger. Auto-debounced recompute already fires after
+    // a short delay when fields change, but new users don't know it exists —
+    // a visible button makes the action discoverable and gives a way to force
+    // an immediate recompute.
+    ui.separator();
+    ui.horizontal(|ui| {
+        let compute_btn = egui::Button::new(
+            egui::RichText::new("\u{23F5} Compute trajectory")
+                .color(egui::Color32::WHITE)
+                .strong(),
+        )
+        .fill(egui::Color32::from_rgb(40, 100, 200));
+        if ui
+            .add(compute_btn)
+            .on_hover_text(
+                "Run the inverse-kinematics solve over the active target and profile. \
+                 Auto-recomputes after a short delay when fields change; this button \
+                 forces an immediate recompute.",
+            )
+            .clicked()
+        {
+            state.mark_sweep_dirty();
+        }
+    });
 }
 
 fn draw_severity_toggle(state: &mut AppState, ui: &mut egui::Ui) {
