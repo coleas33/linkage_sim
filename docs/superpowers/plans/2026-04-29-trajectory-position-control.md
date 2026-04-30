@@ -677,10 +677,10 @@ pub(crate) mod test_helpers;
 In `linkage-sim-rs/src/solver/inverse_kinematics/control_target.rs`, **delete** the inline `build_fourbar` and `solve_at` functions from the test module, and replace with:
 
 ```rust
-use super::test_helpers::{build_fourbar, solve_at};
+use super::super::test_helpers::{build_fourbar, solve_at};
 ```
 
-(at the top of the `#[cfg(test)] mod tests { ... }` block, after the existing `use super::*;`).
+(at the top of the `#[cfg(test)] mod tests { ... }` block, after the existing `use super::*;`. Note: `super::super::` because the test module is nested inside `control_target.rs`; `super` resolves to `control_target`, and `test_helpers` is its sibling under `inverse_kinematics`.)
 
 Run `cargo test --lib solver::inverse_kinematics::control_target::tests` to verify the existing 3 tests still pass via the shared helpers.
 
@@ -713,10 +713,10 @@ Append to the `#[cfg(test)] mod tests` block in `control_target.rs`:
     fn world_y_target_at_rotated_pose() {
         let mech = build_fourbar();
         let q = solve_at(&mech, 0.25); // crank at π/2
-        // Crank tip at body-local (0.005, 0)
+        // Crank tip at body-local (0.01, 0) — make_bar puts B at body-local +x = length.
         let target = ControlTarget::WorldY {
             body_id: "crank".into(),
-            local_pt: [0.005, 0.0],
+            local_pt: [0.01, 0.0],
         };
         let g = target.evaluate(&mech, &q);
         // Crank now points up; tip-y ≈ 0.01.
