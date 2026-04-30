@@ -8,6 +8,7 @@
 //! See: docs/superpowers/specs/2026-04-29-trajectory-position-control-design.md
 
 pub mod control_target;
+pub mod derivatives;
 pub mod severity;
 pub mod solver;
 
@@ -15,5 +16,6 @@ pub mod solver;
 pub(crate) mod test_helpers;
 
 pub use control_target::ControlTarget;
+pub use derivatives::inverse_velocity;
 pub use severity::{InverseSolveStatus, Severity};
 pub use solver::{solve_for_target, workspace_probe, InverseSolveResult, WorkspaceProbe};
