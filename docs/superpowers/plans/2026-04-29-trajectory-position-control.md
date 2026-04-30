@@ -1047,18 +1047,17 @@ git commit -m "feat(traj): add ControlTarget::Projection variant"
     fn distance_target_evaluates_to_norm() {
         let mech = build_fourbar();
         let q = solve_at(&mech, 0.0);
-        // Distance from crank tip to origin
+        // Distance from a midpoint on the crank to the origin
         let target = ControlTarget::Distance {
             body_id: "crank".into(),
             local_pt: [0.005, 0.0],
             ref_pt: [0.0, 0.0],
         };
         let g = target.evaluate(&mech, &q);
-        // At t=0, crank centroid is at (0.005, 0); tip at body-local (0.005, 0)
-        // means the local frame is centered at body origin (0.005, 0), so tip is
-        // at body-local +x = (0.01, 0) world for a horizontal crank.
-        // Distance to (0,0) = 0.01.
-        assert_abs_diff_eq!(g, 0.01, epsilon = 1e-7);
+        // At t=0, body-local (0.005, 0.0) maps to world (0.005, 0.0)
+        // (consistent with world_x_target_evaluates_at_body_local_point).
+        // Distance from (0.005, 0) to (0, 0) = 0.005.
+        assert_abs_diff_eq!(g, 0.005, epsilon = 1e-7);
     }
 
     #[test]
