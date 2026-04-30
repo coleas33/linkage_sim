@@ -74,6 +74,19 @@ pub fn handle_interaction(
         state.alignment_guides.clear();
     }
 
+    // ── Esc cancels armed canvas pick ──────────────────────────────────
+    // Same priority as the click-pick branch below: handled before any
+    // selection / drag gesture can fire so the user has a guaranteed escape
+    // from pick mode even when the trajectory panel is collapsed.
+    if state.pending_canvas_pick.is_some()
+        && ui.input(|i| i.key_pressed(egui::Key::Escape))
+    {
+        state.pending_canvas_pick = None;
+        state.status_message = Some("Canvas pick cancelled".to_string());
+        state.status_message_time = 2.0;
+        return false;
+    }
+
     // ── Trajectory target pick (highest priority, consumes the click) ──
     // When `state.pending_canvas_pick` is set, the trajectory-panel "Pick on
     // canvas" button is in armed mode. Capture the next primary click and

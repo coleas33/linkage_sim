@@ -742,6 +742,26 @@ impl eframe::App for LinkageApp {
                         ui.colored_label(self.state.nc(egui::Color32::from_rgb(100, 220, 100)), msg);
                     });
                 }
+
+                // ── Trajectory canvas-pick mode hint ───────────────────
+                // Visible whenever a "Pick on canvas" button is armed,
+                // regardless of which panel is collapsed. Esc cancels.
+                if let Some(kind) = self.state.pending_canvas_pick {
+                    use crate::gui::state::PendingCanvasPickKind;
+                    let hint = match kind {
+                        PendingCanvasPickKind::LocalPt => "\u{1F4CD} Click on a body to set the target's body-local point. Esc to cancel.",
+                        PendingCanvasPickKind::AxisOrigin => "\u{1F4CD} Click anywhere to set the projection axis origin. Esc to cancel.",
+                        PendingCanvasPickKind::AxisDir => "\u{1F4CD} Click a second point to set axis direction. Esc to cancel.",
+                        PendingCanvasPickKind::RefPt => "\u{1F4CD} Click anywhere to set the distance reference point. Esc to cancel.",
+                    };
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(
+                            egui::RichText::new(hint)
+                                .strong()
+                                .color(self.state.nc(egui::Color32::from_rgb(120, 200, 200))),
+                        );
+                    });
+                }
             });
         });
 

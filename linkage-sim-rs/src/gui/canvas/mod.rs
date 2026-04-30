@@ -28,6 +28,13 @@ pub fn draw_canvas(ui: &mut egui::Ui, state: &mut AppState) {
         ui.allocate_painter(ui.available_size(), egui::Sense::click_and_drag());
     let canvas_rect = response.rect;
 
+    // Crosshair cursor while a trajectory canvas-pick is armed — gives a
+    // clear "you're in a different mode" signal even if the trajectory panel
+    // is collapsed.
+    if state.pending_canvas_pick.is_some() && response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+    }
+
     // Sync mounting angle into view transform so canvas rendering rotates.
     state.view.mounting_angle = state.mounting_angle;
 
