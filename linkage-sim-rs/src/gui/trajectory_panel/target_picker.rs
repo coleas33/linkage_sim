@@ -31,6 +31,15 @@ pub fn draw(state: &mut AppState, ui: &mut egui::Ui) {
         .unwrap_or_default();
     let mech_ref = state.mechanism.as_ref();
 
+    // Snapshot the scrub-cursor + active trajectory for the live readout below.
+    // We must capture before the mut-borrow on `state.sweep_mode` claims it for
+    // the rest of this function.
+    let scrub_t_for_readout = state.last_trajectory_scrub_t;
+    let trajectory_for_readout = match &state.sweep_mode {
+        SweepMode::Trajectory { trajectory, .. } => Some(trajectory.clone()),
+        _ => None,
+    };
+
     // Borrow pending_canvas_pick first (disjoint field from sweep_mode), then
     // destructure sweep_mode for the variant editor below.
     let pending = &mut state.pending_canvas_pick;
@@ -163,11 +172,38 @@ pub fn draw(state: &mut AppState, ui: &mut egui::Ui) {
     let target_clone = target.clone();
     if let Some(mech) = mech_ref {
         let g_now = target_clone.evaluate(mech, &state.q);
-        ui.label(format!(
-            "Current g(q) = {:.4} {}",
-            g_now,
-            target_clone.unit_label()
-        ));
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(format!(
+                    "Current g(q) = {:.4} {}",
+                    g_now,
+                    target_clone.unit_label()
+                ))
+                .strong(),
+            );
+            // When the user has clicked-to-scrub the plot to a specific time
+            // and the active mode is Trajectory, show the expected target
+            // value at that time alongside the live readout. The Δ-color
+            // signals tracking quality at a glance.
+            if let (Some(t_cur), Some(traj)) =
+                (scrub_t_for_readout, trajectory_for_readout.as_ref())
+            {
+                let (h_expected, _, _) = traj.evaluate(t_cur);
+                let residual = g_now - h_expected;
+                let color = if residual.abs() < 1e-3 {
+                    egui::Color32::from_rgb(120, 220, 120)
+                } else {
+                    egui::Color32::from_rgb(220, 180, 120)
+                };
+                ui.label(
+                    egui::RichText::new(format!(
+                        "vs h(t={:.3}s) = {:.4} (\u{0394}={:+.4})",
+                        t_cur, h_expected, residual
+                    ))
+                    .color(color),
+                );
+            }
+        });
     }
 }
 
