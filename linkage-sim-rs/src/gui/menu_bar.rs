@@ -219,7 +219,11 @@ pub(crate) fn draw_menu_bar(
                                 state.sweep_data.is_some(),
                                 egui::Button::new("Export Sweep CSV..."),
                             )
-                            .on_hover_text("Export sweep data (angles, torques, reactions) to CSV")
+                            .on_hover_text(
+                                "Export the active sweep as CSV.\n\
+                                 \u{2022} Angle/Stroke modes: per-step kinematic and dynamic columns.\n\
+                                 \u{2022} Trajectory mode: time-series with target/achieved/u/u_dot/u_ddot/F_actuator/status.",
+                            )
                             .clicked()
                         {
                             if let Some(path) = rfd::FileDialog::new()
@@ -257,23 +261,29 @@ pub(crate) fn draw_menu_bar(
                             ui.close();
                         }
                         // ── Firmware export (trajectory mode only) ──────────────
-                        // Only show when a trajectory has been computed; the
-                        // adapter trait is shared with planned G-code/Aerotech/
-                        // Beckhoff/Galil follow-ups (see export/firmware/mod.rs).
+                        // Always visible so the feature is discoverable; greyed
+                        // out + tooltip-explained when the active sweep isn't a
+                        // computed trajectory. The adapter trait is shared with
+                        // planned G-code/Aerotech/Beckhoff/Galil follow-ups
+                        // (see export/firmware/mod.rs).
                         let in_traj_mode = state
                             .sweep_data
                             .as_ref()
                             .map(|d| matches!(d.sweep_mode, crate::gui::sweep::SweepMode::Trajectory { .. }))
                             .unwrap_or(false);
-                        if in_traj_mode
-                            && ui
-                                .button("Export firmware (JSON)...")
-                                .on_hover_text(
-                                    "Export the trajectory as a firmware-friendly JSON \
-                                     document for downstream actuator controllers.",
-                                )
-                                .clicked()
-                        {
+                        let firmware_clicked = ui
+                            .add_enabled(
+                                in_traj_mode,
+                                egui::Button::new("Export firmware (JSON)..."),
+                            )
+                            .on_hover_text(if in_traj_mode {
+                                "Export the trajectory as a firmware-friendly JSON \
+                                 document for downstream actuator controllers."
+                            } else {
+                                "Switch to Trajectory mode and click Compute to enable this export."
+                            })
+                            .clicked();
+                        if firmware_clicked {
                             if let Some(path) = rfd::FileDialog::new()
                                 .add_filter("JSON", &["json"])
                                 .set_file_name("trajectory_firmware.json")
