@@ -22,7 +22,7 @@ pub use grid::GridSettings;
 pub use view_transform::ViewTransform;
 pub use load_cases::{LoadCase, LoadCaseManager};
 pub use types::{
-    PendingJointType, EditorTool, ContextMenuTarget, SelectedEntity,
+    PendingJointType, PendingCanvasPickKind, EditorTool, ContextMenuTarget, SelectedEntity,
     ValidationWarnings, SolverStatus, ForceResults,
     AlignmentAxis, AlignmentGuide, TrajectoryProfile,
 };
@@ -400,6 +400,10 @@ pub struct AppState {
     /// Trajectory variant is the source of truth for the input panel,
     /// which delegates to `gui::trajectory_panel::draw` when active.
     pub sweep_mode: crate::gui::sweep::SweepMode,
+    /// When `Some`, the next canvas left-click populates the indicated field of
+    /// the active trajectory `ControlTarget` instead of doing normal selection.
+    /// Cleared after consumption.
+    pub pending_canvas_pick: Option<PendingCanvasPickKind>,
 }
 
 /// Background image overlay for tracing mechanisms from photos/sketches.
@@ -633,6 +637,7 @@ impl Default for AppState {
             motion_profile: MotionProfile::default(),
             trajectory_severity: crate::solver::inverse_kinematics::Severity::Analysis,
             sweep_mode: crate::gui::sweep::SweepMode::Angle,
+            pending_canvas_pick: None,
         };
         state.rebuild();
         state

@@ -6,8 +6,10 @@ use crate::core::state::GROUND_ID;
 use crate::forces::elements::*;
 use crate::gui::state::{
     AddBodyState, AppState, DrawBodyGeometryState, EditorTool, ForceZoneDragState,
-    SelectedEntity,
+    PendingCanvasPickKind, SelectedEntity,
 };
+use crate::gui::sweep::SweepMode;
+use crate::solver::inverse_kinematics::ControlTarget;
 
 use super::alignment::compute_alignment_guides;
 use super::colors::*;
@@ -70,6 +72,24 @@ pub fn handle_interaction(
     // Clear alignment guides when no drag is active.
     if state.dragging_ground_pivot.is_none() {
         state.alignment_guides.clear();
+    }
+
+    // ── Trajectory target pick (highest priority, consumes the click) ──
+    // When `state.pending_canvas_pick` is set, the trajectory-panel "Pick on
+    // canvas" button is in armed mode. Capture the next primary click and
+    // route it to the corresponding `ControlTarget` field, then exit pick
+    // mode. We use `response.clicked()` (not `drag_started_by`) so this
+    // doesn't interfere with pan/drag gestures.
+    if state.pending_canvas_pick.is_some() && response.clicked() {
+        if let Some(pos) = response.interact_pointer_pos() {
+            let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+            let kind = state.pending_canvas_pick.unwrap();
+            apply_canvas_pick(state, kind, [wx, wy], pos, attachment_hit_targets, body_segments);
+            state.pending_canvas_pick = None;
+        }
+        // Suppress further click handling this frame; right-drag tracking is
+        // unaffected because we only fire on `response.clicked()`.
+        return false;
     }
 
     // ── Interaction: ground pivot drag ─────────────────────────────────
@@ -1292,6 +1312,123 @@ fn handle_click_selection(
                         state.multi_selected.clear();
                         state.selected = hit;
                     }
+                }
+            }
+        }
+    }
+}
+
+// ── Trajectory target canvas-pick helper ─────────────────────────────────────
+
+/// Write the click coordinates into the active trajectory target's matching
+/// field. Called from `handle_interaction` when `state.pending_canvas_pick` is
+/// armed and the user has just clicked the canvas.
+///
+/// For `LocalPt` picks, the click must hit a body — we look for an attachment
+/// point under the cursor first, then a body segment. The world coordinates
+/// are converted into the target body's local frame. If neither is hit,
+/// the click is silently ignored (the `pending_canvas_pick` is still cleared
+/// by the caller).
+///
+/// For world-frame picks (`AxisOrigin`, `AxisDir`, `RefPt`), the world
+/// coordinates are written directly; `AxisDir` is computed as the unit vector
+/// from the current `axis_origin` to the click point so a second click can
+/// define direction visually.
+fn apply_canvas_pick(
+    state: &mut AppState,
+    kind: PendingCanvasPickKind,
+    world_pos: [f64; 2],
+    screen_pos: Pos2,
+    attachment_hit_targets: &[AttachmentHit],
+    body_segments: &[BodySegment],
+) {
+    match kind {
+        PendingCanvasPickKind::LocalPt => {
+            // 1. Determine the target's body without holding a mutable borrow
+            //    on state.sweep_mode (we'll need state.world_to_body_local
+            //    below, which takes &self on AppState).
+            let target_body: String = match &state.sweep_mode {
+                SweepMode::Trajectory { target, .. } => match target {
+                    ControlTarget::WorldX { body_id, .. }
+                    | ControlTarget::WorldY { body_id, .. }
+                    | ControlTarget::Projection { body_id, .. }
+                    | ControlTarget::Distance { body_id, .. } => body_id.clone(),
+                    _ => return, // Angle target has no local_pt
+                },
+                _ => return,
+            };
+
+            // 2. Find which body the click landed on (attachment first, then segment).
+            let hit_body: Option<String> = {
+                let attach = attachment_hit_targets
+                    .iter()
+                    .filter(|h| screen_pos.distance(h.screen_pos) <= HIT_RADIUS)
+                    .min_by(|a, b| {
+                        screen_pos
+                            .distance(a.screen_pos)
+                            .partial_cmp(&screen_pos.distance(b.screen_pos))
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                if let Some(h) = attach {
+                    Some(h.body_id.clone())
+                } else {
+                    find_nearest_body_segment(screen_pos, body_segments, 20.0)
+                        .map(|seg| seg.body_id)
+                }
+            };
+
+            // Click must land on the target's body — otherwise body-local coords
+            // would be in the wrong frame. Silently skip on mismatch.
+            if hit_body.as_deref() != Some(target_body.as_str()) {
+                return;
+            }
+
+            // 3. Convert world → body-local using the existing helper, then
+            //    write into the target's local_pt field.
+            let local = state.world_to_body_local(&target_body, world_pos[0], world_pos[1]);
+            if let SweepMode::Trajectory { target, .. } = &mut state.sweep_mode {
+                match target {
+                    ControlTarget::WorldX { local_pt, .. }
+                    | ControlTarget::WorldY { local_pt, .. }
+                    | ControlTarget::Projection { local_pt, .. }
+                    | ControlTarget::Distance { local_pt, .. } => *local_pt = local,
+                    _ => {}
+                }
+            }
+        }
+        PendingCanvasPickKind::AxisOrigin => {
+            if let SweepMode::Trajectory { target, .. } = &mut state.sweep_mode {
+                if let ControlTarget::Projection { axis_origin, .. } = target {
+                    *axis_origin = [world_pos[0], world_pos[1]];
+                }
+            }
+        }
+        PendingCanvasPickKind::AxisDir => {
+            if let SweepMode::Trajectory { target, .. } = &mut state.sweep_mode {
+                if let ControlTarget::Projection {
+                    axis_dir,
+                    axis_origin,
+                    ..
+                } = target
+                {
+                    // Direction = world_pos − axis_origin so users can click
+                    // a second point to define direction graphically.
+                    let dx = world_pos[0] - axis_origin[0];
+                    let dy = world_pos[1] - axis_origin[1];
+                    let n = (dx * dx + dy * dy).sqrt();
+                    if n > 1e-9 {
+                        *axis_dir = [dx / n, dy / n];
+                    } else {
+                        // Click coincides with the origin — fallback to +x.
+                        *axis_dir = [1.0, 0.0];
+                    }
+                }
+            }
+        }
+        PendingCanvasPickKind::RefPt => {
+            if let SweepMode::Trajectory { target, .. } = &mut state.sweep_mode {
+                if let ControlTarget::Distance { ref_pt, .. } = target {
+                    *ref_pt = [world_pos[0], world_pos[1]];
                 }
             }
         }

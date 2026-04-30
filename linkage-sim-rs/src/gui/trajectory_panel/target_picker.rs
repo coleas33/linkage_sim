@@ -4,17 +4,15 @@ use eframe::egui;
 
 use crate::core::constraint::Constraint;
 use crate::core::mechanism::Mechanism;
-use crate::gui::state::AppState;
+use crate::gui::state::{AppState, PendingCanvasPickKind};
 use crate::gui::sweep::SweepMode;
 use crate::solver::inverse_kinematics::ControlTarget;
 
 pub fn draw(state: &mut AppState, ui: &mut egui::Ui) {
-    let SweepMode::Trajectory { target, .. } = &mut state.sweep_mode else {
-        ui.label("(only visible in Trajectory mode)");
-        return;
-    };
-
-    // Variant selector — show current kind, allow change
+    // Compute body list and capture mech-ref before we mutably borrow
+    // sweep_mode (split-borrow: sweep_mode and pending_canvas_pick / mechanism
+    // are disjoint fields on AppState, but the borrow checker only sees the
+    // structural lifetime, so we order the destructures carefully below).
     let body_ids: Vec<String> = state
         .mechanism
         .as_ref()
@@ -31,6 +29,15 @@ pub fn draw(state: &mut AppState, ui: &mut egui::Ui) {
                 .collect()
         })
         .unwrap_or_default();
+    let mech_ref = state.mechanism.as_ref();
+
+    // Borrow pending_canvas_pick first (disjoint field from sweep_mode), then
+    // destructure sweep_mode for the variant editor below.
+    let pending = &mut state.pending_canvas_pick;
+    let SweepMode::Trajectory { target, .. } = &mut state.sweep_mode else {
+        ui.label("(only visible in Trajectory mode)");
+        return;
+    };
 
     let current_kind = target_kind_label(target);
     let mut new_kind = current_kind;
@@ -70,19 +77,21 @@ pub fn draw(state: &mut AppState, ui: &mut egui::Ui) {
         | ControlTarget::Projection { body_id, .. }
         | ControlTarget::Distance { body_id, .. } => body_id.clone(),
     };
-    let mech_ref = state.mechanism.as_ref();
 
     // Variant-specific fields
     match target {
         ControlTarget::Angle { .. } => {}
         ControlTarget::WorldX { local_pt, .. } | ControlTarget::WorldY { local_pt, .. } => {
-            draw_point_input_with_joint_helper(
-                local_pt,
-                &body_id_for_target,
-                mech_ref,
-                ui,
-                "Local point (m)",
-            );
+            ui.horizontal(|ui| {
+                draw_point_input_with_joint_helper(
+                    local_pt,
+                    &body_id_for_target,
+                    mech_ref,
+                    ui,
+                    "Local point (m)",
+                );
+                draw_pick_on_canvas_button(pending, PendingCanvasPickKind::LocalPt, ui);
+            });
         }
         ControlTarget::Projection {
             local_pt,
@@ -90,43 +99,76 @@ pub fn draw(state: &mut AppState, ui: &mut egui::Ui) {
             axis_dir,
             ..
         } => {
-            draw_point_input_with_joint_helper(
-                local_pt,
-                &body_id_for_target,
-                mech_ref,
-                ui,
-                "Local point (m)",
-            );
-            ui.label("Axis origin (m):");
-            draw_point_input(axis_origin, ui);
-            ui.label("Axis direction (will be normalized):");
-            draw_point_input(axis_dir, ui);
+            ui.horizontal(|ui| {
+                draw_point_input_with_joint_helper(
+                    local_pt,
+                    &body_id_for_target,
+                    mech_ref,
+                    ui,
+                    "Local point (m)",
+                );
+                draw_pick_on_canvas_button(pending, PendingCanvasPickKind::LocalPt, ui);
+            });
+            ui.horizontal(|ui| {
+                ui.label("Axis origin (m):");
+                draw_point_input(axis_origin, ui);
+                draw_pick_on_canvas_button(pending, PendingCanvasPickKind::AxisOrigin, ui);
+            });
+            ui.horizontal(|ui| {
+                ui.label("Axis direction (will be normalized):");
+                draw_point_input(axis_dir, ui);
+                draw_pick_on_canvas_button(pending, PendingCanvasPickKind::AxisDir, ui);
+            });
         }
         ControlTarget::Distance {
             local_pt, ref_pt, ..
         } => {
-            draw_point_input_with_joint_helper(
-                local_pt,
-                &body_id_for_target,
-                mech_ref,
-                ui,
-                "Local point (m)",
-            );
-            ui.label("Reference point (m):");
-            draw_point_input(ref_pt, ui);
+            ui.horizontal(|ui| {
+                draw_point_input_with_joint_helper(
+                    local_pt,
+                    &body_id_for_target,
+                    mech_ref,
+                    ui,
+                    "Local point (m)",
+                );
+                draw_pick_on_canvas_button(pending, PendingCanvasPickKind::LocalPt, ui);
+            });
+            ui.horizontal(|ui| {
+                ui.label("Reference point (m):");
+                draw_point_input(ref_pt, ui);
+                draw_pick_on_canvas_button(pending, PendingCanvasPickKind::RefPt, ui);
+            });
         }
     }
 
     // Live readout — clone target out of the mutable borrow so we can call
     // evaluate without holding a mut borrow to state.sweep_mode.
     let target_clone = target.clone();
-    if let Some(mech) = &state.mechanism {
+    if let Some(mech) = mech_ref {
         let g_now = target_clone.evaluate(mech, &state.q);
         ui.label(format!(
             "Current g(q) = {:.4} {}",
             g_now,
             target_clone.unit_label()
         ));
+    }
+}
+
+/// Renders a "📍 Pick" button. When clicked, sets `*pending` to `kind` (or
+/// clears it if already active for the same kind, providing a toggle to cancel).
+/// Label changes to "📍 Click canvas..." while pick mode is active for this field.
+fn draw_pick_on_canvas_button(
+    pending: &mut Option<PendingCanvasPickKind>,
+    kind: PendingCanvasPickKind,
+    ui: &mut egui::Ui,
+) {
+    let active = *pending == Some(kind);
+    let label = if active { "📍 Click canvas..." } else { "📍 Pick" };
+    let resp = ui.button(label).on_hover_text(
+        "Click to enter pick mode, then click anywhere on the canvas to set this point's coordinates.",
+    );
+    if resp.clicked() {
+        *pending = if active { None } else { Some(kind) };
     }
 }
 

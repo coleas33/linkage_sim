@@ -37,6 +37,22 @@ pub enum PendingJointType {
     Fixed,
 }
 
+/// Identifies which trajectory-target field should be populated by the next
+/// canvas click. Set by the trajectory_panel "Pick on canvas" buttons; consumed
+/// by the canvas interaction layer on the next left-click.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PendingCanvasPickKind {
+    /// Body-local point (requires hitting a body to capture body-local coords).
+    LocalPt,
+    /// World-frame axis origin.
+    AxisOrigin,
+    /// World-frame axis direction (vector from current origin to click point;
+    /// effectively the click coords are read as the direction vector).
+    AxisDir,
+    /// World-frame reference point.
+    RefPt,
+}
+
 /// Active editor tool — determines what happens on canvas clicks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorTool {
