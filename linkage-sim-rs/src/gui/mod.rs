@@ -26,7 +26,8 @@ pub use state::file_io::{decode_mechanism_from_url, encode_mechanism_for_url};
 pub use sweep::{SweepData, SweepMode};
 use samples::SampleMechanism;
 use crate::core::state::GROUND_ID;
-use state::{AngleUnit, EditorTool, LengthUnit, PlaceForceState, SelectedEntity};
+use crate::solver::inverse_kinematics::ControlTarget;
+use state::{AngleUnit, EditorTool, LengthUnit, MotionProfile, PlaceForceState, SelectedEntity, TrajectoryProfile};
 
 /// Top-level application struct for eframe.
 pub struct LinkageApp {
@@ -482,6 +483,84 @@ impl eframe::App for LinkageApp {
                         .logarithmic(true)
                         .clamping(egui::SliderClamping::Always),
                 ).on_hover_text("Kinematic animation speed in degrees per second");
+
+                ui.separator();
+
+                // ── Sweep mode dropdown (teal) ──────────────────────
+                // Global sweep mode selector: Angle / Stroke / Trajectory.
+                // Lives in the toolbar so the active mode is always
+                // visible, regardless of which side panel the user is
+                // interacting with. Trajectory carries a payload, so we
+                // use selectable_label + click-to-construct (matching the
+                // logic that previously lived in input_panel).
+                let sweep_color = self.state.nc(egui::Color32::from_rgb(120, 200, 200));
+                ui.label(egui::RichText::new("Sweep mode:").color(sweep_color));
+                let sweep_selected_text = match &self.state.sweep_mode {
+                    SweepMode::Angle => "Angle",
+                    SweepMode::Stroke => "Stroke",
+                    SweepMode::Trajectory { .. } => "Trajectory",
+                };
+                egui::ComboBox::from_id_salt("toolbar_sweep_mode")
+                    .selected_text(egui::RichText::new(sweep_selected_text).color(sweep_color))
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut self.state.sweep_mode,
+                            SweepMode::Angle,
+                            "Angle",
+                        )
+                        .on_hover_text(
+                            "Kinematic sweep over the driver crank angle (revolute drivers).",
+                        );
+                        ui.selectable_value(
+                            &mut self.state.sweep_mode,
+                            SweepMode::Stroke,
+                            "Stroke",
+                        )
+                        .on_hover_text(
+                            "Kinematic sweep over actuator stroke (linear drivers).",
+                        );
+                        let is_traj = self.state.sweep_mode.is_trajectory();
+                        if ui
+                            .selectable_label(is_traj, "Trajectory")
+                            .on_hover_text(
+                                "Inverse trajectory analysis: prescribe an output observable \
+                                 h(t) and back-solve the actuator input u(t).",
+                            )
+                            .clicked()
+                            && !is_traj
+                        {
+                            // Construct a default Trajectory mode. Pick the
+                            // non-ground side of the driver pair as the
+                            // default control target body (avoids a panic
+                            // in ControlTarget::angle when no body is
+                            // literally named "crank").
+                            let default_target_body = self
+                                .state
+                                .mechanism
+                                .as_ref()
+                                .and_then(|m| {
+                                    m.driver_body_pair().map(|(a, b)| {
+                                        if a == GROUND_ID {
+                                            b.to_string()
+                                        } else {
+                                            a.to_string()
+                                        }
+                                    })
+                                })
+                                .unwrap_or_else(|| "crank".to_string());
+                            self.state.sweep_mode = SweepMode::Trajectory {
+                                target: ControlTarget::angle(default_target_body),
+                                profile: TrajectoryProfile {
+                                    shape: MotionProfile::ConstantSpeed,
+                                    start_value: 0.0,
+                                    end_value: 1.0,
+                                    duration: 1.0,
+                                },
+                                severity: self.state.trajectory_severity,
+                                n_samples: 200,
+                            };
+                        }
+                    });
 
                 ui.separator();
 
