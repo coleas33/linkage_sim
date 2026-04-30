@@ -169,6 +169,94 @@ impl ControlTarget {
             | ControlTarget::Distance { .. } => DMatrix::zeros(n, n),
         }
     }
+
+    /// Construct an `Angle` variant. Panics if `body_id` is `"ground"` (ground
+    /// has fixed θ = 0; controlling its angle would be a degenerate target).
+    pub fn angle(body_id: impl Into<String>) -> Self {
+        let body_id = body_id.into();
+        assert!(body_id != "ground", "ControlTarget::angle cannot target ground (θ is fixed)");
+        ControlTarget::Angle { body_id }
+    }
+
+    /// Construct a `WorldX` variant. Panics if `body_id` is `"ground"` (ground
+    /// is at fixed origin; observable would be the constant `local_pt[0]`).
+    pub fn world_x(body_id: impl Into<String>, local_pt: [f64; 2]) -> Self {
+        let body_id = body_id.into();
+        assert!(body_id != "ground", "ControlTarget::world_x cannot target ground (pose is fixed)");
+        ControlTarget::WorldX {
+            body_id,
+            local_pt,
+        }
+    }
+
+    /// Construct a `WorldY` variant. Panics if `body_id` is `"ground"`.
+    pub fn world_y(body_id: impl Into<String>, local_pt: [f64; 2]) -> Self {
+        let body_id = body_id.into();
+        assert!(body_id != "ground", "ControlTarget::world_y cannot target ground (pose is fixed)");
+        ControlTarget::WorldY {
+            body_id,
+            local_pt,
+        }
+    }
+
+    /// Construct a `Projection` variant. `axis_dir` is normalized in place;
+    /// panics if `axis_dir` has zero length or `body_id` is `"ground"`.
+    pub fn projection(
+        body_id: impl Into<String>,
+        local_pt: [f64; 2],
+        axis_origin: [f64; 2],
+        axis_dir: [f64; 2],
+    ) -> Self {
+        let body_id = body_id.into();
+        assert!(body_id != "ground", "ControlTarget::projection cannot target ground (pose is fixed)");
+        let dir = nalgebra::Vector2::new(axis_dir[0], axis_dir[1]);
+        let n = dir.norm();
+        assert!(n > 1e-12, "ControlTarget::projection axis_dir must be non-zero");
+        let unit = dir / n;
+        ControlTarget::Projection {
+            body_id,
+            local_pt,
+            axis_origin,
+            axis_dir: [unit.x, unit.y],
+        }
+    }
+
+    /// Construct a `Distance` variant. Panics if `body_id` is `"ground"`.
+    pub fn distance(
+        body_id: impl Into<String>,
+        local_pt: [f64; 2],
+        ref_pt: [f64; 2],
+    ) -> Self {
+        let body_id = body_id.into();
+        assert!(body_id != "ground", "ControlTarget::distance cannot target ground (pose is fixed)");
+        ControlTarget::Distance {
+            body_id,
+            local_pt,
+            ref_pt,
+        }
+    }
+
+    /// Human-readable unit label for the observable's value.
+    pub fn unit_label(&self) -> &'static str {
+        match self {
+            ControlTarget::Angle { .. } => "rad",
+            ControlTarget::WorldX { .. }
+            | ControlTarget::WorldY { .. }
+            | ControlTarget::Projection { .. }
+            | ControlTarget::Distance { .. } => "m",
+        }
+    }
+
+    /// Body ID this target reads from. For UI / diagnostics.
+    pub fn body_id(&self) -> &str {
+        match self {
+            ControlTarget::Angle { body_id }
+            | ControlTarget::WorldX { body_id, .. }
+            | ControlTarget::WorldY { body_id, .. }
+            | ControlTarget::Projection { body_id, .. }
+            | ControlTarget::Distance { body_id, .. } => body_id,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -398,6 +486,87 @@ mod tests {
                 "Distance gradient FD mismatch at '{}' (idx {}): analytic={}, fd={}",
                 label, idx, grad[idx], fd,
             );
+        }
+    }
+
+    #[test]
+    fn projection_constructor_normalizes_axis() {
+        let target = ControlTarget::projection(
+            "crank", [0.005, 0.0], [0.0, 0.0], [3.0, 4.0],
+        );
+        if let ControlTarget::Projection { axis_dir, .. } = target {
+            assert_abs_diff_eq!(axis_dir[0], 0.6, epsilon = 1e-15);
+            assert_abs_diff_eq!(axis_dir[1], 0.8, epsilon = 1e-15);
+        } else {
+            panic!("not Projection variant");
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "axis_dir")]
+    fn projection_constructor_rejects_zero_axis() {
+        let _ = ControlTarget::projection("crank", [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]);
+    }
+
+    #[test]
+    #[should_panic(expected = "ground")]
+    fn angle_constructor_rejects_ground() {
+        let _ = ControlTarget::angle("ground");
+    }
+
+    #[test]
+    #[should_panic(expected = "ground")]
+    fn world_x_constructor_rejects_ground() {
+        let _ = ControlTarget::world_x("ground", [0.0, 0.0]);
+    }
+
+    #[test]
+    #[should_panic(expected = "ground")]
+    fn distance_constructor_rejects_ground() {
+        let _ = ControlTarget::distance("ground", [0.0, 0.0], [0.0, 0.0]);
+    }
+
+    #[test]
+    fn unit_labels() {
+        assert_eq!(
+            ControlTarget::Angle { body_id: "x".into() }.unit_label(),
+            "rad"
+        );
+        assert_eq!(
+            ControlTarget::WorldX { body_id: "x".into(), local_pt: [0.0, 0.0] }.unit_label(),
+            "m"
+        );
+        assert_eq!(
+            ControlTarget::Distance {
+                body_id: "x".into(),
+                local_pt: [0.0, 0.0],
+                ref_pt: [0.0, 0.0],
+            }.unit_label(),
+            "m"
+        );
+    }
+
+    /// Fold-in from Task 1.7 review: exercise the Distance::gradient singularity branch.
+    #[test]
+    fn distance_gradient_returns_zero_at_singularity() {
+        let mech = build_fourbar();
+        let q = solve_at(&mech, 0.0);
+        // Body-local origin maps to body's world origin; setting ref_pt equal to that
+        // forces length = 0 and the early-return-zero branch.
+        let body_origin_world = mech.state().body_point_global(
+            "crank",
+            &nalgebra::Vector2::new(0.0, 0.0),
+            &q,
+        );
+        let target = ControlTarget::Distance {
+            body_id: "crank".into(),
+            local_pt: [0.0, 0.0],
+            ref_pt: [body_origin_world.x, body_origin_world.y],
+        };
+        let grad = target.gradient(&mech, &q);
+        // All components should be zero (singularity early-return)
+        for i in 0..grad.len() {
+            assert_abs_diff_eq!(grad[i], 0.0, epsilon = 1e-15);
         }
     }
 }
