@@ -2,6 +2,8 @@
 
 use eframe::egui;
 
+use crate::core::constraint::Constraint;
+use crate::core::mechanism::Mechanism;
 use crate::gui::state::AppState;
 use crate::gui::sweep::SweepMode;
 use crate::solver::inverse_kinematics::ControlTarget;
@@ -59,12 +61,28 @@ pub fn draw(state: &mut AppState, ui: &mut egui::Ui) {
     // Body picker (common to all variants)
     draw_body_picker(target, &body_ids, ui);
 
+    // Extract body_id once so we can pass it to the joint helper without
+    // colliding with the variant-specific destructure below.
+    let body_id_for_target = match target {
+        ControlTarget::Angle { body_id }
+        | ControlTarget::WorldX { body_id, .. }
+        | ControlTarget::WorldY { body_id, .. }
+        | ControlTarget::Projection { body_id, .. }
+        | ControlTarget::Distance { body_id, .. } => body_id.clone(),
+    };
+    let mech_ref = state.mechanism.as_ref();
+
     // Variant-specific fields
     match target {
         ControlTarget::Angle { .. } => {}
         ControlTarget::WorldX { local_pt, .. } | ControlTarget::WorldY { local_pt, .. } => {
-            ui.label("Body-local point (m):");
-            draw_point_input(local_pt, ui);
+            draw_point_input_with_joint_helper(
+                local_pt,
+                &body_id_for_target,
+                mech_ref,
+                ui,
+                "Local point (m)",
+            );
         }
         ControlTarget::Projection {
             local_pt,
@@ -72,8 +90,13 @@ pub fn draw(state: &mut AppState, ui: &mut egui::Ui) {
             axis_dir,
             ..
         } => {
-            ui.label("Body-local point (m):");
-            draw_point_input(local_pt, ui);
+            draw_point_input_with_joint_helper(
+                local_pt,
+                &body_id_for_target,
+                mech_ref,
+                ui,
+                "Local point (m)",
+            );
             ui.label("Axis origin (m):");
             draw_point_input(axis_origin, ui);
             ui.label("Axis direction (will be normalized):");
@@ -82,8 +105,13 @@ pub fn draw(state: &mut AppState, ui: &mut egui::Ui) {
         ControlTarget::Distance {
             local_pt, ref_pt, ..
         } => {
-            ui.label("Body-local point (m):");
-            draw_point_input(local_pt, ui);
+            draw_point_input_with_joint_helper(
+                local_pt,
+                &body_id_for_target,
+                mech_ref,
+                ui,
+                "Local point (m)",
+            );
             ui.label("Reference point (m):");
             draw_point_input(ref_pt, ui);
         }
@@ -145,5 +173,58 @@ fn draw_point_input(pt: &mut [f64; 2], ui: &mut egui::Ui) {
         ui.add(egui::DragValue::new(&mut pt[0]).speed(0.001).suffix(" m"));
         ui.label("y:");
         ui.add(egui::DragValue::new(&mut pt[1]).speed(0.001).suffix(" m"));
+    });
+}
+
+/// Like `draw_point_input` but adds a "From joint" dropdown that lists every
+/// joint attached to `body_id`; selecting one populates `pt` with that joint's
+/// body-local coordinates on `body_id`.
+///
+/// `mech` is the optional active mechanism — when `None` (or when no joints
+/// touch the body), the dropdown is omitted.
+fn draw_point_input_with_joint_helper(
+    pt: &mut [f64; 2],
+    body_id: &str,
+    mech: Option<&Mechanism>,
+    ui: &mut egui::Ui,
+    label: &str,
+) {
+    ui.horizontal(|ui| {
+        ui.label(format!("{}:", label));
+        ui.label("x:");
+        ui.add(egui::DragValue::new(&mut pt[0]).speed(0.001).suffix(" m"));
+        ui.label("y:");
+        ui.add(egui::DragValue::new(&mut pt[1]).speed(0.001).suffix(" m"));
+
+        let joints_on_body: Vec<(String, [f64; 2])> = mech
+            .map(|m| {
+                m.joints()
+                    .iter()
+                    .filter_map(|j| {
+                        if j.body_i_id() == body_id {
+                            let p = j.point_i_local();
+                            Some((j.id().to_string(), [p.x, p.y]))
+                        } else if j.body_j_id() == body_id {
+                            let p = j.point_j_local();
+                            Some((j.id().to_string(), [p.x, p.y]))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if !joints_on_body.is_empty() {
+            egui::ComboBox::from_id_salt(format!("from-joint-{}-{}", label, body_id))
+                .selected_text("From joint")
+                .show_ui(ui, |ui| {
+                    for (jid, jpt) in &joints_on_body {
+                        if ui.selectable_label(false, jid).clicked() {
+                            *pt = *jpt;
+                        }
+                    }
+                });
+        }
     });
 }
