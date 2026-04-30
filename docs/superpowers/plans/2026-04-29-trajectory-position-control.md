@@ -1814,8 +1814,12 @@ Expected: FAIL — current happy path returns Converged or NonConvergent.
 In `solve_for_target`, after the workspace probe (between probe call and bracket):
 
 ```rust
-    // 2a. Reachability check.
-    let reachability_slack = 1e-9; // tolerance to accommodate FP noise
+    // 2a. Reachability check. Slack accommodates probe granularity: between
+    // adjacent samples `g` can vary by up to ~|g_max - g_min| × (1 / n_probe),
+    // so a fraction of the workspace span is the appropriate scale (much
+    // larger than mere FP noise — `1e-9` would be too tight at typical N_probe=64).
+    let workspace_span = (probe.g_max - probe.g_min).abs();
+    let reachability_slack = (1e-3 * workspace_span).max(1e-9);
     if h < probe.g_min - reachability_slack || h > probe.g_max + reachability_slack {
         let achieved_clamp = h.clamp(probe.g_min, probe.g_max);
         let status = InverseSolveStatus::Reachability {
@@ -1954,7 +1958,11 @@ Replace the previous Newton-step block to incorporate all the above. The full up
         let t_mech_next = (u_k - u_0) / nominal_rate;
         q_k = solve_position(mech, &q_prev, t_mech_next, 1e-10, 50)?.q;
 
-        let delta_norm = (&q_k - &q_prev).norm();
+        // Branch-jump check uses translation-only norm because q mixes meters
+        // (x, y) and radians (θ) per body — a full ‖Δq‖ would be unit-mismatched
+        // against the meter-valued branch_threshold. The spec's "bodies shouldn't
+        // move more than half their longest dimension" claim is translational.
+        let delta_norm = body_translation_delta(&q_k, &q_prev);
         if delta_norm > branch_threshold {
             let status = InverseSolveStatus::BranchJump { delta_q_norm: delta_norm };
             return classify_or_fail(severity, status, q_prev, u_k);
