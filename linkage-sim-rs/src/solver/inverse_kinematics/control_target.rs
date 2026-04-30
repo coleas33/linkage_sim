@@ -16,7 +16,10 @@ use crate::core::mechanism::Mechanism;
 pub enum ControlTarget {
     /// Body angle θ_body. Linear in q (Hessian = 0).
     Angle { body_id: String },
-    // Other variants added in subsequent tasks.
+    /// World x-coord of body-local point.
+    WorldX { body_id: String, local_pt: [f64; 2] },
+    /// World y-coord of body-local point.
+    WorldY { body_id: String, local_pt: [f64; 2] },
 }
 
 impl ControlTarget {
@@ -24,6 +27,14 @@ impl ControlTarget {
     pub fn evaluate(&self, mech: &Mechanism, q: &DVector<f64>) -> f64 {
         match self {
             ControlTarget::Angle { body_id } => mech.state().get_angle(body_id, q),
+            ControlTarget::WorldX { body_id, local_pt } => {
+                let p = nalgebra::Vector2::new(local_pt[0], local_pt[1]);
+                mech.state().body_point_global(body_id, &p, q).x
+            }
+            ControlTarget::WorldY { body_id, local_pt } => {
+                let p = nalgebra::Vector2::new(local_pt[0], local_pt[1]);
+                mech.state().body_point_global(body_id, &p, q).y
+            }
         }
     }
 
@@ -40,9 +51,27 @@ impl ControlTarget {
                     grad[idx.theta_idx()] = 1.0;
                 }
             }
+            ControlTarget::WorldX { body_id, local_pt } => {
+                if !state.is_ground(body_id) {
+                    let idx = state.get_index(body_id).expect("body not registered");
+                    let p = nalgebra::Vector2::new(local_pt[0], local_pt[1]);
+                    // P_x = r_x + (A(θ)·s)_x ;  ∂P_x/∂x = 1, ∂P_x/∂θ = (B(θ)·s)_x
+                    grad[idx.x_idx()] = 1.0;
+                    let bs = state.body_point_global_derivative(body_id, &p, q);
+                    grad[idx.theta_idx()] = bs.x;
+                }
+            }
+            ControlTarget::WorldY { body_id, local_pt } => {
+                if !state.is_ground(body_id) {
+                    let idx = state.get_index(body_id).expect("body not registered");
+                    let p = nalgebra::Vector2::new(local_pt[0], local_pt[1]);
+                    grad[idx.y_idx()] = 1.0;
+                    let bs = state.body_point_global_derivative(body_id, &p, q);
+                    grad[idx.theta_idx()] = bs.y;
+                }
+            }
         }
 
-        let _ = q; // q unused for Angle (gradient is constant)
         grad
     }
 
@@ -51,7 +80,9 @@ impl ControlTarget {
         let n = mech.state().n_coords();
         let _ = q;
         match self {
-            ControlTarget::Angle { .. } => DMatrix::zeros(n, n),
+            ControlTarget::Angle { .. }
+            | ControlTarget::WorldX { .. }
+            | ControlTarget::WorldY { .. } => DMatrix::zeros(n, n),
         }
     }
 }
@@ -101,6 +132,62 @@ mod tests {
             for j in 0..n {
                 assert_abs_diff_eq!(h[(i, j)], 0.0, epsilon = 1e-15);
             }
+        }
+    }
+
+    #[test]
+    fn world_x_target_evaluates_at_body_local_point() {
+        let mech = build_fourbar();
+        let q = solve_at(&mech, 0.0); // crank along +x
+        // Body-local point at (0.005, 0.0) on crank == midpoint of crank bar
+        let target = ControlTarget::WorldX {
+            body_id: "crank".into(),
+            local_pt: [0.005, 0.0],
+        };
+        let g = target.evaluate(&mech, &q);
+        // At t=0, crank centroid is at (0.005, 0.0) world; midpoint same x.
+        assert_abs_diff_eq!(g, 0.005, epsilon = 1e-8);
+    }
+
+    #[test]
+    fn world_y_target_at_rotated_pose() {
+        let mech = build_fourbar();
+        let q = solve_at(&mech, 0.25); // crank at π/2
+        // Crank tip at body-local (0.01, 0) — bar length 0.01.
+        let target = ControlTarget::WorldY {
+            body_id: "crank".into(),
+            local_pt: [0.01, 0.0],
+        };
+        let g = target.evaluate(&mech, &q);
+        // Crank now points up; tip-y ≈ 0.01.
+        assert_abs_diff_eq!(g, 0.01, epsilon = 1e-7);
+    }
+
+    #[test]
+    fn world_x_gradient_finite_difference_check() {
+        let mech = build_fourbar();
+        let q = solve_at(&mech, 0.1);
+        let target = ControlTarget::WorldX {
+            body_id: "crank".into(),
+            local_pt: [0.005, 0.0],
+        };
+        let grad = target.gradient(&mech, &q);
+        // FD check on crank's x, y, theta
+        let crank = mech.state().get_index("crank").unwrap();
+        let h = 1e-7;
+
+        for &(idx, expected_label) in &[
+            (crank.x_idx(), "x"),
+            (crank.y_idx(), "y"),
+            (crank.theta_idx(), "theta"),
+        ] {
+            let mut q_plus = q.clone();
+            q_plus[idx] += h;
+            let mut q_minus = q.clone();
+            q_minus[idx] -= h;
+            let fd = (target.evaluate(&mech, &q_plus) - target.evaluate(&mech, &q_minus)) / (2.0 * h);
+            assert_abs_diff_eq!(grad[idx], fd, epsilon = 1e-5);
+            let _ = expected_label;
         }
     }
 }
