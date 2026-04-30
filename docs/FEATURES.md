@@ -311,3 +311,37 @@ All force elements are editable in the GUI property panel and rendered on the ca
 - **Natural language builder** -- describe a mechanism in words, auto-generate link lengths
 - **Mobile support** -- responsive layout for phones/tablets (3 commits saved in git, ready to cherry-pick)
 - **Mobile support** -- responsive layout and touch interactions for tablets and phones
+
+## Trajectory-mode position control
+
+Define a desired output observable trajectory (e.g. punch-tip vertical position
+as a function of time) and the simulator back-solves the actuator stroke `u(t)`,
+its rate `u̇(t)`, and the actuator force `F(t)` required to follow it — including
+joint reactions and energy along the trajectory.
+
+**Use case.** "Define a press-platen velocity profile in mm and time; tool
+computes actuator stroke and force."
+
+**How to use:**
+1. Build or load a linkage with at least one driver.
+2. Switch the Sweep Mode dropdown from `Angle` / `Stroke` to `Trajectory`.
+3. Pick the **target observable** — angle of a body, world-x or world-y of a
+   body-local point, projection onto a fixed line, or distance to a reference.
+4. Configure the **profile** (constant-speed or trapezoidal) with start, end,
+   duration. Inline preview shows `h(t)` as you edit.
+5. Click **Compute trajectory**. The plot panel shows `target(t)`, `achieved(t)`,
+   tracking residual, `u(t)`, `u̇(t)`, and force traces.
+6. Click on the trajectory plot to scrub the mechanism configuration to that
+   point in time.
+7. **Export CSV** for downstream use (spreadsheet, MATLAB, Python). The CSV
+   column layout is firmware-adapter-friendly.
+
+**Failure handling.** If the target is unreachable, the mechanism passes through
+a singularity, or the trajectory requires switching assembly modes, those
+samples are flagged on the plot in red with a hover tooltip explaining why.
+The **Severity** toggle controls whether the trajectory generation aborts
+(`Strict`) or continues with the failed samples annotated (`Analysis`). CSV
+export coerces to `Strict` automatically.
+
+**Math reference:** see `docs/superpowers/specs/2026-04-29-linkage-equations-reference.md`
+section §8 for the inverse-kinematics derivation.
