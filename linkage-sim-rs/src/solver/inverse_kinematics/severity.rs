@@ -24,7 +24,7 @@ impl Default for Severity {
 ///
 /// In `Severity::Analysis` mode this is returned in the `InverseSolveResult.status`
 /// field. In `Severity::Strict` mode it is converted to `LinkageError` and bubbled.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum InverseSolveStatus {
     /// Newton converged within tolerance.
     Converged,

@@ -42,7 +42,7 @@ use super::state::MotionProfile;
 /// design and is kept to avoid touching ~30 read sites; treat
 /// `angles_deg` as "the X-axis values for this sweep" rather than
 /// "degrees".
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum SweepMode {
     /// Revolute driver: X-axis is angle (degrees, 0-360 default).
     Angle,
@@ -63,7 +63,7 @@ impl SweepMode {
 ///
 /// Computed once when a mechanism is loaded or the driver changes. Cached
 /// to avoid recomputing every frame. Used by the plot panel and canvas.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SweepData {
     /// Driver angles in degrees at which solutions were obtained.
     pub angles_deg: Vec<f64>,
@@ -141,6 +141,28 @@ pub struct SweepData {
     /// Profile angular acceleration (rad/s^2) at each sweep angle.
     /// `None` when ConstantSpeed.
     pub profile_alpha: Option<Vec<f64>>,
+    /// Target value h(t_k) at each sample. Populated only in Trajectory mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_values: Option<Vec<f64>>,
+    /// Achieved value g(q_k) at each sample. Populated only in Trajectory mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub achieved_values: Option<Vec<f64>>,
+    /// Tracking residual achieved - target. Populated only in Trajectory mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tracking_residual: Option<Vec<f64>>,
+    /// Back-solved input parameter u_k. Populated only in Trajectory mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub u_values: Option<Vec<f64>>,
+    /// Back-solved input rate u̇_k. Populated only in Trajectory mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub u_dot_values: Option<Vec<f64>>,
+    /// Back-solved input accel ü_k. Populated only in Trajectory mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub u_ddot_values: Option<Vec<f64>>,
+    /// Per-sample inverse-solve diagnostic. Populated only in Trajectory mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inverse_solve_statuses:
+        Option<Vec<crate::solver::inverse_kinematics::InverseSolveStatus>>,
     /// Angles (degrees) at which toggle/dead points were detected.
     pub toggle_angles: Vec<f64>,
     /// Index range of an "active" sub-slice within the sweep data, used
@@ -271,6 +293,13 @@ pub(crate) fn compute_sweep_data(
         profile_torques: None,
         profile_omega: None,
         profile_alpha: None,
+        target_values: None,
+        achieved_values: None,
+        tracking_residual: None,
+        u_values: None,
+        u_dot_values: None,
+        u_ddot_values: None,
+        inverse_solve_statuses: None,
         toggle_angles: Vec::new(),
         active_range: None, // computed after sweep loop
         sweep_mode: sweep_mode.clone(),
@@ -1021,6 +1050,13 @@ mod tests {
             profile_torques: None,
             profile_omega: None,
             profile_alpha: None,
+            target_values: None,
+            achieved_values: None,
+            tracking_residual: None,
+            u_values: None,
+            u_dot_values: None,
+            u_ddot_values: None,
+            inverse_solve_statuses: None,
             toggle_angles: Vec::new(),
             active_range: None,
             sweep_mode: SweepMode::Angle,
@@ -1058,6 +1094,13 @@ mod tests {
             profile_torques: None,
             profile_omega: None,
             profile_alpha: None,
+            target_values: None,
+            achieved_values: None,
+            tracking_residual: None,
+            u_values: None,
+            u_dot_values: None,
+            u_ddot_values: None,
+            inverse_solve_statuses: None,
             toggle_angles: Vec::new(),
             active_range: None,
             sweep_mode: SweepMode::Angle,
