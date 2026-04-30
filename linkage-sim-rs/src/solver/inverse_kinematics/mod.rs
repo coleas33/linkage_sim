@@ -9,9 +9,11 @@
 
 pub mod control_target;
 pub mod severity;
+pub mod solver;
 
 #[cfg(test)]
 pub(crate) mod test_helpers;
 
 pub use control_target::ControlTarget;
 pub use severity::{InverseSolveStatus, Severity};
+pub use solver::{workspace_probe, WorkspaceProbe};
