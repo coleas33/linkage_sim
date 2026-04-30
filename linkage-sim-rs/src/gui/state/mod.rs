@@ -11,6 +11,7 @@ mod blueprint_ops;
 mod entity_crud;
 mod driver_ops;
 mod undo_ops;
+mod trajectory_ops;
 pub mod file_io;
 mod solver_helpers;
 mod templates;
@@ -384,6 +385,9 @@ pub struct AppState {
     // ── Motion profile ────────────────────────────────────────────────
     /// Driver velocity profile for sweep analysis (constant speed vs trapezoidal).
     pub motion_profile: MotionProfile,
+    // ── Trajectory mode ──────────────────────────────────────────────
+    /// Severity for the active trajectory analysis.
+    pub trajectory_severity: crate::solver::inverse_kinematics::Severity,
 }
 
 /// Background image overlay for tracing mechanisms from photos/sketches.
@@ -617,6 +621,7 @@ impl Default for AppState {
             adding_joint_point: None,
             actuator_rated_force: 0.0,
             motion_profile: MotionProfile::default(),
+            trajectory_severity: crate::solver::inverse_kinematics::Severity::Analysis,
         };
         state.rebuild();
         state
