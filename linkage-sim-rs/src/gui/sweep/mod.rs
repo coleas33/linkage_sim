@@ -17,17 +17,22 @@ use crate::analysis::transmission::{
 use crate::analysis::validation::check_toggle;
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
+use crate::error::LinkageError;
 use crate::forces::elements::{
     evaluate_linear_actuator, force_zone_overlap_ratio, ForceElement, LinearActuatorElement,
 };
-use crate::solver::assembly::assemble_jacobian;
+use crate::solver::assembly::{assemble_gamma, assemble_jacobian, assemble_phi_t};
 use crate::solver::inverse_dynamics::solve_inverse_dynamics;
+use crate::solver::inverse_kinematics::{
+    inverse_acceleration_fd, inverse_velocity, solve_for_target, ControlTarget,
+    InverseSolveResult, Severity,
+};
 use crate::solver::kinematics::{solve_acceleration, solve_position, solve_velocity};
 use crate::solver::statics::{
     extract_reactions, get_driver_reactions, solve_statics, JointReaction, StaticSolveResult,
 };
 
-use super::state::MotionProfile;
+use super::state::{MotionProfile, TrajectoryProfile};
 
 // ── Sweep data ───────────────────────────────────────────────────────────────
 
@@ -762,6 +767,314 @@ fn push_nan_row(
     }
 }
 
+/// Per-sample inverse-kinematics trajectory loop.
+///
+/// Mirrors `compute_sweep_data` for forward sweeps but back-solves the input
+/// parameter `u` from a desired output observable trajectory `h(t)`. For each
+/// sample `k`:
+///   1. `u_k = solve_for_target(mech, q_prev, target, h_k, ...)`.
+///   2. `u_dot_k`, `u_ddot_k` from closed-form / FD inverse helpers.
+///   3. `q_dot_k`, `q_ddot_k` via `Φ_t` / `γ` driver-row override (§7.3).
+///   4. Statics + inverse-dynamics + energy reused unchanged (§7.5).
+///
+/// `data.angles_deg` holds sample times `t_k` in seconds for trajectory mode
+/// (plot consumers branch on `data.sweep_mode.is_trajectory()` to format the
+/// X-axis label). All trajectory-specific Optional<Vec> fields
+/// (`target_values`, `achieved_values`, `tracking_residual`, `u_values`,
+/// `u_dot_values`, `u_ddot_values`, `inverse_solve_statuses`) are populated
+/// to length `n_samples`. `driver_torques` is populated; non-trajectory-mode
+/// Optionals (actuator_*, output_*, profile_*, transmission_angles) remain
+/// `None`.
+///
+/// `Severity::Strict` propagates `InverseSolveStatus` failures as
+/// `LinkageError`. `Severity::Analysis` records the status in
+/// `inverse_solve_statuses` and continues with the partial result returned
+/// by `solve_for_target`.
+///
+/// See: docs/superpowers/specs/2026-04-29-trajectory-position-control-design.md §7
+#[allow(clippy::too_many_arguments)]
+pub fn compute_trajectory(
+    mech: &Mechanism,
+    q_seed: &DVector<f64>,
+    target: &ControlTarget,
+    profile: &TrajectoryProfile,
+    severity: Severity,
+    n_samples: usize,
+    nominal_rate: f64,
+    u_0: f64,
+    u_range: (f64, f64),
+    gravity_magnitude: f64,
+    data: &mut SweepData,
+) -> Result<(), LinkageError> {
+    assert!(n_samples >= 2, "n_samples must be >= 2");
+    assert!(nominal_rate.abs() > 1e-12, "nominal_rate must be non-zero");
+
+    // Initialize trajectory-specific Optional<Vec> fields.
+    data.target_values = Some(Vec::with_capacity(n_samples));
+    data.achieved_values = Some(Vec::with_capacity(n_samples));
+    data.tracking_residual = Some(Vec::with_capacity(n_samples));
+    data.u_values = Some(Vec::with_capacity(n_samples));
+    data.u_dot_values = Some(Vec::with_capacity(n_samples));
+    data.u_ddot_values = Some(Vec::with_capacity(n_samples));
+    data.inverse_solve_statuses = Some(Vec::with_capacity(n_samples));
+
+    // Initialize length-matched required fields. driver_torques is the one
+    // existing Optional<Vec> we populate (statics-derived) per sample.
+    data.driver_torques = Some(Vec::with_capacity(n_samples));
+
+    // Pre-allocate body angle vectors and coupler trace metadata.
+    let body_order: Vec<String> = mech.body_order().to_vec();
+    for body_id in &body_order {
+        data.body_angles
+            .insert(body_id.clone(), Vec::with_capacity(n_samples));
+    }
+    let mut coupler_keys: Vec<(String, String, nalgebra::Vector2<f64>)> = Vec::new();
+    for (body_id, body) in mech.bodies() {
+        if body_id == GROUND_ID {
+            continue;
+        }
+        for (point_name, local) in &body.coupler_points {
+            let key = format!("{}.{}", body_id, point_name);
+            coupler_keys.push((key.clone(), body_id.clone(), *local));
+            data.coupler_traces
+                .insert(key, Vec::with_capacity(n_samples));
+        }
+        for (point_name, local) in &body.attachment_points {
+            let key = format!("{}.{}", body_id, point_name);
+            if !data.coupler_traces.contains_key(&key) {
+                coupler_keys.push((key.clone(), body_id.clone(), *local));
+                data.coupler_traces
+                    .insert(key, Vec::with_capacity(n_samples));
+            }
+        }
+    }
+    let mut coupler_vel_data: HashMap<String, Vec<f64>> = HashMap::new();
+    let mut coupler_accel_data: HashMap<String, Vec<f64>> = HashMap::new();
+    for (key, _, _) in &coupler_keys {
+        coupler_vel_data.insert(key.clone(), Vec::with_capacity(n_samples));
+        coupler_accel_data.insert(key.clone(), Vec::with_capacity(n_samples));
+    }
+    let mut reaction_data: HashMap<String, Vec<f64>> = HashMap::new();
+
+    // Mechanical advantage uses driver/output body pair if detectable.
+    let ma_bodies: Option<(String, String)> =
+        mech.driver_body_pair().and_then(|(_bi, driver)| {
+            let output = mech
+                .body_order()
+                .iter()
+                .filter(|b| b.as_str() != driver)
+                .last()
+                .cloned();
+            output.map(|out| (driver.to_string(), out))
+        });
+
+    let times = profile.sample_times(n_samples);
+    let driver_row = mech.driver_row();
+    // Finite-difference step for inverse_acceleration_fd, scaled by u_range
+    // span so it adapts to the magnitude of the input (rad vs m).
+    let delta = 1e-4 * (u_range.1 - u_range.0).abs().max(1e-6);
+
+    let mut q_prev = q_seed.clone();
+
+    for &t_k in &times {
+        let (h_k, h_dot_k, h_ddot_k) = profile.evaluate(t_k);
+
+        // 1. Inverse position solve. Strict severity propagates errors;
+        //    Analysis severity returns a partial result whose status records
+        //    the failure mode.
+        let res = solve_for_target(
+            mech,
+            &q_prev,
+            target,
+            h_k,
+            severity,
+            u_range,
+            u_0,
+            nominal_rate,
+            1e-8,
+            50,
+            64,
+        )?;
+        let InverseSolveResult {
+            u: u_k,
+            q: q_k,
+            achieved,
+            status,
+            ..
+        } = res;
+        let achieved = if achieved == 0.0 {
+            // Failure cases set achieved=0 in `classify_or_fail`; re-evaluate
+            // for an accurate readout from the partial q.
+            target.evaluate(mech, &q_k)
+        } else {
+            achieved
+        };
+
+        let t_mech_k = (u_k - u_0) / nominal_rate;
+
+        // 2. Inverse velocity (closed-form). Singularity → 0; status of the
+        //    inverse-position solve already records the underlying issue.
+        let u_dot_k = inverse_velocity(mech, &q_k, target, h_dot_k, t_mech_k).unwrap_or(0.0);
+
+        // 3. Inverse acceleration (FD). Singularity → 0.
+        let u_ddot_k = inverse_acceleration_fd(
+            mech,
+            &q_k,
+            target,
+            u_k,
+            u_dot_k,
+            h_ddot_k,
+            delta,
+            u_0,
+            nominal_rate,
+        )
+        .unwrap_or(0.0);
+
+        // 4. Body velocity & acceleration with trajectory rates substituted.
+        //    `Φ_t` and `γ` are assembled normally then overridden on the
+        //    driver row — see spec §7.3 for why this is safe.
+        let phi_q = assemble_jacobian(mech, &q_k, t_mech_k);
+        let mut phi_t = assemble_phi_t(mech, &q_k, t_mech_k);
+        phi_t[driver_row] = -u_dot_k;
+        let neg_phi_t = -phi_t;
+        let q_dot_k = phi_q
+            .clone()
+            .svd(true, true)
+            .solve(&neg_phi_t, 1e-14)
+            .map_err(|_| LinkageError::SvdSolveFailed)?;
+
+        let mut gamma = assemble_gamma(mech, &q_k, &q_dot_k, t_mech_k);
+        gamma[driver_row] = u_ddot_k;
+        let q_ddot_k = phi_q
+            .clone()
+            .svd(true, true)
+            .solve(&gamma, 1e-14)
+            .map_err(|_| LinkageError::SvdSolveFailed)?;
+
+        // 5. Push trajectory-specific fields.
+        data.target_values.as_mut().unwrap().push(h_k);
+        data.achieved_values.as_mut().unwrap().push(achieved);
+        data.tracking_residual
+            .as_mut()
+            .unwrap()
+            .push(achieved - h_k);
+        data.u_values.as_mut().unwrap().push(u_k);
+        data.u_dot_values.as_mut().unwrap().push(u_dot_k);
+        data.u_ddot_values.as_mut().unwrap().push(u_ddot_k);
+        data.inverse_solve_statuses
+            .as_mut()
+            .unwrap()
+            .push(status);
+
+        // 6. Push existing per-sample fields. X-axis carries sample time.
+        data.angles_deg.push(t_k);
+
+        let mech_state = mech.state();
+        for body_id in &body_order {
+            let theta = mech_state.get_angle(body_id, &q_k);
+            data.body_angles
+                .get_mut(body_id)
+                .unwrap()
+                .push(theta.to_degrees());
+        }
+        for (key, body_id, local) in &coupler_keys {
+            let global = mech_state.body_point_global(body_id, local, &q_k);
+            data.coupler_traces
+                .get_mut(key)
+                .unwrap()
+                .push([global.x, global.y]);
+        }
+
+        // Statics → driver torque + joint reactions.
+        let mut pending_reactions: Option<Vec<JointReaction>> = None;
+        if let Ok(statics) = solve_statics(mech, &q_k, t_mech_k) {
+            let reactions = extract_reactions(mech, &statics);
+            let torque = get_driver_reactions(&reactions)
+                .first()
+                .map(|r| r.effort)
+                .unwrap_or(0.0);
+            data.driver_torques.as_mut().unwrap().push(torque);
+            pending_reactions = Some(reactions);
+        } else {
+            data.driver_torques.as_mut().unwrap().push(f64::NAN);
+        }
+
+        // Energy from trajectory q_dot (not the constant-speed forward solve).
+        let energy = compute_energy_state_mech(mech, &q_k, &q_dot_k, gravity_magnitude);
+        data.kinetic_energy.push(energy.kinetic);
+        data.potential_energy.push(energy.potential_gravity);
+        data.total_energy.push(energy.total);
+
+        // Inverse dynamics → driver torque including inertial effects.
+        if let Ok(inv_dyn) = solve_inverse_dynamics(mech, &q_k, &q_dot_k, &q_ddot_k, t_mech_k) {
+            let n_lam = inv_dyn.lambdas.len();
+            if n_lam > 0 {
+                data.inverse_dynamics_torques.push(inv_dyn.lambdas[n_lam - 1]);
+            } else {
+                data.inverse_dynamics_torques.push(f64::NAN);
+            }
+        } else {
+            data.inverse_dynamics_torques.push(f64::NAN);
+        }
+
+        // Mechanical advantage from velocity ratio.
+        if let Some((ref input_id, ref output_id)) = ma_bodies {
+            let ma_val = mechanical_advantage(
+                mech.state(),
+                &q_dot_k,
+                input_id,
+                output_id,
+                VelocityCoord::Theta,
+                VelocityCoord::Theta,
+            )
+            .map(|r| r.ma)
+            .unwrap_or(f64::NAN);
+            data.mechanical_advantage.push(ma_val);
+        } else {
+            data.mechanical_advantage.push(f64::NAN);
+        }
+
+        // Coupler velocities and accelerations from trajectory q_dot/q_ddot.
+        for (key, body_id, local) in &coupler_keys {
+            let (_pos, vel, acc) =
+                eval_coupler_point(mech.state(), body_id, local, &q_k, &q_dot_k, &q_ddot_k);
+            coupler_vel_data
+                .get_mut(key)
+                .unwrap()
+                .push(vel.norm());
+            coupler_accel_data
+                .get_mut(key)
+                .unwrap()
+                .push(acc.norm());
+        }
+
+        // Joint reaction magnitudes — keyed by joint id, multi-eq joints only.
+        if let Some(reactions) = &pending_reactions {
+            for jr in reactions {
+                if jr.n_equations > 1 {
+                    reaction_data
+                        .entry(jr.joint_id.clone())
+                        .or_insert_with(|| Vec::with_capacity(n_samples))
+                        .push(jr.resultant);
+                }
+            }
+        } else {
+            for values in reaction_data.values_mut() {
+                values.push(f64::NAN);
+            }
+        }
+
+        q_prev = q_k;
+    }
+
+    data.joint_reaction_magnitudes = reaction_data;
+    data.coupler_velocities = coupler_vel_data;
+    data.coupler_accelerations = coupler_accel_data;
+    data.active_range = None;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1179,5 +1492,161 @@ mod tests {
         let differs = prof.iter().zip(data.inverse_dynamics_torques.iter())
             .any(|(p, c)| p.is_finite() && c.is_finite() && (p - c).abs() > 1e-12);
         assert!(differs, "Profile torques should differ from constant-speed ID torques");
+    }
+
+    /// Build an empty `SweepData` configured for `SweepMode::Trajectory`.
+    /// Mirrors the construction pattern in the apply_motion_profile tests
+    /// above — all Optional<Vec> fields start as `None`, required Vec/HashMap
+    /// fields start empty. `compute_trajectory` populates them in place.
+    fn empty_trajectory_sweep_data(mode: SweepMode) -> SweepData {
+        SweepData {
+            angles_deg: Vec::new(),
+            body_angles: HashMap::new(),
+            coupler_traces: HashMap::new(),
+            transmission_angles: None,
+            driver_torques: None,
+            kinetic_energy: Vec::new(),
+            potential_energy: Vec::new(),
+            total_energy: Vec::new(),
+            inverse_dynamics_torques: Vec::new(),
+            mechanical_advantage: Vec::new(),
+            joint_reaction_magnitudes: HashMap::new(),
+            coupler_velocities: HashMap::new(),
+            coupler_accelerations: HashMap::new(),
+            actuator_forces: None,
+            actuator_forces_id: None,
+            actuator_lengths: None,
+            actuator_speeds: None,
+            actuator_power: None,
+            actuator_power_id: None,
+            output_forces: None,
+            profile_torques: None,
+            profile_omega: None,
+            profile_alpha: None,
+            target_values: None,
+            achieved_values: None,
+            tracking_residual: None,
+            u_values: None,
+            u_dot_values: None,
+            u_ddot_values: None,
+            inverse_solve_statuses: None,
+            toggle_angles: Vec::new(),
+            active_range: None,
+            sweep_mode: mode,
+        }
+    }
+
+    /// Integration test: drive the canonical 4-bar's crank angle along a
+    /// constant-speed trajectory from 0.5 to 1.5 rad over 1 s, sampled at
+    /// 10 points. Verifies all trajectory-specific Optional<Vec> fields are
+    /// populated and that the back-solved u_k tracks the target h_k for an
+    /// Angle target on the directly-driven body (where dg/du = 1 ⇒ u_k = h_k).
+    #[test]
+    fn compute_trajectory_populates_all_trajectory_fields() {
+        use crate::solver::inverse_kinematics::test_helpers::{build_fourbar, solve_at};
+        use crate::solver::inverse_kinematics::{
+            ControlTarget, InverseSolveStatus, Severity,
+        };
+        use std::f64::consts::PI;
+
+        let mech = build_fourbar();
+        let q0 = solve_at(&mech, 0.0);
+
+        let target = ControlTarget::angle("crank");
+        let profile = TrajectoryProfile {
+            shape: MotionProfile::ConstantSpeed,
+            start_value: 0.5,
+            end_value: 1.5,
+            duration: 1.0,
+        };
+        let n_samples = 10;
+
+        let mode = SweepMode::Trajectory {
+            target: target.clone(),
+            profile: profile.clone(),
+            severity: Severity::Analysis,
+            n_samples,
+        };
+        let mut data = empty_trajectory_sweep_data(mode);
+
+        let result = compute_trajectory(
+            &mech,
+            &q0,
+            &target,
+            &profile,
+            Severity::Analysis,
+            n_samples,
+            2.0 * PI,
+            0.0,
+            (0.0, 2.0 * PI),
+            9.81,
+            &mut data,
+        );
+
+        result.expect("compute_trajectory should succeed for canonical 4-bar");
+
+        // All trajectory-specific Optional<Vec> fields populated to length n_samples.
+        assert_eq!(data.target_values.as_ref().unwrap().len(), n_samples);
+        assert_eq!(data.achieved_values.as_ref().unwrap().len(), n_samples);
+        assert_eq!(data.tracking_residual.as_ref().unwrap().len(), n_samples);
+        assert_eq!(data.u_values.as_ref().unwrap().len(), n_samples);
+        assert_eq!(data.u_dot_values.as_ref().unwrap().len(), n_samples);
+        assert_eq!(data.u_ddot_values.as_ref().unwrap().len(), n_samples);
+        assert_eq!(data.inverse_solve_statuses.as_ref().unwrap().len(), n_samples);
+
+        // angles_deg holds sample times t_k; same length as trajectory fields.
+        assert_eq!(data.angles_deg.len(), n_samples);
+        // First sample at t=0, last at t=duration.
+        assert!((data.angles_deg[0] - 0.0).abs() < 1e-12);
+        assert!((data.angles_deg[n_samples - 1] - 1.0).abs() < 1e-12);
+
+        // For ControlTarget::Angle on directly-driven crank, dg/du = 1, so
+        // u_k = h_k after the constant offset. Verify per-sample tracking.
+        let targets = data.target_values.as_ref().unwrap();
+        let achieved = data.achieved_values.as_ref().unwrap();
+        let residuals = data.tracking_residual.as_ref().unwrap();
+        for k in 0..n_samples {
+            assert!(
+                (achieved[k] - targets[k]).abs() < 1e-6,
+                "sample {} should track target within tol; got {} vs {}",
+                k,
+                achieved[k],
+                targets[k]
+            );
+            assert!(residuals[k].abs() < 1e-6);
+        }
+
+        // First sample's target equals start_value, last equals end_value.
+        assert!((targets[0] - 0.5).abs() < 1e-9);
+        assert!((targets[n_samples - 1] - 1.5).abs() < 1e-9);
+
+        // For a constant-speed profile, h_dot is constant and u_dot ≈ h_dot
+        // (because dg/du = 1 for Angle on the driven body). Same for h_ddot=0.
+        let u_dots = data.u_dot_values.as_ref().unwrap();
+        let expected_h_dot = (1.5 - 0.5) / 1.0; // span/duration
+        for &v in u_dots {
+            assert!(
+                (v - expected_h_dot).abs() < 1e-3,
+                "u_dot ≈ h_dot for Angle target; got {}",
+                v
+            );
+        }
+
+        // All samples should report Converged for this fully-reachable target.
+        for status in data.inverse_solve_statuses.as_ref().unwrap() {
+            assert!(
+                matches!(status, InverseSolveStatus::Converged),
+                "expected Converged, got {:?}",
+                status
+            );
+        }
+
+        // Existing length-matched fields populated to n_samples too.
+        assert_eq!(data.driver_torques.as_ref().unwrap().len(), n_samples);
+        assert_eq!(data.kinetic_energy.len(), n_samples);
+        assert_eq!(data.potential_energy.len(), n_samples);
+        assert_eq!(data.total_energy.len(), n_samples);
+        assert_eq!(data.inverse_dynamics_torques.len(), n_samples);
+        assert_eq!(data.mechanical_advantage.len(), n_samples);
     }
 }
