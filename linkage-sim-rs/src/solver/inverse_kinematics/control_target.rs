@@ -20,6 +20,14 @@ pub enum ControlTarget {
     WorldX { body_id: String, local_pt: [f64; 2] },
     /// World y-coord of body-local point.
     WorldY { body_id: String, local_pt: [f64; 2] },
+    /// Projection of body-local point onto fixed line through `axis_origin` along `axis_dir`.
+    /// `axis_dir` is normalized internally by `evaluate`/`gradient`/`hessian`.
+    Projection {
+        body_id: String,
+        local_pt: [f64; 2],
+        axis_origin: [f64; 2],
+        axis_dir: [f64; 2],
+    },
 }
 
 impl ControlTarget {
@@ -34,6 +42,21 @@ impl ControlTarget {
             ControlTarget::WorldY { body_id, local_pt } => {
                 let p = nalgebra::Vector2::new(local_pt[0], local_pt[1]);
                 mech.state().body_point_global(body_id, &p, q).y
+            }
+            ControlTarget::Projection {
+                body_id,
+                local_pt,
+                axis_origin,
+                axis_dir,
+            } => {
+                let p = nalgebra::Vector2::new(local_pt[0], local_pt[1]);
+                let p_world = mech.state().body_point_global(body_id, &p, q);
+                let origin = nalgebra::Vector2::new(axis_origin[0], axis_origin[1]);
+                let dir = nalgebra::Vector2::new(axis_dir[0], axis_dir[1]);
+                let dir_norm = dir.norm();
+                assert!(dir_norm > 1e-12, "Projection axis_dir is zero");
+                let unit = dir / dir_norm;
+                (p_world - origin).dot(&unit)
             }
         }
     }
@@ -70,6 +93,26 @@ impl ControlTarget {
                     grad[idx.theta_idx()] = bs.y;
                 }
             }
+            ControlTarget::Projection {
+                body_id,
+                local_pt,
+                axis_origin: _,
+                axis_dir,
+            } => {
+                if !state.is_ground(body_id) {
+                    let idx = state.get_index(body_id).expect("body not registered");
+                    let p = nalgebra::Vector2::new(local_pt[0], local_pt[1]);
+                    let dir = nalgebra::Vector2::new(axis_dir[0], axis_dir[1]);
+                    let dir_norm = dir.norm();
+                    assert!(dir_norm > 1e-12, "Projection axis_dir is zero");
+                    let unit = dir / dir_norm;
+                    // ∂g/∂r = unit ;  ∂g/∂θ = unit · B(θ)·s
+                    grad[idx.x_idx()] = unit.x;
+                    grad[idx.y_idx()] = unit.y;
+                    let bs = state.body_point_global_derivative(body_id, &p, q);
+                    grad[idx.theta_idx()] = unit.dot(&bs);
+                }
+            }
         }
 
         grad
@@ -82,7 +125,8 @@ impl ControlTarget {
         match self {
             ControlTarget::Angle { .. }
             | ControlTarget::WorldX { .. }
-            | ControlTarget::WorldY { .. } => DMatrix::zeros(n, n),
+            | ControlTarget::WorldY { .. }
+            | ControlTarget::Projection { .. } => DMatrix::zeros(n, n),
         }
     }
 }
@@ -189,6 +233,83 @@ mod tests {
             assert!(
                 (grad[idx] - fd).abs() < 1e-5,
                 "FD gradient mismatch at coord '{}' (idx {}): analytic={}, fd={}",
+                label, idx, grad[idx], fd,
+            );
+        }
+    }
+
+    #[test]
+    fn projection_target_along_x_equals_world_x_minus_origin() {
+        let mech = build_fourbar();
+        let q = solve_at(&mech, 0.0);
+        // Projection of crank tip onto world-x axis through origin
+        let target = ControlTarget::Projection {
+            body_id: "crank".into(),
+            local_pt: [0.005, 0.0],
+            axis_origin: [0.0, 0.0],
+            axis_dir: [1.0, 0.0],
+        };
+        let g = target.evaluate(&mech, &q);
+        // Same as WorldX with same point at origin
+        let world_x = ControlTarget::WorldX {
+            body_id: "crank".into(),
+            local_pt: [0.005, 0.0],
+        };
+        let g_x = world_x.evaluate(&mech, &q);
+        assert_abs_diff_eq!(g, g_x, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn projection_normalizes_axis_dir() {
+        let mech = build_fourbar();
+        let q = solve_at(&mech, 0.0);
+        // axis_dir not normalized; evaluate should yield same result as if normalized
+        let unnorm = ControlTarget::Projection {
+            body_id: "crank".into(),
+            local_pt: [0.005, 0.0],
+            axis_origin: [0.0, 0.0],
+            axis_dir: [3.0, 0.0], // length 3
+        };
+        let norm = ControlTarget::Projection {
+            body_id: "crank".into(),
+            local_pt: [0.005, 0.0],
+            axis_origin: [0.0, 0.0],
+            axis_dir: [1.0, 0.0],
+        };
+        // evaluate normalizes internally
+        assert_abs_diff_eq!(
+            unnorm.evaluate(&mech, &q),
+            norm.evaluate(&mech, &q),
+            epsilon = 1e-12
+        );
+    }
+
+    #[test]
+    fn projection_gradient_fd_check() {
+        let mech = build_fourbar();
+        let q = solve_at(&mech, 0.1);
+        let target = ControlTarget::Projection {
+            body_id: "crank".into(),
+            local_pt: [0.005, 0.0],
+            axis_origin: [0.01, 0.0],
+            axis_dir: [0.6, 0.8], // 3-4-5 triangle, length 1
+        };
+        let grad = target.gradient(&mech, &q);
+        let crank = mech.state().get_index("crank").unwrap();
+        let h = 1e-7;
+        for &(idx, label) in &[
+            (crank.x_idx(), "x"),
+            (crank.y_idx(), "y"),
+            (crank.theta_idx(), "theta"),
+        ] {
+            let mut qp = q.clone();
+            qp[idx] += h;
+            let mut qm = q.clone();
+            qm[idx] -= h;
+            let fd = (target.evaluate(&mech, &qp) - target.evaluate(&mech, &qm)) / (2.0 * h);
+            assert!(
+                (grad[idx] - fd).abs() < 1e-5,
+                "Projection gradient FD mismatch at '{}' (idx {}): analytic={}, fd={}",
                 label, idx, grad[idx], fd,
             );
         }
