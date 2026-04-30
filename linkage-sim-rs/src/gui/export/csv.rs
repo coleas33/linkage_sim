@@ -6,16 +6,22 @@ use std::io::Write;
 use std::path::Path;
 
 #[cfg(feature = "native")]
-use crate::gui::sweep::SweepData;
+use crate::gui::sweep::{SweepData, SweepMode};
 
 /// Export sweep data to CSV file.
 ///
-/// Columns: driver angle, then sorted body angles, then transmission angle
+/// In trajectory mode, emits the trajectory column layout (see
+/// `write_trajectory_csv`). Otherwise emits the angle/stroke sweep layout:
+/// driver angle, then sorted body angles, then transmission angle
 /// (if available), then driver torque (if available). All angles in degrees,
 /// torque in N*m.
 #[cfg(feature = "native")]
 pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
     let mut file = std::fs::File::create(path).map_err(|e| e.to_string())?;
+
+    if matches!(sweep.sweep_mode, SweepMode::Trajectory { .. }) {
+        return write_trajectory_csv(&mut file, sweep).map_err(|e| e.to_string());
+    }
 
     // Collect and sort body IDs for deterministic column order.
     let mut body_ids: Vec<&String> = sweep.body_angles.keys().collect();
@@ -199,6 +205,111 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Write the trajectory-mode CSV layout (v1 superset).
+///
+/// Columns:
+/// `t_seconds, target_value, achieved_value, residual,
+///  u, u_dot, u_ddot, F_actuator_N, driver_torque_Nm, status`
+///
+/// Time axis is uniform across `[0, profile.duration]` to match the plot
+/// panel's rendering. `F_actuator_N` is NaN when no LinearActuator is present
+/// (trajectory compute does not populate `actuator_forces`).
+#[cfg(feature = "native")]
+fn write_trajectory_csv(out: &mut impl Write, sweep: &SweepData) -> std::io::Result<()> {
+    // Trajectory data lives in the optional vectors. If the user hasn't
+    // computed yet, emit just the header so the file is well-formed.
+    let n = sweep.target_values.as_ref().map(|v| v.len()).unwrap_or(0);
+
+    writeln!(
+        out,
+        "t_seconds,target_value,achieved_value,residual,u,u_dot,u_ddot,F_actuator_N,driver_torque_Nm,status"
+    )?;
+    if n == 0 {
+        return Ok(());
+    }
+
+    // Reconstruct the time axis from the active SweepMode::Trajectory's
+    // profile.duration (matches plot_panel/trajectory.rs).
+    let duration = match &sweep.sweep_mode {
+        SweepMode::Trajectory { profile, .. } => profile.duration,
+        _ => 1.0,
+    };
+    let denom = (n - 1).max(1) as f64;
+    let times: Vec<f64> = (0..n).map(|i| (i as f64) * duration / denom).collect();
+
+    // Required vectors (compute_trajectory always populates these to length n).
+    let target = sweep.target_values.as_ref().unwrap();
+    let achieved = sweep.achieved_values.as_ref().unwrap();
+    let residual = sweep.tracking_residual.as_ref().unwrap();
+    let u = sweep.u_values.as_ref().unwrap();
+    let u_dot = sweep.u_dot_values.as_ref().unwrap();
+    let u_ddot = sweep.u_ddot_values.as_ref().unwrap();
+    let statuses = sweep.inverse_solve_statuses.as_ref();
+
+    for i in 0..n {
+        let t = times[i];
+        // F_actuator_N: only present when a LinearActuator force element exists;
+        // trajectory compute currently doesn't populate this, so emit NaN.
+        let f_act = sweep
+            .actuator_forces
+            .as_ref()
+            .and_then(|v| v.get(i))
+            .copied()
+            .unwrap_or(f64::NAN);
+        // driver_torque_Nm comes from the per-sample statics solve in
+        // compute_trajectory (Optional<Vec> populated to length n).
+        let torque = sweep
+            .driver_torques
+            .as_ref()
+            .and_then(|v| v.get(i))
+            .copied()
+            .unwrap_or(f64::NAN);
+        let status_str = statuses
+            .and_then(|v| v.get(i))
+            .map(format_status)
+            .unwrap_or_else(|| "Unknown".to_string());
+        writeln!(
+            out,
+            "{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{}",
+            t,
+            target[i],
+            achieved[i],
+            residual[i],
+            u[i],
+            u_dot[i],
+            u_ddot[i],
+            f_act,
+            torque,
+            status_str,
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Format an `InverseSolveStatus` as a single CSV field (no commas, no
+/// quoting required). Failure variants include their numeric payload so
+/// downstream tools can filter / sort by them.
+#[cfg(feature = "native")]
+fn format_status(s: &crate::solver::inverse_kinematics::InverseSolveStatus) -> String {
+    use crate::solver::inverse_kinematics::InverseSolveStatus::*;
+    match s {
+        Converged => "Converged".to_string(),
+        Reachability {
+            target,
+            achieved_clamp,
+            ..
+        } => format!("Reachability:{:.4}->{:.4}", target, achieved_clamp),
+        Singularity { dg_du } => format!("Singularity:{:.2e}", dg_du),
+        BranchJump { delta_q_norm } => format!("BranchJump:{:.4}", delta_q_norm),
+        NonConvergent {
+            iterations,
+            residual,
+            // `;` separator (not `,`) so the status field stays a single CSV column.
+        } => format!("NonConvergent:iter={};res={:.2e}", iterations, residual),
+    }
 }
 
 /// Export coupler trace data to CSV file.
@@ -531,6 +642,185 @@ mod tests {
             crank_idx < rocker_idx,
             "crank column should come before rocker"
         );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Build a minimal trajectory-mode SweepData fixture with `n` samples.
+    /// All Optional<Vec> fields populated; statuses include each variant
+    /// at least once so `format_status` is exercised end-to-end.
+    fn test_trajectory_sweep_data(n: usize) -> SweepData {
+        use crate::gui::state::MotionProfile;
+        use crate::gui::state::TrajectoryProfile;
+        use crate::solver::inverse_kinematics::{
+            ControlTarget, InverseSolveStatus, Severity,
+        };
+        assert!(n >= 5, "fixture covers all 5 status variants");
+
+        let profile = TrajectoryProfile {
+            shape: MotionProfile::ConstantSpeed,
+            start_value: 0.0,
+            end_value: 1.0,
+            duration: 2.0,
+        };
+        let mode = SweepMode::Trajectory {
+            target: ControlTarget::Angle {
+                body_id: "crank".to_string(),
+            },
+            profile,
+            severity: Severity::Analysis,
+            n_samples: n,
+        };
+
+        let target_values: Vec<f64> = (0..n).map(|i| i as f64 / (n - 1) as f64).collect();
+        let achieved_values: Vec<f64> =
+            target_values.iter().map(|t| t + 0.001).collect();
+        let tracking_residual: Vec<f64> = achieved_values
+            .iter()
+            .zip(target_values.iter())
+            .map(|(a, t)| a - t)
+            .collect();
+        let u_values: Vec<f64> = (0..n).map(|i| i as f64 * 0.1).collect();
+        let u_dot_values: Vec<f64> = vec![0.05; n];
+        let u_ddot_values: Vec<f64> = vec![0.0; n];
+
+        // One of each status variant in the first five slots; the rest Converged.
+        let mut statuses = vec![
+            InverseSolveStatus::Converged,
+            InverseSolveStatus::Reachability {
+                target: 1.5,
+                achieved_clamp: 1.0,
+                workspace_min: Some(-1.0),
+                workspace_max: Some(1.0),
+            },
+            InverseSolveStatus::Singularity { dg_du: 1.0e-9 },
+            InverseSolveStatus::BranchJump {
+                delta_q_norm: 0.5,
+            },
+            InverseSolveStatus::NonConvergent {
+                iterations: 50,
+                residual: 1.0e-3,
+            },
+        ];
+        statuses.resize(n, InverseSolveStatus::Converged);
+
+        SweepData {
+            angles_deg: (0..n).map(|i| i as f64).collect(),
+            body_angles: HashMap::new(),
+            coupler_traces: HashMap::new(),
+            transmission_angles: None,
+            // Statics-derived torque, populated in trajectory mode.
+            driver_torques: Some((0..n).map(|i| 0.5 + 0.1 * i as f64).collect()),
+            kinetic_energy: Vec::new(),
+            potential_energy: Vec::new(),
+            total_energy: Vec::new(),
+            inverse_dynamics_torques: Vec::new(),
+            mechanical_advantage: Vec::new(),
+            joint_reaction_magnitudes: HashMap::new(),
+            coupler_velocities: HashMap::new(),
+            coupler_accelerations: HashMap::new(),
+            actuator_forces: None,
+            actuator_forces_id: None,
+            actuator_lengths: None,
+            actuator_speeds: None,
+            actuator_power: None,
+            actuator_power_id: None,
+            output_forces: None,
+            profile_torques: None,
+            profile_omega: None,
+            profile_alpha: None,
+            target_values: Some(target_values),
+            achieved_values: Some(achieved_values),
+            tracking_residual: Some(tracking_residual),
+            u_values: Some(u_values),
+            u_dot_values: Some(u_dot_values),
+            u_ddot_values: Some(u_ddot_values),
+            inverse_solve_statuses: Some(statuses),
+            toggle_angles: Vec::new(),
+            active_range: None,
+            sweep_mode: mode,
+        }
+    }
+
+    #[test]
+    fn export_sweep_csv_trajectory_writes_full_layout() {
+        let sweep = test_trajectory_sweep_data(5);
+        let path = std::env::temp_dir().join("test_trajectory_export.csv");
+
+        export_sweep_csv(&path, &sweep).expect("export should succeed");
+
+        let contents = std::fs::read_to_string(&path).expect("should read file");
+        let lines: Vec<&str> = contents.lines().collect();
+
+        // Header + 5 rows.
+        assert_eq!(lines.len(), 6, "header + 5 data rows");
+
+        // Header is the trajectory v1 superset (no angle_deg / body columns).
+        let header = lines[0];
+        assert_eq!(
+            header,
+            "t_seconds,target_value,achieved_value,residual,u,u_dot,u_ddot,F_actuator_N,driver_torque_Nm,status"
+        );
+
+        // 10 columns on every data row.
+        for (i, line) in lines.iter().enumerate().skip(1) {
+            assert_eq!(
+                line.split(',').count(),
+                10,
+                "row {} should have 10 columns: {}",
+                i,
+                line
+            );
+        }
+
+        // Time axis: first row at t=0, last row at duration=2.0 (5 samples → step 0.5).
+        let first_t = lines[1].split(',').next().unwrap().parse::<f64>().unwrap();
+        assert!(first_t.abs() < 1e-9, "first row t≈0, got {}", first_t);
+        let last_t = lines[5].split(',').next().unwrap().parse::<f64>().unwrap();
+        assert!((last_t - 2.0).abs() < 1e-9, "last row t≈2.0, got {}", last_t);
+
+        // F_actuator_N column is NaN when no actuator force element is present.
+        let f_act_idx = 7;
+        for line in lines.iter().skip(1) {
+            let cols: Vec<&str> = line.split(',').collect();
+            assert_eq!(
+                cols[f_act_idx], "NaN",
+                "F_actuator_N should be NaN without an actuator: {}",
+                line
+            );
+        }
+
+        // Each status variant produces its own format token.
+        assert!(lines[1].ends_with(",Converged"));
+        assert!(lines[2].contains(",Reachability:"));
+        assert!(lines[3].contains(",Singularity:"));
+        assert!(lines[4].contains(",BranchJump:"));
+        assert!(lines[5].contains(",NonConvergent:iter=50;res="));
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn export_sweep_csv_trajectory_empty_writes_header_only() {
+        // Switching to trajectory mode but never running compute leaves all
+        // optional vectors None. We still want a well-formed CSV (header only).
+        let mut sweep = test_trajectory_sweep_data(5);
+        sweep.target_values = None;
+        sweep.achieved_values = None;
+        sweep.tracking_residual = None;
+        sweep.u_values = None;
+        sweep.u_dot_values = None;
+        sweep.u_ddot_values = None;
+        sweep.inverse_solve_statuses = None;
+        sweep.driver_torques = None;
+
+        let path = std::env::temp_dir().join("test_trajectory_export_empty.csv");
+        export_sweep_csv(&path, &sweep).expect("export should succeed");
+
+        let contents = std::fs::read_to_string(&path).expect("should read file");
+        let lines: Vec<&str> = contents.lines().collect();
+        assert_eq!(lines.len(), 1, "header only when no trajectory data");
+        assert!(lines[0].starts_with("t_seconds,"));
 
         let _ = std::fs::remove_file(&path);
     }
