@@ -162,7 +162,7 @@ pub fn solve_for_target(
     let t_mech_seed = (u_seed - u_0) / nominal_rate;
     let mut q_k = solve_position(mech, q_seed, t_mech_seed, 1e-10, 50)?.q;
 
-    let driver_row = mech.n_constraints() - 1;
+    let driver_row = mech.driver_row();
 
     // 4. Outer Newton.
     let mut iterations = 0usize;

@@ -137,6 +137,23 @@ impl Mechanism {
         joint_eqs + driver_eqs + linear_driver_eqs
     }
 
+    /// Index of the driver constraint's row in the global Jacobian.
+    ///
+    /// Drivers are added after joints, so the driver occupies the last row.
+    /// Asserts that exactly one driver is present (the 1-DOF inverse-kinematics
+    /// design assumes single-driver mechanisms).
+    ///
+    /// See: docs/superpowers/specs/2026-04-29-trajectory-position-control-design.md §7.3
+    pub fn driver_row(&self) -> usize {
+        let n_drivers = self.n_drivers() + self.n_linear_drivers();
+        assert!(
+            n_drivers == 1,
+            "driver_row() requires exactly 1 driver (got {})",
+            n_drivers
+        );
+        self.n_constraints() - 1
+    }
+
     /// Iterate over all constraints (joints + revolute drivers + linear drivers) in order.
     /// Returns a zero-allocation iterator using chain.
     pub fn all_constraints(&self) -> impl Iterator<Item = &dyn Constraint> {
