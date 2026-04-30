@@ -52,21 +52,3 @@ open_questions:
     extending ControlTarget::hessian for non-Angle variants and assembling a
     "kinematic-only γ" with dq/du in place of q̇. Recommended only if FD ü
     accuracy is shown insufficient by hardware-export use cases.
-
-  - |
-    Trajectory polish: persist `state.sweep_mode` and `state.trajectory_severity`
-    through save/load. Currently runtime-only — reload resets to Angle/Analysis.
-    Should extend the existing `MechanismJson.sweep_config` field to carry these.
-
-  - |
-    Trajectory polish: linear-driver dispatch in compute_sweep. The current
-    dispatch (gui/state/blueprint_ops.rs:1128) only handles revolute drivers
-    in trajectory mode; linear drivers fall back to the existing
-    compute_sweep_data path. Needs unit-aware nominal_rate and u_0 selection.
-
-  - |
-    Trajectory polish: u_range frame conversion. compute_sweep dispatch passes
-    `(sweep_angle_min_deg.to_radians(), sweep_angle_max_deg.to_radians())` as
-    u_range without subtracting `driver_display_offset`, while u_0 = driver_theta_0
-    is in body frame. Forward-sweep path subtracts the offset; trajectory should too.
-    Confirmed display vs body frame mismatch in Task 3.x review.
