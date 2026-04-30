@@ -7,23 +7,34 @@
 //!   - u(t)         (separate stacked plot)
 //!   - Failure bands at samples with status != Converged
 //!
+//! Clicking the main plot scrubs the canvas-displayed mechanism to the
+//! configuration corresponding to the clicked time `t_k` by calling
+//! `state.solve_for_trajectory_target(target, h)` with `h = profile.evaluate(t_k).0`.
+//!
 //! See: docs/superpowers/specs/2026-04-29-trajectory-position-control-design.md §8.3
 
 use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints, VLine};
 
 use crate::gui::state::AppState;
-use crate::gui::sweep::{SweepData, SweepMode};
+use crate::gui::sweep::SweepMode;
 use crate::solver::inverse_kinematics::InverseSolveStatus;
 
 /// Render trajectory-mode plots: target/achieved/residual on the main axis
 /// and the back-solved input parameter `u(t)` stacked below.
 ///
 /// Rendered when `state.sweep_mode == SweepMode::Trajectory { .. }`.
-pub(super) fn render(state: &AppState, data: &SweepData, ui: &mut egui::Ui) {
+/// Takes `&mut state` so that clicks on the main plot can drive the canvas
+/// mechanism to the clicked sample's configuration via
+/// `state.solve_for_trajectory_target`.
+pub(super) fn render(state: &mut AppState, ui: &mut egui::Ui) {
     // Required trajectory series. If any are missing the data was generated
     // by a different sweep mode (or compute_trajectory bailed early); show
     // a hint and bail rather than panicking on the unwraps below.
+    let Some(data) = state.sweep_data.as_ref() else {
+        ui.label("No sweep data available.");
+        return;
+    };
     let (Some(target), Some(achieved), Some(residual), Some(u)) = (
         data.target_values.as_ref(),
         data.achieved_values.as_ref(),
@@ -63,6 +74,10 @@ pub(super) fn render(state: &AppState, data: &SweepData, ui: &mut egui::Ui) {
     let u_h = (total_h - main_h - 8.0).max(80.0);
 
     // ── Main plot: target / achieved / residual ──────────────────────────
+    // Capture click coordinate inside the closure; act on it after the
+    // immutable borrow of `state.sweep_data` ends (we need `&mut state` to
+    // call solve_for_trajectory_target).
+    let mut clicked_t: Option<f64> = None;
     Plot::new("trajectory_main")
         .allow_zoom(true)
         .allow_drag(true)
@@ -108,6 +123,8 @@ pub(super) fn render(state: &AppState, data: &SweepData, ui: &mut egui::Ui) {
                     .color(egui::Color32::from_rgba_unmultiplied(255, 100, 100, 160))
                     .width(1.0),
             );
+
+            clicked_t = super::detect_plot_click(plot_ui);
         });
 
     // ── Stacked u(t) plot ────────────────────────────────────────────────
@@ -133,6 +150,25 @@ pub(super) fn render(state: &AppState, data: &SweepData, ui: &mut egui::Ui) {
                     .width(2.0),
             );
         });
+
+    // ── Click-to-scrub ───────────────────────────────────────────────────
+    // The plot closures above hold an immutable borrow on `state.sweep_data`;
+    // by this point those closures have returned and the borrow is dropped.
+    // Now resolve the click into (target, h) and drive the canvas pose.
+    if let Some(t_raw) = clicked_t {
+        let t_clicked = t_raw.clamp(0.0, duration);
+        // Pull target+h out of the trajectory sweep mode and drop the borrow
+        // before calling the &mut self method.
+        let payload = if let SweepMode::Trajectory { target, profile, .. } = &state.sweep_mode {
+            let (h, _, _) = profile.evaluate(t_clicked);
+            Some((target.clone(), h))
+        } else {
+            None
+        };
+        if let Some((target, h)) = payload {
+            state.solve_for_trajectory_target(&target, h);
+        }
+    }
 }
 
 /// Draw faint red vertical lines at sample times whose `InverseSolveStatus`

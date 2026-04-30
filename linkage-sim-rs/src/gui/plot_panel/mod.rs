@@ -48,19 +48,26 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
         return;
     }
 
-    let Some(sweep) = &state.sweep_data else {
+    if state.sweep_data.is_none() {
         ui.label("No sweep data available.");
         return;
-    };
+    }
 
     // Trajectory mode bypasses the forward-sweep tabs entirely: the X-axis
     // is time, and the data lives in target_values/achieved_values/u_values
     // rather than angles_deg. Dispatch before the angles_deg guard since
-    // trajectory sweeps populate angles_deg as empty.
+    // trajectory sweeps populate angles_deg as empty. Render takes `&mut state`
+    // so it can call `state.solve_for_trajectory_target` on click-to-scrub.
     if matches!(state.sweep_mode, SweepMode::Trajectory { .. }) {
-        trajectory::render(state, sweep, ui);
+        trajectory::render(state, ui);
         return;
     }
+
+    // Forward-sweep tabs need an immutable borrow of sweep data alongside other
+    // state reads; rebind here now that the trajectory dispatch is done.
+    let Some(sweep) = &state.sweep_data else {
+        return; // unreachable given the is_none() check above, but keeps borrow scoped
+    };
 
     if sweep.angles_deg.is_empty() {
         ui.label("Sweep produced no data (solver failed at all angles).");
