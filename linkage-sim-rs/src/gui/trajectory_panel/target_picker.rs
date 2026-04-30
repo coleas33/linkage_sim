@@ -52,14 +52,31 @@ pub fn draw(state: &mut AppState, ui: &mut egui::Ui) {
     if new_kind != current_kind {
         let body = body_ids.first().cloned().unwrap_or_default();
         if !body.is_empty() {
+            // Pick a sensible body-local point for the new variant: prefer
+            // the first coupler point, then the first attachment point,
+            // falling back to the body-local origin (0, 0). The pose-origin
+            // is rarely the intended target — defaulting to a real point on
+            // the body avoids forcing the user to type coordinates before
+            // the live readout means anything.
+            let default_local: [f64; 2] = mech_ref
+                .and_then(|m| m.bodies().get(&body))
+                .map(|b| {
+                    b.coupler_points
+                        .values()
+                        .next()
+                        .or_else(|| b.attachment_points.values().next())
+                        .map(|v| [v.x, v.y])
+                        .unwrap_or([0.0, 0.0])
+                })
+                .unwrap_or([0.0, 0.0]);
             *target = match new_kind {
                 "Angle" => ControlTarget::angle(body),
-                "WorldX" => ControlTarget::world_x(body, [0.0, 0.0]),
-                "WorldY" => ControlTarget::world_y(body, [0.0, 0.0]),
+                "WorldX" => ControlTarget::world_x(body, default_local),
+                "WorldY" => ControlTarget::world_y(body, default_local),
                 "Projection" => {
-                    ControlTarget::projection(body, [0.0, 0.0], [0.0, 0.0], [1.0, 0.0])
+                    ControlTarget::projection(body, default_local, [0.0, 0.0], [1.0, 0.0])
                 }
-                "Distance" => ControlTarget::distance(body, [0.0, 0.0], [0.0, 0.0]),
+                "Distance" => ControlTarget::distance(body, default_local, [0.0, 0.0]),
                 _ => target.clone(),
             };
         }
