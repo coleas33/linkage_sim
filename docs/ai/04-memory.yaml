@@ -6,12 +6,6 @@ active_issues: []
 
 open_questions:
   - |
-    Trajectory v2: click-to-set ControlTarget points on canvas. v1 uses
-    numerical input + "from joint" helper. Click-to-set requires extending the
-    canvas interaction layer (gui/canvas/interaction.rs) with a "pick a body
-    point" mode. Defer until users ask.
-
-  - |
     Trajectory v3: hardware-controller-specific export adapter. v1 emits a
     superset CSV intended for downstream subsetting. A hardware adapter (e.g.
     Aerotech, Galil, Beckhoff) is a thin format-conversion layer on top once
