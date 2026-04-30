@@ -7,7 +7,7 @@ use nalgebra::DVector;
 
 use crate::core::mechanism::Mechanism;
 use crate::error::LinkageError;
-use crate::solver::assembly::assemble_jacobian;
+use crate::solver::assembly::{assemble_gamma, assemble_jacobian};
 
 use super::control_target::ControlTarget;
 
@@ -120,6 +120,70 @@ fn compute_r_prime(
     Ok(grad.dot(&dq_du))
 }
 
+/// Analytic inverse acceleration. Faster (one extra linear solve, same cost as
+/// `inverse_velocity`) and more accurate (no FD truncation error) than
+/// `inverse_acceleration_fd`. Requires `target.hessian(...)` to return the
+/// analytic Hessian (currently implemented for all 5 ControlTarget variants).
+///
+/// Math:
+///   ü = (ḧ − r''(u) · u̇²) / r'(u)
+///   r'(u)  = ∇_q g · dq/du
+///   r''(u) = ∇²_q g (dq/du, dq/du) + ∇_q g · (d²q/du²)
+///
+/// Where d²q/du² solves Φ_q · (d²q/du²) = γ_kinematic, using the existing
+/// `assemble_gamma` with the driver-row Φ_tt term forced to 0 (kinematic-only).
+///
+/// Math reference: docs/superpowers/specs/2026-04-29-linkage-equations-reference.md §8.3.
+#[allow(clippy::too_many_arguments)]
+pub fn inverse_acceleration_analytic(
+    mech: &Mechanism,
+    q: &DVector<f64>,
+    target: &ControlTarget,
+    u: f64,
+    u_dot: f64,
+    h_ddot: f64,
+    u_0: f64,
+    nominal_rate: f64,
+) -> Result<f64, LinkageError> {
+    let driver_row = mech.driver_row();
+    let t_mech = (u - u_0) / nominal_rate;
+
+    // dq/du and r'(u)
+    let dq_du = compute_dq_du(mech, q, t_mech)?;
+    let grad = target.gradient(mech, q);
+    let r_prime = grad.dot(&dq_du);
+
+    let grad_norm = grad.norm();
+    let dqdu_norm = dq_du.norm();
+    let eps_singularity = 1e-6 * (grad_norm * dqdu_norm).max(1e-12);
+    if r_prime.abs() < eps_singularity {
+        return Err(LinkageError::TrajectorySingular { dg_du: r_prime });
+    }
+
+    // d²q/du² via kinematic-only γ + linear solve.
+    // assemble_gamma(...,&dq_du,...) computes Φ_qq(dq/du, dq/du) up to sign
+    // (γ in EQ-of-motion convention is the RHS of Φ_q q̈ = γ, so γ = -Φ_qq(q̇,q̇)
+    // - 2Φ_qt q̇ - Φ_tt). For our purposes Φ_qu = 0 and Φ_uu = 0; we want
+    // Φ_q · (d²q/du²) = -Φ_qq(dq/du, dq/du), i.e. exactly what γ provides on
+    // the constraint rows. The driver row's Φ_tt term must be zeroed since
+    // we're computing d²q/du², not q̈.
+    let phi_q = assemble_jacobian(mech, q, t_mech);
+    let mut gamma = assemble_gamma(mech, q, &dq_du, t_mech);
+    gamma[driver_row] = 0.0; // kinematic-only: zero out Φ_tt
+    let svd = phi_q.svd(true, true);
+    let d2q_du2 = svd
+        .solve(&gamma, 1e-14)
+        .map_err(|_| LinkageError::SvdSolveFailed)?;
+
+    // r''(u) = ∇²g(dq/du, dq/du) + ∇g · (d²q/du²)
+    let hess = target.hessian(mech, q);
+    let hess_term = (&hess * &dq_du).dot(&dq_du);
+    let dq_term = grad.dot(&d2q_du2);
+    let r_double_prime = hess_term + dq_term;
+
+    Ok((h_ddot - r_double_prime * u_dot * u_dot) / r_prime)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,5 +239,53 @@ mod tests {
             u_0, nominal_rate,
         ).unwrap();
         assert_abs_diff_eq!(u_ddot, 0.0, epsilon = 1e-3);
+    }
+
+    #[test]
+    fn inverse_acceleration_analytic_zero_for_constant_velocity() {
+        // Analytic equivalent of the FD test above: constant-velocity ⇒ ü = 0.
+        let mech = build_fourbar();
+        let q = solve_at(&mech, 0.1);
+        let target = ControlTarget::angle("crank");
+        let u_0 = 0.0;
+        let nominal_rate = 2.0 * PI;
+        let u = 0.1 * nominal_rate;
+        let u_dot = 0.5;
+        let h_ddot = 0.0;
+        let u_ddot = inverse_acceleration_analytic(
+            &mech, &q, &target, u, u_dot, h_ddot, u_0, nominal_rate,
+        ).unwrap();
+        // Analytic should be tighter than FD's 1e-3 — Angle has zero Hessian
+        // and the dq/du term carries no quadratic-in-u_dot contribution at
+        // constant input rate, so u_ddot should hit machine zero.
+        assert_abs_diff_eq!(u_ddot, 0.0, epsilon = 1e-9);
+    }
+
+    #[test]
+    fn inverse_acceleration_analytic_matches_fd_for_world_y() {
+        // Analytic and FD should agree within FD's truncation error (~1e-3).
+        let mech = build_fourbar();
+        let q = solve_at(&mech, 0.15);
+        let target = ControlTarget::world_y("crank", [0.005, 0.0]);
+        let u_0 = 0.0;
+        let nominal_rate = 2.0 * PI;
+        let u = 0.15 * nominal_rate;
+        let u_dot = 1.5;
+        let h_ddot = 0.5;
+
+        let analytic = inverse_acceleration_analytic(
+            &mech, &q, &target, u, u_dot, h_ddot, u_0, nominal_rate,
+        ).unwrap();
+
+        let δ = 1e-4;
+        let fd = inverse_acceleration_fd(
+            &mech, &q, &target, u, u_dot, h_ddot, δ, u_0, nominal_rate,
+        ).unwrap();
+
+        assert!(
+            (analytic - fd).abs() < 1e-2,
+            "analytic={}, fd={}, diff={}",
+            analytic, fd, (analytic - fd).abs()
+        );
     }
 }

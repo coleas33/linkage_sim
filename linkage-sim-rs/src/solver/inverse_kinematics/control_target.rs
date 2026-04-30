@@ -11,6 +11,7 @@ use nalgebra::{DMatrix, DVector};
 use serde::{Deserialize, Serialize};
 
 use crate::core::mechanism::Mechanism;
+use crate::core::state::State;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ControlTarget {
@@ -157,16 +158,120 @@ impl ControlTarget {
         grad
     }
 
-    /// Hessian `∇²_q g(q)` — n_coords × n_coords. Zero for variants linear in q.
+    /// Hessian `∇²_q g(q)` — n_coords × n_coords. Sparse: only entries
+    /// involving the targeted body's (x, y, θ) coordinates can be non-zero.
+    ///
+    /// See: docs/superpowers/specs/2026-04-29-linkage-equations-reference.md §8.3
     pub fn hessian(&self, mech: &Mechanism, q: &DVector<f64>) -> DMatrix<f64> {
-        let n = mech.state().n_coords();
-        let _ = q;
+        let state = mech.state();
+        let n = state.n_coords();
+
         match self {
-            ControlTarget::Angle { .. }
-            | ControlTarget::WorldX { .. }
-            | ControlTarget::WorldY { .. }
-            | ControlTarget::Projection { .. }
-            | ControlTarget::Distance { .. } => DMatrix::zeros(n, n),
+            // g = θ_i is linear in q ⇒ Hessian = 0.
+            ControlTarget::Angle { .. } => DMatrix::zeros(n, n),
+
+            // g = r_x + (A(θ)·s)_x ;  ∂²g/∂θ² = -(A(θ)·s)_x ; all other entries 0.
+            ControlTarget::WorldX { body_id, local_pt } => {
+                if state.is_ground(body_id) {
+                    return DMatrix::zeros(n, n);
+                }
+                let idx = state.get_index(body_id).expect("body not registered");
+                let p = nalgebra::Vector2::new(local_pt[0], local_pt[1]);
+                let theta = state.get_angle(body_id, q);
+                let a_s = State::rotation_matrix(theta) * p;
+                let mut h = DMatrix::zeros(n, n);
+                h[(idx.theta_idx(), idx.theta_idx())] = -a_s.x;
+                h
+            }
+
+            // g = r_y + (A(θ)·s)_y ;  ∂²g/∂θ² = -(A(θ)·s)_y ; all other entries 0.
+            ControlTarget::WorldY { body_id, local_pt } => {
+                if state.is_ground(body_id) {
+                    return DMatrix::zeros(n, n);
+                }
+                let idx = state.get_index(body_id).expect("body not registered");
+                let p = nalgebra::Vector2::new(local_pt[0], local_pt[1]);
+                let theta = state.get_angle(body_id, q);
+                let a_s = State::rotation_matrix(theta) * p;
+                let mut h = DMatrix::zeros(n, n);
+                h[(idx.theta_idx(), idx.theta_idx())] = -a_s.y;
+                h
+            }
+
+            // g = unit · (P − origin). Only ∂²g/∂θ² = -unit · A(θ)·s is non-zero.
+            ControlTarget::Projection {
+                body_id,
+                local_pt,
+                axis_origin: _,
+                axis_dir,
+            } => {
+                if state.is_ground(body_id) {
+                    return DMatrix::zeros(n, n);
+                }
+                let idx = state.get_index(body_id).expect("body not registered");
+                let p = nalgebra::Vector2::new(local_pt[0], local_pt[1]);
+                let theta = state.get_angle(body_id, q);
+                let a_s = State::rotation_matrix(theta) * p;
+                let dir = nalgebra::Vector2::new(axis_dir[0], axis_dir[1]);
+                let dir_norm = dir.norm();
+                assert!(dir_norm > 1e-12, "Projection axis_dir is zero");
+                let unit = dir / dir_norm;
+                let mut h = DMatrix::zeros(n, n);
+                h[(idx.theta_idx(), idx.theta_idx())] = -unit.dot(&a_s);
+                h
+            }
+
+            // g = ‖P − ref‖. Six independent entries (3×3 block, symmetric).
+            // Let d = P − ref, ℓ = ‖d‖, û = d/ℓ, A·s = A(θ)·s, B·s = B(θ)·s.
+            //   ∂²g/∂x²    = (1 − û_x²)/ℓ
+            //   ∂²g/∂y²    = (1 − û_y²)/ℓ
+            //   ∂²g/∂x∂y   = −û_x·û_y/ℓ
+            //   ∂²g/∂x∂θ   = ((B·s)_x − û_x·(û · B·s))/ℓ
+            //   ∂²g/∂y∂θ   = ((B·s)_y − û_y·(û · B·s))/ℓ
+            //   ∂²g/∂θ²    = (‖B·s‖² − (û · B·s)²)/ℓ − û · (A·s)
+            // Edge case: ℓ < 1e-12 ⇒ Hessian undefined; return zeros (matches gradient).
+            ControlTarget::Distance {
+                body_id,
+                local_pt,
+                ref_pt,
+            } => {
+                if state.is_ground(body_id) {
+                    return DMatrix::zeros(n, n);
+                }
+                let idx = state.get_index(body_id).expect("body not registered");
+                let p = nalgebra::Vector2::new(local_pt[0], local_pt[1]);
+                let p_world = state.body_point_global(body_id, &p, q);
+                let r = nalgebra::Vector2::new(ref_pt[0], ref_pt[1]);
+                let d = p_world - r;
+                let ell = d.norm();
+                if ell < 1e-12 {
+                    return DMatrix::zeros(n, n);
+                }
+                let unit = d / ell;
+                let theta = state.get_angle(body_id, q);
+                let a_s = State::rotation_matrix(theta) * p;
+                let bs = state.body_point_global_derivative(body_id, &p, q);
+                let u_dot_bs = unit.dot(&bs);
+                let bs_norm_sq = bs.norm_squared();
+
+                let mut h = DMatrix::zeros(n, n);
+                let xi = idx.x_idx();
+                let yi = idx.y_idx();
+                let ti = idx.theta_idx();
+                h[(xi, xi)] = (1.0 - unit.x * unit.x) / ell;
+                h[(yi, yi)] = (1.0 - unit.y * unit.y) / ell;
+                let off_xy = -unit.x * unit.y / ell;
+                h[(xi, yi)] = off_xy;
+                h[(yi, xi)] = off_xy;
+                let off_xt = (bs.x - unit.x * u_dot_bs) / ell;
+                h[(xi, ti)] = off_xt;
+                h[(ti, xi)] = off_xt;
+                let off_yt = (bs.y - unit.y * u_dot_bs) / ell;
+                h[(yi, ti)] = off_yt;
+                h[(ti, yi)] = off_yt;
+                h[(ti, ti)] = (bs_norm_sq - u_dot_bs * u_dot_bs) / ell - unit.dot(&a_s);
+                h
+            }
         }
     }
 
@@ -544,6 +649,121 @@ mod tests {
             }.unit_label(),
             "m"
         );
+    }
+
+    /// Helper: FD-check that `target.hessian(q)` agrees with central differences
+    /// of `target.gradient(q)` at the given coordinate indices.
+    fn assert_hessian_fd_matches(
+        target: &ControlTarget,
+        mech: &Mechanism,
+        q: &DVector<f64>,
+        indices: &[usize],
+    ) {
+        let h_analytic = target.hessian(mech, q);
+        let h = 1e-7;
+        for &i in indices {
+            for &j in indices {
+                let mut q_plus = q.clone();
+                q_plus[j] += h;
+                let mut q_minus = q.clone();
+                q_minus[j] -= h;
+                let grad_plus = target.gradient(mech, &q_plus);
+                let grad_minus = target.gradient(mech, &q_minus);
+                let fd = (grad_plus[i] - grad_minus[i]) / (2.0 * h);
+                assert!(
+                    (h_analytic[(i, j)] - fd).abs() < 1e-5,
+                    "Hessian mismatch at ({}, {}): analytic={}, fd={}",
+                    i, j, h_analytic[(i, j)], fd,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn world_x_hessian_fd_check() {
+        let mech = build_fourbar();
+        let q = solve_at(&mech, 0.2);
+        let target = ControlTarget::world_x("crank", [0.005, 0.0]);
+        let crank = mech.state().get_index("crank").unwrap();
+        assert_hessian_fd_matches(
+            &target,
+            &mech,
+            &q,
+            &[crank.x_idx(), crank.y_idx(), crank.theta_idx()],
+        );
+    }
+
+    #[test]
+    fn world_y_hessian_fd_check() {
+        let mech = build_fourbar();
+        let q = solve_at(&mech, 0.2);
+        let target = ControlTarget::world_y("crank", [0.005, 0.0]);
+        let crank = mech.state().get_index("crank").unwrap();
+        assert_hessian_fd_matches(
+            &target,
+            &mech,
+            &q,
+            &[crank.x_idx(), crank.y_idx(), crank.theta_idx()],
+        );
+    }
+
+    #[test]
+    fn projection_hessian_fd_check() {
+        let mech = build_fourbar();
+        let q = solve_at(&mech, 0.2);
+        let target = ControlTarget::Projection {
+            body_id: "crank".into(),
+            local_pt: [0.005, 0.0],
+            axis_origin: [0.01, 0.0],
+            axis_dir: [0.6, 0.8], // unit length
+        };
+        let crank = mech.state().get_index("crank").unwrap();
+        assert_hessian_fd_matches(
+            &target,
+            &mech,
+            &q,
+            &[crank.x_idx(), crank.y_idx(), crank.theta_idx()],
+        );
+    }
+
+    #[test]
+    fn distance_hessian_fd_check() {
+        let mech = build_fourbar();
+        let q = solve_at(&mech, 0.2);
+        let target = ControlTarget::Distance {
+            body_id: "crank".into(),
+            local_pt: [0.005, 0.0],
+            ref_pt: [0.0, 0.005],
+        };
+        let crank = mech.state().get_index("crank").unwrap();
+        assert_hessian_fd_matches(
+            &target,
+            &mech,
+            &q,
+            &[crank.x_idx(), crank.y_idx(), crank.theta_idx()],
+        );
+    }
+
+    #[test]
+    fn distance_hessian_returns_zero_at_singularity() {
+        let mech = build_fourbar();
+        let q = solve_at(&mech, 0.0);
+        let body_origin_world = mech.state().body_point_global(
+            "crank",
+            &nalgebra::Vector2::new(0.0, 0.0),
+            &q,
+        );
+        let target = ControlTarget::Distance {
+            body_id: "crank".into(),
+            local_pt: [0.0, 0.0],
+            ref_pt: [body_origin_world.x, body_origin_world.y],
+        };
+        let h = target.hessian(&mech, &q);
+        for i in 0..h.nrows() {
+            for j in 0..h.ncols() {
+                assert_abs_diff_eq!(h[(i, j)], 0.0, epsilon = 1e-15);
+            }
+        }
     }
 
     /// Fold-in from Task 1.7 review: exercise the Distance::gradient singularity branch.

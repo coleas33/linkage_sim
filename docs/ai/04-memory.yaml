@@ -13,9 +13,3 @@ open_questions:
     `FirmwareAdapter` trait — implement on demand once a target controller
     is selected.
 
-  - |
-    Trajectory: analytic acceleration inverse. v1 uses finite differences for
-    ü (two extra forward solves per sample). Switching to analytic requires
-    extending ControlTarget::hessian for non-Angle variants and assembling a
-    "kinematic-only γ" with dq/du in place of q̇. Recommended only if FD ü
-    accuracy is shown insufficient by hardware-export use cases.

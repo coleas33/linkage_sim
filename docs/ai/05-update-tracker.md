@@ -5,6 +5,30 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-30 — feat(traj): analytic acceleration inverse via per-variant Hessian
+
+**What:** Replaced the placeholder zero-Hessian arms in `ControlTarget::hessian`
+with closed-form Hessians for `WorldX`, `WorldY`, `Projection`, and `Distance`
+(Angle is linear in q, retains zero Hessian). Added
+`solver/inverse_kinematics/derivatives.rs::inverse_acceleration_analytic` —
+computes `r''(u) = ∇²g(dq/du, dq/du) + ∇g·(d²q/du²)` directly via the
+analytic Hessian plus a "kinematic-only γ" assembly (existing `assemble_gamma`
+with `dq/du` in place of `q̇` and the `Φ_tt` driver-row term zeroed). Eliminates
+the two extra forward solves per sample that `inverse_acceleration_fd` requires.
+
+**Why:** Resolves the `04-memory.yaml` open question on analytic acceleration.
+While FD was sufficient for v1 trajectory analysis, the analytic path is more
+accurate (no FD truncation error) and faster (one linear solve vs two forward
+solves). Available for callers to opt into; `compute_trajectory` continues to
+use FD by default per spec §8.3 recommendation.
+
+**Test results:** 635 lib tests pass (628 baseline + 4 Hessian FD-check tests +
+2 analytic-vs-FD agreement tests + 1 constant-velocity test). Analytic and FD
+agree to ~1e-2 (FD's 1e-3 truncation error dominates). Constant-velocity test
+hits machine-zero with analytic vs `1e-3` with FD — confirming the accuracy gain.
+
+---
+
 ## 2026-04-29 — feat(traj): JSON firmware export adapter
 
 **What:** Added a `FirmwareAdapter` trait and a concrete `JsonAdapter` under
