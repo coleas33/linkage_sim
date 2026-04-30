@@ -135,7 +135,10 @@ fn angle_to_fraction_trapezoidal(
 /// angle to reflect the varying omega and alpha of the profile.
 pub(crate) fn apply_motion_profile(data: &mut SweepData, omega: f64, profile: MotionProfile) {
     match profile {
-        MotionProfile::ConstantSpeed => {
+        // SCurve in driver-side sweep falls back to constant-speed behaviour;
+        // the jerk-limited evaluation is meaningful only for trajectory mode
+        // (see TrajectoryProfile::evaluate / scurve_value).
+        MotionProfile::ConstantSpeed | MotionProfile::SCurve { .. } => {
             data.profile_torques = None;
             data.profile_omega = None;
             data.profile_alpha = None;

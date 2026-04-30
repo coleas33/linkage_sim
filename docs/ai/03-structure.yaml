@@ -87,7 +87,7 @@ gui_submodules:
     path: src/gui/sweep/
     files:
       mod: sweep/mod.rs (SweepData, compute_sweep_data, push_nan_row helper)
-      motion_profile: sweep/motion_profile.rs (trapezoidal velocity profile, apply_motion_profile)
+      motion_profile: sweep/motion_profile.rs (trapezoidal velocity profile, apply_motion_profile; SCurve falls back to ConstantSpeed in driver-side mode)
       fourbar: sweep/fourbar.rs (4-bar linkage detection for transmission angle)
 
   other_top_level_gui:

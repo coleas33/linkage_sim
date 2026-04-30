@@ -185,6 +185,9 @@ impl TrajectoryProfile {
                     accel_fraction, decel_fraction,
                 )
             }
+            MotionProfile::SCurve { .. } => {
+                scurve_value(t_clamped, self.duration, self.start_value, self.end_value)
+            }
         }
     }
 
@@ -238,6 +241,26 @@ fn trapezoidal_value(
     }
 }
 
+/// Pure quintic ease-in-out S-curve evaluation.
+///
+/// Uses the smooth-step polynomial `s(τ) = τ³(10 − 15τ + 6τ²)` with
+/// `τ = t/duration ∈ [0, 1]`. The first derivative is `30τ²(1−τ)²`
+/// (zero at endpoints, peak at τ=0.5) and the second derivative is
+/// `60τ(1−2τ)(1−τ)` (zero at τ=0, 0.5, 1). The endpoint behaviour gives
+/// zero velocity AND zero acceleration at both `t=0` and `t=duration`,
+/// which is the defining property of a jerk-limited motion profile.
+fn scurve_value(t: f64, duration: f64, start: f64, end: f64) -> (f64, f64, f64) {
+    let span = end - start;
+    let tau = (t / duration).clamp(0.0, 1.0);
+    let s = tau.powi(3) * (10.0 - 15.0 * tau + 6.0 * tau * tau);
+    let s_prime = 30.0 * tau.powi(2) * (1.0 - tau).powi(2);
+    let s_doubleprime = 60.0 * tau * (1.0 - 2.0 * tau) * (1.0 - tau);
+    let h = start + s * span;
+    let h_dot = s_prime * span / duration;
+    let h_ddot = s_doubleprime * span / (duration * duration);
+    (h, h_dot, h_ddot)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -273,5 +296,55 @@ mod tests {
         assert!((samples[0] - 0.0).abs() < 1e-12);
         assert!((samples[4] - 1.0).abs() < 1e-12);
         assert!((samples[2] - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn trajectory_profile_scurve_endpoints_match_target() {
+        let profile = TrajectoryProfile {
+            shape: MotionProfile::SCurve { jerk_fraction: 0.2 },
+            start_value: 0.0,
+            end_value: 1.0,
+            duration: 1.0,
+        };
+        let (h, h_dot, h_ddot) = profile.evaluate(0.0);
+        assert!((h - 0.0).abs() < 1e-12);
+        assert!(h_dot.abs() < 1e-12, "jerk-limited: zero velocity at t=0");
+        assert!(h_ddot.abs() < 1e-12, "jerk-limited: zero acceleration at t=0");
+
+        let (h, _, _) = profile.evaluate(0.5);
+        assert!(
+            (h - 0.5).abs() < 1e-3,
+            "midpoint of symmetric profile ~ midpoint span: got {}",
+            h
+        );
+
+        let (h, h_dot, h_ddot) = profile.evaluate(1.0);
+        assert!((h - 1.0).abs() < 1e-12);
+        assert!(h_dot.abs() < 1e-12, "jerk-limited: zero velocity at t=duration");
+        assert!(h_ddot.abs() < 1e-12, "jerk-limited: zero acceleration at t=duration");
+    }
+
+    #[test]
+    fn trajectory_profile_scurve_integrates_to_span() {
+        // Numerical integration check: ∫₀^duration h_dot(t) dt = span
+        let profile = TrajectoryProfile {
+            shape: MotionProfile::SCurve { jerk_fraction: 0.2 },
+            start_value: 0.5,
+            end_value: 2.5,
+            duration: 1.0,
+        };
+        let n = 1000;
+        let dt = profile.duration / n as f64;
+        let mut integral = 0.0;
+        for i in 0..n {
+            let t = (i as f64 + 0.5) * dt;
+            let (_, h_dot, _) = profile.evaluate(t);
+            integral += h_dot * dt;
+        }
+        assert!(
+            (integral - 2.0).abs() < 1e-3,
+            "integral of h_dot should equal span (2.0): got {}",
+            integral
+        );
     }
 }

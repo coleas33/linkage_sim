@@ -42,6 +42,9 @@ pub(crate) use blueprint_ops::detect_driver_joint_id;
 /// `ConstantSpeed` (the default) uses a fixed omega throughout the cycle.
 /// `Trapezoidal` accelerates from rest, cruises, then decelerates to rest,
 /// producing realistic inertial loads for motor sizing.
+/// `SCurve` is a jerk-limited (quintic ease-in-out) profile with zero
+/// velocity AND zero acceleration at both endpoints — used in real actuator
+/// hardware to avoid mechanical shocks at start/stop.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum MotionProfile {
     /// Constant angular velocity (existing default behaviour).
@@ -52,6 +55,17 @@ pub enum MotionProfile {
         accel_fraction: f64,
         /// Fraction of the cycle spent decelerating (0.05 .. 0.45).
         decel_fraction: f64,
+    },
+    /// Jerk-limited S-curve profile (quintic ease-in-out).
+    ///
+    /// v1 implementation uses the pure quintic blending function
+    /// `s(τ) = τ³(10 − 15τ + 6τ²)` for trajectory mode; this gives zero
+    /// velocity and zero acceleration at both endpoints. The `jerk_fraction`
+    /// field is reserved for a future full 7-segment formal version and is
+    /// currently unused.
+    SCurve {
+        /// Reserved for future 7-segment SCurve. Currently unused (v1).
+        jerk_fraction: f64,
     },
 }
 

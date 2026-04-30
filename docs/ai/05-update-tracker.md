@@ -5,6 +5,50 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-29 — feat(traj): add SCurve (jerk-limited) motion profile
+
+**What:** Added a third variant `MotionProfile::SCurve { jerk_fraction: f64 }`
+to the `MotionProfile` enum. v1 implementation uses the pure quintic
+ease-in-out polynomial `s(τ) = τ³(10 − 15τ + 6τ²)` for trajectory-mode
+position, so velocity and acceleration are both zero at `t=0` and
+`t=duration` (the defining property of a jerk-limited profile). The
+`jerk_fraction` field is reserved for a future full 7-segment formal
+version and is currently unused.
+
+In **trajectory mode**, `TrajectoryProfile::evaluate` dispatches to a new
+`scurve_value(t, duration, start, end)` helper next to the existing
+`trapezoidal_value` in `gui/state/types.rs`. The profile-editor UI in
+`gui/trajectory_panel/profile_input.rs` exposes "SCurve" alongside
+"ConstantSpeed" and "Trapezoidal" in the shape dropdown.
+
+In **driver-side sweep mode**, SCurve falls back to `ConstantSpeed`
+behaviour (sets `profile_torques / profile_omega / profile_alpha` to
+`None`). The jerk-limited evaluation is meaningful only for trajectory
+mode where the `(h, ḣ, ḧ)` tuple feeds the inverse-kinematics solve.
+The driver-side selector in `gui/input_panel.rs` does not surface
+SCurve as a selectable option but maps it to the "Constant Speed" label
+when the trajectory-mode UI has switched it on.
+
+**Why:** Closes the long-standing "Trajectory v2: S-curve" open question
+in `04-memory.yaml`. Real actuator hardware uses jerk-limited profiles
+to avoid mechanical shocks at start/stop; v1 quintic captures the
+endpoint property without the implementation cost of the full
+7-segment piecewise jerk profile.
+
+**Touched files:**
+- `linkage-sim-rs/src/gui/state/mod.rs` — new `SCurve { jerk_fraction }` variant
+- `linkage-sim-rs/src/gui/state/types.rs` — `scurve_value` + dispatch + 2 tests
+- `linkage-sim-rs/src/gui/trajectory_panel/profile_input.rs` — dropdown + ctor
+- `linkage-sim-rs/src/gui/sweep/motion_profile.rs` — driver-side fallback to const-speed
+- `linkage-sim-rs/src/gui/input_panel.rs` — exhaustive match (SCurve labelled "Constant Speed")
+
+**Test results:** 621 lib tests pass (619 baseline + 2 new SCurve tests:
+`trajectory_profile_scurve_endpoints_match_target`,
+`trajectory_profile_scurve_integrates_to_span`). Build clean (no new
+warnings beyond the pre-existing baseline).
+
+---
+
 ## 2026-04-29 — R1b refactor: collapse driver scalars into DriverKind enum payload
 
 **What:** Removed the dual-purpose `driver_omega`, `driver_theta_0`, and

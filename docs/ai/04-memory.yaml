@@ -6,12 +6,6 @@ active_issues: []
 
 open_questions:
   - |
-    Trajectory v2: S-curve (jerk-limited) motion profile. Currently only
-    ConstantSpeed and Trapezoidal are implemented. SCurve requires a 7-segment
-    quintic position function. Slot in MotionProfile::SCurve { jerk_fraction }
-    when a user need arises.
-
-  - |
     Trajectory v2: click-to-set ControlTarget points on canvas. v1 uses
     numerical input + "from joint" helper. Click-to-set requires extending the
     canvas interaction layer (gui/canvas/interaction.rs) with a "pick a body

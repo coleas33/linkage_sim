@@ -770,6 +770,9 @@ fn draw_motion_profile_selector(ui: &mut egui::Ui, state: &mut AppState) {
     let selected_text = match state.motion_profile {
         MotionProfile::ConstantSpeed => "Constant Speed",
         MotionProfile::Trapezoidal { .. } => "Trapezoidal",
+        // SCurve is a trajectory-mode concept; in driver-side sweep it falls
+        // back to constant-speed behaviour and is not directly selectable here.
+        MotionProfile::SCurve { .. } => "Constant Speed",
     };
 
     egui::ComboBox::from_id_salt("motion_profile")

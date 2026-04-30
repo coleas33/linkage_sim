@@ -24,12 +24,14 @@ pub fn draw(state: &mut AppState, ui: &mut egui::Ui) {
     let mut shape_label = match profile.shape {
         MotionProfile::ConstantSpeed => "ConstantSpeed",
         MotionProfile::Trapezoidal { .. } => "Trapezoidal",
+        MotionProfile::SCurve { .. } => "SCurve",
     };
     egui::ComboBox::from_label("Shape")
         .selected_text(shape_label)
         .show_ui(ui, |ui| {
             ui.selectable_value(&mut shape_label, "ConstantSpeed", "ConstantSpeed");
             ui.selectable_value(&mut shape_label, "Trapezoidal", "Trapezoidal");
+            ui.selectable_value(&mut shape_label, "SCurve", "SCurve");
         });
     profile.shape = match shape_label {
         "ConstantSpeed" => MotionProfile::ConstantSpeed,
@@ -39,6 +41,10 @@ pub fn draw(state: &mut AppState, ui: &mut egui::Ui) {
                 accel_fraction: 0.2,
                 decel_fraction: 0.2,
             },
+        },
+        "SCurve" => match profile.shape {
+            MotionProfile::SCurve { .. } => profile.shape,
+            _ => MotionProfile::SCurve { jerk_fraction: 0.2 },
         },
         _ => profile.shape,
     };
