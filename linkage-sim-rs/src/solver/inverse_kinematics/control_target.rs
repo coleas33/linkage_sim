@@ -28,6 +28,12 @@ pub enum ControlTarget {
         axis_origin: [f64; 2],
         axis_dir: [f64; 2],
     },
+    /// Euclidean distance from a body-local point to a fixed reference point.
+    Distance {
+        body_id: String,
+        local_pt: [f64; 2],
+        ref_pt: [f64; 2],
+    },
 }
 
 impl ControlTarget {
@@ -57,6 +63,16 @@ impl ControlTarget {
                 assert!(dir_norm > 1e-12, "Projection axis_dir is zero");
                 let unit = dir / dir_norm;
                 (p_world - origin).dot(&unit)
+            }
+            ControlTarget::Distance {
+                body_id,
+                local_pt,
+                ref_pt,
+            } => {
+                let p = nalgebra::Vector2::new(local_pt[0], local_pt[1]);
+                let p_world = mech.state().body_point_global(body_id, &p, q);
+                let r = nalgebra::Vector2::new(ref_pt[0], ref_pt[1]);
+                (p_world - r).norm()
             }
         }
     }
@@ -113,6 +129,29 @@ impl ControlTarget {
                     grad[idx.theta_idx()] = unit.dot(&bs);
                 }
             }
+            ControlTarget::Distance {
+                body_id,
+                local_pt,
+                ref_pt,
+            } => {
+                if !state.is_ground(body_id) {
+                    let idx = state.get_index(body_id).expect("body not registered");
+                    let p = nalgebra::Vector2::new(local_pt[0], local_pt[1]);
+                    let p_world = state.body_point_global(body_id, &p, q);
+                    let r = nalgebra::Vector2::new(ref_pt[0], ref_pt[1]);
+                    let d = p_world - r;
+                    let length = d.norm();
+                    if length < 1e-12 {
+                        // Gradient undefined at distance 0 — leave zero
+                        return grad;
+                    }
+                    let unit = d / length;
+                    grad[idx.x_idx()] = unit.x;
+                    grad[idx.y_idx()] = unit.y;
+                    let bs = state.body_point_global_derivative(body_id, &p, q);
+                    grad[idx.theta_idx()] = unit.dot(&bs);
+                }
+            }
         }
 
         grad
@@ -126,7 +165,8 @@ impl ControlTarget {
             ControlTarget::Angle { .. }
             | ControlTarget::WorldX { .. }
             | ControlTarget::WorldY { .. }
-            | ControlTarget::Projection { .. } => DMatrix::zeros(n, n),
+            | ControlTarget::Projection { .. }
+            | ControlTarget::Distance { .. } => DMatrix::zeros(n, n),
         }
     }
 }
@@ -310,6 +350,52 @@ mod tests {
             assert!(
                 (grad[idx] - fd).abs() < 1e-5,
                 "Projection gradient FD mismatch at '{}' (idx {}): analytic={}, fd={}",
+                label, idx, grad[idx], fd,
+            );
+        }
+    }
+
+    #[test]
+    fn distance_target_evaluates_to_norm() {
+        let mech = build_fourbar();
+        let q = solve_at(&mech, 0.0);
+        // Distance from crank midpoint to origin
+        let target = ControlTarget::Distance {
+            body_id: "crank".into(),
+            local_pt: [0.005, 0.0],
+            ref_pt: [0.0, 0.0],
+        };
+        let g = target.evaluate(&mech, &q);
+        // At t=0, body-local (0.005, 0.0) maps to world (0.005, 0.0)
+        // (same as WorldX test). Distance to (0,0) = 0.005.
+        assert_abs_diff_eq!(g, 0.005, epsilon = 1e-7);
+    }
+
+    #[test]
+    fn distance_gradient_fd_check() {
+        let mech = build_fourbar();
+        let q = solve_at(&mech, 0.2);
+        let target = ControlTarget::Distance {
+            body_id: "crank".into(),
+            local_pt: [0.005, 0.0],
+            ref_pt: [0.0, 0.005],
+        };
+        let grad = target.gradient(&mech, &q);
+        let crank = mech.state().get_index("crank").unwrap();
+        let h = 1e-7;
+        for &(idx, label) in &[
+            (crank.x_idx(), "x"),
+            (crank.y_idx(), "y"),
+            (crank.theta_idx(), "theta"),
+        ] {
+            let mut qp = q.clone();
+            qp[idx] += h;
+            let mut qm = q.clone();
+            qm[idx] -= h;
+            let fd = (target.evaluate(&mech, &qp) - target.evaluate(&mech, &qm)) / (2.0 * h);
+            assert!(
+                (grad[idx] - fd).abs() < 1e-5,
+                "Distance gradient FD mismatch at '{}' (idx {}): analytic={}, fd={}",
                 label, idx, grad[idx], fd,
             );
         }
