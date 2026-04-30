@@ -46,7 +46,7 @@ linkage-sim-rs/src/error.rs                   — add LinkageError variants
 linkage-sim-rs/src/solver/mod.rs              — pub mod inverse_kinematics
 linkage-sim-rs/src/gui/mod.rs                 — mod trajectory_panel
 linkage-sim-rs/src/gui/state/mod.rs           — mod trajectory_ops
-linkage-sim-rs/src/gui/state/types.rs         — SweepData fields, TrajectoryProfile
+linkage-sim-rs/src/gui/state/types.rs         — TrajectoryProfile (SweepData lives in gui/sweep/mod.rs)
 linkage-sim-rs/src/gui/sweep/mod.rs           — SweepMode::Trajectory + compute_trajectory
 linkage-sim-rs/src/gui/sweep/motion_profile.rs — generalize for axis-agnostic
 linkage-sim-rs/src/gui/plot_panel/mod.rs      — dispatch arm for Trajectory
