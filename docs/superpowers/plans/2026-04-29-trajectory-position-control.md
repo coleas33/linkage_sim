@@ -677,10 +677,10 @@ pub(crate) mod test_helpers;
 In `linkage-sim-rs/src/solver/inverse_kinematics/control_target.rs`, **delete** the inline `build_fourbar` and `solve_at` functions from the test module, and replace with:
 
 ```rust
-use super::super::test_helpers::{build_fourbar, solve_at};
+use crate::solver::inverse_kinematics::test_helpers::{build_fourbar, solve_at};
 ```
 
-(at the top of the `#[cfg(test)] mod tests { ... }` block, after the existing `use super::*;`. Note: `super::super::` because the test module is nested inside `control_target.rs`; `super` resolves to `control_target`, and `test_helpers` is its sibling under `inverse_kinematics`.)
+(at the top of the `#[cfg(test)] mod tests { ... }` block, after the existing `use super::*;`. Absolute path is preferred over `super::super::test_helpers` so future module re-organizations don't silently break the import.)
 
 Run `cargo test --lib solver::inverse_kinematics::control_target::tests` to verify the existing 3 tests still pass via the shared helpers.
 

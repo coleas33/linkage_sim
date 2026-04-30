@@ -90,7 +90,7 @@ impl ControlTarget {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::test_helpers::{build_fourbar, solve_at};
+    use crate::solver::inverse_kinematics::test_helpers::{build_fourbar, solve_at};
     use approx::assert_abs_diff_eq;
     use std::f64::consts::PI;
 
@@ -176,7 +176,7 @@ mod tests {
         let crank = mech.state().get_index("crank").unwrap();
         let h = 1e-7;
 
-        for &(idx, expected_label) in &[
+        for &(idx, label) in &[
             (crank.x_idx(), "x"),
             (crank.y_idx(), "y"),
             (crank.theta_idx(), "theta"),
@@ -186,8 +186,11 @@ mod tests {
             let mut q_minus = q.clone();
             q_minus[idx] -= h;
             let fd = (target.evaluate(&mech, &q_plus) - target.evaluate(&mech, &q_minus)) / (2.0 * h);
-            assert_abs_diff_eq!(grad[idx], fd, epsilon = 1e-5);
-            let _ = expected_label;
+            assert!(
+                (grad[idx] - fd).abs() < 1e-5,
+                "FD gradient mismatch at coord '{}' (idx {}): analytic={}, fd={}",
+                label, idx, grad[idx], fd,
+            );
         }
     }
 }
