@@ -1075,6 +1075,47 @@ pub fn compute_trajectory(
     Ok(())
 }
 
+/// Build an empty `SweepData` configured for `SweepMode::Trajectory`.
+/// All Optional<Vec> fields start as `None`, required Vec/HashMap fields
+/// start empty. `compute_trajectory` populates them in place.
+pub(crate) fn empty_trajectory_sweep_data(mode: SweepMode) -> SweepData {
+    SweepData {
+        angles_deg: Vec::new(),
+        body_angles: HashMap::new(),
+        coupler_traces: HashMap::new(),
+        transmission_angles: None,
+        driver_torques: None,
+        kinetic_energy: Vec::new(),
+        potential_energy: Vec::new(),
+        total_energy: Vec::new(),
+        inverse_dynamics_torques: Vec::new(),
+        mechanical_advantage: Vec::new(),
+        joint_reaction_magnitudes: HashMap::new(),
+        coupler_velocities: HashMap::new(),
+        coupler_accelerations: HashMap::new(),
+        actuator_forces: None,
+        actuator_forces_id: None,
+        actuator_lengths: None,
+        actuator_speeds: None,
+        actuator_power: None,
+        actuator_power_id: None,
+        output_forces: None,
+        profile_torques: None,
+        profile_omega: None,
+        profile_alpha: None,
+        target_values: None,
+        achieved_values: None,
+        tracking_residual: None,
+        u_values: None,
+        u_dot_values: None,
+        u_ddot_values: None,
+        inverse_solve_statuses: None,
+        toggle_angles: Vec::new(),
+        active_range: None,
+        sweep_mode: mode,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1494,47 +1535,8 @@ mod tests {
         assert!(differs, "Profile torques should differ from constant-speed ID torques");
     }
 
-    /// Build an empty `SweepData` configured for `SweepMode::Trajectory`.
-    /// Mirrors the construction pattern in the apply_motion_profile tests
-    /// above — all Optional<Vec> fields start as `None`, required Vec/HashMap
-    /// fields start empty. `compute_trajectory` populates them in place.
-    fn empty_trajectory_sweep_data(mode: SweepMode) -> SweepData {
-        SweepData {
-            angles_deg: Vec::new(),
-            body_angles: HashMap::new(),
-            coupler_traces: HashMap::new(),
-            transmission_angles: None,
-            driver_torques: None,
-            kinetic_energy: Vec::new(),
-            potential_energy: Vec::new(),
-            total_energy: Vec::new(),
-            inverse_dynamics_torques: Vec::new(),
-            mechanical_advantage: Vec::new(),
-            joint_reaction_magnitudes: HashMap::new(),
-            coupler_velocities: HashMap::new(),
-            coupler_accelerations: HashMap::new(),
-            actuator_forces: None,
-            actuator_forces_id: None,
-            actuator_lengths: None,
-            actuator_speeds: None,
-            actuator_power: None,
-            actuator_power_id: None,
-            output_forces: None,
-            profile_torques: None,
-            profile_omega: None,
-            profile_alpha: None,
-            target_values: None,
-            achieved_values: None,
-            tracking_residual: None,
-            u_values: None,
-            u_dot_values: None,
-            u_ddot_values: None,
-            inverse_solve_statuses: None,
-            toggle_angles: Vec::new(),
-            active_range: None,
-            sweep_mode: mode,
-        }
-    }
+    // `empty_trajectory_sweep_data` is now `pub(crate)` at module scope (above);
+    // tests reference it via `super::empty_trajectory_sweep_data`.
 
     /// Integration test: drive the canonical 4-bar's crank angle along a
     /// constant-speed trajectory from 0.5 to 1.5 rad over 1 s, sampled at
@@ -1567,7 +1569,7 @@ mod tests {
             severity: Severity::Analysis,
             n_samples,
         };
-        let mut data = empty_trajectory_sweep_data(mode);
+        let mut data = super::empty_trajectory_sweep_data(mode);
 
         let result = compute_trajectory(
             &mech,

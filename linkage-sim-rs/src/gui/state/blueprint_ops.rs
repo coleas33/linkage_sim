@@ -22,7 +22,10 @@ use crate::solver::statics::{
 use nalgebra::DVector;
 
 use super::{AppState, DriverKind, ForceResults, SolverStatus};
-use crate::gui::sweep::{apply_motion_profile, compute_sweep_data, detect_fourbar_links};
+use crate::gui::sweep::{
+    apply_motion_profile, compute_sweep_data, compute_trajectory, detect_fourbar_links,
+    empty_trajectory_sweep_data, SweepMode,
+};
 
 // ── Blueprint helper functions ────────────────────────────────────────────────
 
@@ -1116,6 +1119,77 @@ impl AppState {
             }
         }
         self.sync_gravity();
+
+        // Trajectory mode dispatches to `compute_trajectory` instead of the
+        // default forward-sweep path. Only the revolute driver is wired here;
+        // linear driver support is a TODO (see below) and falls through to
+        // the existing `compute_sweep_data` path so the user still gets a
+        // sweep — just not the trajectory analysis.
+        if let SweepMode::Trajectory {
+            target,
+            profile,
+            severity,
+            n_samples,
+        } = self.sweep_mode.clone()
+        {
+            if self.driver_kind == DriverKind::Revolute {
+                let nominal_rate = self.driver_omega;
+                if nominal_rate.abs() < 1e-12 {
+                    self.error_log.push(
+                        "Trajectory: driver_omega must be non-zero (used as nominal rate for time mapping)".to_string(),
+                    );
+                    self.show_error_panel = true;
+                    self.sweep_data = None;
+                    return;
+                }
+                let u_0 = self.driver_theta_0;
+                let u_range = (
+                    self.sweep_angle_min_deg.to_radians(),
+                    self.sweep_angle_max_deg.to_radians(),
+                );
+
+                let q_seed = if self.q_at_zero.len() == self.last_good_q.len()
+                    && self.q_at_zero.len() > 0
+                {
+                    self.q_at_zero.clone()
+                } else {
+                    self.last_good_q.clone()
+                };
+
+                let mech_ref = self.mechanism.as_ref().unwrap();
+                let mode = SweepMode::Trajectory {
+                    target: target.clone(),
+                    profile: profile.clone(),
+                    severity,
+                    n_samples,
+                };
+                let mut data = empty_trajectory_sweep_data(mode);
+
+                if let Err(e) = compute_trajectory(
+                    mech_ref,
+                    &q_seed,
+                    &target,
+                    &profile,
+                    severity,
+                    n_samples,
+                    nominal_rate,
+                    u_0,
+                    u_range,
+                    self.gravity_magnitude,
+                    &mut data,
+                ) {
+                    self.error_log
+                        .push(format!("Trajectory analysis failed: {}", e));
+                    self.show_error_panel = true;
+                    self.sweep_data = None;
+                    return;
+                }
+                self.sweep_data = Some(data);
+                return;
+            }
+            // TODO(traj-linear): wire linear-driver path. For now fall through
+            // to compute_sweep_data so the user still gets a sweep curve.
+        }
 
         let mech = self.mechanism.as_ref().unwrap();
         let omega = self.driver_omega;
