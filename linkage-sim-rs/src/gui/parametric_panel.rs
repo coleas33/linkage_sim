@@ -439,7 +439,7 @@ fn get_current_value(state: &AppState, param: &SweepParameter) -> f64 {
             .get(*idx)
             .and_then(|f| get_force_field_value(f, field))
             .unwrap_or(1.0),
-        SweepParameter::DriverOmega => state.driver_omega,
+        SweepParameter::DriverOmega => state.driver_omega(),
     }
 }
 

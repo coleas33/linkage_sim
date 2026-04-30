@@ -250,23 +250,25 @@ impl AppState {
         // alongside a linear one, the linear semantic wins so the
         // animation/sweep dispatch is correct).
         if let Some(ld) = bp.linear_drivers.first() {
-            // Linear driver: omega field carries velocity (m/s),
-            // theta_0 carries length_0 (m), driver_stroke is the
-            // current slider value initialised to length_0.
-            self.driver_kind = DriverKind::Linear;
-            self.driver_omega = ld.velocity;
-            self.driver_theta_0 = ld.length_0;
-            if !self.driver_stroke.is_finite() {
-                self.driver_stroke = ld.length_0;
-            }
+            // Linear driver: stroke is the current slider value.
+            // Preserve a finite prior stroke across Linear→Linear
+            // rebuilds; otherwise initialise to length_0.
+            let stroke = match self.driver_kind {
+                DriverKind::Linear { stroke, .. } if stroke.is_finite() => stroke,
+                _ => ld.length_0,
+            };
+            self.driver_kind = DriverKind::Linear {
+                stroke,
+                velocity: ld.velocity,
+                length_0: ld.length_0,
+            };
         } else if let Some(driver) = bp.drivers.values().next() {
-            self.driver_kind = DriverKind::Revolute;
-            self.driver_omega = 2.0 * std::f64::consts::PI;
-            self.driver_theta_0 = 0.0;
+            let mut omega = 2.0 * std::f64::consts::PI;
+            let mut theta_0 = 0.0;
             match driver {
-                DriverJson::ConstantSpeed { omega, theta_0, .. } => {
-                    self.driver_omega = *omega;
-                    self.driver_theta_0 = *theta_0;
+                DriverJson::ConstantSpeed { omega: w, theta_0: t0, .. } => {
+                    omega = *w;
+                    theta_0 = *t0;
                 }
                 DriverJson::Expression { .. } => {
                     // Expression drivers use f(t) directly; omega/theta_0
@@ -274,17 +276,21 @@ impl AppState {
                     // mapping (omega=2*pi means 1 rev/s, theta_0=0).
                 }
             }
+            self.driver_kind = DriverKind::Revolute {
+                angle: self.driver_angle,
+                omega,
+                theta_0,
+            };
         } else {
             self.driver_kind = DriverKind::None;
-            self.driver_omega = 2.0 * std::f64::consts::PI;
-            self.driver_theta_0 = 0.0;
         }
         // Detect driven joint
         self.driver_joint_id = detect_driver_joint_id(&mech);
 
         // Solve at current position using last_good_q as initial guess.
-        let t = if self.driver_omega.abs() > f64::EPSILON {
-            (self.driver_angle - self.driver_theta_0) / self.driver_omega
+        let omega = self.driver_omega();
+        let t = if omega.abs() > f64::EPSILON {
+            (self.driver_angle - self.driver_theta_0()) / omega
         } else {
             0.0
         };
@@ -478,8 +484,9 @@ impl AppState {
     /// mechanism. Used after mass/inertia/gravity changes that don't alter
     /// the kinematic structure.
     pub(crate) fn recompute_dynamics(&mut self) {
-        let t = if self.driver_omega.abs() > f64::EPSILON {
-            (self.driver_angle - self.driver_theta_0) / self.driver_omega
+        let omega = self.driver_omega();
+        let t = if omega.abs() > f64::EPSILON {
+            (self.driver_angle - self.driver_theta_0()) / omega
         } else {
             0.0
         };
@@ -1137,11 +1144,14 @@ impl AppState {
             n_samples,
         } = self.sweep_mode.clone()
         {
-            if self.driver_kind == DriverKind::Revolute || self.driver_kind == DriverKind::Linear {
-                let nominal_rate = self.driver_omega;
+            if matches!(
+                self.driver_kind,
+                DriverKind::Revolute { .. } | DriverKind::Linear { .. }
+            ) {
+                let nominal_rate = self.driver_omega();
                 if nominal_rate.abs() < 1e-12 {
                     let kind_label = match self.driver_kind {
-                        DriverKind::Linear => "driver_velocity",
+                        DriverKind::Linear { .. } => "driver_velocity",
                         _ => "driver_omega",
                     };
                     self.error_log.push(format!(
@@ -1152,8 +1162,8 @@ impl AppState {
                     self.sweep_data = None;
                     return;
                 }
-                let u_0 = self.driver_theta_0;
-                let u_range = if self.driver_kind == DriverKind::Linear {
+                let u_0 = self.driver_theta_0();
+                let u_range = if matches!(self.driver_kind, DriverKind::Linear { .. }) {
                     // Linear: stored fields are mm; convert to m for the solver.
                     (self.sweep_angle_min_deg * 1e-3, self.sweep_angle_max_deg * 1e-3)
                 } else {
@@ -1211,8 +1221,8 @@ impl AppState {
         }
 
         let mech = self.mechanism.as_ref().unwrap();
-        let omega = self.driver_omega;
-        let theta_0 = self.driver_theta_0;
+        let omega = self.driver_omega();
+        let theta_0 = self.driver_theta_0();
 
         // Always start the sweep at t=0 with the known-good state at 0 degrees.
         let q_start = if self.q_at_zero.len() == self.last_good_q.len() && self.q_at_zero.len() > 0 {
@@ -1232,7 +1242,7 @@ impl AppState {
             let max_raw = self.sweep_angle_max_deg;
             if (max_raw - min_raw).abs() < 1e-6 {
                 None
-            } else if self.driver_kind == DriverKind::Linear {
+            } else if matches!(self.driver_kind, DriverKind::Linear { .. }) {
                 Some((min_raw * 1e-3, max_raw * 1e-3))
             } else {
                 let offset_deg = self.driver_display_offset.to_degrees();

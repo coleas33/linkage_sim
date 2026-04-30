@@ -1285,7 +1285,7 @@ mod tests {
             if let Some(mech) = &state.mechanism {
                 if let Ok(result) = crate::solver::kinematics::solve_position(
                     mech, &state.last_good_q,
-                    (state.driver_angle - state.driver_theta_0) / state.driver_omega,
+                    (state.driver_angle - state.driver_theta_0()) / state.driver_omega(),
                     1e-10, 50,
                 ) {
                     if result.converged {

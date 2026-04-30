@@ -23,12 +23,13 @@ impl AppState {
         let Some(mech) = self.mechanism.as_ref() else {
             return;
         };
-        let nominal_rate = if self.driver_omega.abs() > 1e-12 {
-            self.driver_omega
+        let omega = self.driver_omega();
+        let nominal_rate = if omega.abs() > 1e-12 {
+            omega
         } else {
             return;
         };
-        let u_0 = self.driver_theta_0;
+        let u_0 = self.driver_theta_0();
         let u_range = (
             self.sweep_angle_min_deg.to_radians(),
             self.sweep_angle_max_deg.to_radians(),

@@ -68,17 +68,24 @@ use std::f64::consts::PI;
 
 use crate::analysis::grashof::GrashofResult;
 
-/// Discriminant for the active driver type. The field-level docs on
-/// `AppState::driver_kind` describe the per-variant meaning of the
-/// `driver_omega`/`driver_theta_0`/`driver_stroke` scalars.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Discriminant for the active driver type. Each non-`None` variant
+/// carries the rate / initial-value scalars relevant to its driver
+/// kind, so per-variant semantics is type-checked rather than relying
+/// on convention.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DriverKind {
     /// No driver — the mechanism is statically posed and animation is a no-op.
     None,
     /// Revolute driver: angle-controlled (slider is the crank angle).
-    Revolute,
+    /// `angle` is the slider's *body-frame* current value (rad);
+    /// `omega` is the angular velocity (rad/s); `theta_0` is the
+    /// driver progress at t=0 (rad).
+    Revolute { angle: f64, omega: f64, theta_0: f64 },
     /// Linear driver: stroke-controlled (slider is the actuator length).
-    Linear,
+    /// `stroke` is the slider's current value (m); `velocity` is the
+    /// linear velocity (m/s); `length_0` is the actuator length at
+    /// t=0 (m).
+    Linear { stroke: f64, velocity: f64, length_0: f64 },
 }
 
 impl Default for DriverKind {
@@ -127,30 +134,15 @@ pub struct AppState {
     pub show_debug_overlay: bool,
     /// Which sample is currently loaded.
     pub current_sample: Option<SampleMechanism>,
-    /// Driver kind discriminant. When `Revolute`, the `driver_angle`,
-    /// `driver_omega` (rad/s), and `driver_theta_0` (rad) fields below
-    /// are meaningful; `driver_stroke` is unused. When `Linear`,
-    /// `driver_omega` carries velocity (m/s), `driver_theta_0` carries
-    /// initial length (m), and `driver_stroke` (m) is the slider's
-    /// current value; `driver_angle` is unused. When `None`, none of
-    /// the four are meaningful. The `DriverKind` enum exists so
-    /// dispatch points (animation step, solve_at_*, plot labelling)
-    /// can match exhaustively instead of relying on
-    /// `mechanism.has_linear_driver()`-style probes after the fact.
-    /// Per-variant field semantics are deliberately overloaded for now
-    /// to keep this refactor focused on dispatch correctness — a later
-    /// pass can collapse the four scalars into an enum-with-payload if
-    /// the overloading proves too brittle.
+    /// Driver kind discriminant. Each non-`None` variant carries the
+    /// rate / initial-value scalars relevant to its driver kind:
+    /// `Revolute { angle, omega, theta_0 }` and `Linear { stroke,
+    /// velocity, length_0 }`. The accessor methods
+    /// `driver_omega()` / `driver_theta_0()` / `driver_stroke()` and
+    /// their setters provide ergonomic access for sites that don't
+    /// need exhaustive matching; dispatch points (animation step,
+    /// solve_at_*, plot labelling) match on the variant directly.
     pub driver_kind: DriverKind,
-    /// Angular velocity of the driver (rad/s) for revolute drivers,
-    /// or linear velocity (m/s) for linear drivers. See `driver_kind`.
-    pub driver_omega: f64,
-    /// Initial driver progress at t=0. Radians for revolute,
-    /// meters (length_0) for linear. See `driver_kind`.
-    pub driver_theta_0: f64,
-    /// Current actuator stroke in meters (linear driver only). See
-    /// `driver_kind`.
-    pub driver_stroke: f64,
     /// Display-angle offset α (rad) for the driver body. Applied to all
     /// user-visible crank-angle surfaces (slider, sweep range DragValues,
     /// canvas indicator arc, plot x-axes) so that `visible = θ_driver +
@@ -512,9 +504,6 @@ impl Default for AppState {
             view: ViewTransform::default(),
             show_debug_overlay: cfg!(debug_assertions),
             current_sample: None,
-            driver_omega: 2.0 * PI,
-            driver_theta_0: 0.0,
-            driver_stroke: 0.0,
             driver_kind: DriverKind::None,
             driver_display_offset: 0.0,
             playing: false,
@@ -639,6 +628,66 @@ impl Default for AppState {
 // ── Methods that remain in mod.rs (core solve/animation/sample loading) ──────
 
 impl AppState {
+    // ── Driver scalar accessors ────────────────────────────────────────────
+    //
+    // These read/write the rate / initial-value scalars stored on the
+    // active `DriverKind` variant. Callers that want exhaustive
+    // matching should pattern-match `driver_kind` directly; these
+    // accessors exist to keep flat call sites readable.
+
+    /// Active driver's primary rate parameter.
+    /// Revolute → ω (rad/s); Linear → velocity (m/s); None → 0.0.
+    pub fn driver_omega(&self) -> f64 {
+        match self.driver_kind {
+            DriverKind::Revolute { omega, .. } => omega,
+            DriverKind::Linear { velocity, .. } => velocity,
+            DriverKind::None => 0.0,
+        }
+    }
+
+    /// Active driver's initial value parameter.
+    /// Revolute → θ₀ (rad); Linear → L₀ (m); None → 0.0.
+    pub fn driver_theta_0(&self) -> f64 {
+        match self.driver_kind {
+            DriverKind::Revolute { theta_0, .. } => theta_0,
+            DriverKind::Linear { length_0, .. } => length_0,
+            DriverKind::None => 0.0,
+        }
+    }
+
+    /// Active driver's current stroke (Linear) or 0 (Revolute / None).
+    pub fn driver_stroke(&self) -> f64 {
+        match self.driver_kind {
+            DriverKind::Linear { stroke, .. } => stroke,
+            _ => 0.0,
+        }
+    }
+
+    /// Set the active driver's rate parameter. Setter on `None` is a no-op.
+    pub fn set_driver_omega(&mut self, v: f64) {
+        match &mut self.driver_kind {
+            DriverKind::Revolute { omega, .. } => *omega = v,
+            DriverKind::Linear { velocity, .. } => *velocity = v,
+            DriverKind::None => {}
+        }
+    }
+
+    /// Set the active driver's initial value parameter. Setter on `None` is a no-op.
+    pub fn set_driver_theta_0(&mut self, v: f64) {
+        match &mut self.driver_kind {
+            DriverKind::Revolute { theta_0, .. } => *theta_0 = v,
+            DriverKind::Linear { length_0, .. } => *length_0 = v,
+            DriverKind::None => {}
+        }
+    }
+
+    /// Set the active driver's current stroke. No-op for non-Linear drivers.
+    pub fn set_driver_stroke(&mut self, v: f64) {
+        if let DriverKind::Linear { stroke, .. } = &mut self.driver_kind {
+            *stroke = v;
+        }
+    }
+
     /// Convert a color to grayscale when Nathan Mode is active; pass-through otherwise.
     pub fn nc(&self, c: eframe::egui::Color32) -> eframe::egui::Color32 {
         if self.nathan_mode {
@@ -757,14 +806,15 @@ impl AppState {
         // load_sample is reset to revolute defaults; rebuild() will
         // re-detect from the built mechanism's blueprint and update
         // driver_kind appropriately).
-        self.driver_kind = DriverKind::Revolute;
-        self.driver_omega = 2.0 * PI;
-        self.driver_theta_0 = 0.0;
-        self.driver_stroke = 0.0;
+        self.driver_kind = DriverKind::Revolute {
+            angle: 0.0,
+            omega: 2.0 * PI,
+            theta_0: 0.0,
+        };
 
         self.solve_and_update(&mech, &q0, 0.0, 1e-10, 50, Some(q0.clone()));
 
-        self.driver_angle = self.driver_theta_0;
+        self.driver_angle = self.driver_theta_0();
         self.q_at_zero = self.q.clone();
 
         // Samples always start at zero mounting angle.
@@ -809,7 +859,7 @@ impl AppState {
         self.driver_joint_id = self.mechanism.as_ref().and_then(|m| detect_driver_joint_id(m));
         // Initialize default load case from current driver settings
         self.load_cases = if let Some(ref joint_id) = self.driver_joint_id {
-            LoadCaseManager::new_default(joint_id, self.driver_omega, self.driver_theta_0)
+            LoadCaseManager::new_default(joint_id, self.driver_omega(), self.driver_theta_0())
         } else {
             LoadCaseManager::default()
         };
@@ -849,7 +899,7 @@ impl AppState {
         // so adding a radian offset to a stroke is meaningless. Return
         // 0 for linear/none drivers; downstream consumers should also
         // gate on `driver_kind` before applying the offset.
-        if self.driver_kind != DriverKind::Revolute {
+        if !matches!(self.driver_kind, DriverKind::Revolute { .. }) {
             return 0.0;
         }
         let Some(mech) = self.mechanism.as_ref() else { return 0.0 };
@@ -905,8 +955,9 @@ impl AppState {
         // pattern. Clamping at UI / load boundaries should keep
         // `driver_omega` above `MIN_DRIVER_OMEGA_ABS`; this is defense
         // in depth.
-        let t = if self.driver_omega.abs() > f64::EPSILON {
-            (angle_rad - self.driver_theta_0) / self.driver_omega
+        let omega = self.driver_omega();
+        let t = if omega.abs() > f64::EPSILON {
+            (angle_rad - self.driver_theta_0()) / omega
         } else {
             0.0
         };
@@ -1008,7 +1059,7 @@ impl AppState {
         // 4. Re-solve at the current driver angle with the reflected
         //    guess. solve_and_update handles status + q bookkeeping.
         let q_before = self.q.clone();
-        let t = (self.driver_angle - self.driver_theta_0) / self.driver_omega;
+        let t = (self.driver_angle - self.driver_theta_0()) / self.driver_omega();
         let converged = self.solve_and_update(&mech, &q_guess, t, 1e-10, 50, None);
 
         self.mechanism = Some(mech);
@@ -1048,8 +1099,9 @@ impl AppState {
             return;
         }
 
-        let t = if self.driver_omega.abs() > f64::EPSILON {
-            (stroke_m - self.driver_theta_0) / self.driver_omega
+        let velocity = self.driver_omega();
+        let t = if velocity.abs() > f64::EPSILON {
+            (stroke_m - self.driver_theta_0()) / velocity
         } else {
             0.0
         };
@@ -1060,7 +1112,7 @@ impl AppState {
         self.mechanism = Some(mech);
 
         if converged {
-            self.driver_stroke = stroke_m;
+            self.set_driver_stroke(stroke_m);
             self.compute_forces(t);
         }
     }
@@ -1227,8 +1279,8 @@ impl AppState {
         }
 
         match self.driver_kind {
-            DriverKind::Revolute => self.step_animation_revolute(dt),
-            DriverKind::Linear => self.step_animation_linear(dt),
+            DriverKind::Revolute { .. } => self.step_animation_revolute(dt),
+            DriverKind::Linear { .. } => self.step_animation_linear(dt),
             DriverKind::None => {
                 self.playing = false;
                 false
@@ -1251,7 +1303,7 @@ impl AppState {
         // mm/s here so the same control feels consistent. 1 deg/s
         // → 1 mm/s. The user can dial 0.5..720 like before.
         let step_m = (self.animation_speed_deg_per_sec * 1e-3) * dt * self.animation_direction;
-        let mut new_stroke = self.driver_stroke + step_m;
+        let mut new_stroke = self.driver_stroke() + step_m;
 
         let (anim_min, anim_max) = if self.sweep_range_enabled {
             // Display values stored in mm; convert to m for stroke.
@@ -1265,7 +1317,8 @@ impl AppState {
             // No stroke limits known — give a reasonable ±10 cm window
             // around the initial length so the actuator doesn't shoot
             // off forever.
-            (self.driver_theta_0 - 0.1, self.driver_theta_0 + 0.1)
+            let length_0 = self.driver_theta_0();
+            (length_0 - 0.1, length_0 + 0.1)
         };
 
         if new_stroke >= anim_max {

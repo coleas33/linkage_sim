@@ -107,7 +107,7 @@
 
         let mut state = AppState::default();
         state.load_sample(SampleMechanism::ParallelogramActuator);
-        assert_eq!(state.driver_kind, DriverKind::Revolute);
+        assert!(matches!(state.driver_kind, DriverKind::Revolute { .. }));
 
         // Find the LinearActuator force index.
         let act_index = state
@@ -121,9 +121,8 @@
 
         state.convert_actuator_to_linear_driver(act_index);
 
-        assert_eq!(
-            state.driver_kind,
-            DriverKind::Linear,
+        assert!(
+            matches!(state.driver_kind, DriverKind::Linear { .. }),
             "post-convert driver_kind should be Linear"
         );
         let mech = state.mechanism.as_ref().unwrap();
@@ -136,7 +135,7 @@
         // length_0 should be the actuator's pre-conversion length, so
         // driver_stroke is set to that value (no pose jump).
         assert!(
-            state.driver_stroke > 0.0,
+            state.driver_stroke() > 0.0,
             "driver_stroke should be initialised to the current actuator length"
         );
     }
@@ -175,16 +174,16 @@
         state.load_sample(SampleMechanism::FourBar);
         state.set_constant_speed_driver(0.0, 0.0);
         assert!(
-            state.driver_omega.abs() >= MIN_DRIVER_OMEGA_ABS - 1e-12,
+            state.driver_omega().abs() >= MIN_DRIVER_OMEGA_ABS - 1e-12,
             "expected driver_omega clamped to >= {}, got {}",
             MIN_DRIVER_OMEGA_ABS,
-            state.driver_omega
+            state.driver_omega()
         );
 
         // Negative sign must be preserved.
         state.set_constant_speed_driver(-1e-6, 0.0);
         assert!(
-            state.driver_omega < 0.0,
+            state.driver_omega() < 0.0,
             "negative-sign omega should remain negative after clamp"
         );
 
@@ -260,16 +259,16 @@
     fn snapshot_roundtrip_preserves_driver_fields() {
         let mut state = AppState::default();
         state.load_sample(SampleMechanism::FourBar);
-        state.driver_omega = 5.0;
-        state.driver_theta_0 = 1.0;
+        state.set_driver_omega(5.0);
+        state.set_driver_theta_0(1.0);
         state.driver_angle = 2.0;
         state.driver_joint_id = Some("J1".to_string());
 
         let snapshot = state.take_snapshot().unwrap();
         state.restore_snapshot(&snapshot);
 
-        assert_eq!(state.driver_omega, 5.0);
-        assert_eq!(state.driver_theta_0, 1.0);
+        assert_eq!(state.driver_omega(), 5.0);
+        assert_eq!(state.driver_theta_0(), 1.0);
         assert_eq!(state.driver_angle, 2.0);
         assert_eq!(state.driver_joint_id, Some("J1".to_string()));
     }
@@ -1314,7 +1313,7 @@
         // New case should have same driver params as current
         assert_eq!(
             state.load_cases.cases[1].omega,
-            state.driver_omega,
+            state.driver_omega(),
         );
     }
 
@@ -1343,7 +1342,7 @@
         let mut state = AppState::default();
         state.load_sample(SampleMechanism::CrankRocker);
 
-        let original_omega = state.driver_omega;
+        let original_omega = state.driver_omega();
         let new_omega = original_omega * 2.0;
 
         // Add a case with different omega
@@ -1355,7 +1354,7 @@
         });
 
         state.apply_load_case(1);
-        assert_eq!(state.driver_omega, new_omega);
+        assert_eq!(state.driver_omega(), new_omega);
         assert_eq!(state.load_cases.active_index, 1);
     }
 
@@ -1426,7 +1425,7 @@
         state.load_sample(SampleMechanism::CrankRocker);
         assert_eq!(state.load_cases.cases[0].omega, 2.0 * PI);
 
-        state.driver_omega = 10.0;
+        state.set_driver_omega(10.0);
         state.sync_active_load_case();
         assert_eq!(state.load_cases.cases[0].omega, 10.0);
     }
@@ -1484,9 +1483,9 @@
     fn apply_load_case_out_of_bounds_is_noop() {
         let mut state = AppState::default();
         state.load_sample(SampleMechanism::CrankRocker);
-        let omega_before = state.driver_omega;
+        let omega_before = state.driver_omega();
         state.apply_load_case(999);
-        assert_eq!(state.driver_omega, omega_before);
+        assert_eq!(state.driver_omega(), omega_before);
     }
 
     // ── next_attachment_point_name tests ─────────────────────────────────

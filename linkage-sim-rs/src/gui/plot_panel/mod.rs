@@ -255,7 +255,7 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
     let current_driver_display = if sweep.sweep_mode.is_stroke() {
         // Stroke value in metres; the plot consumers handle the
         // metres→mm conversion via their is_stroke branch.
-        state.driver_stroke
+        state.driver_stroke()
     } else {
         state.display_units.angle(state.driver_angle + offset_rad)
     };

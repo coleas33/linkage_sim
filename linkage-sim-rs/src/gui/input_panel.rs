@@ -23,7 +23,7 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
     // Revolute / no-driver: show the Crank Angle slider + sweep range.
     // Linear: show a parallel Actuator Stroke section instead.
-    if state.driver_kind == DriverKind::Linear {
+    if matches!(state.driver_kind, DriverKind::Linear { .. }) {
         draw_actuator_stroke_section(ui, state);
     } else {
     // ── Crank Angle ────────────────────────────────────────────────
@@ -280,11 +280,11 @@ fn draw_actuator_stroke_section(ui: &mut egui::Ui, state: &mut AppState) {
             } else if state.sweep_stroke_max > state.sweep_stroke_min {
                 (state.sweep_stroke_min * 1e3, state.sweep_stroke_max * 1e3)
             } else {
-                let l0_mm = state.driver_theta_0 * 1e3;
+                let l0_mm = state.driver_theta_0() * 1e3;
                 (l0_mm - 100.0, l0_mm + 100.0)
             };
 
-            let mut stroke_mm = state.driver_stroke * 1e3;
+            let mut stroke_mm = state.driver_stroke() * 1e3;
             stroke_mm = stroke_mm.clamp(slider_min_mm, slider_max_mm);
             let prev_stroke_mm = stroke_mm;
             let resp = ui.add(
@@ -647,7 +647,7 @@ fn draw_driver_type_selector(ui: &mut egui::Ui, state: &mut AppState) {
 
     if switch_to_constant {
         state.expr_error = None;
-        state.set_constant_speed_driver(state.driver_omega, state.driver_theta_0);
+        state.set_constant_speed_driver(state.driver_omega(), state.driver_theta_0());
         return;
     }
 
@@ -657,8 +657,8 @@ fn draw_driver_type_selector(ui: &mut egui::Ui, state: &mut AppState) {
     // Static force calculations are correctly independent of speed.
     let mut apply_new_omega: Option<f64> = None;
     if !is_expression {
-        let current_omega = state.driver_omega;
-        let current_theta_0 = state.driver_theta_0;
+        let current_omega = state.driver_omega();
+        let current_theta_0 = state.driver_theta_0();
         ui.horizontal(|ui| {
             ui.label("Speed:");
             let mut rpm = current_omega * 60.0 / (2.0 * std::f64::consts::PI);
@@ -683,7 +683,7 @@ fn draw_driver_type_selector(ui: &mut egui::Ui, state: &mut AppState) {
         });
     }
     if let Some(new_omega) = apply_new_omega {
-        let theta_0 = state.driver_theta_0;
+        let theta_0 = state.driver_theta_0();
         state.set_constant_speed_driver(new_omega, theta_0);
         return;
     }
@@ -848,9 +848,10 @@ fn draw_motion_profile_selector(ui: &mut egui::Ui, state: &mut AppState) {
 
         // Show computed peak omega for reference.
         let cruise_frac = 1.0 - af - df;
-        if cruise_frac > 0.0 && state.driver_omega.abs() > 1e-15 {
+        let omega = state.driver_omega();
+        if cruise_frac > 0.0 && omega.abs() > 1e-15 {
             let total_angle = 2.0 * std::f64::consts::PI;
-            let cycle_time = total_angle / state.driver_omega;
+            let cycle_time = total_angle / omega;
             let denom = 0.5 * af * cycle_time
                 + cruise_frac * cycle_time
                 + 0.5 * df * cycle_time;

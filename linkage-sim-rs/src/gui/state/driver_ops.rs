@@ -25,9 +25,12 @@ impl AppState {
             self.push_undo();
             match crate::gui::samples::build_sample_with_driver(sample, Some(joint_id)) {
                 Ok((mech, q0)) => {
-                    self.driver_omega = 2.0 * PI;
+                    self.driver_kind = super::DriverKind::Revolute {
+                        angle: 0.0,
+                        omega: 2.0 * PI,
+                        theta_0: 0.0,
+                    };
                     self.solve_and_update(&mech, &q0, 0.0, 1e-10, 50, Some(q0.clone()));
-                    self.driver_theta_0 = 0.0;
                     self.driver_angle = 0.0;
                     self.q_at_zero = self.q.clone();
                     self.blueprint = mechanism_to_json(&mech).ok();
@@ -36,8 +39,8 @@ impl AppState {
                     self.selected = None;
                     self.load_cases = LoadCaseManager::new_default(
                         joint_id,
-                        self.driver_omega,
-                        self.driver_theta_0,
+                        self.driver_omega(),
+                        self.driver_theta_0(),
                     );
                     self.playing = false;
                     self.animation_direction = 1.0;
@@ -67,6 +70,15 @@ impl AppState {
         let body_j = body_j.to_string();
 
         self.push_undo();
+        // Capture the current driver rate to seed the new revolute
+        // driver. If the current kind is None, fall back to a sensible
+        // default (one rotation per second).
+        let current_omega = self.driver_omega();
+        let new_omega = if current_omega.abs() > f64::EPSILON {
+            current_omega
+        } else {
+            2.0 * PI
+        };
         let bp = self.blueprint.as_mut().unwrap();
 
         // Remove all existing drivers.
@@ -79,12 +91,18 @@ impl AppState {
             DriverJson::ConstantSpeed {
                 body_i,
                 body_j,
-                omega: self.driver_omega,
+                omega: new_omega,
                 theta_0: 0.0,
             },
         );
 
-        self.driver_theta_0 = 0.0;
+        // Transition kind to revolute with the chosen scalars BEFORE
+        // any subsequent writes go through the setters.
+        self.driver_kind = super::DriverKind::Revolute {
+            angle: 0.0,
+            omega: new_omega,
+            theta_0: 0.0,
+        };
         self.driver_angle = 0.0;
         self.driver_joint_id = Some(joint_id.to_string());
         self.selected = None;
@@ -94,8 +112,8 @@ impl AppState {
 
         self.load_cases = LoadCaseManager::new_default(
             joint_id,
-            self.driver_omega,
-            self.driver_theta_0,
+            self.driver_omega(),
+            self.driver_theta_0(),
         );
 
         self.rebuild();
@@ -168,8 +186,15 @@ impl AppState {
                 theta_0,
             },
         );
-        self.driver_omega = safe_omega;
-        self.driver_theta_0 = theta_0;
+        // Transition kind to revolute (since this is a ConstantSpeed
+        // driver) with the supplied scalars. rebuild() will re-derive
+        // the same values from blueprint, but we set them up front so
+        // any reads between now and rebuild() see the new state.
+        self.driver_kind = super::DriverKind::Revolute {
+            angle: self.driver_angle,
+            omega: safe_omega,
+            theta_0,
+        };
         self.rebuild();
     }
 
@@ -256,7 +281,15 @@ impl AppState {
             length_0,
         });
 
-        self.driver_stroke = length_0;
+        // Transition kind to linear (a LinearDriver was just added).
+        // rebuild() will re-derive these scalars from the blueprint,
+        // but we set them now so any reads see the updated kind /
+        // values immediately.
+        self.driver_kind = super::DriverKind::Linear {
+            stroke: length_0,
+            velocity: 0.01,
+            length_0,
+        };
         self.rebuild();
     }
 
@@ -268,7 +301,7 @@ impl AppState {
             .driver_joint_id
             .clone()
             .unwrap_or_default();
-        self.load_cases.add_case(&driver_joint_id, self.driver_omega, self.driver_theta_0);
+        self.load_cases.add_case(&driver_joint_id, self.driver_omega(), self.driver_theta_0());
     }
 
     /// Remove the currently active load case.
@@ -302,13 +335,13 @@ impl AppState {
             // Different driver joint -- need to reassign.
             // Store the load case driver params so they survive reassignment,
             // then trigger the rebuild via the pending reassignment path.
-            self.driver_omega = case.omega;
-            self.driver_theta_0 = case.theta_0;
+            self.set_driver_omega(case.omega);
+            self.set_driver_theta_0(case.theta_0);
             self.pending_driver_reassignment = Some(case.driver_joint_id.clone());
         } else {
             // Same driver joint -- just update speed and angle.
-            self.driver_omega = case.omega;
-            self.driver_theta_0 = case.theta_0;
+            self.set_driver_omega(case.omega);
+            self.set_driver_theta_0(case.theta_0);
             self.driver_angle = case.theta_0;
             self.solve_at_angle(case.theta_0);
             self.mark_sweep_dirty();
@@ -320,12 +353,16 @@ impl AppState {
     /// Called when the user changes driver settings (omega, theta_0, or joint)
     /// so the active load case stays in sync.
     pub fn sync_active_load_case(&mut self) {
+        // Capture driver scalars first so the borrow checker doesn't
+        // complain about overlapping &self / &mut self borrows.
+        let omega = self.driver_omega();
+        let theta_0 = self.driver_theta_0();
         if let Some(case) = self.load_cases.cases.get_mut(self.load_cases.active_index) {
             if let Some(ref joint_id) = self.driver_joint_id {
                 case.driver_joint_id = joint_id.clone();
             }
-            case.omega = self.driver_omega;
-            case.theta_0 = self.driver_theta_0;
+            case.omega = omega;
+            case.theta_0 = theta_0;
         }
     }
 
@@ -353,7 +390,7 @@ impl AppState {
 
             // Clone blueprint and apply parameter
             let mut bp = base_bp.clone();
-            let mut omega = self.driver_omega;
+            let mut omega = self.driver_omega();
             if !Self::set_parameter_on_blueprint(&mut bp, &config.parameter, value, &mut omega) {
                 metric_values.push(f64::NAN);
                 continue;
@@ -371,7 +408,7 @@ impl AppState {
 
             // Use current q as initial guess when dimensions match
             let q0 = if self.q.len() == mech.state().n_coords() { self.q.clone() } else { mech.state().make_q() };
-            let theta_0 = self.driver_theta_0;
+            let theta_0 = self.driver_theta_0();
             let (sweep, _) = compute_sweep_data(&mech, &q0, omega, theta_0, self.gravity_magnitude, None);
 
             // Extract the selected metric
@@ -400,8 +437,8 @@ impl AppState {
             return;
         }
 
-        let omega = self.driver_omega;
-        let theta_0 = self.driver_theta_0;
+        let omega = self.driver_omega();
+        let theta_0 = self.driver_theta_0();
 
         // Use current q as the initial guess (the geometric guess from sample loading
         // converges much better than all-zeros for the first step).

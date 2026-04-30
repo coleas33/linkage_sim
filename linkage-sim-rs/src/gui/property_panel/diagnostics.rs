@@ -324,7 +324,7 @@ fn draw_motor_sizing_diagnostic(ui: &mut egui::Ui, state: &AppState) {
 
     // Build the speed array for each sweep step.
     // The driver angular velocity is constant (driver_omega) for a constant-speed driver.
-    let omega = state.driver_omega;
+    let omega = state.driver_omega();
     let n = sweep.inverse_dynamics_torques.len();
     let speeds: Vec<f64> = vec![omega; n];
 

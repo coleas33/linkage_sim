@@ -6,18 +6,6 @@ active_issues: []
 
 open_questions:
   - |
-    Follow-up R1b (deferred): `driver_omega`, `driver_theta_0`, and
-    `driver_stroke` on `AppState` are dual-purpose scalars — for revolute
-    drivers omega = rad/s and theta_0 = rad; for linear drivers omega =
-    velocity (m/s) and theta_0 = length_0 (m). Documented inline with
-    the `driver_kind` discriminant added in 2026-04-24's LinearDriver
-    work, but the implicit overloading is brittle. Future cleanup:
-    collapse the four scalars into payload on `DriverKind::Revolute {
-    angle, omega, theta_0 }` / `DriverKind::Linear { stroke, velocity,
-    length_0 }`. Touches ~150 read sites; defer until the GUI feature
-    has been exercised by users and the dispatch boundary is stable.
-
-  - |
     Trajectory v2: S-curve (jerk-limited) motion profile. Currently only
     ConstantSpeed and Trapezoidal are implemented. SCurve requires a 7-segment
     quintic position function. Slot in MotionProfile::SCurve { jerk_fraction }

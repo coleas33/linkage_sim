@@ -359,8 +359,6 @@ impl AppState {
             }
         }
 
-        self.driver_omega = driver_omega;
-        self.driver_theta_0 = driver_theta_0;
         self.driver_angle = target_angle;
         self.q_at_zero = self.q.clone();
         self.driver_joint_id = driver_joint_id;
@@ -369,14 +367,23 @@ impl AppState {
         self.driver_kind = if let Some(ref bp) = self.blueprint {
             if !bp.linear_drivers.is_empty() {
                 let ld = &bp.linear_drivers[0];
-                self.driver_omega = ld.velocity;
-                self.driver_theta_0 = ld.length_0;
-                if !self.driver_stroke.is_finite() || self.driver_stroke == 0.0 {
-                    self.driver_stroke = ld.length_0;
+                let prior_stroke = self.driver_stroke();
+                let stroke = if prior_stroke.is_finite() && prior_stroke != 0.0 {
+                    prior_stroke
+                } else {
+                    ld.length_0
+                };
+                super::DriverKind::Linear {
+                    stroke,
+                    velocity: ld.velocity,
+                    length_0: ld.length_0,
                 }
-                super::DriverKind::Linear
             } else if !bp.drivers.is_empty() {
-                super::DriverKind::Revolute
+                super::DriverKind::Revolute {
+                    angle: target_angle,
+                    omega: driver_omega,
+                    theta_0: driver_theta_0,
+                }
             } else {
                 super::DriverKind::None
             }
@@ -416,15 +423,15 @@ impl AppState {
             } else if let Some(ref joint_id) = self.driver_joint_id {
                 self.load_cases = LoadCaseManager::new_default(
                     joint_id,
-                    self.driver_omega,
-                    self.driver_theta_0,
+                    self.driver_omega(),
+                    self.driver_theta_0(),
                 );
             } else {
                 self.load_cases = LoadCaseManager::default();
             }
         } else if let Some(ref joint_id) = self.driver_joint_id {
             self.load_cases =
-                LoadCaseManager::new_default(joint_id, self.driver_omega, self.driver_theta_0);
+                LoadCaseManager::new_default(joint_id, self.driver_omega(), self.driver_theta_0());
         } else {
             self.load_cases = LoadCaseManager::default();
         }

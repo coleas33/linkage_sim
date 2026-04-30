@@ -17,8 +17,8 @@ impl AppState {
         Some(MechanismSnapshot {
             mechanism_json: json_str,
             driver_angle: self.driver_angle,
-            driver_omega: self.driver_omega,
-            driver_theta_0: self.driver_theta_0,
+            driver_omega: self.driver_omega(),
+            driver_theta_0: self.driver_theta_0(),
             driver_joint_id: self.driver_joint_id.clone(),
             q: self.q.iter().copied().collect(),
         })
@@ -58,8 +58,28 @@ impl AppState {
 
         self.mechanism = Some(mech);
         self.driver_angle = snapshot.driver_angle;
-        self.driver_omega = snapshot.driver_omega;
-        self.driver_theta_0 = snapshot.driver_theta_0;
+        // Reconstruct driver_kind from the restored blueprint, then
+        // overlay the snapshot's omega/theta_0 onto it. Linear takes
+        // priority over revolute (matches rebuild() / load_from_string).
+        self.driver_kind = if let Some(ref bp) = self.blueprint {
+            if let Some(ld) = bp.linear_drivers.first() {
+                super::DriverKind::Linear {
+                    stroke: ld.length_0,
+                    velocity: snapshot.driver_omega,
+                    length_0: snapshot.driver_theta_0,
+                }
+            } else if !bp.drivers.is_empty() {
+                super::DriverKind::Revolute {
+                    angle: snapshot.driver_angle,
+                    omega: snapshot.driver_omega,
+                    theta_0: snapshot.driver_theta_0,
+                }
+            } else {
+                super::DriverKind::None
+            }
+        } else {
+            super::DriverKind::None
+        };
         self.driver_joint_id = snapshot.driver_joint_id.clone();
         self.playing = false;
         self.compute_forces(self.driver_angle);

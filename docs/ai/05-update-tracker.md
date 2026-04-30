@@ -5,6 +5,60 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-29 — R1b refactor: collapse driver scalars into DriverKind enum payload
+
+**What:** Removed the dual-purpose `driver_omega`, `driver_theta_0`, and
+`driver_stroke` scalar fields from `AppState`. Their values now live as
+payload on the `DriverKind` enum:
+
+- `DriverKind::Revolute { angle, omega, theta_0 }`
+- `DriverKind::Linear { stroke, velocity, length_0 }`
+- `DriverKind::None` (unit, unchanged)
+
+Added `driver_omega() / driver_theta_0() / driver_stroke()` getters and
+`set_driver_omega() / set_driver_theta_0() / set_driver_stroke()` setters
+on `AppState` so flat call sites stay readable; dispatch points in
+`step_animation`, `compute_sweep`, and trajectory mode pattern-match the
+variant directly. Setters on the wrong variant (e.g. setting stroke on
+Revolute) are silent no-ops.
+
+Equality / pattern-match call sites updated from
+`state.driver_kind == DriverKind::Linear` to
+`matches!(state.driver_kind, DriverKind::Linear { .. })`.
+`Eq` derive removed from `DriverKind` (f64 payload has no `Eq`); `Copy`
+preserved (all-f64 payload is Copy).
+
+**Why:** The dual-purpose scalars were the implicit-overloading remnant
+flagged as R1b in `04-memory.yaml/open_questions`. Collapsing onto the
+enum makes per-driver-kind semantics type-checked rather than
+documented-by-convention.
+
+**Touched call sites:** 14 files, +283 / -155 lines.
+
+**Test results:** 619 lib tests pass (no count change vs.
+`c905f28`/baseline). Release lib + `linkage-gui` binary both compile
+clean.
+
+**Subtleties handled:**
+- `load_sample()`, `reassign_driver()`, `set_constant_speed_driver()`,
+  `convert_actuator_to_linear_driver()`, `restore_snapshot()`, and
+  blueprint `rebuild()` reorder writes to construct the kind variant
+  fully before any setter call — setters are no-ops on the wrong
+  variant, so write-then-transition was the failure mode to guard
+  against.
+- The `MechanismSnapshot` DTO in `gui/undo.rs` retains its dual-purpose
+  scalar shape (it's a serialization format, not state) — `take_snapshot`
+  / `restore_snapshot` translate between the DTO and the variant
+  payload via the new accessors and a fresh blueprint-driven kind
+  reconstruction on restore.
+- Linear-driver stroke preservation across rebuilds: the old code
+  preserved a finite `driver_stroke` field across `rebuild()`. The new
+  blueprint_ops pattern-matches the prior `DriverKind::Linear { stroke,
+  .. }` and reuses it; resets to `length_0` on Linear→Linear with NaN
+  stroke or any non-Linear→Linear transition.
+
+---
+
 ## 2026-04-30 — Trajectory-mode position control: Stage 4 (polish + CSV + docs) — feature shipped
 
 **What:**
