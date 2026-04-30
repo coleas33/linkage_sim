@@ -112,13 +112,44 @@ fn draw_profile_editor(profile: &mut TrajectoryProfile, ui: &mut egui::Ui) {
         MotionProfile::Trapezoidal { .. } => "Trapezoidal",
         MotionProfile::SCurve { .. } => "SCurve",
     };
-    egui::ComboBox::from_label("Shape")
-        .selected_text(shape_label)
-        .show_ui(ui, |ui| {
-            ui.selectable_value(&mut shape_label, "ConstantSpeed", "ConstantSpeed");
-            ui.selectable_value(&mut shape_label, "Trapezoidal", "Trapezoidal");
-            ui.selectable_value(&mut shape_label, "SCurve", "SCurve");
-        });
+    ui.horizontal(|ui| {
+        egui::ComboBox::from_label("Shape")
+            .selected_text(shape_label)
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut shape_label, "ConstantSpeed", "ConstantSpeed");
+                ui.selectable_value(&mut shape_label, "Trapezoidal", "Trapezoidal");
+                ui.selectable_value(&mut shape_label, "SCurve", "SCurve");
+            });
+        // Hover hint about the cross-shape behavior (the dropdown's
+        // `Response` doesn't surface custom hover-text reliably across
+        // egui versions, so a discoverable "?" button next to it is the
+        // cleanest path).
+        ui.label("?")
+            .on_hover_text(
+                "Switching shape resets shape-specific parameters (accel/decel \
+                 fractions for Trapezoidal, jerk_fraction for SCurve). \
+                 start_value, end_value, and duration are preserved.",
+            );
+        // Reset-to-defaults for the *current* shape's parameters; this is
+        // useful after the user has tuned values into a corner and wants a
+        // clean slate without losing start/end/duration.
+        if ui
+            .button("\u{21BA}")
+            .on_hover_text(
+                "Reset shape parameters to defaults (preserves start/end/duration).",
+            )
+            .clicked()
+        {
+            profile.shape = match profile.shape {
+                MotionProfile::ConstantSpeed => MotionProfile::ConstantSpeed,
+                MotionProfile::Trapezoidal { .. } => MotionProfile::Trapezoidal {
+                    accel_fraction: 0.2,
+                    decel_fraction: 0.2,
+                },
+                MotionProfile::SCurve { .. } => MotionProfile::SCurve { jerk_fraction: 0.2 },
+            };
+        }
+    });
     profile.shape = match shape_label {
         "ConstantSpeed" => MotionProfile::ConstantSpeed,
         "Trapezoidal" => match profile.shape {
@@ -250,6 +281,28 @@ fn draw_keyframe_editor(kt: &mut KeyframeTrajectory, ui: &mut egui::Ui) {
             }
         }
     });
+
+    // Duplicate / near-duplicate t-value warning. After the table renders
+    // (potentially with edits applied this frame) we scan adjacent pairs;
+    // any |Δt| < 1e-9 produces a constant segment which is almost certainly
+    // not what the user intended. We point them at "Sort by t" because two
+    // waypoints with the same t are visually adjacent only after sorting —
+    // before that, the offending pair may be at non-adjacent indices and
+    // the user can't tell what the issue is.
+    let mut has_collision = false;
+    for w in kt.waypoints.windows(2) {
+        if (w[1].0 - w[0].0).abs() < 1e-9 {
+            has_collision = true;
+            break;
+        }
+    }
+    if has_collision {
+        ui.colored_label(
+            egui::Color32::from_rgb(220, 180, 60),
+            "\u{26A0} Two or more waypoints have nearly-identical t values. \
+             The segment between them is treated as constant; click 'Sort by t' to reveal.",
+        );
+    }
 }
 
 /// Parse a 2-column CSV `t_seconds, target_value` into a `KeyframeTrajectory`.
