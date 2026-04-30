@@ -1121,10 +1121,15 @@ impl AppState {
         self.sync_gravity();
 
         // Trajectory mode dispatches to `compute_trajectory` instead of the
-        // default forward-sweep path. Only the revolute driver is wired here;
-        // linear driver support is a TODO (see below) and falls through to
-        // the existing `compute_sweep_data` path so the user still gets a
-        // sweep — just not the trajectory analysis.
+        // default forward-sweep path. Both revolute and linear drivers are
+        // supported. The dual-purpose driver scalars (R1b open question in
+        // docs/ai/04-memory.yaml) carry different units per driver kind:
+        //   Revolute: omega = rad/s, theta_0 = rad
+        //   Linear:   omega = m/s,   theta_0 = L_0 (m)
+        // u_range source also differs: revolute uses sweep_angle_min/max_deg
+        // (display-frame degrees → body-frame radians via `to_radians()` and
+        // a driver_display_offset subtraction); linear uses the same fields
+        // but interpreted as mm and converted to meters via `* 1e-3`.
         if let SweepMode::Trajectory {
             target,
             profile,
@@ -1132,21 +1137,35 @@ impl AppState {
             n_samples,
         } = self.sweep_mode.clone()
         {
-            if self.driver_kind == DriverKind::Revolute {
+            if self.driver_kind == DriverKind::Revolute || self.driver_kind == DriverKind::Linear {
                 let nominal_rate = self.driver_omega;
                 if nominal_rate.abs() < 1e-12 {
-                    self.error_log.push(
-                        "Trajectory: driver_omega must be non-zero (used as nominal rate for time mapping)".to_string(),
-                    );
+                    let kind_label = match self.driver_kind {
+                        DriverKind::Linear => "driver_velocity",
+                        _ => "driver_omega",
+                    };
+                    self.error_log.push(format!(
+                        "Trajectory: {} must be non-zero (used as nominal rate for time mapping)",
+                        kind_label
+                    ));
                     self.show_error_panel = true;
                     self.sweep_data = None;
                     return;
                 }
                 let u_0 = self.driver_theta_0;
-                let u_range = (
-                    self.sweep_angle_min_deg.to_radians(),
-                    self.sweep_angle_max_deg.to_radians(),
-                );
+                let u_range = if self.driver_kind == DriverKind::Linear {
+                    // Linear: stored fields are mm; convert to m for the solver.
+                    (self.sweep_angle_min_deg * 1e-3, self.sweep_angle_max_deg * 1e-3)
+                } else {
+                    // Revolute: stored fields are display-frame degrees; subtract
+                    // the driver display offset to get body-frame radians (matches
+                    // the forward-sweep path's frame convention below).
+                    let offset = self.driver_display_offset;
+                    (
+                        self.sweep_angle_min_deg.to_radians() - offset,
+                        self.sweep_angle_max_deg.to_radians() - offset,
+                    )
+                };
 
                 let q_seed = if self.q_at_zero.len() == self.last_good_q.len()
                     && self.q_at_zero.len() > 0
@@ -1187,8 +1206,8 @@ impl AppState {
                 self.sweep_data = Some(data);
                 return;
             }
-            // TODO(traj-linear): wire linear-driver path. For now fall through
-            // to compute_sweep_data so the user still gets a sweep curve.
+            // No driver case: fall through to compute_sweep_data which also
+            // gracefully handles the "no driver" state.
         }
 
         let mech = self.mechanism.as_ref().unwrap();
