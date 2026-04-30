@@ -14,6 +14,7 @@ mod property_panel;
 pub mod samples;
 pub mod sweep;
 mod theme;
+mod trajectory_panel;
 pub mod tutorial;
 pub mod undo;
 
