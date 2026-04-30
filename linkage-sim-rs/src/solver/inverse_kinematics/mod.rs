@@ -16,4 +16,4 @@ pub(crate) mod test_helpers;
 
 pub use control_target::ControlTarget;
 pub use severity::{InverseSolveStatus, Severity};
-pub use solver::{workspace_probe, WorkspaceProbe};
+pub use solver::{solve_for_target, workspace_probe, InverseSolveResult, WorkspaceProbe};
