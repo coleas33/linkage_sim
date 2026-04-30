@@ -83,6 +83,26 @@ invariants_to_protect:
     BEFORE the mutation and rebuild() AFTER. Skipping push_undo loses undo
     history; skipping rebuild leaves mechanism out of sync with blueprint.
     Use AppState::mutate_and_rebuild(|s| ...) when possible.
+  - severity_controls_return_type_not_math — Trajectory mode's
+    Severity::{Strict, Analysis} runs identical Newton/FD code; the only
+    difference is whether failure status bubbles as Err or as a result
+    field. See solver/inverse_kinematics/solver.rs::classify_or_fail.
+  - workspace_probe_cache_key — Workspace probes are keyed by
+    (mech_revision, target_hash, u_range). For v1 the cache lives outside
+    the solver layer (Stage 2 / AppState); the solver itself recomputes
+    the probe (~64 forward solves) per call. Hot-path callers should cache
+    externally — see solver/inverse_kinematics/solver.rs doc comment.
+  - trajectory_mode_phi_t_override — compute_trajectory (Stage 2) overrides
+    Φ_t and γ on the driver row to substitute back-solved u_dot/u_ddot.
+    Constraint code in core/ remains constant-speed-parameterized. Stage 1
+    solver layer doesn't yet compute this — it lives in
+    gui/sweep/mod.rs::compute_trajectory in Stage 2.
+  - trajectory_mode_t_mech_encoding — u_k is encoded as
+    t_mech_k = (u_k − u_0) / nominal_rate to reuse existing forward solvers
+    without modification. Same trick is used by solve_at_angle and
+    solve_at_stroke. Mechanism::driver_row() centralizes the
+    n_constraints() - 1 assumption that the driver is the last constraint
+    row.
 
 known_limitations:
   - Custom 6-Bar sample is overconstrained when body_5/body_6 are merged.
@@ -120,7 +140,8 @@ lessons_learned:
     a refactor target.
 
 current_statuses:
-  solver: Rust port complete; 644 tests pass against Python golden fixtures
+  solver: Rust port complete; 614 lib tests pass; trajectory-mode IK Stage 1
+    (solver layer) shipped — see solver/inverse_kinematics/
   gui: Phase 5 complete; 14 plot tabs; 30 sample mechanisms
   dxf_import: works native + WASM via drag-drop; selection-based conversions
   actuator_workflow: two-pass solve gives correct reactions with actuator loads

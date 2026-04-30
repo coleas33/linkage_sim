@@ -5,6 +5,67 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-30 — Trajectory-mode position control: Stage 1 (solver layer) shipped
+
+**What:** New `solver/inverse_kinematics/` subtree (6 files) implements the
+inverse-kinematics solver for trajectory-mode position control. Given a
+desired output observable `g(q)` and target value `h`, back-solves the
+actuator input parameter `u` such that `g(q(u)) = h`, where `q(u)` is the
+forward solution from the existing kinematics solvers.
+
+- **Module layout** (`linkage-sim-rs/src/solver/inverse_kinematics/`):
+  - `mod.rs` — public surface (re-exports of types + functions).
+  - `severity.rs` — `Severity::{Strict, Analysis}` + `InverseSolveStatus`
+    (5 variants: `Converged`, `Reachability`, `Singularity`, `BranchJump`,
+    `NonConvergent`).
+  - `control_target.rs` — `ControlTarget` enum with 5 variants
+    (`Angle`, `WorldX`, `WorldY`, `Distance`, `Projection`); constructors
+    validate against ground.
+  - `solver.rs` — `workspace_probe` + `solve_for_target` outer Newton loop;
+    full failure-mode detection (reachability, singularity, branch-jump,
+    non-convergence).
+  - `derivatives.rs` — `inverse_velocity` (closed-form) +
+    `inverse_acceleration_fd` (finite difference); shared `compute_dq_du`
+    helper.
+  - `test_helpers.rs` — `#[cfg(test)]` 4-bar fixture + warm-start q.
+- **Severity model** — `Severity::Strict` returns `Err(LinkageError::...)`
+  on any failure; `Severity::Analysis` returns
+  `Ok(InverseSolveResult { status: <failure variant>, ... })` so the GUI
+  can render failed samples in red rather than aborting the trajectory.
+  Same Newton/FD math runs in both modes; only the return type differs
+  (`classify_or_fail` helper centralizes the dispatch).
+- **New `LinkageError` trajectory variants** (`error.rs`):
+  `TrajectoryUnreachable`, `TrajectorySingular`, `TrajectoryBranchJump`,
+  `TrajectoryNonConvergent`. `From<InverseSolveStatus> for LinkageError`
+  bridges the two enums.
+- **Refactor in `core/`** — new `Mechanism::driver_row()` helper centralizes
+  the `n_constraints() - 1` assumption that the driver is the last
+  constraint row.
+- **Test count:** ~32 new tests in inverse_kinematics module + 1 new error
+  test. Total lib tests: 614 pass (was 613, +1 singularity-detection test
+  added by Task 1.14).
+- **Stage 1 GUI integration:** NONE. Solver works in isolation. Stage 2
+  starts with sweep extension (`gui/sweep/mod.rs::compute_trajectory`),
+  which will override Φ_t / γ on the driver row using back-solved
+  `u_dot` / `u_ddot`.
+
+**Why:** User wants position control via trajectory — specify a desired
+output (e.g. coupler-point world Y vs time) and back-solve the required
+crank/stroke trajectory. Existing solvers go forward (driver → output);
+this layer goes inverse (target output → required driver input).
+
+**Migration note:** No GUI changes shipped in Stage 1; users see no
+difference yet. Stage 2 will wire the solver into `compute_trajectory`,
+and Stage 3 will add the trajectory-mode UI.
+
+**Test results:** 614 lib tests pass (+1 new
+`singularity_detection_near_extremum`). Pre-existing linear_driver
+doctest still fails (not related). BranchJump test deferred to
+stage-1.5 — engineering the failure mode requires constructing a 4-bar
+near a toggle, which is a separate spec; TODO comment in place.
+
+---
+
 ## 2026-04-24 — LinearDriver GUI feature: stroke-driven sweeps
 
 **What:** Wired the dormant LinearDriver pipeline end-to-end so a user

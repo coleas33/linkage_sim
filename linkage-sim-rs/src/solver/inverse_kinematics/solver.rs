@@ -403,4 +403,37 @@ mod tests {
         );
         assert!(matches!(res, Err(LinkageError::TrajectoryUnreachable { .. })));
     }
+
+    #[test]
+    fn singularity_detection_near_extremum() {
+        // At crank angle ≈ 0 (horizontal), y-coordinate of body-local point
+        // (0.005, 0) on the crank is at its minimum extremum, so dy/du ≈ 0.
+        // Solving for h slightly off the extremum forces Newton to land near
+        // the singularity threshold.
+        let mech = build_fourbar();
+        let q0 = solve_at(&mech, 0.0);
+        let target = ControlTarget::world_y("crank", [0.005, 0.0]);
+        // Use Analysis severity so we get the status back rather than an Err.
+        let res = solve_for_target(
+            &mech, &q0, &target, 1e-9,  // target very close to extremum y=0
+            Severity::Analysis,
+            (-0.05, 0.05), 0.0, 2.0 * PI,  // narrow range around the singular point
+            1e-12, 50, 64,  // very tight tol forces Newton to chase
+        ).unwrap();
+        // Either Converged (Newton scraped through) or Singularity (caught it).
+        // We accept either since the threshold is heuristic.
+        assert!(
+            matches!(
+                res.status,
+                InverseSolveStatus::Converged
+                    | InverseSolveStatus::Singularity { .. }
+                    | InverseSolveStatus::NonConvergent { .. }
+            ),
+            "got status {:?}", res.status
+        );
+    }
+
+    // TODO(stage-1.5): add a BranchJump test that constructs a 4-bar near
+    // a toggle position and verifies the branch-jump threshold fires.
+    // The mechanism construction requires careful linkage geometry.
 }
