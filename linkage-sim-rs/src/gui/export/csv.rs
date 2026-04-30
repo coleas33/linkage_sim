@@ -231,9 +231,9 @@ fn write_trajectory_csv(out: &mut impl Write, sweep: &SweepData) -> std::io::Res
     }
 
     // Reconstruct the time axis from the active SweepMode::Trajectory's
-    // profile.duration (matches plot_panel/trajectory.rs).
+    // trajectory duration (matches plot_panel/trajectory.rs).
     let duration = match &sweep.sweep_mode {
-        SweepMode::Trajectory { profile, .. } => profile.duration,
+        SweepMode::Trajectory { trajectory, .. } => trajectory.duration(),
         _ => 1.0,
     };
     let denom = (n - 1).max(1) as f64;
@@ -667,7 +667,7 @@ mod tests {
             target: ControlTarget::Angle {
                 body_id: "crank".to_string(),
             },
-            profile,
+            trajectory: crate::gui::state::Trajectory::Profile(profile),
             severity: Severity::Analysis,
             n_samples: n,
         };

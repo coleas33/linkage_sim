@@ -164,6 +164,126 @@ pub struct ForceResults {
 
 // ── Trajectory profile ───────────────────────────────────────────────────────
 
+/// Trajectory specification for `SweepMode::Trajectory`: either an analytic
+/// motion profile or a user-defined keyframe table with linear interpolation.
+///
+/// Variants:
+///   - `Profile` — closed-form `(h, ḣ, ḧ)` from `MotionProfile` (ConstantSpeed,
+///     Trapezoidal, SCurve).
+///   - `KeyframeTable` — piecewise-linear `h(t)` from user-provided waypoints
+///     (or imported CSV). `ḣ` is the segment slope; `ḧ` is reported as 0
+///     (linear interpolation between waypoints has zero curvature on each
+///     segment; the velocity step at waypoint boundaries is small at typical
+///     trajectory sample rates).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum Trajectory {
+    /// Analytic profile (ConstantSpeed / Trapezoidal / SCurve).
+    Profile(TrajectoryProfile),
+    /// User-defined (t, h) waypoints with linear interpolation.
+    KeyframeTable(KeyframeTrajectory),
+}
+
+impl Trajectory {
+    /// Evaluate `(h(t), ḣ(t), ḧ(t))` at trajectory time `t`.
+    pub fn evaluate(&self, t: f64) -> (f64, f64, f64) {
+        match self {
+            Trajectory::Profile(p) => p.evaluate(t),
+            Trajectory::KeyframeTable(kt) => kt.evaluate(t),
+        }
+    }
+    /// Return `n` uniform sample times across `[0, duration]`.
+    pub fn sample_times(&self, n: usize) -> Vec<f64> {
+        match self {
+            Trajectory::Profile(p) => p.sample_times(n),
+            Trajectory::KeyframeTable(kt) => kt.sample_times(n),
+        }
+    }
+    /// Trajectory duration in seconds.
+    pub fn duration(&self) -> f64 {
+        match self {
+            Trajectory::Profile(p) => p.duration,
+            Trajectory::KeyframeTable(kt) => kt.duration(),
+        }
+    }
+}
+
+/// User-defined (t, h) waypoint trajectory with linear interpolation.
+/// Waypoints must be sorted by time and span `[0, duration]`. The constructor
+/// sorts by time ascending and preserves duplicate-t entries (later evaluation
+/// uses the first matching segment).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct KeyframeTrajectory {
+    /// Sorted (t, h) pairs. First entry's t = 0 (typically); last entry's t
+    /// defines the trajectory duration.
+    pub waypoints: Vec<(f64, f64)>,
+}
+
+impl KeyframeTrajectory {
+    /// Construct a new keyframe trajectory, sorting waypoints by time.
+    pub fn new(waypoints: Vec<(f64, f64)>) -> Self {
+        let mut wps = waypoints;
+        wps.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        Self { waypoints: wps }
+    }
+
+    /// Linear interpolation between adjacent waypoints. Outside the table
+    /// (`t < first` or `t > last`), clamps to the edge value.
+    ///
+    /// Returns `(h, h_dot, h_ddot)`. `h_dot` is the segment slope between
+    /// the bracketing waypoints; `h_ddot` is `0` everywhere (piecewise
+    /// linear). Edge clamps return `h_dot = 0` because `h` is constant
+    /// outside the waypoint range.
+    pub fn evaluate(&self, t: f64) -> (f64, f64, f64) {
+        if self.waypoints.is_empty() {
+            return (0.0, 0.0, 0.0);
+        }
+        if self.waypoints.len() == 1 {
+            return (self.waypoints[0].1, 0.0, 0.0);
+        }
+        // Below first waypoint
+        if t <= self.waypoints[0].0 {
+            return (self.waypoints[0].1, 0.0, 0.0);
+        }
+        // Above last waypoint
+        if t >= self.waypoints[self.waypoints.len() - 1].0 {
+            return (self.waypoints.last().unwrap().1, 0.0, 0.0);
+        }
+        // Linear search for the bracketing pair (small N, simpler than binary search).
+        for w in self.waypoints.windows(2) {
+            let (t0, h0) = w[0];
+            let (t1, h1) = w[1];
+            if t >= t0 && t <= t1 {
+                let dt = t1 - t0;
+                if dt < 1e-12 {
+                    return (h0, 0.0, 0.0);
+                }
+                let frac = (t - t0) / dt;
+                let h = h0 + frac * (h1 - h0);
+                let h_dot = (h1 - h0) / dt;
+                let h_ddot = 0.0;
+                return (h, h_dot, h_ddot);
+            }
+        }
+        // Shouldn't reach here given the above guards.
+        (self.waypoints.last().unwrap().1, 0.0, 0.0)
+    }
+
+    /// Trajectory duration: time of the last waypoint.
+    pub fn duration(&self) -> f64 {
+        self.waypoints.last().map(|w| w.0).unwrap_or(0.0)
+    }
+
+    /// Return `n` uniform sample times across `[0, duration]`.
+    pub fn sample_times(&self, n: usize) -> Vec<f64> {
+        assert!(n >= 2, "sample_times requires n >= 2");
+        let d = self.duration();
+        if d <= 0.0 {
+            return vec![0.0; n];
+        }
+        (0..n).map(|i| (i as f64) * d / ((n - 1) as f64)).collect()
+    }
+}
+
 /// Wraps an existing `MotionProfile` shape with absolute units (start, end, duration).
 /// Used by `SweepMode::Trajectory` to define a target observable trajectory `h(t)`.
 ///
@@ -338,6 +458,32 @@ mod tests {
         assert!((h - 1.0).abs() < 1e-12);
         assert!(h_dot.abs() < 1e-12, "jerk-limited: zero velocity at t=duration");
         assert!(h_ddot.abs() < 1e-12, "jerk-limited: zero acceleration at t=duration");
+    }
+
+    #[test]
+    fn keyframe_trajectory_linear_interpolation() {
+        let kt = KeyframeTrajectory::new(vec![(0.0, 0.0), (1.0, 2.0), (2.0, 1.0)]);
+        let (h, _, _) = kt.evaluate(0.5);
+        assert!((h - 1.0).abs() < 1e-12);
+        let (h, _, _) = kt.evaluate(1.5);
+        assert!((h - 1.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn keyframe_trajectory_clamps_outside_range() {
+        let kt = KeyframeTrajectory::new(vec![(0.5, 1.0), (1.5, 3.0)]);
+        let (h, _, _) = kt.evaluate(0.0);
+        assert!((h - 1.0).abs() < 1e-12); // clamps to first value
+        let (h, _, _) = kt.evaluate(2.0);
+        assert!((h - 3.0).abs() < 1e-12); // clamps to last value
+    }
+
+    #[test]
+    fn keyframe_trajectory_constant_velocity_segment_returns_correct_h_dot() {
+        let kt = KeyframeTrajectory::new(vec![(0.0, 0.0), (2.0, 4.0)]);
+        let (_, h_dot, h_ddot) = kt.evaluate(1.0);
+        assert!((h_dot - 2.0).abs() < 1e-12); // slope = 4/2 = 2
+        assert_eq!(h_ddot, 0.0);
     }
 
     #[test]

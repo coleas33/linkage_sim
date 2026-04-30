@@ -27,7 +27,7 @@ pub use sweep::{SweepData, SweepMode};
 use samples::SampleMechanism;
 use crate::core::state::GROUND_ID;
 use crate::solver::inverse_kinematics::ControlTarget;
-use state::{AngleUnit, EditorTool, LengthUnit, MotionProfile, PlaceForceState, SelectedEntity, TrajectoryProfile};
+use state::{AngleUnit, EditorTool, LengthUnit, MotionProfile, PlaceForceState, SelectedEntity, Trajectory, TrajectoryProfile};
 
 /// Top-level application struct for eframe.
 pub struct LinkageApp {
@@ -550,12 +550,12 @@ impl eframe::App for LinkageApp {
                                 .unwrap_or_else(|| "crank".to_string());
                             self.state.sweep_mode = SweepMode::Trajectory {
                                 target: ControlTarget::angle(default_target_body),
-                                profile: TrajectoryProfile {
+                                trajectory: Trajectory::Profile(TrajectoryProfile {
                                     shape: MotionProfile::ConstantSpeed,
                                     start_value: 0.0,
                                     end_value: 1.0,
                                     duration: 1.0,
-                                },
+                                }),
                                 severity: self.state.trajectory_severity,
                                 n_samples: 200,
                             };

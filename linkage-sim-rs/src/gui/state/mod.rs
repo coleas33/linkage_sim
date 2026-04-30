@@ -24,7 +24,7 @@ pub use load_cases::{LoadCase, LoadCaseManager};
 pub use types::{
     PendingJointType, PendingCanvasPickKind, EditorTool, ContextMenuTarget, SelectedEntity,
     ValidationWarnings, SolverStatus, ForceResults,
-    AlignmentAxis, AlignmentGuide, TrajectoryProfile,
+    AlignmentAxis, AlignmentGuide, KeyframeTrajectory, Trajectory, TrajectoryProfile,
 };
 pub use parametric::{
     SweepParameter, ParametricMetric, ParametricStudyConfig, ParametricStudyResult,

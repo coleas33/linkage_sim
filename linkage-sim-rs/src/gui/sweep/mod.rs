@@ -32,6 +32,8 @@ use crate::solver::statics::{
     extract_reactions, get_driver_reactions, solve_statics, JointReaction, StaticSolveResult,
 };
 
+use super::state::Trajectory;
+#[cfg(test)]
 use super::state::{MotionProfile, TrajectoryProfile};
 
 // ── Sweep data ───────────────────────────────────────────────────────────────
@@ -59,7 +61,7 @@ pub enum SweepMode {
     /// back-solve the actuator input. See spec §3.
     Trajectory {
         target: crate::solver::inverse_kinematics::ControlTarget,
-        profile: crate::gui::state::TrajectoryProfile,
+        trajectory: crate::gui::state::Trajectory,
         severity: crate::solver::inverse_kinematics::Severity,
         n_samples: usize,
     },
@@ -797,7 +799,7 @@ pub fn compute_trajectory(
     mech: &Mechanism,
     q_seed: &DVector<f64>,
     target: &ControlTarget,
-    profile: &TrajectoryProfile,
+    trajectory: &Trajectory,
     severity: Severity,
     n_samples: usize,
     nominal_rate: f64,
@@ -887,7 +889,7 @@ pub fn compute_trajectory(
             output.map(|out| (driver.to_string(), out))
         });
 
-    let times = profile.sample_times(n_samples);
+    let times = trajectory.sample_times(n_samples);
     let driver_row = mech.driver_row();
     // Finite-difference step for inverse_acceleration_fd, scaled by u_range
     // span so it adapts to the magnitude of the input (rad vs m).
@@ -896,7 +898,7 @@ pub fn compute_trajectory(
     let mut q_prev = q_seed.clone();
 
     for &t_k in &times {
-        let (h_k, h_dot_k, h_ddot_k) = profile.evaluate(t_k);
+        let (h_k, h_dot_k, h_ddot_k) = trajectory.evaluate(t_k);
 
         // 1. Inverse position solve. Strict severity propagates errors;
         //    Analysis severity returns a partial result whose status records
@@ -1615,11 +1617,12 @@ mod tests {
             end_value: 1.5,
             duration: 1.0,
         };
+        let trajectory = Trajectory::Profile(profile.clone());
         let n_samples = 10;
 
         let mode = SweepMode::Trajectory {
             target: target.clone(),
-            profile: profile.clone(),
+            trajectory: trajectory.clone(),
             severity: Severity::Analysis,
             n_samples,
         };
@@ -1629,7 +1632,7 @@ mod tests {
             &mech,
             &q0,
             &target,
-            &profile,
+            &trajectory,
             Severity::Analysis,
             n_samples,
             2.0 * PI,

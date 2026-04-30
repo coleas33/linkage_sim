@@ -1139,7 +1139,7 @@ impl AppState {
         // but interpreted as mm and converted to meters via `* 1e-3`.
         if let SweepMode::Trajectory {
             target,
-            profile,
+            trajectory,
             severity,
             n_samples,
         } = self.sweep_mode.clone()
@@ -1188,7 +1188,7 @@ impl AppState {
                 let mech_ref = self.mechanism.as_ref().unwrap();
                 let mode = SweepMode::Trajectory {
                     target: target.clone(),
-                    profile: profile.clone(),
+                    trajectory: trajectory.clone(),
                     severity,
                     n_samples,
                 };
@@ -1198,7 +1198,7 @@ impl AppState {
                     mech_ref,
                     &q_seed,
                     &target,
-                    &profile,
+                    &trajectory,
                     severity,
                     n_samples,
                     nominal_rate,

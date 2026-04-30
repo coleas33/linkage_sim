@@ -58,7 +58,7 @@ pub(super) fn render(state: &mut AppState, ui: &mut egui::Ui) {
     // out of sync (shouldn't happen — caller dispatches on it) fall back to
     // a unit-duration axis so we still render something useful.
     let duration = match &state.sweep_mode {
-        SweepMode::Trajectory { profile, .. } => profile.duration,
+        SweepMode::Trajectory { trajectory, .. } => trajectory.duration(),
         _ => 1.0,
     };
     let times: Vec<f64> = (0..n)
@@ -186,8 +186,8 @@ pub(super) fn render(state: &mut AppState, ui: &mut egui::Ui) {
         let t_clicked = t_raw.clamp(0.0, duration);
         // Pull target+h out of the trajectory sweep mode and drop the borrow
         // before calling the &mut self method.
-        let payload = if let SweepMode::Trajectory { target, profile, .. } = &state.sweep_mode {
-            let (h, _, _) = profile.evaluate(t_clicked);
+        let payload = if let SweepMode::Trajectory { target, trajectory, .. } = &state.sweep_mode {
+            let (h, _, _) = trajectory.evaluate(t_clicked);
             Some((target.clone(), h))
         } else {
             None

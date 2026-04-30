@@ -12,17 +12,6 @@ open_questions:
     point" mode. Defer until users ask.
 
   - |
-    Trajectory v2: keyframe / waypoint trajectory input. Current implementation
-    only supports analytic profiles. Adding a Trajectory enum (Profile vs
-    KeyframeTable) enables non-canonical trajectory shapes. Defer until users
-    ask for non-canonical motion.
-
-  - |
-    Trajectory v2: CSV-table trajectory import. Letting the user load a (t, h)
-    series from disk would enable replicating measured / externally-authored
-    trajectories. Cheap once the keyframe path exists.
-
-  - |
     Trajectory v3: hardware-controller-specific export adapter. v1 emits a
     superset CSV intended for downstream subsetting. A hardware adapter (e.g.
     Aerotech, Galil, Beckhoff) is a thin format-conversion layer on top once

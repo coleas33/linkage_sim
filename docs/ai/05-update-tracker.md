@@ -5,6 +5,76 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-29 — feat(traj): keyframe trajectory input + CSV import
+
+**What:** Added a `Trajectory` enum with two variants — `Profile` (existing
+analytic motion profile: ConstantSpeed / Trapezoidal / SCurve) and
+`KeyframeTable` (user-defined `(t, h)` waypoints with linear interpolation) —
+and migrated `SweepMode::Trajectory.profile: TrajectoryProfile` to
+`SweepMode::Trajectory.trajectory: Trajectory`. Added a CSV import path so
+`(t, h)` series authored externally (e.g. from a hardware capture or
+spreadsheet) can be loaded as keyframes.
+
+`KeyframeTrajectory::evaluate(t)` returns `(h, ḣ, ḧ)` where:
+  - `h` is the linear interpolation between the bracketing waypoints.
+  - `ḣ` is the segment slope `(h₁ - h₀) / (t₁ - t₀)`.
+  - `ḧ` is `0` everywhere (piecewise-linear has zero curvature on each
+    segment; the velocity step at waypoint boundaries is small at typical
+    trajectory sample rates and the inverse-dynamics `ü` solve falls back to
+    its FD path anyway).
+Outside the table (`t < first` or `t > last`), evaluate clamps to the edge
+value with `ḣ = 0`.
+
+The trajectory_panel UI gains a top-level "Trajectory kind" dropdown
+(Profile / Keyframes); switching kinds substitutes a sensible default for
+the new variant. The Keyframes editor shows a row-per-waypoint table with
+inline `t`/`h` drag-edits, an X button to remove rows (minimum 2 retained),
+"+ Add waypoint", "Sort by t", and (native only) "Import CSV...". The
+inline preview plot renders the current `h(t)` curve and overlays
+waypoint markers when in Keyframes mode.
+
+CSV format: 2 columns `t_seconds, target_value`. The first row is treated
+as a header if its first cell fails to parse as a float. Blank lines and
+`#`-prefixed lines are skipped. Waypoints are sorted by `t` ascending.
+
+**Why:** Closes the long-standing "Trajectory v2: keyframe / waypoint
+trajectory input" and "Trajectory v2: CSV-table trajectory import" open
+questions in `04-memory.yaml`. Enables non-canonical trajectory shapes
+(replays of recorded motion, hand-authored bring-up sequences, profiles
+that don't fit ConstantSpeed / Trapezoidal / SCurve).
+
+**Touched files:**
+- `linkage-sim-rs/src/gui/state/types.rs` — `Trajectory` enum, `KeyframeTrajectory` struct + 3 unit tests
+- `linkage-sim-rs/src/gui/state/mod.rs` — re-export `Trajectory`, `KeyframeTrajectory`
+- `linkage-sim-rs/src/gui/sweep/mod.rs` — `SweepMode::Trajectory.profile` → `.trajectory`; `compute_trajectory` parameter type → `&Trajectory`; integration test updated
+- `linkage-sim-rs/src/gui/state/blueprint_ops.rs` — destructure / call site updates
+- `linkage-sim-rs/src/gui/mod.rs` — toolbar default constructor wraps in `Trajectory::Profile(...)`
+- `linkage-sim-rs/src/gui/plot_panel/trajectory.rs` — duration / evaluate via enum
+- `linkage-sim-rs/src/gui/export/csv.rs` — duration via enum + test fixture
+- `linkage-sim-rs/src/gui/trajectory_panel/profile_input.rs` — full rewrite: two-level kind dropdown + analytic editor + keyframe editor + CSV import + parse_keyframes_csv test
+
+**Test results:** 625 lib tests pass (621 baseline + 3 keyframe interp tests
++ 1 CSV parser test). Build clean for both `--features native` and the
+default (WASM-friendly) profile; no new warnings beyond the pre-existing
+baseline.
+
+**Concerns / known limitations:**
+- WASM CSV import is not wired up (rfd's WASM async API would need a
+  separate code path; defer until a browser user actually asks for it).
+  The button is `#[cfg(feature = "native")]`-gated, so the WASM build
+  simply doesn't render it.
+- `ḧ` reports `0` for keyframe trajectories. The inverse-dynamics path
+  uses FD anyway for non-Angle targets, so this is a non-issue in
+  practice; the `h_ddot` value flows into `compute_trajectory` only as a
+  hint for the FD step direction (which the solver then refines).
+- Switching trajectory kinds in the UI discards the prior variant's
+  parameters (analytic ↔ keyframes). This is intentional — there's no
+  obvious mapping between "ConstantSpeed start=0 end=1 dur=1" and a
+  3-waypoint keyframe table — and matches the established switch-resets
+  pattern of the shape dropdown.
+
+---
+
 ## 2026-04-29 — feat(traj): add SCurve (jerk-limited) motion profile
 
 **What:** Added a third variant `MotionProfile::SCurve { jerk_fraction: f64 }`
