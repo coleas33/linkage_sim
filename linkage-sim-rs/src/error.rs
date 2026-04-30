@@ -56,4 +56,101 @@ pub enum LinkageError {
         /// Configured tolerance.
         tolerance: f64,
     },
+
+    // -- Trajectory-mode failures --
+    /// Target value is outside the reachable workspace.
+    #[error(
+        "Trajectory unreachable at target = {target:.4} (workspace [{min:.4}, {max:.4}])."
+    )]
+    TrajectoryUnreachable {
+        target: f64,
+        achieved_clamp: f64,
+        min: f64,
+        max: f64,
+    },
+
+    /// `|dg/du|` fell below the singularity threshold.
+    #[error("Trajectory singular: |dg/du| = {dg_du:.2e} below threshold.")]
+    TrajectorySingular { dg_du: f64 },
+
+    /// Trajectory crossed an assembly-mode boundary mid-solve.
+    #[error("Trajectory branch jump: ‖Δq‖ = {delta_q_norm:.4} exceeded threshold.")]
+    TrajectoryBranchJump { delta_q_norm: f64 },
+
+    /// Inverse Newton did not converge in `max_iter` iterations.
+    #[error(
+        "Trajectory inverse Newton did not converge after {iterations} iterations \
+         (residual = {residual:.2e})."
+    )]
+    TrajectoryNonConvergent { iterations: usize, residual: f64 },
+}
+
+impl From<crate::solver::inverse_kinematics::InverseSolveStatus> for LinkageError {
+    fn from(status: crate::solver::inverse_kinematics::InverseSolveStatus) -> Self {
+        use crate::solver::inverse_kinematics::InverseSolveStatus;
+        match status {
+            InverseSolveStatus::Converged => {
+                // Caller bug: shouldn't convert a Converged status to an error.
+                // Use a representative numerical error.
+                LinkageError::TrajectoryNonConvergent {
+                    iterations: 0,
+                    residual: 0.0,
+                }
+            }
+            InverseSolveStatus::Reachability {
+                target,
+                achieved_clamp,
+                workspace_min,
+                workspace_max,
+            } => LinkageError::TrajectoryUnreachable {
+                target,
+                achieved_clamp,
+                min: workspace_min.unwrap_or(f64::NEG_INFINITY),
+                max: workspace_max.unwrap_or(f64::INFINITY),
+            },
+            InverseSolveStatus::Singularity { dg_du } => {
+                LinkageError::TrajectorySingular { dg_du }
+            }
+            InverseSolveStatus::BranchJump { delta_q_norm } => {
+                LinkageError::TrajectoryBranchJump { delta_q_norm }
+            }
+            InverseSolveStatus::NonConvergent {
+                iterations,
+                residual,
+            } => LinkageError::TrajectoryNonConvergent {
+                iterations,
+                residual,
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::solver::inverse_kinematics::InverseSolveStatus;
+
+    #[test]
+    fn from_inverse_solve_status_to_linkage_error() {
+        let status = InverseSolveStatus::Reachability {
+            target: 1.0,
+            achieved_clamp: 0.5,
+            workspace_min: Some(0.0),
+            workspace_max: Some(0.5),
+        };
+        let err: LinkageError = status.into();
+        match err {
+            LinkageError::TrajectoryUnreachable { target, .. } => {
+                assert_eq!(target, 1.0);
+            }
+            _ => panic!("expected TrajectoryUnreachable"),
+        }
+    }
+
+    #[test]
+    fn from_singularity_status() {
+        let status = InverseSolveStatus::Singularity { dg_du: 1e-9 };
+        let err: LinkageError = status.into();
+        assert!(matches!(err, LinkageError::TrajectorySingular { .. }));
+    }
 }
