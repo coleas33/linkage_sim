@@ -41,7 +41,7 @@ pub(crate) use blueprint_ops::detect_driver_joint_id;
 /// `ConstantSpeed` (the default) uses a fixed omega throughout the cycle.
 /// `Trapezoidal` accelerates from rest, cruises, then decelerates to rest,
 /// producing realistic inertial loads for motor sizing.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum MotionProfile {
     /// Constant angular velocity (existing default behaviour).
     ConstantSpeed,

@@ -2,6 +2,10 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
+use crate::gui::state::MotionProfile;
+
 // ── Alignment guides ─────────────────────────────────────────────────────────
 
 /// Axis for an alignment guide line.
@@ -140,4 +144,134 @@ pub struct ForceResults {
     pub force_contributions: Vec<(String, f64)>,
     /// Virtual work cross-check result: (vw_torque, lagrange_torque, agrees).
     pub virtual_work_check: Option<(f64, f64, bool)>,
+}
+
+// ── Trajectory profile ───────────────────────────────────────────────────────
+
+/// Wraps an existing `MotionProfile` shape with absolute units (start, end, duration).
+/// Used by `SweepMode::Trajectory` to define a target observable trajectory `h(t)`.
+///
+/// See: docs/superpowers/specs/2026-04-29-trajectory-position-control-design.md §5.5
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TrajectoryProfile {
+    /// Shape of the velocity profile (constant / trapezoidal / S-curve).
+    pub shape: MotionProfile,
+    /// `h(0)` in target units.
+    pub start_value: f64,
+    /// `h(duration)` in target units.
+    pub end_value: f64,
+    /// Trajectory duration in seconds. Must be > 0.
+    pub duration: f64,
+}
+
+impl TrajectoryProfile {
+    /// Evaluate `(h(t), ḣ(t), ḧ(t))` at trajectory time `t`.
+    /// `t` is clamped to `[0, duration]`.
+    pub fn evaluate(&self, t: f64) -> (f64, f64, f64) {
+        assert!(self.duration > 0.0, "TrajectoryProfile.duration must be > 0");
+        let t_clamped = t.clamp(0.0, self.duration);
+        match self.shape {
+            MotionProfile::ConstantSpeed => {
+                let frac = t_clamped / self.duration;
+                let span = self.end_value - self.start_value;
+                let h = self.start_value + frac * span;
+                let h_dot = span / self.duration;
+                let h_ddot = 0.0;
+                (h, h_dot, h_ddot)
+            }
+            MotionProfile::Trapezoidal { accel_fraction, decel_fraction } => {
+                trapezoidal_value(
+                    t_clamped, self.duration, self.start_value, self.end_value,
+                    accel_fraction, decel_fraction,
+                )
+            }
+        }
+    }
+
+    /// Return `n` uniform sample times across `[0, duration]`.
+    pub fn sample_times(&self, n: usize) -> Vec<f64> {
+        assert!(n >= 2, "sample_times requires n >= 2");
+        (0..n).map(|i| (i as f64) * self.duration / ((n - 1) as f64)).collect()
+    }
+}
+
+fn trapezoidal_value(
+    t: f64, duration: f64,
+    start: f64, end: f64,
+    accel_frac: f64, decel_frac: f64,
+) -> (f64, f64, f64) {
+    let cruise_frac = 1.0 - accel_frac - decel_frac;
+    debug_assert!(cruise_frac >= 0.0);
+    let span = end - start;
+
+    let t_a = accel_frac * duration;
+    let t_c = cruise_frac * duration;
+    let t_d = decel_frac * duration;
+
+    // Peak velocity v_peak: ∫velocity dt = span ⇒ v_peak (t_a/2 + t_c + t_d/2) = span
+    let denom = 0.5 * t_a + t_c + 0.5 * t_d;
+    if denom.abs() < 1e-15 {
+        return (start, 0.0, 0.0);
+    }
+    let v_peak = span / denom;
+
+    if t < t_a {
+        // Accelerate
+        let a = v_peak / t_a;
+        let h = start + 0.5 * a * t * t;
+        let h_dot = a * t;
+        let h_ddot = a;
+        (h, h_dot, h_ddot)
+    } else if t < t_a + t_c {
+        // Cruise
+        let h = start + 0.5 * v_peak * t_a + v_peak * (t - t_a);
+        (h, v_peak, 0.0)
+    } else {
+        // Decelerate
+        let a = -v_peak / t_d;
+        let dt = t - (t_a + t_c);
+        let h_at_decel_start = start + 0.5 * v_peak * t_a + v_peak * t_c;
+        let h = h_at_decel_start + v_peak * dt + 0.5 * a * dt * dt;
+        let h_dot = v_peak + a * dt;
+        let h_ddot = a;
+        (h, h_dot.max(0.0), h_ddot)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trajectory_profile_constant_velocity_evaluates_linearly() {
+        let profile = TrajectoryProfile {
+            shape: MotionProfile::ConstantSpeed,
+            start_value: 0.0,
+            end_value: 1.0,
+            duration: 2.0,
+        };
+        let (h, _, _) = profile.evaluate(0.0);
+        assert!((h - 0.0).abs() < 1e-12);
+        let (h, _, _) = profile.evaluate(1.0);
+        assert!((h - 0.5).abs() < 1e-12);
+        let (h, h_dot, h_ddot) = profile.evaluate(2.0);
+        assert!((h - 1.0).abs() < 1e-12);
+        assert!((h_dot - 0.5).abs() < 1e-12); // (end-start)/duration = 0.5
+        assert!(h_ddot.abs() < 1e-12);
+    }
+
+    #[test]
+    fn trajectory_profile_sample_times_are_uniform() {
+        let profile = TrajectoryProfile {
+            shape: MotionProfile::ConstantSpeed,
+            start_value: 0.0,
+            end_value: 1.0,
+            duration: 1.0,
+        };
+        let samples = profile.sample_times(5);
+        assert_eq!(samples.len(), 5);
+        assert!((samples[0] - 0.0).abs() < 1e-12);
+        assert!((samples[4] - 1.0).abs() < 1e-12);
+        assert!((samples[2] - 0.5).abs() < 1e-12);
+    }
 }
