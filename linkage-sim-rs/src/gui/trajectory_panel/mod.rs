@@ -30,7 +30,7 @@ pub fn draw(state: &mut AppState, ui: &mut egui::Ui) {
             profile_input::draw(state, ui);
         });
 
-    egui::CollapsingHeader::new("Solve options")
+    egui::CollapsingHeader::new("Failure handling")
         .default_open(false)
         .show(ui, |ui| {
             draw_severity_toggle(state, ui);
@@ -67,9 +67,13 @@ fn draw_severity_toggle(state: &mut AppState, ui: &mut egui::Ui) {
     let current = state.trajectory_severity;
     let mut new = current;
     ui.horizontal(|ui| {
-        ui.label("Severity:");
-        ui.radio_value(&mut new, Severity::Analysis, "Analysis (annotate failures)");
-        ui.radio_value(&mut new, Severity::Strict, "Strict (abort on failure)");
+        ui.label("On failure:");
+        ui.radio_value(&mut new, Severity::Analysis, "Continue")
+            .on_hover_text(
+                "Annotate failed samples in the trajectory; continue solving the rest.",
+            );
+        ui.radio_value(&mut new, Severity::Strict, "Abort")
+            .on_hover_text("Abort the entire trajectory on the first failed sample.");
     });
     if new != current {
         state.trajectory_severity = new;
