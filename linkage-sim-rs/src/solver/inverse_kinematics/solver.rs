@@ -7,10 +7,10 @@ use nalgebra::DVector;
 
 use crate::core::mechanism::Mechanism;
 use crate::error::LinkageError;
-use crate::solver::assembly::assemble_jacobian;
 use crate::solver::kinematics::solve_position;
 
 use super::control_target::ControlTarget;
+use super::derivatives::compute_dq_du;
 use super::severity::{InverseSolveStatus, Severity};
 
 /// Result of a workspace probe — pairs of (input parameter `u_k`, observable `g(q(u_k))`)
@@ -177,8 +177,6 @@ pub fn solve_for_target(
     let t_mech_seed = (u_seed - u_0) / nominal_rate;
     let mut q_k = solve_position(mech, q_seed, t_mech_seed, 1e-10, 50)?.q;
 
-    let driver_row = mech.driver_row();
-
     // 4. Outer Newton.
     let mut iterations = 0usize;
     let mut achieved = target.evaluate(mech, &q_k);
@@ -193,12 +191,7 @@ pub fn solve_for_target(
         }
 
         let t_mech_k = (u_k - u_0) / nominal_rate;
-        let phi_q = assemble_jacobian(mech, &q_k, t_mech_k);
-        let mut phi_u = DVector::zeros(mech.n_constraints());
-        phi_u[driver_row] = -1.0;
-        let svd = phi_q.svd(true, true);
-        let dq_du = svd.solve(&-phi_u, 1e-14)
-            .map_err(|_| LinkageError::SvdSolveFailed)?;
+        let dq_du = compute_dq_du(mech, &q_k, t_mech_k)?;
         let grad = target.gradient(mech, &q_k);
         let r_prime = grad.dot(&dq_du);
 
