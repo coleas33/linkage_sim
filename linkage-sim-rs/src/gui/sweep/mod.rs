@@ -822,6 +822,25 @@ pub fn compute_trajectory(
     // existing Optional<Vec> we populate (statics-derived) per sample.
     data.driver_torques = Some(Vec::with_capacity(n_samples));
 
+    // Detect a LinearActuator force element to drive actuator-force computation
+    // (revolute-driver + force-element pattern). For LinearDriver constraints
+    // the driver row's Lagrange multiplier IS the actuator force directly —
+    // see logic in the per-sample loop below.
+    let actuator_element = mech.forces().iter().find_map(|f| {
+        if let crate::forces::elements::ForceElement::LinearActuator(act) = f {
+            Some(act.clone())
+        } else {
+            None
+        }
+    });
+    let actuator_info: Option<(String, [f64; 2], String, [f64; 2])> = actuator_element
+        .as_ref()
+        .map(|act| (act.body_a.clone(), act.point_a, act.body_b.clone(), act.point_b));
+    let has_linear_driver = mech.n_linear_drivers() > 0;
+    if actuator_info.is_some() || has_linear_driver {
+        data.actuator_forces = Some(Vec::with_capacity(n_samples));
+    }
+
     // Pre-allocate body angle vectors and coupler trace metadata.
     let body_order: Vec<String> = mech.body_order().to_vec();
     for body_id in &body_order {
@@ -987,6 +1006,7 @@ pub fn compute_trajectory(
 
         // Statics → driver torque + joint reactions.
         let mut pending_reactions: Option<Vec<JointReaction>> = None;
+        let mut driver_effort_now = f64::NAN;
         if let Ok(statics) = solve_statics(mech, &q_k, t_mech_k) {
             let reactions = extract_reactions(mech, &statics);
             let torque = get_driver_reactions(&reactions)
@@ -994,9 +1014,43 @@ pub fn compute_trajectory(
                 .map(|r| r.effort)
                 .unwrap_or(0.0);
             data.driver_torques.as_mut().unwrap().push(torque);
+            driver_effort_now = torque;
             pending_reactions = Some(reactions);
         } else {
             data.driver_torques.as_mut().unwrap().push(f64::NAN);
+        }
+
+        // Actuator force per sample. Two paths:
+        //   1) LinearDriver constraint: the driver's Lagrange multiplier (statics
+        //      `effort`) is already the axial actuator force in newtons.
+        //   2) Revolute driver + LinearActuator force element: power balance
+        //      F_actuator * dl/dt = τ_driver * u̇ where u̇ is the back-solved
+        //      input rate at this sample (substitutes for the constant-speed ω).
+        if has_linear_driver {
+            data.actuator_forces.as_mut().unwrap().push(driver_effort_now);
+        } else if let Some(ref act_info) = actuator_info {
+            let mech_state = mech.state();
+            let (ref body_a, ref pt_a, ref body_b, ref pt_b) = *act_info;
+            let local_a = nalgebra::Vector2::new(pt_a[0], pt_a[1]);
+            let local_b = nalgebra::Vector2::new(pt_b[0], pt_b[1]);
+            let p_a = mech_state.body_point_global(body_a, &local_a, &q_k);
+            let p_b = mech_state.body_point_global(body_b, &local_b, &q_k);
+            let d_vec = p_b - p_a;
+            let length = d_vec.norm();
+            let f_act = if length > 1e-12 && u_dot_k.abs() > 1e-12 && driver_effort_now.is_finite() {
+                let unit = d_vec / length;
+                let v_a = mech_state.body_point_velocity(body_a, &local_a, &q_k, &q_dot_k);
+                let v_b = mech_state.body_point_velocity(body_b, &local_b, &q_k, &q_dot_k);
+                let dl_dt = (v_b - v_a).dot(&unit);
+                if dl_dt.abs() > 1e-6 {
+                    driver_effort_now * u_dot_k / dl_dt
+                } else {
+                    f64::NAN
+                }
+            } else {
+                f64::NAN
+            };
+            data.actuator_forces.as_mut().unwrap().push(f_act);
         }
 
         // Energy from trajectory q_dot (not the constant-speed forward solve).
