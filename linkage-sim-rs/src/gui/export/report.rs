@@ -129,6 +129,9 @@ pub fn generate_html_report(
     }
     html.push_str("</table>\n");
 
+    // -- Loop equations -------------------------------------------------------
+    write_loop_equations_section(&mut html, mechanism, q);
+
     // -- Torque envelope ------------------------------------------------------
     if let Some(ref torques) = sweep.driver_torques {
         if let Some(env) = compute_envelope(torques) {
@@ -445,6 +448,97 @@ fn format_unix_timestamp(secs: u64) -> String {
     )
 }
 
+/// Render the "Loop equations" section listing per-constraint Φ_J* with
+/// symbolic forms, residuals at the report's pose `q` (t = 0), and Lagrange
+/// multipliers from `solve_statics`. Multipliers are omitted when the solve
+/// fails (the column simply doesn't appear in that case).
+///
+/// Sourced from the same `gui::eq_rendering` helpers used by the live panel
+/// (E1) and canvas overlay (E2), so all three views stay in sync.
+#[cfg(feature = "native")]
+fn write_loop_equations_section(
+    html: &mut String,
+    mechanism: &Mechanism,
+    q: &nalgebra::DVector<f64>,
+) {
+    use crate::core::constraint::Constraint;
+    use crate::gui::eq_rendering::{
+        kind_at, lambda_string, n_constraints, residual_norm_string, symbolic_form,
+    };
+    use crate::solver::assembly::assemble_constraints;
+    use crate::solver::statics::solve_statics;
+
+    if !mechanism.is_built() {
+        return;
+    }
+
+    // Reports always evaluate at t = 0 — the report captures the current
+    // pose, not a time series. A future per-frame report could override this.
+    let t_mech = 0.0;
+    let phi = assemble_constraints(mechanism, q, t_mech);
+    let lambdas = solve_statics(mechanism, q, t_mech)
+        .ok()
+        .map(|s| s.lambdas);
+
+    html.push_str("<h2>Loop Equations</h2>\n");
+    let dof = mechanism.state().n_coords() as isize - mechanism.n_constraints() as isize;
+    html.push_str(&format!(
+        "<p>Constraint count m = {}, coordinate count n = {}, DOF = {}.</p>\n",
+        mechanism.n_constraints(),
+        mechanism.state().n_coords(),
+        dof,
+    ));
+
+    let has_lambdas = lambdas.is_some();
+    html.push_str("<table>\n<tr><th>ID</th><th>Kind</th><th>Symbolic Φ</th><th>Residual</th>");
+    if has_lambdas {
+        html.push_str("<th>λ multiplier</th>");
+    }
+    html.push_str("</tr>\n");
+
+    let n_constr = n_constraints(mechanism);
+    for (i, c) in mechanism.all_constraints().enumerate() {
+        if i >= n_constr {
+            break;
+        }
+        let Some(kind) = kind_at(mechanism, i) else { continue };
+        let driver_class = if kind.is_driver() {
+            " style='background:#fff3cd;'"
+        } else {
+            ""
+        };
+        let id = html_escape(c.id());
+        let kind_lbl = kind.short_label();
+        let sym = html_escape(&symbolic_form(mechanism, i));
+        let res = html_escape(&residual_norm_string(mechanism, i, &phi));
+        html.push_str(&format!(
+            "<tr{}><td>{}</td><td><code>{}</code></td><td><code>{}</code></td><td><code>{}</code></td>",
+            driver_class, id, kind_lbl, sym, res,
+        ));
+        if has_lambdas {
+            let lam = html_escape(&lambda_string(mechanism, i, lambdas.as_ref()));
+            html.push_str(&format!("<td><code>{}</code></td>", lam));
+        }
+        html.push_str("</tr>\n");
+    }
+    html.push_str("</table>\n");
+    if !has_lambdas {
+        html.push_str("<p><em>Lagrange multipliers omitted: statics solve failed at this pose.</em></p>\n");
+    }
+}
+
+/// Minimal HTML escaping for the loop-equations table cells. Symbolic forms
+/// contain `<` (in `≤`/`≥` they don't, but defensive anyway) and the
+/// driver-meta strings can include arbitrary user expressions, so we escape
+/// the four characters that would break table markup.
+#[cfg(feature = "native")]
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
 /// Summarize a force element as (type_name, detail_string).
 #[cfg(feature = "native")]
 fn force_element_summary(fe: &crate::forces::elements::ForceElement) -> (&'static str, String) {
@@ -518,6 +612,10 @@ mod tests {
         assert!(html.contains("Dimensions"), "should have dimensions table");
         assert!(html.contains("Mass Properties"), "should have mass properties table");
         assert!(html.contains("kg"), "should have mass units");
+        // Loop equations section (E4)
+        assert!(html.contains("Loop Equations"), "should have loop equations section");
+        assert!(html.contains("Φ_rev"), "should render at least one revolute symbol");
+        assert!(html.contains("Φ_rd"), "FourBar sample has a revolute driver");
         // Plotly integration
         assert!(html.contains("plotly-2.35.2.min.js"), "should include plotly CDN");
         assert!(html.contains("Plotly.newPlot"), "should have at least one plotly chart");
