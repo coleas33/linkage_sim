@@ -9,4 +9,4 @@
 
 pub mod severity;
 
-pub use severity::Severity;
+pub use severity::{InverseSolveStatus, Severity};
