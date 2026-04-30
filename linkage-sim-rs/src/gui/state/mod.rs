@@ -23,7 +23,7 @@ pub use load_cases::{LoadCase, LoadCaseManager};
 pub use types::{
     PendingJointType, EditorTool, ContextMenuTarget, SelectedEntity,
     ValidationWarnings, SolverStatus, ForceResults,
-    AlignmentAxis, AlignmentGuide,
+    AlignmentAxis, AlignmentGuide, TrajectoryProfile,
 };
 pub use parametric::{
     SweepParameter, ParametricMetric, ParametricStudyConfig, ParametricStudyResult,

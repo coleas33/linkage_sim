@@ -42,7 +42,7 @@ use super::state::MotionProfile;
 /// design and is kept to avoid touching ~30 read sites; treat
 /// `angles_deg` as "the X-axis values for this sweep" rather than
 /// "degrees".
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub enum SweepMode {
     /// Revolute driver: X-axis is angle (degrees, 0-360 default).
     Angle,
@@ -50,12 +50,25 @@ pub enum SweepMode {
     /// `angles_deg`, displayed in mm by plot consumers via the
     /// is_stroke branch).
     Stroke,
+    /// Inverse trajectory analysis: prescribe an output observable trajectory and
+    /// back-solve the actuator input. See spec §3.
+    Trajectory {
+        target: crate::solver::inverse_kinematics::ControlTarget,
+        profile: crate::gui::state::TrajectoryProfile,
+        severity: crate::solver::inverse_kinematics::Severity,
+        n_samples: usize,
+    },
 }
 
 impl SweepMode {
     /// Returns true for stroke-based (linear driver) sweeps.
     pub fn is_stroke(&self) -> bool {
         matches!(self, SweepMode::Stroke)
+    }
+
+    /// Returns true for trajectory (inverse-kinematics) sweeps.
+    pub fn is_trajectory(&self) -> bool {
+        matches!(self, SweepMode::Trajectory { .. })
     }
 }
 
