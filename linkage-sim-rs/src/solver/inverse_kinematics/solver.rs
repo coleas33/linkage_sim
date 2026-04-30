@@ -110,6 +110,11 @@ pub struct InverseSolveResult {
 ///      (since Φ depends on u only through `−u` after re-parameterization).
 ///   5. `r'(u) = ∇_q g · dq/du`. Update `u_{k+1} = u_k − r_k / r'(u)`.
 ///
+/// Each call internally runs a fresh `workspace_probe` (~64 forward solves).
+/// **In hot paths (e.g. computing a trajectory of N samples against the same
+/// target/range), callers should cache the probe externally** — see spec §6.6.
+/// The cache lives on `AppState` and is not part of this solver layer.
+///
 /// Failure detection added in Task 1.11.
 ///
 /// Math reference: docs/superpowers/specs/2026-04-29-linkage-equations-reference.md §8.1.
