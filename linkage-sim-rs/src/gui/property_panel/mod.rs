@@ -6,11 +6,12 @@
 
 mod pending_edits;
 mod diagnostics;
+mod equations;
 pub(super) mod force_editor;
 
 use eframe::egui;
 use crate::core::state::GROUND_ID;
-use crate::gui::state::AppState;
+use crate::gui::state::{AppState, PropertyPanelTab};
 
 use pending_edits::{PendingPropertyEdit, apply_pending, draw_force_elements_inner};
 use diagnostics::draw_diagnostics_section;
@@ -23,6 +24,24 @@ mod undo_panel;
 /// Mass and inertia fields are editable via `DragValue` widgets when a
 /// blueprint is present and the selected body is not ground.
 pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
+    // ── Tab selector ─────────────────────────────────────────────────
+    // Two tabs share this panel: the original Properties view and the new
+    // live Equations view (E1). The selector is rendered before any early
+    // returns so the tabs remain reachable even when no mechanism is loaded.
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        let mut tab = state.property_panel_tab;
+        ui.selectable_value(&mut tab, PropertyPanelTab::Properties, "Properties");
+        ui.selectable_value(&mut tab, PropertyPanelTab::Equations, "Equations");
+        state.property_panel_tab = tab;
+    });
+    ui.separator();
+
+    if state.property_panel_tab == PropertyPanelTab::Equations {
+        equations::draw(state, ui);
+        return;
+    }
+
     let mut pending: Option<PendingPropertyEdit> = None;
 
     let Some(mech) = &state.mechanism else {

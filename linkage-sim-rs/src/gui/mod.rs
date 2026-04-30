@@ -3,6 +3,7 @@
 mod state;
 mod canvas;
 pub mod dxf_import;
+mod eq_rendering;
 mod error_panel;
 mod export;
 mod force_toolbar;

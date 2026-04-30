@@ -53,6 +53,24 @@ pub enum PendingCanvasPickKind {
     RefPt,
 }
 
+/// Active tab in the left sidebar's property/inspection area.
+///
+/// `Properties` is the original full property panel (link editor, mass, etc.).
+/// `Equations` switches the same panel to the live loop-equations view
+/// (constraint Φ_J* values + λ multipliers). Defaults to `Properties` so
+/// existing user workflows remain the default landing tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PropertyPanelTab {
+    Properties,
+    Equations,
+}
+
+impl Default for PropertyPanelTab {
+    fn default() -> Self {
+        PropertyPanelTab::Properties
+    }
+}
+
 /// Active editor tool — determines what happens on canvas clicks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorTool {

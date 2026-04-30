@@ -23,7 +23,7 @@ pub use view_transform::ViewTransform;
 pub use load_cases::{LoadCase, LoadCaseManager};
 pub use types::{
     PendingJointType, PendingCanvasPickKind, EditorTool, ContextMenuTarget, SelectedEntity,
-    ValidationWarnings, SolverStatus, ForceResults,
+    ValidationWarnings, SolverStatus, ForceResults, PropertyPanelTab,
     AlignmentAxis, AlignmentGuide, KeyframeTrajectory, Trajectory, TrajectoryProfile,
 };
 pub use parametric::{
@@ -218,6 +218,9 @@ pub struct AppState {
     pub show_dimensions: bool,
     /// Whether to show body/joint labels on the canvas.
     pub show_labels: bool,
+    /// Whether to overlay loop-equation labels on the canvas (View ▸ Show
+    /// equations). Off by default — purely diagnostic.
+    pub show_equation_overlay: bool,
     /// Gravity magnitude in m/s² (0 = disabled, 9.81 = Earth standard).
     pub gravity_magnitude: f64,
     /// Mechanism mounting angle in radians (0 = horizontal).
@@ -302,6 +305,9 @@ pub struct AppState {
     // ── Link editor ────────────────────────────────────────────────
     /// Which body is being edited in the Link Editor panel (selected via dropdown).
     pub link_editor_body: Option<String>,
+    /// Active tab in the left sidebar (Properties vs. Equations). Persistence
+    /// is in-memory only — defaults to `Properties` on startup.
+    pub property_panel_tab: PropertyPanelTab,
     // ── Help dialog ─────────────────────────────────────────────────
     /// Whether the keyboard shortcuts help window is open.
     pub show_shortcuts: bool,
@@ -552,6 +558,7 @@ impl Default for AppState {
             show_forces: true,
             show_dimensions: true,
             show_labels: true,
+            show_equation_overlay: false,
             gravity_magnitude: 9.81,
             mounting_angle: 0.0,
             load_cases: LoadCaseManager::default(),
@@ -600,6 +607,7 @@ impl Default for AppState {
             expr_ddot_buf: String::new(),
             expr_error: None,
             link_editor_body: None,
+            property_panel_tab: PropertyPanelTab::default(),
             show_shortcuts: false,
             autosave_timer: 0.0,
             last_save_path: None,
