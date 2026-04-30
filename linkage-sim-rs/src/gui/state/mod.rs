@@ -388,6 +388,12 @@ pub struct AppState {
     // ── Trajectory mode ──────────────────────────────────────────────
     /// Severity for the active trajectory analysis.
     pub trajectory_severity: crate::solver::inverse_kinematics::Severity,
+    /// Active sweep mode (Angle, Stroke, or Trajectory). The Angle/Stroke
+    /// variants drive `compute_sweep` via the existing auto-detect path
+    /// (which still re-derives mode from `mech.n_linear_drivers()`); the
+    /// Trajectory variant is the source of truth for the input panel,
+    /// which delegates to `gui::trajectory_panel::draw` when active.
+    pub sweep_mode: crate::gui::sweep::SweepMode,
 }
 
 /// Background image overlay for tracing mechanisms from photos/sketches.
@@ -622,6 +628,7 @@ impl Default for AppState {
             actuator_rated_force: 0.0,
             motion_profile: MotionProfile::default(),
             trajectory_severity: crate::solver::inverse_kinematics::Severity::Analysis,
+            sweep_mode: crate::gui::sweep::SweepMode::Angle,
         };
         state.rebuild();
         state

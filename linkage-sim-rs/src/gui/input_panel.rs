@@ -1,8 +1,10 @@
 //! Angle slider, playback controls, load case selector, and solver status display.
 
 use eframe::egui;
-use super::state::{AppState, DriverKind, MotionProfile};
+use super::state::{AppState, DriverKind, MotionProfile, TrajectoryProfile};
+use super::sweep::SweepMode;
 use crate::io::DriverJson;
+use crate::solver::inverse_kinematics::ControlTarget;
 
 
 /// Draw the input panel with animation controls and load case management.
@@ -12,6 +14,17 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
     }
 
     ui.separator();
+
+    // ── Sweep mode dropdown ───────────────────────────────────────────
+    // Lets the user pick between angle/stroke kinematic sweeps and
+    // trajectory (inverse-kinematics) analysis. When Trajectory is
+    // active the rest of the panel is delegated to `trajectory_panel`.
+    draw_sweep_mode_dropdown(ui, state);
+
+    if matches!(state.sweep_mode, SweepMode::Trajectory { .. }) {
+        super::trajectory_panel::draw(state, ui);
+        return;
+    }
 
     // Revolute / no-driver: show the Crank Angle slider + sweep range.
     // Linear: show a parallel Actuator Stroke section instead.
@@ -239,6 +252,78 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
         .show(ui, |ui| {
             draw_simulation_controls(ui, state);
         });
+}
+
+/// Draw the sweep-mode dropdown (Angle / Stroke / Trajectory).
+///
+/// The Angle and Stroke variants are conventional kinematic sweeps; their
+/// payload is empty so `selectable_value` works directly. The Trajectory
+/// variant carries a `ControlTarget`, profile, severity, and sample count;
+/// it can't be compared by `selectable_value` cheaply, so we use
+/// `selectable_label` and replace the variant on click while preserving
+/// any in-progress trajectory configuration when re-selecting.
+fn draw_sweep_mode_dropdown(ui: &mut egui::Ui, state: &mut AppState) {
+    ui.horizontal(|ui| {
+        ui.label("Sweep mode:");
+        let selected_text = match &state.sweep_mode {
+            SweepMode::Angle => "Angle",
+            SweepMode::Stroke => "Stroke",
+            SweepMode::Trajectory { .. } => "Trajectory",
+        };
+        egui::ComboBox::from_id_salt("sweep_mode_selector")
+            .selected_text(selected_text)
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut state.sweep_mode, SweepMode::Angle, "Angle")
+                    .on_hover_text(
+                        "Kinematic sweep over the driver crank angle (revolute drivers).",
+                    );
+                ui.selectable_value(&mut state.sweep_mode, SweepMode::Stroke, "Stroke")
+                    .on_hover_text(
+                        "Kinematic sweep over actuator stroke (linear drivers).",
+                    );
+                let is_traj = state.sweep_mode.is_trajectory();
+                if ui
+                    .selectable_label(is_traj, "Trajectory")
+                    .on_hover_text(
+                        "Inverse trajectory analysis: prescribe an output observable \
+                         h(t) and back-solve the actuator input u(t).",
+                    )
+                    .clicked()
+                    && !is_traj
+                {
+                    // Construct a default Trajectory mode. ControlTarget::angle
+                    // defaults to the non-ground body of the driver pair if
+                    // known (avoids a panic when no body is literally named
+                    // "crank"). `driver_body_pair()` returns (body_i, body_j)
+                    // in driver-construction order, so we pick whichever side
+                    // isn't ground.
+                    let default_target_body = state
+                        .mechanism
+                        .as_ref()
+                        .and_then(|m| {
+                            m.driver_body_pair().map(|(a, b)| {
+                                if a == crate::core::state::GROUND_ID {
+                                    b.to_string()
+                                } else {
+                                    a.to_string()
+                                }
+                            })
+                        })
+                        .unwrap_or_else(|| "crank".to_string());
+                    state.sweep_mode = SweepMode::Trajectory {
+                        target: ControlTarget::angle(default_target_body),
+                        profile: TrajectoryProfile {
+                            shape: MotionProfile::ConstantSpeed,
+                            start_value: 0.0,
+                            end_value: 1.0,
+                            duration: 1.0,
+                        },
+                        severity: state.trajectory_severity,
+                        n_samples: 200,
+                    };
+                }
+            });
+    });
 }
 
 /// Actuator Stroke slider + stroke sweep range for linear drivers.

@@ -16,7 +16,6 @@ use crate::gui::state::AppState;
 
 /// Render the trajectory input panel. Called from `gui/input_panel.rs` when
 /// `SweepMode::Trajectory` is active.
-#[allow(dead_code)]
 pub fn draw(state: &mut AppState, ui: &mut egui::Ui) {
     egui::CollapsingHeader::new("Target observable")
         .default_open(true)
