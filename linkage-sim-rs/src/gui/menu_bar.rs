@@ -256,6 +256,33 @@ pub(crate) fn draw_menu_bar(
                             }
                             ui.close();
                         }
+                        // ── Firmware export (trajectory mode only) ──────────────
+                        // Only show when a trajectory has been computed; the
+                        // adapter trait is shared with planned G-code/Aerotech/
+                        // Beckhoff/Galil follow-ups (see export/firmware/mod.rs).
+                        let in_traj_mode = state
+                            .sweep_data
+                            .as_ref()
+                            .map(|d| matches!(d.sweep_mode, crate::gui::sweep::SweepMode::Trajectory { .. }))
+                            .unwrap_or(false);
+                        if in_traj_mode
+                            && ui
+                                .button("Export firmware (JSON)...")
+                                .on_hover_text(
+                                    "Export the trajectory as a firmware-friendly JSON \
+                                     document for downstream actuator controllers.",
+                                )
+                                .clicked()
+                        {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("JSON", &["json"])
+                                .set_file_name("trajectory_firmware.json")
+                                .save_file()
+                            {
+                                export_firmware_json(state, &path);
+                            }
+                            ui.close();
+                        }
                         if ui
                             .add_enabled(
                                 state.mechanism.is_some(),
@@ -700,4 +727,68 @@ pub(crate) fn draw_sample_menu(
         }
     }
         }); // end ScrollArea
+}
+
+/// Trajectory-mode JSON firmware export. Reads the active `SweepMode::Trajectory`'s
+/// target + trajectory + driver-kind units from `state` and dispatches to
+/// `JsonAdapter`. Any failure is surfaced via `error_log` + `show_error_panel`;
+/// success sets a transient status message.
+#[cfg(feature = "native")]
+fn export_firmware_json(state: &mut AppState, path: &std::path::Path) {
+    use crate::gui::export::firmware::{FirmwareAdapter, JsonAdapter};
+    use crate::gui::state::DriverKind;
+    use crate::gui::sweep::SweepMode;
+
+    // Pull (target, trajectory) from the active sweep_mode living in the
+    // SweepData itself — that mirrors what `compute_trajectory` was last
+    // invoked with and avoids assuming `state.sweep_mode` is in lockstep.
+    let Some(data) = state.sweep_data.as_ref() else {
+        state
+            .error_log
+            .push("Firmware export: no sweep data available".to_string());
+        state.show_error_panel = true;
+        return;
+    };
+    let SweepMode::Trajectory {
+        target, trajectory, ..
+    } = &data.sweep_mode
+    else {
+        state
+            .error_log
+            .push("Firmware export: not in Trajectory mode".to_string());
+        state.show_error_panel = true;
+        return;
+    };
+
+    // Input parameter units follow the active driver kind: revolute → rad,
+    // linear → m. None falls back to "rad" (matches the historical default
+    // when no driver is bound; the trajectory solve still uses the body-angle
+    // input parameter in that case).
+    let input_units = match state.driver_kind {
+        DriverKind::Linear { .. } => "m",
+        DriverKind::Revolute { .. } | DriverKind::None => "rad",
+    };
+
+    let adapter = JsonAdapter;
+    match adapter.emit(data, target, trajectory, input_units) {
+        Ok(json_str) => match std::fs::write(path, json_str) {
+            Ok(()) => {
+                state.status_message =
+                    Some(format!("Firmware JSON exported: {}", path.display()));
+                state.status_message_time = 3.0;
+            }
+            Err(e) => {
+                state
+                    .error_log
+                    .push(format!("Firmware export write failed: {}", e));
+                state.show_error_panel = true;
+            }
+        },
+        Err(e) => {
+            state
+                .error_log
+                .push(format!("Firmware export failed: {}", e));
+            state.show_error_panel = true;
+        }
+    }
 }

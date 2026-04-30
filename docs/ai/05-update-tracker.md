@@ -5,6 +5,52 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-29 — feat(traj): JSON firmware export adapter
+
+**What:** Added a `FirmwareAdapter` trait and a concrete `JsonAdapter` under
+`linkage-sim-rs/src/gui/export/firmware/`. The adapter consumes a
+post-`compute_trajectory` `SweepData` plus the active `ControlTarget`,
+`Trajectory`, and input-parameter unit label and emits a versioned JSON
+envelope (`schema_version = "linkage-traj-firmware-v1"`) with metadata
+(`target_kind`, `target_units`, `input_units`, `n_samples`,
+`duration_seconds`) and an array of per-sample objects (`t`, `target`,
+`achieved`, `residual`, `u`, `u_dot`, `u_ddot`, `f_actuator_n`, `status`).
+
+NaN/non-finite actuator forces serialize as JSON `null` via
+`Option::filter(|x| x.is_finite())` so consumers see a clean sentinel
+instead of an invalid `NaN` token. Solver failure modes carry diagnostic
+detail in the `status` string (`"Reachability: target=… clamped=…"`,
+`"Singularity: dg_du=…"`, `"BranchJump: norm=…"`,
+`"NonConvergent: iter=… residual=…"`).
+
+A new "Export firmware (JSON)..." entry appears in the File menu only when
+the cached sweep is in `SweepMode::Trajectory`. The wrapper picks
+`input_units` from `state.driver_kind` (revolute → `"rad"`, linear →
+`"m"`, none → `"rad"` fallback) and surfaces failures via `error_log` /
+`show_error_panel`; success sets a transient status message.
+
+**Why:** Resolves the v3 firmware adapter open question in
+`04-memory.yaml`. JSON is the v1 universal target — easy to consume from
+any language, schema-versioned for forward compatibility. G-code, Aerotech
+AeroBasic, Beckhoff TwinCAT NC PTP, and Galil DMC are planned ~150-LoC
+follow-ups behind the same `FirmwareAdapter` trait, implemented on demand
+once a hardware target is selected.
+
+**Touched files:**
+- `linkage-sim-rs/src/gui/export/firmware/mod.rs` — new: `FirmwareAdapter` trait + re-exports
+- `linkage-sim-rs/src/gui/export/firmware/json.rs` — new: `JsonAdapter`, `FirmwareJsonEnvelope`, `FirmwareJsonSample`, schema constant + 3 unit tests
+- `linkage-sim-rs/src/gui/export/mod.rs` — `pub mod firmware;`
+- `linkage-sim-rs/src/gui/menu_bar.rs` — "Export firmware (JSON)..." menu entry + `export_firmware_json` helper
+- `docs/ai/04-memory.yaml` — closed v3 firmware adapter open question
+- `docs/ai/05-update-tracker.md` — this entry
+
+**Test results:** 628 lib tests pass (625 baseline + 3 firmware adapter
+tests: round-trip parse, NaN-actuator-force filter, empty-data rejection).
+Build clean for `--features native`. Pre-existing `dirs`-crate errors in
+non-native builds are unrelated to this change.
+
+---
+
 ## 2026-04-29 — feat(traj): keyframe trajectory input + CSV import
 
 **What:** Added a `Trajectory` enum with two variants — `Profile` (existing

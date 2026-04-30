@@ -6,10 +6,12 @@ active_issues: []
 
 open_questions:
   - |
-    Trajectory v3: hardware-controller-specific export adapter. v1 emits a
-    superset CSV intended for downstream subsetting. A hardware adapter (e.g.
-    Aerotech, Galil, Beckhoff) is a thin format-conversion layer on top once
-    a target controller is selected.
+    Trajectory v3 firmware adapters: JSON is the v1 default (resolved
+    2026-04-29 — `gui/export/firmware/json.rs`, see 05-update-tracker). The
+    hardware-specific follow-ups (G-code, Aerotech AeroBasic, Beckhoff
+    TwinCAT NC PTP, Galil DMC) are each ~150 LoC behind the same
+    `FirmwareAdapter` trait — implement on demand once a target controller
+    is selected.
 
   - |
     Trajectory: analytic acceleration inverse. v1 uses finite differences for

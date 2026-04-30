@@ -1,8 +1,10 @@
 //! Export functionality: CSV sweep data, coupler traces, SVG/PNG/GIF images,
-//! DXF geometry, and HTML analysis reports.
+//! DXF geometry, HTML analysis reports, and firmware-friendly trajectory
+//! command streams (JSON v1; G-code/Aerotech/Beckhoff/Galil planned).
 
 mod csv;
 mod dxf;
+pub mod firmware;
 mod raster;
 mod report;
 mod svg;
