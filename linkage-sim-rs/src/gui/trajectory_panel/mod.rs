@@ -13,6 +13,7 @@ mod target_picker;
 use eframe::egui;
 
 use crate::gui::state::AppState;
+use crate::gui::sweep::SweepMode;
 
 /// Render the trajectory input panel. Called from `gui/input_panel.rs` when
 /// `SweepMode::Trajectory` is active.
@@ -47,5 +48,13 @@ fn draw_severity_toggle(state: &mut AppState, ui: &mut egui::Ui) {
     });
     if new != current {
         state.trajectory_severity = new;
+        // Sync into the active SweepMode::Trajectory payload so the next
+        // compute_sweep picks up the change. Without this, the radio appears
+        // effective but doesn't reach compute_trajectory until a separate
+        // dirty-trigger fires.
+        if let SweepMode::Trajectory { severity, .. } = &mut state.sweep_mode {
+            *severity = new;
+        }
+        state.mark_sweep_dirty();
     }
 }
