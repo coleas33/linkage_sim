@@ -5,6 +5,70 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-05-01 — docs + UX: trajectory mode walkthrough
+
+**What:**
+- New `docs/guides/TRAJECTORY_MODE.md` walkthrough — concept, when-to-use,
+  5-minute quick-start on the canonical 4-Bar Crank-Rocker, plot reading,
+  failure modes (R/S/B/N glyphs), profile selection, correctness
+  verification recipe, advanced features (comparison overlay, motion
+  ribbon, playback, exports), and a troubleshooting table.
+- Linked from `README.md` doc index.
+- One-line UX fix in `gui/mod.rs`: switching `Sweep mode → Trajectory`
+  now calls `mark_sweep_dirty()` so the trajectory plot populates
+  immediately instead of leaving the user staring at "No trajectory
+  data yet" until they hunt for the Compute button.
+- New regression test `compute_trajectory_world_x_target_tracks_target`:
+  drives WorldX of crank.B along a constant-speed profile from 0.005
+  to 0.009 m, asserts achieved tracks target within 1e-6 and the per-
+  sample pose snapshot's θ_crank satisfies the inverse identity
+  `x = 0.01·cos(θ)`. Complements the existing trivial-Angle test by
+  exercising the Newton outer loop on a non-linear u→h relationship.
+
+**Why:** User feedback was "not obvious how to use it." Three things
+needed to land together: (1) a real walkthrough that explains *why*
+trajectory mode exists vs. forward sweep, (2) an in-app cue that
+trajectory data appears immediately on mode switch, and (3) a
+regression test that pins correctness on a non-trivial target so
+future refactors don't silently break the inverse solve.
+
+**Test results:** 669 lib tests pass (was 668 + 1 new). Native + WASM
+both compile clean.
+
+---
+
+## 2026-05-01 — fix(build): exhaustive cfg gating for `--no-default-features`
+
+**What:** Inline audit of the recent web-pass commits caught two
+configurations where cfg gates were not exhaustive across
+`(feature = "native") × (target_arch = "wasm32")`:
+
+1. `gui/export/download.rs::download_bytes_impl` had only the
+   `feature = "native"` and `target_arch = "wasm32"` arms; a
+   `--no-default-features` native build hit an unresolved symbol from
+   the public caller. Added a third fallback arm returning
+   `DownloadOutcome::Failed`.
+2. `gui/state/templates.rs` gated the `dirs::home_dir()`-using
+   functions (templates_dir, persist_*, remove_persisted_*,
+   load_*_native) by `not(target_arch = "wasm32")` but `dirs` is in
+   the `native` feature flag. Same shape of bug — `--no-default-features`
+   native build had unresolved `dirs` crate. Switched to
+   `feature = "native"` and added no-op fallbacks for the persist /
+   remove methods so the ungated entry points (save_as_template,
+   delete_template, save_as_custom_sample, delete_custom_sample) still
+   link. The `load_saved_*` dispatchers got tri-state cfgs returning
+   empty `Vec` for the unsupported configuration.
+
+**Why:** The `chrono_now` panic on wasm32 (e7006ec) was the same shape
+of bug — un-gated APIs that don't compile in every supported
+configuration. Audit widened the verification to all four build
+configurations: native default, native --no-default-features, wasm
+default, wasm + raster. All now compile clean.
+
+**Test results:** 668 lib tests pass.
+
+---
+
 ## 2026-04-30 — feat(web): recent mechanisms list (Pass 4)
 
 **What:** Added a 5-entry localStorage-backed ring buffer that captures

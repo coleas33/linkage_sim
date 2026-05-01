@@ -647,6 +647,12 @@ impl eframe::App for LinkageApp {
                                 severity: self.state.trajectory_severity,
                                 n_samples: 200,
                             };
+                            // Trigger an initial compute so the user sees a populated
+                            // plot the moment they enter Trajectory mode, instead of
+                            // having to hunt for the Compute button. The default Angle-
+                            // on-driven-body target is the trivial dg/du=1 case that
+                            // always works, so the auto-compute is safe.
+                            self.state.mark_sweep_dirty();
                         }
                     });
 

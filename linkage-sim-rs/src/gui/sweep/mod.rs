@@ -1783,4 +1783,118 @@ mod tests {
             );
         }
     }
+
+    /// Non-trivial correctness check: drive WorldX of crank.B along a
+    /// constant-speed profile and verify achieved tracks target. This
+    /// goes through the full Newton outer loop (not the trivial dg/du=1
+    /// case that compute_trajectory_populates_all_trajectory_fields
+    /// covers), so it validates the inverse-position solve end-to-end on
+    /// a target where the relationship between u and h is non-linear.
+    ///
+    /// The canonical 4-bar's crank is 0.01 m long and pivots at (0, 0),
+    /// so crank.B traces a circle of radius 0.01. WorldX of crank.B is
+    /// 0.01·cos(θ_crank), which is reachable for any |x| ≤ 0.01 m.
+    /// Driving x from 0.005 → 0.009 m means θ_crank goes from π/3 →
+    /// arccos(0.9) ≈ 0.451 rad — well-conditioned the whole way.
+    #[test]
+    fn compute_trajectory_world_x_target_tracks_target() {
+        use crate::solver::inverse_kinematics::test_helpers::{build_fourbar, solve_at};
+        use crate::solver::inverse_kinematics::{
+            ControlTarget, InverseSolveStatus, Severity,
+        };
+        use std::f64::consts::PI;
+
+        let mech = build_fourbar();
+        // Seed at θ_crank = π/3 (where target starts) so the Newton outer
+        // loop has a sensible warm-start.
+        let q0 = solve_at(&mech, PI / 3.0 / (2.0 * PI));
+
+        let target = ControlTarget::WorldX {
+            body_id: "crank".to_string(),
+            local_pt: [0.01, 0.0],
+        };
+        let profile = TrajectoryProfile {
+            shape: MotionProfile::ConstantSpeed,
+            start_value: 0.005,
+            end_value: 0.009,
+            duration: 1.0,
+        };
+        let trajectory = Trajectory::Profile(profile);
+        let n_samples = 25;
+
+        let mode = SweepMode::Trajectory {
+            target: target.clone(),
+            trajectory: trajectory.clone(),
+            severity: Severity::Analysis,
+            n_samples,
+        };
+        let mut data = super::empty_trajectory_sweep_data(mode);
+
+        compute_trajectory(
+            &mech,
+            &q0,
+            &target,
+            &trajectory,
+            Severity::Analysis,
+            n_samples,
+            2.0 * PI, // nominal_rate (rad/s) for time-axis scaling
+            PI / 3.0, // u_0 — initial guess for crank angle
+            (0.0, 2.0 * PI),
+            9.81,
+            &mut data,
+        )
+        .expect("compute_trajectory should succeed for a fully reachable WorldX trajectory");
+
+        let targets = data.target_values.as_ref().unwrap();
+        let achieved = data.achieved_values.as_ref().unwrap();
+        let statuses = data.inverse_solve_statuses.as_ref().unwrap();
+
+        // Every sample should have converged for this fully-reachable
+        // trajectory, and achieved should track target within the
+        // outer-loop tolerance (1e-8 spec; 1e-6 here for headroom).
+        for k in 0..n_samples {
+            assert!(
+                matches!(statuses[k], InverseSolveStatus::Converged),
+                "sample {} should converge; got {:?}",
+                k,
+                statuses[k]
+            );
+            assert!(
+                (achieved[k] - targets[k]).abs() < 1e-6,
+                "sample {} achieved {:.9} vs target {:.9} — outer loop did not track",
+                k,
+                achieved[k],
+                targets[k]
+            );
+        }
+
+        // Boundary samples should hit the prescribed start / end.
+        assert!((targets[0] - 0.005).abs() < 1e-12);
+        assert!((targets[n_samples - 1] - 0.009).abs() < 1e-12);
+
+        // Pose snapshot should record θ_crank consistent with the
+        // back-solved x: x = 0.01·cos(θ). The solver may settle on the
+        // positive or negative branch (cos is even), so we check the
+        // identity x = 0.01·cos(θ) rather than θ = arccos(x/0.01).
+        // Non-driver-row check, complementing the directly-driven
+        // Angle-target test above.
+        let pose_order = data.pose_body_order.as_ref().unwrap();
+        let crank_idx = pose_order
+            .iter()
+            .position(|b| b == "crank")
+            .expect("crank in body order");
+        let pose_snaps = data.pose_snapshots.as_ref().unwrap();
+        for k in 0..n_samples {
+            let theta_crank = pose_snaps[k][crank_idx][2];
+            let x_from_pose = 0.01 * theta_crank.cos();
+            assert!(
+                (x_from_pose - targets[k]).abs() < 1e-6,
+                "sample {} pose θ_crank = {:.6} → x = {:.9}, target = {:.9}",
+                k,
+                theta_crank,
+                x_from_pose,
+                targets[k]
+            );
+        }
+    }
 }

@@ -71,6 +71,7 @@ The simulator is built on four foundational decisions documented in detail in `d
 | `docs/guides/SAMPLES.md` | Built-in sample mechanisms and their properties |
 | `docs/guides/SHORTCUTS.md` | Keyboard and mouse shortcuts reference |
 | `docs/guides/PARAMETRIC_STUDIES.md` | How to run parametric sweeps and compare results |
+| `docs/guides/TRAJECTORY_MODE.md` | Inverse position-control walkthrough: prescribe an output observable h(t), back-solve the actuator command u(t) |
 | `docs/guides/WASM_DEPLOYMENT.md` | Building and deploying the web (WASM) version |
 
 ### Reference
