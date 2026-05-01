@@ -408,13 +408,23 @@ fn add_plotly_multi_chart(
     html.push_str("</script>\n");
 }
 
-/// Get current timestamp as a formatted string.
+/// Get current timestamp as a formatted string. Native uses
+/// `std::time::SystemTime`; wasm32 uses `js_sys::Date::now()` because
+/// `SystemTime::now()` panics with "time not implemented on this platform"
+/// on `wasm32-unknown-unknown`.
+#[cfg(not(target_arch = "wasm32"))]
 fn chrono_now() -> String {
     use std::time::SystemTime;
     let now = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
+    format_unix_timestamp(now)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn chrono_now() -> String {
+    let now = (js_sys::Date::now() / 1000.0) as u64;
     format_unix_timestamp(now)
 }
 
