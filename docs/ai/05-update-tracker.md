@@ -5,6 +5,40 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-30 — feat(web): recent mechanisms list (Pass 4)
+
+**What:** Added a 5-entry localStorage-backed ring buffer that captures
+mechanism JSON snapshots when the user drag-and-drops a JSON or clicks
+"Download JSON…". Surfaced as a "Recent Mechanisms" submenu under
+File (web only) — clicking an entry restores it without re-dragging.
+
+Storage key: `linkage_recent_mechanisms` (single localStorage entry,
+JSON array of `(name, json_text, unix_secs)` tuples). New helpers
+`AppState::wasm_push_recent_mechanism` and
+`AppState::wasm_load_recent_mechanisms`. `format_relative_time` in
+menu_bar.rs renders the timestamp as "5 min ago" / "2 hr ago" /
+"3 days ago".
+
+**Why:** Native has a Recent Files list; web didn't, so a user closing
+the tab and reopening lost their session even with autosave (autosave
+holds only the most recent state, not history). The ring buffer is the
+web-equivalent of native's recent paths — paths don't translate to web,
+so we store full JSON snapshots instead. Bounded to 5 entries to stay
+under typical localStorage quotas.
+
+**Discovery during work:** Most other "missing" persistence features
+(Saved Templates, Custom Samples, Autosave) already had full
+localStorage backings on WASM and just weren't documented as such.
+Verified Save as Template / Manage Templates menu items show on web
+and autosave-recovery prompt fires on startup. The web persistence
+story is now complete.
+
+**Test results:** 668 lib tests pass (no new tests; `js_sys::Date` is
+WASM-only so the helpers can't be exercised under `cargo test`).
+Native + WASM both compile clean.
+
+---
+
 ## 2026-04-30 — feat(web): drag-and-drop imports for JSON + CSV (Pass 3)
 
 **What:** Extended the existing drag-and-drop handler in

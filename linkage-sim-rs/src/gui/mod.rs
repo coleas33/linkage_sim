@@ -117,6 +117,20 @@ impl eframe::App for LinkageApp {
                     match std::str::from_utf8(bytes) {
                         Ok(text) => match self.state.load_from_json_str(text) {
                             Ok(()) => {
+                                // On web, push to the recent-mechanisms ring
+                                // so the user can re-open without re-dragging.
+                                #[cfg(target_arch = "wasm32")]
+                                {
+                                    let display_name = if name.is_empty() {
+                                        "dropped"
+                                    } else {
+                                        name
+                                    };
+                                    crate::gui::state::AppState::wasm_push_recent_mechanism(
+                                        display_name,
+                                        text,
+                                    );
+                                }
                                 self.state.status_message = Some(format!(
                                     "Loaded mechanism: {} (drag & drop)",
                                     name

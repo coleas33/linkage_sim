@@ -227,6 +227,13 @@ pub(crate) fn draw_menu_bar(
                         {
                             match state.serialize_to_json_string() {
                                 Ok(json) => {
+                                    // Push to recent before downloading so the
+                                    // user can recover even if they don't keep
+                                    // the downloaded file.
+                                    crate::gui::state::AppState::wasm_push_recent_mechanism(
+                                        "downloaded",
+                                        &json,
+                                    );
                                     let outcome = export::download::download_text(
                                         "mechanism.json",
                                         "application/json",
@@ -246,6 +253,40 @@ pub(crate) fn draw_menu_bar(
                                 }
                             }
                             ui.close();
+                        }
+                        if !crate::gui::state::AppState::wasm_load_recent_mechanisms().is_empty() {
+                            let recent_resp = ui.menu_button("Recent Mechanisms", |ui| {
+                                let entries =
+                                    crate::gui::state::AppState::wasm_load_recent_mechanisms();
+                                let mut load_json: Option<String> = None;
+                                for (name, json, ts) in &entries {
+                                    let label = format!(
+                                        "{}  ({})",
+                                        name,
+                                        format_relative_time(*ts)
+                                    );
+                                    if ui.button(&label).on_hover_text(name).clicked() {
+                                        load_json = Some(json.clone());
+                                        ui.close();
+                                    }
+                                }
+                                if let Some(json) = load_json {
+                                    if let Err(e) = state.load_from_json_str(&json) {
+                                        state.error_log.push(format!(
+                                            "Failed to load recent mechanism: {}",
+                                            e
+                                        ));
+                                        state.show_error_panel = true;
+                                    } else {
+                                        state.status_message =
+                                            Some("Loaded recent mechanism".to_string());
+                                        state.status_message_time = 3.0;
+                                    }
+                                }
+                            });
+                            recent_resp
+                                .response
+                                .on_hover_text("Recently loaded or saved mechanisms");
                         }
                     }
                     ui.separator();
@@ -925,5 +966,22 @@ fn apply_download_outcome(
             state.error_log.push(msg);
             state.show_error_panel = true;
         }
+    }
+}
+
+/// Format a Unix timestamp as a coarse "X ago" string for the recent-
+/// mechanisms list. Anything older than 24h shows the absolute date.
+#[cfg(target_arch = "wasm32")]
+fn format_relative_time(ts: u64) -> String {
+    let now = (js_sys::Date::now() / 1000.0) as u64;
+    let delta = now.saturating_sub(ts);
+    if delta < 60 {
+        "just now".to_string()
+    } else if delta < 3600 {
+        format!("{} min ago", delta / 60)
+    } else if delta < 86_400 {
+        format!("{} hr ago", delta / 3600)
+    } else {
+        format!("{} days ago", delta / 86_400)
     }
 }

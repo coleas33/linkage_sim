@@ -542,6 +542,60 @@ impl AppState {
             .map(|s| !s.is_empty())
             .unwrap_or(false)
     }
+
+    // ── Recent mechanisms (WASM, ring buffer in localStorage) ────────
+    //
+    // The native "Recent Files" list stores file paths. On web there
+    // are no paths to remember (drag-and-drop yields a filename and
+    // bytes, not a re-openable path), so the web equivalent is a small
+    // ring buffer of full JSON snapshots keyed by name + timestamp.
+    // Click → restore.
+    //
+    // Storage layout: a single localStorage entry under the key
+    // `linkage_recent_mechanisms` containing a JSON array of entries.
+    // Capped at 5 entries to keep the localStorage budget small (each
+    // mechanism JSON is typically a few KB; 5 × few-KB is comfortable).
+
+    /// Push a mechanism snapshot onto the WASM "recent mechanisms" ring.
+    /// De-duplicates by `name` (newer wins, kept at the front).
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn wasm_push_recent_mechanism(name: &str, json: &str) {
+        const MAX_RECENT: usize = 5;
+        let mut entries = Self::wasm_load_recent_mechanisms();
+        entries.retain(|(n, _, _)| n != name);
+        entries.insert(0, (name.to_string(), json.to_string(), wasm_now_secs()));
+        entries.truncate(MAX_RECENT);
+        if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+            // Serialize as a JSON array of three-tuples; failure is
+            // logged-and-skipped (recent list is best-effort UX).
+            if let Ok(s) = serde_json::to_string(&entries) {
+                let _ = storage.set_item("linkage_recent_mechanisms", &s);
+            }
+        }
+    }
+
+    /// Load the WASM "recent mechanisms" ring (newest first). Returns
+    /// `(name, json, unix_secs)` triples — empty Vec on any failure
+    /// (no localStorage / corrupted JSON / etc).
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn wasm_load_recent_mechanisms() -> Vec<(String, String, u64)> {
+        let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+        else {
+            return Vec::new();
+        };
+        let Ok(Some(s)) = storage.get_item("linkage_recent_mechanisms") else {
+            return Vec::new();
+        };
+        serde_json::from_str(&s).unwrap_or_default()
+    }
+}
+
+/// Unix-epoch seconds via JS `Date.now()`. Used to timestamp WASM
+/// recent-mechanism entries (`std::time::SystemTime` is not available on
+/// `wasm32-unknown-unknown`).
+#[cfg(target_arch = "wasm32")]
+fn wasm_now_secs() -> u64 {
+    (js_sys::Date::now() / 1000.0) as u64
 }
 
 #[cfg(test)]
