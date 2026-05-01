@@ -135,7 +135,7 @@ impl AppState {
     ///
     /// Includes load cases, mounting angle, and blueprint point masses.
     /// Used by both native file writes and WASM localStorage autosave.
-    fn serialize_to_json_string(&self) -> Result<String, String> {
+    pub(crate) fn serialize_to_json_string(&self) -> Result<String, String> {
         let mech = self
             .mechanism
             .as_ref()

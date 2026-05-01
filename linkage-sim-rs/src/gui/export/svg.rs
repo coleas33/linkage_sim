@@ -1,12 +1,10 @@
 //! SVG generation and file export for mechanism diagrams.
 
-#[cfg(feature = "native")]
 use crate::core::mechanism::Mechanism;
 
 /// Generate the SVG string for a mechanism at its current pose.
 ///
 /// This is the shared core used by both SVG file export and PNG rasterization.
-#[cfg(feature = "native")]
 pub fn generate_svg_string(
     mechanism: &Mechanism,
     q: &nalgebra::DVector<f64>,

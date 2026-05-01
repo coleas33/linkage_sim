@@ -1,11 +1,8 @@
 //! HTML report generation for mechanism analysis summaries.
 
-#[cfg(feature = "native")]
 use crate::core::mechanism::Mechanism;
-#[cfg(feature = "native")]
 use crate::gui::sweep::SweepData;
 
-#[cfg(feature = "native")]
 use super::svg::generate_svg_string;
 
 /// Generate an HTML report summarizing the current mechanism analysis.
@@ -13,7 +10,6 @@ use super::svg::generate_svg_string;
 /// Includes: mechanism diagram (embedded SVG), topology, dimensions, mass
 /// properties, Grashof classification, torque/transmission/reaction envelopes,
 /// force element summary, and energy data.
-#[cfg(feature = "native")]
 pub fn generate_html_report(
     mechanism: &Mechanism,
     q: &nalgebra::DVector<f64>,
@@ -413,7 +409,6 @@ fn add_plotly_multi_chart(
 }
 
 /// Get current timestamp as a formatted string.
-#[cfg(feature = "native")]
 fn chrono_now() -> String {
     use std::time::SystemTime;
     let now = SystemTime::now()
@@ -455,7 +450,6 @@ fn format_unix_timestamp(secs: u64) -> String {
 ///
 /// Sourced from the same `gui::eq_rendering` helpers used by the live panel
 /// (E1) and canvas overlay (E2), so all three views stay in sync.
-#[cfg(feature = "native")]
 fn write_loop_equations_section(
     html: &mut String,
     mechanism: &Mechanism,
@@ -531,7 +525,6 @@ fn write_loop_equations_section(
 /// contain `<` (in `≤`/`≥` they don't, but defensive anyway) and the
 /// driver-meta strings can include arbitrary user expressions, so we escape
 /// the four characters that would break table markup.
-#[cfg(feature = "native")]
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -540,7 +533,6 @@ fn html_escape(s: &str) -> String {
 }
 
 /// Summarize a force element as (type_name, detail_string).
-#[cfg(feature = "native")]
 fn force_element_summary(fe: &crate::forces::elements::ForceElement) -> (&'static str, String) {
     use crate::forces::elements::ForceElement;
     match fe {
@@ -563,7 +555,6 @@ fn force_element_summary(fe: &crate::forces::elements::ForceElement) -> (&'stati
 /// Serialize a `Vec<f64>` to a JSON array string, replacing NaN/Infinity with null.
 ///
 /// Plotly.js handles `null` gracefully (gaps in the trace) but not NaN.
-#[cfg(feature = "native")]
 fn float_vec_to_json(values: &[f64]) -> String {
     let mut buf = String::with_capacity(values.len() * 8 + 2);
     buf.push('[');
@@ -586,7 +577,6 @@ fn float_vec_to_json(values: &[f64]) -> String {
 mod tests {
     use super::*;
 
-    #[cfg(feature = "native")]
     #[test]
     fn generate_html_report_contains_expected_sections() {
         use crate::gui::samples::{build_sample, SampleMechanism};

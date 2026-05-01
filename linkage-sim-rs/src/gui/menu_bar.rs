@@ -213,7 +213,45 @@ pub(crate) fn draw_menu_bar(
                             }
                             ui.close();
                         }
-                        ui.separator();
+                    } // close native-only block (Open / Save / Recent Files)
+                    // ── Web-only Save analog: download the mechanism JSON ──
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        if ui
+                            .add_enabled(
+                                state.mechanism.is_some(),
+                                egui::Button::new("Download JSON..."),
+                            )
+                            .on_hover_text("Download the mechanism JSON to your device")
+                            .clicked()
+                        {
+                            match state.serialize_to_json_string() {
+                                Ok(json) => {
+                                    let outcome = export::download::download_text(
+                                        "mechanism.json",
+                                        "application/json",
+                                        &json,
+                                        export::download::FileFilter {
+                                            label: "JSON",
+                                            extensions: &["json"],
+                                        },
+                                    );
+                                    apply_download_outcome(state, outcome);
+                                }
+                                Err(e) => {
+                                    state
+                                        .error_log
+                                        .push(format!("JSON serialize failed: {}", e));
+                                    state.show_error_panel = true;
+                                }
+                            }
+                            ui.close();
+                        }
+                    }
+                    ui.separator();
+                    // ── Native-only CSV exports (Pass 2 will unify these) ──
+                    #[cfg(feature = "native")]
+                    {
                         if ui
                             .add_enabled(
                                 state.sweep_data.is_some(),
@@ -260,117 +298,183 @@ pub(crate) fn draw_menu_bar(
                             }
                             ui.close();
                         }
-                        // ── Firmware export (trajectory mode only) ──────────────
-                        // Always visible so the feature is discoverable; greyed
-                        // out + tooltip-explained when the active sweep isn't a
-                        // computed trajectory. The adapter trait is shared with
-                        // planned G-code/Aerotech/Beckhoff/Galil follow-ups
-                        // (see export/firmware/mod.rs).
-                        let in_traj_mode = state
-                            .sweep_data
-                            .as_ref()
-                            .map(|d| matches!(d.sweep_mode, crate::gui::sweep::SweepMode::Trajectory { .. }))
-                            .unwrap_or(false);
-                        let firmware_clicked = ui
-                            .add_enabled(
-                                in_traj_mode,
-                                egui::Button::new("Export firmware (JSON)..."),
-                            )
-                            .on_hover_text(if in_traj_mode {
-                                "Export the trajectory as a firmware-friendly JSON \
-                                 document for downstream actuator controllers."
-                            } else {
-                                "Switch to Trajectory mode and click Compute to enable this export."
-                            })
-                            .clicked();
-                        if firmware_clicked {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("JSON", &["json"])
-                                .set_file_name("trajectory_firmware.json")
-                                .save_file()
-                            {
-                                export_firmware_json(state, &path);
+                    }
+                    // ── Unified text exports (native: file dialog, web: download) ──
+                    let in_traj_mode = state
+                        .sweep_data
+                        .as_ref()
+                        .map(|d| {
+                            matches!(d.sweep_mode, crate::gui::sweep::SweepMode::Trajectory { .. })
+                        })
+                        .unwrap_or(false);
+                    if ui
+                        .add_enabled(in_traj_mode, egui::Button::new("Export firmware (JSON)..."))
+                        .on_hover_text(if in_traj_mode {
+                            "Export the trajectory as a firmware-friendly JSON \
+                             document for downstream actuator controllers."
+                        } else {
+                            "Switch to Trajectory mode and click Compute to enable this export."
+                        })
+                        .clicked()
+                    {
+                        match build_firmware_json_string(state) {
+                            Ok(json) => {
+                                let outcome = export::download::download_text(
+                                    "trajectory_firmware.json",
+                                    "application/json",
+                                    &json,
+                                    export::download::FileFilter {
+                                        label: "JSON",
+                                        extensions: &["json"],
+                                    },
+                                );
+                                apply_download_outcome(state, outcome);
                             }
-                            ui.close();
+                            Err(e) => {
+                                state
+                                    .error_log
+                                    .push(format!("Firmware export failed: {}", e));
+                                state.show_error_panel = true;
+                            }
                         }
-                        if ui
-                            .add_enabled(
-                                state.mechanism.is_some(),
-                                egui::Button::new("Export SVG..."),
-                            )
-                            .on_hover_text("Export mechanism as a scalable vector graphic")
-                            .clicked()
-                        {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("SVG", &["svg"])
-                                .set_file_name("mechanism.svg")
-                                .save_file()
-                            {
-                                if let Some(ref mech) = state.mechanism {
-                                    if let Err(e) =
-                                        export::export_mechanism_svg(&path, mech, &state.q)
-                                    {
-                                        log::error!("SVG export failed: {}", e);
-                                    }
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(state.mechanism.is_some(), egui::Button::new("Export SVG..."))
+                        .on_hover_text("Export mechanism as a scalable vector graphic")
+                        .clicked()
+                    {
+                        if let Some(ref mech) = state.mechanism {
+                            match export::generate_svg_string(mech, &state.q) {
+                                Ok(svg) => {
+                                    let outcome = export::download::download_text(
+                                        "mechanism.svg",
+                                        "image/svg+xml",
+                                        &svg,
+                                        export::download::FileFilter {
+                                            label: "SVG",
+                                            extensions: &["svg"],
+                                        },
+                                    );
+                                    apply_download_outcome(state, outcome);
+                                }
+                                Err(e) => {
+                                    state
+                                        .error_log
+                                        .push(format!("SVG generation failed: {}", e));
+                                    state.show_error_panel = true;
                                 }
                             }
-                            ui.close();
                         }
-                        if ui
-                            .add_enabled(
-                                state.mechanism.is_some(),
-                                egui::Button::new("Export labeled schematic (SVG)..."),
-                            )
-                            .on_hover_text(
-                                "Export the current mechanism as an SVG figure with constraint \
-                                 labels — suitable for design docs, papers, and lab reports.",
-                            )
-                            .clicked()
-                        {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("SVG", &["svg"])
-                                .set_file_name("mechanism_schematic.svg")
-                                .save_file()
-                            {
-                                if let Some(ref mech) = state.mechanism {
-                                    match export::schematic::generate_schematic_svg(
-                                        mech,
-                                        &state.q,
-                                    ) {
-                                        Ok(svg) => {
-                                            if let Err(e) = std::fs::write(&path, &svg) {
-                                                log::error!("Schematic write failed: {}", e);
-                                                state.error_log.push(format!(
-                                                    "Schematic export failed: {}",
-                                                    e
-                                                ));
-                                                state.show_error_panel = true;
-                                            } else {
-                                                state.status_message = Some(format!(
-                                                    "Schematic exported: {}",
-                                                    path.display()
-                                                ));
-                                                state.status_message_time = 3.0;
-                                            }
-                                        }
-                                        Err(e) => {
-                                            log::error!("Schematic generation failed: {}", e);
-                                            state.error_log.push(format!(
-                                                "Schematic generation failed: {}",
-                                                e
-                                            ));
-                                            state.show_error_panel = true;
-                                        }
-                                    }
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(
+                            state.mechanism.is_some(),
+                            egui::Button::new("Export labeled schematic (SVG)..."),
+                        )
+                        .on_hover_text(
+                            "Export the current mechanism as an SVG figure with constraint \
+                             labels — suitable for design docs, papers, and lab reports.",
+                        )
+                        .clicked()
+                    {
+                        if let Some(ref mech) = state.mechanism {
+                            match export::schematic::generate_schematic_svg(mech, &state.q) {
+                                Ok(svg) => {
+                                    let outcome = export::download::download_text(
+                                        "mechanism_schematic.svg",
+                                        "image/svg+xml",
+                                        &svg,
+                                        export::download::FileFilter {
+                                            label: "SVG",
+                                            extensions: &["svg"],
+                                        },
+                                    );
+                                    apply_download_outcome(state, outcome);
+                                }
+                                Err(e) => {
+                                    state
+                                        .error_log
+                                        .push(format!("Schematic generation failed: {}", e));
+                                    state.show_error_panel = true;
                                 }
                             }
-                            ui.close();
                         }
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(state.mechanism.is_some(), egui::Button::new("Export DXF..."))
+                        .on_hover_text("Export mechanism geometry as a DXF drawing file")
+                        .clicked()
+                    {
+                        if let Some(ref mech) = state.mechanism {
+                            match export::generate_dxf_string(mech, &state.q) {
+                                Ok(dxf) => {
+                                    let outcome = export::download::download_text(
+                                        "mechanism.dxf",
+                                        "image/vnd.dxf",
+                                        &dxf,
+                                        export::download::FileFilter {
+                                            label: "DXF",
+                                            extensions: &["dxf"],
+                                        },
+                                    );
+                                    apply_download_outcome(state, outcome);
+                                }
+                                Err(e) => {
+                                    state
+                                        .error_log
+                                        .push(format!("DXF generation failed: {}", e));
+                                    state.show_error_panel = true;
+                                }
+                            }
+                        }
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(
+                            state.sweep_data.is_some() && state.mechanism.is_some(),
+                            egui::Button::new("Generate Report (HTML)..."),
+                        )
+                        .on_hover_text("Generate an HTML report with plots and analysis summary")
+                        .clicked()
+                    {
+                        if let (Some(mech), Some(sweep)) = (&state.mechanism, &state.sweep_data) {
+                            match export::generate_html_report(
+                                mech,
+                                &state.q,
+                                sweep,
+                                state.grashof_result.as_ref(),
+                                &state.display_units,
+                            ) {
+                                Ok(html) => {
+                                    let outcome = export::download::download_text(
+                                        "mechanism_report.html",
+                                        "text/html",
+                                        &html,
+                                        export::download::FileFilter {
+                                            label: "HTML",
+                                            extensions: &["html"],
+                                        },
+                                    );
+                                    apply_download_outcome(state, outcome);
+                                }
+                                Err(e) => {
+                                    state
+                                        .error_log
+                                        .push(format!("Report generation failed: {}", e));
+                                    state.show_error_panel = true;
+                                }
+                            }
+                        }
+                        ui.close();
+                    }
+                    // ── Native-only raster exports (Pass 2: WASM raster path) ──
+                    #[cfg(feature = "native")]
+                    {
                         if ui
-                            .add_enabled(
-                                state.mechanism.is_some(),
-                                egui::Button::new("Export PNG..."),
-                            )
+                            .add_enabled(state.mechanism.is_some(), egui::Button::new("Export PNG..."))
                             .on_hover_text("Export mechanism as a PNG image (1920x1080)")
                             .clicked()
                         {
@@ -395,8 +499,7 @@ pub(crate) fn draw_menu_bar(
                         }
                         if ui
                             .add_enabled(
-                                state.sweep_data.is_some()
-                                    && state.mechanism.is_some(),
+                                state.sweep_data.is_some() && state.mechanism.is_some(),
                                 egui::Button::new("Export GIF..."),
                             )
                             .on_hover_text("Export an animated GIF of the full crank cycle")
@@ -428,79 +531,15 @@ pub(crate) fn draw_menu_bar(
                             ui.close();
                         }
                     }
-                    #[cfg(not(feature = "native"))]
+                    // ── DXF overlay clear (cross-platform) ─────────────────
+                    #[cfg(target_arch = "wasm32")]
                     {
                         ui.separator();
                         ui.label("Drag & drop a .dxf file onto the canvas to import CAD geometry");
-                        if state.dxf_overlay.is_some() {
-                            if ui.button("Clear DXF Overlay").clicked() {
-                                state.dxf_overlay = None;
-                                ui.close();
-                            }
-                        }
                     }
-                    #[cfg(feature = "native")]
-                    {
-                        if ui
-                            .add_enabled(
-                                state.mechanism.is_some(),
-                                egui::Button::new("Export DXF..."),
-                            )
-                            .on_hover_text("Export mechanism geometry as a DXF drawing file")
-                            .clicked()
-                        {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("DXF", &["dxf"])
-                                .set_file_name("mechanism.dxf")
-                                .save_file()
-                            {
-                                if let Some(ref mech) = state.mechanism {
-                                    if let Err(e) =
-                                        export::export_mechanism_dxf(&path, mech, &state.q)
-                                    {
-                                        log::error!("DXF export failed: {}", e);
-                                    }
-                                }
-                            }
-                            ui.close();
-                        }
-                        ui.separator();
-                        if ui
-                            .add_enabled(
-                                state.sweep_data.is_some()
-                                    && state.mechanism.is_some(),
-                                egui::Button::new("Generate Report (HTML)..."),
-                            )
-                            .on_hover_text("Generate an HTML report with plots and analysis summary")
-                            .clicked()
-                        {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("HTML", &["html"])
-                                .set_file_name("mechanism_report.html")
-                                .save_file()
-                            {
-                                if let (Some(mech), Some(sweep)) =
-                                    (&state.mechanism, &state.sweep_data)
-                                {
-                                    match export::generate_html_report(
-                                        mech,
-                                        &state.q,
-                                        sweep,
-                                        state.grashof_result.as_ref(),
-                                        &state.display_units,
-                                    ) {
-                                        Ok(html) => {
-                                            if let Err(e) = std::fs::write(&path, &html) {
-                                                log::error!("Report write failed: {}", e);
-                                            } else {
-                                                // Open in browser
-                                                let _ = open::that(&path);
-                                            }
-                                        }
-                                        Err(e) => log::error!("Report generation failed: {}", e),
-                                    }
-                                }
-                            }
+                    if state.dxf_overlay.is_some() {
+                        if ui.button("Clear DXF Overlay").clicked() {
+                            state.dxf_overlay = None;
                             ui.close();
                         }
                     }
@@ -793,63 +832,48 @@ pub(crate) fn draw_sample_menu(
 
 /// Trajectory-mode JSON firmware export. Reads the active `SweepMode::Trajectory`'s
 /// target + trajectory + driver-kind units from `state` and dispatches to
-/// `JsonAdapter`. Any failure is surfaced via `error_log` + `show_error_panel`;
-/// success sets a transient status message.
-#[cfg(feature = "native")]
-fn export_firmware_json(state: &mut AppState, path: &std::path::Path) {
+/// `JsonAdapter`, returning the rendered JSON string. Caller is responsible for
+/// delivering the bytes (native: file write; web: browser download). Errors
+/// describe the missing precondition (no data, wrong sweep mode) so callers
+/// can surface them in the error panel.
+fn build_firmware_json_string(state: &AppState) -> Result<String, String> {
     use crate::gui::export::firmware::{FirmwareAdapter, JsonAdapter};
     use crate::gui::state::DriverKind;
     use crate::gui::sweep::SweepMode;
 
-    // Pull (target, trajectory) from the active sweep_mode living in the
-    // SweepData itself — that mirrors what `compute_trajectory` was last
-    // invoked with and avoids assuming `state.sweep_mode` is in lockstep.
-    let Some(data) = state.sweep_data.as_ref() else {
-        state
-            .error_log
-            .push("Firmware export: no sweep data available".to_string());
-        state.show_error_panel = true;
-        return;
-    };
+    let data = state
+        .sweep_data
+        .as_ref()
+        .ok_or_else(|| "No sweep data available".to_string())?;
     let SweepMode::Trajectory {
         target, trajectory, ..
     } = &data.sweep_mode
     else {
-        state
-            .error_log
-            .push("Firmware export: not in Trajectory mode".to_string());
-        state.show_error_panel = true;
-        return;
+        return Err("Not in Trajectory mode".to_string());
     };
-
-    // Input parameter units follow the active driver kind: revolute → rad,
-    // linear → m. None falls back to "rad" (matches the historical default
-    // when no driver is bound; the trajectory solve still uses the body-angle
-    // input parameter in that case).
     let input_units = match state.driver_kind {
         DriverKind::Linear { .. } => "m",
         DriverKind::Revolute { .. } | DriverKind::None => "rad",
     };
+    JsonAdapter.emit(data, target, trajectory, input_units)
+}
 
-    let adapter = JsonAdapter;
-    match adapter.emit(data, target, trajectory, input_units) {
-        Ok(json_str) => match std::fs::write(path, json_str) {
-            Ok(()) => {
-                state.status_message =
-                    Some(format!("Firmware JSON exported: {}", path.display()));
-                state.status_message_time = 3.0;
-            }
-            Err(e) => {
-                state
-                    .error_log
-                    .push(format!("Firmware export write failed: {}", e));
-                state.show_error_panel = true;
-            }
-        },
-        Err(e) => {
-            state
-                .error_log
-                .push(format!("Firmware export failed: {}", e));
+/// Wire `download::DownloadOutcome` into the AppState's status / error UX.
+fn apply_download_outcome(
+    state: &mut AppState,
+    outcome: crate::gui::export::download::DownloadOutcome,
+) {
+    use crate::gui::export::download::DownloadOutcome;
+    match outcome {
+        DownloadOutcome::Saved(msg) => {
+            state.status_message = Some(msg);
+            state.status_message_time = 3.0;
+        }
+        DownloadOutcome::Cancelled => {
+            // User dismissed the dialog; nothing to surface.
+        }
+        DownloadOutcome::Failed(msg) => {
+            state.error_log.push(msg);
             state.show_error_panel = true;
         }
     }

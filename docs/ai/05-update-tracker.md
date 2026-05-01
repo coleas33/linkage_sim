@@ -5,6 +5,53 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-30 — feat(web): browser-side downloads for text exports (Pass 1)
+
+**What:** Web build can now save files. Added `gui/export/download.rs` with
+`download_text(filename, mime, contents, filter)` that branches by target:
+native opens an `rfd` save dialog and writes bytes; web wraps the contents
+in a `Blob`, mints an `ObjectURL`, programmatically clicks a transient
+`<a download>` anchor, then revokes the URL. Same call site, both
+platforms. Returns a `DownloadOutcome { Saved | Cancelled | Failed }`
+that maps to the AppState status / error-panel UX via `apply_download_outcome`.
+
+Refactored five export buttons in `gui/menu_bar.rs` to route through the
+helper and dropped their `#[cfg(feature = "native")]` gate:
+- Export firmware (JSON) — uses new `build_firmware_json_string`
+- Export SVG — `generate_svg_string`
+- Export labeled schematic SVG — `generate_schematic_svg`
+- Export DXF — `generate_dxf_string`
+- Generate Report (HTML) — `generate_html_report`
+
+Added a web-only "Download JSON…" button as the Save analog (the web
+build has no concept of a "current open file" so Save / Save As stay
+native-only). The associated `serialize_to_json_string` was promoted to
+`pub(crate)`. Made the `*_string` generators platform-independent by
+dropping the over-broad `#[cfg(feature = "native")]` from `report.rs`,
+`schematic.rs`, `svg.rs`, and `dxf.rs` — the gating was historical, the
+function bodies have always been pure-Rust.
+
+Pass 2 (Sweep CSV / Coupler CSV / PNG / GIF / DXF import / Image import
+/ keyframe CSV import) remains native-only. The CSV generators write
+directly to a `Path`; PNG/GIF use native-only crates (resvg, gif).
+
+**Why:** A full month of trajectory work landed exports for the native
+build only. On the deployed web app, every export menu item was either
+absent or non-functional — so the user could compute a beautiful
+trajectory plus pose snapshots and have no way to extract the data.
+Pass 1 lights up the highest-value text exports without touching the
+raster-export code path.
+
+**Test results:** 661 lib tests pass (no new tests; the helper is
+JS-side glue). WASM target compiles clean. Native dev build compiles
+clean.
+
+**Cargo.toml:** Expanded `web-sys` features with `Blob`,
+`BlobPropertyBag`, `HtmlAnchorElement`, `HtmlElement`, `Element`,
+`Document` for the blob-download path.
+
+---
+
 ## 2026-04-29 — feat(traj): trajectory diff overlay (T3)
 
 **What:** Added `AppState::trajectory_comparison: Option<SweepData>` plus

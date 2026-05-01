@@ -19,43 +19,30 @@
 //!      - Totals (n, m, DOF)
 //!      - Multiplier note
 
-#[cfg(feature = "native")]
 use nalgebra::DVector;
 
-#[cfg(feature = "native")]
 use crate::core::constraint::JointConstraint;
-#[cfg(feature = "native")]
 use crate::core::mechanism::Mechanism;
-#[cfg(feature = "native")]
 use crate::core::state::GROUND_ID;
-#[cfg(feature = "native")]
 use crate::gui::eq_rendering;
 
 /// SVG canvas size — matches Figure 2 / Figure 3 in the equations reference doc.
-#[cfg(feature = "native")]
 const SVG_WIDTH: f64 = 600.0;
-#[cfg(feature = "native")]
 const SVG_HEIGHT: f64 = 340.0;
 
 /// Drawing region where the mechanism is rendered (within the SVG canvas).
 /// Leaves room above for the title strip and right-side for the legend.
-#[cfg(feature = "native")]
 const DRAW_X_MIN: f64 = 60.0;
-#[cfg(feature = "native")]
 const DRAW_X_MAX: f64 = 450.0;
-#[cfg(feature = "native")]
 const DRAW_Y_MIN: f64 = 60.0;
-#[cfg(feature = "native")]
 const DRAW_Y_MAX: f64 = 280.0;
 
 /// Tolerance for clustering joints that share a world position (in world units).
-#[cfg(feature = "native")]
 const POSITION_TOLERANCE: f64 = 1e-4;
 
 /// Generate an SVG string showing the mechanism at pose `q` with all
 /// constraint and body labels annotated. The output is a complete `<svg>`
 /// document including viewBox, title, sidebar legend, and labeled geometry.
-#[cfg(feature = "native")]
 pub fn generate_schematic_svg(
     mech: &Mechanism,
     q: &DVector<f64>,
@@ -591,7 +578,6 @@ pub fn generate_schematic_svg(
 
 /// Trim the multi-line full symbolic form down to just the right-hand portion
 /// suitable for a one-line legend entry (e.g. `θ_j − θ_i − (θ₀+ωt) = 0`).
-#[cfg(feature = "native")]
 fn short_driver_form(symbolic: &str, is_revolute: bool) -> String {
     // `symbolic_form` returns strings like "Φ_rd: θ_j − θ_i − (...) = 0  (1 eq)".
     // Strip the prefix and trailing "(1 eq)" annotation.
@@ -614,7 +600,6 @@ fn short_driver_form(symbolic: &str, is_revolute: bool) -> String {
 /// Minimal XML-escape for text node contents. Body and joint IDs in this
 /// codebase are typically alphanumeric, but escape defensively in case a user
 /// chooses an ID with `<`, `>`, `&`, etc.
-#[cfg(feature = "native")]
 fn xml_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -631,7 +616,6 @@ fn xml_escape(s: &str) -> String {
 }
 
 #[cfg(test)]
-#[cfg(feature = "native")]
 mod tests {
     use super::*;
     use crate::core::body::{make_bar, make_ground};

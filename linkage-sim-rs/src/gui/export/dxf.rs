@@ -1,13 +1,11 @@
 //! DXF generation and file export for mechanism geometry.
 
-#[cfg(feature = "native")]
 use crate::core::mechanism::Mechanism;
 
 /// Generate a DXF ASCII string for the mechanism at its current pose.
 ///
 /// Exports: bodies as LINE entities, joints as CIRCLE entities (r=0.002m),
 /// ground pivots as POINT entities. All coordinates in meters.
-#[cfg(feature = "native")]
 pub fn generate_dxf_string(
     mechanism: &Mechanism,
     q: &nalgebra::DVector<f64>,
