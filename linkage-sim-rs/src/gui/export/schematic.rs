@@ -468,6 +468,54 @@ pub fn generate_schematic_svg(
         ));
     }
 
+    // ── 9b. LinearActuator force elements (orange, distinct from drivers)
+    //
+    // Force elements aren't constraints (don't appear in Φ or contribute to
+    // m), but a LinearActuator is visually a hydraulic cylinder + piston
+    // between two body points, same shape as a LinearDriver. Draw it in
+    // orange so the reader doesn't confuse it with a driver constraint;
+    // include the rated force in the label.
+    use crate::forces::elements::ForceElement;
+    for fe in mech.forces() {
+        if let ForceElement::LinearActuator(act) = fe {
+            let local_a = nalgebra::Vector2::new(act.point_a[0], act.point_a[1]);
+            let local_b = nalgebra::Vector2::new(act.point_b[0], act.point_b[1]);
+            let g_a = state.body_point_global(&act.body_a, &local_a, q);
+            let g_b = state.body_point_global(&act.body_b, &local_b, q);
+            let (ax, ay) = to_svg(g_a.x, g_a.y);
+            let (bx, by) = to_svg(g_b.x, g_b.y);
+            // Same cylinder/piston visual as the LinearDriver, in orange.
+            let mid_x = ax + 0.6 * (bx - ax);
+            let mid_y = ay + 0.6 * (by - ay);
+            svg.push_str(&format!(
+                r##"<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="#e08020" stroke-width="6" stroke-linecap="butt"/>
+"##,
+                ax, ay, mid_x, mid_y
+            ));
+            svg.push_str(&format!(
+                r##"<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="#e08020" stroke-width="2.5"/>
+"##,
+                mid_x, mid_y, bx, by
+            ));
+            svg.push_str(&format!(
+                r##"<circle cx="{:.2}" cy="{:.2}" r="4.5" fill="#e08020"/>
+<circle cx="{:.2}" cy="{:.2}" r="4.5" fill="#e08020"/>
+"##,
+                ax, ay, bx, by
+            ));
+            let label = format!("F = {:.1} N", act.force);
+            let label_x = 0.5 * (ax + bx) + 8.0;
+            let label_y = 0.5 * (ay + by) + 14.0;
+            svg.push_str(&format!(
+                r##"<text x="{:.2}" y="{:.2}" font-size="12" font-style="italic" fill="#e08020">{}</text>
+"##,
+                label_x,
+                label_y,
+                xml_escape(&label)
+            ));
+        }
+    }
+
     // ── 10. Sidebar legend ────────────────────────────────────────────────
     let legend_x = 475.0;
     svg.push_str(&format!(
@@ -710,6 +758,17 @@ mod tests {
         // Sample uses J1..J4 + D1.
         assert!(svg.contains("DOF"));
         assert!(svg.contains("D1"));
+        // The ParallelogramActuator sample has a LinearActuator force element.
+        // Verify the schematic now renders it: orange stroke (#e08020) for the
+        // cylinder/piston, and an "F = ... N" label.
+        assert!(
+            svg.contains("#e08020"),
+            "schematic should render LinearActuator force elements in orange"
+        );
+        assert!(
+            svg.contains("F ="),
+            "schematic should label LinearActuator with its rated force"
+        );
     }
 
     #[test]

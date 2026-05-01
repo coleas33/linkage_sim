@@ -209,6 +209,121 @@ pub fn generate_html_report(
         );
     }
 
+    // -- Actuator stroke envelope (length + speed + power) -------------------
+    //
+    // Length and speed come straight from the kinematic sweep (geometric
+    // distance and its time derivative); power = F * dL/dt. Together with
+    // the force envelope above, these are the four numbers a sizing
+    // engineer needs from the report: peak force, peak speed, peak power,
+    // and stroke range. Skip whichever traces aren't populated (they're
+    // None on mechanisms with no LinearActuator force element).
+    if let Some(ref act_lens) = sweep.actuator_lengths {
+        if let Some(env) = compute_envelope(act_lens) {
+            html.push_str("<h2>Actuator Stroke Length</h2>\n");
+            html.push_str("<div class='summary'>\n");
+            // Stroke range = max - min (the actuator's required travel).
+            let stroke_range = env.max_value - env.min_value;
+            html.push_str(&format!(
+                "<div class='card'><h3>Min length</h3><div class='value'>{:.1} mm</div></div>\n",
+                env.min_value * 1000.0
+            ));
+            html.push_str(&format!(
+                "<div class='card'><h3>Max length</h3><div class='value'>{:.1} mm</div></div>\n",
+                env.max_value * 1000.0
+            ));
+            html.push_str(&format!(
+                "<div class='card'><h3>Stroke range</h3><div class='value'>{:.1} mm</div></div>\n",
+                stroke_range * 1000.0
+            ));
+            html.push_str(&format!(
+                "<div class='card'><h3>Mean length</h3><div class='value'>{:.1} mm</div></div>\n",
+                env.mean * 1000.0
+            ));
+            html.push_str("</div>\n");
+        }
+        let angles_json = float_vec_to_json(&sweep.angles_deg);
+        // Convert to mm for the plot — sizing engineers think in mm, not m.
+        let lens_mm: Vec<f64> = act_lens.iter().map(|x| x * 1000.0).collect();
+        let lens_json = float_vec_to_json(&lens_mm);
+        add_plotly_line_chart(
+            &mut html, "actuator_length_plot",
+            "Actuator Length vs Crank Angle",
+            &angles_json, &lens_json,
+            "Actuator Length", "Length (mm)", "#e08020",
+            None,
+        );
+    }
+    if let Some(ref act_speeds) = sweep.actuator_speeds {
+        if let Some(env) = compute_envelope(act_speeds) {
+            html.push_str("<h2>Actuator Speed</h2>\n");
+            html.push_str("<div class='summary'>\n");
+            html.push_str(&format!(
+                "<div class='card'><h3>Peak (abs)</h3><div class='value'>{:.3} m/s</div></div>\n",
+                env.max_value.abs().max(env.min_value.abs())
+            ));
+            html.push_str(&format!(
+                "<div class='card'><h3>RMS</h3><div class='value'>{:.3} m/s</div></div>\n",
+                env.rms
+            ));
+            html.push_str(&format!(
+                "<div class='card'><h3>Min</h3><div class='value'>{:.3} m/s</div></div>\n",
+                env.min_value
+            ));
+            html.push_str(&format!(
+                "<div class='card'><h3>Max</h3><div class='value'>{:.3} m/s</div></div>\n",
+                env.max_value
+            ));
+            html.push_str("</div>\n");
+        }
+        let angles_json = float_vec_to_json(&sweep.angles_deg);
+        let speeds_json = float_vec_to_json(act_speeds);
+        add_plotly_line_chart(
+            &mut html, "actuator_speed_plot",
+            "Actuator Speed (dL/dt) vs Crank Angle",
+            &angles_json, &speeds_json,
+            "Actuator Speed", "Speed (m/s)", "#5555c0",
+            None,
+        );
+    }
+    if let Some(ref act_power) = sweep.actuator_power {
+        if let Some(env) = compute_envelope(act_power) {
+            html.push_str("<h2>Actuator Power</h2>\n");
+            html.push_str("<div class='summary'>\n");
+            html.push_str(&format!(
+                "<div class='card'><h3>Peak (abs)</h3><div class='value'>{:.2} W</div></div>\n",
+                env.max_value.abs().max(env.min_value.abs())
+            ));
+            html.push_str(&format!(
+                "<div class='card'><h3>RMS</h3><div class='value'>{:.2} W</div></div>\n",
+                env.rms
+            ));
+            html.push_str(&format!(
+                "<div class='card'><h3>Min</h3><div class='value'>{:.2} W</div></div>\n",
+                env.min_value
+            ));
+            html.push_str(&format!(
+                "<div class='card'><h3>Max</h3><div class='value'>{:.2} W</div></div>\n",
+                env.max_value
+            ));
+            html.push_str("</div>\n");
+            html.push_str(&format!(
+                "<p>Computed as <code>P = F·(dL/dt)</code> where F is the \
+                 statics-derived actuator force. Inverse-dynamics-corrected \
+                 power (which includes inertial loads) is shown separately if \
+                 a non-zero motion profile was used.</p>\n",
+            ));
+        }
+        let angles_json = float_vec_to_json(&sweep.angles_deg);
+        let power_json = float_vec_to_json(act_power);
+        add_plotly_line_chart(
+            &mut html, "actuator_power_plot",
+            "Required Actuator Power vs Crank Angle",
+            &angles_json, &power_json,
+            "Actuator Power", "Power (W)", "#208060",
+            None,
+        );
+    }
+
     // -- Transmission angle range ---------------------------------------------
     if let Some(ref ta) = sweep.transmission_angles {
         if let Some(env) = compute_envelope(ta) {
@@ -719,8 +834,36 @@ fn write_math_background_section(
     html.push_str(
         "\\[ \\Phi_{\\mathrm{rd}}:\\ \\theta_j - \\theta_i - f(t) = 0,\\quad f(t) = \\theta_0 + \\omega\\,t \\]\n",
     );
+    html.push_str("<p><b>Linear driver</b> (1 eq, \\(\\Phi_{\\mathrm{ld}}\\)):</p>\n");
     html.push_str(
-        "<p>The driver row is the only row that depends on \\(t\\).</p>\n",
+        "\\[ \\Phi_{\\mathrm{ld}}:\\ \\| P_b - P_a \\| - L(t) = 0 \\]\n",
+    );
+    html.push_str(
+        "<p>where \\(P_a = r_i + A(\\theta_i)\\,s_i^A\\) and \
+         \\(P_b = r_j + A(\\theta_j)\\,s_j^A\\) are the world-frame positions of \
+         the actuator's two attachment points, and \\(L(t)\\) is the prescribed \
+         stroke length as a function of time. Constrains the distance between \
+         two body points; geometrically this is a cylinder + piston whose total \
+         length is driven kinematically.</p>\n",
+    );
+    html.push_str(
+        "<p>Driver rows are the only rows that depend on \\(t\\). For \
+         \\(\\Phi_{\\mathrm{ld}}\\), the velocity-level partial \
+         \\(\\Phi_t = -\\dot L(t)\\) is the prescribed stroke rate; at the \
+         acceleration level \\(\\Phi_{tt} = -\\ddot L(t)\\). The acceleration \
+         RHS \\(\\gamma\\) for a linear driver also includes the centripetal \
+         <code>v_perp²/L</code> term, where v_perp is the velocity component \
+         perpendicular to the line of action.</p>\n",
+    );
+    html.push_str(
+        "<p><b>LinearActuator force element</b> (not a constraint): if the \
+         mechanism uses a LinearActuator force element instead of a LinearDriver \
+         constraint, the actuator applies a constant force \\(F\\) along the \
+         line of action between its two attachment points. The stroke length is \
+         a <em>computed</em> output (not prescribed), and the actuator force \
+         appears in \\(Q_{\\text{applied}}\\) for the statics solve rather than \
+         in \\(\\Phi\\). Drawn in orange in the schematic above to distinguish \
+         from constraint-style drivers (red).</p>\n",
     );
     html.push_str(
         "<p>At a feasible pose, \\(\\Phi = 0\\). The Residual column in the \
@@ -1013,6 +1156,19 @@ mod tests {
         assert!(
             html.contains("\\dot q") && html.contains("\\ddot q"),
             "math section should reference symbolic q-dot and q-ddot"
+        );
+        // Linear driver / actuator coverage (math section).
+        assert!(
+            html.contains("Linear driver"),
+            "math section should include linear driver math"
+        );
+        assert!(
+            html.contains("\\Phi_{\\mathrm{ld}}"),
+            "math section should reference Φ_ld in LaTeX"
+        );
+        assert!(
+            html.contains("LinearActuator force element"),
+            "math section should distinguish LinearActuator force element from LinearDriver constraint"
         );
         // Plotly integration
         assert!(html.contains("plotly-2.35.2.min.js"), "should include plotly CDN");
