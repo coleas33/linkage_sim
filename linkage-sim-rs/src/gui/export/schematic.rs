@@ -26,16 +26,27 @@ use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
 use crate::gui::eq_rendering;
 
-/// SVG canvas size — matches Figure 2 / Figure 3 in the equations reference doc.
+/// SVG canvas size — drawing area (top) + legend area (bottom).
+///
+/// Legend used to live in a sidebar at x=475..595 but constraint rows would
+/// run off the bottom on mechanisms with many joints / drivers. The legend
+/// is now stacked below the drawing area, which gives it the full canvas
+/// width and unbounded vertical room.
 const SVG_WIDTH: f64 = 600.0;
-const SVG_HEIGHT: f64 = 340.0;
+const SVG_HEIGHT: f64 = 500.0;
 
 /// Drawing region where the mechanism is rendered (within the SVG canvas).
-/// Leaves room above for the title strip and right-side for the legend.
+/// Leaves room above for the title strip and below for the legend.
 const DRAW_X_MIN: f64 = 60.0;
-const DRAW_X_MAX: f64 = 450.0;
+const DRAW_X_MAX: f64 = 580.0;
 const DRAW_Y_MIN: f64 = 60.0;
-const DRAW_Y_MAX: f64 = 280.0;
+const DRAW_Y_MAX: f64 = 310.0;
+
+/// Y position where the legend area starts (below the drawing region,
+/// with a small gutter).
+const LEGEND_Y_START: f64 = 340.0;
+/// X position where the legend's text rows start.
+const LEGEND_X_START: f64 = 30.0;
 
 /// Tolerance for clustering joints that share a world position (in world units).
 const POSITION_TOLERANCE: f64 = 1e-4;
@@ -516,12 +527,28 @@ pub fn generate_schematic_svg(
         }
     }
 
-    // ── 10. Sidebar legend ────────────────────────────────────────────────
-    let legend_x = 475.0;
+    // ── 10. Constraint legend (below the drawing area) ───────────────────
+    //
+    // Legend used to live in a sidebar at x=475..595 but constraint rows
+    // ran off the bottom on mechanisms with many joints / drivers. Now
+    // it stacks below the drawing region with the full canvas width.
+    let legend_x = LEGEND_X_START;
+    let legend_header_y = LEGEND_Y_START;
+    // A faint horizontal divider between the drawing area and the legend.
+    // (Raw string uses `r##` because the SVG attribute contains `"#ccc"`,
+    // which would prematurely close a single-# raw string.)
     svg.push_str(&format!(
-        r#"<text x="{:.2}" y="60" font-size="13" font-weight="bold">Constraint rows</text>
+        r##"<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="#ccc" stroke-width="0.8"/>
+"##,
+        20.0,
+        legend_header_y - 12.0,
+        SVG_WIDTH - 20.0,
+        legend_header_y - 12.0,
+    ));
+    svg.push_str(&format!(
+        r#"<text x="{:.2}" y="{:.2}" font-size="13" font-weight="bold">Constraint rows</text>
 "#,
-        legend_x
+        legend_x, legend_header_y,
     ));
 
     // Group joints by kind.
@@ -546,7 +573,7 @@ pub fn generate_schematic_svg(
         }
     }
 
-    let mut y = 82.0_f64;
+    let mut y = legend_header_y + 22.0;
     for (label, ids, total_rows) in &joint_groups {
         let id_list = if ids.len() <= 4 {
             ids.join(",")
