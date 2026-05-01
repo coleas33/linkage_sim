@@ -42,6 +42,12 @@ pub fn generate_html_report(
     html.push_str(".card .value { font-size: 22px; font-weight: 700; color: #0f3460; }\n");
     html.push_str(".plotly-chart { margin: 16px 0; }\n");
     html.push_str(".footer { margin-top: 30px; padding-top: 10px; border-top: 1px solid #ccc; font-size: 12px; color: #888; }\n");
+    // Math background section styling. Equations get a slightly tinted
+    // background so they stand out from prose; subsection headings (h3)
+    // are smaller than h2 to nest under "Mathematical Derivation".
+    html.push_str(".math-eq { background: #f0f2f5; border-left: 3px solid #0f3460; padding: 8px 12px; margin: 8px 0; font-family: 'Cambria Math', 'Latin Modern Math', Georgia, serif; font-size: 14px; line-height: 1.6; white-space: pre; overflow-x: auto; }\n");
+    html.push_str(".math-where { color: #555; font-size: 13px; margin: 4px 0 12px 12px; }\n");
+    html.push_str("h3 { color: #0f3460; margin-top: 20px; font-size: 16px; }\n");
     html.push_str("</style></head><body>\n");
 
     // -- Header ---------------------------------------------------------------
@@ -127,6 +133,9 @@ pub fn generate_html_report(
 
     // -- Loop equations -------------------------------------------------------
     write_loop_equations_section(&mut html, mechanism, q);
+
+    // -- Mathematical derivation ---------------------------------------------
+    write_math_background_section(&mut html, mechanism);
 
     // -- Torque envelope ------------------------------------------------------
     if let Some(ref torques) = sweep.driver_torques {
@@ -583,6 +592,252 @@ fn float_vec_to_json(values: &[f64]) -> String {
     buf
 }
 
+/// Append a "Mathematical Derivation" section to the report — explains the
+/// constraint-based kinematics + statics pipeline in plain text, parameterised
+/// by the actual mechanism (body count, n, m, DOF). The math is the same for
+/// every planar linkage; only the dimensions change. Treats the report as a
+/// self-contained reference so users don't have to chase the spec doc.
+///
+/// Sections (h3): Coordinates, Constraint Vector, Jacobian, Solve Cascade
+/// (Position/Velocity/Acceleration/Statics), Lagrange Multipliers, Trajectory
+/// Mode.
+fn write_math_background_section(html: &mut String, mechanism: &Mechanism) {
+    use crate::core::state::GROUND_ID;
+
+    if !mechanism.is_built() {
+        return;
+    }
+
+    // Mechanism-specific numbers used to ground the abstract math in the
+    // user's actual mechanism (so "n = 9" vs "n = 12" depending on body count).
+    let n = mechanism.state().n_coords();
+    let m = mechanism.n_constraints();
+    let dof = n as isize - m as isize;
+    let n_moving_bodies = mechanism
+        .body_order()
+        .iter()
+        .filter(|b| b.as_str() != GROUND_ID)
+        .count();
+    let body_list: String = mechanism
+        .body_order()
+        .iter()
+        .filter(|b| b.as_str() != GROUND_ID)
+        .map(|b| html_escape(b))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    html.push_str("<h2>Mathematical Derivation</h2>\n");
+    html.push_str(
+        "<p>Every number in the Loop Equations table comes from the same \
+         four-level cascade: position solve \u{2192} velocity solve \u{2192} \
+         acceleration solve \u{2192} statics. This section walks through it.</p>\n",
+    );
+
+    // ── 1. Coordinates ────────────────────────────────────────────────────
+    html.push_str("<h3>1. Coordinates q</h3>\n");
+    html.push_str(&format!(
+        "<p>Each non-ground body has 3 planar DOF: <code>(x, y, \u{03B8})</code>. \
+         This mechanism has {} moving bodies ({}), so q \u{2208} \u{211D}<sup>{}</sup>:</p>\n",
+        n_moving_bodies, body_list, n,
+    ));
+    let body_q_strs: Vec<String> = mechanism
+        .body_order()
+        .iter()
+        .filter(|b| b.as_str() != GROUND_ID)
+        .map(|b| {
+            format!(
+                "x_{b}  y_{b}  \u{03B8}_{b}",
+                b = html_escape(b)
+            )
+        })
+        .collect();
+    html.push_str(&format!(
+        "<div class='math-eq'>q = [ {} ]\u{1D40D}</div>\n",
+        body_q_strs.join(" | ")
+    ));
+    html.push_str(
+        "<p class='math-where'><b>r<sub>i</sub> = (x<sub>i</sub>, y<sub>i</sub>)</b> \
+         is body <i>i</i>'s CG in the world frame; <b>\u{03B8}<sub>i</sub></b> is \
+         its orientation. Ground is locked at the origin and contributes no \
+         coordinates. The 2\u{00D7}2 rotation matrix is</p>\n",
+    );
+    html.push_str(
+        "<div class='math-eq'>A(\u{03B8}) = [ cos \u{03B8}   \u{2212}sin \u{03B8} ]\n         [ sin \u{03B8}    cos \u{03B8} ]</div>\n",
+    );
+    html.push_str(
+        "<p class='math-where'>A body-local point <b>s</b> (e.g. a joint anchor \
+         in body coords) maps to world via <b>r + A(\u{03B8})\u{00B7}s</b>.</p>\n",
+    );
+
+    // ── 2. Constraint vector ──────────────────────────────────────────────
+    html.push_str("<h3>2. Constraint vector \u{03A6}(q,t)</h3>\n");
+    html.push_str(&format!(
+        "<p>Stacks one row per constraint equation. This mechanism has \
+         <b>m = {}</b> total constraint equations across the joints and drivers \
+         listed in the Loop Equations table above.</p>\n",
+        m,
+    ));
+    html.push_str(
+        "<p><b>Revolute joint</b> (2 eqs each, \u{03A6}<sub>rev</sub>):</p>\n",
+    );
+    html.push_str(
+        "<div class='math-eq'>\u{03A6}_rev:  r_i + A(\u{03B8}_i)\u{00B7}s_iᴬ  \u{2212}  r_j \u{2212} A(\u{03B8}_j)\u{00B7}s_jᴬ  =  0</div>\n",
+    );
+    html.push_str(
+        "<p class='math-where'>Says \"the two bodies share a pivot at this point.\" \
+         <b>s<sub>i</sub><sup>A</sup></b> is the anchor's coords in body <i>i</i>'s \
+         local frame, <b>s<sub>j</sub><sup>A</sup></b> in body <i>j</i>'s. Two \
+         scalar equations because it's a 2D vector equality.</p>\n",
+    );
+    html.push_str(
+        "<p><b>Revolute driver</b> (1 eq, \u{03A6}<sub>rd</sub>):</p>\n",
+    );
+    html.push_str(
+        "<div class='math-eq'>\u{03A6}_rd:  \u{03B8}_j \u{2212} \u{03B8}_i \u{2212} f(t)  =  0,    where f(t) = \u{03B8}₀ + \u{03C9}·t</div>\n",
+    );
+    html.push_str(
+        "<p class='math-where'>Says \"the relative orientation between two bodies \
+         follows a prescribed function of time.\" The driver row in the table is \
+         the only row that depends on <b>t</b>.</p>\n",
+    );
+    html.push_str(
+        "<p>At a feasible pose, \u{03A6} = 0. The <b>Residual</b> column in the \
+         table above shows \u{2016}\u{03A6}<sub>J</sub>\u{2016} per row \u{2014} \
+         should all be \u{2264} ~10\u{207B}\u{00B9}\u{2075} (floating-point \
+         noise). A non-trivial residual here means the position solve didn't \
+         converge and downstream forces / energies aren't trustworthy.</p>\n",
+    );
+
+    // ── 3. Jacobian ────────────────────────────────────────────────────────
+    html.push_str("<h3>3. Constraint Jacobian \u{03A6}<sub>q</sub></h3>\n");
+    html.push_str(&format!(
+        "<div class='math-eq'>\u{03A6}_q = \u{2202}\u{03A6}/\u{2202}q  \u{2208} \u{211D}^({}×{})</div>\n",
+        m, n,
+    ));
+    html.push_str(
+        "<p>Block-sparse: each constraint row only has non-zero entries in the \
+         columns belonging to the bodies it touches. Using <b>B(\u{03B8}) = \
+         dA/d\u{03B8}</b>:</p>\n",
+    );
+    html.push_str(
+        "<div class='math-eq'>For \u{03A6}_rev between bodies i and j:\n  \u{2202}\u{03A6}_rev/\u{2202}r_i = +I    (2\u{00D7}2 identity)\n  \u{2202}\u{03A6}_rev/\u{2202}\u{03B8}_i = +B(\u{03B8}_i)·s_iᴬ    (2\u{00D7}1)\n  \u{2202}\u{03A6}_rev/\u{2202}r_j = \u{2212}I\n  \u{2202}\u{03A6}_rev/\u{2202}\u{03B8}_j = \u{2212}B(\u{03B8}_j)·s_jᴬ\n\nFor \u{03A6}_rd:\n  \u{2202}\u{03A6}_rd/\u{2202}\u{03B8}_i = \u{2212}1, \u{2202}\u{03A6}_rd/\u{2202}\u{03B8}_j = +1, others 0</div>\n",
+    );
+    html.push_str(&format!(
+        "<p><b>Determinacy check:</b> n \u{2212} m = {} \u{2212} {} = <b>{}</b>. \
+         {}</p>\n",
+        n,
+        m,
+        dof,
+        if dof == 0 {
+            "DOF = 0 means kinematically determinate \u{2014} the driver fully constrains the pose."
+        } else if dof > 0 {
+            "DOF &gt; 0 means under-constrained \u{2014} additional drivers needed to fix the pose."
+        } else {
+            "DOF &lt; 0 means over-constrained \u{2014} redundant constraints, may be inconsistent."
+        },
+    ));
+
+    // ── 4. Solve cascade ───────────────────────────────────────────────────
+    html.push_str("<h3>4. The four-level solve cascade</h3>\n");
+    html.push_str(
+        "<p>Each level uses the same \u{03A6}<sub>q</sub> and adds one time \
+         derivative.</p>\n",
+    );
+
+    html.push_str("<p><b>Position</b> (find q such that \u{03A6}=0):</p>\n");
+    html.push_str(
+        "<div class='math-eq'>Newton iteration:\n  \u{03A6}_q \u{00B7} \u{0394}q = \u{2212}\u{03A6}(q_k, t)\n  q_{k+1}  =  q_k + \u{0394}q\n\nIterate until \u{2016}\u{03A6}\u{2016} &lt; tol (1e-10).</div>\n",
+    );
+    html.push_str(
+        "<p class='math-where'>Source: <code>src/solver/kinematics.rs</code></p>\n",
+    );
+
+    html.push_str(
+        "<p><b>Velocity</b> (differentiate \u{03A6}(q(t),t) = 0 once w.r.t. t):</p>\n",
+    );
+    html.push_str(
+        "<div class='math-eq'>\u{03A6}_q \u{00B7} q̇ + \u{03A6}_t = 0    \u{21D2}    \u{03A6}_q \u{00B7} q̇ = \u{2212}\u{03A6}_t</div>\n",
+    );
+    html.push_str(
+        "<p class='math-where'>A linear solve. The driver row's \u{2212}\u{03C9} \
+         injects \"the driven body must rotate at \u{03C9} rad/s\"; the joint \
+         rows propagate that through the linkage.</p>\n",
+    );
+
+    html.push_str("<p><b>Acceleration</b> (differentiate again):</p>\n");
+    html.push_str(
+        "<div class='math-eq'>\u{03A6}_q \u{00B7} q̈ = \u{03B3}(q, q̇, t)</div>\n",
+    );
+    html.push_str(
+        "<p class='math-where'>Where the RHS \u{03B3} is the assembled \
+         \"everything except \u{03A6}<sub>q</sub>\u{00B7}q̈\" terms \u{2014} \
+         for revolute joints it's <b>\u{2212}B(\u{03B8})\u{00B7}s·\u{03B8}̇²</b> \
+         (centripetal), for the driver <b>\u{2212}f̈(t)</b>. Source: \
+         <code>src/solver/assembly.rs::assemble_gamma</code>.</p>\n",
+    );
+
+    html.push_str("<p><b>Statics</b> (Lagrange multipliers from force balance):</p>\n");
+    html.push_str(
+        "<div class='math-eq'>Equations of motion:\n  M\u{00B7}q̈ = Q_applied + \u{03A6}_qᵀ \u{00B7} \u{03BB}\n  \u{03A6}_q \u{00B7} q̈ = \u{03B3}\n\nFor pure statics (q̈ = 0):\n  \u{03A6}_qᵀ \u{00B7} \u{03BB} = \u{2212}Q_applied</div>\n",
+    );
+    html.push_str(
+        "<p class='math-where'>Where M is the block-diagonal mass matrix, \
+         <b>Q<sub>applied</sub></b> are external forces (gravity, springs, motors), \
+         and <b>\u{03BB} \u{2208} \u{211D}<sup>m</sup></b> are the Lagrange \
+         multipliers \u{2014} one per constraint equation. Source: \
+         <code>src/solver/statics.rs::solve_statics</code>.</p>\n",
+    );
+
+    // ── 5. Lagrange multipliers ────────────────────────────────────────────
+    html.push_str("<h3>5. Why \u{03BB} = reaction forces / driver torque</h3>\n");
+    html.push_str(
+        "<p><b>\u{03A6}<sub>q</sub><sup>T</sup>\u{00B7}\u{03BB}</b> is the \
+         generalized force the constraints exert on q. For a revolute joint \
+         between bodies i and j:</p>\n",
+    );
+    html.push_str(
+        "<div class='math-eq'>\u{2202}\u{03A6}_rev/\u{2202}r_i = +I   \u{21D2}   \u{03BB} contributes +\u{03BB} to body i's translational EOM\n\u{2202}\u{03A6}_rev/\u{2202}r_j = \u{2212}I   \u{21D2}   \u{03BB} contributes \u{2212}\u{03BB} to body j's</div>\n",
+    );
+    html.push_str(
+        "<p>That's literally Newton's third law on the joint reaction. So \
+         <b>\u{03BB} for a revolute constraint is the force vector \
+         (F<sub>x</sub>, F<sub>y</sub>) body <i>j</i> exerts on body <i>i</i> \
+         through the pin</b> \u{2014} units of newtons. The components shown in \
+         the \u{03BB} column above (e.g. <code>(+0.465, \u{2212}15.241)</code>) \
+         are exactly this force vector at the report's pose.</p>\n",
+    );
+    html.push_str(
+        "<p>For the revolute driver row, <b>\u{2202}\u{03A6}<sub>rd</sub>/\u{2202}\u{03B8}<sub>j</sub> = +1</b>, \
+         so <b>+\u{03BB}\u{00B7}\u{2202}\u{03B8}<sub>j</sub> + (\u{2212}\u{03BB})\u{00B7}\u{2202}\u{03B8}<sub>i</sub></b> \
+         appears in the \u{03B8} equations of motion. That's a torque pair: \
+         body <i>j</i> gets +\u{03BB} N\u{00B7}m, body <i>i</i> gets \
+         \u{2212}\u{03BB} N\u{00B7}m. So <b>\u{03BB} for the driver is the \
+         torque the actuator must apply between the two bodies</b> to enforce \
+         the prescribed \u{03B8}<sub>j</sub> \u{2212} \u{03B8}<sub>i</sub> = \
+         f(t).</p>\n",
+    );
+
+    // ── 6. Trajectory mode ─────────────────────────────────────────────────
+    html.push_str("<h3>6. Trajectory mode (inverse position control)</h3>\n");
+    html.push_str(
+        "<p>Forward sweep prescribes f(t) (the driver) and solves for q(t). \
+         <b>Trajectory mode</b> prescribes a separate observable g(q) = h(t) \
+         (e.g. WorldX of a coupler point), then a Newton outer loop adjusts the \
+         driver input <b>u</b> until <b>g(q(u)) = h(t)</b>:</p>\n",
+    );
+    html.push_str(
+        "<div class='math-eq'>r(u) = g(q(u)) \u{2212} h(t) = 0\n\nNewton outer loop:\n  u_{k+1} = u_k \u{2212} r(u_k) / r′(u_k)\n  with r′(u) = \u{2207}g(q) \u{00B7} dq/du</div>\n",
+    );
+    html.push_str(
+        "<p class='math-where'>The four-level cascade above runs at every \
+         outer-loop iteration, with <b>u</b> swapped into the driver row in \
+         place of <b>f(t)</b>. The full velocity / acceleration inverses are \
+         derived in <code>docs/superpowers/specs/2026-04-29-linkage-equations-reference.md</code> \
+         \u{00A7}8 if you want <b>r′(u)</b> and <b>r″(u)</b> worked out \
+         per ControlTarget variant.</p>\n",
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -616,6 +871,33 @@ mod tests {
         assert!(html.contains("Loop Equations"), "should have loop equations section");
         assert!(html.contains("Φ_rev"), "should render at least one revolute symbol");
         assert!(html.contains("Φ_rd"), "FourBar sample has a revolute driver");
+        // Mathematical derivation section
+        assert!(
+            html.contains("Mathematical Derivation"),
+            "should include the math walkthrough section"
+        );
+        assert!(
+            html.contains("Newton iteration"),
+            "math section should derive the position solve"
+        );
+        assert!(
+            html.contains("Lagrange multipliers"),
+            "math section should explain λ as Lagrange multipliers"
+        );
+        assert!(
+            html.contains("inverse position control"),
+            "math section should mention trajectory mode (inverse)"
+        );
+        // Mechanism-specific parameterisation: the 4-bar has 3 moving bodies,
+        // 9 coords, 9 constraints, DOF=0.
+        assert!(
+            html.contains("3 moving bodies"),
+            "math section should reference mechanism's actual body count"
+        );
+        assert!(
+            html.contains("DOF = 0") || html.contains("DOF = <b>0</b>"),
+            "math section should report the actual DOF"
+        );
         // Plotly integration
         assert!(html.contains("plotly-2.35.2.min.js"), "should include plotly CDN");
         assert!(html.contains("Plotly.newPlot"), "should have at least one plotly chart");
