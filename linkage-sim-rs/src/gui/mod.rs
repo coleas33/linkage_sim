@@ -104,14 +104,79 @@ impl eframe::App for LinkageApp {
         }
 
         // ── Drag-and-drop file import (works on native + WASM) ─────────
-        // Supports images (background overlay) and DXF (CAD import).
+        // Supports JSON (mechanism), DXF (CAD import), CSV (keyframes in
+        // Trajectory mode), and images (background overlay). Dispatch is
+        // by file extension.
         let dropped_files = ctx.input(|i| i.raw.dropped_files.clone());
         for file in &dropped_files {
             if let Some(bytes) = &file.bytes {
                 let name = file.name.as_str();
                 let lower = name.to_lowercase();
-                if lower.ends_with(".dxf") {
-                    // DXF import
+                if lower.ends_with(".json") {
+                    // Mechanism JSON import.
+                    match std::str::from_utf8(bytes) {
+                        Ok(text) => match self.state.load_from_json_str(text) {
+                            Ok(()) => {
+                                self.state.status_message = Some(format!(
+                                    "Loaded mechanism: {} (drag & drop)",
+                                    name
+                                ));
+                                self.state.status_message_time = 4.0;
+                            }
+                            Err(e) => {
+                                log::error!("JSON import failed: {}", e);
+                                self.state.status_message =
+                                    Some(format!("JSON import failed: {}", e));
+                                self.state.status_message_time = 4.0;
+                            }
+                        },
+                        Err(e) => {
+                            self.state.status_message =
+                                Some(format!("JSON file is not valid UTF-8: {}", e));
+                            self.state.status_message_time = 4.0;
+                        }
+                    }
+                } else if lower.ends_with(".csv") {
+                    // Keyframe-trajectory CSV. Only relevant in Trajectory
+                    // mode with a Keyframes payload; otherwise tell the user
+                    // they need to switch modes first.
+                    use crate::gui::state::Trajectory;
+                    use crate::gui::sweep::SweepMode;
+                    match std::str::from_utf8(bytes) {
+                        Ok(text) => match trajectory_panel::parse_keyframes_csv_str(text) {
+                            Ok(kt) => {
+                                if let SweepMode::Trajectory { trajectory, .. } =
+                                    &mut self.state.sweep_mode
+                                {
+                                    *trajectory = Trajectory::KeyframeTable(kt);
+                                    self.state.mark_sweep_dirty();
+                                    self.state.status_message = Some(format!(
+                                        "Loaded keyframes: {} (drag & drop)",
+                                        name
+                                    ));
+                                    self.state.status_message_time = 4.0;
+                                } else {
+                                    self.state.status_message = Some(
+                                        "CSV import: switch to Trajectory mode first."
+                                            .to_string(),
+                                    );
+                                    self.state.status_message_time = 4.0;
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("CSV import failed: {}", e);
+                                self.state.status_message =
+                                    Some(format!("CSV import failed: {}", e));
+                                self.state.status_message_time = 4.0;
+                            }
+                        },
+                        Err(e) => {
+                            self.state.status_message =
+                                Some(format!("CSV file is not valid UTF-8: {}", e));
+                            self.state.status_message_time = 4.0;
+                        }
+                    }
+                } else if lower.ends_with(".dxf") {
                     match dxf_import::parse_dxf_bytes(bytes, 0.001) {
                         Ok(overlay) => {
                             let n_ent = overlay.entities.len();
@@ -130,7 +195,9 @@ impl eframe::App for LinkageApp {
                         }
                     }
                 } else {
-                    // Image import
+                    // Anything else: try as image. Background-image loader
+                    // surfaces a useful error if the bytes aren't a known
+                    // image format.
                     let label = if name.is_empty() { "dropped_image" } else { name };
                     match load_background_image_from_bytes(ctx, label, bytes) {
                         Ok(bg) => {

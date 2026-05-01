@@ -258,8 +258,6 @@ fn draw_keyframe_editor(kt: &mut KeyframeTrajectory, ui: &mut egui::Ui) {
                 .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         }
 
-        // Native-only CSV import. WASM lacks a synchronous file picker; the
-        // button is hidden in the browser build for now.
         #[cfg(feature = "native")]
         {
             if ui
@@ -280,6 +278,16 @@ fn draw_keyframe_editor(kt: &mut KeyframeTrajectory, ui: &mut egui::Ui) {
                 }
             }
         }
+        // On web, the equivalent path is drag-and-drop: dropping a `.csv`
+        // file on the canvas while in Trajectory mode replaces the
+        // active keyframe table. Hint the user in case they're looking
+        // for an explicit button.
+        #[cfg(target_arch = "wasm32")]
+        ui.label(
+            egui::RichText::new("Drag a .csv onto the canvas to import keyframes.")
+                .small()
+                .color(egui::Color32::GRAY),
+        );
     });
 
     // Duplicate / near-duplicate t-value warning. After the table renders
@@ -305,7 +313,8 @@ fn draw_keyframe_editor(kt: &mut KeyframeTrajectory, ui: &mut egui::Ui) {
     }
 }
 
-/// Parse a 2-column CSV `t_seconds, target_value` into a `KeyframeTrajectory`.
+/// Parse 2-column CSV text `t_seconds, target_value` into a
+/// `KeyframeTrajectory`.
 ///
 /// Behaviour:
 ///   - Blank lines and lines starting with `#` are skipped.
@@ -316,14 +325,12 @@ fn draw_keyframe_editor(kt: &mut KeyframeTrajectory, ui: &mut egui::Ui) {
 ///   - At least one valid waypoint is required.
 ///
 /// Waypoints are sorted by `t` ascending via `KeyframeTrajectory::new`.
-#[allow(dead_code)] // used from the native-feature button path
-fn parse_keyframes_csv(path: &std::path::Path) -> Result<KeyframeTrajectory, String> {
-    use std::io::BufRead;
-    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-    let reader = std::io::BufReader::new(file);
+///
+/// Cross-platform — the native file path and the web drag-and-drop path
+/// both call this after reading the file as text.
+pub(crate) fn parse_keyframes_csv_str(csv: &str) -> Result<KeyframeTrajectory, String> {
     let mut waypoints = Vec::new();
-    for (line_no, line) in reader.lines().enumerate() {
-        let line = line.map_err(|e| e.to_string())?;
+    for (line_no, line) in csv.lines().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
@@ -353,10 +360,19 @@ fn parse_keyframes_csv(path: &std::path::Path) -> Result<KeyframeTrajectory, Str
     Ok(KeyframeTrajectory::new(waypoints))
 }
 
+/// (Native only) Read a CSV file and parse it as keyframes.
+#[cfg(feature = "native")]
+#[allow(dead_code)] // used from the native-feature button path
+fn parse_keyframes_csv(path: &std::path::Path) -> Result<KeyframeTrajectory, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    parse_keyframes_csv_str(&text)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[cfg(feature = "native")]
     #[test]
     fn parse_keyframes_csv_simple() {
         use std::io::Write;
@@ -371,5 +387,27 @@ mod tests {
         assert_eq!(kt.waypoints.len(), 3);
         assert!((kt.duration() - 1.0).abs() < 1e-12);
         let _ = std::fs::remove_file(tmp);
+    }
+
+    #[test]
+    fn parse_keyframes_csv_str_simple() {
+        // Cross-platform companion test: same fixture, no filesystem.
+        let csv = "t_seconds,target_value\n0.0, 0.0\n0.5, 1.5\n1.0, 2.0\n";
+        let kt = parse_keyframes_csv_str(csv).unwrap();
+        assert_eq!(kt.waypoints.len(), 3);
+        assert!((kt.duration() - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn parse_keyframes_csv_str_skips_comments_and_blanks() {
+        let csv = "t_seconds,target_value\n# header comment\n\n0.0, 0.0\n# inline comment\n1.0, 2.0\n";
+        let kt = parse_keyframes_csv_str(csv).unwrap();
+        assert_eq!(kt.waypoints.len(), 2);
+    }
+
+    #[test]
+    fn parse_keyframes_csv_str_rejects_empty() {
+        let csv = "# only a comment\n\n";
+        assert!(parse_keyframes_csv_str(csv).is_err());
     }
 }

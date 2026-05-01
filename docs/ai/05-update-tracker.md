@@ -5,6 +5,42 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-30 — feat(web): drag-and-drop imports for JSON + CSV (Pass 3)
+
+**What:** Extended the existing drag-and-drop handler in
+`gui/mod.rs::update()` to dispatch on file extension:
+- `.json` → `state.load_from_json_str` (mechanism)
+- `.csv` → `parse_keyframes_csv_str` (keyframes; only in Trajectory mode)
+- `.dxf` → DXF overlay (existing)
+- everything else → background image (existing)
+
+Refactored `parse_keyframes_csv` (path-based, native-only) to layer over
+`parse_keyframes_csv_str` (cross-platform). +3 tests covering simple
+parse, comment/blank skipping, and empty-input rejection.
+
+Updated the trajectory panel: hide the native-only Import CSV button on
+web and show a "Drag a .csv onto the canvas" hint instead. Updated the
+File menu's web-only drag-and-drop hint to enumerate all four supported
+formats.
+
+**Why:** After Passes 1 and 2 made every export work on web, the
+export-import asymmetry was the next gap. Drag-and-drop already
+worked for DXF and images on web (egui `RawInput::dropped_files`
+delivers bytes on both targets), so extending it to JSON and CSV was
+~30 lines of dispatcher code rather than building a full `<input
+type=file>` + FileReader integration. An explicit "Open JSON…" menu
+button on web is deferred — the channel-based async file-picker
+architecture is documented but not built.
+
+**Test results:** 668 lib tests pass (was 665 + 3 new). Native + WASM
+both compile clean.
+
+**Limitations:** No explicit menu file picker on web — drag-and-drop
+only. Recent files / saved templates / autosave on web all still
+require localStorage wiring (separate effort).
+
+---
+
 ## 2026-04-30 — feat(web): browser-side raster + CSV downloads (Pass 2A + 2B)
 
 **Pass 2A — CSV:** Refactored `gui/export/csv.rs` to factor out

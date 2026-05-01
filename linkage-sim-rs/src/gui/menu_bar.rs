@@ -571,11 +571,20 @@ pub(crate) fn draw_menu_bar(
                             ui.close();
                         }
                     }
-                    // ── DXF overlay clear (cross-platform) ─────────────────
+                    // ── Drag-and-drop hints (web; no native file pickers) ──
                     #[cfg(target_arch = "wasm32")]
                     {
                         ui.separator();
-                        ui.label("Drag & drop a .dxf file onto the canvas to import CAD geometry");
+                        ui.label(
+                            egui::RichText::new(
+                                "Drag & drop onto the canvas:\n\
+                                 \u{2022} .json — load mechanism\n\
+                                 \u{2022} .csv — load keyframe trajectory (Trajectory mode)\n\
+                                 \u{2022} .dxf — import CAD geometry\n\
+                                 \u{2022} .png/.jpg — background tracing image",
+                            )
+                            .small(),
+                        );
                     }
                     if state.dxf_overlay.is_some() {
                         if ui.button("Clear DXF Overlay").clicked() {

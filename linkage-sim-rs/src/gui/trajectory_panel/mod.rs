@@ -10,6 +10,10 @@
 mod profile_input;
 mod target_picker;
 
+// Re-export the cross-platform keyframe CSV parser so the drag-and-drop
+// path in `gui::mod` can call it without touching the private module.
+pub(crate) use profile_input::parse_keyframes_csv_str;
+
 use eframe::egui;
 
 use crate::gui::state::AppState;
