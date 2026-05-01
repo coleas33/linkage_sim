@@ -4,6 +4,8 @@
 //! objects. Schema is versioned via `FIRMWARE_JSON_SCHEMA_VERSION`; bump on
 //! breaking changes so consumers can validate compatibility.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::gui::state::Trajectory;
@@ -54,6 +56,12 @@ pub struct FirmwareJsonSample {
     /// Solver status at this sample. "Converged" for successful samples;
     /// failure modes carry diagnostic detail.
     pub status: String,
+    /// Per-body pose snapshot at this sample, keyed by body ID. Each entry
+    /// is `[x_m, y_m, theta_rad]`. `None` when the source `SweepData` did
+    /// not capture pose (older sweeps; non-trajectory mode).
+    /// `BTreeMap` for stable JSON key order across exports.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pose: Option<BTreeMap<String, [f64; 3]>>,
 }
 
 /// Concrete `FirmwareAdapter` that emits the JSON envelope above.
@@ -109,23 +117,45 @@ impl FirmwareAdapter for JsonAdapter {
 
         let times = trajectory.sample_times(n);
 
+        // Pose snapshots are emitted as `{ body_id: [x, y, θ] }` per sample
+        // when both `pose_body_order` and `pose_snapshots` are present.
+        // Length mismatch between body order and per-sample row falls back
+        // to None for that sample (defensive — never reached from
+        // compute_trajectory which keeps the two in lockstep).
+        let pose_body_order = data.pose_body_order.as_deref();
+        let pose_snapshots = data.pose_snapshots.as_deref();
+
         let samples: Vec<FirmwareJsonSample> = (0..n)
-            .map(|i| FirmwareJsonSample {
-                t: times[i],
-                target: target_values[i],
-                achieved: achieved_values[i],
-                residual: tracking_residual[i],
-                u: u_values[i],
-                u_dot: u_dot_values[i],
-                u_ddot: u_ddot_values[i],
-                // NaN/inf serialize as the JSON `null` sentinel via Option.
-                f_actuator_n: data
-                    .actuator_forces
-                    .as_ref()
-                    .and_then(|v| v.get(i))
-                    .copied()
-                    .filter(|x| x.is_finite()),
-                status: format_status(&statuses[i]),
+            .map(|i| {
+                let pose: Option<BTreeMap<String, [f64; 3]>> =
+                    match (pose_body_order, pose_snapshots.and_then(|p| p.get(i))) {
+                        (Some(order), Some(row)) if order.len() == row.len() => Some(
+                            order
+                                .iter()
+                                .zip(row.iter())
+                                .map(|(b, p)| (b.clone(), *p))
+                                .collect(),
+                        ),
+                        _ => None,
+                    };
+                FirmwareJsonSample {
+                    t: times[i],
+                    target: target_values[i],
+                    achieved: achieved_values[i],
+                    residual: tracking_residual[i],
+                    u: u_values[i],
+                    u_dot: u_dot_values[i],
+                    u_ddot: u_ddot_values[i],
+                    // NaN/inf serialize as the JSON `null` sentinel via Option.
+                    f_actuator_n: data
+                        .actuator_forces
+                        .as_ref()
+                        .and_then(|v| v.get(i))
+                        .copied()
+                        .filter(|x| x.is_finite()),
+                    status: format_status(&statuses[i]),
+                    pose,
+                }
             })
             .collect();
 
@@ -288,6 +318,56 @@ mod tests {
         assert!(
             json_str.contains("\"f_actuator_n\": null"),
             "expected null sentinel for NaN actuator force"
+        );
+    }
+
+    #[test]
+    fn json_adapter_emits_per_sample_pose_when_present() {
+        // When `pose_body_order` + `pose_snapshots` are populated (which
+        // `compute_trajectory` always does), each FirmwareJsonSample
+        // carries a `pose` map keyed by body ID.
+        let (mut data, target, traj) = three_sample_trajectory_data();
+        data.pose_body_order = Some(vec!["crank".to_string(), "coupler".to_string()]);
+        data.pose_snapshots = Some(vec![
+            vec![[0.0, 0.0, 0.0], [0.5, 0.0, 0.1]],
+            vec![[0.0, 0.0, 0.5], [0.5, 0.1, 0.6]],
+            vec![[0.0, 0.0, 1.0], [0.5, 0.2, 1.1]],
+        ]);
+
+        let adapter = JsonAdapter;
+        let json_str = adapter.emit(&data, &target, &traj, "rad").unwrap();
+        let envelope: FirmwareJsonEnvelope = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(envelope.samples.len(), 3);
+        for sample in &envelope.samples {
+            let pose = sample
+                .pose
+                .as_ref()
+                .expect("pose should be present when SweepData carries it");
+            assert!(pose.contains_key("crank"));
+            assert!(pose.contains_key("coupler"));
+        }
+        // Sample 1 carries (x, y, θ) = (0.0, 0.0, 0.5) for crank.
+        let crank_s1 = envelope.samples[1].pose.as_ref().unwrap()["crank"];
+        assert!((crank_s1[2] - 0.5).abs() < 1e-9);
+        // Coupler θ at sample 2 = 1.1.
+        let coupler_s2 = envelope.samples[2].pose.as_ref().unwrap()["coupler"];
+        assert!((coupler_s2[2] - 1.1).abs() < 1e-9);
+    }
+
+    #[test]
+    fn json_adapter_omits_pose_when_absent() {
+        // Backwards-compat: a SweepData without pose data must not include
+        // a pose field in the emitted samples (skip_serializing_if).
+        let (data, target, traj) = three_sample_trajectory_data();
+        assert!(data.pose_body_order.is_none(), "fixture has no pose data");
+
+        let adapter = JsonAdapter;
+        let json_str = adapter.emit(&data, &target, &traj, "rad").unwrap();
+        assert!(
+            !json_str.contains("\"pose\""),
+            "pose field should be omitted from JSON when SweepData has no pose: {}",
+            json_str
         );
     }
 

@@ -183,6 +183,19 @@ pub struct SweepData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inverse_solve_statuses:
         Option<Vec<crate::solver::inverse_kinematics::InverseSolveStatus>>,
+    /// Non-ground body IDs in the column order used by `pose_snapshots`.
+    /// Populated only in Trajectory mode (a snapshot of `mech.body_order()`
+    /// minus ground, captured at compute time so exports don't need to
+    /// re-derive ordering).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pose_body_order: Option<Vec<String>>,
+    /// Per-sample pose snapshot for downstream replay/export.
+    /// Outer length = n_samples, inner length = pose_body_order.len(),
+    /// each entry is `[x, y, theta_rad]` in world coordinates / SI units.
+    /// Populated only in Trajectory mode. Lets CSV/JSON exporters emit
+    /// full q(t) without recomputing the inverse solve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pose_snapshots: Option<Vec<Vec<[f64; 3]>>>,
     /// Angles (degrees) at which toggle/dead points were detected.
     pub toggle_angles: Vec<f64>,
     /// Index range of an "active" sub-slice within the sweep data, used
@@ -320,6 +333,8 @@ pub(crate) fn compute_sweep_data(
         u_dot_values: None,
         u_ddot_values: None,
         inverse_solve_statuses: None,
+        pose_body_order: None,
+        pose_snapshots: None,
         toggle_angles: Vec::new(),
         active_range: None, // computed after sweep loop
         sweep_mode: sweep_mode.clone(),
@@ -819,6 +834,18 @@ pub fn compute_trajectory(
     data.u_dot_values = Some(Vec::with_capacity(n_samples));
     data.u_ddot_values = Some(Vec::with_capacity(n_samples));
     data.inverse_solve_statuses = Some(Vec::with_capacity(n_samples));
+    // Per-sample pose snapshot: capture every non-ground body's
+    // (x, y, theta) so downstream tools can replay q(t) without
+    // re-running the inverse solve. Body order matches mech.body_order()
+    // minus ground.
+    let pose_body_order: Vec<String> = mech
+        .body_order()
+        .iter()
+        .filter(|b| b.as_str() != GROUND_ID)
+        .cloned()
+        .collect();
+    data.pose_body_order = Some(pose_body_order.clone());
+    data.pose_snapshots = Some(Vec::with_capacity(n_samples));
 
     // Initialize length-matched required fields. driver_torques is the one
     // existing Optional<Vec> we populate (statics-derived) per sample.
@@ -1006,6 +1033,18 @@ pub fn compute_trajectory(
                 .push([global.x, global.y]);
         }
 
+        // Pose snapshot for downstream replay/export. One [x, y, θ_rad]
+        // per non-ground body in `pose_body_order` order — matches the
+        // q-vector layout for direct re-injection.
+        let pose_row: Vec<[f64; 3]> = pose_body_order
+            .iter()
+            .map(|body_id| {
+                let (x, y, theta) = mech_state.get_pose(body_id, &q_k);
+                [x, y, theta]
+            })
+            .collect();
+        data.pose_snapshots.as_mut().unwrap().push(pose_row);
+
         // Statics → driver torque + joint reactions.
         let mut pending_reactions: Option<Vec<JointReaction>> = None;
         let mut driver_effort_now = f64::NAN;
@@ -1166,6 +1205,8 @@ pub(crate) fn empty_trajectory_sweep_data(mode: SweepMode) -> SweepData {
         u_dot_values: None,
         u_ddot_values: None,
         inverse_solve_statuses: None,
+        pose_body_order: None,
+        pose_snapshots: None,
         toggle_angles: Vec::new(),
         active_range: None,
         sweep_mode: mode,
@@ -1480,6 +1521,8 @@ mod tests {
             u_dot_values: None,
             u_ddot_values: None,
             inverse_solve_statuses: None,
+            pose_body_order: None,
+            pose_snapshots: None,
             toggle_angles: Vec::new(),
             active_range: None,
             sweep_mode: SweepMode::Angle,
@@ -1524,6 +1567,8 @@ mod tests {
             u_dot_values: None,
             u_ddot_values: None,
             inverse_solve_statuses: None,
+            pose_body_order: None,
+            pose_snapshots: None,
             toggle_angles: Vec::new(),
             active_range: None,
             sweep_mode: SweepMode::Angle,
@@ -1707,5 +1752,35 @@ mod tests {
         assert_eq!(data.total_energy.len(), n_samples);
         assert_eq!(data.inverse_dynamics_torques.len(), n_samples);
         assert_eq!(data.mechanical_advantage.len(), n_samples);
+
+        // Pose snapshots: one per sample, one entry per non-ground body in
+        // mech.body_order(). For the canonical 4-bar this is crank, coupler,
+        // rocker (3 non-ground bodies).
+        let pose_order = data.pose_body_order.as_ref().unwrap();
+        let pose_snaps = data.pose_snapshots.as_ref().unwrap();
+        assert!(
+            !pose_order.iter().any(|b| b.as_str() == GROUND_ID),
+            "pose_body_order must exclude ground"
+        );
+        assert!(pose_order.contains(&"crank".to_string()));
+        assert_eq!(pose_snaps.len(), n_samples, "one pose row per sample");
+        for row in pose_snaps {
+            assert_eq!(row.len(), pose_order.len(), "row length matches body order");
+        }
+        // The crank's θ at sample k equals targets[k] (Angle target on crank).
+        let crank_idx = pose_order
+            .iter()
+            .position(|b| b == "crank")
+            .expect("crank in body order");
+        for k in 0..n_samples {
+            let theta_crank = pose_snaps[k][crank_idx][2];
+            assert!(
+                (theta_crank - targets[k]).abs() < 1e-6,
+                "pose θ_crank at sample {} should equal target {}; got {}",
+                k,
+                targets[k],
+                theta_crank
+            );
+        }
     }
 }

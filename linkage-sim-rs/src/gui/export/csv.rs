@@ -222,10 +222,23 @@ fn write_trajectory_csv(out: &mut impl Write, sweep: &SweepData) -> std::io::Res
     // computed yet, emit just the header so the file is well-formed.
     let n = sweep.target_values.as_ref().map(|v| v.len()).unwrap_or(0);
 
-    writeln!(
-        out,
-        "t_seconds,target_value,achieved_value,residual,u,u_dot,u_ddot,F_actuator_N,driver_torque_Nm,status"
-    )?;
+    // Pose snapshot columns are appended after the fixed trajectory
+    // columns when `pose_body_order` + `pose_snapshots` are populated.
+    // This keeps the file consumable by tools that only know the v1
+    // layout (they ignore extra columns) while letting downstream
+    // replay tools recover the full q(t).
+    let pose_body_order = sweep.pose_body_order.as_deref().unwrap_or(&[]);
+
+    let mut header = String::from(
+        "t_seconds,target_value,achieved_value,residual,u,u_dot,u_ddot,F_actuator_N,driver_torque_Nm,status",
+    );
+    for body_id in pose_body_order {
+        header.push_str(&format!(
+            ",q_x_{body}_m,q_y_{body}_m,q_theta_{body}_rad",
+            body = body_id
+        ));
+    }
+    writeln!(out, "{}", header)?;
     if n == 0 {
         return Ok(());
     }
@@ -247,6 +260,7 @@ fn write_trajectory_csv(out: &mut impl Write, sweep: &SweepData) -> std::io::Res
     let u_dot = sweep.u_dot_values.as_ref().unwrap();
     let u_ddot = sweep.u_ddot_values.as_ref().unwrap();
     let statuses = sweep.inverse_solve_statuses.as_ref();
+    let pose_snapshots = sweep.pose_snapshots.as_ref();
 
     for i in 0..n {
         let t = times[i];
@@ -270,7 +284,7 @@ fn write_trajectory_csv(out: &mut impl Write, sweep: &SweepData) -> std::io::Res
             .and_then(|v| v.get(i))
             .map(format_status)
             .unwrap_or_else(|| "Unknown".to_string());
-        writeln!(
+        write!(
             out,
             "{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{}",
             t,
@@ -284,6 +298,20 @@ fn write_trajectory_csv(out: &mut impl Write, sweep: &SweepData) -> std::io::Res
             torque,
             status_str,
         )?;
+        // Per-body pose columns (3 per body). Emit NaN if pose_snapshots
+        // is missing or shorter than expected — defensive against
+        // partial fixtures, never reachable from compute_trajectory.
+        if !pose_body_order.is_empty() {
+            let row = pose_snapshots.and_then(|p| p.get(i));
+            for j in 0..pose_body_order.len() {
+                let pose = row.and_then(|r| r.get(j));
+                let (x, y, th) = pose
+                    .map(|p| (p[0], p[1], p[2]))
+                    .unwrap_or((f64::NAN, f64::NAN, f64::NAN));
+                write!(out, ",{:.6},{:.6},{:.6}", x, y, th)?;
+            }
+        }
+        writeln!(out)?;
     }
 
     Ok(())
@@ -439,6 +467,8 @@ mod tests {
             u_dot_values: None,
             u_ddot_values: None,
             inverse_solve_statuses: None,
+            pose_body_order: None,
+            pose_snapshots: None,
             toggle_angles: Vec::new(),
             active_range: None,
             sweep_mode: crate::gui::sweep::SweepMode::Angle,
@@ -736,6 +766,8 @@ mod tests {
             u_dot_values: Some(u_dot_values),
             u_ddot_values: Some(u_ddot_values),
             inverse_solve_statuses: Some(statuses),
+            pose_body_order: None,
+            pose_snapshots: None,
             toggle_angles: Vec::new(),
             active_range: None,
             sweep_mode: mode,
@@ -796,6 +828,84 @@ mod tests {
         assert!(lines[3].contains(",Singularity:"));
         assert!(lines[4].contains(",BranchJump:"));
         assert!(lines[5].contains(",NonConvergent:iter=50;res="));
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn export_sweep_csv_trajectory_includes_pose_columns_when_present() {
+        // When `pose_body_order` + `pose_snapshots` are populated (which
+        // `compute_trajectory` always does), the trajectory CSV appends
+        // 3 pose columns per body after the v1 fixed columns.
+        let mut sweep = test_trajectory_sweep_data(5);
+        sweep.pose_body_order = Some(vec!["crank".to_string(), "rocker".to_string()]);
+        sweep.pose_snapshots = Some(
+            (0..5)
+                .map(|i| {
+                    let f = i as f64;
+                    vec![[0.1 * f, 0.2 * f, 0.3 * f], [0.4 * f, 0.5 * f, 0.6 * f]]
+                })
+                .collect(),
+        );
+
+        let path = std::env::temp_dir().join("test_trajectory_export_pose.csv");
+        export_sweep_csv(&path, &sweep).expect("export should succeed");
+
+        let contents = std::fs::read_to_string(&path).expect("should read file");
+        let lines: Vec<&str> = contents.lines().collect();
+
+        // Header now carries 6 extra pose columns (3 per body × 2 bodies).
+        assert_eq!(
+            lines[0],
+            "t_seconds,target_value,achieved_value,residual,u,u_dot,u_ddot,F_actuator_N,driver_torque_Nm,status,\
+             q_x_crank_m,q_y_crank_m,q_theta_crank_rad,q_x_rocker_m,q_y_rocker_m,q_theta_rocker_rad",
+            "header should include per-body pose columns"
+        );
+
+        // 16 columns on every data row (10 trajectory + 6 pose).
+        for (i, line) in lines.iter().enumerate().skip(1) {
+            assert_eq!(
+                line.split(',').count(),
+                16,
+                "row {} should have 16 columns: {}",
+                i,
+                line
+            );
+        }
+
+        // Sample 2 (i=2): crank pose = (0.2, 0.4, 0.6), rocker = (0.8, 1.0, 1.2).
+        let cols2: Vec<&str> = lines[3].split(',').collect();
+        assert!((cols2[10].parse::<f64>().unwrap() - 0.2).abs() < 1e-6);
+        assert!((cols2[11].parse::<f64>().unwrap() - 0.4).abs() < 1e-6);
+        assert!((cols2[12].parse::<f64>().unwrap() - 0.6).abs() < 1e-6);
+        assert!((cols2[13].parse::<f64>().unwrap() - 0.8).abs() < 1e-6);
+        assert!((cols2[14].parse::<f64>().unwrap() - 1.0).abs() < 1e-6);
+        assert!((cols2[15].parse::<f64>().unwrap() - 1.2).abs() < 1e-6);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn export_sweep_csv_trajectory_omits_pose_columns_when_absent() {
+        // Backwards-compat path: a SweepData without pose_body_order should
+        // emit the v1 layout exactly (no pose columns, 10 columns per row).
+        let sweep = test_trajectory_sweep_data(5);
+        assert!(sweep.pose_body_order.is_none(), "fixture has no pose data");
+
+        let path = std::env::temp_dir().join("test_trajectory_export_no_pose.csv");
+        export_sweep_csv(&path, &sweep).expect("export should succeed");
+
+        let contents = std::fs::read_to_string(&path).expect("should read file");
+        let lines: Vec<&str> = contents.lines().collect();
+
+        // Header is the v1 string with no extra columns.
+        assert_eq!(
+            lines[0],
+            "t_seconds,target_value,achieved_value,residual,u,u_dot,u_ddot,F_actuator_N,driver_torque_Nm,status"
+        );
+        for line in lines.iter().skip(1) {
+            assert_eq!(line.split(',').count(), 10);
+        }
 
         let _ = std::fs::remove_file(&path);
     }
