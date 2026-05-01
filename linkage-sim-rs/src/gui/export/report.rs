@@ -1696,11 +1696,11 @@ fn write_transmission_angle_section(
          rotation:</p>\n",
     );
     html.push_str(&format!(
-        "\\[ BD_\\min = |d - a| = {:.4}\\,\\text{{m}},\\quad BD_\\max = d + a = {:.4}\\,\\text{{m}} \\]\n",
+        "\\[ BD_{{\\min}} = |d - a| = {:.4}\\,\\text{{m}},\\quad BD_{{\\max}} = d + a = {:.4}\\,\\text{{m}} \\]\n",
         bd_min, bd_max,
     ));
     html.push_str(&format!(
-        "\\[ \\mu_\\min = {:.3}^\\circ,\\quad \\mu_\\max = {:.3}^\\circ \\]\n",
+        "\\[ \\mu_{{\\min}} = {:.3}^\\circ,\\quad \\mu_{{\\max}} = {:.3}^\\circ \\]\n",
         mu_min.to_degrees(),
         mu_max.to_degrees(),
     ));
