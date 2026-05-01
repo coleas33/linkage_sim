@@ -30,6 +30,12 @@ pub fn draw(state: &mut AppState, ui: &mut egui::Ui) {
             profile_input::draw(state, ui);
         });
 
+    egui::CollapsingHeader::new("Visualization")
+        .default_open(false)
+        .show(ui, |ui| {
+            draw_visualization_section(state, ui);
+        });
+
     egui::CollapsingHeader::new("Failure handling")
         .default_open(false)
         .show(ui, |ui| {
@@ -86,4 +92,24 @@ fn draw_severity_toggle(state: &mut AppState, ui: &mut egui::Ui) {
         }
         state.mark_sweep_dirty();
     }
+}
+
+/// Draw the "Visualization" section: motion-ribbon toggle + density slider.
+/// Trajectory-mode-only — the renderer short-circuits when not in Trajectory
+/// mode, so the toggle is harmless to flip in other modes.
+fn draw_visualization_section(state: &mut AppState, ui: &mut egui::Ui) {
+    ui.checkbox(
+        &mut state.show_motion_ribbon,
+        "Show motion ribbon (ghost poses)",
+    )
+    .on_hover_text(
+        "Render N evenly-spaced ghost poses of the mechanism along the \
+         back-solved trajectory, faded behind the live pose. Useful for \
+         visualising the swept path without animating.",
+    );
+    ui.add_enabled(
+        state.show_motion_ribbon,
+        egui::Slider::new(&mut state.motion_ribbon_n_ghosts, 2..=20).text("Ghosts"),
+    )
+    .on_hover_text("Number of ghost poses sampled across the trajectory.");
 }

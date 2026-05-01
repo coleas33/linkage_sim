@@ -53,6 +53,18 @@ pub fn render_mechanism(
     let view = &state.view;
     let selected = &state.selected;
 
+    // ── Motion ribbon: ghost poses along the back-solved trajectory ──
+    // Renders BEFORE everything else (except grid + bg image, which are
+    // already painted by draw_canvas) so the live mechanism draws on
+    // top. Trajectory mode only.
+    if state.show_motion_ribbon
+        && state.sweep_mode.is_trajectory()
+    {
+        if let Some(sweep_data) = state.sweep_data.as_ref() {
+            draw_motion_ribbon(painter, state, sweep_data);
+        }
+    }
+
     // Nathan Mode: optional grayscale color transform for canvas elements.
     let gc = |c: Color32| -> Color32 {
         if state.nathan_mode { to_grayscale(c) } else { c }
@@ -1505,6 +1517,151 @@ pub fn show_body_tooltip(ui: &mut egui::Ui, body: &Body, body_id: &str) {
             ui.label(format!("Length: {:.1} mm", length * 1e3));
         }
     });
+}
+
+// ── Motion ribbon (ghost poses along trajectory) ────────────────────────────
+
+/// Render N evenly-spaced ghost poses of the mechanism along the
+/// back-solved trajectory `q(t)` on the canvas, faded behind the live
+/// pose. Visualises the swept path without animating.
+///
+/// Each ghost is re-solved by mapping the recorded `u_k` (the
+/// back-solved input parameter) to the equivalent kinematic time and
+/// invoking `solve_position`. The rendered geometry is a simple
+/// link-bar outline (no joints, dimensions, or labels) so the silhouette
+/// is unobtrusive.
+///
+/// Skipped silently when `sweep_data.u_values` is `None` (sweep
+/// hasn't completed) or `n_ghosts < 2` / `total_samples < 2`.
+fn draw_motion_ribbon(
+    painter: &egui::Painter,
+    state: &AppState,
+    sweep_data: &crate::gui::sweep::SweepData,
+) {
+    use crate::solver::kinematics::solve_position;
+
+    let n = state.motion_ribbon_n_ghosts;
+    let total_samples = sweep_data.u_values.as_ref().map(|v| v.len()).unwrap_or(0);
+    if total_samples < 2 || n < 2 {
+        return;
+    }
+
+    let Some(mech) = state.mechanism.as_ref() else {
+        return;
+    };
+    let nominal_rate = state.driver_omega();
+    if nominal_rate.abs() < 1e-12 {
+        return;
+    }
+    let u_0 = state.driver_theta_0();
+
+    let stride = (total_samples - 1) as f64 / (n - 1) as f64;
+    let u_values = sweep_data.u_values.as_ref().unwrap();
+
+    // Warm-start each ghost solve from the previous successful pose so
+    // we stay on the same assembly branch as the live mechanism.
+    let mut q_seed = state.last_good_q.clone();
+
+    for i in 0..n {
+        let idx = ((i as f64 * stride).round() as usize).min(total_samples - 1);
+        let u_k = u_values[idx];
+        let t_mech = (u_k - u_0) / nominal_rate;
+
+        match solve_position(mech, &q_seed, t_mech, 1e-10, 50) {
+            Ok(res) if res.converged => {
+                // Alpha ramps 40 → 240 across ghosts so older poses are
+                // dimmer than later ones (gives a visible ordering).
+                let alpha =
+                    ((i as f64) / (n.saturating_sub(1).max(1) as f64) * 200.0 + 40.0)
+                        .min(255.0) as u8;
+                draw_mechanism_ghost(painter, state, mech, &res.q, alpha);
+                q_seed = res.q;
+            }
+            _ => {
+                // Skip this ghost; keep the previous q_seed for the next attempt.
+            }
+        }
+    }
+}
+
+/// Render a faded silhouette of the mechanism at a given pose `q`.
+///
+/// Draws only the link bars (rounded-rect outlines) for each
+/// non-ground body. No joints, no attachment dots, no labels — just
+/// enough to convey the mechanism's pose silhouette. The fill and
+/// stroke alpha are both scaled by `alpha`.
+fn draw_mechanism_ghost(
+    painter: &egui::Painter,
+    state: &AppState,
+    mech: &Mechanism,
+    q: &nalgebra::DVector<f64>,
+    alpha: u8,
+) {
+    let mech_state = mech.state();
+    let view = &state.view;
+    let bodies = mech.bodies();
+
+    // Use BODY_COLOR with alpha override for the stroke; faded fill at half alpha.
+    let base = if state.nathan_mode {
+        to_grayscale(BODY_COLOR)
+    } else {
+        BODY_COLOR
+    };
+    let fill_alpha = alpha.saturating_div(3).max(8);
+    let stroke_color = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), alpha);
+    let fill_color = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), fill_alpha);
+
+    for (body_id, body) in bodies.iter() {
+        if body_id == GROUND_ID {
+            continue;
+        }
+
+        let mut point_names: Vec<&String> = body.attachment_points.keys().collect();
+        point_names.sort();
+        let screen_points: Vec<Pos2> = point_names
+            .iter()
+            .map(|name| {
+                let local = &body.attachment_points[*name];
+                let global = mech_state.body_point_global(body_id, local, q);
+                let sp = view.world_to_screen(global.x, global.y);
+                Pos2::new(sp[0], sp[1])
+            })
+            .collect();
+
+        if screen_points.len() < 2 {
+            continue;
+        }
+
+        // Reuse the bar geometry from the live render path.
+        let draw_bar = |a: Pos2, b: Pos2| {
+            let dx = b.x - a.x;
+            let dy = b.y - a.y;
+            let len = (dx * dx + dy * dy).sqrt();
+            if len < 1.0 {
+                return;
+            }
+            let nx = -dy / len * LINK_HALF_WIDTH;
+            let ny = dx / len * LINK_HALF_WIDTH;
+            let corners = vec![
+                Pos2::new(a.x + nx, a.y + ny),
+                Pos2::new(b.x + nx, b.y + ny),
+                Pos2::new(b.x - nx, b.y - ny),
+                Pos2::new(a.x - nx, a.y - ny),
+            ];
+            let shape = egui::epaint::PathShape::convex_polygon(
+                corners,
+                fill_color,
+                Stroke::new(1.5, stroke_color),
+            );
+            painter.add(shape);
+        };
+        for pair in screen_points.windows(2) {
+            draw_bar(pair[0], pair[1]);
+        }
+        if screen_points.len() >= 3 {
+            draw_bar(*screen_points.last().unwrap(), screen_points[0]);
+        }
+    }
 }
 
 #[cfg(test)]

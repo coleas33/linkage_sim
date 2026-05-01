@@ -414,6 +414,15 @@ pub struct AppState {
     /// Persists across recomputes — it's a UX state for the visible cursor,
     /// not derived from sweep_data.
     pub last_trajectory_scrub_t: Option<f64>,
+    // ── Motion ribbon (ghost poses along trajectory) ─────────────────
+    /// Render N evenly-spaced ghost poses of the mechanism along the
+    /// trajectory on the canvas, behind the live pose. Visualises the
+    /// swept path without animating. Trajectory mode only.
+    pub show_motion_ribbon: bool,
+    /// Number of ghost poses to render when `show_motion_ribbon` is
+    /// true. Clamped to 2..=20 by the slider; values outside that range
+    /// are tolerated by the renderer (it short-circuits if < 2).
+    pub motion_ribbon_n_ghosts: usize,
 }
 
 /// Background image overlay for tracing mechanisms from photos/sketches.
@@ -651,6 +660,8 @@ impl Default for AppState {
             sweep_mode: crate::gui::sweep::SweepMode::Angle,
             pending_canvas_pick: None,
             last_trajectory_scrub_t: None,
+            show_motion_ribbon: false,
+            motion_ribbon_n_ghosts: 8,
         };
         state.rebuild();
         state

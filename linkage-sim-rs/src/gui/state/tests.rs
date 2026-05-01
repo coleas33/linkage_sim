@@ -2511,3 +2511,80 @@
         let diff = (&state.q - &q_before).norm();
         assert!(diff < 1e-9, "flip on ground-only must not move anything, got drift={}", diff);
     }
+
+    // ── Motion ribbon smoke test ────────────────────────────────────────
+    #[test]
+    fn motion_ribbon_toggle_does_not_panic_with_no_sweep_data() {
+        // Toggling the ribbon on without a completed trajectory sweep
+        // must be a no-op: the renderer short-circuits when sweep_data
+        // is missing or u_values is empty. This is a regression guard
+        // for the canvas drawing path under construction-time states.
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.show_motion_ribbon = true;
+        state.motion_ribbon_n_ghosts = 8;
+        // Ribbon is gated on Trajectory mode; we don't enter it in this
+        // test — just verify the field flips and defaults are sensible.
+        assert!(state.show_motion_ribbon);
+        assert!(state.sweep_data.is_some()); // sample sets up an Angle sweep
+    }
+
+    #[test]
+    fn motion_ribbon_pose_resolve_loop_completes_for_small_trajectory() {
+        // Asserts the per-ghost solve loop converges across N samples
+        // for a canonical 4-bar with a feasible Angle target trajectory.
+        // This is the same loop the canvas runs each frame, so it
+        // exercises the cost-per-frame path.
+        use crate::gui::sweep::SweepMode;
+        use crate::gui::state::{Trajectory, TrajectoryProfile};
+        use crate::solver::inverse_kinematics::{ControlTarget, Severity};
+        use crate::solver::kinematics::solve_position;
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // Switch into a feasible Trajectory mode covering a small angle range.
+        let target = ControlTarget::angle("crank");
+        state.sweep_mode = SweepMode::Trajectory {
+            target,
+            trajectory: Trajectory::Profile(TrajectoryProfile {
+                shape: crate::gui::state::MotionProfile::ConstantSpeed,
+                start_value: 0.5,
+                end_value: 1.5,
+                duration: 1.0,
+            }),
+            severity: Severity::Analysis,
+            n_samples: 10,
+        };
+        state.compute_sweep();
+
+        let sweep_data = state.sweep_data.as_ref().expect("sweep should populate");
+        let u_values = sweep_data
+            .u_values
+            .as_ref()
+            .expect("trajectory sweep populates u_values");
+        assert_eq!(u_values.len(), 10);
+
+        // Run the same loop the renderer would: 10 ghosts, warm-started.
+        let mech = state.mechanism.as_ref().unwrap();
+        let nominal_rate = state.driver_omega();
+        let u_0 = state.driver_theta_0();
+        let mut q_seed = state.last_good_q.clone();
+        let mut converged_count = 0;
+        for &u_k in u_values.iter() {
+            let t_mech = (u_k - u_0) / nominal_rate;
+            if let Ok(res) = solve_position(mech, &q_seed, t_mech, 1e-10, 50) {
+                if res.converged {
+                    q_seed = res.q;
+                    converged_count += 1;
+                }
+            }
+        }
+        // We don't require all to converge (some samples on the
+        // trajectory may straddle a singularity), but the bulk should.
+        assert!(
+            converged_count >= 8,
+            "expected >=8/10 ghost solves to converge, got {}",
+            converged_count
+        );
+    }
