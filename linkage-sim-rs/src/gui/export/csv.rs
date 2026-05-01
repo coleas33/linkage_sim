@@ -1,26 +1,42 @@
 //! CSV export: sweep data and coupler trace data.
 
-#[cfg(feature = "native")]
 use std::io::Write;
-#[cfg(feature = "native")]
-use std::path::Path;
 
-#[cfg(feature = "native")]
 use crate::gui::sweep::{SweepData, SweepMode};
 
-/// Export sweep data to CSV file.
+/// (Native only) Write sweep data CSV to a file path. Calls
+/// `write_sweep_csv` underneath; both layouts (angle/stroke + trajectory)
+/// are produced by the cross-platform writer so the web download path
+/// (`generate_sweep_csv_string`) emits identical bytes.
+#[cfg(feature = "native")]
+pub fn export_sweep_csv(path: &std::path::Path, sweep: &SweepData) -> Result<(), String> {
+    let mut file = std::fs::File::create(path).map_err(|e| e.to_string())?;
+    write_sweep_csv(&mut file, sweep).map_err(|e| e.to_string())
+}
+
+/// (Cross-platform) Render sweep data CSV as a String.
+///
+/// Wraps `write_sweep_csv` over a `Vec<u8>` and decodes as UTF-8. The
+/// writer only emits ASCII (numeric data + simple identifiers) so the
+/// decode never fails in practice — surfaces an error defensively.
+pub fn generate_sweep_csv_string(sweep: &SweepData) -> Result<String, String> {
+    let mut buf: Vec<u8> = Vec::new();
+    write_sweep_csv(&mut buf, sweep).map_err(|e| e.to_string())?;
+    String::from_utf8(buf).map_err(|e| e.to_string())
+}
+
+/// Write sweep data CSV to a generic `Write`. The cross-platform core
+/// for both `export_sweep_csv` (native file I/O) and
+/// `generate_sweep_csv_string` (web blob download).
 ///
 /// In trajectory mode, emits the trajectory column layout (see
 /// `write_trajectory_csv`). Otherwise emits the angle/stroke sweep layout:
 /// driver angle, then sorted body angles, then transmission angle
 /// (if available), then driver torque (if available). All angles in degrees,
 /// torque in N*m.
-#[cfg(feature = "native")]
-pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
-    let mut file = std::fs::File::create(path).map_err(|e| e.to_string())?;
-
+fn write_sweep_csv(out: &mut impl Write, sweep: &SweepData) -> std::io::Result<()> {
     if matches!(sweep.sweep_mode, SweepMode::Trajectory { .. }) {
-        return write_trajectory_csv(&mut file, sweep).map_err(|e| e.to_string());
+        return write_trajectory_csv(out, sweep);
     }
 
     // Collect and sort body IDs for deterministic column order.
@@ -108,7 +124,7 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
     if has_toggles {
         headers.push("toggle_angle_deg".to_string());
     }
-    writeln!(file, "{}", headers.join(",")).map_err(|e| e.to_string())?;
+    writeln!(out, "{}", headers.join(","))?;
 
     // Data rows
     for (i, angle) in sweep.angles_deg.iter().enumerate() {
@@ -201,7 +217,7 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
                 row.push(String::new());
             }
         }
-        writeln!(file, "{}", row.join(",")).map_err(|e| e.to_string())?;
+        writeln!(out, "{}", row.join(","))?;
     }
 
     Ok(())
@@ -216,7 +232,6 @@ pub fn export_sweep_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
 /// Time axis is uniform across `[0, profile.duration]` to match the plot
 /// panel's rendering. `F_actuator_N` is NaN when no LinearActuator is present
 /// (trajectory compute does not populate `actuator_forces`).
-#[cfg(feature = "native")]
 fn write_trajectory_csv(out: &mut impl Write, sweep: &SweepData) -> std::io::Result<()> {
     // Trajectory data lives in the optional vectors. If the user hasn't
     // computed yet, emit just the header so the file is well-formed.
@@ -320,7 +335,6 @@ fn write_trajectory_csv(out: &mut impl Write, sweep: &SweepData) -> std::io::Res
 /// Format an `InverseSolveStatus` as a single CSV field (no commas, no
 /// quoting required). Failure variants include their numeric payload so
 /// downstream tools can filter / sort by them.
-#[cfg(feature = "native")]
 fn format_status(s: &crate::solver::inverse_kinematics::InverseSolveStatus) -> String {
     use crate::solver::inverse_kinematics::InverseSolveStatus::*;
     match s {
@@ -340,30 +354,46 @@ fn format_status(s: &crate::solver::inverse_kinematics::InverseSolveStatus) -> S
     }
 }
 
-/// Export coupler trace data to CSV file.
+/// (Native only) Write coupler trace CSV to a file path.
+#[cfg(feature = "native")]
+pub fn export_coupler_csv(path: &std::path::Path, sweep: &SweepData) -> Result<(), String> {
+    if sweep.coupler_traces.is_empty() {
+        return Err("No coupler traces available".to_string());
+    }
+    let mut file = std::fs::File::create(path).map_err(|e| e.to_string())?;
+    write_coupler_csv(&mut file, sweep).map_err(|e| e.to_string())
+}
+
+/// (Cross-platform) Render coupler trace CSV as a String.
+///
+/// Returns `Err` when the sweep has no coupler traces — matches the
+/// `export_coupler_csv` precondition.
+pub fn generate_coupler_csv_string(sweep: &SweepData) -> Result<String, String> {
+    if sweep.coupler_traces.is_empty() {
+        return Err("No coupler traces available".to_string());
+    }
+    let mut buf: Vec<u8> = Vec::new();
+    write_coupler_csv(&mut buf, sweep).map_err(|e| e.to_string())?;
+    String::from_utf8(buf).map_err(|e| e.to_string())
+}
+
+/// Write coupler trace CSV to a generic `Write`. Cross-platform core for
+/// `export_coupler_csv` and `generate_coupler_csv_string`.
 ///
 /// Columns: driver angle, then sorted coupler trace x/y pairs. Coordinates
-/// are in meters (SI).
-#[cfg(feature = "native")]
-pub fn export_coupler_csv(path: &Path, sweep: &SweepData) -> Result<(), String> {
+/// are in meters (SI). Caller is responsible for the empty-traces
+/// precondition check (the wrappers do it before calling).
+fn write_coupler_csv(out: &mut impl Write, sweep: &SweepData) -> std::io::Result<()> {
     let mut trace_names: Vec<&String> = sweep.coupler_traces.keys().collect();
     trace_names.sort();
 
-    if trace_names.is_empty() {
-        return Err("No coupler traces available".to_string());
-    }
-
-    let mut file = std::fs::File::create(path).map_err(|e| e.to_string())?;
-
-    // Header: angle_deg, trace1_x, trace1_y, ...
     let mut headers = vec!["angle_deg".to_string()];
     for name in &trace_names {
         headers.push(format!("{}_x_m", name));
         headers.push(format!("{}_y_m", name));
     }
-    writeln!(file, "{}", headers.join(",")).map_err(|e| e.to_string())?;
+    writeln!(out, "{}", headers.join(","))?;
 
-    // Data rows
     for (i, angle) in sweep.angles_deg.iter().enumerate() {
         let mut row = vec![format!("{:.4}", angle)];
         for name in &trace_names {
@@ -377,7 +407,7 @@ pub fn export_coupler_csv(path: &Path, sweep: &SweepData) -> Result<(), String> 
                 }
             }
         }
-        writeln!(file, "{}", row.join(",")).map_err(|e| e.to_string())?;
+        writeln!(out, "{}", row.join(","))?;
     }
 
     Ok(())
@@ -829,6 +859,71 @@ mod tests {
         assert!(lines[4].contains(",BranchJump:"));
         assert!(lines[5].contains(",NonConvergent:iter=50;res="));
 
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn generate_sweep_csv_string_matches_file_export() {
+        // Cross-platform companion must produce byte-identical output to
+        // the file exporter (modulo newline normalization). This test
+        // pins them together so future writer changes hit both paths.
+        let sweep = test_sweep_data();
+        let path = std::env::temp_dir().join("test_sweep_csv_string_parity.csv");
+        export_sweep_csv(&path, &sweep).expect("file export should succeed");
+
+        let from_file = std::fs::read_to_string(&path).expect("read file");
+        let from_string = generate_sweep_csv_string(&sweep).expect("string export");
+        // Normalize trailing newlines (writeln! adds OS-specific). Compare
+        // line-by-line.
+        let lines_file: Vec<&str> = from_file.lines().collect();
+        let lines_str: Vec<&str> = from_string.lines().collect();
+        assert_eq!(
+            lines_file, lines_str,
+            "file and String exports should produce identical content"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn generate_sweep_csv_string_trajectory_includes_pose() {
+        // The trajectory layout shares write_trajectory_csv between the
+        // file and String paths, so pose columns should also appear in
+        // generate_sweep_csv_string output when SweepData carries them.
+        let mut sweep = test_trajectory_sweep_data(5);
+        sweep.pose_body_order = Some(vec!["crank".to_string()]);
+        sweep.pose_snapshots = Some(
+            (0..5).map(|i| vec![[0.1 * i as f64, 0.0, 0.0]]).collect(),
+        );
+        let csv = generate_sweep_csv_string(&sweep).expect("string export");
+        assert!(
+            csv.lines().next().unwrap().contains("q_theta_crank_rad"),
+            "header should include pose column: {}",
+            csv.lines().next().unwrap()
+        );
+        assert_eq!(csv.lines().count(), 6, "header + 5 data rows");
+    }
+
+    #[test]
+    fn generate_coupler_csv_string_empty_traces_returns_error() {
+        // String companion preserves the empty-traces precondition.
+        let mut sweep = test_sweep_data();
+        sweep.coupler_traces.clear();
+        let result = generate_coupler_csv_string(&sweep);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("No coupler traces"));
+    }
+
+    #[test]
+    fn generate_coupler_csv_string_matches_file_export() {
+        let sweep = test_sweep_data();
+        let path = std::env::temp_dir().join("test_coupler_csv_string_parity.csv");
+        export_coupler_csv(&path, &sweep).expect("file export should succeed");
+
+        let from_file = std::fs::read_to_string(&path).expect("read file");
+        let from_string = generate_coupler_csv_string(&sweep).expect("string export");
+        let lines_file: Vec<&str> = from_file.lines().collect();
+        let lines_str: Vec<&str> = from_string.lines().collect();
+        assert_eq!(lines_file, lines_str);
         let _ = std::fs::remove_file(&path);
     }
 

@@ -15,6 +15,7 @@ mod svg;
 // String-returning generators are platform-independent and re-exported on
 // both native and web. Path-writing wrappers (file I/O) and raster
 // generation (resvg/gif crates) remain native-only.
+pub use csv::{generate_coupler_csv_string, generate_sweep_csv_string};
 #[cfg(feature = "native")]
 pub use csv::{export_coupler_csv, export_sweep_csv};
 pub use dxf::generate_dxf_string;

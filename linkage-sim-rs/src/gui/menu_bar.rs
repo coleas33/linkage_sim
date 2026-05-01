@@ -249,55 +249,74 @@ pub(crate) fn draw_menu_bar(
                         }
                     }
                     ui.separator();
-                    // ── Native-only CSV exports (Pass 2 will unify these) ──
-                    #[cfg(feature = "native")]
+                    // ── CSV exports (cross-platform) ─────────────────
+                    if ui
+                        .add_enabled(
+                            state.sweep_data.is_some(),
+                            egui::Button::new("Export Sweep CSV..."),
+                        )
+                        .on_hover_text(
+                            "Export the active sweep as CSV.\n\
+                             \u{2022} Angle/Stroke modes: per-step kinematic and dynamic columns.\n\
+                             \u{2022} Trajectory mode: time-series with target/achieved/u/u_dot/u_ddot/F_actuator/status.",
+                        )
+                        .clicked()
                     {
-                        if ui
-                            .add_enabled(
-                                state.sweep_data.is_some(),
-                                egui::Button::new("Export Sweep CSV..."),
-                            )
-                            .on_hover_text(
-                                "Export the active sweep as CSV.\n\
-                                 \u{2022} Angle/Stroke modes: per-step kinematic and dynamic columns.\n\
-                                 \u{2022} Trajectory mode: time-series with target/achieved/u/u_dot/u_ddot/F_actuator/status.",
-                            )
-                            .clicked()
-                        {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("CSV", &["csv"])
-                                .set_file_name("sweep_data.csv")
-                                .save_file()
-                            {
-                                if let Some(ref sweep) = state.sweep_data {
-                                    if let Err(e) = export::export_sweep_csv(&path, sweep) {
-                                        log::error!("CSV export failed: {}", e);
-                                    }
+                        if let Some(ref sweep) = state.sweep_data {
+                            match export::generate_sweep_csv_string(sweep) {
+                                Ok(csv) => {
+                                    let outcome = export::download::download_text(
+                                        "sweep_data.csv",
+                                        "text/csv",
+                                        &csv,
+                                        export::download::FileFilter {
+                                            label: "CSV",
+                                            extensions: &["csv"],
+                                        },
+                                    );
+                                    apply_download_outcome(state, outcome);
+                                }
+                                Err(e) => {
+                                    state
+                                        .error_log
+                                        .push(format!("CSV export failed: {}", e));
+                                    state.show_error_panel = true;
                                 }
                             }
-                            ui.close();
                         }
-                        if ui
-                            .add_enabled(
-                                state.sweep_data.is_some(),
-                                egui::Button::new("Export Coupler CSV..."),
-                            )
-                            .on_hover_text("Export coupler point trace coordinates to CSV")
-                            .clicked()
-                        {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("CSV", &["csv"])
-                                .set_file_name("coupler_trace.csv")
-                                .save_file()
-                            {
-                                if let Some(ref sweep) = state.sweep_data {
-                                    if let Err(e) = export::export_coupler_csv(&path, sweep) {
-                                        log::error!("Coupler CSV export failed: {}", e);
-                                    }
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(
+                            state.sweep_data.is_some(),
+                            egui::Button::new("Export Coupler CSV..."),
+                        )
+                        .on_hover_text("Export coupler point trace coordinates to CSV")
+                        .clicked()
+                    {
+                        if let Some(ref sweep) = state.sweep_data {
+                            match export::generate_coupler_csv_string(sweep) {
+                                Ok(csv) => {
+                                    let outcome = export::download::download_text(
+                                        "coupler_trace.csv",
+                                        "text/csv",
+                                        &csv,
+                                        export::download::FileFilter {
+                                            label: "CSV",
+                                            extensions: &["csv"],
+                                        },
+                                    );
+                                    apply_download_outcome(state, outcome);
+                                }
+                                Err(e) => {
+                                    state
+                                        .error_log
+                                        .push(format!("Coupler CSV export failed: {}", e));
+                                    state.show_error_panel = true;
                                 }
                             }
-                            ui.close();
                         }
+                        ui.close();
                     }
                     // ── Unified text exports (native: file dialog, web: download) ──
                     let in_traj_mode = state
