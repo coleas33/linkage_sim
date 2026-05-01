@@ -507,6 +507,7 @@ pub(crate) fn draw_menu_bar(
                                 sweep,
                                 state.grashof_result.as_ref(),
                                 &state.display_units,
+                                &state.sensor_config,
                             ) {
                                 Ok(html) => {
                                     let outcome = export::download::download_text(

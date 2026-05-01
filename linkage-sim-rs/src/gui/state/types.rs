@@ -415,6 +415,75 @@ fn scurve_value(t: f64, duration: f64, start: f64, end: f64) -> (f64, f64, f64) 
     (h, h_dot, h_ddot)
 }
 
+/// Sensor configuration for state-estimation / closed-loop control.
+///
+/// Drives the §5 sensor-fusion derivation in the HTML report. Independent
+/// of the mechanism core (just stores which joints / actuators have
+/// sensors, not the actual readings). When `encoder_joint` is `Some`,
+/// an encoder is assumed to be mounted on that revolute joint and
+/// measures the relative angle between its two bodies; for joints
+/// involving ground, that's just the moving body's orientation.
+///
+/// `noise_std_*` fields are 1-σ standard deviations of the sensor
+/// noise, in SI units (rad for the encoder, m for the actuator). Used
+/// only by the EKF derivation in the report (process / measurement
+/// covariance matrices). Defaults are conservative (encoder ≈ 0.001 rad
+/// ≈ 12 bits resolution; actuator ≈ 50 µm = LVDT-typical).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SensorConfig {
+    /// Joint where an encoder is mounted. `None` = no encoder. Joint ID
+    /// must reference an existing revolute joint in the mechanism for
+    /// the sensor to be exercised.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encoder_joint: Option<String>,
+    /// 1-σ encoder noise [rad].
+    #[serde(default = "SensorConfig::default_encoder_noise")]
+    pub encoder_noise_std: f64,
+    /// Whether the linear actuator's stroke is measured. Only meaningful
+    /// when the mechanism has a LinearActuator force element or
+    /// LinearDriver constraint; otherwise treated as `false`.
+    #[serde(default)]
+    pub actuator_position_enabled: bool,
+    /// 1-σ actuator-position noise [m].
+    #[serde(default = "SensorConfig::default_actuator_noise")]
+    pub actuator_noise_std: f64,
+}
+
+impl SensorConfig {
+    fn default_encoder_noise() -> f64 {
+        0.001 // ~12-bit encoder over 2π → 2π / 4096 ≈ 1.5 mrad
+    }
+
+    fn default_actuator_noise() -> f64 {
+        50e-6 // 50 µm: typical LVDT / linear encoder
+    }
+
+    /// Returns the number of active sensors (0, 1, or 2). Drives the
+    /// EKF section's branching — 2 sensors → full fusion, 1 → single-
+    /// sensor estimator, 0 → open-loop note.
+    pub fn n_active_sensors(&self) -> usize {
+        let mut n = 0;
+        if self.encoder_joint.is_some() {
+            n += 1;
+        }
+        if self.actuator_position_enabled {
+            n += 1;
+        }
+        n
+    }
+}
+
+impl Default for SensorConfig {
+    fn default() -> Self {
+        Self {
+            encoder_joint: None,
+            encoder_noise_std: Self::default_encoder_noise(),
+            actuator_position_enabled: false,
+            actuator_noise_std: Self::default_actuator_noise(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

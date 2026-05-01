@@ -214,6 +214,19 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
             }
         });
 
+    // ── Sensors ───────────────────────────────────────────────────────
+    // What you have wired up in real life. Drives §5 (sensor fusion /
+    // EKF) of the HTML report and labels the schematic accordingly.
+    let sensor_color = state.nc(egui::Color32::from_rgb(180, 130, 220));
+    egui::CollapsingHeader::new(
+        egui::RichText::new("Sensors").color(sensor_color),
+    )
+        .id_salt("sensors_section")
+        .default_open(false)
+        .show(ui, |ui| {
+            draw_sensors_section(ui, state);
+        });
+
     // ── Driver ───────────────────────────────────────────────────────
     let driver_color = state.nc(egui::Color32::from_rgb(100, 220, 140));
     egui::CollapsingHeader::new(
@@ -872,4 +885,163 @@ fn draw_motion_profile_selector(ui: &mut egui::Ui, state: &mut AppState) {
             }
         }
     }
+}
+
+/// Draw the Sensors collapsing section: encoder on/off + which joint,
+/// actuator-position on/off, plus noise-σ inputs that the report uses to
+/// build the EKF measurement covariance matrix.
+fn draw_sensors_section(ui: &mut egui::Ui, state: &mut AppState) {
+    use crate::core::constraint::Constraint;
+
+    ui.label(
+        egui::RichText::new(
+            "Pick the sensors you actually have on the real-world mechanism. \
+             Drives §5 (sensor fusion / state estimation) of the HTML report.",
+        )
+        .small()
+        .weak(),
+    );
+    ui.add_space(4.0);
+
+    // ── Encoder selector ──────────────────────────────────────────────
+    let mut encoder_enabled = state.sensor_config.encoder_joint.is_some();
+    let toggled_encoder = ui
+        .checkbox(&mut encoder_enabled, "Joint encoder")
+        .on_hover_text(
+            "Enable a rotary encoder on a revolute joint. Measures the relative \
+             angle between the joint's two bodies; for joints to ground, that's \
+             just the moving body's orientation.",
+        )
+        .changed();
+    if toggled_encoder {
+        if encoder_enabled {
+            // Default to the driver's joint if available — that's where the
+            // encoder almost always lives in real hardware.
+            let default_joint = state
+                .mechanism
+                .as_ref()
+                .and_then(|m| m.drivers().first().map(|d| d.id().to_string()))
+                .or_else(|| {
+                    state
+                        .mechanism
+                        .as_ref()
+                        .and_then(|m| m.joints().first().map(|j| j.id().to_string()))
+                });
+            state.sensor_config.encoder_joint = default_joint;
+        } else {
+            state.sensor_config.encoder_joint = None;
+        }
+    }
+    if state.sensor_config.encoder_joint.is_some() {
+        // Joint dropdown.
+        let joints: Vec<String> = state
+            .mechanism
+            .as_ref()
+            .map(|m| {
+                let mut joint_ids: Vec<String> =
+                    m.joints().iter().map(|j| j.id().to_string()).collect();
+                // Drivers can also host encoders (typical case: encoder on
+                // the motor shaft).
+                for d in m.drivers() {
+                    joint_ids.push(d.id().to_string());
+                }
+                joint_ids
+            })
+            .unwrap_or_default();
+        let current = state
+            .sensor_config
+            .encoder_joint
+            .clone()
+            .unwrap_or_default();
+        ui.horizontal(|ui| {
+            ui.label("at joint");
+            egui::ComboBox::from_id_salt("encoder_joint_combo")
+                .selected_text(&current)
+                .show_ui(ui, |ui| {
+                    for jid in &joints {
+                        ui.selectable_value(
+                            &mut state.sensor_config.encoder_joint,
+                            Some(jid.clone()),
+                            jid,
+                        );
+                    }
+                });
+        });
+        // Noise σ slider.
+        let mut sigma_mrad = state.sensor_config.encoder_noise_std * 1000.0;
+        let prev = sigma_mrad;
+        ui.horizontal(|ui| {
+            ui.label("noise σ");
+            ui.add(
+                egui::Slider::new(&mut sigma_mrad, 0.01..=10.0)
+                    .logarithmic(true)
+                    .suffix(" mrad"),
+            )
+            .on_hover_text(
+                "1-σ standard deviation of the encoder reading, in milliradians. \
+                 12-bit absolute encoder ≈ 1.5 mrad, 16-bit ≈ 0.1 mrad.",
+            );
+        });
+        if (sigma_mrad - prev).abs() > 1e-9 {
+            state.sensor_config.encoder_noise_std = sigma_mrad / 1000.0;
+        }
+    }
+
+    ui.add_space(4.0);
+
+    // ── Actuator position sensor ───────────────────────────────────────
+    // Only meaningful if the mechanism has a linear actuator.
+    let has_actuator = state.mechanism.as_ref().is_some_and(|m| {
+        m.forces().iter().any(|f| {
+            matches!(f, crate::forces::elements::ForceElement::LinearActuator(_))
+        }) || !m.linear_drivers().is_empty()
+    });
+    ui.add_enabled_ui(has_actuator, |ui| {
+        ui.checkbox(
+            &mut state.sensor_config.actuator_position_enabled,
+            "Linear actuator position sensor",
+        )
+        .on_hover_text(if has_actuator {
+            "LVDT, leadscrew encoder, or similar sensor measuring stroke length \
+             along the actuator's line of action."
+        } else {
+            "Add a LinearActuator force element or LinearDriver constraint to \
+             the mechanism to enable actuator position sensing."
+        });
+    });
+    if state.sensor_config.actuator_position_enabled && has_actuator {
+        let mut sigma_um = state.sensor_config.actuator_noise_std * 1e6;
+        let prev = sigma_um;
+        ui.horizontal(|ui| {
+            ui.label("noise σ");
+            ui.add(
+                egui::Slider::new(&mut sigma_um, 1.0..=1000.0)
+                    .logarithmic(true)
+                    .suffix(" µm"),
+            )
+            .on_hover_text(
+                "1-σ standard deviation of the actuator-position reading, in \
+                 micrometres. Typical LVDT ≈ 50 µm, optical scale ≈ 5 µm.",
+            );
+        });
+        if (sigma_um - prev).abs() > 1e-9 {
+            state.sensor_config.actuator_noise_std = sigma_um * 1e-6;
+        }
+    }
+
+    ui.add_space(4.0);
+
+    // Status hint based on the current config.
+    let n = state.sensor_config.n_active_sensors();
+    let summary = match n {
+        0 => "Open-loop (no sensors enabled)",
+        1 => "Single-sensor estimator",
+        _ => "2-sensor fusion (EKF)",
+    };
+    ui.label(
+        egui::RichText::new(format!("State estimation: {}", summary))
+            .small()
+            .italics()
+            .color(egui::Color32::from_rgb(160, 160, 200)),
+    );
 }

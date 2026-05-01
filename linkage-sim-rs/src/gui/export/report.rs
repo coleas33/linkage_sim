@@ -17,6 +17,7 @@ pub fn generate_html_report(
     sweep: &SweepData,
     grashof: Option<&crate::analysis::grashof::GrashofResult>,
     units: &super::super::state::DisplayUnits,
+    sensor_config: &crate::gui::state::SensorConfig,
 ) -> Result<String, String> {
     use crate::analysis::envelopes::compute_envelope;
     use crate::core::state::GROUND_ID;
@@ -169,7 +170,7 @@ pub fn generate_html_report(
     write_loop_equations_section(&mut html, mechanism, q);
 
     // -- Mathematical derivation ---------------------------------------------
-    write_math_background_section(&mut html, mechanism, q);
+    write_math_background_section(&mut html, mechanism, q, sensor_config);
 
     // -- Torque envelope ------------------------------------------------------
     if let Some(ref torques) = sweep.driver_torques {
@@ -1564,6 +1565,337 @@ void control_cycle() {{
     html.push_str("</ul>\n");
 }
 
+/// Append "§4l — State estimation / sensor fusion" subsection.
+///
+/// Branches on the user's sensor configuration:
+/// - 0 sensors → open-loop note (state predicted from input torque +
+///   dynamics model only; no sensor fusion possible)
+/// - 1 sensor → single-sensor estimator (low-pass + numerical
+///   differentiation; no fusion)
+/// - 2 sensors → full Extended Kalman Filter (EKF) setup with
+///   measurement Jacobian H derived from §4i sensitivity.
+///
+/// In all cases, the section is parameterised to the actual sensor
+/// noise σ values configured in the GUI so the emitted Q, R covariance
+/// matrices are ready to copy into firmware.
+fn write_state_estimation_section(
+    html: &mut String,
+    mechanism: &crate::core::mechanism::Mechanism,
+    _q: &nalgebra::DVector<f64>,
+    sensor_config: &crate::gui::state::SensorConfig,
+) {
+    use crate::core::constraint::Constraint;
+
+    let n_sensors = sensor_config.n_active_sensors();
+
+    html.push_str("<h3>4l. State estimation and sensor fusion</h3>\n");
+
+    if n_sensors == 0 {
+        html.push_str(
+            "<p><b>Configuration: no sensors enabled.</b> The mechanism is \
+             being driven open-loop — there's no measurement to compare the \
+             commanded state against, so no observer / estimator is \
+             possible. Configure at least one sensor in the input panel \
+             (\"Sensors\" section) to populate this derivation.</p>\n",
+        );
+        html.push_str(
+            "<p>Without sensors, the controller relies entirely on the \
+             dynamics model (process equation \\(x_{k+1} = F\\,x_k + G\\,u_k\\)) \
+             to predict where the mechanism is. Errors accumulate without \
+             bound. Acceptable for short-duration trajectories with stiff \
+             actuators (stepper motors at low load), but fragile against \
+             friction, backlash, or load disturbances.</p>\n",
+        );
+        return;
+    }
+
+    // Identify available sensors for the prose.
+    let encoder_joint = sensor_config.encoder_joint.as_deref();
+    let actuator_enabled = sensor_config.actuator_position_enabled;
+
+    html.push_str(
+        "<p>State estimation combines a dynamics model (predict step) with \
+         sensor measurements (update step) to produce the best estimate of \
+         the mechanism's true state. The state vector for closed-loop \
+         control of a 4-bar is</p>\n",
+    );
+    html.push_str(
+        "\\[ x = \\begin{bmatrix} \\theta_2 \\\\ \\dot\\theta_2 \\end{bmatrix} \\in \\mathbb{R}^2 \\]\n",
+    );
+    html.push_str(
+        "<p>(crank angle and angular velocity). Higher-order extensions add \
+         \\(\\ddot\\theta_2\\) or per-body angles; the 2-state model below \
+         is the minimum that closes the loop. Discrete-time dynamics with \
+         sample period \\(\\Delta t\\):</p>\n",
+    );
+    html.push_str(
+        "\\[ x_{k+1} = F\\,x_k + w_k,\\qquad F = \\begin{bmatrix} 1 & \\Delta t \\\\ 0 & 1 \\end{bmatrix} \\]\n",
+    );
+    html.push_str(
+        "<p>where \\(w_k \\sim \\mathcal{N}(0, Q)\\) is the process noise \
+         (un-modelled dynamics: friction, motor torque ripple, etc.). \
+         Typical Q for this 2-state model:</p>\n",
+    );
+    html.push_str(
+        "\\[ Q = \\begin{bmatrix} \\sigma_\\theta^2\\,\\Delta t^2 & 0 \\\\ 0 & \\sigma_{\\dot\\theta}^2\\,\\Delta t \\end{bmatrix} \\]\n",
+    );
+    html.push_str(
+        "<p>(diagonal; the \\(\\Delta t\\) factors come from integrating \
+         continuous-time white noise over the sample period — see e.g. \
+         Crassidis &amp; Junkins, <em>Optimal Estimation</em>, ch. 4).</p>\n",
+    );
+
+    // ── Measurement model ─────────────────────────────────────────────
+    html.push_str("<p><b>Measurement model</b> for your sensor selection:</p>\n");
+
+    // Determine which row(s) appear in y = h(x).
+    let mut h_rows: Vec<&'static str> = Vec::new();
+    let mut h_jac_rows: Vec<&'static str> = Vec::new();
+    let mut r_diag: Vec<f64> = Vec::new();
+    let mut r_unit: Vec<&'static str> = Vec::new();
+
+    if let Some(joint_id) = encoder_joint {
+        // Encoder reading: relative angle of the two bodies the joint connects.
+        // For typical configurations this collapses to θ_2 (when the joint
+        // connects ground to crank). For other joints, the reading is
+        // θ_j − θ_i which still depends on θ_2 through the kinematic chain.
+        // Look up which two bodies this joint touches.
+        let touches_ground_and_crank = mechanism
+            .joints()
+            .iter()
+            .chain(mechanism.drivers().iter().map(|_| {
+                // Drivers can also be encoder hosts — but we look them up below.
+                // Placeholder: not all drivers are JointConstraint.
+                None
+            }).filter_map(|x| x))
+            .any(|j| {
+                j.id() == joint_id
+                    && (j.body_i_id() == "ground" || j.body_j_id() == "ground")
+            });
+        let _ = touches_ground_and_crank;
+        // Display the encoder row generically; the user can simplify by
+        // hand if their encoder is on the driver joint.
+        h_rows.push("\\theta_j - \\theta_i");
+        h_jac_rows.push(
+            "\\frac{\\partial(\\theta_j - \\theta_i)}{\\partial \\theta_2}\\quad 0",
+        );
+        r_diag.push(sensor_config.encoder_noise_std.powi(2));
+        r_unit.push("rad²");
+        html.push_str(&format!(
+            "<p>Encoder on joint <code>{}</code> measures \
+             \\(\\theta_j - \\theta_i\\) (relative orientation of the joint's \
+             two bodies). For an encoder on a ground-attached joint (e.g. the \
+             crank-ground revolute), this reduces to \\(\\theta_2\\) directly. \
+             1-σ noise: \\({:.4}\\) rad ≈ \\({:.2}\\) mrad.</p>\n",
+            html_escape(joint_id),
+            sensor_config.encoder_noise_std,
+            sensor_config.encoder_noise_std * 1000.0,
+        ));
+    }
+
+    if actuator_enabled {
+        let has_actuator = mechanism.forces().iter().any(|f| {
+            matches!(f, crate::forces::elements::ForceElement::LinearActuator(_))
+        }) || !mechanism.linear_drivers().is_empty();
+        if has_actuator {
+            h_rows.push("L(\\theta_2)");
+            h_jac_rows.push("\\frac{dL}{d\\theta_2}\\quad 0");
+            r_diag.push(sensor_config.actuator_noise_std.powi(2));
+            r_unit.push("m²");
+            html.push_str(&format!(
+                "<p>Actuator-position sensor measures \\(L\\), the world-frame \
+                 distance between the actuator's two attachment points (§4i). \
+                 1-σ noise: \\({:.6}\\) m ≈ \\({:.1}\\) µm.</p>\n",
+                sensor_config.actuator_noise_std,
+                sensor_config.actuator_noise_std * 1e6,
+            ));
+        } else {
+            html.push_str(
+                "<p><em>Actuator-position sensor is enabled in the input panel \
+                 but the mechanism has no LinearActuator force element or \
+                 LinearDriver constraint. Add one (or disable this sensor) for \
+                 the EKF below to be valid.</em></p>\n",
+            );
+        }
+    }
+
+    // Render h(x), H, R using LaTeX matrices.
+    if !h_rows.is_empty() {
+        html.push_str("\\[ h(x) = \\begin{bmatrix} ");
+        html.push_str(&h_rows.join(" \\\\ "));
+        html.push_str(" \\end{bmatrix},\\qquad ");
+        html.push_str("H = \\frac{\\partial h}{\\partial x} = \\begin{bmatrix} ");
+        html.push_str(&h_jac_rows.join(" \\\\ "));
+        html.push_str(" \\end{bmatrix} \\]\n");
+        // Measurement covariance R as a diagonal matrix.
+        html.push_str("\\[ R = \\operatorname{diag}\\left(");
+        let r_terms: Vec<String> = r_diag
+            .iter()
+            .zip(r_unit.iter())
+            .map(|(v, u)| format!("{:.3e}\\,\\text{{{}}}", v, u))
+            .collect();
+        html.push_str(&r_terms.join(",\\;"));
+        html.push_str("\\right) \\]\n");
+    }
+
+    // ── EKF predict / update equations ─────────────────────────────────
+    if n_sensors == 2 {
+        html.push_str(
+            "<p>With both sensors enabled, the optimal fusion is the \
+             <b>Extended Kalman Filter</b>. Predict step:</p>\n",
+        );
+    } else {
+        html.push_str(
+            "<p>With one sensor, the same Kalman-filter machinery applies but \
+             reduces to a 1-dimensional update. The math below works for \
+             either sensor count.</p>\n",
+        );
+    }
+    html.push_str(
+        "\\[ \\hat x_{k+1|k} = F\\,\\hat x_{k|k},\\qquad P_{k+1|k} = F\\,P_{k|k}\\,F^T + Q \\]\n",
+    );
+    html.push_str("<p>Update step (innovation form):</p>\n");
+    html.push_str(
+        "\\[ y_{\\mathrm{res}} = y_k - h(\\hat x_{k+1|k}),\\quad S = H\\,P_{k+1|k}\\,H^T + R \\]\n",
+    );
+    html.push_str(
+        "\\[ K = P_{k+1|k}\\,H^T\\,S^{-1},\\quad \\hat x_{k+1|k+1} = \\hat x_{k+1|k} + K\\,y_{\\mathrm{res}} \\]\n",
+    );
+    html.push_str(
+        "\\[ P_{k+1|k+1} = (I - K\\,H)\\,P_{k+1|k} \\]\n",
+    );
+    html.push_str(
+        "<p>The Kalman gain \\(K\\) automatically weights each sensor by its \
+         relative confidence: lower-noise sensors get more weight. When one \
+         sensor's noise blows up (e.g. fault), \\(R\\) for that row is \
+         large, \\(S^{-1}\\) for that row is small, and \\(K\\) automatically \
+         de-weights it. <b>This is the rigorous version of \"trust the \
+         sensor that's working\".</b></p>\n",
+    );
+
+    // ── Pseudocode tailored to the active sensors ─────────────────────
+    let n_meas = h_rows.len();
+    if n_meas > 0 {
+        html.push_str("<p><b>Embedded pseudocode</b> for your sensor set:</p>\n");
+        let mut code = String::new();
+        code.push_str("// State and covariance (EKF)\n");
+        code.push_str("float x[2] = { theta2_init, 0.0f };\n");
+        code.push_str("float P[2][2] = { { sigma_init², 0 }, { 0, sigma_init² } };\n");
+        code.push_str(&format!(
+            "const float SIGMA_PROC_THETA = ...;     // tune empirically\n"
+        ));
+        code.push_str(&format!(
+            "const float SIGMA_PROC_OMEGA = ...;     // tune empirically\n"
+        ));
+        if encoder_joint.is_some() {
+            code.push_str(&format!(
+                "const float SIGMA_ENC = {:.6}f;            // [rad]\n",
+                sensor_config.encoder_noise_std,
+            ));
+        }
+        if actuator_enabled {
+            code.push_str(&format!(
+                "const float SIGMA_ACT = {:.8}f;     // [m]\n",
+                sensor_config.actuator_noise_std,
+            ));
+        }
+        code.push_str("\n");
+        code.push_str("void ekf_step(float dt) {\n");
+        code.push_str("    // ── Predict ───────────────────────────────\n");
+        code.push_str("    float x_pred[2] = { x[0] + x[1]*dt, x[1] };\n");
+        code.push_str("    // F = [[1, dt], [0, 1]]; P_pred = F P Fᵀ + Q\n");
+        code.push_str("    float P_pred[2][2];\n");
+        code.push_str("    P_pred[0][0] = P[0][0] + dt*(P[1][0] + P[0][1]) + dt*dt*P[1][1]\n");
+        code.push_str("                 + SIGMA_PROC_THETA*SIGMA_PROC_THETA * dt*dt;\n");
+        code.push_str("    P_pred[0][1] = P[0][1] + dt*P[1][1];\n");
+        code.push_str("    P_pred[1][0] = P[1][0] + dt*P[1][1];\n");
+        code.push_str("    P_pred[1][1] = P[1][1]\n");
+        code.push_str("                 + SIGMA_PROC_OMEGA*SIGMA_PROC_OMEGA * dt;\n");
+        code.push_str("\n");
+        code.push_str("    // ── Update ───────────────────────────────\n");
+        code.push_str("    // Build h(x_pred) and H = ∂h/∂x for the active sensors.\n");
+        if encoder_joint.is_some() && actuator_enabled {
+            code.push_str("    // 2 sensors: H is 2x2 (one row per measurement).\n");
+            code.push_str("    float h_pred[2] = { x_pred[0],  L_of_theta2(x_pred[0]) };\n");
+            code.push_str("    float dL = dL_dtheta(x_pred[0]);  // §4i sensitivity\n");
+            code.push_str("    // H = [[1, 0], [dL, 0]];\n");
+            code.push_str("    float y_meas[2] = { read_encoder(), read_actuator() };\n");
+            code.push_str("    float y_res[2] = { y_meas[0] - h_pred[0], y_meas[1] - h_pred[1] };\n");
+            code.push_str("    // S = H P_pred Hᵀ + R, K = P_pred Hᵀ S⁻¹.\n");
+            code.push_str("    // ... 2x2 inversion. See Crassidis & Junkins ch. 4.\n");
+        } else if encoder_joint.is_some() {
+            code.push_str("    // 1 sensor (encoder): H = [1, 0].\n");
+            code.push_str("    float h_pred = x_pred[0];\n");
+            code.push_str("    float y_res = read_encoder() - h_pred;\n");
+            code.push_str("    float S = P_pred[0][0] + SIGMA_ENC*SIGMA_ENC;\n");
+            code.push_str("    float K[2] = { P_pred[0][0] / S, P_pred[1][0] / S };\n");
+            code.push_str("    x[0] = x_pred[0] + K[0] * y_res;\n");
+            code.push_str("    x[1] = x_pred[1] + K[1] * y_res;\n");
+            code.push_str("    P[0][0] = (1 - K[0]) * P_pred[0][0];\n");
+            code.push_str("    P[0][1] = (1 - K[0]) * P_pred[0][1];\n");
+            code.push_str("    P[1][0] = P_pred[1][0] - K[1] * P_pred[0][0];\n");
+            code.push_str("    P[1][1] = P_pred[1][1] - K[1] * P_pred[0][1];\n");
+        } else if actuator_enabled {
+            code.push_str("    // 1 sensor (actuator): H = [dL/dtheta, 0].\n");
+            code.push_str("    float h_pred = L_of_theta2(x_pred[0]);\n");
+            code.push_str("    float dL = dL_dtheta(x_pred[0]);\n");
+            code.push_str("    float y_res = read_actuator() - h_pred;\n");
+            code.push_str("    float S = dL*dL * P_pred[0][0] + SIGMA_ACT*SIGMA_ACT;\n");
+            code.push_str("    float K[2] = { dL * P_pred[0][0] / S, dL * P_pred[1][0] / S };\n");
+            code.push_str("    x[0] = x_pred[0] + K[0] * y_res;\n");
+            code.push_str("    x[1] = x_pred[1] + K[1] * y_res;\n");
+            code.push_str("    P[0][0] = P_pred[0][0] - K[0] * dL * P_pred[0][0];\n");
+            code.push_str("    P[0][1] = P_pred[0][1] - K[0] * dL * P_pred[0][1];\n");
+            code.push_str("    P[1][0] = P_pred[1][0] - K[1] * dL * P_pred[0][0];\n");
+            code.push_str("    P[1][1] = P_pred[1][1] - K[1] * dL * P_pred[0][1];\n");
+        }
+        code.push_str("}\n");
+        // HTML-escape the < and > in the code block. We pre-format with
+        // monospace styling.
+        let escaped = html_escape(&code);
+        html.push_str(&format!(
+            "<pre style='background: #f0f2f5; padding: 12px; border-left: 3px solid #0f3460; \
+             font-family: Consolas, Monaco, monospace; font-size: 12px; line-height: 1.5; \
+             overflow-x: auto;'>{}</pre>\n",
+            escaped,
+        ));
+    }
+
+    // ── Practical caveats ──────────────────────────────────────────────
+    html.push_str("<p><b>Practical caveats</b>:</p>\n");
+    html.push_str("<ul>\n");
+    html.push_str(
+        "<li><b>Σ initialization</b>: at startup, set \\(P_{0|0}\\) to large values \
+         (e.g. \\(\\sigma_{\\theta,0} = 1\\) rad, \\(\\sigma_{\\dot\\theta,0} = 10\\) rad/s) \
+         so the first few measurements correct it quickly. Don't initialize to zero — \
+         the filter would refuse to update.</li>\n",
+    );
+    html.push_str(
+        "<li><b>Innovation gating</b>: if \\(|y_{\\mathrm{res}}| > 5 \\sqrt{S}\\) for several \
+         cycles, treat the measurement as an outlier (likely a sensor fault) and skip \
+         the update. This is the practical fault-detection mechanism the EKF gives \
+         you for free.</li>\n",
+    );
+    html.push_str(
+        "<li><b>Linearization error near singularities</b>: \\(dL/d\\theta_2\\) goes \
+         to zero at dead points (§4f). The EKF's H Jacobian becomes ill-conditioned \
+         there; the filter degrades gracefully but the actuator-position sensor \
+         loses observability of \\(\\theta_2\\). If your trajectory passes through \
+         a dead point, lean on the encoder during that pose.</li>\n",
+    );
+    html.push_str(
+        "<li><b>Tuning Q</b>: empirical. Start with \\(\\sigma_{\\dot\\theta} \\approx \
+         \\) 10% of expected angular velocity; increase if the filter lags input \
+         changes, decrease if it tracks measurement noise.</li>\n",
+    );
+    html.push_str(
+        "<li><b>References</b>: Welch &amp; Bishop, <em>An Introduction to the \
+         Kalman Filter</em> (UNC TR-95-041); Crassidis &amp; Junkins, <em>Optimal \
+         Estimation of Dynamic Systems</em> (CRC, 2011).</li>\n",
+    );
+    html.push_str("</ul>\n");
+}
+
 /// Append "Grashof condition + classification" subsection. The Grashof
 /// inequality \(s + l \leq p + q\) — where s, l are the shortest and
 /// longest links and p, q the other two — predicts whether the input
@@ -1943,6 +2275,7 @@ fn write_math_background_section(
     html: &mut String,
     mechanism: &Mechanism,
     q: &nalgebra::DVector<f64>,
+    sensor_config: &crate::gui::state::SensorConfig,
 ) {
     use crate::core::state::GROUND_ID;
     use crate::solver::kinematics::{solve_acceleration, solve_velocity};
@@ -2227,6 +2560,9 @@ fn write_math_background_section(
     // ── 4b. Freudenstein's equation (closed-form 4-bar) ────────────────────
     write_freudenstein_section(html, mechanism, q);
 
+    // ── 4l. State estimation / sensor fusion ───────────────────────────────
+    write_state_estimation_section(html, mechanism, q, sensor_config);
+
     // ── 5. Lagrange multipliers ────────────────────────────────────────────
     html.push_str("<h3>5. Why \\(\\lambda\\) = reaction forces / driver torque</h3>\n");
     html.push_str(
@@ -2483,7 +2819,10 @@ mod tests {
 
         let units = DisplayUnits::default();
 
-        let html = generate_html_report(&mech, &q, &sweep, None, &units)
+        // Default SensorConfig = no sensors; §5 should still emit something
+        // (the open-loop note) so the assertion below has content to match.
+        let sensors = crate::gui::state::SensorConfig::default();
+        let html = generate_html_report(&mech, &q, &sweep, None, &units, &sensors)
             .expect("report generation should succeed");
 
         assert!(html.contains("Linkage Mechanism Report"), "should have title");
@@ -2647,10 +2986,87 @@ mod tests {
             html.contains("control_cycle()"),
             "embedded recipe should include pseudocode"
         );
+        // §4l State estimation: with default SensorConfig (no sensors),
+        // the section appears with the open-loop note rather than the EKF.
+        assert!(
+            html.contains("State estimation and sensor fusion"),
+            "should include state estimation section heading"
+        );
+        assert!(
+            html.contains("no sensors enabled"),
+            "default SensorConfig (no sensors) should produce the open-loop note"
+        );
         // Plotly integration
         assert!(html.contains("plotly-2.35.2.min.js"), "should include plotly CDN");
         assert!(html.contains("Plotly.newPlot"), "should have at least one plotly chart");
         assert!(html.contains("energy_plot"), "should have energy plot div");
+    }
+
+    #[test]
+    fn report_state_estimation_section_branches_on_sensor_config() {
+        // Verify §4l adapts to the SensorConfig: 0 sensors → open-loop
+        // note; 1 sensor → 1-D filter; 2 sensors → 2x2 EKF.
+        use crate::gui::samples::{build_sample, SampleMechanism};
+        use crate::gui::state::{DisplayUnits, SensorConfig};
+
+        let (mech, q0) = build_sample(SampleMechanism::FourBar);
+        let result = crate::solver::kinematics::solve_position(&mech, &q0, 0.0, 1e-10, 50)
+            .expect("solve should succeed");
+        let q = if result.converged { result.q } else { q0 };
+        let (sweep, _) = crate::gui::sweep::compute_sweep_data(
+            &mech, &q, 2.0 * std::f64::consts::PI, 0.0, 9.81, None,
+        );
+        let units = DisplayUnits::default();
+
+        // Encoder only.
+        let mut sensors = SensorConfig::default();
+        sensors.encoder_joint = Some("D1".to_string());
+        let html = generate_html_report(&mech, &q, &sweep, None, &units, &sensors).unwrap();
+        assert!(
+            html.contains("State estimation and sensor fusion"),
+            "should include the section"
+        );
+        assert!(
+            !html.contains("no sensors enabled"),
+            "1-sensor config should not emit the open-loop note"
+        );
+        assert!(
+            html.contains("Encoder on joint <code>D1</code>"),
+            "should describe the configured encoder joint"
+        );
+        assert!(
+            html.contains("// 1 sensor (encoder)"),
+            "1-sensor pseudocode branch should be selected"
+        );
+
+        // Both sensors (canonical FourBar has no LinearActuator, so
+        // actuator_position_enabled with no detected actuator triggers
+        // the warning branch — verify by switching to a sample with one).
+        let (mech2, q02) = build_sample(SampleMechanism::ParallelogramActuator);
+        let result2 = crate::solver::kinematics::solve_position(&mech2, &q02, 0.0, 1e-10, 50)
+            .expect("solve should succeed");
+        let q2 = if result2.converged { result2.q } else { q02 };
+        let (sweep2, _) = crate::gui::sweep::compute_sweep_data(
+            &mech2,
+            &q2,
+            2.0 * std::f64::consts::PI,
+            0.0,
+            9.81,
+            None,
+        );
+        let mut sensors2 = SensorConfig::default();
+        sensors2.encoder_joint = Some("D1".to_string());
+        sensors2.actuator_position_enabled = true;
+        let html2 =
+            generate_html_report(&mech2, &q2, &sweep2, None, &units, &sensors2).unwrap();
+        assert!(
+            html2.contains("// 2 sensors: H is 2x2"),
+            "2-sensor pseudocode branch should be selected when both sensors active"
+        );
+        assert!(
+            html2.contains("Extended Kalman Filter"),
+            "2-sensor section should call out the EKF"
+        );
     }
 
     #[test]

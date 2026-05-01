@@ -25,6 +25,7 @@ pub use types::{
     PendingJointType, PendingCanvasPickKind, EditorTool, ContextMenuTarget, SelectedEntity,
     ValidationWarnings, SolverStatus, ForceResults, PropertyPanelTab,
     AlignmentAxis, AlignmentGuide, KeyframeTrajectory, Trajectory, TrajectoryProfile,
+    SensorConfig,
 };
 pub use parametric::{
     SweepParameter, ParametricMetric, ParametricStudyConfig, ParametricStudyResult,
@@ -225,6 +226,12 @@ pub struct AppState {
     pub gravity_magnitude: f64,
     /// Mechanism mounting angle in radians (0 = horizontal).
     pub mounting_angle: f64,
+    /// Sensor configuration for state-estimation / control reports.
+    /// Drives §5 of the HTML report (EKF / sensor fusion derivation)
+    /// and the on-canvas sensor-badge overlay. Mechanism-independent
+    /// (just identifies joints / actuators by ID); persisted across
+    /// saves once `sensor_config` lands in the JSON schema.
+    pub sensor_config: SensorConfig,
     // ── Load cases ──────────────────────────────────────────────────────
     /// Named driver configurations for comparing operating conditions.
     pub load_cases: LoadCaseManager,
@@ -593,6 +600,7 @@ impl Default for AppState {
             show_equation_overlay: false,
             gravity_magnitude: 9.81,
             mounting_angle: 0.0,
+            sensor_config: SensorConfig::default(),
             load_cases: LoadCaseManager::default(),
             active_tool: EditorTool::Select,
             context_menu_target: ContextMenuTarget::default(),
