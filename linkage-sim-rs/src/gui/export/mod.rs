@@ -7,6 +7,7 @@ mod dxf;
 pub mod firmware;
 mod raster;
 mod report;
+pub mod schematic;
 mod svg;
 
 // Re-export all public items so callers can use `export::function_name` unchanged.

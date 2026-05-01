@@ -5,6 +5,32 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-29 — feat(eq): auto-generated labeled mechanism schematic (SVG)
+
+**What:** Added `gui/export/schematic.rs::generate_schematic_svg(mech, q)` that
+produces a self-contained SVG of the loaded mechanism with constraint labels,
+matching the visual style of figures 2 & 3 in
+`docs/superpowers/specs/2026-04-29-linkage-equations-reference.md`. The figure
+includes a title strip with DOF, ground hatching, bars (one per non-ground
+body), joint clusters (coincident joints render as one circle with merged
+labels), italic body labels at each body's centroid, a red driver indicator
+(curved arrow for `RevoluteDriver`, cylinder/piston line for `LinearDriver`),
+and a sidebar legend listing constraint rows grouped by joint kind plus the
+driver row's symbolic form (delegated to `gui::eq_rendering::symbolic_form`).
+Wired into `gui/menu_bar.rs` as File → "Export labeled schematic (SVG)...".
+
+**Why:** Part of the "linkage equations reference" body of work (E-series). The
+goal is to give users a publication-quality labeled figure of their own
+mechanism for design docs and lab reports — generated programmatically from
+the loaded mechanism rather than hand-coded per-figure as in the spec.
+
+**Test results:** 647 lib tests pass (642 baseline + 5 new). New tests cover
+the 4-bar revolute-driver path, the `ParallelogramActuator` sample, an inline
+`LinearDriver`-driven 4-bar (linear-driver indicator branch), an empty
+mechanism (returns Err), and structural well-formedness of the emitted SVG.
+
+---
+
 ## 2026-04-30 — feat(traj): analytic acceleration inverse via per-variant Hessian
 
 **What:** Replaced the placeholder zero-Hessian arms in `ControlTarget::hessian`

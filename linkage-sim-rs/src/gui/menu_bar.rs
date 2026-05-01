@@ -319,6 +319,56 @@ pub(crate) fn draw_menu_bar(
                         if ui
                             .add_enabled(
                                 state.mechanism.is_some(),
+                                egui::Button::new("Export labeled schematic (SVG)..."),
+                            )
+                            .on_hover_text(
+                                "Export the current mechanism as an SVG figure with constraint \
+                                 labels — suitable for design docs, papers, and lab reports.",
+                            )
+                            .clicked()
+                        {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("SVG", &["svg"])
+                                .set_file_name("mechanism_schematic.svg")
+                                .save_file()
+                            {
+                                if let Some(ref mech) = state.mechanism {
+                                    match export::schematic::generate_schematic_svg(
+                                        mech,
+                                        &state.q,
+                                    ) {
+                                        Ok(svg) => {
+                                            if let Err(e) = std::fs::write(&path, &svg) {
+                                                log::error!("Schematic write failed: {}", e);
+                                                state.error_log.push(format!(
+                                                    "Schematic export failed: {}",
+                                                    e
+                                                ));
+                                                state.show_error_panel = true;
+                                            } else {
+                                                state.status_message = Some(format!(
+                                                    "Schematic exported: {}",
+                                                    path.display()
+                                                ));
+                                                state.status_message_time = 3.0;
+                                            }
+                                        }
+                                        Err(e) => {
+                                            log::error!("Schematic generation failed: {}", e);
+                                            state.error_log.push(format!(
+                                                "Schematic generation failed: {}",
+                                                e
+                                            ));
+                                            state.show_error_panel = true;
+                                        }
+                                    }
+                                }
+                            }
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(
+                                state.mechanism.is_some(),
                                 egui::Button::new("Export PNG..."),
                             )
                             .on_hover_text("Export mechanism as a PNG image (1920x1080)")

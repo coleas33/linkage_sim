@@ -81,7 +81,9 @@ gui_submodules:
 
   export:
     path: src/gui/export/
-    files: [mod, svg, dxf, csv, raster, report]
+    files: [mod, svg, dxf, csv, raster, report, schematic, firmware]
+    notes:
+      schematic: Auto-generated labeled mechanism schematic (SVG) — File → "Export labeled schematic (SVG)..."; matches docs/superpowers/specs/2026-04-29-linkage-equations-reference.md figures 2 & 3.
 
   sweep:
     path: src/gui/sweep/
