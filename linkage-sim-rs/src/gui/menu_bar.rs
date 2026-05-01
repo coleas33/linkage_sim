@@ -489,28 +489,39 @@ pub(crate) fn draw_menu_bar(
                         }
                         ui.close();
                     }
-                    // ── Native-only raster exports (Pass 2: WASM raster path) ──
-                    #[cfg(feature = "native")]
+                    // ── Raster exports (gated by `raster` feature; native always
+                    //    has it, web opts in at build time to keep the bundle small)
+                    #[cfg(feature = "raster")]
                     {
                         if ui
-                            .add_enabled(state.mechanism.is_some(), egui::Button::new("Export PNG..."))
+                            .add_enabled(
+                                state.mechanism.is_some(),
+                                egui::Button::new("Export PNG..."),
+                            )
                             .on_hover_text("Export mechanism as a PNG image (1920x1080)")
                             .clicked()
                         {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("PNG", &["png"])
-                                .set_file_name("mechanism.png")
-                                .save_file()
-                            {
-                                if let Some(ref mech) = state.mechanism {
-                                    if let Err(e) = export::export_mechanism_png(
-                                        &path,
-                                        mech,
-                                        &state.q,
-                                        1920,
-                                        1080,
-                                    ) {
-                                        log::error!("PNG export failed: {}", e);
+                            if let Some(ref mech) = state.mechanism {
+                                match export::generate_mechanism_png_bytes(
+                                    mech, &state.q, 1920, 1080,
+                                ) {
+                                    Ok(bytes) => {
+                                        let outcome = export::download::download_bytes(
+                                            "mechanism.png",
+                                            "image/png",
+                                            &bytes,
+                                            export::download::FileFilter {
+                                                label: "PNG",
+                                                extensions: &["png"],
+                                            },
+                                        );
+                                        apply_download_outcome(state, outcome);
+                                    }
+                                    Err(e) => {
+                                        state
+                                            .error_log
+                                            .push(format!("PNG export failed: {}", e));
+                                        state.show_error_panel = true;
                                     }
                                 }
                             }
@@ -524,26 +535,36 @@ pub(crate) fn draw_menu_bar(
                             .on_hover_text("Export an animated GIF of the full crank cycle")
                             .clicked()
                         {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("GIF", &["gif"])
-                                .set_file_name("mechanism.gif")
-                                .save_file()
+                            if let (Some(mech), Some(sweep)) =
+                                (&state.mechanism, &state.sweep_data)
                             {
-                                if let (Some(mech), Some(sweep)) =
-                                    (&state.mechanism, &state.sweep_data)
-                                {
-                                    if let Err(e) = export::export_mechanism_gif(
-                                        &path,
-                                        mech,
-                                        sweep,
-                                        &state.q,
-                                        state.driver_omega(),
-                                        state.driver_theta_0(),
-                                        800,
-                                        600,
-                                        5,
-                                    ) {
-                                        log::error!("GIF export failed: {}", e);
+                                match export::generate_mechanism_gif_bytes(
+                                    mech,
+                                    sweep,
+                                    &state.q,
+                                    state.driver_omega(),
+                                    state.driver_theta_0(),
+                                    800,
+                                    600,
+                                    5,
+                                ) {
+                                    Ok(bytes) => {
+                                        let outcome = export::download::download_bytes(
+                                            "mechanism.gif",
+                                            "image/gif",
+                                            &bytes,
+                                            export::download::FileFilter {
+                                                label: "GIF",
+                                                extensions: &["gif"],
+                                            },
+                                        );
+                                        apply_download_outcome(state, outcome);
+                                    }
+                                    Err(e) => {
+                                        state
+                                            .error_log
+                                            .push(format!("GIF export failed: {}", e));
+                                        state.show_error_panel = true;
                                     }
                                 }
                             }

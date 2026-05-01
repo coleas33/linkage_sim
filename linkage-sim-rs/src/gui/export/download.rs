@@ -43,14 +43,27 @@ pub fn download_text(
     contents: &str,
     filter: FileFilter,
 ) -> DownloadOutcome {
-    download_text_impl(default_filename, mime_type, contents, filter)
+    download_bytes(default_filename, mime_type, contents.as_bytes(), filter)
+}
+
+/// Trigger a download / save of the given binary contents (PNG, GIF, etc).
+///
+/// Same semantics as `download_text` but accepts raw bytes — required
+/// for binary formats where UTF-8 conversion would corrupt the data.
+pub fn download_bytes(
+    default_filename: &str,
+    mime_type: &str,
+    contents: &[u8],
+    filter: FileFilter,
+) -> DownloadOutcome {
+    download_bytes_impl(default_filename, mime_type, contents, filter)
 }
 
 #[cfg(feature = "native")]
-fn download_text_impl(
+fn download_bytes_impl(
     default_filename: &str,
     _mime_type: &str,
-    contents: &str,
+    contents: &[u8],
     filter: FileFilter,
 ) -> DownloadOutcome {
     let Some(path) = rfd::FileDialog::new()
@@ -67,10 +80,10 @@ fn download_text_impl(
 }
 
 #[cfg(target_arch = "wasm32")]
-fn download_text_impl(
+fn download_bytes_impl(
     default_filename: &str,
     mime_type: &str,
-    contents: &str,
+    contents: &[u8],
     _filter: FileFilter,
 ) -> DownloadOutcome {
     use wasm_bindgen::JsCast;
@@ -84,7 +97,7 @@ fn download_text_impl(
 
     // Build a Blob from the contents. js_sys::Array of Uint8Array is the
     // most portable input shape.
-    let bytes = js_sys::Uint8Array::from(contents.as_bytes());
+    let bytes = js_sys::Uint8Array::from(contents);
     let parts = js_sys::Array::new();
     parts.push(&bytes.into());
 

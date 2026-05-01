@@ -6,7 +6,13 @@ description = "Planar linkage mechanism simulator — Rust port of the validated
 
 [features]
 default = ["native"]
-native = ["dep:rfd", "dep:resvg", "dep:gif", "dep:open", "dep:dirs"]
+# native: full desktop build with file dialogs + raster export
+native = ["raster", "dep:rfd", "dep:open", "dep:dirs"]
+# raster: PNG/GIF export (resvg + gif). Available on both native and
+# web — `cargo build --features raster --target wasm32-unknown-unknown`
+# enables it on the WASM target. Disabled by default on WASM to keep
+# the bundle small (~1MB binary cost).
+raster = ["dep:resvg", "dep:gif"]
 
 [dependencies]
 nalgebra = { version = "0.33", features = ["serde-serialize"] }

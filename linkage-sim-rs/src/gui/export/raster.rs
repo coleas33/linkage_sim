@@ -1,18 +1,18 @@
 //! Raster export: PNG and animated GIF generation via resvg.
 
-#[cfg(feature = "native")]
+#[cfg(feature = "raster")]
 use crate::core::mechanism::Mechanism;
-#[cfg(feature = "native")]
+#[cfg(feature = "raster")]
 use crate::gui::sweep::SweepData;
 
-#[cfg(feature = "native")]
+#[cfg(feature = "raster")]
 use super::svg::generate_svg_string;
 
 /// Rasterize an SVG string to RGBA pixel data at the given dimensions.
 ///
 /// This is the shared rasterization core used by both PNG export and GIF
 /// frame generation. Requires the `native` feature (depends on `resvg`).
-#[cfg(feature = "native")]
+#[cfg(feature = "raster")]
 pub(crate) fn rasterize_svg_to_rgba(
     svg_str: &str,
     width: u32,
@@ -44,11 +44,31 @@ pub(crate) fn rasterize_svg_to_rgba(
     Ok(pixmap.take())
 }
 
-/// Export the mechanism at its current pose as a PNG image.
-///
-/// Generates an SVG string, rasterizes it with resvg at the given dimensions,
-/// and saves the result as a PNG file. Requires the `native` feature.
-#[cfg(feature = "native")]
+/// (Cross-platform, requires `raster`) Render the mechanism at its current
+/// pose to a PNG byte buffer. Used by both the native file-write path and
+/// the web blob-download path.
+#[cfg(feature = "raster")]
+pub fn generate_mechanism_png_bytes(
+    mechanism: &Mechanism,
+    q: &nalgebra::DVector<f64>,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, String> {
+    let svg_str = generate_svg_string(mechanism, q)?;
+    let rgba = rasterize_svg_to_rgba(&svg_str, width, height)?;
+    let pixmap = resvg::tiny_skia::Pixmap::from_vec(
+        rgba,
+        resvg::tiny_skia::IntSize::from_wh(width, height).unwrap(),
+    )
+    .ok_or_else(|| "Failed to reconstruct pixmap from RGBA data".to_string())?;
+    pixmap
+        .encode_png()
+        .map_err(|e| format!("Failed to encode PNG: {}", e))
+}
+
+/// (Native only, requires `raster`) Export the mechanism at its current pose
+/// as a PNG image saved to disk.
+#[cfg(all(feature = "raster", feature = "native"))]
 pub fn export_mechanism_png(
     path: &std::path::Path,
     mechanism: &Mechanism,
@@ -56,23 +76,85 @@ pub fn export_mechanism_png(
     width: u32,
     height: u32,
 ) -> Result<(), String> {
-    let svg_str = generate_svg_string(mechanism, q)?;
-    let rgba = rasterize_svg_to_rgba(&svg_str, width, height)?;
-
-    // Reconstruct a Pixmap from the raw RGBA data so we can use save_png.
-    let pixmap = resvg::tiny_skia::Pixmap::from_vec(rgba, resvg::tiny_skia::IntSize::from_wh(width, height).unwrap())
-        .ok_or_else(|| "Failed to reconstruct pixmap from RGBA data".to_string())?;
-
-    pixmap.save_png(path)
-        .map_err(|e| format!("Failed to save PNG: {}", e))
+    let bytes = generate_mechanism_png_bytes(mechanism, q, width, height)?;
+    std::fs::write(path, bytes).map_err(|e| format!("Failed to save PNG: {}", e))
 }
 
-/// Export an animated GIF of the mechanism sweep.
-///
-/// Re-solves the mechanism position at each sampled sweep step, renders via
-/// SVG + resvg, and encodes as a looping animated GIF. Requires the `native`
-/// feature (depends on `resvg` and `gif`).
-#[cfg(feature = "native")]
+/// (Cross-platform, requires `raster`) Render the mechanism sweep as an
+/// animated GIF byte buffer. Re-solves the mechanism position at each
+/// sampled sweep step, renders via SVG + resvg, and encodes as a looping
+/// (ping-pong) animated GIF.
+#[cfg(feature = "raster")]
+pub fn generate_mechanism_gif_bytes(
+    mech: &Mechanism,
+    sweep: &SweepData,
+    q_start: &nalgebra::DVector<f64>,
+    omega: f64,
+    theta_0: f64,
+    width: u32,
+    height: u32,
+    frame_delay_cs: u16,
+) -> Result<Vec<u8>, String> {
+    use crate::solver::kinematics::solve_position;
+    use gif::{Encoder, Frame, Repeat};
+
+    let n_steps = sweep.angles_deg.len();
+    if n_steps == 0 {
+        return Err("No sweep data to export".to_string());
+    }
+
+    let mut buf: Vec<u8> = Vec::new();
+    {
+        let mut encoder = Encoder::new(&mut buf, width as u16, height as u16, &[])
+            .map_err(|e| format!("Failed to initialize GIF encoder: {}", e))?;
+        encoder
+            .set_repeat(Repeat::Infinite)
+            .map_err(|e| format!("Failed to set GIF repeat: {}", e))?;
+
+        let step_skip = (n_steps / 72).max(1);
+        let forward_indices: Vec<usize> = (0..n_steps).step_by(step_skip).collect();
+        let reverse_indices: Vec<usize> =
+            forward_indices.iter().rev().skip(1).copied().collect();
+        let all_indices: Vec<usize> = forward_indices
+            .into_iter()
+            .chain(reverse_indices.into_iter())
+            .collect();
+
+        let mut q_guess = q_start.clone();
+
+        for &i in &all_indices {
+            let angle_rad = sweep.angles_deg[i].to_radians();
+            let t = (angle_rad - theta_0) / omega;
+
+            match solve_position(mech, &q_guess, t, 1e-10, 50) {
+                Ok(result) if result.converged => {
+                    if let Ok(svg_str) = generate_svg_string(mech, &result.q) {
+                        if let Ok(rgba) = rasterize_svg_to_rgba(&svg_str, width, height) {
+                            let mut rgba_buf = rgba;
+                            let mut frame = Frame::from_rgba_speed(
+                                width as u16,
+                                height as u16,
+                                &mut rgba_buf,
+                                10,
+                            );
+                            frame.delay = frame_delay_cs;
+                            encoder
+                                .write_frame(&frame)
+                                .map_err(|e| format!("Failed to write GIF frame: {}", e))?;
+                        }
+                    }
+                    q_guess = result.q;
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(buf)
+}
+
+/// (Native only, requires `raster`) Export an animated GIF of the mechanism
+/// sweep, saved to disk.
+#[cfg(all(feature = "raster", feature = "native"))]
 pub fn export_mechanism_gif(
     path: &std::path::Path,
     mech: &Mechanism,
@@ -84,60 +166,10 @@ pub fn export_mechanism_gif(
     height: u32,
     frame_delay_cs: u16,
 ) -> Result<(), String> {
-    use crate::solver::kinematics::solve_position;
-    use gif::{Encoder, Frame, Repeat};
-
-    let n_steps = sweep.angles_deg.len();
-    if n_steps == 0 {
-        return Err("No sweep data to export".to_string());
-    }
-
-    let file = std::fs::File::create(path)
-        .map_err(|e| format!("Failed to create GIF file: {}", e))?;
-    let mut encoder = Encoder::new(file, width as u16, height as u16, &[])
-        .map_err(|e| format!("Failed to initialize GIF encoder: {}", e))?;
-    encoder.set_repeat(Repeat::Infinite)
-        .map_err(|e| format!("Failed to set GIF repeat: {}", e))?;
-
-    // Target ~72 frames per direction for smooth animation.
-    let step_skip = (n_steps / 72).max(1);
-
-    // Build frame indices: forward (0→end) then reverse (end→0) for ping-pong loop.
-    let forward_indices: Vec<usize> = (0..n_steps).step_by(step_skip).collect();
-    let reverse_indices: Vec<usize> = forward_indices.iter().rev().skip(1).copied().collect();
-    let all_indices: Vec<usize> = forward_indices.into_iter()
-        .chain(reverse_indices.into_iter())
-        .collect();
-
-    let mut q_guess = q_start.clone();
-
-    for &i in &all_indices {
-        let angle_rad = sweep.angles_deg[i].to_radians();
-        let t = (angle_rad - theta_0) / omega;
-
-        match solve_position(mech, &q_guess, t, 1e-10, 50) {
-            Ok(result) if result.converged => {
-                if let Ok(svg_str) = generate_svg_string(mech, &result.q) {
-                    if let Ok(rgba) = rasterize_svg_to_rgba(&svg_str, width, height) {
-                        let mut rgba_buf = rgba;
-                        let mut frame = Frame::from_rgba_speed(
-                            width as u16,
-                            height as u16,
-                            &mut rgba_buf,
-                            10,
-                        );
-                        frame.delay = frame_delay_cs;
-                        encoder.write_frame(&frame)
-                            .map_err(|e| format!("Failed to write GIF frame: {}", e))?;
-                    }
-                }
-                q_guess = result.q;
-            }
-            _ => {}
-        }
-    }
-
-    Ok(())
+    let bytes = generate_mechanism_gif_bytes(
+        mech, sweep, q_start, omega, theta_0, width, height, frame_delay_cs,
+    )?;
+    std::fs::write(path, bytes).map_err(|e| format!("Failed to save GIF: {}", e))
 }
 
 #[cfg(test)]
@@ -146,7 +178,7 @@ mod tests {
     use std::collections::HashMap;
 
     #[test]
-    #[cfg(feature = "native")]
+    #[cfg(feature = "raster")]
     fn export_png_produces_valid_file() {
         use crate::gui::samples::{build_sample, SampleMechanism};
         use crate::solver::kinematics::solve_position;
@@ -175,7 +207,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "native")]
+    #[cfg(feature = "raster")]
     fn export_png_empty_mechanism_returns_error() {
         use crate::core::mechanism::Mechanism;
         use nalgebra::DVector;
@@ -192,7 +224,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "native")]
+    #[cfg(feature = "raster")]
     fn export_png_custom_dimensions() {
         use crate::gui::samples::{build_sample, SampleMechanism};
         use crate::solver::kinematics::solve_position;
@@ -213,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "native")]
+    #[cfg(feature = "raster")]
     fn export_gif_produces_valid_file() {
         use crate::gui::samples::SampleMechanism;
         use crate::gui::state::AppState;
@@ -254,7 +286,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "native")]
+    #[cfg(feature = "raster")]
     fn export_gif_empty_sweep_returns_error() {
         use crate::gui::samples::{build_sample, SampleMechanism};
 
@@ -315,7 +347,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "native")]
+    #[cfg(feature = "raster")]
     fn export_gif_crank_rocker_produces_valid_file() {
         use crate::gui::state::AppState;
         use crate::gui::samples::SampleMechanism;
@@ -349,7 +381,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "native")]
+    #[cfg(feature = "raster")]
     fn rasterize_svg_to_rgba_produces_correct_size() {
         use crate::gui::samples::{build_sample, SampleMechanism};
         use crate::solver::kinematics::solve_position;
@@ -370,7 +402,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "native")]
+    #[cfg(feature = "raster")]
     fn export_chebyshev_lambda_pngs() {
         use crate::gui::samples::{build_sample, SampleMechanism};
         use crate::solver::kinematics::solve_position;

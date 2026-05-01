@@ -5,6 +5,40 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-30 — feat(web): browser-side raster + CSV downloads (Pass 2A + 2B)
+
+**Pass 2A — CSV:** Refactored `gui/export/csv.rs` to factor out
+cross-platform `write_sweep_csv` and `write_coupler_csv` writers
+taking `&mut impl Write`. Public surface gained
+`generate_sweep_csv_string` / `generate_coupler_csv_string` companions
+to the existing path-writing functions. Both Sweep CSV and Coupler CSV
+menu_bar buttons now route through `download::download_text` and work
+on web. +4 tests pin file/String parity. 665 lib tests pass.
+
+**Pass 2B — PNG/GIF:** Added a new `raster` feature flag in
+`Cargo.toml` (the `native` feature now depends on it). Refactored
+`gui/export/raster.rs` from `cfg(feature = "native")` to
+`cfg(feature = "raster")` and added `generate_mechanism_png_bytes` /
+`generate_mechanism_gif_bytes` companions. Extended `download.rs`
+with a `download_bytes` helper for binary content. Menu_bar PNG/GIF
+buttons gated by `raster` (so they appear on any build with the
+feature, including web).
+
+**Deployment:** Updated `scripts/build_web.sh` and
+`.github/workflows/deploy-web.yml` to add `--features raster` to the
+WASM build. Bundle cost is ~+2.5 MB pre-wasm-bindgen
+(9.25 MB → 11.73 MB; post-processing brings the final shipped
+`_bg.wasm` to a smaller fraction).
+
+**Why:** After Pass 1 lit up text exports on web, raster was the last
+gap blocking parity with the native export menu. Resvg + gif compile
+to wasm32 cleanly — verified via `cargo check --no-default-features
+--features raster --target wasm32-unknown-unknown` — so the only
+question was bundle size. 27% growth is acceptable given the user
+gets PNG and GIF in exchange.
+
+---
+
 ## 2026-04-30 — feat(web): browser-side downloads for text exports (Pass 1)
 
 **What:** Web build can now save files. Added `gui/export/download.rs` with

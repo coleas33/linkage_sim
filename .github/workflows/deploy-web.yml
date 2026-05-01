@@ -41,7 +41,8 @@ jobs:
           cargo build --release \
             --target wasm32-unknown-unknown \
             --bin linkage-web \
-            --no-default-features
+            --no-default-features \
+            --features raster
           wasm-bindgen \
             target/wasm32-unknown-unknown/release/linkage-web.wasm \
             --out-dir web \

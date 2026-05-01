@@ -20,7 +20,8 @@ echo "Building WASM binary (release)..."
 cargo build --release \
     --target wasm32-unknown-unknown \
     --bin linkage-web \
-    --no-default-features
+    --no-default-features \
+    --features raster
 
 echo "Generating JS bindings..."
 wasm-bindgen \
