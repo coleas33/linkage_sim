@@ -69,7 +69,7 @@ impl AppState {
     ///
     /// Called once at startup.
     pub(crate) fn load_saved_templates() -> Vec<(String, String)> {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(feature = "native")]
         {
             Self::load_templates_native()
         }
@@ -77,18 +77,28 @@ impl AppState {
         {
             Self::load_templates_wasm()
         }
+        #[cfg(not(any(feature = "native", target_arch = "wasm32")))]
+        {
+            Vec::new()
+        }
     }
 
     // ── Native persistence ──────────────────────────────────────────────────
+    //
+    // Gated by `feature = "native"` (not `not(target_arch = "wasm32")`)
+    // because this code path uses the `dirs` crate which is only pulled
+    // in when the feature is enabled. The two are normally synonymous on
+    // desktop, but a `--no-default-features` native build (e.g. CI sanity
+    // checks) needs them to differ.
 
     /// Directory for template files: `~/.linkage-sim/templates/`.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "native")]
     fn templates_dir() -> Option<std::path::PathBuf> {
         dirs::home_dir().map(|h| h.join(".linkage-sim").join("templates"))
     }
 
     /// Persist a single template to disk as `<name>.json`.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "native")]
     fn persist_template(&self, name: &str, json: &str) {
         let Some(dir) = Self::templates_dir() else { return };
         if std::fs::create_dir_all(&dir).is_err() {
@@ -102,7 +112,7 @@ impl AppState {
     }
 
     /// Remove a template file from disk.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "native")]
     fn remove_persisted_template(&self, name: &str) {
         let Some(dir) = Self::templates_dir() else { return };
         let path = dir.join(format!("{}.json", sanitize_filename(name)));
@@ -110,7 +120,7 @@ impl AppState {
     }
 
     /// Load all `.json` files from the templates directory.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "native")]
     fn load_templates_native() -> Vec<(String, String)> {
         let Some(dir) = Self::templates_dir() else {
             return Vec::new();
@@ -154,6 +164,19 @@ impl AppState {
             let _ = storage.remove_item(&key);
         }
     }
+
+    // ── No-op fallback (no `native` feature, not wasm32) ────────────────────
+    //
+    // Kept callable from the ungated `save_as_template` / `delete_template`
+    // entry points so a `--no-default-features` native build still links.
+    // Templates simply don't persist — the in-memory `saved_templates`
+    // vector still works for the lifetime of the session.
+
+    #[cfg(all(not(feature = "native"), not(target_arch = "wasm32")))]
+    fn persist_template(&self, _name: &str, _json: &str) {}
+
+    #[cfg(all(not(feature = "native"), not(target_arch = "wasm32")))]
+    fn remove_persisted_template(&self, _name: &str) {}
 
     #[cfg(target_arch = "wasm32")]
     fn load_templates_wasm() -> Vec<(String, String)> {
@@ -238,7 +261,7 @@ impl AppState {
     ///
     /// Called once at startup.
     pub(crate) fn load_saved_custom_samples() -> Vec<(String, String)> {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(feature = "native")]
         {
             Self::load_custom_samples_native()
         }
@@ -246,18 +269,22 @@ impl AppState {
         {
             Self::load_custom_samples_wasm()
         }
+        #[cfg(not(any(feature = "native", target_arch = "wasm32")))]
+        {
+            Vec::new()
+        }
     }
 
     // ── Native persistence (custom samples) ────────────────────────────
 
     /// Directory for custom sample files: `~/.linkage-sim/custom_samples/`.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "native")]
     fn custom_samples_dir() -> Option<std::path::PathBuf> {
         dirs::home_dir().map(|h| h.join(".linkage-sim").join("custom_samples"))
     }
 
     /// Persist a single custom sample to disk as `<name>.json`.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "native")]
     fn persist_custom_sample(&self, name: &str, json: &str) {
         let Some(dir) = Self::custom_samples_dir() else { return };
         if std::fs::create_dir_all(&dir).is_err() {
@@ -271,7 +298,7 @@ impl AppState {
     }
 
     /// Remove a custom sample file from disk.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "native")]
     fn remove_persisted_custom_sample(&self, name: &str) {
         let Some(dir) = Self::custom_samples_dir() else { return };
         let path = dir.join(format!("{}.json", sanitize_filename(name)));
@@ -279,7 +306,7 @@ impl AppState {
     }
 
     /// Load all `.json` files from the custom_samples directory.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "native")]
     fn load_custom_samples_native() -> Vec<(String, String)> {
         let Some(dir) = Self::custom_samples_dir() else {
             return Vec::new();
@@ -345,6 +372,14 @@ impl AppState {
         samples.sort_by(|a, b| a.0.cmp(&b.0));
         samples
     }
+
+    // ── No-op fallback (custom samples) ─────────────────────────────────────
+
+    #[cfg(all(not(feature = "native"), not(target_arch = "wasm32")))]
+    fn persist_custom_sample(&self, _name: &str, _json: &str) {}
+
+    #[cfg(all(not(feature = "native"), not(target_arch = "wasm32")))]
+    fn remove_persisted_custom_sample(&self, _name: &str) {}
 }
 
 /// Sanitize a template name for use as a filename.

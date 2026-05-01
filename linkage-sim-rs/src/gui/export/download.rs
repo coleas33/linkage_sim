@@ -79,6 +79,24 @@ fn download_bytes_impl(
     }
 }
 
+/// Fallback for the `--no-default-features` non-wasm build (no `rfd`,
+/// no `web_sys`). Compiles, but downloads are not actually delivered.
+/// Surfaces a clear error rather than silently succeeding so callers
+/// can flag the unsupported configuration.
+#[cfg(all(not(feature = "native"), not(target_arch = "wasm32")))]
+fn download_bytes_impl(
+    _default_filename: &str,
+    _mime_type: &str,
+    _contents: &[u8],
+    _filter: FileFilter,
+) -> DownloadOutcome {
+    DownloadOutcome::Failed(
+        "Download unavailable: build with `--features native` (desktop) \
+         or `--target wasm32-unknown-unknown` (web)."
+            .to_string(),
+    )
+}
+
 #[cfg(target_arch = "wasm32")]
 fn download_bytes_impl(
     default_filename: &str,
