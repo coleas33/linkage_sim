@@ -17,7 +17,7 @@ use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoint, PlotPoints, Text as PlotText, VLine};
 
 use crate::gui::state::AppState;
-use crate::gui::sweep::SweepMode;
+use crate::gui::sweep::{SweepData, SweepMode};
 use crate::solver::inverse_kinematics::InverseSolveStatus;
 
 /// Render trajectory-mode plots: target/achieved/residual on the main axis
@@ -66,6 +66,15 @@ pub(super) fn render(state: &mut AppState, ui: &mut egui::Ui) {
         .collect();
 
     let statuses = data.inverse_solve_statuses.as_ref();
+
+    // Optional comparison snapshot — a frozen SweepData captured by the
+    // user via "Save as comparison" in the trajectory panel. Rendered
+    // beneath the live traces in dotted style so the user can A/B two
+    // profiles or targets on the same axes. Time axis comes from the
+    // snapshot's own SweepMode::Trajectory duration (which may differ
+    // from the live duration).
+    let comparison = state.trajectory_comparison.as_ref();
+    let comparison_traces = comparison.and_then(comparison_traces_from);
 
     // Available height is split between the two stacked plots: ~65% for
     // the main target/achieved/residual plot, the rest for u(t).
@@ -125,6 +134,27 @@ pub(super) fn render(state: &mut AppState, ui: &mut egui::Ui) {
                     .width(1.0),
             );
 
+            // Comparison overlay: dotted, faded, and labelled "(prev)" so
+            // the live traces stay visually dominant.
+            if let Some(cmp) = &comparison_traces {
+                let pts_t: PlotPoints =
+                    cmp.times.iter().zip(cmp.target.iter()).map(|(&t, &v)| [t, v]).collect();
+                let pts_a: PlotPoints =
+                    cmp.times.iter().zip(cmp.achieved.iter()).map(|(&t, &v)| [t, v]).collect();
+                plot_ui.line(
+                    Line::new("target (prev)", pts_t)
+                        .color(egui::Color32::from_rgba_unmultiplied(255, 150, 80, 130))
+                        .style(egui_plot::LineStyle::Dotted { spacing: 6.0 })
+                        .width(1.2),
+                );
+                plot_ui.line(
+                    Line::new("achieved (prev)", pts_a)
+                        .color(egui::Color32::from_rgba_unmultiplied(100, 200, 255, 130))
+                        .style(egui_plot::LineStyle::Dotted { spacing: 6.0 })
+                        .width(1.5),
+                );
+            }
+
             // Persistent click-to-scrub cursor at the most recently clicked
             // time. Gold/yellow distinguishes from the red failure bands.
             if let Some(t_cur) = scrub_t_for_cursor {
@@ -160,6 +190,16 @@ pub(super) fn render(state: &mut AppState, ui: &mut egui::Ui) {
                     .color(egui::Color32::from_rgb(120, 220, 120))
                     .width(2.0),
             );
+            if let Some(cmp) = &comparison_traces {
+                let pts_u: PlotPoints =
+                    cmp.times.iter().zip(cmp.u.iter()).map(|(&t, &v)| [t, v]).collect();
+                plot_ui.line(
+                    Line::new("u(t) (prev)", pts_u)
+                        .color(egui::Color32::from_rgba_unmultiplied(120, 220, 120, 130))
+                        .style(egui_plot::LineStyle::Dotted { spacing: 6.0 })
+                        .width(1.5),
+                );
+            }
         });
 
     // ── Failure summary ──────────────────────────────────────────────────
@@ -212,6 +252,43 @@ pub(super) fn render(state: &mut AppState, ui: &mut egui::Ui) {
     }
 }
 
+/// Comparison-overlay traces extracted from a frozen `SweepData` snapshot.
+/// Carries its own time axis because the snapshot's trajectory duration may
+/// differ from the live trajectory's (e.g. the user is comparing 1.0s vs
+/// 2.0s profiles).
+struct ComparisonTraces<'a> {
+    times: Vec<f64>,
+    target: &'a [f64],
+    achieved: &'a [f64],
+    u: &'a [f64],
+}
+
+/// Build a `ComparisonTraces` view if the snapshot is in trajectory mode and
+/// has the required series populated. Returns `None` for non-trajectory or
+/// partially-populated snapshots so the plot just skips overlay rendering.
+fn comparison_traces_from(snapshot: &SweepData) -> Option<ComparisonTraces<'_>> {
+    let target = snapshot.target_values.as_deref()?;
+    let achieved = snapshot.achieved_values.as_deref()?;
+    let u = snapshot.u_values.as_deref()?;
+    let n = target.len();
+    if n < 2 || achieved.len() != n || u.len() != n {
+        return None;
+    }
+    let duration = match &snapshot.sweep_mode {
+        SweepMode::Trajectory { trajectory, .. } => trajectory.duration(),
+        _ => return None,
+    };
+    let times: Vec<f64> = (0..n)
+        .map(|i| (i as f64) * duration / ((n - 1) as f64))
+        .collect();
+    Some(ComparisonTraces {
+        times,
+        target,
+        achieved,
+        u,
+    })
+}
+
 /// Render an `InverseSolveStatus` failure variant as a single-line summary
 /// string suitable for the failure-band tooltip / collapsing list.
 ///
@@ -253,6 +330,70 @@ fn format_failure_tooltip(status: &InverseSolveStatus) -> String {
                 iterations, residual
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gui::state::{MotionProfile, Trajectory, TrajectoryProfile};
+    use crate::gui::sweep::{empty_trajectory_sweep_data, SweepMode};
+    use crate::solver::inverse_kinematics::{ControlTarget, Severity};
+
+    fn fixture(n: usize, duration: f64) -> SweepData {
+        let mode = SweepMode::Trajectory {
+            target: ControlTarget::angle("crank"),
+            trajectory: Trajectory::Profile(TrajectoryProfile {
+                shape: MotionProfile::ConstantSpeed,
+                start_value: 0.0,
+                end_value: 1.0,
+                duration,
+            }),
+            severity: Severity::Analysis,
+            n_samples: n,
+        };
+        let mut data = empty_trajectory_sweep_data(mode);
+        let v: Vec<f64> = (0..n).map(|i| i as f64 / (n - 1) as f64).collect();
+        data.target_values = Some(v.clone());
+        data.achieved_values = Some(v.clone());
+        data.u_values = Some(v);
+        data
+    }
+
+    #[test]
+    fn comparison_traces_uses_snapshot_duration_not_live_duration() {
+        // Snapshot at 2.0s; live duration would be different. The overlay
+        // must render along the snapshot's own time axis so the user
+        // sees an honest A/B of two different durations.
+        let snap = fixture(5, 2.0);
+        let cmp = comparison_traces_from(&snap).expect("trajectory data should yield traces");
+        assert_eq!(cmp.times.len(), 5);
+        assert!((cmp.times[0]).abs() < 1e-9);
+        assert!((cmp.times[4] - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn comparison_traces_returns_none_for_non_trajectory_mode() {
+        // A SweepData carrying SweepMode::Angle is not eligible for overlay,
+        // even if the trajectory series happen to be populated.
+        let mut snap = fixture(5, 1.0);
+        snap.sweep_mode = SweepMode::Angle;
+        assert!(comparison_traces_from(&snap).is_none());
+    }
+
+    #[test]
+    fn comparison_traces_returns_none_for_partial_snapshot() {
+        // Drop u_values: the overlay needs the full target/achieved/u set
+        // to render meaningfully.
+        let mut snap = fixture(5, 1.0);
+        snap.u_values = None;
+        assert!(comparison_traces_from(&snap).is_none());
+    }
+
+    #[test]
+    fn comparison_traces_returns_none_for_too_few_samples() {
+        let snap = fixture(1, 1.0);
+        assert!(comparison_traces_from(&snap).is_none());
     }
 }
 

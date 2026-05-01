@@ -5,6 +5,53 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-04-29 — feat(traj): trajectory diff overlay (T3)
+
+**What:** Added `AppState::trajectory_comparison: Option<SweepData>` plus
+"Save as comparison" / "Clear" buttons in the trajectory panel's
+Visualization section. When a comparison is saved, the trajectory plot
+overlays its target/achieved/u traces in faded dotted style alongside the
+live trajectory so the user can A/B two profiles, two targets, or two
+severity settings on the same axes. The overlay carries the snapshot's own
+time axis (not the live one) so different durations render honestly.
+Implemented in `gui/plot_panel/trajectory.rs::comparison_traces_from`.
+
+**Why:** Users iterating on trajectory design need a quick A/B without
+exporting CSVs and replotting externally. Trapezoidal vs S-curve at the
+same target, or the same profile pointed at two different targets, are
+the canonical "did I improve it?" workflows.
+
+**Test results:** 661 lib tests pass (657 baseline + 4 new). New tests
+cover snapshot duration vs live-duration time axis, non-trajectory mode
+rejection, partial-snapshot rejection, and degenerate sample-count
+rejection.
+
+---
+
+## 2026-04-29 — feat(traj): per-sample pose snapshot in CSV/JSON exports (T4)
+
+**What:** Added `pose_body_order: Option<Vec<String>>` and
+`pose_snapshots: Option<Vec<Vec<[f64; 3]>>>` to `SweepData`.
+`compute_trajectory` populates them with each non-ground body's
+`(x, y, θ_rad)` at every sample. Trajectory CSV appends
+`q_x_<body>_m, q_y_<body>_m, q_theta_<body>_rad` columns per body after
+the v1 columns; firmware JSON adds an optional `pose: { body_id: [x, y, θ] }`
+map per sample. Both are skipped when the snapshot is absent so the v1
+schema stays valid for older / non-trajectory data.
+
+**Why:** Downstream tools (firmware test harnesses, motion previewers,
+report generators) need to replay the full pose without re-running the
+inverse solve. Per-body columns are additive, so existing v1 consumers
+keep working.
+
+**Test results:** 657 lib tests pass (653 baseline + 4 new). New tests
+cover CSV present/absent paths, JSON present/absent paths, plus an
+extension to `compute_trajectory_populates_all_trajectory_fields`
+asserting θ_crank in the pose snapshot tracks the Angle target on the
+directly-driven body.
+
+---
+
 ## 2026-04-29 — feat(eq): auto-generated labeled mechanism schematic (SVG)
 
 **What:** Added `gui/export/schematic.rs::generate_schematic_svg(mech, q)` that

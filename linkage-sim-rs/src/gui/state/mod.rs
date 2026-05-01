@@ -439,6 +439,13 @@ pub struct AppState {
     /// When true, playback loops back to t=0 at the end; otherwise it
     /// stops at duration.
     pub trajectory_playback_loop: bool,
+    // ── Trajectory comparison snapshot ──────────────────────────────
+    /// A frozen `SweepData` from a previously computed trajectory. When
+    /// `Some`, the trajectory plot overlays its target/achieved/u traces
+    /// in a faded dotted style alongside the live trajectory so the user
+    /// can A/B two profiles or two targets. UX-only — not persisted to
+    /// JSON snapshots.
+    pub trajectory_comparison: Option<crate::gui::sweep::SweepData>,
 }
 
 /// Background image overlay for tracing mechanisms from photos/sketches.
@@ -682,6 +689,7 @@ impl Default for AppState {
             trajectory_playback_t: 0.0,
             trajectory_playback_speed: 1.0,
             trajectory_playback_loop: true,
+            trajectory_comparison: None,
         };
         state.rebuild();
         state

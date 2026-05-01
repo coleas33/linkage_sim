@@ -177,4 +177,43 @@ fn draw_visualization_section(state: &mut AppState, ui: &mut egui::Ui) {
             duration,
         ));
     }
+
+    ui.separator();
+
+    // ── Comparison snapshot (T3) ─────────────────────────────────────
+    // Save the current trajectory as a frozen overlay so the user can
+    // compute a second trajectory (different profile shape, severity,
+    // target, …) and visually A/B them on the same plot.
+    ui.label("Compare two trajectories:");
+    ui.horizontal(|ui| {
+        let has_live = state.sweep_data.is_some()
+            && matches!(state.sweep_mode, SweepMode::Trajectory { .. });
+        if ui
+            .add_enabled(has_live, egui::Button::new("\u{1F4C0} Save as comparison"))
+            .on_hover_text(
+                "Snapshot the current trajectory. Future computes will be \
+                 plotted alongside this snapshot in dotted style so you \
+                 can A/B two profiles or targets.",
+            )
+            .clicked()
+        {
+            state.trajectory_comparison = state.sweep_data.clone();
+        }
+        let has_comparison = state.trajectory_comparison.is_some();
+        if ui
+            .add_enabled(has_comparison, egui::Button::new("\u{2716} Clear"))
+            .on_hover_text("Remove the comparison snapshot from the trajectory plot.")
+            .clicked()
+        {
+            state.trajectory_comparison = None;
+        }
+    });
+    if state.trajectory_comparison.is_some() {
+        ui.label(
+            egui::RichText::new("Comparison saved \u{2014} overlays in dotted style.")
+                .small()
+                .italics()
+                .color(egui::Color32::from_rgb(180, 180, 220)),
+        );
+    }
 }
