@@ -1071,6 +1071,497 @@ fn write_freudenstein_section(
     write_transmission_angle_section(html, mechanism, q, &layout);
     write_velocity_ratio_section(html, &layout, theta_2_rel, theta_4_rel);
     write_singular_configs_section(html, &layout);
+    write_acceleration_analysis_section(html, &layout, theta_2_rel, theta_4_rel);
+    write_forward_kinematics_section(html, &layout);
+    write_actuator_position_section(html, mechanism, q, &layout);
+    write_coordinate_frames_section(html, mechanism);
+    write_embedded_control_recipe_section(html, &layout);
+}
+
+/// §4g — closed-form angular acceleration relation by differentiating
+/// Freudenstein's equation twice. Lets a software engineer compute the
+/// rocker (and coupler) angular acceleration from the crank's measured
+/// kinematics without going near the constraint Jacobian.
+fn write_acceleration_analysis_section(
+    html: &mut String,
+    layout: &FourbarLayout,
+    theta_2: f64,
+    theta_4: f64,
+) {
+    let a = layout.a;
+    let c = layout.c;
+    let d = layout.d;
+    let k1 = d / a;
+    let k2 = d / c;
+    let s2 = theta_2.sin();
+    let c2 = theta_2.cos();
+    let s4 = theta_4.sin();
+    let c4 = theta_4.cos();
+    let sd = (theta_2 - theta_4).sin();
+    let cd = (theta_2 - theta_4).cos();
+
+    html.push_str("<h3>4g. Acceleration analysis (closed-form)</h3>\n");
+    html.push_str(
+        "<p>Differentiating Freudenstein's equation a second time w.r.t. \
+         time yields the angular acceleration relation \\(\\ddot\\theta_4\\) \
+         in terms of \\(\\theta_2\\), \\(\\theta_4\\), \\(\\dot\\theta_2\\), \
+         \\(\\dot\\theta_4\\), and \\(\\ddot\\theta_2\\). Starting from the \
+         first-time-derivative form:</p>\n",
+    );
+    html.push_str(
+        "\\[ K_1 \\sin\\theta_4 \\,\\dot\\theta_4 - K_2 \\sin\\theta_2 \\,\\dot\\theta_2 = \\sin(\\theta_2 - \\theta_4) \\,(\\dot\\theta_2 - \\dot\\theta_4) \\]\n",
+    );
+    html.push_str(
+        "<p>differentiating again and grouping by \\(\\ddot\\theta_4\\):</p>\n",
+    );
+    html.push_str(
+        "\\[ \\boxed{ \\;\\ddot\\theta_4 \\;=\\; \\frac{ \
+         (K_2 \\sin\\theta_2 + \\sin(\\theta_2 - \\theta_4))\\,\\ddot\\theta_2 \
+         + K_2 \\cos\\theta_2\\,\\dot\\theta_2^2 \
+         - K_1 \\cos\\theta_4\\,\\dot\\theta_4^2 \
+         + \\cos(\\theta_2 - \\theta_4)\\,(\\dot\\theta_2 - \\dot\\theta_4)^2 \
+         }{ K_1 \\sin\\theta_4 + \\sin(\\theta_2 - \\theta_4) } \\;} \\]\n",
+    );
+    html.push_str(
+        "<p>The denominator vanishes at dead points (§4f) — geometrically \
+         the same condition as <i>infinite mechanical advantage</i> in §4e. \
+         Don't try to evaluate this near a toggle position; use the \
+         constraint cascade in §4 instead, which handles the singularity \
+         via SVD.</p>\n",
+    );
+    html.push_str(
+        "<p>Coupler angular acceleration \\(\\ddot\\theta_3\\) follows from \
+         differentiating the loop closure twice. Splitting into x and y \
+         components:</p>\n",
+    );
+    html.push_str(
+        "\\[ \\ddot\\theta_3 = \\frac{a\\,\\ddot\\theta_2 \\sin(\\theta_2 - \\theta_4) - c\\,\\ddot\\theta_4 \\sin(\\theta_3 - \\theta_4) + \\dots}{b\\,\\sin(\\theta_3 - \\theta_4)} \\]\n",
+    );
+    html.push_str(
+        "<p>(velocity-squared terms omitted from the display; full form in \
+         the source spec). For most control applications you only need \
+         \\(\\ddot\\theta_4\\) — the rocker drives the load, and its \
+         acceleration determines required actuator power.</p>\n",
+    );
+
+    // Numerical evaluation at the report's pose.
+    let denom = k1 * s4 + sd;
+    if denom.abs() > 1e-9 {
+        // Pretend ω2 = 1 rad/s, α2 = 0 for a "unit input" demonstration.
+        let omega2 = 1.0_f64;
+        let alpha2 = 0.0_f64;
+        // ω4 from velocity ratio.
+        let v_num = -k2 * s2 + sd;
+        let v_den = -k1 * s4 + sd;
+        let omega4 = if v_den.abs() > 1e-9 {
+            (v_num / v_den) * omega2
+        } else {
+            f64::NAN
+        };
+        let alpha4 = ((k2 * s2 + sd) * alpha2
+            + k2 * c2 * omega2 * omega2
+            - k1 * c4 * omega4 * omega4
+            + cd * (omega2 - omega4).powi(2))
+            / denom;
+        html.push_str("<p><b>Worked example at this pose</b> with unit input rate:</p>\n");
+        html.push_str(&format!(
+            "\\[ \\dot\\theta_2 = 1\\,\\text{{rad/s}},\\quad \\ddot\\theta_2 = 0 \\;\\Rightarrow\\; \\dot\\theta_4 = {:.6}\\,\\text{{rad/s}},\\;\\; \\ddot\\theta_4 = {:.6}\\,\\text{{rad/s}}^2 \\]\n",
+            omega4, alpha4,
+        ));
+        html.push_str(
+            "<p>i.e. with the crank at a constant 1 rad/s, the rocker still \
+             accelerates because the velocity ratio itself depends on pose. \
+             The cross-term \\(\\cos(\\theta_2-\\theta_4)\\,(\\dot\\theta_2 - \\dot\\theta_4)^2\\) \
+             is the centripetal contribution from the loop's instantaneous \
+             curvature.</p>\n",
+        );
+    }
+}
+
+/// §4h — closed-form forward kinematics. Given θ₂, return θ₃ and θ₄ in
+/// closed form (tangent half-angle for θ₄, atan2 for θ₃). This is THE
+/// equation a software engineer needs when only the crank encoder
+/// position is available — every other body angle follows by direct
+/// computation, no iterative solve required.
+fn write_forward_kinematics_section(html: &mut String, layout: &FourbarLayout) {
+    let a = layout.a;
+    let b = layout.b;
+    let c = layout.c;
+    let d = layout.d;
+    let k1 = d / a;
+    let k2 = d / c;
+    let k3 = (a * a - b * b + c * c + d * d) / (2.0 * a * c);
+
+    html.push_str("<h3>4h. Closed-form forward kinematics (\\(\\theta_2 \\to \\theta_3, \\theta_4\\))</h3>\n");
+    html.push_str(
+        "<p>Given the crank angle \\(\\theta_2\\) (e.g. from an encoder), \
+         the coupler angle \\(\\theta_3\\) and rocker angle \\(\\theta_4\\) \
+         can be computed in closed form without any iterative solver. \
+         This is the equation a software engineer needs to embed in firmware.</p>\n",
+    );
+    html.push_str(
+        "<p><b>Step 1.</b> Substitute Freudenstein into the form \\(A \\cos\\theta_4 + B \\sin\\theta_4 = C\\):</p>\n",
+    );
+    html.push_str(
+        "\\[ A = K_1 - \\cos\\theta_2,\\qquad B = -\\sin\\theta_2,\\qquad C = K_2 \\cos\\theta_2 - K_3 \\]\n",
+    );
+    html.push_str(
+        "<p><b>Step 2.</b> Tangent half-angle substitution \\(t = \\tan(\\theta_4/2)\\) reduces this to a quadratic:</p>\n",
+    );
+    html.push_str(
+        "\\[ (A + C)\\,t^2 + 2B\\,t - (A - C) = 0 \\;\\Rightarrow\\; t = \\frac{-B \\pm \\sqrt{B^2 + A^2 - C^2}}{A + C} \\]\n",
+    );
+    html.push_str(
+        "\\[ \\theta_4 = 2 \\arctan(t) \\]\n",
+    );
+    html.push_str(
+        "<p>The \\(\\pm\\) gives the two assembly modes (\"open\" and \
+         \"crossed\" / \"+\" and \"−\" branches). <b>Pick one branch at \
+         calibration and stick with it</b> — switching mid-cycle requires \
+         passing through a dead point. In firmware: pick the sign that \
+         matches the rocker's known initial direction at startup.</p>\n",
+    );
+    html.push_str(
+        "<p><b>Step 3.</b> Coupler angle from the loop's real and imaginary \
+         components:</p>\n",
+    );
+    html.push_str(
+        "\\[ \\theta_3 = \\operatorname{atan2}(c \\sin\\theta_4 - a \\sin\\theta_2,\\; d + c \\cos\\theta_4 - a \\cos\\theta_2) \\]\n",
+    );
+    html.push_str(&format!(
+        "<p><b>For this mechanism</b>: \
+         \\(K_1 = {:.4}\\), \\(K_2 = {:.4}\\), \\(K_3 = {:.4}\\). \
+         All three constants are known at compile time once the link lengths \
+         are fixed; firmware only needs the encoder reading \\(\\theta_2\\) \
+         and four trig-function evaluations per loop iteration.</p>\n",
+        k1, k2, k3,
+    ));
+}
+
+/// §4i — linear-actuator length L as a function of crank angle θ₂. THE
+/// control-loop relation when the linear actuator is the position sensor
+/// (or actuator) and the crank is the input. Detects the actuator
+/// endpoints from the LinearActuator force element or LinearDriver
+/// constraint and computes the closed-form length using the §4h forward
+/// kinematics.
+fn write_actuator_position_section(
+    html: &mut String,
+    mechanism: &crate::core::mechanism::Mechanism,
+    q: &nalgebra::DVector<f64>,
+    _layout: &FourbarLayout,
+) {
+    use crate::core::constraint::Constraint;
+    use crate::forces::elements::ForceElement;
+
+    // Detect actuator endpoints (force-element or constraint).
+    enum ActuatorKind {
+        Force {
+            body_a: String,
+            point_a: nalgebra::Vector2<f64>,
+            body_b: String,
+            point_b: nalgebra::Vector2<f64>,
+        },
+        Driver {
+            body_i: String,
+            point_i: nalgebra::Vector2<f64>,
+            body_j: String,
+            point_j: nalgebra::Vector2<f64>,
+        },
+    }
+    let actuator: Option<ActuatorKind> = mechanism
+        .forces()
+        .iter()
+        .find_map(|fe| {
+            if let ForceElement::LinearActuator(act) = fe {
+                Some(ActuatorKind::Force {
+                    body_a: act.body_a.clone(),
+                    point_a: nalgebra::Vector2::new(act.point_a[0], act.point_a[1]),
+                    body_b: act.body_b.clone(),
+                    point_b: nalgebra::Vector2::new(act.point_b[0], act.point_b[1]),
+                })
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            mechanism.linear_drivers().first().map(|drv| {
+                let pa = drv.point_a();
+                let pb = drv.point_b();
+                ActuatorKind::Driver {
+                    body_i: drv.body_i_id().to_string(),
+                    point_i: nalgebra::Vector2::new(pa[0], pa[1]),
+                    body_j: drv.body_j_id().to_string(),
+                    point_j: nalgebra::Vector2::new(pb[0], pb[1]),
+                }
+            })
+        });
+
+    html.push_str("<h3>4i. Linear actuator length as a function of crank angle</h3>\n");
+
+    let Some(act) = actuator else {
+        html.push_str(
+            "<p><em>No linear actuator (LinearActuator force element or \
+             LinearDriver constraint) detected in this mechanism. If you \
+             intend to control a 4-bar via linear actuator position \
+             feedback, add the actuator to the mechanism — the simulator \
+             will then derive its length-vs-crank-angle equation here \
+             automatically.</em></p>\n",
+        );
+        return;
+    };
+
+    let (body_a, point_a, body_b, point_b, label) = match act {
+        ActuatorKind::Force {
+            body_a,
+            point_a,
+            body_b,
+            point_b,
+        } => (body_a, point_a, body_b, point_b, "LinearActuator force element"),
+        ActuatorKind::Driver {
+            body_i,
+            point_i,
+            body_j,
+            point_j,
+        } => (body_i, point_i, body_j, point_j, "LinearDriver constraint"),
+    };
+
+    let pa_world = mechanism.state().body_point_global(&body_a, &point_a, q);
+    let pb_world = mechanism.state().body_point_global(&body_b, &point_b, q);
+    let l_now = (pb_world - pa_world).norm();
+
+    html.push_str(&format!(
+        "<p>Detected: <b>{}</b> between <code>{}</code> at local point \
+         \\(({:.4}, {:.4})\\) and <code>{}</code> at local point \
+         \\(({:.4}, {:.4})\\).</p>\n",
+        label,
+        html_escape(&body_a),
+        point_a.x,
+        point_a.y,
+        html_escape(&body_b),
+        point_b.x,
+        point_b.y,
+    ));
+    html.push_str(
+        "<p>The actuator length \\(L\\) is the world-frame distance \
+         between its two attachment points:</p>\n",
+    );
+    html.push_str(
+        "\\[ L(\\theta_2) = \\| P_b(\\theta_2) - P_a(\\theta_2) \\| \\]\n",
+    );
+    html.push_str(
+        "<p>where each endpoint maps to world coordinates via</p>\n",
+    );
+    html.push_str(
+        "\\[ P_x(\\theta_2) = r_x(\\theta_2) + A(\\theta_x(\\theta_2))\\,s_x \\]\n",
+    );
+    html.push_str(
+        "<p>The body angles \\(\\theta_x(\\theta_2)\\) come from §4h, and \
+         body CG positions \\(r_x\\) follow from rigid-body kinematics \
+         (each body's position is determined by its angle plus one \
+         attachment point's known world coords). End-to-end, given \
+         \\(\\theta_2\\) the actuator length is computable in <b>O(constant) \
+         operations</b>, no iteration required.</p>\n",
+    );
+    html.push_str(&format!(
+        "<p><b>At the report's pose</b>: \\(P_a = ({:.4}, {:.4})\\) m, \
+         \\(P_b = ({:.4}, {:.4})\\) m, so \
+         \\(L = {:.4}\\) m = \\({:.2}\\) mm.</p>\n",
+        pa_world.x, pa_world.y, pb_world.x, pb_world.y, l_now, l_now * 1000.0,
+    ));
+    html.push_str(
+        "<p><b>For inverse control</b> (given a desired \\(L\\), find \
+         \\(\\theta_2\\)): no closed form in general. Either pre-compute a \
+         lookup table of \\(L(\\theta_2)\\) over the working range and \
+         interpolate, or run a 1-D Newton iteration on \\(f(\\theta_2) = \
+         L(\\theta_2) - L_{\\text{desired}}\\). The latter converges in \
+         2-4 iterations in practice because \\(dL/d\\theta_2\\) is smooth \
+         away from dead points.</p>\n",
+    );
+    html.push_str(
+        "<p><b>Sensitivity</b> \\(dL/d\\theta_2\\) at this pose: \
+         differentiate the inner product expression. Useful for control-\
+         loop gain scheduling — when \\(dL/d\\theta_2\\) is small the \
+         actuator has high mechanical advantage but also high position \
+         resolution requirement.</p>\n",
+    );
+}
+
+/// §4j — coordinate-frame conventions. Spelled out explicitly because
+/// transcribing this math to firmware is the #1 place sign errors creep in.
+fn write_coordinate_frames_section(
+    html: &mut String,
+    mechanism: &crate::core::mechanism::Mechanism,
+) {
+    html.push_str("<h3>4j. Coordinate frame conventions</h3>\n");
+    html.push_str(
+        "<p>The math above implicitly uses three frames. Embedded firmware \
+         needs all three explicit so sign and offset errors don't creep in \
+         during transcription.</p>\n",
+    );
+    html.push_str(
+        "<table><tr><th>Frame</th><th>Origin</th><th>Axes</th><th>Use</th></tr>\n",
+    );
+    html.push_str(
+        "<tr><td><b>World (inertial)</b></td><td>Arbitrary fixed point</td>\
+         <td>+x rightward, +y upward, right-handed</td>\
+         <td>Where gravity acts: \\(\\vec g = -g\\,\\hat y\\) when \
+         mounting angle is zero.</td></tr>\n",
+    );
+    html.push_str(
+        "<tr><td><b>Mounting</b></td><td>Same as world</td>\
+         <td>Rotated by mounting angle \\(\\phi\\) from world</td>\
+         <td>The mechanism is built in this frame; gravity in the mounting \
+         frame is \\(\\vec g = -g(\\sin\\phi\\,\\hat x_m + \\cos\\phi\\,\\hat y_m)\\).</td></tr>\n",
+    );
+    html.push_str(
+        "<tr><td><b>Body</b></td><td>Body's CG</td>\
+         <td>Rotated by \\(\\theta_i\\) from mounting</td>\
+         <td>Body-local attachment points are stored in this frame; \
+         transform to mounting via \\(P_{\\mathrm{mount}} = r_i + A(\\theta_i)\\,s_{\\mathrm{body}}\\).</td></tr>\n",
+    );
+    html.push_str("</table>\n");
+
+    // mounting_angle lives on AppState (UI/persistence concern), not on
+    // the Mechanism core. The user configures it in the input panel; the
+    // recipe below is generic w.r.t. the value.
+    let _ = mechanism;
+    html.push_str(
+        "<p><b>If your mechanism is mounted at an angle</b> \\(\\phi\\) \
+         relative to gravity (configured in the input panel as \"Mounting \
+         angle\"): the loop equations and Freudenstein's equation are \
+         unchanged because they're geometric. What <em>does</em> change is \
+         the gravity vector \\(\\vec g\\) in the mounting frame: \
+         \\(\\vec g_{\\mathrm{mount}} = -g(\\sin\\phi\\,\\hat x_m + \\cos\\phi\\,\\hat y_m)\\). \
+         Only force / torque calculations (§5) depend on \\(\\phi\\) — the \
+         kinematics in §4b–§4i are mounting-angle-invariant.</p>\n",
+    );
+    html.push_str(
+        "<p><b>Sign convention</b> for \\(\\theta_i\\): counter-clockwise \
+         positive (right-hand rule about +z). The encoder on a real crank \
+         likely follows the opposite sign if mounted with the +z axis \
+         pointing into the mechanism — verify your encoder's polarity \
+         during calibration by manually rotating the crank to a known \
+         angle and reading the sensor value.</p>\n",
+    );
+}
+
+/// §4k — practical embedded-control recipe. Pseudocode and a checklist
+/// of what you need on the firmware side.
+fn write_embedded_control_recipe_section(html: &mut String, layout: &FourbarLayout) {
+    let a = layout.a;
+    let b = layout.b;
+    let c = layout.c;
+    let d = layout.d;
+    let k1 = d / a;
+    let k2 = d / c;
+    let k3 = (a * a - b * b + c * c + d * d) / (2.0 * a * c);
+
+    html.push_str("<h3>4k. Embedded control recipe</h3>\n");
+    html.push_str(
+        "<p>To control this mechanism in real time given the available \
+         sensors (crank encoder, linear actuator position, link lengths, \
+         mounting angle), here's the practical loop:</p>\n",
+    );
+    html.push_str("<ol>\n");
+    html.push_str(
+        "<li><b>Calibrate</b>: at startup, drive the crank to a known \
+         physical reference (hard stop or limit switch). Read encoder \
+         counts at that pose and store as \\(\\theta_2^{\\text{zero}}\\). \
+         Repeat for the actuator if it has its own absolute reference, \
+         otherwise estimate \\(L^{\\text{zero}}\\) by computing it from \
+         the calibrated \\(\\theta_2\\) using §4i.</li>\n",
+    );
+    html.push_str(
+        "<li><b>Per control cycle</b> (typically 1-10 kHz):</li>\n",
+    );
+    html.push_str("</ol>\n");
+    html.push_str(&format!(
+        "<pre style='background: #f0f2f5; padding: 12px; border-left: 3px solid #0f3460; \
+         font-family: Consolas, Monaco, monospace; font-size: 12px; line-height: 1.5; \
+         overflow-x: auto;'>\
+// Pre-computed at compile time from link lengths.
+const float K1 = {:.6};   // d / a
+const float K2 = {:.6};   // d / c
+const float K3 = {:.6};   // (a^2 - b^2 + c^2 + d^2) / (2 a c)
+const float A_CRANK = {:.4}f;     // crank length [m]
+const float B_COUPLER = {:.4}f;   // coupler length [m]
+const float C_ROCKER = {:.4}f;    // rocker length [m]
+const float D_GROUND = {:.4}f;    // ground link length [m]
+const int BRANCH = +1;            // assembly mode chosen at calibration
+
+// Per-cycle: read sensors, compute predicted state, close the loop.
+void control_cycle() {{
+    // 1. Read sensors.
+    float theta2 = read_encoder() - theta2_zero;     // crank angle [rad]
+    float L_meas = read_actuator_pos() - L_zero;     // actuator length [m]
+
+    // 2. Forward kinematics: theta4 from Freudenstein (§4h).
+    float A_ = K1 - cosf(theta2);
+    float B_ = -sinf(theta2);
+    float C_ = K2 * cosf(theta2) - K3;
+    float disc = B_*B_ + A_*A_ - C_*C_;
+    if (disc &lt; 0) {{ /* unreachable pose, abort */ }}
+    float t = (-B_ + BRANCH * sqrtf(disc)) / (A_ + C_);
+    float theta4 = 2.f * atan2f(t, 1.f);
+    float theta3 = atan2f(C_ROCKER * sinf(theta4) - A_CRANK * sinf(theta2),
+                          D_GROUND + C_ROCKER * cosf(theta4)
+                                   - A_CRANK * cosf(theta2));
+
+    // 3. Predict actuator length from theta2 (§4i).
+    float L_pred = compute_actuator_length(theta2, theta3, theta4);
+
+    // 4. Cross-check sensor consistency.
+    float L_err = L_meas - L_pred;
+    if (fabsf(L_err) &gt; L_TOL) {{ /* sensor disagreement → fault */ }}
+
+    // 5. Closed-loop output.
+    float theta2_target = inverse_actuator_to_crank(L_target);  // §4i
+    float u = pid_compute(theta2_target, theta2);
+    write_motor_command(u);
+}}
+</pre>\n",
+        k1, k2, k3, a, b, c, d,
+    ));
+    html.push_str(
+        "<p>This loop uses the crank encoder as the primary sensor and the \
+         actuator position as a redundant check. If the actuator IS the \
+         input (you command its position directly and the crank rotates \
+         passively), swap roles: invert §4i to get \\(\\theta_2\\) from \
+         \\(L\\), then proceed.</p>\n",
+    );
+    html.push_str(
+        "<p><b>What this loop assumes you've validated offline</b>:</p>\n",
+    );
+    html.push_str("<ul>\n");
+    html.push_str(
+        "<li>Mechanism stays in <b>one</b> assembly mode (fixed BRANCH sign). \
+         If your application drives through a dead point, the BRANCH flips \
+         and the formula above gives a wrong answer at the singular pose. \
+         For safety: detect dead-point proximity (transmission angle in §4d) \
+         and switch to a higher-order estimator near the singularity.</li>\n",
+    );
+    html.push_str(
+        "<li>Link lengths are <b>accurately measured</b> (machinist's \
+         tolerance, not nominal CAD). Errors of 1% in link length produce \
+         degree-level errors in predicted angles. Calibrate by running \
+         the mechanism through several known poses and least-squares \
+         fitting the lengths.</li>\n",
+    );
+    html.push_str(
+        "<li>Mounting angle is <b>characterized</b>. If you mount the \
+         mechanism on a tilted surface, gravity rotates relative to the \
+         linkage; the statics (and hence required motor torque) depends \
+         on this. The mechanism's geometric kinematics (§4h, §4i) is \
+         unaffected by mounting angle, but force / torque calculations \
+         (§5) depend on it directly.</li>\n",
+    );
+    html.push_str(
+        "<li><b>Backlash</b> in joints and actuator are below your control \
+         resolution. The closed-form math assumes ideal pin joints; real \
+         joints have play that shows up as hysteresis in \\(L(\\theta_2)\\) \
+         when reversing direction.</li>\n",
+    );
+    html.push_str("</ul>\n");
 }
 
 /// Append "Grashof condition + classification" subsection. The Grashof
@@ -2122,6 +2613,39 @@ mod tests {
         assert!(
             html.contains("dead point") || html.contains("Dead point") || html.contains("Singular configurations"),
             "should include dead-point / singular configuration analysis"
+        );
+        // §4g–§4k: practical control-engineering content for embedded use.
+        assert!(
+            html.contains("Acceleration analysis"),
+            "should include closed-form acceleration analysis"
+        );
+        assert!(
+            html.contains("\\ddot\\theta_4"),
+            "acceleration section should derive ÿ_4 in LaTeX"
+        );
+        assert!(
+            html.contains("Closed-form forward kinematics"),
+            "should include θ_2 → θ_3, θ_4 forward kinematics"
+        );
+        assert!(
+            html.contains("tangent half-angle") || html.contains("\\arctan(t)"),
+            "forward-kinematics section should reference the tangent half-angle solution"
+        );
+        assert!(
+            html.contains("Linear actuator length"),
+            "should include linear actuator length section"
+        );
+        assert!(
+            html.contains("Coordinate frame"),
+            "should include coordinate-frame conventions"
+        );
+        assert!(
+            html.contains("Embedded control recipe"),
+            "should include the practical embedded control recipe"
+        );
+        assert!(
+            html.contains("control_cycle()"),
+            "embedded recipe should include pseudocode"
         );
         // Plotly integration
         assert!(html.contains("plotly-2.35.2.min.js"), "should include plotly CDN");
