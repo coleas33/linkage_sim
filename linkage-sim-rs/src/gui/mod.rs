@@ -225,7 +225,13 @@ impl eframe::App for LinkageApp {
         if self.state.step_simulation(dt) {
             ctx.request_repaint();
         }
-        if self.state.step_animation(dt) {
+        // Trajectory playback takes precedence over the constant-omega
+        // animation so they don't fight for the canvas pose.
+        if self.state.trajectory_playback_active {
+            if self.state.step_trajectory_playback(dt) {
+                ctx.request_repaint();
+            }
+        } else if self.state.step_animation(dt) {
             ctx.request_repaint();
         }
 

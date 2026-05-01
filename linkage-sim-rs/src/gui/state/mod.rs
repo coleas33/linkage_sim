@@ -423,6 +423,22 @@ pub struct AppState {
     /// true. Clamped to 2..=20 by the slider; values outside that range
     /// are tolerated by the renderer (it short-circuits if < 2).
     pub motion_ribbon_n_ghosts: usize,
+    // ── Trajectory playback ──────────────────────────────────────────
+    /// When true, the per-frame update advances `trajectory_playback_t`
+    /// and back-solves the canvas pose at that trajectory time. Distinct
+    /// from `playing` (which is the constant-omega kinematic animation);
+    /// the two are mutually exclusive — entering trajectory playback
+    /// forces `playing = false` and vice versa.
+    pub trajectory_playback_active: bool,
+    /// Current trajectory playback time in seconds. Persists across
+    /// pauses so resume picks up where it left off.
+    pub trajectory_playback_t: f64,
+    /// Playback speed multiplier (1.0 = real-time, 0.5 = half, 2.0 =
+    /// double). Clamped to 0.05..=4.0 by the UI.
+    pub trajectory_playback_speed: f64,
+    /// When true, playback loops back to t=0 at the end; otherwise it
+    /// stops at duration.
+    pub trajectory_playback_loop: bool,
 }
 
 /// Background image overlay for tracing mechanisms from photos/sketches.
@@ -662,6 +678,10 @@ impl Default for AppState {
             last_trajectory_scrub_t: None,
             show_motion_ribbon: false,
             motion_ribbon_n_ghosts: 8,
+            trajectory_playback_active: false,
+            trajectory_playback_t: 0.0,
+            trajectory_playback_speed: 1.0,
+            trajectory_playback_loop: true,
         };
         state.rebuild();
         state

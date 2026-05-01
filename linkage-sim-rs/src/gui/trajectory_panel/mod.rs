@@ -94,10 +94,12 @@ fn draw_severity_toggle(state: &mut AppState, ui: &mut egui::Ui) {
     }
 }
 
-/// Draw the "Visualization" section: motion-ribbon toggle + density slider.
-/// Trajectory-mode-only — the renderer short-circuits when not in Trajectory
-/// mode, so the toggle is harmless to flip in other modes.
+/// Draw the "Visualization" section: motion-ribbon toggle + density slider,
+/// plus the trajectory-time playback controls (Play / Pause / Stop, speed,
+/// loop). Both features are trajectory-mode-only and require completed
+/// sweep data to do anything visible.
 fn draw_visualization_section(state: &mut AppState, ui: &mut egui::Ui) {
+    // ── Motion ribbon ────────────────────────────────────────────────
     ui.checkbox(
         &mut state.show_motion_ribbon,
         "Show motion ribbon (ghost poses)",
@@ -112,4 +114,67 @@ fn draw_visualization_section(state: &mut AppState, ui: &mut egui::Ui) {
         egui::Slider::new(&mut state.motion_ribbon_n_ghosts, 2..=20).text("Ghosts"),
     )
     .on_hover_text("Number of ghost poses sampled across the trajectory.");
+
+    ui.separator();
+
+    // ── Trajectory playback ──────────────────────────────────────────
+    let duration = if let SweepMode::Trajectory { trajectory, .. } = &state.sweep_mode {
+        trajectory.duration()
+    } else {
+        0.0
+    };
+
+    ui.horizontal(|ui| {
+        let play_label = if state.trajectory_playback_active {
+            "\u{23F8} Pause"
+        } else {
+            "\u{25B6} Play trajectory"
+        };
+        if ui
+            .button(play_label)
+            .on_hover_text(
+                "Animate the canvas through the back-solved q(t) at the \
+                 trajectory's actual time scale (not the constant-omega \
+                 driver-animation speed).",
+            )
+            .clicked()
+        {
+            state.trajectory_playback_active = !state.trajectory_playback_active;
+            if state.trajectory_playback_active {
+                // Reset t if at end, otherwise resume.
+                if duration > 0.0 && state.trajectory_playback_t >= duration {
+                    state.trajectory_playback_t = 0.0;
+                }
+                // Suspend the constant-omega kinematic animation —
+                // both can't drive the canvas simultaneously.
+                state.playing = false;
+            }
+        }
+        if ui
+            .button("\u{23F9} Stop")
+            .on_hover_text("Stop playback and reset trajectory time to 0.")
+            .clicked()
+        {
+            state.trajectory_playback_active = false;
+            state.trajectory_playback_t = 0.0;
+            state.last_trajectory_scrub_t = Some(0.0);
+        }
+        ui.add(
+            egui::DragValue::new(&mut state.trajectory_playback_speed)
+                .speed(0.05)
+                .range(0.05..=4.0)
+                .suffix("x"),
+        )
+        .on_hover_text("Playback speed multiplier (1.0 = real time).");
+        ui.checkbox(&mut state.trajectory_playback_loop, "Loop")
+            .on_hover_text("Loop back to t=0 at the end of the trajectory.");
+    });
+
+    if duration > 0.0 {
+        ui.label(format!(
+            "t = {:.3} s / {:.3} s",
+            state.trajectory_playback_t.min(duration),
+            duration,
+        ));
+    }
 }

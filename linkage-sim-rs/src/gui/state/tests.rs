@@ -2588,3 +2588,138 @@
             converged_count
         );
     }
+
+    // ── Trajectory playback tick ───────────────────────────────────────
+    #[test]
+    fn trajectory_playback_advances_t_by_dt_times_speed() {
+        use crate::gui::sweep::SweepMode;
+        use crate::gui::state::{Trajectory, TrajectoryProfile};
+        use crate::solver::inverse_kinematics::{ControlTarget, Severity};
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.sweep_mode = SweepMode::Trajectory {
+            target: ControlTarget::angle("crank"),
+            trajectory: Trajectory::Profile(TrajectoryProfile {
+                shape: crate::gui::state::MotionProfile::ConstantSpeed,
+                start_value: 0.5,
+                end_value: 1.5,
+                duration: 2.0,
+            }),
+            severity: Severity::Analysis,
+            n_samples: 50,
+        };
+        state.compute_sweep();
+        state.trajectory_playback_active = true;
+        state.trajectory_playback_t = 0.0;
+        state.trajectory_playback_speed = 1.0;
+        state.trajectory_playback_loop = true;
+
+        let stepped = state.step_trajectory_playback(0.1);
+        assert!(stepped, "step should report active");
+        assert!(
+            (state.trajectory_playback_t - 0.1).abs() < 1e-12,
+            "t should advance by dt*speed = 0.1, got {}",
+            state.trajectory_playback_t
+        );
+
+        // Half-speed.
+        state.trajectory_playback_speed = 0.5;
+        state.step_trajectory_playback(0.2);
+        assert!(
+            (state.trajectory_playback_t - 0.2).abs() < 1e-12,
+            "t should be 0.1 + 0.2*0.5 = 0.2, got {}",
+            state.trajectory_playback_t
+        );
+
+        // Plot cursor should track playback time.
+        assert_eq!(state.last_trajectory_scrub_t, Some(0.2));
+    }
+
+    #[test]
+    fn trajectory_playback_loops_at_duration_when_loop_enabled() {
+        use crate::gui::sweep::SweepMode;
+        use crate::gui::state::{Trajectory, TrajectoryProfile};
+        use crate::solver::inverse_kinematics::{ControlTarget, Severity};
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.sweep_mode = SweepMode::Trajectory {
+            target: ControlTarget::angle("crank"),
+            trajectory: Trajectory::Profile(TrajectoryProfile {
+                shape: crate::gui::state::MotionProfile::ConstantSpeed,
+                start_value: 0.5,
+                end_value: 1.5,
+                duration: 1.0,
+            }),
+            severity: Severity::Analysis,
+            n_samples: 20,
+        };
+        state.compute_sweep();
+        state.trajectory_playback_active = true;
+        state.trajectory_playback_t = 0.95;
+        state.trajectory_playback_speed = 1.0;
+        state.trajectory_playback_loop = true;
+
+        // dt=0.1 pushes past the 1.0 duration: should wrap to 0.05.
+        state.step_trajectory_playback(0.1);
+        assert!(state.trajectory_playback_active, "loop mode keeps playing");
+        assert!(
+            state.trajectory_playback_t < 1.0,
+            "looped t should wrap below duration, got {}",
+            state.trajectory_playback_t
+        );
+        assert!(
+            (state.trajectory_playback_t - 0.05).abs() < 1e-9,
+            "expected wrap to 0.05, got {}",
+            state.trajectory_playback_t
+        );
+    }
+
+    #[test]
+    fn trajectory_playback_stops_at_duration_when_loop_disabled() {
+        use crate::gui::sweep::SweepMode;
+        use crate::gui::state::{Trajectory, TrajectoryProfile};
+        use crate::solver::inverse_kinematics::{ControlTarget, Severity};
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.sweep_mode = SweepMode::Trajectory {
+            target: ControlTarget::angle("crank"),
+            trajectory: Trajectory::Profile(TrajectoryProfile {
+                shape: crate::gui::state::MotionProfile::ConstantSpeed,
+                start_value: 0.5,
+                end_value: 1.5,
+                duration: 1.0,
+            }),
+            severity: Severity::Analysis,
+            n_samples: 20,
+        };
+        state.compute_sweep();
+        state.trajectory_playback_active = true;
+        state.trajectory_playback_t = 0.95;
+        state.trajectory_playback_speed = 1.0;
+        state.trajectory_playback_loop = false;
+
+        state.step_trajectory_playback(0.1);
+        assert!(
+            !state.trajectory_playback_active,
+            "non-loop playback stops at end"
+        );
+        assert!(
+            (state.trajectory_playback_t - 1.0).abs() < 1e-12,
+            "non-loop playback clamps to duration, got {}",
+            state.trajectory_playback_t
+        );
+    }
+
+    #[test]
+    fn trajectory_playback_inactive_returns_false_immediately() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.trajectory_playback_active = false;
+        let t_before = state.trajectory_playback_t;
+        let stepped = state.step_trajectory_playback(0.1);
+        assert!(!stepped);
+        assert_eq!(state.trajectory_playback_t, t_before);
+    }
