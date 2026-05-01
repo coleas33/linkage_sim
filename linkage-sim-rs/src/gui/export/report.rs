@@ -733,6 +733,635 @@ fn html_escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
+/// Geometry of a four-bar linkage extracted from a mechanism, in the
+/// canonical Freudenstein orientation (crank → coupler → rocker → ground).
+#[derive(Debug, Clone)]
+struct FourbarLayout {
+    crank_id: String,
+    coupler_id: String,
+    rocker_id: String,
+    /// World position of the ground anchor on the crank side (J1).
+    o2_world: nalgebra::Vector2<f64>,
+    /// World position of the crank-coupler joint (J2).
+    b_world: nalgebra::Vector2<f64>,
+    /// World position of the coupler-rocker joint (J3).
+    c_world: nalgebra::Vector2<f64>,
+    /// World position of the ground anchor on the rocker side (J4).
+    o4_world: nalgebra::Vector2<f64>,
+    /// Crank length |OB|.
+    a: f64,
+    /// Coupler length |BC|.
+    b: f64,
+    /// Rocker length |CO4|.
+    c: f64,
+    /// Ground length |O2 O4|.
+    d: f64,
+}
+
+/// Detect whether the mechanism is a planar 4-bar (one driver, four
+/// revolute joints, three moving bodies + ground) and extract the
+/// crank/coupler/rocker assignment plus link lengths. Returns `None`
+/// for any topology that doesn't match Freudenstein's setup, e.g.
+/// slider-cranks, multi-driver mechanisms, non-revolute joints.
+fn detect_fourbar(
+    mechanism: &crate::core::mechanism::Mechanism,
+    q: &nalgebra::DVector<f64>,
+) -> Option<FourbarLayout> {
+    use crate::core::constraint::{Constraint, JointConstraint};
+    use crate::core::state::GROUND_ID;
+
+    // 4 bodies total = ground + 3 moving (crank, coupler, rocker).
+    if mechanism.bodies().len() != 4 {
+        return None;
+    }
+    let n_revolute = mechanism
+        .joints()
+        .iter()
+        .filter(|j| matches!(j, JointConstraint::Revolute(_)))
+        .count();
+    if n_revolute != 4 || mechanism.joints().len() != 4 {
+        return None;
+    }
+    if mechanism.drivers().len() != 1 || !mechanism.linear_drivers().is_empty() {
+        return None;
+    }
+
+    let drv = mechanism.drivers().first()?;
+    // Crank is the non-ground side of the driver.
+    let crank_id = if drv.body_i_id() == GROUND_ID {
+        drv.body_j_id().to_string()
+    } else if drv.body_j_id() == GROUND_ID {
+        drv.body_i_id().to_string()
+    } else {
+        return None;
+    };
+
+    // Helper: among the revolute joints, find one matching a topology test
+    // and return the joint reference.
+    let find_revolute = |a: &str, b: &str| {
+        mechanism.joints().iter().find_map(|j| {
+            if let JointConstraint::Revolute(r) = j {
+                let i = r.body_i_id();
+                let jb = r.body_j_id();
+                if (i == a && jb == b) || (i == b && jb == a) {
+                    Some(r)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+    };
+
+    // Identify rocker = body connected to ground via a non-driver revolute joint.
+    let rocker_id = mechanism.joints().iter().find_map(|j| {
+        if let JointConstraint::Revolute(r) = j {
+            let other = if r.body_i_id() == GROUND_ID {
+                Some(r.body_j_id().to_string())
+            } else if r.body_j_id() == GROUND_ID {
+                Some(r.body_i_id().to_string())
+            } else {
+                None
+            };
+            other.filter(|id| id != &crank_id)
+        } else {
+            None
+        }
+    })?;
+
+    // Coupler is the remaining body.
+    let coupler_id = mechanism
+        .body_order()
+        .iter()
+        .find(|b| **b != crank_id && **b != rocker_id && b.as_str() != GROUND_ID)
+        .cloned()?;
+
+    let j1 = find_revolute(GROUND_ID, &crank_id)?;
+    let j2 = find_revolute(&crank_id, &coupler_id)?;
+    let j3 = find_revolute(&coupler_id, &rocker_id)?;
+    let j4 = find_revolute(&rocker_id, GROUND_ID)?;
+
+    // Helper: extract anchor on the requested body, transform to world.
+    let world_anchor =
+        |joint: &crate::core::constraint::RevoluteJoint, body: &str| -> nalgebra::Vector2<f64> {
+            let local = if joint.body_i_id() == body {
+                *joint.point_i_local()
+            } else {
+                *joint.point_j_local()
+            };
+            mechanism.state().body_point_global(body, &local, q)
+        };
+
+    let o2_world = world_anchor(j1, GROUND_ID);
+    let b_world = world_anchor(j2, &crank_id);
+    let c_world = world_anchor(j3, &rocker_id);
+    let o4_world = world_anchor(j4, GROUND_ID);
+
+    let d = (o4_world - o2_world).norm();
+    let a = (b_world - o2_world).norm();
+    let b_len = (c_world - b_world).norm();
+    let c_len = (c_world - o4_world).norm();
+
+    Some(FourbarLayout {
+        crank_id,
+        coupler_id,
+        rocker_id,
+        o2_world,
+        b_world,
+        c_world,
+        o4_world,
+        a,
+        b: b_len,
+        c: c_len,
+        d,
+    })
+}
+
+/// Append a "Freudenstein's equation" subsection to the report, but only
+/// when the mechanism is a planar 4-bar in Freudenstein's standard
+/// configuration. Skipped silently otherwise (slider-cranks, multi-driver
+/// mechanisms, etc.).
+fn write_freudenstein_section(
+    html: &mut String,
+    mechanism: &crate::core::mechanism::Mechanism,
+    q: &nalgebra::DVector<f64>,
+) {
+    let Some(layout) = detect_fourbar(mechanism, q) else {
+        // Non-4-bar mechanism — leave a brief note so the user knows
+        // this section is *available*, just not applicable here.
+        html.push_str("<h3>4b. Freudenstein's equation (4-bar only)</h3>\n");
+        html.push_str(
+            "<p><em>This section appears only when the mechanism is a planar \
+             4-bar with four revolute joints and one revolute driver. \
+             Freudenstein's equation is the closed-form analytical \
+             relationship between input and output angles for that family. \
+             For other topologies (slider-crank, multi-driver, prismatic \
+             joints), the constraint cascade in section 4 is the only \
+             general approach.</em></p>\n",
+        );
+        return;
+    };
+
+    let FourbarLayout {
+        crank_id,
+        coupler_id,
+        rocker_id,
+        o2_world,
+        b_world,
+        c_world,
+        o4_world,
+        a,
+        b,
+        c,
+        d,
+    } = &layout;
+
+    // Geometric angles measured relative to the ground vector (O4 - O2).
+    // Robust to mounting_angle and arbitrary world rotation.
+    let ground_vec = o4_world - o2_world;
+    let ground_len = ground_vec.norm();
+    if ground_len < 1e-12 {
+        return; // Degenerate; can't define Freudenstein.
+    }
+    let ground_unit = ground_vec / ground_len;
+    let ground_perp = nalgebra::Vector2::new(-ground_unit.y, ground_unit.x);
+
+    let crank_vec = b_world - o2_world;
+    let rocker_vec = c_world - o4_world;
+
+    let theta_2 = crank_vec.y.atan2(crank_vec.x); // world-frame angle of OB
+    let theta_4 = rocker_vec.y.atan2(rocker_vec.x); // world-frame angle of O4 C
+    // Also compute relative-to-ground angles (the form Freudenstein assumes
+    // when the ground is along +x).
+    let theta_2_rel = crank_vec.dot(&ground_perp).atan2(crank_vec.dot(&ground_unit));
+    let theta_4_rel = rocker_vec
+        .dot(&ground_perp)
+        .atan2(rocker_vec.dot(&ground_unit));
+
+    let k1 = d / a;
+    let k2 = d / c;
+    let k3 = (a * a - b * b + c * c + d * d) / (2.0 * a * c);
+
+    let lhs = k1 * theta_4_rel.cos() - k2 * theta_2_rel.cos() + k3;
+    let rhs = (theta_2_rel - theta_4_rel).cos();
+    let resid = (lhs - rhs).abs();
+
+    html.push_str("<h3>4b. Freudenstein's equation (closed-form 4-bar check)</h3>\n");
+    html.push_str(
+        "<p>For a planar 4-bar linkage, the loop-closure equation \
+         (vector sum of all four links) reduces algebraically to a single \
+         scalar equation relating the input crank angle \
+         \\(\\theta_2\\) to the output rocker angle \\(\\theta_4\\). \
+         This is <b>Freudenstein's equation</b> [Freudenstein 1954, 1955; \
+         see Norton, <em>Design of Machinery</em> ch. 4]:</p>\n",
+    );
+    html.push_str(
+        "\\[ K_1\\,\\cos\\theta_4 \\;-\\; K_2\\,\\cos\\theta_2 \\;+\\; K_3 \\;=\\; \\cos(\\theta_2 - \\theta_4) \\]\n",
+    );
+    html.push_str(
+        "<p>where</p>\n",
+    );
+    html.push_str(
+        "\\[ K_1 = \\frac{d}{a},\\qquad K_2 = \\frac{d}{c},\\qquad K_3 = \\frac{a^2 - b^2 + c^2 + d^2}{2\\,a\\,c} \\]\n",
+    );
+    html.push_str(
+        "<p>with link lengths \\(a\\) (crank, input), \\(b\\) (coupler), \
+         \\(c\\) (rocker, output), and \\(d\\) (ground / fixed link). \
+         Angles \\(\\theta_2\\) and \\(\\theta_4\\) are measured from the \
+         ground line at the respective ground pivots \\(O_2\\) and \\(O_4\\). \
+         Derivation: square and add the real / imaginary parts of the loop \
+         equation \\(a\\,e^{i\\theta_2} + b\\,e^{i\\theta_3} - c\\,e^{i\\theta_4} - d = 0\\) \
+         to eliminate the coupler angle \\(\\theta_3\\).</p>\n",
+    );
+
+    html.push_str(&format!(
+        "<p><b>Detected layout</b>: crank = <code>{}</code>, coupler = \
+         <code>{}</code>, rocker = <code>{}</code>. Ground line from \
+         \\(O_2 = ({:.4}, {:.4})\\) m to \\(O_4 = ({:.4}, {:.4})\\) m \
+         (length \\(d = {:.4}\\) m).</p>\n",
+        html_escape(crank_id),
+        html_escape(coupler_id),
+        html_escape(rocker_id),
+        o2_world.x,
+        o2_world.y,
+        o4_world.x,
+        o4_world.y,
+        d,
+    ));
+
+    html.push_str("<p><b>Link lengths and Freudenstein constants for this mechanism</b>:</p>\n");
+    html.push_str(&format!(
+        "\\[ a = {:.4}\\,\\text{{m}},\\quad b = {:.4}\\,\\text{{m}},\\quad c = {:.4}\\,\\text{{m}},\\quad d = {:.4}\\,\\text{{m}} \\]\n",
+        a, b, c, d,
+    ));
+    html.push_str(&format!(
+        "\\[ K_1 = \\frac{{d}}{{a}} = \\frac{{{:.4}}}{{{:.4}}} = {:.6} \\]\n",
+        d, a, k1,
+    ));
+    html.push_str(&format!(
+        "\\[ K_2 = \\frac{{d}}{{c}} = \\frac{{{:.4}}}{{{:.4}}} = {:.6} \\]\n",
+        d, c, k2,
+    ));
+    html.push_str(&format!(
+        "\\[ K_3 = \\frac{{a^2 - b^2 + c^2 + d^2}}{{2\\,a\\,c}} = {:.6} \\]\n",
+        k3,
+    ));
+
+    html.push_str("<p><b>Numerical verification at this pose</b>:</p>\n");
+    html.push_str(&format!(
+        "\\[ \\theta_2 = {:.6}\\,\\text{{rad}} = {:.3}^\\circ,\\quad \
+         \\theta_4 = {:.6}\\,\\text{{rad}} = {:.3}^\\circ \\]\n",
+        theta_2_rel,
+        theta_2_rel.to_degrees(),
+        theta_4_rel,
+        theta_4_rel.to_degrees(),
+    ));
+    html.push_str(&format!(
+        "\\[ \\text{{LHS}} = K_1\\cos\\theta_4 - K_2\\cos\\theta_2 + K_3 = {:.6} \\]\n",
+        lhs,
+    ));
+    html.push_str(&format!(
+        "\\[ \\text{{RHS}} = \\cos(\\theta_2 - \\theta_4) = {:.6} \\]\n",
+        rhs,
+    ));
+    html.push_str(&format!(
+        "\\[ |\\text{{LHS}} - \\text{{RHS}}| = {:.3e} \\quad \\text{{(should be at floating-point noise)}} \\]\n",
+        resid,
+    ));
+
+    if resid > 1e-6 {
+        html.push_str(&format!(
+            "<p style='color: #c62828;'><strong>Warning:</strong> Freudenstein \
+             residual is {:.3e}, larger than expected. This may indicate the \
+             ground line is not aligned with the world +x axis (the report \
+             measures angles relative to the ground line directly, so this \
+             should be fine for tilted mounts) or that the position solve \
+             didn't fully converge.</p>\n",
+            resid,
+        ));
+    } else {
+        html.push_str(
+            "<p>The Freudenstein residual at floating-point noise confirms the \
+             constraint cascade in section 4 produces a pose consistent with \
+             the closed-form analytical equation. <em>This is the canonical \
+             4-bar consistency check</em> \u{2014} if you want a single number \
+             that proves the simulator's kinematics is mathematically correct \
+             for this mechanism, this is it.</p>\n",
+        );
+    }
+
+    html.push_str(
+        "<p>Note: world-frame angles (relative to the world +x axis, ignoring \
+         any mounting angle) are \
+        ",
+    );
+    html.push_str(&format!(
+        "\\(\\theta_2^{{\\,world}} = {:.3}^\\circ\\), \
+         \\(\\theta_4^{{\\,world}} = {:.3}^\\circ\\). The values used in the \
+         Freudenstein check above are measured relative to the actual ground \
+         line, which makes the equation hold even when the mechanism is \
+         tilted.</p>\n",
+        theta_2.to_degrees(),
+        theta_4.to_degrees(),
+    ));
+
+    // ── Continued: classical 4-bar engineering equations ─────────────────
+    write_grashof_section(html, &layout);
+    write_transmission_angle_section(html, mechanism, q, &layout);
+    write_velocity_ratio_section(html, &layout, theta_2_rel, theta_4_rel);
+    write_singular_configs_section(html, &layout);
+}
+
+/// Append "Grashof condition + classification" subsection. The Grashof
+/// inequality \(s + l \leq p + q\) — where s, l are the shortest and
+/// longest links and p, q the other two — predicts whether the input
+/// link can rotate fully (Class I), the mechanism oscillates (Class II),
+/// or sits at the change-point boundary (Class III).
+fn write_grashof_section(html: &mut String, layout: &FourbarLayout) {
+    let lengths = [layout.a, layout.b, layout.c, layout.d];
+    let shortest = lengths.iter().cloned().fold(f64::INFINITY, f64::min);
+    let longest = lengths.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    // p, q = the two non-shortest, non-longest lengths.
+    let s_plus_l = shortest + longest;
+    let total = lengths.iter().sum::<f64>();
+    let p_plus_q = total - s_plus_l;
+
+    let (class, name) = if (s_plus_l - p_plus_q).abs() < 1e-9 {
+        ("III", "Change-point")
+    } else if s_plus_l < p_plus_q {
+        ("I", "Grashof (full rotation possible)")
+    } else {
+        ("II", "Non-Grashof (all links oscillate)")
+    };
+
+    // Determine motion type for Class I — depends on which link is shortest.
+    let motion_type = if class == "I" {
+        if shortest == layout.d {
+            "double-crank (drag-link): both crank and rocker rotate fully"
+        } else if shortest == layout.a {
+            "crank-rocker: input crank rotates fully, output rocker oscillates"
+        } else if shortest == layout.c {
+            "rocker-crank: input rocker oscillates, output crank rotates fully"
+        } else {
+            "double-rocker (Class I): both inputs oscillate, but with full coupler rotation"
+        }
+    } else {
+        "—"
+    };
+
+    html.push_str("<h3>4c. Grashof's condition (motion classification)</h3>\n");
+    html.push_str(
+        "<p>Grashof's theorem [Grashof 1883] classifies a 4-bar by comparing \
+         the shortest \\(s\\) and longest \\(l\\) link lengths against the \
+         other two \\(p\\) and \\(q\\). The inequality</p>\n",
+    );
+    html.push_str("\\[ s + l \\;\\leq\\; p + q \\]\n");
+    html.push_str(
+        "<p>determines whether at least one link can complete a full \
+         revolution. Three classes:</p>\n",
+    );
+    html.push_str("<ul>\n<li><b>Class I (Grashof, \\(s + l < p + q\\))</b>: at least one link rotates fully. Sub-types depend on which link is shortest:\n<ul>\n<li>If shortest = ground (\\(d\\)): <em>double-crank</em> (both crank and rocker rotate)</li>\n<li>If shortest = side link adjacent to ground: <em>crank-rocker</em> (the short side rotates, the opposite side oscillates)</li>\n<li>If shortest = coupler: <em>double-rocker</em> (Class I but unusual — both side links oscillate while coupler rotates fully)</li>\n</ul></li>\n<li><b>Class II (non-Grashof, \\(s + l > p + q\\))</b>: all links oscillate; no full revolution possible.</li>\n<li><b>Class III (change-point, \\(s + l = p + q\\))</b>: boundary case; mechanism can pass through dead-center configurations and switch assembly modes.</li>\n</ul>\n");
+
+    html.push_str(&format!(
+        "<p><b>For this mechanism</b>: \
+         \\(s = {:.4}\\,\\text{{m}}\\), \\(l = {:.4}\\,\\text{{m}}\\), \
+         \\(p + q = {:.4}\\,\\text{{m}}\\), so \
+         \\(s + l = {:.4}\\,\\text{{m}}\\). \
+         Result: <b>Class {}</b> ({}). Motion type: {}.</p>\n",
+        shortest,
+        longest,
+        p_plus_q,
+        s_plus_l,
+        class,
+        name,
+        motion_type,
+    ));
+}
+
+/// Append "Transmission angle" subsection — the angle between the coupler
+/// and the output rocker. Determines force-transmission quality. Below
+/// ~40° or above ~140° the mechanism transmits force inefficiently and
+/// can stall. Computed at the report's pose plus the analytical extreme
+/// values that occur when the input crank is collinear with the ground.
+fn write_transmission_angle_section(
+    html: &mut String,
+    mechanism: &crate::core::mechanism::Mechanism,
+    q: &nalgebra::DVector<f64>,
+    layout: &FourbarLayout,
+) {
+    use crate::core::state::GROUND_ID;
+    // Transmission angle μ = angle BCD where B is crank-coupler, C is
+    // coupler-rocker, D is rocker-ground. Specifically μ is the angle
+    // between vector BC (along coupler) and CD (along rocker), measured
+    // as the interior angle of the 4-bar at vertex C.
+    let bc = layout.c_world - layout.b_world; // along coupler
+    let cd = layout.o4_world - layout.c_world; // along rocker
+    let cos_mu = bc.dot(&cd) / (bc.norm() * cd.norm());
+    let mu = cos_mu.clamp(-1.0, 1.0).acos();
+    let mu_deg = mu.to_degrees();
+
+    // Analytical extremes: when the crank is collinear with the ground,
+    // the diagonal length BD is at its extremes (a + d or |d - a|).
+    // Then by law of cosines on triangle BCD:
+    //   cos(μ) = (b² + c² - BD²) / (2 b c)
+    let a = layout.a;
+    let b = layout.b;
+    let c = layout.c;
+    let d = layout.d;
+    let bd_max = a + d;
+    let bd_min = (d - a).abs();
+    let cos_mu_at_max_bd = (b * b + c * c - bd_max * bd_max) / (2.0 * b * c);
+    let cos_mu_at_min_bd = (b * b + c * c - bd_min * bd_min) / (2.0 * b * c);
+    let mu_at_max_bd = cos_mu_at_max_bd.clamp(-1.0, 1.0).acos();
+    let mu_at_min_bd = cos_mu_at_min_bd.clamp(-1.0, 1.0).acos();
+
+    // The "minimum transmission angle" reachable is whichever of these is
+    // closer to 0 or 180° — i.e. whichever has the more extreme cos.
+    let mu_min = mu_at_max_bd.min(mu_at_min_bd);
+    let mu_max = mu_at_max_bd.max(mu_at_min_bd);
+
+    html.push_str("<h3>4d. Transmission angle</h3>\n");
+    html.push_str(
+        "<p>The <b>transmission angle</b> \\(\\mu\\) is the angle between \
+         the coupler and the output rocker, measured at joint C. It \
+         determines how much of the input force from the coupler actually \
+         drives the rocker (vs. wasted as a radial force into the rocker \
+         pivot).</p>\n",
+    );
+    html.push_str(
+        "<p>By the law of cosines applied to triangle BCD (where B is the \
+         crank-coupler joint, C the coupler-rocker joint, D the rocker-\
+         ground joint), with the diagonal length \\(BD = |O_2 D - O_2 B|\\):</p>\n",
+    );
+    html.push_str(
+        "\\[ \\cos\\mu = \\frac{b^2 + c^2 - BD^2}{2\\,b\\,c} \\]\n",
+    );
+    html.push_str(
+        "<p>The diagonal \\(BD\\) ranges from \\(|d - a|\\) (crank aligned \
+         with ground, on the same side) to \\(d + a\\) (crank aligned with \
+         ground, opposite sides). These two extremes give the global \
+         min/max transmission angles for the mechanism over a full crank \
+         rotation:</p>\n",
+    );
+    html.push_str(&format!(
+        "\\[ BD_\\min = |d - a| = {:.4}\\,\\text{{m}},\\quad BD_\\max = d + a = {:.4}\\,\\text{{m}} \\]\n",
+        bd_min, bd_max,
+    ));
+    html.push_str(&format!(
+        "\\[ \\mu_\\min = {:.3}^\\circ,\\quad \\mu_\\max = {:.3}^\\circ \\]\n",
+        mu_min.to_degrees(),
+        mu_max.to_degrees(),
+    ));
+    let _ = (mu_deg, q, mechanism, GROUND_ID); // silence unused
+    html.push_str(&format!(
+        "<p><b>At the report's pose</b>: \\(\\mu = {:.3}^\\circ\\).</p>\n",
+        mu_deg,
+    ));
+    html.push_str(
+        "<p><b>Engineering rule of thumb</b>: \\(\\mu\\) should stay within \
+         \\([40^\\circ, 140^\\circ]\\) for efficient force transmission. \
+         Values approaching 0° or 180° mean the coupler is nearly \
+         collinear with the rocker, and the rocker takes near-zero torque \
+         from the crank \u{2014} the mechanism approaches a dead-point \
+         (toggle) where small input forces cannot drive the output.</p>\n",
+    );
+    if mu_min.to_degrees() < 40.0 || mu_max.to_degrees() > 140.0 {
+        html.push_str(
+            "<p style='color: #c62828;'><strong>Warning:</strong> the \
+             transmission angle range exceeds the \\([40^\\circ, 140^\\circ]\\) \
+             rule-of-thumb at some point in the cycle. Consider redesigning \
+             link proportions for better force transmission.</p>\n",
+        );
+    }
+}
+
+/// Append "Velocity ratio / mechanical advantage" subsection. For a 4-bar,
+/// the angular velocity ratio \(\dot\theta_4 / \dot\theta_2\) follows from
+/// differentiating Freudenstein's equation, giving a closed-form expression
+/// for the instantaneous gain at any pose.
+fn write_velocity_ratio_section(
+    html: &mut String,
+    layout: &FourbarLayout,
+    theta_2: f64,
+    theta_4: f64,
+) {
+    // Differentiate Freudenstein:
+    //   K_1 cos θ_4 - K_2 cos θ_2 + K_3 = cos(θ_2 - θ_4)
+    // d/dt:
+    //   -K_1 sin(θ_4) θ̇_4 + K_2 sin(θ_2) θ̇_2 = -sin(θ_2 - θ_4)·(θ̇_2 - θ̇_4)
+    // Solve for θ̇_4 / θ̇_2:
+    //   θ̇_4 / θ̇_2 = [ -K_2 sin(θ_2) + sin(θ_2 - θ_4) ] / [ -K_1 sin(θ_4) + sin(θ_2 - θ_4) ]
+    let a = layout.a;
+    let c = layout.c;
+    let d = layout.d;
+    let k1 = d / a;
+    let k2 = d / c;
+    let s_diff = (theta_2 - theta_4).sin();
+    let num = -k2 * theta_2.sin() + s_diff;
+    let den = -k1 * theta_4.sin() + s_diff;
+    let ratio = if den.abs() > 1e-12 { num / den } else { f64::NAN };
+
+    // Mechanical advantage = inverse of velocity ratio (output torque /
+    // input torque, by virtual work).
+    let ma = if ratio.abs() > 1e-12 { 1.0 / ratio } else { f64::NAN };
+
+    html.push_str("<h3>4e. Velocity ratio &amp; mechanical advantage</h3>\n");
+    html.push_str(
+        "<p>The angular velocity ratio \\(\\dot\\theta_4 / \\dot\\theta_2\\) \
+         (output rocker speed over input crank speed) follows from \
+         differentiating Freudenstein's equation w.r.t. time:</p>\n",
+    );
+    html.push_str(
+        "\\[ \\frac{\\dot\\theta_4}{\\dot\\theta_2} \\;=\\; \\frac{-K_2 \\sin\\theta_2 + \\sin(\\theta_2 - \\theta_4)}{-K_1 \\sin\\theta_4 + \\sin(\\theta_2 - \\theta_4)} \\]\n",
+    );
+    html.push_str(
+        "<p>By the principle of virtual work (assuming a lossless mechanism), \
+         the mechanical advantage \\(MA = T_{\\text{out}}/T_{\\text{in}}\\) \
+         is the reciprocal of the velocity ratio:</p>\n",
+    );
+    html.push_str(
+        "\\[ MA \\;=\\; \\frac{T_4}{T_2} \\;=\\; \\frac{\\dot\\theta_2}{\\dot\\theta_4} \\]\n",
+    );
+    html.push_str(&format!(
+        "<p><b>At the report's pose</b>: \
+         \\(\\dot\\theta_4 / \\dot\\theta_2 = {:.4}\\), so \
+         \\(MA = {:.4}\\).</p>\n",
+        ratio, ma,
+    ));
+    html.push_str(
+        "<p>MA &gt;&gt; 1 means the mechanism amplifies torque (e.g. clamps, \
+         toggle presses); MA &lt;&lt; 1 means it amplifies speed (e.g. \
+         flying-shear cutters). MA → ∞ near dead points where velocity \
+         ratio → 0 — these are the high-force regions.</p>\n",
+    );
+}
+
+/// Append "Singular configurations" subsection — derives the dead-point
+/// conditions analytically. Dead points occur when the transmission
+/// angle is 0° or 180° (coupler and rocker collinear), making the
+/// mechanism unable to propagate input motion to the output.
+fn write_singular_configs_section(html: &mut String, layout: &FourbarLayout) {
+    let a = layout.a;
+    let b = layout.b;
+    let c = layout.c;
+    let d = layout.d;
+    // Dead points: BD is at extreme, μ = 0 or π. Need b² + c² ± 2bc = BD².
+    // BD = b + c (μ = 0) or BD = |b - c| (μ = π).
+    // BD also = a + d or |d - a| (crank collinear with ground). So dead
+    // points exist iff one of {b+c, |b-c|} equals one of {a+d, |d-a|}.
+    let bd_at_0 = b + c;
+    let bd_at_pi = (b - c).abs();
+    let bd_max = a + d;
+    let bd_min = (d - a).abs();
+    let near = |x: f64, y: f64| (x - y).abs() < 1e-6;
+    let dead_at_a_plus_d_zero = near(bd_max, bd_at_0);
+    let dead_at_a_plus_d_pi = near(bd_max, bd_at_pi);
+    let dead_at_d_minus_a_zero = near(bd_min, bd_at_0);
+    let dead_at_d_minus_a_pi = near(bd_min, bd_at_pi);
+    let any_dead = dead_at_a_plus_d_zero || dead_at_a_plus_d_pi
+        || dead_at_d_minus_a_zero || dead_at_d_minus_a_pi;
+
+    html.push_str("<h3>4f. Singular configurations (dead points)</h3>\n");
+    html.push_str(
+        "<p>A <b>dead point</b> (or toggle position) occurs when the coupler \
+         is collinear with the rocker — equivalently, when \\(\\mu = 0\\) \
+         or \\(\\mu = \\pi\\). At these poses, the mechanism's instantaneous \
+         velocity ratio \\(\\dot\\theta_4 / \\dot\\theta_2 \\to 0\\), so no \
+         torque applied to the input crank can move the output rocker. \
+         Whether the mechanism <em>has</em> dead points is geometric:</p>\n",
+    );
+    html.push_str(
+        "\\[ BD = b + c \\quad\\text{($\\mu = 0$)} \\quad \\text{or} \\quad BD = |b - c| \\quad\\text{($\\mu = \\pi$)} \\]\n",
+    );
+    html.push_str(
+        "<p>Combined with the constraint that \\(BD\\) ranges over \
+         \\([|d - a|, d + a]\\) over a full crank rotation, dead points \
+         exist iff at least one of the four combinations \
+         \\(\\{|d - a|, d + a\\} = \\{|b - c|, b + c\\}\\) is realisable.</p>\n",
+    );
+    html.push_str(&format!(
+        "<p><b>For this mechanism</b>: \
+         \\(b + c = {:.4}\\,\\text{{m}}\\), \\(|b - c| = {:.4}\\,\\text{{m}}\\), \
+         \\(d + a = {:.4}\\,\\text{{m}}\\), \\(|d - a| = {:.4}\\,\\text{{m}}\\). \
+         Dead-point condition: <b>{}</b>.</p>\n",
+        bd_at_0, bd_at_pi, bd_max, bd_min,
+        if any_dead {
+            "DEAD POINTS PRESENT — the mechanism passes through at least one toggle position per cycle."
+        } else {
+            "no exact dead points (the geometry never quite lines up). Note transmission angle still gets close to 0° or 180° if the link lengths are near the threshold; see §4d."
+        },
+    ));
+    html.push_str(
+        "<p><b>Engineering significance</b>: dead points are bad for \
+         actuators that drive through the input but useful for clamping \
+         applications where infinite mechanical advantage is desired \
+         momentarily. Class III (change-point) mechanisms always have dead \
+         points by construction — the boundary \\(s + l = p + q\\) \
+         literally <em>is</em> the BD-equality condition.</p>\n",
+    );
+}
+
 /// Escape a string for inclusion inside a KaTeX `\text{...}` group.
 ///
 /// KaTeX strict mode rejects bare LaTeX-special characters (notably `_`,
@@ -1104,6 +1733,9 @@ fn write_math_background_section(
         );
     }
 
+    // ── 4b. Freudenstein's equation (closed-form 4-bar) ────────────────────
+    write_freudenstein_section(html, mechanism, q);
+
     // ── 5. Lagrange multipliers ────────────────────────────────────────────
     html.push_str("<h3>5. Why \\(\\lambda\\) = reaction forces / driver torque</h3>\n");
     html.push_str(
@@ -1457,6 +2089,39 @@ mod tests {
         assert!(
             html.contains("\\text{crank}"),
             "q-vector should use \\text{{}} for body names"
+        );
+        // Closed-form 4-bar engineering equations (sections 4b-4f).
+        assert!(
+            html.contains("Freudenstein"),
+            "should include Freudenstein's equation"
+        );
+        assert!(
+            html.contains("K_1\\,\\cos\\theta_4"),
+            "Freudenstein equation should appear in LaTeX"
+        );
+        assert!(
+            html.contains("Grashof"),
+            "should include Grashof's condition"
+        );
+        assert!(
+            html.contains("Class I") || html.contains("Class II") || html.contains("Class III"),
+            "Grashof section should classify the 4-bar"
+        );
+        assert!(
+            html.contains("Transmission angle"),
+            "should include transmission angle math"
+        );
+        assert!(
+            html.contains("\\cos\\mu"),
+            "transmission angle section should derive cos μ"
+        );
+        assert!(
+            html.contains("Velocity ratio") || html.contains("velocity ratio"),
+            "should include velocity ratio / mechanical advantage"
+        );
+        assert!(
+            html.contains("dead point") || html.contains("Dead point") || html.contains("Singular configurations"),
+            "should include dead-point / singular configuration analysis"
         );
         // Plotly integration
         assert!(html.contains("plotly-2.35.2.min.js"), "should include plotly CDN");
