@@ -440,7 +440,11 @@ pub(crate) fn draw_menu_bar(
                         .clicked()
                     {
                         if let Some(ref mech) = state.mechanism {
-                            match export::schematic::generate_schematic_svg(mech, &state.q) {
+                            match export::schematic::generate_schematic_svg(
+                                mech,
+                                &state.q,
+                                &state.sensor_config,
+                            ) {
                                 Ok(svg) => {
                                     let outcome = export::download::download_text(
                                         "mechanism_schematic.svg",

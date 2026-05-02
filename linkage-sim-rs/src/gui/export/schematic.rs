@@ -57,6 +57,7 @@ const POSITION_TOLERANCE: f64 = 1e-4;
 pub fn generate_schematic_svg(
     mech: &Mechanism,
     q: &DVector<f64>,
+    sensor_config: &crate::gui::state::SensorConfig,
 ) -> Result<String, String> {
     // Bring the Constraint trait into scope so we can call id() / body_i_id()
     // / body_j_id() / n_equations() on concrete RevoluteDriver / LinearDriver
@@ -527,6 +528,116 @@ pub fn generate_schematic_svg(
         }
     }
 
+    // ── 9c. Sensor badges (encoder + actuator position sensor) ──────────
+    //
+    // Surfaces the user's sensor config (from gui::state::SensorConfig) on
+    // the diagram so they can verify they configured the right joint
+    // without leaving the canvas. Two badge kinds:
+    //   - Encoder: filled purple circle with "E" at the encoder joint's
+    //     world position, with a caption "encoder" above.
+    //   - Actuator position: filled purple circle with "P" at the midpoint
+    //     of the actuator (LinearDriver constraint or LinearActuator force
+    //     element), captioned "pos".
+    if let Some(ref encoder_joint_id) = sensor_config.encoder_joint {
+        // Locate the joint's world anchor. Search joints first, then drivers
+        // (encoders typically live on the driver shaft).
+        let world_pos: Option<nalgebra::Vector2<f64>> = mech
+            .joints()
+            .iter()
+            .find(|j| j.id() == encoder_joint_id)
+            .and_then(|j| {
+                if let JointConstraint::Revolute(r) = j {
+                    let anchor = nalgebra::Vector2::new(
+                        r.point_i_local().x,
+                        r.point_i_local().y,
+                    );
+                    Some(state.body_point_global(r.body_i_id(), &anchor, q))
+                } else {
+                    None
+                }
+            })
+            .or_else(|| {
+                mech.drivers().iter().find(|d| d.id() == encoder_joint_id).and_then(|d| {
+                    // Use the driver's body pair to anchor visually. Fall back
+                    // to ground origin if neither body has a useful attachment.
+                    let bi = d.body_i_id();
+                    let body = mech.bodies().get(bi)?;
+                    let any_anchor = body.attachment_points.values().next().copied()?;
+                    Some(state.body_point_global(bi, &any_anchor, q))
+                })
+            });
+        if let Some(p) = world_pos {
+            let (cx, cy) = to_svg(p.x, p.y);
+            let bx = cx + 16.0; // badge centre offset so it doesn't overlap joint dot
+            let by = cy - 14.0;
+            svg.push_str(&format!(
+                r##"<circle cx="{:.2}" cy="{:.2}" r="9" fill="#7a4fb0" stroke="#3a2068" stroke-width="1.2"/>
+<text x="{:.2}" y="{:.2}" font-size="11" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="middle">E</text>
+<text x="{:.2}" y="{:.2}" font-size="9" font-style="italic" fill="#3a2068" text-anchor="middle">encoder</text>
+"##,
+                bx, by,
+                bx, by,
+                bx, by - 14.0,
+            ));
+        }
+    }
+    if sensor_config.actuator_position_enabled {
+        // Find the first actuator (LinearActuator force element first, then
+        // LinearDriver constraint) and stamp a badge at its midpoint.
+        use crate::forces::elements::ForceElement;
+        let actuator_midpoint: Option<nalgebra::Vector2<f64>> = mech
+            .forces()
+            .iter()
+            .find_map(|f| {
+                if let ForceElement::LinearActuator(act) = f {
+                    let pa = state.body_point_global(
+                        &act.body_a,
+                        &nalgebra::Vector2::new(act.point_a[0], act.point_a[1]),
+                        q,
+                    );
+                    let pb = state.body_point_global(
+                        &act.body_b,
+                        &nalgebra::Vector2::new(act.point_b[0], act.point_b[1]),
+                        q,
+                    );
+                    Some(0.5 * (pa + pb))
+                } else {
+                    None
+                }
+            })
+            .or_else(|| {
+                mech.linear_drivers().first().map(|drv| {
+                    let pa_local = drv.point_a();
+                    let pb_local = drv.point_b();
+                    let pa = state.body_point_global(
+                        drv.body_i_id(),
+                        &nalgebra::Vector2::new(pa_local[0], pa_local[1]),
+                        q,
+                    );
+                    let pb = state.body_point_global(
+                        drv.body_j_id(),
+                        &nalgebra::Vector2::new(pb_local[0], pb_local[1]),
+                        q,
+                    );
+                    0.5 * (pa + pb)
+                })
+            });
+        if let Some(p) = actuator_midpoint {
+            let (cx, cy) = to_svg(p.x, p.y);
+            let bx = cx + 16.0;
+            let by = cy + 18.0; // below the actuator line so it doesn't fight the F label
+            svg.push_str(&format!(
+                r##"<circle cx="{:.2}" cy="{:.2}" r="9" fill="#7a4fb0" stroke="#3a2068" stroke-width="1.2"/>
+<text x="{:.2}" y="{:.2}" font-size="11" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="middle">P</text>
+<text x="{:.2}" y="{:.2}" font-size="9" font-style="italic" fill="#3a2068" text-anchor="middle">pos sensor</text>
+"##,
+                bx, by,
+                bx, by,
+                bx, by + 14.0,
+            ));
+        }
+    }
+
     // ── 10. Constraint legend (below the drawing area) ───────────────────
     //
     // Legend used to live in a sidebar at x=475..595 but constraint rows
@@ -727,7 +838,7 @@ mod tests {
     #[test]
     fn schematic_svg_for_fourbar_contains_essentials() {
         let (mech, q) = build_fourbar_with_q();
-        let svg = generate_schematic_svg(&mech, &q).unwrap();
+        let svg = generate_schematic_svg(&mech, &q, &crate::gui::state::SensorConfig::default()).unwrap();
         // Must contain SVG document framing.
         assert!(
             svg.contains("<svg"),
@@ -755,7 +866,7 @@ mod tests {
     #[test]
     fn schematic_svg_well_formed() {
         let (mech, q) = build_fourbar_with_q();
-        let svg = generate_schematic_svg(&mech, &q).unwrap();
+        let svg = generate_schematic_svg(&mech, &q, &crate::gui::state::SensorConfig::default()).unwrap();
         // Roughly well-formed: every <line opens with a corresponding close.
         // We use self-closed <line .../> tags, so the count of `<line ` must
         // equal the count of `/>` for those lines (matched against simple
@@ -779,7 +890,7 @@ mod tests {
         use crate::gui::samples::{build_sample, SampleMechanism};
         let (mech, q0) = build_sample(SampleMechanism::ParallelogramActuator);
         let res = solve_position(&mech, &q0, 0.0, 1e-10, 50).expect("solver ok");
-        let svg = generate_schematic_svg(&mech, &res.q).expect("svg ok");
+        let svg = generate_schematic_svg(&mech, &res.q, &crate::gui::state::SensorConfig::default()).expect("svg ok");
         assert!(svg.contains("<svg"));
         assert!(svg.contains("</svg>"));
         // Sample uses J1..J4 + D1.
@@ -840,7 +951,7 @@ mod tests {
         mech.state().set_pose("coupler", &mut q0, 0.025, 0.0, 0.0);
         mech.state().set_pose("rocker", &mut q0, 0.04, 0.005, 0.5);
         let res = solve_position(&mech, &q0, 0.0, 1e-10, 50).expect("solver ok");
-        let svg = generate_schematic_svg(&mech, &res.q).expect("svg ok");
+        let svg = generate_schematic_svg(&mech, &res.q, &crate::gui::state::SensorConfig::default()).expect("svg ok");
 
         // Linear driver indicator: should render two colored circles + label.
         assert!(svg.contains("D1"), "missing linear driver label");
@@ -857,7 +968,57 @@ mod tests {
         let mut mech = Mechanism::new();
         mech.build().unwrap();
         let q = DVector::zeros(0);
-        let result = generate_schematic_svg(&mech, &q);
+        let result = generate_schematic_svg(&mech, &q, &crate::gui::state::SensorConfig::default());
         assert!(result.is_err(), "empty mechanism should return an error");
+    }
+
+    #[test]
+    fn schematic_svg_emits_encoder_badge_when_configured() {
+        // FourBar sample with encoder configured on the driver joint D1.
+        // Schematic should render the purple "encoder" badge near the
+        // crank-ground anchor — verify the marker text is present.
+        use crate::gui::samples::{build_sample, SampleMechanism};
+        let (mech, q0) = build_sample(SampleMechanism::FourBar);
+        let res = solve_position(&mech, &q0, 0.0, 1e-10, 50).expect("solver ok");
+        let mut sensors = crate::gui::state::SensorConfig::default();
+        sensors.encoder_joint = Some("D1".to_string());
+        let svg = generate_schematic_svg(&mech, &res.q, &sensors).expect("svg ok");
+        // Default config (no sensors) emits a clean diagram — proving
+        // negative case so the positive case below has meaning.
+        let svg_no_sensors = generate_schematic_svg(
+            &mech,
+            &res.q,
+            &crate::gui::state::SensorConfig::default(),
+        )
+        .unwrap();
+        assert!(
+            !svg_no_sensors.contains(">encoder</text>"),
+            "default config should not emit any encoder badge"
+        );
+        assert!(
+            svg.contains(">encoder</text>"),
+            "encoder badge should appear when encoder_joint is set"
+        );
+        assert!(
+            svg.contains("#7a4fb0"),
+            "encoder badge should render in the configured purple"
+        );
+    }
+
+    #[test]
+    fn schematic_svg_emits_actuator_position_badge_when_configured() {
+        // ParallelogramActuator sample has a LinearActuator force element;
+        // enabling actuator_position_enabled should draw a "pos sensor"
+        // badge at its midpoint.
+        use crate::gui::samples::{build_sample, SampleMechanism};
+        let (mech, q0) = build_sample(SampleMechanism::ParallelogramActuator);
+        let res = solve_position(&mech, &q0, 0.0, 1e-10, 50).expect("solver ok");
+        let mut sensors = crate::gui::state::SensorConfig::default();
+        sensors.actuator_position_enabled = true;
+        let svg = generate_schematic_svg(&mech, &res.q, &sensors).expect("svg ok");
+        assert!(
+            svg.contains(">pos sensor</text>"),
+            "actuator position badge should appear when actuator_position_enabled is true"
+        );
     }
 }

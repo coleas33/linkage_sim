@@ -25,7 +25,7 @@ pub fn generate_html_report(
     // Prefer the labeled schematic (joint IDs, body labels, ground hatching,
     // constraint legend) for a report. Fall back to the regular SVG if the
     // schematic generator fails (empty mechanism etc).
-    let svg = generate_schematic_svg(mechanism, q)
+    let svg = generate_schematic_svg(mechanism, q, sensor_config)
         .or_else(|_| generate_svg_string(mechanism, q))
         .unwrap_or_default();
 

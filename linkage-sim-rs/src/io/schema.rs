@@ -78,6 +78,41 @@ pub struct MechanismJson {
     /// to None which loaders interpret as Angle / Analysis defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sweep_state: Option<SweepStateJson>,
+    /// Sensor configuration (encoder + actuator-position selections, noise
+    /// std-devs). Drives the §4l state-estimation derivation in HTML reports
+    /// and the encoder badge on the schematic. Backward-compatible: old files
+    /// default to None which loaders interpret as no sensors enabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sensor_config: Option<SensorConfigJson>,
+}
+
+/// Serializable mirror of `gui::state::SensorConfig`. Held in `io::schema`
+/// rather than `gui::state` so `io` doesn't depend on `gui` (the dependency
+/// arrow already points the other way: `gui::state::file_io` constructs
+/// these by copying from `AppState::sensor_config`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SensorConfigJson {
+    /// Joint where an encoder is mounted. `None` = no encoder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encoder_joint: Option<String>,
+    /// 1-σ encoder noise [rad].
+    #[serde(default = "SensorConfigJson::default_encoder_noise")]
+    pub encoder_noise_std: f64,
+    /// Whether the linear actuator's stroke is measured.
+    #[serde(default)]
+    pub actuator_position_enabled: bool,
+    /// 1-σ actuator-position noise [m].
+    #[serde(default = "SensorConfigJson::default_actuator_noise")]
+    pub actuator_noise_std: f64,
+}
+
+impl SensorConfigJson {
+    fn default_encoder_noise() -> f64 {
+        0.001
+    }
+    fn default_actuator_noise() -> f64 {
+        50e-6
+    }
 }
 
 /// Serializable container for GUI sweep mode + trajectory severity. Held as

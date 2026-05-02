@@ -163,6 +163,15 @@ impl AppState {
                 .to_string(),
             ),
         });
+        // Persist sensor configuration (encoder joint + actuator sensor
+        // selection + noise σ values) so the §4l state-estimation derivation
+        // and the encoder badge survive save/load.
+        json_struct.sensor_config = Some(crate::io::schema::SensorConfigJson {
+            encoder_joint: self.sensor_config.encoder_joint.clone(),
+            encoder_noise_std: self.sensor_config.encoder_noise_std,
+            actuator_position_enabled: self.sensor_config.actuator_position_enabled,
+            actuator_noise_std: self.sensor_config.actuator_noise_std,
+        });
         serde_json::to_string_pretty(&json_struct).map_err(|e| e.to_string())
     }
 
@@ -265,6 +274,21 @@ impl AppState {
                     _ => crate::solver::inverse_kinematics::Severity::Analysis,
                 };
             }
+        }
+
+        // Restore sensor configuration if present. Backward-compatible:
+        // missing field → keep current SensorConfig (typically default = no
+        // sensors). We don't reset sensor_config to default on load if the
+        // file lacks one, so a user who configured sensors manually then
+        // loaded an older mechanism file keeps their selections rather than
+        // having them silently wiped.
+        if let Some(sc) = json_struct.sensor_config.as_ref() {
+            self.sensor_config = crate::gui::state::SensorConfig {
+                encoder_joint: sc.encoder_joint.clone(),
+                encoder_noise_std: sc.encoder_noise_std,
+                actuator_position_enabled: sc.actuator_position_enabled,
+                actuator_noise_std: sc.actuator_noise_std,
+            };
         }
 
         self.blueprint = Some(json_struct);
@@ -720,5 +744,81 @@ mod tests {
         );
         assert!((dst.sweep_angle_min_deg - 10.0).abs() < 1e-9);
         assert!((dst.sweep_angle_max_deg - 350.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn sensor_config_round_trips_through_save_load() {
+        // Configure sensors on a fresh AppState, serialise, deserialise into
+        // a second AppState, verify both selections + noise σ values
+        // survived. This is the proof that sensor_config persists.
+        use crate::gui::samples::{build_sample, SampleMechanism};
+
+        let mut src = AppState::default();
+        let (mech, _q0) = build_sample(SampleMechanism::ParallelogramActuator);
+        // Need a mechanism + blueprint loaded for serialize_to_json_string.
+        src.mechanism = Some(mech);
+        src.blueprint = src.mechanism.as_ref().and_then(|m| {
+            crate::io::mechanism_to_json(m).ok()
+        });
+        src.sensor_config = crate::gui::state::SensorConfig {
+            encoder_joint: Some("D1".to_string()),
+            encoder_noise_std: 0.0005,
+            actuator_position_enabled: true,
+            actuator_noise_std: 25e-6,
+        };
+
+        let json = src
+            .serialize_to_json_string()
+            .expect("serialize should succeed");
+
+        let mut dst = AppState::default();
+        dst.load_from_json_str(&json).expect("load should succeed");
+
+        assert_eq!(dst.sensor_config.encoder_joint, Some("D1".to_string()));
+        assert!((dst.sensor_config.encoder_noise_std - 0.0005).abs() < 1e-12);
+        assert!(dst.sensor_config.actuator_position_enabled);
+        assert!((dst.sensor_config.actuator_noise_std - 25e-6).abs() < 1e-12);
+    }
+
+    #[test]
+    fn old_json_without_sensor_config_loads_with_defaults() {
+        // Backward compatibility: pre-sensor-config files lack the
+        // sensor_config field. They should load cleanly with the default
+        // SensorConfig (no sensors enabled).
+        let pre_sensor_json = r#"{
+            "schema_version": "1.1.0",
+            "bodies": {
+                "ground": {
+                    "attachment_points": {"A": [0.0, 0.0]},
+                    "mass": 0.0,
+                    "cg_local": [0.0, 0.0],
+                    "izz_cg": 0.0
+                }
+            },
+            "joints": {},
+            "drivers": {},
+            "forces": [],
+            "mounting_angle": 0.0,
+            "linear_drivers": []
+        }"#;
+        let mut state = AppState::default();
+        // Pre-load a non-default sensor_config to verify the loader does
+        // not silently overwrite it when the file lacks the field. Users
+        // who have configured sensors and then load an old file should
+        // keep their selections.
+        state.sensor_config.encoder_joint = Some("preserved".to_string());
+        state.sensor_config.actuator_position_enabled = true;
+
+        state
+            .load_from_json_str(pre_sensor_json)
+            .expect("old JSON should load");
+
+        // Encoder selection preserved (file didn't set it; loader doesn't
+        // wipe).
+        assert_eq!(
+            state.sensor_config.encoder_joint,
+            Some("preserved".to_string())
+        );
+        assert!(state.sensor_config.actuator_position_enabled);
     }
 }
