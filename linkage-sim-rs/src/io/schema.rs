@@ -84,6 +84,31 @@ pub struct MechanismJson {
     /// default to None which loaders interpret as no sensors enabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sensor_config: Option<SensorConfigJson>,
+    /// Active motion profile (ConstantSpeed / Trapezoidal / SCurve).
+    /// Affects the driver-torque envelope in sweep analyses. Held as
+    /// opaque JSON value to avoid a cyclic dep on `gui::state::MotionProfile`
+    /// (mirror pattern matching `sweep_state.sweep_mode`).
+    /// Backward-compatible: missing → ConstantSpeed default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motion_profile: Option<serde_json::Value>,
+    /// Rated actuator force (N) — used by the GUI's force-margin overlay
+    /// to colour the canvas when the required actuator force approaches
+    /// the actuator's rated capacity. 0.0 = "unspecified, hide the
+    /// overlay". Backward-compatible: missing → 0.0.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub actuator_rated_force: f64,
+    /// Forward-dynamics simulation duration (s). Per-mechanism analysis
+    /// config; persisted so the user doesn't reset duration on reload.
+    /// Backward-compatible: missing → None (loader keeps default 5.0s).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub simulation_duration: Option<f64>,
+    /// Parametric study configuration (parameter + range + metric).
+    /// Held as opaque JSON value to avoid cyclic dep on `gui::state::ParametricStudyConfig`
+    /// — gui::state::parametric carries serde derives so the value
+    /// round-trips losslessly. Backward-compatible: missing → loader keeps
+    /// its current default config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parametric_config: Option<serde_json::Value>,
 }
 
 /// Serializable mirror of `gui::state::SensorConfig`. Held in `io::schema`

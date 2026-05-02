@@ -172,6 +172,16 @@ impl AppState {
             actuator_position_enabled: self.sensor_config.actuator_position_enabled,
             actuator_noise_std: self.sensor_config.actuator_noise_std,
         });
+        // Persist analysis-config fields that affect downstream output:
+        // motion profile shape (drives torque envelope), actuator rated
+        // force (drives the GUI margin overlay), simulation duration
+        // (forward-dynamics window), and parametric study config.
+        // All are optional and skipped when at their defaults so existing
+        // files don't get diff churn.
+        json_struct.motion_profile = serde_json::to_value(&self.motion_profile).ok();
+        json_struct.actuator_rated_force = self.actuator_rated_force;
+        json_struct.simulation_duration = Some(self.simulation_duration);
+        json_struct.parametric_config = serde_json::to_value(&self.parametric_config).ok();
         serde_json::to_string_pretty(&json_struct).map_err(|e| e.to_string())
     }
 
@@ -289,6 +299,31 @@ impl AppState {
                 actuator_position_enabled: sc.actuator_position_enabled,
                 actuator_noise_std: sc.actuator_noise_std,
             };
+        }
+        // Restore analysis-config fields. Same "preserve-current-on-missing"
+        // semantics as sensor_config: a user who set up motion_profile /
+        // actuator_rated_force in the GUI then loads an older mechanism
+        // keeps their configuration.
+        if let Some(mp_value) = json_struct.motion_profile.as_ref() {
+            if let Ok(mp) =
+                serde_json::from_value::<crate::gui::state::MotionProfile>(mp_value.clone())
+            {
+                self.motion_profile = mp;
+            }
+        }
+        if json_struct.actuator_rated_force != 0.0 {
+            self.actuator_rated_force = json_struct.actuator_rated_force;
+        }
+        if let Some(dur) = json_struct.simulation_duration {
+            self.simulation_duration = dur;
+        }
+        if let Some(pc_value) = json_struct.parametric_config.as_ref() {
+            if let Ok(pc) = serde_json::from_value::<
+                crate::gui::state::ParametricStudyConfig,
+            >(pc_value.clone())
+            {
+                self.parametric_config = pc;
+            }
         }
 
         self.blueprint = Some(json_struct);
@@ -778,6 +813,103 @@ mod tests {
         assert!((dst.sensor_config.encoder_noise_std - 0.0005).abs() < 1e-12);
         assert!(dst.sensor_config.actuator_position_enabled);
         assert!((dst.sensor_config.actuator_noise_std - 25e-6).abs() < 1e-12);
+    }
+
+    #[test]
+    fn analysis_config_round_trips_through_save_load() {
+        // Verifies the four new MechanismJson fields survive save/load:
+        //   - motion_profile (Trapezoidal variant with non-default fractions)
+        //   - actuator_rated_force
+        //   - simulation_duration
+        //   - parametric_config (full SweepParameter + ParametricMetric)
+        use crate::gui::samples::{build_sample, SampleMechanism};
+        use crate::gui::state::{
+            MotionProfile, ParametricMetric, ParametricStudyConfig, SweepParameter,
+        };
+
+        let mut src = AppState::default();
+        let (mech, _q0) = build_sample(SampleMechanism::FourBar);
+        src.mechanism = Some(mech);
+        src.blueprint = src
+            .mechanism
+            .as_ref()
+            .and_then(|m| crate::io::mechanism_to_json(m).ok());
+        src.motion_profile = MotionProfile::Trapezoidal {
+            accel_fraction: 0.30,
+            decel_fraction: 0.40,
+        };
+        src.actuator_rated_force = 1234.5;
+        src.simulation_duration = 7.5;
+        src.parametric_config = ParametricStudyConfig {
+            parameter: SweepParameter::BodyMass("crank".to_string()),
+            min_value: 0.5,
+            max_value: 5.0,
+            num_steps: 9,
+            metric: ParametricMetric::PeakReaction,
+        };
+
+        let json = src
+            .serialize_to_json_string()
+            .expect("serialize should succeed");
+
+        let mut dst = AppState::default();
+        dst.load_from_json_str(&json).expect("load should succeed");
+
+        match dst.motion_profile {
+            MotionProfile::Trapezoidal {
+                accel_fraction,
+                decel_fraction,
+            } => {
+                assert!((accel_fraction - 0.30).abs() < 1e-12);
+                assert!((decel_fraction - 0.40).abs() < 1e-12);
+            }
+            other => panic!("expected Trapezoidal, got {:?}", other),
+        }
+        assert!((dst.actuator_rated_force - 1234.5).abs() < 1e-9);
+        assert!((dst.simulation_duration - 7.5).abs() < 1e-12);
+        match &dst.parametric_config.parameter {
+            SweepParameter::BodyMass(id) => assert_eq!(id, "crank"),
+            other => panic!("expected BodyMass, got {:?}", other),
+        }
+        assert!((dst.parametric_config.min_value - 0.5).abs() < 1e-12);
+        assert!((dst.parametric_config.max_value - 5.0).abs() < 1e-12);
+        assert_eq!(dst.parametric_config.num_steps, 9);
+        assert!(matches!(
+            dst.parametric_config.metric,
+            ParametricMetric::PeakReaction
+        ));
+    }
+
+    #[test]
+    fn old_json_without_analysis_config_loads_with_defaults() {
+        // Backward compatibility: pre-analysis-config files lack the four
+        // new fields. They should load cleanly without overwriting the
+        // user's in-memory selections.
+        let pre_config_json = r#"{
+            "schema_version": "1.1.0",
+            "bodies": {
+                "ground": {
+                    "attachment_points": {"A": [0.0, 0.0]},
+                    "mass": 0.0,
+                    "cg_local": [0.0, 0.0],
+                    "izz_cg": 0.0
+                }
+            },
+            "joints": {},
+            "drivers": {},
+            "forces": [],
+            "mounting_angle": 0.0,
+            "linear_drivers": []
+        }"#;
+        let mut state = AppState::default();
+        // Set non-default in-memory values; load shouldn't wipe them.
+        state.actuator_rated_force = 999.0;
+        state.simulation_duration = 12.0;
+        state
+            .load_from_json_str(pre_config_json)
+            .expect("old JSON should load");
+        assert!((state.actuator_rated_force - 999.0).abs() < 1e-9);
+        assert!((state.simulation_duration - 12.0).abs() < 1e-12);
     }
 
     #[test]

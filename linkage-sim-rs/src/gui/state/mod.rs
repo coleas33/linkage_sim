@@ -557,6 +557,10 @@ impl Default for AppState {
             linear_drivers: Vec::new(),
             sweep_state: None,
             sensor_config: None,
+            motion_profile: None,
+            actuator_rated_force: 0.0,
+            simulation_duration: None,
+            parametric_config: None,
         };
 
         let mut state = Self {

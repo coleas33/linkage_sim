@@ -3,7 +3,7 @@
 use crate::gui::sweep::SweepData;
 
 /// A parameter that can be swept in a parametric study.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SweepParameter {
     /// Body mass (kg). Value: body_id.
     BodyMass(String),
@@ -75,7 +75,7 @@ impl SweepParameter {
 }
 
 /// Which output metric to plot on the Y-axis of a parametric study.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ParametricMetric {
     PeakDriverTorque,
     RmsDriverTorque,
@@ -161,7 +161,7 @@ impl ParametricMetric {
 }
 
 /// Configuration for a parametric study.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ParametricStudyConfig {
     pub parameter: SweepParameter,
     pub min_value: f64,
