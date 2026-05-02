@@ -2,6 +2,7 @@
 
 /// Grid display and snap-to-grid settings. Spacing is stored in meters (SI);
 /// the UI converts to/from the active display unit at the display boundary.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct GridSettings {
     /// Whether snap-to-grid is active during drag operations.
     pub snap_enabled: bool,

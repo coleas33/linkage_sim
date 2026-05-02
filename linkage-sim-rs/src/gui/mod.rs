@@ -1281,6 +1281,14 @@ impl eframe::App for LinkageApp {
         self.state.tick_autosave(dt);
         #[cfg(target_arch = "wasm32")]
         self.state.tick_autosave(dt);
+
+        // ── User-pref persist tick ────────────────────────────────────────
+        // Saves the prefs sidecar (display units, grid, show-toggles, etc.)
+        // when any of those fields drift from the last persisted snapshot.
+        // Cheap when there's no change; writes to disk / localStorage when
+        // there is. No debounce — pref toggles are user-initiated and
+        // infrequent enough that per-event saves are fine.
+        self.state.tick_save_user_prefs();
     }
 }
 

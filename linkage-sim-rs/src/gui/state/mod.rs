@@ -15,6 +15,7 @@ mod trajectory_ops;
 pub mod file_io;
 mod solver_helpers;
 mod templates;
+mod preferences;
 
 // Re-export all public items so external code can use `crate::gui::state::*`.
 pub use display_units::{LengthUnit, AngleUnit, DisplayUnits};
@@ -32,6 +33,7 @@ pub use parametric::{
     CounterbalanceConfig, CounterbalanceResult,
 };
 pub use simulation::SimulationState;
+pub use preferences::UserPreferences;
 
 // Re-export blueprint helper functions used in tests and other modules.
 pub(crate) use blueprint_ops::detect_driver_joint_id;
@@ -453,6 +455,12 @@ pub struct AppState {
     /// can A/B two profiles or two targets. UX-only — not persisted to
     /// JSON snapshots.
     pub trajectory_comparison: Option<crate::gui::sweep::SweepData>,
+    // ── User preferences cache ───────────────────────────────────────
+    /// Snapshot of the last persisted `UserPreferences`. Used by
+    /// `tick_save_user_prefs` to detect drift between current AppState
+    /// pref-fields and disk; only writes when something actually changed.
+    /// Not persisted itself — reconstructed on startup.
+    pub last_saved_prefs: UserPreferences,
 }
 
 /// Background image overlay for tracing mechanisms from photos/sketches.
@@ -703,7 +711,14 @@ impl Default for AppState {
             trajectory_playback_speed: 1.0,
             trajectory_playback_loop: true,
             trajectory_comparison: None,
+            last_saved_prefs: UserPreferences::default(),
         };
+        // Apply user preferences (display units, grid, show_*, dismiss_welcome,
+        // nathan_mode) loaded from sidecar storage. Returns defaults silently
+        // on any failure, so a missing/corrupt prefs file == first-launch UX.
+        let prefs = UserPreferences::load();
+        state.apply_user_preferences(&prefs);
+        state.last_saved_prefs = prefs;
         state.rebuild();
         state
     }
@@ -712,6 +727,55 @@ impl Default for AppState {
 // ── Methods that remain in mod.rs (core solve/animation/sample loading) ──────
 
 impl AppState {
+    /// Take a snapshot of the user-preference fields in the current state.
+    /// Used by `tick_save_user_prefs` to compare against `last_saved_prefs`
+    /// and decide whether a write is warranted.
+    pub fn current_user_preferences(&self) -> UserPreferences {
+        UserPreferences {
+            display_units: self.display_units,
+            grid: self.grid,
+            show_dimensions: self.show_dimensions,
+            show_labels: self.show_labels,
+            show_equation_overlay: self.show_equation_overlay,
+            show_forces: self.show_forces,
+            show_plots: self.show_plots,
+            show_parametric: self.show_parametric,
+            show_debug_overlay: self.show_debug_overlay,
+            dismiss_welcome: self.dismiss_welcome,
+            nathan_mode: self.nathan_mode,
+        }
+    }
+
+    /// Apply a `UserPreferences` snapshot to the current state. Called once
+    /// at startup with the loaded prefs; safe to call again at runtime if
+    /// the user imports a prefs file.
+    pub fn apply_user_preferences(&mut self, prefs: &UserPreferences) {
+        self.display_units = prefs.display_units;
+        self.grid = prefs.grid;
+        self.show_dimensions = prefs.show_dimensions;
+        self.show_labels = prefs.show_labels;
+        self.show_equation_overlay = prefs.show_equation_overlay;
+        self.show_forces = prefs.show_forces;
+        self.show_plots = prefs.show_plots;
+        self.show_parametric = prefs.show_parametric;
+        self.show_debug_overlay = prefs.show_debug_overlay;
+        self.dismiss_welcome = prefs.dismiss_welcome;
+        self.nathan_mode = prefs.nathan_mode;
+    }
+
+    /// Persist user preferences if any pref field has changed since the
+    /// last save. Cheap to call every frame — when nothing changed it just
+    /// does an equality compare and returns. When something HAS changed,
+    /// writes the prefs sidecar (native: ~/.linkage-sim/preferences.json,
+    /// web: localStorage) and updates the cached snapshot.
+    pub fn tick_save_user_prefs(&mut self) {
+        let current = self.current_user_preferences();
+        if current != self.last_saved_prefs {
+            current.save();
+            self.last_saved_prefs = current;
+        }
+    }
+
     // ── Driver scalar accessors ────────────────────────────────────────────
     //
     // These read/write the rate / initial-value scalars stored on the

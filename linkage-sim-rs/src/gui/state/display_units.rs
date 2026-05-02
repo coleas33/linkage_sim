@@ -1,14 +1,14 @@
 // ── Display units ─────────────────────────────────────────────────────────────
 
 /// Length unit preference for display. Solvers always use SI (meters) internally.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LengthUnit {
     Meters,
     Millimeters,
 }
 
 /// Angle unit preference for display. Solvers always use radians internally.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AngleUnit {
     Radians,
     Degrees,
@@ -16,6 +16,7 @@ pub enum AngleUnit {
 
 /// Display unit preferences. All conversion happens at the display boundary —
 /// solvers never see converted values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DisplayUnits {
     pub length: LengthUnit,
     pub angle: AngleUnit,
