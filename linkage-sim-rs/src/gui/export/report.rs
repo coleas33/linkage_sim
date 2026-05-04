@@ -2650,6 +2650,389 @@ fn write_trajectory_inverse_section(html: &mut String) {
     );
 }
 
+/// §7 — practical deployment recipes for inverse kinematics + state
+/// estimation on real-time hardware. The report's earlier sections
+/// (§4, §6, §4l) derive the math that's right for *design-time*
+/// trajectory planning and analysis. This section is the bridge to the
+/// firmware: which method goes on the MCU, what the architecture looks
+/// like, and what the simulator doesn't yet generate for a one-click
+/// deployment.
+fn write_hardware_deployment_section(
+    html: &mut String,
+    sensor_config: &crate::gui::state::SensorConfig,
+) {
+    html.push_str("<h3>7. Deploying to hardware</h3>\n");
+
+    // ── §7.0 Two roles, two algorithms ────────────────────────────────────
+    html.push_str(
+        "<h3 style='margin-left: 12px;'>7.0 Design-time vs runtime: don't conflate them</h3>\n",
+    );
+    html.push_str(
+        "<p>The math in this report serves <b>two distinct roles</b>. The \
+         simulator's strength is at one role; your firmware's strength is at \
+         the other. Confusing them produces controllers that are either too \
+         slow (running design-time math at runtime) or too fragile (running \
+         runtime math at design time without numerical safeguards).</p>\n",
+    );
+    html.push_str(
+        "<table>\n\
+         <tr><th></th><th>Design time (the simulator's job)</th><th>Runtime (your firmware's job)</th></tr>\n\
+         <tr><td><b>Where it runs</b></td><td>Laptop, browser</td><td>MCU (Cortex-M, ESP32, etc.)</td></tr>\n\
+         <tr><td><b>Time budget</b></td><td>Seconds per trajectory</td><td>10–1000 µs per control cycle</td></tr>\n\
+         <tr><td><b>Generality</b></td><td>Any mechanism topology</td><td>Specialised for THIS mechanism</td></tr>\n\
+         <tr><td><b>Math</b></td><td>IFT-Newton on \\(\\Phi_q\\) (§4, §6)</td><td>Closed-form (§4h) or table interpolation</td></tr>\n\
+         <tr><td><b>Failure mode</b></td><td>Slow convergence, you wait</td><td>Missed deadline, hardware misbehaves</td></tr>\n\
+         <tr><td><b>Output</b></td><td>(t, q, q̇, q̈, λ, F) trajectory tables</td><td>Live (u, q̂, command) at every cycle</td></tr>\n\
+         </table>\n",
+    );
+    html.push_str(
+        "<p><b>The simulator's IFT-Newton outer loop is optimal for design \
+         time and a poor choice for runtime.</b> Per-iteration matrix \
+         factorisation costs ~10–50 µs on a Cortex-M7 — acceptable but \
+         wasteful when closed-form alternatives exist.</p>\n",
+    );
+
+    // ── §7.1 IK deployment ────────────────────────────────────────────────
+    html.push_str(
+        "<h3 style='margin-left: 12px;'>7.1 Inverse-kinematics deployment</h3>\n",
+    );
+    html.push_str(
+        "<p>Two questions decide which method goes on the MCU:</p>\n\
+         <ol>\n\
+         <li><b>Is the trajectory known in advance?</b> (vs. live, operator-driven, or sensor-driven)</li>\n\
+         <li><b>Is the mechanism a 4-bar (or another topology with closed-form forward kinematics)?</b></li>\n\
+         </ol>\n",
+    );
+    html.push_str(
+        "<table>\n\
+         <tr><th>Trajectory</th><th>Mechanism</th><th>Recommended method</th><th>Cost</th><th>LOC (C)</th></tr>\n\
+         <tr><td>Known offline</td><td>Any</td><td>Pre-compute table → linear/cubic interpolate</td><td>~1 µs</td><td>~50</td></tr>\n\
+         <tr><td>Live</td><td>4-bar</td><td>Closed-form §4h + 1-D Newton</td><td>~3–10 µs</td><td>~80</td></tr>\n\
+         <tr><td>Live</td><td>Slider-crank, RRRP</td><td>Same — closed form exists</td><td>~3–10 µs</td><td>~80</td></tr>\n\
+         <tr><td>Live</td><td>Multi-loop / non-closed-form</td><td>Damped Newton (Levenberg-Marquardt) with bounded iters</td><td>~30–100 µs</td><td>~200</td></tr>\n\
+         <tr><td>Live</td><td>Anything with workspace bounds you can pre-compute</td><td>Lookup table on \\(u(g)\\) over the working range, cubic interpolate</td><td>~2 µs</td><td>~60</td></tr>\n\
+         </table>\n",
+    );
+
+    // ── §7.1.1 Offline + interpolation ────────────────────────────────────
+    html.push_str(
+        "<h4 style='margin-left: 24px;'>7.1.1 Offline-planned trajectories (the dominant case)</h4>\n",
+    );
+    html.push_str(
+        "<p>This is the architecture that fits most controlled-mechanism \
+         applications: pick-and-place, prescribed paths, repetitive cycles. \
+         The simulator already produces what you need.</p>\n",
+    );
+    html.push_str(
+        "<ol>\n\
+         <li>At design time, run <code>compute_trajectory</code> in the simulator with your desired \
+         observable, profile, and sample count.</li>\n\
+         <li>Export via <b>File → Export firmware (JSON)</b> — emits \\((t_k, h_k, u_k, \\dot u_k, \\ddot u_k, F_{\\text{act},k}, \\text{status}_k)\\) per sample plus the full pose \\((x_i, y_i, \\theta_i)\\) for each body.</li>\n\
+         <li>At firmware build time, parse the JSON into a packed C array and bake into ROM (or load from flash at boot).</li>\n\
+         <li>At runtime, each control cycle: binary-search for the bracketing samples \\((t_k, t_{k+1})\\), then linearly or cubically interpolate.</li>\n\
+         </ol>\n",
+    );
+    html.push_str(
+        "<p>Use linear interpolation when only \\(u_k\\) is tabulated; <b>cubic Hermite</b> \
+         when \\(u_k\\) and \\(\\dot u_k\\) are both tabulated (the simulator emits both, so you \
+         get C¹-continuous output for free). For trajectories at 200–500 \
+         samples per second of motion, cubic-Hermite-interpolated tables are \
+         indistinguishable from re-running the original Newton solver.</p>\n",
+    );
+    html.push_str(
+        "<pre style='background: #f0f2f5; padding: 12px; border-left: 3px solid #0f3460; \
+         font-family: Consolas, Monaco, monospace; font-size: 12px; line-height: 1.5; \
+         overflow-x: auto;'>\
+// Cubic Hermite interpolation: needs both u and u_dot at each sample.
+float traj_lookup_u(float t) {
+    int k = bsearch_bracket(traj_t, traj_n, t);   // O(log n)
+    float t0 = traj_t[k], t1 = traj_t[k+1];
+    float dt = t1 - t0;
+    float s = (t - t0) / dt;                        // [0, 1]
+    float h00 = (1 + 2*s) * (1 - s)*(1 - s);
+    float h10 = s * (1 - s)*(1 - s);
+    float h01 = s*s * (3 - 2*s);
+    float h11 = s*s * (s - 1);
+    return h00 * traj_u[k]
+         + h10 * dt * traj_u_dot[k]
+         + h01 * traj_u[k+1]
+         + h11 * dt * traj_u_dot[k+1];
+}
+</pre>\n",
+    );
+
+    // ── §7.1.2 Closed-form on the MCU ─────────────────────────────────────
+    html.push_str(
+        "<h4 style='margin-left: 24px;'>7.1.2 Live IK on a 4-bar — use §4h, not §6</h4>\n",
+    );
+    html.push_str(
+        "<p>For live commands (operator joystick, sensor-driven targets), \
+         the closed-form forward kinematics in §4h is <b>10–100× faster</b> \
+         than the simulator's matrix Newton. Wrap §4h's \\(\\theta_2 \\to \\theta_3, \\theta_4\\) \
+         map in a 1-D Newton on \\(u\\):</p>\n",
+    );
+    html.push_str(
+        "<pre style='background: #f0f2f5; padding: 12px; border-left: 3px solid #0f3460; \
+         font-family: Consolas, Monaco, monospace; font-size: 12px; line-height: 1.5; \
+         overflow-x: auto;'>\
+// 1-D Newton on closed-form forward map (Freudenstein, §4h).
+// Find theta_2 such that g(theta_2) = h_target.
+float inverse_g_to_theta2(float h_target, float theta2_warm) {
+    float u = theta2_warm;
+    for (int i = 0; i &lt; 4; i++) {
+        forward_kin_t fk = forward_kinematics(u);   // §4h closed-form
+        float g_now = compute_observable(&fk);       // your ControlTarget
+        float dg_du = compute_dg_dtheta2(&fk);       // §6.4 row + chain rule
+        float r = g_now - h_target;
+        if (fabsf(r) &lt; 1e-8f) break;
+        u -= r / dg_du;                              // Newton step
+    }
+    return u;
+}
+</pre>\n",
+    );
+    html.push_str(
+        "<p>Cost per call: ~3–10 µs on Cortex-M7. Replaces ~10–50 µs of \
+         matrix Newton. Big win at 1 kHz control rates.</p>\n",
+    );
+
+    // ── §7.1.3 Damped Newton (Levenberg-Marquardt) ────────────────────────
+    html.push_str(
+        "<h4 style='margin-left: 24px;'>7.1.3 Live IK on non-4-bar — use damped Newton (Levenberg-Marquardt)</h4>\n",
+    );
+    html.push_str(
+        "<p>For multi-loop or non-trivially-closed-form mechanisms, plain \
+         Newton on \\(\\Phi_q\\) breaks at singularities (where \\(\\Phi_q\\) \
+         loses rank and \\(r'(u) \\to 0\\)). The robotics-standard fix is \
+         <b>Levenberg-Marquardt damping</b>:</p>\n",
+    );
+    html.push_str(
+        "\\[ (\\Phi_q^T \\Phi_q + \\lambda I)\\,\\Delta q = -\\Phi_q^T\\,\\Phi \\]\n",
+    );
+    html.push_str(
+        "<p>The damping factor \\(\\lambda\\) tunes between Newton (\\(\\lambda = 0\\), \
+         quadratic convergence in well-conditioned regions) and gradient \
+         descent (\\(\\lambda \\to \\infty\\), linear but always-stable). A \
+         common heuristic: start with \\(\\lambda \\approx 10^{-3} \\|\\Phi_q\\|_\\infty^2\\), \
+         decrease by 10× when residual decreases, increase by 10× when it \
+         doesn't. <b>Bound the iteration count</b> (e.g. 8 max) so a missed \
+         convergence doesn't blow your control deadline.</p>\n",
+    );
+    html.push_str(
+        "<p>The simulator doesn't currently emit LM-style code — it uses \
+         pure Newton with a bisection fallback because design-time runs \
+         don't have a deadline. For runtime use you'd either lift the \
+         simulator's solver loop and add the \\(\\lambda I\\) regularisation, \
+         or hand-write an LM kernel using the §3 \\(\\Phi_q\\) formulas.</p>\n",
+    );
+
+    // ── §7.2 State-estimation deployment ───────────────────────────────────
+    html.push_str(
+        "<h3 style='margin-left: 12px;'>7.2 State-estimation deployment</h3>\n",
+    );
+    html.push_str(
+        "<p>You have a sensor (or two). You want a clean estimate of the \
+         mechanism's state — the variable your control loop tracks. Three \
+         options, increasing in complexity:</p>\n",
+    );
+    html.push_str(
+        "<table>\n\
+         <tr><th>Method</th><th>When to use</th><th>Cost</th><th>LOC (C)</th></tr>\n\
+         <tr><td><b>(a) Raw sensor + finite-difference</b></td>\
+         <td>Single high-precision sensor, no need for smoothed velocity, single-cycle latency OK</td>\
+         <td>~0 µs</td>\
+         <td>~10</td></tr>\n\
+         <tr><td><b>(b) 1-D Kalman / complementary filter</b></td>\
+         <td>Single noisy sensor + need smoothed velocity, OR 2 sensors with very different bandwidths (e.g. IMU + encoder)</td>\
+         <td>~1–3 µs</td>\
+         <td>~50</td></tr>\n\
+         <tr><td><b>(c) EKF (§4l)</b></td>\
+         <td>2 sensors with characterisable noise, want optimal blending, want fault detection via innovation gating</td>\
+         <td>~5–15 µs</td>\
+         <td>~150</td></tr>\n\
+         </table>\n",
+    );
+
+    // ── §7.2.1 Choosing between them ──────────────────────────────────────
+    html.push_str(
+        "<h4 style='margin-left: 24px;'>7.2.1 Picking the right filter for your sensor stack</h4>\n",
+    );
+    html.push_str(
+        "<p><b>Raw / FD</b>: \\(\\hat\\theta_k = \\theta_{\\text{enc},k}\\), \
+         \\(\\hat{\\dot\\theta}_k = (\\theta_{\\text{enc},k} - \\theta_{\\text{enc},k-1})/\\Delta t\\). \
+         Add a 1-pole low-pass to the velocity estimate (\\(\\alpha = 0.95\\)) \
+         to control the differentiation noise. Adequate when the encoder noise \
+         is at least 4× smaller than the position resolution your control \
+         loop needs.</p>\n",
+    );
+    html.push_str(
+        "<p><b>Complementary filter</b> (best when sensors have different \
+         bandwidths): blend a high-bandwidth-noisy sensor (e.g. tachometer, \
+         IMU) with a low-bandwidth-clean sensor (e.g. absolute encoder):</p>\n",
+    );
+    html.push_str(
+        "\\[ \\hat\\theta_{k+1} = \\alpha\\,(\\hat\\theta_k + \\hat{\\dot\\theta}_k\\,\\Delta t) + (1 - \\alpha)\\,\\theta_{\\text{enc},k} \\]\n",
+    );
+    html.push_str(
+        "<p>Tunable \\(\\alpha \\in [0.95, 0.99]\\). One multiply-add per cycle. \
+         Cheaper than EKF; doesn't give you optimal weighting or fault \
+         detection but works fine when your two sensors aren't directly \
+         redundant.</p>\n",
+    );
+    html.push_str(
+        "<p><b>EKF (§4l)</b>: optimal Bayesian blend when you have two \
+         sensors that both measure the SAME state through different \
+         mappings (encoder reads \\(\\theta_2\\), actuator-position sensor reads \
+         \\(L(\\theta_2)\\) per §4i). The Kalman gain automatically weights \
+         each by its noise \\(\\sigma\\); innovation gating gives fault \
+         detection for free.</p>\n",
+    );
+
+    // ── §7.2.2 EKF tuning notes ───────────────────────────────────────────
+    html.push_str(
+        "<h4 style='margin-left: 24px;'>7.2.2 EKF tuning (Q and R)</h4>\n",
+    );
+    html.push_str(
+        "<p><b>Initial covariance</b> \\(P_{0|0}\\): set diagonal to \
+         \\(\\sigma_{\\theta,0}^2 \\approx 1\\,\\text{rad}^2\\) (effectively \"I have no \
+         idea\"); the filter converges to a good estimate within ~10 \
+         measurement updates, after which \\(P\\) drops to its steady-state \
+         value.</p>\n",
+    );
+    html.push_str(
+        "<p><b>Process noise</b> \\(Q\\): tune empirically. Start with \
+         \\(\\sigma_{\\dot\\theta} \\approx\\) 10% of expected angular velocity. \
+         Symptom of \\(Q\\) too small: filter lags input changes (\"sluggish\"). \
+         Symptom of \\(Q\\) too large: filter tracks measurement noise \
+         (\"jumpy\"). The right value falls out of running the filter on a \
+         couple cycles of motion data and inspecting the innovation \
+         sequence.</p>\n",
+    );
+    html.push_str(&format!(
+        "<p><b>Measurement noise</b> \\(R\\): from your sensor data sheets, \
+         not tuned. {}</p>\n",
+        if sensor_config.encoder_joint.is_some()
+            || sensor_config.actuator_position_enabled
+        {
+            format!(
+                "Currently configured: encoder σ = {:.4} rad ({:.2} mrad), \
+                 actuator σ = {:.6} m ({:.1} µm). These propagate directly into \
+                 the §4l EKF as the diagonal of R.",
+                sensor_config.encoder_noise_std,
+                sensor_config.encoder_noise_std * 1000.0,
+                sensor_config.actuator_noise_std,
+                sensor_config.actuator_noise_std * 1e6,
+            )
+        } else {
+            "No sensors configured in this report; configure them in the \
+             Sensors panel to see numerical R values here."
+                .to_string()
+        },
+    ));
+    html.push_str(
+        "<p><b>Innovation gating</b> for fault detection: at each update, \
+         compute \\(s = y - h(\\hat x_{k+1|k})\\). If \\(|s| > 5\\sqrt{S}\\) for \
+         several cycles in a row, the sensor is misbehaving (broken, drifted, \
+         or your model is wrong). Skip the update on flagged samples and \
+         log; if the fault persists, switch to a degraded single-sensor \
+         mode.</p>\n",
+    );
+
+    // ── §7.3 Putting it together ──────────────────────────────────────────
+    html.push_str(
+        "<h3 style='margin-left: 12px;'>7.3 The full embedded control loop</h3>\n",
+    );
+    html.push_str(
+        "<p>The pieces above stack together into a typical 1 kHz control \
+         interrupt. <b>Total budget per cycle: ~50–100 µs on a Cortex-M7</b>; \
+         most of that is the EKF + table lookup + PID, not the kinematics.</p>\n",
+    );
+    html.push_str(
+        "<pre style='background: #f0f2f5; padding: 12px; border-left: 3px solid #0f3460; \
+         font-family: Consolas, Monaco, monospace; font-size: 12px; line-height: 1.5; \
+         overflow-x: auto;'>\
+// Runs every 1 ms (1 kHz). Total budget ~100 µs; observed ~30 µs.
+void control_isr(void) {
+    // ── 1. Sample sensors (~2 µs) ───────────────────────────────
+    float theta_enc = (read_encoder() - theta_zero) * RAD_PER_COUNT;
+    float L_act     = (read_actuator_pos() - L_zero) * M_PER_COUNT;
+
+    // ── 2. State estimation: EKF predict + update (~10 µs, §4l) ─
+    ekf_predict(DT);
+    float y[2] = { theta_enc, L_act };
+    ekf_update(y);
+    float theta2_hat   = ekf_state.x[0];
+    float omega2_hat   = ekf_state.x[1];
+
+    // ── 3. Lookup desired trajectory (~2 µs, §7.1.1) ────────────
+    float t_now = (float)tick_count * DT;
+    float u_target     = traj_lookup_u(t_now);
+    float u_dot_target = traj_lookup_u_dot(t_now);
+
+    // ── 4. PID + feed-forward (~3 µs) ───────────────────────────
+    float u_err = u_target - theta2_hat;
+    float u_cmd = pid_compute(u_err)
+                + KFF_VEL  * u_dot_target
+                + KFF_INERTIA * compute_alpha2_target(t_now);
+
+    // ── 5. Safety checks before commit ──────────────────────────
+    if (fabsf(u_cmd) &gt; U_CMD_LIMIT) u_cmd = copysignf(U_CMD_LIMIT, u_cmd);
+    if (transmission_angle_too_low(theta2_hat)) {
+        // Near a dead point; skip closed-loop trim, ride feed-forward only.
+        u_cmd = KFF_VEL * u_dot_target;
+    }
+
+    // ── 6. Commit (~1 µs) ───────────────────────────────────────
+    write_motor_command(u_cmd);
+    tick_count++;
+}
+</pre>\n",
+    );
+
+    // ── §7.4 Gap list ─────────────────────────────────────────────────────
+    html.push_str(
+        "<h3 style='margin-left: 12px;'>7.4 What the simulator doesn't yet generate</h3>\n",
+    );
+    html.push_str(
+        "<p>For one-click \"this report → deployable C code\" the simulator \
+         is currently ~80% of the way there. What's missing:</p>\n",
+    );
+    html.push_str(
+        "<ol>\n\
+         <li><b>C-code generator for §4h closed-form FK</b> — emit a \
+         <code>forward_kinematics(theta2)</code> function with this \
+         mechanism's link lengths baked in as <code>const float</code> literals. \
+         The §4k embedded-control recipe shows the constant block; a generator \
+         that emits the full module is ~100 LOC.</li>\n\
+         <li><b>C-code generator for §4l EKF</b> — emit \
+         <code>ekf_predict</code> / <code>ekf_update</code> with the configured Q, R, \
+         and measurement Jacobian H. ~150 LOC of generated C.</li>\n\
+         <li><b>Trajectory interpolation helper</b> — packaged as a \
+         standalone module (binary search + cubic Hermite) that consumes the \
+         firmware JSON exported from <code>compute_trajectory</code>. ~50 \
+         LOC.</li>\n\
+         <li><b>Workspace-bounds enforcement</b> — clamp commanded \\(g\\) at \
+         the reachable workspace boundary (the simulator has the §1 \
+         workspace-probe table; export it).</li>\n\
+         <li><b>Singularity-aware degraded mode</b> — when the simulator's \
+         <code>compute_trajectory</code> reports <em>R/S/B/N</em> failures along \
+         a trajectory, generate runtime checks that switch to feed-forward-\
+         only control through those samples (rather than tripping a fault).</li>\n\
+         <li><b>CMake / build scaffold</b> for an STM32CubeIDE / PlatformIO / \
+         Arduino-style project layout.</li>\n\
+         </ol>\n",
+    );
+    html.push_str(
+        "<p>Each item is 50–200 lines of generated code; total deployment \
+         pipeline ~500–1000 LOC of C if you implement everything. The \
+         report's pseudocode (§4k, §4l, §7.1.1, §7.3) is the seed; the \
+         missing piece is mechanical translation to real C source files \
+         with this mechanism's specific constants. Until that ships, the \
+         report is the spec and you do the hand-translation — which for a \
+         one-off mechanism is ~half a day's work.</p>\n",
+    );
+}
+
 fn write_singular_configs_section(html: &mut String, layout: &FourbarLayout) {
     let a = layout.a;
     let b = layout.b;
@@ -3126,13 +3509,16 @@ fn write_math_background_section(
     // ── 6. Trajectory mode (inverse position control) ─────────────────────
     write_trajectory_inverse_section(html);
 
-    // ── 7. Numerical validation ─────────────────────────────────────────────
+    // ── 7. Deploying to hardware ───────────────────────────────────────────
+    write_hardware_deployment_section(html, sensor_config);
+
+    // ── 8. Numerical validation ─────────────────────────────────────────────
     //
     // Shows the cascade actually working: residuals at each level should
     // be at floating-point noise. Lets a reader spot-check the solver
     // outputs against an external tool (Mathematica, MATLAB, NumPy, etc.)
     // by giving them concrete numbers to compare to.
-    html.push_str("<h3>7. Numerical validation at this pose</h3>\n");
+    html.push_str("<h3>8. Numerical validation at this pose</h3>\n");
     html.push_str(
         "<p>The four-level cascade is mathematically self-consistent: at the \
          converged pose, every residual should be at floating-point noise \
@@ -3225,7 +3611,7 @@ fn write_math_background_section(
     html.push_str("</table>\n");
 
     // ── 8. Verification recipe ─────────────────────────────────────────────
-    html.push_str("<h3>8. How to verify the math externally</h3>\n");
+    html.push_str("<h3>9. How to verify the math externally</h3>\n");
     html.push_str(
         "<p>To validate this report's solver outputs against an independent \
          tool (Mathematica, MATLAB, SymPy, Python+NumPy, etc.), follow these \
@@ -3276,7 +3662,7 @@ fn write_math_background_section(
     html.push_str("</ol>\n");
 
     // ── 9. References ──────────────────────────────────────────────────────
-    html.push_str("<h3>9. Further reading</h3>\n");
+    html.push_str("<h3>10. Further reading</h3>\n");
     html.push_str(
         "<p>The math used here is standard multibody-dynamics constraint \
          theory. Authoritative references:</p>\n",
@@ -3444,6 +3830,53 @@ mod tests {
         assert!(
             html.contains("Why you care"),
             "§6.2 / §6.3 should include a 'Why you care' framing intro"
+        );
+        // §7 hardware-deployment section — covers IK + state estimation
+        // recipes for embedded use. The previous §7-§9 renumbered to §8-§10.
+        assert!(
+            html.contains("<h3>7. Deploying to hardware</h3>"),
+            "should include §7 hardware deployment section"
+        );
+        assert!(
+            html.contains("Design-time vs runtime"),
+            "§7.0 should orient the reader on the two-role distinction"
+        );
+        assert!(
+            html.contains("Inverse-kinematics deployment"),
+            "§7.1 should cover IK deployment with a decision tree"
+        );
+        assert!(
+            html.contains("State-estimation deployment"),
+            "§7.2 should cover state-estimation deployment options"
+        );
+        assert!(
+            html.contains("EKF tuning"),
+            "§7.2.2 should cover Q/R tuning for the EKF"
+        );
+        assert!(
+            html.contains("control_isr"),
+            "§7.3 should include the full embedded ISR pseudocode"
+        );
+        assert!(
+            html.contains("Levenberg-Marquardt") || html.contains("damped Newton"),
+            "§7.1 should cover damped Newton / LM for non-4-bar mechanisms"
+        );
+        assert!(
+            html.contains("Cubic Hermite") || html.contains("cubic Hermite"),
+            "§7.1.1 should mention cubic Hermite interpolation for trajectory tables"
+        );
+        // Renumbering: §7→§8, §8→§9, §9→§10. Verify the new numbering landed.
+        assert!(
+            html.contains("<h3>8. Numerical validation"),
+            "old §7 'Numerical validation' should now be §8"
+        );
+        assert!(
+            html.contains("<h3>9. How to verify"),
+            "old §8 'External verification' should now be §9"
+        );
+        assert!(
+            html.contains("<h3>10. Further reading"),
+            "old §9 'Further reading' should now be §10"
         );
         // Mechanism-specific parameterisation
         assert!(
