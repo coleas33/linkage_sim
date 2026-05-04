@@ -2124,6 +2124,278 @@ fn write_velocity_ratio_section(
 /// conditions analytically. Dead points occur when the transmission
 /// angle is 0° or 180° (coupler and rocker collinear), making the
 /// mechanism unable to propagate input motion to the output.
+/// §6 Trajectory mode — full inverse-kinematics derivation.
+///
+/// Replaces the previous one-paragraph stub that pointed at the spec doc;
+/// the reader gets §8.1–§8.4 of `docs/superpowers/specs/2026-04-29-linkage-
+/// equations-reference.md` inlined, with explicit per-ControlTarget
+/// formulas for ∇_q g and ∇²_q g, the dq/du and d²q/du² derivations via
+/// the implicit function theorem, and a side-by-side comparison of the
+/// analytic vs finite-difference Hessian implementation choice.
+///
+/// Mechanism-independent (the math is the same for every planar linkage),
+/// so this function takes no `mechanism` / `q` / `layout` parameters.
+fn write_trajectory_inverse_section(html: &mut String) {
+    html.push_str("<h3>6. Trajectory mode (inverse position control)</h3>\n");
+    html.push_str(
+        "<p><b>Forward sweep</b> prescribes \\(f(t)\\) (the driver input) and \
+         solves the constraint cascade \\(\\Phi(q,t)=0\\) for \\(q(t)\\). \
+         <b>Trajectory mode</b> flips that: we prescribe a separate output \
+         observable \\(g(q) = h(t)\\) (e.g. \"WorldX of the coupler tip\") \
+         and back-solve the actuator command \\(u(t)\\) that makes \
+         \\(g(q(u(t))) = h(t)\\) hold at every sample.</p>\n",
+    );
+    html.push_str(
+        "<p>The output observable is a smooth scalar function of \
+         coordinates:</p>\n",
+    );
+    html.push_str("\\[ g:\\,\\mathbb{R}^{3n} \\to \\mathbb{R},\\qquad g(q) \\]\n");
+    html.push_str(
+        "<p>The simulator implements five <code>ControlTarget</code> variants \
+         (full per-variant formulas in §6.4 below): <em>Angle</em>, \
+         <em>WorldX</em>, <em>WorldY</em>, <em>Projection</em>, \
+         <em>Distance</em>. Each variant supplies \\(g(q)\\) and \\(\\nabla_q g(q)\\) \
+         in closed form; the Hessian \\(\\nabla_q^2 g\\) is supplied analytically \
+         (for non-Angle variants) or finite-differenced (§6.5).</p>\n",
+    );
+
+    // ── §6.1 Position inverse ─────────────────────────────────────────────
+    html.push_str(
+        "<h3 style='margin-left: 12px;'>6.1 Position inverse — find \\(u\\) such that \\(g(q(u)) = h\\)</h3>\n",
+    );
+    html.push_str(
+        "<p>Define the residual</p>\n\
+         \\[ r(u) = g(q(u)) - h \\]\n\
+         <p>and Newton-iterate on \\(r(u) = 0\\):</p>\n\
+         \\[ u^{(k+1)} = u^{(k)} - \\frac{r(u^{(k)})}{r'(u^{(k)})} \\]\n",
+    );
+    html.push_str(
+        "<p>The Newton step needs \\(r'(u) = dg/du\\). The chain rule plus the \
+         <b>implicit function theorem</b> applied to \\(\\Phi(q(u),u) = 0\\) \
+         (treating \\(q\\) as a function of \\(u\\) along the constraint \
+         manifold) gives</p>\n",
+    );
+    html.push_str(
+        "\\[ \\Phi_q\\,\\frac{dq}{du} + \\Phi_u = 0 \\quad\\Longrightarrow\\quad \\frac{dq}{du} = -\\Phi_q^{-1}\\,\\Phi_u \\]\n\
+         \\[ r'(u) = \\nabla_q g \\cdot \\frac{dq}{du} = -\\nabla_q g \\cdot \\Phi_q^{-1}\\,\\Phi_u \\]\n",
+    );
+    html.push_str(
+        "<p>where \\(\\Phi_u = \\partial \\Phi/\\partial u\\) is the column of \
+         derivatives w.r.t. the driver input. For the simulator's two driver \
+         parameterizations:</p>\n",
+    );
+    html.push_str(
+        "<ul>\n\
+         <li><b>Revolute driver</b>: \\(f(t) = \\theta_0 + \\omega t\\) means \\(u = \\theta_j - \\theta_i\\). \
+         \\(\\Phi_u\\) is \\(-1\\) on the driver row, zero everywhere else.</li>\n\
+         <li><b>Linear driver</b>: \\(d(t) = L_0 + v t\\) means \\(u = L\\) (the actuator length). \
+         \\(\\Phi_u\\) is again \\(-1\\) on the driver row, zero elsewhere.</li>\n\
+         </ul>\n",
+    );
+    html.push_str(
+        "<p>So \\(\\Phi_u\\) is a single column with one non-zero entry — \
+         identical in shape regardless of driver kind. This is exactly \
+         <code>\\(\\Phi_t\\) divided by the parameterization rate</code>, and the \
+         simulator reuses <code>assemble_phi_t</code> with a divide.</p>\n",
+    );
+    html.push_str("<p><b>Outer-loop algorithm</b>:</p>\n");
+    html.push_str(
+        "<ol>\n\
+         <li>\\(u_0 \\leftarrow\\) current driver input (warm start from previous sample).</li>\n\
+         <li>Forward solve: \\(q_k \\leftarrow\\) <code>solve_position</code>(\\(q_{k-1}, u_k\\)).</li>\n\
+         <li>\\(r_k \\leftarrow g(q_k) - h\\). If \\(|r_k| < \\text{tol}\\), <b>return</b> \\(u_k\\).</li>\n\
+         <li>One extra linear solve: \\(\\Phi_q\\,s = -\\Phi_u\\), then \\(r' \\leftarrow \\nabla_q g \\cdot s\\).</li>\n\
+         <li>\\(u_{k+1} \\leftarrow u_k - r_k / r'_k\\). Loop to step 2.</li>\n\
+         </ol>\n",
+    );
+    html.push_str(
+        "<p>Cost per outer iteration: one forward position solve + one extra \
+         linear solve for \\(s\\). Quadratic convergence away from \
+         singularities; falls back to bisection on the workspace probe table \
+         when Newton diverges or branch-jumps. See \
+         <code>src/solver/inverse_kinematics/solver.rs::solve_for_target</code>.</p>\n",
+    );
+
+    // ── §6.2 Velocity inverse ─────────────────────────────────────────────
+    html.push_str(
+        "<h3 style='margin-left: 12px;'>6.2 Velocity inverse — find \\(\\dot u\\) such that \\(\\dot g = \\dot h\\)</h3>\n",
+    );
+    html.push_str(
+        "<p>Closed form, no iteration. Differentiate \\(g(q(u(t)))\\) once \
+         w.r.t. \\(t\\):</p>\n",
+    );
+    html.push_str(
+        "\\[ \\dot g = \\nabla_q g \\cdot \\dot q = \\nabla_q g \\cdot \\frac{dq}{du}\\,\\dot u = r'(u)\\,\\dot u \\]\n\
+         \\[ \\boxed{\\;\\dot u = \\dot h\\,/\\,r'(u)\\;} \\]\n",
+    );
+    html.push_str(
+        "<p>\\(r'(u)\\) was already computed in §6.1, so velocity inversion \
+         is one division per timestep. The body-velocity vector \\(\\dot q\\) \
+         then comes from the §4 velocity solve \\(\\Phi_q\\,\\dot q = -\\Phi_t\\), \
+         but with \\(\\Phi_t\\) recomputed using the back-solved \\(\\dot u\\) \
+         (not the user-set nominal driver rate). Equivalently: scale the \
+         existing \\(\\dot q\\) result by \\(\\dot u\\) divided by the nominal \
+         rate.</p>\n",
+    );
+
+    // ── §6.3 Acceleration inverse ─────────────────────────────────────────
+    html.push_str(
+        "<h3 style='margin-left: 12px;'>6.3 Acceleration inverse — find \\(\\ddot u\\) such that \\(\\ddot g = \\ddot h\\)</h3>\n",
+    );
+    html.push_str(
+        "<p>Differentiate \\(\\dot g = r'(u)\\,\\dot u\\) once more:</p>\n",
+    );
+    html.push_str(
+        "\\[ \\ddot g = r''(u)\\,\\dot u^2 + r'(u)\\,\\ddot u \\]\n\
+         \\[ \\boxed{\\;\\ddot u = \\big(\\ddot h - r''(u)\\,\\dot u^2\\big)\\,/\\,r'(u)\\;} \\]\n",
+    );
+    html.push_str(
+        "<p>The new term is \\(r''(u) = d^2 g / du^2\\). By chain rule, this \
+         decomposes into <b>two contributions</b>:</p>\n",
+    );
+    html.push_str(
+        "\\[ r''(u) = \\underbrace{\\nabla_q^2 g\\,(dq/du,\\,dq/du)}_{\\text{Hessian of observable}} \\;+\\; \\underbrace{\\nabla_q g \\cdot (d^2 q/du^2)}_{\\text{constraint-acceleration term}} \\]\n",
+    );
+    html.push_str(
+        "<p><b>The constraint-acceleration term</b> \\(d^2 q/du^2\\) comes \
+         from differentiating \\(\\Phi_q (dq/du) + \\Phi_u = 0\\) once more \
+         w.r.t. \\(u\\):</p>\n",
+    );
+    html.push_str(
+        "\\[ \\Phi_q\\,\\frac{d^2 q}{du^2} = -\\big[\\,\\Phi_{qq}(dq/du,\\,dq/du) \\;+\\; 2\\,\\Phi_{qu}(dq/du) \\;+\\; \\Phi_{uu}\\,\\big] \\]\n",
+    );
+    html.push_str(
+        "<p>For our drivers \\(\\Phi\\) depends on \\(u\\) only through a \
+         linear \\(-u\\) term, so \\(\\Phi_{qu} = 0\\) and \\(\\Phi_{uu} = 0\\), and \
+         the RHS reduces to \\(-\\Phi_{qq}(dq/du,\\,dq/du)\\). This is \
+         <b>structurally identical to the velocity-quadratic part of \\(\\gamma\\) \
+         from §4</b>: assemble \\(\\gamma\\) with \\((dq/du)\\) substituted for \
+         \\(\\dot q\\) and the explicit driver-row \\(f''(t)\\) / \\(d''(t)\\) \
+         terms zeroed out. The simulator exposes this as a \"kinematic-only \
+         \\(\\gamma\\)\" variant of the existing assembly code.</p>\n",
+    );
+    html.push_str(
+        "<p><b>The Hessian-of-observable term</b> \\(\\nabla_q^2 g\\) depends on \
+         the ControlTarget variant — explicit formulas in §6.4 below.</p>\n",
+    );
+
+    // ── §6.4 Per-ControlTarget formulas ───────────────────────────────────
+    html.push_str(
+        "<h3 style='margin-left: 12px;'>6.4 Per-ControlTarget formulas</h3>\n",
+    );
+    html.push_str(
+        "<p>Notation: body \\(i\\) has CG position \\(r_i = (x_i, y_i)\\) and orientation \
+         \\(\\theta_i\\); the body-local point of interest is \\(\\mathbf{s} = (s_x, s_y)\\). \
+         The world-frame point is \\(P_i(\\mathbf{s}) = r_i + A(\\theta_i)\\mathbf{s}\\), \
+         and \\(B(\\theta) = dA/d\\theta = \\begin{bmatrix} -\\sin\\theta & -\\cos\\theta \\\\ \\cos\\theta & -\\sin\\theta \\end{bmatrix}\\). \
+         Empty cells indicate identically zero.</p>\n",
+    );
+    html.push_str(
+        "<table>\n\
+         <tr><th>Variant</th><th>\\(g(q)\\)</th><th>Non-zero \\(\\nabla_q g\\) entries</th><th>Non-zero \\(\\nabla_q^2 g\\) entries</th></tr>\n",
+    );
+    // Angle
+    html.push_str(
+        "<tr><td><b>Angle</b></td>\
+         <td>\\(\\theta_i\\)</td>\
+         <td>\\(\\partial g/\\partial \\theta_i = 1\\)</td>\
+         <td>—</td></tr>\n",
+    );
+    // WorldX
+    html.push_str(
+        "<tr><td><b>WorldX</b></td>\
+         <td>\\(\\mathbf{e}_x \\cdot P_i(\\mathbf{s}) = x_i + \\cos\\theta_i\\,s_x - \\sin\\theta_i\\,s_y\\)</td>\
+         <td>\\(\\partial g/\\partial x_i = 1,\\;\\;\\partial g/\\partial \\theta_i = -\\sin\\theta_i\\,s_x - \\cos\\theta_i\\,s_y\\)</td>\
+         <td>\\(\\partial^2 g/\\partial \\theta_i^2 = -(\\cos\\theta_i\\,s_x - \\sin\\theta_i\\,s_y) = -\\mathbf{e}_x\\cdot A(\\theta_i)\\mathbf{s}\\)</td></tr>\n",
+    );
+    // WorldY
+    html.push_str(
+        "<tr><td><b>WorldY</b></td>\
+         <td>\\(\\mathbf{e}_y \\cdot P_i(\\mathbf{s}) = y_i + \\sin\\theta_i\\,s_x + \\cos\\theta_i\\,s_y\\)</td>\
+         <td>\\(\\partial g/\\partial y_i = 1,\\;\\;\\partial g/\\partial \\theta_i = \\cos\\theta_i\\,s_x - \\sin\\theta_i\\,s_y\\)</td>\
+         <td>\\(\\partial^2 g/\\partial \\theta_i^2 = -(\\sin\\theta_i\\,s_x + \\cos\\theta_i\\,s_y) = -\\mathbf{e}_y\\cdot A(\\theta_i)\\mathbf{s}\\)</td></tr>\n",
+    );
+    // Projection
+    html.push_str(
+        "<tr><td><b>Projection</b></td>\
+         <td>\\(\\hat{\\mathbf{u}} \\cdot (P_i(\\mathbf{s}) - \\mathbf{p}_0)\\)</td>\
+         <td>\\(\\partial g/\\partial r_i = \\hat{\\mathbf{u}},\\;\\;\\partial g/\\partial \\theta_i = \\hat{\\mathbf{u}} \\cdot B(\\theta_i)\\mathbf{s}\\)</td>\
+         <td>\\(\\partial^2 g/\\partial \\theta_i^2 = -\\hat{\\mathbf{u}} \\cdot A(\\theta_i)\\mathbf{s}\\)</td></tr>\n",
+    );
+    // Distance
+    html.push_str(
+        "<tr><td><b>Distance</b></td>\
+         <td>\\(\\|P_i(\\mathbf{s}) - \\mathbf{p}_0\\|\\)</td>\
+         <td>Let \\(\\mathbf{d} = P_i - \\mathbf{p}_0\\), \\(L = \\|\\mathbf{d}\\|\\), \\(\\hat{\\mathbf{n}} = \\mathbf{d}/L\\). \
+         Then \\(\\partial g/\\partial r_i = \\hat{\\mathbf{n}},\\;\\;\\partial g/\\partial \\theta_i = \\hat{\\mathbf{n}} \\cdot B(\\theta_i)\\mathbf{s}\\)</td>\
+         <td>Non-trivial; comes from differentiating the unit direction \
+         \\(\\hat{\\mathbf{n}}\\). Block at \\((r_i, r_i)\\): \\((I - \\hat{\\mathbf{n}}\\hat{\\mathbf{n}}^T)/L\\). \
+         Cross terms involve \\(B(\\theta_i)\\mathbf{s}\\) and \\(A(\\theta_i)\\mathbf{s}\\). \
+         Implemented as <code>ControlTarget::Distance::hessian</code>.</td></tr>\n",
+    );
+    html.push_str("</table>\n");
+    html.push_str(
+        "<p>The Angle variant has zero Hessian — the simplest case, \
+         which is why §4a's worked example uses it.</p>\n",
+    );
+
+    // ── §6.5 Implementation choices: analytic vs FD Hessian ───────────────
+    html.push_str(
+        "<h3 style='margin-left: 12px;'>6.5 Analytic vs finite-difference \\(r''(u)\\)</h3>\n",
+    );
+    html.push_str(
+        "<p>The simulator offers two implementations of \\(r''(u)\\). They \
+         agree to ~\\(10^{-6}\\) at well-conditioned poses; analytic is \
+         preferred for hardware export, FD is the conservative default during \
+         GUI exploration.</p>\n",
+    );
+    html.push_str(
+        "<table>\n\
+         <tr><th>Method</th><th>How</th><th>Cost / iteration</th><th>Trade-offs</th></tr>\n\
+         <tr><td><b>(a) Analytic</b></td>\
+         <td>Each ControlTarget supplies \\(\\nabla_q^2 g\\) (table above) plus the kinematic-only \\(\\gamma\\) for \\(d^2 q/du^2\\). \
+         Combined per the §6.3 decomposition.</td>\
+         <td>1 extra linear solve (for \\(d^2 q/du^2\\))</td>\
+         <td>Exact (modulo float precision); breaks at singularities the same way analytic gradients do; needs ~50 LoC per variant for the Hessian.</td></tr>\n\
+         <tr><td><b>(b) Finite difference</b></td>\
+         <td>\\(r'(u \\pm \\delta)\\) via two extra forward solves; \\(r''(u) \\approx (r'(u+\\delta) - r'(u-\\delta))/(2\\delta)\\)</td>\
+         <td>2 extra forward solves (warm-started, 2–3 inner iters each)</td>\
+         <td>\\(O(\\delta^2)\\) accurate; sidesteps the Hessian formulas entirely; robust near singularities; \\(\\delta\\) must be tuned for the input parameter scale.</td></tr>\n\
+         </table>\n",
+    );
+    html.push_str(
+        "<p>Both paths live in \
+         <code>src/solver/inverse_kinematics/derivatives.rs</code>: \
+         <code>inverse_acceleration_fd</code> is the default (used by \
+         <code>compute_trajectory</code>) and <code>inverse_acceleration_analytic</code> \
+         is opt-in via <code>ControlTarget::hessian</code>.</p>\n",
+    );
+
+    // ── §6.6 Cascade reuse note ───────────────────────────────────────────
+    html.push_str(
+        "<h3 style='margin-left: 12px;'>6.6 What this means for the existing cascade</h3>\n",
+    );
+    html.push_str(
+        "<p>Once we have \\(u(t),\\,\\dot u(t),\\,\\ddot u(t)\\) along the trajectory, \
+         the body acceleration \\(\\ddot q(t)\\) is just the existing \
+         \\(\\Phi_q\\,\\ddot q = \\gamma\\) solve from §4 — but \\(\\gamma\\) now \
+         incorporates the trajectory's \\(\\dot u,\\ddot u\\) via \
+         \\(\\Phi_t = -\\dot u,\\;\\Phi_{tt} = -\\ddot u\\) on the driver row. \
+         <b>No new acceleration-level math beyond §4</b>; trajectory mode just \
+         feeds different RHS values into the same solver.</p>\n",
+    );
+    html.push_str(
+        "<p>The same is true for actuator-force computation: at each timestep \
+         the existing <code>solve_statics</code> (or <code>solve_inverse_dynamics</code>) \
+         runs with the back-solved \\(q\\) — its multiplier on the driver row is \
+         \\(F_{\\text{actuator}}(t)\\) for a linear driver or \\(\\tau_{\\text{driver}}(t)\\) \
+         for a revolute one. So the cascade is bottom-up reused: trajectory \
+         mode is a <em>thin outer Newton loop wrapping the existing forward \
+         solver</em>, with the per-variant gradient and Hessian as the only \
+         new code.</p>\n",
+    );
+}
+
 fn write_singular_configs_section(html: &mut String, layout: &FourbarLayout) {
     let a = layout.a;
     let b = layout.b;
@@ -2597,26 +2869,8 @@ fn write_math_background_section(
          the prescribed \\(\\theta_j - \\theta_i = f(t)\\).</p>\n",
     );
 
-    // ── 6. Trajectory mode ─────────────────────────────────────────────────
-    html.push_str("<h3>6. Trajectory mode (inverse position control)</h3>\n");
-    html.push_str(
-        "<p>Forward sweep prescribes \\(f(t)\\) (the driver) and solves for \
-         \\(q(t)\\). <b>Trajectory mode</b> prescribes a separate observable \
-         \\(g(q) = h(t)\\) (e.g. WorldX of a coupler point), then a Newton outer \
-         loop adjusts the driver input \\(u\\) until \\(g(q(u)) = h(t)\\):</p>\n",
-    );
-    html.push_str("\\[ r(u) = g(q(u)) - h(t) = 0 \\]\n");
-    html.push_str(
-        "\\[ u_{k+1} = u_k - \\frac{r(u_k)}{r'(u_k)},\\qquad r'(u) = \\nabla g(q)\\cdot\\frac{dq}{du} \\]\n",
-    );
-    html.push_str(
-        "<p>The four-level cascade above runs at every outer-loop iteration, \
-         with \\(u\\) swapped into the driver row in place of \\(f(t)\\). The \
-         full velocity / acceleration inverses are derived in \
-         <code>docs/superpowers/specs/2026-04-29-linkage-equations-reference.md</code> \
-         \u{00A7}8 if you want \\(r'(u)\\) and \\(r''(u)\\) worked out per \
-         ControlTarget variant.</p>\n",
-    );
+    // ── 6. Trajectory mode (inverse position control) ─────────────────────
+    write_trajectory_inverse_section(html);
 
     // ── 7. Numerical validation ─────────────────────────────────────────────
     //
@@ -2865,6 +3119,46 @@ mod tests {
         assert!(
             html.contains("inverse position control"),
             "math section should mention trajectory mode (inverse)"
+        );
+        // §6 inverse-kinematics derivation should now be inlined (formerly
+        // a one-paragraph reference to the spec doc).
+        assert!(
+            html.contains("6.1 Position inverse"),
+            "§6.1 position-inverse subsection should be inlined"
+        );
+        assert!(
+            html.contains("6.2 Velocity inverse"),
+            "§6.2 velocity-inverse subsection should be inlined"
+        );
+        assert!(
+            html.contains("6.3 Acceleration inverse"),
+            "§6.3 acceleration-inverse subsection should be inlined"
+        );
+        assert!(
+            html.contains("Per-ControlTarget"),
+            "§6.4 per-variant table should appear"
+        );
+        assert!(
+            html.contains("Analytic vs finite-difference"),
+            "§6.5 analytic-vs-FD comparison should appear"
+        );
+        assert!(
+            html.contains("\\Phi_q^{-1}\\,\\Phi_u")
+                || html.contains("-\\Phi_q^{-1}\\,\\Phi_u"),
+            "implicit-function-theorem dq/du derivation should be in LaTeX"
+        );
+        assert!(
+            html.contains("\\nabla_q^2 g"),
+            "Hessian-of-observable notation should appear"
+        );
+        // Five ControlTarget variants must all be named in §6.4.
+        assert!(
+            html.contains("<b>Angle</b>")
+                && html.contains("<b>WorldX</b>")
+                && html.contains("<b>WorldY</b>")
+                && html.contains("<b>Projection</b>")
+                && html.contains("<b>Distance</b>"),
+            "all five ControlTarget variants should appear in §6.4 table"
         );
         // Mechanism-specific parameterisation
         assert!(
