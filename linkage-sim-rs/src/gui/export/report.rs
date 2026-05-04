@@ -2234,26 +2234,105 @@ fn write_velocity_ratio_section(
 /// so this function takes no `mechanism` / `q` / `layout` parameters.
 fn write_trajectory_inverse_section(html: &mut String) {
     html.push_str("<h3>6. Trajectory mode (inverse position control)</h3>\n");
+
+    // ── §6.0 Plain-English overview + glossary ────────────────────────────
     html.push_str(
-        "<p><b>Forward sweep</b> prescribes \\(f(t)\\) (the driver input) and \
-         solves the constraint cascade \\(\\Phi(q,t)=0\\) for \\(q(t)\\). \
-         <b>Trajectory mode</b> flips that: we prescribe a separate output \
-         observable \\(g(q) = h(t)\\) (e.g. \"WorldX of the coupler tip\") \
-         and back-solve the actuator command \\(u(t)\\) that makes \
-         \\(g(q(u(t))) = h(t)\\) hold at every sample.</p>\n",
+        "<h3 style='margin-left: 12px;'>6.0 What this section is about (read this first)</h3>\n",
     );
     html.push_str(
-        "<p>The output observable is a smooth scalar function of \
-         coordinates:</p>\n",
+        "<p>The earlier sections (§1–§5) solved the <b>forward</b> problem: \
+         given a crank angle, where does every body sit and what forces \
+         act on each joint? That's what mechanism textbooks teach.</p>\n",
     );
-    html.push_str("\\[ g:\\,\\mathbb{R}^{3n} \\to \\mathbb{R},\\qquad g(q) \\]\n");
     html.push_str(
-        "<p>The simulator implements five <code>ControlTarget</code> variants \
-         (full per-variant formulas in §6.4 below): <em>Angle</em>, \
-         <em>WorldX</em>, <em>WorldY</em>, <em>Projection</em>, \
-         <em>Distance</em>. Each variant supplies \\(g(q)\\) and \\(\\nabla_q g(q)\\) \
-         in closed form; the Hessian \\(\\nabla_q^2 g\\) is supplied analytically \
-         (for non-Angle variants) or finite-differenced (§6.5).</p>\n",
+        "<p>This section solves the <b>inverse</b> problem instead: given a \
+         desired motion of <em>some specific output</em> (the tip of a \
+         coupler, the orientation of an end-effector, the distance to a \
+         workpiece), what crank-angle (or actuator-stroke) trajectory \
+         produces it? <b>This is what you need to actually control the \
+         mechanism on hardware.</b></p>\n",
+    );
+    html.push_str(
+        "<p style='background: #fffbe5; border-left: 3px solid #d4a000; padding: 8px 12px;'>\
+         <b>Concrete example.</b> Imagine you've built the 4-bar shown in \
+         the diagram above and you want the coupler-tip's world-X coordinate \
+         to advance smoothly from \\(x = 0\\) to \\(x = 50\\,\\text{mm}\\) over 1 \
+         second. The forward sweep can't help — it sweeps the <em>crank</em> \
+         angle, not the tip's x-coordinate, and the relationship between \
+         the two is nonlinear and has no closed form. The inverse-kinematics \
+         solver in this section computes a crank-angle profile \
+         \\(u(t) = \\theta_{\\text{crank}}(t)\\) such that, at every time \
+         \\(t \\in [0, 1]\\), driving the crank to \\(u(t)\\) puts the \
+         coupler tip at \\(x = h(t) = 0.05\\,t\\) m. That \\(u(t)\\) is what \
+         you'd send to your servo motor.</p>\n",
+    );
+
+    html.push_str("<p><b>Notation glossary</b> (every symbol used in §6):</p>\n");
+    html.push_str(
+        "<table>\n\
+         <tr><th>Symbol</th><th>Plain-English meaning</th><th>Where it comes from</th></tr>\n\
+         <tr><td>\\(q\\)</td>\
+         <td>The mechanism's full <em>pose</em>: a vector of \\((x_i, y_i, \\theta_i)\\) for every non-ground body. \
+         Lives in \\(\\mathbb{R}^{3n}\\) for \\(n\\) moving bodies.</td>\
+         <td>§1, §4a (numeric values for this mechanism)</td></tr>\n\
+         <tr><td>\\(u\\)</td>\
+         <td>The <em>one</em> number you control on the hardware: crank angle \\(\\theta_{\\text{crank}}\\) (revolute driver) or actuator length \\(L\\) (linear driver). Scalar.</td>\
+         <td>The driver input; in §1 it was called \\(f(t)\\).</td></tr>\n\
+         <tr><td>\\(\\Phi(q, t)\\)</td>\
+         <td>The constraint vector — joint coincidences plus the driver row. Equals zero at any feasible pose.</td>\
+         <td>§2 (catalogued per joint type)</td></tr>\n\
+         <tr><td>\\(\\Phi_q\\)</td>\
+         <td>Constraint Jacobian \\(\\partial \\Phi/\\partial q\\), the \\(m \\times n\\) matrix of partials.</td>\
+         <td>§3 (block-sparse formulas)</td></tr>\n\
+         <tr><td>\\(\\Phi_u\\)</td>\
+         <td>Constraint sensitivity to the driver input: a single column vector, \\(-1\\) on the driver row and zero everywhere else.</td>\
+         <td>Defined below (§6.1).</td></tr>\n\
+         <tr><td>\\(g(q)\\)</td>\
+         <td>The <em>output observable</em> — the scalar quantity you want to control. Five variants in this simulator: <em>Angle</em>, <em>WorldX</em>, <em>WorldY</em>, <em>Projection</em>, <em>Distance</em> (full table in §6.4).</td>\
+         <td>You pick one in the GUI.</td></tr>\n\
+         <tr><td>\\(h(t)\\)</td>\
+         <td>The <em>desired</em> value of \\(g\\) at time \\(t\\) — i.e. the trajectory you specify.</td>\
+         <td>You define this via the Profile editor (constant-speed / trapezoidal / S-curve / keyframed).</td></tr>\n\
+         <tr><td>\\(r(u)\\)</td>\
+         <td>The residual: \\(g(q(u)) - h\\). At every Newton step we want this to be zero.</td>\
+         <td>Defined in §6.1.</td></tr>\n\
+         <tr><td>\\(dq/du\\)</td>\
+         <td>How the entire pose moves when you nudge the one number you control. The motion direction along the constraint manifold.</td>\
+         <td>Implicit function theorem on \\(\\Phi(q(u), u) = 0\\); §6.1.</td></tr>\n\
+         <tr><td>\\(r'(u)\\)</td>\
+         <td>The Newton slope: \\(dg/du = \\nabla_q g \\cdot dq/du\\). Says \"if I nudge \\(u\\) by 1 unit, the residual changes by this much.\"</td>\
+         <td>§6.1.</td></tr>\n\
+         </table>\n",
+    );
+
+    html.push_str(
+        "<p><b>The whole algorithm in plain English</b> (skip the math \
+         below and you'll still know what's happening):</p>\n",
+    );
+    html.push_str(
+        "<ol>\n\
+         <li>You specify a desired observable trajectory \\(h(t)\\) — say \
+         \"my coupler tip should be at \\(x = 0.025\\) m at \\(t = 0.5\\) s.\"</li>\n\
+         <li>The simulator picks the most recent crank angle as a starting \
+         guess and asks: \"if I drive the crank to <em>this</em> angle, \
+         what \\(g(q)\\) do I get?\" Call the answer \\(g_{\\text{achieved}}\\).</li>\n\
+         <li>Compare \\(g_{\\text{achieved}}\\) to \\(h\\). If they're \
+         within tolerance — done, this is the right crank angle.</li>\n\
+         <li>If not — Newton's method tells you how to adjust the crank \
+         angle to close the gap. Adjust, re-solve the mechanism, compare \
+         again.</li>\n\
+         <li>2-4 iterations later, you've found a \\(u\\) that makes \
+         \\(g(q(u)) = h\\) within \\(10^{-8}\\). Record \\((t, h, u, q)\\) \
+         as one trajectory sample. Move to the next time-step. Warm-start \
+         from the last \\(u\\).</li>\n\
+         </ol>\n",
+    );
+    html.push_str(
+        "<p>Everything else in §6 is either (a) deriving the Newton update \
+         step in detail, (b) deriving the closed-form velocity / acceleration \
+         inverses for free once you have the position inverse, or (c) \
+         per-variant formulas for \\(\\nabla_q g\\) and \\(\\nabla_q^2 g\\) \
+         that the simulator hard-codes.</p>\n",
     );
 
     // ── §6.1 Position inverse ─────────────────────────────────────────────
@@ -2261,16 +2340,22 @@ fn write_trajectory_inverse_section(html: &mut String) {
         "<h3 style='margin-left: 12px;'>6.1 Position inverse — find \\(u\\) such that \\(g(q(u)) = h\\)</h3>\n",
     );
     html.push_str(
-        "<p>Define the residual</p>\n\
+        "<p>Define the <b>residual</b> — the gap between what we have and \
+         what we want:</p>\n\
          \\[ r(u) = g(q(u)) - h \\]\n\
-         <p>and Newton-iterate on \\(r(u) = 0\\):</p>\n\
-         \\[ u^{(k+1)} = u^{(k)} - \\frac{r(u^{(k)})}{r'(u^{(k)})} \\]\n",
+         <p>We want to find the \\(u^*\\) where \\(r(u^*) = 0\\). Newton's \
+         method does this by repeatedly stepping in the direction of the \
+         tangent line:</p>\n\
+         \\[ u^{(k+1)} = u^{(k)} - \\frac{r(u^{(k)})}{r'(u^{(k)})} \\]\n\
+         <p>where \\(r'(u) = dg/du\\) is the rate at which the residual \
+         changes when you nudge \\(u\\). Computing this is the only part \
+         that needs work — \\(r(u)\\) itself is just one forward solve.</p>\n",
     );
     html.push_str(
-        "<p>The Newton step needs \\(r'(u) = dg/du\\). The chain rule plus the \
-         <b>implicit function theorem</b> applied to \\(\\Phi(q(u),u) = 0\\) \
-         (treating \\(q\\) as a function of \\(u\\) along the constraint \
-         manifold) gives</p>\n",
+        "<p>The chain rule plus the <b>implicit function theorem</b> applied \
+         to \\(\\Phi(q(u),u) = 0\\) (this says: \"as \\(u\\) changes, \\(q\\) \
+         must change too, in just the right way to keep all the constraints \
+         satisfied\") gives</p>\n",
     );
     html.push_str(
         "\\[ \\Phi_q\\,\\frac{dq}{du} + \\Phi_u = 0 \\quad\\Longrightarrow\\quad \\frac{dq}{du} = -\\Phi_q^{-1}\\,\\Phi_u \\]\n\
@@ -2295,21 +2380,29 @@ fn write_trajectory_inverse_section(html: &mut String) {
          <code>\\(\\Phi_t\\) divided by the parameterization rate</code>, and the \
          simulator reuses <code>assemble_phi_t</code> with a divide.</p>\n",
     );
-    html.push_str("<p><b>Outer-loop algorithm</b>:</p>\n");
+    html.push_str("<p><b>Outer-loop algorithm</b> (each step annotated with what it does in plain English):</p>\n");
     html.push_str(
         "<ol>\n\
-         <li>\\(u_0 \\leftarrow\\) current driver input (warm start from previous sample).</li>\n\
-         <li>Forward solve: \\(q_k \\leftarrow\\) <code>solve_position</code>(\\(q_{k-1}, u_k\\)).</li>\n\
-         <li>\\(r_k \\leftarrow g(q_k) - h\\). If \\(|r_k| < \\text{tol}\\), <b>return</b> \\(u_k\\).</li>\n\
-         <li>One extra linear solve: \\(\\Phi_q\\,s = -\\Phi_u\\), then \\(r' \\leftarrow \\nabla_q g \\cdot s\\).</li>\n\
-         <li>\\(u_{k+1} \\leftarrow u_k - r_k / r'_k\\). Loop to step 2.</li>\n\
+         <li><b>Warm start.</b> \\(u_0 \\leftarrow\\) the driver input from the previous trajectory sample. \
+         (For the first sample, use whatever's in the GUI's driver field.)</li>\n\
+         <li><b>Forward solve.</b> Run <code>solve_position</code>(\\(q_{k-1}, u_k\\)) to get the pose \
+         \\(q_k\\) consistent with the current driver input \\(u_k\\). This is the same Newton-on-Φ \
+         loop from §4 — typically converges in 2-3 inner iterations from a warm start.</li>\n\
+         <li><b>Check the residual.</b> \\(r_k \\leftarrow g(q_k) - h\\). \
+         If \\(|r_k| < \\text{tol}\\) (default \\(10^{-8}\\)), <b>return</b> \\(u_k\\) — we're done.</li>\n\
+         <li><b>Compute the Newton slope.</b> One extra linear solve: \\(\\Phi_q\\,s = -\\Phi_u\\). \
+         The result \\(s = dq/du\\) tells you which direction the pose moves as you nudge \\(u\\). \
+         Then \\(r' \\leftarrow \\nabla_q g \\cdot s\\) — the rate of change of the residual.</li>\n\
+         <li><b>Newton step.</b> \\(u_{k+1} \\leftarrow u_k - r_k / r'_k\\). Loop back to step 2.</li>\n\
          </ol>\n",
     );
     html.push_str(
-        "<p>Cost per outer iteration: one forward position solve + one extra \
-         linear solve for \\(s\\). Quadratic convergence away from \
-         singularities; falls back to bisection on the workspace probe table \
-         when Newton diverges or branch-jumps. See \
+        "<p><b>Cost per outer iteration:</b> one forward position solve + one extra \
+         linear solve for \\(s\\). <b>Convergence:</b> quadratic away from singularities — \
+         in practice 2-4 outer iterations to reach \\(10^{-8}\\) residual when warm-started \
+         from the previous sample. <b>Fallback:</b> if Newton diverges or branch-jumps \
+         (the pose suddenly flips to a different assembly mode), the simulator falls back \
+         to bisection on a workspace-probe table built up-front. See \
          <code>src/solver/inverse_kinematics/solver.rs::solve_for_target</code>.</p>\n",
     );
 
@@ -2318,7 +2411,15 @@ fn write_trajectory_inverse_section(html: &mut String) {
         "<h3 style='margin-left: 12px;'>6.2 Velocity inverse — find \\(\\dot u\\) such that \\(\\dot g = \\dot h\\)</h3>\n",
     );
     html.push_str(
-        "<p>Closed form, no iteration. Differentiate \\(g(q(u(t)))\\) once \
+        "<p><b>Why you care:</b> §6.1 gave you the actuator <em>positions</em> at \
+         each sample. To control real hardware you also need actuator <em>velocities</em> \
+         — that's the rate command you'd send to a velocity-mode servo, or the input \
+         used by the inner velocity loop of a position-mode servo. The velocity inverse \
+         answers: \"if my desired observable is changing at rate \\(\\dot h\\), how fast \
+         does my driver input need to change?\"</p>\n",
+    );
+    html.push_str(
+        "<p>Closed form, no iteration needed. Differentiate \\(g(q(u(t)))\\) once \
          w.r.t. \\(t\\):</p>\n",
     );
     html.push_str(
@@ -2340,7 +2441,17 @@ fn write_trajectory_inverse_section(html: &mut String) {
         "<h3 style='margin-left: 12px;'>6.3 Acceleration inverse — find \\(\\ddot u\\) such that \\(\\ddot g = \\ddot h\\)</h3>\n",
     );
     html.push_str(
-        "<p>Differentiate \\(\\dot g = r'(u)\\,\\dot u\\) once more:</p>\n",
+        "<p><b>Why you care:</b> needed if you're driving a torque- or \
+         current-mode actuator (where the hardware applies force, not \
+         velocity), if you need feed-forward acceleration in a high-\
+         performance servo loop, or if you're computing the inertial \
+         loading on the mechanism (which scales with \\(\\ddot q\\)). For \
+         most velocity-mode position-control applications, §6.1 + §6.2 \
+         is enough; this subsection is here for completeness.</p>\n",
+    );
+    html.push_str(
+        "<p>Differentiate \\(\\dot g = r'(u)\\,\\dot u\\) once more w.r.t. \
+         \\(t\\):</p>\n",
     );
     html.push_str(
         "\\[ \\ddot g = r''(u)\\,\\dot u^2 + r'(u)\\,\\ddot u \\]\n\
@@ -2381,11 +2492,37 @@ fn write_trajectory_inverse_section(html: &mut String) {
         "<h3 style='margin-left: 12px;'>6.4 Per-ControlTarget formulas</h3>\n",
     );
     html.push_str(
-        "<p>Notation: body \\(i\\) has CG position \\(r_i = (x_i, y_i)\\) and orientation \
+        "<p>The simulator offers five <code>ControlTarget</code> variants in \
+         the GUI's Target observable picker. Each one is a different choice \
+         for \\(g(q)\\) — i.e. <em>which scalar quantity</em> you want to \
+         control. The math in §6.1–§6.3 needs \\(g(q)\\) itself, its gradient \
+         \\(\\nabla_q g\\), and (for acceleration inversion) its Hessian \
+         \\(\\nabla_q^2 g\\). This subsection lists those for every variant.</p>\n",
+    );
+    html.push_str(
+        "<p><b>Notation</b>: body \\(i\\) has CG position \\(r_i = (x_i, y_i)\\) and orientation \
          \\(\\theta_i\\); the body-local point of interest is \\(\\mathbf{s} = (s_x, s_y)\\). \
          The world-frame point is \\(P_i(\\mathbf{s}) = r_i + A(\\theta_i)\\mathbf{s}\\), \
          and \\(B(\\theta) = dA/d\\theta = \\begin{bmatrix} -\\sin\\theta & -\\cos\\theta \\\\ \\cos\\theta & -\\sin\\theta \\end{bmatrix}\\). \
-         Empty cells indicate identically zero.</p>\n",
+         Empty cells in the Hessian column indicate identically zero entries.</p>\n",
+    );
+    html.push_str(
+        "<p style='background: #eef5fc; border-left: 3px solid #4a87bf; padding: 8px 12px;'>\
+         <b>Worked example: WorldX of a coupler tip.</b> Suppose you choose \
+         <em>WorldX</em> as your <code>ControlTarget</code> and the body-local point \
+         \\(\\mathbf{s} = (0.04, 0.0)\\) m on the coupler (the tip 40 mm past the \
+         coupler's local origin along its body x-axis). Then</p>\n\
+         \\[ g(q) = x_{\\text{coupler}} + \\cos\\theta_{\\text{coupler}}\\,(0.04) - \\sin\\theta_{\\text{coupler}}\\,(0) = x_{\\text{coupler}} + 0.04\\cos\\theta_{\\text{coupler}} \\]\n\
+         <p>Reading off \\(\\nabla_q g\\) (which entries are non-zero?): \
+         only the coupler's coordinates appear, and only \\(\\partial g/\\partial x_{\\text{coupler}} = 1\\) and \
+         \\(\\partial g/\\partial \\theta_{\\text{coupler}} = -0.04\\sin\\theta_{\\text{coupler}}\\) \
+         are non-zero. So \\(\\nabla_q g\\) is a vector that's <em>mostly zero</em> with two non-zero entries — \
+         exactly what the table below records as the \"Non-zero \\(\\nabla_q g\\) entries\" column. \
+         At a converged pose with \\(\\theta_{\\text{coupler}} \\approx 0.5\\) rad, those entries are \
+         \\(1\\) and \\(-0.04 \\cdot 0.479 \\approx -0.0192\\) — the second entry is the slope of \
+         WorldX with respect to coupler rotation at this pose. The Hessian (next column) gives the \
+         curvature: \\(\\partial^2 g/\\partial \\theta_{\\text{coupler}}^2 = -0.04\\cos\\theta_{\\text{coupler}} \\approx -0.0351\\). \
+         These three numbers are everything §6.1–§6.3 need to invert this trajectory.</p>\n",
     );
     html.push_str(
         "<table>\n\
@@ -2441,6 +2578,17 @@ fn write_trajectory_inverse_section(html: &mut String) {
         "<h3 style='margin-left: 12px;'>6.5 Analytic vs finite-difference \\(r''(u)\\)</h3>\n",
     );
     html.push_str(
+        "<p><b>Why two implementations?</b> The Hessian-of-observable term \
+         \\(\\nabla_q^2 g\\) is messy to derive in closed form for some \
+         <code>ControlTarget</code> variants (especially <em>Distance</em> — \
+         see §6.4). Rather than risk a bug in hand-coded Hessians, the \
+         simulator <em>also</em> ships a finite-difference variant that \
+         sidesteps the algebra entirely by sampling \\(r'(u \\pm \\delta)\\) \
+         and differencing. Both paths produce the same \\(\\ddot u\\) to \
+         floating-point noise; the FD variant trades extra forward solves \
+         for not having to maintain Hessian formulas.</p>\n",
+    );
+    html.push_str(
         "<p>The simulator offers two implementations of \\(r''(u)\\). They \
          agree to ~\\(10^{-6}\\) at well-conditioned poses; analytic is \
          preferred for hardware export, FD is the conservative default during \
@@ -2471,6 +2619,15 @@ fn write_trajectory_inverse_section(html: &mut String) {
     // ── §6.6 Cascade reuse note ───────────────────────────────────────────
     html.push_str(
         "<h3 style='margin-left: 12px;'>6.6 What this means for the existing cascade</h3>\n",
+    );
+    html.push_str(
+        "<p><b>Read this if you're wondering \"so once I have \\(u(t)\\), what \
+         else does the simulator give me?\"</b> The §6.1–§6.3 outputs \
+         \\((u, \\dot u, \\ddot u)\\) feed directly back into the §4 forward \
+         solvers — body velocities, body accelerations, joint reactions, \
+         actuator torque/force are all computed by the same code that \
+         handles forward sweeps, just with the trajectory's \\(\\dot u, \\ddot u\\) \
+         on the driver row instead of the constant-omega values.</p>\n",
     );
     html.push_str(
         "<p>Once we have \\(u(t),\\,\\dot u(t),\\,\\ddot u(t)\\) along the trajectory, \
@@ -3256,6 +3413,37 @@ mod tests {
                 && html.contains("<b>Projection</b>")
                 && html.contains("<b>Distance</b>"),
             "all five ControlTarget variants should appear in §6.4 table"
+        );
+        // §6.0 first-time-reader scaffolding (overview + glossary + plain
+        // English algorithm) should be present.
+        assert!(
+            html.contains("6.0 What this section is about"),
+            "§6.0 overview subsection should be inlined for first-time readers"
+        );
+        assert!(
+            html.contains("Concrete example") && html.contains("coupler-tip"),
+            "§6.0 should include the motivating concrete example"
+        );
+        assert!(
+            html.contains("Notation glossary") || html.contains("notation glossary"),
+            "§6.0 should include the symbol glossary table"
+        );
+        assert!(
+            html.contains("whole algorithm in plain English"),
+            "§6.0 should include the plain-English algorithm description"
+        );
+        // §6.4 should now have the worked-example call-out for WorldX,
+        // before the formal per-variant table.
+        assert!(
+            html.contains("Worked example: WorldX"),
+            "§6.4 should walk through one variant in detail before the table"
+        );
+        // §6.2, §6.3, §6.5, §6.6 should each have a "Why you care" /
+        // "Why two implementations" / "Read this if" framing intro that
+        // explains the practical use before diving into math.
+        assert!(
+            html.contains("Why you care"),
+            "§6.2 / §6.3 should include a 'Why you care' framing intro"
         );
         // Mechanism-specific parameterisation
         assert!(
