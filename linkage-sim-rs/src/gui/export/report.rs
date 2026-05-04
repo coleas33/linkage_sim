@@ -600,49 +600,146 @@ fn add_plotly_multi_chart(
     html.push_str("</script>\n");
 }
 
-/// Get current timestamp as a formatted string. Native uses
-/// `std::time::SystemTime`; wasm32 uses `js_sys::Date::now()` because
-/// `SystemTime::now()` panics with "time not implemented on this platform"
-/// on `wasm32-unknown-unknown`.
+/// Get current timestamp formatted in US Eastern time (`EST` in winter,
+/// `EDT` in summer). Native uses `std::time::SystemTime`; wasm32 uses
+/// `js_sys::Date::now()` because `SystemTime::now()` panics with
+/// "time not implemented on this platform" on `wasm32-unknown-unknown`.
 #[cfg(not(target_arch = "wasm32"))]
 fn chrono_now() -> String {
     use std::time::SystemTime;
     let now = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs();
-    format_unix_timestamp(now)
+        .as_secs() as i64;
+    format_unix_timestamp_eastern(now)
 }
 
 #[cfg(target_arch = "wasm32")]
 fn chrono_now() -> String {
-    let now = (js_sys::Date::now() / 1000.0) as u64;
-    format_unix_timestamp(now)
+    let now = (js_sys::Date::now() / 1000.0) as i64;
+    format_unix_timestamp_eastern(now)
 }
 
-/// Format a Unix timestamp (seconds since epoch) as an approximate UTC date string.
+/// Format a Unix timestamp as US-Eastern time (`EST` in winter, `EDT` in
+/// summer). Uses a proper Gregorian calendar conversion (Howard Hinnant's
+/// `days_from_civil` algorithm, valid for all dates after 1582) plus a
+/// computed DST flag for US Eastern zone — accurate to the second.
 ///
-/// Uses simple arithmetic instead of a chrono dependency. The month/day are
-/// approximate (assumes 365-day years and 30-day months) but sufficient for
-/// display purposes in generated reports.
-fn format_unix_timestamp(secs: u64) -> String {
-    let s = secs % 60;
-    let m = (secs / 60) % 60;
-    let h = (secs / 3600) % 24;
-    let days = secs / 86400;
-    let years = 1970 + days / 365;
-    let day_of_year = days % 365;
-    let month = day_of_year / 30 + 1;
-    let day = day_of_year % 30 + 1;
+/// The earlier implementation approximated months as 30 days and ignored
+/// leap years; cumulative error reached ~14 days by 2026. Don't go back.
+fn format_unix_timestamp_eastern(utc_secs: i64) -> String {
+    // First pass: compute UTC (year, month, day, hour) so we can decide
+    // whether DST is in effect, then re-shift to local time.
+    let utc_days = utc_secs.div_euclid(86_400);
+    let utc_secs_of_day = utc_secs.rem_euclid(86_400);
+    let (utc_year, utc_month, utc_day) = days_to_ymd(utc_days);
+    let utc_hour = (utc_secs_of_day / 3600) as u32;
+
+    // EST = UTC-5, EDT = UTC-4. DST is in effect from 2 AM local time on
+    // the 2nd Sunday of March through 2 AM local time on the 1st Sunday
+    // of November. We approximate "2 AM local" using the UTC hour, which
+    // is correct except in the ~2-hour transition window — acceptable
+    // for a report timestamp.
+    let dst = is_us_eastern_dst(utc_year, utc_month, utc_day, utc_hour);
+    let offset_hours: i64 = if dst { -4 } else { -5 };
+    let local_secs = utc_secs + offset_hours * 3600;
+
+    let local_days = local_secs.div_euclid(86_400);
+    let local_secs_of_day = local_secs.rem_euclid(86_400);
+    let (year, month, day) = days_to_ymd(local_days);
+    let h = (local_secs_of_day / 3600) as u32;
+    let m = ((local_secs_of_day / 60) % 60) as u32;
+    let s = (local_secs_of_day % 60) as u32;
+    let zone = if dst { "EDT" } else { "EST" };
     format!(
-        "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
-        years,
-        month.min(12),
-        day.min(31),
-        h,
-        m,
-        s,
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02} {}",
+        year, month, day, h, m, s, zone,
     )
+}
+
+/// Convert days since 1970-01-01 (Unix epoch) to (year, month, day).
+///
+/// Howard Hinnant's `civil_from_days`, hot-loop-safe, valid for all
+/// proleptic Gregorian dates. See <https://howardhinnant.github.io/date_algorithms.html>.
+/// Months are 1-indexed (1 = January … 12 = December); days are 1-indexed.
+fn days_to_ymd(days: i64) -> (i32, u32, u32) {
+    // Shift epoch so day 0 is 0000-03-01 (treats March as the start of
+    // year, putting the leap day at the end — simplifies the algorithm).
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64; // [0, 146_096]
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]; March-relative month index
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32; // [1, 31]
+    let m = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32; // [1, 12]
+    let y_civil = if m <= 2 { y + 1 } else { y };
+    (y_civil as i32, m, d)
+}
+
+/// Returns true iff the given UTC instant falls within the US-Eastern
+/// daylight-saving period (2nd Sunday of March → 1st Sunday of November,
+/// each transitioning at 2 AM local time = 7 AM UTC during the spring
+/// transition / 6 AM UTC during the fall transition). Approximated as
+/// "transitions at 7 AM UTC" since the report only displays time to
+/// the second; the 1-hour fudge in the transition window is invisible.
+fn is_us_eastern_dst(year: i32, month: u32, day: u32, hour: u32) -> bool {
+    // Outside Mar–Nov: never DST. Inside Apr–Oct: always DST.
+    if !(3..=11).contains(&month) {
+        return false;
+    }
+    if (4..=10).contains(&month) {
+        return true;
+    }
+    if month == 3 {
+        // Spring forward: 2nd Sunday of March, 2 AM local (≈ 7 AM UTC).
+        let second_sun = nth_weekday_of_month(year, 3, 7 /* Sunday */, 2);
+        if day < second_sun {
+            return false;
+        }
+        if day > second_sun {
+            return true;
+        }
+        return hour >= 7;
+    }
+    // November: fall back on the 1st Sunday at 2 AM local (≈ 6 AM UTC).
+    let first_sun = nth_weekday_of_month(year, 11, 7 /* Sunday */, 1);
+    if day < first_sun {
+        return true;
+    }
+    if day > first_sun {
+        return false;
+    }
+    hour < 6
+}
+
+/// Return the day-of-month (1-indexed) of the `nth` `weekday` (1=Mon ..
+/// 7=Sun) in `month` of `year`. Used for US DST transition computation
+/// (2nd Sunday of March, 1st Sunday of November).
+fn nth_weekday_of_month(year: i32, month: u32, weekday: u32, nth: u32) -> u32 {
+    // Days since epoch for the 1st of `month`.
+    let first_days = ymd_to_days(year, month, 1);
+    // Day-of-week for the 1st: Hinnant's algorithm has Sunday=0..Saturday=6
+    // for `((days + 4) mod 7)` since 1970-01-01 was a Thursday.
+    let dow_sun_zero = ((first_days + 4).rem_euclid(7)) as u32; // 0=Sun..6=Sat
+    let target_sun_zero = if weekday == 7 { 0 } else { weekday };
+    let offset = (target_sun_zero + 7 - dow_sun_zero) % 7;
+    1 + offset + 7 * (nth - 1)
+}
+
+/// Inverse of `days_to_ymd`: convert a (year, month, day) civil date to
+/// days since 1970-01-01. Howard Hinnant's `days_from_civil`.
+fn ymd_to_days(y: i32, m: u32, d: u32) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y } as i64;
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = (y - era * 400) as u64; // [0, 399]
+    let m = m as u64;
+    let d = d as u64;
+    let mp = if m > 2 { m - 3 } else { m + 9 }; // [0, 11]
+    let doy = (153 * mp + 2) / 5 + d - 1; // [0, 365]
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy; // [0, 146_096]
+    era * 146_097 + doe as i64 - 719_468
 }
 
 /// Render the "Loop equations" section listing per-constraint Φ_J* with
@@ -3389,5 +3486,114 @@ mod tests {
     fn float_vec_to_json_single_value() {
         let json = float_vec_to_json(&[42.0]);
         assert_eq!(json, "[42.000000]");
+    }
+
+    // ── Date / timezone helpers ───────────────────────────────────────
+
+    #[test]
+    fn days_to_ymd_known_dates() {
+        // Spot-check several dates against external truth (e.g. `date -ud
+        // @<unix>`). All inputs are seconds since 1970-01-01 UTC.
+        let cases: &[(i64, i32, u32, u32)] = &[
+            (0, 1970, 1, 1),                  // epoch
+            (86_399, 1970, 1, 1),             // last second of day 0
+            (86_400, 1970, 1, 2),             // first second of day 1
+            (951_782_400, 2000, 2, 29),       // leap day in century year (2000)
+            (1_577_836_800, 2020, 1, 1),      // 2020-01-01
+            (1_614_038_400, 2021, 2, 23),     // arbitrary mid-decade date
+            // Future-date coverage is provided by
+            // `ymd_to_days_round_trips_through_days_to_ymd` which sweeps
+            // 50 dates across ~50 years.
+        ];
+        for &(secs, ey, em, ed) in cases {
+            let days = secs / 86_400;
+            let (y, m, d) = days_to_ymd(days);
+            assert_eq!(
+                (y, m, d),
+                (ey, em, ed),
+                "secs {} should be {}-{:02}-{:02}, got {}-{:02}-{:02}",
+                secs, ey, em, ed, y, m, d,
+            );
+        }
+    }
+
+    #[test]
+    fn ymd_to_days_round_trips_through_days_to_ymd() {
+        // Inverse identity: ymd_to_days followed by days_to_ymd should
+        // recover the same (y, m, d). Pick ~50 dates spanning ~60 years.
+        for offset in 0..50 {
+            let days = offset * 365 + 1; // some prime-ish stride
+            let (y, m, d) = days_to_ymd(days);
+            let back = ymd_to_days(y, m, d);
+            assert_eq!(
+                back, days,
+                "round-trip mismatch: {}-{:02}-{:02} -> {} (expected {})",
+                y, m, d, back, days
+            );
+        }
+    }
+
+    #[test]
+    fn is_us_eastern_dst_known_transitions() {
+        // 2026 transitions:
+        //   Spring forward: 2026-03-08 (2nd Sunday of March)
+        //   Fall back:      2026-11-01 (1st Sunday of November)
+        // EST = UTC-5, EDT = UTC-4. Spring 2 AM local = 7 AM UTC.
+
+        // Mid-January: definitely EST.
+        assert!(!is_us_eastern_dst(2026, 1, 15, 12));
+        // Mid-July: definitely EDT.
+        assert!(is_us_eastern_dst(2026, 7, 15, 12));
+        // 2026-03-08 06:00 UTC (1 AM EST) — still EST.
+        assert!(!is_us_eastern_dst(2026, 3, 8, 6));
+        // 2026-03-08 07:00 UTC (3 AM EDT after spring-forward) — now EDT.
+        assert!(is_us_eastern_dst(2026, 3, 8, 7));
+        // 2026-03-07 (day before): EST.
+        assert!(!is_us_eastern_dst(2026, 3, 7, 23));
+        // 2026-03-09 (day after spring-forward): EDT.
+        assert!(is_us_eastern_dst(2026, 3, 9, 0));
+        // 2026-11-01 05:00 UTC (1 AM EDT) — still EDT.
+        assert!(is_us_eastern_dst(2026, 11, 1, 5));
+        // 2026-11-01 06:00 UTC (1 AM EST after fall-back) — now EST.
+        assert!(!is_us_eastern_dst(2026, 11, 1, 6));
+    }
+
+    #[test]
+    fn nth_weekday_of_month_known_values() {
+        // 2026-03-08 = 2nd Sunday of March (per US DST rules)
+        assert_eq!(nth_weekday_of_month(2026, 3, 7, 2), 8);
+        // 2026-11-01 = 1st Sunday of November
+        assert_eq!(nth_weekday_of_month(2026, 11, 7, 1), 1);
+        // 2026-01-05 = 1st Monday of January
+        assert_eq!(nth_weekday_of_month(2026, 1, 1, 1), 5);
+        // 2024-02-29 was a Thursday → 5th Thursday of Feb 2024 = 29
+        assert_eq!(nth_weekday_of_month(2024, 2, 4, 5), 29);
+    }
+
+    #[test]
+    fn format_unix_timestamp_eastern_summer_uses_edt() {
+        // 2026-05-02 17:56:28 UTC == 2026-05-02 13:56:28 EDT (UTC-4 in May)
+        // This is the bug case the user reported (showed "2026-05-18
+        // 13:56:28 UTC" in the report header before this fix).
+        let secs = ymd_to_days(2026, 5, 2) * 86_400 + 17 * 3600 + 56 * 60 + 28;
+        let s = format_unix_timestamp_eastern(secs);
+        assert_eq!(s, "2026-05-02 13:56:28 EDT");
+    }
+
+    #[test]
+    fn format_unix_timestamp_eastern_winter_uses_est() {
+        // 2026-01-15 18:30:00 UTC == 2026-01-15 13:30:00 EST (UTC-5 in Jan)
+        let secs = ymd_to_days(2026, 1, 15) * 86_400 + 18 * 3600 + 30 * 60;
+        let s = format_unix_timestamp_eastern(secs);
+        assert_eq!(s, "2026-01-15 13:30:00 EST");
+    }
+
+    #[test]
+    fn format_unix_timestamp_eastern_handles_day_rollover() {
+        // 2026-05-03 03:30:00 UTC == 2026-05-02 23:30:00 EDT (rolls back
+        // to previous day in local time).
+        let secs = ymd_to_days(2026, 5, 3) * 86_400 + 3 * 3600 + 30 * 60;
+        let s = format_unix_timestamp_eastern(secs);
+        assert_eq!(s, "2026-05-02 23:30:00 EDT");
     }
 }
