@@ -3031,6 +3031,374 @@ void control_isr(void) {
          report is the spec and you do the hand-translation — which for a \
          one-off mechanism is ~half a day's work.</p>\n",
     );
+
+    // ── §7.5 Sensor characterization & calibration recipes ────────────────
+    html.push_str(
+        "<h3 style='margin-left: 12px;'>7.5 Sensor characterization &amp; calibration recipes</h3>\n",
+    );
+    html.push_str(
+        "<p>Before the EKF, the sensors. The §4l filter assumes the \
+         covariance \\(R\\) you give it accurately describes reality; if your \
+         σ is wrong by 10× or your zero-offset is off by 1 mrad, the filter \
+         will be either sluggish, jumpy, or just biased — you'll spend a \
+         week chasing it as a tuning problem when it's actually a \
+         characterisation problem. This subsection is the pre-flight \
+         checklist a firmware author should run through before the filter \
+         touches real data.</p>\n",
+    );
+
+    // ── §7.5.1 Measuring sigma ───────────────────────────────────────────
+    html.push_str(
+        "<h4 style='margin-left: 24px;'>7.5.1 Measuring \\(\\sigma_{\\mathrm{enc}}\\) and \\(\\sigma_{\\mathrm{act}}\\)</h4>\n",
+    );
+    html.push_str(
+        "<p>Sensor data sheets give a rough \\(\\sigma\\) but it's almost \
+         always optimistic — they assume textbook conditions and don't \
+         include effects from your wiring, mounting, EMI, or temperature. \
+         <b>Measure your own σ at install time, then again every 6 months.</b></p>\n",
+    );
+    html.push_str(
+        "<ol>\n\
+         <li><b>Lock the mechanism in a fixed pose.</b> Use a hard stop, \
+         a dowel pin, or just clamp it. The actual value of θ doesn't \
+         matter — what matters is that it doesn't move during the recording.</li>\n\
+         <li><b>Record sensor readings at full control rate</b> for 30+ \
+         seconds. At 1 kHz that's 30 000 samples per sensor. Save the raw \
+         stream — don't filter, don't downsample.</li>\n\
+         <li><b>Subtract the sample mean</b> \\(\\hat\\mu = \\tfrac{1}{N}\\sum_k y_k\\) \
+         to get a zero-mean noise sequence \\(n_k = y_k - \\hat\\mu\\).</li>\n\
+         <li><b>Compute the variance</b> \\(\\hat\\sigma^2 = \\tfrac{1}{N-1}\\sum_k n_k^2\\). \
+         Take the square root — that is your characterised σ, and it goes \
+         straight into the EKF's R diagonal.</li>\n\
+         <li><b>White-noise sanity check.</b> Compute the lag-1 \
+         autocorrelation \\(\\hat\\rho_1 = \\sum_k n_k n_{k-1} / \\sum_k n_k^2\\). \
+         For an EKF-friendly white-noise sensor, \\(|\\hat\\rho_1| < 0.1\\). \
+         If higher, the sensor has correlated noise (drift, mechanical \
+         resonance, sampling jitter) and the EKF's white-noise assumption \
+         is partly violated — the filter will still run but R is no \
+         longer a complete description of the error.</li>\n\
+         <li><b>Allan variance for longer runs</b> (optional but worth \
+         doing once per design). Plot \\(\\sigma_A^2(\\tau)\\) over averaging \
+         windows \\(\\tau\\) from 1 sample to N/2 samples on log-log axes. \
+         The slope identifies the noise type: \\(-1/2\\) is pure white \
+         noise, \\(0\\) is bias instability, \\(+1/2\\) is random walk. For \
+         a well-mounted encoder you should see white noise dominate out \
+         to \\(\\tau \\approx\\) 100 ms, then bias instability flatten the \
+         curve. Random walk is a red flag — it means the sensor is drifting \
+         and you'll need either an augmented bias state in the EKF or \
+         frequent re-zeroing.</li>\n\
+         <li><b>Repeat at 3–5 poses</b> across the workspace. Some sensors \
+         have pose-dependent noise (e.g. magnetic encoders near steel, \
+         linear pots near the end of travel). If σ varies by more than 2× \
+         across poses, treat the worst case as your design σ for R, or \
+         model R as pose-dependent.</li>\n\
+         </ol>\n",
+    );
+    html.push_str("<p><b>Sanity-check against this report.</b> ");
+    if sensor_config.encoder_joint.is_some()
+        || sensor_config.actuator_position_enabled
+    {
+        html.push_str(&format!(
+            "Configured here: encoder σ = {:.4} rad ({:.2} mrad), actuator \
+             σ = {:.6} m ({:.1} µm). After your bench characterisation, the \
+             values you measure should be within ~50% of these. If they're \
+             10× higher, your simulator-side R is fictionally clean and \
+             the design-time analysis (innovation thresholds, gain scheduling, \
+             dead-band sizing) was solved against the wrong problem — \
+             update the simulator config with the measured numbers and \
+             re-run all the design-time outputs in this report.",
+            sensor_config.encoder_noise_std,
+            sensor_config.encoder_noise_std * 1000.0,
+            sensor_config.actuator_noise_std,
+            sensor_config.actuator_noise_std * 1e6,
+        ));
+    } else {
+        html.push_str(
+            "No sensor σ configured in this report. Configure them in the \
+             Sensors panel and re-export to see suggested R diagonal values \
+             and innovation-gating thresholds here.",
+        );
+    }
+    html.push_str("</p>\n");
+
+    // ── §7.5.2 Calibration ───────────────────────────────────────────────
+    html.push_str(
+        "<h4 style='margin-left: 24px;'>7.5.2 Zero offset, scale factor, polarity</h4>\n",
+    );
+    html.push_str(
+        "<p>Each sensor channel needs three calibration constants. Get any \
+         of them wrong and your EKF will produce confidently wrong \
+         estimates — the filter has no way to detect a bias in its own \
+         calibration.</p>\n",
+    );
+    html.push_str(
+        "<ol>\n\
+         <li><b>Zero offset</b> (\\(y_{\\text{zero}}\\)): drive the mechanism \
+         to a mechanical reference — a hard stop, a precision dowel pin, \
+         or a known calibration fixture — and record the raw count. All \
+         future reads subtract this. For an absolute encoder bolted to \
+         the joint shaft, the offset is set by the mechanical coupling and \
+         is stable across power cycles. For incremental encoders, the \
+         offset is set by your homing routine on power-up; persist it to \
+         non-volatile storage so a single homing pass survives reboots.</li>\n\
+         <li><b>Scale factor</b> (counts → SI units): the data-sheet \
+         nominal gets you within ~1%, but for true precision use a \
+         <b>two-point measurement</b>. Drive to two known poses (a \
+         precision angle gauge, two hard stops at calibrated angles, or \
+         two pose locations marked against a master fixture); record raw \
+         counts at each; then \
+         \\(\\text{scale} = (y_2^{\\text{SI}} - y_1^{\\text{SI}}) / (c_2 - c_1)\\). \
+         This calibrates out manufacturing tolerance, gear-ratio mismatch, \
+         and any non-unity coupler imperfection in one step.</li>\n\
+         <li><b>Polarity</b>: jog the mechanism in one direction by a \
+         small known amount and confirm the calibrated reading moves in \
+         the expected direction (positive Δθ should produce increasing \
+         \\(\\theta_{\\text{enc}}\\)). A flipped polarity in firmware will \
+         cause the EKF's measurement Jacobian \\(H\\) to point the wrong \
+         way and the filter will diverge in 100 ms. Cheap to check, \
+         very expensive to debug downstream.</li>\n\
+         <li><b>Gear ratio</b> (motor-mounted encoders): if the encoder \
+         is on the motor shaft and the joint sees a reduction \\(N\\), the \
+         joint angle is \\(\\theta_{\\text{joint}} = \\theta_{\\text{enc}} / N\\). \
+         Verify by counting motor revolutions over a full known joint \
+         sweep — don't rely on the gearbox label, especially for \
+         compound or harmonic-drive trains.</li>\n\
+         </ol>\n",
+    );
+    html.push_str(
+        "<p><b>The §4i cross-check.</b> Once both sensors are individually \
+         calibrated, drive through the workspace and at every cycle log \
+         the residual \\(\\Delta_k = L_{\\text{act,meas}} - L(\\theta_{\\text{enc,meas}})\\) \
+         using the §4i closed-form geometry. The residual should be \
+         zero-mean with a standard deviation around \
+         \\(\\sqrt{\\sigma_{\\text{act}}^2 + (\\partial L / \\partial \\theta_2)^2 \\sigma_{\\text{enc}}^2}\\). \
+         A non-zero mean exposes a scaling or zero-offset error in one of \
+         the two sensors. A growing or position-dependent residual reveals \
+         a model error — wrong link length, wrong mounting angle, or a \
+         loose joint with backlash. This single check catches the bulk of \
+         install-time mistakes before they become EKF tuning headaches.</p>\n",
+    );
+
+    // ── §7.5.3 Cold-start ────────────────────────────────────────────────
+    html.push_str(
+        "<h4 style='margin-left: 24px;'>7.5.3 Cold-start initialisation and assembly mode</h4>\n",
+    );
+    html.push_str(
+        "<p>The first time the EKF runs after power-up or a watchdog reset, \
+         it has no prior — \\(\\hat x_{0|0}\\) is whatever you initialised \
+         it to. Two things must happen before normal operation can resume.</p>\n",
+    );
+    html.push_str(
+        "<p><b>1. Set \\(P_{0|0}\\) large.</b> Diagonal \\(\\sigma_{\\theta,0}^2 \
+         \\approx 1\\,\\text{rad}^2\\), \\(\\sigma_{\\dot\\theta,0}^2 \\approx \
+         100\\,(\\text{rad/s})^2\\) is the standard \"I have no idea\" prior. \
+         The first few measurement updates collapse \\(P\\) to its \
+         steady-state value within ~10 cycles. Don't initialise \
+         \\(P_{0|0}\\) small — that tells the filter you trust the (zero) \
+         initial state, and it will reject the early measurements until \
+         \\(P\\) grows back, costing seconds of bad output.</p>\n",
+    );
+    html.push_str(
+        "<p><b>2. Resolve assembly mode.</b> §4h has TWO roots for \
+         \\((\\theta_3, \\theta_4)\\) given \\(\\theta_2\\) — the open and \
+         crossed configurations of the 4-bar. The mechanism is mechanically \
+         pinned to one of them at assembly (you can't switch without \
+         disassembly). The EKF and the §4h closed-form FK both need to \
+         know which.</p>\n",
+    );
+    html.push_str(
+        "<p>Procedure: at install time, with the mechanism powered up but \
+         the motor disabled, read both \\(\\theta_{\\text{enc}}\\) and \
+         \\(L_{\\text{act}}\\). Compute both §4h roots; for each, evaluate \
+         §4i to get the predicted \\(L\\); pick the root whose predicted \
+         \\(L\\) matches the measured \\(L_{\\text{act}}\\) within \
+         \\(3\\sigma_{\\text{act}}\\). Save this choice to non-volatile \
+         storage as a single bit. Read it on every boot. <b>Never recompute \
+         it at runtime</b> — between the time you read \\(L_{\\text{act}}\\) \
+         and the time you write the motor command, you've already run \
+         several control cycles, and a branch-flip mid-trajectory is not \
+         recoverable.</p>\n",
+    );
+    html.push_str(
+        "<p><b>3. Recovery from unexpected reset.</b> If the EKF is reset \
+         mid-operation (watchdog, brown-out, intentional reset on \
+         out-of-range innovations), don't restart from zero. Read both \
+         sensors immediately, then run a single EKF update with \
+         \\(P_{0|0}\\) huge; the cached assembly bit picks the right §4h \
+         root, and the joint of \\(\\theta_{\\text{enc}}\\) and \
+         \\(L_{\\text{act}}\\) gives you a strongly over-determined \
+         initial state. After 1 update cycle, \\(P\\) is approximately \
+         \\(R\\) on the diagonal — back to nominal precision in 1 ms.</p>\n",
+    );
+
+    // ── §7.6 EKF tuning & validation in production ────────────────────────
+    html.push_str(
+        "<h3 style='margin-left: 12px;'>7.6 EKF tuning &amp; validation in production</h3>\n",
+    );
+    html.push_str(
+        "<p>An EKF that compiles and runs without crashing is not the same \
+         as an EKF that produces optimal estimates. A subtly mistuned \
+         filter will track measurements but with wrong uncertainty \
+         estimates, wrong gains, and wrong fault-detection thresholds. \
+         The standard diagnostic — innovation analysis — is cheap to log \
+         and tells you whether your filter is healthy. §7.2.2 covered \
+         the tuning principles; this subsection is the production \
+         playbook for actually doing it.</p>\n",
+    );
+
+    // ── §7.6.1 Innovation tuning ─────────────────────────────────────────
+    html.push_str(
+        "<h4 style='margin-left: 24px;'>7.6.1 Innovation-based tuning workflow</h4>\n",
+    );
+    html.push_str(
+        "<p>The innovation \\(\\nu_k = y_k - h(\\hat x_{k|k-1})\\) is the \
+         measurement minus what the filter predicted. <b>For a correctly \
+         tuned EKF, the innovation sequence is zero-mean white noise with \
+         covariance \\(S_k = H_k P_{k|k-1} H_k^T + R\\).</b> This is a \
+         non-trivial property — it requires R, Q, the dynamics model, and \
+         the measurement model to all be approximately correct. \
+         Violations leave fingerprints in the innovation statistics.</p>\n",
+    );
+    html.push_str(
+        "<table>\n\
+         <tr><th>Diagnostic</th><th>What it means</th><th>Fix</th></tr>\n\
+         <tr><td>\\(\\overline\\nu \\ne 0\\) (non-zero sample mean)</td>\
+         <td>Systematic bias: zero-offset wrong, or measurement model \\(h(x)\\) wrong</td>\
+         <td>Re-run §7.5.2 zero-offset cal; cross-check the §4i geometry constants</td></tr>\n\
+         <tr><td>\\(\\overline{\\nu^2} \\gg \\overline{S}\\) (innovations bigger than predicted)</td>\
+         <td>Filter overconfident — Q or R too small</td>\
+         <td>Increase Q (process noise) until the consistency ratio \\(\\nu^2/S\\) approaches 1; only increase R above measured σ² as a last resort</td></tr>\n\
+         <tr><td>\\(\\overline{\\nu^2} \\ll \\overline{S}\\) (innovations smaller than predicted)</td>\
+         <td>Filter underconfident — Q or R too large</td>\
+         <td>Decrease Q first; do NOT decrease R below your characterised σ²</td></tr>\n\
+         <tr><td>\\(\\hat\\rho_1(\\nu) > 0.1\\) (autocorrelated innovations)</td>\
+         <td>Dynamics model wrong — typically a constant-velocity assumption broken by aggressive trajectory acceleration</td>\
+         <td>Increase Q on the velocity state, or augment to a constant-acceleration model with an extra state</td></tr>\n\
+         <tr><td>Innovations grow over time</td>\
+         <td>Sensor drift, or unmodelled bias</td>\
+         <td>Add a bias state to the EKF; recalibrate more frequently; or check thermal drift</td></tr>\n\
+         </table>\n",
+    );
+    html.push_str(
+        "<p><b>Recommended bring-up sequence</b> for a new filter:</p>\n\
+         <ol>\n\
+         <li>Use σ from §7.5.1 directly as the R diagonal. Do not tune R.</li>\n\
+         <li>Set Q small initially: \\(Q = \\text{diag}(10^{-6}\\,\\text{rad}^2, \
+         10^{-3}\\,(\\text{rad/s})^2)\\). The filter will lag input changes.</li>\n\
+         <li>Increase Q until innovations are zero-mean white noise with \
+         covariance matching \\(S\\) within ~30%. The right Q is usually \
+         within one order of magnitude of the typical commanded \
+         acceleration squared, scaled by \\(\\Delta t^2\\).</li>\n\
+         <li>Validate against §7.6.2 HIL once the innovations look good. \
+         Innovation diagnostics tell you the filter is self-consistent, \
+         not that it's accurate.</li>\n\
+         </ol>\n",
+    );
+
+    // ── §7.6.2 HIL validation ────────────────────────────────────────────
+    html.push_str(
+        "<h4 style='margin-left: 24px;'>7.6.2 Hardware-in-the-loop validation against the simulator</h4>\n",
+    );
+    html.push_str(
+        "<p>Innovation diagnostics tell you whether the filter is \
+         self-consistent — not whether it's producing the right answer. \
+         To validate absolute accuracy, replay a known ground-truth signal \
+         through the deployed firmware and compare the estimate to the \
+         truth.</p>\n",
+    );
+    html.push_str(
+        "<ol>\n\
+         <li><b>Generate a ground-truth trajectory</b> in the simulator. \
+         Pick a representative motion: full sweep of the workspace, plus \
+         a stationary hold, plus a pass near a near-singular configuration. \
+         <code>compute_trajectory</code> emits \\((t_k, \\theta_{2,k}^{\\text{truth}}, \
+         \\dot\\theta_{2,k}^{\\text{truth}}, \\ddot\\theta_{2,k}^{\\text{truth}})\\).</li>\n\
+         <li><b>Synthesise sensor measurements</b> by sampling the §4i \
+         forward map and adding noise:\
+         \\[ \\theta_{\\text{enc},k} = \\theta_{2,k}^{\\text{truth}} + n_{\\theta,k},\\quad n_{\\theta,k} \\sim \\mathcal{N}(0, \\sigma_{\\text{enc}}^2) \\]\
+         \\[ L_{\\text{act},k} = L\\!\\left(\\theta_{2,k}^{\\text{truth}}\\right) + n_{L,k},\\quad n_{L,k} \\sim \\mathcal{N}(0, \\sigma_{\\text{act}}^2) \\]\
+         This is exactly what the deployed sensors should produce when \
+         the mechanism actually runs the same trajectory.</li>\n\
+         <li><b>Pipe the synthesised stream</b> into your firmware via \
+         UART, SPI, or a debug-mode replay buffer. The firmware should \
+         not know it's running on synthesised data — same code path, \
+         same ISR, same EKF as production.</li>\n\
+         <li><b>Compare the deployed \\(\\hat\\theta_{2,k}\\)</b> against \
+         the simulator's \\(\\theta_{2,k}^{\\text{truth}}\\). Compute RMS \
+         error after the initial ~50-cycle convergence transient.</li>\n\
+         <li><b>Sanity-check the magnitude.</b> The §4l Riccati equation \
+         gives the steady-state \\(\\sigma_\\theta\\) you should expect; if \
+         the RMS error is within ~50% of that, the filter is working as \
+         designed. If 5×–100× higher, you have a bug — usually a \
+         sign-flipped Jacobian, a wrong link constant, or a stale \
+         assembly-mode bit from §7.5.3.</li>\n\
+         </ol>\n",
+    );
+    html.push_str(
+        "<p>Recommended scope: 60+ seconds covering the full workspace, \
+         a near-dead-point pass, and a stationary hold. Run nightly in CI \
+         if you have a hardware fixture; once per release otherwise. The \
+         simulator side of HIL is already in this codebase — \
+         <code>compute_trajectory</code> plus a Gaussian-noise wrapper is \
+         ~20 lines of glue.</p>\n",
+    );
+
+    // ── §7.6.3 Log format ────────────────────────────────────────────────
+    html.push_str(
+        "<h4 style='margin-left: 24px;'>7.6.3 Production log format</h4>\n",
+    );
+    html.push_str(
+        "<p>The diagnostics in §7.6.1 require logged data. Don't try to \
+         compute statistics live on the MCU — log to flash or stream out \
+         and post-process. The format below is a portable binary record \
+         that fits 1 kHz logging on any modern flash chip:</p>\n",
+    );
+    html.push_str(
+        "<pre style='background: #f0f2f5; padding: 12px; border-left: 3px solid #0f3460; \
+         font-family: Consolas, Monaco, monospace; font-size: 12px; line-height: 1.5; \
+         overflow-x: auto;'>\
+// Per-cycle record (little-endian, 36 bytes). At 1 kHz: 36 KB/s, ~130 MB/hour.
+typedef struct __attribute__((packed)) {
+    uint32_t  t_us;             // monotonic timestamp, microseconds
+    float     theta_enc_meas;   // raw encoder, calibrated, rad   (NaN if not configured)
+    float     L_act_meas;       // raw actuator pos, calibrated, m (NaN if not configured)
+    float     theta2_hat;       // EKF posterior estimate, rad
+    float     omega2_hat;       // EKF posterior velocity, rad/s
+    float     P_diag_theta;     // posterior covariance diagonal, rad^2
+    float     P_diag_omega;     // posterior covariance diagonal, (rad/s)^2
+    float     innov_theta;      // y_enc - h_theta(x_pred), rad
+    float     innov_L;          // y_L   - h_L(x_pred),     m
+    uint8_t   status;           // bit 0: enc gated, 1: act gated, 2: predict-only, 3-7: reserved
+    uint8_t   _pad[3];          // align to 4 bytes
+} ekf_log_record_t;
+
+// File header (written once at start of log file)
+typedef struct __attribute__((packed)) {
+    char      magic[4];         // \"EKFL\"
+    uint16_t  version;          // 1
+    uint16_t  record_size;      // sizeof(ekf_log_record_t) = 36
+    float     dt_s;             // control period, seconds
+    float     sigma_enc;        // configured R diagonal sqrt, rad
+    float     sigma_act;        // configured R diagonal sqrt, m
+    float     Q_diag[2];        // configured process-noise diagonal
+    uint64_t  mechanism_hash;   // SHA-1 prefix of the MechanismJson at design time
+    uint32_t  build_id;         // firmware git sha prefix
+} ekf_log_header_t;
+</pre>\n",
+    );
+    html.push_str(
+        "<p><b>Post-processing pipeline.</b> A 5-minute Python script \
+         reads the binary log and produces (a) histograms of \\(\\nu\\) \
+         per channel, (b) the lag-1 autocorrelation \\(\\hat\\rho_1\\), \
+         and (c) the running mean of the consistency ratio \\(\\nu^2 / S\\), \
+         which should sit near 1.0 for a well-tuned filter. \
+         <code>numpy</code> + <code>matplotlib</code> is sufficient; no \
+         heavy tooling needed. The mechanism hash and build ID in the \
+         header let you correlate log files with specific \
+         firmware/mechanism configurations across a fleet of devices, \
+         which becomes critical the moment you have more than one unit \
+         deployed and a regression to localise.</p>\n",
+    );
 }
 
 fn write_singular_configs_section(html: &mut String, layout: &FourbarLayout) {
@@ -3864,6 +4232,42 @@ mod tests {
         assert!(
             html.contains("Cubic Hermite") || html.contains("cubic Hermite"),
             "§7.1.1 should mention cubic Hermite interpolation for trajectory tables"
+        );
+        // §7.5 Sensor characterisation & calibration recipes
+        assert!(
+            html.contains("Sensor characterization"),
+            "§7.5 should cover sensor characterisation and calibration"
+        );
+        assert!(
+            html.contains("Allan variance"),
+            "§7.5.1 should include the Allan-variance noise-typing technique"
+        );
+        assert!(
+            html.contains("Zero offset")
+                && html.contains("Scale factor")
+                && html.contains("Polarity"),
+            "§7.5.2 should cover the three calibration constants"
+        );
+        assert!(
+            html.contains("assembly mode") || html.contains("Assembly mode"),
+            "§7.5.3 should cover the open/crossed assembly-mode determination"
+        );
+        assert!(
+            html.contains("Cold-start") || html.contains("cold-start"),
+            "§7.5.3 should cover cold-start initialisation"
+        );
+        // §7.6 EKF tuning & validation in production
+        assert!(
+            html.contains("Innovation-based tuning"),
+            "§7.6.1 should cover innovation-based tuning"
+        );
+        assert!(
+            html.contains("Hardware-in-the-loop"),
+            "§7.6.2 should cover HIL validation against the simulator"
+        );
+        assert!(
+            html.contains("ekf_log_record_t"),
+            "§7.6.3 should specify a concrete production log record format"
         );
         // Renumbering: §7→§8, §8→§9, §9→§10. Verify the new numbering landed.
         assert!(
