@@ -425,20 +425,39 @@ fn compute_default_x_bounds(sweep: &SweepData, units: &DisplayUnits) -> Option<(
 }
 
 /// Wrap a `Plot` with a fixed default x-axis bound matching the sweep's
-/// data range. Without this, egui_plot's auto-fit pulls the bounds to
-/// include the cursor `VLine` drawn at the current driver position; in
-/// trajectory mode that lets the cursor expand the visible x-range below
-/// the trajectory's start angle, exposing empty space where no data exists.
+/// data range, AND salt the plot id with the bounds key so egui_plot's
+/// cached state gets invalidated when the data range changes.
 ///
-/// The user can still pan/zoom — only the default/reset framing is fixed.
-/// When the sweep has no usable data, the plot is returned unchanged and
-/// auto-fit handles the empty case.
+/// Why both pieces:
+/// - `default_x_bounds` disables auto-fit and pins the *reset* bounds —
+///   stops the cursor `VLine` from expanding the visible x-range during
+///   playback. But `default_x_bounds` does NOT override `egui::Memory`
+///   that's already cached for the plot id (pan/zoom state, previously-
+///   computed bounds from before the fix shipped, etc.) — egui keeps
+///   re-using the cached state until the id changes.
+/// - The id salt (rounded bounds tuple) makes the id change whenever the
+///   data range changes. egui sees the new id as a fresh plot, has no
+///   cached state for it, and uses our `default_x_bounds` directly.
+///
+/// User pan/zoom still works *within a single sweep recompute*; it
+/// only resets when the underlying data range changes.
+///
+/// `plot_id_stem` should match the string passed to `Plot::new(...)`
+/// (this helper effectively replaces that id with `(stem, bounds_key)`).
 fn with_default_x_bounds<'a>(
     plot: Plot<'a>,
+    plot_id_stem: &str,
     sweep: &SweepData,
     units: &DisplayUnits,
 ) -> Plot<'a> {
-    if let Some((lo, hi)) = compute_default_x_bounds(sweep, units) {
+    let bounds = compute_default_x_bounds(sweep, units);
+    let key: (i64, i64) = bounds
+        .map(|(lo, hi)| {
+            ((lo * 1000.0).round() as i64, (hi * 1000.0).round() as i64)
+        })
+        .unwrap_or((0, 0));
+    let plot = plot.id(egui::Id::new((plot_id_stem, key)));
+    if let Some((lo, hi)) = bounds {
         plot.default_x_bounds(lo, hi)
     } else {
         plot
@@ -761,5 +780,103 @@ mod tests {
             .expect("finite samples yield bounds");
         assert!((lo - 66.5).abs() < 1e-6);
         assert!((hi - 180.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn end_to_end_sweep_range_with_offset_pins_to_user_input_range() {
+        // Reproduce the user-reported "plot shows 65°–120° when sweep range
+        // is 22°–75°" symptom end-to-end. Wires `compute_sweep` →
+        // `sweep_in_display_frame` → `compute_default_x_bounds` against a
+        // 4-bar with a non-zero `driver_display_offset` and asserts the
+        // resulting bounds equal the user's display-frame input range.
+        //
+        // Expected pipeline:
+        //   1. blueprint_ops::compute_sweep subtracts offset → body-frame
+        //      range passed to compute_sweep_data.
+        //   2. compute_sweep_data writes body-frame degrees to angles_deg.
+        //   3. sweep_in_display_frame adds offset back → display-frame.
+        //   4. compute_default_x_bounds reads display-frame data → bounds
+        //      should equal (22, 75).
+        //
+        // If this test fails, the bug is somewhere in steps 1–4.
+        use crate::gui::samples::SampleMechanism;
+        use crate::gui::state::AppState;
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        // Rotate the crank's far attachment point by +43° in its local
+        // frame so the body's A→B direction sits at +43° from +X. This
+        // gives `driver_display_offset` ≈ 43° (matches the user's symptom).
+        let crank_len = 2.0_f64;
+        let new_bx = crank_len * 43f64.to_radians().cos();
+        let new_by = crank_len * 43f64.to_radians().sin();
+        if let Some(bp) = state.blueprint.as_mut() {
+            if let Some(crank) = bp.bodies.get_mut("crank") {
+                crank.attachment_points
+                    .insert("B".to_string(), [new_bx, new_by]);
+            }
+        }
+        state.rebuild();
+        assert!(
+            (state.driver_display_offset - 43f64.to_radians()).abs() < 1e-3,
+            "test fixture should have ~43° offset, got {} rad",
+            state.driver_display_offset,
+        );
+
+        // User configures display-frame sweep range 22°–75°.
+        state.sweep_angle_min_deg = 22.0;
+        state.sweep_angle_max_deg = 75.0;
+        state.sweep_range_enabled = true;
+        state.compute_sweep();
+
+        let sweep = state
+            .sweep_data
+            .as_ref()
+            .expect("compute_sweep should populate sweep_data");
+
+        // Capture raw and shifted ranges for debug output on failure.
+        let raw_min = sweep
+            .angles_deg
+            .iter()
+            .copied()
+            .filter(|x| x.is_finite())
+            .fold(f64::INFINITY, f64::min);
+        let raw_max = sweep
+            .angles_deg
+            .iter()
+            .copied()
+            .filter(|x| x.is_finite())
+            .fold(f64::NEG_INFINITY, f64::max);
+
+        // Apply the same shift the plot panel does.
+        let offset_deg = state.driver_display_offset.to_degrees();
+        let display_sweep = sweep_in_display_frame(sweep, offset_deg);
+
+        let shifted_min = display_sweep
+            .angles_deg
+            .iter()
+            .copied()
+            .filter(|x| x.is_finite())
+            .fold(f64::INFINITY, f64::min);
+        let shifted_max = display_sweep
+            .angles_deg
+            .iter()
+            .copied()
+            .filter(|x| x.is_finite())
+            .fold(f64::NEG_INFINITY, f64::max);
+
+        let (lo, hi) = compute_default_x_bounds(&display_sweep, &deg_units())
+            .expect("nontrivial sweep should yield bounds");
+
+        assert!(
+            (lo - 22.0).abs() < 1.0 && (hi - 75.0).abs() < 1.0,
+            "expected display-frame bounds (22, 75), got ({}, {})\n  \
+             raw angles_deg range = ({}, {})\n  \
+             shifted angles_deg range = ({}, {})\n  \
+             driver_display_offset = {} rad ({:.3}°)",
+            lo, hi, raw_min, raw_max, shifted_min, shifted_max,
+            state.driver_display_offset, offset_deg,
+        );
     }
 }

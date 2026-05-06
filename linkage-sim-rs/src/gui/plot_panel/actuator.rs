@@ -39,7 +39,7 @@ pub(super) fn draw_actuator_force(
         .y_axis_label("Actuator Force (N)")
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
-    let plot = with_default_x_bounds(plot, sweep, units);
+    let plot = with_default_x_bounds(plot, "actuator_force_plot", sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -263,7 +263,7 @@ pub(super) fn draw_actuator_speed(
         .y_axis_label("Actuator Speed (mm/s)")
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
-    let plot = with_default_x_bounds(plot, sweep, units);
+    let plot = with_default_x_bounds(plot, "actuator_speed_plot", sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -328,7 +328,7 @@ pub(super) fn draw_actuator_power(
         .y_axis_label("Power (W)")
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
-    let plot = with_default_x_bounds(plot, sweep, units);
+    let plot = with_default_x_bounds(plot, "actuator_power_plot", sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {

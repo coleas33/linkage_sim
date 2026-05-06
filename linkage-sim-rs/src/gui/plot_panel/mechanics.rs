@@ -30,7 +30,7 @@ pub(super) fn draw_body_angles(
         .y_axis_label(format!("Body Angle ({})", angle_label))
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
-    let plot = with_default_x_bounds(plot, sweep, units);
+    let plot = with_default_x_bounds(plot, "body_angles_plot", sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -108,7 +108,7 @@ pub(super) fn draw_transmission_angle(
         .y_axis_label("Transmission Angle (deg)")
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
-    let plot = with_default_x_bounds(plot, sweep, units);
+    let plot = with_default_x_bounds(plot, "transmission_angle_plot", sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -205,7 +205,7 @@ pub(super) fn draw_mechanical_advantage(
         .y_axis_label("Mechanical Advantage")
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
-    let plot = with_default_x_bounds(plot, sweep, units);
+    let plot = with_default_x_bounds(plot, "mechanical_advantage_plot", sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -279,7 +279,7 @@ pub(super) fn draw_joint_reactions(
         .y_axis_label("Reaction Force (N)")
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
-    let plot = with_default_x_bounds(plot, sweep, units);
+    let plot = with_default_x_bounds(plot, "joint_reactions_plot", sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {

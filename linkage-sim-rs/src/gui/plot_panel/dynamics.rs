@@ -31,7 +31,7 @@ pub(super) fn draw_driver_torque(
         .y_axis_label(driver_effort_y_label(sweep))
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
-    let plot = with_default_x_bounds(plot, sweep, units);
+    let plot = with_default_x_bounds(plot, "driver_torque_plot", sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -92,7 +92,7 @@ pub(super) fn draw_inverse_dynamics(
         .y_axis_label(driver_effort_y_label(sweep))
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
-    let plot = with_default_x_bounds(plot, sweep, units);
+    let plot = with_default_x_bounds(plot, "inverse_dynamics_plot", sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -202,7 +202,7 @@ pub(super) fn draw_energy(
         .y_axis_label("Energy (J)")
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
-    let plot = with_default_x_bounds(plot, sweep, units);
+    let plot = with_default_x_bounds(plot, "energy_plot", sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
