@@ -217,6 +217,10 @@ pub struct AppState {
     pub force_results: ForceResults,
     /// Whether to draw force arrows on the canvas.
     pub show_forces: bool,
+    /// When `show_forces` is on, render reaction forces as separate Fx
+    /// (solid) and Fy (dashed) component arrows instead of a single
+    /// resultant arrow. Persists to the user-preferences sidecar.
+    pub show_force_components: bool,
     /// Whether to show link length dimensions on the canvas.
     pub show_dimensions: bool,
     /// Whether to show body/joint labels on the canvas.
@@ -608,6 +612,7 @@ impl Default for AppState {
             grid: GridSettings::default(),
             force_results: ForceResults::default(),
             show_forces: true,
+            show_force_components: false,
             show_dimensions: true,
             show_labels: true,
             show_equation_overlay: false,
@@ -738,6 +743,7 @@ impl AppState {
             show_labels: self.show_labels,
             show_equation_overlay: self.show_equation_overlay,
             show_forces: self.show_forces,
+            show_force_components: self.show_force_components,
             show_plots: self.show_plots,
             show_parametric: self.show_parametric,
             show_debug_overlay: self.show_debug_overlay,
@@ -756,6 +762,7 @@ impl AppState {
         self.show_labels = prefs.show_labels;
         self.show_equation_overlay = prefs.show_equation_overlay;
         self.show_forces = prefs.show_forces;
+        self.show_force_components = prefs.show_force_components;
         self.show_plots = prefs.show_plots;
         self.show_parametric = prefs.show_parametric;
         self.show_debug_overlay = prefs.show_debug_overlay;

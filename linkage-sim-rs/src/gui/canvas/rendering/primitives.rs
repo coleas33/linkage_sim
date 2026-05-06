@@ -422,6 +422,93 @@ pub(super) fn draw_force_arrow(painter: &egui::Painter, origin: Pos2, fx: f32, f
     );
 }
 
+/// Draw reaction force as separate Fx (solid) and Fy (dashed) component arrows.
+///
+/// `fx`, `fy` are world-frame components in Newtons. The Fx arrow runs
+/// horizontally in screen space (sign-preserving: negative fx points left);
+/// the Fy arrow runs vertically (positive fy points up — screen Y is flipped).
+/// Both share `FORCE_ARROW_COLOR` and `FORCE_ARROW_SCALE` with the resultant
+/// renderer so the toggle is purely a style/decomposition switch.
+///
+/// Components below the noise floor (|F| < 1e-12) are skipped to avoid
+/// drawing zero-length arrows. A component is also skipped if the magnitude
+/// alone is below the noise floor — so a purely horizontal force draws Fx
+/// only and Fy is suppressed.
+pub(super) fn draw_force_arrow_components(
+    painter: &egui::Painter,
+    origin: Pos2,
+    fx: f32,
+    fy: f32,
+) {
+    // Solid Fx along world-X (screen-x is +right, no flip).
+    draw_axis_component(painter, origin, fx, AxisDirection::X, "Fx");
+    // Dashed Fy along world-Y (screen-y is flipped: +world_y → -screen_y).
+    draw_axis_component(painter, origin, fy, AxisDirection::Y, "Fy");
+}
+
+#[derive(Clone, Copy)]
+enum AxisDirection { X, Y }
+
+/// Render one axis-aligned component arrow. Solid for X, dashed shaft for Y.
+/// Arrowhead is always solid so the arrow direction reads cleanly.
+fn draw_axis_component(
+    painter: &egui::Painter,
+    origin: Pos2,
+    component: f32,
+    axis: AxisDirection,
+    label_prefix: &str,
+) {
+    if component.abs() < 1e-12 {
+        return;
+    }
+    let mag = component.abs();
+    let px_len = (mag * FORCE_ARROW_SCALE).clamp(FORCE_ARROW_MIN_PX, FORCE_ARROW_MAX_PX);
+
+    // Unit direction in screen space, accounting for the sign of the component
+    // and the screen-Y flip on the Y axis.
+    let (dx, dy) = match axis {
+        AxisDirection::X => (component.signum(), 0.0_f32),
+        AxisDirection::Y => (0.0_f32, -component.signum()),
+    };
+    let tip = Pos2::new(origin.x + dx * px_len, origin.y + dy * px_len);
+
+    // Shaft: solid for X, dashed for Y.
+    let stroke = Stroke::new(FORCE_ARROW_WIDTH, FORCE_ARROW_COLOR);
+    match axis {
+        AxisDirection::X => {
+            painter.line_segment([origin, tip], stroke);
+        }
+        AxisDirection::Y => {
+            draw_dashed_line(painter, origin, tip, stroke, 5.0, 3.0);
+        }
+    }
+
+    // Solid arrowhead in both modes — keeps the arrow legible regardless
+    // of dash phase at the tip.
+    let head_len: f32 = 8.0;
+    let head_angle: f32 = 0.44;
+    let back_dx = -dx;
+    let back_dy = -dy;
+    for sign in [-1.0_f32, 1.0] {
+        let cos_a = head_angle.cos();
+        let sin_a = head_angle.sin() * sign;
+        let hx = back_dx * cos_a - back_dy * sin_a;
+        let hy = back_dx * sin_a + back_dy * cos_a;
+        let head_end = Pos2::new(tip.x + hx * head_len, tip.y + hy * head_len);
+        painter.line_segment([tip, head_end], stroke);
+    }
+
+    // Signed component label near the tip — sign carries direction, so
+    // the label is unambiguous even when the arrow is short.
+    painter.text(
+        Pos2::new(tip.x + 4.0, tip.y - 4.0),
+        egui::Align2::LEFT_BOTTOM,
+        format!("{} = {:.0} N", label_prefix, component),
+        FontId::proportional(11.0),
+        FORCE_ARROW_COLOR,
+    );
+}
+
 /// Fill a force element template with actual body IDs and point coordinates.
 pub fn fill_force_template(
     template: &ForceElement,

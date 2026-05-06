@@ -45,6 +45,11 @@ pub struct UserPreferences {
     /// Show force-element arrows on the canvas.
     #[serde(default = "default_true")]
     pub show_forces: bool,
+    /// When `show_forces` is on: render reaction forces as separate
+    /// Fx (solid) and Fy (dashed) component arrows instead of a single
+    /// resultant arrow. Default `false` to preserve the legacy resultant view.
+    #[serde(default)]
+    pub show_force_components: bool,
     /// Show the bottom plot panel.
     #[serde(default = "default_true")]
     pub show_plots: bool,
@@ -75,6 +80,7 @@ impl Default for UserPreferences {
             show_labels: true,
             show_equation_overlay: false,
             show_forces: true,
+            show_force_components: false,
             show_plots: true,
             show_parametric: false,
             show_debug_overlay: false,
@@ -185,6 +191,7 @@ mod tests {
         let mut prefs = UserPreferences::default();
         prefs.show_dimensions = false;
         prefs.show_equation_overlay = true;
+        prefs.show_force_components = true;
         prefs.dismiss_welcome = true;
         prefs.nathan_mode = true;
         prefs.grid.snap_enabled = false;
@@ -217,6 +224,10 @@ mod tests {
         assert!(!restored.show_dimensions, "explicit field should win");
         assert!(restored.show_labels, "missing field should default to true");
         assert!(!restored.dismiss_welcome, "missing bool defaults to false");
+        assert!(
+            !restored.show_force_components,
+            "missing show_force_components should default to false (legacy resultant view)"
+        );
     }
 
     #[test]
@@ -231,6 +242,7 @@ mod tests {
         prefs.show_dimensions = false;
         prefs.show_labels = false;
         prefs.show_forces = false;
+        prefs.show_force_components = true;
         prefs.show_equation_overlay = true;
         prefs.dismiss_welcome = true;
         prefs.nathan_mode = true;

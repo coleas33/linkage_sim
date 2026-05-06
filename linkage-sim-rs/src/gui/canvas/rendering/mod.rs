@@ -21,7 +21,9 @@ mod force_render;
 pub use primitives::{draw_dashed_line, draw_ground_marker, draw_diamond_marker, fill_force_template};
 pub use force_render::{force_zone_app_point_world, heat_color};
 
-use primitives::{draw_alignment_guides, draw_force_arrow, draw_rotary_badge};
+use primitives::{
+    draw_alignment_guides, draw_force_arrow, draw_force_arrow_components, draw_rotary_badge,
+};
 use force_render::{draw_force_elements, load_path_color_for_body};
 
 // ── Main rendering pass (immutable) ──────────────────────────────────────────
@@ -611,7 +613,11 @@ pub fn render_overlays(
     if state.show_forces && solver_converged {
         for (screen_pos, joint_id) in joint_hit_targets {
             if let Some(&(fx, fy)) = state.force_results.joint_reactions.get(joint_id) {
-                draw_force_arrow(painter, *screen_pos, fx as f32, fy as f32);
+                if state.show_force_components {
+                    draw_force_arrow_components(painter, *screen_pos, fx as f32, fy as f32);
+                } else {
+                    draw_force_arrow(painter, *screen_pos, fx as f32, fy as f32);
+                }
             }
         }
     }

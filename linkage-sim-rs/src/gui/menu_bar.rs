@@ -697,6 +697,18 @@ pub(crate) fn draw_menu_bar(
                         .on_hover_text("Parametric study panel (coming soon)");
                     ui.checkbox(&mut state.show_forces, "Force Arrows")
                         .on_hover_text("Show/hide joint reaction force arrows and force element visuals on the canvas");
+                    ui.add_enabled(
+                        state.show_forces,
+                        egui::Checkbox::new(
+                            &mut state.show_force_components,
+                            "    Show X/Y components",
+                        ),
+                    )
+                    .on_hover_text(
+                        "Render reaction forces as separate Fx (solid) and Fy (dashed) \
+                         arrows along the world axes instead of a single resultant arrow. \
+                         Requires Force Arrows enabled.",
+                    );
                     ui.checkbox(&mut state.show_dimensions, "Link Dimensions")
                         .on_hover_text("Show/hide link length dimensions on the canvas");
                     ui.checkbox(&mut state.show_labels, "Show Labels")
