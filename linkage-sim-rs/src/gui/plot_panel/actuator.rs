@@ -8,7 +8,8 @@ use crate::gui::sweep::SweepData;
 
 use super::{
     detect_plot_click, draw_angle_series_with_range, draw_range_boundary_markers,
-    draw_toggle_markers, filter_actuator_outliers, series_colors, x_axis_label_for_sweep,
+    draw_toggle_markers, filter_actuator_outliers, series_colors, with_default_x_bounds,
+    x_axis_label_for_sweep,
 };
 
 pub(super) fn draw_actuator_force(
@@ -38,6 +39,7 @@ pub(super) fn draw_actuator_force(
         .y_axis_label("Actuator Force (N)")
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
+    let plot = with_default_x_bounds(plot, sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -261,6 +263,7 @@ pub(super) fn draw_actuator_speed(
         .y_axis_label("Actuator Speed (mm/s)")
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
+    let plot = with_default_x_bounds(plot, sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -325,6 +328,7 @@ pub(super) fn draw_actuator_power(
         .y_axis_label("Power (W)")
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
+    let plot = with_default_x_bounds(plot, sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {

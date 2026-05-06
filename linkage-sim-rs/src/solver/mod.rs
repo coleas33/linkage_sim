@@ -3,6 +3,7 @@ pub mod condition;
 pub mod events;
 pub mod kinematics;
 pub mod statics;
+pub mod reactions;
 pub mod inverse_dynamics;
 pub mod forward_dynamics;
 pub mod inverse_kinematics;

@@ -8,7 +8,7 @@ use crate::gui::sweep::SweepData;
 
 use super::{
     detect_plot_click, draw_angle_series_with_range, draw_range_boundary_markers,
-    draw_toggle_markers, series_colors, x_axis_label_for_sweep,
+    draw_toggle_markers, series_colors, with_default_x_bounds, x_axis_label_for_sweep,
 };
 
 pub(super) fn draw_body_angles(
@@ -30,6 +30,7 @@ pub(super) fn draw_body_angles(
         .y_axis_label(format!("Body Angle ({})", angle_label))
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
+    let plot = with_default_x_bounds(plot, sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -107,6 +108,7 @@ pub(super) fn draw_transmission_angle(
         .y_axis_label("Transmission Angle (deg)")
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
+    let plot = with_default_x_bounds(plot, sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -203,6 +205,7 @@ pub(super) fn draw_mechanical_advantage(
         .y_axis_label("Mechanical Advantage")
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
+    let plot = with_default_x_bounds(plot, sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -276,6 +279,7 @@ pub(super) fn draw_joint_reactions(
         .y_axis_label("Reaction Force (N)")
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
+    let plot = with_default_x_bounds(plot, sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {

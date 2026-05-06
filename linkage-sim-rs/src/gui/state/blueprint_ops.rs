@@ -15,9 +15,8 @@ use crate::io::{
     DriverJson, JointJson, MechanismJson,
 };
 use crate::solver::kinematics::solve_velocity;
-use crate::solver::statics::{
-    extract_reactions, get_driver_reactions, get_joint_reactions, solve_statics,
-};
+use crate::solver::reactions::solve_reactions_with_actuator;
+use crate::solver::statics::get_joint_reactions;
 
 use nalgebra::DVector;
 
@@ -552,7 +551,13 @@ impl AppState {
             return;
         }
 
-        let statics_result = match solve_statics(mech, &self.q, t) {
+        // Force-element-aware reaction solve: matches the sweep's
+        // joint-reaction pipeline so the canvas force arrows and property-
+        // panel readouts agree with the joint-reactions plot when a
+        // LinearActuator is sized via power balance. See
+        // `solver/reactions.rs` for the two-pass details.
+        let omega_for_helper = self.driver_omega();
+        let solve_result = match solve_reactions_with_actuator(mech, &self.q, t, omega_for_helper) {
             Ok(r) => r,
             Err(_) => {
                 self.force_results = ForceResults::default();
@@ -560,16 +565,13 @@ impl AppState {
             }
         };
 
-        let reactions = extract_reactions(mech, &statics_result);
+        let driver_torque = solve_result.driver_torque;
 
-        // Extract driver torque.
-        let driver_torque = get_driver_reactions(&reactions)
-            .first()
-            .map(|r| r.effort);
-
-        // Extract per-joint reaction forces.
+        // Extract per-joint reaction forces from the (potentially pass-2)
+        // reactions. force_global is the world-frame (Fx, Fy) reaction
+        // vector that the canvas arrow renderer consumes directly.
         let mut joint_reactions = HashMap::new();
-        for jr in get_joint_reactions(&reactions) {
+        for jr in get_joint_reactions(&solve_result.reactions) {
             joint_reactions.insert(
                 jr.joint_id.clone(),
                 (jr.force_global[0], jr.force_global[1]),
@@ -622,8 +624,8 @@ impl AppState {
         self.force_results = ForceResults {
             driver_torque,
             joint_reactions,
-            condition_number: Some(statics_result.condition_number),
-            is_overconstrained: statics_result.is_overconstrained,
+            condition_number: Some(solve_result.condition_number),
+            is_overconstrained: solve_result.is_overconstrained,
             mechanical_advantage: ma,
             force_contributions: contribs,
             virtual_work_check: vw_check,

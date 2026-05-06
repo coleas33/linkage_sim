@@ -19,7 +19,7 @@ use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
 use crate::error::LinkageError;
 use crate::forces::elements::{
-    evaluate_linear_actuator, force_zone_overlap_ratio, ForceElement, LinearActuatorElement,
+    force_zone_overlap_ratio, ForceElement, LinearActuatorElement,
 };
 use crate::solver::assembly::{assemble_gamma, assemble_jacobian, assemble_phi_t};
 use crate::solver::inverse_dynamics::solve_inverse_dynamics;
@@ -28,9 +28,10 @@ use crate::solver::inverse_kinematics::{
     InverseSolveResult, Severity,
 };
 use crate::solver::kinematics::{solve_acceleration, solve_position, solve_velocity};
-use crate::solver::statics::{
-    extract_reactions, get_driver_reactions, solve_statics, JointReaction, StaticSolveResult,
+use crate::solver::reactions::{
+    solve_reactions_with_actuator, solve_reactions_with_actuator_using_q_dot,
 };
+use crate::solver::statics::JointReaction;
 
 use super::state::Trajectory;
 #[cfg(test)]
@@ -490,24 +491,27 @@ pub(crate) fn compute_sweep_data(
                     data.transmission_angles.as_mut().unwrap().push(ta.angle_deg);
                 }
 
-                // Driver torque and joint reactions from statics solve.
-                // Reactions are deferred: if a LinearActuator is present, we
-                // re-solve statics with the computed actuator force so that
-                // joint reactions reflect the actuator as the prime mover.
-                let mut pending_reactions: Option<Vec<JointReaction>> = None;
-                let mut statics_q_forces: Option<DVector<f64>> = None;
-                if let Ok(statics) = solve_statics(mech, &q, t) {
-                    let reactions = extract_reactions(mech, &statics);
-                    let torque = get_driver_reactions(&reactions)
-                        .first()
-                        .map(|r| r.effort)
-                        .unwrap_or(0.0);
-                    data.driver_torques.as_mut().unwrap().push(torque);
-                    statics_q_forces = Some(statics.q_forces);
-                    pending_reactions = Some(reactions);
-                } else {
-                    data.driver_torques.as_mut().unwrap().push(0.0);
-                }
+                // Driver torque + joint reactions, force-element aware.
+                // `solve_reactions_with_actuator` does the two-pass solve:
+                // when a LinearActuator is in sizing mode (la.force ≈ 0)
+                // it back-calculates the required force and re-solves so
+                // reactions reflect the actuator as the prime mover. The
+                // GUI's per-pose display calls the same helper, which is
+                // why the canvas / property panel and the plot agree.
+                let pending_reactions: Option<Vec<JointReaction>> =
+                    match solve_reactions_with_actuator(mech, &q, t, omega) {
+                        Ok(r) => {
+                            data.driver_torques
+                                .as_mut()
+                                .unwrap()
+                                .push(r.driver_torque.unwrap_or(0.0));
+                            Some(r.reactions)
+                        }
+                        Err(_) => {
+                            data.driver_torques.as_mut().unwrap().push(0.0);
+                            None
+                        }
+                    };
 
                 // Velocity solve for energy and mechanical advantage.
                 if let Ok(q_dot) = solve_velocity(mech, &q, t) {
@@ -642,41 +646,8 @@ pub(crate) fn compute_sweep_data(
                     }
                 }
 
-                // ── Two-pass reaction solve ─────────────────────────────
-                // If a LinearActuator is present and we computed its required
-                // force, re-solve statics with that force applied.  This makes
-                // joint reactions reflect the actuator as the prime mover
-                // (driver torque drops to ~0, load flows through actuator).
-                if let (Some(q_forces), Some(act_elem)) =
-                    (&statics_q_forces, &actuator_element)
-                {
-                    let act_force = data.actuator_forces.as_ref()
-                        .and_then(|v| v.last().copied())
-                        .unwrap_or(f64::NAN);
-                    if act_force.is_finite() && act_force.abs() > 1e-12 {
-                        let mut act_mod = act_elem.clone();
-                        act_mod.force = act_force;
-                        let q_dot_zero = DVector::zeros(mech.state().n_coords());
-                        let q_actuator = evaluate_linear_actuator(
-                            &act_mod, mech.state(), &q, &q_dot_zero,
-                        );
-                        let q_new = q_forces + &q_actuator;
-                        let phi_q = assemble_jacobian(mech, &q, t);
-                        let rhs = -&q_new;
-                        if let Ok(lambdas) = phi_q.transpose().svd(true, true).solve(&rhs, 1e-14) {
-                            let result2 = StaticSolveResult {
-                                lambdas,
-                                q_forces: q_new,
-                                residual_norm: 0.0,
-                                is_overconstrained: false,
-                                condition_number: 0.0,
-                            };
-                            pending_reactions = Some(extract_reactions(mech, &result2));
-                        }
-                    }
-                }
-
-                // Push the final reactions (pass-2 if available, else pass-1).
+                // Push the final reactions from the helper (which handles
+                // the optional pass-2 internally).
                 if let Some(reactions) = &pending_reactions {
                     for jr in reactions {
                         if jr.n_equations > 1 {
@@ -1045,20 +1016,25 @@ pub fn compute_trajectory(
             .collect();
         data.pose_snapshots.as_mut().unwrap().push(pose_row);
 
-        // Statics → driver torque + joint reactions.
+        // Driver torque + joint reactions, force-element aware. The
+        // trajectory has q_dot_k already (from the trajectory solve at
+        // this sample) and uses u_dot_k as the input rate, so we use the
+        // q_dot variant of the helper. solve_velocity's constant-speed
+        // Φ_t would give the wrong scaling here.
         let mut pending_reactions: Option<Vec<JointReaction>> = None;
         let mut driver_effort_now = f64::NAN;
-        if let Ok(statics) = solve_statics(mech, &q_k, t_mech_k) {
-            let reactions = extract_reactions(mech, &statics);
-            let torque = get_driver_reactions(&reactions)
-                .first()
-                .map(|r| r.effort)
-                .unwrap_or(0.0);
-            data.driver_torques.as_mut().unwrap().push(torque);
-            driver_effort_now = torque;
-            pending_reactions = Some(reactions);
-        } else {
-            data.driver_torques.as_mut().unwrap().push(f64::NAN);
+        match solve_reactions_with_actuator_using_q_dot(
+            mech, &q_k, &q_dot_k, t_mech_k, u_dot_k,
+        ) {
+            Ok(r) => {
+                let torque = r.driver_torque.unwrap_or(0.0);
+                data.driver_torques.as_mut().unwrap().push(torque);
+                driver_effort_now = torque;
+                pending_reactions = Some(r.reactions);
+            }
+            Err(_) => {
+                data.driver_torques.as_mut().unwrap().push(f64::NAN);
+            }
         }
 
         // Actuator force per sample. Two paths:

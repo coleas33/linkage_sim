@@ -9,7 +9,7 @@ use crate::gui::sweep::SweepData;
 use super::{
     detect_plot_click, draw_angle_series_with_range, draw_range_boundary_markers,
     draw_toggle_markers, driver_effort_series_name, driver_effort_y_label, faded_color,
-    series_colors, x_axis_label_for_sweep,
+    series_colors, with_default_x_bounds, x_axis_label_for_sweep,
 };
 
 pub(super) fn draw_driver_torque(
@@ -31,6 +31,7 @@ pub(super) fn draw_driver_torque(
         .y_axis_label(driver_effort_y_label(sweep))
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
+    let plot = with_default_x_bounds(plot, sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -91,6 +92,7 @@ pub(super) fn draw_inverse_dynamics(
         .y_axis_label(driver_effort_y_label(sweep))
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
+    let plot = with_default_x_bounds(plot, sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -200,6 +202,7 @@ pub(super) fn draw_energy(
         .y_axis_label("Energy (J)")
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
+    let plot = with_default_x_bounds(plot, sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {

@@ -385,6 +385,66 @@ fn x_axis_label_for_sweep(sweep: &SweepData, units: &DisplayUnits) -> String {
     }
 }
 
+/// Compute the display-space x-axis bounds (min, max) for an angle/stroke
+/// sweep, or `None` if the sweep has no usable data.
+///
+/// In angle mode the bounds are converted from body-frame radians to the
+/// configured display angle unit. In stroke mode they're converted from
+/// metres to millimetres. This matches the per-plot conversion that
+/// `draw_angle_series_with_range` already applies to data points.
+fn compute_default_x_bounds(sweep: &SweepData, units: &DisplayUnits) -> Option<(f64, f64)> {
+    if sweep.angles_deg.is_empty() {
+        return None;
+    }
+    let raw_min = sweep
+        .angles_deg
+        .iter()
+        .copied()
+        .filter(|x| x.is_finite())
+        .fold(f64::INFINITY, f64::min);
+    let raw_max = sweep
+        .angles_deg
+        .iter()
+        .copied()
+        .filter(|x| x.is_finite())
+        .fold(f64::NEG_INFINITY, f64::max);
+    if !raw_min.is_finite() || !raw_max.is_finite() {
+        return None;
+    }
+    if raw_max - raw_min < 1e-9 {
+        return None;
+    }
+    if sweep.sweep_mode.is_stroke() {
+        Some((raw_min * 1000.0, raw_max * 1000.0))
+    } else {
+        Some((
+            units.angle(raw_min.to_radians()),
+            units.angle(raw_max.to_radians()),
+        ))
+    }
+}
+
+/// Wrap a `Plot` with a fixed default x-axis bound matching the sweep's
+/// data range. Without this, egui_plot's auto-fit pulls the bounds to
+/// include the cursor `VLine` drawn at the current driver position; in
+/// trajectory mode that lets the cursor expand the visible x-range below
+/// the trajectory's start angle, exposing empty space where no data exists.
+///
+/// The user can still pan/zoom — only the default/reset framing is fixed.
+/// When the sweep has no usable data, the plot is returned unchanged and
+/// auto-fit handles the empty case.
+fn with_default_x_bounds<'a>(
+    plot: Plot<'a>,
+    sweep: &SweepData,
+    units: &DisplayUnits,
+) -> Plot<'a> {
+    if let Some((lo, hi)) = compute_default_x_bounds(sweep, units) {
+        plot.default_x_bounds(lo, hi)
+    } else {
+        plot
+    }
+}
+
 /// Return the y-axis label for the driver effort plot.
 ///
 /// In angle mode (revolute driver) this is `"Driver Torque (N*m)"`.
@@ -600,5 +660,106 @@ fn series_colors(nathan_mode: bool) -> Vec<egui::Color32> {
         raw.into_iter().map(to_grayscale).collect()
     } else {
         raw
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gui::state::{AngleUnit, DisplayUnits, LengthUnit};
+    use crate::gui::sweep::{empty_trajectory_sweep_data, SweepMode};
+
+    fn deg_units() -> DisplayUnits {
+        DisplayUnits {
+            length: LengthUnit::Millimeters,
+            angle: AngleUnit::Degrees,
+        }
+    }
+
+    #[test]
+    fn empty_sweep_returns_no_bounds() {
+        // No data → helper signals "leave it on auto-fit" via None.
+        let mut sweep = empty_trajectory_sweep_data(SweepMode::Angle);
+        sweep.angles_deg.clear();
+        let bounds = compute_default_x_bounds(&sweep, &deg_units());
+        assert!(bounds.is_none());
+    }
+
+    #[test]
+    fn angle_mode_bounds_match_data_range_in_display_units() {
+        // Sweep covering 66.5°–180° (body-frame degrees, per the convention
+        // documented on `SweepData.angles_deg` for angle mode): helper
+        // should report bounds in display-frame degrees that match the
+        // data range exactly. This is the regression for the user's
+        // "lines disappear before 66.5°" report — locking these bounds
+        // hides the empty pre-66.5 region instead of letting auto-fit
+        // expose it via the cursor.
+        let mut sweep = empty_trajectory_sweep_data(SweepMode::Angle);
+        // angles_deg carries DEGREES in angle mode (despite the field
+        // name conflating angle/stroke semantics); helper converts to
+        // display unit via .to_radians() → units.angle(rad).
+        sweep.angles_deg = vec![66.5, 120.0, 180.0];
+
+        let (lo, hi) = compute_default_x_bounds(&sweep, &deg_units())
+            .expect("nontrivial range yields bounds");
+        assert!((lo - 66.5).abs() < 1e-6, "lo = {}", lo);
+        assert!((hi - 180.0).abs() < 1e-6, "hi = {}", hi);
+    }
+
+    #[test]
+    fn stroke_mode_converts_metres_to_millimetres() {
+        // Stroke-mode angles_deg carries metres; bounds come back in mm.
+        let mode = SweepMode::Stroke;
+        let mut sweep = empty_trajectory_sweep_data(mode);
+        sweep.angles_deg = vec![0.05, 0.10, 0.15]; // 50–150 mm
+
+        let (lo, hi) = compute_default_x_bounds(&sweep, &deg_units())
+            .expect("stroke range yields bounds");
+        assert!((lo - 50.0).abs() < 1e-9);
+        assert!((hi - 150.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn degenerate_range_returns_no_bounds() {
+        // All-equal x values would panic egui_plot's debug assert
+        // (min < max). Helper returns None instead, falling back to auto-fit.
+        let mut sweep = empty_trajectory_sweep_data(SweepMode::Angle);
+        sweep.angles_deg = vec![45.0; 5];
+        assert!(compute_default_x_bounds(&sweep, &deg_units()).is_none());
+    }
+
+    #[test]
+    fn nan_only_data_returns_no_bounds() {
+        // A sweep where every angle is NaN (e.g. catastrophic solver
+        // failure) shouldn't pin bounds at NaN. Returns None.
+        let mut sweep = empty_trajectory_sweep_data(SweepMode::Angle);
+        sweep.angles_deg = vec![f64::NAN; 4];
+        assert!(compute_default_x_bounds(&sweep, &deg_units()).is_none());
+    }
+
+    #[test]
+    fn radians_mode_converts_degrees_to_radians_for_display() {
+        // Same data, AngleUnit::Radians: bounds come back in radians.
+        let mut sweep = empty_trajectory_sweep_data(SweepMode::Angle);
+        sweep.angles_deg = vec![0.0, 90.0, 180.0]; // body-frame degrees
+        let units = DisplayUnits {
+            length: LengthUnit::Millimeters,
+            angle: AngleUnit::Radians,
+        };
+        let (lo, hi) = compute_default_x_bounds(&sweep, &units)
+            .expect("nontrivial range yields bounds");
+        assert!((lo - 0.0).abs() < 1e-9);
+        assert!((hi - std::f64::consts::PI).abs() < 1e-9);
+    }
+
+    #[test]
+    fn nan_padding_is_skipped() {
+        // Mixed finite + NaN: bounds reflect the finite extent only.
+        let mut sweep = empty_trajectory_sweep_data(SweepMode::Angle);
+        sweep.angles_deg = vec![f64::NAN, 66.5, f64::NAN, 180.0, f64::NAN];
+        let (lo, hi) = compute_default_x_bounds(&sweep, &deg_units())
+            .expect("finite samples yield bounds");
+        assert!((lo - 66.5).abs() < 1e-6);
+        assert!((hi - 180.0).abs() < 1e-6);
     }
 }

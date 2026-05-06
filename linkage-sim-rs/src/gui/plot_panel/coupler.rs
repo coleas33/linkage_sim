@@ -8,7 +8,7 @@ use crate::gui::sweep::SweepData;
 
 use super::{
     detect_plot_click, draw_angle_series_with_range, draw_range_boundary_markers,
-    draw_toggle_markers, series_colors, x_axis_label_for_sweep,
+    draw_toggle_markers, series_colors, with_default_x_bounds, x_axis_label_for_sweep,
 };
 
 pub(super) fn draw_coupler_trace(ui: &mut egui::Ui, sweep: &SweepData, units: &DisplayUnits, nathan_mode: bool) {
@@ -106,6 +106,7 @@ pub(super) fn draw_coupler_velocity(
         .y_axis_label("Velocity (m/s)")
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
+    let plot = with_default_x_bounds(plot, sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -179,6 +180,7 @@ pub(super) fn draw_coupler_acceleration(
         .y_axis_label("Acceleration (m/s\u{00b2})")
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
+    let plot = with_default_x_bounds(plot, sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
@@ -251,6 +253,7 @@ pub(super) fn draw_output_force(
         .y_axis_label("Output Force (N)")
         .legend(egui_plot::Legend::default().position(egui_plot::Corner::LeftTop))
         .height(ui.available_height().max(50.0));
+    let plot = with_default_x_bounds(plot, sweep, units);
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
