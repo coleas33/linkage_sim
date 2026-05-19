@@ -5,6 +5,48 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-05-18 — focus shift + validation-design spec
+
+**What:**
+- Updated `docs/ai/01-meta.yaml` `active_focus` to reaction-force
+  validation for 4-bars with a LinearActuator (was: Custom 6-Bar press
+  workflow). The 6-bar workflow is no longer the user's stated focus.
+- New `docs/superpowers/specs/2026-05-18-reaction-force-validation-design.md`
+  documenting three approaches — closed-form FBD (A), internal cross-
+  checks (B), external tool comparison (C) — plus a Hybrid path
+  (A+B). Recommendation: A first, then B.
+- New entry in `docs/ai/04-memory.yaml` `open_questions` tracking the
+  reference-choice decision that blocks the implementation plan.
+
+**Why:**
+- The J3-mismatch bug (commit `492fbb7`) shipped because existing
+  reaction tests only assert solver self-consistency, not absolute
+  correctness. Validation work is the natural next focus to lock in
+  trust before further hardware-deployment work.
+
+---
+
+## 2026-05-12 — repo hygiene: gitignore browser-automation scratch
+
+**What:**
+- Added `.playwright-mcp/`, `.superpowers/`, and `/linkage-*.png` to the
+  repo-root `.gitignore`. These artifacts are produced by Playwright MCP
+  sessions and ad-hoc Claude Code work poking at the deployed web app;
+  they should never have been tracked but had been showing as `??`
+  untracked entries across sessions.
+
+**Why:**
+- Lowers the noise floor on `git status` so real working-tree changes
+  stand out. No behavioural impact.
+
+**Known noise still in the tree (not addressed here):** the
+`docs/chebyshev_lambda/*.png` files drift by 1–2 bytes when the raster
+GIF tests run — committed PNG metadata is non-deterministic across
+runs. Worth investigating which test is regenerating them and either
+making it deterministic or routing it to a scratch path.
+
+---
+
 ## 2026-05-01 — docs + UX: trajectory mode walkthrough
 
 **What:**

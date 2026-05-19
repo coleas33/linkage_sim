@@ -6,6 +6,13 @@ active_issues: []
 
 open_questions:
   - |
+    Reaction-force validation reference choice: which of options A
+    (closed-form FBD), B (internal cross-checks), C (external tool),
+    or Hybrid (A+B) does the user want? Blocks the implementation
+    plan for the current active_focus. See
+    `docs/superpowers/specs/2026-05-18-reaction-force-validation-design.md`
+    for the trade-offs. Recommendation in the spec: A first, then B.
+  - |
     Trajectory v3 firmware adapters: JSON is the v1 default (resolved
     2026-04-29 — `gui/export/firmware/json.rs`, see 05-update-tracker). The
     hardware-specific follow-ups (G-code, Aerotech AeroBasic, Beckhoff

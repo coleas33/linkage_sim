@@ -13,7 +13,7 @@ merge_strategy: direct pushes to main; Vercel auto-deploys WASM on every push
 commit_style: conventional (feat:, fix:, docs:, refactor:) with Co-Authored-By footer
 
 active_mode: build-and-ship
-active_focus: Custom 6-Bar press workflow (DXF -> links -> actuator -> analysis)
+active_focus: Validate joint reaction forces for 4-bar mechanisms with a LinearActuator force element — confirm the pass-2 sizing-mode solve (solver/reactions.rs) matches independent physics across the cycle.
 
 coordination:
   before_work: read all docs/ai/*.yaml
