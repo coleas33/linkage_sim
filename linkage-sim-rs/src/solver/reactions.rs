@@ -401,6 +401,285 @@ mod tests {
         );
     }
 
+    /// FBD-validated reactions test for 4-bar + LinearActuator in sizing mode
+    /// at pose θ_2 = π/3. Builds the 9×9 Cartesian equilibrium system by hand
+    /// (force balance + moment balance per body), solves it via nalgebra,
+    /// and asserts the simulator's pass-2 output matches.
+    ///
+    /// Why this catches more than the existing self-consistency tests: the
+    /// matrix below is constructed from physical equilibrium equations
+    /// (ΣF = 0, ΣM_CG = 0) written directly in Cartesian coordinates —
+    /// not from the constraint Jacobian Φ_q the solver uses internally.
+    /// A sign-flipped Jacobian row, a wrong mass-to-Q mapping, a
+    /// pass-2 double-count, or a swap of actuator endpoints would produce
+    /// reactions that satisfy `Φ_qᵀλ = -Q` (the solver's internal check)
+    /// while violating the per-body equilibrium written here.
+    ///
+    /// ───── Geometry derivation ────────────────────────────────────────
+    ///
+    /// Config: a=1, b=3, c=2, d=4 (Grashof crank-rocker), gravity on,
+    /// LinearActuator from coupler-midpoint to ground-midpoint, force=0.
+    ///
+    /// At θ_2 = π/3:
+    ///   A = (0, 0)   (J1 location, crank-ground pivot)
+    ///   B = (cos π/3, sin π/3) = (1/2, √3/2)   (J2 location)
+    ///   D = (4, 0)   (J4 location, rocker-ground pivot)
+    ///
+    /// Loop closure (3 cos θ_c − 2 cos θ_r = 7/2, 3 sin θ_c − 2 sin θ_r = −√3/2):
+    ///   Squaring & adding gives cos(θ_c − θ_r) = 0, so θ_c = θ_r − π/2
+    ///   (open branch — matches the seed pose).
+    ///   Substituting gives the 2×2 linear system
+    ///     [−2  3][cos θ_r]   [7/2  ]
+    ///     [ 3  2][sin θ_r] = [√3/2]
+    ///   det = −13, so
+    ///     cos θ_r = (3√3 − 14) / 26
+    ///     sin θ_r = (21 + 2√3) / 26
+    ///   And:
+    ///     C_x = 4 + 2 cos θ_r = (38 + 3√3) / 13 ≈ 3.3228
+    ///     C_y = 2 sin θ_r     = (21 + 2√3) / 13 ≈ 1.8819
+    ///
+    /// CGs (uniform-bar bodies, CG at midpoint):
+    ///   CG_crank   = A/2 + B/2        = (1/4, √3/4)
+    ///   CG_coupler = (B + C) / 2      ≈ (1.9114, 1.3739)
+    ///   CG_rocker  = (C + D) / 2      ≈ (3.6614, 0.9410)
+    ///
+    /// Actuator endpoints in world frame:
+    ///   point_a (coupler-local (1.5, 0)) = coupler midpoint = CG_coupler
+    ///   point_b (ground-local (2, 0))    = (2, 0)
+    ///   Δ = p_b − p_a ≈ (0.0886, −1.3739),   |Δ| ≈ 1.3767
+    ///   unit u = Δ / |Δ| ≈ (0.0644, −0.9979)
+    /// Important consequence: p_a = CG_coupler, so the actuator force at
+    /// p_a contributes ZERO moment about the coupler CG. This drops a
+    /// term from the coupler moment equation.
+    ///
+    /// ───── Sign convention for force_global ───────────────────────────
+    ///
+    /// `extract_reactions` reports the Lagrange multipliers as
+    /// `force_global = (λ_x, λ_y)`. For a revolute constraint
+    /// Φ = r_i − r_j = 0, the static equilibrium is Φ_qᵀλ = −Q, so the
+    /// constraint imposes +λ on body_i and −λ on body_j. We adopt:
+    ///   R_Jk ≡ force_global at joint Jk = force on body_i of that joint.
+    ///   Force on body_j of that joint = −R_Jk (Newton's 3rd law).
+    ///
+    /// Joints, with body_i listed first per `add_revolute_joint(...)`:
+    ///   J1: body_i = ground,   body_j = crank   →  on crank:    −R_J1
+    ///   J2: body_i = crank,    body_j = coupler →  on crank:    +R_J2; on coupler: −R_J2
+    ///   J3: body_i = coupler,  body_j = rocker  →  on coupler: +R_J3; on rocker:  −R_J3
+    ///   J4: body_i = ground,   body_j = rocker  →  on rocker:  −R_J4
+    ///
+    /// ───── Equilibrium equations ──────────────────────────────────────
+    ///
+    /// Crank: gravity (0, −m_c·g) at CG_crank.
+    ///   ΣFx: −R_J1x + R_J2x = 0
+    ///   ΣFy: −R_J1y + R_J2y − m_c·g = 0  →  R_J2y − R_J1y = m_c·g
+    ///   ΣM_CG: moment of (−R_J1) at A=(0,0) plus moment of (+R_J2) at B.
+    ///     r_A−CG = (−1/4, −√3/4), F = −R_J1: m = (−1/4)(−R_J1y) − (−√3/4)(−R_J1x)
+    ///                                          = (1/4) R_J1y − (√3/4) R_J1x
+    ///     r_B−CG = (1/4, √3/4),   F =  R_J2: m = (1/4) R_J2y − (√3/4) R_J2x
+    ///   Multiplying by 4:
+    ///     (R_J1y + R_J2y) − √3 (R_J1x + R_J2x) = 0
+    ///
+    /// Coupler: gravity (0, −m_b·g) at CG_coupler. Actuator: per
+    /// `evaluate_linear_actuator`, the force on body_a (the coupler here)
+    /// is `−F_act·u` (with `u = (p_b − p_a)/|·|` pointing from a to b),
+    /// so positive F_act = extension = pushing the bodies apart. This is
+    /// the same sign convention `actuator_force` carries through the rest
+    /// of the codebase.
+    ///   ΣFx: −R_J2x + R_J3x − u_x F_act = 0
+    ///   ΣFy: −R_J2y + R_J3y − u_y F_act − m_b·g = 0
+    ///   ΣM_CG: moments of (−R_J2) at B and (+R_J3) at C.
+    ///     r_B−CGc = (Bx − CGcx, By − CGcy), F = −R_J2:
+    ///       m = (Bx − CGcx)(−R_J2y) − (By − CGcy)(−R_J2x)
+    ///         = −(Bx − CGcx) R_J2y + (By − CGcy) R_J2x
+    ///     r_C−CGc = (Cx − CGcx, Cy − CGcy), F = +R_J3:
+    ///       m = (Cx − CGcx) R_J3y − (Cy − CGcy) R_J3x
+    ///
+    /// Rocker: gravity (0, −m_r·g) at CG_rocker.
+    ///   ΣFx: −R_J3x − R_J4x = 0
+    ///   ΣFy: −R_J3y − R_J4y − m_r·g = 0  →  R_J3y + R_J4y = −m_r·g
+    ///   ΣM_CG: moments of (−R_J3) at C and (−R_J4) at D.
+    ///     m_J3 = −(Cx − CGrx) R_J3y + (Cy − CGry) R_J3x
+    ///     m_J4 = −(Dx − CGrx) R_J4y + (Dy − CGry) R_J4x
+    ///
+    /// ───── 9×9 linear system ──────────────────────────────────────────
+    ///
+    /// Unknowns x = [R_J1x, R_J1y, R_J2x, R_J2y, R_J3x, R_J3y, R_J4x, R_J4y, F_act]ᵀ
+    ///
+    /// The code below builds A and b from these equations and solves Ax = b.
+    /// The solution is the independent FBD ground truth.
+    #[test]
+    fn fbd_validates_pass2_reactions_at_60deg() {
+        use nalgebra::DMatrix;
+        let mech = build_fourbar_with_actuator(0.0);
+        let q = seed_pose_at_60deg(&mech);
+
+        const G: f64 = 9.81;
+        let m_crank = 2.0_f64;
+        let m_coupler = 3.0_f64;
+        let m_rocker = 2.0_f64;
+        let sqrt3 = 3f64.sqrt();
+
+        // Joint positions in world frame at θ_2 = π/3 (derived above).
+        let bx = 0.5_f64;
+        let by = sqrt3 / 2.0;
+        let cx = (38.0 + 3.0 * sqrt3) / 13.0;
+        let cy = (21.0 + 2.0 * sqrt3) / 13.0;
+        let dx = 4.0_f64;
+        let dy = 0.0_f64;
+
+        // CGs (midpoints of each uniform bar).
+        let cgcx = (bx + cx) * 0.5;
+        let cgcy = (by + cy) * 0.5;
+        let cgrx = (cx + dx) * 0.5;
+        let cgry = (cy + dy) * 0.5;
+
+        // Actuator: p_a = coupler local (1.5, 0) = coupler midpoint = CG_coupler.
+        // p_b = ground local (2, 0) = (2, 0) world.
+        let p_ax = cgcx;
+        let p_ay = cgcy;
+        let p_bx = 2.0_f64;
+        let p_by = 0.0_f64;
+        let dx_act = p_bx - p_ax;
+        let dy_act = p_by - p_ay;
+        let len_act = (dx_act * dx_act + dy_act * dy_act).sqrt();
+        let ux = dx_act / len_act;
+        let uy = dy_act / len_act;
+
+        // Build the 9×9 system Ax = b.
+        let mut a = DMatrix::<f64>::zeros(9, 9);
+        let mut b = nalgebra::DVector::<f64>::zeros(9);
+
+        // Column index legend:
+        //   0: R_J1x  1: R_J1y  2: R_J2x  3: R_J2y
+        //   4: R_J3x  5: R_J3y  6: R_J4x  7: R_J4y
+        //   8: F_act
+
+        // Row 0 — Crank ΣFx: -R_J1x + R_J2x = 0
+        a[(0, 0)] = -1.0;
+        a[(0, 2)] = 1.0;
+
+        // Row 1 — Crank ΣFy: -R_J1y + R_J2y = m_crank * g
+        a[(1, 1)] = -1.0;
+        a[(1, 3)] = 1.0;
+        b[1] = m_crank * G;
+
+        // Row 2 — Crank ΣM_CG: (R_J1y + R_J2y) − √3·(R_J1x + R_J2x) = 0
+        a[(2, 0)] = -sqrt3;
+        a[(2, 1)] = 1.0;
+        a[(2, 2)] = -sqrt3;
+        a[(2, 3)] = 1.0;
+
+        // Row 3 — Coupler ΣFx: -R_J2x + R_J3x − u_x F_act = 0
+        // (force on body_a is `−F_act·u` per evaluate_linear_actuator)
+        a[(3, 2)] = -1.0;
+        a[(3, 4)] = 1.0;
+        a[(3, 8)] = -ux;
+
+        // Row 4 — Coupler ΣFy: -R_J2y + R_J3y − u_y F_act = m_coupler * g
+        a[(4, 3)] = -1.0;
+        a[(4, 5)] = 1.0;
+        a[(4, 8)] = -uy;
+        b[4] = m_coupler * G;
+
+        // Row 5 — Coupler ΣM_CG:
+        //   -(Bx − CGcx) R_J2y + (By − CGcy) R_J2x + (Cx − CGcx) R_J3y - (Cy − CGcy) R_J3x = 0
+        let b_dx = bx - cgcx;
+        let b_dy = by - cgcy;
+        let c_dx = cx - cgcx;
+        let c_dy = cy - cgcy;
+        a[(5, 2)] = b_dy; // R_J2x coeff
+        a[(5, 3)] = -b_dx; // R_J2y coeff
+        a[(5, 4)] = -c_dy; // R_J3x coeff
+        a[(5, 5)] = c_dx; // R_J3y coeff
+
+        // Row 6 — Rocker ΣFx: -R_J3x - R_J4x = 0
+        a[(6, 4)] = -1.0;
+        a[(6, 6)] = -1.0;
+
+        // Row 7 — Rocker ΣFy: -R_J3y - R_J4y = m_rocker * g
+        a[(7, 5)] = -1.0;
+        a[(7, 7)] = -1.0;
+        b[7] = m_rocker * G;
+
+        // Row 8 — Rocker ΣM_CG:
+        //   -(Cx − CGrx) R_J3y + (Cy − CGry) R_J3x - (Dx − CGrx) R_J4y + (Dy − CGry) R_J4x = 0
+        let cr_dx = cx - cgrx;
+        let cr_dy = cy - cgry;
+        let dr_dx = dx - cgrx;
+        let dr_dy = dy - cgry;
+        a[(8, 4)] = cr_dy; // R_J3x coeff
+        a[(8, 5)] = -cr_dx; // R_J3y coeff
+        a[(8, 6)] = dr_dy; // R_J4x coeff
+        a[(8, 7)] = -dr_dx; // R_J4y coeff
+
+        let lu = a.full_piv_lu();
+        let x = lu
+            .solve(&b)
+            .expect("FBD linear system should be non-singular at this pose");
+
+        let exp_r_j1 = (x[0], x[1]);
+        let exp_r_j2 = (x[2], x[3]);
+        let exp_r_j3 = (x[4], x[5]);
+        let exp_r_j4 = (x[6], x[7]);
+        let exp_f_act = x[8];
+
+        // Now run the simulator and compare.
+        let result = solve_reactions_with_actuator(&mech, &q, PI / 3.0, 1.0)
+            .expect("statics should converge in sizing mode");
+        assert!(result.used_two_pass, "sizing-mode actuator → pass-2");
+
+        // Pass-2's driver torque should be ~0 by construction; if it's
+        // not, the back-substituted F_act is wrong and the comparison
+        // below will fail anyway, but flagging it gives a clearer
+        // diagnostic.
+        let drv_lambda = result
+            .reactions
+            .iter()
+            .find(|r| r.n_equations == 1)
+            .map(|r| r.effort)
+            .expect("driver lambda present");
+        assert!(
+            drv_lambda.abs() < 1e-6,
+            "pass-2 driver torque should be ~0 (actuator drives the load); got {}",
+            drv_lambda,
+        );
+
+        let sim_f_act = result.actuator_force.expect("pass-2 produces F_act");
+        let get = |id: &str| -> (f64, f64) {
+            let r = result
+                .reactions
+                .iter()
+                .find(|r| r.joint_id == id)
+                .unwrap_or_else(|| panic!("joint {} missing in reactions", id));
+            (r.force_global[0], r.force_global[1])
+        };
+        let sim_r_j1 = get("J1");
+        let sim_r_j2 = get("J2");
+        let sim_r_j3 = get("J3");
+        let sim_r_j4 = get("J4");
+
+        // Tolerance: 1e-4 N is well below any physically meaningful load
+        // (gravity totals ~70 N on this mechanism). Statics solver has
+        // a 1e-14 residual tolerance and the FBD here is exact to f64.
+        let tol = 1e-4;
+        let diff = |label: &str, sim: (f64, f64), exp: (f64, f64)| {
+            assert!(
+                (sim.0 - exp.0).abs() < tol && (sim.1 - exp.1).abs() < tol,
+                "{} mismatch: sim = ({}, {}), FBD = ({}, {})",
+                label, sim.0, sim.1, exp.0, exp.1,
+            );
+        };
+        diff("J1", sim_r_j1, exp_r_j1);
+        diff("J2", sim_r_j2, exp_r_j2);
+        diff("J3", sim_r_j3, exp_r_j3);
+        diff("J4", sim_r_j4, exp_r_j4);
+        assert!(
+            (sim_f_act - exp_f_act).abs() < tol,
+            "F_act mismatch: sim = {}, FBD = {}",
+            sim_f_act, exp_f_act,
+        );
+    }
+
     #[test]
     fn actuator_with_known_force_skips_pass_two() {
         // LinearActuator with stored force ≠ 0: helper must NOT run pass-2

@@ -5,6 +5,42 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-05-18 — FBD validation test for 4-bar + LinearActuator at θ_2=π/3
+
+**What:**
+- New regression test `solver::reactions::tests::fbd_validates_pass2_reactions_at_60deg`.
+  Builds the 9×9 Cartesian equilibrium system by hand (force balance +
+  moment balance per body) for the crank-rocker + sizing-mode
+  LinearActuator config, solves it with `nalgebra::full_piv_lu`, and
+  asserts the simulator's pass-2 reactions and back-solved F_act match
+  the independent FBD solution within 1e-4 N at pose θ_2 = π/3. Also
+  checks the pass-2 driver torque lambda is ~0 (the point of pass-2).
+- Caught and corrected a sign-convention bug in the FBD derivation
+  during the write-up: `evaluate_linear_actuator` applies
+  `force_on_a = −F_act·u` (with `u = (p_b − p_a)/|·|`), so positive
+  F_act = extension. My first cut had `+F_act·u` on body_a, which is
+  the compression convention. Same physical force; flipped sign on
+  F_act in the answer. Now matches.
+
+**Why this matters:**
+- The J3-mismatch bug (commit `492fbb7`) shipped because no test
+  asserted absolute correctness — only solver self-consistency
+  (residual small, lambdas finite). This is the first absolute-truth
+  anchor: the simulator's `Φ_qᵀ λ = −Q` matches an independently
+  written Cartesian equilibrium at a verified pose. Catches future
+  sign-flipped Jacobians, pass-2 double-counts, swapped actuator
+  endpoints, mass-to-Q mapping errors, etc.
+
+**Counts:** 699 → 700 lib tests passing.
+
+**Spec status:**
+`docs/superpowers/specs/2026-05-18-reaction-force-validation-design.md`
+option A is now partially in (1 of 4–6 poses). Extending to additional
+poses (top-dead-center, near-singular, etc.) is incremental; the
+infrastructure is in place.
+
+---
+
 ## 2026-05-18 — focus shift + validation-design spec
 
 **What:**
