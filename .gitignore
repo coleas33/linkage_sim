@@ -46,3 +46,11 @@ settings.local.json
 .cursorignore
 # Output — GIFs are committed for reference
 # output/
+
+# Browser-automation / screenshot scratch — produced by Playwright MCP
+# and ad-hoc Claude Code sessions when poking at the deployed web app.
+# Always at repo root, never under linkage-sim-rs/, so a top-level
+# pattern is sufficient.
+.playwright-mcp/
+.superpowers/
+/linkage-*.png
