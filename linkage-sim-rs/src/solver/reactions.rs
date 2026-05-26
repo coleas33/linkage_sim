@@ -333,11 +333,11 @@ mod tests {
         mech
     }
 
-    /// Seed pose for the test 4-bar at θ_2 = π/3 — the same pose used by
-    /// `solver::statics::tests` so we know it's a clean assembly.
-    fn seed_pose_at_60deg(mech: &Mechanism) -> DVector<f64> {
+    /// Seed pose for the test 4-bar at a given crank angle, with initial
+    /// guesses that match the open-branch assembly the FBD validations
+    /// assume. `solve_position` Newton-iterates from this seed.
+    fn seed_pose_at_angle(mech: &Mechanism, angle: f64) -> DVector<f64> {
         let state = mech.state();
-        let angle = PI / 3.0;
         let mut q0 = state.make_q();
         state.set_pose("crank", &mut q0, 0.0, 0.0, angle);
         state.set_pose("coupler", &mut q0, angle.cos(), angle.sin(), 0.0);
@@ -348,12 +348,207 @@ mod tests {
         pos.q
     }
 
+    // ── FBD helpers (shared by the per-pose pass-2 validation tests) ───────
+    //
+    // The 9×9 Cartesian equilibrium system has the same structure at every
+    // pose — only the joint positions, CGs, and actuator endpoint change.
+    // The two helpers below isolate that machinery so each per-pose test
+    // is just (a) derive the joint positions B and C from θ_2, then
+    // (b) call `solve_fbd_pass2_for_pose` and `assert_pass2_matches_fbd`.
+    //
+    // See the full derivation comment block above
+    // `fbd_validates_pass2_reactions_at_60deg` (kept in place as the
+    // documented worked example).
+
+    /// FBD constants matching `build_fourbar_with_actuator`.
+    /// Changing the fixture geometry means changing these too.
+    const FBD_G: f64 = 9.81;
+    const FBD_M_CRANK: f64 = 2.0;
+    const FBD_M_COUPLER: f64 = 3.0;
+    const FBD_M_ROCKER: f64 = 2.0;
+    const FBD_DX: f64 = 4.0; // rocker-ground pivot world position
+    const FBD_DY: f64 = 0.0;
+    const FBD_P_BX: f64 = 2.0; // actuator point_b world position (ground)
+    const FBD_P_BY: f64 = 0.0;
+
+    /// Solve the 9×9 Cartesian equilibrium system for the canonical
+    /// 4-bar + LinearActuator fixture in sizing mode at the given pose.
+    ///
+    /// Inputs are the world-frame positions of the pin joints J2 (B) and
+    /// J3 (C). A is fixed at the origin, D and the actuator's ground
+    /// endpoint p_b are fixed by the fixture (see `FBD_*` constants
+    /// above). p_a equals the coupler midpoint (= CG_coupler) for this
+    /// fixture's `point_a = (b/2, 0)`, which zeros the actuator's moment
+    /// about the coupler CG.
+    ///
+    /// Returns `[R_J1x, R_J1y, R_J2x, R_J2y, R_J3x, R_J3y, R_J4x, R_J4y, F_act]`.
+    ///
+    /// See the full derivation in the comment block above
+    /// `fbd_validates_pass2_reactions_at_60deg`.
+    fn solve_fbd_pass2_for_pose(bx: f64, by: f64, cx: f64, cy: f64) -> [f64; 9] {
+        use nalgebra::DMatrix;
+
+        // CGs — midpoint of each uniform bar's two attachment points.
+        let cgcx = (bx + cx) * 0.5;
+        let cgcy = (by + cy) * 0.5;
+        let cgrx = (cx + FBD_DX) * 0.5;
+        let cgry = (cy + FBD_DY) * 0.5;
+
+        // Actuator endpoint p_a = coupler midpoint = CG_coupler for this
+        // fixture. p_b is the fixed ground endpoint.
+        let p_ax = cgcx;
+        let p_ay = cgcy;
+        let dxa = FBD_P_BX - p_ax;
+        let dya = FBD_P_BY - p_ay;
+        let lena = (dxa * dxa + dya * dya).sqrt();
+        let ux = dxa / lena;
+        let uy = dya / lena;
+
+        let mut a = DMatrix::<f64>::zeros(9, 9);
+        let mut b = DVector::<f64>::zeros(9);
+
+        // Column legend:
+        //   0: R_J1x  1: R_J1y  2: R_J2x  3: R_J2y
+        //   4: R_J3x  5: R_J3y  6: R_J4x  7: R_J4y
+        //   8: F_act
+
+        // Crank ΣFx: -R_J1x + R_J2x = 0
+        a[(0, 0)] = -1.0;
+        a[(0, 2)] = 1.0;
+
+        // Crank ΣFy: -R_J1y + R_J2y = m_crank·g
+        a[(1, 1)] = -1.0;
+        a[(1, 3)] = 1.0;
+        b[1] = FBD_M_CRANK * FBD_G;
+
+        // Crank ΣM_CG. A = (0,0), CG_crank = B/2, so r_A−CG = −B/2 and
+        // r_B−CG = +B/2. Moment formula r_x·F_y − r_y·F_x then collapses
+        // to: Bx·(R_J1y + R_J2y) − By·(R_J1x + R_J2x) = 0.
+        a[(2, 0)] = -by;
+        a[(2, 1)] = bx;
+        a[(2, 2)] = -by;
+        a[(2, 3)] = bx;
+
+        // Coupler ΣFx: -R_J2x + R_J3x − u_x·F_act = 0
+        // (force on body_a is −F_act·u per evaluate_linear_actuator)
+        a[(3, 2)] = -1.0;
+        a[(3, 4)] = 1.0;
+        a[(3, 8)] = -ux;
+
+        // Coupler ΣFy: -R_J2y + R_J3y − u_y·F_act = m_coupler·g
+        a[(4, 3)] = -1.0;
+        a[(4, 5)] = 1.0;
+        a[(4, 8)] = -uy;
+        b[4] = FBD_M_COUPLER * FBD_G;
+
+        // Coupler ΣM_CG:
+        //   −(Bx − CGcx)·R_J2y + (By − CGcy)·R_J2x
+        //   + (Cx − CGcx)·R_J3y − (Cy − CGcy)·R_J3x = 0
+        // Actuator term vanishes since p_a = CG_coupler.
+        let b_dx = bx - cgcx;
+        let b_dy = by - cgcy;
+        let c_dx = cx - cgcx;
+        let c_dy = cy - cgcy;
+        a[(5, 2)] = b_dy;
+        a[(5, 3)] = -b_dx;
+        a[(5, 4)] = -c_dy;
+        a[(5, 5)] = c_dx;
+
+        // Rocker ΣFx: -R_J3x − R_J4x = 0
+        a[(6, 4)] = -1.0;
+        a[(6, 6)] = -1.0;
+
+        // Rocker ΣFy: -R_J3y − R_J4y = m_rocker·g
+        a[(7, 5)] = -1.0;
+        a[(7, 7)] = -1.0;
+        b[7] = FBD_M_ROCKER * FBD_G;
+
+        // Rocker ΣM_CG:
+        //   −(Cx − CGrx)·R_J3y + (Cy − CGry)·R_J3x
+        //   − (Dx − CGrx)·R_J4y + (Dy − CGry)·R_J4x = 0
+        let cr_dx = cx - cgrx;
+        let cr_dy = cy - cgry;
+        let dr_dx = FBD_DX - cgrx;
+        let dr_dy = FBD_DY - cgry;
+        a[(8, 4)] = cr_dy;
+        a[(8, 5)] = -cr_dx;
+        a[(8, 6)] = dr_dy;
+        a[(8, 7)] = -dr_dx;
+
+        let x = a
+            .full_piv_lu()
+            .solve(&b)
+            .expect("FBD linear system should be non-singular");
+        [x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7], x[8]]
+    }
+
+    /// Run `solve_reactions_with_actuator` and assert the result matches
+    /// the FBD-derived expected values within `tol = 1e-4 N`. Also
+    /// asserts the pass-2 driver lambda is ~0 (the whole point of
+    /// pass-2: actuator carries the load, rotational driver torque
+    /// collapses).
+    fn assert_pass2_matches_fbd(
+        mech: &Mechanism,
+        q: &DVector<f64>,
+        crank_angle: f64,
+        expected: &[f64; 9],
+        pose_label: &str,
+    ) {
+        let result = solve_reactions_with_actuator(mech, q, crank_angle, 1.0)
+            .expect("statics should converge in sizing mode");
+        assert!(
+            result.used_two_pass,
+            "{}: sizing-mode actuator → pass-2",
+            pose_label,
+        );
+
+        let drv_lambda = result
+            .reactions
+            .iter()
+            .find(|r| r.n_equations == 1)
+            .map(|r| r.effort)
+            .expect("driver lambda present");
+        assert!(
+            drv_lambda.abs() < 1e-6,
+            "{}: pass-2 driver torque should be ~0; got {}",
+            pose_label, drv_lambda,
+        );
+
+        let sim_f_act = result.actuator_force.expect("pass-2 produces F_act");
+        let get = |id: &str| -> (f64, f64) {
+            let r = result
+                .reactions
+                .iter()
+                .find(|r| r.joint_id == id)
+                .unwrap_or_else(|| panic!("{}: joint {} missing", pose_label, id));
+            (r.force_global[0], r.force_global[1])
+        };
+
+        let tol = 1e-4;
+        let cmp = |label: &str, sim: (f64, f64), exp: (f64, f64)| {
+            assert!(
+                (sim.0 - exp.0).abs() < tol && (sim.1 - exp.1).abs() < tol,
+                "{}: {} mismatch: sim = ({}, {}), FBD = ({}, {})",
+                pose_label, label, sim.0, sim.1, exp.0, exp.1,
+            );
+        };
+        cmp("J1", get("J1"), (expected[0], expected[1]));
+        cmp("J2", get("J2"), (expected[2], expected[3]));
+        cmp("J3", get("J3"), (expected[4], expected[5]));
+        cmp("J4", get("J4"), (expected[6], expected[7]));
+        assert!(
+            (sim_f_act - expected[8]).abs() < tol,
+            "{}: F_act mismatch: sim = {}, FBD = {}",
+            pose_label, sim_f_act, expected[8],
+        );
+    }
+
     #[test]
     fn no_actuator_returns_pass_one_reactions() {
         // A 4-bar without a LinearActuator: helper returns pass-1 reactions
         // and used_two_pass=false. Reactions match a direct extract_reactions.
         let mech = build_fourbar();
-        let q = seed_pose_at_60deg(&mech);
+        let q = seed_pose_at_angle(&mech, PI / 3.0);
 
         let result = solve_reactions_with_actuator(&mech, &q, PI / 3.0, 1.0)
             .expect("statics should converge");
@@ -377,7 +572,7 @@ mod tests {
         // resulting joint reactions differ from pass-1 (the actuator now
         // carries the load, so joints in its chain see different forces).
         let mech = build_fourbar_with_actuator(0.0);
-        let q = seed_pose_at_60deg(&mech);
+        let q = seed_pose_at_angle(&mech, PI / 3.0);
 
         let result = solve_reactions_with_actuator(&mech, &q, PI / 3.0, 1.0)
             .expect("statics should converge");
@@ -509,175 +704,58 @@ mod tests {
     /// The solution is the independent FBD ground truth.
     #[test]
     fn fbd_validates_pass2_reactions_at_60deg() {
-        use nalgebra::DMatrix;
+        // Pose θ_2 = π/3. Joint-position derivation lives in the long
+        // comment block above this function (the canonical worked
+        // example). All other FBD math goes through
+        // `solve_fbd_pass2_for_pose` and `assert_pass2_matches_fbd`.
         let mech = build_fourbar_with_actuator(0.0);
-        let q = seed_pose_at_60deg(&mech);
+        let q = seed_pose_at_angle(&mech, PI / 3.0);
 
-        const G: f64 = 9.81;
-        let m_crank = 2.0_f64;
-        let m_coupler = 3.0_f64;
-        let m_rocker = 2.0_f64;
         let sqrt3 = 3f64.sqrt();
-
-        // Joint positions in world frame at θ_2 = π/3 (derived above).
         let bx = 0.5_f64;
         let by = sqrt3 / 2.0;
         let cx = (38.0 + 3.0 * sqrt3) / 13.0;
         let cy = (21.0 + 2.0 * sqrt3) / 13.0;
-        let dx = 4.0_f64;
-        let dy = 0.0_f64;
 
-        // CGs (midpoints of each uniform bar).
-        let cgcx = (bx + cx) * 0.5;
-        let cgcy = (by + cy) * 0.5;
-        let cgrx = (cx + dx) * 0.5;
-        let cgry = (cy + dy) * 0.5;
+        let expected = solve_fbd_pass2_for_pose(bx, by, cx, cy);
+        assert_pass2_matches_fbd(&mech, &q, PI / 3.0, &expected, "θ_2=π/3");
+    }
 
-        // Actuator: p_a = coupler local (1.5, 0) = coupler midpoint = CG_coupler.
-        // p_b = ground local (2, 0) = (2, 0) world.
-        let p_ax = cgcx;
-        let p_ay = cgcy;
-        let p_bx = 2.0_f64;
-        let p_by = 0.0_f64;
-        let dx_act = p_bx - p_ax;
-        let dy_act = p_by - p_ay;
-        let len_act = (dx_act * dx_act + dy_act * dy_act).sqrt();
-        let ux = dx_act / len_act;
-        let uy = dy_act / len_act;
+    /// FBD-validated reactions test for 4-bar + LinearActuator in sizing
+    /// mode at pose θ_2 = π/2 (top dead center).
+    ///
+    /// At θ_2 = π/2 the crank is vertical:
+    ///   A = (0, 0),  B = (0, 1),  D = (4, 0)
+    ///
+    /// Loop closure (Cx − 0)² + (Cy − 1)² = 9 and (Cx − 4)² + Cy² = 4.
+    /// Subtracting gives `4Cx − Cy = 10`, so `Cy = 4Cx − 10`.
+    /// Substituting back yields `17·Cx² − 88·Cx + 112 = 0`.
+    /// Discriminant: 88² − 4·17·112 = 7744 − 7616 = 128 = (8√2)².
+    /// Two roots:
+    ///   Cx = (44 + 4√2)/17 ≈ 2.9210,  Cy = (6 + 16√2)/17 ≈ 1.6840  (open branch — matches seed)
+    ///   Cx = (44 − 4√2)/17 ≈ 2.2554,  Cy ≈ −0.9784                  (crossed branch — skipped)
+    ///
+    /// Open branch chosen because `seed_pose_at_angle`'s initial guesses
+    /// place the coupler and rocker above the x-axis; `solve_position`
+    /// Newton-iterates to the nearest consistent C.
+    ///
+    /// Crank ΣM_CG simplification at this pose: with B = (0, 1),
+    /// `−By·(R_J1x + R_J2x) + Bx·(R_J1y + R_J2y) = 0` collapses to
+    /// `R_J1x + R_J2x = 0`. The generic `solve_fbd_pass2_for_pose`
+    /// handles it without special-casing.
+    #[test]
+    fn fbd_validates_pass2_reactions_at_90deg() {
+        let mech = build_fourbar_with_actuator(0.0);
+        let q = seed_pose_at_angle(&mech, PI / 2.0);
 
-        // Build the 9×9 system Ax = b.
-        let mut a = DMatrix::<f64>::zeros(9, 9);
-        let mut b = nalgebra::DVector::<f64>::zeros(9);
+        let sqrt2 = 2f64.sqrt();
+        let bx = 0.0_f64;
+        let by = 1.0_f64;
+        let cx = (44.0 + 4.0 * sqrt2) / 17.0;
+        let cy = 4.0 * cx - 10.0;
 
-        // Column index legend:
-        //   0: R_J1x  1: R_J1y  2: R_J2x  3: R_J2y
-        //   4: R_J3x  5: R_J3y  6: R_J4x  7: R_J4y
-        //   8: F_act
-
-        // Row 0 — Crank ΣFx: -R_J1x + R_J2x = 0
-        a[(0, 0)] = -1.0;
-        a[(0, 2)] = 1.0;
-
-        // Row 1 — Crank ΣFy: -R_J1y + R_J2y = m_crank * g
-        a[(1, 1)] = -1.0;
-        a[(1, 3)] = 1.0;
-        b[1] = m_crank * G;
-
-        // Row 2 — Crank ΣM_CG: (R_J1y + R_J2y) − √3·(R_J1x + R_J2x) = 0
-        a[(2, 0)] = -sqrt3;
-        a[(2, 1)] = 1.0;
-        a[(2, 2)] = -sqrt3;
-        a[(2, 3)] = 1.0;
-
-        // Row 3 — Coupler ΣFx: -R_J2x + R_J3x − u_x F_act = 0
-        // (force on body_a is `−F_act·u` per evaluate_linear_actuator)
-        a[(3, 2)] = -1.0;
-        a[(3, 4)] = 1.0;
-        a[(3, 8)] = -ux;
-
-        // Row 4 — Coupler ΣFy: -R_J2y + R_J3y − u_y F_act = m_coupler * g
-        a[(4, 3)] = -1.0;
-        a[(4, 5)] = 1.0;
-        a[(4, 8)] = -uy;
-        b[4] = m_coupler * G;
-
-        // Row 5 — Coupler ΣM_CG:
-        //   -(Bx − CGcx) R_J2y + (By − CGcy) R_J2x + (Cx − CGcx) R_J3y - (Cy − CGcy) R_J3x = 0
-        let b_dx = bx - cgcx;
-        let b_dy = by - cgcy;
-        let c_dx = cx - cgcx;
-        let c_dy = cy - cgcy;
-        a[(5, 2)] = b_dy; // R_J2x coeff
-        a[(5, 3)] = -b_dx; // R_J2y coeff
-        a[(5, 4)] = -c_dy; // R_J3x coeff
-        a[(5, 5)] = c_dx; // R_J3y coeff
-
-        // Row 6 — Rocker ΣFx: -R_J3x - R_J4x = 0
-        a[(6, 4)] = -1.0;
-        a[(6, 6)] = -1.0;
-
-        // Row 7 — Rocker ΣFy: -R_J3y - R_J4y = m_rocker * g
-        a[(7, 5)] = -1.0;
-        a[(7, 7)] = -1.0;
-        b[7] = m_rocker * G;
-
-        // Row 8 — Rocker ΣM_CG:
-        //   -(Cx − CGrx) R_J3y + (Cy − CGry) R_J3x - (Dx − CGrx) R_J4y + (Dy − CGry) R_J4x = 0
-        let cr_dx = cx - cgrx;
-        let cr_dy = cy - cgry;
-        let dr_dx = dx - cgrx;
-        let dr_dy = dy - cgry;
-        a[(8, 4)] = cr_dy; // R_J3x coeff
-        a[(8, 5)] = -cr_dx; // R_J3y coeff
-        a[(8, 6)] = dr_dy; // R_J4x coeff
-        a[(8, 7)] = -dr_dx; // R_J4y coeff
-
-        let lu = a.full_piv_lu();
-        let x = lu
-            .solve(&b)
-            .expect("FBD linear system should be non-singular at this pose");
-
-        let exp_r_j1 = (x[0], x[1]);
-        let exp_r_j2 = (x[2], x[3]);
-        let exp_r_j3 = (x[4], x[5]);
-        let exp_r_j4 = (x[6], x[7]);
-        let exp_f_act = x[8];
-
-        // Now run the simulator and compare.
-        let result = solve_reactions_with_actuator(&mech, &q, PI / 3.0, 1.0)
-            .expect("statics should converge in sizing mode");
-        assert!(result.used_two_pass, "sizing-mode actuator → pass-2");
-
-        // Pass-2's driver torque should be ~0 by construction; if it's
-        // not, the back-substituted F_act is wrong and the comparison
-        // below will fail anyway, but flagging it gives a clearer
-        // diagnostic.
-        let drv_lambda = result
-            .reactions
-            .iter()
-            .find(|r| r.n_equations == 1)
-            .map(|r| r.effort)
-            .expect("driver lambda present");
-        assert!(
-            drv_lambda.abs() < 1e-6,
-            "pass-2 driver torque should be ~0 (actuator drives the load); got {}",
-            drv_lambda,
-        );
-
-        let sim_f_act = result.actuator_force.expect("pass-2 produces F_act");
-        let get = |id: &str| -> (f64, f64) {
-            let r = result
-                .reactions
-                .iter()
-                .find(|r| r.joint_id == id)
-                .unwrap_or_else(|| panic!("joint {} missing in reactions", id));
-            (r.force_global[0], r.force_global[1])
-        };
-        let sim_r_j1 = get("J1");
-        let sim_r_j2 = get("J2");
-        let sim_r_j3 = get("J3");
-        let sim_r_j4 = get("J4");
-
-        // Tolerance: 1e-4 N is well below any physically meaningful load
-        // (gravity totals ~70 N on this mechanism). Statics solver has
-        // a 1e-14 residual tolerance and the FBD here is exact to f64.
-        let tol = 1e-4;
-        let diff = |label: &str, sim: (f64, f64), exp: (f64, f64)| {
-            assert!(
-                (sim.0 - exp.0).abs() < tol && (sim.1 - exp.1).abs() < tol,
-                "{} mismatch: sim = ({}, {}), FBD = ({}, {})",
-                label, sim.0, sim.1, exp.0, exp.1,
-            );
-        };
-        diff("J1", sim_r_j1, exp_r_j1);
-        diff("J2", sim_r_j2, exp_r_j2);
-        diff("J3", sim_r_j3, exp_r_j3);
-        diff("J4", sim_r_j4, exp_r_j4);
-        assert!(
-            (sim_f_act - exp_f_act).abs() < tol,
-            "F_act mismatch: sim = {}, FBD = {}",
-            sim_f_act, exp_f_act,
-        );
+        let expected = solve_fbd_pass2_for_pose(bx, by, cx, cy);
+        assert_pass2_matches_fbd(&mech, &q, PI / 2.0, &expected, "θ_2=π/2");
     }
 
     #[test]
@@ -686,7 +764,7 @@ mod tests {
         // (would double-count the actuator's q_forces contribution).
         // Reactions match a direct pass-1 solve.
         let mech = build_fourbar_with_actuator(50.0);
-        let q = seed_pose_at_60deg(&mech);
+        let q = seed_pose_at_angle(&mech, PI / 3.0);
 
         let result = solve_reactions_with_actuator(&mech, &q, PI / 3.0, 1.0)
             .expect("statics should converge");

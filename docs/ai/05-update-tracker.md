@@ -5,6 +5,35 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-05-21 — FBD validation extended to θ_2=π/2 + helper extracted
+
+**What:**
+- New regression test `solver::reactions::tests::fbd_validates_pass2_reactions_at_90deg`
+  for top-dead-center (crank vertical). Open branch root from loop
+  closure: `Cx = (44 + 4√2)/17 ≈ 2.921`, `Cy ≈ 1.684`. Test passed
+  first-run.
+- Refactored: extracted `solve_fbd_pass2_for_pose(bx, by, cx, cy) → [f64; 9]`
+  + `assert_pass2_matches_fbd(mech, q, θ, expected, label)` helpers
+  from the inline 60° test. Each new pose is now ~10 lines of
+  derivation + a single helper call instead of ~150 lines of matrix
+  construction. The 60° test still carries the full FBD derivation
+  comment block as the canonical worked example.
+- Generalized `seed_pose_at_60deg(mech)` → `seed_pose_at_angle(mech, θ)`.
+  Three existing callers updated.
+
+**Why:**
+- Adding more poses is now ~30 min each, down from ~1 hour. Lowers
+  the cost of broader validation coverage per the spec
+  (`docs/superpowers/specs/2026-05-18-reaction-force-validation-design.md`).
+
+**Counts:** 700 → 701 lib tests passing.
+
+**Spec status:** option A is 2 of 4–6 poses in. Remaining candidates:
+mid-stroke (π/4 or 5π/4), bottom-dead-center (3π/2), near-singular,
+negative-y branch. Each is now a small follow-on.
+
+---
+
 ## 2026-05-18 — FBD validation test for 4-bar + LinearActuator at θ_2=π/3
 
 **What:**
