@@ -42,6 +42,7 @@ fn force_zone_no_overlap_produces_zero_force() {
         zone_max: [11.0, 11.0],
         force: [0.0, -500.0],
         label: None,
+        body_local_app_point: None,
     };
 
     let q_dot = DVector::zeros(q.len());
@@ -67,6 +68,7 @@ fn force_zone_full_overlap_applies_full_force() {
         zone_max: [1.0, 1.0],
         force: [0.0, -500.0],
         label: None,
+        body_local_app_point: None,
     };
 
     let q_dot = DVector::zeros(q.len());
@@ -93,6 +95,7 @@ fn force_zone_partial_overlap_scales_force() {
         zone_max: [1.0, 1.0],
         force: [0.0, -500.0],
         label: None,
+        body_local_app_point: None,
     };
     let full = ForceElement::ForceZone(fz_full).evaluate(state, bodies, &q, &q_dot, 0.0);
 
@@ -105,6 +108,7 @@ fn force_zone_partial_overlap_scales_force() {
         zone_max: [1.0, 1.0],
         force: [0.0, -500.0],
         label: None,
+        body_local_app_point: None,
     };
     let partial = ForceElement::ForceZone(fz_partial).evaluate(state, bodies, &q, &q_dot, 0.0);
 
@@ -145,6 +149,7 @@ fn force_zone_missing_body_returns_zero() {
         zone_max: [1.0, 1.0],
         force: [0.0, -500.0],
         label: None,
+        body_local_app_point: None,
     };
 
     let q_dot = DVector::zeros(q.len());
@@ -173,6 +178,7 @@ fn force_zone_body_without_geometry_returns_zero() {
         zone_max: [1.0, 1.0],
         force: [0.0, -500.0],
         label: None,
+        body_local_app_point: None,
     };
 
     let q_dot = DVector::zeros(q.len());
@@ -188,6 +194,7 @@ fn force_zone_serialization_roundtrip() {
         zone_max: [3.0, 4.0],
         force: [10.0, -20.0],
         label: Some("test zone".to_string()),
+        body_local_app_point: None,
     };
     let fe = ForceElement::ForceZone(fz);
 
@@ -214,6 +221,7 @@ fn force_zone_type_name() {
         zone_max: [1.0, 1.0],
         force: [0.0, -10.0],
         label: None,
+        body_local_app_point: None,
     };
     let fe = ForceElement::ForceZone(fz);
     assert_eq!(fe.type_name(), "Force Zone");
@@ -227,6 +235,7 @@ fn force_zone_attached_body_ids() {
         zone_max: [1.0, 1.0],
         force: [0.0, -10.0],
         label: None,
+        body_local_app_point: None,
     };
     let fe = ForceElement::ForceZone(fz);
     assert_eq!(fe.attached_body_ids(), vec!["my_bar"]);

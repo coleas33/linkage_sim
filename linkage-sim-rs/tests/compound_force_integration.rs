@@ -94,6 +94,12 @@ fn make_compound_spring_json() -> MechanismJson {
         sweep_config: None,
         mounting_angle: 0.0,
         linear_drivers: Vec::new(),
+        sweep_state: None,
+        sensor_config: None,
+        motion_profile: None,
+        actuator_rated_force: 0.0,
+        simulation_duration: None,
+        parametric_config: None,
     }
 }
 
@@ -173,6 +179,12 @@ fn make_pure_spring_json() -> MechanismJson {
         sweep_config: None,
         mounting_angle: 0.0,
         linear_drivers: Vec::new(),
+        sweep_state: None,
+        sensor_config: None,
+        motion_profile: None,
+        actuator_rated_force: 0.0,
+        simulation_duration: None,
+        parametric_config: None,
     }
 }
 

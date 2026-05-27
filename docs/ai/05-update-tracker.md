@@ -5,6 +5,36 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-05-21 — clear long-standing tests/ crate red
+
+**What:**
+- `tests/compound_force_integration.rs`: +6 fields (`sweep_state`,
+  `sensor_config`, `motion_profile`, `actuator_rated_force`,
+  `simulation_duration`, `parametric_config`) added to each of 2
+  `MechanismJson` literals — 12 added lines total. All defaulted to
+  `None` / `0.0` per the struct's `#[serde(default)]` semantics.
+- `tests/force_zone_tests.rs`: +1 field (`body_local_app_point: None`)
+  added to each of 9 `ForceZoneElement` literals.
+- Cleared 11 `E0063` compile errors that had blocked
+  `cargo test --tests` for weeks (stale fixtures from earlier
+  `MechanismJson` / `ForceZoneElement` refactors).
+- Dispatched as a background `rust-test-fixer` subagent run; output
+  verified independently before commit.
+
+**Why:**
+- Long-standing red on `cargo test --tests` was a continuous
+  distractor and hid any real test-crate regressions. Now clean.
+
+**Counts:** integration tests now 78/78 passing across 10 binaries
+(was 0 of 78 — they wouldn't even compile). Lib tests unchanged at
+702/702.
+
+**Conservatism:** all changes are additive `: None` / `: 0.0`
+field initialisers on test fixtures. No struct definitions touched.
+No test intent altered.
+
+---
+
 ## 2026-05-21 — FBD validation extended to θ_2=3π/2 (BDC) + branch-aware seed
 
 **What:**
