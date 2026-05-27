@@ -768,6 +768,57 @@ mod tests {
     }
 
     /// FBD-validated reactions test for 4-bar + LinearActuator in sizing
+    /// mode at pose θ_2 = π/4 (45°, mid-stroke). Generic case: Bx ≠ 0
+    /// and By ≠ 0, so the Crank-M equation does NOT collapse to
+    /// `R_J1x + R_J2x = 0` like it does at TDC/BDC. Exercises every
+    /// coefficient slot in `solve_fbd_pass2_for_pose`.
+    ///
+    /// At θ_2 = π/4:
+    ///   A = (0, 0),  B = (√2/2, √2/2),  D = (4, 0)
+    ///
+    /// Loop closure (Cx − Bx)² + (Cy − By)² = 9 and (Cx − 4)² + Cy² = 4.
+    /// Using |B|² = 1, subtracting and rearranging gives the linear
+    /// combination `(8 − √2)·Cx − √2·Cy = 20`, so
+    /// `Cy = ((8 − √2)·Cx − 20) / √2`. Substituting back into
+    /// `Cx² + Cy² = 8·Cx − 12` (from the rocker constraint) yields the
+    /// quadratic
+    ///   `(68 − 16√2)·Cx² + (−336 + 40√2)·Cx + 424 = 0`
+    /// with discriminant `768 + 256·√2 = 256·(3 + √2)`, so
+    /// `√Δ = 16·√(3 + √2)`. Two roots:
+    ///   Cx ≈ 3.4498, Cy ≈ 1.9230  (open branch — matches seed)
+    ///   Cx ≈ 2.7091, Cy ≈ −1.5260 (crossed branch — skipped)
+    ///
+    /// Open branch chosen because `seed_pose_at_angle` at π/4 (sin > 0)
+    /// uses rocker θ_r = +π/2, placing rocker.C above the x-axis at
+    /// (4, 2), close to the upper root.
+    ///
+    /// Code computes the quadratic coefficients from `sqrt2` directly
+    /// rather than baking high-precision literals, both for derivability
+    /// and so future readers can re-verify the algebra by inspection.
+    #[test]
+    fn fbd_validates_pass2_reactions_at_45deg() {
+        let mech = build_fourbar_with_actuator(0.0);
+        let angle = PI / 4.0;
+        let q = seed_pose_at_angle(&mech, angle);
+
+        let sqrt2 = 2f64.sqrt();
+        let bx = sqrt2 / 2.0;
+        let by = sqrt2 / 2.0;
+
+        // Solve the quadratic for the open-branch Cx, then back out Cy
+        // from the linear loop-closure combination.
+        let aq = 68.0 - 16.0 * sqrt2;
+        let bq = -336.0 + 40.0 * sqrt2;
+        let cq = 424.0;
+        let disc = bq * bq - 4.0 * aq * cq;
+        let cx = (-bq + disc.sqrt()) / (2.0 * aq);
+        let cy = ((8.0 - sqrt2) * cx - 20.0) / sqrt2;
+
+        let expected = solve_fbd_pass2_for_pose(bx, by, cx, cy);
+        assert_pass2_matches_fbd(&mech, &q, angle, &expected, "θ_2=π/4");
+    }
+
+    /// FBD-validated reactions test for 4-bar + LinearActuator in sizing
     /// mode at pose θ_2 = 3π/2 (bottom dead center — crank vertical
     /// pointing down). Mirror of the TDC test above.
     ///

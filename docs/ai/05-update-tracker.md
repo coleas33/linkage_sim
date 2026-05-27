@@ -5,6 +5,29 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-05-21 — FBD validation extended to θ_2=π/4 (mid-stroke, generic case)
+
+**What:**
+- New regression test `fbd_validates_pass2_reactions_at_45deg`.
+  Mid-stroke pose with Bx ≠ 0 AND By ≠ 0 — exercises every coefficient
+  slot in `solve_fbd_pass2_for_pose`, including the Crank-M row that
+  collapsed to `R_J1x + R_J2x = 0` at TDC/BDC (Bx = 0). The 60° test
+  had Bx ≠ 0 too but the discriminant gave clean √3 numbers; this
+  one gets √2 with √(3 + √2) in the discriminant root.
+- Loop-closure quadratic: `(68 − 16√2)·Cx² + (−336 + 40√2)·Cx + 424 = 0`.
+  Discriminant `768 + 256√2 = 256·(3 + √2)`. Open branch C ≈ (3.450, 1.923).
+- Code computes the quadratic coefficients from `sqrt2` directly
+  rather than baking high-precision literals, so the algebra is
+  inspectable. Passed first-run.
+
+**Counts:** 702 → 703 lib tests passing. Spec's lower bound of 4 poses now met.
+
+**Spec status:** 4 of 4–6 FBD-validated poses done (π/4, π/3, π/2, 3π/2).
+Remaining candidates: near-singular (numerical conditioning),
+5π/4 (lower-half-plane generic, mirror of π/4).
+
+---
+
 ## 2026-05-21 — clear long-standing tests/ crate red
 
 **What:**
