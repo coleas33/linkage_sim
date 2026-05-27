@@ -334,14 +334,23 @@ mod tests {
     }
 
     /// Seed pose for the test 4-bar at a given crank angle, with initial
-    /// guesses that match the open-branch assembly the FBD validations
-    /// assume. `solve_position` Newton-iterates from this seed.
+    /// guesses that drive Newton-iteration toward the open-branch
+    /// assembly the FBD validations assume.
+    ///
+    /// The rocker initial guess flips with `angle.sin()`: when the crank
+    /// is in the upper half-plane (sin θ ≥ 0) the rocker seed points
+    /// upward (θ_r = +π/2); when below (sin θ < 0, e.g. BDC) it points
+    /// downward (θ_r = −π/2). Without this, the rocker seed at +π/2
+    /// would conflict with the coupler seed at θ_c = 0 (whose C_y has
+    /// the same sign as sin(crank angle)), and Newton can converge to
+    /// the wrong branch or fail to converge.
     fn seed_pose_at_angle(mech: &Mechanism, angle: f64) -> DVector<f64> {
         let state = mech.state();
         let mut q0 = state.make_q();
         state.set_pose("crank", &mut q0, 0.0, 0.0, angle);
         state.set_pose("coupler", &mut q0, angle.cos(), angle.sin(), 0.0);
-        state.set_pose("rocker", &mut q0, 4.0, 0.0, PI / 2.0);
+        let rocker_angle = if angle.sin() >= 0.0 { PI / 2.0 } else { -PI / 2.0 };
+        state.set_pose("rocker", &mut q0, 4.0, 0.0, rocker_angle);
         let pos = solve_position(mech, &q0, angle, 1e-10, 50)
             .expect("position solve");
         assert!(pos.converged);
@@ -756,6 +765,46 @@ mod tests {
 
         let expected = solve_fbd_pass2_for_pose(bx, by, cx, cy);
         assert_pass2_matches_fbd(&mech, &q, PI / 2.0, &expected, "θ_2=π/2");
+    }
+
+    /// FBD-validated reactions test for 4-bar + LinearActuator in sizing
+    /// mode at pose θ_2 = 3π/2 (bottom dead center — crank vertical
+    /// pointing down). Mirror of the TDC test above.
+    ///
+    /// At θ_2 = 3π/2:
+    ///   A = (0, 0),  B = (0, −1),  D = (4, 0)
+    ///
+    /// Loop closure (Cx − 0)² + (Cy + 1)² = 9 and (Cx − 4)² + Cy² = 4.
+    /// Subtracting gives `8·Cx + 2·Cy = 20`, i.e. `Cy = 10 − 4·Cx`.
+    /// Substituting yields the same quadratic as TDC: `17·Cx² − 88·Cx + 112 = 0`.
+    /// Discriminant 128 = (8√2)². Two roots, with Cy = 10 − 4·Cx:
+    ///   Cx = (44 + 4√2)/17 ≈ 2.9210,  Cy = (−6 − 16√2)/17 ≈ −1.6840  (open branch — matches seed)
+    ///   Cx = (44 − 4√2)/17 ≈ 2.2554,  Cy ≈ 0.9784                    (other branch — skipped)
+    ///
+    /// Open branch chosen because at BDC `seed_pose_at_angle` flips its
+    /// rocker initial guess to θ_r = −π/2 (matching the sign of
+    /// `angle.sin()`), pulling Newton toward the C below the x-axis.
+    /// Without that flip the seed would conflict (coupler-C below,
+    /// rocker-C above) and the solve could pick either branch.
+    ///
+    /// Crank ΣM_CG at this pose: with B = (0, −1) and CG_crank = B/2,
+    /// `−By·(R_J1x + R_J2x) + Bx·(R_J1y + R_J2y) = 0` collapses to
+    /// `R_J1x + R_J2x = 0` (same simplification as TDC, since Bx = 0
+    /// in both — only the sign of By differs).
+    #[test]
+    fn fbd_validates_pass2_reactions_at_270deg() {
+        let mech = build_fourbar_with_actuator(0.0);
+        let angle = 3.0 * PI / 2.0;
+        let q = seed_pose_at_angle(&mech, angle);
+
+        let sqrt2 = 2f64.sqrt();
+        let bx = 0.0_f64;
+        let by = -1.0_f64;
+        let cx = (44.0 + 4.0 * sqrt2) / 17.0;
+        let cy = 10.0 - 4.0 * cx;
+
+        let expected = solve_fbd_pass2_for_pose(bx, by, cx, cy);
+        assert_pass2_matches_fbd(&mech, &q, angle, &expected, "θ_2=3π/2");
     }
 
     #[test]

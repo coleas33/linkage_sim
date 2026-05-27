@@ -5,6 +5,30 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-05-21 — FBD validation extended to θ_2=3π/2 (BDC) + branch-aware seed
+
+**What:**
+- New regression test `fbd_validates_pass2_reactions_at_270deg`
+  (bottom dead center, crank vertical pointing down). Same quadratic
+  as TDC but with `Cy = 10 − 4·Cx`, so the open branch C is at
+  `((44 + 4√2)/17, (−6 − 16√2)/17) ≈ (2.921, −1.684)`. Passed
+  first-run.
+- `seed_pose_at_angle` now picks the rocker initial guess based on
+  `angle.sin()`: upper half-plane crank → rocker θ = +π/2 (existing
+  behaviour); lower half-plane → rocker θ = −π/2 (new). Without this,
+  the rocker seed at +π/2 would conflict with the coupler seed (whose
+  C_y has the same sign as sin(crank angle)) and Newton might pick
+  the wrong branch or fail to converge. Existing π/3 and π/2 callers
+  are unaffected (both have sin > 0).
+
+**Counts:** 701 → 702 lib tests passing.
+
+**Spec status:** 3 of 4–6 FBD-validated poses done (π/3, π/2, 3π/2).
+Mid-stroke (π/4 or 5π/4) and near-singular are the remaining
+candidates.
+
+---
+
 ## 2026-05-21 — FBD validation extended to θ_2=π/2 + helper extracted
 
 **What:**
