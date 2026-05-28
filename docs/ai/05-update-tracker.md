@@ -5,6 +5,44 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-05-21 — validation Option B: equilibrium check + GUI badge
+
+**What:**
+- `ReactionSolveResult` gains `residual_norm: f64` (the `‖Φ_qᵀλ + Q‖`
+  for the final solve) and an `is_valid()` method that combines the
+  residual threshold (1e-6 N absolute) with the pass-2 driver-torque
+  collapse check (1e-6 N·m when `used_two_pass`).
+- Fixed a real gap: pass-2's `residual_norm` was previously hardcoded
+  to `0.0` (never computed). A failed pass-2 SVD could silently ship
+  wrong lambdas. Now computed and surfaced through `is_valid()`.
+- `solve_reactions_with_actuator` `debug_assert!`'s `is_valid()` at
+  the end of its pass-2 path. Dev builds panic if equilibrium fails;
+  release builds rely on the GUI badge and FBD regression tests.
+- `ForceResults` gains `equilibrium_valid: Option<bool>`, populated by
+  `recompute_force_results` from the helper's `is_valid()`.
+- GUI property panel: new green/red badge ("✓ Equilibrium check
+  passed" / "✗ Equilibrium check FAILED") at the top of the Joint
+  Reactions section, with hover text explaining the threshold and
+  pointing at the FBD tests for diagnosis when it goes red.
+- New test `is_valid_reports_true_for_well_conditioned_solves` covers
+  all three branches (no-actuator pass-1, sizing-mode pass-2,
+  known-force pass-1).
+
+**Why it matters:**
+- The FBD-validated regression tests cover 5 specific poses with
+  absolute-truth comparison. The equilibrium badge layers on top of
+  that: it runs on EVERY pose the GUI ever displays, catching any
+  bug class that produces reactions inconsistent with the applied
+  forces. Includes the previously-silent pass-2 SVD failures.
+
+**Counts:** 704 → 705 lib tests passing. Wasm32 build clean.
+
+**Spec status:** Option A (5 FBD-validated poses) + Option B
+(equilibrium check + badge) both shipped. Option C (external tool
+comparison) remains open; idle until you produce a reference.
+
+---
+
 ## 2026-05-21 — FBD validation extended to θ_2=0.9π (near-singular)
 
 **What:**

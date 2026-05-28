@@ -47,6 +47,44 @@ pub struct ReactionSolveResult {
     pub condition_number: f64,
     /// Pass-1 over-constrained flag (diagnostic).
     pub is_overconstrained: bool,
+    /// Equilibrium residual `‖Φ_qᵀλ + Q‖` for the *final* solve (pass-2
+    /// when `used_two_pass`, pass-1 otherwise). Reports whether the
+    /// returned `reactions` actually satisfy static equilibrium with
+    /// the applied generalised forces; should be ~1e-12 or smaller on
+    /// well-conditioned systems.
+    pub residual_norm: f64,
+}
+
+impl ReactionSolveResult {
+    /// Whether the returned reactions satisfy Cartesian equilibrium of
+    /// the applied forces to a tight absolute threshold. Used by:
+    /// - `solve_reactions_with_actuator`'s `debug_assert!` (catches
+    ///   solver regressions in dev builds before they reach the GUI),
+    /// - the GUI property panel's green/red validation badge,
+    /// - any caller that wants a quick "do I trust these numbers"
+    ///   check before using the reactions downstream.
+    ///
+    /// Tolerance: `1e-6 N` absolute on `residual_norm`, plus (when
+    /// `used_two_pass`) a `1e-6 N·m` check that the pass-2 driver
+    /// lambda has actually collapsed (the point of pass-2). On
+    /// well-conditioned systems both are typically ~1e-12.
+    pub fn is_valid(&self) -> bool {
+        if self.residual_norm.is_nan() || self.residual_norm > 1e-6 {
+            return false;
+        }
+        if self.used_two_pass {
+            let drv_zero_ok = self
+                .reactions
+                .iter()
+                .find(|r| r.n_equations == 1)
+                .map(|r| r.effort.abs() < 1e-6)
+                .unwrap_or(true);
+            if !drv_zero_ok {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 /// Compute the actuator force required to drive the kinematic motion under
@@ -149,7 +187,8 @@ pub fn solve_reactions_with_actuator_using_q_dot(
 
 /// Build a pass-1-only result. Used when the helper short-circuits before
 /// running pass-2 (no actuator, non-sizing-mode actuator, velocity solve
-/// failed, singular actuator pose, etc.).
+/// failed, singular actuator pose, etc.). Pass-1's residual_norm is
+/// reused as the validation residual.
 fn pass1_only_result(mech: &Mechanism, pass1: &StaticSolveResult) -> ReactionSolveResult {
     let reactions = extract_reactions(mech, pass1);
     let driver_torque = get_driver_reactions(&reactions).first().map(|r| r.effort);
@@ -160,6 +199,7 @@ fn pass1_only_result(mech: &Mechanism, pass1: &StaticSolveResult) -> ReactionSol
         used_two_pass: false,
         condition_number: pass1.condition_number,
         is_overconstrained: pass1.is_overconstrained,
+        residual_norm: pass1.residual_norm,
     }
 }
 
@@ -183,6 +223,7 @@ fn solve_reactions_inner(
         used_two_pass: false,
         condition_number: pass1.condition_number,
         is_overconstrained: pass1.is_overconstrained,
+        residual_norm: pass1.residual_norm,
     };
 
     // Find the first sizing-mode `LinearActuator`. A non-zero stored force
@@ -230,23 +271,47 @@ fn solve_reactions_inner(
         .solve(&rhs, 1e-14)
         .map_err(|_| LinkageError::SvdSolveFailed)?;
 
+    // Compute the pass-2 residual `‖Φ_qᵀ·λ_2 + q_new‖` to track whether
+    // the SVD solve converged cleanly. Skipped in the previous version
+    // (left as 0.0) — that meant a failed pass-2 solve could silently
+    // ship wrong lambdas. With this populated, `is_valid()` and the
+    // GUI badge can flag the inconsistency.
+    let phi_q_t = phi_q.transpose();
+    let residual = &phi_q_t * &lambdas2 + &q_new;
+    let pass2_residual_norm = residual.norm();
+
     let pass2 = StaticSolveResult {
         lambdas: lambdas2,
         q_forces: q_new,
-        residual_norm: 0.0,
+        residual_norm: pass2_residual_norm,
         is_overconstrained: false,
         condition_number: 0.0,
     };
     let reactions2 = extract_reactions(mech, &pass2);
 
-    Ok(ReactionSolveResult {
+    let result = ReactionSolveResult {
         reactions: reactions2,
         driver_torque,
         actuator_force: Some(actuator_force),
         used_two_pass: true,
         condition_number: pass1.condition_number,
         is_overconstrained: pass1.is_overconstrained,
-    })
+        residual_norm: pass2_residual_norm,
+    };
+
+    // Catch solver regressions in dev builds. Release builds skip this
+    // and rely on the GUI validation badge + the FBD regression tests
+    // to surface any drift.
+    debug_assert!(
+        result.is_valid(),
+        "solve_reactions_with_actuator produced invalid result: \
+         used_two_pass={}, residual_norm={}, driver_lambda={:?}",
+        result.used_two_pass,
+        result.residual_norm,
+        result.reactions.iter().find(|r| r.n_equations == 1).map(|r| r.effort),
+    );
+
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -936,6 +1001,52 @@ mod tests {
         // F_act at this pose is order kN, so 1e-2 N is still ~5 orders
         // of magnitude below the answer.
         assert_pass2_matches_fbd(&mech, &q, angle, &expected, "θ_2=0.9π (near-singular)", 1e-2);
+    }
+
+    /// Cover the `ReactionSolveResult::is_valid()` contract directly.
+    /// On well-conditioned mechanisms the helper should always produce
+    /// `is_valid() == true`; this test pins that across the no-actuator,
+    /// sizing-mode actuator, and known-force actuator branches.
+    #[test]
+    fn is_valid_reports_true_for_well_conditioned_solves() {
+        // No actuator → pass-1 only.
+        let mech_a = build_fourbar();
+        let q_a = seed_pose_at_angle(&mech_a, PI / 3.0);
+        let r_a = solve_reactions_with_actuator(&mech_a, &q_a, PI / 3.0, 1.0).unwrap();
+        assert!(!r_a.used_two_pass);
+        assert!(
+            r_a.is_valid(),
+            "no-actuator pass-1 should validate; residual={}, drv_lambda={:?}",
+            r_a.residual_norm,
+            r_a.reactions.iter().find(|r| r.n_equations == 1).map(|r| r.effort),
+        );
+        assert!(
+            r_a.residual_norm < 1e-10,
+            "pass-1 residual should be ~1e-12; got {}", r_a.residual_norm,
+        );
+
+        // Sizing-mode actuator → pass-2.
+        let mech_b = build_fourbar_with_actuator(0.0);
+        let q_b = seed_pose_at_angle(&mech_b, PI / 3.0);
+        let r_b = solve_reactions_with_actuator(&mech_b, &q_b, PI / 3.0, 1.0).unwrap();
+        assert!(r_b.used_two_pass);
+        assert!(
+            r_b.is_valid(),
+            "sizing-mode pass-2 should validate; residual={}, drv_lambda={:?}",
+            r_b.residual_norm,
+            r_b.reactions.iter().find(|r| r.n_equations == 1).map(|r| r.effort),
+        );
+
+        // Known-force actuator → pass-1 only (double-count guard fires).
+        let mech_c = build_fourbar_with_actuator(50.0);
+        let q_c = seed_pose_at_angle(&mech_c, PI / 3.0);
+        let r_c = solve_reactions_with_actuator(&mech_c, &q_c, PI / 3.0, 1.0).unwrap();
+        assert!(!r_c.used_two_pass);
+        assert!(
+            r_c.is_valid(),
+            "known-force pass-1 should validate; residual={}",
+            r_c.residual_norm,
+        );
     }
 
     #[test]

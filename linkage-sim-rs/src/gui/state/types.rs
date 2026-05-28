@@ -178,6 +178,14 @@ pub struct ForceResults {
     pub force_contributions: Vec<(String, f64)>,
     /// Virtual work cross-check result: (vw_torque, lagrange_torque, agrees).
     pub virtual_work_check: Option<(f64, f64, bool)>,
+    /// Whether the most recent reaction solve satisfies its equilibrium
+    /// residual (`||Φ_qᵀλ + Q|| < tol`). `None` when no solve has run
+    /// yet; `Some(true)` when the solver's lambdas balance applied forces
+    /// to within tolerance; `Some(false)` means the displayed reactions
+    /// are inconsistent with the applied forces — investigate before
+    /// trusting them. Surfaced as a green/red badge in the property
+    /// panel beside the Joint Reactions section.
+    pub equilibrium_valid: Option<bool>,
 }
 
 // ── Trajectory profile ───────────────────────────────────────────────────────

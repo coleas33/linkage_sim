@@ -566,6 +566,43 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 ui.label(format!("Mech. Advantage: {:.3}", ma));
             }
 
+            // Equilibrium validation badge. Goes green when the reactions
+            // satisfy `‖Φ_qᵀλ + Q‖ < 1e-6` (and pass-2 driver lambda
+            // collapsed to ~0 if pass-2 ran). Red means the displayed
+            // numbers don't balance applied forces — usually a solver
+            // failure at a near-singular pose or a real regression.
+            match state.force_results.equilibrium_valid {
+                Some(true) => {
+                    ui.colored_label(
+                        state.nc(egui::Color32::from_rgb(100, 220, 130)),
+                        "\u{2713} Equilibrium check passed",
+                    )
+                    .on_hover_text(
+                        "Reaction lambdas balance applied forces to within \
+                         1e-6 N (Φ_qᵀλ + Q residual). If pass-2 ran (an \
+                         actuator is in sizing mode), the driver-torque \
+                         lambda has also collapsed to ~0 as expected.",
+                    );
+                }
+                Some(false) => {
+                    ui.colored_label(
+                        state.nc(egui::Color32::from_rgb(255, 100, 100)),
+                        "\u{2717} Equilibrium check FAILED",
+                    )
+                    .on_hover_text(
+                        "Reactions do NOT balance applied forces. Likely \
+                         causes: (1) near-singular pose pushing the SVD \
+                         beyond its conditioning, (2) a real solver \
+                         regression. Compare against the FBD-validated \
+                         tests in src/solver/reactions.rs.",
+                    );
+                }
+                None => {
+                    // No solve has run yet (no mechanism, no driver, or
+                    // statics failed). Nothing to badge.
+                }
+            }
+
             if state.force_results.joint_reactions.is_empty() {
                 ui.label("No reaction data (need driver)");
             } else {
