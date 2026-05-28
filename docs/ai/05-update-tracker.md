@@ -5,6 +5,39 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-05-21 — FBD validation extended to θ_2=0.9π (near-singular)
+
+**What:**
+- New regression test `fbd_validates_pass2_reactions_near_singular`.
+  At θ_2 = 0.9π the linkage is ~18° from its toggle limit at θ_2 = π
+  (where coupler+rocker are collinear and BD = b + c = 5). Transmission
+  angle at C ≈ 165°. Loop-closure discriminant ≈ 0.01 vs ~16 for the
+  linear-term squared — the near-singular signature (two roots almost
+  identical).
+- `assert_pass2_matches_fbd` now takes `tol` as a parameter; the four
+  existing well-conditioned poses pass `1e-4`; this one passes `1e-2`
+  to absorb the residual that the SVD-based solve produces when the
+  answer magnitude is large. Driver-torque tolerance scales
+  proportionally (`tol * 1e-2` with a floor of `1e-6`).
+- Passed first-run, which is mildly surprising — the simulator's
+  numerical conditioning at this pose is better than worst-case
+  expected.
+
+**Why it matters:**
+- The "test numerical conditioning" goal from the validation spec is
+  now covered. If the simulator's SVD ever degrades at near-singular
+  configurations, this test catches it loud and clear before the
+  GUI's reaction display starts producing nonsense values near
+  toggle limits.
+
+**Counts:** 703 → 704 lib tests passing.
+
+**Spec status:** 5 of 4–6 FBD-validated poses done. Option A is now
+above the spec's recommended upper bound; declaring option A complete
+unless the user wants the 5π/4 mirror too.
+
+---
+
 ## 2026-05-21 — FBD validation extended to θ_2=π/4 (mid-stroke, generic case)
 
 **What:**
