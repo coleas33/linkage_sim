@@ -47,12 +47,16 @@ pub struct ReactionSolveResult {
     pub condition_number: f64,
     /// Pass-1 over-constrained flag (diagnostic).
     pub is_overconstrained: bool,
-    /// Equilibrium residual `‖Φ_qᵀλ + Q‖` for the *final* solve (pass-2
-    /// when `used_two_pass`, pass-1 otherwise). Reports whether the
-    /// returned `reactions` actually satisfy static equilibrium with
-    /// the applied generalised forces; should be ~1e-12 or smaller on
-    /// well-conditioned systems.
+    /// Generalised-coordinate residual `‖Φ_qᵀλ + Q‖` for the final solve.
+    /// DIAGNOSTIC ONLY — near-tautological because λ is solved to make it
+    /// zero (see `body_equilibrium_residual`). Use `validation` for the
+    /// trustworthiness verdict, not this.
     pub residual_norm: f64,
+    /// Trustworthiness verdict from the INDEPENDENT per-body equilibrium
+    /// check (plus condition-number gate and, for pass-2, driver-collapse).
+    /// This — not `residual_norm` — is what the GUI badge and `is_valid()`
+    /// report.
+    pub validation: ValidationState,
 }
 
 impl ReactionSolveResult {
@@ -69,22 +73,215 @@ impl ReactionSolveResult {
     /// lambda has actually collapsed (the point of pass-2). On
     /// well-conditioned systems both are typically ~1e-12.
     pub fn is_valid(&self) -> bool {
-        if self.residual_norm.is_nan() || self.residual_norm > 1e-6 {
-            return false;
-        }
-        if self.used_two_pass {
-            let drv_zero_ok = self
-                .reactions
-                .iter()
-                .find(|r| r.n_equations == 1)
-                .map(|r| r.effort.abs() < 1e-6)
-                .unwrap_or(true);
-            if !drv_zero_ok {
-                return false;
-            }
-        }
-        true
+        !matches!(self.validation, ValidationState::Failed)
     }
+
+    /// Tri-state validation for display and assertions:
+    /// - `Verified`   — independent per-body equilibrium holds (genuinely checked).
+    /// - `Unverified` — the mechanism has element/joint types the independent
+    ///   check does not yet model; the SVD residual converged but we make NO
+    ///   physics claim. Callers must NOT present this as "passed".
+    /// - `Failed`     — independent equilibrium violated, or the linear solve
+    ///   didn't converge, or the pose is too ill-conditioned to trust.
+    pub fn validation(&self) -> ValidationState {
+        self.validation
+    }
+}
+
+/// Result of the independent (non-circular) reaction validation. See
+/// `body_equilibrium_residual` for why the plain `residual_norm` is not
+/// sufficient on its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValidationState {
+    Verified,
+    Unverified,
+    Failed,
+}
+
+/// Condition-number ceiling above which a pose is treated as too
+/// ill-conditioned to trust the reactions (rank-deficient / singular).
+/// The near-singular sweep showed cond ~1e2 at θ=0.9π (fine) climbing to
+/// ~4.7e5 at the θ=π toggle (reactions physically unbounded); 1e8 leaves
+/// generous margin for legitimate near-toggle work while rejecting the
+/// genuinely singular.
+const CONDITION_CEILING: f64 = 1e8;
+
+/// Relative-residual threshold for the independent per-body equilibrium
+/// check. Correct solves sit at ~1e-15 (machine eps); a real sign/frame/
+/// Jacobian error pushes this to O(0.1–1). 1e-6 is a safe separating line.
+const EQUILIBRIUM_REL_TOL: f64 = 1e-6;
+
+/// Independent per-body Cartesian Newton-Euler equilibrium residual — the
+/// NON-circular validation of the reaction solve.
+///
+/// `ReactionSolveResult::residual_norm` (‖Φ_qᵀλ + Q‖) is near-tautological:
+/// λ is produced by SVD-solving exactly that system, so for a square,
+/// full-rank Jacobian the residual is ~machine-eps **regardless of whether
+/// the applied generalised force Q — and hence the reactions — is physically
+/// correct**. A mutation test (swapping the moment arm in
+/// `forces::helpers::point_force_to_q`) confirmed `residual_norm` stayed at
+/// ~1e-14 while the reactions were wrong; a spurious force injected on a
+/// non-driver body DOF likewise left both the residual AND the pass-2
+/// driver-torque-collapse check passing while a joint reaction was 2× off.
+///
+/// This function instead checks equilibrium in a DIFFERENT basis: for each
+/// moving body it sums, in world-frame Cartesian coordinates, the joint
+/// reaction forces (from `force_global`, with Newton's-3rd-law signs, at the
+/// joint world positions), the driver couple, and the applied forces
+/// (gravity, linear actuator) computed directly from geometry — NOT routed
+/// through `point_force_to_q`. A body in static equilibrium satisfies
+/// ΣF = 0 and ΣM = 0, so any sign/frame/Jacobian error the generalised
+/// residual hides surfaces here as a non-zero net force or moment.
+///
+/// Returns `Some(relative_residual)` when every force element and joint type
+/// in `mech` is modeled (currently: Revolute joints + the rotational Driver,
+/// Gravity, and a single LinearActuator). Returns `None` when the mechanism
+/// contains anything else (force zones, springs, dampers, fixed/prismatic
+/// joints, multiple actuators) — callers MUST treat `None` as "unverified",
+/// never as pass or fail.
+///
+/// `eff_actuator_force` is the actuator's effective axial force at this pose
+/// (the back-solved value in pass-2, or stored `la.force` in pass-1); `None`
+/// when no actuator acts.
+pub fn body_equilibrium_residual(
+    mech: &Mechanism,
+    q: &DVector<f64>,
+    reactions: &[JointReaction],
+    eff_actuator_force: Option<f64>,
+) -> Option<f64> {
+    use crate::core::constraint::{Constraint, JointConstraint};
+    use std::collections::HashMap;
+
+    let state = mech.state();
+
+    // ── Bail to None on anything this check can't independently model ──
+    for j in mech.joints() {
+        if !matches!(j, JointConstraint::Revolute(_)) {
+            return None;
+        }
+    }
+    let mut gravity: Option<Vector2<f64>> = None;
+    let mut actuator: Option<LinearActuatorElement> = None;
+    for f in mech.forces() {
+        match f {
+            ForceElement::Gravity(g) => {
+                gravity = Some(Vector2::new(g.g_vector[0], g.g_vector[1]))
+            }
+            ForceElement::LinearActuator(a) => {
+                if actuator.is_some() {
+                    return None; // >1 actuator: not modeled
+                }
+                actuator = Some(a.clone());
+            }
+            _ => return None, // force zone / spring / damper / motor / …
+        }
+    }
+
+    // ── Per-body accumulators (world frame) ──────────────────────────────
+    let mut net_f: HashMap<&str, Vector2<f64>> = HashMap::new();
+    let mut net_m: HashMap<&str, f64> = HashMap::new();
+    let mut cg_world: HashMap<&str, Vector2<f64>> = HashMap::new();
+    let mut force_scale = 1.0_f64;
+    let mut char_len = 1e-9_f64;
+
+    for (id, body) in mech.bodies() {
+        if state.is_ground(id) {
+            continue;
+        }
+        let (bx, by, bth) = state.get_pose(id, q);
+        let (c, s) = (bth.cos(), bth.sin());
+        let cg = Vector2::new(
+            bx + c * body.cg_local.x - s * body.cg_local.y,
+            by + s * body.cg_local.x + c * body.cg_local.y,
+        );
+        cg_world.insert(id.as_str(), cg);
+        net_f.insert(id.as_str(), Vector2::zeros());
+        net_m.insert(id.as_str(), 0.0);
+
+        // Gravity acts at the CG (zero moment about CG) on every moving body.
+        if let Some(g) = gravity {
+            let fg = g * body.mass;
+            *net_f.get_mut(id.as_str()).unwrap() += fg;
+            force_scale = force_scale.max(fg.norm());
+        }
+    }
+
+    // Nested helper: add a world-frame force `f` applied at `world_pt` to a
+    // (possibly ground — then ignored) body, accumulating net force and
+    // moment about that body's CG, and tracking the moment-arm scale.
+    fn accum(
+        net_f: &mut HashMap<&str, Vector2<f64>>,
+        net_m: &mut HashMap<&str, f64>,
+        cg_world: &HashMap<&str, Vector2<f64>>,
+        char_len: &mut f64,
+        body: &str,
+        world_pt: Vector2<f64>,
+        f: Vector2<f64>,
+    ) {
+        let Some(cg) = cg_world.get(body) else { return };
+        let r = world_pt - cg;
+        *char_len = char_len.max(r.norm());
+        *net_f.get_mut(body).unwrap() += f;
+        *net_m.get_mut(body).unwrap() += r.x * f.y - r.y * f.x;
+    }
+
+    // ── Joint reactions + driver couple ──────────────────────────────────
+    for jr in reactions {
+        if jr.n_equations == 1 {
+            // Driver: pure couple. +effort on the driven body, −effort on
+            // the reference body. Ground entries are silently dropped.
+            if let Some(m) = net_m.get_mut(jr.body_j_id.as_str()) {
+                *m += jr.effort;
+            }
+            if let Some(m) = net_m.get_mut(jr.body_i_id.as_str()) {
+                *m -= jr.effort;
+            }
+            force_scale = force_scale.max(jr.effort.abs() / char_len.max(1e-9));
+            continue;
+        }
+        // Joint: locate it to get its world position.
+        let Some(joint) = mech.joints().iter().find(|j| j.id() == jr.joint_id) else {
+            return None; // a non-joint, non-driver constraint we don't model
+        };
+        let pt_i = joint.point_i_local();
+        let world_pt = state.body_point_global(&jr.body_i_id, &pt_i, q);
+        let f = Vector2::new(jr.force_global[0], jr.force_global[1]);
+        force_scale = force_scale.max(f.norm());
+        // Newton's 3rd law: +f on body_i, −f on body_j.
+        accum(&mut net_f, &mut net_m, &cg_world, &mut char_len, &jr.body_i_id, world_pt, f);
+        accum(&mut net_f, &mut net_m, &cg_world, &mut char_len, &jr.body_j_id, world_pt, -f);
+    }
+
+    // ── Linear actuator applied force (from geometry, not point_force_to_q) ──
+    if let (Some(a), Some(force)) = (actuator.as_ref(), eff_actuator_force) {
+        let pa_local = Vector2::new(a.point_a[0], a.point_a[1]);
+        let pb_local = Vector2::new(a.point_b[0], a.point_b[1]);
+        let p_a = state.body_point_global(&a.body_a, &pa_local, q);
+        let p_b = state.body_point_global(&a.body_b, &pb_local, q);
+        let d = p_b - p_a;
+        let len = d.norm();
+        if len > 1e-12 {
+            let u = d / len;
+            // evaluate_linear_actuator: force_on_a = −F·u, force_on_b = +F·u.
+            accum(&mut net_f, &mut net_m, &cg_world, &mut char_len, &a.body_a, p_a, -force * u);
+            accum(&mut net_f, &mut net_m, &cg_world, &mut char_len, &a.body_b, p_b, force * u);
+            force_scale = force_scale.max(force.abs());
+        }
+    }
+
+    // ── Worst-body relative residual ─────────────────────────────────────
+    let inv_scale = 1.0 / force_scale.max(1e-9);
+    let mut worst = 0.0_f64;
+    for id in net_f.keys() {
+        let fr = net_f[id].norm();
+        let mr = net_m[id].abs() / char_len.max(1e-9);
+        let r = (fr + mr) * inv_scale;
+        if !r.is_finite() {
+            return Some(f64::INFINITY);
+        }
+        worst = worst.max(r);
+    }
+    Some(worst)
 }
 
 /// Compute the actuator force required to drive the kinematic motion under
@@ -163,7 +360,7 @@ pub fn solve_reactions_with_actuator(
     // driver). The trajectory variant injects its own q_dot below.
     match solve_velocity(mech, q, t) {
         Ok(q_dot) => solve_reactions_inner(mech, q, &q_dot, t, driver_omega, pass1),
-        Err(_) => Ok(pass1_only_result(mech, &pass1)),
+        Err(_) => Ok(pass1_only_result(mech, q, &pass1)),
     }
 }
 
@@ -185,13 +382,72 @@ pub fn solve_reactions_with_actuator_using_q_dot(
     solve_reactions_inner(mech, q, q_dot, t, driver_omega, pass1)
 }
 
+/// The actuator's effective axial force for a PASS-1 result: whatever the
+/// (single) actuator element carries as-is (`la.force`), or `None` if no
+/// actuator is present. Pass-1 applies the stored force directly, so this
+/// is what balances the pass-1 reactions and what the independent check
+/// must use.
+fn pass1_eff_actuator_force(mech: &Mechanism) -> Option<f64> {
+    mech.forces().iter().find_map(|f| match f {
+        ForceElement::LinearActuator(a) => Some(a.force),
+        _ => None,
+    })
+}
+
+/// Compute the trustworthiness verdict from the independent per-body
+/// equilibrium check, the condition-number gate, and (for pass-2) the
+/// driver-collapse expectation.
+fn compute_validation(
+    mech: &Mechanism,
+    q: &DVector<f64>,
+    reactions: &[JointReaction],
+    eff_actuator_force: Option<f64>,
+    condition_number: f64,
+    expect_driver_collapse: bool,
+    driver_torque_pass1: Option<f64>,
+) -> ValidationState {
+    if !condition_number.is_finite() || condition_number > CONDITION_CEILING {
+        return ValidationState::Failed;
+    }
+    // Pass-2 prime-mover intent: the rotational driver torque must collapse.
+    // This is the check (relative to the pass-1 torque it started from) that
+    // catches a wrong back-solved actuator force — the per-body equilibrium
+    // alone cannot, since the reactions self-consistently balance whatever
+    // (possibly wrong) actuator force was injected.
+    if expect_driver_collapse {
+        if let Some(eff) = reactions.iter().find(|r| r.n_equations == 1).map(|r| r.effort) {
+            let reference = driver_torque_pass1.unwrap_or(0.0).abs().max(1.0);
+            if !eff.is_finite() || eff.abs() > 1e-6 * reference {
+                return ValidationState::Failed;
+            }
+        }
+    }
+    match body_equilibrium_residual(mech, q, reactions, eff_actuator_force) {
+        Some(r) if r.is_finite() && r < EQUILIBRIUM_REL_TOL => ValidationState::Verified,
+        Some(_) => ValidationState::Failed,
+        None => ValidationState::Unverified,
+    }
+}
+
 /// Build a pass-1-only result. Used when the helper short-circuits before
 /// running pass-2 (no actuator, non-sizing-mode actuator, velocity solve
-/// failed, singular actuator pose, etc.). Pass-1's residual_norm is
-/// reused as the validation residual.
-fn pass1_only_result(mech: &Mechanism, pass1: &StaticSolveResult) -> ReactionSolveResult {
+/// failed, singular actuator pose, etc.).
+fn pass1_only_result(
+    mech: &Mechanism,
+    q: &DVector<f64>,
+    pass1: &StaticSolveResult,
+) -> ReactionSolveResult {
     let reactions = extract_reactions(mech, pass1);
     let driver_torque = get_driver_reactions(&reactions).first().map(|r| r.effort);
+    let validation = compute_validation(
+        mech,
+        q,
+        &reactions,
+        pass1_eff_actuator_force(mech),
+        pass1.condition_number,
+        false,
+        driver_torque,
+    );
     ReactionSolveResult {
         reactions,
         driver_torque,
@@ -200,6 +456,7 @@ fn pass1_only_result(mech: &Mechanism, pass1: &StaticSolveResult) -> ReactionSol
         condition_number: pass1.condition_number,
         is_overconstrained: pass1.is_overconstrained,
         residual_norm: pass1.residual_norm,
+        validation,
     }
 }
 
@@ -216,14 +473,26 @@ fn solve_reactions_inner(
     let reactions1 = extract_reactions(mech, &pass1);
     let driver_torque = get_driver_reactions(&reactions1).first().map(|r| r.effort);
 
-    let pass1_only = |reacts: Vec<JointReaction>| ReactionSolveResult {
-        reactions: reacts,
-        driver_torque,
-        actuator_force: None,
-        used_two_pass: false,
-        condition_number: pass1.condition_number,
-        is_overconstrained: pass1.is_overconstrained,
-        residual_norm: pass1.residual_norm,
+    let pass1_only = |reacts: Vec<JointReaction>| {
+        let validation = compute_validation(
+            mech,
+            q,
+            &reacts,
+            pass1_eff_actuator_force(mech),
+            pass1.condition_number,
+            false,
+            driver_torque,
+        );
+        ReactionSolveResult {
+            reactions: reacts,
+            driver_torque,
+            actuator_force: None,
+            used_two_pass: false,
+            condition_number: pass1.condition_number,
+            is_overconstrained: pass1.is_overconstrained,
+            residual_norm: pass1.residual_norm,
+            validation,
+        }
     };
 
     // Find the first sizing-mode `LinearActuator`. A non-zero stored force
@@ -289,6 +558,18 @@ fn solve_reactions_inner(
     };
     let reactions2 = extract_reactions(mech, &pass2);
 
+    // Independent validation: per-body Cartesian equilibrium (using the
+    // back-solved actuator force), condition gate, and driver-collapse.
+    let validation = compute_validation(
+        mech,
+        q,
+        &reactions2,
+        Some(actuator_force),
+        pass1.condition_number,
+        true,
+        driver_torque,
+    );
+
     let result = ReactionSolveResult {
         reactions: reactions2,
         driver_torque,
@@ -297,16 +578,18 @@ fn solve_reactions_inner(
         condition_number: pass1.condition_number,
         is_overconstrained: pass1.is_overconstrained,
         residual_norm: pass2_residual_norm,
+        validation,
     };
 
-    // Catch solver regressions in dev builds. Release builds skip this
-    // and rely on the GUI validation badge + the FBD regression tests
-    // to surface any drift.
+    // Catch solver regressions in dev builds. `is_valid()` is false only on
+    // a genuine `Failed` verdict (independent equilibrium violated, ill-
+    // conditioned, or driver didn't collapse) — NOT on `Unverified`, so this
+    // never false-fires on mechanisms outside the modeled element set.
     debug_assert!(
         result.is_valid(),
-        "solve_reactions_with_actuator produced invalid result: \
-         used_two_pass={}, residual_norm={}, driver_lambda={:?}",
-        result.used_two_pass,
+        "solve_reactions_with_actuator produced a Failed validation: \
+         validation={:?}, residual_norm={}, driver_lambda={:?}",
+        result.validation,
         result.residual_norm,
         result.reactions.iter().find(|r| r.n_equations == 1).map(|r| r.effort),
     );
@@ -1067,5 +1350,153 @@ mod tests {
             assert_eq!(lhs.joint_id, rhs.joint_id);
             assert!((lhs.resultant - rhs.resultant).abs() < 1e-9);
         }
+    }
+
+    /// Validate the trajectory `_using_q_dot` path (the one with no FBD
+    /// pose test): for the same pose and load, the back-solved actuator
+    /// force and all reactions must be IDENTICAL to the constant-speed
+    /// path regardless of the input rate (omega cancels in the power
+    /// balance F = τ·ω/(dL/dt)). Covers positive, larger, and negative
+    /// rates. Originated as a workflow review probe; kept as a regression
+    /// test for the otherwise-unvalidated trajectory path.
+    #[test]
+    fn qdot_variant_is_rate_invariant_and_matches_constant_speed() {
+        use crate::solver::kinematics::solve_velocity;
+        let mech = build_fourbar_with_actuator(0.0);
+        let angle = PI / 3.0;
+        let q = seed_pose_at_angle(&mech, angle);
+
+        let cs = solve_reactions_with_actuator(&mech, &q, angle, 1.0).unwrap();
+        assert!(cs.used_two_pass);
+        let f_cs = cs.actuator_force.unwrap();
+
+        // Same pose, q_dot scaled to several different rates.
+        let qd1 = solve_velocity(&mech, &q, angle).unwrap();
+        for rate in [3.7_f64, -2.1, 0.25] {
+            let qd = &qd1 * rate;
+            let tr = solve_reactions_with_actuator_using_q_dot(&mech, &q, &qd, angle, rate)
+                .unwrap();
+            assert!(tr.used_two_pass, "rate {rate}: expected pass-2");
+            assert!(
+                (f_cs - tr.actuator_force.unwrap()).abs() < 1e-9,
+                "rate {rate}: F_act differs: cs={} tr={}",
+                f_cs, tr.actuator_force.unwrap(),
+            );
+            for (a, b) in cs.reactions.iter().zip(tr.reactions.iter()) {
+                assert_eq!(a.joint_id, b.joint_id);
+                assert!(
+                    (a.force_global[0] - b.force_global[0]).abs() < 1e-9
+                        && (a.force_global[1] - b.force_global[1]).abs() < 1e-9,
+                    "rate {rate}: {} reaction differs", a.joint_id,
+                );
+            }
+        }
+    }
+
+    /// The canonical sizing-mode actuator pose must reach the strongest
+    /// verdict: independently `Verified` (not merely `Unverified`).
+    #[test]
+    fn validation_verified_for_modeled_actuator_mechanism() {
+        let mech = build_fourbar_with_actuator(0.0);
+        let q = seed_pose_at_angle(&mech, PI / 3.0);
+        let r = solve_reactions_with_actuator(&mech, &q, PI / 3.0, 1.0).unwrap();
+        assert_eq!(
+            r.validation(),
+            ValidationState::Verified,
+            "gravity + single actuator + revolute 4-bar should be independently verified",
+        );
+        assert!(r.is_valid());
+    }
+
+    /// THE headline regression test: the independent per-body equilibrium
+    /// check must have teeth. A correct reaction set scores ~machine-eps;
+    /// perturbing a single joint reaction by a physically-significant
+    /// amount must blow the residual far past the tolerance. This is the
+    /// class of error the near-tautological `residual_norm` could NOT
+    /// catch (a mutation-test swap of the moment arm left residual_norm at
+    /// ~1e-14 while reactions were wrong).
+    #[test]
+    fn body_equilibrium_residual_catches_perturbed_reaction() {
+        let mech = build_fourbar_with_actuator(0.0);
+        let angle = PI / 3.0;
+        let q = seed_pose_at_angle(&mech, angle);
+        let r = solve_reactions_with_actuator(&mech, &q, angle, 1.0).unwrap();
+        let f_act = r.actuator_force;
+
+        // Correct reactions → tiny residual.
+        let good = body_equilibrium_residual(&mech, &q, &r.reactions, f_act)
+            .expect("modeled mechanism yields Some");
+        assert!(good < 1e-9, "correct reactions should balance; got {good}");
+
+        // Perturb one joint's reaction by 50 N → must be caught.
+        let mut bad_reactions = r.reactions.clone();
+        let j = bad_reactions
+            .iter_mut()
+            .find(|jr| jr.n_equations > 1)
+            .expect("a joint reaction exists");
+        j.force_global[0] += 50.0;
+        let bad = body_equilibrium_residual(&mech, &q, &bad_reactions, f_act)
+            .expect("modeled mechanism yields Some");
+        assert!(
+            bad > EQUILIBRIUM_REL_TOL,
+            "a 50 N perturbation must break equilibrium; residual stayed {bad}",
+        );
+    }
+
+    /// A mechanism containing an element type the independent check does
+    /// not model must report `Unverified` — never a false `Verified`/
+    /// `Failed`. Two actuators trips the ">1 actuator" guard.
+    #[test]
+    fn validation_unverified_for_unmodeled_mechanism() {
+        let mut mech = {
+            // Rebuild the canonical fixture but add a SECOND actuator.
+            let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
+            let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
+            let coupler = make_bar("coupler", "B", "C", 3.0, 3.0, 0.05);
+            let rocker = make_bar("rocker", "D", "C", 2.0, 2.0, 0.02);
+            let mut m = Mechanism::new();
+            m.add_body(ground).unwrap();
+            m.add_body(crank).unwrap();
+            m.add_body(coupler).unwrap();
+            m.add_body(rocker).unwrap();
+            m.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+            m.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+            m.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+            m.add_revolute_joint("J4", "ground", "O4", "rocker", "D").unwrap();
+            m.add_revolute_driver("D1", "ground", "crank", |t| t, |_t| 1.0, |_t| 0.0)
+                .unwrap();
+            m.add_force(ForceElement::Gravity(GravityElement::default()));
+            m
+        };
+        let act = LinearActuatorElement {
+            body_a: "coupler".to_string(),
+            point_a: [1.5, 0.0],
+            point_a_name: None,
+            body_b: "ground".to_string(),
+            point_b: [2.0, 0.0],
+            point_b_name: None,
+            force: 100.0,
+            speed_limit: 0.0,
+            stroke_min: 0.0,
+            stroke_max: 0.0,
+            end_stop_stiffness: 0.0,
+            end_stop_damping: 0.0,
+            end_stop_restitution: 0.0,
+        };
+        let mut act2 = act.clone();
+        act2.point_b = [2.5, 0.0];
+        mech.add_force(ForceElement::LinearActuator(act));
+        mech.add_force(ForceElement::LinearActuator(act2));
+        mech.build().unwrap();
+
+        let q = seed_pose_at_angle(&mech, PI / 3.0);
+        let r = solve_reactions_with_actuator(&mech, &q, PI / 3.0, 1.0).unwrap();
+        assert_eq!(
+            r.validation(),
+            ValidationState::Unverified,
+            "two actuators are outside the modeled set → Unverified, not a guess",
+        );
+        // Unverified is NOT a failure — is_valid() stays true.
+        assert!(r.is_valid());
     }
 }

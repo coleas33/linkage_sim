@@ -566,40 +566,57 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 ui.label(format!("Mech. Advantage: {:.3}", ma));
             }
 
-            // Equilibrium validation badge. Goes green when the reactions
-            // satisfy `‖Φ_qᵀλ + Q‖ < 1e-6` (and pass-2 driver lambda
-            // collapsed to ~0 if pass-2 ran). Red means the displayed
-            // numbers don't balance applied forces — usually a solver
-            // failure at a near-singular pose or a real regression.
-            match state.force_results.equilibrium_valid {
-                Some(true) => {
+            // Reaction validation badge — tri-state, driven by the
+            // INDEPENDENT per-body Cartesian equilibrium check (not the
+            // near-tautological Φ_qᵀλ residual). See
+            // solver::reactions::body_equilibrium_residual.
+            use crate::solver::reactions::ValidationState;
+            match state.force_results.reaction_validation {
+                Some(ValidationState::Verified) => {
                     ui.colored_label(
                         state.nc(egui::Color32::from_rgb(100, 220, 130)),
-                        "\u{2713} Equilibrium check passed",
+                        "\u{2713} Reactions verified",
                     )
                     .on_hover_text(
-                        "Reaction lambdas balance applied forces to within \
-                         1e-6 N (Φ_qᵀλ + Q residual). If pass-2 ran (an \
-                         actuator is in sizing mode), the driver-torque \
-                         lambda has also collapsed to ~0 as expected.",
+                        "Independently cross-checked: every moving body's \
+                         net force and moment balance to zero in world-frame \
+                         Cartesian coordinates (computed from joint geometry \
+                         and applied forces directly, NOT from the solve that \
+                         produced the reactions). Pass-2 driver torque also \
+                         collapsed. These numbers are trustworthy.",
                     );
                 }
-                Some(false) => {
+                Some(ValidationState::Unverified) => {
                     ui.colored_label(
-                        state.nc(egui::Color32::from_rgb(255, 100, 100)),
-                        "\u{2717} Equilibrium check FAILED",
+                        state.nc(egui::Color32::from_rgb(180, 180, 185)),
+                        "\u{2014} Reactions not independently verified",
                     )
                     .on_hover_text(
-                        "Reactions do NOT balance applied forces. Likely \
-                         causes: (1) near-singular pose pushing the SVD \
-                         beyond its conditioning, (2) a real solver \
-                         regression. Compare against the FBD-validated \
-                         tests in src/solver/reactions.rs.",
+                        "The solve converged, but this mechanism contains an \
+                         element or joint type the independent equilibrium \
+                         check does not yet model (e.g. force zones, springs, \
+                         fixed/prismatic joints, multiple actuators). The \
+                         reactions may well be correct — they just haven't \
+                         been cross-checked. Independent verification \
+                         currently covers gravity + a single linear actuator \
+                         on a revolute 4-bar.",
+                    );
+                }
+                Some(ValidationState::Failed) => {
+                    ui.colored_label(
+                        state.nc(egui::Color32::from_rgb(255, 100, 100)),
+                        "\u{2717} Reaction check FAILED",
+                    )
+                    .on_hover_text(
+                        "Independent per-body equilibrium is violated, the \
+                         pose is too ill-conditioned (near a singularity), or \
+                         the pass-2 driver torque did not collapse. Do NOT \
+                         trust these reactions. Compare against the FBD tests \
+                         in src/solver/reactions.rs.",
                     );
                 }
                 None => {
-                    // No solve has run yet (no mechanism, no driver, or
-                    // statics failed). Nothing to badge.
+                    // No solve yet (no mechanism / no driver / statics failed).
                 }
             }
 

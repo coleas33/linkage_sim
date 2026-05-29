@@ -5,6 +5,61 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-05-28 — reaction validation made non-circular (adversarial-review fix)
+
+**What:**
+- An adversarial-review workflow (degraded on a session-token limit, but
+  its surviving artifacts + direct verification were conclusive) found
+  that the 2026-05-21 `is_valid()` / equilibrium badge was **unsound**.
+  The `residual_norm` check (‖Φ_qᵀλ + Q‖) is near-tautological: λ is
+  SVD-solved to make exactly that zero, so for the square full-rank 4-bar
+  Jacobian it sits at ~1e-14 regardless of whether the physics is right.
+  Proven two ways: (a) a mutation test swapping the moment arm in
+  `point_force_to_q` left `residual_norm` at 3.49e-14 while reactions were
+  wrong; (b) a probe injecting a spurious 100 N force on the rocker left
+  BOTH `is_valid()` criteria passing while J4's reaction was 2× off.
+- Replaced with an INDEPENDENT per-body Cartesian Newton-Euler check
+  (`solver::reactions::body_equilibrium_residual`): for each moving body,
+  sum world-frame joint reactions (from `force_global`, Newton-3 signs, at
+  joint geometry) + driver couple + applied forces (gravity, actuator from
+  geometry — NOT via `point_force_to_q`), assert ΣF and ΣM ≈ 0 relative to
+  force scale. Genuinely independent of the solve, so it catches
+  sign/frame/Jacobian errors the generalised residual hides.
+- New tri-state `ValidationState { Verified, Unverified, Failed }`.
+  `Unverified` is returned (never a false green/red) when the mechanism
+  has element/joint types the check doesn't yet model — currently it
+  covers gravity + a single LinearActuator on a revolute 4-bar; force
+  zones, springs, fixed/prismatic joints, multiple actuators → Unverified.
+- Added a condition-number ceiling (1e8) and kept the pass-2
+  driver-collapse check (relative) as a complementary gate that catches
+  wrong back-solved actuator force.
+- GUI badge is now tri-state and honest: green "Reactions verified",
+  grey "not independently verified", red "Reaction check FAILED", with
+  hover text matching what is actually checked.
+- `ForceResults.equilibrium_valid: Option<bool>` →
+  `reaction_validation: Option<ValidationState>`.
+- Cleaned up workflow-agent test debris: removed two `#[ignore]` eprintln
+  probes; kept + renamed the trajectory-path test
+  (`qdot_variant_is_rate_invariant_and_matches_constant_speed`); reverted
+  an orphaned mutation-test swap a review agent left in `helpers.rs`.
+- New regression tests: `body_equilibrium_residual_catches_perturbed_reaction`
+  (the headline — proves the check has teeth), plus Verified/Unverified
+  verdict tests.
+
+**Process note:** the review workflow's agents made uncommitted edits to
+`src/` (a mutation probe + added tests). Read-only review intent was
+violated; the `fbd-math-reviewer` agent definition grants Bash. Worth
+tightening agent tool scopes before the next review workflow.
+
+**Counts:** 705 → 709 lib tests passing. Wasm32 clean.
+
+**Spec status:** Option B is now genuinely sound (was shipped unsound on
+2026-05-21). Remaining: extend `body_equilibrium_residual` to force zones
++ external forces (the real press mechanism has a ForceZone, so it
+currently shows "Unverified"), then fixed/prismatic joints.
+
+---
+
 ## 2026-05-21 — validation Option B: equilibrium check + GUI badge
 
 **What:**

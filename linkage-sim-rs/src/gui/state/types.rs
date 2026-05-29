@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::gui::state::MotionProfile;
+use crate::solver::reactions::ValidationState;
 
 // ── Alignment guides ─────────────────────────────────────────────────────────
 
@@ -178,14 +179,15 @@ pub struct ForceResults {
     pub force_contributions: Vec<(String, f64)>,
     /// Virtual work cross-check result: (vw_torque, lagrange_torque, agrees).
     pub virtual_work_check: Option<(f64, f64, bool)>,
-    /// Whether the most recent reaction solve satisfies its equilibrium
-    /// residual (`||Φ_qᵀλ + Q|| < tol`). `None` when no solve has run
-    /// yet; `Some(true)` when the solver's lambdas balance applied forces
-    /// to within tolerance; `Some(false)` means the displayed reactions
-    /// are inconsistent with the applied forces — investigate before
-    /// trusting them. Surfaced as a green/red badge in the property
-    /// panel beside the Joint Reactions section.
-    pub equilibrium_valid: Option<bool>,
+    /// Trustworthiness verdict for the most recent reaction solve, from the
+    /// INDEPENDENT per-body equilibrium check (see
+    /// `solver::reactions::body_equilibrium_residual`). `None` when no solve
+    /// has run yet. `Some(Verified)` = genuinely cross-checked and balances;
+    /// `Some(Unverified)` = mechanism has element/joint types the independent
+    /// check can't model yet, so no physics claim is made; `Some(Failed)` =
+    /// equilibrium violated / ill-conditioned — do not trust the numbers.
+    /// Surfaced as a tri-state badge in the property panel.
+    pub reaction_validation: Option<ValidationState>,
 }
 
 // ── Trajectory profile ───────────────────────────────────────────────────────

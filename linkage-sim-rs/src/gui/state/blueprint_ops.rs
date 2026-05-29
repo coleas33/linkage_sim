@@ -621,7 +621,7 @@ impl AppState {
             None
         };
 
-        let equilibrium_valid = Some(solve_result.is_valid());
+        let reaction_validation = Some(solve_result.validation());
 
         self.force_results = ForceResults {
             driver_torque,
@@ -631,7 +631,7 @@ impl AppState {
             mechanical_advantage: ma,
             force_contributions: contribs,
             virtual_work_check: vw_check,
-            equilibrium_valid,
+            reaction_validation,
         };
     }
 
