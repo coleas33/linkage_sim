@@ -146,6 +146,7 @@ const EQUILIBRIUM_REL_TOL: f64 = 1e-6;
 pub fn body_equilibrium_residual(
     mech: &Mechanism,
     q: &DVector<f64>,
+    t: f64,
     reactions: &[JointReaction],
     eff_actuator_force: Option<f64>,
 ) -> Option<f64> {
@@ -173,7 +174,14 @@ pub fn body_equilibrium_residual(
                 }
                 actuator = Some(a.clone());
             }
-            _ => return None, // force zone / spring / damper / motor / …
+            // Applied in pass 2 below (need the per-body accumulators).
+            ForceElement::ForceZone(_)
+            | ForceElement::ExternalForce(_)
+            | ForceElement::ExternalTorque(_) => {}
+            // Velocity-/state-dependent or rotary elements not yet modeled
+            // by this static check: spring, damper, gas spring, motor,
+            // bearing friction, joint limit, torsion spring, rotary damper.
+            _ => return None,
         }
     }
 
@@ -269,6 +277,60 @@ pub fn body_equilibrium_residual(
         }
     }
 
+    // ── Force zones, external forces, external torques (pass 2) ──────────
+    // Each is rebuilt from geometry / element data, NOT via point_force_to_q,
+    // preserving the check's independence from the moment-arm projection.
+    for fe in mech.forces() {
+        match fe {
+            ForceElement::ForceZone(fz) => {
+                use crate::geometry::{
+                    body_rect_to_world, clip_polygon_to_aabb, polygon_area, polygon_centroid,
+                };
+                let Some(body) = mech.bodies().get(&fz.body_id) else { continue };
+                let Some(geo) = body.geometry.as_ref() else { continue };
+                let (bx, by, bth) = state.get_pose(&fz.body_id, q);
+                let corners = body_rect_to_world(bx, by, bth, geo.width, geo.height, &geo.offset);
+                let zmin = Vector2::new(fz.zone_min[0], fz.zone_min[1]);
+                let zmax = Vector2::new(fz.zone_max[0], fz.zone_max[1]);
+                let clipped = clip_polygon_to_aabb(&corners, &zmin, &zmax);
+                // Binary overlap: any contact → full force (matches
+                // evaluate_force_zone).
+                if polygon_area(&clipped) < 1e-15 {
+                    continue;
+                }
+                let force = Vector2::new(fz.force[0], fz.force[1]);
+                // World application point: pinned body-local override, else
+                // the overlap-polygon centroid.
+                let app = if let Some(lp) = fz.body_local_app_point {
+                    let (c, s) = (bth.cos(), bth.sin());
+                    Vector2::new(
+                        bx + c * lp[0] - s * lp[1],
+                        by + s * lp[0] + c * lp[1],
+                    )
+                } else {
+                    polygon_centroid(&clipped)
+                };
+                accum(&mut net_f, &mut net_m, &cg_world, &mut char_len, &fz.body_id, app, force);
+                force_scale = force_scale.max(force.norm());
+            }
+            ForceElement::ExternalForce(ef) => {
+                let factor = ef.modulation.factor(t);
+                let force = Vector2::new(ef.force[0] * factor, ef.force[1] * factor);
+                let lp = Vector2::new(ef.local_point[0], ef.local_point[1]);
+                let app = state.body_point_global(&ef.body_id, &lp, q);
+                accum(&mut net_f, &mut net_m, &cg_world, &mut char_len, &ef.body_id, app, force);
+                force_scale = force_scale.max(force.norm());
+            }
+            ForceElement::ExternalTorque(et) => {
+                let factor = et.modulation.factor(t);
+                if let Some(m) = net_m.get_mut(et.body_id.as_str()) {
+                    *m += et.torque * factor;
+                }
+            }
+            _ => {}
+        }
+    }
+
     // ── Worst-body relative residual ─────────────────────────────────────
     let inv_scale = 1.0 / force_scale.max(1e-9);
     let mut worst = 0.0_f64;
@@ -360,7 +422,7 @@ pub fn solve_reactions_with_actuator(
     // driver). The trajectory variant injects its own q_dot below.
     match solve_velocity(mech, q, t) {
         Ok(q_dot) => solve_reactions_inner(mech, q, &q_dot, t, driver_omega, pass1),
-        Err(_) => Ok(pass1_only_result(mech, q, &pass1)),
+        Err(_) => Ok(pass1_only_result(mech, q, t, &pass1)),
     }
 }
 
@@ -400,6 +462,7 @@ fn pass1_eff_actuator_force(mech: &Mechanism) -> Option<f64> {
 fn compute_validation(
     mech: &Mechanism,
     q: &DVector<f64>,
+    t: f64,
     reactions: &[JointReaction],
     eff_actuator_force: Option<f64>,
     condition_number: f64,
@@ -422,7 +485,7 @@ fn compute_validation(
             }
         }
     }
-    match body_equilibrium_residual(mech, q, reactions, eff_actuator_force) {
+    match body_equilibrium_residual(mech, q, t, reactions, eff_actuator_force) {
         Some(r) if r.is_finite() && r < EQUILIBRIUM_REL_TOL => ValidationState::Verified,
         Some(_) => ValidationState::Failed,
         None => ValidationState::Unverified,
@@ -435,6 +498,7 @@ fn compute_validation(
 fn pass1_only_result(
     mech: &Mechanism,
     q: &DVector<f64>,
+    t: f64,
     pass1: &StaticSolveResult,
 ) -> ReactionSolveResult {
     let reactions = extract_reactions(mech, pass1);
@@ -442,6 +506,7 @@ fn pass1_only_result(
     let validation = compute_validation(
         mech,
         q,
+        t,
         &reactions,
         pass1_eff_actuator_force(mech),
         pass1.condition_number,
@@ -477,6 +542,7 @@ fn solve_reactions_inner(
         let validation = compute_validation(
             mech,
             q,
+            t,
             &reacts,
             pass1_eff_actuator_force(mech),
             pass1.condition_number,
@@ -563,6 +629,7 @@ fn solve_reactions_inner(
     let validation = compute_validation(
         mech,
         q,
+        t,
         &reactions2,
         Some(actuator_force),
         pass1.condition_number,
@@ -1424,7 +1491,7 @@ mod tests {
         let f_act = r.actuator_force;
 
         // Correct reactions → tiny residual.
-        let good = body_equilibrium_residual(&mech, &q, &r.reactions, f_act)
+        let good = body_equilibrium_residual(&mech, &q, angle, &r.reactions, f_act)
             .expect("modeled mechanism yields Some");
         assert!(good < 1e-9, "correct reactions should balance; got {good}");
 
@@ -1435,12 +1502,87 @@ mod tests {
             .find(|jr| jr.n_equations > 1)
             .expect("a joint reaction exists");
         j.force_global[0] += 50.0;
-        let bad = body_equilibrium_residual(&mech, &q, &bad_reactions, f_act)
+        let bad = body_equilibrium_residual(&mech, &q, angle, &bad_reactions, f_act)
             .expect("modeled mechanism yields Some");
         assert!(
             bad > EQUILIBRIUM_REL_TOL,
             "a 50 N perturbation must break equilibrium; residual stayed {bad}",
         );
+    }
+
+    /// A 4-bar with gravity + sizing actuator + a ForceZone load must now
+    /// reach `Verified` (force zones are independently modeled). The zone
+    /// applies a real 1000 N load at an OFF-CG application point, so the
+    /// per-body moment term is exercised — a wrong zone force or moment
+    /// would push the residual past tolerance and report `Failed` instead.
+    #[test]
+    fn validation_verified_with_force_zone() {
+        use crate::core::body::BodyGeometry;
+        use crate::forces::elements::ForceZoneElement;
+
+        let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
+        let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
+        let mut coupler = make_bar("coupler", "B", "C", 3.0, 3.0, 0.05);
+        // Geometry spanning the coupler bar so the zone can overlap it.
+        coupler.geometry = Some(BodyGeometry {
+            width: 3.0,
+            height: 0.4,
+            offset: Vector2::new(1.5, 0.0),
+        });
+        let rocker = make_bar("rocker", "D", "C", 2.0, 2.0, 0.02);
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(crank).unwrap();
+        mech.add_body(coupler).unwrap();
+        mech.add_body(rocker).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+        mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+        mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+        mech.add_revolute_joint("J4", "ground", "O4", "rocker", "D").unwrap();
+        mech.add_revolute_driver("D1", "ground", "crank", |t| t, |_t| 1.0, |_t| 0.0)
+            .unwrap();
+        mech.add_force(ForceElement::Gravity(GravityElement::default()));
+        // Sizing-mode actuator (force = 0 → pass-2 sizes it).
+        mech.add_force(ForceElement::LinearActuator(LinearActuatorElement {
+            body_a: "coupler".to_string(),
+            point_a: [1.5, 0.0],
+            point_a_name: None,
+            body_b: "ground".to_string(),
+            point_b: [2.0, 0.0],
+            point_b_name: None,
+            force: 0.0,
+            speed_limit: 0.0,
+            stroke_min: 0.0,
+            stroke_max: 0.0,
+            end_stop_stiffness: 0.0,
+            end_stop_damping: 0.0,
+            end_stop_restitution: 0.0,
+        }));
+        // Large zone guaranteed to overlap the coupler at θ_2 = π/3, with a
+        // pinned OFF-CG application point so the zone moment term is real.
+        mech.add_force(ForceElement::ForceZone(ForceZoneElement {
+            body_id: "coupler".to_string(),
+            zone_min: [0.0, 0.0],
+            zone_max: [5.0, 3.0],
+            force: [0.0, -1000.0],
+            label: None,
+            body_local_app_point: Some([2.5, 0.0]),
+        }));
+        mech.build().unwrap();
+
+        let q = seed_pose_at_angle(&mech, PI / 3.0);
+        let r = solve_reactions_with_actuator(&mech, &q, PI / 3.0, 1.0).unwrap();
+        assert_eq!(
+            r.validation(),
+            ValidationState::Verified,
+            "gravity + actuator + force zone should independently verify",
+        );
+        // The zone load really applies (1000 N) — sanity-check the
+        // per-body residual is genuinely tiny, not vacuously so.
+        let resid = body_equilibrium_residual(&mech, &q, PI / 3.0, &r.reactions, r.actuator_force)
+            .expect("modeled");
+        assert!(resid < 1e-9, "force-zone equilibrium residual {resid}");
     }
 
     /// A mechanism containing an element type the independent check does

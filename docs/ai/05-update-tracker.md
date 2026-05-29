@@ -5,6 +5,38 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-05-28 — extend independent reaction check to force zones + external forces
+
+**What:**
+- `body_equilibrium_residual` now models `ForceZone`, `ExternalForce`,
+  and `ExternalTorque` in addition to gravity + a single LinearActuator.
+  Each is rebuilt from element data / geometry (force-zone overlap via the
+  `crate::geometry` helpers; external force/torque via `modulation.factor(t)`),
+  NOT through `point_force_to_q`, preserving independence from the
+  moment-arm projection.
+- Threaded `t` through `body_equilibrium_residual` and `compute_validation`
+  (needed for external-force/torque time modulation).
+- The decoded press mechanism (gravity + sizing actuator + a 3 kN
+  `ForceZone` on the output link) now reports **Verified** instead of
+  Unverified.
+- New regression test `validation_verified_with_force_zone`: a 4-bar with
+  gravity + sizing actuator + a 1000 N force zone at an OFF-CG application
+  point reaches Verified, residual < 1e-9 (exercises the zone moment term).
+- Updated the GUI "Unverified" badge hover text to list the now-covered
+  set (revolute + driver + gravity + single actuator + force zones +
+  external forces/torques) and the still-unmodeled set (springs, dampers,
+  motors, fixed/prismatic joints, multiple actuators).
+
+**Counts:** 709 → 710 lib tests passing. Wasm32 clean.
+
+**Spec status:** Option B independent check now covers the full element
+set of the validated press class. Remaining unmodeled: rotary/velocity-
+dependent elements (springs, dampers, gas spring, motor, bearing
+friction, joint limit, torsion spring, rotary damper) and non-revolute
+joints (fixed, prismatic, cam) → those still report Unverified.
+
+---
+
 ## 2026-05-28 — reaction validation made non-circular (adversarial-review fix)
 
 **What:**

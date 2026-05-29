@@ -594,12 +594,13 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                     .on_hover_text(
                         "The solve converged, but this mechanism contains an \
                          element or joint type the independent equilibrium \
-                         check does not yet model (e.g. force zones, springs, \
-                         fixed/prismatic joints, multiple actuators). The \
-                         reactions may well be correct — they just haven't \
-                         been cross-checked. Independent verification \
-                         currently covers gravity + a single linear actuator \
-                         on a revolute 4-bar.",
+                         check does not yet model (e.g. springs, dampers, \
+                         motors, fixed/prismatic joints, multiple actuators). \
+                         The reactions may well be correct — they just \
+                         haven't been cross-checked. Independent verification \
+                         currently covers revolute joints, the rotational \
+                         driver, gravity, a single linear actuator, force \
+                         zones, and external forces/torques.",
                     );
                 }
                 Some(ValidationState::Failed) => {
