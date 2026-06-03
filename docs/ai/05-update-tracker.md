@@ -5,6 +5,44 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-05-28 — mutation-test the validator; pin the driver-collapse gate
+
+**What:**
+- Ran a systematic mutation-testing campaign against the reaction
+  validator (`body_equilibrium_residual` + `compute_validation`) in an
+  isolated git worktree: flipped each sign/handler (gravity, the moment
+  cross-product two ways, driver couple, joint Newton-3, actuator force,
+  force-zone force) plus two production mutations (point_force_to_q
+  moment-arm swap, actuator Newton-3 sign). Every behaviourally-distinct
+  mutation was CAUGHT by the existing tests — the validator's sign logic
+  is well pinned.
+- Caught a harness footgun in the process: a `replace(count=1)` anchor
+  `let force_on_a = -force_on_b;` matched the gas-spring element before the
+  actuator, so the first "actuator" mutation was actually a no-op gas-spring
+  mutation. Lesson recorded in the fbd-derive skill workflow: use
+  occurrence-specific anchors for mutation testing.
+- Found ONE real coverage gap: disabling the pass-2 driver-collapse gate
+  in `compute_validation` was invisible to the entire suite. That gate is
+  the ONLY thing that catches a wrong back-solved actuator force —
+  per-body equilibrium cannot, because the reactions self-consistently
+  balance whatever force was injected (residual stays ~1e-12). If a
+  refactor broke the gate, wrong-physics could regress silently to a green
+  badge — the exact failure mode the 2026-05-28 fix removed.
+- Closed it with `driver_collapse_gate_catches_wrong_actuator_force`:
+  builds pass-2 reactions from a deliberately-2× actuator force, asserts
+  (a) per-body equilibrium is fooled (resid < 1e-9 — documents WHY the gate
+  is needed) and (b) `compute_validation` returns `Failed`. The test was
+  itself mutation-verified: it passes with the gate and fails without it.
+
+**Counts:** 710 → 711 lib tests passing.
+
+**Process note:** a read-only "validate-the-validator" adversarial-review
+workflow ran concurrently in the main worktree while mutation testing ran
+in an isolated one (no interference). Its findings, if any survive
+verification, to be folded in separately.
+
+---
+
 ## 2026-05-28 — extend independent reaction check to force zones + external forces
 
 **What:**

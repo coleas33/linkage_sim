@@ -1641,4 +1641,91 @@ mod tests {
         // Unverified is NOT a failure — is_valid() stays true.
         assert!(r.is_valid());
     }
+
+    /// Pin the pass-2 driver-collapse gate. A WRONG back-solved actuator
+    /// force produces reactions that still satisfy per-body equilibrium
+    /// (they self-consistently balance whatever force was injected), so the
+    /// per-body check alone is fooled — ONLY the driver-collapse gate
+    /// catches it. This test proves both halves, so deleting the gate makes
+    /// it fail. (Found via mutation testing: disabling the gate was
+    /// otherwise invisible to the whole suite.)
+    #[test]
+    fn driver_collapse_gate_catches_wrong_actuator_force() {
+        use crate::solver::assembly::assemble_jacobian;
+        use crate::solver::kinematics::solve_velocity;
+        let mech = build_fourbar_with_actuator(0.0);
+        let angle = PI / 3.0;
+        let q = seed_pose_at_angle(&mech, angle);
+        let pass1 = solve_statics(&mech, &q, angle).unwrap();
+        let driver_torque = get_driver_reactions(&extract_reactions(&mech, &pass1))
+            .first()
+            .map(|r| r.effort);
+        let act = mech
+            .forces()
+            .iter()
+            .find_map(|f| match f {
+                ForceElement::LinearActuator(a) => Some(a.clone()),
+                _ => None,
+            })
+            .unwrap();
+        let st = mech.state();
+        let qz = DVector::zeros(st.n_coords());
+        let phi_q = assemble_jacobian(&mech, &q, angle);
+
+        let correct_f = compute_actuator_force_from_power_balance(
+            &mech,
+            &q,
+            &solve_velocity(&mech, &q, angle).unwrap(),
+            driver_torque.unwrap(),
+            1.0,
+            &act,
+        )
+        .unwrap();
+        let wrong_f = correct_f * 2.0; // deliberately wrong
+
+        let mut am = act.clone();
+        am.force = wrong_f;
+        let q_act = evaluate_linear_actuator(&am, st, &q, &qz);
+        let q_new = &pass1.q_forces + &q_act;
+        let lam = phi_q
+            .transpose()
+            .svd(true, true)
+            .solve(&(-&q_new), 1e-14)
+            .unwrap();
+        let pass2 = StaticSolveResult {
+            lambdas: lam,
+            q_forces: q_new,
+            residual_norm: 0.0,
+            is_overconstrained: false,
+            condition_number: 0.0,
+        };
+        let reactions = extract_reactions(&mech, &pass2);
+
+        // Per-body equilibrium is FOOLED — the reactions self-consistently
+        // balance the wrong force, so this residual is tiny. That is exactly
+        // why the driver-collapse gate must exist.
+        let resid = body_equilibrium_residual(&mech, &q, angle, &reactions, Some(wrong_f))
+            .expect("modeled");
+        assert!(
+            resid < 1e-9,
+            "wrong-F_act reactions are self-consistent (per-body can't catch): {resid}",
+        );
+
+        // The driver-collapse gate must catch it.
+        let v = compute_validation(
+            &mech,
+            &q,
+            angle,
+            &reactions,
+            Some(wrong_f),
+            pass1.condition_number,
+            true,
+            driver_torque,
+        );
+        assert_eq!(
+            v,
+            ValidationState::Failed,
+            "wrong F_act must fail validation via the driver-collapse gate",
+        );
+    }
 }
