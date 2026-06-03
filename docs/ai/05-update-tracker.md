@@ -5,6 +5,60 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-05-28 — validate-the-validator review: close the validator's coverage gaps
+
+**What:** A read-only adversarial-review workflow (5 lenses, findings
+adversarially verified) examined `body_equilibrium_residual` +
+`compute_validation` — the trust anchor written solo. Verdict: the
+validator's PHYSICS is correct, but its TESTS only exercised the force
+half of a force-AND-moment check, so whole branches could regress to
+garbage while the suite stayed green ("the correlated-error hole relocated
+one level up — in the coverage, not the formula"). Closed every confirmed
+gap with mutation-verified tests:
+
+- **B1/B2 — moment term untested.** Zeroing `mr = net_m/char_len` passed
+  the whole suite; the only residual-teeth test perturbed a force (caught
+  by the force term alone). Confirmed independently: with `mr=0` the suite
+  still caught the real `point_force_to_q` swap (force term + FBD values
+  catch force-applied bugs) — but moment-ONLY load types (external torque,
+  driver couple, fixed-joint moments) would slip. Added
+  `body_equilibrium_residual_catches_moment_only_imbalance`: bumps the
+  driver couple (pure moment, no force) and asserts the moment term
+  catches it; its `good < 1e-9` baseline also pins the cross-product sign.
+  Mutation-verified (passes with the moment term, fails with `mr=0`).
+- **W1 — external force/torque handlers had zero coverage** (flipping
+  either sign passed all tests). Added
+  `validation_verified_with_external_force_and_torque`; mutation-verified
+  both handler signs.
+- **W3 — no `Failed` verdict ever asserted end-to-end.** Added
+  `validation_failed_when_ill_conditioned` (feeds cond > 1e8 and non-finite
+  → Failed; also pins `Failed→!is_valid` and `Unverified→is_valid`) and
+  `validation_failed_on_nan_reaction`. (The driver-collapse firing side was
+  pinned in the prior commit.)
+- **W2 — force-zone overlap gate + centroid are SHARED with production,
+  not independent.** Softened the overstated independence comment to be
+  precise (independence holds for the moment-arm projection; the overlap
+  decision and centroid are shared, narrow blast radius). Added
+  `validation_verified_force_zone_centroid_branch` to exercise the
+  previously-unreached `body_local_app_point: None` centroid path.
+- **N3** — documented the body_j-uses-body_i-joint-point reuse as a
+  fail-safe (only ever adds residual) in a code comment.
+
+**Process scar:** lost the five new tests mid-session by using
+`git checkout -- reactions.rs` to revert an in-main mutation — it also
+wiped the uncommitted tests. Re-applied. Rule reinforced: mutation-test in
+an isolated worktree (as done for the earlier campaign), never
+`git checkout` a file holding uncommitted work.
+
+**Counts:** 711 → 716 lib tests passing. Wasm32 clean.
+
+**Spec status:** the reaction validator's test coverage now matches the
+soundness it actually has. Remaining (deferred, documented): N4 global
+force_scale normalisation (float-drift band only), N5 external-on-ground
+silent drop (config-lint gap, not a validator defect).
+
+---
+
 ## 2026-05-28 — mutation-test the validator; pin the driver-collapse gate
 
 **What:**

@@ -255,7 +255,11 @@ pub fn body_equilibrium_residual(
         let world_pt = state.body_point_global(&jr.body_i_id, &pt_i, q);
         let f = Vector2::new(jr.force_global[0], jr.force_global[1]);
         force_scale = force_scale.max(f.norm());
-        // Newton's 3rd law: +f on body_i, −f on body_j.
+        // Newton's 3rd law: +f on body_i, −f on body_j. `world_pt` is body_i's
+        // joint point; at a converged pose body_j's coincides, so reusing it
+        // is exact. Off-manifold it would inject a spurious moment ∝ Φ_revolute,
+        // but that only ADDS residual (fail-safe: never masks a wrong reaction)
+        // and is negligible at the 1e-10 convergence every caller uses.
         accum(&mut net_f, &mut net_m, &cg_world, &mut char_len, &jr.body_i_id, world_pt, f);
         accum(&mut net_f, &mut net_m, &cg_world, &mut char_len, &jr.body_j_id, world_pt, -f);
     }
@@ -278,8 +282,15 @@ pub fn body_equilibrium_residual(
     }
 
     // ── Force zones, external forces, external torques (pass 2) ──────────
-    // Each is rebuilt from geometry / element data, NOT via point_force_to_q,
-    // preserving the check's independence from the moment-arm projection.
+    // Each is rebuilt from geometry / element data, NOT via point_force_to_q.
+    // Independence is precise for the moment-arm PROJECTION: production routes
+    // the moment through point_force_to_q, while this computes it directly in
+    // world frame (accum's r×f), so a point_force_to_q sign/frame bug IS caught.
+    // For force zones, two decisions are SHARED with production, not re-derived:
+    // the binary overlap gate (polygon_area < 1e-15) and the unpinned-app-point
+    // centroid (polygon_centroid). A bug in those shared geometry primitives
+    // would corrupt both sides identically and cancel — narrow blast radius
+    // (wrong app-POINT or overlap DECISION only, not a moment-arm projection).
     for fe in mech.forces() {
         match fe {
             ForceElement::ForceZone(fz) => {
@@ -1727,5 +1738,206 @@ mod tests {
             ValidationState::Failed,
             "wrong F_act must fail validation via the driver-collapse gate",
         );
+    }
+
+    /// Pin the MOMENT half of the residual. The driver supplies a real
+    /// couple (no-actuator pass-1), so bumping the driver reaction's torque
+    /// breaks moment balance while touching NO force — the force term can't
+    /// see it; only `mr = net_m/char_len` can. Every other residual-teeth
+    /// test perturbs a force (caught by the force term regardless), so the
+    /// moment machinery was otherwise untested — zeroing it passed the whole
+    /// suite. The baseline `good < 1e-9` assertion also pins the cross-product
+    /// SIGN. Found by the validate-the-validator review.
+    #[test]
+    fn body_equilibrium_residual_catches_moment_only_imbalance() {
+        let mech = build_fourbar();
+        let angle = PI / 3.0;
+        let q = seed_pose_at_angle(&mech, angle);
+        let r = solve_reactions_with_actuator(&mech, &q, angle, 1.0).unwrap();
+        let good = body_equilibrium_residual(&mech, &q, angle, &r.reactions, None).unwrap();
+        assert!(good < 1e-9, "baseline residual {good}");
+
+        let mut bad = r.reactions.clone();
+        bad.iter_mut().find(|x| x.n_equations == 1).unwrap().effort += 50.0;
+        let resid = body_equilibrium_residual(&mech, &q, angle, &bad, None).unwrap();
+        assert!(
+            resid > EQUILIBRIUM_REL_TOL,
+            "a pure-moment (driver-couple) imbalance must be caught; got {resid}",
+        );
+    }
+
+    /// External force (off-CG) and external torque are in the modeled set; a
+    /// mechanism carrying both must reach Verified with a tiny residual. Pins
+    /// the ExternalForce/ExternalTorque handler signs — a flip in either
+    /// breaks the residual → not Verified. (Both had zero validator coverage
+    /// before; found by the review.)
+    #[test]
+    fn validation_verified_with_external_force_and_torque() {
+        use crate::forces::elements::{
+            ExternalForceElement, ExternalTorqueElement, TimeModulation,
+        };
+        let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
+        let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
+        let coupler = make_bar("coupler", "B", "C", 3.0, 3.0, 0.05);
+        let rocker = make_bar("rocker", "D", "C", 2.0, 2.0, 0.02);
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(crank).unwrap();
+        mech.add_body(coupler).unwrap();
+        mech.add_body(rocker).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+        mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+        mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+        mech.add_revolute_joint("J4", "ground", "O4", "rocker", "D").unwrap();
+        mech.add_revolute_driver("D1", "ground", "crank", |t| t, |_t| 1.0, |_t| 0.0)
+            .unwrap();
+        mech.add_force(ForceElement::Gravity(GravityElement::default()));
+        mech.add_force(ForceElement::LinearActuator(LinearActuatorElement {
+            body_a: "coupler".to_string(),
+            point_a: [1.5, 0.0],
+            point_a_name: None,
+            body_b: "ground".to_string(),
+            point_b: [2.0, 0.0],
+            point_b_name: None,
+            force: 0.0,
+            speed_limit: 0.0,
+            stroke_min: 0.0,
+            stroke_max: 0.0,
+            end_stop_stiffness: 0.0,
+            end_stop_damping: 0.0,
+            end_stop_restitution: 0.0,
+        }));
+        mech.add_force(ForceElement::ExternalForce(ExternalForceElement {
+            body_id: "coupler".to_string(),
+            local_point: [2.5, 0.0],
+            local_point_name: None,
+            force: [100.0, -50.0],
+            modulation: TimeModulation::default(),
+        }));
+        mech.add_force(ForceElement::ExternalTorque(ExternalTorqueElement {
+            body_id: "rocker".to_string(),
+            torque: 30.0,
+            modulation: TimeModulation::default(),
+        }));
+        mech.build().unwrap();
+
+        let angle = PI / 3.0;
+        let q = seed_pose_at_angle(&mech, angle);
+        let r = solve_reactions_with_actuator(&mech, &q, angle, 1.0).unwrap();
+        assert_eq!(
+            r.validation(),
+            ValidationState::Verified,
+            "gravity + actuator + external force + external torque should verify",
+        );
+        let resid = body_equilibrium_residual(&mech, &q, angle, &r.reactions, r.actuator_force)
+            .expect("modeled");
+        assert!(resid < 1e-9, "external-load residual {resid}");
+    }
+
+    /// Pin the condition-number gate's FIRING side and the `Failed → !is_valid`
+    /// mapping — the reject path of the trust anchor, otherwise never asserted.
+    #[test]
+    fn validation_failed_when_ill_conditioned() {
+        let mech = build_fourbar_with_actuator(0.0);
+        let angle = PI / 3.0;
+        let q = seed_pose_at_angle(&mech, angle);
+        let r = solve_reactions_with_actuator(&mech, &q, angle, 1.0).unwrap();
+        let v = compute_validation(
+            &mech, &q, angle, &r.reactions, r.actuator_force,
+            CONDITION_CEILING * 10.0, true, r.driver_torque,
+        );
+        assert_eq!(v, ValidationState::Failed, "cond > ceiling must Fail");
+        let vn = compute_validation(
+            &mech, &q, angle, &r.reactions, r.actuator_force,
+            f64::NAN, true, r.driver_torque,
+        );
+        assert_eq!(vn, ValidationState::Failed, "non-finite cond must Fail");
+        let failed = ReactionSolveResult { validation: ValidationState::Failed, ..r.clone() };
+        assert!(!failed.is_valid());
+        let unver = ReactionSolveResult { validation: ValidationState::Unverified, ..r };
+        assert!(unver.is_valid());
+    }
+
+    /// A NaN in a reaction must yield `Failed`, not a spurious `Verified`.
+    #[test]
+    fn validation_failed_on_nan_reaction() {
+        let mech = build_fourbar_with_actuator(0.0);
+        let angle = PI / 3.0;
+        let q = seed_pose_at_angle(&mech, angle);
+        let r = solve_reactions_with_actuator(&mech, &q, angle, 1.0).unwrap();
+        let mut bad = r.reactions.clone();
+        bad.iter_mut().find(|x| x.n_equations > 1).unwrap().force_global[0] = f64::NAN;
+        let resid = body_equilibrium_residual(&mech, &q, angle, &bad, r.actuator_force)
+            .expect("modeled");
+        assert!(!(resid < EQUILIBRIUM_REL_TOL), "NaN reaction must not pass; got {resid}");
+        let v = compute_validation(
+            &mech, &q, angle, &bad, r.actuator_force,
+            r.condition_number, true, r.driver_torque,
+        );
+        assert_eq!(v, ValidationState::Failed);
+    }
+
+    /// Pin the force-zone CENTROID branch (`body_local_app_point: None`), which
+    /// no other test reaches — they all pin the app point. Verifies the
+    /// check's centroid agrees with production's at a real overlap.
+    #[test]
+    fn validation_verified_force_zone_centroid_branch() {
+        use crate::core::body::BodyGeometry;
+        use crate::forces::elements::ForceZoneElement;
+        let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
+        let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
+        let mut coupler = make_bar("coupler", "B", "C", 3.0, 3.0, 0.05);
+        coupler.geometry = Some(BodyGeometry {
+            width: 3.0,
+            height: 0.4,
+            offset: Vector2::new(1.5, 0.0),
+        });
+        let rocker = make_bar("rocker", "D", "C", 2.0, 2.0, 0.02);
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(crank).unwrap();
+        mech.add_body(coupler).unwrap();
+        mech.add_body(rocker).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+        mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+        mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+        mech.add_revolute_joint("J4", "ground", "O4", "rocker", "D").unwrap();
+        mech.add_revolute_driver("D1", "ground", "crank", |t| t, |_t| 1.0, |_t| 0.0)
+            .unwrap();
+        mech.add_force(ForceElement::Gravity(GravityElement::default()));
+        mech.add_force(ForceElement::LinearActuator(LinearActuatorElement {
+            body_a: "coupler".to_string(),
+            point_a: [1.5, 0.0],
+            point_a_name: None,
+            body_b: "ground".to_string(),
+            point_b: [2.0, 0.0],
+            point_b_name: None,
+            force: 0.0,
+            speed_limit: 0.0,
+            stroke_min: 0.0,
+            stroke_max: 0.0,
+            end_stop_stiffness: 0.0,
+            end_stop_damping: 0.0,
+            end_stop_restitution: 0.0,
+        }));
+        // No body_local_app_point → both check and solver use the overlap
+        // centroid. Horizontal+vertical force so the centroid moment is real.
+        mech.add_force(ForceElement::ForceZone(ForceZoneElement {
+            body_id: "coupler".to_string(),
+            zone_min: [0.0, 0.0],
+            zone_max: [5.0, 3.0],
+            force: [400.0, -1000.0],
+            label: None,
+            body_local_app_point: None,
+        }));
+        mech.build().unwrap();
+
+        let angle = PI / 3.0;
+        let q = seed_pose_at_angle(&mech, angle);
+        let r = solve_reactions_with_actuator(&mech, &q, angle, 1.0).unwrap();
+        assert_eq!(r.validation(), ValidationState::Verified);
+        let resid = body_equilibrium_residual(&mech, &q, angle, &r.reactions, r.actuator_force)
+            .expect("modeled");
+        assert!(resid < 1e-9, "centroid-branch residual {resid}");
     }
 }
