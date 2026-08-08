@@ -4,7 +4,9 @@
 //! Analogous to `RevoluteDriver` (which prescribes relative angle), the
 //! `LinearDriver` constrains:
 //!
-//!     Phi = |P_b - P_a| - d(t) = 0
+//! ```text
+//! Phi = |P_b - P_a| - d(t) = 0
+//! ```
 //!
 //! where P_a, P_b are global positions of local attachment points on two bodies.
 //! The Lagrange multiplier lambda gives the required actuator force along the
