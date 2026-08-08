@@ -248,7 +248,7 @@ mod tests {
         let snapshot = MechanismSnapshot {
             mechanism_json: "{}".to_string(),
             driver_angle: 1.5,
-            driver_omega: 3.14,
+            driver_omega: std::f64::consts::PI,
             driver_theta_0: 0.5,
             driver_joint_id: Some("J1".to_string()),
             q: vec![1.0, 2.0, 3.0],
@@ -261,7 +261,7 @@ mod tests {
         let restored = history.undo(current).unwrap();
 
         assert_eq!(restored.driver_angle, 1.5);
-        assert_eq!(restored.driver_omega, 3.14);
+        assert_eq!(restored.driver_omega, std::f64::consts::PI);
         assert_eq!(restored.driver_theta_0, 0.5);
         assert_eq!(restored.driver_joint_id, Some("J1".to_string()));
     }

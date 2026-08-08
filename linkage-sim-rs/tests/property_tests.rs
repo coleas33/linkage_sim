@@ -324,7 +324,7 @@ proptest! {
     #[test]
     fn expression_driver_matches_constant_speed(
         omega in 0.5_f64..10.0,
-        theta_0 in 0.0_f64..6.28,
+        theta_0 in 0.0_f64..std::f64::consts::TAU,
         t in 0.0_f64..2.0,
     ) {
         let expr = format!("{}*t+{}", omega, theta_0);
