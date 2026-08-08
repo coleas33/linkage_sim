@@ -99,21 +99,21 @@
   title: GUI actuator force label disagrees with actuator force plot at same pose
   dimension: gui
   risk: mechanical
-  evidence: "User report 2026-08-08: value shown in GUI label differs from actuator force plot tab at the same pose; reproducible in the running app. Code-level pinpoint (label read path vs plot_panel/actuator.rs + sweep data) pending Phase 1 audit re-run."
-  acceptance: "test (or documented repro) proving label and plot read the same value at the same pose; both sourced from one computation path"
+  evidence: "CONFIRMED by audit 2026-08-08 (repro: cargo test --test braindump_repro bl010 -- --nocapture). Both widgets read sweep.actuator_forces; divergence is display-only, 3 mechanisms: (1) stored-force mode label prints la.force verbatim (+2225 N, samples/fourbar.rs:671) at force_render.rs:266 while plot Statics shows computed -2222.8 N — sign+quantity mismatch, likely what the user saw; (2) plot-only Tukey outlier filter (plot_panel/mod.rs:648-661) silently drops 7 finite samples the label shows (fence only ~185 N wide on flat curves); (3) label nearest-index lookup (force_render.rs:247-257) breaks on seam-crossing range sweeps via rem_euclid(360) and compares degrees vs METRES for stroke-mode sweeps (never branches on sweep_mode.is_stroke())."
+  acceptance: "regression test: canvas-label path returns exactly sweep.actuator_forces[i] at the current driver parameter for (a) full 0..360 sweep, (b) seam-crossing 200..365 range sweep at 365 deg, (c) stroke-mode sweep; plot stops dropping finite samples or label applies the identical filter; promote tests/braindump_repro.rs bl010 tests with assertions inverted"
   priority: 1
   status: open
-  notes: "Braindump item; audit chaser must produce file:line evidence before a fix is written."
+  notes: "Repro suite at linkage-sim-rs/tests/braindump_repro.rs (untracked; promote during fix). Label also only reads Statics series, never actuator_forces_id — document or expose."
 
 - id: BL-011
   title: Non-360-degree mechanisms flip to mirrored assembly branch / break near range limits
   dimension: physics
   risk: physics
-  evidence: "User report 2026-08-08: rockers / non-Grashof / limited-range linkages visibly flip configuration and destabilize during sweep, drag, and playback near range limits. Suspect Newton initial-guess continuity in solver/kinematics.rs and range-limit handling; reproducing sample + angle pending Phase 1 audit re-run."
-  acceptance: "regression test: sweeping a limited-range sample across its full reachable range preserves assembly branch (no sign flip in a monitored coordinate) and range-limit behavior is a clean stop/NaN, not a mirrored solve"
+  evidence: "CONFIRMED by audit 2026-08-08, 3/3 skeptics (repro: cargo test --test braindump_repro bl011_sweep_branch_flip_after_unreachable_gap -- --nocapture). Non-Grashof triple-rocker (0.05/0.05/0.05/0.09 m, reachable |theta| <= 86.18 deg): sweep converges 0..86 deg elbow sign -1, fails 87..273, RE-ENTERS at 274 deg on mirrored branch (sign +1) — pose at 360 deg is the mirror of 0 deg. Cause: sweep keeps stale last-good q as Newton guess across the unreachable gap (gui/sweep/mod.rs:667-669) and solve_position is plain NR+SVD with no step limiting or branch-continuity check (solver/kinematics.rs:35-80). Interactive paths share the mechanics (state/mod.rs:1103-1129 solve_at_angle, input_panel.rs:102-105 slider, plot_panel/mod.rs:331-338 plot-click). Shipped 'Flip Branch' workaround button (input_panel.rs:117-126) corroborates."
+  acceptance: "promote tests/braindump_repro.rs::bl011_sweep_branch_flip_after_unreachable_gap with inverted assertion: 0..360 sweep of the 0.05/0.05/0.05/0.09 rocker yields elbow sign at 360 deg == sign at 0 deg (no reentry flip); post-gap re-entry preserves branch or is a clean NaN stop; prefer an in-crate #[cfg(test)] test driving compute_sweep_data itself (pattern at sweep/mod.rs:1222+)"
   priority: 1
   status: open
-  notes: "Braindump item; audit chaser must produce reproducing sample + angle before a fix is written."
+  notes: "Verified refinement: proximity to range limit does NOT flip (400-step ping-pong at 0.7-deg steps: zero flips); only a guess crossing the unreachable gap flips — sweep re-entry, slider drag across gap, plot-click far side. Fix targets gap re-entry seeding (fresh assembly on same branch) or rejecting discontinuous converged solutions."
 
 - id: BL-012
   title: cargo test rewrites docs/chebyshev_lambda/*.png on every run
@@ -154,6 +154,16 @@
   priority: 3
   status: open
   notes: ""
+
+- id: BL-017
+  title: Sizing-mode sweep of ChebyshevLambdaActuator panics debug builds (reactions.rs debug_assert)
+  dimension: physics
+  risk: physics
+  evidence: "CONFIRMED by audit 2026-08-08, 3/3 skeptics (repro: cargo test --test braindump_repro bl010_side_sizing_mode_sweep_panics_debug_assert -- --nocapture, #[should_panic] passes). Tutorial workflow (tutorial.rs:204 'Set Actuator Force to Zero') + compute_sweep on ChebyshevLambdaActuator: panic at src/solver/reactions.rs:666 — pass-2 driver collapse fails (driver_lambda=-195.4 N*m instead of ~0), likely near a dl_dt~0 pose (power-balance guard at reactions.rs:397 only rejects |dl_dt| <= 1e-6). Debug builds abort on a documented user workflow; release builds silently carry the failed validation."
+  acceptance: "same repro test with #[should_panic] REMOVED passes: per-pose validation failure surfaces as status/NaN (existing ReactionValidation enum) instead of debug_assert abort; AND root cause of the non-collapsing driver at that pose understood/documented; cargo test --all green in debug profile"
+  priority: 1
+  status: open
+  notes: "Audit side-discovery while reproducing BL-010. Two sub-issues: (1) replace data-dependent debug_assert with soft status; (2) physics: why does power-balance actuator force fail to collapse the driver there — interacts with two_pass_statics invariant (02-system.yaml) and BL-009. Repro in tests/braindump_repro.rs (untracked)."
 
 - id: BL-016
   title: "Investigate driving egui canvas UI for deeper GUI smoke (samples + plot tabs)"
