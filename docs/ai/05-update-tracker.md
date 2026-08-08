@@ -5,6 +5,21 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-08-08 — Agentic test-and-improve loop bootstrapped
+- Phase 0: fixed linear_driver doctest (text fence) + 3 deny-level
+  approx_constant clippy errors; cargo test --all and clippy now green.
+- Added scripts/gate.sh (test + clippy + WASM check gate).
+- Added docs/ai/backlog.yaml (9 seed items) as the loop queue;
+  04-memory active_issues now points at it.
+- Added .claude/workflows/{audit-campaign,gui-smoke,fix-campaign}.js.
+- Spec: docs/superpowers/specs/2026-08-08-agentic-test-improve-loop-design.md;
+  plan: docs/superpowers/plans/2026-08-08-agentic-test-improve-loop.md.
+- Runtime note: the Workflow tool delivers `args` as a JSON string; all three
+  workflow scripts normalize via an ARGS shim (discovered during selftest,
+  fixed in 91f4fa4 and applied to the other two scripts).
+
+---
+
 ## 2026-05-28 — validate-the-validator review: close the validator's coverage gaps
 
 **What:** A read-only adversarial-review workflow (5 lenses, findings

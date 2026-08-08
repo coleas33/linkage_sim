@@ -122,8 +122,6 @@ known_limitations:
     via DXF "Add Geometry to Link" button (target picked from the popup)
     use the world center transformed into local coords; if the target body
     is rotated at import time the geometry rectangle inherits that rotation.
-  - Forward dynamics doctests for linear_driver (src/core/linear_driver.rs
-    line 7) fail to parse as Rust code. Pre-existing; not blocking.
 
 risks:
   - Non-Grashof sweeps NaN-pad every data channel for every unreachable
@@ -148,9 +146,14 @@ lessons_learned:
     test code. Production code lives in element_types.rs, evaluation.rs,
     force_element.rs, time_modulation.rs submodules. Do not chase this as
     a refactor target.
+  - Verify "known broken" intel against the compiler before scheduling repair
+    work — the tests/ struct-literal breakage was already fixed in b919485,
+    but stale docs and an agent description kept reporting it for months.
+  - Indented lines in /// or //! docs become rustdoc doctests when preceded
+    by a blank doc line. Fence ASCII math as ```text.
 
 current_statuses:
-  solver: Rust port complete; 614 lib tests pass; trajectory-mode IK Stage 1
+  solver: Rust port complete; 716 lib tests pass; trajectory-mode IK Stage 1
     (solver layer) shipped — see solver/inverse_kinematics/
   gui: Phase 5 complete; 14 plot tabs; 30 sample mechanisms
   dxf_import: works native + WASM via drag-drop; selection-based conversions
