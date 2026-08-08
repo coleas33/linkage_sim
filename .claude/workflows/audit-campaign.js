@@ -28,7 +28,8 @@ const VERDICT_SCHEMA = {
   properties: { confirmed: { type: 'boolean' }, reason: { type: 'string' } },
 }
 
-if (args && args.selftest) {
+const ARGS = typeof args === 'string' ? JSON.parse(args || '{}') : (args || {})
+if (ARGS.selftest) {
   return { ok: true, dimensions: ['physics', 'tests', 'quality', 'gui'] }
 }
 
@@ -42,11 +43,11 @@ const DIMS = {
   gui: `Dimension: GUI static review (live smoke is a separate workflow). Review src/gui/ for: state mutations missing the push_undo-before/rebuild-after contract (grep mutate sites against AppState::mutate_and_rebuild, see 02-system.yaml invariants); WASM/native divergence (rfd dialogs vs dropped_files paths — lessons_learned says both must exist for every import flow); DragValue::changed() used where drag_stopped()||lost_focus() is required. Report each violating site file:line.`,
 }
 
-const selected = ((args && args.dimensions) || Object.keys(DIMS))
+const selected = (ARGS.dimensions || Object.keys(DIMS))
   .filter(k => DIMS[k])
   .map(k => ({ key: k, prompt: DIMS[k] }))
 
-const braindump = (args && args.braindump) || []
+const braindump = ARGS.braindump || []
 const finders = selected.map(d => ({
   key: d.key,
   prompt: `${COMMON}\n\n${d.prompt}`,
