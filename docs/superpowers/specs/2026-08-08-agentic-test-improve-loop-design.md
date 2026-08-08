@@ -6,12 +6,15 @@
 
 ## Problem
 
-The repo has accumulated many known and suspected issues: the integration
-test crate (`linkage-sim-rs/tests/`) does not compile, a doctest in
-`core/linear_driver.rs` fails to parse, CSV/HTML export NaN handling is
-unverified, reaction-force physics validation is incomplete (current
-active focus), and there are suspected DRY/perf/GUI issues nobody has
-cataloged. The user wants an agentic system that finds, verifies, fixes,
+The repo has accumulated many known and suspected issues: a doctest in
+`core/linear_driver.rs` fails to parse, `cargo clippy --all-targets`
+fails on 3 deny-level `approx_constant` errors (plus ~290 warnings),
+CSV/HTML export NaN handling is unverified, reaction-force physics
+validation is incomplete (current active focus), and there are suspected
+DRY/perf/GUI issues nobody has cataloged. (2026-08-08 diagnostics: the
+integration test crate compiles clean — earlier "broken tests/ crate"
+intel was stale; all 9 test executables build and `cargo test --lib` is
+716/716 green.) The user wants an agentic system that finds, verifies, fixes,
 and regression-guards these issues with minimal manual cataloging.
 
 ## Decisions made during brainstorm
