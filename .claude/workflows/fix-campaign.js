@@ -49,17 +49,19 @@ Return files_changed as repo-relative paths.`,
   )
 
   if (!fix || fix.status !== 'fixed') {
-    results.push({ id: item.id, outcome: fix ? fix.status : 'agent-error', notes: fix ? fix.notes : 'agent died' })
-    if (fix && fix.status !== 'rejected') {
-      await agent(`In ${ROOT}: if "git status --porcelain" shows changes, run: git stash push -u -m "loop-${item.id}-${fix.status}". Confirm the working tree is clean afterward and report what you stashed.`,
-        { phase: 'Fix', label: `clean:${item.id}` })
-    }
+    const outcome = fix ? fix.status : 'agent-error'
+    results.push({ id: item.id, outcome, notes: fix ? fix.notes : 'agent died' })
+    await agent(`In ${ROOT}: if "git status --porcelain" shows changes, run: git stash push -u -m "loop-${item.id}-${outcome}". Confirm the working tree is clean afterward and report what you stashed.`,
+      { phase: 'Fix', label: `clean:${item.id}` })
     continue
   }
 
+  let changedFiles = fix.files_changed || []
   let approved = false
   let lastReview = null
+  let roundsUsed = 0
   for (let round = 1; round <= 2 && !approved; round++) {
+    roundsUsed = round
     lastReview = await agent(
       `Fresh-context review of the UNCOMMITTED diff in ${ROOT} fixing backlog item: ${JSON.stringify(item)}.
 Run "git status" and "git diff" yourself. Judge: (a) correctness of the change; (b) test quality — would the new test fail if the bug came back?; (c) scope — every changed hunk traces to this item; (d) run "cargo clippy" on the touched targets — reject if the diff introduces new warnings. Approve only if all four hold; otherwise list concrete, actionable findings.`,
@@ -75,23 +77,26 @@ Run "git status" and "git diff" yourself. Judge: (a) correctness of the change; 
         { phase: 'Fix', label: `rework:${item.id}`, schema: FIX_SCHEMA },
       )
       if (!rework || rework.status !== 'fixed') break
+      changedFiles = Array.from(new Set([...changedFiles, ...(rework.files_changed || [])]))
     }
   }
 
   if (!approved) {
-    results.push({ id: item.id, outcome: 'escalated', reviews: 2, notes: JSON.stringify(lastReview ? lastReview.findings : 'review/rework failed') })
+    results.push({ id: item.id, outcome: 'escalated', reviews: roundsUsed, notes: JSON.stringify(lastReview ? lastReview.findings : 'review/rework failed') })
     await agent(`In ${ROOT}: run git stash push -u -m "loop-${item.id}-escalated" so the batch stays clean; the user will inspect the stash. Confirm working tree clean.`,
       { phase: 'Fix', label: `stash:${item.id}` })
     continue
   }
 
   await agent(
-    `In ${ROOT}: commit ALL current working-tree changes as ONE conventional commit for backlog item ${item.id} ("${item.title}"). Choose the type from the change (fix:/test:/docs:/refactor:), mention ${item.id} in the subject, one-sentence body, and end the message with the footer line:
+    `In ${ROOT}: stage EXACTLY these files (repo-relative paths) and commit them as ONE conventional commit for backlog item ${item.id} ("${item.title}"): ${JSON.stringify(changedFiles)}
+For each listed file, run: git add -- <file>. Do not use "git add -A" or "git add .". Choose the commit type from the change (fix:/test:/docs:/refactor:), mention ${item.id} in the subject, one-sentence body, and end the message with the footer line:
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+NEVER stage docs/chebyshev_lambda/*.png or any file not in this list; if the list is empty, run git status, report it, and do NOT commit.
 Do NOT push. Confirm with "git log -1 --stat".`,
     { phase: 'Fix', label: `commit:${item.id}` },
   )
-  results.push({ id: item.id, outcome: 'fixed', reviews: lastReview && lastReview.approved ? 1 : 2 })
+  results.push({ id: item.id, outcome: 'fixed', reviews: roundsUsed })
 }
 
 return { results }

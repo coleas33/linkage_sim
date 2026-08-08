@@ -43,7 +43,7 @@ const DIMS = {
   gui: `Dimension: GUI static review (live smoke is a separate workflow). Review src/gui/ for: state mutations missing the push_undo-before/rebuild-after contract (grep mutate sites against AppState::mutate_and_rebuild, see 02-system.yaml invariants); WASM/native divergence (rfd dialogs vs dropped_files paths — lessons_learned says both must exist for every import flow); DragValue::changed() used where drag_stopped()||lost_focus() is required. Report each violating site file:line.`,
 }
 
-const selected = (ARGS.dimensions || Object.keys(DIMS))
+const selected = (Array.isArray(ARGS.dimensions) ? ARGS.dimensions : Object.keys(DIMS))
   .filter(k => DIMS[k])
   .map(k => ({ key: k, prompt: DIMS[k] }))
 

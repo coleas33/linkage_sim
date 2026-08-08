@@ -22,8 +22,8 @@ if (ARGS.selftest) { return { ok: true } }
 const url = ARGS.url || 'http://localhost:8080'
 const result = await agent(
   `Smoke-test the WASM linkage app at ${url} using Playwright MCP tools (load them via ToolSearch, e.g. "select:mcp__plugin_playwright_playwright__browser_navigate,mcp__plugin_playwright_playwright__browser_snapshot,mcp__plugin_playwright_playwright__browser_console_messages,mcp__plugin_playwright_playwright__browser_take_screenshot,mcp__plugin_playwright_playwright__browser_wait_for,mcp__plugin_playwright_playwright__browser_close").
-Steps: navigate to ${url}; wait 5 seconds for WASM init; snapshot the page and confirm a <canvas> element exists; collect console messages; take a screenshot and judge whether it shows a rendered app (dark CAD-style UI) vs a blank page; close the browser.
+Steps: navigate to ${url}; wait 5 seconds for WASM init; snapshot the page and confirm a <canvas> element exists; collect console messages; take a screenshot and judge whether it shows a rendered app (menu bar / toolbar / panels visible, any theme) vs a blank page; close the browser.
 passed=true only if: page loaded, canvas present, zero console messages of type error (warnings are OK — put them in notes). List every console error string verbatim in console_errors. If navigation fails entirely, passed=false with the failure in notes — the server may not be running (caller must have run scripts/serve_web.sh).`,
   { label: 'gui-smoke', phase: 'Smoke', schema: SMOKE_SCHEMA },
 )
-return result
+return result || { passed: false, canvas_present: false, console_errors: [], notes: 'smoke agent returned no result (agent error)' }
