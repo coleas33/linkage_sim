@@ -94,3 +94,73 @@
   priority: 1
   status: open
   notes: "Coordinate with fbd-math-reviewer conventions from tests::fbd_validates_pass2_reactions_at_60deg."
+
+- id: BL-010
+  title: GUI actuator force label disagrees with actuator force plot at same pose
+  dimension: gui
+  risk: mechanical
+  evidence: "User report 2026-08-08: value shown in GUI label differs from actuator force plot tab at the same pose; reproducible in the running app. Code-level pinpoint (label read path vs plot_panel/actuator.rs + sweep data) pending Phase 1 audit re-run."
+  acceptance: "test (or documented repro) proving label and plot read the same value at the same pose; both sourced from one computation path"
+  priority: 1
+  status: open
+  notes: "Braindump item; audit chaser must produce file:line evidence before a fix is written."
+
+- id: BL-011
+  title: Non-360-degree mechanisms flip to mirrored assembly branch / break near range limits
+  dimension: physics
+  risk: physics
+  evidence: "User report 2026-08-08: rockers / non-Grashof / limited-range linkages visibly flip configuration and destabilize during sweep, drag, and playback near range limits. Suspect Newton initial-guess continuity in solver/kinematics.rs and range-limit handling; reproducing sample + angle pending Phase 1 audit re-run."
+  acceptance: "regression test: sweeping a limited-range sample across its full reachable range preserves assembly branch (no sign flip in a monitored coordinate) and range-limit behavior is a clean stop/NaN, not a mirrored solve"
+  priority: 1
+  status: open
+  notes: "Braindump item; audit chaser must produce reproducing sample + angle before a fix is written."
+
+- id: BL-012
+  title: cargo test rewrites docs/chebyshev_lambda/*.png on every run
+  dimension: tests
+  risk: mechanical
+  evidence: "src/gui/export/raster.rs:406-431 test export_chebyshev_lambda_pngs writes into docs/chebyshev_lambda/; observed 2026-08-08 (8 PNGs dirty after every gate run; were clean at session start)"
+  acceptance: "cargo test --all leaves the working tree clean (test writes to target/ or is #[ignore]/opt-in); PNG regeneration documented as an explicit command"
+  priority: 2
+  status: open
+  notes: "Interacts with fix-campaign per-item commits; commit step already guards against staging these PNGs."
+
+- id: BL-013
+  title: Web (WASM) build renders light theme; theme.rs claims CAD dark visuals
+  dimension: gui
+  risk: mechanical
+  evidence: "gui-smoke live run 2026-08-08: screenshot shows light theme (archived at .superpowers/sdd/2026-08-08-agentic-test-improve-loop/smoke-test-linkage.png); docs/ai/03-structure.yaml describes theme.rs as 'CAD dark visuals'"
+  acceptance: "web build renders the intended theme (or the intended default is documented and gui-smoke prompt/theme docs updated to match); verified by gui-smoke screenshot"
+  priority: 3
+  status: open
+  notes: ""
+
+- id: BL-014
+  title: Per-frame console warning spam in web build (egui viewport Title command)
+  dimension: gui
+  risk: mechanical
+  evidence: "gui-smoke live run 2026-08-08: ~194 identical warnings in ~5s — eframe app_runner.rs:256 'Unhandled egui viewport command: Title(...)' via linkage-web.js:1271, one per frame"
+  acceptance: "zero repeated viewport-command warnings during a 5s gui-smoke run (set title once / gate the per-frame call on web)"
+  priority: 3
+  status: open
+  notes: ""
+
+- id: BL-015
+  title: docs/ai/02-system.yaml is not YAML-parseable (scanner error line 14-15)
+  dimension: quality
+  risk: mechanical
+  evidence: "PyYAML ScannerError at line 14 col 5 / line 15 col 3 (unquoted 'constraint-first mathematics: Phi(q,t)=0...' sequence item); verified identical at d7ee35c and e222aab (pre-existing)"
+  acceptance: "python -c 'import yaml; yaml.safe_load(open(\"docs/ai/02-system.yaml\"))' succeeds with content semantically unchanged"
+  priority: 3
+  status: open
+  notes: ""
+
+- id: BL-016
+  title: "Investigate driving egui canvas UI for deeper GUI smoke (samples + plot tabs)"
+  dimension: gui
+  risk: mechanical
+  evidence: "Plan 2026-08-08 deviation 2: v1 smoke is load/canvas/console only; egui renders to a single canvas so per-widget assertions need coordinate clicking or an AccessKit bridge (no DOM). Spec success-criterion 4 (30 samples render, 14 tabs switch) unmet until this lands."
+  acceptance: "documented decision + working prototype: either coordinate-map click script, AccessKit-based hooks, or URL-parameter sample loading, demonstrated by gui-smoke exercising at least sample-load + one tab switch"
+  priority: 3
+  status: open
+  notes: ""
