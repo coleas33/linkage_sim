@@ -1,0 +1,96 @@
+# Agentic test-and-improve loop queue.
+# Spec: docs/superpowers/specs/2026-08-08-agentic-test-improve-loop-design.md
+# Rules: every item carries evidence (file:line or repro); acceptance is a
+# verifiable check; risk=physics items require fbd-math-reviewer + explicit
+# user review of that item's diff before merge.
+# status: open | in_progress | fixed | deferred | rejected | escalated
+
+- id: BL-001
+  title: linear_driver.rs module doc formula compiled as failing doctest
+  dimension: tests
+  risk: mechanical
+  evidence: "src/core/linear_driver.rs:7 — indented block after blank doc line; cargo test --doc: 1 failed (2026-08-08)"
+  acceptance: "cargo test --doc reports 0 failed"
+  priority: 1
+  status: fixed
+  notes: "Fixed in Phase 0 (agent/phase0-baseline)."
+
+- id: BL-002
+  title: cargo clippy --all-targets fails on 3 deny-level approx_constant errors
+  dimension: quality
+  risk: mechanical
+  evidence: "src/gui/undo.rs:251,264 (3.14 for PI); tests/property_tests.rs:327 (6.28 for TAU); clippy exit != 0 (2026-08-08)"
+  acceptance: "cargo clippy --all-targets exits 0"
+  priority: 1
+  status: fixed
+  notes: "Fixed in Phase 0 (agent/phase0-baseline)."
+
+- id: BL-003
+  title: "Clippy warning debt: ~289 lib warnings (167 collapsible_if; 234 auto-fixable)"
+  dimension: quality
+  risk: mechanical
+  evidence: "cargo clippy --all-targets 2026-08-08: lib 289 warnings, lib-test 305 (278 dupes); top lints collapsible_if 167, too_many_arguments 17, empty_line_after_doc_comments 13"
+  acceptance: "cargo clippy --all-targets produces 0 warnings on lib and lib-test targets; cargo test --all stays green"
+  priority: 3
+  status: open
+  notes: "Mostly cargo clippy --fix + review; too_many_arguments items may be deferred individually with reasons."
+
+- id: BL-004
+  title: docs/guides/WASM_DEPLOYMENT.md drifted from actual build/deploy config
+  dimension: quality
+  risk: mechanical
+  evidence: "WASM_DEPLOYMENT.md:36-40 omits --features raster (build_web.sh:20-24 and deploy-web.yml:38-50 include it); WASM_DEPLOYMENT.md:100 claims max-age=31536000 immutable but web/vercel.json sets max-age=0 must-revalidate"
+  acceptance: "doc's build command and cache-control statements match build_web.sh and web/vercel.json verbatim"
+  priority: 3
+  status: open
+  notes: ""
+
+- id: BL-005
+  title: .claude/agents/rust-test-fixer.md premise is stale (tests already fixed)
+  dimension: quality
+  risk: mechanical
+  evidence: "Agent description claims tests/ struct literals miss fields; commit b919485 (2026-05-26) added them; cargo test --all --no-run exits 0 (2026-08-08)"
+  acceptance: "agent description rewritten to a general 'repair broken test-crate compiles' role or the agent is deleted; no claim that tests/ is currently broken"
+  priority: 3
+  status: open
+  notes: ""
+
+- id: BL-006
+  title: nom v1.2.4 flagged future-incompatible (will be rejected by a future rustc)
+  dimension: quality
+  risk: mechanical
+  evidence: "cargo report during 2026-08-08 build: 'nom v1.2.4 ... will be rejected by a future version of Rust'"
+  acceptance: "cargo tree -i nom documented in notes; dependency updated/replaced, or item deferred with the upstream blocker named"
+  priority: 2
+  status: open
+  notes: ""
+
+- id: BL-007
+  title: CSV/HTML export behavior on NaN-padded (non-Grashof) sweep rows unverified
+  dimension: tests
+  risk: mechanical
+  evidence: "docs/ai/02-system.yaml risks: 'CSV/HTML export needs verification' for NaN rows; no test in tests/ or src/gui/export/ covers a non-Grashof sweep export"
+  acceptance: "test exports a non-Grashof sweep to CSV and HTML; CSV parses row-count-consistently with a documented NaN policy (skip or empty cell); HTML contains no literal 'NaN' artifacts"
+  priority: 2
+  status: open
+  notes: ""
+
+- id: BL-008
+  title: mixed_script_confusables warning for `let δ = 1e-6` in IK derivatives
+  dimension: quality
+  risk: mechanical
+  evidence: "solver/inverse_kinematics/derivatives.rs:217:13 — rustc mixed_script_confusables warning during doctest build (2026-08-08)"
+  acceptance: "identifier renamed (e.g. delta); warning gone; cargo test --all green"
+  priority: 3
+  status: open
+  notes: ""
+
+- id: BL-009
+  title: Extend reaction-force physics validation to force-zone poses + cross-checks
+  dimension: physics
+  risk: physics
+  evidence: "docs/ai/01-meta.yaml active_focus; docs/ai/04-memory.yaml open question (validation reference choice, spec 2026-05-18 recommends FBD-first); existing FBD regression covers theta_2=60deg only (solver/reactions.rs tests)"
+  acceptance: "FBD regression tests at additional poses including force-zone-active ones (use fbd-derive skill); energy-balance and virtual-work-vs-statics cross-check tests; each new check mutation-tested (break solver quantity, confirm test fails, restore)"
+  priority: 1
+  status: open
+  notes: "Coordinate with fbd-math-reviewer conventions from tests::fbd_validates_pass2_reactions_at_60deg."

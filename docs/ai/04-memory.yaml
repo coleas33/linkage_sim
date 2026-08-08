@@ -2,7 +2,8 @@
 # Stable knowledge (invariants, limitations, risks, lessons) lives in 02-system.yaml.
 # Completed decisions live in 05-update-tracker.md.
 
-active_issues: []
+active_issues:
+  - "Agentic loop queue: see docs/ai/backlog.yaml (open items tracked there, not here)"
 
 open_questions:
   - |
