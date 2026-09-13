@@ -175,6 +175,16 @@
   status: open
   notes: "Audit side-discovery while reproducing BL-010. Two sub-issues: (1) replace data-dependent debug_assert with soft status; (2) physics: why does power-balance actuator force fail to collapse the driver there — interacts with two_pass_statics invariant (02-system.yaml) and BL-009. Repro in tests/braindump_repro.rs (untracked)."
 
+- id: BL-020
+  title: Animation frozen below ~15 deg/s — crank-angle slider step_by(0.5) snaps the pose back every frame
+  dimension: gui
+  risk: mechanical
+  evidence: "User report 2026-09-13 (native + WASM, all mechanisms, crank-angle readout static). CONFIRMED: src/gui/input_panel.rs:87-105 binds display_angle_deg to egui::Slider::step_by(0.5) and calls solve_at_angle whenever the post-widget value differs from the pre-widget value by >1e-6 — without user interaction. Headless probe (egui 0.32.3, one frame, RawInput::default): a step_by(0.5) slider rewrote 10.05 -> 10.0 and reported changed()=true; the same slider without step_by left 10.05 unchanged. So each frame the animation's advance (speed*dt) is rounded to the 0.5-deg grid and re-solved: any step < 0.25 deg/frame (< 15 deg/s at 60 fps) is undone. Matches the earlier 'anything less than 15 deg/s doesn't move' report that 5856ccb attributed to omega=0. Side effect even when paused: the pose is silently quantized to 0.5 deg whenever the input panel is visible (e.g. after a plot-click scrub to 274.3 deg)."
+  acceptance: "regression test drives the input panel through egui::Context::run for one frame with no input at driver_angle=10.05 deg and asserts driver_angle is unchanged (and no solve_at_angle side effect) both while playing and while paused; slider write-back happens only on user interaction (drag / typed edit); cargo test --all green; manual: 3 deg/s playback visibly advances natively and in WASM"
+  priority: 1
+  status: open
+  notes: "Not a batch-1 regression (predates Phase 0; deployed site has it). Simplest fix: drop step_by(0.5) (egui only writes back on interaction without it) or gate the write-back on response.dragged()/drag_stopped()/typed-edit rather than a value diff; note response.changed() is TRUE for the snap so it cannot be the gate. Prior regression test step_animation_advances_at_slow_speed only covers the state layer, which was never the problem."
+
 - id: BL-016
   title: "Investigate driving egui canvas UI for deeper GUI smoke (samples + plot tabs)"
   dimension: gui
