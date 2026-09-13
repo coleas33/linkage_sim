@@ -731,6 +731,17 @@ impl Default for AppState {
 
 // ── Methods that remain in mod.rs (core solve/animation/sample loading) ──────
 
+/// What the canvas actuator label displays; see [`AppState::actuator_label_force`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ActuatorLabelForce {
+    /// Statics actuator force (N) read from `sweep.actuator_forces` at the
+    /// current driver pose -- the same sample the Actuator Force plot draws.
+    Computed(f64),
+    /// The element's stored `force` (N): no usable sweep sample at this pose
+    /// (no sweep yet, no actuator series, or a non-finite sample).
+    Stored(f64),
+}
+
 impl AppState {
     /// Take a snapshot of the user-preference fields in the current state.
     /// Used by `tick_save_user_prefs` to compare against `last_saved_prefs`
@@ -815,6 +826,40 @@ impl AppState {
         match self.driver_kind {
             DriverKind::Linear { stroke, .. } => stroke,
             _ => 0.0,
+        }
+    }
+
+    /// Value the canvas actuator label shows for `la` (see
+    /// `canvas/rendering/force_render.rs`).
+    ///
+    /// Reads the statics actuator force from `sweep.actuator_forces` at the
+    /// sample nearest the current driver parameter -- the driver angle for
+    /// angle-mode sweeps, the stroke for stroke-mode sweeps -- so the label
+    /// shows the same value the Actuator Force plot's "Statics" series draws
+    /// at that pose, regardless of whether the element stores a force. Only
+    /// the statics series is read; the plot's "With Inertia" overlay
+    /// (`actuator_forces_id`) is not surfaced on the canvas. Falls back to the
+    /// stored `la.force` when no usable sweep sample exists.
+    ///
+    /// The sweep computes the force of the FIRST `LinearActuator` element in
+    /// the mechanism; with several actuators every label reads that series.
+    pub fn actuator_label_force(
+        &self,
+        la: &crate::forces::elements::LinearActuatorElement,
+    ) -> ActuatorLabelForce {
+        let computed = self.sweep_data.as_ref().and_then(|sweep| {
+            let forces = sweep.actuator_forces.as_ref()?;
+            let driver_value = if sweep.sweep_mode.is_stroke() {
+                self.driver_stroke()
+            } else {
+                self.driver_angle
+            };
+            let f = *forces.get(sweep.index_at_driver(driver_value)?)?;
+            f.is_finite().then_some(f)
+        });
+        match computed {
+            Some(f) => ActuatorLabelForce::Computed(f),
+            None => ActuatorLabelForce::Stored(la.force),
         }
     }
 

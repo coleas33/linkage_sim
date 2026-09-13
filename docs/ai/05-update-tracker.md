@@ -5,6 +5,32 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-12 — BL-010: canvas actuator label agrees with the actuator force plot
+- Label value extracted into `AppState::actuator_label_force` returning
+  `ActuatorLabelForce::{Computed, Stored}`; the canvas only formats it.
+  The `la.force ≈ 0` gate is gone: stored-force mode now shows the same
+  statics sample the plot draws (was +2225 N stored vs -2223 N plotted on
+  ChebyshevLambdaActuator).
+- New `SweepData::index_at_driver`: circular nearest-angle lookup in angle
+  mode (seam-crossing range sweeps such as 200..365 and wrapped driver
+  angles resolve to the same sample; 0/360 tie -> first sample), linear
+  nearest-stroke in metres in stroke mode, NaN samples skipped.
+- Actuator force plot no longer drops finite samples: `filter_actuator_outliers`
+  (Tukey fence) removed for both the Statics and With-Inertia series; both
+  now build their points via `plot_panel::finite_series` (finite-only pairing).
+  Near-singular spikes now stretch the auto Y range; Y zoom persists so the
+  flat part stays inspectable. A `default_y_bounds` soft view was tried and
+  rejected: egui_plot 0.33 re-applies default bounds every frame and locks
+  the axis — the same is already true of X via `with_default_x_bounds`
+  (new BL-019).
+- Tests: `tests/actuator_force_label.rs` (promoted from the BL-010 repros,
+  assertions inverted), `sweep::tests::index_at_driver_*`,
+  `plot_panel::tests::outlier_fence_*` (finite_series keeps every finite
+  spike the old fence dropped). `tests/braindump_repro.rs` now only
+  holds the BL-017 repro.
+
+---
+
 ## 2026-08-08 — Agentic test-and-improve loop bootstrapped
 - Phase 0: fixed linear_driver doctest (text fence) + 3 deny-level
   approx_constant clippy errors; cargo test --all and clippy now green.

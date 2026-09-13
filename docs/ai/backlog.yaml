@@ -102,8 +102,8 @@
   evidence: "CONFIRMED by audit 2026-08-08 (repro: cargo test --test braindump_repro bl010 -- --nocapture). Both widgets read sweep.actuator_forces; divergence is display-only, 3 mechanisms: (1) stored-force mode label prints la.force verbatim (+2225 N, samples/fourbar.rs:671) at force_render.rs:266 while plot Statics shows computed -2222.8 N — sign+quantity mismatch, likely what the user saw; (2) plot-only Tukey outlier filter (plot_panel/mod.rs:648-661) silently drops 7 finite samples the label shows (fence only ~185 N wide on flat curves); (3) label nearest-index lookup (force_render.rs:247-257) breaks on seam-crossing range sweeps via rem_euclid(360) and compares degrees vs METRES for stroke-mode sweeps (never branches on sweep_mode.is_stroke())."
   acceptance: "regression test: canvas-label path returns exactly sweep.actuator_forces[i] at the current driver parameter for (a) full 0..360 sweep, (b) seam-crossing 200..365 range sweep at 365 deg, (c) stroke-mode sweep; plot stops dropping finite samples or label applies the identical filter; promote tests/braindump_repro.rs bl010 tests with assertions inverted"
   priority: 1
-  status: open
-  notes: "Repro suite at linkage-sim-rs/tests/braindump_repro.rs (untracked; promote during fix). Label also only reads Statics series, never actuator_forces_id — document or expose."
+  status: fixed
+  notes: "Fixed 2026-09-12. Label value now comes from AppState::actuator_label_force (gui/state/mod.rs; ActuatorLabelForce::{Computed,Stored}) which always reads sweep.actuator_forces at SweepData::index_at_driver (gui/sweep/mod.rs: circular nearest-angle in angle mode so seam-crossing range sweeps and wrapped driver angles resolve to the same sample; linear nearest-stroke in metres in stroke mode; NaN samples skipped) — the stored-force gate is gone, so stored-force mode shows the computed statics value too. Plot side: filter_actuator_outliers (Tukey fence drop) removed — both Statics and With-Inertia series are built by plot_panel::finite_series so every finite sample is drawn; near-singular spikes now stretch the auto Y range (Y zoom persists in egui_plot 0.33, so the flat part stays inspectable). default_y_bounds was tried and rejected: in egui_plot 0.33 default_*_bounds re-apply every frame and lock the axis (see BL-019). Tests: tests/actuator_force_label.rs (full sweep, stored-force mode, 200..365 seam sweep incl. 365-deg and wrapped 5-deg scrub, stroke-mode sweep — every index asserted bitwise), sweep::tests::index_at_driver_*, plot_panel::tests::outlier_fence_* (finite_series keeps spikes the old fence dropped; skips only non-finite). Documented (not exposed): label reads Statics only, never actuator_forces_id; with several LinearActuators every label reads the first element's series (pre-existing, unchanged)."
 
 - id: BL-011
   title: Non-360-degree mechanisms flip to mirrored assembly branch / break near range limits
@@ -184,3 +184,13 @@
   priority: 3
   status: open
   notes: ""
+
+- id: BL-019
+  title: with_default_x_bounds locks X pan/zoom on every sweep plot (egui_plot default_x_bounds re-applies each frame)
+  dimension: gui
+  risk: mechanical
+  evidence: "Found 2026-09-12 while fixing BL-010. Headless probe (egui::Context::run, 4 frames): with Plot::default_x_bounds set, an X bounds change made in frame 1 is reset to the defaults on the next frame, while a Y change persists; with default_y_bounds both reset. Cause: egui_plot 0.33 lib.rs ~1066 `if (!default_auto_bounds.x && !any_dynamic_modifications) || mem.auto_bounds.x { bounds.set_x(&min_auto_bounds) }` runs every frame, and drag/zoom only mutate mem.transform. plot_panel/mod.rs with_default_x_bounds doc claims 'User pan/zoom still works within a single sweep recompute' — that is not the case for X."
+  acceptance: "either a headless regression test that X pan/zoom persists across frames on a sweep plot (probe pattern above) after switching to a one-shot set_plot_bounds_x keyed on the data range, or the with_default_x_bounds doc corrected to state that X is pinned to the data range by design"
+  priority: 3
+  status: open
+  notes: "Discovered during BL-010; not fixed there (out of scope). Same mechanism is why the actuator force plot cannot use default_y_bounds as a soft outlier view."

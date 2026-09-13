@@ -638,26 +638,17 @@ fn draw_angle_series_with_range(
     }
 }
 
-/// Filter extreme outliers from actuator force data using Tukey's fence method.
+/// Pair sweep x-values with a y-series, keeping every finite sample.
 ///
-/// Near singularities the actuator force diverges (F = T*omega/dl_dt as dl_dt -> 0).
-/// Even with a NaN threshold on dl_dt, values just above the threshold can be
-/// orders of magnitude larger than the useful data, blowing out the Y-axis and
-/// causing lag when zooming. This removes values beyond Q1 - 10*IQR .. Q3 + 10*IQR
-/// (very conservative — only clips extreme spikes, preserves genuine peaks).
-fn filter_actuator_outliers(pairs: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
-    if pairs.len() < 10 {
-        return pairs;
-    }
-    let mut ys: Vec<f64> = pairs.iter().map(|(_, y)| *y).collect();
-    ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let n = ys.len();
-    let q1 = ys[n / 4];
-    let q3 = ys[3 * n / 4];
-    let iqr = (q3 - q1).max(1.0); // floor at 1 N to avoid zero IQR
-    let lo = q1 - 10.0 * iqr;
-    let hi = q3 + 10.0 * iqr;
-    pairs.into_iter().filter(|(_, y)| *y >= lo && *y <= hi).collect()
+/// This is the only filtering the actuator force plot applies (BL-010): the
+/// former Tukey-fence outlier drop silently removed finite samples the canvas
+/// label still displayed, so plot and label disagreed at the same pose.
+fn finite_series(xs: &[f64], ys: &[f64]) -> Vec<(f64, f64)> {
+    xs.iter()
+        .zip(ys.iter())
+        .filter(|&(_, &y)| y.is_finite())
+        .map(|(&x, &y)| (x, y))
+        .collect()
 }
 
 /// A palette of distinguishable colors for plot series.
@@ -780,6 +771,57 @@ mod tests {
             .expect("finite samples yield bounds");
         assert!((lo - 66.5).abs() < 1e-6);
         assert!((hi - 180.0).abs() < 1e-6);
+    }
+
+    /// Flat curve with two near-singular spikes: the removed Tukey fence
+    /// (Q1 - 10*IQR .. Q3 + 10*IQR, IQR floored at 1 N) would have dropped
+    /// both spikes because the fence is only ~20 N wide on a flat curve.
+    fn spiky_force_series() -> (Vec<f64>, Vec<f64>) {
+        let xs: Vec<f64> = (0..24).map(|i| i as f64 * 15.0).collect();
+        let mut ys = vec![-2222.8; 24];
+        ys[5] = 5.0e4;
+        ys[17] = -8.0e4;
+        (xs, ys)
+    }
+
+    #[test]
+    fn outlier_fence_removed_keeps_every_finite_sample() {
+        // BL-010 mechanism (2): plot must draw exactly the samples the
+        // canvas label reads — no silent outlier drop.
+        let (xs, ys) = spiky_force_series();
+        let series = finite_series(&xs, &ys);
+        assert_eq!(series.len(), ys.len());
+        for (i, &(x, y)) in series.iter().enumerate() {
+            assert_eq!(x.to_bits(), xs[i].to_bits());
+            assert_eq!(y.to_bits(), ys[i].to_bits());
+        }
+    }
+
+    #[test]
+    fn outlier_fence_removed_still_skips_non_finite_samples() {
+        // NaN/inf (solver failures, dl_dt -> 0 guard) are the only samples
+        // omitted; finite spikes stay.
+        let (xs, mut ys) = spiky_force_series();
+        ys[2] = f64::NAN;
+        ys[9] = f64::INFINITY;
+        ys[20] = f64::NEG_INFINITY;
+        let series = finite_series(&xs, &ys);
+        let finite_count = ys.iter().filter(|y| y.is_finite()).count();
+        assert_eq!(series.len(), finite_count);
+        assert_eq!(finite_count, ys.len() - 3);
+        assert!(series.iter().any(|&(_, y)| y == 5.0e4));
+        assert!(series.iter().any(|&(_, y)| y == -8.0e4));
+        assert!(series.iter().all(|&(x, _)| x != 30.0 && x != 135.0 && x != 300.0));
+    }
+
+    #[test]
+    fn outlier_fence_removed_short_series_unchanged() {
+        // Fewer than 10 samples was the old filter's bypass; behaviour must
+        // be identical either side of that threshold.
+        let xs = [0.0, 90.0, 180.0];
+        let ys = [1.0, 1.0e6, -1.0e6];
+        assert_eq!(finite_series(&xs, &ys), vec![(0.0, 1.0), (90.0, 1.0e6), (180.0, -1.0e6)]);
+        assert!(finite_series(&[], &[]).is_empty());
     }
 
     #[test]

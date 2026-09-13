@@ -8,7 +8,7 @@ use crate::gui::sweep::SweepData;
 
 use super::{
     detect_plot_click, draw_angle_series_with_range, draw_range_boundary_markers,
-    draw_toggle_markers, filter_actuator_outliers, series_colors, with_default_x_bounds,
+    draw_toggle_markers, finite_series, series_colors, with_default_x_bounds,
     x_axis_label_for_sweep,
 };
 
@@ -32,6 +32,12 @@ pub(super) fn draw_actuator_force(
     // Because this function doesn't own state mutably, we render the input
     // in the caller instead (see draw_plot_panel).
 
+    // Statics-based actuator force: every finite sample is drawn, so the
+    // curve shows exactly what the canvas label reads at each pose (BL-010).
+    // Near-singular spikes (F = T*omega/dl_dt as dl_dt -> 0) may stretch the
+    // auto Y range; zoom the Y axis to inspect the rest of the curve.
+    let pairs = finite_series(&sweep.angles_deg, forces);
+
     let plot = Plot::new("actuator_force_plot")
         .allow_zoom(true)
         .allow_drag(true)
@@ -43,16 +49,6 @@ pub(super) fn draw_actuator_force(
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
-        // Statics-based actuator force (solid line).
-        let pairs: Vec<(f64, f64)> = sweep
-            .angles_deg
-            .iter()
-            .zip(forces.iter())
-            .filter(|&(_, &f)| f.is_finite())
-            .map(|(&x_deg, &f)| (x_deg, f))
-            .collect();
-        let pairs = filter_actuator_outliers(pairs);
-
         draw_angle_series_with_range(
             plot_ui,
             "Statics",
@@ -66,14 +62,7 @@ pub(super) fn draw_actuator_force(
 
         // Inverse dynamics actuator force (dashed overlay, includes inertia).
         if let Some(ref id_forces) = sweep.actuator_forces_id {
-            let id_pairs: Vec<(f64, f64)> = sweep
-                .angles_deg
-                .iter()
-                .zip(id_forces.iter())
-                .filter(|&(_, &f)| f.is_finite())
-                .map(|(&x_deg, &f)| (x_deg, f))
-                .collect();
-            let id_pairs = filter_actuator_outliers(id_pairs);
+            let id_pairs = finite_series(&sweep.angles_deg, id_forces);
 
             let is_stroke = sweep.sweep_mode.is_stroke();
             let id_points: PlotPoints = id_pairs

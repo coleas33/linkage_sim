@@ -212,6 +212,42 @@ pub struct SweepData {
     pub sweep_mode: SweepMode,
 }
 
+impl SweepData {
+    /// Index of the sweep sample nearest the current driver parameter.
+    ///
+    /// `driver_value` is the body-frame driver angle in RADIANS for
+    /// angle-mode sweeps and the actuator stroke in METRES for stroke-mode
+    /// sweeps (matching what `angles_deg` carries in each mode). Angles are
+    /// compared circularly, so a range sweep that crosses the 360-degree
+    /// seam (e.g. 200..365, whose `angles_deg` run past 360) and a wrapped
+    /// driver angle resolve to the same sample; an exact tie (0 and 360 in a
+    /// full-revolution sweep) resolves to the first sample. Non-finite
+    /// samples are skipped. `None` when `driver_value` is non-finite or the
+    /// sweep has no finite samples (trajectory sweeps leave `angles_deg`
+    /// empty).
+    pub fn index_at_driver(&self, driver_value: f64) -> Option<usize> {
+        if !driver_value.is_finite() {
+            return None;
+        }
+        let is_stroke = self.sweep_mode.is_stroke();
+        let target = if is_stroke { driver_value } else { driver_value.to_degrees() };
+        let distance = |x: f64| -> f64 {
+            if is_stroke {
+                (x - target).abs()
+            } else {
+                ((x - target + 180.0).rem_euclid(360.0) - 180.0).abs()
+            }
+        };
+        self.angles_deg
+            .iter()
+            .enumerate()
+            .filter(|(_, x)| x.is_finite())
+            .map(|(i, &x)| (i, distance(x)))
+            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(i, _)| i)
+    }
+}
+
 pub(crate) fn compute_sweep_data(
     mech: &Mechanism,
     q_start: &DVector<f64>,
@@ -2169,5 +2205,61 @@ mod tests {
         for deg in (0..=24).chain(102..=258).chain(337..=360) {
             assert!(rocker[deg].is_nan(), "sample {} deg should be unreachable", deg);
         }
+    }
+
+    // ── SweepData::index_at_driver (BL-010 label lookup) ──────────────────
+
+    fn angle_sweep(angles_deg: Vec<f64>) -> SweepData {
+        let mut data = empty_trajectory_sweep_data(SweepMode::Angle);
+        data.angles_deg = angles_deg;
+        data
+    }
+
+    #[test]
+    fn index_at_driver_full_revolution_nearest_and_tie_to_first() {
+        let sweep = angle_sweep((0..=360).map(f64::from).collect());
+        assert_eq!(sweep.index_at_driver(0.0), Some(0), "0 and 360 tie -> first");
+        assert_eq!(sweep.index_at_driver(90.0_f64.to_radians()), Some(90));
+        assert_eq!(sweep.index_at_driver(90.4_f64.to_radians()), Some(90));
+        assert_eq!(sweep.index_at_driver(90.6_f64.to_radians()), Some(91));
+        // Driver angle that has wrapped past a revolution.
+        assert_eq!(sweep.index_at_driver(450.0_f64.to_radians()), Some(90));
+        assert_eq!(sweep.index_at_driver((-90.0_f64).to_radians()), Some(270));
+    }
+
+    #[test]
+    fn index_at_driver_seam_crossing_range_sweep() {
+        // Range sweep 200..365: raw samples above 360, no 0..5 aliases.
+        let sweep = angle_sweep((200..=365).map(f64::from).collect());
+        assert_eq!(sweep.index_at_driver(365.0_f64.to_radians()), Some(165));
+        assert_eq!(sweep.index_at_driver(5.0_f64.to_radians()), Some(165), "wrapped 5 deg -> 365 sample");
+        assert_eq!(sweep.index_at_driver(360.0_f64.to_radians()), Some(160));
+        assert_eq!(sweep.index_at_driver(0.0), Some(160), "wrapped 0 deg -> 360 sample");
+        // Outside the range: nearest end by circular distance.
+        assert_eq!(sweep.index_at_driver(190.0_f64.to_radians()), Some(0));
+        assert_eq!(sweep.index_at_driver(10.0_f64.to_radians()), Some(165));
+    }
+
+    #[test]
+    fn index_at_driver_stroke_mode_compares_metres_linearly() {
+        let mut sweep = empty_trajectory_sweep_data(SweepMode::Stroke);
+        sweep.angles_deg = vec![0.40, 0.41, 0.42, 0.43];
+        assert_eq!(sweep.index_at_driver(0.42), Some(2));
+        assert_eq!(sweep.index_at_driver(0.4149), Some(1));
+        assert_eq!(sweep.index_at_driver(0.4151), Some(2));
+        // No circular wrap in stroke mode: 0.42 + 2*pi must not alias 0.42.
+        assert_eq!(sweep.index_at_driver(0.42 + std::f64::consts::TAU), Some(3));
+    }
+
+    #[test]
+    fn index_at_driver_skips_nan_samples_and_rejects_bad_input() {
+        let sweep = angle_sweep(vec![f64::NAN, 10.0, f64::NAN, 30.0]);
+        assert_eq!(sweep.index_at_driver(9.0_f64.to_radians()), Some(1));
+        assert_eq!(sweep.index_at_driver(25.0_f64.to_radians()), Some(3));
+        assert_eq!(sweep.index_at_driver(f64::NAN), None);
+        assert_eq!(sweep.index_at_driver(f64::INFINITY), None);
+
+        assert_eq!(angle_sweep(vec![]).index_at_driver(0.0), None);
+        assert_eq!(angle_sweep(vec![f64::NAN; 3]).index_at_driver(0.0), None);
     }
 }

@@ -52,7 +52,7 @@ gui_submodules:
       rendering:
         mod: canvas/rendering/mod.rs (main render pass, overlays, tooltips, grid, background image)
         primitives: canvas/rendering/primitives.rs (springs, dampers, arrows, arcs, markers, alignment guides)
-        force_render: canvas/rendering/force_render.rs (force element visualization + load-path heat map)
+        force_render: canvas/rendering/force_render.rs (force element visualization + load-path heat map; actuator label value comes from AppState::actuator_label_force)
       hit_testing: canvas/hit_testing.rs
       colors: canvas/colors.rs
       context_menu: canvas/context_menu.rs
@@ -72,7 +72,7 @@ gui_submodules:
       mod: plot_panel/mod.rs (PlotTab enum, dispatcher, shared helpers)
       mechanics: plot_panel/mechanics.rs (body angles, transmission, MA, joint reactions)
       dynamics: plot_panel/dynamics.rs (driver torque, inverse dynamics, energy)
-      actuator: plot_panel/actuator.rs (force, speed, power)
+      actuator: plot_panel/actuator.rs (force, speed, power; force plot draws every finite sample — no outlier filter, BL-010)
       coupler: plot_panel/coupler.rs (trace, velocity, acceleration, output force)
 
   samples:
@@ -88,7 +88,7 @@ gui_submodules:
   sweep:
     path: src/gui/sweep/
     files:
-      mod: sweep/mod.rs (SweepData, compute_sweep_data, solve_sweep_positions two-pass Newton continuation for full-revolution sweeps — post-gap samples reached backward from 360 deg on the starting branch (BL-011), push_nan_row helper)
+      mod: sweep/mod.rs (SweepData + SweepData::index_at_driver (nearest sample to the current driver angle/stroke, circular in angle mode — BL-010), compute_sweep_data, solve_sweep_positions two-pass Newton continuation for full-revolution sweeps — post-gap samples reached backward from 360 deg on the starting branch (BL-011), push_nan_row helper)
       motion_profile: sweep/motion_profile.rs (trapezoidal velocity profile, apply_motion_profile; SCurve falls back to ConstantSpeed in driver-side mode)
       fourbar: sweep/fourbar.rs (4-bar linkage detection for transmission angle)
 
