@@ -61,7 +61,7 @@ if (braindump.length) {
 
 const results = await pipeline(
   finders,
-  f => agent(f.prompt, { label: `find:${f.key}`, phase: 'Find', schema: FINDINGS_SCHEMA }),
+  f => agent(f.prompt, { label: `find:${f.key}`, phase: 'Find', schema: FINDINGS_SCHEMA, model: 'sonnet' }),
   (found, f) => {
     if (!found || !found.findings || !found.findings.length) return []
     return parallel(found.findings.map(fi => () => {
@@ -70,7 +70,7 @@ const results = await pipeline(
         : ['reproduce it from scratch']
       return parallel(lenses.map(lens => () =>
         agent(`Adversarial skeptic. Try to REFUTE this finding via the lens: ${lens}. ${COMMON}\nFinding: ${JSON.stringify(fi)}\nRules: default confirmed=false unless you positively reproduce/validate the evidence yourself. State exactly what you ran or read.`,
-          { label: `verify:${(fi.title || '').slice(0, 40)}`, phase: 'Verify', schema: VERDICT_SCHEMA })))
+          { label: `verify:${(fi.title || '').slice(0, 40)}`, phase: 'Verify', schema: VERDICT_SCHEMA, ...(fi.risk === 'physics' ? {} : { model: 'sonnet' }) })))
         .then(vs => {
           const good = vs.filter(Boolean)
           const yes = good.filter(v => v.confirmed).length

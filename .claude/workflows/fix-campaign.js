@@ -45,14 +45,14 @@ Pipeline (all steps mandatory, in order):
 3. GATE: run "bash scripts/gate.sh" from ${ROOT}; it must exit 0 printing GATE PASS. If you cannot get it green after honest attempts, return status "blocked" with the failure output in notes.
 4. MUTATION (only if you added a physics cross-check test): temporarily break the solver quantity under test, confirm your new test goes red, restore. Note the mutation you used.
 Return files_changed as repo-relative paths.`,
-    { phase: 'Fix', label: `fix:${item.id}`, schema: FIX_SCHEMA },
+    { phase: 'Fix', label: `fix:${item.id}`, schema: FIX_SCHEMA, ...(item.risk === 'physics' ? {} : { model: 'sonnet' }) },
   )
 
   if (!fix || fix.status !== 'fixed') {
     const outcome = fix ? fix.status : 'agent-error'
     results.push({ id: item.id, outcome, notes: fix ? fix.notes : 'agent died' })
     await agent(`In ${ROOT}: if "git status --porcelain" shows changes, run: git stash push -u -m "loop-${item.id}-${outcome}". Confirm the working tree is clean afterward and report what you stashed.`,
-      { phase: 'Fix', label: `clean:${item.id}` })
+      { phase: 'Fix', label: `clean:${item.id}`, model: 'haiku', effort: 'low' })
     continue
   }
 
@@ -74,7 +74,7 @@ Run "git status" and "git diff" yourself. Judge: (a) correctness of the change; 
     if (round === 1) {
       const rework = await agent(
         `Address these review findings for backlog item ${item.id} in ${ROOT} (do NOT commit): ${JSON.stringify(lastReview ? lastReview.findings : ['review agent died'])}. Then re-run "bash scripts/gate.sh" — must print GATE PASS. Keep changes minimal.`,
-        { phase: 'Fix', label: `rework:${item.id}`, schema: FIX_SCHEMA },
+        { phase: 'Fix', label: `rework:${item.id}`, schema: FIX_SCHEMA, ...(item.risk === 'physics' ? {} : { model: 'sonnet' }) },
       )
       if (!rework || rework.status !== 'fixed') break
       changedFiles = Array.from(new Set([...changedFiles, ...(rework.files_changed || [])]))
@@ -84,7 +84,7 @@ Run "git status" and "git diff" yourself. Judge: (a) correctness of the change; 
   if (!approved) {
     results.push({ id: item.id, outcome: 'escalated', reviews: roundsUsed, notes: JSON.stringify(lastReview ? lastReview.findings : 'review/rework failed') })
     await agent(`In ${ROOT}: run git stash push -u -m "loop-${item.id}-escalated" so the batch stays clean; the user will inspect the stash. Confirm working tree clean.`,
-      { phase: 'Fix', label: `stash:${item.id}` })
+      { phase: 'Fix', label: `stash:${item.id}`, model: 'haiku', effort: 'low' })
     continue
   }
 
@@ -94,7 +94,7 @@ For each listed file, run: git add -- <file>. Do not use "git add -A" or "git ad
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 NEVER stage docs/chebyshev_lambda/*.png or any file not in this list; if the list is empty, run git status, report it, and do NOT commit.
 Do NOT push. Confirm with "git log -1 --stat".`,
-    { phase: 'Fix', label: `commit:${item.id}` },
+    { phase: 'Fix', label: `commit:${item.id}`, model: 'haiku', effort: 'low' },
   )
   results.push({ id: item.id, outcome: 'fixed', reviews: roundsUsed })
 }
