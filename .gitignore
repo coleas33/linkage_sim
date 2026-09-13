@@ -27,7 +27,8 @@ coverage.xml
 .idea/
 
 # AI tools
-.claude/
+.claude/*
+!.claude/workflows/
 
 # OS
 Thumbs.db
