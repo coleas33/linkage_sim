@@ -15,6 +15,7 @@ use crate::analysis::transmission::{
     mechanical_advantage, transmission_angle_fourbar, VelocityCoord,
 };
 use crate::analysis::validation::check_toggle;
+use crate::core::driver::DriverMeta;
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
 use crate::error::LinkageError;
@@ -398,31 +399,53 @@ pub(crate) fn compute_sweep_data(
         output.map(|out| (driver.to_string(), out))
     });
 
+    // Sample X values (degrees in angle mode, metres in stroke mode; see
+    // comment at the top of the function) and the driver time at each.
+    let x_values: Vec<f64> = (0..=num_steps)
+        .map(|i| start_angle_deg + (i as f64) * step_size)
+        .collect();
+    let ts: Vec<f64> = x_values
+        .iter()
+        .map(|&x_value| {
+            if is_stroke {
+                // f(t) = length_0 + velocity * t  =>  t = (x - length_0) / velocity
+                // (omega = velocity, theta_0 = length_0 in linear mode).
+                if omega.abs() > f64::EPSILON {
+                    (x_value - theta_0) / omega
+                } else {
+                    0.0
+                }
+            } else {
+                (x_value.to_radians() - theta_0) / omega
+            }
+        })
+        .collect();
+
+    // Position solve at every sample (None where unreachable). A full
+    // driver revolution lets post-gap samples be reached from the far end
+    // on the starting assembly branch (BL-011). The far-end seed is only
+    // an exact solution for a constant-speed revolute driver (see
+    // `solve_sweep_positions`), so other drivers keep plain forward
+    // continuation. Range-limited sweeps and the interactive solve paths
+    // (solve_at_angle, slider, plot-click) are NOT covered — see BL-018.
+    let constant_speed_driver = matches!(
+        mech.drivers().first().and_then(|d| d.meta()),
+        Some(DriverMeta::ConstantSpeed { .. })
+    );
+    let full_revolution =
+        !is_stroke && constant_speed_driver && (end_x - start_x - 360.0).abs() < 1e-9;
+    let positions = solve_sweep_positions(mech, q_start, &ts, full_revolution);
+
     // Sweep loop: iterate over num_steps+1 positions from start_angle_deg
     // to end_angle_deg in 1-degree increments.
-    let mut q = q_start.clone();
     let mut q_at_zero = q_start.clone();
 
-    for i in 0..=num_steps {
-        // X is degrees (angle mode) or metres (stroke mode); see comment
-        // at the top of the function.
-        let x_value = start_angle_deg + (i as f64) * step_size;
-        let t = if is_stroke {
-            // f(t) = length_0 + velocity * t  =>  t = (x - length_0) / velocity
-            // (omega = velocity, theta_0 = length_0 in linear mode).
-            if omega.abs() > f64::EPSILON {
-                (x_value - theta_0) / omega
-            } else {
-                0.0
-            }
-        } else {
-            (x_value.to_radians() - theta_0) / omega
-        };
-        let angle_deg = x_value;
+    for (i, pos) in positions.into_iter().enumerate() {
+        let t = ts[i];
+        let angle_deg = x_values[i];
 
-        match solve_position(mech, &q, t, 1e-10, 50) {
-            Ok(result) if result.converged => {
-                q = result.q.clone();
+        match pos {
+            Some(q) => {
                 // Update q_at_zero only when the sweep actually visits
                 // angle 0 as its first sample. For range-limited sweeps
                 // that start elsewhere (e.g. 200..=365) we leave the
@@ -664,9 +687,8 @@ pub(crate) fn compute_sweep_data(
                     }
                 }
             }
-            _ => {
+            None => {
                 // Solver failed at this angle — push NaN for all channels.
-                // Don't update `q`: keep last-good as the initial guess.
                 push_nan_row(
                     &mut data,
                     angle_deg,
@@ -693,6 +715,88 @@ pub(crate) fn compute_sweep_data(
     data.active_range = None;
 
     (data, q_at_zero)
+}
+
+/// Solve the position at every sweep sample by Newton continuation.
+///
+/// Forward pass: each sample is seeded with the previous converged
+/// solution (a failed sample keeps the last-good guess). When the sweep
+/// covers exactly one driver revolution and the forward pass hits an
+/// unreachable gap, the samples beyond the gap are NOT seeded with the
+/// stale pre-gap pose — Newton then lands on an arbitrary (typically the
+/// mirrored) assembly branch (BL-011). Instead they are reached by a
+/// backward pass from the final sample, seeded with the first sample's
+/// solution rotated one full driver turn (the same physical pose), so the
+/// starting branch is preserved by continuity. Samples reachable from
+/// neither end are `None` (NaN in the sweep data).
+///
+/// Preconditions for `full_revolution`:
+/// - The first sample must converge (it anchors the branch); otherwise
+///   the forward pass falls back to plain continuation over the whole
+///   sweep.
+/// - The revolute driver must be constant-speed, `f(t) = theta_0 +
+///   omega*t`, so that `f(t_last) = f(t_first) + 2*pi` and the rotated
+///   first solution exactly satisfies the driver row at the last sample.
+///   For an expression driver this does not hold and the far-end seed is
+///   not a solution; the caller must pass `full_revolution = false`.
+///
+/// Only the feasible arc connected to the first sample (from either end)
+/// is covered. For a 4-bar whose first sample assembles, the feasible
+/// input range `c1 <= cos(theta) <= c2` is a single arc containing 0, so
+/// nothing is lost; a second, isolated arc (only possible when the first
+/// sample does NOT assemble, which disables the two-pass scheme) or a
+/// second transient Newton failure is left as `None` rather than seeded
+/// from a stale pose.
+fn solve_sweep_positions(
+    mech: &Mechanism,
+    q_start: &DVector<f64>,
+    ts: &[f64],
+    full_revolution: bool,
+) -> Vec<Option<DVector<f64>>> {
+    let mut positions: Vec<Option<DVector<f64>>> = vec![None; ts.len()];
+
+    // Forward pass.
+    let mut q = q_start.clone();
+    let mut gap_start: Option<usize> = None;
+    for (i, &t) in ts.iter().enumerate() {
+        match solve_position(mech, &q, t, 1e-10, 50) {
+            Ok(result) if result.converged => {
+                q = result.q;
+                positions[i] = Some(q.clone());
+            }
+            _ => {
+                if full_revolution && positions[0].is_some() {
+                    gap_start = Some(i);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Backward pass from the end of the revolution on the same branch.
+    let driver_theta_idx = mech
+        .driver_body_pair()
+        .and_then(|(_, driver)| mech.state().get_index(driver).ok())
+        .map(|idx| idx.theta_idx());
+    if let (Some(gap_start), Some(q_first), Some(theta_idx)) =
+        (gap_start, positions[0].as_ref(), driver_theta_idx)
+    {
+        let mut q = q_first.clone();
+        q[theta_idx] += 2.0 * std::f64::consts::PI;
+        // `gap_start` itself is retried: it only failed from the stale
+        // forward guess, and the true range limit is rarely on a grid point.
+        for i in (gap_start..ts.len()).rev() {
+            match solve_position(mech, &q, ts[i], 1e-10, 50) {
+                Ok(result) if result.converged => {
+                    q = result.q;
+                    positions[i] = Some(q.clone());
+                }
+                _ => break,
+            }
+        }
+    }
+
+    positions
 }
 
 /// Push NaN for all data channels at a given angle (solver failure case).
@@ -1871,6 +1975,199 @@ mod tests {
                 x_from_pose,
                 targets[k]
             );
+        }
+    }
+
+    /// BL-011: 4-bar fixture with pivots O2 = (0, 0), O4 = (0.09, 0) and a
+    /// 0.05 m crank; coupler and rocker lengths are parameters. The seed
+    /// pose is solved at `seed_deg` on the elbow-up branch (joint C above
+    /// the B->D chord).
+    fn build_rocker_fixture(
+        coupler_len: f64,
+        rocker_len: f64,
+        seed_deg: f64,
+    ) -> (Mechanism, DVector<f64>) {
+        use crate::core::body::{make_bar, make_ground};
+
+        let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 0.09, 0.0)]);
+        let crank = make_bar("crank", "A", "B", 0.05, 0.0, 0.0);
+        let coupler = make_bar("coupler", "B", "C", coupler_len, 0.0, 0.0);
+        let rocker = make_bar("rocker", "C", "D", rocker_len, 0.0, 0.0);
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(crank).unwrap();
+        mech.add_body(coupler).unwrap();
+        mech.add_body(rocker).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+        mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+        mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+        mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
+        mech.add_constant_speed_driver("D1", "ground", "crank", 1.0, 0.0)
+            .unwrap();
+        mech.build().unwrap();
+
+        // Elbow-up seed: B on the crank circle, C at the intersection of
+        // the coupler circle about B and the rocker circle about D with
+        // positive cross product (C above the B->D chord).
+        let th = seed_deg.to_radians();
+        let b = nalgebra::Vector2::new(0.05 * th.cos(), 0.05 * th.sin());
+        let d = nalgebra::Vector2::new(0.09, 0.0);
+        let bd = d - b;
+        let l = bd.norm();
+        let a = (coupler_len.powi(2) - rocker_len.powi(2) + l * l) / (2.0 * l);
+        let h = (coupler_len.powi(2) - a * a).sqrt();
+        let u = bd / l;
+        let n = nalgebra::Vector2::new(-u.y, u.x);
+        let c = b + a * u + h * n;
+        // `make_bar` puts the body origin at its first point.
+        let st = mech.state();
+        let mut q = st.make_q();
+        st.set_pose("crank", &mut q, 0.0, 0.0, th);
+        st.set_pose("coupler", &mut q, b.x, b.y, (c.y - b.y).atan2(c.x - b.x));
+        st.set_pose("rocker", &mut q, c.x, c.y, (d.y - c.y).atan2(d.x - c.x));
+        let r0 = solve_position(&mech, &q, th, 1e-10, 50).unwrap();
+        assert!(r0.converged, "seed solve at {} deg failed", seed_deg);
+        assert_eq!(elbow_sign(&mech, &r0.q), 1.0, "seed is not elbow-up");
+        (mech, r0.q)
+    }
+
+    /// BL-011: non-Grashof triple-rocker (crank 0.05, coupler 0.05,
+    /// rocker 0.05, ground 0.09 m). s + l = 0.14 > p + q = 0.10, and the
+    /// crank can only assemble for |theta| <= 86.18 deg, so the full
+    /// 0..360 sweep has one unreachable gap, 87..=273 deg.
+    fn build_non_grashof_rocker() -> (Mechanism, DVector<f64>) {
+        build_rocker_fixture(0.05, 0.05, 0.0)
+    }
+
+    /// Assembly branch of the rocker fixture: +1 = elbow-up (joint C above
+    /// the B->D chord), -1 = mirrored.
+    fn elbow_sign(mech: &Mechanism, q: &DVector<f64>) -> f64 {
+        let st = mech.state();
+        let b = st.body_point_global("crank", &nalgebra::Vector2::new(0.05, 0.0), q);
+        let c = st.body_point_global("rocker", &nalgebra::Vector2::new(0.0, 0.0), q);
+        let d = nalgebra::Vector2::new(0.09, 0.0);
+        let (bd, bc) = (d - b, c - b);
+        (bd.x * bc.y - bd.y * bc.x).signum()
+    }
+
+    /// Smallest absolute difference between two angles in degrees (wrap-aware).
+    fn angle_diff_deg(a: f64, b: f64) -> f64 {
+        let d = (a - b).rem_euclid(360.0);
+        d.min(360.0 - d)
+    }
+
+    /// Sample times for a 0..=360 deg sweep of a unit-speed driver.
+    fn full_revolution_ts() -> Vec<f64> {
+        (0..=360).map(|deg| (deg as f64).to_radians()).collect()
+    }
+
+    /// BL-011: the two-pass continuation keeps every converged sample on
+    /// the starting assembly branch and covers exactly the reachable arc.
+    #[test]
+    fn solve_sweep_positions_full_revolution_preserves_branch() {
+        let (mech, q0) = build_non_grashof_rocker();
+        let positions = solve_sweep_positions(&mech, &q0, &full_revolution_ts(), true);
+        assert_eq!(positions.len(), 361);
+
+        for (deg, pos) in positions.iter().enumerate() {
+            let reachable = deg <= 86 || deg >= 274;
+            match pos {
+                Some(q) => {
+                    assert!(reachable, "sample {} deg converged inside the gap", deg);
+                    assert_eq!(
+                        elbow_sign(&mech, q),
+                        1.0,
+                        "sample {} deg is on the mirrored branch",
+                        deg
+                    );
+                }
+                None => assert!(!reachable, "reachable sample {} deg is None", deg),
+            }
+        }
+    }
+
+    /// BL-011 (pre-fix behaviour, kept as the control): plain forward
+    /// continuation re-enters after the gap on the mirrored branch.
+    #[test]
+    fn solve_sweep_positions_forward_only_flips_branch_after_gap() {
+        let (mech, q0) = build_non_grashof_rocker();
+        let positions = solve_sweep_positions(&mech, &q0, &full_revolution_ts(), false);
+        let last = positions[360].as_ref().expect("360 deg converges");
+        assert_eq!(elbow_sign(&mech, last), -1.0, "control: expected mirrored re-entry");
+    }
+
+    /// BL-011: after the unreachable gap, the sweep used to re-enter the
+    /// reachable range with the stale pre-gap pose as the Newton guess and
+    /// land on the mirrored assembly branch, so the pose at 360 deg was the
+    /// mirror image of the pose at 0 deg. Post-gap samples must be on the
+    /// same branch as the start (360 deg IS 0 deg) and the reachable arc
+    /// must be fully covered.
+    #[test]
+    fn sweep_reentry_after_unreachable_gap_preserves_branch() {
+        let (mech, q0) = build_non_grashof_rocker();
+        let (data, _) = compute_sweep_data(&mech, &q0, 1.0, 0.0, 9.81, None);
+        let rocker = &data.body_angles["rocker"];
+        assert_eq!(data.angles_deg.len(), 361);
+        assert_eq!(rocker.len(), 361);
+
+        // Exact coverage: reachable |theta| <= 86.18 deg.
+        for (deg, v) in rocker.iter().enumerate() {
+            let reachable = deg <= 86 || deg >= 274;
+            assert_eq!(
+                v.is_finite(),
+                reachable,
+                "sample {} deg: expected {}, got {}",
+                deg,
+                if reachable { "finite" } else { "NaN" },
+                v
+            );
+        }
+
+        // 360 deg is the same physical pose as 0 deg (same branch).
+        let (first, last) = (rocker[0], rocker[360]);
+        assert!(
+            angle_diff_deg(last, first) < 1e-6,
+            "branch flip across the gap: rocker angle {:.3} deg at 0 deg vs {:.3} deg at 360 deg",
+            first,
+            last
+        );
+
+        // Every converged sample is continuous with its converged
+        // neighbour (no mirrored re-entry, no mid-run flip).
+        for i in 1..=360 {
+            let (prev, cur) = (rocker[i - 1], rocker[i]);
+            if prev.is_nan() || cur.is_nan() {
+                continue;
+            }
+            assert!(
+                angle_diff_deg(cur, prev) < 10.0,
+                "rocker angle jumps {:.3} -> {:.3} deg between samples {} and {}",
+                prev,
+                cur,
+                i - 1,
+                i
+            );
+        }
+    }
+
+    /// BL-011 scope guard: a 4-bar whose feasible input range is two
+    /// disjoint arcs (coupler 0.08, rocker 0.03: 0.9 >= cos(theta) >= -1/6,
+    /// i.e. 26..=99 deg and 261..=334 deg) cannot assemble at 0 deg, so the
+    /// two-pass scheme is inactive and plain continuation must still cover
+    /// both arcs — no coverage regression versus the pre-BL-011 sweep.
+    #[test]
+    fn sweep_two_arc_fourbar_keeps_both_arcs_when_first_sample_fails() {
+        let (mech, q60) = build_rocker_fixture(0.08, 0.03, 60.0);
+        let (data, _) = compute_sweep_data(&mech, &q60, 1.0, 0.0, 9.81, None);
+        let rocker = &data.body_angles["rocker"];
+        assert_eq!(rocker.len(), 361);
+        assert!(rocker[0].is_nan(), "0 deg must be unreachable for this fixture");
+        for deg in (28..=97).chain(263..=332) {
+            assert!(rocker[deg].is_finite(), "sample {} deg should converge", deg);
+        }
+        for deg in (0..=24).chain(102..=258).chain(337..=360) {
+            assert!(rocker[deg].is_nan(), "sample {} deg should be unreachable", deg);
         }
     }
 }

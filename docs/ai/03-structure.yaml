@@ -88,7 +88,7 @@ gui_submodules:
   sweep:
     path: src/gui/sweep/
     files:
-      mod: sweep/mod.rs (SweepData, compute_sweep_data, push_nan_row helper)
+      mod: sweep/mod.rs (SweepData, compute_sweep_data, solve_sweep_positions two-pass Newton continuation for full-revolution sweeps — post-gap samples reached backward from 360 deg on the starting branch (BL-011), push_nan_row helper)
       motion_profile: sweep/motion_profile.rs (trapezoidal velocity profile, apply_motion_profile; SCurve falls back to ConstantSpeed in driver-side mode)
       fourbar: sweep/fourbar.rs (4-bar linkage detection for transmission angle)
 

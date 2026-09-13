@@ -112,8 +112,18 @@
   evidence: "CONFIRMED by audit 2026-08-08, 3/3 skeptics (repro: cargo test --test braindump_repro bl011_sweep_branch_flip_after_unreachable_gap -- --nocapture). Non-Grashof triple-rocker (0.05/0.05/0.05/0.09 m, reachable |theta| <= 86.18 deg): sweep converges 0..86 deg elbow sign -1, fails 87..273, RE-ENTERS at 274 deg on mirrored branch (sign +1) — pose at 360 deg is the mirror of 0 deg. Cause: sweep keeps stale last-good q as Newton guess across the unreachable gap (gui/sweep/mod.rs:667-669) and solve_position is plain NR+SVD with no step limiting or branch-continuity check (solver/kinematics.rs:35-80). Interactive paths share the mechanics (state/mod.rs:1103-1129 solve_at_angle, input_panel.rs:102-105 slider, plot_panel/mod.rs:331-338 plot-click). Shipped 'Flip Branch' workaround button (input_panel.rs:117-126) corroborates."
   acceptance: "promote tests/braindump_repro.rs::bl011_sweep_branch_flip_after_unreachable_gap with inverted assertion: 0..360 sweep of the 0.05/0.05/0.05/0.09 rocker yields elbow sign at 360 deg == sign at 0 deg (no reentry flip); post-gap re-entry preserves branch or is a clean NaN stop; prefer an in-crate #[cfg(test)] test driving compute_sweep_data itself (pattern at sweep/mod.rs:1222+)"
   priority: 1
+  status: fixed
+  notes: "Fixed for the full 0..360 constant-speed sweep only: gui/sweep/mod.rs solve_sweep_positions — forward pass stops at the first unreachable sample, post-gap samples are reached by a backward pass from 360 deg seeded with the 0-deg solution rotated 2*pi (exact for constant-speed drivers). Tests: sweep::tests::{solve_sweep_positions_full_revolution_preserves_branch (elbow sign at every converged sample), solve_sweep_positions_forward_only_flips_branch_after_gap (pre-fix control), sweep_reentry_after_unreachable_gap_preserves_branch (exact coverage 0..=86/274..=360), sweep_two_arc_fourbar_keeps_both_arcs_when_first_sample_fails}. Verified refinement: proximity to range limit does NOT flip (400-step ping-pong at 0.7-deg steps: zero flips). Remaining paths tracked as BL-018."
+
+- id: BL-018
+  title: Branch flip across unreachable gap still reachable via range-limited sweeps and interactive solve paths
+  dimension: physics
+  risk: physics
+  evidence: "BL-011 fix scope (gui/sweep/mod.rs solve_sweep_positions) is gated on a full 0..360 sweep with a constant-speed driver whose first sample assembles. Still stale-seeded across a gap: range-limited sweeps (e.g. 200..365), full sweeps whose first sample fails, expression drivers, and the interactive paths state/mod.rs solve_at_angle, input_panel.rs slider drag across the gap, plot_panel/mod.rs plot-click on the far side (same 0.05/0.05/0.05/0.09 rocker repro)."
+  acceptance: "either a branch-continuity rejection in solve_position callers (reject a converged solution whose elbow/assembly sign differs from the seed's across a failed interval) or fresh-assembly re-seeding on the starting branch for those paths; regression tests for a 200..365 range sweep and for solve_at_angle across the gap on the BL-011 fixture"
+  priority: 2
   status: open
-  notes: "Verified refinement: proximity to range limit does NOT flip (400-step ping-pong at 0.7-deg steps: zero flips); only a guess crossing the unreachable gap flips — sweep re-entry, slider drag across gap, plot-click far side. Fix targets gap re-entry seeding (fresh assembly on same branch) or rejecting discontinuous converged solutions."
+  notes: "Split out of BL-011 during review (2026-09-12). The 'Flip Branch' workaround button (input_panel.rs:117-126) remains the user-facing escape hatch until then."
 
 - id: BL-012
   title: cargo test rewrites docs/chebyshev_lambda/*.png on every run
