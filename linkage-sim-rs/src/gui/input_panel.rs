@@ -87,8 +87,7 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 let prev_display_angle = display_angle_deg;
                 let response = ui.add(
                     egui::Slider::new(&mut display_angle_deg, slider_min..=slider_max)
-                        .suffix("\u{00B0}")
-                        .step_by(0.5),
+                        .suffix("\u{00B0}"),
                 ).on_hover_text("Drag to set the driver crank angle in degrees. 0° = visible bar along world +X (horizontal).");
                 if response.dragged() {
                     if state.playing {
@@ -1044,4 +1043,47 @@ fn draw_sensors_section(ui: &mut egui::Ui, state: &mut AppState) {
             .italics()
             .color(egui::Color32::from_rgb(160, 160, 200)),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gui::samples::SampleMechanism;
+
+    /// Run one frame of the input panel with no user input at all.
+    fn one_idle_frame(state: &mut AppState) {
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| draw_input_panel(ui, state));
+        });
+    }
+
+    /// BL-020: an idle frame must never move the driver angle.
+    ///
+    /// The crank slider used `step_by(0.5)`; egui snaps such a slider's bound
+    /// value to the step grid on every frame even without interaction, and
+    /// the panel then re-solved the pose at the snapped value — undoing any
+    /// animation step smaller than 0.25 deg/frame (playback froze below
+    /// ~15 deg/s) and quantising the pose to 0.5 deg while paused.
+    #[test]
+    fn idle_frame_does_not_move_driver_angle_bl020() {
+        // Two off-grid angles 0.25 deg apart: no display offset can put both
+        // on the 0.5-deg grid, so at least one exercises the snap.
+        for angle_deg in [10.05_f64, 10.30] {
+            for playing in [true, false] {
+                let mut state = AppState::default();
+                state.load_sample(SampleMechanism::FourBar);
+                state.solve_at_angle(angle_deg.to_radians());
+                assert!(state.solver_status.converged, "fixture must assemble at {angle_deg} deg");
+                state.playing = playing;
+                let before = state.driver_angle;
+                one_idle_frame(&mut state);
+                let drift_deg = (state.driver_angle - before).to_degrees();
+                assert!(
+                    drift_deg.abs() < 1e-9,
+                    "angle={angle_deg} playing={playing}: idle frame moved driver angle by {drift_deg:.4} deg"
+                );
+            }
+        }
+    }
 }

@@ -182,8 +182,18 @@
   evidence: "User report 2026-09-13 (native + WASM, all mechanisms, crank-angle readout static). CONFIRMED: src/gui/input_panel.rs:87-105 binds display_angle_deg to egui::Slider::step_by(0.5) and calls solve_at_angle whenever the post-widget value differs from the pre-widget value by >1e-6 — without user interaction. Headless probe (egui 0.32.3, one frame, RawInput::default): a step_by(0.5) slider rewrote 10.05 -> 10.0 and reported changed()=true; the same slider without step_by left 10.05 unchanged. So each frame the animation's advance (speed*dt) is rounded to the 0.5-deg grid and re-solved: any step < 0.25 deg/frame (< 15 deg/s at 60 fps) is undone. Matches the earlier 'anything less than 15 deg/s doesn't move' report that 5856ccb attributed to omega=0. Side effect even when paused: the pose is silently quantized to 0.5 deg whenever the input panel is visible (e.g. after a plot-click scrub to 274.3 deg)."
   acceptance: "regression test drives the input panel through egui::Context::run for one frame with no input at driver_angle=10.05 deg and asserts driver_angle is unchanged (and no solve_at_angle side effect) both while playing and while paused; slider write-back happens only on user interaction (drag / typed edit); cargo test --all green; manual: 3 deg/s playback visibly advances natively and in WASM"
   priority: 1
+  status: fixed
+  notes: "Fixed 2026-09-13 on agent/batch-1: removed step_by(0.5) from the crank-angle slider (input_panel.rs); egui only writes a non-stepped slider back on real interaction, so the value-diff gate now fires only for drags/typed edits. Regression test gui::input_panel::tests::idle_frame_does_not_move_driver_angle_bl020 (headless egui frame, no input, playing and paused, two off-grid angles). Same-class mounting-angle slider tracked as BL-021. Not a batch-1 regression (predates Phase 0; deployed site has it). Original fix note: drop step_by(0.5) (egui only writes back on interaction without it) or gate the write-back on response.dragged()/drag_stopped()/typed-edit rather than a value diff; note response.changed() is TRUE for the snap so it cannot be the gate. Prior regression test step_animation_advances_at_slow_speed only covers the state layer, which was never the problem."
+
+- id: BL-021
+  title: Mounting Angle slider step_by(0.5) re-triggers rebuild + sweep every frame for off-grid angles
+  dimension: gui
+  risk: mechanical
+  evidence: "input_panel.rs:203-213 (Mounting Angle section, collapsed by default): Slider::step_by(0.5) bound to a local copy of state.mounting_angle, followed by a value-diff gate that calls mark_sweep_dirty() + rebuild(). Same egui snap-on-idle-frame behaviour proven for BL-020: with an off-grid mounting angle (e.g. 0.3 deg loaded from JSON) every frame the section is open snaps the angle to the grid and rebuilds the mechanism + recomputes the sweep."
+  acceptance: "idle-frame regression test with the Mounting Angle section expanded (open the CollapsingHeader via egui memory in the test) asserts mounting_angle unchanged and no rebuild; write-back only on interaction (drop step_by or gate on drag/edit); cargo test --all green"
+  priority: 3
   status: open
-  notes: "Not a batch-1 regression (predates Phase 0; deployed site has it). Simplest fix: drop step_by(0.5) (egui only writes back on interaction without it) or gate the write-back on response.dragged()/drag_stopped()/typed-edit rather than a value diff; note response.changed() is TRUE for the snap so it cannot be the gate. Prior regression test step_animation_advances_at_slow_speed only covers the state layer, which was never the problem."
+  notes: "Found while fixing BL-020; left out of that fix to keep it surgical and because the collapsed section needs extra test plumbing."
 
 - id: BL-016
   title: "Investigate driving egui canvas UI for deeper GUI smoke (samples + plot tabs)"

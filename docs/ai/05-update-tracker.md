@@ -5,6 +5,21 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-13 — BL-020: slow playback no longer frozen (crank slider write-back)
+- Root cause: `egui::Slider::step_by(0.5)` snaps its bound value to the
+  step grid on every frame even with no input (verified headlessly on
+  egui 0.32.3); the input panel then re-solved the pose at the snapped
+  value, undoing any animation step < 0.25 deg/frame (frozen below
+  ~15 deg/s at 60 fps, all mechanisms, native + WASM) and quantising the
+  pose to 0.5 deg while paused. Predates Phase 0 — not a batch-1 change.
+- Fix: dropped `step_by(0.5)` from the crank-angle slider
+  (`gui/input_panel.rs`); a non-stepped slider only writes back on real
+  interaction, so the existing value-diff gate now fires only for drags
+  and typed edits.
+- Test: `gui::input_panel::tests::idle_frame_does_not_move_driver_angle_bl020`
+  drives one idle frame through `draw_input_panel`, playing and paused.
+- Same-class Mounting Angle slider logged as BL-021 (collapsed by default).
+
 ## 2026-09-12 — BL-010: canvas actuator label agrees with the actuator force plot
 - Label value extracted into `AppState::actuator_label_force` returning
   `ActuatorLabelForce::{Computed, Stored}`; the canvas only formats it.

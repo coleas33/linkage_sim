@@ -152,6 +152,11 @@ lessons_learned:
   - Indented lines in /// or //! docs become rustdoc doctests when preceded
     by a blank doc line. Fence ASCII math as ```text.
 
+  - egui Slider::step_by (and DragValue clamp/step) writes the snapped value
+    back to the bound variable on idle frames. Never gate a solve/rebuild on
+    "value differs from before the widget" — gate on dragged()/drag_stopped()
+    or typed edits, or bind a non-stepped slider (BL-020, BL-021).
+
 current_statuses:
   solver: Rust port complete; 716 lib tests pass; trajectory-mode IK Stage 1
     (solver layer) shipped — see solver/inverse_kinematics/
