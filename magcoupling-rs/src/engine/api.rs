@@ -369,14 +369,22 @@ mod tests {
     }
 
     #[test]
-    fn workbook_defaults_equal_the_defaults_while_no_default_is_corrected() {
-        assert_eq!(
-            DesignInputs::defaults_with(Deviations::NONE),
-            DesignInputs::default()
-        );
+    fn workbook_defaults_put_back_every_corrected_default() {
         assert_eq!(
             DesignInputs::defaults_with(Deviations::ALL),
             DesignInputs::default()
+        );
+        let workbook = DesignInputs::defaults_with(Deviations::NONE);
+        assert_eq!(
+            workbook.temperature.mismatch.adhesive_shear_modulus_GPa,
+            0.55
+        );
+        assert_eq!(
+            DesignInputs::default()
+                .temperature
+                .mismatch
+                .adhesive_shear_modulus_GPa,
+            0.107
         );
     }
 }

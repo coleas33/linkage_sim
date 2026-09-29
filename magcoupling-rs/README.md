@@ -26,8 +26,9 @@ and **Pole sweep** sheets (`sweeps::gap_sweep`, `sweeps::pole_sweep`, the sweep
 variables `GAP_SWEEP_CORNER_GAPS_MM` and `POLE_SWEEP_POLES`, 338 and 156 table
 cells) and the API completion (`headline`, `DesignInputs::validate`). Every module
 except `fields3d` (M3) is ported; workbook parity is complete (1,149 checks: 330
-result cells, 659 table cells and 160 default inputs). Deviations E1 to E14 are all
-registered as `Planned`; none is applied yet.
+result cells, 659 table cells and 160 default inputs). Deviations E1 to E14 are
+registered: E1 is applied (see [Differences from the workbook](#differences-from-the-workbook)),
+E2 to E14 are `Planned`.
 
 ```rust
 use magcoupling::{DesignInputs, compute_all, headline};
@@ -48,6 +49,20 @@ row (the adhesive, the screw class), and the workbook's own IF fall-through wher
 a two-way IF decides. A typed value far outside its slider gives results that may
 be inf or NaN. Call `DesignInputs::validate()` where inputs enter: it returns
 every offending path, in schema order, with the reason `set` would give.
+
+## Differences from the workbook
+
+Every correction below is approved in the M1 math audit report
+(`docs/analyses/2026-09-29-magcoupling-math-audit.md`, the row with the same
+id) and registered in `src/engine/deviations.rs` with the cells it changes and
+their workbook and corrected values. The corrections are always on for users
+(`compute_all`); only the parity and differential tests switch them off,
+through the test-only `workbook-parity` feature, to compare against the workbook
+and the Python engine exactly.
+
+| Id | Cells | Workbook | This port | Report |
+|---|---|---|---|---|
+| E1 | Temperature design!C96 (feeds C104-C106, C201, C202) | 0.55 GPa (EA 9514's modulus) | 0.107 GPa (AA 326 TDS); C106 and C202 now read "Below ..." | E1 |
 
 ## Layout
 
@@ -81,7 +96,7 @@ bash linkage-sim-rs/scripts/gate.sh   # everything, both crates and the Python o
 | `tests/static_data.rs` | Static tables equal the Python engine's, value for value (`tests/data/static_data.json`). |
 | `tests/robustness.rs` | Inputs no parity or differential case holds (the plan's Review Focus): a selector code outside its choices set directly on the struct (adhesive, screw class, and every selector at once with `validate()` naming each), a measured drag of exactly zero, every numeric input at 0, -1, a tenth of its minimum, ten times its maximum and 1e300 (`compute_all_never_panics_on_extreme_inputs`), and a debug-build time bound per `compute_all` call. The engine must never panic. |
 | `tests/schema.rs` | Slider ranges, selectors, labels, unique well-formed paths and cells; each table column's label, unit and note equal the workbook headers (`table_columns_match_the_workbook_headers`); exports `tests/data/input_schema.json`. |
-| `tests/deviations.rs` | Registry cells exist in the snapshot, entries are approved rows of the audit report, and one correction switched on changes exactly its registered cells. |
+| `tests/deviations.rs` | Registry cells exist in the snapshot, entries are approved rows of the audit report, and one correction switched on changes exactly its registered cells; each applied correction's figures match the report (`e1_adhesive_shear_modulus_matches_the_report`), and help a correction rewords belongs to a real input and differs from the workbook's. |
 
 ### Regenerating test data
 
@@ -197,6 +212,11 @@ branch at the formula with `if dev.is_on(DeviationId::Ek) { corrected } else
 { workbook }` (keep the workbook form beside it); for a corrected default,
 declare the corrected default and record the workbook value in the entry's
 `workbook_input_defaults`; set the entry to `Applied` and list every cell that
-changes at defaults in `changes_at_defaults`. `tests/deviations.rs` then
-proves the correction changes exactly those cells, to those values. Physics
+changes at defaults in `changes_at_defaults`. Where the correction rewords a
+help text, record the workbook's text in `workbook_help`:
+`tests/python_schema.rs` compares Python's help against it, and
+`tests/deviations.rs` requires the port's help to differ. `tests/deviations.rs`
+then proves the correction changes exactly those cells, to those values; add a
+test of the report's figures (`assert_report`, `assert_workbook`) and a row to
+[Differences from the workbook](#differences-from-the-workbook). Physics
 changes get a dedicated physics reviewer (spec, testing summary).

@@ -18,12 +18,11 @@ use magcoupling::engine::deviations::{
 };
 use magcoupling::engine::meta::{InputSet, Value, input_rows, result_rows};
 
-/// Every value with a workbook cell (inputs and results, table cells included) under `dev`.
-fn cell_values(dev: Deviations) -> BTreeMap<String, Value> {
-    let inputs = DesignInputs::defaults_with(dev);
-    let results = compute_all_with(&inputs, dev);
+/// Every value with a workbook cell (inputs and results) for `inputs` under `dev`.
+fn cell_values_for(inputs: &DesignInputs, dev: Deviations) -> BTreeMap<String, Value> {
+    let results = compute_all_with(inputs, dev);
     let mut cells = BTreeMap::new();
-    for row in input_rows(&inputs) {
+    for row in input_rows(inputs) {
         if let Some(cell) = row.meta.cell {
             cells.insert(cell.to_owned(), row.value);
         }
@@ -34,6 +33,45 @@ fn cell_values(dev: Deviations) -> BTreeMap<String, Value> {
         }
     }
     cells
+}
+
+/// Every value with a workbook cell at the defaults `dev` implies.
+fn cell_values(dev: Deviations) -> BTreeMap<String, Value> {
+    cell_values_for(&DesignInputs::defaults_with(dev), dev)
+}
+
+/// The value at one workbook cell at the defaults `dev` implies.
+fn at(cell: &str, dev: Deviations) -> Value {
+    cell_values(dev)
+        .remove(cell)
+        .unwrap_or_else(|| panic!("{cell} is not a cell of the port"))
+}
+
+fn num(value: &Value) -> f64 {
+    match value {
+        Value::Num(x) => *x,
+        Value::Int(i) => *i as f64,
+        other => panic!("expected a number, got {other:?}"),
+    }
+}
+
+/// `got` equals the audit report's figure `want`, which the report states to
+/// within `half_step` (half a unit of its last digit).
+fn assert_report(cell: &str, got: &Value, want: f64, half_step: f64) {
+    let got = num(got);
+    assert!(
+        (got - want).abs() <= half_step,
+        "{cell}: {got} is not the report's {want} (± {half_step})"
+    );
+}
+
+/// With every correction off, the cell still holds the workbook snapshot value.
+fn assert_workbook(cell: &str) {
+    let snapshot = snapshot();
+    assert!(
+        parity_close(&at(cell, Deviations::NONE), &snapshot[cell]),
+        "{cell}: the workbook-exact switch lost the snapshot value"
+    );
 }
 
 /// Cells whose value differs between `a` and `b` by the parity rule.
@@ -177,4 +215,70 @@ fn all_deviations_together_change_only_registered_cells() {
         unexplained.is_empty(),
         "cells changed by no registered deviation: {unexplained:?}"
     );
+}
+
+#[test]
+fn e1_adhesive_shear_modulus_matches_the_report() {
+    let e1 = Deviations::only(DeviationId::E1);
+    assert_eq!(at("Temperature design!C96", e1), Value::Num(0.107));
+    assert_report(
+        "Temperature design!C104",
+        &at("Temperature design!C104", e1),
+        11.6,
+        0.05,
+    ); // was 46.1
+    assert_report(
+        "Temperature design!C105",
+        &at("Temperature design!C105", e1),
+        6.0,
+        0.05,
+    ); // was 26.7
+    assert_report(
+        "Temperature design!C201",
+        &at("Temperature design!C201", e1),
+        2.6,
+        0.05,
+    ); // was 11.4
+    assert_eq!(
+        at("Temperature design!C106", e1),
+        Value::Text("Below the lap-shear strength".into())
+    );
+    assert_eq!(
+        at("Temperature design!C202", e1),
+        Value::Text("Below the fatigue endurance".into())
+    );
+    for cell in [
+        "Temperature design!C96",
+        "Temperature design!C104",
+        "Temperature design!C105",
+        "Temperature design!C106",
+        "Temperature design!C201",
+        "Temperature design!C202",
+    ] {
+        assert_workbook(cell);
+    }
+}
+
+#[test]
+fn reworded_help_is_recorded_for_real_fields() {
+    let inputs = input_rows(&DesignInputs::default());
+    for d in REGISTRY
+        .iter()
+        .filter(|d| d.status == DeviationStatus::Applied)
+    {
+        for &(path, workbook) in d.workbook_help {
+            if path.contains("[*]") {
+                continue; // table columns: checked against the workbook headers in tests/schema.rs
+            }
+            let row = inputs
+                .iter()
+                .find(|r| r.path == path)
+                .unwrap_or_else(|| panic!("{}: {path} is not an input", d.id));
+            assert_ne!(
+                row.meta.help, workbook,
+                "{}: {path} help is not reworded",
+                d.id
+            );
+        }
+    }
 }

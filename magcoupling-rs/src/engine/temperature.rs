@@ -177,8 +177,9 @@ inputs! {
             ndfeb_cte_per_C: f64 = -0.8e-6 => param("1/°C", "NdFeB expansion in the bond plane",
                 "Across the magnetization.", "Temperature design!C95")
                 .range(-3e-6, 6e-6, 1e-8),
-            adhesive_shear_modulus_GPa: f64 = 0.55 => param("GPa", "Adhesive shear modulus",
-                "", "Temperature design!C96")
+            adhesive_shear_modulus_GPa: f64 = 0.107 => param("GPa", "Adhesive shear modulus",
+                "Loctite AA 326 + SF 7649 (Henkel TDS, Aug-2020): tensile modulus 0.300 GPa, so G = E/(2(1+ν)) ≈ 0.107 GPa at ν = 0.4. Correction E1: the workbook's 0.55 GPa is the modulus of EA 9514.",
+                "Temperature design!C96")
                 .range(0.01, 3.0, 0.001)
                 .log(), // > 0: square root in the Volkersen lambda
             ndfeb_modulus_GPa: f64 = 160.0 => param("GPa", "NdFeB elastic modulus",

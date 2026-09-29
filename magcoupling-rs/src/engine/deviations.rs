@@ -156,6 +156,11 @@ pub struct Deviation {
     /// Workbook defaults of inputs whose declared default this deviation
     /// corrects, by input path. Empty unless the deviation changes a default.
     pub workbook_input_defaults: &'static [(&'static str, Literal)],
+    /// Help texts this correction rewords, as (input path, or table column path
+    /// `group.table[*].field`, and the workbook's text). The metadata tests
+    /// compare the recorded text with Python and the workbook, and require the
+    /// port's help to differ.
+    pub workbook_help: &'static [(&'static str, &'static str)],
     /// Every cell that changes at default inputs (complete once `Applied`).
     pub changes_at_defaults: &'static [CellChange],
 }
@@ -173,7 +178,7 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E1,
         title: "Adhesive shear modulus does not match the selected adhesive",
         class: DeviationClass::Engine,
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &[
             "Temperature design!C96",
             "Temperature design!C104",
@@ -182,11 +187,45 @@ pub const REGISTRY: &[Deviation] = &[
             "Temperature design!C201",
             "Temperature design!C202",
         ],
-        corrected_formula: "Temperature design!C96 = 0.107 GPa (Loctite AA 326: E = 0.300 GPa, nu = 0.4); \
-            better, a per-adhesive shear modulus that follows the adhesive selection \
-            (AA 326 about 0.107 GPa, EA 9514 about 0.55 GPa, 2214 and DP460 from their TDS).",
-        workbook_input_defaults: &[],
-        changes_at_defaults: &[],
+        corrected_formula: "Temperature design!C96 = 0.107 GPa (Loctite AA 326: E = 0.300 GPa, nu = 0.4). \
+            The per-adhesive shear modulus the report also suggests is deferred to Addendum A5 (decision D2).",
+        workbook_input_defaults: &[(
+            "temperature.mismatch.adhesive_shear_modulus_GPa",
+            Literal::Num(0.55),
+        )],
+        workbook_help: &[("temperature.mismatch.adhesive_shear_modulus_GPa", "")],
+        changes_at_defaults: &[
+            CellChange {
+                cell: "Temperature design!C96",
+                workbook: Literal::Num(0.55),
+                corrected: Literal::Num(0.107),
+            },
+            CellChange {
+                cell: "Temperature design!C104",
+                workbook: Literal::Num(46.12653767935644),
+                corrected: Literal::Num(11.59827175128882),
+            },
+            CellChange {
+                cell: "Temperature design!C105",
+                workbook: Literal::Num(26.728261752019268),
+                corrected: Literal::Num(6.027792167235714),
+            },
+            CellChange {
+                cell: "Temperature design!C106",
+                workbook: Literal::Text("Above the lap-shear strength at the block ends"),
+                corrected: Literal::Text("Below the lap-shear strength"),
+            },
+            CellChange {
+                cell: "Temperature design!C201",
+                workbook: Literal::Num(11.365659614702167),
+                corrected: Literal::Num(2.563198259452589),
+            },
+            CellChange {
+                cell: "Temperature design!C202",
+                workbook: Literal::Text("Above the fatigue endurance: qualify by thermal cycling"),
+                corrected: Literal::Text("Below the fatigue endurance"),
+            },
+        ],
     },
     Deviation {
         id: DeviationId::E2,
@@ -210,6 +249,7 @@ pub const REGISTRY: &[Deviation] = &[
             fits inside = length <= grip + slit + thread available; \
             report when no 2 mm step meets both rules.",
         workbook_input_defaults: &[],
+        workbook_help: &[],
         changes_at_defaults: &[],
     },
     Deviation {
@@ -229,6 +269,7 @@ pub const REGISTRY: &[Deviation] = &[
             Calibration!C21 to match; rerun fields3d so the demagnetization fields follow the new Br. \
             The value (1.30 or 1.315 T) is to be confirmed with the user before this is applied.",
         workbook_input_defaults: &[],
+        workbook_help: &[],
         changes_at_defaults: &[],
     },
     Deviation {
@@ -247,6 +288,7 @@ pub const REGISTRY: &[Deviation] = &[
         ],
         corrected_formula: "a_i = MAX(w_i/(2 tan(pi/N)) + 0.05, bore/2 + keyway + 2.5 + inner bondline).",
         workbook_input_defaults: &[],
+        workbook_help: &[],
         changes_at_defaults: &[],
     },
     Deviation {
@@ -262,6 +304,7 @@ pub const REGISTRY: &[Deviation] = &[
         corrected_formula: "Multiply the web integral by 4 in fields3d.run; default \
             Temperature design!C121 = 4.14e-5 T^2 m^2 (3D, doubled at the steel surface); C125 unchanged.",
         workbook_input_defaults: &[],
+        workbook_help: &[],
         changes_at_defaults: &[],
     },
     Deviation {
@@ -272,6 +315,7 @@ pub const REGISTRY: &[Deviation] = &[
         cells: &["Calculator!C63"],
         corrected_formula: "Calculator!C63 = C62/2 - (C60 + Metal design!C121).",
         workbook_input_defaults: &[],
+        workbook_help: &[],
         changes_at_defaults: &[],
     },
     Deviation {
@@ -296,6 +340,7 @@ pub const REGISTRY: &[Deviation] = &[
             A_n = B_in,n B_on,n S_n / (2 mu0), in both circuits, the sweeps and the calibration; \
             optionally report the pull-out angle. Default outputs do not change.",
         workbook_input_defaults: &[],
+        workbook_help: &[],
         changes_at_defaults: &[],
     },
     Deviation {
@@ -312,6 +357,7 @@ pub const REGISTRY: &[Deviation] = &[
         corrected_formula: "Use the inner corner radius C55 everywhere: C9 = face gap - (C55 - face radius); \
             Metal design!C175 = 2 (C55 + bedding); C111 cavity = pi ap^2 for arcs.",
         workbook_input_defaults: &[],
+        workbook_help: &[],
         changes_at_defaults: &[],
     },
     Deviation {
@@ -328,6 +374,7 @@ pub const REGISTRY: &[Deviation] = &[
         corrected_formula: "Gate the cup and boss densities on C6 as the hub already is; \
             Materials!C22 returns 'No back iron' when C6 = 0; carry the masses into the thermal heat capacity.",
         workbook_input_defaults: &[],
+        workbook_help: &[],
         changes_at_defaults: &[],
     },
     Deviation {
@@ -346,6 +393,7 @@ pub const REGISTRY: &[Deviation] = &[
         ],
         corrected_formula: "B_gap = (Br_i t_i + Br_o t_o) / (t_i + t_o + g).",
         workbook_input_defaults: &[],
+        workbook_help: &[],
         changes_at_defaults: &[],
     },
     Deviation {
@@ -356,6 +404,7 @@ pub const REGISTRY: &[Deviation] = &[
         cells: &["Temperature design!C91", "Temperature design!C195"],
         corrected_formula: "C91 margin = C195 x C78 / C86.",
         workbook_input_defaults: &[],
+        workbook_help: &[],
         changes_at_defaults: &[],
     },
     Deviation {
@@ -374,6 +423,7 @@ pub const REGISTRY: &[Deviation] = &[
         corrected_formula: "Times to limit = 0 when T0 >= T_lim, tested before the 'never' branch; \
             critical drag = max(0, T_lim - T0) G / omega.",
         workbook_input_defaults: &[],
+        workbook_help: &[],
         changes_at_defaults: &[],
     },
     Deviation {
@@ -385,6 +435,7 @@ pub const REGISTRY: &[Deviation] = &[
         corrected_formula: "Rotations per °C = +inf when the heating power is 0; \
             optionally reject a negative drag; document that infinity can appear in results.",
         workbook_input_defaults: &[],
+        workbook_help: &[],
         changes_at_defaults: &[],
     },
     Deviation {
@@ -397,6 +448,7 @@ pub const REGISTRY: &[Deviation] = &[
             Two M3 need a 14.5 mm clamp; three M2.5 need 18 mm, and from 18 mm up the calculator \
             recommends M2.5 x 3.\"",
         workbook_input_defaults: &[],
+        workbook_help: &[],
         changes_at_defaults: &[],
     },
 ];
@@ -494,6 +546,11 @@ mod tests {
                 "{} is Planned but restores defaults",
                 d.id
             );
+            assert!(
+                d.workbook_help.is_empty(),
+                "{} is Planned but rewords help",
+                d.id
+            );
         }
     }
 
@@ -565,6 +622,7 @@ mod tests {
             cells: &["X!C1"],
             corrected_formula: "fake",
             workbook_input_defaults: &[("br_T", Literal::Num(1.29))],
+            workbook_help: &[],
             changes_at_defaults: &[],
         }];
 

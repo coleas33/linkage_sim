@@ -6,8 +6,9 @@
 //! missing. `tests/data/python_schema.json` is written by
 //! `reference/magcoupling-py/tools/gen_differential.py`.
 //!
-//! When a documentation deviation (E14) rewords help text, this test must
-//! compare that field against the registry's corrected text instead.
+//! Where an applied correction rewords a help text (its registry entry's
+//! `workbook_help`), Python still has the workbook text, so that field's help
+//! is compared against the recorded workbook text instead.
 
 mod common;
 
@@ -19,7 +20,7 @@ use common::{
 };
 use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with, headline};
 use magcoupling::engine::compat::parity_close;
-use magcoupling::engine::deviations::Deviations;
+use magcoupling::engine::deviations::{DeviationStatus, Deviations, REGISTRY};
 use magcoupling::engine::meta::{ResultRow, Value, input_rows, result_rows};
 
 /// One Python schema row.
@@ -88,9 +89,19 @@ fn compare(
     }
 }
 
+/// Help texts an applied correction rewords: path -> the workbook (and Python) text.
+fn reworded_help() -> BTreeMap<&'static str, &'static str> {
+    REGISTRY
+        .iter()
+        .filter(|d| d.status == DeviationStatus::Applied)
+        .flat_map(|d| d.workbook_help.iter().copied())
+        .collect()
+}
+
 #[test]
 fn ported_inputs_carry_the_python_metadata_and_defaults() {
     let python = python_rows();
+    let reworded = reworded_help();
     let mut failures = Vec::new();
     for row in input_rows(&DesignInputs::defaults_with(Deviations::NONE)) {
         let Some(py) = python.get(&row.path) else {
@@ -101,10 +112,12 @@ fn ported_inputs_carry_the_python_metadata_and_defaults() {
         if py.kind != "input" {
             failures.push(format!("{}: Python kind is {:?}", row.path, py.kind));
         }
+        // Python keeps the workbook help where a correction rewords it.
+        let help = reworded.get(row.path.as_str()).copied().unwrap_or(m.help);
         compare(
             &mut failures,
             &row.path,
-            (m.label, m.unit, m.help, m.cell),
+            (m.label, m.unit, help, m.cell),
             py,
         );
         let choices: Vec<(i64, String)> =
