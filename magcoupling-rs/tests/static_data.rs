@@ -142,3 +142,39 @@ fn adhesives_equal_the_python_candidates() {
         }
     }
 }
+
+#[test]
+fn screw_sizes_and_machining_steps_equal_the_python_data() {
+    use magcoupling::engine::clamps::{MACHINING_STEPS, SCREW_SIZES, TABLE_COLUMNS};
+    let doc = python_static();
+    let rows = doc["screw_sizes"].as_array().expect("screw_sizes");
+    assert_eq!(rows.len(), SCREW_SIZES.len());
+    for (py, rs) in rows.iter().zip(SCREW_SIZES.iter()) {
+        assert_eq!(rs.name, text(py, "name"));
+        for (key, value) in [
+            ("d_mm", rs.d_mm),
+            ("pitch_mm", rs.pitch_mm),
+            ("As_mm2", rs.As_mm2),
+            ("hole_mm", rs.hole_mm),
+            ("head_mm", rs.head_mm),
+            ("head_h_mm", rs.head_h_mm),
+            ("hex_mm", rs.hex_mm),
+        ] {
+            assert_eq!(value, number(py, key), "{}.{key}", rs.name);
+        }
+    }
+    let steps: Vec<&str> = doc["machining_steps"]
+        .as_array()
+        .expect("steps")
+        .iter()
+        .map(|s| s.as_str().expect("text"))
+        .collect();
+    assert_eq!(MACHINING_STEPS.as_slice(), steps.as_slice());
+    let columns: Vec<&str> = doc["table_columns"]
+        .as_array()
+        .expect("columns")
+        .iter()
+        .map(|s| s.as_str().expect("text"))
+        .collect();
+    assert_eq!(TABLE_COLUMNS.as_slice(), columns.as_slice());
+}

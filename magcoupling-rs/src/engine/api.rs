@@ -8,7 +8,7 @@
 //! → Metal design → Materials → Temperature design → Shaft clamps → sweeps.
 //!
 //! Ported so far: Calibration, Calculator (model), Metal design retainers,
-//! Calculator mass, Metal design, Materials, Temperature design.
+//! Calculator mass, Metal design, Materials, Temperature design, Shaft clamps.
 //!
 //! Python API mapping: `compute_all(inp)` is [`compute_all`];
 //! `input_schema(inp)` and `result_schema(res)` are
@@ -18,6 +18,7 @@
 //! the original).
 
 use super::calibration::{self, CalibrationInputs, CalibrationResults};
+use super::clamps::{self, ClampInputs, ClampResults};
 use super::deviations::Deviations;
 #[cfg(feature = "workbook-parity")]
 use super::deviations::{REGISTRY, restore_workbook_defaults};
@@ -37,6 +38,7 @@ inputs! {
             calibration: CalibrationInputs,
             materials: MaterialsInputs,
             temperature: TemperatureInputs,
+            clamps: ClampInputs,
         }
     }
 }
@@ -53,6 +55,7 @@ results! {
             metal: MetalDesignResults,
             materials: MaterialsResults,
             temperature: TemperatureResults,
+            clamps: ClampResults,
         }
     }
 }
@@ -201,6 +204,20 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         al6061_sigma_S_m: materials::AL6061.conductivity_S_m,
     };
     let temp = temperature::compute(&inputs.temperature, &links, dev);
+
+    let alloy = if inputs.clamps.alloy == 1 {
+        &materials::AL7075
+    } else {
+        &materials::AL6061
+    };
+    let clr = clamps::compute(
+        &inputs.clamps,
+        ci.bore_mm,
+        mdr.torque_cold_high_Nm,
+        alloy,
+        mat_in.screws.proof(inputs.clamps.screw_class),
+        dev,
+    );
     DesignResults {
         calibration: cal,
         model: m,
@@ -209,6 +226,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         metal: mdr,
         materials: matr,
         temperature: temp,
+        clamps: clr,
     }
 }
 

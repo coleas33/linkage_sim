@@ -18,7 +18,10 @@ with the validation checklist `VALIDATION_ITEMS`) and the **Materials** sheet
 (`materials::compute`, the aluminium alloys `AL7075` and `AL6061`, and
 `ScrewClasses::proof`) and the **Temperature design** sheet
 (`temperature::compute`, the adhesive table `ADHESIVES`, and
-`selected_adhesive`, which selects no adhesive for a code outside 1 to 4).
+`selected_adhesive`, which selects no adhesive for a code outside 1 to 4) and the
+**Shaft clamps** and **Clamp screw sizes** sheets (`clamps::compute`, the screw
+sizes `SCREW_SIZES`, the `MACHINING_STEPS`, and the 165-cell screw table; a screw
+class outside 1 to 3 gives NaN numbers and the text `"#N/A"`).
 Deviations E1 to E14 are all registered as `Planned`; none is applied yet.
 
 ```rust
@@ -35,7 +38,7 @@ println!("{}", res.calibration.f_cal_updated); // 1.0658
 | `src/engine/compat.rs` | Python and Excel semantics the port reproduces (see the translation rules below) |
 | `src/engine/deviations.rs` | Registry of approved workbook corrections, and the `Deviations` switch |
 | `src/engine/api.rs` | `DesignInputs`, `DesignResults`, `compute_all` |
-| `src/engine/<module>.rs` | One module per Python module: `constants`, `calibration`, `library`, `model` (with the mass estimate), `metal_design`, `materials`, `temperature` so far |
+| `src/engine/<module>.rs` | One module per Python module: `constants`, `calibration`, `library`, `model` (with the mass estimate), `metal_design`, `materials`, `temperature`, `clamps` so far |
 | `tests/` | Parity, differential, metadata and registry tests (below) |
 | `tests/data/` | Workbook snapshot copy, exported schemas, differential data |
 
@@ -57,7 +60,7 @@ bash linkage-sim-rs/scripts/gate.sh   # everything, both crates and the Python o
 | `tests/differential.rs` | Every result of every seeded case equals the Python engine (`tests/data/differential/<group>.json`), deviations off. `every_branch_is_reached` checks the `BRANCHES` table (every branch of every text result is hit) and `every_varied_input_takes_two_values` checks that each varied input changes; the helpers corpus checks `compat` against Python exactly. |
 | `tests/python_schema.rs` | Every ported field carries the Python label, unit, help, cell, choices and default; no Python field of a ported group is missing; each ported table has the Python field order, row count and cell of every value (`tables_match_the_python_layout`). |
 | `tests/static_data.rs` | Static tables equal the Python engine's, value for value (`tests/data/static_data.json`). |
-| `tests/robustness.rs` | Inputs no parity or differential case holds (the plan's Review Focus): a selector code outside its choices set directly on the struct, a measured drag of exactly zero. The engine must never panic. |
+| `tests/robustness.rs` | Inputs no parity or differential case holds (the plan's Review Focus): a selector code outside its choices set directly on the struct (adhesive, screw class), a measured drag of exactly zero. The engine must never panic. |
 | `tests/schema.rs` | Slider ranges, selectors, labels, unique well-formed paths and cells; each table column's label, unit and note equal the workbook headers (`table_columns_match_the_workbook_headers`); exports `tests/data/input_schema.json`. |
 | `tests/deviations.rs` | Registry cells exist in the snapshot, entries are approved rows of the audit report, and one correction switched on changes exactly its registered cells. |
 
@@ -121,6 +124,9 @@ snapshot copy must equal `reference/magcoupling-py/tests/reference_values.json`
    unit against the workbook; add the table's cells to `table_cells` in
    `tests/common/mod.rs`, and its layout to `table_layouts()` in
    `gen_differential.py` (`tables_match_the_python_layout` compares).
+   `result_rows` lists a group's tables after its scalars, so the screw table
+   comes after `clamps.layout_relief` (Python declares it after
+   `boss_radius_mm`); the scalar order is Python's.
 4. Compute: `pub fn compute(.., dev: Deviations) -> XResults`, line by line in
    Python's order with Python's local names (`#[allow(non_snake_case)]` on the
    function where Python uses capitals). Follow the translation rules.

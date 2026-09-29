@@ -48,6 +48,10 @@ pub const PORTED_INPUTS: &[PortedInputs] = &[
         group: "temperature",
         cells: 37,
     },
+    PortedInputs {
+        group: "clamps",
+        cells: 25,
+    },
 ];
 
 /// Ported result groups, in Python `DesignResults` order.
@@ -86,6 +90,11 @@ pub const PORTED_RESULTS: &[PortedResults] = &[
         group: "temperature",
         cells: 130, // temperature.adhesive.selected_name has no cell: differential only
         table_cells: 0,
+    },
+    PortedResults {
+        group: "clamps",
+        cells: 33,
+        table_cells: 165, // 33 celled screw-table fields x 5 sizes (the size name has no cell)
     },
 ];
 

@@ -58,6 +58,12 @@
   3,
   5
  ],
+ "machining_steps": [
+  "1. Turn the OD and bore (H7) in one setup; cut the keyway 90° from where the slit will go.",
+  "2. With the part still solid, drill the clearance hole and counterbore on the head-side jaw, then drill and tap the far jaw, square to the slit plane at the screw offset. Drilling before slitting keeps the holes aligned.",
+  "3. Cut the relief slot, then the slit (slitting saw), leaving the hinge.",
+  "4. Deburr, anodize, chase the thread, and assemble dry with Loctite 243 on the screw at the tightening torque."
+ ],
  "magnet_library": [
   {
    "br_T": 1.29,
@@ -239,6 +245,65 @@
    "vendor": "SuperMagnetMan",
    "width_mm": 6.4
   }
+ ],
+ "screw_sizes": [
+  {
+   "As_mm2": 3.39,
+   "d_mm": 2.5,
+   "head_h_mm": 2.5,
+   "head_mm": 4.5,
+   "hex_mm": 2,
+   "hole_mm": 2.9,
+   "name": "M2.5",
+   "pitch_mm": 0.45
+  },
+  {
+   "As_mm2": 5.03,
+   "d_mm": 3,
+   "head_h_mm": 3,
+   "head_mm": 5.5,
+   "hex_mm": 2.5,
+   "hole_mm": 3.4,
+   "name": "M3",
+   "pitch_mm": 0.5
+  },
+  {
+   "As_mm2": 8.78,
+   "d_mm": 4,
+   "head_h_mm": 4,
+   "head_mm": 7.0,
+   "hex_mm": 3,
+   "hole_mm": 4.5,
+   "name": "M4",
+   "pitch_mm": 0.7
+  },
+  {
+   "As_mm2": 14.2,
+   "d_mm": 5,
+   "head_h_mm": 5,
+   "head_mm": 8.5,
+   "hex_mm": 4,
+   "hole_mm": 5.5,
+   "name": "M5",
+   "pitch_mm": 0.8
+  },
+  {
+   "As_mm2": 20.1,
+   "d_mm": 6,
+   "head_h_mm": 6,
+   "head_mm": 10.0,
+   "hex_mm": 5,
+   "hole_mm": 6.6,
+   "name": "M6",
+   "pitch_mm": 1.0
+  }
+ ],
+ "table_columns": [
+  "C",
+  "D",
+  "E",
+  "F",
+  "G"
  ],
  "validation_items": [
   [

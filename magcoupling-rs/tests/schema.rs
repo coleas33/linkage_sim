@@ -311,5 +311,11 @@ fn table_columns_match_the_workbook_headers() {
             }
         }
     }
+    // The size field is uncelled, so the loop skips it: check its label here.
+    let size = result_rows(&compute_all(&DesignInputs::default()))
+        .into_iter()
+        .find(|r| r.path == "clamps.table[0].size")
+        .expect("the screw table");
+    assert_eq!(size.meta.label, text_at("Clamp screw sizes!B5"));
     assert!(failures.is_empty(), "{}", report(&failures));
 }

@@ -2326,6 +2326,447 @@
       },
       "type": "f64",
       "unit": "°C"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C16",
+      "choices": [],
+      "default": 2.0,
+      "help": "Reversing torque and vibration; the key is extra.",
+      "label": "Safety factor, clamp alone",
+      "path": "clamps.safety_factor",
+      "range": {
+        "log": false,
+        "max": 5.0,
+        "min": 1.0,
+        "step": 0.1
+      },
+      "type": "f64",
+      "unit": "-"
+    },
+    {
+      "assumption": true,
+      "cell": "Shaft clamps!C18",
+      "choices": [],
+      "default": 0.15,
+      "help": "Degreased; 0.10 if the bore could be oily.",
+      "label": "Friction coefficient, shaft to bore",
+      "path": "clamps.friction",
+      "range": {
+        "log": false,
+        "max": 0.4,
+        "min": 0.05,
+        "step": 0.005
+      },
+      "type": "f64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C19",
+      "choices": [
+        [
+          1,
+          "one-piece slotted"
+        ],
+        [
+          2,
+          "two-piece"
+        ]
+      ],
+      "default": 1,
+      "help": "1 = one-piece slotted, 2 = two-piece.",
+      "label": "Clamp type",
+      "path": "clamps.clamp_type",
+      "range": null,
+      "type": "i64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C20",
+      "choices": [],
+      "default": 0.8,
+      "help": "Share of screw force pressing the shaft.",
+      "label": "Clamp factor, one-piece",
+      "path": "clamps.factor_one_piece",
+      "range": {
+        "log": false,
+        "max": 1.0,
+        "min": 0.3,
+        "step": 0.01
+      },
+      "type": "f64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C21",
+      "choices": [],
+      "default": 1.0,
+      "help": "",
+      "label": "Clamp factor, two-piece",
+      "path": "clamps.factor_two_piece",
+      "range": {
+        "log": false,
+        "max": 1.2,
+        "min": 0.3,
+        "step": 0.01
+      },
+      "type": "f64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C23",
+      "choices": [
+        [
+          1,
+          "7075-T6"
+        ],
+        [
+          2,
+          "6061-T6"
+        ]
+      ],
+      "default": 1,
+      "help": "1 = 7075-T6, 2 = 6061-T6.",
+      "label": "Aluminium",
+      "path": "clamps.alloy",
+      "range": null,
+      "type": "i64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C27",
+      "choices": [
+        [
+          1,
+          "12.9"
+        ],
+        [
+          2,
+          "10.9"
+        ],
+        [
+          3,
+          "A4-70"
+        ]
+      ],
+      "default": 1,
+      "help": "1 = 12.9, 2 = 10.9, 3 = A4-70.",
+      "label": "Screw class",
+      "path": "clamps.screw_class",
+      "range": null,
+      "type": "i64",
+      "unit": "-"
+    },
+    {
+      "assumption": true,
+      "cell": "Shaft clamps!C29",
+      "choices": [],
+      "default": 0.75,
+      "help": "",
+      "label": "Preload as a share of proof load",
+      "path": "clamps.preload_fraction",
+      "range": {
+        "log": false,
+        "max": 0.9,
+        "min": 0.3,
+        "step": 0.01
+      },
+      "type": "f64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C30",
+      "choices": [],
+      "default": 0.2,
+      "help": "Dry or with Loctite 243.",
+      "label": "Nut factor",
+      "path": "clamps.nut_factor",
+      "range": {
+        "log": false,
+        "max": 0.35,
+        "min": 0.1,
+        "step": 0.01
+      },
+      "type": "f64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C31",
+      "choices": [],
+      "default": 2.0,
+      "help": "",
+      "label": "Thread engagement in aluminium (× screw diameter)",
+      "path": "clamps.engagement_x_d",
+      "range": {
+        "log": false,
+        "max": 3.0,
+        "min": 0.5,
+        "step": 0.05
+      },
+      "type": "f64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C32",
+      "choices": [],
+      "default": 1.5,
+      "help": "",
+      "label": "Safety factor on thread stripping",
+      "path": "clamps.strip_sf",
+      "range": {
+        "log": false,
+        "max": 4.0,
+        "min": 1.0,
+        "step": 0.1
+      },
+      "type": "f64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C35",
+      "choices": [],
+      "default": 25.0,
+      "help": "At 22 mm only M3 fits; two of them need a 14.5 mm clamp.",
+      "label": "Boss outside diameter",
+      "path": "clamps.boss_od_mm",
+      "range": {
+        "log": false,
+        "max": 60.0,
+        "min": 12.0,
+        "step": 0.1
+      },
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C36",
+      "choices": [],
+      "default": 10.0,
+      "help": "",
+      "label": "Clamp length, free end to relief cut",
+      "path": "clamps.clamp_length_mm",
+      "range": {
+        "log": false,
+        "max": 40.0,
+        "min": 3.0,
+        "step": 0.1
+      },
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C37",
+      "choices": [],
+      "default": 0.8,
+      "help": "",
+      "label": "Slit width",
+      "path": "clamps.slit_mm",
+      "range": {
+        "log": false,
+        "max": 3.0,
+        "min": 0.2,
+        "step": 0.1
+      },
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C38",
+      "choices": [],
+      "default": 1.0,
+      "help": "",
+      "label": "Minimum ligament, bore to screw hole",
+      "path": "clamps.ligament_mm",
+      "range": {
+        "log": false,
+        "max": 5.0,
+        "min": 0.3,
+        "step": 0.1
+      },
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C39",
+      "choices": [],
+      "default": 1.0,
+      "help": "",
+      "label": "Minimum wall outside the screw hole",
+      "path": "clamps.wall_out_mm",
+      "range": {
+        "log": false,
+        "max": 5.0,
+        "min": 0.3,
+        "step": 0.1
+      },
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C40",
+      "choices": [],
+      "default": 3.0,
+      "help": "",
+      "label": "Minimum head-side jaw (grip)",
+      "path": "clamps.grip_min_mm",
+      "range": {
+        "log": false,
+        "max": 10.0,
+        "min": 0.5,
+        "step": 0.1
+      },
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C41",
+      "choices": [],
+      "default": 1.0,
+      "help": "",
+      "label": "Axial margin, clamp end to counterbore edge",
+      "path": "clamps.axial_margin_mm",
+      "range": {
+        "log": false,
+        "max": 5.0,
+        "min": 0.0,
+        "step": 0.1
+      },
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C42",
+      "choices": [],
+      "default": 1.0,
+      "help": "",
+      "label": "Relief cut width",
+      "path": "clamps.relief_mm",
+      "range": {
+        "log": false,
+        "max": 5.0,
+        "min": 0.3,
+        "step": 0.1
+      },
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C43",
+      "choices": [],
+      "default": 8.0,
+      "help": "Measured up from the far side of the boss.",
+      "label": "Hinge left under the relief cut",
+      "path": "clamps.hinge_mm",
+      "range": {
+        "log": false,
+        "max": 30.0,
+        "min": 1.0,
+        "step": 0.1
+      },
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C58",
+      "choices": [],
+      "default": 4.0,
+      "help": "",
+      "label": "Key width",
+      "path": "clamps.key_width_mm",
+      "range": {
+        "log": false,
+        "max": 10.0,
+        "min": 1.0,
+        "step": 0.5
+      },
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C59",
+      "choices": [],
+      "default": 1.5,
+      "help": "",
+      "label": "Key contact height in the hub",
+      "path": "clamps.key_contact_mm",
+      "range": {
+        "log": false,
+        "max": 5.0,
+        "min": 0.5,
+        "step": 0.1
+      },
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C64",
+      "choices": [],
+      "default": 3,
+      "help": "Pilot + 3 × M3 + dowel.",
+      "label": "Adapter joint screws",
+      "path": "clamps.joint_screws",
+      "range": {
+        "log": false,
+        "max": 8.0,
+        "min": 1.0,
+        "step": 1.0
+      },
+      "type": "i64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C65",
+      "choices": [],
+      "default": 26.0,
+      "help": "",
+      "label": "Bolt circle diameter",
+      "path": "clamps.joint_bolt_circle_mm",
+      "range": {
+        "log": false,
+        "max": 60.0,
+        "min": 10.0,
+        "step": 0.5
+      },
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": "Shaft clamps!C66",
+      "choices": [],
+      "default": 0.15,
+      "help": "",
+      "label": "Friction coefficient, nickel plate on aluminium",
+      "path": "clamps.joint_friction",
+      "range": {
+        "log": false,
+        "max": 0.4,
+        "min": 0.05,
+        "step": 0.005
+      },
+      "type": "f64",
+      "unit": "-"
     }
   ]
 }

@@ -11,6 +11,7 @@
 
 pub mod api;
 pub mod calibration;
+pub mod clamps;
 pub mod compat;
 pub mod constants;
 pub mod deviations;

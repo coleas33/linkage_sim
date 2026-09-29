@@ -25,7 +25,7 @@ Writes:
     magcoupling-rs/tests/data/differential/helpers.json
         a corpus for the rounding and formatting helpers.
     magcoupling-rs/tests/data/static_data.json
-        the static engine tables (magnet library, the harmonic set, the validation checklist, the aluminium alloys and the adhesive candidates so far), for tests/static_data.rs.
+        the static engine tables (magnet library, the harmonic set, the validation checklist, the aluminium alloys, the adhesive candidates, the screw sizes, the machining steps and the screw table columns so far), for tests/static_data.rs.
 
 Cases per module, all inside the slider ranges: the workbook defaults; each
 input at each end of its range, each selector at each choice and each text
@@ -58,6 +58,7 @@ import magcoupling  # noqa: E402
 from magcoupling import DesignInputs, compute_all, input_schema, result_schema, set_input  # noqa: E402
 from magcoupling._fields import ceiling, floor_  # noqa: E402
 from magcoupling.clamps import SCREW_SIZES, TABLE_COLUMNS, TABLE_ROWS, ScrewRow, _fmt_num  # noqa: E402
+from magcoupling import clamps as py_clamps  # noqa: E402
 from magcoupling import metal_design as py_metal_design  # noqa: E402
 from magcoupling import model as py_model  # noqa: E402
 from magcoupling.library import _ROWS, MAGNET_LIBRARY  # noqa: E402
@@ -84,6 +85,7 @@ MODULES = {
     "metal": ["coupling", "metal", "calibration"],
     "materials": ["coupling", "metal", "materials", "calibration"],
     "temperature": ["coupling", "metal", "calibration", "materials", "temperature"],
+    "clamps": ["coupling", "metal", "calibration", "materials", "clamps"],
 }
 # every library part, blank (manual magnet) and a near miss of the default part
 PART_CHOICES = list(MAGNET_LIBRARY) + ["", "b842sh"]
@@ -133,6 +135,19 @@ PROBES = {
         ("bench drag at the slider minimum", {"metal.measured_drag_Nm": 0.001}),
         ("manual inner magnet: uncalibrated onset", {"coupling.magnets.part_inner": ""}),
         ("low conductance: steady state above the limit", {"temperature.thermal.conductance_W_K": 0.02}),
+    ],
+    # Shaft clamps: the size that works changes with the boss and the clamp length (the boss stays 22 mm
+    # so only M3 fits, and the clamp length decides how many screws fit); stripping governs when the
+    # engagement is short in the softer alloy; the M6 probe reaches the 4 mm vent-port limit.
+    "clamps": [
+        ("22 mm boss, 10 mm clamp: nothing fits", {"clamps.boss_od_mm": 22.0, "clamps.clamp_length_mm": 10.0}),
+        ("22 mm boss, 14.5 mm clamp: two M3", {"clamps.boss_od_mm": 22.0, "clamps.clamp_length_mm": 14.5}),
+        ("22 mm boss, 18 mm clamp: three M2.5", {"clamps.boss_od_mm": 22.0, "clamps.clamp_length_mm": 18.0}),
+        ("stripping governs: 6061 with 1 x d engagement", {"clamps.alloy": 2, "clamps.engagement_x_d": 1.0}),
+        # No fixed case reaches "No: key too large" (M6 must be the first size that works; about 0.5 %
+        # of random clamp samples do). Checked in the oracle: recommended "ISO 4762 M6 x 26, class 12.9".
+        ("M6 first size that works: key too large for the vent port",
+         {"clamps.safety_factor": 3.0, "clamps.friction": 0.1, "clamps.boss_od_mm": 40.0, "clamps.clamp_length_mm": 13.0}),
     ],
 }
 
@@ -326,6 +341,9 @@ def static_data() -> str:
                              for label, (status, action) in py_metal_design.VALIDATION_ITEMS.items()],
         "aluminium": [dataclasses.asdict(a) for a in (Aluminium().al7075, Aluminium().al6061)],
         "adhesives": [dataclasses.asdict(a) for a in py_temperature.default_adhesives()],
+        "screw_sizes": [dataclasses.asdict(s) for s in py_clamps.SCREW_SIZES],
+        "machining_steps": list(py_clamps.MACHINING_STEPS),
+        "table_columns": list(py_clamps.TABLE_COLUMNS),
     }
     return dumps(doc) + "\n"
 

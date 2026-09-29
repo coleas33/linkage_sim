@@ -125,8 +125,10 @@ enum Reach {
     Prefix(&'static str),
     /// A number (the numeric side of a number-or-text result).
     Number,
+    /// Any text (a result with a single formatted form, e.g. clamps.layout_slit).
+    AnyText,
 }
-use Reach::{Number, Prefix, Text};
+use Reach::{AnyText, Number, Prefix, Text};
 
 /// Every branch of every ported module's text results, so each branch of the
 /// Python source is compared at least once. `[*]` matches any table row.
@@ -268,6 +270,48 @@ const BRANCHES: &[(&str, &[Reach])] = &[
             Text("Above the fatigue endurance: qualify by thermal cycling"),
         ],
     ),
+    (
+        "clamps.recommended",
+        &[
+            Prefix("ISO 4762 "),
+            Text("None: enlarge the boss or the clamp length"),
+        ],
+    ),
+    ("clamps.screws", &[Number, Text("")]),
+    ("clamps.tightening_Nm", &[Number, Text("")]),
+    ("clamps.hex_mm", &[Number, Text("")]),
+    ("clamps.capacity_Nm", &[Number, Text("")]),
+    ("clamps.sf_coupling", &[Number, Text("")]),
+    (
+        "clamps.head_check",
+        &[Text("OK"), Text("Use a hardened washer"), Text("")],
+    ),
+    (
+        "clamps.vent_port",
+        &[
+            Text("Yes: the key fits the 4 mm limit"),
+            Text("No: key too large"),
+            Text(""),
+        ],
+    ),
+    ("clamps.layout_offset_mm", &[Number, Text("")]),
+    ("clamps.layout_pitch_mm", &[Number, Text("")]),
+    ("clamps.layout_first_mm", &[Number, Text("")]),
+    ("clamps.layout_cbore_dia_mm", &[Number, Text("")]),
+    ("clamps.layout_cbore_depth_mm", &[Number, Text("")]),
+    ("clamps.layout_grip_mm", &[Number, Text("")]),
+    ("clamps.layout_tap_drill_mm", &[Number, Text("")]),
+    ("clamps.layout_thread_avail_mm", &[Number, Text("")]),
+    ("clamps.layout_slit", &[AnyText]),
+    ("clamps.layout_relief", &[AnyText]),
+    (
+        "clamps.table[*].size",
+        &[Text("M2.5"), Text("M3"), Text("M4"), Text("M5"), Text("M6")],
+    ),
+    (
+        "clamps.table[*].head_check",
+        &[Text("OK"), Text("Use a hardened washer")],
+    ),
 ];
 
 fn reached(value: &Value, reach: Reach) -> bool {
@@ -275,6 +319,7 @@ fn reached(value: &Value, reach: Reach) -> bool {
         (Text(t), Value::Text(v)) => v == t,
         (Prefix(p), Value::Text(v)) => v.starts_with(p),
         (Number, Value::Num(_) | Value::Int(_)) => true,
+        (AnyText, Value::Text(_)) => true,
         _ => false,
     }
 }
@@ -433,6 +478,11 @@ fn materials_matches_python_on_every_case() {
 #[test]
 fn temperature_matches_python_on_every_case() {
     check_module("temperature");
+}
+
+#[test]
+fn clamps_matches_python_on_every_case() {
+    check_module("clamps");
 }
 
 /// A corpus key and the Rust helper call it records (as the engine calls it).

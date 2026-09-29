@@ -37,3 +37,19 @@ fn zero_measured_drag_does_not_panic() {
         );
     }
 }
+
+#[test]
+fn an_invalid_screw_class_is_nan_not_a_panic() {
+    for code in [0, 4, i64::MIN] {
+        let mut inputs = DesignInputs::defaults_with(Deviations::NONE);
+        inputs.clamps.screw_class = code; // bypasses set()
+        let c = compute_all_with(&inputs, Deviations::NONE).clamps;
+        assert!(c.screw_proof_MPa.is_nan(), "{code}");
+        assert!(c.table.iter().all(|r| r.preload_N.is_nan()), "{code}");
+        assert!(
+            c.recommended.ends_with("class #N/A") || c.recommended.starts_with("None"),
+            "{code}: {}",
+            c.recommended
+        );
+    }
+}

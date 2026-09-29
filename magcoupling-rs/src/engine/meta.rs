@@ -862,7 +862,6 @@ pub(crate) use results;
 /// Declares a table row struct: fields with `col`/`at_row`/`uncelled_col` metadata.
 /// Tables are declared in a `results!` struct's `tables { .. }` section, which
 /// names the layout; the row names only each field's column or row.
-#[allow(unused_macros)] // first used by clamps (Task 10), which removes this allow
 macro_rules! rows {
     (
         $(#[$sattr:meta])*
@@ -904,7 +903,6 @@ macro_rules! rows {
         }
     };
 }
-#[allow(unused_imports)] // first used by clamps (Task 10), which removes this allow
 pub(crate) use rows;
 
 #[cfg(test)]
