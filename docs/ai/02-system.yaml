@@ -98,7 +98,13 @@ invariants_to_protect:
     because load re-applies the list on top. Writing composite + list
     double-counts every point mass (BL-023). mechanism_to_json alone (undo
     snapshots) bakes point masses in and emits an empty list, which is
-    self-consistent but loses the editable list.
+    self-consistent but loses the editable list. set_body_mass /
+    set_body_izz edit the blueprint BASE value and then re-derive the live
+    body's composite mass, CG and Izz (base + point masses) through
+    sync_live_mass_props; never patch a single live field with a base value
+    (composite CG and Izz depend on base mass) (BL-024). The parametric
+    BodyMass/BodyIzz sweep varies the BASE value on a blueprint clone and
+    rebuilds, so point masses stay on top of it.
   - severity_controls_return_type_not_math — Trajectory mode's
     Severity::{Strict, Analysis} runs identical Newton/FD code; the only
     difference is whether failure status bubbles as Err or as a result

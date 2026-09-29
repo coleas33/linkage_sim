@@ -5,6 +5,33 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-29 — BL-024: set_body_mass / set_body_izz keep point masses in the live mechanism
+- Root cause: `AppState::set_body_mass` / `set_body_izz` (`gui/state/blueprint_ops.rs`)
+  wrote the blueprint BASE mass/Izz straight onto the live `Mechanism` body
+  without rebuilding, so the live body lost every point-mass contribution
+  until the next rebuild. Gravity Q, statics and the reaction solve used the
+  bare base mass (rocker 1 kg + 2 kg point mass, base set to 4 kg: live mass
+  4 kg, expected 6 kg). Composite CG and Izz also depend on base mass, so
+  they went stale too (base-Izz edit left the parallel-axis term wrong).
+- Fix: both setters now edit the blueprint base value and call the new private
+  `sync_live_mass_props`, which recomputes the composite (base + point masses)
+  with `Body::add_point_mass`, the same math the loader applies, and copies
+  mass/CG/Izz onto the live body. No rebuild, so animation state is untouched.
+- Parametric `BodyMass`/`BodyIzz` sweep: already correct (clones the
+  blueprint, sets the BASE value, rebuilds through the loader, so point masses
+  stay on top). Documented on `SweepParameter` (`gui/state/parametric.rs`) and
+  locked by a test. The property panel mass/Izz sliders also edit the base.
+- Tests (`gui/state/tests.rs`): `set_body_mass_keeps_point_masses_in_live_mechanism_bl024`
+  (live composite == new base + point mass == fresh build of the blueprint;
+  gravity Q_y == -g * composite mass with no rebuild),
+  `set_body_mass_to_zero_leaves_only_point_mass_in_live_mechanism_bl024`,
+  `set_body_izz_keeps_point_masses_in_live_mechanism_bl024`,
+  `parametric_body_mass_sweep_varies_base_and_keeps_point_masses_bl024`.
+  Mutation check: scaling gravity mass by 0.9 in `evaluate_gravity` turns the
+  mass test red (Q_y -52.97 vs -58.86); restored.
+- Not fixed here: undo snapshots still bake point masses in (BL-023 note).
+
+
 ## 2026-09-28 — BL-025: point-mass edits, Reposition and Move to Link are single undo steps
 - Root cause: `update_point_mass` never called `push_undo` (its doc said the
   caller should; neither caller did), so numeric mass/X/Y edits and the canvas

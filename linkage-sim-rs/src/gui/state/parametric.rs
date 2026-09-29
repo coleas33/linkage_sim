@@ -5,9 +5,12 @@ use crate::gui::sweep::SweepData;
 /// A parameter that can be swept in a parametric study.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SweepParameter {
-    /// Body mass (kg). Value: body_id.
+    /// Body BASE mass (kg), excluding point masses. Value: body_id.
+    /// Point masses stay on top of the swept value at every step (the sweep
+    /// edits a blueprint clone and rebuilds through the loader).
     BodyMass(String),
-    /// Body moment of inertia about CG (kg*m^2). Value: body_id.
+    /// Body BASE moment of inertia about CG (kg*m^2), excluding the
+    /// point-mass contribution. Value: body_id.
     BodyIzz(String),
     /// Attachment point X coordinate (m). Value: (body_id, point_name).
     AttachmentX(String, String),

@@ -6,6 +6,7 @@ use crate::analysis::grashof::check_grashof;
 use crate::analysis::transmission::{mechanical_advantage, VelocityCoord};
 use crate::analysis::force_breakdown::evaluate_contributions;
 use crate::analysis::virtual_work::virtual_work_check;
+use crate::core::body::Body;
 use crate::core::constraint::Constraint;
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
@@ -18,7 +19,7 @@ use crate::solver::kinematics::solve_velocity;
 use crate::solver::reactions::solve_reactions_with_actuator;
 use crate::solver::statics::get_joint_reactions;
 
-use nalgebra::DVector;
+use nalgebra::{DVector, Vector2};
 
 use super::{AppState, DriverKind, ForceResults, SolverStatus};
 use crate::gui::sweep::{
@@ -472,11 +473,12 @@ impl AppState {
         self.rebuild();
     }
 
-    /// Set mass property on a body in the blueprint.
+    /// Set the BASE mass of a body in the blueprint (point masses excluded).
     ///
     /// Mass does not affect the kinematic constraint equations, so a full
-    /// `rebuild()` is unnecessary. We update the blueprint **and** the live
-    /// mechanism directly, then recompute forces and mark the sweep dirty
+    /// `rebuild()` is unnecessary. We update the blueprint base value, re-derive
+    /// the live body's composite mass/CG/Izz (base + point masses) via
+    /// `sync_live_mass_props`, then recompute forces and mark the sweep dirty
     /// (force/energy curves depend on mass).
     pub fn set_body_mass(&mut self, body_id: &str, mass: f64) {
         self.push_undo();
@@ -484,16 +486,12 @@ impl AppState {
         if let Some(body) = bp.bodies.get_mut(body_id) {
             body.mass = mass;
         }
-        // Patch the live mechanism so we skip the full JSON roundtrip.
-        if let Some(mech) = &mut self.mechanism {
-            if let Some(body) = mech.body_mut(body_id) {
-                body.mass = mass;
-            }
-        }
+        self.sync_live_mass_props(body_id);
         self.recompute_dynamics();
     }
 
-    /// Set moment of inertia on a body in the blueprint.
+    /// Set the BASE moment of inertia on a body in the blueprint (point
+    /// masses excluded).
     ///
     /// Izz does not affect kinematics. Same lightweight update as `set_body_mass`.
     pub fn set_body_izz(&mut self, body_id: &str, izz: f64) {
@@ -502,12 +500,35 @@ impl AppState {
         if let Some(body) = bp.bodies.get_mut(body_id) {
             body.izz_cg = izz;
         }
-        if let Some(mech) = &mut self.mechanism {
-            if let Some(body) = mech.body_mut(body_id) {
-                body.izz_cg = izz;
-            }
-        }
+        self.sync_live_mass_props(body_id);
         self.recompute_dynamics();
+    }
+
+    /// Re-derive one body's composite mass, CG and Izz in the live mechanism
+    /// from its blueprint base values plus point masses, without a rebuild.
+    ///
+    /// Uses `Body::add_point_mass`, the same composite math the loader applies
+    /// (`io/from_json.rs`), so the live body equals a fresh build. The composite
+    /// CG and Izz depend on the base mass, so base edits must re-derive all
+    /// three rather than patching a single field.
+    fn sync_live_mass_props(&mut self, body_id: &str) {
+        let Some(bp_body) = self.blueprint.as_ref().and_then(|bp| bp.bodies.get(body_id)) else {
+            return;
+        };
+        let Some(live) = self.mechanism.as_mut().and_then(|m| m.body_mut(body_id)) else {
+            return;
+        };
+
+        let mut composite = Body::new(body_id);
+        composite.mass = bp_body.mass;
+        composite.cg_local = Vector2::new(bp_body.cg_local[0], bp_body.cg_local[1]);
+        composite.izz_cg = bp_body.izz_cg;
+        for pm in &bp_body.point_masses {
+            composite.add_point_mass(pm.mass, Vector2::new(pm.local_pos[0], pm.local_pos[1]));
+        }
+        live.mass = composite.mass;
+        live.cg_local = composite.cg_local;
+        live.izz_cg = composite.izz_cg;
     }
 
     /// Recompute force results and mark sweep dirty without rebuilding the

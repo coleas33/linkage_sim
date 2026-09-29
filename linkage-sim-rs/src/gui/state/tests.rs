@@ -2263,6 +2263,145 @@
         );
     }
 
+    // ── BL-024: base-mass edits must keep point masses in the live mechanism ──
+    //
+    // `set_body_mass` / `set_body_izz` edit the blueprint BASE values and patch
+    // the live mechanism without a rebuild. The live body must still equal what
+    // a fresh build of the blueprint produces (base + point masses).
+
+    /// Composite mass properties of a mechanism freshly built from the
+    /// blueprint (the rebuild path), keyed by body id.
+    fn fresh_built_mass_props(state: &AppState) -> std::collections::BTreeMap<String, MassProps> {
+        let bp = state.blueprint.as_ref().expect("blueprint should exist");
+        let mut mech = crate::io::load_mechanism_unbuilt_from_json(bp).expect("blueprint should load");
+        mech.build().expect("mechanism should build");
+        mech.bodies()
+            .iter()
+            .map(|(id, b)| {
+                (id.clone(), MassProps { mass: b.mass, cg: [b.cg_local.x, b.cg_local.y], izz: b.izz_cg })
+            })
+            .collect()
+    }
+
+    /// Gravity generalized force of the LIVE mechanism at the current pose
+    /// (no rebuild), plus the y-coordinate index of `body_id` in q.
+    fn live_gravity_q(state: &AppState, body_id: &str) -> (nalgebra::DVector<f64>, usize) {
+        let mech = state.mechanism.as_ref().expect("mechanism should be built");
+        let g = mech
+            .forces()
+            .iter()
+            .find_map(|f| match f {
+                crate::forces::elements::ForceElement::Gravity(g) => Some(g),
+                _ => None,
+            })
+            .expect("live mechanism should carry a gravity element");
+        let q_vec = crate::forces::elements::evaluate_gravity(g, mech.state(), mech.bodies(), &state.q);
+        let y_idx = mech.state().get_index(body_id).expect("body index").y_idx();
+        (q_vec, y_idx)
+    }
+
+    #[test]
+    fn set_body_mass_keeps_point_masses_in_live_mechanism_bl024() {
+        let (mut state, body, _) = four_bar_with_one_point_mass(); // 2 kg point mass
+        assert_eq!(state.mounting_angle, 0.0, "setup: gravity must point along -y");
+        let old_base = state.blueprint.as_ref().unwrap().bodies[&body].mass;
+        let (q_before, y_idx) = live_gravity_q(&state, &body);
+
+        let new_base = old_base + 3.0;
+        state.set_body_mass(&body, new_base);
+
+        // Blueprint keeps the BASE mass; the live body is base + point mass.
+        assert_eq!(state.blueprint.as_ref().unwrap().bodies[&body].mass, new_base);
+        let live = built_mass_props(&state);
+        assert!(
+            (live[&body].mass - (new_base + 2.0)).abs() < 1e-12,
+            "live composite mass should be new base + 2 kg point mass, got {}",
+            live[&body].mass
+        );
+
+        // Composite CG and Izz depend on the base mass too: live == fresh rebuild.
+        assert_mass_props_match("live vs fresh build after set_body_mass", &fresh_built_mass_props(&state), &live);
+
+        // Gravity Q (no explicit rebuild) reflects the new composite mass.
+        let (q_after, _) = live_gravity_q(&state, &body);
+        let expected_fy = -state.gravity_magnitude * (new_base + 2.0);
+        assert!(
+            (q_after[y_idx] - expected_fy).abs() < 1e-9,
+            "gravity Q_y should be -g * (new base + point masses) = {}, got {}",
+            expected_fy,
+            q_after[y_idx]
+        );
+        assert!(
+            (q_after[y_idx] - q_before[y_idx]).abs() > 1.0,
+            "setup: the edit must actually change the gravity load"
+        );
+    }
+
+    #[test]
+    fn set_body_mass_to_zero_leaves_only_point_mass_in_live_mechanism_bl024() {
+        let (mut state, body, _) = four_bar_with_one_point_mass();
+        state.set_body_mass(&body, 0.0);
+
+        let live = built_mass_props(&state);
+        assert!(
+            (live[&body].mass - 2.0).abs() < 1e-12,
+            "with zero base mass the live body carries just the 2 kg point mass, got {}",
+            live[&body].mass
+        );
+        assert_mass_props_match("live vs fresh build at zero base mass", &fresh_built_mass_props(&state), &live);
+    }
+
+    #[test]
+    fn set_body_izz_keeps_point_masses_in_live_mechanism_bl024() {
+        let (mut state, body, _) = four_bar_with_one_point_mass();
+        let mass_before = built_mass_props(&state)[&body].mass;
+        let cg_before = built_mass_props(&state)[&body].cg;
+        let old_base_izz = state.blueprint.as_ref().unwrap().bodies[&body].izz_cg;
+
+        let new_base_izz = old_base_izz + 0.05;
+        state.set_body_izz(&body, new_base_izz);
+
+        assert_eq!(state.blueprint.as_ref().unwrap().bodies[&body].izz_cg, new_base_izz);
+        let live = built_mass_props(&state);
+        // Composite Izz keeps the point-mass parallel-axis term: live == fresh rebuild.
+        assert_mass_props_match("live vs fresh build after set_body_izz", &fresh_built_mass_props(&state), &live);
+        assert!(
+            live[&body].izz > new_base_izz + 1e-6,
+            "composite Izz {} must exceed base Izz {} by the point-mass contribution",
+            live[&body].izz,
+            new_base_izz
+        );
+        // Izz does not move mass or CG.
+        assert!((live[&body].mass - mass_before).abs() < 1e-12);
+        assert!((live[&body].cg[0] - cg_before[0]).abs() < 1e-12);
+        assert!((live[&body].cg[1] - cg_before[1]).abs() < 1e-12);
+    }
+
+    /// The parametric BodyMass / BodyIzz sweep varies the BASE value on a
+    /// blueprint clone and rebuilds through the loader, so point masses stay
+    /// on top of the swept value at every step (documented on `SweepParameter`).
+    #[test]
+    fn parametric_body_mass_sweep_varies_base_and_keeps_point_masses_bl024() {
+        let (state, body, _) = four_bar_with_one_point_mass();
+        for swept in [0.4, 1.0, 7.5] {
+            let mut bp = state.blueprint.as_ref().unwrap().clone();
+            let mut omega = state.driver_omega();
+            assert!(AppState::set_parameter_on_blueprint(
+                &mut bp,
+                &SweepParameter::BodyMass(body.clone()),
+                swept,
+                &mut omega,
+            ));
+            let mut mech = crate::io::load_mechanism_unbuilt_from_json(&bp).unwrap();
+            mech.build().unwrap();
+            assert!(
+                (mech.bodies()[&body].mass - (swept + 2.0)).abs() < 1e-12,
+                "swept base {swept} kg + 2 kg point mass, got {}",
+                mech.bodies()[&body].mass
+            );
+        }
+    }
+
     #[test]
     fn new_empty_mechanism_resets_state() {
         let mut state = AppState::default();
