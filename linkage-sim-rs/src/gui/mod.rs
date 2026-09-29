@@ -369,32 +369,7 @@ impl eframe::App for LinkageApp {
 
 
         // ── Delete / Backspace shortcut ───────────────────────────────────
-        if ctx.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
-            if !self.state.multi_selected.is_empty() {
-                // Delete all multi-selected items.
-                let items: Vec<_> = self.state.multi_selected.drain(..).collect();
-                for entity in items {
-                    match entity {
-                        SelectedEntity::Body(id) => self.state.remove_body(&id),
-                        SelectedEntity::Joint(id) => self.state.remove_joint(&id),
-                        _ => {}
-                    }
-                }
-                self.state.selected = None;
-            } else {
-                match self.state.selected.take() {
-                    Some(SelectedEntity::Body(id)) => {
-                        self.state.remove_body(&id);
-                    }
-                    Some(SelectedEntity::Joint(id)) => {
-                        self.state.remove_joint(&id);
-                    }
-                    other => {
-                        self.state.selected = other;
-                    }
-                }
-            }
-        }
+        handle_delete_shortcut(ctx, &mut self.state);
 
         // --- Toolbar ---
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
@@ -416,7 +391,7 @@ impl eframe::App for LinkageApp {
                     egui::Button::new(egui::RichText::new("Select").color(tool_color))
                 };
                 if ui.add(select_btn)
-                    .on_hover_text("Select mode: click a link, joint, or body to select it. Drag empty space to pan the canvas. Shift+click to multi-select. Press Delete/Backspace to remove the selected entity. (Shortcut: Escape returns here from any tool)")
+                    .on_hover_text("Select mode: click a link, joint, body, or weight to select it. Drag a weight to move it (drop it on another link to move it there). Drag empty space to pan the canvas. Shift+click to multi-select. Press Delete/Backspace to remove the selected entity. (Shortcut: Escape returns here from any tool)")
                     .clicked()
                 {
                     self.state.active_tool = EditorTool::Select;
@@ -1294,6 +1269,50 @@ impl eframe::App for LinkageApp {
     }
 }
 
+// ── Delete shortcut ─────────────────────────────────────────────────────────
+
+/// Delete / Backspace removes the selection: every multi-selected item, else
+/// the single selected body, joint or weight (each removal is one undo step).
+/// Ignored while a widget has keyboard focus, so Backspace while typing in a
+/// text or number field edits the text instead of deleting the selection.
+fn handle_delete_shortcut(ctx: &egui::Context, state: &mut AppState) {
+    if ctx.wants_keyboard_input()
+        || !ctx.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace))
+    {
+        return;
+    }
+    if !state.multi_selected.is_empty() {
+        // Delete all multi-selected items.
+        let items: Vec<_> = state.multi_selected.drain(..).collect();
+        for entity in items {
+            match entity {
+                SelectedEntity::Body(id) => state.remove_body(&id),
+                SelectedEntity::Joint(id) => state.remove_joint(&id),
+                SelectedEntity::Weight { body_id, weight_id } => {
+                    state.remove_point_mass_by_id(&body_id, &weight_id);
+                }
+                _ => {}
+            }
+        }
+        state.selected = None;
+    } else {
+        match state.selected.take() {
+            Some(SelectedEntity::Body(id)) => {
+                state.remove_body(&id);
+            }
+            Some(SelectedEntity::Joint(id)) => {
+                state.remove_joint(&id);
+            }
+            Some(SelectedEntity::Weight { body_id, weight_id }) => {
+                state.remove_point_mass_by_id(&body_id, &weight_id);
+            }
+            other => {
+                state.selected = other;
+            }
+        }
+    }
+}
+
 // ── Sample thumbnail generation ─────────────────────────────────────────────
 
 /// Generate thumbnail textures for all sample mechanisms.
@@ -1391,4 +1410,110 @@ fn load_background_image(
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "background".to_string());
     load_background_image_from_bytes(ctx, &name, &bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gui::test_support::key_press;
+
+    /// Four-bar with weights W1 and W2 on the coupler.
+    fn fourbar_with_weights() -> AppState {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        assert_eq!(state.add_point_mass("coupler", 2.0, [0.03, 0.02]).as_deref(), Some("W1"));
+        assert_eq!(state.add_point_mass("coupler", 1.0, [0.01, 0.0]).as_deref(), Some("W2"));
+        state
+    }
+
+    fn weight(id: &str) -> SelectedEntity {
+        SelectedEntity::Weight { body_id: "coupler".to_string(), weight_id: id.to_string() }
+    }
+
+    /// One frame in which `key` is pressed and the delete shortcut runs.
+    fn press(state: &mut AppState, key: egui::Key) {
+        let ctx = egui::Context::default();
+        let input = egui::RawInput { events: vec![key_press(key)], ..Default::default() };
+        let _ = ctx.run(input, |ctx| handle_delete_shortcut(ctx, state));
+    }
+
+    #[test]
+    fn delete_or_backspace_removes_the_selected_weight_as_one_undo_step() {
+        for key in [egui::Key::Delete, egui::Key::Backspace] {
+            let mut state = fourbar_with_weights();
+            state.selected = Some(weight("W1"));
+            let depth = state.undo_history.undo_count();
+
+            press(&mut state, key);
+
+            assert!(state.find_point_mass("coupler", "W1").is_none(), "{key:?} removes W1");
+            assert!(state.find_point_mass("coupler", "W2").is_some(), "{key:?} keeps W2");
+            assert_eq!(state.selected, None);
+            assert_eq!(state.undo_history.undo_count(), depth + 1);
+        }
+    }
+
+    #[test]
+    fn delete_removes_every_multi_selected_weight() {
+        let mut state = fourbar_with_weights();
+        state.multi_selected = vec![weight("W1"), weight("W2")];
+        state.selected = Some(weight("W2"));
+
+        press(&mut state, egui::Key::Delete);
+
+        assert!(state.find_point_mass("coupler", "W1").is_none());
+        assert!(state.find_point_mass("coupler", "W2").is_none());
+        assert!(state.multi_selected.is_empty());
+        assert_eq!(state.selected, None);
+    }
+
+    #[test]
+    fn delete_with_a_stale_weight_selection_changes_nothing() {
+        let mut state = fourbar_with_weights();
+        state.selected = Some(weight("W7")); // e.g. undone since it was selected
+        let depth = state.undo_history.undo_count();
+
+        press(&mut state, egui::Key::Delete);
+
+        assert!(state.find_point_mass("coupler", "W1").is_some());
+        assert!(state.find_point_mass("coupler", "W2").is_some());
+        assert_eq!(state.undo_history.undo_count(), depth);
+    }
+
+    #[test]
+    fn other_keys_do_not_delete() {
+        let mut state = fourbar_with_weights();
+        state.selected = Some(weight("W1"));
+
+        press(&mut state, egui::Key::A);
+
+        assert!(state.find_point_mass("coupler", "W1").is_some());
+        assert_eq!(state.selected, Some(weight("W1")));
+    }
+
+    #[test]
+    fn backspace_while_typing_in_a_text_field_does_not_delete_the_selection() {
+        let mut state = fourbar_with_weights();
+        state.selected = Some(weight("W1"));
+        let depth = state.undo_history.undo_count();
+        let ctx = egui::Context::default();
+        let mut text = String::from("2.5");
+
+        // Frame 1: the user clicks into a text field, which takes keyboard focus.
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| ui.text_edit_singleline(&mut text).request_focus());
+        });
+        // Frame 2: Backspace, handled as in `update`: the shortcut first, then the panels.
+        let input = egui::RawInput { events: vec![key_press(egui::Key::Backspace)], ..Default::default() };
+        let _ = ctx.run(input, |ctx| {
+            handle_delete_shortcut(ctx, &mut state);
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.text_edit_singleline(&mut text);
+            });
+        });
+
+        assert!(state.find_point_mass("coupler", "W1").is_some(), "the weight survives");
+        assert_eq!(state.selected, Some(weight("W1")));
+        assert_eq!(state.undo_history.undo_count(), depth);
+    }
 }

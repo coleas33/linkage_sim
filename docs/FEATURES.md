@@ -215,6 +215,8 @@ All force elements are editable in the GUI property panel and rendered on the ca
 - **Add Joint Point tool** -- click anywhere to add attachment points to existing bodies, creating ternary/quaternary shapes
 - **Place Mass tool** -- two-phase workflow: select body, click to place. Move to Link and Reposition buttons. Preview circle at cursor.
 - **Weight selection** -- click a weight (point mass) marker to select it; Shift+click toggles it in the multi-selection. A weight wins over a joint or pin under the same click. Hovering a weight shows a highlight ring and a grab cursor.
+- **Weight drag and drop** -- press on a weight and drag it: a live preview (dashed line and marker) follows the pointer, snapped to the grid when snapping is on, and the weight moves once, on release, as one undo step. Dropped within 60 px of a different link (and nearer to it than to its own), the weight moves to that link at the drop point, keeping its id, name and mass; the target link is highlighted while dragging. Esc, or releasing outside the canvas, cancels. Delete/Backspace removes the selected weight.
+- **Delete shortcut ignores typing** -- Delete/Backspace does nothing while a text or number field has keyboard focus, so editing a value never deletes the selected body, joint or weight.
 - **Scale Mechanism** -- uniform scale with 50%/75%/150%/200% presets and custom percentage input
 - **Arrow key nudge** -- select joint/body, arrow keys move by grid step, Shift+arrow = 10x
 - **Angle/length constraints** -- live readout during Draw Link drag, editable angle slider per segment in property panel

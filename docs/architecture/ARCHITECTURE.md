@@ -192,7 +192,7 @@ When point masses are attached, the solver recomputes the body's composite mass 
 - `cg_composite = (m_body * cg_body + Σ m_point * pos_point) / m_composite`
 - `Izz_composite = Izz_body + m_body * d_body² + Σ (m_point * d_point²)` (parallel axis theorem, where `d` is distance from new composite CG)
 
-Multiple point masses can attach to the same body. The GUI displays them as markers on the body; clicking a marker selects that weight (`SelectedEntity::Weight`, addressed by body id and weight id).
+Multiple point masses can attach to the same body. The GUI displays them as markers on the body; clicking a marker selects that weight (`SelectedEntity::Weight`, addressed by body id and weight id). Dragging a marker previews the move and commits it on release as one `move_point_mass` (one undo step); when the nearest link within 60 px of the drop point is a different link, the weight is reattached to it at the drop point.
 
 In the Rust JSON schema a point mass ("weight") lives in its body's `point_masses` list as `{ "id": "W1", "label": "Robot torso", "mass": 50.0, "local_pos": [0.3, 0.0] }` (`label` optional). The `id` is unique across the mechanism; files written before ids existed load unchanged and get `W<n>` ids on load (smallest unused number; bodies sorted by id, list order). The loader skips, and reports in the error panel, a point mass on ground, a mass that is not a positive finite number, and a non-finite position; skipped weights stay in the file so a save writes them back unchanged.
 

@@ -150,6 +150,23 @@ invariants_to_protect:
     point_mass_screen_pos (AppState::body_local_to_world at the current q),
     so a weight is picked exactly where it is drawn. Ground and blank-id
     weights are neither drawn nor picked.
+  - weight_drag_commits_once_on_release — canvas weight drag
+    (interaction.rs handle_weight_drag) keeps only a preview in
+    AppState::weight_drag (pointer snapped by GridSettings::snap_point) and
+    calls move_point_mass exactly once on drag_stopped_by(Primary). The
+    target is the nearest link within LINK_PICK_RADIUS (60 px, shared with
+    Place Mass and Move to Link) that the blueprint has and is not ground
+    (compound actuator bodies are drawn but cannot carry weights), else the
+    weight's own link. The own link is a candidate too (nearest link wins,
+    as the spec says), so a drop nearer its own link than a neighbour's
+    stays put. A drag egui ends without a primary release (Esc) or
+    a release outside the canvas rect commits nothing. The drag starts from
+    pointer.press_origin(): egui reports drag_started only after the pointer
+    has moved > 6 px.
+  - delete_shortcut_ignores_focused_widgets — gui/mod.rs
+    handle_delete_shortcut returns early while ctx.wants_keyboard_input();
+    before this, Backspace in any text/number field deleted the selected
+    body, joint (and would have deleted a selected weight).
   - gravity_breakdown_sources_sum_to_model_gravity — analysis::gravity_breakdown::weight_sources
     lists one link self-weight per non-ground body with positive finite base
     mass (base mass at base cg_local, id "link:<body>") plus every point mass

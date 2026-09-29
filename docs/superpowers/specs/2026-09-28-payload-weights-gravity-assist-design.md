@@ -177,12 +177,14 @@ weights get default names (`W1`, `W2`, …).
 - Press-drag shows a live preview; the blueprint mutation and rebuild happen
   **once on release** (`drag_stopped()`), per the existing lesson that per-frame
   rebuilds are too expensive.
-- On release the nearest link wins, within the existing 60 px pick radius:
-  if a different link is nearer than the weight's own link, the weight
-  reattaches there, preserving its world position; otherwise it moves on its
-  current link (accepted deviation, 2026-09-29: prevents accidental
-  reattachment while dragging along the weight's own link). Each drag is **one** undo step
-  (`AppState::mutate_and_rebuild`). Delete removes the selected weight.
+- On release the weight lands at the drop point (snapped to the grid when
+  snapping is on). The nearest link within the existing 60 px pick radius
+  takes it, its own link included: a drop nearest a different link reattaches
+  the weight there, and a drop nearer its own link, or with no link in range,
+  moves it on its current link (accepted deviation, 2026-09-29: prevents
+  accidental reattachment while dragging along the weight's own link). Ground
+  and compound actuator bodies never take a weight. Each drag is **one** undo
+  step (`AppState::mutate_and_rebuild`). Delete removes the selected weight.
 
 **Property panel.** A selected weight shows name, mass, owning link, and
 body-local position. The link editor's weights section is always visible and

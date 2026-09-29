@@ -239,7 +239,7 @@ mod tests {
 
         use crate::gui::samples::SampleMechanism;
         use crate::gui::state::{AppState, EditorTool, SelectedEntity};
-        use crate::gui::test_support::{primary_button_with, sorted_link_ids};
+        use crate::gui::test_support::{key_press, primary_button, primary_button_with, sorted_link_ids};
         use super::super::draw_canvas;
 
         /// One canvas frame with `events`, `modifiers` held; returns egui's
@@ -275,15 +275,37 @@ mod tests {
             click_with(ctx, state, pos, egui::Modifiers::NONE);
         }
 
-        /// Four-bar with a 2 kg weight "W1" on the first sorted link, after one
-        /// idle frame (which applies the pending fit-to-view, so `state.view`
-        /// is final). Returns the context, state, that link and a second link.
+        /// Press at `from` and drag through the midpoint to `to` without
+        /// releasing. egui reports the drag once the pointer has moved more
+        /// than 6 px from the press.
+        fn press_and_drag(ctx: &egui::Context, state: &mut AppState, from: Pos2, to: Pos2) {
+            frame(ctx, state, vec![egui::Event::PointerMoved(from)]);
+            frame(ctx, state, vec![primary_button(from, true)]);
+            frame(ctx, state, vec![egui::Event::PointerMoved(from + (to - from) * 0.5)]);
+            frame(ctx, state, vec![egui::Event::PointerMoved(to)]);
+        }
+
+        fn release(ctx: &egui::Context, state: &mut AppState, at: Pos2) {
+            frame(ctx, state, vec![primary_button(at, false)]);
+        }
+
+        fn drag(ctx: &egui::Context, state: &mut AppState, from: Pos2, to: Pos2) {
+            press_and_drag(ctx, state, from, to);
+            release(ctx, state, to);
+        }
+
+        /// Four-bar with a 2 kg weight "W1" on the first sorted link, after two
+        /// idle frames: the first applies the pending fit-to-view (so
+        /// `state.view` is final), the second adapts the grid spacing to the
+        /// fitted zoom (so `state.grid` snaps as a drag will). Returns the
+        /// context, state, that link and a second link.
         fn setup() -> (egui::Context, AppState, String, String) {
             let mut state = AppState::default();
             state.load_sample(SampleMechanism::FourBar);
             let links = sorted_link_ids(&state);
             assert_eq!(state.add_point_mass(&links[0], 2.0, [0.03, 0.02]).as_deref(), Some("W1"));
             let ctx = egui::Context::default();
+            frame(&ctx, &mut state, Vec::new());
             frame(&ctx, &mut state, Vec::new());
             (ctx, state, links[0].clone(), links[1].clone())
         }
@@ -313,6 +335,31 @@ mod tests {
 
         fn weight(body: &str, id: &str) -> SelectedEntity {
             SelectedEntity::Weight { body_id: body.to_string(), weight_id: id.to_string() }
+        }
+
+        /// The world point a drop at screen `pos` lands on: under the
+        /// pointer, snapped to the grid when snapping is on.
+        fn drop_world(state: &AppState, pos: Pos2) -> [f64; 2] {
+            let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
+            let (gx, gy) = state.grid.snap_point(wx, wy);
+            [gx, gy]
+        }
+
+        /// Screen ends (sorted pin names) of a two-pin link's bar.
+        fn link_ends(state: &AppState, body: &str) -> (Pos2, Pos2) {
+            let mech = state.mechanism.as_ref().unwrap();
+            let pins = &mech.bodies()[body].attachment_points;
+            let mut names: Vec<&String> = pins.keys().collect();
+            names.sort();
+            assert_eq!(names.len(), 2, "fixture: a two-pin link");
+            let end = |name: &String| screen_of(state, world_of(state, body, [pins[name].x, pins[name].y]));
+            (end(names[0]), end(names[1]))
+        }
+
+        /// The screen point `t` of the way along a two-pin link's bar.
+        fn along_link(state: &AppState, body: &str, t: f32) -> Pos2 {
+            let (a, b) = link_ends(state, body);
+            a + (b - a) * t
         }
 
         fn assert_close(what: &str, got: [f64; 2], want: [f64; 2]) {
@@ -452,6 +499,184 @@ mod tests {
 
             state.active_tool = EditorTool::PlaceMass;
             assert_eq!(hover(&mut state, at), egui::CursorIcon::Default, "no weight pick in other tools");
+        }
+
+        #[test]
+        fn dragging_a_weight_moves_it_on_release_as_one_undo_step() {
+            let (ctx, mut state, body, _) = setup();
+            let from = weight_screen(&state, &body, "W1");
+            let to = Pos2::new(120.0, 700.0); // empty canvas, far from every link
+            assert!(state.grid.snap_enabled, "fixture: snapping is on by default");
+            let world = drop_world(&state, to);
+            let [wx, wy] = state.view.screen_to_world(to.x, to.y);
+            assert_ne!(world, [wx, wy], "fixture: the snap moves the drop point");
+            let expected = state.world_to_body_local(&body, world[0], world[1]);
+            let depth = state.undo_history.undo_count();
+
+            drag(&ctx, &mut state, from, to);
+
+            let pm = state.find_point_mass(&body, "W1").expect("W1 stays on its link");
+            assert_close("drop on the snapped grid point", pm.local_pos, expected);
+            assert_eq!(pm.mass, 2.0);
+            assert_eq!(state.undo_history.undo_count(), depth + 1, "one drag = one undo step");
+            assert_eq!(state.selected, Some(weight(&body, "W1")));
+            assert!(state.weight_drag.is_none());
+
+            state.undo();
+            let pm = state.find_point_mass(&body, "W1").expect("undo keeps W1");
+            assert_eq!(pm.local_pos, [0.03, 0.02], "one undo restores the start position");
+        }
+
+        #[test]
+        fn a_drag_with_snapping_off_drops_exactly_under_the_pointer() {
+            let (ctx, mut state, body, _) = setup();
+            state.grid.snap_enabled = false;
+            let from = weight_screen(&state, &body, "W1");
+            let to = Pos2::new(120.0, 700.0);
+            let expected = local_under(&state, &body, to);
+
+            drag(&ctx, &mut state, from, to);
+
+            assert_close("unsnapped drop", state.find_point_mass(&body, "W1").unwrap().local_pos, expected);
+        }
+
+        #[test]
+        fn the_drag_preview_leaves_the_blueprint_alone_until_release() {
+            let (ctx, mut state, body, _) = setup();
+            let from = weight_screen(&state, &body, "W1");
+            let to = Pos2::new(120.0, 700.0);
+            let depth = state.undo_history.undo_count();
+
+            press_and_drag(&ctx, &mut state, from, to);
+
+            assert_eq!(state.find_point_mass(&body, "W1").unwrap().local_pos, [0.03, 0.02], "not moved yet");
+            assert_eq!(state.undo_history.undo_count(), depth, "no undo entry mid-drag");
+            let preview = state.weight_drag.clone().expect("a weight drag is in progress");
+            assert_eq!(preview.body_id, body);
+            assert_eq!(preview.weight_id, "W1");
+            assert_eq!(preview.current_world, drop_world(&state, to));
+            assert_eq!(state.selected, Some(weight(&body, "W1")), "pressing a weight selects it");
+            let cursor = frame_with(&ctx, &mut state, vec![egui::Event::PointerMoved(to)], egui::Modifiers::NONE)
+                .platform_output
+                .cursor_icon;
+            assert_eq!(cursor, egui::CursorIcon::Grabbing);
+
+            release(&ctx, &mut state, to);
+
+            assert_eq!(state.undo_history.undo_count(), depth + 1);
+            assert!(state.weight_drag.is_none());
+        }
+
+        #[test]
+        fn dropping_near_another_link_reattaches_the_weight_at_the_drop_point() {
+            let (ctx, mut state, body, other) = setup();
+            state.grid.snap_enabled = false;
+            let from = weight_screen(&state, &body, "W1");
+            let to = along_link(&state, &other, 0.5);
+            let expected = local_under(&state, &other, to);
+            let depth = state.undo_history.undo_count();
+
+            drag(&ctx, &mut state, from, to);
+
+            assert!(state.find_point_mass(&body, "W1").is_none(), "W1 left its link");
+            let pm = state.find_point_mass(&other, "W1").expect("W1 is on the link it was dropped on");
+            assert_close("reattached where it was dropped", pm.local_pos, expected);
+            assert_eq!(pm.mass, 2.0);
+            assert_eq!(state.undo_history.undo_count(), depth + 1, "a reattach is one undo step");
+            assert_eq!(state.selected, Some(weight(&other, "W1")), "the selection follows the weight");
+        }
+
+        #[test]
+        fn dropping_on_its_own_link_next_to_a_neighbour_keeps_the_weight_there() {
+            let (ctx, mut state, body, _) = setup();
+            state.grid.snap_enabled = false;
+            // 90 % along its own link, beside the pin it shares with the rocker,
+            // so the rocker's bar is inside the pick radius too.
+            let to = along_link(&state, &body, 0.9);
+            let (ra, rb) = link_ends(&state, "rocker");
+            let near_rocker = super::super::hit_testing::project_onto_segment(to, ra, rb)
+                .is_some_and(|(_, d)| d > 0.5 && d <= 60.0);
+            assert!(near_rocker, "fixture: the drop point is within the pick radius of the rocker");
+            let from = weight_screen(&state, &body, "W1");
+            let expected = local_under(&state, &body, to);
+
+            drag(&ctx, &mut state, from, to);
+
+            let pm = state.find_point_mass(&body, "W1").expect("the nearest link wins: W1 stays");
+            assert_close("moved along its own link", pm.local_pos, expected);
+        }
+
+        #[test]
+        fn dragging_works_under_a_mounting_angle() {
+            let (ctx, mut state, body, other) = setup();
+            state.mounting_angle = 0.3;
+            frame(&ctx, &mut state, Vec::new()); // the canvas copies it into the view
+            state.grid.snap_enabled = false;
+            let from = weight_screen(&state, &body, "W1");
+            let to = along_link(&state, &other, 0.5);
+            let expected = local_under(&state, &other, to);
+
+            drag(&ctx, &mut state, from, to);
+
+            let pm = state.find_point_mass(&other, "W1").expect("reattached in the rotated view");
+            assert_close("rotated view drop", pm.local_pos, expected);
+        }
+
+        #[test]
+        fn escape_cancels_a_weight_drag_without_an_edit() {
+            let (ctx, mut state, body, _) = setup();
+            let from = weight_screen(&state, &body, "W1");
+            let to = Pos2::new(120.0, 700.0);
+            let depth = state.undo_history.undo_count();
+
+            press_and_drag(&ctx, &mut state, from, to);
+            frame(&ctx, &mut state, vec![key_press(egui::Key::Escape)]);
+            assert!(state.weight_drag.is_none(), "Esc drops the preview");
+            release(&ctx, &mut state, to);
+
+            assert_eq!(state.find_point_mass(&body, "W1").unwrap().local_pos, [0.03, 0.02]);
+            assert_eq!(state.undo_history.undo_count(), depth);
+        }
+
+        #[test]
+        fn releasing_a_weight_outside_the_canvas_cancels_the_drag() {
+            let (ctx, mut state, body, _) = setup();
+            let from = weight_screen(&state, &body, "W1");
+            // Inside the window, but in the panel margin around the canvas.
+            let outside = Pos2::new(3.0, 400.0);
+            let depth = state.undo_history.undo_count();
+
+            drag(&ctx, &mut state, from, outside);
+
+            assert!(state.weight_drag.is_none());
+            assert_eq!(state.find_point_mass(&body, "W1").unwrap().local_pos, [0.03, 0.02]);
+            assert_eq!(state.undo_history.undo_count(), depth);
+        }
+
+        #[test]
+        fn dragging_empty_canvas_still_pans_the_view() {
+            let (ctx, mut state, body, _) = setup();
+            let offset = state.view.offset;
+
+            drag(&ctx, &mut state, Pos2::new(120.0, 700.0), Pos2::new(220.0, 650.0));
+
+            assert_ne!(state.view.offset, offset, "the view panned");
+            assert!(state.weight_drag.is_none());
+            assert_eq!(state.find_point_mass(&body, "W1").unwrap().local_pos, [0.03, 0.02]);
+        }
+
+        #[test]
+        fn a_weight_does_not_drag_outside_select_mode() {
+            let (ctx, mut state, body, _) = setup();
+            state.active_tool = EditorTool::AddGroundPivot;
+            let from = weight_screen(&state, &body, "W1");
+            let depth = state.undo_history.undo_count();
+
+            drag(&ctx, &mut state, from, Pos2::new(120.0, 700.0));
+
+            assert!(state.weight_drag.is_none());
+            assert_eq!(state.find_point_mass(&body, "W1").unwrap().local_pos, [0.03, 0.02]);
+            assert_eq!(state.undo_history.undo_count(), depth);
         }
     }
 }

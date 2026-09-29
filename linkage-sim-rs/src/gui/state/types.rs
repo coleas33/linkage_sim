@@ -130,6 +130,18 @@ pub enum SelectedEntity {
     Weight { body_id: String, weight_id: String },
 }
 
+/// A weight (point mass) being dragged on the canvas. Only a preview: the
+/// blueprint changes once, when the drag ends (`drag_stopped`), through one
+/// `AppState::move_point_mass` (one undo step, one rebuild).
+#[derive(Debug, Clone, PartialEq)]
+pub struct WeightDrag {
+    pub body_id: String,
+    pub weight_id: String,
+    /// Where the weight lands if released now (world, m): under the pointer,
+    /// snapped to the grid when snapping is on.
+    pub current_world: [f64; 2],
+}
+
 // ── Validation warnings ──────────────────────────────────────────────────────
 
 /// Lightweight validation warnings computed after each rebuild.

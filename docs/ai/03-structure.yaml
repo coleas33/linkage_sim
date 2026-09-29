@@ -50,7 +50,7 @@ gui_submodules:
     path: src/gui/canvas/
     files:
       mod: canvas/mod.rs (top-level canvas orchestration)
-      interaction: canvas/interaction.rs (drag, pan, zoom, tool handlers)
+      interaction: canvas/interaction.rs (drag, pan, zoom, tool handlers; weight hover/drag - weights_interactive, handle_weight_drag, weight_drop_target)
       rendering:
         mod: canvas/rendering/mod.rs (main render pass, overlays, tooltips, grid, background image)
         primitives: canvas/rendering/primitives.rs (springs, dampers, arrows, arcs, markers, alignment guides)
@@ -96,7 +96,7 @@ gui_submodules:
       weights: sweep/weights.rs (payload weights - WeightBreakdown {sources, basis, gravity_power, force_share, power_share, other_force, other_power, total_force, total_power, braking} + classification(); ShareBasis {ActuatorForce, DriverTorque}; WeightBreakdownBuilder fed per sample by compute_sweep_data_with_weights; required_totals. AppState::compute_sweep passes gravity_breakdown::weight_sources(blueprint); plain compute_sweep_data = no breakdown)
 
   other_top_level_gui:
-    - mod.rs (LinkageApp + update loop orchestration)
+    - mod.rs (LinkageApp + update loop orchestration; handle_delete_shortcut)
     - menu_bar.rs (File/Edit/Help/View/Image menus + sample gallery)
     - theme.rs (CAD dark visuals, Nathan Mode grayscale)
     - input_panel.rs
@@ -107,7 +107,7 @@ gui_submodules:
     - tutorial.rs
     - undo.rs
     - dxf_import.rs
-    - test_support.rs (#[cfg(test)] helpers shared by GUI module tests, e.g. sorted_link_ids, set_actuator_stored_force, input events primary_button_with; extend it instead of re-implementing fixtures per module)
+    - test_support.rs (#[cfg(test)] helpers shared by GUI module tests, e.g. sorted_link_ids, set_actuator_stored_force, input events primary_button, primary_button_with, key_press; extend it instead of re-implementing fixtures per module)
 
 entry_points:
   native_bin: src/bin/linkage_gui.rs (uses native feature)

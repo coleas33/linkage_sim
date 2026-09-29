@@ -6,7 +6,7 @@ use crate::core::state::GROUND_ID;
 use crate::forces::elements::*;
 use crate::gui::state::{
     AddBodyState, AppState, DrawBodyGeometryState, EditorTool, ForceZoneDragState,
-    PendingCanvasPickKind, SelectedEntity,
+    PendingCanvasPickKind, SelectedEntity, WeightDrag,
 };
 use crate::gui::sweep::SweepMode;
 use crate::solver::inverse_kinematics::ControlTarget;
@@ -14,7 +14,8 @@ use crate::solver::inverse_kinematics::ControlTarget;
 use super::alignment::compute_alignment_guides;
 use super::colors::*;
 use super::hit_testing::{
-    find_nearest_body_segment, find_point_mass_at, point_mass_screen_pos, AttachmentHit, BodySegment,
+    find_nearest_body_segment, find_nearest_body_segment_where, find_point_mass_at,
+    point_mass_screen_pos, AttachmentHit, BodySegment,
 };
 use super::rendering::{draw_dashed_line, fill_force_template};
 
@@ -57,6 +58,7 @@ pub fn handle_interaction(
 ) -> bool {
     let is_shift = ui.input(|i| i.modifiers.shift);
     let is_ctrl = ui.input(|i| i.modifiers.ctrl);
+    let is_ctrl_dragging_image = is_ctrl && state.background_image.is_some();
     let mut is_panning = false;
 
     // ── Interaction: Ctrl+drag to move background image ───────────────
@@ -107,11 +109,18 @@ pub fn handle_interaction(
         return false;
     }
 
+    // ── Interaction: weight (point mass) drag ──────────────────────────
+    // Before the ground-pivot and force-zone drags: a press on a weight
+    // drags the weight, as a click on it selects the weight.
+    handle_weight_drag(ui, painter, response, state, body_segments, is_shift, is_ctrl_dragging_image);
+    let is_dragging_weight = state.weight_drag.is_some();
+
     // ── Interaction: ground pivot drag ─────────────────────────────────
     // Start drag when pointer is near a ground attachment point in Select mode.
     if state.active_tool == EditorTool::Select
         && response.drag_started_by(egui::PointerButton::Primary)
         && !is_shift
+        && !is_dragging_weight
     {
         if let Some(pos) = response.interact_pointer_pos() {
             // Only consider ground body attachment points.
@@ -202,6 +211,7 @@ pub fn handle_interaction(
         && !is_shift
         && state.dragging_force_zone_app_point.is_none()
         && !is_dragging_ground
+        && !is_dragging_weight
     {
         if let Some(pos) = response.interact_pointer_pos() {
             if let Some(mech) = state.mechanism.as_ref() {
@@ -291,12 +301,12 @@ pub fn handle_interaction(
 
     // Primary drag on empty space (Select mode) pans the view.
     // Suppress panning when dragging a ground pivot, force-zone app point,
-    // or Ctrl+dragging the background image.
-    let is_ctrl_dragging_image = is_ctrl && state.background_image.is_some();
+    // weight, or Ctrl+dragging the background image.
     if response.dragged_by(egui::PointerButton::Primary)
         && !is_shift
         && !is_dragging_ground
         && !is_dragging_force_zone_ap
+        && !is_dragging_weight
         && !is_ctrl_dragging_image
     {
         if state.active_tool == EditorTool::Select
@@ -402,6 +412,7 @@ pub fn handle_interaction(
         state.place_mass_body = None;
         state.reassigning_point_mass = None;
         state.repositioning_point_mass = None;
+        state.weight_drag = None;
         state.adding_joint_point = None;
         state.active_tool = EditorTool::Select;
     }
@@ -409,7 +420,7 @@ pub fn handle_interaction(
     // ── Interaction: Reassign point mass to a different link ─────────────
     if state.reassigning_point_mass.is_some() && response.clicked() {
         if let Some(pos) = response.interact_pointer_pos() {
-            let hit = find_nearest_body_segment(pos, body_segments, 60.0);
+            let hit = find_nearest_body_segment(pos, body_segments, LINK_PICK_RADIUS);
             if let Some(seg_hit) = hit {
                 let new_body_id = seg_hit.body_id.clone();
                 let (old_body_id, weight_id) = state.reassigning_point_mass.take().unwrap();
@@ -463,9 +474,9 @@ pub fn handle_interaction(
     // Show preview and hint for reassign/reposition modes
     if state.reassigning_point_mass.is_some() || state.repositioning_point_mass.is_some() {
         if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
-            let preview_color = egui::Color32::from_rgba_premultiplied(255, 200, 50, 128);
-            painter.circle_filled(pos, 6.0, preview_color);
-            painter.circle_stroke(pos, 6.0, egui::Stroke::new(1.5, egui::Color32::from_rgb(255, 200, 50)));
+            let color = state.nc(WEIGHT_COLOR);
+            painter.circle_filled(pos, 6.0, color.linear_multiply(0.5));
+            painter.circle_stroke(pos, 6.0, Stroke::new(1.5, color));
         }
     }
 
@@ -542,14 +553,14 @@ fn weights_interactive(state: &AppState) -> bool {
 }
 
 /// Hover feedback: a ring around the weight under the pointer and a grab
-/// cursor, so the user sees what a click selects.
+/// cursor, so the user sees what a click selects or a drag moves.
 fn draw_weight_hover(
     ui: &egui::Ui,
     painter: &egui::Painter,
     response: &egui::Response,
     state: &AppState,
 ) {
-    if !weights_interactive(state) || !response.hovered() {
+    if !weights_interactive(state) || state.weight_drag.is_some() || !response.hovered() {
         return;
     }
     let Some(pos) = response.hover_pos() else { return };
@@ -558,6 +569,124 @@ fn draw_weight_hover(
     let Some(center) = point_mass_screen_pos(state, &body_id, pm.local_pos) else { return };
     painter.circle_stroke(center, WEIGHT_HIT_RADIUS, Stroke::new(2.0, state.nc(JOINT_HOVER_HIGHLIGHT)));
     ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+}
+
+/// Drag a weight to a new spot.
+///
+/// A primary press on a weight followed by a drag starts a preview
+/// (`state.weight_drag`: the pointer, snapped to the grid when snapping is
+/// on) and selects the weight. The release commits it with one
+/// `move_point_mass` (one undo step, one rebuild): dropped nearest to another
+/// link within `LINK_PICK_RADIUS`, the weight is reattached to that link at
+/// the drop point; otherwise it moves on its own link. A drag that ends
+/// without a primary release (Esc), or is released outside the canvas,
+/// changes nothing.
+fn handle_weight_drag(
+    ui: &egui::Ui,
+    painter: &egui::Painter,
+    response: &egui::Response,
+    state: &mut AppState,
+    body_segments: &[BodySegment],
+    is_shift: bool,
+    is_ctrl_dragging_image: bool,
+) {
+    if state.weight_drag.is_none()
+        && weights_interactive(state)
+        && response.drag_started_by(egui::PointerButton::Primary)
+        && !is_shift
+        && !is_ctrl_dragging_image
+    {
+        // Pick at the press point: egui reports the drag only once the
+        // pointer has already moved a few pixels away from it.
+        let press = ui.input(|i| i.pointer.press_origin()).or_else(|| response.interact_pointer_pos());
+        let grabbed = press
+            .and_then(|p| find_point_mass_at(state, p, WEIGHT_HIT_RADIUS))
+            .and_then(|(body_id, weight_id)| {
+                let local = state.find_point_mass(&body_id, &weight_id)?.local_pos;
+                Some((body_id, weight_id, local))
+            });
+        if let Some((body_id, weight_id, local)) = grabbed {
+            state.multi_selected.clear();
+            state.selected = Some(SelectedEntity::Weight { body_id: body_id.clone(), weight_id: weight_id.clone() });
+            let current_world = state.body_local_to_world(&body_id, local);
+            state.weight_drag = Some(WeightDrag { body_id, weight_id, current_world });
+        }
+    }
+
+    // Taken out for this frame; put back below while the drag goes on.
+    let Some(mut drag) = state.weight_drag.take() else { return };
+
+    let released = response.drag_stopped_by(egui::PointerButton::Primary);
+    if !released && !response.dragged() {
+        return; // egui ended the drag without a release (Esc): drop the preview
+    }
+    let Some(pointer) = response.interact_pointer_pos() else { return };
+    if released && !response.rect.contains(pointer) {
+        return; // released outside the canvas: cancel
+    }
+
+    let [wx, wy] = state.view.screen_to_world(pointer.x, pointer.y);
+    let (gx, gy) = state.grid.snap_point(wx, wy);
+    drag.current_world = [gx, gy];
+    let [sx, sy] = state.view.world_to_screen(gx, gy);
+    let drop_screen = Pos2::new(sx, sy);
+    let target = weight_drop_target(state, &drag.body_id, drop_screen, body_segments);
+
+    if released {
+        let local = state.world_to_body_local(&target, gx, gy);
+        if state.move_point_mass(&drag.body_id, &drag.weight_id, &target, local) {
+            state.selected = Some(SelectedEntity::Weight { body_id: target, weight_id: drag.weight_id });
+        }
+        return;
+    }
+
+    draw_weight_drag_preview(painter, state, &drag, drop_screen, &target, body_segments);
+    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+    state.weight_drag = Some(drag);
+}
+
+/// The link a weight dropped at screen point `drop_screen` lands on: the
+/// nearest link within `LINK_PICK_RADIUS` that can carry a weight (in the
+/// blueprint and not ground, which rules out compound actuator bodies), else
+/// `own_body`.
+fn weight_drop_target(
+    state: &AppState,
+    own_body: &str,
+    drop_screen: Pos2,
+    body_segments: &[BodySegment],
+) -> String {
+    let carries_weights = |body_id: &str| {
+        body_id != GROUND_ID && state.blueprint.as_ref().is_some_and(|bp| bp.bodies.contains_key(body_id))
+    };
+    find_nearest_body_segment_where(drop_screen, body_segments, LINK_PICK_RADIUS, carries_weights)
+        .map_or_else(|| own_body.to_string(), |hit| hit.body_id)
+}
+
+/// Drag preview: the target link highlighted when the drop reattaches, a
+/// dashed line from the weight to the drop point, and a marker there.
+fn draw_weight_drag_preview(
+    painter: &egui::Painter,
+    state: &AppState,
+    drag: &WeightDrag,
+    drop_screen: Pos2,
+    target: &str,
+    body_segments: &[BodySegment],
+) {
+    let color = state.nc(WEIGHT_COLOR);
+    if target != drag.body_id {
+        let highlight = Stroke::new(6.0, color.linear_multiply(0.4));
+        for seg in body_segments.iter().filter(|s| s.body_id == target) {
+            painter.line_segment([seg.screen_a, seg.screen_b], highlight);
+        }
+    }
+    let origin = state
+        .find_point_mass(&drag.body_id, &drag.weight_id)
+        .and_then(|pm| point_mass_screen_pos(state, &drag.body_id, pm.local_pos));
+    if let Some(origin) = origin {
+        draw_dashed_line(painter, origin, drop_screen, Stroke::new(1.0, color), 4.0, 3.0);
+    }
+    painter.circle_filled(drop_screen, WEIGHT_RADIUS, color);
+    painter.circle_stroke(drop_screen, WEIGHT_HIT_RADIUS, Stroke::new(1.5, color));
 }
 
 // ── Draw Link tool ───────────────────────────────────────────────────────────
@@ -1040,7 +1169,7 @@ fn handle_place_mass(
         // Phase 1: select a body by clicking near a link segment.
         // Highlight nearest body segment on hover.
         if let Some(hover) = ui.input(|i| i.pointer.hover_pos()) {
-            if let Some(seg_hit) = find_nearest_body_segment(hover, body_segments, 60.0) {
+            if let Some(seg_hit) = find_nearest_body_segment(hover, body_segments, LINK_PICK_RADIUS) {
                 // Draw highlight on the hovered body segment
                 let highlight = Color32::from_rgb(255, 200, 50).linear_multiply(0.4);
                 painter.line_segment(
@@ -1062,8 +1191,8 @@ fn handle_place_mass(
 
         if response.clicked() {
             if let Some(pos) = response.interact_pointer_pos() {
-                // Find nearest body segment within 60px
-                if let Some(seg_hit) = find_nearest_body_segment(pos, body_segments, 60.0) {
+                // Find nearest body segment within the link pick radius
+                if let Some(seg_hit) = find_nearest_body_segment(pos, body_segments, LINK_PICK_RADIUS) {
                     state.place_mass_body = Some(seg_hit.body_id.clone());
                 }
             }
@@ -1463,5 +1592,49 @@ fn apply_canvas_pick(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::hit_testing::tests::segment;
+    use crate::gui::samples::SampleMechanism;
+
+    fn fourbar() -> AppState {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state
+    }
+
+    #[test]
+    fn a_weight_drop_lands_on_the_nearest_link_within_the_pick_radius() {
+        let state = fourbar();
+        let drop = Pos2::new(100.0, 0.0);
+        let segments = vec![segment("crank", 10.0), segment("rocker", 40.0)];
+        assert_eq!(weight_drop_target(&state, "coupler", drop, &segments), "crank");
+        assert_eq!(weight_drop_target(&state, "rocker", drop, &segments), "crank");
+        assert_eq!(weight_drop_target(&state, "crank", drop, &segments), "crank", "its own link is nearest");
+    }
+
+    #[test]
+    fn a_weight_drop_far_from_every_link_stays_on_its_own_link() {
+        let state = fourbar();
+        let segments = vec![segment("crank", LINK_PICK_RADIUS + 1.0)];
+        assert_eq!(weight_drop_target(&state, "coupler", Pos2::new(100.0, 0.0), &segments), "coupler");
+        assert_eq!(weight_drop_target(&state, "coupler", Pos2::new(100.0, 0.0), &[]), "coupler");
+    }
+
+    #[test]
+    fn a_weight_drop_skips_links_that_cannot_carry_a_weight() {
+        // A compound actuator cylinder (expanded from a mount-point actuator at
+        // build time, so absent from the blueprint) and ground lie nearer than
+        // the crank.
+        let state = fourbar();
+        let drop = Pos2::new(100.0, 0.0);
+        let segments = vec![segment("force_0_cyl", 2.0), segment(GROUND_ID, 4.0), segment("crank", 30.0)];
+        assert_eq!(weight_drop_target(&state, "coupler", drop, &segments), "crank");
+        let unusable = vec![segment("force_0_cyl", 2.0), segment(GROUND_ID, 4.0)];
+        assert_eq!(weight_drop_target(&state, "coupler", drop, &unusable), "coupler");
     }
 }

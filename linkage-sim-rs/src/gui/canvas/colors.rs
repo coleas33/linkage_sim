@@ -21,6 +21,7 @@ pub const DRIVER_JOINT_COLOR: Color32 = Color32::from_rgb(80, 220, 130);
 pub const GROUND_MARKER_COLOR: Color32 = Color32::from_rgb(160, 145, 110);
 pub const ATTACHMENT_DOT_COLOR: Color32 = Color32::from_rgb(170, 185, 210);
 pub const MOUNT_POINT_COLOR: Color32 = Color32::from_rgb(224, 86, 253); // #e056fd magenta
+pub const WEIGHT_COLOR: Color32 = Color32::from_rgb(255, 200, 50); // weight (point mass) gold
 
 // Labels
 pub const DEBUG_TEXT_COLOR: Color32 = Color32::from_rgb(150, 160, 180);
@@ -73,6 +74,9 @@ pub const WEIGHT_RADIUS: f32 = 5.0;
 /// stays below `HIT_RADIUS`: a joint under a weight is still reachable from
 /// its outer ring.
 pub const WEIGHT_HIT_RADIUS: f32 = 8.0;
+/// Pick radius, in screen pixels, for choosing a link by clicking or dropping
+/// near its bar: Place Mass, Move to Link and dropping a dragged weight.
+pub const LINK_PICK_RADIUS: f32 = 60.0;
 pub const ATTACHMENT_DOT_RADIUS: f32 = 3.5;
 pub const MOUNT_POINT_RADIUS: f32 = 4.0;
 pub const ZOOM_FACTOR: f32 = 1.05;

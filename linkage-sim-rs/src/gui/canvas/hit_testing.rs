@@ -61,26 +61,36 @@ pub fn find_nearest_body_segment(
     segments: &[BodySegment],
     max_distance: f32,
 ) -> Option<SegmentHit> {
+    find_nearest_body_segment_where(point, segments, max_distance, |_| true)
+}
+
+/// Find the nearest body line segment to a screen point among the segments
+/// whose body id passes `accept`.
+pub fn find_nearest_body_segment_where(
+    point: Pos2,
+    segments: &[BodySegment],
+    max_distance: f32,
+    accept: impl Fn(&str) -> bool,
+) -> Option<SegmentHit> {
     let mut best: Option<(f32, Pos2, [f64; 2], String, String, String)> = None;
 
-    for seg in segments {
-        if let Some((proj_screen, dist)) = project_onto_segment(point, seg.screen_a, seg.screen_b) {
-            if dist <= max_distance {
-                if best.as_ref().map_or(true, |(d, _, _, _, _, _)| dist < *d) {
-                    let ab_screen = seg.screen_b - seg.screen_a;
-                    let ap_screen = proj_screen - seg.screen_a;
-                    let t = if ab_screen.length_sq() > 1e-10 {
-                        ap_screen.length() / ab_screen.length()
-                    } else {
-                        0.0
-                    };
-                    let world_x = seg.world_a[0] + t as f64 * (seg.world_b[0] - seg.world_a[0]);
-                    let world_y = seg.world_a[1] + t as f64 * (seg.world_b[1] - seg.world_a[1]);
+    for seg in segments.iter().filter(|seg| accept(&seg.body_id)) {
+        let Some((proj_screen, dist)) = project_onto_segment(point, seg.screen_a, seg.screen_b) else {
+            continue;
+        };
+        if dist <= max_distance && best.as_ref().is_none_or(|(d, ..)| dist < *d) {
+            let ab_screen = seg.screen_b - seg.screen_a;
+            let ap_screen = proj_screen - seg.screen_a;
+            let t = if ab_screen.length_sq() > 1e-10 {
+                ap_screen.length() / ab_screen.length()
+            } else {
+                0.0
+            };
+            let world_x = seg.world_a[0] + t as f64 * (seg.world_b[0] - seg.world_a[0]);
+            let world_y = seg.world_a[1] + t as f64 * (seg.world_b[1] - seg.world_a[1]);
 
-                    best = Some((dist, proj_screen, [world_x, world_y], seg.body_id.clone(),
-                                 seg.point_a_name.clone(), seg.point_b_name.clone()));
-                }
-            }
+            best = Some((dist, proj_screen, [world_x, world_y], seg.body_id.clone(),
+                         seg.point_a_name.clone(), seg.point_b_name.clone()));
         }
     }
 
@@ -128,7 +138,7 @@ pub fn find_point_mass_at(state: &AppState, screen_pos: Pos2, radius_px: f32) ->
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use eframe::egui::vec2;
 
@@ -238,6 +248,41 @@ mod tests {
         coupler.point_masses.push(weight("  ", local));
         coupler.point_masses.push(weight("W9", [f64::NAN, local[1]]));
         assert_eq!(find_point_mass_at(&state, at, 50.0), None);
+    }
+
+    /// A horizontal 200 px bar of `body` at screen height `y` (world
+    /// coordinates unused). Shared with the canvas interaction tests.
+    pub(in crate::gui::canvas) fn segment(body: &str, y: f32) -> BodySegment {
+        BodySegment {
+            screen_a: Pos2::new(0.0, y),
+            screen_b: Pos2::new(200.0, y),
+            world_a: [0.0, 0.0],
+            world_b: [0.0, 0.0],
+            body_id: body.to_string(),
+            point_a_name: "A".to_string(),
+            point_b_name: "B".to_string(),
+        }
+    }
+
+    #[test]
+    fn find_nearest_body_segment_where_skips_rejected_bodies() {
+        let segments = vec![
+            segment("near", 5.0),
+            segment("far", 30.0),
+        ];
+        let p = Pos2::new(50.0, 0.0);
+        let nearest = |max: f32, accept: fn(&str) -> bool| {
+            find_nearest_body_segment_where(p, &segments, max, accept).map(|h| h.body_id)
+        };
+        assert_eq!(nearest(60.0, |_| true), Some("near".to_string()));
+        assert_eq!(nearest(60.0, |b| b != "near"), Some("far".to_string()));
+        assert_eq!(nearest(60.0, |_| false), None);
+        assert_eq!(nearest(20.0, |b| b != "near"), None, "the distance limit still applies");
+        assert_eq!(
+            find_nearest_body_segment(p, &segments, 60.0).map(|h| h.body_id),
+            Some("near".to_string()),
+            "the unfiltered search is unchanged"
+        );
     }
 
     #[test]

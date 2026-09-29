@@ -24,7 +24,7 @@ pub use view_transform::ViewTransform;
 pub use load_cases::{LoadCase, LoadCaseManager};
 pub use types::{
     PendingJointType, PendingCanvasPickKind, EditorTool, ContextMenuTarget, SelectedEntity,
-    ValidationWarnings, SolverStatus, ForceResults, PropertyPanelTab,
+    WeightDrag, ValidationWarnings, SolverStatus, ForceResults, PropertyPanelTab,
     AlignmentAxis, AlignmentGuide, KeyframeTrajectory, Trajectory, TrajectoryProfile,
     SensorConfig,
 };
@@ -404,6 +404,8 @@ pub struct AppState {
     /// Point mass being repositioned via mouse click. (body_id, weight_id)
     /// When Some, next canvas click updates the mass position.
     pub repositioning_point_mass: Option<(String, String)>,
+    /// Weight being dragged on the canvas (preview only; committed on release).
+    pub weight_drag: Option<WeightDrag>,
     /// Body to add a new attachment point to. Set when user clicks "Add Joint Point".
     /// When Some, next canvas click places a new attachment point on this body.
     pub adding_joint_point: Option<String>,
@@ -706,6 +708,7 @@ impl Default for AppState {
             last_point_mass_kg: 1.0,
             reassigning_point_mass: None,
             repositioning_point_mass: None,
+            weight_drag: None,
             adding_joint_point: None,
             actuator_rated_force: 0.0,
             motion_profile: MotionProfile::default(),

@@ -5,6 +5,52 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-29 — Payload weights Task 6: drag and drop weights
+- `gui/state/types.rs`: `WeightDrag { body_id, weight_id, current_world }`;
+  `AppState::weight_drag: Option<WeightDrag>` (preview only).
+- `gui/canvas/interaction.rs`: `handle_weight_drag` (runs before the
+  ground-pivot / force-zone drags, which it pre-empts, and suppresses pan):
+  press on a weight + drag selects it and previews (pointer snapped to the
+  grid when snapping is on; target link highlighted; dashed line; grabbing
+  cursor); release = one `move_point_mass` (one undo step), selection
+  follows the weight. `weight_drop_target`: nearest link within
+  `LINK_PICK_RADIUS` that the blueprint has and is not ground (compound
+  actuator bodies are skipped), else its own link. Esc or a release outside
+  the canvas cancels. Rendering fades the dragged weight and shows a hint.
+- `gui/canvas/hit_testing.rs`: `find_nearest_body_segment_where` (filtered
+  search; `find_nearest_body_segment` delegates). `colors.rs`:
+  `LINK_PICK_RADIUS` (60 px, now also used by Place Mass and Move to Link),
+  `WEIGHT_COLOR`.
+- `gui/mod.rs`: the Delete/Backspace block becomes
+  `handle_delete_shortcut`, removes a selected (or multi-selected) weight,
+  and is ignored while a widget has keyboard focus (Backspace in a text
+  field used to delete the selected body or joint).
+- Tests: `gui::canvas::tests::weight_clicks` (move on release with snap and
+  one undo step + undo, unsnapped drop, preview leaves the blueprint alone,
+  reattach at the drop point, nearest-own-link stays, mounting angle, Esc,
+  release outside the canvas, empty-canvas drag still pans, no drag outside
+  Select mode), `gui::canvas::interaction::tests` (drop target rules),
+  `gui::canvas::hit_testing::tests::find_nearest_body_segment_where_*`,
+  `gui::tests` (Delete/Backspace removes selected and multi-selected
+  weights, stale selection, other keys, Backspace while typing).
+- Drop rule: the nearest link within the pick radius wins, its own link
+  included, so a drop nearer its own link than a neighbour's stays put. The
+  spec's Track 2 section 3 already said so (the accepted-deviation amendment);
+  it now also states where the weight lands and that ground and compound
+  actuator bodies never take a weight.
+- Cleanups: the Move to Link / Reposition cursor preview uses `WEIGHT_COLOR`
+  instead of a literal gold (and follows Nathan mode like the other weight
+  previews). `find_nearest_body_segment_where` is clippy-clean (let-else,
+  one condition, `is_none_or`), which also clears the three warnings the old
+  `find_nearest_body_segment` carried.
+- `gui/test_support.rs` gains `primary_button` and `key_press`; the canvas
+  drag tests and the `gui::tests` delete tests use them instead of local
+  copies. The canvas interaction tests reuse the `hit_testing` tests'
+  `segment(body, y)` bar fixture.
+- Mutation checks done: dropping the `wants_keyboard_input` guard fails the
+  Backspace-while-typing test; accepting every body as a drop target fails
+  `a_weight_drop_skips_links_that_cannot_carry_a_weight`.
+
 ## 2026-09-29 — Payload weights Task 5: weight hit testing and selection
 - `gui/canvas/hit_testing.rs`: `point_mass_screen_pos` (weight marker
   position at the current pose/view; `None` when not finite) and

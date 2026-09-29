@@ -39,3 +39,13 @@ pub(crate) fn set_actuator_stored_force(state: &mut AppState, force: f64) {
 pub(crate) fn primary_button_with(pos: egui::Pos2, pressed: bool, modifiers: egui::Modifiers) -> egui::Event {
     egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers }
 }
+
+/// A primary-button press (`pressed`) or release at `pos`, no modifiers.
+pub(crate) fn primary_button(pos: egui::Pos2, pressed: bool) -> egui::Event {
+    primary_button_with(pos, pressed, egui::Modifiers::NONE)
+}
+
+/// A key press event with no modifiers.
+pub(crate) fn key_press(key: egui::Key) -> egui::Event {
+    egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE }
+}

@@ -363,7 +363,7 @@ pub fn render_mechanism(
 
     // ── Draw point masses from blueprint ───────────────────────────
     if let Some(bp) = &state.blueprint {
-        let point_mass_color = gc(Color32::from_rgb(255, 200, 50));
+        let point_mass_color = gc(WEIGHT_COLOR);
         let selected_ring = Stroke::new(2.0, gc(BODY_SELECTED_COLOR));
         for (body_id, bp_body) in &bp.bodies {
             if body_id == GROUND_ID {
@@ -373,7 +373,12 @@ pub fn render_mechanism(
                 let Some(screen_pos) = point_mass_screen_pos(state, body_id, pm.local_pos) else {
                     continue;
                 };
-                painter.circle_filled(screen_pos, WEIGHT_RADIUS, point_mass_color);
+                // A weight being dragged fades where it is; the drag preview
+                // (canvas interaction) draws it at the drop point.
+                let dragged = state.weight_drag.as_ref()
+                    .is_some_and(|d| d.body_id == *body_id && d.weight_id == pm.id);
+                let fill = if dragged { point_mass_color.linear_multiply(0.35) } else { point_mass_color };
+                painter.circle_filled(screen_pos, WEIGHT_RADIUS, fill);
                 let entity = SelectedEntity::Weight { body_id: body_id.clone(), weight_id: pm.id.clone() };
                 if selected.as_ref() == Some(&entity) || state.multi_selected.contains(&entity) {
                     painter.circle_stroke(screen_pos, WEIGHT_RADIUS + 3.0, selected_ring);
@@ -824,7 +829,10 @@ pub fn render_overlays(
             } else if state.repositioning_point_mass.is_some() {
                 Some("Click anywhere to reposition the point mass (Esc to cancel)".to_string())
             } else {
-                None
+                state.weight_drag.as_ref().map(|drag| format!(
+                    "Release to drop weight '{}'; near another link it moves to that link (Esc or release outside the canvas to cancel)",
+                    drag.weight_id
+                ))
             }
         }
     };
