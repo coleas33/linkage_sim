@@ -27,6 +27,8 @@ const ARGS = typeof args === 'string' ? JSON.parse(args || '{}') : (args || {})
 if (ARGS.selftest) { return { ok: true } }
 
 const items = ARGS.items || []
+// Commit footer comes from the caller (it names the current model and session); the default never goes stale.
+const FOOTER = ARGS.footer || 'Co-Authored-By: Claude <noreply@anthropic.com>'
 if (!items.length) return { error: 'pass args.items = array of backlog items (see docs/ai/backlog.yaml)' }
 
 const ROOT = 'C:/Users/Cole/source/repos/linkage_simulation/linkage-sim-rs'
@@ -57,6 +59,7 @@ Return files_changed as repo-relative paths.`,
   }
 
   let changedFiles = fix.files_changed || []
+  let fixSummary = fix.notes || ''
   let approved = false
   let lastReview = null
   let roundsUsed = 0
@@ -79,6 +82,7 @@ Run "git status" and "git diff" yourself. Judge: (a) correctness of the change; 
       )
       if (!rework || rework.status !== 'fixed') break
       changedFiles = Array.from(new Set([...changedFiles, ...(rework.files_changed || [])]))
+      fixSummary = rework.notes || fixSummary
     }
   }
 
@@ -91,8 +95,10 @@ Run "git status" and "git diff" yourself. Judge: (a) correctness of the change; 
 
   await agent(
     `In ${ROOT}: stage EXACTLY these files (repo-relative paths) and commit them as ONE conventional commit for backlog item ${item.id} ("${item.title}"): ${JSON.stringify(changedFiles)}
-For each listed file, run: git add -- <file>. Do not use "git add -A" or "git add .". Choose the commit type from the change (fix:/test:/docs:/refactor:), mention ${item.id} in the subject, one-sentence body, and end the message with the footer line:
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+For each listed file, run: git add -- <file>. Do not use "git add -A" or "git add .". Choose the commit type from the change (fix:/test:/docs:/refactor:) and mention ${item.id} in the subject.
+IMPORTANT: the backlog title above describes the BUG. The subject and the one-sentence body must describe what the change DOES (the fix), for example "keep point masses when editing mass", never a restatement of the bug. What the fixer says the change does: ${JSON.stringify(fixSummary)}. If in doubt, read "git diff --cached".
+End the message with these footer lines exactly:
+${FOOTER}
 NEVER stage docs/chebyshev_lambda/*.png or any file not in this list; if the list is empty, run git status, report it, and do NOT commit.
 Do NOT push. Confirm with "git log -1 --stat".`,
     { phase: 'Fix', label: `commit:${item.id}`, model: 'haiku', effort: 'low' },

@@ -222,8 +222,8 @@
   evidence: gui/state/blueprint_ops.rs:449-486 patch the live Mechanism body with the BASE mass/izz, discarding point-mass contributions until the next rebuild; property panel (property_panel/mod.rs:232) and parametric BodyMass sweep (parametric_panel.rs:423) operate on base mass.
   acceptance: 'test: body with a point mass, call set_body_mass, assert built composite mass = new base + point masses and gravity Q reflects it without an explicit rebuild; parametric BodyMass sweep documented or fixed to vary base mass while keeping point masses'
   priority: 2
-  status: open
-  notes: Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md.
+  status: fixed
+  notes: "Fixed 2026-09-29 on agent/batch-3 (5d023f6): set_body_mass/set_body_izz re-derive the live composite mass, CG and Izz from blueprint base + point masses (Body::add_point_mass, the loader's math); parametric BodyMass sweep varies base mass and keeps point masses. Tests in gui/state/tests.rs (*_bl024). Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md."
 
 - id: BL-025
   title: "Point-mass edits and Reposition are not undoable; Move to Link records two undo steps"
@@ -242,8 +242,8 @@
   evidence: gui/sweep/mod.rs:647-649 computes F from the pass-1 driver torque; solver/reactions.rs:579 skips pass 2 when |force|>=1e-12, so actuator_forces = F_required - F_stored (verified to 1.5e-11 on ParallelogramActuator); canvas label says '(computed)' (gui/state/mod.rs:846-864, force_render.rs:239-242). Sweep also duplicates the power-balance formula from reactions.rs:372-403 instead of using ReactionSolveResult::actuator_force.
   acceptance: 'test: stored-force mechanism sweep reports the required actuator force (matches sizing-mode value at every angle) or the plot/label clearly show the residual with correct wording; single power-balance implementation shared by solver and sweep'
   priority: 2
-  status: open
-  notes: Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md. Payload breakdown shares are defined against the required force.
+  status: fixed
+  notes: "Fixed 2026-09-29 on agent/batch-3 (c412485): sweep and trajectory report the REQUIRED actuator force in stored-force mode (stored drive force added back to the pass-1 residual; matches sizing mode at every angle, incl. speed limit and trajectory); power balance lives once in solver::reactions (required_actuator_force, actuator_length_rate). Removes the payload-draft workaround. Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md. Payload breakdown shares are defined against the required force."
 
 - id: BL-027
   title: "Inverse dynamics omits the velocity-quadratic term (With Inertia curve wrong for off-pivot masses)"
@@ -252,8 +252,8 @@
   evidence: 'solver/inverse_dynamics.rs:67-70 uses only M(q)*q_ddot while M depends on configuration via CG offsets (solver/assembly.rs:133-145); no velocity-quadratic term exists in solver/core/forces. Verified 2026-09-28: parallelogram rocker mass at (0,0.8): tau_ID - tau_statics = -3158.273 N*m at every angle, correct value 0 (constant KE), error = 2*m*s_y*omega^2 exactly. Doc sign at inverse_dynamics.rs:1 opposite to line 70. Forward dynamics (forward_dynamics.rs:100) likely same flaw (unverified).'
   acceptance: 'test: constant-KE case gives tau_ID == tau_statics (rel 1e-9); general case tau_ID - tau_statics == dKE/dtheta per unit rate (energy check) on two samples; forward dynamics checked or split into its own item'
   priority: 2
-  status: open
-  notes: Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md; independent of Track 2.
+  status: fixed
+  notes: "Fixed 2026-09-29 on agent/batch-3 (263ef79): velocity-quadratic force Q_v (assembly::assemble_quadratic_velocity_forces) added to inverse AND forward dynamics. Tests: hand-computed Q_v, constant-KE parallelogram tau_ID == tau_statics, KE-rate energy check, centripetal pivot reaction, forward-dynamics free-spin energy conservation. Golden fixtures (Python reference also lacks Q_v) shifted by the exact Q_v multiplier correction rather than loosened. The legacy Python solver under src/linkage_sim has the same omission. Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md; independent of Track 2."
 
 - id: BL-028
   title: "Python reference solvers omit Q_v; golden inverse-dynamics fixtures pass only via a Rust-side shift"
