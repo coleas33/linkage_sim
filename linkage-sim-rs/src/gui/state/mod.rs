@@ -734,8 +734,10 @@ impl Default for AppState {
 /// What the canvas actuator label displays; see [`AppState::actuator_label_force`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ActuatorLabelForce {
-    /// Statics actuator force (N) read from `sweep.actuator_forces` at the
-    /// current driver pose -- the same sample the Actuator Force plot draws.
+    /// Statics required actuator force (N) read from `sweep.actuator_forces`
+    /// at the current driver pose -- the same sample the Actuator Force plot
+    /// draws. In stored-force mode this is still the required force, not the
+    /// residual beyond the stored value (BL-026).
     Computed(f64),
     /// The element's stored `force` (N): no usable sweep sample at this pose
     /// (no sweep yet, no actuator series, or a non-finite sample).

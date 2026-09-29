@@ -357,24 +357,15 @@ pub fn body_equilibrium_residual(
     Some(worst)
 }
 
-/// Compute the actuator force required to drive the kinematic motion under
-/// static balance, via the power-balance identity `F = τ·ω/(dL/dt)`.
+/// Extension rate of the actuator, `dL/dt = û·(v_B − v_A)`, with `û` the
+/// unit vector from attachment A to attachment B (positive = extending).
 ///
-/// Returns `None` when the actuator is at a singular configuration (length
-/// rate near zero — e.g. perpendicular to motion) or when the formula
-/// would yield a non-finite value.
-///
-/// `q_dot` must come from a velocity solve consistent with `driver_omega`
-/// — typically `solve_velocity(mech, q, t)` with the same driver
-/// configuration that produced `driver_torque`. The result is omega-
-/// invariant (both numerator and denominator scale with omega), so any
-/// consistent value works.
-pub fn compute_actuator_force_from_power_balance(
+/// Returns `None` when the attachment points coincide (length ≤ 1e-12), where
+/// the actuator axis is undefined.
+pub fn actuator_length_rate(
     mech: &Mechanism,
     q: &DVector<f64>,
     q_dot: &DVector<f64>,
-    driver_torque: f64,
-    driver_omega: f64,
     actuator: &LinearActuatorElement,
 ) -> Option<f64> {
     let mech_state = mech.state();
@@ -390,16 +381,68 @@ pub fn compute_actuator_force_from_power_balance(
     let unit = d / length;
     let v_a = mech_state.body_point_velocity(&actuator.body_a, &local_a, q, q_dot);
     let v_b = mech_state.body_point_velocity(&actuator.body_b, &local_b, q, q_dot);
-    let dl_dt = (v_b - v_a).dot(&unit);
+    Some((v_b - v_a).dot(&unit))
+}
+
+/// The one power-balance implementation, shared by the pass-2 back-solve
+/// below and the GUI sweep: the axial force the actuator must supply to
+/// drive the motion by itself (rotational driver torque collapsed to zero),
+///
+/// `F = τ·ω / (dL/dt) + F_applied`.
+///
+/// `driver_torque` is the driver effort from a solve in which the actuator
+/// already pushed with `applied_force` along its axis — its stored `force`
+/// in stored-force mode, 0 in sizing mode. That torque balances the loads
+/// *net of* `applied_force`, so the quotient alone is only the residual
+/// `F_required − F_applied`; adding `applied_force` back gives the required
+/// force. The solves are linear in the actuator force, so the result equals
+/// the sizing-mode value at the same pose.
+///
+/// `dl_dt` comes from [`actuator_length_rate`] evaluated with a `q_dot`
+/// consistent with `driver_omega`. The quotient is omega-invariant (both
+/// numerator and denominator scale with omega), so any consistent value
+/// works.
+///
+/// Returns `None` at a singular pose (`|dL/dt| < 1e-6`: the actuator is
+/// nearly perpendicular to the motion) or when the result is non-finite.
+pub fn required_actuator_force(
+    driver_torque: f64,
+    driver_omega: f64,
+    dl_dt: f64,
+    applied_force: f64,
+) -> Option<f64> {
     if dl_dt.abs() < 1e-6 {
         return None;
     }
-    let f = driver_torque * driver_omega / dl_dt;
-    if f.is_finite() && f.abs() > 1e-12 {
-        Some(f)
-    } else {
-        None
-    }
+    let f = driver_torque * driver_omega / dl_dt + applied_force;
+    f.is_finite().then_some(f)
+}
+
+/// Compute the actuator force required to drive the kinematic motion under
+/// static balance, via [`required_actuator_force`].
+///
+/// `driver_torque` must be a pass-1 statics effort (`solve_statics`, which
+/// evaluates forces at `q̇ = 0`, so the actuator's stored force is applied
+/// unramped by any speed limit and is added back as-is).
+///
+/// Returns `None` when the actuator is at a singular configuration (length
+/// rate near zero — e.g. perpendicular to motion), when the formula would
+/// yield a non-finite value, or when the force is effectively zero.
+///
+/// `q_dot` must come from a velocity solve consistent with `driver_omega`
+/// — typically `solve_velocity(mech, q, t)` with the same driver
+/// configuration that produced `driver_torque`.
+pub fn compute_actuator_force_from_power_balance(
+    mech: &Mechanism,
+    q: &DVector<f64>,
+    q_dot: &DVector<f64>,
+    driver_torque: f64,
+    driver_omega: f64,
+    actuator: &LinearActuatorElement,
+) -> Option<f64> {
+    let dl_dt = actuator_length_rate(mech, q, q_dot, actuator)?;
+    required_actuator_force(driver_torque, driver_omega, dl_dt, actuator.force)
+        .filter(|f| f.abs() > 1e-12)
 }
 
 /// Solve for joint reactions, redistributing load through a `LinearActuator`

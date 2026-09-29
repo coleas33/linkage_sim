@@ -20,7 +20,7 @@ use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
 use crate::error::LinkageError;
 use crate::forces::elements::{
-    force_zone_overlap_ratio, ForceElement, LinearActuatorElement,
+    force_zone_overlap_ratio, linear_actuator_drive_force, ForceElement, LinearActuatorElement,
 };
 use crate::solver::assembly::{assemble_gamma, assemble_jacobian, assemble_phi_t};
 use crate::solver::inverse_dynamics::solve_inverse_dynamics;
@@ -30,7 +30,8 @@ use crate::solver::inverse_kinematics::{
 };
 use crate::solver::kinematics::{solve_acceleration, solve_position, solve_velocity};
 use crate::solver::reactions::{
-    solve_reactions_with_actuator, solve_reactions_with_actuator_using_q_dot,
+    actuator_length_rate, required_actuator_force, solve_reactions_with_actuator,
+    solve_reactions_with_actuator_using_q_dot,
 };
 use crate::solver::statics::JointReaction;
 
@@ -120,14 +121,21 @@ pub struct SweepData {
     /// Coupler point acceleration magnitudes over the sweep.
     /// Key: trace name, Value: acceleration magnitude (m/s^2) at each step.
     pub coupler_accelerations: HashMap<String, Vec<f64>>,
-    /// Required actuator force (N) at each sweep angle.
-    /// Computed from driver torque and actuator velocity via power balance:
-    /// F_actuator = driver_torque * omega / (dL/dt).
+    /// Required actuator force (N) at each sweep angle: the force the
+    /// actuator must supply to drive the motion by itself. Computed from the
+    /// statics driver torque and actuator velocity via the shared power
+    /// balance (`solver::reactions::required_actuator_force`):
+    /// F_actuator = driver_torque * omega / (dL/dt) + F_stored.
+    /// The stored force is added back because the statics solve already
+    /// applied it, so the value is the same in sizing mode (F_stored = 0)
+    /// and stored-force mode.
     /// `None` when no LinearActuator force element is present.
     pub actuator_forces: Option<Vec<f64>>,
     /// Required actuator force from inverse dynamics (includes inertial loads).
     /// More accurate than statics-based `actuator_forces` at high speed.
-    /// Uses the same power-balance formula but with the inverse dynamics torque.
+    /// Uses the same power balance with the inverse dynamics torque; the
+    /// stored force added back is the speed-limited value the inverse
+    /// dynamics solve applied (`linear_actuator_drive_force`).
     /// `None` when no LinearActuator force element is present.
     pub actuator_forces_id: Option<Vec<f64>>,
     /// Actuator length (m) at each sweep angle.
@@ -629,37 +637,33 @@ pub(crate) fn compute_sweep_data(
                         }
                     }
 
-                    // Actuator force from power balance:
-                    // F_actuator = driver_torque * omega / dL_dt
-                    if let Some(ref act_info) = actuator_info {
-                        let (ref body_a, ref pt_a, ref body_b, ref pt_b) = *act_info;
-                        let local_a = nalgebra::Vector2::new(pt_a[0], pt_a[1]);
-                        let local_b = nalgebra::Vector2::new(pt_b[0], pt_b[1]);
-                        let p_a = mech_state.body_point_global(body_a, &local_a, &q);
-                        let p_b = mech_state.body_point_global(body_b, &local_b, &q);
-                        let d_vec = p_b - p_a;
-                        let length = d_vec.norm();
-                        if length > 1e-12 {
-                            let unit = d_vec / length;
-                            let v_a = mech_state.body_point_velocity(body_a, &local_a, &q, &q_dot);
-                            let v_b = mech_state.body_point_velocity(body_b, &local_b, &q, &q_dot);
-                            let dl_dt = (v_b - v_a).dot(&unit);
+                    // Required actuator force from the shared power balance
+                    // (`required_actuator_force`), adding back whatever
+                    // stored force the solve already applied (BL-026).
+                    // NaN at singular poses (actuator nearly perpendicular
+                    // to the motion).
+                    if let Some(ref act) = actuator_element {
+                        if let Some(dl_dt) = actuator_length_rate(mech, &q, &q_dot, act) {
+                            // Statics evaluates forces at q_dot = 0: the
+                            // stored force was applied unramped.
                             let driver_torque = *data.driver_torques.as_ref().unwrap().last().unwrap_or(&0.0);
-                            let actuator_force = if dl_dt.abs() > 1e-6 {
-                                driver_torque * omega / dl_dt
-                            } else {
-                                f64::NAN // singular -- actuator nearly perpendicular to motion
-                            };
+                            let actuator_force =
+                                required_actuator_force(driver_torque, omega, dl_dt, act.force)
+                                    .unwrap_or(f64::NAN);
                             data.actuator_forces.as_mut().unwrap().push(actuator_force);
 
-                            // Inverse dynamics actuator force: same formula but
-                            // using the ID torque (includes inertial loads).
+                            // Inverse dynamics actuator force: same balance
+                            // with the ID torque (includes inertial loads).
+                            // ID evaluates forces at the real q_dot, so the
+                            // stored force it applied is the speed-limited one.
                             let id_torque = *data.inverse_dynamics_torques.last().unwrap_or(&f64::NAN);
-                            let id_force = if dl_dt.abs() > 1e-6 && id_torque.is_finite() {
-                                id_torque * omega / dl_dt
-                            } else {
-                                f64::NAN
-                            };
+                            let id_force = required_actuator_force(
+                                id_torque,
+                                omega,
+                                dl_dt,
+                                linear_actuator_drive_force(act, dl_dt),
+                            )
+                            .unwrap_or(f64::NAN);
                             data.actuator_forces_id.as_mut().unwrap().push(id_force);
 
                             // Actuator extension rate (m/s).
@@ -973,11 +977,8 @@ pub fn compute_trajectory(
             None
         }
     });
-    let actuator_info: Option<(String, [f64; 2], String, [f64; 2])> = actuator_element
-        .as_ref()
-        .map(|act| (act.body_a.clone(), act.point_a, act.body_b.clone(), act.point_b));
     let has_linear_driver = mech.n_linear_drivers() > 0;
-    if actuator_info.is_some() || has_linear_driver {
+    if actuator_element.is_some() || has_linear_driver {
         data.actuator_forces = Some(Vec::with_capacity(n_samples));
     }
 
@@ -1180,30 +1181,20 @@ pub fn compute_trajectory(
         // Actuator force per sample. Two paths:
         //   1) LinearDriver constraint: the driver's Lagrange multiplier (statics
         //      `effort`) is already the axial actuator force in newtons.
-        //   2) Revolute driver + LinearActuator force element: power balance
-        //      F_actuator * dl/dt = τ_driver * u̇ where u̇ is the back-solved
-        //      input rate at this sample (substitutes for the constant-speed ω).
+        //   2) Revolute driver + LinearActuator force element: the shared power
+        //      balance (`required_actuator_force`) with u̇, the back-solved
+        //      input rate at this sample, substituting for the constant-speed
+        //      ω. The statics effort was solved at q_dot = 0 with the stored
+        //      force applied unramped, so that force is added back (BL-026).
         if has_linear_driver {
             data.actuator_forces.as_mut().unwrap().push(driver_effort_now);
-        } else if let Some(ref act_info) = actuator_info {
-            let mech_state = mech.state();
-            let (ref body_a, ref pt_a, ref body_b, ref pt_b) = *act_info;
-            let local_a = nalgebra::Vector2::new(pt_a[0], pt_a[1]);
-            let local_b = nalgebra::Vector2::new(pt_b[0], pt_b[1]);
-            let p_a = mech_state.body_point_global(body_a, &local_a, &q_k);
-            let p_b = mech_state.body_point_global(body_b, &local_b, &q_k);
-            let d_vec = p_b - p_a;
-            let length = d_vec.norm();
-            let f_act = if length > 1e-12 && u_dot_k.abs() > 1e-12 && driver_effort_now.is_finite() {
-                let unit = d_vec / length;
-                let v_a = mech_state.body_point_velocity(body_a, &local_a, &q_k, &q_dot_k);
-                let v_b = mech_state.body_point_velocity(body_b, &local_b, &q_k, &q_dot_k);
-                let dl_dt = (v_b - v_a).dot(&unit);
-                if dl_dt.abs() > 1e-6 {
-                    driver_effort_now * u_dot_k / dl_dt
-                } else {
-                    f64::NAN
-                }
+        } else if let Some(ref act) = actuator_element {
+            let f_act = if u_dot_k.abs() > 1e-12 {
+                actuator_length_rate(mech, &q_k, &q_dot_k, act)
+                    .and_then(|dl_dt| {
+                        required_actuator_force(driver_effort_now, u_dot_k, dl_dt, act.force)
+                    })
+                    .unwrap_or(f64::NAN)
             } else {
                 f64::NAN
             };
@@ -2261,5 +2252,165 @@ mod tests {
 
         assert_eq!(angle_sweep(vec![]).index_at_driver(0.0), None);
         assert_eq!(angle_sweep(vec![f64::NAN; 3]).index_at_driver(0.0), None);
+    }
+
+    // ── BL-026: stored-force mode reports the REQUIRED actuator force ─────
+
+    /// ParallelogramActuator plus gravity (so the actuator carries a real
+    /// load), with the actuator's stored force and speed limit overridden.
+    /// `force = 0` is sizing mode.
+    fn parallelogram_actuator_with(force: f64, speed_limit: f64) -> (Mechanism, DVector<f64>) {
+        use crate::forces::elements::GravityElement;
+        let (mut mech, q0) = build_sample(SampleMechanism::ParallelogramActuator);
+        mech.add_force(ForceElement::Gravity(GravityElement::default()));
+        for f in mech.forces_mut() {
+            if let ForceElement::LinearActuator(la) = f {
+                la.force = force;
+                la.speed_limit = speed_limit;
+            }
+        }
+        (mech, q0)
+    }
+
+    /// Stored force used by the BL-026 tests: large against the ~100 N
+    /// gravity-driven required force, so a residual `F_required - F_stored`
+    /// cannot pass for the required force.
+    const BL026_STORED_FORCE: f64 = 500.0;
+
+    /// Assert a stored-force-mode series equals the sizing-mode series at
+    /// every sample: NaN (singular pose / failed solve) at the same samples,
+    /// finite values equal to a tolerance scaled by the magnitudes involved.
+    fn assert_matches_sizing_mode(label: &str, stored: &[f64], sizing: &[f64]) {
+        assert_eq!(stored.len(), sizing.len(), "{label}: series lengths differ");
+        let mut n_finite = 0;
+        for (i, (&s, &z)) in stored.iter().zip(sizing).enumerate() {
+            if z.is_nan() {
+                assert!(s.is_nan(), "{label} sample {i}: sizing mode NaN, stored mode {s}");
+                continue;
+            }
+            let tol = 1e-9 * (z.abs() + BL026_STORED_FORCE + 1.0);
+            assert!(
+                (s - z).abs() <= tol,
+                "{label} sample {i}: stored mode {s} != sizing mode {z} (diff {}, stored force {})",
+                s - z,
+                BL026_STORED_FORCE,
+            );
+            n_finite += 1;
+        }
+        assert!(
+            n_finite > stored.len() / 2,
+            "{label}: only {n_finite}/{} finite samples -- fixture no longer exercises the force",
+            stored.len()
+        );
+    }
+
+    /// Constant-speed sweep of the BL-026 fixture over 1..=359 deg. The 0 deg
+    /// pose is the parallelogram's collinear change point, where the
+    /// sizing-mode pass-2 solve trips the debug_assert in
+    /// `solve_reactions_inner` (pre-existing, unrelated to BL-026), so it is
+    /// excluded. 90 and 270 deg (dL/dt = 0) stay in: both modes must be NaN.
+    fn bl026_sweep(force: f64, speed_limit: f64) -> SweepData {
+        let (mech, q0) = parallelogram_actuator_with(force, speed_limit);
+        compute_sweep_data(&mech, &q0, 2.0 * std::f64::consts::PI, 0.0, 9.81, Some((1.0, 359.0))).0
+    }
+
+    #[test]
+    fn stored_force_sweep_reports_required_actuator_force() {
+        let sizing = bl026_sweep(0.0, 0.0);
+        let stored = bl026_sweep(BL026_STORED_FORCE, 0.0);
+
+        assert_matches_sizing_mode(
+            "statics actuator_forces",
+            stored.actuator_forces.as_ref().unwrap(),
+            sizing.actuator_forces.as_ref().unwrap(),
+        );
+        assert_matches_sizing_mode(
+            "inverse-dynamics actuator_forces_id",
+            stored.actuator_forces_id.as_ref().unwrap(),
+            sizing.actuator_forces_id.as_ref().unwrap(),
+        );
+        // Power is F * dL/dt, so it follows the force.
+        assert_matches_sizing_mode(
+            "statics actuator_power",
+            stored.actuator_power.as_ref().unwrap(),
+            sizing.actuator_power.as_ref().unwrap(),
+        );
+        assert_matches_sizing_mode(
+            "inverse-dynamics actuator_power_id",
+            stored.actuator_power_id.as_ref().unwrap(),
+            sizing.actuator_power_id.as_ref().unwrap(),
+        );
+    }
+
+    /// With a speed limit, the inverse-dynamics solve (real q_dot) applies
+    /// the stored force ramped down by `1 - |dL/dt| / speed_limit`, so the
+    /// "With Inertia" series must add back that ramped force, not the raw
+    /// stored force. Statics (q_dot = 0) applies it unramped.
+    #[test]
+    fn stored_force_sweep_with_speed_limit_reports_required_actuator_force() {
+        // Peak |dL/dt| on this fixture is ~6 m/s at 2*pi rad/s, so a 20 m/s
+        // limit ramps the stored force by up to ~30 %.
+        let speed_limit = 20.0;
+        let sizing = bl026_sweep(0.0, speed_limit);
+        let stored = bl026_sweep(BL026_STORED_FORCE, speed_limit);
+
+        let speeds = stored.actuator_speeds.as_ref().unwrap();
+        let peak_ratio = speeds.iter().filter(|v| v.is_finite()).fold(0.0_f64, |m, v| m.max(v.abs()))
+            / speed_limit;
+        assert!(
+            peak_ratio > 0.1 && peak_ratio < 1.0,
+            "fixture must ramp but not saturate the speed limit: peak |dL/dt|/limit = {peak_ratio}"
+        );
+
+        assert_matches_sizing_mode(
+            "statics actuator_forces (speed limit)",
+            stored.actuator_forces.as_ref().unwrap(),
+            sizing.actuator_forces.as_ref().unwrap(),
+        );
+        assert_matches_sizing_mode(
+            "inverse-dynamics actuator_forces_id (speed limit)",
+            stored.actuator_forces_id.as_ref().unwrap(),
+            sizing.actuator_forces_id.as_ref().unwrap(),
+        );
+    }
+
+    /// The trajectory path (revolute driver + LinearActuator element) must
+    /// report the required force too.
+    #[test]
+    fn stored_force_trajectory_reports_required_actuator_force() {
+        use crate::solver::inverse_kinematics::{ControlTarget, Severity};
+        use std::f64::consts::PI;
+
+        let target = ControlTarget::angle("crank");
+        let trajectory = Trajectory::Profile(TrajectoryProfile {
+            shape: MotionProfile::ConstantSpeed,
+            start_value: 0.5,
+            end_value: 1.5,
+            duration: 1.0,
+        });
+        let n_samples = 20;
+        let run = |force: f64| {
+            let (mech, q0) = parallelogram_actuator_with(force, 0.0);
+            let mut data = empty_trajectory_sweep_data(SweepMode::Trajectory {
+                target: target.clone(),
+                trajectory: trajectory.clone(),
+                severity: Severity::Analysis,
+                n_samples,
+            });
+            compute_trajectory(
+                &mech, &q0, &target, &trajectory, Severity::Analysis, n_samples,
+                2.0 * PI, 0.0, (0.0, 2.0 * PI), 9.81, &mut data,
+            )
+            .expect("trajectory solves on the parallelogram actuator");
+            data
+        };
+        let sizing = run(0.0);
+        let stored = run(BL026_STORED_FORCE);
+
+        assert_matches_sizing_mode(
+            "trajectory actuator_forces",
+            stored.actuator_forces.as_ref().unwrap(),
+            sizing.actuator_forces.as_ref().unwrap(),
+        );
     }
 }

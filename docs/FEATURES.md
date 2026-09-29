@@ -203,7 +203,7 @@ All force elements are editable in the GUI property panel and rendered on the ca
 
 ### Actuator Sizing
 
-- **Actuator force plot** -- required actuator force (N) vs crank angle via power balance (F = T × omega / dL_dt)
+- **Actuator force plot** -- required actuator force (N) vs crank angle via power balance (F = T × omega / dL_dt + F_stored); the actuator's stored force is added back, so the curve is the same whether the stored force is 0 (sizing mode) or set
 - **Statics + inverse dynamics curves** -- solid line (statics, quasi-static) and dashed line (with inertia, includes acceleration effects)
 - **Actuator stroke display** -- Health Report shows stroke (max-min length), min/max actuator length, peak forces from both methods
 - **Force zone overlap feedback** -- Diagnostics shows per-zone overlap percentage and applied force magnitude at current configuration

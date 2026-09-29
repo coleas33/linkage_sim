@@ -92,8 +92,9 @@ fn label_matches_plot_sample_on_full_sweep() {
 }
 
 /// Mechanism (1) of BL-010 in isolation: at the pose the mechanism loads at,
-/// the plot's Statics series shows the computed force (about -2223 N) while
-/// the pre-fix label printed the stored +2225 N.
+/// the plot's Statics series shows the computed required force (about +2 N
+/// since BL-026; the pre-BL-026 residual was about -2223 N) while the
+/// pre-fix label printed the stored +2225 N.
 #[test]
 fn stored_force_mode_label_reads_sweep_not_stored_value() {
     let mut state = AppState::default();

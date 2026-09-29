@@ -373,6 +373,19 @@ pub fn evaluate_motor(
     total
 }
 
+/// The actuator's own axial force at extension rate `v_along` (m/s,
+/// positive = extending): the stored `a.force`, ramped linearly to zero as
+/// `|v_along|` approaches `a.speed_limit` (0 = no limit). Excludes the
+/// stroke end-stop penalty. `evaluate_linear_actuator` applies exactly this.
+pub fn linear_actuator_drive_force(a: &LinearActuatorElement, v_along: f64) -> f64 {
+    if a.speed_limit > 0.0 {
+        let speed_ratio = v_along.abs() / a.speed_limit;
+        if speed_ratio >= 1.0 { 0.0 } else { a.force * (1.0 - speed_ratio) }
+    } else {
+        a.force
+    }
+}
+
 pub fn evaluate_linear_actuator(
     a: &LinearActuatorElement,
     state: &State,
@@ -390,16 +403,16 @@ pub fn evaluate_linear_actuator(
     }
     let unit = delta / length;
 
-    // Speed limiting: ramp force to zero as speed approaches limit
-    let actual_force = if a.speed_limit > 0.0 {
+    // Speed limiting: ramp force to zero as speed approaches limit. The
+    // extension rate only matters when a limit is set.
+    let v_along = if a.speed_limit > 0.0 {
         let v_a = state.body_point_velocity(&a.body_a, &pt_a_local, q, q_dot);
         let v_b = state.body_point_velocity(&a.body_b, &pt_b_local, q, q_dot);
-        let v_along = unit.dot(&(v_b - v_a));
-        let speed_ratio = v_along.abs() / a.speed_limit;
-        if speed_ratio >= 1.0 { 0.0 } else { a.force * (1.0 - speed_ratio) }
+        unit.dot(&(v_b - v_a))
     } else {
-        a.force
+        0.0
     };
+    let actual_force = linear_actuator_drive_force(a, v_along);
 
     let mut net_force_along_unit = actual_force;
 
