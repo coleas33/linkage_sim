@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use crate::analysis::grashof::check_grashof;
 use crate::analysis::transmission::{mechanical_advantage, VelocityCoord};
 use crate::analysis::force_breakdown::evaluate_contributions;
+use crate::analysis::gravity_breakdown::weight_sources;
 use crate::analysis::virtual_work::virtual_work_check;
 use crate::core::body::Body;
 use crate::core::constraint::Constraint;
@@ -23,8 +24,8 @@ use nalgebra::{DVector, Vector2};
 
 use super::{AppState, DriverKind, ForceResults, SolverStatus};
 use crate::gui::sweep::{
-    apply_motion_profile, compute_sweep_data, compute_trajectory, detect_fourbar_links,
-    empty_trajectory_sweep_data, SweepMode,
+    apply_motion_profile, compute_sweep_data_with_weights, compute_trajectory,
+    detect_fourbar_links, empty_trajectory_sweep_data, SweepMode,
 };
 
 // ── Blueprint helper functions ────────────────────────────────────────────────
@@ -1416,7 +1417,19 @@ impl AppState {
             None
         };
 
-        let (mut data, q_zero) = compute_sweep_data(mech, &q_start, omega, theta_0, self.gravity_magnitude, sweep_range);
+        // Payload weights: the breakdown needs the blueprint's weight list
+        // (link self-weights + point masses); the built mechanism only has
+        // the composite masses.
+        let sources = self.blueprint.as_ref().map(weight_sources).unwrap_or_default();
+        let (mut data, q_zero) = compute_sweep_data_with_weights(
+            mech,
+            &q_start,
+            omega,
+            theta_0,
+            self.gravity_magnitude,
+            sweep_range,
+            sources,
+        );
         apply_motion_profile(&mut data, omega, self.motion_profile);
         self.sweep_data = Some(data);
         self.q_at_zero = q_zero;

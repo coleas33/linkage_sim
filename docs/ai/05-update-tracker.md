@@ -5,6 +5,46 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-29 — Payload weights Task 4: per-weight breakdown in the sweep
+- `gui/sweep/weights.rs` (new): `WeightBreakdown` (per source `gravity_power`,
+  `force_share` = `-P_g/rate`, `power_share` = `-P_g`; `other_force`,
+  `other_power` = total - sum; `total_force`, `total_power`; `braking`;
+  `classification(source, sample)`), `ShareBasis::{ActuatorForce,
+  DriverTorque}`, `WeightBreakdownBuilder` and `required_totals`. Re-exported
+  as `gui::sweep::{WeightBreakdown, ShareBasis}`.
+- `gui/sweep/mod.rs`: `SweepData::weight_breakdown: Option<WeightBreakdown>`;
+  `compute_sweep_data_with_weights(.., weight_sources)` feeds one row per
+  sample (NaN rows through `push_nan_row` and the velocity-failure branch;
+  NaN totals where statics failed instead of the 0 torque the plot shows);
+  `compute_sweep_data` keeps its signature and computes no breakdown.
+  `AppState::compute_sweep` passes `weight_sources(blueprint)`.
+- Totals are the REQUIRED actuator force/power. BL-026 (on main) already
+  makes `actuator_forces` the required force in stored-force mode, so
+  `required_totals` takes it as is. The draft's stored-force add-back is
+  gone. The total power `T*omega + F_stored*dL/dt` stays finite through
+  stroke reversal (02-system.yaml `weight_breakdown_total_is_required_force`).
+  No actuator: driver-torque shares (N for a linear driver in stroke mode).
+  Trajectory mode: `None`.
+- `gui/test_support.rs` gains `set_actuator_stored_force` (shared
+  stored-force setter; later tasks reuse it instead of copying the loop).
+- Tests: `gui::sweep::weights::tests` cover Parallelogram and Chebyshev
+  sizing with two weights (sums, totals = plotted actuator force/power,
+  remainder ~ 0). `stored_force_mode_and_sizing_mode_give_identical_breakdowns`
+  checks totals, shares, remainders, braking and classification on both
+  samples. Also covered: known-pose and trace-derived helping/hurting;
+  braking follows net gravity power; near-reversal NaN; forced solver
+  failures with actuator and driver basis; FourBar driver-torque basis;
+  mounting angle; builder and `required_totals` hand values.
+  `sweep_gravity_power_matches_energy_change_between_adjacent_samples` now
+  checks every source on both actuator samples. Positions are rebuilt from
+  the traces plus body angles; the measured central-difference error is
+  O(h^2): 5e-5 on the Parallelogram, 1.2e-3 on the Chebyshev.
+  `breakdown_sum_invariant_holds_after_a_mass_edit_on_a_weighted_link_without_rebuild`
+  guards BL-024. Also `gui::sweep::tests::stroke_mode_weight_breakdown_splits_the_linear_driver_force`.
+- Mutation checks done. Restoring the add-back fails the stored/sizing test
+  and the `required_totals` test. Dropping `apply_point_masses` from
+  `sync_live_mass_props` fails the mass-edit test (F_other = -78 N).
+
 ## 2026-09-29 — Payload weights Task 3: gravity breakdown physics module
 - New pure module `analysis/gravity_breakdown.rs` (spec Track 2, section 2):
   `weight_sources(&MechanismJson)` (link self-weights `link:<body>` at base

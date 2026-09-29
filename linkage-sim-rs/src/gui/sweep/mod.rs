@@ -2,15 +2,19 @@
 
 mod fourbar;
 mod motion_profile;
+mod weights;
 
 pub(crate) use fourbar::detect_fourbar_links;
 pub(crate) use motion_profile::apply_motion_profile;
+pub use weights::{ShareBasis, WeightBreakdown};
+use weights::{required_totals, WeightBreakdownBuilder};
 
 use nalgebra::DVector;
 use std::collections::HashMap;
 
 use crate::analysis::coupler::eval_coupler_point;
 use crate::analysis::energy::compute_energy_state_mech;
+use crate::analysis::gravity_breakdown::{gravity_vector, WeightSource};
 use crate::analysis::transmission::{
     mechanical_advantage, transmission_angle_fourbar, VelocityCoord,
 };
@@ -206,6 +210,12 @@ pub struct SweepData {
     /// full q(t) without recomputing the inverse solve.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pose_snapshots: Option<Vec<Vec<[f64; 3]>>>,
+    /// Per-weight gravity breakdown (payload weights): which weight helps or
+    /// hurts the actuator at each sample, force/power shares, and braking.
+    /// `None` when the sweep had no weight sources (`compute_sweep_data`,
+    /// or no link or point mass) and in Trajectory mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weight_breakdown: Option<WeightBreakdown>,
     /// Angles (degrees) at which toggle/dead points were detected.
     pub toggle_angles: Vec<f64>,
     /// Index range of an "active" sub-slice within the sweep data, used
@@ -264,6 +274,22 @@ pub(crate) fn compute_sweep_data(
     gravity_magnitude: f64,
     sweep_range: Option<(f64, f64)>,
 ) -> (SweepData, DVector<f64>) {
+    compute_sweep_data_with_weights(mech, q_start, omega, theta_0, gravity_magnitude, sweep_range, Vec::new())
+}
+
+/// [`compute_sweep_data`] plus the per-weight gravity breakdown
+/// (`SweepData::weight_breakdown`) of `weight_sources`, which must come from
+/// `analysis::gravity_breakdown::weight_sources` on the blueprint `mech` was
+/// built from. No sources = no breakdown.
+pub(crate) fn compute_sweep_data_with_weights(
+    mech: &Mechanism,
+    q_start: &DVector<f64>,
+    omega: f64,
+    theta_0: f64,
+    gravity_magnitude: f64,
+    sweep_range: Option<(f64, f64)>,
+    weight_sources: Vec<WeightSource>,
+) -> (SweepData, DVector<f64>) {
     // Detect whether this sweep should iterate angle (revolute driver)
     // or stroke (linear driver). When linear drivers are present the
     // X-axis is stroke in metres; sweep_range is interpreted as
@@ -319,6 +345,23 @@ pub(crate) fn compute_sweep_data(
         }
     }).collect();
     let has_force_zones = !force_zones.is_empty();
+
+    // Per-weight gravity breakdown: shares of the actuator force when there
+    // is an actuator, else of the driver torque. Gravity comes from the
+    // mechanism's own element (mounting angle included), not from
+    // `gravity_magnitude`.
+    let share_basis = if actuator_element.is_some() {
+        ShareBasis::ActuatorForce
+    } else {
+        ShareBasis::DriverTorque
+    };
+    // The stored force pass-1 statics applies (0 in sizing mode): the
+    // breakdown's total power needs it to stay finite through stroke
+    // reversal (`required_totals`).
+    let stored_force = actuator_element.as_ref().map_or(0.0, |act| act.force);
+    let mut breakdown = (!weight_sources.is_empty()).then(|| {
+        WeightBreakdownBuilder::new(weight_sources, share_basis, gravity_vector(mech), capacity)
+    });
 
     let mut data = SweepData {
         angles_deg: Vec::with_capacity(capacity),
@@ -381,6 +424,7 @@ pub(crate) fn compute_sweep_data(
         inverse_solve_statuses: None,
         pose_body_order: None,
         pose_snapshots: None,
+        weight_breakdown: None, // filled after the sweep loop
         toggle_angles: Vec::new(),
         active_range: None, // computed after sweep loop
         sweep_mode: sweep_mode.clone(),
@@ -686,6 +730,24 @@ pub(crate) fn compute_sweep_data(
                             data.actuator_power_id.as_mut().unwrap().push(f64::NAN);
                         }
                     }
+
+                    if let Some(builder) = breakdown.as_mut() {
+                        // A failed statics solve pushed a 0 driver torque above;
+                        // the breakdown reports NaN totals there, not a fake zero.
+                        let statics_ok = pending_reactions.is_some();
+                        let last = |series: &Option<Vec<f64>>| {
+                            series.as_ref().and_then(|s| s.last().copied()).unwrap_or(f64::NAN)
+                        };
+                        let driver_torque = if statics_ok { last(&data.driver_torques) } else { f64::NAN };
+                        let actuator_force = if statics_ok { last(&data.actuator_forces) } else { f64::NAN };
+                        let rate = match share_basis {
+                            ShareBasis::ActuatorForce => last(&data.actuator_speeds),
+                            ShareBasis::DriverTorque => omega,
+                        };
+                        let (total_force, total_power) =
+                            required_totals(share_basis, driver_torque, omega, rate, actuator_force, stored_force);
+                        builder.push_sample(mech, &q, &q_dot, rate, total_force, total_power);
+                    }
                 } else {
                     data.kinetic_energy.push(f64::NAN);
                     data.potential_energy.push(f64::NAN);
@@ -706,6 +768,10 @@ pub(crate) fn compute_sweep_data(
                         data.actuator_speeds.as_mut().unwrap().push(f64::NAN);
                         data.actuator_power.as_mut().unwrap().push(f64::NAN);
                         data.actuator_power_id.as_mut().unwrap().push(f64::NAN);
+                    }
+
+                    if let Some(builder) = breakdown.as_mut() {
+                        builder.push_nan();
                     }
                 }
 
@@ -739,12 +805,14 @@ pub(crate) fn compute_sweep_data(
                     &mut reaction_data,
                     actuator_info.is_some(),
                     has_force_zones,
+                    breakdown.as_mut(),
                 );
             }
         }
     }
 
     data.joint_reaction_magnitudes = reaction_data;
+    data.weight_breakdown = breakdown.map(WeightBreakdownBuilder::finish);
     data.coupler_velocities = coupler_vel_data;
     data.coupler_accelerations = coupler_accel_data;
 
@@ -854,6 +922,7 @@ fn push_nan_row(
     reaction_data: &mut HashMap<String, Vec<f64>>,
     has_actuator: bool,
     has_force_zones: bool,
+    breakdown: Option<&mut WeightBreakdownBuilder>,
 ) {
     data.angles_deg.push(angle_deg);
 
@@ -896,6 +965,10 @@ fn push_nan_row(
 
     if has_force_zones {
         data.output_forces.as_mut().unwrap().push(f64::NAN);
+    }
+
+    if let Some(builder) = breakdown {
+        builder.push_nan();
     }
 }
 
@@ -1314,6 +1387,7 @@ pub(crate) fn empty_trajectory_sweep_data(mode: SweepMode) -> SweepData {
         inverse_solve_statuses: None,
         pose_body_order: None,
         pose_snapshots: None,
+        weight_breakdown: None,
         toggle_angles: Vec::new(),
         active_range: None,
         sweep_mode: mode,
@@ -1630,6 +1704,7 @@ mod tests {
             inverse_solve_statuses: None,
             pose_body_order: None,
             pose_snapshots: None,
+            weight_breakdown: None,
             toggle_angles: Vec::new(),
             active_range: None,
             sweep_mode: SweepMode::Angle,
@@ -1676,6 +1751,7 @@ mod tests {
             inverse_solve_statuses: None,
             pose_body_order: None,
             pose_snapshots: None,
+            weight_breakdown: None,
             toggle_angles: Vec::new(),
             active_range: None,
             sweep_mode: SweepMode::Angle,
@@ -2412,5 +2488,49 @@ mod tests {
             stored.actuator_forces.as_ref().unwrap(),
             sizing.actuator_forces.as_ref().unwrap(),
         );
+    }
+
+    // ── Payload weights in a stroke-mode sweep ────────────────────────────
+
+    /// Linear driver, no actuator element: the weight shares are shares of
+    /// the driver's axial force (N, `ShareBasis::DriverTorque` with the
+    /// driver velocity as the rate) and the bar's self-weight explains all
+    /// of it; samples past the bar's reach are NaN rows of the same length.
+    #[test]
+    fn stroke_mode_weight_breakdown_splits_the_linear_driver_force() {
+        use crate::analysis::gravity_breakdown::weight_sources;
+        use crate::forces::elements::GravityElement;
+
+        let length_0 = initial_distance(); // ~0.5887 m; the bar reaches at most 0.6 m
+        let velocity = 0.01;
+        let (mut mech, q0) = build_linear_driver_mech(velocity, length_0);
+        mech.add_force(ForceElement::Gravity(GravityElement::default()));
+        let sources = weight_sources(&crate::io::mechanism_to_json(&mech).unwrap());
+        assert_eq!(sources.len(), 1, "the bar's self-weight");
+
+        let range = Some((length_0 - 0.02, length_0 + 0.02));
+        let (data, _) = compute_sweep_data_with_weights(&mech, &q0, velocity, length_0, 9.81, range, sources);
+        assert!(data.sweep_mode.is_stroke());
+        let b = data.weight_breakdown.as_ref().expect("breakdown");
+        assert_eq!(b.basis, ShareBasis::DriverTorque);
+        let n = data.angles_deg.len();
+        for len in [b.force_share[0].len(), b.power_share[0].len(), b.total_force.len(), b.other_force.len(), b.braking.len()] {
+            assert_eq!(len, n);
+        }
+        let torques = data.driver_torques.as_ref().unwrap();
+        let (mut solved, mut failed) = (0, 0);
+        for (k, &torque) in torques.iter().enumerate() {
+            if torque.is_nan() {
+                failed += 1;
+                assert!(b.force_share[0][k].is_nan() && b.total_force[k].is_nan() && b.other_force[k].is_nan());
+                continue;
+            }
+            solved += 1;
+            assert_eq!(b.total_force[k], torque, "total = driver force at {} m", data.angles_deg[k]);
+            let scale = torque.abs().max(1e-12);
+            assert!((b.force_share[0][k] + b.other_force[k] - b.total_force[k]).abs() <= 1e-12 * scale);
+            assert!(b.other_force[k].abs() <= 1e-9 * scale, "self-weight is the only load at {} m", data.angles_deg[k]);
+        }
+        assert!(solved > 20 && failed > 0, "{solved} solved, {failed} past the bar's reach");
     }
 }

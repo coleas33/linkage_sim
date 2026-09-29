@@ -80,6 +80,23 @@ invariants_to_protect:
     The length itself is 361 only for full-range sweeps (0..=360); a
     custom range sweeps literally min..=max in 1° steps, so length is
     max-min+1. Plot consumers key off angles_deg, not a fixed count.
+    SweepData::weight_breakdown (per-weight gravity breakdown) obeys the
+    same rule: every per-source and total series has angles_deg.len()
+    entries; push_nan_row (and the velocity-failure branch) push a NaN row
+    into its WeightBreakdownBuilder.
+  - weight_breakdown_total_is_required_force — gui/sweep/weights.rs
+    required_totals: for an actuator, total_force = the sweep's
+    actuator_forces as is. Since BL-026 that is already the required force
+    in sizing and stored-force mode alike
+    (solver::reactions::required_actuator_force), so never add the stored
+    force again (stored_force_mode_and_sizing_mode_give_identical_breakdowns
+    fails if you do). total_power = driver_torque*omega + stored*dL/dt,
+    the same balance times dL/dt, finite through stroke reversal where
+    actuator_forces is NaN. Without an actuator the shares are
+    driver-effort shares (N*m, or N for a linear driver) with rate =
+    driver rate. Force shares are NaN where |dL/dt| < 1 % of its sweep max;
+    power shares and classification stay defined. A failed statics solve
+    gives NaN totals, not the 0 torque the plot shows.
   - Every state mutation that changes the blueprint MUST call push_undo()
     BEFORE the mutation and rebuild() AFTER. Skipping push_undo loses undo
     history; skipping rebuild leaves mechanism out of sync with blueprint.

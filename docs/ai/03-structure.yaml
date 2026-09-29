@@ -93,6 +93,7 @@ gui_submodules:
       mod: sweep/mod.rs (SweepData + SweepData::index_at_driver (nearest sample to the current driver angle/stroke, circular in angle mode — BL-010), compute_sweep_data, solve_sweep_positions two-pass Newton continuation for full-revolution sweeps — post-gap samples reached backward from 360 deg on the starting branch (BL-011), push_nan_row helper)
       motion_profile: sweep/motion_profile.rs (trapezoidal velocity profile, apply_motion_profile; SCurve falls back to ConstantSpeed in driver-side mode)
       fourbar: sweep/fourbar.rs (4-bar linkage detection for transmission angle)
+      weights: sweep/weights.rs (payload weights - WeightBreakdown {sources, basis, gravity_power, force_share, power_share, other_force, other_power, total_force, total_power, braking} + classification(); ShareBasis {ActuatorForce, DriverTorque}; WeightBreakdownBuilder fed per sample by compute_sweep_data_with_weights; required_totals. AppState::compute_sweep passes gravity_breakdown::weight_sources(blueprint); plain compute_sweep_data = no breakdown)
 
   other_top_level_gui:
     - mod.rs (LinkageApp + update loop orchestration)
@@ -106,7 +107,7 @@ gui_submodules:
     - tutorial.rs
     - undo.rs
     - dxf_import.rs
-    - test_support.rs (#[cfg(test)] helpers shared by GUI module tests, e.g. sorted_link_ids; extend it instead of re-implementing fixtures per module)
+    - test_support.rs (#[cfg(test)] helpers shared by GUI module tests, e.g. sorted_link_ids, set_actuator_stored_force; extend it instead of re-implementing fixtures per module)
 
 entry_points:
   native_bin: src/bin/linkage_gui.rs (uses native feature)
