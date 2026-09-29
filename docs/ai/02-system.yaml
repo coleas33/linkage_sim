@@ -105,6 +105,13 @@ invariants_to_protect:
     (composite CG and Izz depend on base mass) (BL-024). The parametric
     BodyMass/BodyIzz sweep varies the BASE value on a blueprint clone and
     rebuilds, so point masses stay on top of it.
+  - dynamics_qv_and_multiplier_sign — M depends on theta when s_cg != 0, so
+    inverse AND forward dynamics must add the velocity-quadratic force
+    Q_v = assemble_quadratic_velocity_forces (solver/assembly.rs). Statics and
+    inverse dynamics share Phi_q^T lambda = -(Q + Q_v - M q_ddot), so ID
+    reduces to statics at rest; forward dynamics writes
+    M q_ddot + Phi_q^T lambda = Q + Q_v, so its lambda has the opposite
+    sign. The Python reference solvers still omit Q_v (BL-028) (BL-027).
   - severity_controls_return_type_not_math — Trajectory mode's
     Severity::{Strict, Analysis} runs identical Newton/FD code; the only
     difference is whether failure status bubbles as Err or as a result

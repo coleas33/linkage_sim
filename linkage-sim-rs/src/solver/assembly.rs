@@ -147,3 +147,48 @@ pub fn assemble_mass_matrix(mech: &Mechanism, q: &DVector<f64>) -> DMatrix<f64> 
 
     m_mat
 }
+
+/// Assemble the velocity-quadratic generalized force vector Q_v(q, q̇).
+///
+/// Because M depends on θ when the CG is offset from the body origin, the
+/// Lagrange equations carry a centripetal term: M q̈ = Q + Q_v + (constraint
+/// forces). Per moving body, from a_cg = r̈ + B s θ̈ − A s θ̇²:
+///
+/// ```text
+///   Q_v = [ m θ̇² (A(θ) s_cg)_x,  m θ̇² (A(θ) s_cg)_y,  0 ]
+/// ```
+///
+/// The θ row is zero because the ṙ·(A s) θ̇ contributions of d/dt(∂T/∂θ̇)
+/// and ∂T/∂θ cancel, and (B s)·(A s) = 0.
+///
+/// Zero when s_cg = 0. Ground and massless bodies (mass <= 0.0) are skipped,
+/// matching `assemble_mass_matrix`.
+pub fn assemble_quadratic_velocity_forces(
+    mech: &Mechanism,
+    q: &DVector<f64>,
+    q_dot: &DVector<f64>,
+) -> DVector<f64> {
+    let state = mech.state();
+    let mut q_v = DVector::zeros(state.n_coords());
+
+    for (body_id, body) in mech.bodies() {
+        if body_id == GROUND_ID || body.mass <= 0.0 {
+            continue;
+        }
+
+        let idx = state.get_index(body_id).expect("body not registered");
+        let s_cg = &body.cg_local;
+        let theta = q[idx.theta_idx()];
+        let theta_dot = q_dot[idx.theta_idx()];
+        let (sin_t, cos_t) = theta.sin_cos();
+        // A(theta) * s_cg = [cos(theta)*sx - sin(theta)*sy, sin(theta)*sx + cos(theta)*sy]
+        let as_x = cos_t * s_cg.x - sin_t * s_cg.y;
+        let as_y = sin_t * s_cg.x + cos_t * s_cg.y;
+        let coeff = body.mass * theta_dot * theta_dot;
+
+        q_v[idx.x_idx()] = coeff * as_x;
+        q_v[idx.y_idx()] = coeff * as_y;
+    }
+
+    q_v
+}

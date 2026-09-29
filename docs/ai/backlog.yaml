@@ -255,6 +255,26 @@
   status: open
   notes: Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md; independent of Track 2.
 
+- id: BL-028
+  title: "Python reference solvers omit Q_v; golden inverse-dynamics fixtures pass only via a Rust-side shift"
+  dimension: physics
+  risk: physics
+  evidence: "Found in BL-027 review 2026-09-29. src/linkage_sim/solvers/inverse_dynamics.py:83 rhs = -(Q - M_q_ddot) and forward_dynamics.py:154 b[:n] = Q have no velocity-quadratic force Q_v = [m theta_dot^2 A(theta) s_cg; 0]. data/benchmarks/golden/{fourbar,slidercrank}_inverse_dynamics.json therefore hold pre-BL-027 multipliers; tests/golden_fixtures.rs keeps them passing with quadratic_velocity_lambda_shift, which uses the same Rust assemble_quadratic_velocity_forces as the solver (circular for joint reactions)."
+  acceptance: "Python inverse and forward dynamics add Q_v (same formula as linkage-sim-rs/src/solver/assembly.rs assemble_quadratic_velocity_forces) with Python tests mirroring the Rust constant-KE and centripetal-pivot checks; golden *_inverse_dynamics.json regenerated (and *_dynamics.json if they change); quadratic_velocity_lambda_shift and its call sites deleted from tests/golden_fixtures.rs; the 'does not include Q_v yet (BL-028)' comment in solver/inverse_dynamics.rs removed; cargo test --all and the Python suite green"
+  priority: 2
+  status: open
+  notes: "Follow-up of BL-027."
+
+- id: BL-029
+  title: "Trapezoidal motion-profile torque uses (tau_ID - tau_statics)/omega^2 as the inertia on alpha"
+  dimension: physics
+  risk: physics
+  evidence: "Found in BL-027 review 2026-09-29. gui/sweep/motion_profile.rs:196-200 sets i_eff = (tau_ID - tau_statics)/omega^2 from the constant-speed sweep and adds i_eff * alpha_p. For a one-DOF linkage tau_inertia = I(theta)*theta_ddot + 1/2*dI/dtheta*theta_dot^2; the sweep has theta_ddot = 0, so that ratio is 1/2*dI/dtheta, not I(theta). The (omega_p/omega)^2 scaling term is right; the alpha_p term is wrong (also wrong before BL-027)."
+  acceptance: "test: on a crank-rocker with off-axis CGs (configuration-dependent I(theta)), the profile torque at samples with alpha_p != 0 equals solve_inverse_dynamics driven with that (omega_p, alpha_p) at the same angle (rel 1e-6); cargo test --all green"
+  priority: 2
+  status: open
+  notes: "Independent of the BL-027 fix; noted during its review."
+
 - id: BL-016
   title: "Investigate driving egui canvas UI for deeper GUI smoke (samples + plot tabs)"
   dimension: gui

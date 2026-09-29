@@ -94,9 +94,9 @@ The driver's entry is at a known position (the last constraint rows added during
 
 3. **Inverse dynamics solve** — at each timestep:
    ```
-   Φ_q^T * λ = Q - M * q̈
+   Φ_q^T * λ = -(Q + Q_v - M * q̈)      (equivalently M * q̈ - Φ_q^T * λ = Q + Q_v)
    ```
-   This is the same linear system as statics, with the right-hand side modified by the inertial term `M * q̈`. The D'Alembert principle: inertial forces are fictitious loads subtracted from the applied loads.
+   This is the same linear system as statics (`Φ_q^T * λ = -Q`), with `-Q` replaced by `-(Q + Q_v - M * q̈)`: the right-hand side gains the inertial term `M * q̈` and the velocity-quadratic force `Q_v` (the centripetal term that appears when a CG is offset from its body origin; see `NUMERICAL_FORMULATION.md`, Inverse Dynamics). At rest it reduces exactly to statics, so `λ` keeps the statics sign convention. The D'Alembert principle: inertial forces are fictitious loads subtracted from the applied loads.
 
 4. **Reaction extraction** — identical to static analysis.
 
@@ -127,9 +127,11 @@ The driver's entry is at a known position (the last constraint rows added during
 **Mathematical formulation:**
 
 ```
-M * q̈ + Φ_q^T * λ = Q(q, q̇, t)     (equations of motion)
+M * q̈ + Φ_q^T * λ = Q(q, q̇, t) + Q_v(q, q̇)     (equations of motion)
 Φ(q, t) = 0                            (constraint equations)
 ```
+
+Sign note: here `λ` enters as `+Φ_q^T * λ`, the opposite of the statics / inverse-dynamics convention (Mode 3), so a forward-dynamics `λ` has the opposite sign for the same physical load.
 
 This is a differential-algebraic equation (DAE), not a plain ODE. The constraints `Φ = 0` are algebraic, not differential. See `docs/NUMERICAL_FORMULATION.md` for solution approaches.
 

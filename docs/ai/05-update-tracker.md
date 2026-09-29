@@ -5,6 +5,32 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-29 — BL-027: inverse and forward dynamics add the velocity-quadratic force Q_v
+- Root cause: `M(q)` depends on `theta` when a CG is offset from the body
+  origin, but neither dynamics solver had the Lagrange term that goes with it,
+  `Q_v = [m theta_dot^2 A(theta) s_cg; 0]` per body. The "With Inertia" torque
+  was wrong for bodies whose origin moves (parallelogram rocker, 50 kg at
+  (0, 0.8), 1 rev/s: tau_ID - tau_statics = -3158 N*m, correct 0). Every
+  pivot reaction was missing the `m omega^2 |s_cg|` centripetal load, even
+  for a crank pinned at its own origin.
+- Fix: new `assemble_quadratic_velocity_forces` (`solver/assembly.rs`), added
+  to the RHS in `solve_inverse_dynamics` (`Phi_q^T lambda = -(Q + Q_v - M q_ddot)`)
+  and `forward_dynamics::compute_rhs`. Docs: ANALYSIS_MODES.md and
+  NUMERICAL_FORMULATION.md now use the code's ID sign and note that forward
+  dynamics uses the opposite lambda sign.
+- Tests: `quadratic_velocity_forces_hand_computed`,
+  `constant_ke_parallelogram_inverse_dynamics_torque_equals_statics`,
+  `inverse_dynamics_torque_minus_statics_matches_ke_rate` (energy check),
+  `pivot_reaction_is_centripetal_force_for_crank_pinned_at_origin` (Newton),
+  and forward `free_spin_about_off_origin_pivot_conserves_speed_and_energy`.
+  Mutation: dropping Q_v from the solvers turns the constant-KE, KE-rate,
+  free-spin and Newton tests red (Newton: pivot reaction [0, 0]; a negated
+  Q_v gives the reversed vector).
+- Golden ID fixtures come from the Python reference, which still omits Q_v.
+  `tests/golden_fixtures.rs::quadratic_velocity_lambda_shift` bridges them
+  until BL-028 fixes Python and regenerates them. BL-029 tracks the separate
+  motion-profile alpha-term error (`gui/sweep/motion_profile.rs`).
+
 ## 2026-09-29 — BL-024: set_body_mass / set_body_izz keep point masses in the live mechanism
 - Root cause: `AppState::set_body_mass` / `set_body_izz` (`gui/state/blueprint_ops.rs`)
   wrote the blueprint BASE mass/Izz straight onto the live `Mechanism` body

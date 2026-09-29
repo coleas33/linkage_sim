@@ -407,7 +407,7 @@ The driver's `λ` is the primary output: required input torque (revolute) or for
 
 ### Singularity Analysis and Conditioning
 
-The equilibrium solve `Φ_q^T * λ = -Q` (statics) and `Φ_q^T * λ = Q - M*q̈` (inverse dynamics) depend critically on the conditioning of `Φ_q`. Near singular configurations, multipliers blow up and reaction recovery becomes unreliable. Three distinct questions must be separated:
+The equilibrium solve `Φ_q^T * λ = -Q` (statics) and `Φ_q^T * λ = -(Q + Q_v - M*q̈)` (inverse dynamics) depend critically on the conditioning of `Φ_q`. Near singular configurations, multipliers blow up and reaction recovery becomes unreliable. Three distinct questions must be separated:
 
 #### 1. Existence of Equilibrium
 
@@ -429,7 +429,7 @@ When multipliers are not unique, the driver reaction `λ_driver` is still unique
 
 #### 3. Conditioning of Reaction Recovery
 
-Even when multipliers are technically unique, ill-conditioning of `Φ_q` amplifies small errors in `Q` (or `Q - M*q̈`) into large errors in `λ`. This happens near toggle points, dead centers, and singular configurations.
+Even when multipliers are technically unique, ill-conditioning of `Φ_q` amplifies small errors in `Q` (or `Q + Q_v - M*q̈`) into large errors in `λ`. This happens near toggle points, dead centers, and singular configurations.
 
 **Monitoring (computed at every configuration):**
 
@@ -459,12 +459,14 @@ Singularity of `Φ_q` is directly related to transmission angle: `σ_min → 0` 
 Given `q`, `q̇`, `q̈` from kinematic analysis at each timestep, solve:
 
 ```
-M * q̈ + Φ_q^T * λ = Q
+M * q̈ - Φ_q^T * λ = Q + Q_v
 
-⟹  Φ_q^T * λ = Q - M * q̈
+⟹  Φ_q^T * λ = -(Q + Q_v - M * q̈)
 ```
 
-This is the same linear system as statics, but with `Q` replaced by `Q - M * q̈`. The inertial terms `M * q̈` are treated as fictitious forces (D'Alembert principle).
+This is the same linear system as statics, but with `-Q` replaced by `-(Q + Q_v - M * q̈)`. The inertial terms `M * q̈` are treated as fictitious forces (D'Alembert principle). With `q̇ = q̈ = 0` it reduces exactly to statics, so `λ` keeps the statics sign convention.
+
+`Q_v` is the velocity-quadratic (centripetal) force. When a body's CG is offset from its coordinate origin (`s_cg ≠ 0`), its mass block couples translation and rotation and depends on `θ`, so Lagrange's equations gain a term quadratic in `θ̇`. Per body, `Q_v = [m θ̇² A(θ) s_cg ; 0]` (the `θ` entry is zero). It vanishes when `s_cg = 0` or `θ̇ = 0`. Otherwise it changes the joint reactions of every rotating body with an offset CG, even a crank pinned at its own origin: at constant speed there `r̈ = θ̈ = 0`, so `M * q̈ = 0` and `Q_v` alone supplies the `m ω² |s_cg|` centripetal pivot load. It can change the driver effort only when the body origin moves (for example a rocker whose origin sits at the moving coupler joint C), because only then does `q̇ · Q_v` do work. Implemented once in `assemble_quadratic_velocity_forces` (`linkage-sim-rs/src/solver/assembly.rs`) and shared by inverse and forward dynamics.
 
 Again, `λ_driver` gives the required actuator effort including inertial loads.
 
@@ -473,9 +475,11 @@ Again, `λ_driver` gives the required actuator effort including inertial loads.
 Solve the coupled DAE:
 
 ```
-M * q̈ + Φ_q^T * λ = Q       (equations of motion)
+M * q̈ + Φ_q^T * λ = Q + Q_v (equations of motion)
 Φ(q, t) = 0                   (constraint equations)
 ```
+
+Sign note: here `λ` enters as `+Φ_q^T * λ`, the opposite of the statics / inverse-dynamics convention above, so a forward-dynamics `λ` has the opposite sign for the same physical load.
 
 This is an index-3 DAE. Direct numerical integration is difficult. Options:
 
@@ -488,7 +492,7 @@ Differentiate the constraints twice to get acceleration-level equations:
 
 Combine with the EOM:
 ```
-[M    Φ_q^T] [q̈] = [Q]
+[M    Φ_q^T] [q̈] = [Q + Q_v]
 [Φ_q    0  ] [λ ] = [γ]
 ```
 

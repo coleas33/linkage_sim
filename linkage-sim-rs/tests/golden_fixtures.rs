@@ -15,6 +15,7 @@ use linkage_sim_rs::core::body::{make_bar, make_ground, Body};
 use linkage_sim_rs::core::mechanism::Mechanism;
 use linkage_sim_rs::forces::elements::{ForceElement, GravityElement};
 use linkage_sim_rs::gui::samples::helpers::fourbar_loop_closure;
+use linkage_sim_rs::solver::assembly::{assemble_jacobian, assemble_quadratic_velocity_forces};
 use linkage_sim_rs::solver::forward_dynamics::{simulate, ForwardDynamicsConfig};
 use linkage_sim_rs::solver::inverse_dynamics::solve_inverse_dynamics;
 use linkage_sim_rs::solver::kinematics::{solve_acceleration, solve_position, solve_velocity};
@@ -457,6 +458,26 @@ fn load_golden_inverse_dynamics(filename: &str) -> GoldenInverseDynamics {
     serde_json::from_str(&data).unwrap()
 }
 
+/// Multiplier shift that moves the golden inverse-dynamics lambdas onto the
+/// BL-027-corrected equation.
+///
+/// The Python reference that generated these fixtures omits the
+/// velocity-quadratic force Q_v, so its multipliers satisfy
+/// `Phi_q^T lambda = -(Q - M q_ddot)`. The Rust solver solves
+/// `Phi_q^T lambda = -(Q + Q_v - M q_ddot)`; the two differ by exactly
+/// `delta` with `Phi_q^T delta = -Q_v` (returned here). Q_v itself is checked
+/// independently by the energy tests in `solver/inverse_dynamics.rs`.
+fn quadratic_velocity_lambda_shift(
+    mech: &Mechanism,
+    q: &DVector<f64>,
+    q_dot: &DVector<f64>,
+    t: f64,
+) -> DVector<f64> {
+    let phi_q_t = assemble_jacobian(mech, q, t).transpose();
+    let q_v = assemble_quadratic_velocity_forces(mech, q, q_dot);
+    phi_q_t.svd(true, true).solve(&(-q_v), 1e-14).unwrap()
+}
+
 #[test]
 fn fourbar_inverse_dynamics_matches_golden() {
     let golden = load_golden_inverse_dynamics("fourbar_inverse_dynamics.json");
@@ -508,9 +529,12 @@ fn fourbar_inverse_dynamics_matches_golden() {
         // lambda values blow up to ~1e10. Both Python lstsq and Rust SVD give
         // numerically meaningless values there, so we skip comparison when the
         // golden lambdas have extreme magnitude.
-        let lam_golden = DVector::from_column_slice(&step.lambdas);
-        let lam_golden_norm = lam_golden.norm();
-        if lam_golden_norm < 1e6 {
+        // Golden values are shifted by the Q_v term the Python reference lacks
+        // (see quadratic_velocity_lambda_shift).
+        let lam_golden_raw = DVector::from_column_slice(&step.lambdas);
+        if lam_golden_raw.norm() < 1e6 {
+            let shift = quadratic_velocity_lambda_shift(&mech, &pos.q, &q_dot, angle);
+            let lam_golden = &lam_golden_raw + &shift;
             let lam_diff = (&result.lambdas - &lam_golden).norm();
             assert!(
                 lam_diff < 0.5,
@@ -520,7 +544,8 @@ fn fourbar_inverse_dynamics_matches_golden() {
 
             // Compare driver torque (last lambda)
             let driver_lam = result.lambdas[result.lambdas.len() - 1];
-            let torque_diff = (driver_lam - step.driver_torque).abs();
+            let driver_golden = step.driver_torque + shift[shift.len() - 1];
+            let torque_diff = (driver_lam - driver_golden).abs();
             assert!(
                 torque_diff < 0.5,
                 "4-bar inv dyn driver torque mismatch at step {} (angle={:.1} deg): dt={:e}",
@@ -583,8 +608,10 @@ fn slidercrank_inverse_dynamics_matches_golden() {
             step_idx, angle.to_degrees(), mq_diff,
         );
 
-        // Compare lambdas
-        let lam_golden = DVector::from_column_slice(&step.lambdas);
+        // Compare lambdas, shifted by the Q_v term the Python reference lacks
+        // (see quadratic_velocity_lambda_shift).
+        let shift = quadratic_velocity_lambda_shift(&mech, &pos.q, &q_dot, angle);
+        let lam_golden = DVector::from_column_slice(&step.lambdas) + &shift;
         let lam_diff = (&result.lambdas - &lam_golden).norm();
         assert!(
             lam_diff < 1e-4,
@@ -594,7 +621,8 @@ fn slidercrank_inverse_dynamics_matches_golden() {
 
         // Compare driver torque
         let driver_lam = result.lambdas[result.lambdas.len() - 1];
-        let torque_diff = (driver_lam - step.driver_torque).abs();
+        let driver_golden = step.driver_torque + shift[shift.len() - 1];
+        let torque_diff = (driver_lam - driver_golden).abs();
         assert!(
             torque_diff < 1e-4,
             "Slider-crank inv dyn driver torque mismatch at step {} (angle={:.1} deg): dt={:e}",

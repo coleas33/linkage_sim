@@ -1,7 +1,7 @@
 //! Forward dynamics integrator for constrained multibody systems.
 //!
 //! Solves the index-3 DAE:
-//!     M * q_ddot + Phi_q^T * lambda = Q
+//!     M * q_ddot + Phi_q^T * lambda = Q + Q_v
 //!     Phi(q, t) = 0
 //!
 //! Using Baumgarte stabilization to control constraint drift:
@@ -20,6 +20,7 @@ use crate::core::mechanism::Mechanism;
 use crate::error::LinkageError;
 use crate::solver::assembly::{
     assemble_constraints, assemble_gamma, assemble_jacobian, assemble_mass_matrix, assemble_phi_t,
+    assemble_quadratic_velocity_forces,
 };
 use crate::solver::events::{check_events, DynamicsEvent, EventOccurrence};
 
@@ -81,10 +82,11 @@ pub struct ForwardDynamicsResult {
 /// Compute the RHS of the ODE: dy/dt = [q_dot, q_ddot].
 ///
 /// Solves the augmented system:
-///   [M,     Phi_q^T] [q_ddot]   [Q        ]
+///   [M,     Phi_q^T] [q_ddot]   [Q + Q_v  ]
 ///   [Phi_q,  0     ] [lambda] = [gamma_stab]
 ///
 /// where gamma_stab = gamma - 2*alpha*(Phi_q*q_dot + Phi_t) - beta^2*Phi
+/// and Q_v is the velocity-quadratic force (`assemble_quadratic_velocity_forces`).
 fn compute_rhs(
     mech: &Mechanism,
     q: &DVector<f64>,
@@ -102,7 +104,8 @@ fn compute_rhs(
     let phi = assemble_constraints(mech, q, t);
     let phi_t = assemble_phi_t(mech, q, t);
     let gamma = assemble_gamma(mech, q, qd, t);
-    let q_forces = mech.assemble_forces_compiled(q, qd, t, compiled_modulations);
+    let q_forces = mech.assemble_forces_compiled(q, qd, t, compiled_modulations)
+        + assemble_quadratic_velocity_forces(mech, q, qd);
 
     // Baumgarte-stabilized acceleration RHS:
     // gamma_stab = gamma - 2*alpha*(Phi_q*q_dot + Phi_t) - beta^2*Phi
@@ -134,7 +137,7 @@ fn compute_rhs(
     }
     // Lower-right: zero (already initialized)
 
-    // RHS: [Q; gamma_stab]
+    // RHS: [Q + Q_v; gamma_stab]
     for i in 0..n {
         b_vec[i] = q_forces[i];
     }
@@ -1376,5 +1379,68 @@ mod tests {
             any_near_max || any_near_min,
             "Pendulum never approached either joint limit"
         );
+    }
+
+    #[test]
+    fn free_spin_about_off_origin_pivot_conserves_speed_and_energy() {
+        // BL-027: a body pinned at body-local P = (1, 0) — not its origin —
+        // with CG at (0, 0.8), no forces. It spins freely about the fixed
+        // pivot, so the rotation rate and KE must stay constant. The body
+        // origin moves on a circle, so dropping the velocity-quadratic term
+        // m * theta_dot^2 * A(theta) * s_cg leaves a spurious torque about
+        // the pivot of m * theta_dot^2 * (P x s_cg) = 14.4 N*m at 3 rad/s.
+        let ground = make_ground(&[("O", 0.0, 0.0)]);
+        let mut bar = Body::new("bar");
+        bar.add_attachment_point("P", 1.0, 0.0).unwrap();
+        bar.mass = 2.0;
+        bar.cg_local = Vector2::new(0.0, 0.8);
+        bar.izz_cg = 0.05;
+
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(bar).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O", "bar", "P")
+            .unwrap();
+        mech.build().unwrap();
+
+        // theta = 0: origin at O - A(0) * P = (-1, 0); pivot fixed gives
+        // r_dot = -B(0) * P * theta_dot = (0, -omega0).
+        let omega0 = 3.0;
+        let state = mech.state();
+        let mut q0 = state.make_q();
+        state.set_pose("bar", &mut q0, -1.0, 0.0, 0.0);
+        let mut qd0 = DVector::zeros(state.n_coords());
+        let idx = state.get_index("bar").unwrap();
+        qd0[idx.y_idx()] = -omega0;
+        qd0[idx.theta_idx()] = omega0;
+
+        let config = ForwardDynamicsConfig {
+            alpha: 10.0,
+            beta: 10.0,
+            max_step: 0.001,
+            ..Default::default()
+        };
+        let result = simulate(&mech, &q0, &qd0, (0.0, 1.0), Some(&config), None).unwrap();
+        assert!(result.success);
+
+        let ke = |q: &DVector<f64>, qd: &DVector<f64>| 0.5 * qd.dot(&(assemble_mass_matrix(&mech, q) * qd));
+        let ke0 = ke(&q0, &qd0);
+        // Pivot inertia: Izz + m * |s_cg - P|^2 = 0.05 + 2 * 1.64 = 3.33.
+        assert_abs_diff_eq!(ke0, 0.5 * 3.33 * omega0 * omega0, epsilon = 1e-12);
+
+        for (i, (q, qd)) in result.q.iter().zip(result.q_dot.iter()).enumerate() {
+            let omega = qd[idx.theta_idx()];
+            assert!(
+                (omega - omega0).abs() < 1e-6,
+                "t = {}: theta_dot = {}, expected constant {}",
+                result.t[i], omega, omega0
+            );
+            let ke_i = ke(q, qd);
+            assert!(
+                (ke_i - ke0).abs() < 1e-6 * ke0,
+                "t = {}: KE = {}, expected constant {}",
+                result.t[i], ke_i, ke0
+            );
+        }
     }
 }
