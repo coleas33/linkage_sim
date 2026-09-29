@@ -1,13 +1,17 @@
-//! Metal design sheet ('Metal design'): inputs only so far.
+//! Metal design sheet ('Metal design'): inputs and retainers so far.
 //!
 //! Port of `reference/magcoupling-py/magcoupling/metal_design.py`. This module
-//! holds [`MetalDesignInputs`] (48 fields); the retainers, the sheet's results
-//! and `VALIDATION_ITEMS` follow with their ports.
+//! holds [`MetalDesignInputs`] (48 fields) and the retainers ([`RetainerResults`],
+//! [`retainers`], 9 result cells); the sheet's results and `VALIDATION_ITEMS`
+//! follow with their ports.
 //!
 //! Planned deviations touching this sheet (see
 //! [`crate::engine::deviations::REGISTRY`]): E8 (Metal design!C175).
 
-use super::meta::{inputs, param};
+use std::f64::consts::PI;
+
+use super::deviations::Deviations;
+use super::meta::{inputs, out, param, results};
 
 inputs! {
     /// Metal design inputs (Metal design!C7:C190).
@@ -162,5 +166,68 @@ inputs! {
                 "", "Metal design!C190")
                 .range(0.0, 20.0, 0.5),
         }
+    }
+}
+
+results! {
+    /// Sleeve, liner, endplate and cap results (Metal design!C45:C46, C175:C181).
+    pub struct RetainerResults {
+        fields {
+            retainer_span_mm: f64 => out("mm", "Proposed retainer axial span", "", "Metal design!C45"),
+            retainers_g: f64 => out("g", "Approximate sleeve / liner mass", "", "Metal design!C46"),
+            sleeve_id_mm: f64 => out("mm", "Inner sleeve nominal ID", "", "Metal design!C175"),
+            sleeve_od_mm: f64 => out("mm", "Inner sleeve nominal OD", "", "Metal design!C176"),
+            liner_od_mm: f64 => out("mm", "Outer liner nominal OD", "", "Metal design!C177"),
+            liner_id_mm: f64 => out("mm", "Outer liner nominal ID", "", "Metal design!C178"),
+            endplate_od_mm: f64 => out("mm", "Inner endplate nominal OD", "", "Metal design!C179"),
+            cap_g: f64 => out("g", "Aluminium cap estimated gross mass", "", "Metal design!C180"),
+            endplates_g: f64 => out("g", "Two inner endplates estimated mass", "", "Metal design!C181"),
+        }
+    }
+}
+
+/// Sleeve, liner, endplate and cap geometry and mass (Metal design rows 45-46, 175-181).
+#[allow(clippy::too_many_arguments)] // Python signature
+pub fn retainers(
+    md: &MetalDesignInputs,
+    inner_back_apothem_mm: f64,
+    inner_thickness_mm: f64,
+    inner_width_mm: f64,
+    outer_face_apothem_mm: f64,
+    bore_mm: f64,
+    _dev: Deviations,
+) -> RetainerResults {
+    let sleeve_id = 2.0
+        * (((inner_back_apothem_mm + inner_thickness_mm).powi(2) + (inner_width_mm / 2.0).powi(2))
+            .sqrt()
+            + md.sleeve_bedding_mm);
+    let sleeve_od = sleeve_id + 2.0 * md.sleeve_mm;
+    let liner_od = 2.0 * (outer_face_apothem_mm - md.liner_bedding_mm);
+    let liner_id = liner_od - 2.0 * md.liner_mm;
+    let span = md.retainer_span_mm;
+    let m_ret = PI / 4.0
+        * (sleeve_od.powi(2) - sleeve_id.powi(2) + liner_od.powi(2) - liner_id.powi(2))
+        * span
+        * md.sleeve_density_g_mm3;
+    let cap = (PI / 4.0 * (md.cap_od_mm.powi(2) - liner_id.powi(2)) * md.cap_axial_mm
+        + PI / 4.0
+            * (md.cap_od_mm.powi(2) - md.cap_thread_dia_mm.powi(2))
+            * md.cap_thread_engagement_mm)
+        * md.al_density_g_mm3;
+    let endplate_od = sleeve_id;
+    let endplates = PI / 4.0
+        * ((endplate_od.powi(2) - bore_mm.powi(2)) * md.front_endplate_mm
+            + (endplate_od.powi(2) - md.rear_endplate_hole_mm.powi(2)) * md.rear_endplate_mm)
+        * md.sleeve_density_g_mm3;
+    RetainerResults {
+        retainer_span_mm: span,
+        retainers_g: m_ret,
+        sleeve_id_mm: sleeve_id,
+        sleeve_od_mm: sleeve_od,
+        liner_od_mm: liner_od,
+        liner_id_mm: liner_id,
+        endplate_od_mm: endplate_od,
+        cap_g: cap,
+        endplates_g: endplates,
     }
 }

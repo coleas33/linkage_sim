@@ -54,6 +54,10 @@ pub const PORTED_RESULTS: &[PortedResults] = &[
         group: "model",
         cells: 73,
     },
+    PortedResults {
+        group: "retainers",
+        cells: 9,
+    },
 ];
 
 /// The top-level group of a dotted path (`"calibration.br_T"` gives `"calibration"`).

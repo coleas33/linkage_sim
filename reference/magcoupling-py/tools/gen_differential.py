@@ -73,6 +73,7 @@ MAX_FILE_BYTES = 4_000_000  # a data file above this means: vary fewer groups or
 MODULES = {
     "calibration": ["calibration"],
     "model": ["coupling", "metal", "materials", "calibration"],
+    "retainers": ["coupling", "metal"],
 }
 # every library part, blank (manual magnet) and a near miss of the default part
 PART_CHOICES = list(MAGNET_LIBRARY) + ["", "b842sh"]

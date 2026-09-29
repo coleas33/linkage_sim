@@ -42,8 +42,8 @@ magcoupling_rs:
     deviations: deviations.rs (REGISTRY of M1 corrections E1-E14, all Planned; Deviations switch; NONE/only() and restore_workbook_defaults behind the test-only workbook-parity feature)
     api: api.rs (DesignInputs/DesignResults groups in Python order; compute_all; test-only compute_all_with, DesignInputs::defaults_with)
     ported: [constants.rs, calibration.rs, library.rs, model.rs]
-    inputs_only: "metal_design.rs and materials.rs hold the input structs only so far (retainers, results, compute and static tables follow)"
-    remaining: [metal_design (retainers and results), materials (results), temperature, clamps, sweeps, fields3d (M3)]
+    partial: "metal_design.rs holds the input structs and the retainers (RetainerResults, retainers; 9 result cells); materials.rs holds the input structs only so far (results, compute and static tables follow)"
+    remaining: [metal_design (results, compute, VALIDATION_ITEMS), materials (results), temperature, clamps, sweeps, fields3d (M3)]
   features: gui and app (declared empty, M4); workbook-parity (test-only, enabled by a self dev-dependency)
   tests: tests/ (parity.rs, differential.rs, python_schema.rs, schema.rs, deviations.rs, static_data.rs; common/mod.rs holds the PORTED_INPUTS / PORTED_RESULTS ratchets)
   test_data: tests/data/ (reference_values.json = copy of the vendored snapshot; input_schema.json via MAGCOUPLING_BLESS=1 cargo test --test schema; python_schema.json, static_data.json and differential/*.json via tools/gen_differential.py)

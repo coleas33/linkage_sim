@@ -317,6 +317,11 @@ fn model_matches_python_on_every_case() {
     );
 }
 
+#[test]
+fn retainers_matches_python_on_every_case() {
+    check_module("retainers");
+}
+
 /// A corpus key and the Rust helper call it records (as the engine calls it).
 type Rounding = (&'static str, fn(f64) -> f64);
 
