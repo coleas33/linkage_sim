@@ -144,10 +144,20 @@ impl AppState {
         json_struct.load_cases = self.load_cases.cases.clone();
         json_struct.mounting_angle = self.mounting_angle;
         // Preserve blueprint point masses (baked into mass/CG/Izz at build time).
+        // `mechanism_to_json` emitted the composite (point-mass-inclusive)
+        // mass/CG/Izz, and load re-applies the point masses on top of the
+        // stored values, so for these bodies write the blueprint's BASE
+        // mass/CG/Izz instead or every point mass is counted twice (BL-023).
         if let Some(ref bp) = self.blueprint {
             for (body_id, bp_body) in &bp.bodies {
+                if bp_body.point_masses.is_empty() {
+                    continue;
+                }
                 if let Some(json_body) = json_struct.bodies.get_mut(body_id) {
                     json_body.point_masses = bp_body.point_masses.clone();
+                    json_body.mass = bp_body.mass;
+                    json_body.cg_local = bp_body.cg_local;
+                    json_body.izz_cg = bp_body.izz_cg;
                 }
             }
         }

@@ -83,6 +83,15 @@ invariants_to_protect:
     BEFORE the mutation and rebuild() AFTER. Skipping push_undo loses undo
     history; skipping rebuild leaves mechanism out of sync with blueprint.
     Use AppState::mutate_and_rebuild(|s| ...) when possible.
+  - blueprint_mass_is_base_live_mass_is_composite — state.blueprint bodies
+    hold BASE mass/CG/Izz plus a point_masses list; the built Mechanism
+    holds the composite (base + point masses). Anything that writes a
+    file/URL from the live mechanism (AppState::serialize_to_json_string)
+    must write the blueprint BASE values for bodies that have point_masses,
+    because load re-applies the list on top. Writing composite + list
+    double-counts every point mass (BL-023). mechanism_to_json alone (undo
+    snapshots) bakes point masses in and emits an empty list, which is
+    self-consistent but loses the editable list.
   - severity_controls_return_type_not_math — Trajectory mode's
     Severity::{Strict, Analysis} runs identical Newton/FD code; the only
     difference is whether failure status bubbles as Err or as a result

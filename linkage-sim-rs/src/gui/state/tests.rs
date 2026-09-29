@@ -1961,6 +1961,178 @@
         let _ = std::fs::remove_file(&tmp);
     }
 
+    // ── BL-023: save / autosave / share URL must not double-count point masses ──
+
+    /// Mass, CG and Izz of one body (either the built composite or the blueprint base).
+    #[derive(Debug, Clone, Copy)]
+    struct MassProps {
+        mass: f64,
+        cg: [f64; 2],
+        izz: f64,
+    }
+
+    /// Composite (point-mass-inclusive) mass properties of every body in the
+    /// built mechanism, keyed by body id.
+    fn built_mass_props(state: &AppState) -> std::collections::BTreeMap<String, MassProps> {
+        state
+            .mechanism
+            .as_ref()
+            .expect("mechanism should be built")
+            .bodies()
+            .iter()
+            .map(|(id, b)| {
+                (
+                    id.clone(),
+                    MassProps { mass: b.mass, cg: [b.cg_local.x, b.cg_local.y], izz: b.izz_cg },
+                )
+            })
+            .collect()
+    }
+
+    /// Base (point-mass-exclusive) mass properties of every body in the blueprint.
+    fn blueprint_mass_props(state: &AppState) -> std::collections::BTreeMap<String, MassProps> {
+        state
+            .blueprint
+            .as_ref()
+            .expect("blueprint should exist")
+            .bodies
+            .iter()
+            .map(|(id, b)| (id.clone(), MassProps { mass: b.mass, cg: b.cg_local, izz: b.izz_cg }))
+            .collect()
+    }
+
+    fn assert_mass_props_match(
+        what: &str,
+        expected: &std::collections::BTreeMap<String, MassProps>,
+        actual: &std::collections::BTreeMap<String, MassProps>,
+    ) {
+        const TOL: f64 = 1e-12;
+        assert_eq!(
+            expected.keys().collect::<Vec<_>>(),
+            actual.keys().collect::<Vec<_>>(),
+            "{what}: body id sets differ"
+        );
+        for (id, e) in expected {
+            let a = &actual[id];
+            assert!((e.mass - a.mass).abs() < TOL, "{what}: body '{id}' mass {} -> {}", e.mass, a.mass);
+            assert!((e.cg[0] - a.cg[0]).abs() < TOL, "{what}: body '{id}' cg.x {} -> {}", e.cg[0], a.cg[0]);
+            assert!((e.cg[1] - a.cg[1]).abs() < TOL, "{what}: body '{id}' cg.y {} -> {}", e.cg[1], a.cg[1]);
+            assert!((e.izz - a.izz).abs() < TOL, "{what}: body '{id}' izz {} -> {}", e.izz, a.izz);
+        }
+    }
+
+    /// Four-bar with off-CG point masses: two on one body (so accumulation
+    /// order matters) and one on another. Returns the state and the id of
+    /// the body carrying two point masses.
+    fn four_bar_with_point_masses() -> (AppState, String) {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+
+        let mut ids: Vec<String> = state
+            .blueprint
+            .as_ref()
+            .unwrap()
+            .bodies
+            .keys()
+            .filter(|k| k.as_str() != GROUND_ID)
+            .cloned()
+            .collect();
+        ids.sort();
+
+        let base = blueprint_mass_props(&state);
+        state.add_point_mass(&ids[0], 50.0, [0.03, 0.02]);
+        state.add_point_mass(&ids[0], 2.5, [-0.01, 0.04]);
+        state.add_point_mass(&ids[1], 7.0, [0.05, -0.02]);
+
+        // Precondition (guards against a vacuous test): the point masses are
+        // applied exactly once to the live mechanism, and the blueprint base
+        // is untouched.
+        let built = built_mass_props(&state);
+        assert!(
+            (built[&ids[0]].mass - (base[&ids[0]].mass + 52.5)).abs() < 1e-12,
+            "setup: composite mass should be base + 52.5"
+        );
+        assert!((built[&ids[1]].mass - (base[&ids[1]].mass + 7.0)).abs() < 1e-12);
+        assert_mass_props_match("setup: blueprint base", &base, &blueprint_mass_props(&state));
+
+        (state, ids[0].clone())
+    }
+
+    /// Assert that `dst` (loaded from `src`'s serialization) reproduces the
+    /// same built composite properties, the same blueprint base properties
+    /// and the same point-mass lists as `src`.
+    fn assert_round_trip_preserves_mass(what: &str, src: &AppState, dst: &AppState) {
+        assert_mass_props_match(&format!("{what}: built"), &built_mass_props(src), &built_mass_props(dst));
+        assert_mass_props_match(
+            &format!("{what}: blueprint base"),
+            &blueprint_mass_props(src),
+            &blueprint_mass_props(dst),
+        );
+        let src_bp = src.blueprint.as_ref().unwrap();
+        let dst_bp = dst.blueprint.as_ref().unwrap();
+        for (id, sb) in &src_bp.bodies {
+            let db = &dst_bp.bodies[id];
+            assert_eq!(sb.point_masses.len(), db.point_masses.len(), "{what}: body '{id}' point-mass count");
+            for (s, d) in sb.point_masses.iter().zip(&db.point_masses) {
+                assert!((s.mass - d.mass).abs() < 1e-12, "{what}: body '{id}' point-mass mass");
+                assert!((s.local_pos[0] - d.local_pos[0]).abs() < 1e-12, "{what}: body '{id}' point-mass x");
+                assert!((s.local_pos[1] - d.local_pos[1]).abs() < 1e-12, "{what}: body '{id}' point-mass y");
+            }
+        }
+    }
+
+    #[test]
+    fn point_masses_not_double_counted_by_serialize_load_bl023() {
+        let (src, heavy_body) = four_bar_with_point_masses();
+
+        let json = src.serialize_to_json_string().expect("serialize should succeed");
+        let mut dst = AppState::default();
+        dst.load_from_json_str(&json).expect("load should succeed");
+        assert_round_trip_preserves_mass("save/load", &src, &dst);
+
+        // A second generation (autosave of a just-loaded file) must be stable too.
+        let json2 = dst.serialize_to_json_string().expect("re-serialize should succeed");
+        let mut dst2 = AppState::default();
+        dst2.load_from_json_str(&json2).expect("re-load should succeed");
+        assert_round_trip_preserves_mass("second save/load", &src, &dst2);
+
+        // Point masses removed after a reload still leave the true base mass.
+        let mut dst3 = dst2;
+        let base_mass = blueprint_mass_props(&src)[&heavy_body].mass;
+        dst3.remove_point_mass(&heavy_body, 1);
+        dst3.remove_point_mass(&heavy_body, 0);
+        let m = dst3.mechanism.as_ref().unwrap().bodies()[&heavy_body].mass;
+        assert!((m - base_mass).abs() < 1e-12, "base mass after removing point masses: {m} vs {base_mass}");
+    }
+
+    #[test]
+    fn point_masses_not_double_counted_by_share_url_bl023() {
+        let (src, _) = four_bar_with_point_masses();
+
+        let url = src.generate_share_url().expect("generate_share_url failed");
+        let encoded = url.split("?m=").nth(1).expect("share URL missing ?m=");
+        let json = super::file_io::decode_mechanism_from_url(encoded).expect("decode failed");
+
+        let mut dst = AppState::default();
+        dst.load_from_json_str(&json).expect("load should succeed");
+        assert_round_trip_preserves_mass("share URL", &src, &dst);
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn point_masses_not_double_counted_by_file_save_load_bl023() {
+        let (mut src, _) = four_bar_with_point_masses();
+
+        let tmp = std::env::temp_dir().join("linkage_test_pm_bl023.json");
+        src.save_to_file(&tmp).expect("save should succeed");
+        let mut dst = AppState::default();
+        let loaded = dst.load_from_file(&tmp);
+        let _ = std::fs::remove_file(&tmp);
+        loaded.expect("load should succeed");
+
+        assert_round_trip_preserves_mass("file save/load", &src, &dst);
+    }
+
     #[test]
     fn new_empty_mechanism_resets_state() {
         let mut state = AppState::default();

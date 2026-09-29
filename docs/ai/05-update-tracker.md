@@ -5,6 +5,27 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-28 — BL-023: save / autosave / share URL no longer double-count point masses
+- Root cause: `AppState::serialize_to_json_string` built the body JSON from
+  the live mechanism via `mechanism_to_json` (composite, point-mass-inclusive
+  mass/CG/Izz) and then re-attached the blueprint `point_masses`; load applies
+  the list on top of the stored values, so every point mass was counted twice
+  (rocker 1 kg + 50 kg -> 101 kg after one share-URL round trip). Affected
+  native save, native/WASM autosave, and share URLs (single serialization point).
+- Fix: for bodies that have point masses, serialize the blueprint BASE
+  mass/CG/Izz next to the list (`gui/state/file_io.rs`). Bodies without point
+  masses are unchanged.
+- Tests (`gui/state/tests.rs`): `point_masses_not_double_counted_by_{serialize_load,
+  share_url,file_save_load}_bl023` assert built composite and blueprint base
+  mass/CG/Izz plus the point-mass lists unchanged to 1e-12, incl. a second
+  save/load generation and base mass after removing the point masses.
+- Files saved by the buggy build (with point masses) already contain inflated
+  composite mass; they are not repaired on load.
+- Not fixed here: undo/redo snapshots (`take_snapshot`) still bake point masses
+  into body mass and drop the editable list (physics-consistent, list lost);
+  BL-024 covers `set_body_mass`/`set_body_izz` dropping point masses live.
+
+
 ## 2026-09-13 — BL-020: slow playback no longer frozen (crank slider write-back)
 - Root cause: `egui::Slider::step_by(0.5)` snaps its bound value to the
   step grid on every frame even with no input (verified headlessly on
