@@ -19,7 +19,6 @@ from dataclasses import fields
 
 import numpy as np
 import pytest
-from scipy.optimize import brentq
 
 from audit.common import MU0_EXACT, TOL_ALGEBRA, assert_all, defaults, mismatch, rel_err, run, text_item, vary
 from audit.references import demag_adhesive as ref
@@ -275,33 +274,24 @@ def test_summary_margins_and_hot_day_note(changes):
 
 def _alternative_skipping_onset(form: str, inp, res) -> float:
     """Skipping onset under another reasonable way of calibrating the knee model to the supplier rating."""
-    d = inp.temperature.demag
-    alpha, br20, mu0 = inp.calibration.alpha_br_per_C, res.model.inner_br_T, inp.coupling.mu0
-    rating = ref.part_rating_C(inp.coupling.magnets.part_inner)
-    n42sh = ref.ARNOLD_N42SH
+    d, n42sh = inp.temperature.demag, ref.ARNOLD_N42SH
     mu_rec = n42sh["br_nominal_T"] / (MU0_EXACT * n42sh["hcb_nominal_kA_m"] * 1000)       # 1.056 (Arnold N42SH)
-    h_ref = ref.load_line_reverse_field_kA_m(br20, 1.0, mu0, mu_rec if "recoil_permeability" in form else 1.0)
-    h_lp = d.h_rev_likepole_kA_m
-    if form.startswith("knee_fraction"):
-        knee = brentq(lambda k: ref.knee_crossing_C(h_ref, d.hcj20_kA_m, d.beta_hcj_per_C, k, alpha) - rating, 0.3, 1.2)
-        return ref.knee_crossing_C(h_lp, d.hcj20_kA_m, d.beta_hcj_per_C, knee, alpha)
-    if form == "beta_hcj":
-        beta = brentq(lambda b: ref.knee_crossing_C(h_ref, d.hcj20_kA_m, b, d.knee_fraction, alpha) - rating, -0.02, -0.001)
-        return ref.knee_crossing_C(h_lp, d.hcj20_kA_m, beta, d.knee_fraction, alpha)
-    args = (d.hcj20_kA_m, d.beta_hcj_per_C, d.knee_fraction, alpha)
-    return ref.knee_crossing_C(h_lp, *args) - ref.calibration_offset_C(h_ref, rating, *args)
+    return ref.alternative_calibrated_onset_C(form, d.h_rev_likepole_kA_m, res.model.inner_br_T, inp.coupling.mu0,
+                                              ref.part_rating_C(inp.coupling.magnets.part_inner), d.hcj20_kA_m,
+                                              d.beta_hcj_per_C, d.knee_fraction, inp.calibration.alpha_br_per_C, mu_rec)
 
 
 @pytest.mark.family("temperature")
-@pytest.mark.parametrize("form", ["knee_fraction", "beta_hcj", "recoil_permeability", "knee_fraction+recoil_permeability"])
+@pytest.mark.parametrize("form", ref.ALTERNATIVE_CALIBRATIONS)
 def test_onset_calibration_form_sensitivity_within_design_margin(form):
     """Model form: other reasonable ways to calibrate to the 150 degC rating move the skipping onset by < the 10 degC margin.
 
     The engine shifts every onset by a constant temperature. Alternatives: scale the knee fraction, or scale the Hcj
-    coefficient, so the Pc = 1 magnet reaches its knee at exactly 150 degC; keep the offset but place the Pc = 1
-    operating point with the datasheet recoil permeability mu_rec = Br/(mu0 HcB) = 1.056 (Arnold N42SH); or both the
-    knee-fraction calibration and the datasheet recoil permeability. Tolerance: the design margin (C51), whose job is to
-    cover model-form uncertainty.
+    coefficient, so the Pc = 1 magnet reaches its knee at exactly 150 degC; keep the offset but use the datasheet recoil
+    permeability mu_rec = Br/(mu0 HcB) = 1.056 (Arnold N42SH); or both the knee-fraction calibration and the datasheet
+    recoil permeability. The recoil forms apply the one mu_rec to both the Pc = 1 operating point and the rigid-magnet
+    (magpylib) 3D like-pole field, each on its own effective load line (``ref.recoil_reverse_field_kA_m``): 513 -> 499
+    and 863 -> 824 kA/m at defaults. Tolerance: the design margin (C51), whose job is to cover model-form uncertainty.
     """
     inp, res = defaults(), run()
     alt = _alternative_skipping_onset(form, inp, res)

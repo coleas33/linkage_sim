@@ -18,6 +18,8 @@ Load line (permeance coefficient)
     Textbook form, e.g. Campbell, *Permanent Magnet Materials and their Application*
     (Cambridge, 1994), ch. 5; Furlani, *Permanent Magnet and Electromechanical Devices*
     (Academic Press, 2001), sec. 3.4.
+    A rigid-magnet field h (mu_rec = 1) defines Pc_eff = Br/(mu0 h) - 1, so the same law moves
+    any rigid field to mu_rec: |H| = h / (1 + (mu_rec - 1) mu0 h / Br) (``recoil_reverse_field_kA_m``).
 
 Supplier ratings (K&J Magnetics, the workbook's magnet vendor)
     Maximum operating temperature by grade suffix and Br ranges by grade, from the K&J
@@ -143,6 +145,38 @@ def load_line_reverse_field_kA_m(br_T: float, permeance_coefficient: float, mu0:
     return br_T / (mu0 * (recoil_permeability + permeance_coefficient)) / 1000.0
 
 
+def recoil_reverse_field_kA_m(h_rigid_kA_m: float, br_T: float, mu0: float, recoil_permeability: float) -> float:
+    """Reverse field at an operating point when the magnets have recoil permeability mu_rec instead of 1.
+
+    ``h_rigid_kA_m`` is the field computed with rigid magnets (polarization Br everywhere, mu_rec = 1), like the Pc = 1
+    value Br/(2 mu0) and the magpylib 3D inputs. It fixes the operating point's effective load line,
+    Pc_eff = Br/(mu0 h_rigid) - 1, and a linear magnet of recoil permeability mu_rec on that line sits at (the
+    ``load_line_reverse_field_kA_m`` law)
+        |H| = Br / (mu0 (mu_rec + Pc_eff)) = h_rigid / (1 + (mu_rec - 1) N_eff),    N_eff = mu0 h_rigid / Br.
+    Equivalently: every rigid field in a fixed geometry (the block's own demagnetizing field, the other ring, the
+    back-iron images) is proportional to the polarization, so if every magnet has the same mu_rec and the sources'
+    polarization drops by the factor f set at the evaluated point, h = f h_rigid and J = f Br = Br - (mu_rec - 1) mu0 h.
+    For the Pc = 1 reference magnet (N_eff = 1/2) this is exactly Br/(mu0 (1 + mu_rec)), so one function with one
+    mu_rec places the reference magnet and any 3D reverse field on the same magnet model.
+
+    Why not a fixed factor: 2/(1 + mu_rec) treats every field as a Pc = 1 operating point, and the block's own
+    demagnetization factor, 1/(1 + N (mu_rec - 1)) with N = 0.563 (Aharoni, 12.7 x 6.35 x 3.17 mm through the
+    thickness), leaves the other ring and the images rigid. Cross-check at the default like-pole worst point
+    (863 kA/m rigid, mu_rec = 1.056): a self-consistent solve of the fields3d geometry, each block and image split into
+    cells with J = Br + (mu_rec - 1) mu0 H_parallel, reproduces 863 kA/m at mu_rec = 1 and gives 836 / 829 / 827 kA/m
+    at 1 / 3^3 / 5^3 cells per block; this function gives 824, the Pc = 1 factor 839 and the block factor 837.
+
+    Raises ValueError for Br <= 0 or when there is no operating point (1 + (mu_rec - 1) N_eff <= 0).
+    """
+    if br_T <= 0:
+        raise ValueError(f"Br must be positive, got {br_T} T")
+    denominator = 1.0 + (recoil_permeability - 1.0) * mu0 * h_rigid_kA_m * 1000.0 / br_T
+    if denominator <= 0:
+        raise ValueError(f"no operating point: mu_rec {recoil_permeability} with rigid field {h_rigid_kA_m} kA/m "
+                         f"and Br {br_T} T gives 1 + (mu_rec - 1) N_eff = {denominator:.3g}")
+    return h_rigid_kA_m / denominator
+
+
 def knee_crossing_C(h_rev20_kA_m: float, hcj20_kA_m: float, beta_hcj_per_C: float, knee_fraction: float,
                     alpha_br_per_C: float, t_lo_C: float = -273.15, t_hi_C: float = 1273.15) -> float:
     """Temperature where the Br-scaled reverse field equals the knee field, by Brent root-finding.
@@ -165,6 +199,44 @@ def calibration_offset_C(h_ref_kA_m: float, rating_C: float | None, hcj20_kA_m: 
     if rating_C is None:
         return 0.0
     return knee_crossing_C(h_ref_kA_m, hcj20_kA_m, beta_hcj_per_C, knee_fraction, alpha_br_per_C) - rating_C
+
+
+#: Ways to calibrate the knee model to the supplier rating other than the engine's constant offset (model-form check).
+ALTERNATIVE_CALIBRATIONS = ("knee_fraction", "beta_hcj", "recoil_permeability", "knee_fraction+recoil_permeability")
+
+
+def alternative_calibrated_onset_C(form: str, h_rev20_kA_m: float, br20_T: float, mu0: float, rating_C: float | None,
+                                   hcj20_kA_m: float, beta_hcj_per_C: float, knee_fraction: float, alpha_br_per_C: float,
+                                   recoil_permeability: float) -> float:
+    """Onset of a reverse field under another reasonable way of calibrating the knee model to the supplier rating.
+
+    ``h_rev20_kA_m`` is a rigid-magnet (recoil permeability 1, polarization ``br20_T``) reverse field at 20 degC, like
+    the 3D inputs; the reference magnet is the Pc = 1 magnet of Br ``br20_T``. The forms:
+        knee_fraction        scale the knee fraction so the reference magnet reaches its knee at the rating;
+        beta_hcj             scale the Hcj temperature coefficient instead;
+        recoil_permeability  keep the engine's constant offset, with the magnets' recoil permeability;
+        knee_fraction+recoil_permeability
+                             the knee-fraction calibration with the magnets' recoil permeability.
+    The recoil forms move the reference magnet and the field under test with the same ``recoil_reverse_field_kA_m``
+    and the same mu_rec: both are rigid-magnet fields of the same material, so a field equal to the reference magnet's
+    own Br/(2 mu0) always reaches its knee at the rating.
+    Raises ValueError for an unknown form or a missing rating (nothing to calibrate to).
+    """
+    if form not in ALTERNATIVE_CALIBRATIONS:
+        raise ValueError(f"unknown calibration form {form!r}; expected one of {ALTERNATIVE_CALIBRATIONS}")
+    if rating_C is None:
+        raise ValueError("an alternative calibration needs a supplier rating")
+    mu_rec = recoil_permeability if "recoil_permeability" in form else 1.0
+    h_ref = recoil_reverse_field_kA_m(load_line_reverse_field_kA_m(br20_T, 1.0, mu0), br20_T, mu0, mu_rec)
+    h = recoil_reverse_field_kA_m(h_rev20_kA_m, br20_T, mu0, mu_rec)
+    if form.startswith("knee_fraction"):
+        knee = brentq(lambda k: knee_crossing_C(h_ref, hcj20_kA_m, beta_hcj_per_C, k, alpha_br_per_C) - rating_C, 0.3, 1.2)
+        return knee_crossing_C(h, hcj20_kA_m, beta_hcj_per_C, knee, alpha_br_per_C)
+    if form == "beta_hcj":
+        beta = brentq(lambda b: knee_crossing_C(h_ref, hcj20_kA_m, b, knee_fraction, alpha_br_per_C) - rating_C, -0.02, -0.001)
+        return knee_crossing_C(h, hcj20_kA_m, beta, knee_fraction, alpha_br_per_C)
+    args = (hcj20_kA_m, beta_hcj_per_C, knee_fraction, alpha_br_per_C)
+    return knee_crossing_C(h, *args) - calibration_offset_C(h_ref, rating_C, *args)
 
 
 # --------------------------------------------------------------------------- adhesive

@@ -48,6 +48,27 @@ def coupling_slab(br_i: float, br_o: float, fill_i: float, fill_o: float, t_i: f
     return layers, t_i + gap + t_o
 
 
+def _unrolled_fill(width: float, pitch: float) -> float:
+    """Fill of a flat block of real width ``width`` on a slab of pole pitch ``pitch``. A block wider than the
+    pitch would overlap its neighbours once unrolled, which a slab layer (0 < fill <= 1) cannot represent."""
+    if not 0.0 < width <= pitch:
+        raise ValueError(f"a {width} mm block cannot be unrolled onto a {pitch} mm pole pitch "
+                         "(need 0 < width <= pitch)")
+    return width / pitch
+
+
+def unrolled_coupling_slab(g, br_i: float, br_o: float, w_i: float, w_o: float, t_i: float,
+                           t_o: float) -> tuple[list[MagnetLayer], float]:
+    """The coupling slab of a design's two rings of flat blocks, both unrolled at the geometry's gap-radius pole
+    pitch ``g.pole_pitch`` with its face gap ``g.face_gap``. Each block keeps its real width, fill = w / pitch.
+
+    Not the arc-length fill at each block's mid-thickness radius (``g.fill_inner``/``g.fill_outer``, the
+    workbook's C66/C67): at the gap-radius pitch that fill makes a block w*R_g/r_mid wide, so the inner blocks
+    come out too wide and the outer ones too narrow (7.586 and 5.460 mm for the default 6.35 mm block)."""
+    return coupling_slab(br_i, br_o, _unrolled_fill(w_i, g.pole_pitch), _unrolled_fill(w_o, g.pole_pitch), t_i, t_o,
+                         g.face_gap)
+
+
 def backiron_flux_per_depth(surface: str, layers: list[MagnetLayer], h_mm: float, pitch_mm: float,
                             n_max: int = 4001) -> float:
     """Flux per unit axial length [T*mm] that the 'inner' or 'outer' plate carries across the

@@ -14,10 +14,11 @@ from scipy.integrate import quad
 
 from audit.common import TOL_ALGEBRA, mismatch, rel_err
 from audit.references.backiron_flux import (backiron_flux_per_depth, coupling_slab, flat_circuit_flux_density,
-                                            sinusoidal_backiron_thickness)
+                                            sinusoidal_backiron_thickness, unrolled_coupling_slab)
 from audit.references.block_geometry import (annulus_part, axial_overlap, block_rectangle, convex_polygon_distance,
-                                             max_radius, min_radius, point_segment_distance, polygon_area,
-                                             polygon_polar_moment, regular_polygon, ring_min_clearance, side_length)
+                                             coupling_geometry, max_radius, min_radius, point_segment_distance,
+                                             polygon_area, polygon_polar_moment, regular_polygon, ring_min_clearance,
+                                             side_length)
 from audit.references.metal_stack import (gearbox_input_torque, gearbox_output_torque, linear_stack, omega_rad_s,
                                           plated_size, pole_pair_frequency_Hz, pole_pairs, preplate_size, shaft_power_W,
                                           sleeve_liner_clearance)
@@ -179,6 +180,45 @@ def test_sanity_iron_face_is_limit_of_general_solution(surface):
     scale = float(np.max(np.abs(np.concatenate([a_y, b_y]))))
     err = float(np.max(np.abs(np.concatenate([a_y - a_face * growth, b_y - b_face * growth])))) / scale
     assert err < 1e-12, mismatch(f"iron-face coefficients vs general solution ({surface})", "reference", err, 0.0, 1e-12)
+
+
+def _default_rings_geometry(w_o: float = 6.35):
+    """Reference geometry of the default rings: 10 poles, both rings the same 6.35 x 3.17 mm block, inner block
+    backs at apothem 10.15 mm, 1.4 mm face gap. Gap radius 10.15 + 3.17 + 0.7 = 14.02 mm, pole pitch
+    2*pi*14.02/10 = 8.8090 mm. Bondlines, cup wall, bore and keyway do not enter the slab."""
+    return coupling_geometry(npole=10, inner_back_apothem=10.15, t_i=3.17, w_i=6.35, t_o=3.17, w_o=w_o, face_gap=1.4,
+                             bond_inner=0.05, bond_outer=0.05, cup_wall_corner=1.8, bore=10.0, keyway_depth=1.7)
+
+
+@pytest.mark.family("materials")
+def test_sanity_unrolled_slab_keeps_block_widths():
+    """The back-iron checks unroll both rings onto one slab at the gap-radius pole pitch tau = 2*pi*14.02/10 =
+    8.8090 mm. A flat block keeps its real width there, so each layer's block is fill*tau = 6.35 mm wide
+    (fill = 6.35/8.8090 = 0.7209 on both rings). The arc-length fills at the blocks' mid radii (Calculator C66/C67,
+    0.8612 inner, 0.6198 outer) would scale each block by R_g/r_mid instead: 7.586 mm (inner) and 5.460 mm
+    (outer). Both rings are then the same layer, so the slab is mirror-symmetric (y -> h - y) and the hub and cup
+    plates carry the same flux. Tolerance 1e-12: rounding only."""
+    g = _default_rings_geometry()
+    layers, h = unrolled_coupling_slab(g, 1.24356, 1.24356, 6.35, 6.35, 3.17, 3.17)
+    for ring, layer in zip(("inner", "outer"), layers):
+        width = layer.fill * g.pole_pitch
+        assert rel_err(width, 6.35) < 1e-12, mismatch(f"{ring} block width in the unrolled slab (fill {layer.fill:.4f} "
+                                                      f"x pitch {g.pole_pitch:.4f} mm)", "reference", width, 6.35, 1e-12)
+    assert rel_err(h, 3.17 + 1.4 + 3.17) < 1e-12, mismatch("slab height", "reference", h, 7.74, 1e-12)
+    inner = backiron_flux_per_depth("inner", layers, h, g.pole_pitch)
+    outer = backiron_flux_per_depth("outer", layers, h, g.pole_pitch)
+    assert rel_err(inner, outer) < 1e-12, mismatch("unrolled identical rings: hub vs cup plate flux [T*mm]", "reference",
+                                                   inner, outer, 1e-12)
+
+
+@pytest.mark.family("materials")
+@pytest.mark.parametrize("w_o", [9.0, 0.0], ids=["wider than the pitch", "zero width"])
+def test_sanity_unrolled_slab_refuses_unrepresentable_blocks(w_o):
+    """A 9.0 mm outer block fits its 9.57 mm pocket flat but is wider than the 8.809 mm gap-radius pitch: unrolled
+    it would overlap its neighbours, which a slab layer (0 < fill <= 1) cannot represent, so the slab is refused
+    rather than clamped. A zero-width block is refused too."""
+    with pytest.raises(ValueError):
+        unrolled_coupling_slab(_default_rings_geometry(w_o), 1.24356, 1.24356, 6.35, w_o, 3.17, 3.17)
 
 
 @pytest.mark.family("materials")

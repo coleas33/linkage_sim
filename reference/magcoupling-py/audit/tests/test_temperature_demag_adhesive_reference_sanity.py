@@ -45,6 +45,82 @@ def test_sanity_load_line_textbook():
 
 
 @pytest.mark.family("temperature")
+@pytest.mark.parametrize("mu_rec", [1.0, 1.056, 1.2])
+@pytest.mark.parametrize("pc", [0.0, 0.19, 1.0, 5.0])
+def test_sanity_recoil_correction_is_the_load_line_law(pc, mu_rec):
+    """Sanity: moving the rigid (mu_rec = 1) field of a Pc load line to mu_rec gives the textbook Br/(mu0 (mu_rec + Pc)),
+    for Pc = 1 (the reference magnet), Pc = 0.19 (the default like-pole worst point, 863 kA/m), a closed circuit
+    (Pc = 5) and Pc = 0 (H = Br/mu0); mu_rec = 1 leaves the field unchanged."""
+    h_rigid = ref.load_line_reverse_field_kA_m(1.29, pc, MU0_EXACT)
+    got = ref.recoil_reverse_field_kA_m(h_rigid, 1.29, MU0_EXACT, mu_rec)
+    expect = ref.load_line_reverse_field_kA_m(1.29, pc, MU0_EXACT, mu_rec)
+    assert rel_err(got, expect) < TOL_ALGEBRA, mismatch(f"recoil field at Pc = {pc}, mu_rec = {mu_rec}", "reference",
+                                                        got, expect, TOL_ALGEBRA)
+
+
+@pytest.mark.family("temperature")
+def test_sanity_recoil_correction_edge_cases():
+    """Sanity: zero field stays zero, mu_rec = 1 is the identity for any field, and there is no operating point for a
+    non-positive Br or a non-positive 1 + (mu_rec - 1) mu0 h / Br."""
+    got = ref.recoil_reverse_field_kA_m(0.0, 1.29, MU0_EXACT, 1.056)
+    assert got == 0.0, mismatch("zero field", "reference", got, 0.0, 0.0)
+    got = ref.recoil_reverse_field_kA_m(863.0, 1.29, MU0_EXACT, 1.0)
+    assert got == 863.0, mismatch("mu_rec = 1 identity", "reference", got, 863.0, 0.0)
+    with pytest.raises(ValueError):
+        ref.recoil_reverse_field_kA_m(863.0, 0.0, MU0_EXACT, 1.056)
+    with pytest.raises(ValueError):
+        ref.recoil_reverse_field_kA_m(863.0, 1.29, MU0_EXACT, -1.0)   # 1 - 2 * 0.84 < 0
+
+
+#: Knee-model and magnet inputs for the calibration sanity cases (workbook defaults: Hcj20, beta, knee, alpha, Br, mu0).
+_KNEE_MODEL = dict(hcj20_kA_m=1592.0, beta_hcj_per_C=-0.005, knee_fraction=0.9, alpha_br_per_C=-0.0012)
+_BR20, _MU0_WORKBOOK, _RATING = 1.29, 1.256637e-6, 150.0
+
+
+@pytest.mark.family("temperature")
+@pytest.mark.parametrize("mu_rec", [1.0, 1.056, 1.2])
+@pytest.mark.parametrize("form", ref.ALTERNATIVE_CALIBRATIONS)
+def test_sanity_alternative_calibration_puts_the_reference_magnet_at_its_rating(form, mu_rec):
+    """Sanity: under every alternative calibration, a reverse field equal to the Pc = 1 reference magnet's own
+    rigid-magnet field Br/(2 mu0) reaches its knee exactly at the rating, whatever the recoil permeability.
+
+    That field is the reference magnet, so one magnet model must place both at the same operating point. Fails when the
+    recoil permeability moves the reference magnet's operating point but not the field under test.
+    """
+    h_rigid = ref.load_line_reverse_field_kA_m(_BR20, 1.0, _MU0_WORKBOOK)
+    got = ref.alternative_calibrated_onset_C(form, h_rigid, _BR20, _MU0_WORKBOOK, _RATING, recoil_permeability=mu_rec,
+                                             **_KNEE_MODEL)
+    assert rel_err(got, _RATING) < TOL_ALGEBRA, mismatch(f"reference-magnet onset, {form} calibration, mu_rec = {mu_rec}",
+                                                         "reference", got, _RATING, TOL_ALGEBRA)
+
+
+@pytest.mark.family("temperature")
+def test_sanity_recoil_calibrations_reduce_to_rigid_forms_at_mu_rec_one():
+    """Sanity: at mu_rec = 1 the knee_fraction+recoil_permeability form is the knee_fraction form, and the
+    recoil_permeability form is the engine's constant offset (knee crossing minus the Pc = 1 magnet's offset)."""
+    h = 863.0
+    common = dict(h_rev20_kA_m=h, br20_T=_BR20, mu0=_MU0_WORKBOOK, rating_C=_RATING, recoil_permeability=1.0, **_KNEE_MODEL)
+    k = _KNEE_MODEL
+    knee_args = (k["hcj20_kA_m"], k["beta_hcj_per_C"], k["knee_fraction"], k["alpha_br_per_C"])
+    h_ref = ref.load_line_reverse_field_kA_m(_BR20, 1.0, _MU0_WORKBOOK)
+    offset_form = ref.knee_crossing_C(h, *knee_args) - ref.calibration_offset_C(h_ref, _RATING, *knee_args)
+    for recoil_form, rigid in (("knee_fraction+recoil_permeability", ref.alternative_calibrated_onset_C("knee_fraction", **common)),
+                               ("recoil_permeability", offset_form)):
+        got = ref.alternative_calibrated_onset_C(recoil_form, **common)
+        assert rel_err(got, rigid) < TOL_ALGEBRA, mismatch(f"{recoil_form} at mu_rec = 1", "reference", got, rigid, TOL_ALGEBRA)
+
+
+@pytest.mark.family("temperature")
+def test_sanity_alternative_calibration_rejects_unknown_form_and_missing_rating():
+    """Sanity: an unknown form or a blank part (no rating to calibrate to) raises instead of silently falling back."""
+    common = dict(h_rev20_kA_m=863.0, br20_T=_BR20, mu0=_MU0_WORKBOOK, recoil_permeability=1.056, **_KNEE_MODEL)
+    with pytest.raises(ValueError):
+        ref.alternative_calibrated_onset_C("beta_hcj+recoil_permeability", rating_C=_RATING, **common)
+    with pytest.raises(ValueError):
+        ref.alternative_calibrated_onset_C("knee_fraction", rating_C=None, **common)
+
+
+@pytest.mark.family("temperature")
 def test_sanity_grade_rating_table():
     """Sanity: grade parsing gives the K&J ratings quoted on its pages (N42 and N52 80 C, N42SH 150 C, N35AH 220 C)."""
     for grade, rating in (("N42", 80.0), ("N52", 80.0), ("N42SH", 150.0), ("N50M", 100.0), ("N35AH", 220.0)):

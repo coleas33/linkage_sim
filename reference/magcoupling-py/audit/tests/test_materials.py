@@ -10,8 +10,8 @@ from decimal import ROUND_CEILING, Decimal
 import pytest
 
 from audit.common import TOL_ALGEBRA, TOL_MODEL, defaults, mismatch, rel_err, run, vary
-from audit.references.backiron_flux import (backiron_flux_per_depth, coupling_slab, flat_circuit_flux_density,
-                                            sinusoidal_backiron_thickness)
+from audit.references.backiron_flux import (backiron_flux_per_depth, flat_circuit_flux_density,
+                                            sinusoidal_backiron_thickness, unrolled_coupling_slab)
 from audit.references.block_geometry import geometry_for_design, rotating_parts_for_design
 from audit.references.metal_stack import preplate_size
 from audit.references.remanence import br_at
@@ -38,14 +38,17 @@ def _required_thickness_sinusoidal(inp, res) -> float:
 
 
 def _required_thickness_2d(inp, res, surface: str) -> float:
-    """Back-iron thickness from the exact 2D slab field. Fills: the arc-length fills of the reference geometry
-    (block width over the pole arc at mid-thickness, the planar unrolling of the rings), the definition the
-    geometry checks confirm for C66/C67. The reference and C104 then share the geometry and differ only in the
-    flux model."""
+    """Back-iron thickness from the exact 2D field of the steel-backed slab, both rings unrolled at the gap-radius
+    pole pitch with each flat block at its real width (unrolled_coupling_slab: fill = w / pitch, 0.7209 on both
+    rings at defaults). Not the arc-length fills C66/C67, which at that pitch make the inner blocks 19.5 % too wide
+    and the outer ones 14 % too narrow. C104 has no fill in it, so the block width enters only through this
+    reference. Flat blocks only: an arc magnet has no single width to unroll."""
+    if inp.coupling.faceted != 1:
+        raise ValueError("the unrolled slab reference is defined for flat blocks (coupling.faceted = 1) only")
     br_i, br_o = _br_op(inp, res)
-    g = geometry_for_design(inp, res)
-    layers, h = coupling_slab(br_i, br_o, g.fill_inner, g.fill_outer, res.model.inner_thickness_mm,
-                              res.model.outer_thickness_mm, g.face_gap)
+    g, m = geometry_for_design(inp, res), res.model
+    layers, h = unrolled_coupling_slab(g, br_i, br_o, m.inner_width_mm, m.outer_width_mm, m.inner_thickness_mm,
+                                       m.outer_thickness_mm)
     return backiron_flux_per_depth(surface, layers, h, g.pole_pitch) / inp.materials.steel.bsat_T
 
 
@@ -88,8 +91,8 @@ def test_cup_backiron_requirement_vs_2d_slab():
     """Calculator!C104 (compared with the cup corner wall) against the flux entering the cup steel between a
     pole centre and the inter-pole line in the exact 2D field of the steel-backed slab (ideal iron, square-wave
     magnetization, 4001 harmonics, aligned rings = maximum flux), divided by B_design. The inter-pole line is
-    at the pocket corners, where the wall is thinnest. Fills as in _required_thickness_2d (arc-length, the
-    engine's own definition), so only the flux model differs. Tolerance TOL_MODEL."""
+    at the pocket corners, where the wall is thinnest. Blocks at their real width, as in _required_thickness_2d.
+    Tolerance TOL_MODEL."""
     inp = defaults()
     res = run(inp)
     ref = _required_thickness_2d(inp, res, "outer")
@@ -101,8 +104,9 @@ def test_cup_backiron_requirement_vs_2d_slab():
 @pytest.mark.family("materials")
 def test_hub_backiron_requirement_vs_2d_slab():
     """The hub check (Calculator!C106) reuses the single requirement C104. Reference: the flux entering the hub
-    steel in the same 2D slab solution (same fills). The inner ring's larger fill (C66) puts more flux,
-    including the inner magnets' own inter-pole leakage, into the hub than into the cup. Tolerance TOL_MODEL."""
+    steel in the same 2D slab solution (blocks at their real width, as in _required_thickness_2d). At defaults
+    both rings are the same magnet (width, thickness and Br), so the slab carries the same flux into the hub as
+    into the cup and this check shares the cup check's residual. Tolerance TOL_MODEL."""
     inp = defaults()
     res = run(inp)
     ref = _required_thickness_2d(inp, res, "inner")
