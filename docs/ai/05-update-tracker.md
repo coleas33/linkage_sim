@@ -10,7 +10,7 @@ Reverse chronological (newest at top).
   (`reference/magcoupling-py/`, the workbook port) against re-derivations, a
   2D field model, magpylib 3D, limit and scaling laws and literature data.
   787 checks: 741 pass, 46 fail. Each failing root-cause group was judged by
-  three skeptic lenses; two check bugs were fixed test-first (`89e38ae`).
+  three skeptic lenses; two check bugs were fixed test-first (`0b7c162`).
 - Findings: 14 engine errors (14 checks), 15 model approximations
   (29 checks), 3 placeholder inputs (3 checks); 573 engine checks confirmed
   correct (164 reference self-tests, 2 harness and 2 consistency-only
@@ -30,6 +30,15 @@ Reverse chronological (newest at top).
 - Tools added: `audit/tools/group_candidates.py`,
   `audit/tools/coverage_table.py` (run it with `PYTHONIOENCODING=utf-8` on
   Windows; the cp1252 console cannot print the docstrings).
+- Final-review fixes: `audit/tests/conftest.py` now applies the family-marker
+  rule only to items under `audit/`, so `pytest tests audit/tests` runs both
+  trees in one session (3 conftest-rule cases added to
+  `test_harness_smoke.py`: 790 checks, same 46 failures, engine coverage
+  still 573). `docs/ai/03-structure.yaml` has a `reference:` block (layout,
+  read-only engine, how to run the parity suite and the audit with the
+  `.venv`). The report header records the library versions; E14 is tagged
+  documentation-only. The check-fix commit is `0b7c162` (a message-only
+  rewrite of the earlier `89e38ae`; tree unchanged).
 
 ## 2026-09-29 — BL-027: inverse and forward dynamics add the velocity-quadratic force Q_v
 - Root cause: `M(q)` depends on `theta` when a CG is offset from the body

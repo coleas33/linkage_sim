@@ -12,7 +12,12 @@ from pathlib import Path
 import pytest
 
 FAMILIES = ("torque", "geometry", "metal", "materials", "temperature", "thermal", "clamps", "sweeps", "constants")
+AUDIT_ROOT = Path(__file__).resolve().parents[1]
 _RESULTS: list[dict] = []
+
+
+def _in_audit_tree(item) -> bool:
+    return AUDIT_ROOT in Path(str(item.path)).resolve().parents
 
 
 def pytest_configure(config):
@@ -20,7 +25,11 @@ def pytest_configure(config):
 
 
 def pytest_collection_modifyitems(items):
+    # This hook sees every collected item, including the vendored tests/ when both trees run in one session.
+    # The family rule is for audit checks only; per-item hooks below already reach only items under audit/tests.
     for item in items:
+        if not _in_audit_tree(item):
+            continue
         m = item.get_closest_marker("family")
         if m is None or not m.args or m.args[0] not in FAMILIES:
             raise pytest.UsageError(f"{item.nodeid}: every audit check needs @pytest.mark.family(<one of {FAMILIES}>)")
