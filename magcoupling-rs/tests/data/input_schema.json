@@ -1,0 +1,281 @@
+{
+  "about": "Rust input metadata of magcoupling-rs: types, workbook defaults, choices and slider ranges. Written by `MAGCOUPLING_BLESS=1 cargo test --test schema`; read by reference/magcoupling-py/tools/gen_differential.py. Do not edit by hand.",
+  "inputs": [
+    {
+      "assumption": false,
+      "cell": "Calibration!C5",
+      "choices": [],
+      "default": 1.8,
+      "help": "User bench result. Method, repeatability and temperature not supplied.",
+      "label": "Measured pull-out torque",
+      "path": "calibration.measured_torque_Nm",
+      "range": {
+        "log": false,
+        "max": 10.0,
+        "min": 0.1,
+        "step": 0.01
+      },
+      "type": "f64",
+      "unit": "N·m"
+    },
+    {
+      "assumption": false,
+      "cell": "Calibration!C12",
+      "choices": [],
+      "default": 20,
+      "help": "Two equal rings, alternating polarity.",
+      "label": "Total installed magnets",
+      "path": "calibration.total_magnets",
+      "range": {
+        "log": false,
+        "max": 40.0,
+        "min": 4.0,
+        "step": 2.0
+      },
+      "type": "i64",
+      "unit": "count"
+    },
+    {
+      "assumption": false,
+      "cell": "Calibration!C14",
+      "choices": [],
+      "default": 1.4,
+      "help": "Between the opposing flat faces.",
+      "label": "Reported spacing",
+      "path": "calibration.spacing_mm",
+      "range": {
+        "log": false,
+        "max": 5.0,
+        "min": 0.2,
+        "step": 0.01
+      },
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": "Calibration!C15",
+      "choices": [
+        [
+          0,
+          "corner"
+        ],
+        [
+          1,
+          "flat centre"
+        ]
+      ],
+      "default": 1,
+      "help": "0 = corner, 1 = flat centre.",
+      "label": "Gap definition",
+      "path": "calibration.gap_definition",
+      "range": null,
+      "type": "i64",
+      "unit": "selector"
+    },
+    {
+      "assumption": false,
+      "cell": "Calibration!C16",
+      "choices": [],
+      "default": 20.0,
+      "help": "ASSUMED; replace with the recorded value.",
+      "label": "Assumed test magnet temperature",
+      "path": "calibration.test_temp_C",
+      "range": {
+        "log": false,
+        "max": 150.0,
+        "min": -40.0,
+        "step": 0.5
+      },
+      "type": "f64",
+      "unit": "°C"
+    },
+    {
+      "assumption": false,
+      "cell": "Calibration!C17",
+      "choices": [],
+      "default": 9.85,
+      "help": "",
+      "label": "Prototype inner hub apothem",
+      "path": "calibration.apothem_mm",
+      "range": {
+        "log": false,
+        "max": 30.0,
+        "min": 4.0,
+        "step": 0.01
+      },
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": "Calibration!C18",
+      "choices": [],
+      "default": 12.7,
+      "help": "",
+      "label": "Prototype magnet axial length",
+      "path": "calibration.magnet_length_mm",
+      "range": {
+        "log": false,
+        "max": 50.8,
+        "min": 2.0,
+        "step": 0.01
+      },
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": "Calibration!C19",
+      "choices": [],
+      "default": 6.35,
+      "help": "",
+      "label": "Prototype magnet tangential width",
+      "path": "calibration.magnet_width_mm",
+      "range": {
+        "log": false,
+        "max": 25.4,
+        "min": 1.0,
+        "step": 0.01
+      },
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": "Calibration!C20",
+      "choices": [],
+      "default": 3.17,
+      "help": "",
+      "label": "Prototype magnet radial thickness",
+      "path": "calibration.magnet_thickness_mm",
+      "range": {
+        "log": false,
+        "max": 10.0,
+        "min": 0.5,
+        "step": 0.01
+      },
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": "Calibration!C21",
+      "choices": [],
+      "default": 1.29,
+      "help": "",
+      "label": "Prototype remanence at 20 °C",
+      "path": "calibration.br_T",
+      "range": {
+        "log": false,
+        "max": 1.5,
+        "min": 0.2,
+        "step": 0.001
+      },
+      "type": "f64",
+      "unit": "T"
+    },
+    {
+      "assumption": true,
+      "cell": "Calibration!C22",
+      "choices": [],
+      "default": -0.0012,
+      "help": "Used by every sheet. Torque scales with the square of the Br ratio.",
+      "label": "Reversible Br temperature coefficient",
+      "path": "calibration.alpha_br_per_C",
+      "range": {
+        "log": false,
+        "max": 0.0,
+        "min": -0.0025,
+        "step": 0.00001
+      },
+      "type": "f64",
+      "unit": "1/°C"
+    },
+    {
+      "assumption": true,
+      "cell": "Calibration!C23",
+      "choices": [],
+      "default": 0.15,
+      "help": "",
+      "label": "Original end-effect coefficient",
+      "path": "calibration.c_end",
+      "range": {
+        "log": false,
+        "max": 0.5,
+        "min": 0.0,
+        "step": 0.005
+      },
+      "type": "f64",
+      "unit": "-"
+    },
+    {
+      "assumption": true,
+      "cell": "Calibration!C24",
+      "choices": [],
+      "default": 0.95,
+      "help": "Kept separate from the measured correction.",
+      "label": "Original calibration coefficient",
+      "path": "calibration.f_cal_original",
+      "range": {
+        "log": false,
+        "max": 1.5,
+        "min": 0.5,
+        "step": 0.005
+      },
+      "type": "f64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": "Calibration!C25",
+      "choices": [],
+      "default": 1.256637e-6,
+      "help": "",
+      "label": "Vacuum permeability",
+      "path": "calibration.mu0",
+      "range": {
+        "log": false,
+        "max": 1.2567e-6,
+        "min": 1.2566e-6,
+        "step": 1e-11
+      },
+      "type": "f64",
+      "unit": "H/m"
+    },
+    {
+      "assumption": false,
+      "cell": "Calibration!C47",
+      "choices": [],
+      "default": 2.06,
+      "help": "Supplied context, not rerun.",
+      "label": "3D result at 1.0 mm corner gap",
+      "path": "calibration.fea_torque1_Nm",
+      "range": {
+        "log": false,
+        "max": 5.0,
+        "min": 0.0,
+        "step": 0.01
+      },
+      "type": "f64",
+      "unit": "N·m"
+    },
+    {
+      "assumption": false,
+      "cell": "Calibration!C48",
+      "choices": [],
+      "default": 1.7,
+      "help": "",
+      "label": "3D result at 1.5 mm corner gap",
+      "path": "calibration.fea_torque2_Nm",
+      "range": {
+        "log": false,
+        "max": 5.0,
+        "min": 0.0,
+        "step": 0.01
+      },
+      "type": "f64",
+      "unit": "N·m"
+    }
+  ]
+}
