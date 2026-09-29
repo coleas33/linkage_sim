@@ -5,6 +5,34 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-29 — Magcoupling M2: engine port tracer bullet (calibration)
+- New crate `magcoupling-rs/` beside `linkage-sim-rs/` (not a workspace):
+  library `magcoupling`, pure std engine, wasm32-clean; features `gui`/`app`
+  declared empty for M4, `workbook-parity` test-only via a self
+  dev-dependency. Branch `magcoupling/m2` (from `magcoupling/m1`).
+- Metadata model (`src/engine/meta.rs`): `inputs!`/`results!` declare each
+  field once with its default and a const builder in Python's `param()`/
+  `out()` argument order, plus slider range and the Addendum A3
+  `assumption` flag; field names keep the Python spelling so dotted paths
+  equal the Python `input_schema()` paths.
+- `compat.rs`: Python/Excel semantics (py_min/py_max, CEILING/FLOOR with the
+  1e-12 guard and no -0.0, TEXT(x,"0"), float repr with half-even ties,
+  _fmt_num, f-string rounding, parity rule).
+- Deviation registry: E1-E14 from the approved M1 report, all `Planned`;
+  `Deviations::ALL` for users, `NONE`/`only(id)` for tests.
+- Calibration sheet ported; parity (23 result cells, 16 default inputs),
+  differential vs Python (300 seeded cases, every range end, both selector
+  choices, inclusive span ends), helpers corpus (~1,250 values), metadata
+  parity with the Python schema, schema and registry checks.
+- Generator `reference/magcoupling-py/tools/gen_differential.py` reads the
+  Rust slider ranges from `tests/data/input_schema.json`; `--check` guards
+  staleness. The corpus found two real Python/Rust differences (repr ties,
+  ceil of (-1, 0]).
+- `linkage-sim-rs/scripts/gate.sh` now has 7 gates: + magcoupling-rs test,
+  clippy -D warnings, wasm32 check, and the vendored Python parity suite +
+  data freshness (SKIP line when no oracle venv is found).
+- Guide: `magcoupling-rs/README.md` (porting pattern, translation rules).
+
 ## 2026-09-29 — Magcoupling M1: math audit
 - Independent audit of the vendored magcoupling 1.0.0 engine
   (`reference/magcoupling-py/`, the workbook port) against re-derivations, a

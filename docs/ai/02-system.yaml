@@ -56,6 +56,14 @@ major_subsystems:
     responsibility: all user-facing interaction. Split into multiple
       sub-modules (see 03-structure.yaml)
 
+  magcoupling:
+    path: magcoupling-rs/
+    responsibility: magnetic slip coupling calculator, Rust port of the
+      vendored Python oracle reference/magcoupling-py (workbook port).
+      Workbook-exact except registered, approved corrections (deviation
+      registry, M1 audit E1-E14). Engine only so far (M2): calibration ported.
+    key_files: [src/engine/meta.rs, src/engine/compat.rs, src/engine/deviations.rs, src/engine/api.rs]
+
 dataflow_on_user_change: |
   user edit -> state.blueprint mutation -> state.push_undo() -> state.rebuild()
     -> Mechanism::build() -> solve_position() -> state.q updated
@@ -186,6 +194,16 @@ lessons_learned:
     "value differs from before the widget" — gate on dragged()/drag_stopped()
     or typed edits, or bind a non-stepped slider (BL-020, BL-021).
 
+  - Rust's shortest float formatting ({:e}, Display) rounds an exact decimal
+    tie half up; Python repr rounds it half to even (1662665358865589.25
+    prints ...589.2 in Python). magcoupling-rs uses compat::py_repr; found by
+    the generated helpers corpus, not by review.
+  - Python math.ceil/floor return ints, so they never yield -0.0; Rust
+    .ceil()/.floor() do for inputs in (-1, 0]. Mirror with compat::ceiling/floor_.
+  - A package can dev-depend on itself to switch on a feature for its own
+    tests only (magcoupling-rs workbook-parity); plain cargo test gets it,
+    shipped builds and the wasm check do not.
+
 current_statuses:
   solver: Rust port complete; 716 lib tests pass; trajectory-mode IK Stage 1
     (solver layer) shipped — see solver/inverse_kinematics/
@@ -193,3 +211,4 @@ current_statuses:
   dxf_import: works native + WASM via drag-drop; selection-based conversions
   actuator_workflow: two-pass solve gives correct reactions with actuator loads
   non_grashof_sweep: NaN-padded across unreachable angles; playback ping-pongs
+  magcoupling: M1 audit approved (E1-E14); M2 engine port started - metadata model, compat helpers, deviation registry (all Planned), calibration ported with parity (23 cells), differential (300 cases) and metadata-parity tests

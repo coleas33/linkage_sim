@@ -21,3 +21,12 @@ open_questions:
     `FirmwareAdapter` trait — implement on demand once a target controller
     is selected.
   - "RESOLVED 2026-09-29: the user approved all M1 corrections E1-E14 (E14 documentation-only); they enter the M2 deviation registry."
+  - |
+    Magcoupling M2 decisions needed before the matching deviation is applied
+    (all E1-E14 are registered as Planned in magcoupling-rs; none applied):
+    E3 library Br value (1.30 T grade minimum, as the other K&J rows, or
+    about 1.315 T nominal; the report offers both); E1 form (constant
+    C96 = 0.107 GPa, or a per-adhesive shear modulus, which needs TDS values
+    for 2214 and DP460). Also open: engine semantics for an out-of-choices
+    selector code set directly on a struct (proposed: never panic; NaN or an
+    Excel-style error text, plus a validate() at input boundaries).
