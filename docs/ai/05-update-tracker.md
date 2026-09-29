@@ -394,6 +394,41 @@ Reverse chronological (newest at top).
   every weight in `sync_live_mass_props` turns it red); BL-023 round-trip
   helper now compares ids and labels too.
 
+## 2026-09-29 — Magcoupling M1: math audit
+- Independent audit of the vendored magcoupling 1.0.0 engine
+  (`reference/magcoupling-py/`, the workbook port) against re-derivations, a
+  2D field model, magpylib 3D, limit and scaling laws and literature data.
+  787 checks: 741 pass, 46 fail. Each failing root-cause group was judged by
+  three skeptic lenses; two check bugs were fixed test-first (`0b7c162`).
+- Findings: 14 engine errors (14 checks), 15 model approximations
+  (29 checks), 3 placeholder inputs (3 checks); 573 engine checks confirmed
+  correct (164 reference self-tests, 2 harness and 2 consistency-only
+  checks excluded).
+- Engine errors that change a default output: adhesive shear modulus
+  (C96 is EA 9514's, not AA 326's; C106 and C202 flip to "Below"),
+  clamp screw length omits the slit (M4 x 12 becomes M4 x 14, which
+  protrudes from the 25 mm boss), N42SH library Br 1.29 T is below K&J's
+  1.30 T minimum (clamp recommendation fails from 1.3025 T), pole-sweep hub
+  wall counts the bondline, rear-web eddy loss 4x low (high-case steady
+  temperature 0.04 degC under the limit), cup wall at flats counts the
+  bondline. The hot-torque verdicts do not change.
+- Report: `docs/analyses/2026-09-29-magcoupling-math-audit.md`; merged
+  results and every skeptic verdict:
+  `docs/analyses/2026-09-29-magcoupling-audit-results.json`. The Decision
+  column (E1..E14) awaits the user's review before M2 planning.
+- Tools added: `audit/tools/group_candidates.py`,
+  `audit/tools/coverage_table.py` (run it with `PYTHONIOENCODING=utf-8` on
+  Windows; the cp1252 console cannot print the docstrings).
+- Final-review fixes: `audit/tests/conftest.py` now applies the family-marker
+  rule only to items under `audit/`, so `pytest tests audit/tests` runs both
+  trees in one session (3 conftest-rule cases added to
+  `test_harness_smoke.py`: 790 checks, same 46 failures, engine coverage
+  still 573). `docs/ai/03-structure.yaml` has a `reference:` block (layout,
+  read-only engine, how to run the parity suite and the audit with the
+  `.venv`). The report header records the library versions; E14 is tagged
+  documentation-only. The check-fix commit is `0b7c162` (a message-only
+  rewrite of the earlier `89e38ae`; tree unchanged).
+
 ## 2026-09-29 — BL-027: inverse and forward dynamics add the velocity-quadratic force Q_v
 - Root cause: `M(q)` depends on `theta` when a CG is offset from the body
   origin, but neither dynamics solver had the Lagrange term that goes with it,

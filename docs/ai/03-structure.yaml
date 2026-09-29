@@ -5,6 +5,31 @@ layout:
   data: data/ (golden fixtures)
   docs: ../docs/
 
+reference:
+  path: reference/ (repo root, outside linkage-sim-rs/; upstream code kept verbatim as test oracles, see reference/README.md)
+  magcoupling_py:
+    path: reference/magcoupling-py/
+    role: vendored magcoupling 1.0.0 (Python port of magnetic_coupling_torque_calculator.xlsx); read-only oracle for the magcoupling M1 audit and the planned Rust port (M2)
+    engine: magcoupling/ (READ-ONLY, never edit; parity and differential tests compare against it unchanged)
+    parity_suite: tests/ (test_parity.py checks every workbook formula cell against reference_values.json; test_api.py; test_optional.py needs the magpylib and matplotlib extras)
+    tools: tools/extract_reference.py (regenerates tests/reference_values.json from the workbook)
+    venv: .venv/ (gitignored; created from requirements-audit.txt, see running below)
+  audit:
+    path: reference/magcoupling-py/audit/
+    references: audit/references/ (independent reference models per formula family - 2D field, slab field, block geometry, metal stack, remanence, slip and thermal, sweeps, clamps, units)
+    tests: audit/tests/ (every check carries @pytest.mark.family; conftest.py enforces the marker on audit items only, so it can share a session with tests/; *_reference_sanity.py files self-test the references; test_harness_smoke.py covers the harness and the conftest rule)
+    tools: audit/tools/ (group_candidates.py groups failures by root cause, coverage_table.py prints the confirmed-correct table, placeholder_sensitivity.py prints placeholder sensitivities)
+    out: audit/out/ (generated results.json, candidate_groups.json, coverage.md and more; gitignored, regenerate by running the suite)
+    report: docs/analyses/2026-09-29-magcoupling-math-audit.md (findings E1..E14, M1..M15, P1..P3) and docs/analyses/2026-09-29-magcoupling-audit-results.json (raw results with skeptic verdicts)
+    plan: docs/superpowers/plans/2026-09-29-magcoupling-m1-math-verification.md
+    expected_result: 46 failing checks (32 root-cause groups, all classified in the report) among 790 checks; the failures document engine or workbook errors, they are not regressions
+  running:
+    setup: "cd reference/magcoupling-py; python -m venv .venv; ./.venv/Scripts/python -m pip install -e . -r requirements-audit.txt (Windows layout; use .venv/bin/python on POSIX)"
+    parity_suite: "cd reference/magcoupling-py; ./.venv/Scripts/python -m pytest -q tests"
+    audit_suite: "cd reference/magcoupling-py; ./.venv/Scripts/python -m pytest -q audit/tests -p no:cacheprovider (writes audit/out/results.json)"
+    both_in_one_session: "cd reference/magcoupling-py; ./.venv/Scripts/python -m pytest -q tests audit/tests -p no:cacheprovider"
+    audit_tools: "cd reference/magcoupling-py; ./.venv/Scripts/python -m audit.tools.group_candidates | coverage_table | placeholder_sensitivity (run after the audit suite; set PYTHONIOENCODING=utf-8 on Windows for coverage_table)"
+
 modules:
   core:
     bodies: src/core/body.rs
