@@ -42,6 +42,10 @@ pub const PORTED_INPUTS: &[PortedInputs] = &[
         group: "materials",
         cells: 11,
     },
+    PortedInputs {
+        group: "temperature",
+        cells: 37,
+    },
 ];
 
 /// Ported result groups, in Python `DesignResults` order.
@@ -69,6 +73,10 @@ pub const PORTED_RESULTS: &[PortedResults] = &[
     PortedResults {
         group: "materials",
         cells: 7,
+    },
+    PortedResults {
+        group: "temperature",
+        cells: 130, // temperature.adhesive.selected_name has no cell: differential only
     },
 ];
 

@@ -16,7 +16,9 @@ retainers** (`metal_design::retainers`), the **mass estimate**
 (`model::mass_estimate`) and the **Metal design** sheet (`metal_design::compute`,
 with the validation checklist `VALIDATION_ITEMS`) and the **Materials** sheet
 (`materials::compute`, the aluminium alloys `AL7075` and `AL6061`, and
-`ScrewClasses::proof`).
+`ScrewClasses::proof`) and the **Temperature design** sheet
+(`temperature::compute`, the adhesive table `ADHESIVES`, and
+`selected_adhesive`, which selects no adhesive for a code outside 1 to 4).
 Deviations E1 to E14 are all registered as `Planned`; none is applied yet.
 
 ```rust
@@ -33,7 +35,7 @@ println!("{}", res.calibration.f_cal_updated); // 1.0658
 | `src/engine/compat.rs` | Python and Excel semantics the port reproduces (see the translation rules below) |
 | `src/engine/deviations.rs` | Registry of approved workbook corrections, and the `Deviations` switch |
 | `src/engine/api.rs` | `DesignInputs`, `DesignResults`, `compute_all` |
-| `src/engine/<module>.rs` | One module per Python module: `constants`, `calibration`, `library`, `model` (with the mass estimate), `metal_design`, `materials` so far |
+| `src/engine/<module>.rs` | One module per Python module: `constants`, `calibration`, `library`, `model` (with the mass estimate), `metal_design`, `materials`, `temperature` so far |
 | `tests/` | Parity, differential, metadata and registry tests (below) |
 | `tests/data/` | Workbook snapshot copy, exported schemas, differential data |
 
@@ -55,6 +57,7 @@ bash linkage-sim-rs/scripts/gate.sh   # everything, both crates and the Python o
 | `tests/differential.rs` | Every result of every seeded case equals the Python engine (`tests/data/differential/<group>.json`), deviations off. `every_branch_is_reached` checks the `BRANCHES` table (every branch of every text result is hit) and `every_varied_input_takes_two_values` checks that each varied input changes; the helpers corpus checks `compat` against Python exactly. |
 | `tests/python_schema.rs` | Every ported field carries the Python label, unit, help, cell, choices and default; no Python field of a ported group is missing. |
 | `tests/static_data.rs` | Static tables equal the Python engine's, value for value (`tests/data/static_data.json`). |
+| `tests/robustness.rs` | Inputs no parity or differential case holds (the plan's Review Focus): a selector code outside its choices set directly on the struct, a measured drag of exactly zero. The engine must never panic. |
 | `tests/schema.rs` | Slider ranges, selectors, labels, unique well-formed paths and cells; exports `tests/data/input_schema.json`. |
 | `tests/deviations.rs` | Registry cells exist in the snapshot, entries are approved rows of the audit report, and one correction switched on changes exactly its registered cells. |
 

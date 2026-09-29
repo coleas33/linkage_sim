@@ -24,7 +24,7 @@ Writes:
     magcoupling-rs/tests/data/differential/helpers.json
         a corpus for the rounding and formatting helpers.
     magcoupling-rs/tests/data/static_data.json
-        the static engine tables (magnet library, the harmonic set, the validation checklist and the aluminium alloys so far), for tests/static_data.rs.
+        the static engine tables (magnet library, the harmonic set, the validation checklist, the aluminium alloys and the adhesive candidates so far), for tests/static_data.rs.
 
 Cases per module, all inside the slider ranges: the workbook defaults; each
 input at each end of its range, each selector at each choice and each text
@@ -60,6 +60,7 @@ from magcoupling import metal_design as py_metal_design  # noqa: E402
 from magcoupling import model as py_model  # noqa: E402
 from magcoupling.library import _ROWS, MAGNET_LIBRARY  # noqa: E402
 from magcoupling.materials import Aluminium  # noqa: E402
+from magcoupling import temperature as py_temperature  # noqa: E402
 from magcoupling.temperature import _text0  # noqa: E402
 
 if Path(magcoupling.__file__).resolve().parent != ORACLE / "magcoupling":
@@ -79,6 +80,7 @@ MODULES = {
     "mass": ["coupling", "metal"],
     "metal": ["coupling", "metal", "calibration"],
     "materials": ["coupling", "metal", "materials", "calibration"],
+    "temperature": ["coupling", "metal", "calibration", "materials", "temperature"],
 }
 # every library part, blank (manual magnet) and a near miss of the default part
 PART_CHOICES = list(MAGNET_LIBRARY) + ["", "b842sh"]
@@ -118,6 +120,16 @@ PROBES = {
     "metal": [
         ("measured drag at the slider minimum", {"metal.measured_drag_Nm": 0.001}),
         ("measured drag 0.05 N m", {"metal.measured_drag_Nm": 0.05}),
+    ],
+    # The Temperature design branches random sampling reaches only by chance: a hot-day start above
+    # the limit, the bench drag at and above its slider minimum, a manual inner magnet (the onset stays
+    # uncalibrated) and a low conductance (the steady state rises above the limit).
+    "temperature": [
+        ("hot-day start above the limit", {"temperature.duty.driving_rise_C": 40.0}),
+        ("bench drag entered", {"metal.measured_drag_Nm": 0.05}),
+        ("bench drag at the slider minimum", {"metal.measured_drag_Nm": 0.001}),
+        ("manual inner magnet: uncalibrated onset", {"coupling.magnets.part_inner": ""}),
+        ("low conductance: steady state above the limit", {"temperature.thermal.conductance_W_K": 0.02}),
     ],
 }
 
@@ -299,6 +311,7 @@ def static_data() -> str:
         "validation_items": [[label, status, action]
                              for label, (status, action) in py_metal_design.VALIDATION_ITEMS.items()],
         "aluminium": [dataclasses.asdict(a) for a in (Aluminium().al7075, Aluminium().al6061)],
+        "adhesives": [dataclasses.asdict(a) for a in py_temperature.default_adhesives()],
     }
     return dumps(doc) + "\n"
 

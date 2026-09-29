@@ -192,6 +192,82 @@ const BRANCHES: &[(&str, &[Reach])] = &[
             Prefix("Too thin: raise Metal design C122 to at least "),
         ],
     ),
+    (
+        "temperature.summary.governing_note",
+        &[
+            Text("Magnets govern (skipping case)."),
+            Text("Adhesive governs."),
+        ],
+    ),
+    (
+        "temperature.summary.torque_hot_day_note",
+        &[
+            Text("Meets it nominally (no variation allowance)"),
+            Text("Below it"),
+        ],
+    ),
+    (
+        "temperature.summary.time_to_limit_high",
+        &[Number, Text("never: steady state stays below the limit")],
+    ),
+    (
+        "temperature.summary.verdict",
+        &[
+            Text("OK on temperature. Confirm drag torque and thermal cycling by test."),
+            Text("CHECK: see the rows above."),
+        ],
+    ),
+    ("temperature.demag.tmax_lib_C", &[Number, Text("n/a")]),
+    (
+        "temperature.adhesive.selected_name",
+        &[
+            Text("Loctite AA 326 + SF 7649"),
+            Text("Loctite EA 9514"),
+            Text("3M Scotch-Weld 2214 Hi-Temp"),
+            Text("3M Scotch-Weld DP460"),
+        ],
+    ),
+    (
+        "temperature.adhesive.fatigue_screen",
+        &[Prefix("OK: "), Text("CHECK")],
+    ),
+    (
+        "temperature.mismatch.reading",
+        &[
+            Text("Above the lap-shear strength at the block ends"),
+            Text("Below the lap-shear strength"),
+        ],
+    ),
+    (
+        "temperature.thermal.time_to_limit_high",
+        &[Number, Text("never: steady state stays below the limit")],
+    ),
+    (
+        "temperature.thermal.rotations_to_limit_high",
+        &[Number, Text("never")],
+    ),
+    (
+        "temperature.thermal.time_to_limit_est",
+        &[Number, Text("never: steady state stays below the limit")],
+    ),
+    (
+        "temperature.magnet_life.torque_hot_day_check",
+        &[
+            Text("Meets it nominally (no variation allowance)"),
+            Text("Below it"),
+        ],
+    ),
+    (
+        "temperature.adhesive_life.hot_fatigue_screen",
+        &[Text("OK"), Text("CHECK: get hot fatigue data")],
+    ),
+    (
+        "temperature.adhesive_life.daily_screen",
+        &[
+            Text("Below the fatigue endurance"),
+            Text("Above the fatigue endurance: qualify by thermal cycling"),
+        ],
+    ),
 ];
 
 fn reached(value: &Value, reach: Reach) -> bool {
@@ -352,6 +428,11 @@ fn metal_matches_python_on_every_case() {
 #[test]
 fn materials_matches_python_on_every_case() {
     check_module("materials");
+}
+
+#[test]
+fn temperature_matches_python_on_every_case() {
+    check_module("temperature");
 }
 
 /// A corpus key and the Rust helper call it records (as the engine calls it).

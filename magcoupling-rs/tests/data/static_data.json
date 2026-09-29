@@ -1,5 +1,39 @@
 {
  "about": "Static tables of the magcoupling engine (plain data, no metadata). Written by reference/magcoupling-py/tools/gen_differential.py. Do not edit by hand.",
+ "adhesives": [
+  {
+   "cure_C": 22,
+   "design_limit_C": 120,
+   "lap_shear_MPa": 15,
+   "name": "Loctite AA 326 + SF 7649",
+   "note": "No-mix acrylic for magnet bonding; room-temperature cure; 0.10 mm bondline; service to 120 °C.",
+   "role": "Recommended"
+  },
+  {
+   "cure_C": 120,
+   "design_limit_C": 113,
+   "lap_shear_MPa": 45,
+   "name": "Loctite EA 9514",
+   "note": "One-part toughened heat-cure epoxy; Tg 133 °C; cure 60 min at 120 °C (not 150 °C).",
+   "role": "Alternative: more hot strength"
+  },
+  {
+   "cure_C": 121,
+   "design_limit_C": 177,
+   "lap_shear_MPa": 17,
+   "name": "3M Scotch-Weld 2214 Hi-Temp",
+   "note": "Rated to 177 °C but brittle (1 % elongation, 9 N/cm T-peel).",
+   "role": "Not recommended"
+  },
+  {
+   "cure_C": 23,
+   "design_limit_C": 60,
+   "lap_shear_MPa": 19,
+   "name": "3M Scotch-Weld DP460",
+   "note": "Room-temperature epoxy; T-peel collapses by 82 °C.",
+   "role": "Not recommended"
+  }
+ ],
  "aluminium": [
   {
    "conductivity_S_m": 19000000.0,

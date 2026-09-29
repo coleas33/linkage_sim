@@ -8,7 +8,7 @@
 //! → Metal design → Materials → Temperature design → Shaft clamps → sweeps.
 //!
 //! Ported so far: Calibration, Calculator (model), Metal design retainers,
-//! Calculator mass, Metal design, Materials.
+//! Calculator mass, Metal design, Materials, Temperature design.
 //!
 //! Python API mapping: `compute_all(inp)` is [`compute_all`];
 //! `input_schema(inp)` and `result_schema(res)` are
@@ -25,6 +25,7 @@ use super::materials::{self, MaterialsInputs, MaterialsResults};
 use super::meta::{inputs, results};
 use super::metal_design::{self, MetalDesignInputs, MetalDesignResults, RetainerResults};
 use super::model::{self, CouplingInputs, MassResults, ModelResults};
+use super::temperature::{self, TemperatureInputs, TemperatureResults};
 
 inputs! {
     /// Every editable input, grouped as the Python `DesignInputs` (same order).
@@ -35,6 +36,7 @@ inputs! {
             metal: MetalDesignInputs,
             calibration: CalibrationInputs,
             materials: MaterialsInputs,
+            temperature: TemperatureInputs,
         }
     }
 }
@@ -50,6 +52,7 @@ results! {
             retainers: RetainerResults,
             metal: MetalDesignResults,
             materials: MaterialsResults,
+            temperature: TemperatureResults,
         }
     }
 }
@@ -148,6 +151,56 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         dev,
     );
     let matr = materials::compute(mat_in, m.backiron_needed_mm, md.cup_wall_corner_mm, dev);
+    let links = temperature::TemperatureLinks {
+        op_temp_C: ci.op_temp_C,
+        npole: ci.npole,
+        br20_T: m.inner_br_T,
+        alpha_br: cal_in.alpha_br_per_C,
+        tmax_lib_C: m.inner_tmax_C,
+        mu0: ci.mu0,
+        pullout_op_Nm: m.pullout_Nm,
+        pullout_20C_Nm: m.pullout_20C_Nm,
+        inner_back_apothem_mm: ci.inner_back_apothem_mm,
+        inner_length_mm: m.inner_length_mm,
+        inner_width_mm: m.inner_width_mm,
+        inner_thickness_mm: m.inner_thickness_mm,
+        hub_wall_mm: m.hub_wall_mm,
+        active_length_mm: m.active_length_mm,
+        outer_back_apothem_mm: m.outer_back_apothem_mm,
+        mass_magnets_g: mass.magnets_g,
+        mass_cup_g: mass.cup_g,
+        mass_hub_g: mass.hub_g,
+        mass_boss_g: mass.boss_g,
+        slip_rpm: md.slip_rpm,
+        slip_event_s: md.slip_event_s,
+        life_events: md.life_events,
+        measured_drag_Nm: md.measured_drag_Nm,
+        cold_high_Nm: mdr.torque_cold_high_Nm,
+        required_min_Nm: md.required_min_Nm,
+        variation: md.variation,
+        min_temp_C: md.min_temp_C,
+        magnetic_cycles: mdr.magnetic_cycles,
+        bond_inner_mm: md.bond_inner_mm,
+        bond_outer_mm: md.bond_outer_mm,
+        sleeve_mm: md.sleeve_mm,
+        liner_mm: md.liner_mm,
+        sleeve_id_mm: ret.sleeve_id_mm,
+        sleeve_od_mm: ret.sleeve_od_mm,
+        liner_od_mm: ret.liner_od_mm,
+        liner_id_mm: ret.liner_id_mm,
+        cap_face_mm: md.cap_axial_mm,
+        hardware_g: md.hardware_g,
+        retainers_g: ret.retainers_g,
+        cap_g: ret.cap_g,
+        endplates_g: ret.endplates_g,
+        steel_sigma_S_m: mat_in.steel.conductivity_S_m,
+        steel_mu_r: mat_in.steel.mu_r_incremental,
+        steel_c: mat_in.steel.specific_heat_J_kgK,
+        steel_cte: mat_in.steel.cte_per_C,
+        steel_E_GPa: mat_in.steel.modulus_GPa,
+        al6061_sigma_S_m: materials::AL6061.conductivity_S_m,
+    };
+    let temp = temperature::compute(&inputs.temperature, &links, dev);
     DesignResults {
         calibration: cal,
         model: m,
@@ -155,6 +208,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         retainers: ret,
         metal: mdr,
         materials: matr,
+        temperature: temp,
     }
 }
 

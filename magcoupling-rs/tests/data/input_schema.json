@@ -1685,6 +1685,647 @@
       },
       "type": "f64",
       "unit": "MPa"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C34",
+      "choices": [],
+      "default": 2000.0,
+      "help": "Used for the centrifugal load.",
+      "label": "Wheel-side (inner) rotor maximum speed",
+      "path": "temperature.duty.wheel_rotor_rpm",
+      "range": {
+        "log": false,
+        "max": 6000.0,
+        "min": 100.0,
+        "step": 10.0
+      },
+      "type": "f64",
+      "unit": "rpm"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C35",
+      "choices": [],
+      "default": 55.0,
+      "help": "User: 55 °C day.",
+      "label": "Hot-day ambient temperature",
+      "path": "temperature.duty.hot_ambient_C",
+      "range": {
+        "log": false,
+        "max": 80.0,
+        "min": -20.0,
+        "step": 0.5
+      },
+      "type": "f64",
+      "unit": "°C"
+    },
+    {
+      "assumption": true,
+      "cell": "Temperature design!C36",
+      "choices": [],
+      "default": 10.0,
+      "help": "Placeholder: housing air, sun and gearbox heat. Measure it.",
+      "label": "Coupling rise above ambient while driving (no slip)",
+      "path": "temperature.duty.driving_rise_C",
+      "range": {
+        "log": false,
+        "max": 60.0,
+        "min": 0.0,
+        "step": 0.5
+      },
+      "type": "f64",
+      "unit": "°C"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C38",
+      "choices": [],
+      "default": 2.0,
+      "help": "",
+      "label": "Slip fault trip time (unbroken slip)",
+      "path": "temperature.duty.fault_trip_s",
+      "range": {
+        "log": true,
+        "max": 60.0,
+        "min": 0.1,
+        "step": 0.1
+      },
+      "type": "f64",
+      "unit": "s"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C39",
+      "choices": [],
+      "default": 20000.0,
+      "help": "Placeholder; used for the average slip duty.",
+      "label": "Operating hours over the system life",
+      "path": "temperature.duty.life_hours",
+      "range": {
+        "log": false,
+        "max": 100000.0,
+        "min": 1000.0,
+        "step": 100.0
+      },
+      "type": "f64",
+      "unit": "h"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C44",
+      "choices": [],
+      "default": 1592.0,
+      "help": "N42SH ≥ 20 kOe.",
+      "label": "Intrinsic coercivity Hcj at 20 °C (grade minimum)",
+      "path": "temperature.demag.hcj20_kA_m",
+      "range": {
+        "log": false,
+        "max": 3000.0,
+        "min": 800.0,
+        "step": 1.0
+      },
+      "type": "f64",
+      "unit": "kA/m"
+    },
+    {
+      "assumption": true,
+      "cell": "Temperature design!C45",
+      "choices": [],
+      "default": -0.005,
+      "help": "",
+      "label": "Hcj temperature coefficient (effective, 20–150 °C)",
+      "path": "temperature.demag.beta_hcj_per_C",
+      "range": {
+        "log": false,
+        "max": -0.001,
+        "min": -0.008,
+        "step": 0.0001
+      },
+      "type": "f64",
+      "unit": "1/°C"
+    },
+    {
+      "assumption": true,
+      "cell": "Temperature design!C46",
+      "choices": [],
+      "default": 0.9,
+      "help": "",
+      "label": "Knee field as a fraction of Hcj",
+      "path": "temperature.demag.knee_fraction",
+      "range": {
+        "log": false,
+        "max": 1.0,
+        "min": 0.5,
+        "step": 0.01
+      },
+      "type": "f64",
+      "unit": "-"
+    },
+    {
+      "assumption": true,
+      "cell": "Temperature design!C51",
+      "choices": [],
+      "default": 10.0,
+      "help": "",
+      "label": "Design margin below the onset",
+      "path": "temperature.demag.design_margin_C",
+      "range": {
+        "log": false,
+        "max": 40.0,
+        "min": 0.0,
+        "step": 0.5
+      },
+      "type": "f64",
+      "unit": "°C"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C52",
+      "choices": [],
+      "default": 354.0,
+      "help": "Outer blocks (inner 341).",
+      "label": "3D worst reverse field, rings aligned",
+      "path": "temperature.demag.h_rev_aligned_kA_m",
+      "range": {
+        "log": false,
+        "max": 1500.0,
+        "min": 0.0,
+        "step": 1.0
+      },
+      "type": "f64",
+      "unit": "kA/m"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C53",
+      "choices": [],
+      "default": 791.0,
+      "help": "Outer blocks (inner 760).",
+      "label": "3D worst reverse field at pull-out",
+      "path": "temperature.demag.h_rev_pullout_kA_m",
+      "range": {
+        "log": false,
+        "max": 1500.0,
+        "min": 0.0,
+        "step": 1.0
+      },
+      "type": "f64",
+      "unit": "kA/m"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C54",
+      "choices": [],
+      "default": 863.0,
+      "help": "Outer blocks (inner 844); once per pole pass while skipping.",
+      "label": "3D worst reverse field, like poles facing",
+      "path": "temperature.demag.h_rev_likepole_kA_m",
+      "range": {
+        "log": false,
+        "max": 1500.0,
+        "min": 0.0,
+        "step": 1.0
+      },
+      "type": "f64",
+      "unit": "kA/m"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C55",
+      "choices": [],
+      "default": 569.0,
+      "help": "Adhesive-cure case (inner ring alone: 545).",
+      "label": "3D worst reverse field, single ring on its carrier",
+      "path": "temperature.demag.h_rev_single_ring_kA_m",
+      "range": {
+        "log": false,
+        "max": 1500.0,
+        "min": 0.0,
+        "step": 1.0
+      },
+      "type": "f64",
+      "unit": "kA/m"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C75",
+      "choices": [
+        [
+          1,
+          "AA 326"
+        ],
+        [
+          2,
+          "EA 9514"
+        ],
+        [
+          3,
+          "2214 Hi-Temp"
+        ],
+        [
+          4,
+          "DP460"
+        ]
+      ],
+      "default": 1,
+      "help": "1 = AA 326, 2 = EA 9514, 3 = 2214 Hi-Temp, 4 = DP460.",
+      "label": "Selected adhesive (code)",
+      "path": "temperature.adhesive.selected",
+      "range": null,
+      "type": "i64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C95",
+      "choices": [],
+      "default": -8e-7,
+      "help": "Across the magnetization.",
+      "label": "NdFeB expansion in the bond plane",
+      "path": "temperature.mismatch.ndfeb_cte_per_C",
+      "range": {
+        "log": false,
+        "max": 6e-6,
+        "min": -3e-6,
+        "step": 1e-8
+      },
+      "type": "f64",
+      "unit": "1/°C"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C96",
+      "choices": [],
+      "default": 0.55,
+      "help": "",
+      "label": "Adhesive shear modulus",
+      "path": "temperature.mismatch.adhesive_shear_modulus_GPa",
+      "range": {
+        "log": true,
+        "max": 3.0,
+        "min": 0.01,
+        "step": 0.001
+      },
+      "type": "f64",
+      "unit": "GPa"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C97",
+      "choices": [],
+      "default": 160.0,
+      "help": "",
+      "label": "NdFeB elastic modulus",
+      "path": "temperature.mismatch.ndfeb_modulus_GPa",
+      "range": {
+        "log": false,
+        "max": 200.0,
+        "min": 100.0,
+        "step": 1.0
+      },
+      "type": "f64",
+      "unit": "GPa"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C103",
+      "choices": [],
+      "default": 0.1,
+      "help": "",
+      "label": "Recommended bondline",
+      "path": "temperature.mismatch.recommended_bondline_mm",
+      "range": {
+        "log": false,
+        "max": 0.5,
+        "min": 0.01,
+        "step": 0.005
+      },
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C111",
+      "choices": [],
+      "default": 1350000.0,
+      "help": "",
+      "label": "316L conductivity",
+      "path": "temperature.slip_loss.sigma_316_S_m",
+      "range": {
+        "log": true,
+        "max": 10000000.0,
+        "min": 100000.0,
+        "step": 1000.0
+      },
+      "type": "f64",
+      "unit": "S/m"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C113",
+      "choices": [],
+      "default": 670000.0,
+      "help": "",
+      "label": "NdFeB conductivity",
+      "path": "temperature.slip_loss.sigma_ndfeb_S_m",
+      "range": {
+        "log": true,
+        "max": 2000000.0,
+        "min": 100000.0,
+        "step": 1000.0
+      },
+      "type": "f64",
+      "unit": "S/m"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C114",
+      "choices": [],
+      "default": 0.7,
+      "help": "",
+      "label": "End factor for thin shells and the cap",
+      "path": "temperature.slip_loss.end_factor",
+      "range": {
+        "log": false,
+        "max": 1.0,
+        "min": 0.0,
+        "step": 0.01
+      },
+      "type": "f64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C116",
+      "choices": [],
+      "default": 0.207,
+      "help": "3D, doubled at the steel surface.",
+      "label": "Opposite-ring field at hub steel (fundamental)",
+      "path": "temperature.slip_loss.b_hub_T",
+      "range": {
+        "log": false,
+        "max": 1.0,
+        "min": 0.0,
+        "step": 0.001
+      },
+      "type": "f64",
+      "unit": "T"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C117",
+      "choices": [],
+      "default": 0.214,
+      "help": "3D.",
+      "label": "Opposite-ring field at cup steel (fundamental)",
+      "path": "temperature.slip_loss.b_cup_T",
+      "range": {
+        "log": false,
+        "max": 1.0,
+        "min": 0.0,
+        "step": 0.001
+      },
+      "type": "f64",
+      "unit": "T"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C118",
+      "choices": [],
+      "default": 0.416,
+      "help": "3D.",
+      "label": "Opposite-ring field at the inner sleeve (fundamental)",
+      "path": "temperature.slip_loss.b_sleeve_T",
+      "range": {
+        "log": false,
+        "max": 1.0,
+        "min": 0.0,
+        "step": 0.001
+      },
+      "type": "f64",
+      "unit": "T"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C119",
+      "choices": [],
+      "default": 0.419,
+      "help": "3D.",
+      "label": "Opposite-ring field at the outer liner (fundamental)",
+      "path": "temperature.slip_loss.b_liner_T",
+      "range": {
+        "log": false,
+        "max": 1.0,
+        "min": 0.0,
+        "step": 0.001
+      },
+      "type": "f64",
+      "unit": "T"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C120",
+      "choices": [],
+      "default": 5.27e-10,
+      "help": "3D.",
+      "label": "Cap-face end field, ∫Bz² r² dA",
+      "path": "temperature.slip_loss.cap_integral_T2m4",
+      "range": {
+        "log": true,
+        "max": 1e-8,
+        "min": 1e-12,
+        "step": 1e-13
+      },
+      "type": "f64",
+      "unit": "T²·m⁴"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C121",
+      "choices": [],
+      "default": 0.00001035,
+      "help": "3D.",
+      "label": "Rear-web end field, ∫B² dA",
+      "path": "temperature.slip_loss.web_integral_T2m2",
+      "range": {
+        "log": true,
+        "max": 0.001,
+        "min": 1e-7,
+        "step": 1e-8
+      },
+      "type": "f64",
+      "unit": "T²·m²"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C122",
+      "choices": [],
+      "default": 0.19,
+      "help": "3D.",
+      "label": "Alternating radial field inside the blocks",
+      "path": "temperature.slip_loss.b_magnet_T",
+      "range": {
+        "log": false,
+        "max": 1.0,
+        "min": 0.0,
+        "step": 0.001
+      },
+      "type": "f64",
+      "unit": "T"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C133",
+      "choices": [],
+      "default": 3.0,
+      "help": "Set to 1 once measured.",
+      "label": "High-case multiplier on the estimate",
+      "path": "temperature.slip_loss.high_multiplier",
+      "range": {
+        "log": false,
+        "max": 10.0,
+        "min": 1.0,
+        "step": 0.1
+      },
+      "type": "f64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C138",
+      "choices": [],
+      "default": 440.0,
+      "help": "",
+      "label": "Specific heat, NdFeB",
+      "path": "temperature.thermal.c_ndfeb",
+      "range": {
+        "log": false,
+        "max": 600.0,
+        "min": 300.0,
+        "step": 1.0
+      },
+      "type": "f64",
+      "unit": "J/(kg·K)"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C139",
+      "choices": [],
+      "default": 500.0,
+      "help": "",
+      "label": "Specific heat, 316L",
+      "path": "temperature.thermal.c_316",
+      "range": {
+        "log": false,
+        "max": 700.0,
+        "min": 300.0,
+        "step": 1.0
+      },
+      "type": "f64",
+      "unit": "J/(kg·K)"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C140",
+      "choices": [],
+      "default": 900.0,
+      "help": "",
+      "label": "Specific heat, aluminium",
+      "path": "temperature.thermal.c_aluminium",
+      "range": {
+        "log": false,
+        "max": 1000.0,
+        "min": 700.0,
+        "step": 1.0
+      },
+      "type": "f64",
+      "unit": "J/(kg·K)"
+    },
+    {
+      "assumption": true,
+      "cell": "Temperature design!C142",
+      "choices": [],
+      "default": 0.3,
+      "help": "Both 10 mm shafts plus convection in the sealed housing. Measure it.",
+      "label": "Thermal conductance to the housing and shafts",
+      "path": "temperature.thermal.conductance_W_K",
+      "range": {
+        "log": true,
+        "max": 5.0,
+        "min": 0.01,
+        "step": 0.001
+      },
+      "type": "f64",
+      "unit": "W/K"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C194",
+      "choices": [],
+      "default": 0.5,
+      "help": "Placeholder; not published for AA 326.",
+      "label": "Share of lap-shear strength retained at the peak temperature",
+      "path": "temperature.adhesive_life.hot_strength_retained",
+      "range": {
+        "log": false,
+        "max": 1.0,
+        "min": 0.05,
+        "step": 0.01
+      },
+      "type": "f64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C195",
+      "choices": [],
+      "default": 0.2,
+      "help": "",
+      "label": "Fatigue endurance at 10^8+ cycles, share of static strength",
+      "path": "temperature.adhesive_life.fatigue_endurance",
+      "range": {
+        "log": false,
+        "max": 0.6,
+        "min": 0.02,
+        "step": 0.005
+      },
+      "type": "f64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C198",
+      "choices": [],
+      "default": 10.0,
+      "help": "Placeholder.",
+      "label": "Service life",
+      "path": "temperature.adhesive_life.service_years",
+      "range": {
+        "log": false,
+        "max": 40.0,
+        "min": 1.0,
+        "step": 0.5
+      },
+      "type": "f64",
+      "unit": "years"
+    },
+    {
+      "assumption": false,
+      "cell": "Temperature design!C199",
+      "choices": [],
+      "default": 30.0,
+      "help": "Placeholder.",
+      "label": "Daily temperature swing at the coupling",
+      "path": "temperature.adhesive_life.daily_swing_C",
+      "range": {
+        "log": false,
+        "max": 100.0,
+        "min": 0.0,
+        "step": 0.5
+      },
+      "type": "f64",
+      "unit": "°C"
     }
   ]
 }

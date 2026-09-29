@@ -118,3 +118,27 @@ fn aluminium_alloys_equal_the_python_data() {
         }
     }
 }
+
+#[test]
+fn adhesives_equal_the_python_candidates() {
+    use magcoupling::engine::temperature::ADHESIVES;
+    let doc = python_static();
+    let rows = doc["adhesives"].as_array().expect("adhesives");
+    assert_eq!(rows.len(), ADHESIVES.len());
+    for (py, rs) in rows.iter().zip(ADHESIVES.iter()) {
+        assert_eq!(rs.name, text(py, "name"));
+        assert_eq!(
+            (rs.role, rs.note),
+            (text(py, "role").as_str(), text(py, "note").as_str()),
+            "{}",
+            rs.name
+        );
+        for (key, value) in [
+            ("design_limit_C", rs.design_limit_C),
+            ("cure_C", rs.cure_C),
+            ("lap_shear_MPa", rs.lap_shear_MPa),
+        ] {
+            assert_eq!(value, number(py, key), "{}.{key}", rs.name);
+        }
+    }
+}
