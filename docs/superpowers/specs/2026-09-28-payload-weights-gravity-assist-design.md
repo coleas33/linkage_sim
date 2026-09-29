@@ -262,3 +262,185 @@ the user runs a hands-on checklist on a robot-lift model.
   force difference).
 - Parametric position study (peak force vs weight position).
 - Per-weight split of the "With Inertia" curve.
+
+## Hands-on checklist (robot-lift model)
+
+Run this after the automated gate passes, before merging Track 2. Tick each
+box in the real GUI. A box that fails goes into `docs/ai/backlog.yaml` with
+the angle and the numbers seen. The numbers quoted come from the sample's
+default sweep (0-360 deg in 1 deg steps) with W1 at the rocker tip.
+
+**Caution (known issue):** while the model is still the loaded sample, that
+is until section 6 reopens it from a file, changing the driver rebuilds the
+stock sample and discards every weight and every other edit. The driver
+changes on right-click of a ground pivot joint (**Set as Driver**, **Set
+Driver to …**) or when a load case with another driver joint is applied.
+Ctrl+Z brings everything back, and a model reopened from a file keeps its
+weights. Section 6 checks the undo.
+
+### 0. Build and smoke test
+
+1. From `linkage-sim-rs/`: `bash scripts/gate.sh` prints `GATE PASS`. The
+   tests rewrite `docs/chebyshev_lambda/*.png`; restore them with
+   `git checkout -- ../docs/chebyshev_lambda/`.
+2. Build and serve the WASM app from `linkage-sim-rs/`:
+   `bash scripts/build_web.sh` (needs the `wasm32-unknown-unknown` target
+   and `wasm-bindgen-cli`), then `bash scripts/serve_web.sh` in a second
+   shell. It serves http://localhost:8080; leave it running.
+3. In Claude Code, run the `gui-smoke` skill (workflow
+   `.claude/workflows/gui-smoke.js`; default URL http://localhost:8080,
+   override with args `{"url": "..."}`). It must report `passed: true`: the
+   page loaded, a `<canvas>` is present, and the console shows no errors.
+4. Do sections 1-6 in the served page, or natively with
+   `cargo run --release --bin linkage-gui` from `linkage-sim-rs/`.
+
+### 1. Model the lift
+
+- [ ] File > Load Sample > **Parallelogram + Actuator**. Leave the
+      actuator's stored force **F** at the sample's 50 N: every plot and the
+      actuator label show the required force whatever F is (section 6
+      checks this).
+- [ ] Click **+ Mass**: a mass field appears in the toolbar. Set it to 50 kg
+      and click the rocker. The canvas hint reads "Click to place weight W1
+      (50 kg) on 'rocker' (Esc to cancel)", and a preview circle shows where
+      the weight lands (on the grid when snapping is on). Click the rocker's
+      tip, the end joined to the coupler: **W1** appears, selected, and the
+      tool returns to Select. If its **Position** does not read X 0 mm,
+      Y 0 mm (the tip), type those values.
+- [ ] Click **+ Mass** again: the field shows 50 kg, the last mass used. Set
+      20 kg, click the coupler, then a point on it: **W2** appears. Type
+      "Robot torso" in its **Name** field and press Enter.
+- [ ] With W2 selected, the property panel shows "Weight Robot torso (W2)",
+      "Link: coupler" and its Name, Mass and body-local Position fields.
+      Pick the coupler in the Link Editor: its **Weights (1)** section lists
+      W2 and has an **Add weight** button. The rocker's lists W1.
+- [ ] Pick the rocker in the Link Editor and click **Add weight**: W3
+      (20 kg, the last mass used) appears at the rocker's centre of mass.
+      One Ctrl+Z removes it.
+- [ ] Click W2's Mass field, type 25 and press Esc: the mass stays 20 kg.
+      Type 25 and press Enter: it is 25 kg, and one Ctrl+Z puts back 20 kg.
+      While typing, Backspace edits the text and does not delete the
+      selected weight.
+
+### 2. Select, drag, reattach, delete
+
+- [ ] Hover a weight: it gets a highlight ring and a grab cursor. Click W1
+      at the rocker tip: W1 is selected, not the joint under it. Shift+click
+      W2: both are selected; Shift+click W2 again drops it from the
+      selection.
+- [ ] Drag W2 along the coupler: a dashed line and a marker follow the
+      pointer (on the grid when snapping is on), and the mechanism does not
+      re-solve until release. After release, one Ctrl+Z puts W2 back.
+- [ ] Drag W2 over the rocker and release nearer the rocker than the
+      coupler, within 60 px: the rocker is highlighted while dragging, and W2
+      moves to the rocker at the drop point with the same id, name and mass.
+      One Ctrl+Z reverts it.
+- [ ] Start dragging W2, then press Esc, or release outside the canvas:
+      nothing changes.
+- [ ] Select W1 and press Delete: it is removed. Ctrl+Z restores it as W1.
+
+### 3. Canvas readout at the current pose
+
+Set the crank angle with the **Crank Angle** slider, or by clicking a plot.
+
+- [ ] At 45 deg both weight arrows are red (being lifted), W1's longer than
+      W2's (the length grows with the mass). The actuator label reads
+      "7.9 kN push, motoring".
+- [ ] At 135 deg both arrows are green (coming down); the label reads
+      "1.3 kN push, braking".
+- [ ] At 90 deg the arrows are gray (moving sideways); the label reads
+      "0.00 N", with no push/pull or motoring/braking word.
+- [ ] Hover W1 at 45 deg: a tooltip shows "W1", "Mass: 50 kg" and
+      "Force share: +5.5 kN (hurting)". Select it: the same readout stays
+      next to the weight. With neither hover nor selection, no weight label
+      is drawn.
+- [ ] Hover W1 at 56 deg, a stroke reversal (the actuator speed passes zero
+      between 56 and 57 deg): the share reads "Force share: - (hurting)".
+      The other reversal, between 236 and 237 deg, shows no dash: no sample
+      falls inside the 1 % speed band there, so W1's share jumps from about
+      +45 kN to about -20 kN instead.
+- [ ] The label's push/pull word follows the sign of the Actuator Force plot
+      at the cursor: positive = push (extension), negative = pull
+      (retraction). From 57 to 89 deg, for example, it reads pull.
+- [ ] Drag W1 elsewhere on the rocker: its arrow is gold until the sweep is
+      recomputed (a moment later), then green, red or gray again. Ctrl+Z
+      puts it back at the tip.
+
+### 4. Plots
+
+The force passes through infinity at the stroke reversals (about 227 kN at
+56 deg), so those spikes set the y range of the force plots. Scroll to zoom
+in; double-click resets the view.
+
+- [ ] **Actuator Power**: shaded bands cover exactly the angles where the
+      red statics curve is below zero (91-269 deg). The legend entry
+      "Braking" hides and shows them. The tab tooltip mentions the bands.
+- [ ] **Actuator Force**: the same bands. The tab tooltip says "Positive =
+      extension". Enter a **Rated Force**: the lines are labelled
+      "Rated (push)" and "Rated (pull)".
+- [ ] At 0, 180 and 360 deg the parallelogram's links are collinear (change
+      points) and the velocity is not unique, so one sample there can glitch
+      in every channel: the 0 and 180 deg samples dip, and at 360 deg the
+      plots show a one-sample braking band, a pull force and mixed line
+      colours. That is a solver artifact of this sample, not a payload bug.
+      (The canvas at 360 deg reads the 0 deg sample.)
+- [ ] **Weight Breakdown**, Force share: the legend lists "coupler (link)",
+      "crank (link)", "rocker (link)", "Robot torso (W2)", "W1", "Other
+      loads" and "Total". Other loads stays at 0 (gravity is the only load),
+      and Total lies on the Actuator Force statics curve. Each weight's line
+      is red where that weight rises, green where it falls, and gray where
+      it moves sideways (90 and 270 deg).
+- [ ] The weight lines and Other loads have a gap at 56-57 deg (force shares
+      are blank near stroke reversal), while Total spikes there. At 236-237
+      deg the weight lines spike and change sign without a gap (see
+      section 3).
+- [ ] Near 200 deg W1's line, and the rocker's own, is green (helping) while
+      its force share is positive (W1 about +1.0 kN): the retracting
+      actuator pushes harder to hold the load back (see "Key physics
+      statement").
+- [ ] **Power share**: each weight's line is below zero where it is green
+      and above zero where it is red, with no gaps; Total lies on the
+      Actuator Power statics curve.
+- [ ] At three angles, hover the lines: the weight shares plus Other loads
+      add up to Total.
+
+### 5. Physical intuition
+
+Read the shares at 45 deg in the Force share view.
+
+- [ ] Set W1's Position to X 1000 mm, Y 0 mm, halfway from the tip (X 0) to
+      the rocker pivot (X 2000 mm): its share halves, from about +5.5 kN to
+      about +2.7 kN. A rocker point's speed is proportional to its distance
+      from the pivot, in the same direction.
+- [ ] Drag W2 anywhere on the coupler: its share does not change. The
+      parallelogram coupler translates, so every coupler point has the same
+      velocity.
+- [ ] Set W1's mass to 100 kg: its shares double; the other weights' lines
+      do not move.
+
+### 6. Modes, driver and persistence
+
+- [ ] In the property panel, set the actuator's **F** to 0 (sizing mode),
+      then back to 50 N: the Actuator Force and Actuator Power plots, the
+      Weight Breakdown Total and the actuator label do not change (since
+      BL-026 they all show the required force).
+- [ ] Open **Mounting Angle** in the input panel and set 30 deg: at 90 deg
+      the weights are no longer gray, because gravity now has a component
+      along their sideways motion; they turn gray near 60 and 240 deg
+      instead. Set it back to 0.
+- [ ] Turn on View > **Nathan Mode**: the green, red and gray lines and
+      arrows stay distinguishable by brightness. Turn it off.
+- [ ] Right-click the rocker's ground pivot joint (J4) and pick **Set as
+      Driver**: the stock sample comes back without the weights (the known
+      reset in the caution above). One Ctrl+Z restores W1 and W2 with their
+      ids, names and masses, and J1 as the driver.
+- [ ] Save and reopen: natively File > **Save As...**, then File > **Open
+      JSON...**; in the browser File > **Download JSON...**, then File >
+      **Recent Mechanisms**. Then use File > **Share via URL** and open the
+      copied link in the browser. Each time, the weights keep their ids,
+      names and masses, and each link's Mass in the Link Editor still reads
+      1 kg (no double counting).
+- [ ] Load **4-Bar Crank-Rocker**, which has no actuator: the Weight
+      Breakdown shows driver torque shares ("Driver Torque Share (N·m)") for
+      crank, coupler and rocker, and the Actuator Force, Actuator Speed and
+      Actuator Power tabs are disabled.

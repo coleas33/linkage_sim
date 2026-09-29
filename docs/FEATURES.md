@@ -41,7 +41,7 @@ All force elements are editable in the GUI property panel and rendered on the ca
 
 ### GUI (Phase 5 -- complete)
 
-- 10 plot tabs: coupler trace, body angles, transmission angle, driver torque, inverse dynamics, energy (KE/PE/total), mechanical advantage, joint reactions, coupler velocity, coupler acceleration
+- 15 plot tabs: coupler trace, body angles, transmission angle, driver torque, inverse dynamics, energy (KE/PE/total), mechanical advantage, joint reactions, coupler velocity, coupler acceleration, actuator force, actuator speed, actuator power, weight breakdown (each weight's force or power share), output force (force zones)
 - Forward dynamics simulation with timeline scrubbing, playback speed control, and constraint drift display
 - PNG + SVG export (resvg-based rasterization, 1920x1080 default)
 - GIF animation export (renders sweep frames via resvg, encodes with gif crate, 800x600 @ 20fps)

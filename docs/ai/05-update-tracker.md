@@ -5,6 +5,42 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-29 — Payload weights Task 10: hands-on checklist and plot-tab counts
+- Payload spec: appended "Hands-on checklist (robot-lift model)", one pass
+  over the finished feature. Section 0 is the gate, the WASM build/serve
+  scripts and the `gui-smoke` workflow. Sections 1-6 cover placement (toolbar
+  mass field, hint, W<n> names), the weight editor and Add weight, Esc/Enter
+  commits, select/drag/reattach/cancel/delete, the canvas readout (arrows,
+  tooltip, selected readout, label words, gold stale arrow), braking bands,
+  the Weight Breakdown views, the physical-intuition checks, stored-force
+  invariance, mounting angle, Nathan Mode, save/reopen/share and a
+  no-actuator sample. It folds in the checklist patches from the old Task
+  7/8 drafts. It drops the pre-BL-026 steps: no "set F to 0 first", and the
+  Actuator Force plot no longer shows F_required - F_stored.
+- A caution at the top of the checklist and a new 02-system
+  known_limitations entry: on a loaded sample, driver reassignment rebuilds
+  the stock sample and drops every weight. It is undoable, and a model
+  reopened from a file keeps its weights.
+- A throwaway probe on `test_support::swept_lift` (not committed) checked
+  every number and claim in the checklist against the code. Labels:
+  "7.9 kN push, motoring" at 45 deg, "1.3 kN push, braking" at 135 and
+  "0.00 N" at 90. W1's share is +5.5 kN at 45 and halves at the rocker
+  midpoint. Braking runs 91-269 deg, Other loads stays below 4e-7 N, Total
+  equals the plotted force, and going from stored force 50 N to 0 changes
+  nothing (3e-11). A 30 deg mounting angle moves gray to 60/240 deg.
+  Reassign-then-undo restores the weights.
+- The probe corrected two draft claims. (1) Force shares are blank only at
+  56-57 deg. The 236.3 deg reversal, where the actuator is at its shortest,
+  has no sample inside the 1 % band, so W1's share jumps from about +45 kN
+  to -20 kN with no gap (new 02-system known_limitations entry). (2) The
+  change-point glitch on this sample is at 360 deg on the plots (a
+  one-sample braking band and a pull force), not a band break at 180.
+- README and FEATURES: 15 plot tabs (was "10"). The list now includes
+  actuator force/speed/power, weight breakdown and output force.
+- 04-memory: active issue (the checklist runs before merge) and an open
+  question: stroke-mode driver-share scope and the small spec/code
+  wording mismatches.
+
 ## 2026-09-29 — Payload weights Task 9: canvas readout
 - `AppState::current_sweep_index` (the sample the plot cursor marks;
   `actuator_label_force` now uses it) and `AppState::actuator_label_power`

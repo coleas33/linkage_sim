@@ -300,6 +300,19 @@ known_limitations:
     via DXF "Add Geometry to Link" button (target picked from the popup)
     use the world center transformed into local coords; if the target body
     is rotated at import time the geometry rectangle inherits that rotation.
+  - The stroke-reversal blank-out is sample based.
+    gravity_breakdown::force_share returns NaN only where |dL/dt| <
+    EPS_REL_LDOT (1 %) of the sweep max, so a reversal where dL/dt changes
+    fast can fall between two samples with neither inside the band. On
+    ParallelogramActuator at 1 deg steps the 56.3 deg reversal is blanked
+    (56 and 57 deg) but the 236.3 deg one (actuator at its shortest) is
+    not; W1 of the hands-on checklist jumps from about +45 kN to -20 kN
+    between 236 and 237 deg.
+  - Driver reassignment on a loaded sample (AppState::current_sample is
+    Some) rebuilds the stock sample (state/driver_ops.rs reassign_driver)
+    and drops every blueprint edit, weights included. It is undoable, and a
+    model loaded from a file (current_sample None) keeps its weights. The
+    payload spec's hands-on checklist warns about it.
 
 risks:
   - Non-Grashof sweeps NaN-pad every data channel for every unreachable
