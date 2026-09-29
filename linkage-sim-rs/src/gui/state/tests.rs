@@ -1553,6 +1553,42 @@
         assert!((ly - 0.03).abs() < 1e-10);
     }
 
+    // ── body_local_to_world tests ─────────────────────────────────────────
+
+    #[test]
+    fn body_local_to_world_matches_the_mechanism_pose() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.solve_at_angle(0.7);
+        let mech = state.mechanism.as_ref().unwrap();
+        for body in ["crank", "coupler", "rocker"] {
+            let want = mech.state().body_point_global(body, &nalgebra::Vector2::new(0.03, 0.02), &state.q);
+            assert_eq!(state.body_local_to_world(body, [0.03, 0.02]), [want.x, want.y], "{body}");
+        }
+    }
+
+    #[test]
+    fn body_local_to_world_inverts_world_to_body_local() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.solve_at_angle(0.7);
+        for body in ["crank", "coupler", "rocker"] {
+            let [wx, wy] = state.body_local_to_world(body, [0.012, -0.004]);
+            let [lx, ly] = state.world_to_body_local(body, wx, wy);
+            assert!((lx - 0.012).abs() < 1e-12 && (ly + 0.004).abs() < 1e-12, "{body}: {lx}, {ly}");
+        }
+    }
+
+    #[test]
+    fn body_local_to_world_passes_ground_unknown_bodies_and_no_mechanism_through() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        assert_eq!(state.body_local_to_world("ground", [0.05, 0.03]), [0.05, 0.03]);
+        assert_eq!(state.body_local_to_world("no_such_body", [0.05, 0.03]), [0.05, 0.03]);
+        state.mechanism = None;
+        assert_eq!(state.body_local_to_world("crank", [0.05, 0.03]), [0.05, 0.03]);
+    }
+
     // ── Raw helper tests ─────────────────────────────────────────────────
 
     #[test]

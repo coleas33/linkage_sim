@@ -55,7 +55,7 @@ gui_submodules:
         mod: canvas/rendering/mod.rs (main render pass, overlays, tooltips, grid, background image)
         primitives: canvas/rendering/primitives.rs (springs, dampers, arrows, arcs, markers, alignment guides)
         force_render: canvas/rendering/force_render.rs (force element visualization + load-path heat map; actuator label value comes from AppState::actuator_label_force)
-      hit_testing: canvas/hit_testing.rs
+      hit_testing: canvas/hit_testing.rs (body-segment projection; weight picking find_point_mass_at + point_mass_screen_pos, which drawing shares)
       colors: canvas/colors.rs
       context_menu: canvas/context_menu.rs
       alignment: canvas/alignment.rs
@@ -107,7 +107,7 @@ gui_submodules:
     - tutorial.rs
     - undo.rs
     - dxf_import.rs
-    - test_support.rs (#[cfg(test)] helpers shared by GUI module tests, e.g. sorted_link_ids, set_actuator_stored_force; extend it instead of re-implementing fixtures per module)
+    - test_support.rs (#[cfg(test)] helpers shared by GUI module tests, e.g. sorted_link_ids, set_actuator_stored_force, input events primary_button_with; extend it instead of re-implementing fixtures per module)
 
 entry_points:
   native_bin: src/bin/linkage_gui.rs (uses native feature)

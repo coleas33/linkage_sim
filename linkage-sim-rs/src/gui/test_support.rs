@@ -1,5 +1,7 @@
 //! Helpers shared by the tests of the GUI modules.
 
+use eframe::egui;
+
 use crate::core::state::GROUND_ID;
 use crate::forces::elements::ForceElement;
 use crate::gui::state::AppState;
@@ -30,4 +32,10 @@ pub(crate) fn set_actuator_stored_force(state: &mut AppState, force: f64) {
         }
     }
     state.rebuild();
+}
+
+/// A primary-button press (`pressed`) or release at `pos`, with `modifiers`
+/// held (e.g. Shift for a multi-selection click).
+pub(crate) fn primary_button_with(pos: egui::Pos2, pressed: bool, modifiers: egui::Modifiers) -> egui::Event {
+    egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers }
 }

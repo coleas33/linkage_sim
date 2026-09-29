@@ -5,6 +5,33 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-29 — Payload weights Task 5: weight hit testing and selection
+- `gui/canvas/hit_testing.rs`: `point_mass_screen_pos` (weight marker
+  position at the current pose/view; `None` when not finite) and
+  `find_point_mass_at(state, screen_pos, radius_px)` (nearest weight within
+  the radius; ground and blank-id weights skipped; ties go to sorted body id,
+  then list order).
+- `gui/state/types.rs`: `SelectedEntity::Weight { body_id, weight_id }`.
+- `gui/state/entity_crud.rs`: `AppState::body_local_to_world`, the inverse
+  of `world_to_body_local`; Move to Link now uses it instead of an inlined
+  transform.
+- `gui/canvas/interaction.rs`: Select-mode clicks test weights first
+  (`WEIGHT_HIT_RADIUS` 8 px), then joints, then pins; Shift+click toggles
+  weights in the multi-selection. Hovering a weight draws a ring and sets
+  the grab cursor (`weights_interactive`: plain Select mode, no other pick
+  armed). `gui/canvas/rendering/mod.rs` draws weights through
+  `point_mass_screen_pos` and rings selected weights.
+- Tests: `gui::canvas::hit_testing::tests` (hit, miss, nearest, tie order,
+  skipped weights, no blueprint), `gui::canvas::tests::weight_clicks`
+  (click selects, empty click clears, weight beats joint on a pin,
+  Shift+click toggle, grab cursor only in Select mode) and
+  `body_local_to_world_*` in `gui/state/tests.rs`.
+- `gui/test_support.rs` gains `primary_button_with(pos, pressed, modifiers)`;
+  the canvas click tests build their pointer events with it instead of a
+  local helper.
+- Mutation check done: letting the joint loop run after a weight hit fails
+  `a_weight_on_a_pin_wins_the_click_over_the_joint`.
+
 ## 2026-09-29 — Payload weights Task 4: per-weight breakdown in the sweep
 - `gui/sweep/weights.rs` (new): `WeightBreakdown` (per source `gravity_power`,
   `force_share` = `-P_g/rate`, `power_share` = `-P_g`; `other_force`,

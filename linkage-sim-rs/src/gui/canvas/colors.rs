@@ -66,6 +66,13 @@ pub const JOINT_RADIUS: f32 = 7.0;
 pub const JOINT_STROKE_WIDTH: f32 = 2.0;
 pub const GROUND_MARKER_SIZE: f32 = 14.0;
 pub const HIT_RADIUS: f32 = 12.0;
+/// Radius of a weight (point mass) marker, in screen pixels.
+pub const WEIGHT_RADIUS: f32 = 5.0;
+/// Pick radius around a weight marker's centre, in screen pixels. Weights
+/// are picked before joints and pins (see `handle_click_selection`), so this
+/// stays below `HIT_RADIUS`: a joint under a weight is still reachable from
+/// its outer ring.
+pub const WEIGHT_HIT_RADIUS: f32 = 8.0;
 pub const ATTACHMENT_DOT_RADIUS: f32 = 3.5;
 pub const MOUNT_POINT_RADIUS: f32 = 4.0;
 pub const ZOOM_FACTOR: f32 = 1.05;

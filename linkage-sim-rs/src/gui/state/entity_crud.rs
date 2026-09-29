@@ -485,4 +485,20 @@ impl AppState {
         let sin_t = theta.sin();
         [cos_t * dx + sin_t * dy, -sin_t * dx + cos_t * dy]
     }
+
+    /// Convert body-local coordinates to world coordinates using the body's
+    /// current pose from `self.q`: the inverse of `world_to_body_local`.
+    ///
+    /// Returns `local` unchanged for the ground body (its frame is the world
+    /// frame), for a body the built mechanism does not have, or when the
+    /// mechanism is not built.
+    pub fn body_local_to_world(&self, body_id: &str, local: [f64; 2]) -> [f64; 2] {
+        let Some(mech) = &self.mechanism else { return local };
+        let mech_state = mech.state();
+        if body_id != GROUND_ID && mech_state.get_index(body_id).is_err() {
+            return local;
+        }
+        let p = mech_state.body_point_global(body_id, &nalgebra::Vector2::new(local[0], local[1]), &self.q);
+        [p.x, p.y]
+    }
 }

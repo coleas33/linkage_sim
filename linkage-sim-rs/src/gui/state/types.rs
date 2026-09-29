@@ -125,6 +125,9 @@ pub enum SelectedEntity {
     Body(String),
     Joint(String),
     Driver(String),
+    /// A weight (point mass), addressed by its owning body and its id
+    /// (`PointMassJson::id`), never by list index.
+    Weight { body_id: String, weight_id: String },
 }
 
 // ── Validation warnings ──────────────────────────────────────────────────────

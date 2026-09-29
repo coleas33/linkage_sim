@@ -142,6 +142,14 @@ invariants_to_protect:
     W<n>, bodies sorted by id, list order); add_point_mass uses
     io::next_point_mass_id. Address weights by (body_id, weight_id), never
     by list index.
+  - weights_picked_before_joints — a Select-mode click tests weights first
+    (canvas::hit_testing::find_point_mass_at, WEIGHT_HIT_RADIUS = 8 px,
+    below HIT_RADIUS = 12 px so a joint under a weight stays reachable from
+    its outer ring), then joints, then pins. A hit selects
+    SelectedEntity::Weight { body_id, weight_id }. Drawing and picking share
+    point_mass_screen_pos (AppState::body_local_to_world at the current q),
+    so a weight is picked exactly where it is drawn. Ground and blank-id
+    weights are neither drawn nor picked.
   - gravity_breakdown_sources_sum_to_model_gravity — analysis::gravity_breakdown::weight_sources
     lists one link self-weight per non-ground body with positive finite base
     mass (base mass at base cg_local, id "link:<body>") plus every point mass

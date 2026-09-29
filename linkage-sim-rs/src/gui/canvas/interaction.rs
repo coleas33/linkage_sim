@@ -13,7 +13,9 @@ use crate::solver::inverse_kinematics::ControlTarget;
 
 use super::alignment::compute_alignment_guides;
 use super::colors::*;
-use super::hit_testing::{find_nearest_body_segment, AttachmentHit, BodySegment};
+use super::hit_testing::{
+    find_nearest_body_segment, find_point_mass_at, point_mass_screen_pos, AttachmentHit, BodySegment,
+};
 use super::rendering::{draw_dashed_line, fill_force_template};
 
 /// Find the nearest attachment point within hit radius of a screen position.
@@ -412,22 +414,8 @@ pub fn handle_interaction(
                 let new_body_id = seg_hit.body_id.clone();
                 let (old_body_id, weight_id) = state.reassigning_point_mass.take().unwrap();
                 // Get the world position of the existing point mass
-                if let Some([lx, ly]) = state.find_point_mass(&old_body_id, &weight_id).map(|pm| pm.local_pos) {
-                    let [wx, wy] = {
-                        // Convert old body-local to world
-                        if old_body_id == "ground" {
-                            [lx, ly]
-                        } else if let Some(mech) = &state.mechanism {
-                            if let Ok(idx) = mech.state().get_index(&old_body_id) {
-                                let bx = state.q[idx.q_start];
-                                let by = state.q[idx.q_start + 1];
-                                let theta = state.q[idx.q_start + 2];
-                                let ct = theta.cos();
-                                let st = theta.sin();
-                                [bx + ct * lx - st * ly, by + st * lx + ct * ly]
-                            } else { [lx, ly] }
-                        } else { [lx, ly] }
-                    };
+                if let Some(local) = state.find_point_mass(&old_body_id, &weight_id).map(|pm| pm.local_pos) {
+                    let [wx, wy] = state.body_local_to_world(&old_body_id, local);
                     // Move from old body to new body in one undoable step
                     let [nlx, nly] = state.world_to_body_local(&new_body_id, wx, wy);
                     state.move_point_mass(&old_body_id, &weight_id, &new_body_id, [nlx, nly]);
@@ -517,6 +505,9 @@ pub fn handle_interaction(
         handle_create_joint(response, state, attachment_hit_targets);
     }
 
+    // ── Weights: hover feedback ─────────────────────────────────────────
+    draw_weight_hover(ui, painter, response, state);
+
     // ── Interaction: click for selection / ground pivot ──────────────────
     if state.draw_link_start.is_none()
         && state.creating_joint.is_none()
@@ -533,6 +524,40 @@ pub fn handle_interaction(
     }
 
     right_drag_ended
+}
+
+// ── Weights (point masses) ───────────────────────────────────────────────────
+
+/// Whether weights answer the pointer (hover feedback, drag): only in plain
+/// Select mode, while no other canvas pick (trajectory target, Move to Link,
+/// Reposition, Add Joint Point, joint or link creation) waits for a click.
+fn weights_interactive(state: &AppState) -> bool {
+    state.active_tool == EditorTool::Select
+        && state.pending_canvas_pick.is_none()
+        && state.reassigning_point_mass.is_none()
+        && state.repositioning_point_mass.is_none()
+        && state.adding_joint_point.is_none()
+        && state.creating_joint.is_none()
+        && state.draw_link_start.is_none()
+}
+
+/// Hover feedback: a ring around the weight under the pointer and a grab
+/// cursor, so the user sees what a click selects.
+fn draw_weight_hover(
+    ui: &egui::Ui,
+    painter: &egui::Painter,
+    response: &egui::Response,
+    state: &AppState,
+) {
+    if !weights_interactive(state) || !response.hovered() {
+        return;
+    }
+    let Some(pos) = response.hover_pos() else { return };
+    let Some((body_id, weight_id)) = find_point_mass_at(state, pos, WEIGHT_HIT_RADIUS) else { return };
+    let Some(pm) = state.find_point_mass(&body_id, &weight_id) else { return };
+    let Some(center) = point_mass_screen_pos(state, &body_id, pm.local_pos) else { return };
+    painter.circle_stroke(center, WEIGHT_HIT_RADIUS, Stroke::new(2.0, state.nc(JOINT_HOVER_HIGHLIGHT)));
+    ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
 }
 
 // ── Draw Link tool ───────────────────────────────────────────────────────────
@@ -1280,12 +1305,19 @@ fn handle_click_selection(
                 };
 
                 if !dxf_handled {
-                    let mut hit: Option<SelectedEntity> = None;
+                    // Weights first: they are small, user-placed targets that
+                    // often sit on a pin, where the joint would otherwise
+                    // always win.
+                    let mut hit: Option<SelectedEntity> =
+                        find_point_mass_at(state, pointer_pos, WEIGHT_HIT_RADIUS)
+                            .map(|(body_id, weight_id)| SelectedEntity::Weight { body_id, weight_id });
 
-                    for (joint_screen, joint_id) in joint_hit_targets {
-                        if pointer_pos.distance(*joint_screen) <= HIT_RADIUS {
-                            hit = Some(SelectedEntity::Joint(joint_id.clone()));
-                            break;
+                    if hit.is_none() {
+                        for (joint_screen, joint_id) in joint_hit_targets {
+                            if pointer_pos.distance(*joint_screen) <= HIT_RADIUS {
+                                hit = Some(SelectedEntity::Joint(joint_id.clone()));
+                                break;
+                            }
                         }
                     }
 

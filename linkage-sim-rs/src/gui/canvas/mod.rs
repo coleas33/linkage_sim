@@ -238,31 +238,41 @@ mod tests {
         use nalgebra::Vector2;
 
         use crate::gui::samples::SampleMechanism;
-        use crate::gui::state::{AppState, EditorTool};
-        use crate::gui::test_support::sorted_link_ids;
+        use crate::gui::state::{AppState, EditorTool, SelectedEntity};
+        use crate::gui::test_support::{primary_button_with, sorted_link_ids};
         use super::super::draw_canvas;
 
-        fn frame(ctx: &egui::Context, state: &mut AppState, events: Vec<egui::Event>) {
+        /// One canvas frame with `events`, `modifiers` held; returns egui's
+        /// output (cursor icon etc.).
+        fn frame_with(
+            ctx: &egui::Context,
+            state: &mut AppState,
+            events: Vec<egui::Event>,
+            modifiers: egui::Modifiers,
+        ) -> egui::FullOutput {
             let input = egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(1000.0, 800.0))),
                 events,
+                modifiers,
                 ..Default::default()
             };
-            let _ = ctx.run(input, |ctx| {
+            ctx.run(input, |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| draw_canvas(ui, state));
-            });
+            })
+        }
+
+        fn frame(ctx: &egui::Context, state: &mut AppState, events: Vec<egui::Event>) {
+            let _ = frame_with(ctx, state, events, egui::Modifiers::NONE);
+        }
+
+        fn click_with(ctx: &egui::Context, state: &mut AppState, pos: Pos2, modifiers: egui::Modifiers) {
+            let _ = frame_with(ctx, state, vec![egui::Event::PointerMoved(pos)], modifiers);
+            let _ = frame_with(ctx, state, vec![primary_button_with(pos, true, modifiers)], modifiers);
+            let _ = frame_with(ctx, state, vec![primary_button_with(pos, false, modifiers)], modifiers);
         }
 
         fn click(ctx: &egui::Context, state: &mut AppState, pos: Pos2) {
-            let button = |pressed| egui::Event::PointerButton {
-                pos,
-                button: egui::PointerButton::Primary,
-                pressed,
-                modifiers: egui::Modifiers::NONE,
-            };
-            frame(ctx, state, vec![egui::Event::PointerMoved(pos)]);
-            frame(ctx, state, vec![button(true)]);
-            frame(ctx, state, vec![button(false)]);
+            click_with(ctx, state, pos, egui::Modifiers::NONE);
         }
 
         /// Four-bar with a 2 kg weight "W1" on the first sorted link, after one
@@ -293,6 +303,16 @@ mod tests {
         fn local_under(state: &AppState, body: &str, pos: Pos2) -> [f64; 2] {
             let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
             state.world_to_body_local(body, wx, wy)
+        }
+
+        /// Screen position of weight `id` on `body` at the current pose.
+        fn weight_screen(state: &AppState, body: &str, id: &str) -> Pos2 {
+            let pm = state.find_point_mass(body, id).expect("weight exists");
+            screen_of(state, world_of(state, body, pm.local_pos))
+        }
+
+        fn weight(body: &str, id: &str) -> SelectedEntity {
+            SelectedEntity::Weight { body_id: body.to_string(), weight_id: id.to_string() }
         }
 
         fn assert_close(what: &str, got: [f64; 2], want: [f64; 2]) {
@@ -360,6 +380,78 @@ mod tests {
             assert_close("placement", pm.local_pos, expected);
             assert_eq!(state.last_point_mass_kg, 3.5);
             assert_eq!(state.active_tool, EditorTool::Select);
+        }
+
+        #[test]
+        fn clicking_a_weight_selects_it() {
+            let (ctx, mut state, body, _) = setup();
+            state.selected = Some(SelectedEntity::Body(body.clone()));
+            let at = weight_screen(&state, &body, "W1");
+            let depth = state.undo_history.undo_count();
+
+            click(&ctx, &mut state, at);
+
+            assert_eq!(state.selected, Some(weight(&body, "W1")));
+            assert!(state.multi_selected.is_empty());
+            assert_eq!(state.undo_history.undo_count(), depth, "selecting is not an edit");
+        }
+
+        #[test]
+        fn clicking_empty_canvas_clears_a_weight_selection() {
+            let (ctx, mut state, body, _) = setup();
+            state.selected = Some(weight(&body, "W1"));
+
+            click(&ctx, &mut state, Pos2::new(120.0, 700.0));
+
+            assert_eq!(state.selected, None);
+        }
+
+        #[test]
+        fn a_weight_on_a_pin_wins_the_click_over_the_joint() {
+            let (ctx, mut state, body, _) = setup();
+            // A weight exactly on one of the link's pins, where a joint is drawn too.
+            let pin = {
+                let mech = state.mechanism.as_ref().unwrap();
+                let mut names: Vec<&String> = mech.bodies()[&body].attachment_points.keys().collect();
+                names.sort();
+                mech.bodies()[&body].attachment_points[names[0]]
+            };
+            let id = state.add_point_mass(&body, 1.0, [pin.x, pin.y]).expect("weight on the pin");
+            let at = weight_screen(&state, &body, &id);
+
+            click(&ctx, &mut state, at);
+
+            assert_eq!(state.selected, Some(weight(&body, &id)));
+        }
+
+        #[test]
+        fn shift_click_toggles_a_weight_in_the_multi_selection() {
+            let (ctx, mut state, body, _) = setup();
+            let at = weight_screen(&state, &body, "W1");
+
+            click_with(&ctx, &mut state, at, egui::Modifiers::SHIFT);
+            assert_eq!(state.multi_selected, vec![weight(&body, "W1")]);
+            assert_eq!(state.selected, Some(weight(&body, "W1")));
+
+            click_with(&ctx, &mut state, at, egui::Modifiers::SHIFT);
+            assert!(state.multi_selected.is_empty());
+        }
+
+        #[test]
+        fn hovering_a_weight_shows_a_grab_cursor_only_in_select_mode() {
+            let (ctx, mut state, body, _) = setup();
+            let at = weight_screen(&state, &body, "W1");
+            let hover = |state: &mut AppState, pos: Pos2| {
+                frame_with(&ctx, state, vec![egui::Event::PointerMoved(pos)], egui::Modifiers::NONE)
+                    .platform_output
+                    .cursor_icon
+            };
+
+            assert_eq!(hover(&mut state, at), egui::CursorIcon::Grab);
+            assert_eq!(hover(&mut state, Pos2::new(120.0, 700.0)), egui::CursorIcon::Default);
+
+            state.active_tool = EditorTool::PlaceMass;
+            assert_eq!(hover(&mut state, at), egui::CursorIcon::Default, "no weight pick in other tools");
         }
     }
 }
