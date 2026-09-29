@@ -185,6 +185,13 @@ const BRANCHES: &[(&str, &[Reach])] = &[
     ),
     ("metal.slip_loss_W", &[Number, Text("not measured")]),
     ("metal.slip_energy_J", &[Number, Text("not measured")]),
+    (
+        "materials.cup_wall_check",
+        &[
+            Text("OK"),
+            Prefix("Too thin: raise Metal design C122 to at least "),
+        ],
+    ),
 ];
 
 fn reached(value: &Value, reach: Reach) -> bool {
@@ -340,6 +347,11 @@ fn mass_matches_python_on_every_case() {
 #[test]
 fn metal_matches_python_on_every_case() {
     check_module("metal");
+}
+
+#[test]
+fn materials_matches_python_on_every_case() {
+    check_module("materials");
 }
 
 /// A corpus key and the Rust helper call it records (as the engine calls it).

@@ -14,8 +14,9 @@ Excel semantics helpers, deviation registry), the **Calibration** sheet, the
 magnet library, the **Calculator model** (`model`), the **Metal design
 retainers** (`metal_design::retainers`), the **mass estimate**
 (`model::mass_estimate`) and the **Metal design** sheet (`metal_design::compute`,
-with the validation checklist `VALIDATION_ITEMS`). The Materials sheet
-contributes its inputs only so far.
+with the validation checklist `VALIDATION_ITEMS`) and the **Materials** sheet
+(`materials::compute`, the aluminium alloys `AL7075` and `AL6061`, and
+`ScrewClasses::proof`).
 Deviations E1 to E14 are all registered as `Planned`; none is applied yet.
 
 ```rust
@@ -32,7 +33,7 @@ println!("{}", res.calibration.f_cal_updated); // 1.0658
 | `src/engine/compat.rs` | Python and Excel semantics the port reproduces (see the translation rules below) |
 | `src/engine/deviations.rs` | Registry of approved workbook corrections, and the `Deviations` switch |
 | `src/engine/api.rs` | `DesignInputs`, `DesignResults`, `compute_all` |
-| `src/engine/<module>.rs` | One module per Python module: `constants`, `calibration`, `library`, `model` (with the mass estimate), `metal_design` so far (`materials` holds inputs only) |
+| `src/engine/<module>.rs` | One module per Python module: `constants`, `calibration`, `library`, `model` (with the mass estimate), `metal_design`, `materials` so far |
 | `tests/` | Parity, differential, metadata and registry tests (below) |
 | `tests/data/` | Workbook snapshot copy, exported schemas, differential data |
 
@@ -138,7 +139,7 @@ snapshot copy must equal `reference/magcoupling-py/tests/reference_values.json`
 | `None` input | `Option<f64>`; a text result sentinel is `NumOrText::Text` |
 | `isinstance(x, (int, float))` | a match on `Option` or `NumOrText` |
 | `if code == 1 ... else ...` on a selector | the same, catch-all `else` included |
-| `{1: a, 2: b}[code]` (KeyError) | a `match` whose fallback yields NaN or an Excel-style error text; never panic |
+| `{1: a, 2: b}[code]` (KeyError) | a `match` whose fallback yields NaN or an Excel-style error text; never panic (example: `ScrewClasses::proof`) |
 | an exception (`ZeroDivisionError`, math domain) | Rust yields inf or NaN; slider ranges keep Python in its domain, and the generator fails loudly if Python raises |
 | rounded workbook constants | the same literal (`MU0 = 1.256637e-06`, not `4π·1e-7`) |
 

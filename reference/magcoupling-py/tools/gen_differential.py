@@ -24,7 +24,7 @@ Writes:
     magcoupling-rs/tests/data/differential/helpers.json
         a corpus for the rounding and formatting helpers.
     magcoupling-rs/tests/data/static_data.json
-        the static engine tables (magnet library, the harmonic set and the validation checklist so far), for tests/static_data.rs.
+        the static engine tables (magnet library, the harmonic set, the validation checklist and the aluminium alloys so far), for tests/static_data.rs.
 
 Cases per module, all inside the slider ranges: the workbook defaults; each
 input at each end of its range, each selector at each choice and each text
@@ -59,6 +59,7 @@ from magcoupling.clamps import _fmt_num  # noqa: E402
 from magcoupling import metal_design as py_metal_design  # noqa: E402
 from magcoupling import model as py_model  # noqa: E402
 from magcoupling.library import _ROWS, MAGNET_LIBRARY  # noqa: E402
+from magcoupling.materials import Aluminium  # noqa: E402
 from magcoupling.temperature import _text0  # noqa: E402
 
 if Path(magcoupling.__file__).resolve().parent != ORACLE / "magcoupling":
@@ -77,6 +78,7 @@ MODULES = {
     "retainers": ["coupling", "metal"],
     "mass": ["coupling", "metal"],
     "metal": ["coupling", "metal", "calibration"],
+    "materials": ["coupling", "metal", "materials", "calibration"],
 }
 # every library part, blank (manual magnet) and a near miss of the default part
 PART_CHOICES = list(MAGNET_LIBRARY) + ["", "b842sh"]
@@ -296,6 +298,7 @@ def static_data() -> str:
         "harmonics": list(py_model.HARMONICS),
         "validation_items": [[label, status, action]
                              for label, (status, action) in py_metal_design.VALIDATION_ITEMS.items()],
+        "aluminium": [dataclasses.asdict(a) for a in (Aluminium().al7075, Aluminium().al6061)],
     }
     return dumps(doc) + "\n"
 

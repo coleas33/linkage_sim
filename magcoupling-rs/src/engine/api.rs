@@ -8,7 +8,7 @@
 //! → Metal design → Materials → Temperature design → Shaft clamps → sweeps.
 //!
 //! Ported so far: Calibration, Calculator (model), Metal design retainers,
-//! Calculator mass, Metal design; Materials contributes its inputs only.
+//! Calculator mass, Metal design, Materials.
 //!
 //! Python API mapping: `compute_all(inp)` is [`compute_all`];
 //! `input_schema(inp)` and `result_schema(res)` are
@@ -21,7 +21,7 @@ use super::calibration::{self, CalibrationInputs, CalibrationResults};
 use super::deviations::Deviations;
 #[cfg(feature = "workbook-parity")]
 use super::deviations::{REGISTRY, restore_workbook_defaults};
-use super::materials::MaterialsInputs;
+use super::materials::{self, MaterialsInputs, MaterialsResults};
 use super::meta::{inputs, results};
 use super::metal_design::{self, MetalDesignInputs, MetalDesignResults, RetainerResults};
 use super::model::{self, CouplingInputs, MassResults, ModelResults};
@@ -49,6 +49,7 @@ results! {
             mass: MassResults,
             retainers: RetainerResults,
             metal: MetalDesignResults,
+            materials: MaterialsResults,
         }
     }
 }
@@ -146,12 +147,14 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         cal_in.test_temp_C,
         dev,
     );
+    let matr = materials::compute(mat_in, m.backiron_needed_mm, md.cup_wall_corner_mm, dev);
     DesignResults {
         calibration: cal,
         model: m,
         mass,
         retainers: ret,
         metal: mdr,
+        materials: matr,
     }
 }
 

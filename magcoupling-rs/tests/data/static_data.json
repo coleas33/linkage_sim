@@ -1,5 +1,23 @@
 {
  "about": "Static tables of the magcoupling engine (plain data, no metadata). Written by reference/magcoupling-py/tools/gen_differential.py. Do not edit by hand.",
+ "aluminium": [
+  {
+   "conductivity_S_m": 19000000.0,
+   "head_pressure_limit_MPa": 400,
+   "key_bearing_allow_MPa": 100,
+   "name": "7075-T6",
+   "shear_MPa": 331,
+   "yield_MPa": 503
+  },
+  {
+   "conductivity_S_m": 25000000.0,
+   "head_pressure_limit_MPa": 250,
+   "key_bearing_allow_MPa": 60,
+   "name": "6061-T6",
+   "shear_MPa": 207,
+   "yield_MPa": 276
+  }
+ ],
  "engine": "magcoupling 1.0.0",
  "harmonics": [
   1,

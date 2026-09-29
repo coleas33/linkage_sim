@@ -98,3 +98,23 @@ fn validation_items_equal_the_python_checklist() {
         .collect();
     assert_eq!(rust, python);
 }
+
+#[test]
+fn aluminium_alloys_equal_the_python_data() {
+    use magcoupling::engine::materials::{AL6061, AL7075};
+    let doc = python_static();
+    let rows = doc["aluminium"].as_array().expect("aluminium");
+    assert_eq!(rows.len(), 2);
+    for (py, rs) in rows.iter().zip([AL7075, AL6061]) {
+        assert_eq!(rs.name, text(py, "name"));
+        for (key, value) in [
+            ("yield_MPa", rs.yield_MPa),
+            ("shear_MPa", rs.shear_MPa),
+            ("head_pressure_limit_MPa", rs.head_pressure_limit_MPa),
+            ("key_bearing_allow_MPa", rs.key_bearing_allow_MPa),
+            ("conductivity_S_m", rs.conductivity_S_m),
+        ] {
+            assert_eq!(value, number(py, key), "{}.{key}", rs.name);
+        }
+    }
+}
