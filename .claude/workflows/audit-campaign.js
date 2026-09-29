@@ -61,7 +61,8 @@ if (braindump.length) {
 
 const results = await pipeline(
   finders,
-  f => agent(f.prompt, { label: `find:${f.key}`, phase: 'Find', schema: FINDINGS_SCHEMA, model: 'sonnet' }),
+  // session model for physics derivations and braindump debugging; sonnet for grep-and-read dimensions
+  f => agent(f.prompt, { label: `find:${f.key}`, phase: 'Find', schema: FINDINGS_SCHEMA, ...(f.key === 'physics' || f.key === 'braindump' ? {} : { model: 'sonnet' }) }),
   (found, f) => {
     if (!found || !found.findings || !found.findings.length) return []
     return parallel(found.findings.map(fi => () => {

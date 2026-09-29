@@ -129,3 +129,26 @@ For multi-step tasks, state a brief plan:
 3. [Step] → verify: [check]
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+## 5. Model Selection for Subagents and Workflows
+
+This overrides the default of letting subagents inherit the session model. It applies whenever you dispatch a subagent (Agent tool) or write a workflow script, and always under ultracode.
+
+- **Simple tasks run on `sonnet`** (the alias for the newest Sonnet). Simple means mechanical, well specified, low judgment:
+  - exploring or mapping code; audit finders for the `tests`, `quality`, and `gui` dimensions;
+  - implementing a plan task whose plan gives the exact code (transcription plus running tests);
+  - the first attempt at a `risk: mechanical` backlog item in `fix-campaign` (red test, minimal fix, gate);
+  - the per-item review of a `risk: mechanical` fix diff, first pass or re-review;
+  - reproduce-it skeptics on non-physics findings;
+  - doc and YAML edits, lint fixes, running commands and reporting output, GUI smoke runs.
+- **Git housekeeping runs on `haiku` at `effort: 'low'`:** stash, cleanup, and scoped commit helpers.
+- **Judgment-heavy work keeps the session model (omit `model`):**
+  - physics, meaning every `risk: physics` backlog item (fix, rework, and review), `fbd-math-reviewer` passes, the `physics` finder dimension, all skeptic lenses on physics findings, and the magcoupling math audit;
+  - architecture, design, and planning;
+  - debugging without a known root cause, including braindump chase-downs;
+  - feature or integration work that spans several files without exact code in a plan;
+  - final whole-branch reviews.
+- **Precedence:** when a task matches both lists, the session model wins.
+- **Escalate, never downgrade.** A `sonnet` attempt has failed when it ends `blocked`, leaves the gate red, or is rejected in review. Every retry or rework of that task runs on the session model, as the `rework:` step in `fix-campaign.js` does. Escalate too when a task turns out mid-way to need judgment.
+- **When unsure, use the session model.**
+- **Make the choice visible in workflow scripts.** Set `model: 'sonnet'` or `model: 'haiku'` explicitly on every simple-task `agent()` call. For session-model calls, omit `model` on purpose and say why in a comment, such as `// session model: physics`. Never hard-code an Opus alias or version. For queues that mix risk levels, use the conditional spread in `.claude/workflows/fix-campaign.js` and `.claude/workflows/audit-campaign.js`: `...(item.risk === 'physics' ? {} : { model: 'sonnet' })`.

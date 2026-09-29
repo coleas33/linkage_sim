@@ -68,13 +68,14 @@ Run "git status" and "git diff" yourself. Judge: (a) correctness of the change; 
       {
         phase: 'Fix', label: `review:${item.id}:r${round}`, schema: REVIEW_SCHEMA,
         agentType: item.risk === 'physics' ? 'fbd-math-reviewer' : 'feature-dev:code-reviewer',
+        ...(item.risk === 'physics' ? {} : { model: 'sonnet' }), // session model for physics reviews
       },
     )
     if (lastReview && lastReview.approved) { approved = true; break }
     if (round === 1) {
       const rework = await agent(
         `Address these review findings for backlog item ${item.id} in ${ROOT} (do NOT commit): ${JSON.stringify(lastReview ? lastReview.findings : ['review agent died'])}. Then re-run "bash scripts/gate.sh" — must print GATE PASS. Keep changes minimal.`,
-        { phase: 'Fix', label: `rework:${item.id}`, schema: FIX_SCHEMA, ...(item.risk === 'physics' ? {} : { model: 'sonnet' }) },
+        { phase: 'Fix', label: `rework:${item.id}`, schema: FIX_SCHEMA }, // session model: escalation after a rejected review
       )
       if (!rework || rework.status !== 'fixed') break
       changedFiles = Array.from(new Set([...changedFiles, ...(rework.files_changed || [])]))
