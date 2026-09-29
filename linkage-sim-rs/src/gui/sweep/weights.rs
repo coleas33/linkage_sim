@@ -77,6 +77,18 @@ impl WeightBreakdown {
         };
         gb::classify(p_g, gb::max_abs_finite(series))
     }
+
+    /// [`Self::classification`] at every sample of `source`, with the
+    /// weight's sweep-wide band computed once instead of per sample (the
+    /// Weight Breakdown plot colours whole lines with it). Empty when
+    /// `source` is out of range.
+    pub fn classifications(&self, source: usize) -> Vec<Classification> {
+        let Some(series) = self.gravity_power.get(source) else {
+            return Vec::new();
+        };
+        let max_abs_p_g = gb::max_abs_finite(series);
+        series.iter().map(|&p_g| gb::classify(p_g, max_abs_p_g)).collect()
+    }
 }
 
 /// Required totals `(total_force, total_power)` at one sample.
@@ -838,6 +850,28 @@ mod tests {
         assert_eq!(classes(1), vec![Hurting, Helping, Helping, Neutral]);
         assert_eq!(b.classification(2, 0), Neutral, "source index out of range");
         assert_eq!(b.classification(0, 4), Neutral, "sample index out of range");
+    }
+
+    /// `classifications` (one band computation per weight, used to colour
+    /// whole plot lines) agrees with `classification` at every sample, on a
+    /// sweep that has helping, hurting and neutral samples.
+    #[test]
+    fn classifications_match_classification_at_every_sample() {
+        let state = swept(SampleMechanism::ChebyshevLambdaActuator, true, CHEBYSHEV_WEIGHTS);
+        let (data, b) = breakdown(&state);
+        let mut seen = Vec::new();
+        for i in 0..b.sources.len() {
+            let all = b.classifications(i);
+            assert_eq!(all.len(), data.angles_deg.len(), "{}", b.sources[i].id);
+            for (k, &c) in all.iter().enumerate() {
+                assert_eq!(c, b.classification(i, k), "{} at {} deg", b.sources[i].id, data.angles_deg[k]);
+                if !seen.contains(&c) {
+                    seen.push(c);
+                }
+            }
+        }
+        assert_eq!(seen.len(), 3, "all three classes occur: {seen:?}");
+        assert!(b.classifications(b.sources.len()).is_empty(), "source index out of range");
     }
 
     #[test]

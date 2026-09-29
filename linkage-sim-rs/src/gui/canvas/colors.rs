@@ -2,6 +2,8 @@
 
 use eframe::egui::Color32;
 
+use crate::analysis::gravity_breakdown::Classification;
+
 // ── Colors — CAD-inspired dark palette ───────────────────────────────────────
 
 // Canvas background: subtle gradient-like dark with slight blue tint
@@ -48,6 +50,24 @@ pub const FORCE_ZONE_COLOR: Color32 = Color32::from_rgb(255, 80, 80);
 pub const FORCE_ZONE_OVERLAP_FILL: Color32 = Color32::from_rgba_premultiplied(255, 200, 0, 50);
 pub const FORCE_ZONE_OVERLAP_STROKE: Color32 = Color32::from_rgb(255, 204, 0);
 
+// Payload weights: helping / hurting / neutral (gravity_breakdown::classify).
+// Brightness also differs (grayscale ~186 / ~100 / ~141) so Nathan Mode keeps
+// the three classes apart.
+pub const WEIGHT_HELPING_COLOR: Color32 = Color32::from_rgb(110, 235, 140);
+pub const WEIGHT_HURTING_COLOR: Color32 = Color32::from_rgb(220, 50, 50);
+pub const WEIGHT_NEUTRAL_COLOR: Color32 = Color32::from_rgb(140, 140, 150);
+
+/// Colour of a weight that is helping (green), hurting (red) or neutral
+/// (gray) at a sample. The single palette for the canvas weight arrows and
+/// the Weight Breakdown plot lines, so the two always agree.
+pub fn classification_color(class: Classification) -> Color32 {
+    match class {
+        Classification::Helping => WEIGHT_HELPING_COLOR,
+        Classification::Hurting => WEIGHT_HURTING_COLOR,
+        Classification::Neutral => WEIGHT_NEUTRAL_COLOR,
+    }
+}
+
 /// Convert a color to grayscale (for Nathan Mode).
 pub fn to_grayscale(c: Color32) -> Color32 {
     let lum = (c.r() as f32 * 0.299 + c.g() as f32 * 0.587 + c.b() as f32 * 0.114) as u8;
@@ -82,3 +102,32 @@ pub const MOUNT_POINT_RADIUS: f32 = 4.0;
 pub const ZOOM_FACTOR: f32 = 1.05;
 pub const MIN_SCALE: f32 = 10.0;
 pub const MAX_SCALE: f32 = 100_000.0;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analysis::gravity_breakdown::Classification::{Helping, Hurting, Neutral};
+
+    #[test]
+    fn classification_colors_are_green_red_and_gray() {
+        assert_eq!(classification_color(Helping), WEIGHT_HELPING_COLOR);
+        assert_eq!(classification_color(Hurting), WEIGHT_HURTING_COLOR);
+        assert_eq!(classification_color(Neutral), WEIGHT_NEUTRAL_COLOR);
+        let green = WEIGHT_HELPING_COLOR;
+        assert!(green.g() > green.r() && green.g() > green.b(), "helping is green: {green:?}");
+        let red = WEIGHT_HURTING_COLOR;
+        assert!(red.r() > red.g() && red.r() > red.b(), "hurting is red: {red:?}");
+        let gray = WEIGHT_NEUTRAL_COLOR;
+        let (lo, hi) = (gray.r().min(gray.g()).min(gray.b()), gray.r().max(gray.g()).max(gray.b()));
+        assert!(hi - lo <= 16, "neutral is gray: {gray:?}");
+    }
+
+    /// Nathan Mode draws everything in grayscale: the three classes must
+    /// stay apart by brightness (helping brightest, hurting darkest).
+    #[test]
+    fn classification_colors_stay_distinct_in_grayscale() {
+        let lum = |c: Color32| i32::from(to_grayscale(c).r());
+        let (help, neutral, hurt) = (lum(WEIGHT_HELPING_COLOR), lum(WEIGHT_NEUTRAL_COLOR), lum(WEIGHT_HURTING_COLOR));
+        assert!(help - neutral >= 30 && neutral - hurt >= 30, "grayscale {help} / {neutral} / {hurt}");
+    }
+}

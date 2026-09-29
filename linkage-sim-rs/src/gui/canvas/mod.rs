@@ -18,7 +18,7 @@ use eframe::egui::{self, FontId, Pos2};
 
 use crate::gui::state::AppState;
 
-pub use colors::to_grayscale;
+pub use colors::{classification_color, to_grayscale};
 use colors::*;
 use hit_testing::{AttachmentHit, BodySegment};
 

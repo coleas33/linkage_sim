@@ -8,9 +8,10 @@ use crate::gui::sweep::SweepData;
 
 use super::{
     detect_plot_click, draw_angle_series_with_range, draw_range_boundary_markers,
-    draw_toggle_markers, finite_series, series_colors, with_default_x_bounds,
+    draw_toggle_markers, finite_series, series_colors, sweep_x_to_display, with_default_x_bounds,
     x_axis_label_for_sweep,
 };
+use super::weights::draw_braking_bands;
 
 pub(super) fn draw_actuator_force(
     ui: &mut egui::Ui,
@@ -49,6 +50,18 @@ pub(super) fn draw_actuator_force(
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
+        // Braking bands first so the curves draw on top; they span every
+        // curve and rated line drawn below.
+        let rated_lines = [actuator_rated_force, -actuator_rated_force];
+        let mut extent: Vec<&[f64]> = vec![forces.as_slice()];
+        if let Some(id_forces) = &sweep.actuator_forces_id {
+            extent.push(id_forces.as_slice());
+        }
+        if actuator_rated_force > 0.0 {
+            extent.push(&rated_lines);
+        }
+        draw_braking_bands(plot_ui, sweep, units, &extent, nathan_mode);
+
         draw_angle_series_with_range(
             plot_ui,
             "Statics",
@@ -64,13 +77,9 @@ pub(super) fn draw_actuator_force(
         if let Some(ref id_forces) = sweep.actuator_forces_id {
             let id_pairs = finite_series(&sweep.angles_deg, id_forces);
 
-            let is_stroke = sweep.sweep_mode.is_stroke();
             let id_points: PlotPoints = id_pairs
                 .iter()
-                .map(|&(x, f)| {
-                    let x_display = if is_stroke { x * 1000.0 } else { units.angle(x.to_radians()) };
-                    [x_display, f]
-                })
+                .map(|&(x, f)| [sweep_x_to_display(x, sweep, units), f])
                 .collect();
             let id_color = if nathan_mode {
                 crate::gui::canvas::to_grayscale(egui::Color32::from_rgb(100, 200, 255))
@@ -91,22 +100,22 @@ pub(super) fn draw_actuator_force(
         if actuator_rated_force > 0.0 {
             let rated = actuator_rated_force;
 
-            // Horizontal rated force line (positive / tension).
+            // Horizontal rated force line (positive = extension, push).
             let rated_color = if nathan_mode {
                 crate::gui::canvas::to_grayscale(egui::Color32::from_rgb(80, 200, 80))
             } else {
                 egui::Color32::from_rgb(80, 200, 80)
             };
             plot_ui.hline(
-                HLine::new("Rated Force", rated)
+                HLine::new("Rated (push)", rated)
                     .color(rated_color)
                     .style(egui_plot::LineStyle::Dashed { length: 6.0 })
                     .width(2.0),
             );
 
-            // Horizontal rated force line (negative / compression).
+            // Horizontal rated force line (negative = retraction, pull).
             plot_ui.hline(
-                HLine::new("Rated (compression)", -rated)
+                HLine::new("Rated (pull)", -rated)
                     .color(rated_color)
                     .style(egui_plot::LineStyle::Dashed { length: 6.0 })
                     .width(2.0),
@@ -114,10 +123,7 @@ pub(super) fn draw_actuator_force(
 
             // ── Safety Factor Overlay (Feature 5) ───────────────────────
             // Color-code the force data by utilization ratio |F| / rated.
-            let is_stroke = sweep.sweep_mode.is_stroke();
-            let to_display = |x_deg: f64| -> f64 {
-                if is_stroke { x_deg * 1000.0 } else { units.angle(x_deg.to_radians()) }
-            };
+            let to_display = |x_deg: f64| sweep_x_to_display(x_deg, sweep, units);
 
             let mut green_pts: Vec<[f64; 2]> = Vec::new();
             let mut yellow_pts: Vec<[f64; 2]> = Vec::new();
@@ -321,6 +327,13 @@ pub(super) fn draw_actuator_power(
 
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
+        // Braking bands first so the curves draw on top.
+        let mut extent: Vec<&[f64]> = vec![power.as_slice()];
+        if let Some(id_power) = &sweep.actuator_power_id {
+            extent.push(id_power.as_slice());
+        }
+        draw_braking_bands(plot_ui, sweep, units, &extent, nathan_mode);
+
         // Statics-based power (solid line).
         let pairs: Vec<(f64, f64)> = sweep
             .angles_deg
@@ -343,16 +356,12 @@ pub(super) fn draw_actuator_power(
 
         // Inverse dynamics power (dashed overlay, includes inertia).
         if let Some(ref id_power) = sweep.actuator_power_id {
-            let is_stroke = sweep.sweep_mode.is_stroke();
             let id_points: PlotPoints = sweep
                 .angles_deg
                 .iter()
                 .zip(id_power.iter())
                 .filter(|&(_, &p)| p.is_finite())
-                .map(|(&x, &p)| {
-                    let x_display = if is_stroke { x * 1000.0 } else { units.angle(x.to_radians()) };
-                    [x_display, p]
-                })
+                .map(|(&x, &p)| [sweep_x_to_display(x, sweep, units), p])
                 .collect();
             let id_color = if nathan_mode {
                 crate::gui::canvas::to_grayscale(egui::Color32::from_rgb(100, 200, 255))

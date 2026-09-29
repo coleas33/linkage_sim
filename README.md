@@ -168,7 +168,7 @@ The full solver port (Phases 1-4: kinematics, statics, inverse dynamics, forward
 - **Full interactive editor**: create bodies, joints, and ground pivots via right-click context menu; drag ground pivots to reposition; Draw Link tool with body-aware snapping; multi-point body creation; prismatic and fixed joint creation
 - **12 force element types** all editable in the property panel and rendered on the canvas, with categorized toolbar ribbon (Joint Torques / Link Forces dropdowns)
 - **10 plot tabs**: coupler trace, body angles, transmission angle, driver torque, inverse dynamics, energy (KE/PE/total), mechanical advantage, joint reactions, coupler velocity, coupler acceleration
-- **Actuator sizing**: actuator force plot (statics + inverse dynamics curves), stroke display in Health Report, force zone overlap diagnostics
+- **Actuator sizing**: actuator force plot (statics + inverse dynamics curves), braking bands on the actuator force and power plots, per-weight Weight Breakdown plot (which weight helps or hurts, in force and in power), stroke display in Health Report, force zone overlap diagnostics
 - **Trapezoidal motion profile** with profile torque overlay for realistic acceleration/deceleration analysis
 - **Parametric sweep**: full 360-degree driver rotation sweeps, parameter studies (mass, inertia, attachment points, force parameters, driver speed), save and overlay named results for side-by-side comparison
 - **Forward dynamics simulation** with timeline scrubbing, playback speed control, and constraint drift display

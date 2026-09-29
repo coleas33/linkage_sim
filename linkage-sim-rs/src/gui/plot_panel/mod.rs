@@ -27,8 +27,14 @@ enum PlotTab {
     ActuatorForce,
     ActuatorSpeed,
     ActuatorPower,
+    WeightBreakdown,
     OutputForce,
 }
+
+/// Hover text of the Actuator Force tab. Sign convention of the
+/// LinearActuator element (`forces::elements::evaluation`): positive =
+/// extension.
+const ACTUATOR_FORCE_TAB_TIP: &str = "Force in the linear actuator vs. driver angle. Red line = statics only (no inertia); cyan dashed = with inertia. Positive = extension (the actuator pushes its ends apart), negative = retraction (it pulls them together). Shaded bands mark where the load drives the actuator (braking). If a rated force is entered, a green safe-zone band is shown.";
 
 
 // Plot submodules grouped by analysis domain
@@ -37,6 +43,7 @@ mod coupler;
 mod dynamics;
 mod mechanics;
 mod trajectory;
+mod weights;
 
 /// Draw the plot panel with tabbed plots.
 ///
@@ -181,7 +188,7 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 &mut selected_tab,
                 PlotTab::ActuatorForce,
                 "Actuator Force",
-            ).on_hover_text("Force in the linear actuator vs. driver angle. Red line = statics only (no inertia); cyan dashed = with inertia. Positive = tension (extending), negative = compression (retracting). If a rated force is entered, a green safe-zone band is shown.");
+            ).on_hover_text(ACTUATOR_FORCE_TAB_TIP);
         });
 
         // Only show actuator speed tab when actuator speed data exists.
@@ -201,7 +208,18 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 &mut selected_tab,
                 PlotTab::ActuatorPower,
                 "Actuator Power",
-            ).on_hover_text("Mechanical power (Force \u{d7} Speed) delivered by the linear actuator in Watts vs. driver angle. Red = statics only; cyan dashed = with inertia. Peak power determines the motor/pump sizing requirement.");
+            ).on_hover_text("Mechanical power (Force \u{d7} Speed) delivered by the linear actuator in Watts vs. driver angle. Red = statics only; cyan dashed = with inertia. Peak power determines the motor/pump sizing requirement. Negative power means the load drives the actuator (braking, shaded bands).");
+        });
+
+        // Only show the weight breakdown tab when the sweep has one (some
+        // link mass or weight).
+        let has_wb = sweep.weight_breakdown.is_some();
+        ui.add_enabled_ui(has_wb, |ui| {
+            ui.selectable_value(
+                &mut selected_tab,
+                PlotTab::WeightBreakdown,
+                "Weight Breakdown",
+            ).on_hover_text("Each weight's share of the load the actuator (or, without an actuator, the driver) must carry vs. driver angle: one line per link self-weight and per placed weight, plus Other loads (springs, force zones, external loads, end stops) and the required Total. A line is green where that weight comes down and helps, red where the actuator lifts it, gray where it moves sideways. Force share = -m g\u{b7}v divided by the actuator speed dL/dt (by the driver rate without an actuator), left blank near stroke reversal; power share = -m g\u{b7}v, negative when the weight gives power back.");
         });
 
         // Only show output force tab when force zone data exists.
@@ -319,6 +337,23 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
         PlotTab::ActuatorPower => {
             actuator::draw_actuator_power(ui, sweep, current_driver_display, &state.display_units, nm)
         }
+        PlotTab::WeightBreakdown => {
+            ui.horizontal(|ui| {
+                ui.label("Show:");
+                ui.selectable_value(&mut state.weight_breakdown_show_power, false, "Force share")
+                    .on_hover_text("Each weight's share of the required actuator force (N), or of the driver torque without an actuator. Speed-independent.");
+                ui.selectable_value(&mut state.weight_breakdown_show_power, true, "Power share")
+                    .on_hover_text("Each weight's share of the actuator power (W) at the driver's configured speed. Negative = the weight gives power back (helping).");
+            });
+            weights::draw_weight_breakdown(
+                ui,
+                sweep,
+                current_driver_display,
+                &state.display_units,
+                nm,
+                state.weight_breakdown_show_power,
+            )
+        }
         PlotTab::OutputForce => {
             coupler::draw_output_force(ui, sweep, current_driver_display, &state.display_units, nm)
         }
@@ -369,6 +404,20 @@ fn display_to_radians(display_angle: f64, units: &DisplayUnits) -> f64 {
     }
 }
 
+/// Convert a sweep x value (`SweepData::angles_deg` entry, toggle angle or
+/// range bound) to the plot's display x: metres to millimetres in stroke
+/// mode, degrees to the configured display angle unit in angle mode.
+///
+/// The single place the plots map sweep x to screen x; clicks go back
+/// through `display_to_radians` (angle) or `* 1e-3` (stroke).
+fn sweep_x_to_display(x: f64, sweep: &SweepData, units: &DisplayUnits) -> f64 {
+    if sweep.sweep_mode.is_stroke() {
+        x * 1000.0
+    } else {
+        units.angle(x.to_radians())
+    }
+}
+
 /// Return the x-axis label string for plots that sweep over the driver variable.
 ///
 /// In angle mode this is `"Driver Angle (deg)"` or `"Driver Angle (rad)"`.
@@ -388,10 +437,8 @@ fn x_axis_label_for_sweep(sweep: &SweepData, units: &DisplayUnits) -> String {
 /// Compute the display-space x-axis bounds (min, max) for an angle/stroke
 /// sweep, or `None` if the sweep has no usable data.
 ///
-/// In angle mode the bounds are converted from body-frame radians to the
-/// configured display angle unit. In stroke mode they're converted from
-/// metres to millimetres. This matches the per-plot conversion that
-/// `draw_angle_series_with_range` already applies to data points.
+/// The bounds go through `sweep_x_to_display`, the same conversion the
+/// plots apply to their data points.
 fn compute_default_x_bounds(sweep: &SweepData, units: &DisplayUnits) -> Option<(f64, f64)> {
     if sweep.angles_deg.is_empty() {
         return None;
@@ -414,14 +461,10 @@ fn compute_default_x_bounds(sweep: &SweepData, units: &DisplayUnits) -> Option<(
     if raw_max - raw_min < 1e-9 {
         return None;
     }
-    if sweep.sweep_mode.is_stroke() {
-        Some((raw_min * 1000.0, raw_max * 1000.0))
-    } else {
-        Some((
-            units.angle(raw_min.to_radians()),
-            units.angle(raw_max.to_radians()),
-        ))
-    }
+    Some((
+        sweep_x_to_display(raw_min, sweep, units),
+        sweep_x_to_display(raw_max, sweep, units),
+    ))
 }
 
 /// Wrap a `Plot` with a fixed default x-axis bound matching the sweep's
@@ -510,9 +553,8 @@ fn draw_toggle_markers(
     sweep: &SweepData,
     units: &DisplayUnits,
 ) {
-    let is_stroke = sweep.sweep_mode.is_stroke();
     for (i, &toggle_val) in sweep.toggle_angles.iter().enumerate() {
-        let toggle_display = if is_stroke { toggle_val * 1000.0 } else { units.angle(toggle_val.to_radians()) };
+        let toggle_display = sweep_x_to_display(toggle_val, sweep, units);
         plot_ui.vline(
             VLine::new(format!("toggle_{}", i), toggle_display)
                 .color(egui::Color32::from_rgba_premultiplied(255, 60, 60, 100))
@@ -535,9 +577,8 @@ fn draw_range_boundary_markers(
         if let (Some(&min_val), Some(&max_val)) =
             (sweep.angles_deg.get(start), sweep.angles_deg.get(end))
         {
-            let is_stroke = sweep.sweep_mode.is_stroke();
-            let min_display = if is_stroke { min_val * 1000.0 } else { units.angle(min_val.to_radians()) };
-            let max_display = if is_stroke { max_val * 1000.0 } else { units.angle(max_val.to_radians()) };
+            let min_display = sweep_x_to_display(min_val, sweep, units);
+            let max_display = sweep_x_to_display(max_val, sweep, units);
             let boundary_color =
                 egui::Color32::from_rgba_unmultiplied(255, 255, 255, 80);
             plot_ui.vline(
@@ -592,10 +633,7 @@ fn draw_angle_series_with_range(
         return;
     }
 
-    let is_stroke = sweep.sweep_mode.is_stroke();
-    let to_display = |x: f64| -> f64 {
-        if is_stroke { x * 1000.0 } else { units.angle(x.to_radians()) }
-    };
+    let to_display = |x: f64| sweep_x_to_display(x, sweep, units);
 
     if let Some((start, end)) = sweep.active_range {
         // Full curve -- faded/dashed for context.
@@ -773,6 +811,24 @@ mod tests {
         assert!((hi - 180.0).abs() < 1e-6);
     }
 
+    /// The one sweep-x conversion every plot uses (data points, braking
+    /// bands, toggle and range markers, default x bounds): metres to
+    /// millimetres in stroke mode whatever the angle unit, degrees to the
+    /// display angle unit in angle mode.
+    #[test]
+    fn sweep_x_to_display_converts_per_sweep_mode_and_angle_unit() {
+        let angle = empty_trajectory_sweep_data(SweepMode::Angle);
+        let stroke = empty_trajectory_sweep_data(SweepMode::Stroke);
+        let rad_units = DisplayUnits { length: LengthUnit::Millimeters, angle: AngleUnit::Radians };
+        assert!((sweep_x_to_display(90.0, &angle, &deg_units()) - 90.0).abs() < 1e-12);
+        assert!((sweep_x_to_display(-45.0, &angle, &deg_units()) + 45.0).abs() < 1e-12);
+        assert!((sweep_x_to_display(90.0, &angle, &rad_units) - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+        assert_eq!(sweep_x_to_display(0.125, &stroke, &deg_units()), 125.0);
+        assert_eq!(sweep_x_to_display(0.125, &stroke, &rad_units), 125.0);
+        assert!(sweep_x_to_display(f64::NAN, &angle, &deg_units()).is_nan());
+        assert!(sweep_x_to_display(f64::NAN, &stroke, &deg_units()).is_nan());
+    }
+
     /// Flat curve with two near-singular spikes: the removed Tukey fence
     /// (Q1 - 10*IQR .. Q3 + 10*IQR, IQR floored at 1 N) would have dropped
     /// both spikes because the fence is only ~20 N wide on a flat curve.
@@ -822,6 +878,83 @@ mod tests {
         let ys = [1.0, 1.0e6, -1.0e6];
         assert_eq!(finite_series(&xs, &ys), vec![(0.0, 1.0), (90.0, 1.0e6), (180.0, -1.0e6)]);
         assert!(finite_series(&[], &[]).is_empty());
+    }
+
+    /// The code's convention is positive = extension (the actuator pushes
+    /// its ends apart); the tab tip used to say "positive = tension".
+    #[test]
+    fn actuator_force_tab_tip_states_the_extension_sign_convention() {
+        assert!(ACTUATOR_FORCE_TAB_TIP.contains("Positive = extension"), "{ACTUATOR_FORCE_TAB_TIP}");
+        assert!(!ACTUATOR_FORCE_TAB_TIP.contains("Positive = tension"), "{ACTUATOR_FORCE_TAB_TIP}");
+        assert!(!ACTUATOR_FORCE_TAB_TIP.contains("compression"), "{ACTUATOR_FORCE_TAB_TIP}");
+    }
+
+    /// Run one idle frame of the plot panel with `tab` selected (the panel
+    /// keeps its tab in egui memory under `ui.id().with("plot_tab")`).
+    fn plot_panel_frame(state: &mut AppState, tab: PlotTab) {
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let tab_id = ui.id().with("plot_tab");
+                ui.memory_mut(|mem| mem.data.insert_temp(tab_id, tab));
+                draw_plot_panel(ui, state);
+            });
+        });
+    }
+
+    /// The Weight Breakdown tab (force and power view) and the actuator
+    /// tabs with braking bands and a rated force render headlessly, and an
+    /// idle frame changes neither the view toggle nor the pose.
+    #[test]
+    fn weight_breakdown_and_braking_band_tabs_render_idle_frames() {
+        use crate::gui::samples::SampleMechanism;
+        use crate::gui::state::AppState;
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::ParallelogramActuator);
+        state.add_point_mass("rocker", 50.0, [0.0, 0.0]).expect("weight added");
+        state.compute_sweep();
+        let breakdown = state.sweep_data.as_ref().unwrap().weight_breakdown.as_ref().expect("breakdown");
+        assert!(breakdown.braking.iter().any(|&b| b), "the fixture has braking bands to draw");
+        state.actuator_rated_force = 500.0;
+        for show_power in [false, true] {
+            state.weight_breakdown_show_power = show_power;
+            let angle = state.driver_angle;
+            for tab in [PlotTab::WeightBreakdown, PlotTab::ActuatorForce, PlotTab::ActuatorPower] {
+                plot_panel_frame(&mut state, tab);
+                assert_eq!(state.weight_breakdown_show_power, show_power, "{tab:?} idle frame");
+                assert_eq!(state.driver_angle, angle, "{tab:?} idle frame");
+            }
+        }
+    }
+
+    /// Without an actuator the tab shows driver-torque shares; with no link
+    /// mass and no weight the sweep has no breakdown, and the tab and the
+    /// band-less actuator tab still render.
+    #[test]
+    fn weight_breakdown_tab_renders_driver_basis_and_missing_breakdown() {
+        use crate::gui::samples::SampleMechanism;
+        use crate::gui::state::AppState;
+        use crate::gui::sweep::ShareBasis;
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.compute_sweep();
+        let breakdown = state.sweep_data.as_ref().unwrap().weight_breakdown.as_ref().expect("breakdown");
+        assert_eq!(breakdown.basis, ShareBasis::DriverTorque);
+        for show_power in [false, true] {
+            state.weight_breakdown_show_power = show_power;
+            plot_panel_frame(&mut state, PlotTab::WeightBreakdown);
+        }
+
+        for body in state.blueprint.as_mut().unwrap().bodies.values_mut() {
+            body.mass = 0.0;
+        }
+        state.rebuild();
+        state.compute_sweep();
+        assert!(state.sweep_data.as_ref().unwrap().weight_breakdown.is_none());
+        plot_panel_frame(&mut state, PlotTab::WeightBreakdown);
+        plot_panel_frame(&mut state, PlotTab::ActuatorForce);
     }
 
     #[test]

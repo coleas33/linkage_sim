@@ -56,7 +56,7 @@ gui_submodules:
         primitives: canvas/rendering/primitives.rs (springs, dampers, arrows, arcs, markers, alignment guides)
         force_render: canvas/rendering/force_render.rs (force element visualization + load-path heat map; actuator label value comes from AppState::actuator_label_force)
       hit_testing: canvas/hit_testing.rs (body-segment projection; weight picking find_point_mass_at + point_mass_screen_pos, which drawing shares)
-      colors: canvas/colors.rs
+      colors: canvas/colors.rs (includes classification_color, re-exported as canvas::classification_color — the one helping/hurting/neutral palette for weight arrows and Weight Breakdown lines)
       context_menu: canvas/context_menu.rs
       alignment: canvas/alignment.rs
 
@@ -71,10 +71,11 @@ gui_submodules:
   plot_panel:
     path: src/gui/plot_panel/
     files:
-      mod: plot_panel/mod.rs (PlotTab enum, dispatcher, shared helpers)
+      mod: plot_panel/mod.rs (PlotTab enum incl. WeightBreakdown, dispatcher, shared helpers incl. sweep_x_to_display - the one sweep-x to display-x conversion; Weight Breakdown force/power toggle bound to AppState::weight_breakdown_show_power)
       mechanics: plot_panel/mechanics.rs (body angles, transmission, MA, joint reactions)
       dynamics: plot_panel/dynamics.rs (driver torque, inverse dynamics, energy)
-      actuator: plot_panel/actuator.rs (force, speed, power; force plot draws every finite sample — no outlier filter, BL-010)
+      actuator: plot_panel/actuator.rs (force, speed, power; force plot draws every finite sample — no outlier filter, BL-010; force and power plots shade braking bands via weights::draw_braking_bands)
+      weights: plot_panel/weights.rs (payload weights - Weight Breakdown tab draw_weight_breakdown, one line per weight source + Other loads + Total, force or power share, runs coloured per sample by classification; braking bands braking_bands / band_y_extent / draw_braking_bands; pure assembly breakdown_lines, source_line_name, breakdown_y_label)
       coupler: plot_panel/coupler.rs (trace, velocity, acceleration, output force)
 
   samples:
@@ -93,7 +94,7 @@ gui_submodules:
       mod: sweep/mod.rs (SweepData + SweepData::index_at_driver (nearest sample to the current driver angle/stroke, circular in angle mode — BL-010), compute_sweep_data, solve_sweep_positions two-pass Newton continuation for full-revolution sweeps — post-gap samples reached backward from 360 deg on the starting branch (BL-011), push_nan_row helper)
       motion_profile: sweep/motion_profile.rs (trapezoidal velocity profile, apply_motion_profile; SCurve falls back to ConstantSpeed in driver-side mode)
       fourbar: sweep/fourbar.rs (4-bar linkage detection for transmission angle)
-      weights: sweep/weights.rs (payload weights - WeightBreakdown {sources, basis, gravity_power, force_share, power_share, other_force, other_power, total_force, total_power, braking} + classification(); ShareBasis {ActuatorForce, DriverTorque}; WeightBreakdownBuilder fed per sample by compute_sweep_data_with_weights; required_totals. AppState::compute_sweep passes gravity_breakdown::weight_sources(blueprint); plain compute_sweep_data = no breakdown)
+      weights: sweep/weights.rs (payload weights - WeightBreakdown {sources, basis, gravity_power, force_share, power_share, other_force, other_power, total_force, total_power, braking} + classification() and classifications() (per-sample class of one source, band computed once; the plot colours lines with it); ShareBasis {ActuatorForce, DriverTorque}; WeightBreakdownBuilder fed per sample by compute_sweep_data_with_weights; required_totals. AppState::compute_sweep passes gravity_breakdown::weight_sources(blueprint); plain compute_sweep_data = no breakdown)
 
   other_top_level_gui:
     - mod.rs (LinkageApp + update loop orchestration; handle_delete_shortcut)
@@ -128,7 +129,7 @@ where_things_belong:
 
   add_new_plot_tab:
     - src/gui/plot_panel/mod.rs (add to PlotTab enum, dispatcher, tab button)
-    - src/gui/plot_panel/{mechanics,dynamics,actuator,coupler}.rs (add draw_ fn)
+    - src/gui/plot_panel/{mechanics,dynamics,actuator,coupler,weights}.rs (add draw_ fn)
     - src/gui/sweep/mod.rs (compute + store data in SweepData)
 
   add_new_interactive_tool:

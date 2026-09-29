@@ -8,6 +8,10 @@ use crate::forces::elements::*;
 use super::pending_edits::PendingPropertyEdit;
 use crate::gui::state::AppState;
 
+/// Hover text of the LinearActuator force field. Sign convention of the
+/// element (`forces::elements::evaluation`): positive = extension.
+const ACTUATOR_FORCE_FIELD_TIP: &str = "Constant axial force applied by the actuator in Newtons. Positive = extension (pushes the attachment points apart), negative = retraction (pulls them together). Set to 0 to solve for the required actuator force from statics.";
+
 /// Draw the force elements section of the property panel.
 ///
 /// Lists all non-gravity force elements with editable parameters in
@@ -969,7 +973,7 @@ fn draw_force_element_details(
                             .speed(1.0)
                             .suffix(" N"),
                     )
-                    .on_hover_text("Constant axial force applied by the actuator in Newtons. Positive = tension (pulling points together), negative = compression (pushing apart). Set to 0 to solve for the required actuator force from statics.")
+                    .on_hover_text(ACTUATOR_FORCE_FIELD_TIP)
                     .changed()
                 {
                     let mut updated = la.clone();
@@ -1502,4 +1506,18 @@ fn draw_point_fields(
             });
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The code's convention is positive = extension (the actuator pushes
+    /// its attachment points apart); the field tip used to say the opposite.
+    #[test]
+    fn actuator_force_field_tip_states_the_extension_sign_convention() {
+        assert!(ACTUATOR_FORCE_FIELD_TIP.contains("Positive = extension"), "{ACTUATOR_FORCE_FIELD_TIP}");
+        assert!(!ACTUATOR_FORCE_FIELD_TIP.contains("Positive = tension"), "{ACTUATOR_FORCE_FIELD_TIP}");
+        assert!(!ACTUATOR_FORCE_FIELD_TIP.contains("compression"), "{ACTUATOR_FORCE_FIELD_TIP}");
+    }
 }

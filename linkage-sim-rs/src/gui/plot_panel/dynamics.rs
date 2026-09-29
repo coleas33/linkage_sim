@@ -9,7 +9,7 @@ use crate::gui::sweep::SweepData;
 use super::{
     detect_plot_click, draw_angle_series_with_range, draw_range_boundary_markers,
     draw_toggle_markers, driver_effort_series_name, driver_effort_y_label, faded_color,
-    series_colors, with_default_x_bounds, x_axis_label_for_sweep,
+    series_colors, sweep_x_to_display, with_default_x_bounds, x_axis_label_for_sweep,
 };
 
 pub(super) fn draw_driver_torque(
@@ -124,10 +124,7 @@ pub(super) fn draw_inverse_dynamics(
                 .iter()
                 .zip(statics_torques.iter())
                 .filter(|&(_, &t)| t.is_finite())
-                .map(|(&x, &t)| {
-                    let x_display = if is_stroke { x * 1000.0 } else { units.angle(x.to_radians()) };
-                    [x_display, t]
-                })
+                .map(|(&x, &t)| [sweep_x_to_display(x, sweep, units), t])
                 .collect();
             let statics_label = if is_stroke { "Statics Force" } else { "Statics Torque" };
             let statics_color = if nathan_mode {

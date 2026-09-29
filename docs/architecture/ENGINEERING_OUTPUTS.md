@@ -184,6 +184,23 @@ T_driver_total = T_gravity + T_springs + T_dampers + T_external + T_inertia
 
 Plotted as a stacked chart vs. input angle, this shows the engineer exactly where the motor effort comes from and which sources can be reduced (e.g., adding a counterbalance spring to cancel gravity contribution).
 
+### Per-Weight Gravity Breakdown (Weight Breakdown tab)
+
+The gravity term is split further, one entry per weight: each link's own mass (base mass at its base CG, named after the link) and each point mass placed on a link. Gravity is linear in mass, so the split is exact. For weight *i* at each sweep sample (`analysis::gravity_breakdown`, `gui::sweep::weights`):
+
+```text
+P_g,i = m_i * (g . v_i)          gravity power (W); > 0 = weight coming down = helping
+power share  = -P_g,i            actuator power spent on the weight (W); < 0 = gives power back
+force share  = -P_g,i / (dL/dt)  actuator force share (N); NaN where |dL/dt| < 1 % of its sweep max
+other        = total - sum(shares)   springs, force zones, external loads, end stops
+```
+
+Without a linear actuator the shares are driver-torque shares (`-P_g,i / omega`, N·m; N for a linear driver). The total is the **required** actuator force and power, the values the Actuator Force and Actuator Power plots show in sizing and stored-force mode alike (BL-026), so `sum(shares) + other = total` at every sample where the shares are finite.
+
+Sign conventions: actuator force positive = extension (the actuator pushes its ends apart), negative = retraction (it pulls them together). A weight is *helping* where `P_g,i` is above 1 % of its sweep maximum, *hurting* below minus that band, *neutral* in between (moving sideways). Because the force share also changes sign with the stroke direction, the plot colours each weight's line by helping (green) / hurting (red) / neutral (gray) at each sample, the same palette as the canvas weight arrows (`canvas::classification_color`), rather than relying on the sign.
+
+**Braking:** the actuator brakes (the load drives it) where the required actuator power is below `-1e-6 * max|P|` over the sweep. The Actuator Force and Actuator Power plots shade those driver ranges; a band runs halfway to the neighbouring samples on either side. In the quasi-static model the force to hold a load is the same up and down; gravity helping shows up as negative power (braking), not as a smaller force.
+
 ---
 
 ## Mechanism Health Panel

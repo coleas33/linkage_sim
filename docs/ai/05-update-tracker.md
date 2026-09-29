@@ -5,6 +5,61 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-29 — Payload weights Task 7: braking bands and the Weight Breakdown plot
+- `gui/plot_panel/weights.rs` (new): `PlotTab::WeightBreakdown` ("Weight
+  Breakdown" tab, enabled when `SweepData::weight_breakdown` is `Some`): one
+  line per weight source (legend `"coupler (link)"`, `"Robot (W1)"`) plus
+  "Other loads" and "Total", force share or power share
+  (`AppState::weight_breakdown_show_power`, not persisted). Each weight's
+  line is split into runs coloured per sample by
+  `WeightBreakdown::classifications` (new: band computed once per weight)
+  through `canvas::classification_color` (new, `canvas/colors.rs`: green
+  helping / red hurting / gray neutral, distinct in Nathan Mode grayscale),
+  the palette the canvas weight arrows will share. Force shares leave gaps
+  near stroke reversal and at failed samples.
+- Braking bands: `braking_bands(xs, braking)` (runs of braking samples,
+  midpoint to midpoint, clipped at the sweep ends, zero-width dropped) and
+  `band_y_extent` (data y range, never `plot_bounds()`), drawn by
+  `draw_braking_bands` as "Braking" polygons behind the Actuator Force and
+  Actuator Power curves. Source: `WeightBreakdown::braking` only, i.e. the
+  required power. Since BL-026 the plotted actuator force and power are the
+  required values in stored-force mode too, so the bands and the Total line
+  follow the plotted curves in both modes; no BL-026 caveat remains.
+- `plot_panel::sweep_x_to_display` (new, DRY): the one sweep-x to display-x
+  conversion (m -> mm in stroke mode, degrees -> display angle unit). It
+  replaces the inline copies at 9 sites: `compute_default_x_bounds`,
+  `draw_toggle_markers`, `draw_range_boundary_markers`,
+  `draw_angle_series_with_range`, the actuator force / power "With Inertia"
+  overlays and the safety-factor overlay, the driver-torque statics
+  overlay, and `draw_braking_bands`. `current_driver_display` is not a
+  sweep x value (radians plus the display offset) and keeps its own branch.
+- Sign wording: the Actuator Force tab tip and the LinearActuator force
+  field tip now say positive = extension (push), negative = retraction
+  (pull) (were "positive = tension"); the rated-force lines are "Rated
+  (push)" / "Rated (pull)" (was "Rated (compression)" for the pull side).
+  Both tips are constants with tests.
+- Tests: `gui::plot_panel::weights::tests` (band edges, ends, NaN x,
+  descending x, length mismatch, y extent, legend names, run splitting in
+  both views, y labels; bands = negative plotted actuator power on the
+  parallelogram in stored-force AND sizing mode, which uses
+  `test_support::set_actuator_stored_force` instead of an inline loop; the
+  Total line equals the plotted actuator force and power in stored-force
+  mode), `gui::plot_panel::tests` (tooltip, `sweep_x_to_display`, headless
+  render of the new tab and the banded tabs incl. driver basis and no
+  breakdown), `gui::canvas::colors::tests`,
+  `gui::property_panel::force_editor::tests`,
+  `gui::sweep::weights::tests::classifications_match_classification_at_every_sample`.
+  Mutation check: dropping `stored_force * rate` from `required_totals`'
+  total power fails the stored-force case of the band test (91 deg) and
+  the Total line test.
+- Docs: 02-system `weight_breakdown_sum_and_sign_conventions`, egui_plot
+  auto-bounds lesson, 15 plot tabs; 03-structure plot_panel/weights.rs,
+  `sweep_x_to_display`, colors palette, `classifications()`;
+  `docs/architecture/ENGINEERING_OUTPUTS.md` per-weight breakdown and
+  braking section; FEATURES/README actuator sizing bullets. The stale
+  "10 plot tabs" lines in README/FEATURES and the hands-on checklist are
+  Task 10.
+
 ## 2026-09-29 — Payload weights Task 6: drag and drop weights
 - `gui/state/types.rs`: `WeightDrag { body_id, weight_id, current_world }`;
   `AppState::weight_drag: Option<WeightDrag>` (preview only).

@@ -412,6 +412,9 @@ pub struct AppState {
     /// User-specified actuator rated force (N) for margin/safety factor display.
     /// When 0.0, the margin overlay is disabled.
     pub actuator_rated_force: f64,
+    /// Weight Breakdown plot view: power shares (W) when true, force shares
+    /// (N, or driver-torque shares without an actuator) when false.
+    pub weight_breakdown_show_power: bool,
     // ── Motion profile ────────────────────────────────────────────────
     /// Driver velocity profile for sweep analysis (constant speed vs trapezoidal).
     pub motion_profile: MotionProfile,
@@ -711,6 +714,7 @@ impl Default for AppState {
             weight_drag: None,
             adding_joint_point: None,
             actuator_rated_force: 0.0,
+            weight_breakdown_show_power: false,
             motion_profile: MotionProfile::default(),
             trajectory_severity: crate::solver::inverse_kinematics::Severity::Analysis,
             sweep_mode: crate::gui::sweep::SweepMode::Angle,

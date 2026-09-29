@@ -4,7 +4,7 @@ what_it_is: |
   kinematics (positions/velocities/accelerations), static force balance
   (joint reactions, required input effort), inverse dynamics (with inertia),
   and forward dynamics (time-domain simulation). Ships a Rust + egui GUI
-  (native + WASM) with 30 sample mechanisms, 14 plot tabs, DXF import,
+  (native + WASM) with 30 sample mechanisms, 15 plot tabs, DXF import,
   sweep + parametric analysis, and HTML/CSV/SVG/GIF/DXF export.
 
 architecture_invariants:
@@ -184,6 +184,29 @@ invariants_to_protect:
     io::from_json::apply_point_masses is the only place weights reach the
     physics (the loader and sync_live_mass_props both call it), so a
     no-rebuild mass edit skips exactly what a rebuild skips.
+  - weight_breakdown_sum_and_sign_conventions — WeightBreakdownBuilder::finish
+    builds other_* = total_* - sum(shares), so wherever the shares are
+    finite sum_i force_share[i] + other_force == total_force and
+    sum_i power_share[i] + other_power == total_power (other ~ 0 when
+    gravity is the only load; tested). Signs, one convention everywhere -
+    actuator force positive = extension/push (forces/elements/evaluation.rs;
+    tooltips and the "Rated (push)/(pull)" lines say so, never "tension");
+    P_g,i = m_i g.v_i > 0 = helping (coming down); power_share = -P_g,i
+    (< 0 = gives power back); force_share = -P_g,i / dL/dt also flips with
+    the stroke direction, so plots colour weight lines by classification,
+    never by the share's sign; braking = required power
+    < -BRAKE_TOL_REL * max|P|. Since BL-026 the plotted Actuator Force and
+    Actuator Power are the required values in sizing and stored-force mode
+    alike, so the braking bands and the Weight Breakdown Total line follow
+    the plotted curves in both modes (plot_panel::weights tests
+    braking_bands_cover_exactly_the_negative_actuator_power_samples,
+    total_line_is_the_plotted_required_actuator_force_and_power).
+    canvas::classification_color (green helping, red hurting, gray neutral)
+    is the single palette for canvas weight arrows and Weight Breakdown
+    lines. Braking bands read WeightBreakdown::braking only (none when the
+    sweep has no breakdown). Every plot maps sweep x to display x through
+    plot_panel::sweep_x_to_display (mm in stroke mode, display angle unit
+    otherwise); never inline the conversion.
   - severity_controls_return_type_not_math — Trajectory mode's
     Severity::{Strict, Analysis} runs identical Newton/FD code; the only
     difference is whether failure status bubbles as Err or as a result
@@ -260,11 +283,15 @@ lessons_learned:
     DragValue::range also marks the response changed() when it clamps an
     out-of-range stored value on an idle frame; use
     .clamp_existing_to_range(false) on committed fields (weight mass field).
+  - egui_plot fits its auto bounds to every item plus a 5 % margin
+    (margin_fraction), so a shaded band sized from plot_ui.plot_bounds()
+    would widen the axes on every frame. Size bands from the data's finite
+    y range instead (plot_panel/weights.rs band_y_extent).
 
 current_statuses:
   solver: Rust port complete; 716 lib tests pass; trajectory-mode IK Stage 1
     (solver layer) shipped — see solver/inverse_kinematics/
-  gui: Phase 5 complete; 14 plot tabs; 30 sample mechanisms
+  gui: Phase 5 complete; 15 plot tabs (Weight Breakdown added); 30 sample mechanisms
   dxf_import: works native + WASM via drag-drop; selection-based conversions
   actuator_workflow: two-pass solve gives correct reactions with actuator loads
   non_grashof_sweep: NaN-padded across unreachable angles; playback ping-pongs

@@ -203,7 +203,9 @@ All force elements are editable in the GUI property panel and rendered on the ca
 
 ### Actuator Sizing
 
-- **Actuator force plot** -- required actuator force (N) vs crank angle via power balance (F = T × omega / dL_dt + F_stored); the actuator's stored force is added back, so the curve is the same whether the stored force is 0 (sizing mode) or set
+- **Actuator force plot** -- required actuator force (N) vs crank angle via power balance (F = T × omega / dL_dt + F_stored); the actuator's stored force is added back, so the curve is the same whether the stored force is 0 (sizing mode) or set; positive = extension (push), negative = retraction (pull)
+- **Braking bands** -- the Actuator Force and Actuator Power plots shade the crank ranges where the load drives the actuator (negative required power)
+- **Weight Breakdown tab** -- one line per link self-weight and per placed weight, plus Other loads and Total, as force share (N) or power share (W); each weight's line is green where it helps (coming down), red where the actuator lifts it, gray where it moves sideways
 - **Statics + inverse dynamics curves** -- solid line (statics, quasi-static) and dashed line (with inertia, includes acceleration effects)
 - **Actuator stroke display** -- Health Report shows stroke (max-min length), min/max actuator length, peak forces from both methods
 - **Force zone overlap feedback** -- Diagnostics shows per-zone overlap percentage and applied force magnitude at current configuration
