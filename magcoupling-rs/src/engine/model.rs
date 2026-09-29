@@ -17,7 +17,7 @@
 use std::f64::consts::PI;
 
 use super::compat::{fmt_fixed, py_max, py_min};
-use super::constants::MU0;
+use super::constants::{MU0, NDFEB_DENSITY_G_MM3};
 use super::deviations::Deviations;
 use super::library::lookup;
 use super::meta::{NumOrText, inputs, out, param, results};
@@ -227,6 +227,23 @@ results! {
                 "Library rating only.", "Calculator!C107"),
             outer_temp_check: String => out("", "Outer magnet temperature check",
                 "Library rating only.", "Calculator!C108"),
+        }
+    }
+}
+
+results! {
+    /// Calculator sheet mass results (Calculator!C110:C115).
+    pub struct MassResults {
+        fields {
+            magnets_g: f64 => out("g", "Magnets (both rings)", "7.5 g/cm³.", "Calculator!C110"),
+            cup_g: f64 => out("g", "Steel cup wall and integral rear web", "", "Calculator!C111"),
+            hub_g: f64 => out("g", "Steel keyed inner hub", "", "Calculator!C112"),
+            boss_g: f64 => out("g", "Integral steel shaft boss", "", "Calculator!C113"),
+            total_g: f64 => out("g", "Preliminary rotating mass, including retainers",
+                "Gross geometry plus hardware; holes, threads and slots not subtracted.",
+                "Calculator!C114"),
+            added_inertia_kgm2: f64 => out("kg·m²", "Added inertia at 0.25 m from the swing axis",
+                "Point-mass estimate.", "Calculator!C115"),
         }
     }
 }
@@ -590,6 +607,63 @@ pub fn compute(
         hub_check: thick_check(hub_wall),
         inner_temp_check: temp_check(mi.tmax_C),
         outer_temp_check: temp_check(mo.tmax_C),
+    }
+}
+
+/// Calculator rows 110-115. Gross solids: no holes, slots or threads subtracted.
+#[allow(non_snake_case, clippy::too_many_arguments)] // Python names and signature
+pub fn mass_estimate(
+    ci: &CouplingInputs,
+    r: &ModelResults,
+    bond_inner_mm: f64,
+    bond_outer_mm: f64,
+    cup_depth_mm: f64,
+    web_mm: f64,
+    hub_length_mm: f64,
+    boss_length_mm: f64,
+    boss_od_mm: f64,
+    steel_density_g_mm3: f64,
+    al_density_g_mm3: f64,
+    retainers_g: f64,
+    hardware_g: f64,
+    cap_g: f64,
+    endplates_g: f64,
+    _dev: Deviations,
+) -> MassResults {
+    let N = ci.npole as f64;
+    let m_mag = N
+        * (r.inner_length_mm * r.inner_width_mm * r.inner_thickness_mm
+            + r.outer_length_mm * r.outer_width_mm * r.outer_thickness_mm)
+        * NDFEB_DENSITY_G_MM3;
+    let m_ring = ((PI * (r.cup_od_mm / 2.0).powi(2)
+        - N * (r.outer_back_apothem_mm + bond_outer_mm).powi(2) * (PI / N).tan())
+        * cup_depth_mm
+        + PI * ((r.cup_od_mm / 2.0).powi(2) - (ci.bore_mm / 2.0).powi(2)) * web_mm)
+        * steel_density_g_mm3;
+    let hub_area = if ci.faceted == 1 {
+        N * (ci.inner_back_apothem_mm - bond_inner_mm).powi(2) * (PI / N).tan()
+    } else {
+        PI * (ci.inner_back_apothem_mm - bond_inner_mm).powi(2)
+    };
+    let m_hub = (hub_area - PI * (ci.bore_mm / 2.0).powi(2))
+        * hub_length_mm
+        * (if ci.backiron == 1 {
+            steel_density_g_mm3
+        } else {
+            al_density_g_mm3
+        });
+    let m_boss = PI
+        * ((boss_od_mm / 2.0).powi(2) - (ci.bore_mm / 2.0).powi(2))
+        * boss_length_mm
+        * steel_density_g_mm3;
+    let total = m_mag + m_ring + m_hub + m_boss + retainers_g + hardware_g + cap_g + endplates_g;
+    MassResults {
+        magnets_g: m_mag,
+        cup_g: m_ring,
+        hub_g: m_hub,
+        boss_g: m_boss,
+        total_g: total,
+        added_inertia_kgm2: total / 1000.0 * 0.25_f64.powi(2),
     }
 }
 

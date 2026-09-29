@@ -74,6 +74,7 @@ MODULES = {
     "calibration": ["calibration"],
     "model": ["coupling", "metal", "materials", "calibration"],
     "retainers": ["coupling", "metal"],
+    "mass": ["coupling", "metal"],
 }
 # every library part, blank (manual magnet) and a near miss of the default part
 PART_CHOICES = list(MAGNET_LIBRARY) + ["", "b842sh"]

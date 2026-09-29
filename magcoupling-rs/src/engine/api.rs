@@ -7,8 +7,9 @@
 //! Calibration → Calculator (model) → Metal design retainers → Calculator mass
 //! → Metal design → Materials → Temperature design → Shaft clamps → sweeps.
 //!
-//! Ported so far: Calibration, Calculator (model), Metal design retainers; the
-//! rest of Metal design and Materials contribute their inputs only.
+//! Ported so far: Calibration, Calculator (model), Metal design retainers,
+//! Calculator mass; the rest of Metal design and Materials contribute their
+//! inputs only.
 //!
 //! Python API mapping: `compute_all(inp)` is [`compute_all`];
 //! `input_schema(inp)` and `result_schema(res)` are
@@ -24,7 +25,7 @@ use super::deviations::{REGISTRY, restore_workbook_defaults};
 use super::materials::MaterialsInputs;
 use super::meta::{inputs, results};
 use super::metal_design::{self, MetalDesignInputs, RetainerResults};
-use super::model::{self, CouplingInputs, ModelResults};
+use super::model::{self, CouplingInputs, MassResults, ModelResults};
 
 inputs! {
     /// Every editable input, grouped as the Python `DesignInputs` (same order).
@@ -46,6 +47,7 @@ results! {
         groups {
             calibration: CalibrationResults,
             model: ModelResults,
+            mass: MassResults,
             retainers: RetainerResults,
         }
     }
@@ -106,9 +108,28 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         ci.bore_mm,
         dev,
     );
+    let mass = model::mass_estimate(
+        ci,
+        &m,
+        md.bond_inner_mm,
+        md.bond_outer_mm,
+        md.cup_depth_mm,
+        md.web_mm,
+        md.hub_length_mm,
+        md.boss_length_mm,
+        md.boss_od_mm,
+        md.steel_density_g_mm3,
+        md.al_density_g_mm3,
+        ret.retainers_g,
+        md.hardware_g,
+        ret.cap_g,
+        ret.endplates_g,
+        dev,
+    );
     DesignResults {
         calibration: cal,
         model: m,
+        mass,
         retainers: ret,
     }
 }

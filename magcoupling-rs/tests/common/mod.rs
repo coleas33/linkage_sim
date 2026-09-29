@@ -55,6 +55,10 @@ pub const PORTED_RESULTS: &[PortedResults] = &[
         cells: 73,
     },
     PortedResults {
+        group: "mass",
+        cells: 6,
+    },
+    PortedResults {
         group: "retainers",
         cells: 9,
     },
