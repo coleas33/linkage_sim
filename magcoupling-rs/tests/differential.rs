@@ -14,12 +14,15 @@ mod common;
 use std::collections::{BTreeMap, BTreeSet};
 
 use common::{PORTED_RESULTS, data_path, group_of, json_to_value, read_json, report};
-use magcoupling::engine::api::{DesignInputs, compute_all_with};
+use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with};
 use magcoupling::engine::compat::{
     ceiling, floor_, fmt_fixed, fmt_num, parity_close, py_repr, text0,
 };
 use magcoupling::engine::deviations::Deviations;
-use magcoupling::engine::meta::{InputSet, Value, result_rows};
+use magcoupling::engine::meta::{FieldType, InputSet, Value, input_rows, result_rows};
+
+/// The data file whose cases vary every input group and compare every result.
+const FULL: &str = "full";
 
 /// A generated case: inputs by path, and the Python results of its module.
 struct Case {
@@ -83,7 +86,7 @@ fn rust_results(module: &str, case: &Case) -> Result<BTreeMap<String, Value>, St
     let results = compute_all_with(&inputs, Deviations::NONE);
     Ok(result_rows(&results)
         .into_iter()
-        .filter(|r| group_of(&r.path) == module)
+        .filter(|r| module == FULL || group_of(&r.path) == module)
         .map(|r| (r.path, r.value))
         .collect())
 }
@@ -91,7 +94,12 @@ fn rust_results(module: &str, case: &Case) -> Result<BTreeMap<String, Value>, St
 /// Compares every result of every case; returns the cases for coverage checks.
 fn check_module(module: &str) -> Vec<Case> {
     let cases = load_cases(module);
-    assert!(cases.len() >= 200, "{module}: only {} cases", cases.len());
+    let minimum = if module == FULL { 100 } else { 200 };
+    assert!(
+        cases.len() >= minimum,
+        "{module}: only {} cases",
+        cases.len()
+    );
     let mut failures = Vec::new();
     for case in &cases {
         let rust = match rust_results(module, case) {
@@ -514,6 +522,82 @@ fn gap_sweep_matches_python_on_every_case() {
 #[test]
 fn pole_sweep_matches_python_on_every_case() {
     check_module("pole_sweep");
+}
+
+#[test]
+fn full_run_matches_python_on_every_case() {
+    check_module(FULL);
+}
+
+/// Selector inputs and their codes, from the Rust metadata.
+fn selectors() -> Vec<(String, Vec<i64>)> {
+    input_rows(&DesignInputs::default())
+        .into_iter()
+        .filter(|r| !r.meta.choices.is_empty())
+        .map(|r| (r.path, r.meta.choices.iter().map(|&(c, _)| c).collect()))
+        .collect()
+}
+
+#[test]
+fn every_selector_pair_is_covered_in_the_full_run() {
+    let cases = load_cases(FULL);
+    let selectors = selectors();
+    let mut missing = Vec::new();
+    for (i, (a, codes_a)) in selectors.iter().enumerate() {
+        for (b, codes_b) in &selectors[i + 1..] {
+            for &ca in codes_a {
+                for &cb in codes_b {
+                    let hit = cases
+                        .iter()
+                        .any(|c| c.inputs[a] == Value::Int(ca) && c.inputs[b] == Value::Int(cb));
+                    if !hit {
+                        missing.push(format!("{a} = {ca} with {b} = {cb}"));
+                    }
+                }
+            }
+        }
+    }
+    assert!(missing.is_empty(), "{}", report(&missing));
+}
+
+#[test]
+fn every_selector_choice_appears_in_every_module_file() {
+    let mut missing = Vec::new();
+    for p in PORTED_RESULTS {
+        let cases = load_cases(p.group);
+        for (path, codes) in selectors() {
+            if !cases[0].inputs.contains_key(&path) {
+                continue; // this module does not vary that group
+            }
+            for code in codes {
+                if !cases.iter().any(|c| c.inputs[&path] == Value::Int(code)) {
+                    missing.push(format!("{}: {path} never takes {code}", p.group));
+                }
+            }
+        }
+    }
+    assert!(missing.is_empty(), "{}", report(&missing));
+}
+
+#[test]
+fn every_text_result_has_a_branches_entry() {
+    // A result that can be text (a verdict, a sentinel, a built message) must list
+    // its branches in BRANCHES, so every branch is compared with Python at least once.
+    let results = result_rows(&compute_all(&DesignInputs::default()));
+    let missing: Vec<String> = results
+        .iter()
+        .filter(|r| matches!(r.meta.ty, FieldType::Text | FieldType::NumOrText))
+        .filter(|r| {
+            !BRANCHES
+                .iter()
+                .any(|(pattern, _)| matches_pattern(pattern, &r.path))
+        })
+        .map(|r| r.path.clone())
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "text results without BRANCHES rows: {missing:?}"
+    );
 }
 
 /// A corpus key and the Rust helper call it records (as the engine calls it).

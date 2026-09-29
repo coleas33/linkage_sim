@@ -12,7 +12,7 @@ reference:
     role: vendored magcoupling 1.0.0 (Python port of magnetic_coupling_torque_calculator.xlsx); read-only oracle for the magcoupling M1 audit and the planned Rust port (M2)
     engine: magcoupling/ (READ-ONLY, never edit; parity and differential tests compare against it unchanged)
     parity_suite: tests/ (test_parity.py checks every workbook formula cell against reference_values.json; test_api.py; test_optional.py needs the magpylib and matplotlib extras)
-    tools: tools/extract_reference.py (regenerates tests/reference_values.json from the workbook); tools/gen_differential.py (writes magcoupling-rs/tests/data/python_schema.json, static_data.json and differential/*.json from the engine, with slider ranges read from magcoupling-rs/tests/data/input_schema.json; --check verifies they are current)
+    tools: tools/extract_reference.py (regenerates tests/reference_values.json from the workbook); tools/gen_differential.py (writes magcoupling-rs/tests/data/python_schema.json, static_data.json and differential/*.json (one file per result group, plus full.json, the run that varies all inputs at once) from the engine, with slider ranges read from magcoupling-rs/tests/data/input_schema.json; --check verifies they are current)
     venv: .venv/ (gitignored; created from requirements-audit.txt, see running below)
   audit:
     path: reference/magcoupling-py/audit/

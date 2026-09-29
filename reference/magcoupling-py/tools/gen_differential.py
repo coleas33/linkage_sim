@@ -23,6 +23,9 @@ Writes:
     magcoupling-rs/tests/data/differential/<group>.json
         seeded cases for each ported result group (MODULES): columnar, the
         input and result paths once in the header, one case per line.
+    magcoupling-rs/tests/data/differential/full.json
+        the full run: every input group varied at once (all 160 inputs), every
+        result compared (all groups and tables); see FULL.
     magcoupling-rs/tests/data/differential/helpers.json
         a corpus for the rounding and formatting helpers.
     magcoupling-rs/tests/data/static_data.json
@@ -36,6 +39,11 @@ groups varied at once), enough to reach CASES_PER_MODULE and never fewer than
 RANDOM_MIN. Python must not raise on any case, and every result must be
 finite: a failure means a slider range lets the engine leave its domain and
 must be fixed (or the behaviour becomes a registered deviation).
+
+The full run (FULL) is one more file: the workbook defaults, FULL_RANDOM random
+sets that vary all 160 inputs at once, then a case for every pair of selector
+choices across all groups that the random sets missed. It compares every result
+group and table, so it also catches a MODULES entry that forgot an input group.
 """
 from __future__ import annotations
 
@@ -91,6 +99,8 @@ MODULES = {
     "gap_sweep": ["coupling", "metal", "calibration"],
     "pole_sweep": ["coupling", "metal", "calibration"],
 }
+FULL = "full"       # every input group varied, every result compared
+FULL_RANDOM = 100   # random cases of the full run (its fixed cases are defaults and selector pairs)
 # every library part, blank (manual magnet) and a near miss of the default part
 PART_CHOICES = list(MAGNET_LIBRARY) + ["", "b842sh"]
 # Text inputs have no slider: the values each case may take (sampled like a selector).
@@ -273,6 +283,24 @@ def module_cases(module: str, fields: list, rng: random.Random) -> list:
     return cases
 
 
+def full_cases(fields: list, rng: random.Random) -> list:
+    """Defaults, random sets varying all inputs, then a case for every pair of
+    selector choices (across all groups) the random sets missed."""
+    defaults = {f["path"]: f["default"] for f in fields}
+    cases = [("workbook defaults", dict(defaults))]
+    for _ in range(FULL_RANDOM):
+        cases.append(("random", {f["path"]: sample(f, rng) for f in fields}))
+    selectors = [f for f in fields if f["choices"]]
+    for i, a in enumerate(selectors):
+        for b in selectors[i + 1:]:
+            for ca, _ in a["choices"]:
+                for cb, _ in b["choices"]:
+                    if not any(c[a["path"]] == ca and c[b["path"]] == cb for _, c in cases):
+                        cases.append((f"pair {a['path']} = {ca}, {b['path']} = {cb}",
+                                      {**defaults, a["path"]: ca, b["path"]: cb}))
+    return cases
+
+
 def run_case(module: str, tag: str, inputs: dict) -> dict:
     inp = DesignInputs()
     for path, value in inputs.items():
@@ -282,7 +310,7 @@ def run_case(module: str, tag: str, inputs: dict) -> dict:
     except Exception as exc:  # noqa: BLE001 - reported with the case, then re-raised
         raise RuntimeError(f"{module} case {tag!r} raised {type(exc).__name__}: {exc}\ninputs: {inputs}") from exc
     return {r["path"]: plain(r["value"], f"{tag}: {r['path']}") for r in result_schema(res)
-            if r["kind"] in ("result", "") and group_of(r["path"]) == module}
+            if r["kind"] in ("result", "") and (module == FULL or group_of(r["path"]) == module)}
 
 
 def module_file(module: str, groups: list, schema: list) -> str:
@@ -293,7 +321,8 @@ def module_file(module: str, groups: list, schema: list) -> str:
     input_paths = [f["path"] for f in fields]
     rng = random.Random(f"{SEED}:{module}")
     result_paths, cases = None, []
-    for i, (tag, inputs) in enumerate(module_cases(module, fields, rng)):
+    generated = full_cases(fields, rng) if module == FULL else module_cases(module, fields, rng)
+    for i, (tag, inputs) in enumerate(generated):
         results = run_case(module, tag, inputs)
         if result_paths is None:
             result_paths = list(results)
@@ -380,6 +409,8 @@ def outputs() -> dict:
              DATA / "static_data.json": static_data()}
     for module, groups in MODULES.items():
         files[DATA / "differential" / f"{module}.json"] = module_file(module, groups, schema)
+    all_groups = list(dict.fromkeys(group_of(f["path"]) for f in schema))  # schema order
+    files[DATA / "differential" / f"{FULL}.json"] = module_file(FULL, all_groups, schema)
     return files
 
 
@@ -402,7 +433,7 @@ def main(argv=None) -> int:
         if stale:
             print("stale differential data (run tools/gen_differential.py):\n  " + "\n  ".join(stale))
             return 1
-        print(f"differential data is current ({', '.join(MODULES)} + helpers + python schema + static data)")
+        print(f"differential data is current ({', '.join(MODULES)} + helpers + python schema + static data + full)")
     return 0
 
 

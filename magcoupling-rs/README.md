@@ -76,7 +76,7 @@ bash linkage-sim-rs/scripts/gate.sh   # everything, both crates and the Python o
 | Test | Checks |
 |---|---|
 | `tests/parity.rs` | Every result with a workbook cell (table values too: their cells are synthesized from the table layout) and every default input equals `tests/data/reference_values.json` (numbers 1e-9 relative, 1e-12 absolute; text exact), deviations off. Per-group cell counts are a ratchet (`PORTED_INPUTS`, `PORTED_RESULTS` with `cells` and `table_cells` in `tests/common/mod.rs`); `the_port_checks_every_cell_test_parity_checks` pins their totals to `test_parity.py`'s 1,149. |
-| `tests/differential.rs` | Every result of every seeded case equals the Python engine (`tests/data/differential/<group>.json`), deviations off. `every_branch_is_reached` checks the `BRANCHES` table (every branch of every text result is hit) and `every_varied_input_takes_two_values` checks that each varied input changes; the helpers corpus checks `compat` against Python exactly. |
+| `tests/differential.rs` | Every result of every seeded case equals the Python engine (`tests/data/differential/<group>.json`), deviations off. The full run (`differential/full.json`, `full_run_matches_python_on_every_case`) varies all 160 inputs at once and compares every result, groups and tables, so it also catches a `MODULES` entry that forgot an input group; `every_selector_pair_is_covered_in_the_full_run` checks that every pair of selector choices across groups occurs in it, and `every_selector_choice_appears_in_every_module_file` that each module file sets every selector it varies to every choice. `every_branch_is_reached` checks the `BRANCHES` table (every branch of every text result is hit), `every_text_result_has_a_branches_entry` that no text-producing result lacks a `BRANCHES` row (a new branch cannot land unchecked), and `every_varied_input_takes_two_values` that each varied input changes; the helpers corpus checks `compat` against Python exactly. |
 | `tests/python_schema.rs` | Every ported field carries the Python label, unit, help, cell, choices and default; no Python field of a ported group is missing; each ported table has the Python field order, row count and cell of every value (`tables_match_the_python_layout`); `headline` has Python's keys, order and values at the defaults; inputs and scalar results are listed in the Python order (the GUI's tables and CSV export follow it). |
 | `tests/static_data.rs` | Static tables equal the Python engine's, value for value (`tests/data/static_data.json`). |
 | `tests/robustness.rs` | Inputs no parity or differential case holds (the plan's Review Focus): a selector code outside its choices set directly on the struct (adhesive, screw class, and every selector at once with `validate()` naming each), a measured drag of exactly zero, every numeric input at 0, -1, a tenth of its minimum, ten times its maximum and 1e300 (`compute_all_never_panics_on_extreme_inputs`), and a debug-build time bound per `compute_all` call. The engine must never panic. |
@@ -108,10 +108,18 @@ then random ones: as many as it takes to reach `CASES_PER_MODULE` and never
 fewer than `RANDOM_MIN` (100). A data file over `MAX_FILE_BYTES` (4 MB) fails
 the generator: vary fewer groups or cut cases.
 
+`differential/full.json` (`FULL`) is not a module: its cases vary every input
+group at once (`full_cases`: the workbook defaults, `FULL_RANDOM` = 100 random
+sets, then one case for each pair of selector choices across groups that the
+random sets missed) and compare every result group and table. A new module needs
+no line for it: the full run picks up its inputs and results from the schema.
+
 `BRANCHES` in `tests/differential.rs` lists, per text-producing result path
 (`[*]` matches any table row), the numbers and texts (`Number`, `Text`,
 `Prefix`) that the module's cases must reach, so each branch of the Python
-source is compared at least once. Add its rows when a module lands.
+source is compared at least once. Add its rows when a module lands:
+`every_text_result_has_a_branches_entry` fails while a `Text` or `NumOrText`
+result has none.
 
 The gate runs `gen_differential.py --check`, so stale data fails it. The
 snapshot copy must equal `reference/magcoupling-py/tests/reference_values.json`
