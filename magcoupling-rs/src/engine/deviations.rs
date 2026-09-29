@@ -231,7 +231,7 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E2,
         title: "Clamp screw length leaves out the clamp slit",
         class: DeviationClass::Engine,
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &[
             "Clamp screw sizes!C34",
             "Clamp screw sizes!D34",
@@ -247,10 +247,30 @@ pub const REGISTRY: &[Deviation] = &[
         ],
         corrected_formula: "Length = CEILING(grip + slit + engagement x d, 2); \
             fits inside = length <= grip + slit + thread available; \
-            report when no 2 mm step meets both rules.",
+            report when no 2 mm step meets both rules; \
+            the note is the Rust-only result clamps.length_note (decision D6).",
         workbook_input_defaults: &[],
-        workbook_help: &[],
-        changes_at_defaults: &[],
+        workbook_help: &[(
+            "clamps.table[*].length_mm",
+            "Grip plus required engagement, rounded up to an even length.",
+        )],
+        changes_at_defaults: &[
+            CellChange {
+                cell: "Clamp screw sizes!E34",
+                workbook: Literal::Num(12.0),
+                corrected: Literal::Num(14.0),
+            },
+            CellChange {
+                cell: "Clamp screw sizes!E35",
+                workbook: Literal::Int(1),
+                corrected: Literal::Int(0),
+            },
+            CellChange {
+                cell: "Shaft clamps!C48",
+                workbook: Literal::Text("ISO 4762 M4 x 12, class 12.9"),
+                corrected: Literal::Text("ISO 4762 M4 x 14, class 12.9"),
+            },
+        ],
     },
     Deviation {
         id: DeviationId::E3,

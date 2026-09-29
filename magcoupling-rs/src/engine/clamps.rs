@@ -15,23 +15,24 @@
 //! This module holds the screw sizes ([`SCREW_SIZES`]), the inputs
 //! ([`ClampInputs`], 25 cells), the 'Clamp screw sizes' table ([`ScrewRow`], 165
 //! cells: 33 celled fields for each of the 5 sizes), the results
-//! ([`ClampResults`], 33 result cells), [`MACHINING_STEPS`] and [`compute`].
+//! ([`ClampResults`], 33 result cells plus the Rust-only `length_note`),
+//! [`MACHINING_STEPS`] and [`compute`].
 //!
 //! A screw class code outside 1 to 3 gives NaN numbers and the text `"#N/A"`
 //! (decision D3, [`screw_class_name`] and `ScrewClasses::proof`): Python raises
 //! `KeyError`.
 //!
-//! Planned deviations touching this sheet (see
-//! [`crate::engine::deviations::REGISTRY`]): E2 (Clamp screw sizes rows 34 and
-//! 35, Shaft clamps!C48), E14 (help text only).
+//! Deviations touching this sheet (see [`crate::engine::deviations::REGISTRY`]):
+//! E2, applied (Clamp screw sizes rows 34 and 35, Shaft clamps!C48, and the
+//! Rust-only `length_note`); E14, planned (help text only).
 
 use std::f64::consts::PI;
 
 use super::compat::{ceiling, floor_, fmt_fixed, fmt_num, py_min};
-use super::deviations::Deviations;
+use super::deviations::{DeviationId, Deviations};
 use super::materials::AluminiumAlloy;
 use super::meta::{
-    NumOrText, TableLayout, at_row, inputs, out, param, results, rows, uncelled_col,
+    NumOrText, TableLayout, at_row, inputs, out, out_rust_only, param, results, rows, uncelled_col,
 };
 
 /// A metric screw size (Python `ScrewSize`).
@@ -233,7 +234,7 @@ rows! {
         clamp_torque_Nm: f64 => at_row("N·m", "Clamp torque with the screws needed", "", 31),
         sf_coupling: f64 => at_row("-", "Safety factor on the coupling torque", "", 32),
         tightening_Nm: f64 => at_row("N·m", "Tightening torque", "Nut factor x preload x diameter.", 33),
-        length_mm: f64 => at_row("mm", "Screw length", "Grip plus required engagement, rounded up to an even length.", 34),
+        length_mm: f64 => at_row("mm", "Screw length", "Grip plus slit plus required engagement, rounded up to an even length (correction E2).", 34),
         length_ok: i64 => at_row("-", "Length stays inside the far jaw (1 = yes)", "", 35),
         cbore_dia_mm: f64 => at_row("mm", "Counterbore diameter", "Head plus 0.5 mm.", 36),
         cbore_depth_mm: f64 => at_row("mm", "Counterbore depth at the screw axis", "From the OD to the head seat.", 37),
@@ -258,6 +259,8 @@ results! {
             boss_radius_mm: f64 => out("mm", "Boss radius", "", "Shaft clamps!C44"),
             index: i64 => out("-", "Size index in the table", "0 = none fits.", "Shaft clamps!C47"),
             recommended: String => out("", "Recommended screw", "", "Shaft clamps!C48"),
+            length_note: String => out_rust_only("", "Screw length note",
+                "Set when no 2 mm length step of the recommended size both engages the required thread and stays inside the boss (correction E2); empty otherwise."),
             screws: NumOrText => out("-", "Screws per clamp", "", "Shaft clamps!C49"),
             tightening_Nm: NumOrText => out("N·m", "Tightening torque", "With Loctite 243.", "Shaft clamps!C50"),
             hex_mm: NumOrText => out("mm", "Hex key", "", "Shaft clamps!C51"),
@@ -324,7 +327,7 @@ pub fn compute(
     max_torque_Nm: f64,
     al_props: &AluminiumAlloy,
     screw_proof_MPa: f64,
-    _dev: Deviations,
+    dev: Deviations,
 ) -> ClampResults {
     let R = ci.boss_od_mm / 2.0;
     let T_req = max_torque_Nm * ci.safety_factor;
@@ -371,10 +374,21 @@ pub fn compute(
                 0
             };
             let works: i64 = if geo == 1 && need <= fit { 1 } else { 0 };
+            // E2: the screw crosses the open slit before it reaches the far jaw.
+            let e2 = dev.is_on(DeviationId::E2);
             let length = if fits == 1 {
-                ceiling(grip + ereq, 2.0)
+                if e2 {
+                    ceiling(grip + ci.slit_mm + ereq, 2.0)
+                } else {
+                    ceiling(grip + ereq, 2.0)
+                }
             } else {
                 0.0
+            };
+            let inside = if e2 {
+                grip + ci.slit_mm + avail
+            } else {
+                grip + avail
             };
             ScrewRow {
                 size: s.name.to_owned(),
@@ -412,11 +426,7 @@ pub fn compute(
                 sf_coupling: need as f64 * Tper / max_torque_Nm,
                 tightening_Nm: ci.nut_factor * F * s.d_mm / 1000.0,
                 length_mm: length,
-                length_ok: if fits == 1 && length <= grip + avail {
-                    1
-                } else {
-                    0
-                },
+                length_ok: if fits == 1 && length <= inside { 1 } else { 0 },
                 cbore_dia_mm: s.head_mm + 0.5,
                 cbore_depth_mm: if fits == 1 {
                     (R.powi(2) - e.powi(2)).sqrt()
@@ -443,6 +453,20 @@ pub fn compute(
         ),
         None => NONE_FITS.to_owned(),
     };
+    let length_note = match chosen {
+        Some(r) if dev.is_on(DeviationId::E2) && r.length_ok == 0 => format!(
+            "No 2 mm length step of {} both engages {} mm of thread and stays inside the boss; {} x {} protrudes {} mm",
+            r.size,
+            fmt_num(r.engagement_req_mm),
+            r.size,
+            fmt_num(r.length_mm),
+            fmt_fixed(
+                r.length_mm - (r.grip_mm + ci.slit_mm + r.thread_avail_mm),
+                2
+            ),
+        ),
+        _ => String::new(),
+    };
     let blank = NumOrText::Text("");
     let pick = |value: fn(&ScrewRow) -> f64| chosen.map_or(blank, |r| NumOrText::Num(value(r)));
     let key_p = 2.0 * T_req
@@ -464,6 +488,7 @@ pub fn compute(
         boss_radius_mm: R,
         index,
         recommended,
+        length_note,
         screws: pick(|r| r.screws_needed as f64),
         tightening_Nm: pick(|r| r.tightening_Nm),
         hex_mm: pick(|r| r.hex_mm),
@@ -643,5 +668,82 @@ mod tests {
         };
         let r = m4(&longer);
         assert_eq!((r.length_mm, r.length_ok), (26.0, 0));
+    }
+
+    #[test]
+    fn e2_screw_length_is_ok_when_it_equals_the_full_chord() {
+        // Pythagorean values, all dyadic: shaft 6 mm and ligament 1 mm give offset 6.25 for M4, a
+        // 32.5 mm boss (R = 16.25) gives sqrt(R^2 - 6.25^2) = 15 and sqrt(R^2 - 9.75^2) = 13, so the
+        // chord from the head seat to the far OD is 28. A 0.5 mm slit takes 0.25 from each: grip
+        // 12.75, thread available 14.75. Engagement 3.6875 x 4 = 14.75 makes grip + slit + engagement
+        // exactly 28, so the corrected length equals the room the corrected check allows.
+        let ci = ClampInputs {
+            boss_od_mm: 32.5,
+            slit_mm: 0.5,
+            engagement_x_d: 3.6875,
+            ..ClampInputs::default()
+        };
+        let m4_at = |ci: &ClampInputs, dev| {
+            let row = compute(ci, 6.0, 3.7647, &AL7075, 970.0, dev).table[2].clone();
+            assert_eq!(row.size, "M4");
+            row
+        };
+        let e2 = Deviations::only(DeviationId::E2);
+        let r = m4_at(&ci, e2);
+        assert_eq!(
+            (r.grip_mm, r.thread_avail_mm, r.engagement_req_mm),
+            (12.75, 14.75, 14.75)
+        );
+        assert_eq!(r.length_mm, r.grip_mm + ci.slit_mm + r.thread_avail_mm);
+        assert_eq!((r.length_mm, r.length_ok), (28.0, 1));
+        // The workbook rounds 27.5 up to the same 28 mm but leaves the slit out of the room too.
+        let r = m4_at(&ci, Deviations::NONE);
+        assert_eq!((r.length_mm, r.length_ok), (28.0, 0));
+        // A quarter millimetre more engagement rounds the corrected length up to 30: past the far OD.
+        let longer = ClampInputs {
+            engagement_x_d: 3.75,
+            ..ci
+        };
+        let r = m4_at(&longer, e2);
+        assert_eq!((r.length_mm, r.length_ok), (30.0, 0));
+    }
+
+    #[test]
+    fn e2_length_note_is_set_only_when_the_recommended_screw_protrudes_with_the_correction_on() {
+        let e2 = Deviations::only(DeviationId::E2);
+        let with = |ci: &ClampInputs, dev| compute(ci, 10.0, 3.7647, &AL7075, 970.0, dev);
+        // Defaults: the corrected M4 x 14 protrudes (the full text is pinned in tests/deviations.rs).
+        let r = with(&ClampInputs::default(), e2);
+        assert_eq!((r.index, r.table[2].length_ok), (3, 0));
+        assert!(r.length_note.starts_with("No 2 mm length step of M4 "));
+        // A 24.5 mm boss: the workbook check fails the recommended M4 x 12 (it leaves out the
+        // slit), but with the correction off there is never a note.
+        let ci = ClampInputs {
+            boss_od_mm: 24.5,
+            ..ClampInputs::default()
+        };
+        let r = with(&ci, Deviations::NONE);
+        assert_eq!(
+            (r.index, r.table[2].length_mm, r.table[2].length_ok),
+            (3, 12.0, 0)
+        );
+        assert_eq!(r.length_note, "");
+        // With the correction the same screw stays inside the boss: no note.
+        let r = with(&ci, e2);
+        assert_eq!(
+            (r.index, r.table[2].length_mm, r.table[2].length_ok),
+            (3, 12.0, 1)
+        );
+        assert_eq!(r.length_note, "");
+        // No size fits: no recommendation, so no note.
+        let small = ClampInputs {
+            boss_od_mm: 12.0,
+            ..ClampInputs::default()
+        };
+        let r = with(&small, e2);
+        assert_eq!(
+            (r.index, r.recommended.as_str(), r.length_note.as_str()),
+            (0, NONE_FITS, "")
+        );
     }
 }

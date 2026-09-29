@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use magcoupling::engine::deviations::{DeviationStatus, REGISTRY};
 use magcoupling::engine::meta::Value;
 
 /// A ported input group of `DesignInputs` and its workbook input cells
@@ -179,6 +180,17 @@ pub fn value_to_json(value: &Value) -> serde_json::Value {
         Value::Text(s) => serde_json::Value::from(s.as_str()),
         Value::None => serde_json::Value::Null,
     }
+}
+
+/// Help texts an applied correction rewords (its registry entry's
+/// `workbook_help`): input path or table column path (`group.table[*].field`)
+/// to the workbook (and Python) text.
+pub fn reworded_help() -> BTreeMap<&'static str, &'static str> {
+    REGISTRY
+        .iter()
+        .filter(|d| d.status == DeviationStatus::Applied)
+        .flat_map(|d| d.workbook_help.iter().copied())
+        .collect()
 }
 
 /// The workbook snapshot, `"Sheet!Cell"` to value (`tests/data/reference_values.json`).

@@ -260,6 +260,46 @@ fn e1_adhesive_shear_modulus_matches_the_report() {
 }
 
 #[test]
+fn e2_clamp_screw_length_matches_the_report() {
+    let e2 = Deviations::only(DeviationId::E2);
+    assert_eq!(
+        at("Shaft clamps!C48", e2),
+        Value::Text("ISO 4762 M4 x 14, class 12.9".into())
+    );
+    assert_eq!(num(&at("Clamp screw sizes!E34", e2)), 14.0);
+    assert_eq!(
+        num(&at("Clamp screw sizes!E35", e2)),
+        0.0,
+        "the 14 mm screw protrudes from the 25 mm boss"
+    );
+    // Screw strength limits the preload, so capacity and safety factor do not change.
+    assert_report(
+        "Shaft clamps!C52",
+        &at("Shaft clamps!C52", e2),
+        7.665,
+        0.0005,
+    );
+    assert_report("Shaft clamps!C53", &at("Shaft clamps!C53", e2), 2.04, 0.005);
+    let note = |dev| {
+        compute_all_with(&DesignInputs::defaults_with(dev), dev)
+            .clamps
+            .length_note
+    };
+    assert_eq!(
+        note(e2),
+        "No 2 mm length step of M4 both engages 8 mm of thread and stays inside the boss; M4 x 14 protrudes 0.34 mm"
+    );
+    assert_eq!(note(Deviations::NONE), "");
+    for cell in [
+        "Shaft clamps!C48",
+        "Clamp screw sizes!E34",
+        "Clamp screw sizes!E35",
+    ] {
+        assert_workbook(cell);
+    }
+}
+
+#[test]
 fn reworded_help_is_recorded_for_real_fields() {
     let inputs = input_rows(&DesignInputs::default());
     for d in REGISTRY

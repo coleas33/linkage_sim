@@ -223,6 +223,9 @@ pub struct ResultMeta {
     /// Workbook cell, e.g. `"Calibration!C6"`; `None` for the rare result the
     /// workbook does not show.
     pub cell: Option<&'static str>,
+    /// A result the Python engine does not have: no workbook cell;
+    /// metadata-parity, order and differential tests skip it.
+    pub rust_only: bool,
 }
 
 /// Declares a result's metadata, in the order of Python's
@@ -240,6 +243,7 @@ pub const fn out(
         label,
         help,
         cell: Some(cell),
+        rust_only: false,
     }
 }
 
@@ -256,6 +260,25 @@ pub const fn out_uncelled(
         label,
         help,
         cell: None,
+        rust_only: false,
+    }
+}
+
+/// Declares a result the Python engine does not have (no cell), e.g. a
+/// correction's explanatory note.
+pub const fn out_rust_only(
+    unit: &'static str,
+    label: &'static str,
+    help: &'static str,
+) -> ResultMeta {
+    ResultMeta {
+        name: "",
+        ty: FieldType::F64,
+        unit,
+        label,
+        help,
+        cell: None,
+        rust_only: true,
     }
 }
 
@@ -304,6 +327,7 @@ const fn column_meta(
             label,
             help,
             cell: None,
+            rust_only: false,
         },
         axis,
     }
@@ -1033,6 +1057,14 @@ mod tests {
             (m.name, m.ty, m.cell, m.help),
             ("mixed", FieldType::NumOrText, None, "help m")
         );
+    }
+
+    #[test]
+    fn only_out_rust_only_marks_a_result_rust_only() {
+        assert!(out_rust_only("", "L", "").rust_only && !out("", "L", "", "S!C1").rust_only);
+        assert_eq!(out_rust_only("", "L", "").cell, None);
+        assert!(!out_uncelled("", "L", "").rust_only);
+        assert!(!at_row("", "L", "", 6).meta.rust_only);
     }
 
     #[test]

@@ -86,6 +86,7 @@ fn rust_results(module: &str, case: &Case) -> Result<BTreeMap<String, Value>, St
     let results = compute_all_with(&inputs, Deviations::NONE);
     Ok(result_rows(&results)
         .into_iter()
+        .filter(|r| !r.meta.rust_only)
         .filter(|r| module == FULL || group_of(&r.path) == module)
         .map(|r| (r.path, r.value))
         .collect())
@@ -587,6 +588,7 @@ fn every_text_result_has_a_branches_entry() {
     let missing: Vec<String> = results
         .iter()
         .filter(|r| matches!(r.meta.ty, FieldType::Text | FieldType::NumOrText))
+        .filter(|r| !r.meta.rust_only) // no Python counterpart, so no differential data to reach
         .filter(|r| {
             !BRANCHES
                 .iter()

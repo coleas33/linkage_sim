@@ -27,8 +27,8 @@ variables `GAP_SWEEP_CORNER_GAPS_MM` and `POLE_SWEEP_POLES`, 338 and 156 table
 cells) and the API completion (`headline`, `DesignInputs::validate`). Every module
 except `fields3d` (M3) is ported; workbook parity is complete (1,149 checks: 330
 result cells, 659 table cells and 160 default inputs). Deviations E1 to E14 are
-registered: E1 is applied (see [Differences from the workbook](#differences-from-the-workbook)),
-E2 to E14 are `Planned`.
+registered: E1 and E2 are applied (see [Differences from the workbook](#differences-from-the-workbook)),
+E3 to E14 are `Planned`.
 
 ```rust
 use magcoupling::{DesignInputs, compute_all, headline};
@@ -63,6 +63,7 @@ and the Python engine exactly.
 | Id | Cells | Workbook | This port | Report |
 |---|---|---|---|---|
 | E1 | Temperature design!C96 (feeds C104-C106, C201, C202) | 0.55 GPa (EA 9514's modulus) | 0.107 GPa (AA 326 TDS); C106 and C202 now read "Below ..." | E1 |
+| E2 | Clamp screw sizes!C34:G35, Shaft clamps!C48 | length = CEILING(grip + 2d, 2); fits = length <= grip + thread | the slit (0.8 mm) is added to both; M4 x 12 becomes M4 x 14, which protrudes 0.34 mm: clamps.length_note says so | E2 |
 
 ## Layout
 
@@ -91,12 +92,12 @@ bash linkage-sim-rs/scripts/gate.sh   # everything, both crates and the Python o
 | Test | Checks |
 |---|---|
 | `tests/parity.rs` | Every result with a workbook cell (table values too: their cells are synthesized from the table layout) and every default input equals `tests/data/reference_values.json` (numbers 1e-9 relative, 1e-12 absolute; text exact), deviations off. Per-group cell counts are a ratchet (`PORTED_INPUTS`, `PORTED_RESULTS` with `cells` and `table_cells` in `tests/common/mod.rs`); `the_port_checks_every_cell_test_parity_checks` pins their totals to `test_parity.py`'s 1,149. |
-| `tests/differential.rs` | Every result of every seeded case equals the Python engine (`tests/data/differential/<group>.json`), deviations off. The full run (`differential/full.json`, `full_run_matches_python_on_every_case`) varies all 160 inputs at once and compares every result, groups and tables, so it also catches a `MODULES` entry that forgot an input group; `every_selector_pair_is_covered_in_the_full_run` checks that every pair of selector choices across groups occurs in it, and `every_selector_choice_appears_in_every_module_file` that each module file sets every selector it varies to every choice. `every_branch_is_reached` checks the `BRANCHES` table (every branch of every text result is hit), `every_text_result_has_a_branches_entry` that no text-producing result lacks a `BRANCHES` row (a new branch cannot land unchecked), and `every_varied_input_takes_two_values` that each varied input changes; the helpers corpus checks `compat` against Python exactly. |
-| `tests/python_schema.rs` | Every ported field carries the Python label, unit, help, cell, choices and default; no Python field of a ported group is missing; each ported table has the Python field order, row count and cell of every value (`tables_match_the_python_layout`); `headline` has Python's keys, order and values at the defaults; inputs and scalar results are listed in the Python order (the GUI's tables and CSV export follow it). |
+| `tests/differential.rs` | Every result of every seeded case equals the Python engine (`tests/data/differential/<group>.json`), deviations off. The full run (`differential/full.json`, `full_run_matches_python_on_every_case`) varies all 160 inputs at once and compares every result, groups and tables, so it also catches a `MODULES` entry that forgot an input group; `every_selector_pair_is_covered_in_the_full_run` checks that every pair of selector choices across groups occurs in it, and `every_selector_choice_appears_in_every_module_file` that each module file sets every selector it varies to every choice. `every_branch_is_reached` checks the `BRANCHES` table (every branch of every text result is hit), `every_text_result_has_a_branches_entry` that no text-producing result lacks a `BRANCHES` row (a new branch cannot land unchecked), and `every_varied_input_takes_two_values` that each varied input changes; the helpers corpus checks `compat` against Python exactly. Rust-only results (`ResultMeta::rust_only`, e.g. `clamps.length_note`) have no Python counterpart and are skipped. |
+| `tests/python_schema.rs` | Every ported field carries the Python label, unit, help, cell, choices and default; no Python field of a ported group is missing; each ported table has the Python field order, row count and cell of every value (`tables_match_the_python_layout`); `headline` has Python's keys, order and values at the defaults; inputs and scalar results are listed in the Python order (the GUI's tables and CSV export follow it); Rust-only results are skipped. |
 | `tests/static_data.rs` | Static tables equal the Python engine's, value for value (`tests/data/static_data.json`). |
 | `tests/robustness.rs` | Inputs no parity or differential case holds (the plan's Review Focus): a selector code outside its choices set directly on the struct (adhesive, screw class, and every selector at once with `validate()` naming each), a measured drag of exactly zero, every numeric input at 0, -1, a tenth of its minimum, ten times its maximum and 1e300 (`compute_all_never_panics_on_extreme_inputs`), and a debug-build time bound per `compute_all` call. The engine must never panic. |
-| `tests/schema.rs` | Slider ranges, selectors, labels, unique well-formed paths and cells; each table column's label, unit and note equal the workbook headers (`table_columns_match_the_workbook_headers`); exports `tests/data/input_schema.json`. |
-| `tests/deviations.rs` | Registry cells exist in the snapshot, entries are approved rows of the audit report, and one correction switched on changes exactly its registered cells; each applied correction's figures match the report (`e1_adhesive_shear_modulus_matches_the_report`), and help a correction rewords belongs to a real input and differs from the workbook's. |
+| `tests/schema.rs` | Slider ranges, selectors, labels, unique well-formed paths and cells (a Rust-only result has none); each table column's label, unit and note equal the workbook headers (`table_columns_match_the_workbook_headers`; where a correction rewords a column's note, the recorded workbook text equals the note and the port's differs); exports `tests/data/input_schema.json`. |
+| `tests/deviations.rs` | Registry cells exist in the snapshot, entries are approved rows of the audit report, and one correction switched on changes exactly its registered cells; each applied correction's figures match the report (`e1_adhesive_shear_modulus_matches_the_report`, `e2_clamp_screw_length_matches_the_report`), and help a correction rewords belongs to a real input and differs from the workbook's. |
 
 ### Regenerating test data
 
@@ -213,9 +214,13 @@ branch at the formula with `if dev.is_on(DeviationId::Ek) { corrected } else
 declare the corrected default and record the workbook value in the entry's
 `workbook_input_defaults`; set the entry to `Applied` and list every cell that
 changes at defaults in `changes_at_defaults`. Where the correction rewords a
-help text, record the workbook's text in `workbook_help`:
-`tests/python_schema.rs` compares Python's help against it, and
-`tests/deviations.rs` requires the port's help to differ. `tests/deviations.rs`
+help text, record the workbook's text in `workbook_help` (an input path, or a
+table column as `group.table[*].field`): `tests/python_schema.rs` compares
+Python's help against it, `tests/schema.rs` the workbook note of a table
+column, and both `tests/deviations.rs` and `tests/schema.rs` require the port's
+help to differ. A result the Python engine does not have (E2's
+`clamps.length_note`) is declared with `out_rust_only`: it has no cell, and the
+metadata-parity, order and differential tests skip it. `tests/deviations.rs`
 then proves the correction changes exactly those cells, to those values; add a
 test of the report's figures (`assert_report`, `assert_workbook`) and a row to
 [Differences from the workbook](#differences-from-the-workbook). Physics

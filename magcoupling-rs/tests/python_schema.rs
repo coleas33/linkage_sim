@@ -16,11 +16,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use common::{
     PORTED_INPUTS, PORTED_RESULTS, data_path, is_ported_input, is_ported_result, is_table_path,
-    json_to_value, read_json, report,
+    json_to_value, read_json, report, reworded_help,
 };
 use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with, headline};
 use magcoupling::engine::compat::parity_close;
-use magcoupling::engine::deviations::{DeviationStatus, Deviations, REGISTRY};
+use magcoupling::engine::deviations::Deviations;
 use magcoupling::engine::meta::{ResultRow, Value, input_rows, result_rows};
 
 /// One Python schema row.
@@ -89,15 +89,6 @@ fn compare(
     }
 }
 
-/// Help texts an applied correction rewords: path -> the workbook (and Python) text.
-fn reworded_help() -> BTreeMap<&'static str, &'static str> {
-    REGISTRY
-        .iter()
-        .filter(|d| d.status == DeviationStatus::Applied)
-        .flat_map(|d| d.workbook_help.iter().copied())
-        .collect()
-}
-
 #[test]
 fn ported_inputs_carry_the_python_metadata_and_defaults() {
     let python = python_rows();
@@ -143,7 +134,10 @@ fn ported_inputs_carry_the_python_metadata_and_defaults() {
 fn ported_results_carry_the_python_metadata() {
     let python = python_rows();
     let mut failures = Vec::new();
-    for row in result_rows(&compute_all(&DesignInputs::default())) {
+    for row in result_rows(&compute_all(&DesignInputs::default()))
+        .into_iter()
+        .filter(|r| !r.meta.rust_only)
+    {
         // Python lists no metadata for table rows; `tables_match_the_python_layout` covers them.
         if is_table_path(&row.path) {
             continue;
@@ -312,6 +306,7 @@ fn schemas_list_fields_in_the_python_order() {
     let results: Vec<String> = result_rows(&compute_all(&DesignInputs::default()))
         .into_iter()
         .filter(|r| !is_table_path(&r.path))
+        .filter(|r| !r.meta.rust_only)
         .map(|r| r.path)
         .collect();
     assert_eq!(inputs, python("input"));

@@ -14,10 +14,10 @@
 
 mod common;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
-use common::{data_path, read_text, report, snapshot, value_to_json};
+use common::{data_path, read_text, report, reworded_help, snapshot, value_to_json};
 use magcoupling::engine::api::{DesignInputs, compute_all};
 use magcoupling::engine::deviations::Deviations;
 use magcoupling::engine::meta::{FieldType, Value, input_rows, result_rows};
@@ -208,6 +208,19 @@ fn every_field_has_a_label_and_well_formed_unique_path_and_cell() {
         );
 
     let mut failures = Vec::new();
+    // A Rust-only result has no Python counterpart, so no workbook cell either.
+    for r in results.iter().filter(|r| r.meta.rust_only) {
+        assert!(
+            r.meta.cell.is_none(),
+            "{}: a Rust-only result has a cell",
+            r.path
+        );
+        assert!(
+            r.cell.is_none(),
+            "{}: a Rust-only result has a cell",
+            r.path
+        );
+    }
     let mut paths = BTreeSet::new();
     let mut cells: BTreeSet<String> = BTreeSet::new();
     for (path, label, cell) in fields {
@@ -280,6 +293,12 @@ fn table_columns_match_the_workbook_headers() {
         Some(Value::Text(t)) => t.clone(),
         _ => String::new(),
     };
+    // Column help an applied correction rewords: the recorded text is the workbook's.
+    let reworded: BTreeMap<&str, &str> = reworded_help()
+        .into_iter()
+        .filter(|(path, _)| path.contains("[*]"))
+        .collect();
+    let mut seen = BTreeSet::new();
     let mut failures = Vec::new();
     for row in result_rows(&compute_all(&DesignInputs::default())) {
         // Headers belong to columns: check each once, at its first data row.
@@ -295,21 +314,42 @@ fn table_columns_match_the_workbook_headers() {
             continue;
         };
         let m = row.meta;
+        let pattern = row.path.replacen("[0]", "[*]", 1);
+        let recorded = reworded.get(pattern.as_str()).copied();
         for (what, rust, cell) in [
             ("label", m.label, Some(label)),
             ("unit", m.unit, Some(unit)),
             ("help", m.help, help),
         ] {
-            if let Some(cell) = cell
-                && rust != text_at(&cell)
-            {
-                failures.push(format!(
-                    "{}: {what} {rust:?}, workbook {cell} {:?}",
-                    row.path,
-                    text_at(&cell)
-                ));
+            let Some(cell) = cell else { continue };
+            let workbook = text_at(&cell);
+            match recorded {
+                // A reworded help: the registry holds the workbook text, the port a new one.
+                Some(recorded) if what == "help" => {
+                    seen.insert(pattern.clone());
+                    if recorded != workbook {
+                        failures.push(format!(
+                            "{}: recorded workbook help {recorded:?}, workbook {cell} {workbook:?}",
+                            row.path
+                        ));
+                    }
+                    if rust == workbook {
+                        failures.push(format!("{}: help is not reworded", row.path));
+                    }
+                }
+                _ if rust != workbook => failures.push(format!(
+                    "{}: {what} {rust:?}, workbook {cell} {workbook:?}",
+                    row.path
+                )),
+                _ => {}
             }
         }
+    }
+    // A mistyped column path in `workbook_help` would otherwise be skipped silently.
+    for path in reworded.keys().filter(|p| !seen.contains(**p)) {
+        failures.push(format!(
+            "{path}: reworded help names no table column with a note cell"
+        ));
     }
     // The size field is uncelled, so the loop skips it: check its label here.
     let size = result_rows(&compute_all(&DesignInputs::default()))
