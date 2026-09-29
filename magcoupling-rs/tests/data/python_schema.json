@@ -1,5 +1,5 @@
 {
- "about": "Python metadata of every magcoupling input and result (kinds 'input' and 'result'; table rows without metadata are not listed). Written by reference/magcoupling-py/tools/gen_differential.py. Do not edit by hand.",
+ "about": "Python metadata of every magcoupling input and result (kinds 'input' and 'result'; table rows without metadata are not listed; table layouts under 'tables'). Written by reference/magcoupling-py/tools/gen_differential.py. Do not edit by hand.",
  "engine": "magcoupling 1.0.0",
  "rows": [
   {
@@ -4666,5 +4666,943 @@
    "path": "clamps.layout_relief",
    "unit": ""
   }
- ]
+ ],
+ "tables": {
+  "clamps.table": {
+   "cells": {
+    "As_mm2": [
+     "Clamp screw sizes!C8",
+     "Clamp screw sizes!D8",
+     "Clamp screw sizes!E8",
+     "Clamp screw sizes!F8",
+     "Clamp screw sizes!G8"
+    ],
+    "cbore_depth_mm": [
+     "Clamp screw sizes!C37",
+     "Clamp screw sizes!D37",
+     "Clamp screw sizes!E37",
+     "Clamp screw sizes!F37",
+     "Clamp screw sizes!G37"
+    ],
+    "cbore_dia_mm": [
+     "Clamp screw sizes!C36",
+     "Clamp screw sizes!D36",
+     "Clamp screw sizes!E36",
+     "Clamp screw sizes!F36",
+     "Clamp screw sizes!G36"
+    ],
+    "clamp_torque_Nm": [
+     "Clamp screw sizes!C31",
+     "Clamp screw sizes!D31",
+     "Clamp screw sizes!E31",
+     "Clamp screw sizes!F31",
+     "Clamp screw sizes!G31"
+    ],
+    "d_mm": [
+     "Clamp screw sizes!C6",
+     "Clamp screw sizes!D6",
+     "Clamp screw sizes!E6",
+     "Clamp screw sizes!F6",
+     "Clamp screw sizes!G6"
+    ],
+    "engagement_req_mm": [
+     "Clamp screw sizes!C19",
+     "Clamp screw sizes!D19",
+     "Clamp screw sizes!E19",
+     "Clamp screw sizes!F19",
+     "Clamp screw sizes!G19"
+    ],
+    "geometry_ok": [
+     "Clamp screw sizes!C20",
+     "Clamp screw sizes!D20",
+     "Clamp screw sizes!E20",
+     "Clamp screw sizes!F20",
+     "Clamp screw sizes!G20"
+    ],
+    "grip_mm": [
+     "Clamp screw sizes!C17",
+     "Clamp screw sizes!D17",
+     "Clamp screw sizes!E17",
+     "Clamp screw sizes!F17",
+     "Clamp screw sizes!G17"
+    ],
+    "head_check": [
+     "Clamp screw sizes!C25",
+     "Clamp screw sizes!D25",
+     "Clamp screw sizes!E25",
+     "Clamp screw sizes!F25",
+     "Clamp screw sizes!G25"
+    ],
+    "head_fits": [
+     "Clamp screw sizes!C16",
+     "Clamp screw sizes!D16",
+     "Clamp screw sizes!E16",
+     "Clamp screw sizes!F16",
+     "Clamp screw sizes!G16"
+    ],
+    "head_h_mm": [
+     "Clamp screw sizes!C11",
+     "Clamp screw sizes!D11",
+     "Clamp screw sizes!E11",
+     "Clamp screw sizes!F11",
+     "Clamp screw sizes!G11"
+    ],
+    "head_mm": [
+     "Clamp screw sizes!C10",
+     "Clamp screw sizes!D10",
+     "Clamp screw sizes!E10",
+     "Clamp screw sizes!F10",
+     "Clamp screw sizes!G10"
+    ],
+    "head_pressure_MPa": [
+     "Clamp screw sizes!C24",
+     "Clamp screw sizes!D24",
+     "Clamp screw sizes!E24",
+     "Clamp screw sizes!F24",
+     "Clamp screw sizes!G24"
+    ],
+    "hex_mm": [
+     "Clamp screw sizes!C12",
+     "Clamp screw sizes!D12",
+     "Clamp screw sizes!E12",
+     "Clamp screw sizes!F12",
+     "Clamp screw sizes!G12"
+    ],
+    "hole_mm": [
+     "Clamp screw sizes!C9",
+     "Clamp screw sizes!D9",
+     "Clamp screw sizes!E9",
+     "Clamp screw sizes!F9",
+     "Clamp screw sizes!G9"
+    ],
+    "length_mm": [
+     "Clamp screw sizes!C34",
+     "Clamp screw sizes!D34",
+     "Clamp screw sizes!E34",
+     "Clamp screw sizes!F34",
+     "Clamp screw sizes!G34"
+    ],
+    "length_ok": [
+     "Clamp screw sizes!C35",
+     "Clamp screw sizes!D35",
+     "Clamp screw sizes!E35",
+     "Clamp screw sizes!F35",
+     "Clamp screw sizes!G35"
+    ],
+    "offset_mm": [
+     "Clamp screw sizes!C14",
+     "Clamp screw sizes!D14",
+     "Clamp screw sizes!E14",
+     "Clamp screw sizes!F14",
+     "Clamp screw sizes!G14"
+    ],
+    "pitch_axial_mm": [
+     "Clamp screw sizes!C28",
+     "Clamp screw sizes!D28",
+     "Clamp screw sizes!E28",
+     "Clamp screw sizes!F28",
+     "Clamp screw sizes!G28"
+    ],
+    "pitch_mm": [
+     "Clamp screw sizes!C7",
+     "Clamp screw sizes!D7",
+     "Clamp screw sizes!E7",
+     "Clamp screw sizes!F7",
+     "Clamp screw sizes!G7"
+    ],
+    "preload_N": [
+     "Clamp screw sizes!C23",
+     "Clamp screw sizes!D23",
+     "Clamp screw sizes!E23",
+     "Clamp screw sizes!F23",
+     "Clamp screw sizes!G23"
+    ],
+    "preload_strength_N": [
+     "Clamp screw sizes!C21",
+     "Clamp screw sizes!D21",
+     "Clamp screw sizes!E21",
+     "Clamp screw sizes!F21",
+     "Clamp screw sizes!G21"
+    ],
+    "preload_strip_N": [
+     "Clamp screw sizes!C22",
+     "Clamp screw sizes!D22",
+     "Clamp screw sizes!E22",
+     "Clamp screw sizes!F22",
+     "Clamp screw sizes!G22"
+    ],
+    "screws_fit": [
+     "Clamp screw sizes!C29",
+     "Clamp screw sizes!D29",
+     "Clamp screw sizes!E29",
+     "Clamp screw sizes!F29",
+     "Clamp screw sizes!G29"
+    ],
+    "screws_needed": [
+     "Clamp screw sizes!C27",
+     "Clamp screw sizes!D27",
+     "Clamp screw sizes!E27",
+     "Clamp screw sizes!F27",
+     "Clamp screw sizes!G27"
+    ],
+    "sf_coupling": [
+     "Clamp screw sizes!C32",
+     "Clamp screw sizes!D32",
+     "Clamp screw sizes!E32",
+     "Clamp screw sizes!F32",
+     "Clamp screw sizes!G32"
+    ],
+    "tap_drill_mm": [
+     "Clamp screw sizes!C13",
+     "Clamp screw sizes!D13",
+     "Clamp screw sizes!E13",
+     "Clamp screw sizes!F13",
+     "Clamp screw sizes!G13"
+    ],
+    "thread_avail_mm": [
+     "Clamp screw sizes!C18",
+     "Clamp screw sizes!D18",
+     "Clamp screw sizes!E18",
+     "Clamp screw sizes!F18",
+     "Clamp screw sizes!G18"
+    ],
+    "tightening_Nm": [
+     "Clamp screw sizes!C33",
+     "Clamp screw sizes!D33",
+     "Clamp screw sizes!E33",
+     "Clamp screw sizes!F33",
+     "Clamp screw sizes!G33"
+    ],
+    "torque_per_screw_Nm": [
+     "Clamp screw sizes!C26",
+     "Clamp screw sizes!D26",
+     "Clamp screw sizes!E26",
+     "Clamp screw sizes!F26",
+     "Clamp screw sizes!G26"
+    ],
+    "vent_port_ok": [
+     "Clamp screw sizes!C38",
+     "Clamp screw sizes!D38",
+     "Clamp screw sizes!E38",
+     "Clamp screw sizes!F38",
+     "Clamp screw sizes!G38"
+    ],
+    "wall_out_mm": [
+     "Clamp screw sizes!C15",
+     "Clamp screw sizes!D15",
+     "Clamp screw sizes!E15",
+     "Clamp screw sizes!F15",
+     "Clamp screw sizes!G15"
+    ],
+    "works": [
+     "Clamp screw sizes!C30",
+     "Clamp screw sizes!D30",
+     "Clamp screw sizes!E30",
+     "Clamp screw sizes!F30",
+     "Clamp screw sizes!G30"
+    ]
+   },
+   "fields": [
+    "size",
+    "d_mm",
+    "pitch_mm",
+    "As_mm2",
+    "hole_mm",
+    "head_mm",
+    "head_h_mm",
+    "hex_mm",
+    "tap_drill_mm",
+    "offset_mm",
+    "wall_out_mm",
+    "head_fits",
+    "grip_mm",
+    "thread_avail_mm",
+    "engagement_req_mm",
+    "geometry_ok",
+    "preload_strength_N",
+    "preload_strip_N",
+    "preload_N",
+    "head_pressure_MPa",
+    "head_check",
+    "torque_per_screw_Nm",
+    "screws_needed",
+    "pitch_axial_mm",
+    "screws_fit",
+    "works",
+    "clamp_torque_Nm",
+    "sf_coupling",
+    "tightening_Nm",
+    "length_mm",
+    "length_ok",
+    "cbore_dia_mm",
+    "cbore_depth_mm",
+    "vent_port_ok"
+   ],
+   "rows": 5
+  },
+  "gap_sweep": {
+   "cells": {
+    "centre_gap_mm": [
+     "Gap sweep!E6",
+     "Gap sweep!E7",
+     "Gap sweep!E8",
+     "Gap sweep!E9",
+     "Gap sweep!E10",
+     "Gap sweep!E11",
+     "Gap sweep!E12",
+     "Gap sweep!E13",
+     "Gap sweep!E14",
+     "Gap sweep!E15",
+     "Gap sweep!E16",
+     "Gap sweep!E17",
+     "Gap sweep!E18"
+    ],
+    "corner_gap_mm": [
+     "Gap sweep!D6",
+     "Gap sweep!D7",
+     "Gap sweep!D8",
+     "Gap sweep!D9",
+     "Gap sweep!D10",
+     "Gap sweep!D11",
+     "Gap sweep!D12",
+     "Gap sweep!D13",
+     "Gap sweep!D14",
+     "Gap sweep!D15",
+     "Gap sweep!D16",
+     "Gap sweep!D17",
+     "Gap sweep!D18"
+    ],
+    "cup_od_mm": [
+     "Gap sweep!G6",
+     "Gap sweep!G7",
+     "Gap sweep!G8",
+     "Gap sweep!G9",
+     "Gap sweep!G10",
+     "Gap sweep!G11",
+     "Gap sweep!G12",
+     "Gap sweep!G13",
+     "Gap sweep!G14",
+     "Gap sweep!G15",
+     "Gap sweep!G16",
+     "Gap sweep!G17",
+     "Gap sweep!G18"
+    ],
+    "f_end": [
+     "Gap sweep!W6",
+     "Gap sweep!W7",
+     "Gap sweep!W8",
+     "Gap sweep!W9",
+     "Gap sweep!W10",
+     "Gap sweep!W11",
+     "Gap sweep!W12",
+     "Gap sweep!W13",
+     "Gap sweep!W14",
+     "Gap sweep!W15",
+     "Gap sweep!W16",
+     "Gap sweep!W17",
+     "Gap sweep!W18"
+    ],
+    "fill_inner": [
+     "Gap sweep!J6",
+     "Gap sweep!J7",
+     "Gap sweep!J8",
+     "Gap sweep!J9",
+     "Gap sweep!J10",
+     "Gap sweep!J11",
+     "Gap sweep!J12",
+     "Gap sweep!J13",
+     "Gap sweep!J14",
+     "Gap sweep!J15",
+     "Gap sweep!J16",
+     "Gap sweep!J17",
+     "Gap sweep!J18"
+    ],
+    "fill_outer": [
+     "Gap sweep!K6",
+     "Gap sweep!K7",
+     "Gap sweep!K8",
+     "Gap sweep!K9",
+     "Gap sweep!K10",
+     "Gap sweep!K11",
+     "Gap sweep!K12",
+     "Gap sweep!K13",
+     "Gap sweep!K14",
+     "Gap sweep!K15",
+     "Gap sweep!K16",
+     "Gap sweep!K17",
+     "Gap sweep!K18"
+    ],
+    "gap_radius_mm": [
+     "Gap sweep!H6",
+     "Gap sweep!H7",
+     "Gap sweep!H8",
+     "Gap sweep!H9",
+     "Gap sweep!H10",
+     "Gap sweep!H11",
+     "Gap sweep!H12",
+     "Gap sweep!H13",
+     "Gap sweep!H14",
+     "Gap sweep!H15",
+     "Gap sweep!H16",
+     "Gap sweep!H17",
+     "Gap sweep!H18"
+    ],
+    "gearbox_input_Nm": [
+     "Gap sweep!Z6",
+     "Gap sweep!Z7",
+     "Gap sweep!Z8",
+     "Gap sweep!Z9",
+     "Gap sweep!Z10",
+     "Gap sweep!Z11",
+     "Gap sweep!Z12",
+     "Gap sweep!Z13",
+     "Gap sweep!Z14",
+     "Gap sweep!Z15",
+     "Gap sweep!Z16",
+     "Gap sweep!Z17",
+     "Gap sweep!Z18"
+    ],
+    "inner_apothem_mm": [
+     "Gap sweep!C6",
+     "Gap sweep!C7",
+     "Gap sweep!C8",
+     "Gap sweep!C9",
+     "Gap sweep!C10",
+     "Gap sweep!C11",
+     "Gap sweep!C12",
+     "Gap sweep!C13",
+     "Gap sweep!C14",
+     "Gap sweep!C15",
+     "Gap sweep!C16",
+     "Gap sweep!C17",
+     "Gap sweep!C18"
+    ],
+    "k1": [
+     "Gap sweep!L6",
+     "Gap sweep!L7",
+     "Gap sweep!L8",
+     "Gap sweep!L9",
+     "Gap sweep!L10",
+     "Gap sweep!L11",
+     "Gap sweep!L12",
+     "Gap sweep!L13",
+     "Gap sweep!L14",
+     "Gap sweep!L15",
+     "Gap sweep!L16",
+     "Gap sweep!L17",
+     "Gap sweep!L18"
+    ],
+    "k3": [
+     "Gap sweep!O6",
+     "Gap sweep!O7",
+     "Gap sweep!O8",
+     "Gap sweep!O9",
+     "Gap sweep!O10",
+     "Gap sweep!O11",
+     "Gap sweep!O12",
+     "Gap sweep!O13",
+     "Gap sweep!O14",
+     "Gap sweep!O15",
+     "Gap sweep!O16",
+     "Gap sweep!O17",
+     "Gap sweep!O18"
+    ],
+    "k5": [
+     "Gap sweep!R6",
+     "Gap sweep!R7",
+     "Gap sweep!R8",
+     "Gap sweep!R9",
+     "Gap sweep!R10",
+     "Gap sweep!R11",
+     "Gap sweep!R12",
+     "Gap sweep!R13",
+     "Gap sweep!R14",
+     "Gap sweep!R15",
+     "Gap sweep!R16",
+     "Gap sweep!R17",
+     "Gap sweep!R18"
+    ],
+    "outer_face_apothem_mm": [
+     "Gap sweep!F6",
+     "Gap sweep!F7",
+     "Gap sweep!F8",
+     "Gap sweep!F9",
+     "Gap sweep!F10",
+     "Gap sweep!F11",
+     "Gap sweep!F12",
+     "Gap sweep!F13",
+     "Gap sweep!F14",
+     "Gap sweep!F15",
+     "Gap sweep!F16",
+     "Gap sweep!F17",
+     "Gap sweep!F18"
+    ],
+    "pole_pitch_mm": [
+     "Gap sweep!I6",
+     "Gap sweep!I7",
+     "Gap sweep!I8",
+     "Gap sweep!I9",
+     "Gap sweep!I10",
+     "Gap sweep!I11",
+     "Gap sweep!I12",
+     "Gap sweep!I13",
+     "Gap sweep!I14",
+     "Gap sweep!I15",
+     "Gap sweep!I16",
+     "Gap sweep!I17",
+     "Gap sweep!I18"
+    ],
+    "pullout_20C_Nm": [
+     "Gap sweep!Y6",
+     "Gap sweep!Y7",
+     "Gap sweep!Y8",
+     "Gap sweep!Y9",
+     "Gap sweep!Y10",
+     "Gap sweep!Y11",
+     "Gap sweep!Y12",
+     "Gap sweep!Y13",
+     "Gap sweep!Y14",
+     "Gap sweep!Y15",
+     "Gap sweep!Y16",
+     "Gap sweep!Y17",
+     "Gap sweep!Y18"
+    ],
+    "pullout_op_Nm": [
+     "Gap sweep!X6",
+     "Gap sweep!X7",
+     "Gap sweep!X8",
+     "Gap sweep!X9",
+     "Gap sweep!X10",
+     "Gap sweep!X11",
+     "Gap sweep!X12",
+     "Gap sweep!X13",
+     "Gap sweep!X14",
+     "Gap sweep!X15",
+     "Gap sweep!X16",
+     "Gap sweep!X17",
+     "Gap sweep!X18"
+    ],
+    "s1": [
+     "Gap sweep!M6",
+     "Gap sweep!M7",
+     "Gap sweep!M8",
+     "Gap sweep!M9",
+     "Gap sweep!M10",
+     "Gap sweep!M11",
+     "Gap sweep!M12",
+     "Gap sweep!M13",
+     "Gap sweep!M14",
+     "Gap sweep!M15",
+     "Gap sweep!M16",
+     "Gap sweep!M17",
+     "Gap sweep!M18"
+    ],
+    "s3": [
+     "Gap sweep!P6",
+     "Gap sweep!P7",
+     "Gap sweep!P8",
+     "Gap sweep!P9",
+     "Gap sweep!P10",
+     "Gap sweep!P11",
+     "Gap sweep!P12",
+     "Gap sweep!P13",
+     "Gap sweep!P14",
+     "Gap sweep!P15",
+     "Gap sweep!P16",
+     "Gap sweep!P17",
+     "Gap sweep!P18"
+    ],
+    "s5": [
+     "Gap sweep!S6",
+     "Gap sweep!S7",
+     "Gap sweep!S8",
+     "Gap sweep!S9",
+     "Gap sweep!S10",
+     "Gap sweep!S11",
+     "Gap sweep!S12",
+     "Gap sweep!S13",
+     "Gap sweep!S14",
+     "Gap sweep!S15",
+     "Gap sweep!S16",
+     "Gap sweep!S17",
+     "Gap sweep!S18"
+    ],
+    "status": [
+     "Gap sweep!AA6",
+     "Gap sweep!AA7",
+     "Gap sweep!AA8",
+     "Gap sweep!AA9",
+     "Gap sweep!AA10",
+     "Gap sweep!AA11",
+     "Gap sweep!AA12",
+     "Gap sweep!AA13",
+     "Gap sweep!AA14",
+     "Gap sweep!AA15",
+     "Gap sweep!AA16",
+     "Gap sweep!AA17",
+     "Gap sweep!AA18"
+    ],
+    "tau1_Pa": [
+     "Gap sweep!N6",
+     "Gap sweep!N7",
+     "Gap sweep!N8",
+     "Gap sweep!N9",
+     "Gap sweep!N10",
+     "Gap sweep!N11",
+     "Gap sweep!N12",
+     "Gap sweep!N13",
+     "Gap sweep!N14",
+     "Gap sweep!N15",
+     "Gap sweep!N16",
+     "Gap sweep!N17",
+     "Gap sweep!N18"
+    ],
+    "tau3_Pa": [
+     "Gap sweep!Q6",
+     "Gap sweep!Q7",
+     "Gap sweep!Q8",
+     "Gap sweep!Q9",
+     "Gap sweep!Q10",
+     "Gap sweep!Q11",
+     "Gap sweep!Q12",
+     "Gap sweep!Q13",
+     "Gap sweep!Q14",
+     "Gap sweep!Q15",
+     "Gap sweep!Q16",
+     "Gap sweep!Q17",
+     "Gap sweep!Q18"
+    ],
+    "tau5_Pa": [
+     "Gap sweep!T6",
+     "Gap sweep!T7",
+     "Gap sweep!T8",
+     "Gap sweep!T9",
+     "Gap sweep!T10",
+     "Gap sweep!T11",
+     "Gap sweep!T12",
+     "Gap sweep!T13",
+     "Gap sweep!T14",
+     "Gap sweep!T15",
+     "Gap sweep!T16",
+     "Gap sweep!T17",
+     "Gap sweep!T18"
+    ],
+    "tau_Pa": [
+     "Gap sweep!U6",
+     "Gap sweep!U7",
+     "Gap sweep!U8",
+     "Gap sweep!U9",
+     "Gap sweep!U10",
+     "Gap sweep!U11",
+     "Gap sweep!U12",
+     "Gap sweep!U13",
+     "Gap sweep!U14",
+     "Gap sweep!U15",
+     "Gap sweep!U16",
+     "Gap sweep!U17",
+     "Gap sweep!U18"
+    ],
+    "torque_2d_Nm": [
+     "Gap sweep!V6",
+     "Gap sweep!V7",
+     "Gap sweep!V8",
+     "Gap sweep!V9",
+     "Gap sweep!V10",
+     "Gap sweep!V11",
+     "Gap sweep!V12",
+     "Gap sweep!V13",
+     "Gap sweep!V14",
+     "Gap sweep!V15",
+     "Gap sweep!V16",
+     "Gap sweep!V17",
+     "Gap sweep!V18"
+    ],
+    "variable": [
+     "Gap sweep!B6",
+     "Gap sweep!B7",
+     "Gap sweep!B8",
+     "Gap sweep!B9",
+     "Gap sweep!B10",
+     "Gap sweep!B11",
+     "Gap sweep!B12",
+     "Gap sweep!B13",
+     "Gap sweep!B14",
+     "Gap sweep!B15",
+     "Gap sweep!B16",
+     "Gap sweep!B17",
+     "Gap sweep!B18"
+    ]
+   },
+   "fields": [
+    "variable",
+    "inner_apothem_mm",
+    "corner_gap_mm",
+    "centre_gap_mm",
+    "outer_face_apothem_mm",
+    "cup_od_mm",
+    "gap_radius_mm",
+    "pole_pitch_mm",
+    "fill_inner",
+    "fill_outer",
+    "k1",
+    "s1",
+    "tau1_Pa",
+    "k3",
+    "s3",
+    "tau3_Pa",
+    "k5",
+    "s5",
+    "tau5_Pa",
+    "tau_Pa",
+    "torque_2d_Nm",
+    "f_end",
+    "pullout_op_Nm",
+    "pullout_20C_Nm",
+    "gearbox_input_Nm",
+    "status"
+   ],
+   "rows": 13
+  },
+  "pole_sweep": {
+   "cells": {
+    "centre_gap_mm": [
+     "Pole sweep!E6",
+     "Pole sweep!E7",
+     "Pole sweep!E8",
+     "Pole sweep!E9",
+     "Pole sweep!E10",
+     "Pole sweep!E11"
+    ],
+    "corner_gap_mm": [
+     "Pole sweep!D6",
+     "Pole sweep!D7",
+     "Pole sweep!D8",
+     "Pole sweep!D9",
+     "Pole sweep!D10",
+     "Pole sweep!D11"
+    ],
+    "cup_od_mm": [
+     "Pole sweep!G6",
+     "Pole sweep!G7",
+     "Pole sweep!G8",
+     "Pole sweep!G9",
+     "Pole sweep!G10",
+     "Pole sweep!G11"
+    ],
+    "f_end": [
+     "Pole sweep!W6",
+     "Pole sweep!W7",
+     "Pole sweep!W8",
+     "Pole sweep!W9",
+     "Pole sweep!W10",
+     "Pole sweep!W11"
+    ],
+    "fill_inner": [
+     "Pole sweep!J6",
+     "Pole sweep!J7",
+     "Pole sweep!J8",
+     "Pole sweep!J9",
+     "Pole sweep!J10",
+     "Pole sweep!J11"
+    ],
+    "fill_outer": [
+     "Pole sweep!K6",
+     "Pole sweep!K7",
+     "Pole sweep!K8",
+     "Pole sweep!K9",
+     "Pole sweep!K10",
+     "Pole sweep!K11"
+    ],
+    "gap_radius_mm": [
+     "Pole sweep!H6",
+     "Pole sweep!H7",
+     "Pole sweep!H8",
+     "Pole sweep!H9",
+     "Pole sweep!H10",
+     "Pole sweep!H11"
+    ],
+    "gearbox_input_Nm": [
+     "Pole sweep!Z6",
+     "Pole sweep!Z7",
+     "Pole sweep!Z8",
+     "Pole sweep!Z9",
+     "Pole sweep!Z10",
+     "Pole sweep!Z11"
+    ],
+    "inner_apothem_mm": [
+     "Pole sweep!C6",
+     "Pole sweep!C7",
+     "Pole sweep!C8",
+     "Pole sweep!C9",
+     "Pole sweep!C10",
+     "Pole sweep!C11"
+    ],
+    "k1": [
+     "Pole sweep!L6",
+     "Pole sweep!L7",
+     "Pole sweep!L8",
+     "Pole sweep!L9",
+     "Pole sweep!L10",
+     "Pole sweep!L11"
+    ],
+    "k3": [
+     "Pole sweep!O6",
+     "Pole sweep!O7",
+     "Pole sweep!O8",
+     "Pole sweep!O9",
+     "Pole sweep!O10",
+     "Pole sweep!O11"
+    ],
+    "k5": [
+     "Pole sweep!R6",
+     "Pole sweep!R7",
+     "Pole sweep!R8",
+     "Pole sweep!R9",
+     "Pole sweep!R10",
+     "Pole sweep!R11"
+    ],
+    "outer_face_apothem_mm": [
+     "Pole sweep!F6",
+     "Pole sweep!F7",
+     "Pole sweep!F8",
+     "Pole sweep!F9",
+     "Pole sweep!F10",
+     "Pole sweep!F11"
+    ],
+    "pole_pitch_mm": [
+     "Pole sweep!I6",
+     "Pole sweep!I7",
+     "Pole sweep!I8",
+     "Pole sweep!I9",
+     "Pole sweep!I10",
+     "Pole sweep!I11"
+    ],
+    "pullout_20C_Nm": [
+     "Pole sweep!Y6",
+     "Pole sweep!Y7",
+     "Pole sweep!Y8",
+     "Pole sweep!Y9",
+     "Pole sweep!Y10",
+     "Pole sweep!Y11"
+    ],
+    "pullout_op_Nm": [
+     "Pole sweep!X6",
+     "Pole sweep!X7",
+     "Pole sweep!X8",
+     "Pole sweep!X9",
+     "Pole sweep!X10",
+     "Pole sweep!X11"
+    ],
+    "s1": [
+     "Pole sweep!M6",
+     "Pole sweep!M7",
+     "Pole sweep!M8",
+     "Pole sweep!M9",
+     "Pole sweep!M10",
+     "Pole sweep!M11"
+    ],
+    "s3": [
+     "Pole sweep!P6",
+     "Pole sweep!P7",
+     "Pole sweep!P8",
+     "Pole sweep!P9",
+     "Pole sweep!P10",
+     "Pole sweep!P11"
+    ],
+    "s5": [
+     "Pole sweep!S6",
+     "Pole sweep!S7",
+     "Pole sweep!S8",
+     "Pole sweep!S9",
+     "Pole sweep!S10",
+     "Pole sweep!S11"
+    ],
+    "status": [
+     "Pole sweep!AA6",
+     "Pole sweep!AA7",
+     "Pole sweep!AA8",
+     "Pole sweep!AA9",
+     "Pole sweep!AA10",
+     "Pole sweep!AA11"
+    ],
+    "tau1_Pa": [
+     "Pole sweep!N6",
+     "Pole sweep!N7",
+     "Pole sweep!N8",
+     "Pole sweep!N9",
+     "Pole sweep!N10",
+     "Pole sweep!N11"
+    ],
+    "tau3_Pa": [
+     "Pole sweep!Q6",
+     "Pole sweep!Q7",
+     "Pole sweep!Q8",
+     "Pole sweep!Q9",
+     "Pole sweep!Q10",
+     "Pole sweep!Q11"
+    ],
+    "tau5_Pa": [
+     "Pole sweep!T6",
+     "Pole sweep!T7",
+     "Pole sweep!T8",
+     "Pole sweep!T9",
+     "Pole sweep!T10",
+     "Pole sweep!T11"
+    ],
+    "tau_Pa": [
+     "Pole sweep!U6",
+     "Pole sweep!U7",
+     "Pole sweep!U8",
+     "Pole sweep!U9",
+     "Pole sweep!U10",
+     "Pole sweep!U11"
+    ],
+    "torque_2d_Nm": [
+     "Pole sweep!V6",
+     "Pole sweep!V7",
+     "Pole sweep!V8",
+     "Pole sweep!V9",
+     "Pole sweep!V10",
+     "Pole sweep!V11"
+    ],
+    "variable": [
+     "Pole sweep!B6",
+     "Pole sweep!B7",
+     "Pole sweep!B8",
+     "Pole sweep!B9",
+     "Pole sweep!B10",
+     "Pole sweep!B11"
+    ]
+   },
+   "fields": [
+    "variable",
+    "inner_apothem_mm",
+    "corner_gap_mm",
+    "centre_gap_mm",
+    "outer_face_apothem_mm",
+    "cup_od_mm",
+    "gap_radius_mm",
+    "pole_pitch_mm",
+    "fill_inner",
+    "fill_outer",
+    "k1",
+    "s1",
+    "tau1_Pa",
+    "k3",
+    "s3",
+    "tau3_Pa",
+    "k5",
+    "s5",
+    "tau5_Pa",
+    "tau_Pa",
+    "torque_2d_Nm",
+    "f_end",
+    "pullout_op_Nm",
+    "pullout_20C_Nm",
+    "gearbox_input_Nm",
+    "status"
+   ],
+   "rows": 6
+  }
+ }
 }

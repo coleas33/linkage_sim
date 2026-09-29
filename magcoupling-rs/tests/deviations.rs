@@ -18,18 +18,18 @@ use magcoupling::engine::deviations::{
 };
 use magcoupling::engine::meta::{InputSet, Value, input_rows, result_rows};
 
-/// Every value with a workbook cell (inputs and results) under `dev`.
-fn cell_values(dev: Deviations) -> BTreeMap<&'static str, Value> {
+/// Every value with a workbook cell (inputs and results, table cells included) under `dev`.
+fn cell_values(dev: Deviations) -> BTreeMap<String, Value> {
     let inputs = DesignInputs::defaults_with(dev);
     let results = compute_all_with(&inputs, dev);
     let mut cells = BTreeMap::new();
     for row in input_rows(&inputs) {
         if let Some(cell) = row.meta.cell {
-            cells.insert(cell, row.value);
+            cells.insert(cell.to_owned(), row.value);
         }
     }
     for row in result_rows(&results) {
-        if let Some(cell) = row.meta.cell {
+        if let Some(cell) = row.cell {
             cells.insert(cell, row.value);
         }
     }
@@ -37,13 +37,10 @@ fn cell_values(dev: Deviations) -> BTreeMap<&'static str, Value> {
 }
 
 /// Cells whose value differs between `a` and `b` by the parity rule.
-fn changed_cells(
-    a: &BTreeMap<&'static str, Value>,
-    b: &BTreeMap<&'static str, Value>,
-) -> BTreeSet<&'static str> {
+fn changed_cells(a: &BTreeMap<String, Value>, b: &BTreeMap<String, Value>) -> BTreeSet<String> {
     a.iter()
         .filter(|(cell, va)| !parity_close(va, &b[*cell]))
-        .map(|(cell, _)| *cell)
+        .map(|(cell, _)| cell.clone())
         .collect()
 }
 
@@ -142,14 +139,18 @@ fn each_deviation_alone_changes_exactly_its_registered_cells() {
         let d = &REGISTRY[id.index()];
         let corrected = cell_values(Deviations::only(id));
         let changed = changed_cells(&workbook, &corrected);
-        let registered: BTreeSet<&str> = d.changes_at_defaults.iter().map(|c| c.cell).collect();
+        let registered: BTreeSet<String> = d
+            .changes_at_defaults
+            .iter()
+            .map(|c| c.cell.to_owned())
+            .collect();
         if changed != registered {
             failures.push(format!(
                 "{id}: changed {changed:?}, registered {registered:?}"
             ));
         }
         for change in d.changes_at_defaults {
-            let got = &corrected[change.cell];
+            let got = &corrected[&change.cell.to_owned()];
             if !parity_close(got, &change.corrected.to_value()) {
                 failures.push(format!(
                     "{id}: {} = {got:?}, registered {:?}",
@@ -167,9 +168,9 @@ fn all_deviations_together_change_only_registered_cells() {
         &cell_values(Deviations::NONE),
         &cell_values(Deviations::ALL),
     );
-    let registered: BTreeSet<&str> = REGISTRY
+    let registered: BTreeSet<String> = REGISTRY
         .iter()
-        .flat_map(|d| d.changes_at_defaults.iter().map(|c| c.cell))
+        .flat_map(|d| d.changes_at_defaults.iter().map(|c| c.cell.to_owned()))
         .collect();
     let unexplained: Vec<_> = changed.difference(&registered).collect();
     assert!(

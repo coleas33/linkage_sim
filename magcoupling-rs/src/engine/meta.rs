@@ -47,6 +47,18 @@
 //! Selector inputs stay `i64` workbook codes (`backiron`: 1 steel, 0 none), not
 //! Rust enums, because the engine mirrors the Python branching on those codes;
 //! [`InputSet::set`] rejects codes outside `choices`.
+//!
+//! # Tables
+//!
+//! The screw table and the two sweeps are lists of rows whose workbook cells
+//! follow a layout, not one declared cell per value. A row struct is declared
+//! with [`rows!`] (each field carries [`col`], [`at_row`] or [`uncelled_col`]
+//! metadata naming only its column letter or its sheet row); a [`results!`] struct
+//! lists its tables in a `tables { name: Row => layout }` section, where the
+//! [`TableLayout`] says whether the rows run down the sheet or across it. The
+//! field is a `Vec<Row>` and its paths are `name[i].field`, as in the Python
+//! schema. Every value gets a synthesized workbook cell (`Gap sweep!N8`), which
+//! the visit callback hands out like a scalar's `meta.cell`.
 
 use std::fmt;
 
@@ -255,6 +267,132 @@ impl ResultMeta {
     }
 }
 
+/// The callback of [`ResultSet::visit`] and [`RowSet::visit_row`]:
+/// `f(path, meta, cell, value)`, where `cell` is the workbook cell (`meta.cell`
+/// for a scalar, synthesized for a table row).
+pub type ResultVisitor<'a> = dyn FnMut(&str, &'static ResultMeta, Option<&str>, Value) + 'a;
+
+/// Where a table field sits on its sheet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CellAxis {
+    /// A column letter: rows run down the sheet (the sweeps).
+    Column(&'static str),
+    /// A row number: rows run across the sheet (the screw table).
+    Row(u32),
+    /// Not a workbook cell (e.g. the screw size name, a header).
+    None,
+}
+
+/// Metadata of one table field: the result metadata plus its place on the sheet.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ColumnMeta {
+    pub meta: ResultMeta,
+    pub axis: CellAxis,
+}
+
+const fn column_meta(
+    unit: &'static str,
+    label: &'static str,
+    help: &'static str,
+    axis: CellAxis,
+) -> ColumnMeta {
+    ColumnMeta {
+        meta: ResultMeta {
+            name: "",
+            ty: FieldType::F64,
+            unit,
+            label,
+            help,
+            cell: None,
+        },
+        axis,
+    }
+}
+
+/// A table field that sits in a sheet column (the sweeps: `B` .. `AA`).
+pub const fn col(
+    unit: &'static str,
+    label: &'static str,
+    help: &'static str,
+    column: &'static str,
+) -> ColumnMeta {
+    column_meta(unit, label, help, CellAxis::Column(column))
+}
+
+/// A table field that sits in a sheet row (the screw table: rows 6 .. 38).
+pub const fn at_row(
+    unit: &'static str,
+    label: &'static str,
+    help: &'static str,
+    row: u32,
+) -> ColumnMeta {
+    column_meta(unit, label, help, CellAxis::Row(row))
+}
+
+/// A table field with no workbook cell.
+pub const fn uncelled_col(
+    unit: &'static str,
+    label: &'static str,
+    help: &'static str,
+) -> ColumnMeta {
+    column_meta(unit, label, help, CellAxis::None)
+}
+
+impl ColumnMeta {
+    /// Completes the metadata with the field's name and type (used by `rows!`).
+    #[doc(hidden)]
+    pub const fn bind(self, name: &'static str, ty: FieldType) -> Self {
+        Self {
+            meta: self.meta.bind(name, ty),
+            ..self
+        }
+    }
+}
+
+/// How the rows of a table map to workbook cells.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TableLayout {
+    /// Row `i` of the table is sheet row `first_row + i`; fields name their column.
+    RowsDown { sheet: &'static str, first_row: u32 },
+    /// Row `i` of the table is sheet column `columns[i]`; fields name their row.
+    ColumnsAcross {
+        sheet: &'static str,
+        columns: &'static [&'static str],
+    },
+}
+
+impl TableLayout {
+    /// The cell of field `axis` in table row `index`; `None` when the axis does
+    /// not fit the layout or the row has no column.
+    pub fn cell(&self, axis: CellAxis, index: usize) -> Option<String> {
+        match (*self, axis) {
+            (TableLayout::RowsDown { sheet, first_row }, CellAxis::Column(column)) => {
+                Some(format!("{sheet}!{column}{}", first_row as usize + index))
+            }
+            (TableLayout::ColumnsAcross { sheet, columns }, CellAxis::Row(row)) => columns
+                .get(index)
+                .map(|column| format!("{sheet}!{column}{row}")),
+            _ => None,
+        }
+    }
+}
+
+/// A table row declared with [`rows!`].
+pub trait RowSet {
+    /// Field metadata, in declaration order.
+    const COLUMNS: &'static [ColumnMeta];
+
+    /// Calls `f(path, meta, cell, value)` for every field of this row, row
+    /// `index` of a table laid out by `layout`. `prefix` ends with `[index].`.
+    fn visit_row(
+        &self,
+        prefix: &str,
+        layout: &TableLayout,
+        index: usize,
+        f: &mut ResultVisitor<'_>,
+    );
+}
+
 /// Why [`InputSet::set`] refused a value.
 #[derive(Clone, Debug, PartialEq)]
 pub enum SetErrorKind {
@@ -449,9 +587,11 @@ pub trait ResultSet {
     /// Names of the nested groups declared on this struct, in declaration order.
     const GROUPS: &'static [&'static str];
 
-    /// Calls `f(path, meta, value)` for every leaf result, fields before
-    /// groups, each in declaration order. `prefix` is prepended to every path.
-    fn visit(&self, prefix: &str, f: &mut dyn FnMut(&str, &'static ResultMeta, Value));
+    /// Calls `f(path, meta, cell, value)` for every leaf result, fields before
+    /// groups before tables, each in declaration order. `prefix` is prepended to
+    /// every path; `cell` is the field's workbook cell: `meta.cell` for a scalar,
+    /// synthesized for a table row.
+    fn visit(&self, prefix: &str, f: &mut ResultVisitor<'_>);
 }
 
 /// One input with its full path, metadata and current value.
@@ -467,6 +607,8 @@ pub struct InputRow {
 pub struct ResultRow {
     pub path: String,
     pub meta: &'static ResultMeta,
+    /// The workbook cell, synthesized for table rows.
+    pub cell: Option<String>,
     pub value: Value,
 }
 
@@ -486,10 +628,11 @@ pub fn input_rows<T: InputSet>(inputs: &T) -> Vec<InputRow> {
 /// Every leaf result with path, metadata and value (Python `result_schema()`).
 pub fn result_rows<T: ResultSet>(results: &T) -> Vec<ResultRow> {
     let mut rows = Vec::new();
-    results.visit("", &mut |path, meta, value| {
+    results.visit("", &mut |path, meta, cell, value| {
         rows.push(ResultRow {
             path: path.to_owned(),
             meta,
+            cell: cell.map(str::to_owned),
             value,
         })
     });
@@ -639,8 +782,10 @@ macro_rules! inputs {
 pub(crate) use inputs;
 
 /// Declares a result struct: fields with metadata, then optional nested
-/// groups. See the module docs for the field syntax (no defaults: results are
-/// built by the module's `compute`, which must set every field).
+/// groups and tables. See the module docs for the field syntax (no defaults:
+/// results are built by the module's `compute`, which must set every field). A
+/// `tables { name: Row => layout }` entry is a `Vec<Row>` field (`Row` declared
+/// with [`rows!`]) whose values get workbook cells from the [`TableLayout`].
 macro_rules! results {
     (
         $(#[$sattr:meta])*
@@ -656,6 +801,11 @@ macro_rules! results {
                     $( $(#[$gattr:meta])* $group:ident : $Group:ty ),* $(,)?
                 }
             )?
+            $(
+                tables {
+                    $( $(#[$tattr:meta])* $table:ident : $Row:ty => $layout:expr ),* $(,)?
+                }
+            )?
         }
     ) => {
         $(#[$sattr])*
@@ -664,6 +814,7 @@ macro_rules! results {
         pub struct $Name {
             $( $(#[$fattr])* pub $field: $ty, )*
             $( $( $(#[$gattr])* pub $group: $Group, )* )?
+            $( $( $(#[$tattr])* pub $table: ::std::vec::Vec<$Row>, )* )?
         }
 
         impl $crate::engine::meta::ResultSet for $Name {
@@ -678,11 +829,11 @@ macro_rules! results {
             fn visit(
                 &self,
                 prefix: &str,
-                f: &mut dyn FnMut(&str, &'static $crate::engine::meta::ResultMeta, $crate::engine::meta::Value),
+                f: &mut $crate::engine::meta::ResultVisitor<'_>,
             ) {
                 let values = [ $( $crate::engine::meta::FieldValue::to_value(&self.$field), )* ];
                 for (meta, value) in <Self as $crate::engine::meta::ResultSet>::FIELDS.iter().zip(values) {
-                    f(&::std::format!("{prefix}{}", meta.name), meta, value);
+                    f(&::std::format!("{prefix}{}", meta.name), meta, meta.cell, value);
                 }
                 $( $(
                     $crate::engine::meta::ResultSet::visit(
@@ -691,11 +842,70 @@ macro_rules! results {
                         f,
                     );
                 )* )?
+                $( $(
+                    for (index, row) in self.$table.iter().enumerate() {
+                        $crate::engine::meta::RowSet::visit_row(
+                            row,
+                            &::std::format!("{prefix}{}[{index}].", stringify!($table)),
+                            &$layout,
+                            index,
+                            f,
+                        );
+                    }
+                )* )?
             }
         }
     };
 }
 pub(crate) use results;
+
+/// Declares a table row struct: fields with `col`/`at_row`/`uncelled_col` metadata.
+/// Tables are declared in a `results!` struct's `tables { .. }` section, which
+/// names the layout; the row names only each field's column or row.
+#[allow(unused_macros)] // first used by clamps (Task 10), which removes this allow
+macro_rules! rows {
+    (
+        $(#[$sattr:meta])*
+        pub struct $Name:ident {
+            $(
+                $(#[$fattr:meta])*
+                $field:ident : $ty:ty => $meta:expr
+            ),* $(,)?
+        }
+    ) => {
+        $(#[$sattr])*
+        #[derive(Clone, Debug, PartialEq)]
+        #[allow(non_snake_case)]
+        pub struct $Name {
+            $( $(#[$fattr])* pub $field: $ty, )*
+        }
+
+        impl $crate::engine::meta::RowSet for $Name {
+            const COLUMNS: &'static [$crate::engine::meta::ColumnMeta] = &[
+                $( ($meta).bind(
+                    stringify!($field),
+                    <$ty as $crate::engine::meta::FieldValue>::TYPE,
+                ), )*
+            ];
+
+            fn visit_row(
+                &self,
+                prefix: &str,
+                layout: &$crate::engine::meta::TableLayout,
+                index: usize,
+                f: &mut $crate::engine::meta::ResultVisitor<'_>,
+            ) {
+                let values = [ $( $crate::engine::meta::FieldValue::to_value(&self.$field), )* ];
+                for (column, value) in <Self as $crate::engine::meta::RowSet>::COLUMNS.iter().zip(values) {
+                    let cell = layout.cell(column.axis, index);
+                    f(&::std::format!("{prefix}{}", column.meta.name), &column.meta, cell.as_deref(), value);
+                }
+            }
+        }
+    };
+}
+#[allow(unused_imports)] // first used by clamps (Task 10), which removes this allow
+pub(crate) use rows;
 
 #[cfg(test)]
 mod tests {
@@ -936,5 +1146,117 @@ mod tests {
             ]
         );
         assert_eq!(NumOrText::Num(1.5).to_value(), Value::Num(1.5));
+    }
+
+    rows! {
+        /// A toy screw-table row: one sheet column per row, fields name their sheet row.
+        pub struct ToyRow {
+            size: String => uncelled_col("", "Size", ""),
+            d_mm: f64 => at_row("mm", "Diameter", "", 6),
+            ok: i64 => at_row("-", "Fits", "", 7),
+        }
+    }
+
+    rows! {
+        /// A toy sweep row: one sheet row per row, fields name their column.
+        pub struct SweepToy {
+            x: f64 => col("mm", "X", "", "B"),
+            status: String => col("", "Status", "", "AA"),
+        }
+    }
+
+    const TOY_COLUMNS: [&str; 2] = ["C", "D"];
+
+    results! {
+        pub struct ToyOut {
+            fields {
+                n: f64 => out("-", "N", "", "S!C1"),
+            }
+            tables {
+                table: ToyRow => TableLayout::ColumnsAcross { sheet: "Toy", columns: &TOY_COLUMNS },
+                sweep: SweepToy => TableLayout::RowsDown { sheet: "Sweep", first_row: 6 },
+            }
+        }
+    }
+
+    #[test]
+    fn table_rows_get_synthesized_cells() {
+        let out = ToyOut {
+            n: 1.0,
+            table: vec![
+                ToyRow {
+                    size: "M3".into(),
+                    d_mm: 3.0,
+                    ok: 1,
+                },
+                ToyRow {
+                    size: "M4".into(),
+                    d_mm: 4.0,
+                    ok: 0,
+                },
+            ],
+            sweep: vec![
+                SweepToy {
+                    x: 0.5,
+                    status: "a".into(),
+                },
+                SweepToy {
+                    x: 0.75,
+                    status: "b".into(),
+                },
+            ],
+        };
+        let rows: Vec<(String, Option<String>, Value)> = result_rows(&out)
+            .into_iter()
+            .map(|r| (r.path, r.cell, r.value))
+            .collect();
+        let s = |x: &str| x.to_owned();
+        assert_eq!(
+            rows,
+            vec![
+                (s("n"), Some(s("S!C1")), Value::Num(1.0)),
+                (s("table[0].size"), None, Value::Text(s("M3"))),
+                (s("table[0].d_mm"), Some(s("Toy!C6")), Value::Num(3.0)),
+                (s("table[0].ok"), Some(s("Toy!C7")), Value::Int(1)),
+                (s("table[1].size"), None, Value::Text(s("M4"))),
+                (s("table[1].d_mm"), Some(s("Toy!D6")), Value::Num(4.0)),
+                (s("table[1].ok"), Some(s("Toy!D7")), Value::Int(0)),
+                (s("sweep[0].x"), Some(s("Sweep!B6")), Value::Num(0.5)),
+                (
+                    s("sweep[0].status"),
+                    Some(s("Sweep!AA6")),
+                    Value::Text(s("a"))
+                ),
+                (s("sweep[1].x"), Some(s("Sweep!B7")), Value::Num(0.75)),
+                (
+                    s("sweep[1].status"),
+                    Some(s("Sweep!AA7")),
+                    Value::Text(s("b"))
+                ),
+            ]
+        );
+        assert_eq!(ToyRow::COLUMNS[1].meta.name, "d_mm");
+        assert_eq!(ToyRow::COLUMNS[2].meta.ty, FieldType::I64);
+    }
+
+    #[test]
+    fn a_layout_gives_no_cell_to_a_mismatched_axis_or_a_row_past_its_columns() {
+        let across = TableLayout::ColumnsAcross {
+            sheet: "T",
+            columns: &TOY_COLUMNS,
+        };
+        assert_eq!(across.cell(CellAxis::Row(6), 1), Some("T!D6".to_owned()));
+        assert_eq!(across.cell(CellAxis::Column("B"), 0), None);
+        assert_eq!(across.cell(CellAxis::Row(6), 2), None, "only two columns");
+        let down = TableLayout::RowsDown {
+            sheet: "S",
+            first_row: 6,
+        };
+        assert_eq!(
+            down.cell(CellAxis::Column("AA"), 12),
+            Some("S!AA18".to_owned())
+        );
+        assert_eq!(down.cell(CellAxis::Row(6), 0), None);
+        assert_eq!(down.cell(CellAxis::None, 0), None);
     }
 }

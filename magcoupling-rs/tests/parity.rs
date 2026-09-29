@@ -28,7 +28,9 @@ fn every_result_cell_matches_the_workbook() {
     let mut checked: BTreeMap<String, usize> = BTreeMap::new();
     let mut failures = Vec::new();
     for row in result_rows(&results) {
-        let Some(cell) = row.meta.cell else { continue };
+        let Some(cell) = row.cell.as_deref() else {
+            continue;
+        };
         *checked.entry(group_of(&row.path).to_owned()).or_default() += 1;
         match snapshot.get(cell) {
             None => failures.push(format!(
@@ -45,7 +47,7 @@ fn every_result_cell_matches_the_workbook() {
     assert!(failures.is_empty(), "{}", report(&failures));
     let expected: BTreeMap<String, usize> = PORTED_RESULTS
         .iter()
-        .map(|p| (p.group.to_owned(), p.cells))
+        .map(|p| (p.group.to_owned(), p.cells + p.table_cells))
         .collect();
     assert_eq!(checked, expected, "result cells checked per ported group");
 }

@@ -17,7 +17,8 @@ Reads (slider ranges are defined once, in Rust):
 Writes:
     magcoupling-rs/tests/data/python_schema.json
         Python metadata of every input and result (label, unit, help, cell,
-        choices, input defaults), for the Rust metadata-parity test.
+        choices, input defaults) and the layout of each table (field order, row
+        count, cell of every field and row), for the Rust metadata-parity test.
     magcoupling-rs/tests/data/differential/<group>.json
         seeded cases for each ported result group (MODULES): columnar, the
         input and result paths once in the header, one case per line.
@@ -44,6 +45,7 @@ import math
 import random
 import re
 import sys
+from dataclasses import fields as dc_fields
 from pathlib import Path
 
 HERE = Path(__file__).resolve()
@@ -55,12 +57,13 @@ sys.path.insert(0, str(ORACLE))  # this checkout's engine, never an installed co
 import magcoupling  # noqa: E402
 from magcoupling import DesignInputs, compute_all, input_schema, result_schema, set_input  # noqa: E402
 from magcoupling._fields import ceiling, floor_  # noqa: E402
-from magcoupling.clamps import _fmt_num  # noqa: E402
+from magcoupling.clamps import SCREW_SIZES, TABLE_COLUMNS, TABLE_ROWS, ScrewRow, _fmt_num  # noqa: E402
 from magcoupling import metal_design as py_metal_design  # noqa: E402
 from magcoupling import model as py_model  # noqa: E402
 from magcoupling.library import _ROWS, MAGNET_LIBRARY  # noqa: E402
 from magcoupling.materials import Aluminium  # noqa: E402
 from magcoupling import temperature as py_temperature  # noqa: E402
+from magcoupling.sweeps import GAP_SWEEP_CORNER_GAPS_MM, POLE_SWEEP_POLES, SWEEP_COLUMNS, SweepRow  # noqa: E402
 from magcoupling.temperature import _text0  # noqa: E402
 
 if Path(magcoupling.__file__).resolve().parent != ORACLE / "magcoupling":
@@ -158,6 +161,17 @@ def plain(value, where: str):
 
 
 # --------------------------------------------------------------------------- python schema
+def table_layouts() -> dict:
+    """Each table's field order, row count and the cell of every (field, row): test_parity.py's mapping."""
+    def sweep(sheet: str, n: int) -> dict:
+        return {"fields": [f.name for f in dc_fields(SweepRow)], "rows": n,
+                "cells": {name: [f"{sheet}!{col}{6 + i}" for i in range(n)] for name, col in SWEEP_COLUMNS.items()}}
+    screw = {"fields": [f.name for f in dc_fields(ScrewRow)], "rows": len(SCREW_SIZES),
+             "cells": {name: [f"Clamp screw sizes!{col}{row}" for col in TABLE_COLUMNS] for name, row in TABLE_ROWS.items()}}
+    return {"clamps.table": screw, "gap_sweep": sweep("Gap sweep", len(GAP_SWEEP_CORNER_GAPS_MM)),
+            "pole_sweep": sweep("Pole sweep", len(POLE_SWEEP_POLES))}
+
+
 def python_schema() -> str:
     inp = DesignInputs()
     res = compute_all(inp)
@@ -169,9 +183,9 @@ def python_schema() -> str:
             row["default"] = plain(r["value"], r["path"])
         rows.append(row)
     doc = {"about": "Python metadata of every magcoupling input and result (kinds 'input' and 'result'; "
-                    "table rows without metadata are not listed). Written by "
+                    "table rows without metadata are not listed; table layouts under 'tables'). Written by "
                     "reference/magcoupling-py/tools/gen_differential.py. Do not edit by hand.",
-           "engine": f"magcoupling {magcoupling.__version__}", "rows": rows}
+           "engine": f"magcoupling {magcoupling.__version__}", "rows": rows, "tables": table_layouts()}
     return dumps(doc) + "\n"
 
 

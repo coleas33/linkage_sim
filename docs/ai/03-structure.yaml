@@ -37,7 +37,7 @@ magcoupling_rs:
   lib: magcoupling (src/lib.rs re-exports compute_all, DesignInputs, DesignResults)
   engine: src/engine/ (pure std, wasm32-clean; one module per Python module)
   engine_files:
-    meta: meta.rs (inputs!/results! macros, param/out builders, slider range, assumption flag, Value, InputSet/ResultSet get/set/visit by dotted path)
+    meta: meta.rs (inputs!/results!/rows! macros, param/out and col/at_row/uncelled_col builders, slider range, assumption flag, Value, InputSet/ResultSet get/set/visit by dotted path; table rows via RowSet and TableLayout with synthesized cells, results! tables section)
     compat: compat.rs (py_min/py_max, ceiling/floor_, text0, py_repr, fmt_num, fmt_fixed, parity_close)
     deviations: deviations.rs (REGISTRY of M1 corrections E1-E14, all Planned; Deviations switch; NONE/only() and restore_workbook_defaults behind the test-only workbook-parity feature)
     api: api.rs (DesignInputs/DesignResults groups in Python order; compute_all; test-only compute_all_with, DesignInputs::defaults_with)

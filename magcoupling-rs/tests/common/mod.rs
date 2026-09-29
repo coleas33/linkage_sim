@@ -20,6 +20,8 @@ pub struct PortedInputs {
 pub struct PortedResults {
     pub group: &'static str,
     pub cells: usize,
+    /// Cells of the group's tables: the screw table, the sweeps.
+    pub table_cells: usize,
 }
 
 /// Ported input groups, in Python `DesignInputs` order. The counts are a
@@ -53,30 +55,37 @@ pub const PORTED_RESULTS: &[PortedResults] = &[
     PortedResults {
         group: "calibration",
         cells: 23,
+        table_cells: 0,
     },
     PortedResults {
         group: "model",
         cells: 73,
+        table_cells: 0,
     },
     PortedResults {
         group: "mass",
         cells: 6,
+        table_cells: 0,
     },
     PortedResults {
         group: "retainers",
         cells: 9,
+        table_cells: 0,
     },
     PortedResults {
         group: "metal",
         cells: 49,
+        table_cells: 0,
     },
     PortedResults {
         group: "materials",
         cells: 7,
+        table_cells: 0,
     },
     PortedResults {
         group: "temperature",
         cells: 130, // temperature.adhesive.selected_name has no cell: differential only
+        table_cells: 0,
     },
 ];
 
@@ -93,6 +102,12 @@ pub fn is_ported_input(path: &str) -> bool {
 /// Whether a result path belongs to a ported result group.
 pub fn is_ported_result(path: &str) -> bool {
     PORTED_RESULTS.iter().any(|p| p.group == group_of(path))
+}
+
+/// Whether a result path is a table value (`gap_sweep[3].x`): its cell is
+/// synthesized from the table layout.
+pub fn is_table_path(path: &str) -> bool {
+    path.contains('[')
 }
 
 /// A file under `magcoupling-rs/tests/data/`.

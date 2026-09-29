@@ -14,13 +14,13 @@ mod common;
 use std::collections::{BTreeMap, BTreeSet};
 
 use common::{
-    PORTED_INPUTS, PORTED_RESULTS, data_path, is_ported_input, is_ported_result, json_to_value,
-    read_json, report,
+    PORTED_INPUTS, PORTED_RESULTS, data_path, is_ported_input, is_ported_result, is_table_path,
+    json_to_value, read_json, report,
 };
-use magcoupling::engine::api::{DesignInputs, compute_all};
+use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::Deviations;
-use magcoupling::engine::meta::{input_rows, result_rows};
+use magcoupling::engine::meta::{ResultRow, input_rows, result_rows};
 
 /// One Python schema row.
 struct PyRow {
@@ -131,6 +131,10 @@ fn ported_results_carry_the_python_metadata() {
     let python = python_rows();
     let mut failures = Vec::new();
     for row in result_rows(&compute_all(&DesignInputs::default())) {
+        // Python lists no metadata for table rows; `tables_match_the_python_layout` covers them.
+        if is_table_path(&row.path) {
+            continue;
+        }
         let Some(py) = python.get(&row.path) else {
             failures.push(format!("{}: not a Python result", row.path));
             continue;
@@ -195,4 +199,55 @@ fn every_python_field_of_a_ported_group_is_ported() {
             p.group
         );
     }
+}
+
+#[test]
+fn tables_match_the_python_layout() {
+    let doc = read_json(&data_path("python_schema.json"));
+    let results = result_rows(&compute_all_with(
+        &DesignInputs::defaults_with(Deviations::NONE),
+        Deviations::NONE,
+    ));
+    let mut failures = Vec::new();
+    for (table, layout) in doc["tables"].as_object().expect("a tables object") {
+        if !is_ported_result(table) {
+            continue;
+        }
+        let prefix = format!("{table}[");
+        let rows: Vec<&ResultRow> = results
+            .iter()
+            .filter(|r| r.path.starts_with(&prefix))
+            .collect();
+        let fields: Vec<&str> = layout["fields"]
+            .as_array()
+            .expect("fields")
+            .iter()
+            .map(|f| f.as_str().expect("a name"))
+            .collect();
+        let n_rows = layout["rows"].as_u64().expect("rows") as usize;
+        if rows.len() != n_rows * fields.len() {
+            failures.push(format!(
+                "{table}: {} values, Python has {n_rows} rows of {} fields",
+                rows.len(),
+                fields.len()
+            ));
+            continue;
+        }
+        for (i, chunk) in rows.chunks(fields.len()).enumerate() {
+            for (row, name) in chunk.iter().zip(&fields) {
+                let path = format!("{table}[{i}].{name}");
+                if row.path != path {
+                    failures.push(format!("{}: expected {path}", row.path));
+                    continue;
+                }
+                let cell = layout["cells"]
+                    .get(*name)
+                    .map(|cells| cells[i].as_str().expect("a cell").to_owned());
+                if row.cell != cell {
+                    failures.push(format!("{path}: cell rust={:?} python={cell:?}", row.cell));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", report(&failures));
 }

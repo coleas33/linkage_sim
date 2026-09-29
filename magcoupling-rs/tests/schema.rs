@@ -17,7 +17,7 @@ mod common;
 use std::collections::BTreeSet;
 use std::fs;
 
-use common::{data_path, read_text, report, value_to_json};
+use common::{data_path, read_text, report, snapshot, value_to_json};
 use magcoupling::engine::api::{DesignInputs, compute_all};
 use magcoupling::engine::deviations::Deviations;
 use magcoupling::engine::meta::{FieldType, Value, input_rows, result_rows};
@@ -204,12 +204,12 @@ fn every_field_has_a_label_and_well_formed_unique_path_and_cell() {
         .chain(
             results
                 .iter()
-                .map(|r| (r.path.as_str(), r.meta.label, r.meta.cell)),
+                .map(|r| (r.path.as_str(), r.meta.label, r.cell.as_deref())),
         );
 
     let mut failures = Vec::new();
     let mut paths = BTreeSet::new();
-    let mut cells = BTreeSet::new();
+    let mut cells: BTreeSet<String> = BTreeSet::new();
     for (path, label, cell) in fields {
         if label.trim().is_empty() {
             failures.push(format!("{path}: empty label"));
@@ -221,7 +221,7 @@ fn every_field_has_a_label_and_well_formed_unique_path_and_cell() {
             if !is_cell_reference(cell) {
                 failures.push(format!("{path}: malformed cell {cell:?}"));
             }
-            if !cells.insert(cell) {
+            if !cells.insert(cell.to_owned()) {
                 failures.push(format!(
                     "{path}: cell {cell} is already used by another field"
                 ));
@@ -245,4 +245,71 @@ fn cell_reference_check_rejects_malformed_references() {
     ] {
         assert!(!is_cell_reference(bad), "{bad}");
     }
+}
+
+/// The workbook cells holding a table column's label, unit and note, from one
+/// of its value cells (`Clamp screw sizes!C21` gives B21, H21, I21;
+/// `Gap sweep!N6` gives N4, N5 and no note).
+fn header_cells(cell: &str) -> Option<(String, String, Option<String>)> {
+    let (sheet, address) = cell.split_once('!')?;
+    let letters: String = address
+        .chars()
+        .take_while(|c| c.is_ascii_uppercase())
+        .collect();
+    let row = &address[letters.len()..];
+    match sheet {
+        "Clamp screw sizes" => Some((
+            format!("{sheet}!B{row}"),
+            format!("{sheet}!H{row}"),
+            Some(format!("{sheet}!I{row}")),
+        )),
+        "Gap sweep" | "Pole sweep" => Some((
+            format!("{sheet}!{letters}4"),
+            format!("{sheet}!{letters}5"),
+            None,
+        )),
+        _ => None,
+    }
+}
+
+#[test]
+fn table_columns_match_the_workbook_headers() {
+    let snapshot = snapshot();
+    // An empty workbook cell is absent from the snapshot: it reads as "".
+    let text_at = |cell: &str| match snapshot.get(cell) {
+        Some(Value::Text(t)) => t.clone(),
+        _ => String::new(),
+    };
+    let mut failures = Vec::new();
+    for row in result_rows(&compute_all(&DesignInputs::default())) {
+        // Headers belong to columns: check each once, at its first data row.
+        let (Some(cell), true) = (row.cell.as_deref(), row.path.contains("[0].")) else {
+            continue;
+        };
+        // Column B of the sweeps: "Corner gap (mm)" on one sheet, "Poles" on the other.
+        if row.path.ends_with(".variable") {
+            continue;
+        }
+        let Some((label, unit, help)) = header_cells(cell) else {
+            failures.push(format!("{}: no header rule for {cell}", row.path));
+            continue;
+        };
+        let m = row.meta;
+        for (what, rust, cell) in [
+            ("label", m.label, Some(label)),
+            ("unit", m.unit, Some(unit)),
+            ("help", m.help, help),
+        ] {
+            if let Some(cell) = cell
+                && rust != text_at(&cell)
+            {
+                failures.push(format!(
+                    "{}: {what} {rust:?}, workbook {cell} {:?}",
+                    row.path,
+                    text_at(&cell)
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", report(&failures));
 }

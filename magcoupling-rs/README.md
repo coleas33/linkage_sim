@@ -9,8 +9,8 @@ Every result must match the workbook snapshot and the Python engine, except
 where an approved correction from the M1 math audit is registered in the
 deviation registry.
 
-**Status (M2, in progress):** engine infrastructure (metadata model, Python and
-Excel semantics helpers, deviation registry), the **Calibration** sheet, the
+**Status (M2, in progress):** engine infrastructure (metadata model with table
+rows, Python and Excel semantics helpers, deviation registry), the **Calibration** sheet, the
 magnet library, the **Calculator model** (`model`), the **Metal design
 retainers** (`metal_design::retainers`), the **mass estimate**
 (`model::mass_estimate`) and the **Metal design** sheet (`metal_design::compute`,
@@ -31,7 +31,7 @@ println!("{}", res.calibration.f_cal_updated); // 1.0658
 
 | Path | Contents |
 |---|---|
-| `src/engine/meta.rs` | Field metadata: `inputs!`/`results!`, `param`/`out` builders, `Value`, get/set/visit by dotted path |
+| `src/engine/meta.rs` | Field metadata: `inputs!`/`results!`, `param`/`out` builders, `Value`, get/set/visit by dotted path; table rows (`rows!`, `TableLayout`, `col`/`at_row` builders) with synthesized workbook cells |
 | `src/engine/compat.rs` | Python and Excel semantics the port reproduces (see the translation rules below) |
 | `src/engine/deviations.rs` | Registry of approved workbook corrections, and the `Deviations` switch |
 | `src/engine/api.rs` | `DesignInputs`, `DesignResults`, `compute_all` |
@@ -53,12 +53,12 @@ bash linkage-sim-rs/scripts/gate.sh   # everything, both crates and the Python o
 
 | Test | Checks |
 |---|---|
-| `tests/parity.rs` | Every result with a workbook cell and every default input equals `tests/data/reference_values.json` (numbers 1e-9 relative, 1e-12 absolute; text exact), deviations off. Per-group cell counts are a ratchet (`PORTED_INPUTS`, `PORTED_RESULTS` in `tests/common/mod.rs`). |
+| `tests/parity.rs` | Every result with a workbook cell (table values too: their cells are synthesized from the table layout) and every default input equals `tests/data/reference_values.json` (numbers 1e-9 relative, 1e-12 absolute; text exact), deviations off. Per-group cell counts are a ratchet (`PORTED_INPUTS`, `PORTED_RESULTS` with `cells` and `table_cells` in `tests/common/mod.rs`). |
 | `tests/differential.rs` | Every result of every seeded case equals the Python engine (`tests/data/differential/<group>.json`), deviations off. `every_branch_is_reached` checks the `BRANCHES` table (every branch of every text result is hit) and `every_varied_input_takes_two_values` checks that each varied input changes; the helpers corpus checks `compat` against Python exactly. |
-| `tests/python_schema.rs` | Every ported field carries the Python label, unit, help, cell, choices and default; no Python field of a ported group is missing. |
+| `tests/python_schema.rs` | Every ported field carries the Python label, unit, help, cell, choices and default; no Python field of a ported group is missing; each ported table has the Python field order, row count and cell of every value (`tables_match_the_python_layout`). |
 | `tests/static_data.rs` | Static tables equal the Python engine's, value for value (`tests/data/static_data.json`). |
 | `tests/robustness.rs` | Inputs no parity or differential case holds (the plan's Review Focus): a selector code outside its choices set directly on the struct, a measured drag of exactly zero. The engine must never panic. |
-| `tests/schema.rs` | Slider ranges, selectors, labels, unique well-formed paths and cells; exports `tests/data/input_schema.json`. |
+| `tests/schema.rs` | Slider ranges, selectors, labels, unique well-formed paths and cells; each table column's label, unit and note equal the workbook headers (`table_columns_match_the_workbook_headers`); exports `tests/data/input_schema.json`. |
 | `tests/deviations.rs` | Registry cells exist in the snapshot, entries are approved rows of the audit report, and one correction switched on changes exactly its registered cells. |
 
 ### Regenerating test data
@@ -68,8 +68,8 @@ The slider ranges are defined once, in Rust. The data flows one way:
 1. Rust metadata to `tests/data/input_schema.json`:
    `MAGCOUPLING_BLESS=1 cargo test --test schema`
 2. `input_schema.json` to the Python generator, which writes
-   `tests/data/python_schema.json`, `tests/data/static_data.json` and
-   `tests/data/differential/*.json`:
+   `tests/data/python_schema.json` (with the table layouts),
+   `tests/data/static_data.json` and `tests/data/differential/*.json`:
    `cd reference/magcoupling-py && ./.venv/Scripts/python tools/gen_differential.py`
    (use `.venv/bin/python` on POSIX; `--check` only verifies).
 3. `cargo test` compares.
@@ -109,7 +109,18 @@ snapshot copy must equal `reference/magcoupling-py/tests/reference_values.json`
 3. Results: one `results!` struct per Python result dataclass, `out()` calls
    transcribed. Type each field by the values Python actually produces (the
    annotations are not reliable): `f64`, `NumOrText` for a number or a fixed
-   text sentinel, `String` for built text, `i64` for an index.
+   text sentinel, `String` for built text, `i64` for an index. Tables (the screw
+   table, the sweeps): one `rows!` struct per Python row dataclass, each field
+   with `col(unit, label, help, "B")` (rows run down the sheet) or
+   `at_row(unit, label, help, 6)` (rows run across it), `uncelled_col` for a
+   field without a cell; list it in the `results!` struct as
+   `tables { name: Row => TableLayout::RowsDown { sheet, first_row } }` (or
+   `ColumnsAcross { sheet, columns }`). Its values get the paths `name[i].field`
+   and synthesized cells, so the parity test checks them and
+   `table_columns_match_the_workbook_headers` checks each column's label and
+   unit against the workbook; add the table's cells to `table_cells` in
+   `tests/common/mod.rs`, and its layout to `table_layouts()` in
+   `gen_differential.py` (`tables_match_the_python_layout` compares).
 4. Compute: `pub fn compute(.., dev: Deviations) -> XResults`, line by line in
    Python's order with Python's local names (`#[allow(non_snake_case)]` on the
    function where Python uses capitals). Follow the translation rules.
