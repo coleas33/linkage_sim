@@ -9,21 +9,31 @@ use std::path::{Path, PathBuf};
 
 use magcoupling::engine::meta::Value;
 
-/// A top-level group of `DesignInputs`/`DesignResults` that is ported, with the
-/// number of workbook cells it must check. The counts are a ratchet against
-/// silently dropped fields; `tests/python_schema.rs` also checks them against
-/// the Python engine's own schema.
-pub struct Ported {
+/// A ported input group of `DesignInputs` and its workbook input cells
+/// (inputs whose default is `None` are not counted, as in `test_parity.py`).
+pub struct PortedInputs {
     pub group: &'static str,
-    pub result_cells: usize,
-    pub input_cells: usize,
+    pub cells: usize,
 }
 
-/// Ported groups, in Python `compute_all` order. Add a line when a module lands.
-pub const PORTED: &[Ported] = &[Ported {
+/// A ported result group of `DesignResults` and its workbook result cells.
+pub struct PortedResults {
+    pub group: &'static str,
+    pub cells: usize,
+}
+
+/// Ported input groups, in Python `DesignInputs` order. The counts are a
+/// ratchet against silently dropped fields; `tests/python_schema.rs` checks
+/// them against the Python engine's own schema.
+pub const PORTED_INPUTS: &[PortedInputs] = &[PortedInputs {
     group: "calibration",
-    result_cells: 23,
-    input_cells: 16,
+    cells: 16,
+}];
+
+/// Ported result groups, in Python `DesignResults` order.
+pub const PORTED_RESULTS: &[PortedResults] = &[PortedResults {
+    group: "calibration",
+    cells: 23,
 }];
 
 /// The top-level group of a dotted path (`"calibration.br_T"` gives `"calibration"`).
@@ -31,10 +41,14 @@ pub fn group_of(path: &str) -> &str {
     path.split(['.', '[']).next().unwrap_or(path)
 }
 
-/// Whether a path belongs to a ported group.
-pub fn is_ported(path: &str) -> bool {
-    let group = group_of(path);
-    PORTED.iter().any(|p| p.group == group)
+/// Whether an input path belongs to a ported input group.
+pub fn is_ported_input(path: &str) -> bool {
+    PORTED_INPUTS.iter().any(|p| p.group == group_of(path))
+}
+
+/// Whether a result path belongs to a ported result group.
+pub fn is_ported_result(path: &str) -> bool {
+    PORTED_RESULTS.iter().any(|p| p.group == group_of(path))
 }
 
 /// A file under `magcoupling-rs/tests/data/`.

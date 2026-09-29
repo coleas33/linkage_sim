@@ -13,7 +13,7 @@ mod common;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use common::{PORTED, data_path, group_of, json_to_value, read_json, report};
+use common::{PORTED_RESULTS, data_path, group_of, json_to_value, read_json, report};
 use magcoupling::engine::api::{DesignInputs, compute_all_with};
 use magcoupling::engine::compat::{
     ceiling, floor_, fmt_fixed, fmt_num, parity_close, py_repr, text0,
@@ -29,26 +29,45 @@ struct Case {
     results: BTreeMap<String, Value>,
 }
 
-fn scalar_map(json: &serde_json::Value) -> BTreeMap<String, Value> {
-    json.as_object()
-        .expect("a JSON object of path to value")
-        .iter()
-        .map(|(path, v)| (path.clone(), json_to_value(v)))
-        .collect()
-}
-
 fn load_cases(module: &str) -> Vec<Case> {
     let doc = read_json(&data_path(&format!("differential/{module}.json")));
     assert_eq!(doc["module"], module);
+    let paths = |key: &str| -> Vec<String> {
+        doc[key]
+            .as_array()
+            .unwrap_or_else(|| panic!("{module}: {key} is an array"))
+            .iter()
+            .map(|p| p.as_str().expect("a path").to_owned())
+            .collect()
+    };
+    let (input_paths, result_paths) = (paths("input_paths"), paths("result_paths"));
     doc["cases"]
         .as_array()
         .expect("a cases array")
         .iter()
-        .map(|c| Case {
-            id: c["id"].as_u64().expect("a case id"),
-            tag: c["tag"].as_str().expect("a case tag").to_owned(),
-            inputs: scalar_map(&c["inputs"]),
-            results: scalar_map(&c["results"]),
+        .map(|c| {
+            let id = c["id"].as_u64().expect("a case id");
+            let zip = |paths: &[String], key: &str| -> BTreeMap<String, Value> {
+                let values = c[key]
+                    .as_array()
+                    .unwrap_or_else(|| panic!("case {id}: {key}"));
+                assert_eq!(
+                    values.len(),
+                    paths.len(),
+                    "{module} case {id}: {key} length"
+                );
+                paths
+                    .iter()
+                    .cloned()
+                    .zip(values.iter().map(json_to_value))
+                    .collect()
+            };
+            Case {
+                id,
+                tag: c["tag"].as_str().expect("a case tag").to_owned(),
+                inputs: zip(&input_paths, "inputs"),
+                results: zip(&result_paths, "results"),
+            }
         })
         .collect()
 }
@@ -97,9 +116,124 @@ fn check_module(module: &str) -> Vec<Case> {
     cases
 }
 
+/// What a text-producing result must reach across its module's cases.
+#[derive(Clone, Copy, Debug)]
+enum Reach {
+    /// Exactly this text.
+    Text(&'static str),
+    /// A text starting with this.
+    #[allow(dead_code)] // no BRANCHES row uses it until a module with built text lands
+    Prefix(&'static str),
+    /// A number (the numeric side of a number-or-text result).
+    Number,
+}
+use Reach::{Number, Prefix, Text};
+
+/// Every branch of every ported module's text results, so each branch of the
+/// Python source is compared at least once. `[*]` matches any table row.
+/// Add the rows of a module when it lands.
+const BRANCHES: &[(&str, &[Reach])] = &[
+    (
+        "calibration.fea_interp_Nm",
+        &[Number, Text("outside range")],
+    ),
+    ("calibration.fea_interp_error", &[Number, Text("n.a.")]),
+];
+
+fn reached(value: &Value, reach: Reach) -> bool {
+    match (reach, value) {
+        (Text(t), Value::Text(v)) => v == t,
+        (Prefix(p), Value::Text(v)) => v.starts_with(p),
+        (Number, Value::Num(_) | Value::Int(_)) => true,
+        _ => false,
+    }
+}
+
+/// `gap_sweep[*].status` matches `gap_sweep[3].status`; other patterns match exactly.
+fn matches_pattern(pattern: &str, path: &str) -> bool {
+    match pattern.split_once("[*]") {
+        None => pattern == path,
+        Some((head, tail)) => path
+            .strip_prefix(head)
+            .and_then(|rest| rest.strip_prefix('['))
+            .and_then(|rest| rest.split_once(']'))
+            .is_some_and(|(index, rest)| {
+                !index.is_empty() && index.bytes().all(|b| b.is_ascii_digit()) && rest == tail
+            }),
+    }
+}
+
+#[test]
+fn every_branch_is_reached() {
+    let mut cache: BTreeMap<&str, Vec<Case>> = BTreeMap::new();
+    let mut failures = Vec::new();
+    for &(pattern, reaches) in BRANCHES {
+        let module = group_of(pattern);
+        let cases = cache.entry(module).or_insert_with(|| load_cases(module));
+        let values: Vec<&Value> = cases
+            .iter()
+            .flat_map(|c| c.results.iter())
+            .filter(|(path, _)| matches_pattern(pattern, path))
+            .map(|(_, v)| v)
+            .collect();
+        if values.is_empty() {
+            failures.push(format!(
+                "{pattern}: no such result in differential/{module}.json"
+            ));
+            continue;
+        }
+        for &reach in reaches {
+            if !values.iter().any(|v| reached(v, reach)) {
+                failures.push(format!("{pattern}: never reaches {reach:?}"));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", report(&failures));
+}
+
+#[test]
+fn every_varied_input_takes_two_values() {
+    let mut failures = Vec::new();
+    for p in PORTED_RESULTS {
+        let cases = load_cases(p.group);
+        let paths: BTreeSet<&String> = cases.iter().flat_map(|c| c.inputs.keys()).collect();
+        for path in paths {
+            let distinct: BTreeSet<String> = cases
+                .iter()
+                .map(|c| format!("{:?}", c.inputs[path]))
+                .collect();
+            if distinct.len() < 2 {
+                failures.push(format!("{}: {path} never varies", p.group));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", report(&failures));
+}
+
+#[test]
+fn branch_patterns_match_table_rows_only_by_index() {
+    assert!(matches_pattern(
+        "gap_sweep[*].status",
+        "gap_sweep[12].status"
+    ));
+    assert!(!matches_pattern(
+        "gap_sweep[*].status",
+        "gap_sweep[].status"
+    ));
+    assert!(!matches_pattern(
+        "gap_sweep[*].status",
+        "gap_sweep[1].status_x"
+    ));
+    assert!(!matches_pattern(
+        "gap_sweep[*].status",
+        "pole_sweep[1].status"
+    ));
+    assert!(matches_pattern("model.verdict", "model.verdict"));
+}
+
 #[test]
 fn every_ported_module_has_differential_data() {
-    for p in PORTED {
+    for p in PORTED_RESULTS {
         assert!(
             data_path(&format!("differential/{}.json", p.group)).exists(),
             "no differential data for {}: add it to MODULES in gen_differential.py",
@@ -112,8 +246,8 @@ fn every_ported_module_has_differential_data() {
 fn calibration_matches_python_on_every_case() {
     let cases = check_module("calibration");
 
-    // Coverage: both gap definitions, both sides of the interpolation span,
-    // both inclusive span ends, and every input actually varied.
+    // Coverage: both gap definitions, both sides of the interpolation span
+    // and both inclusive span ends.
     let count = |f: &dyn Fn(&Case) -> bool| cases.iter().filter(|c| f(c)).count();
     let gap_definition = |c: &Case| c.inputs["calibration.gap_definition"].clone();
     assert!(count(&|c| gap_definition(c) == Value::Int(0)) >= 20);
@@ -130,14 +264,6 @@ fn calibration_matches_python_on_every_case() {
             ) >= 1,
             "no case on the inclusive span end {end}"
         );
-    }
-    let inputs: BTreeSet<&String> = cases.iter().flat_map(|c| c.inputs.keys()).collect();
-    for path in inputs {
-        let distinct: BTreeSet<String> = cases
-            .iter()
-            .map(|c| format!("{:?}", c.inputs[path]))
-            .collect();
-        assert!(distinct.len() >= 2, "{path} never varies");
     }
 }
 

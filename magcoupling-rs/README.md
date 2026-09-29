@@ -46,8 +46,8 @@ bash linkage-sim-rs/scripts/gate.sh   # everything, both crates and the Python o
 
 | Test | Checks |
 |---|---|
-| `tests/parity.rs` | Every result with a workbook cell and every default input equals `tests/data/reference_values.json` (numbers 1e-9 relative, 1e-12 absolute; text exact), deviations off. Per-group cell counts are a ratchet. |
-| `tests/differential.rs` | Every result of every seeded case equals the Python engine (`tests/data/differential/<module>.json`), deviations off, with branch-coverage assertions; the helpers corpus checks `compat` against Python exactly. |
+| `tests/parity.rs` | Every result with a workbook cell and every default input equals `tests/data/reference_values.json` (numbers 1e-9 relative, 1e-12 absolute; text exact), deviations off. Per-group cell counts are a ratchet (`PORTED_INPUTS`, `PORTED_RESULTS` in `tests/common/mod.rs`). |
+| `tests/differential.rs` | Every result of every seeded case equals the Python engine (`tests/data/differential/<group>.json`), deviations off. `every_branch_is_reached` checks the `BRANCHES` table (every branch of every text result is hit) and `every_varied_input_takes_two_values` checks that each varied input changes; the helpers corpus checks `compat` against Python exactly. |
 | `tests/python_schema.rs` | Every ported field carries the Python label, unit, help, cell, choices and default; no Python field of a ported group is missing. |
 | `tests/static_data.rs` | Static tables equal the Python engine's, value for value (`tests/data/static_data.json`). |
 | `tests/schema.rs` | Slider ranges, selectors, labels, unique well-formed paths and cells; exports `tests/data/input_schema.json`. |
@@ -65,6 +65,23 @@ The slider ranges are defined once, in Rust. The data flows one way:
    `cd reference/magcoupling-py && ./.venv/Scripts/python tools/gen_differential.py`
    (use `.venv/bin/python` on POSIX; `--check` only verifies).
 3. `cargo test` compares.
+
+`MODULES` in `gen_differential.py` maps each ported **result group** to the
+**input groups** each case varies: every group the results read, directly or
+through upstream sheets (`TEXT_CHOICES` lists the values a text input may take,
+since it has no slider). `differential/<group>.json` is columnar: the header
+lists `input_groups`, `input_paths` and `result_paths` once, and each case is
+one line `{"id", "tag", "inputs": [...], "results": [...]}` with values in the
+header's path order. A module's cases are the fixed ones first (defaults, each
+input at each range end and each choice, the `PROBES` on branch boundaries),
+then random ones: as many as it takes to reach `CASES_PER_MODULE` and never
+fewer than `RANDOM_MIN` (100). A data file over `MAX_FILE_BYTES` (4 MB) fails
+the generator: vary fewer groups or cut cases.
+
+`BRANCHES` in `tests/differential.rs` lists, per text-producing result path
+(`[*]` matches any table row), the numbers and texts (`Number`, `Text`,
+`Prefix`) that the module's cases must reach, so each branch of the Python
+source is compared at least once. Add its rows when a module lands.
 
 The gate runs `gen_differential.py --check`, so stale data fails it. The
 snapshot copy must equal `reference/magcoupling-py/tests/reference_values.json`
@@ -89,12 +106,12 @@ snapshot copy must equal `reference/magcoupling-py/tests/reference_values.json`
    Python's order with Python's local names (`#[allow(non_snake_case)]` on the
    function where Python uses capitals). Follow the translation rules.
 5. Wire it into `api.rs` in the Python `compute_all` order; add the group to
-   `PORTED` in `tests/common/mod.rs` and to `MODULES` (with the input groups it
-   varies) and `PROBES` (a case on each side of every branch boundary) in
+   `PORTED_RESULTS` (and its input groups to `PORTED_INPUTS`) in
+   `tests/common/mod.rs` and to `MODULES` (with the input groups it varies)
+   and `PROBES` (a case on each side of every branch boundary) in
    `gen_differential.py`.
-6. Bless the schema, regenerate the data, run `cargo test`, add coverage
-   assertions for the module's branches to `tests/differential.rs`, and run
-   the gate.
+6. Bless the schema, regenerate the data, run `cargo test`, add the module's
+   text results to `BRANCHES` in `tests/differential.rs`, and run the gate.
 7. Apply deviations afterwards, one commit each, never in the port commit.
 
 ## Translation rules (Python to Rust)

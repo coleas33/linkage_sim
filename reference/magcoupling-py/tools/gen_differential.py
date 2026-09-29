@@ -18,20 +18,22 @@ Writes:
     magcoupling-rs/tests/data/python_schema.json
         Python metadata of every input and result (label, unit, help, cell,
         choices, input defaults), for the Rust metadata-parity test.
-    magcoupling-rs/tests/data/differential/<module>.json
-        seeded cases for each ported module.
+    magcoupling-rs/tests/data/differential/<group>.json
+        seeded cases for each ported result group (MODULES): columnar, the
+        input and result paths once in the header, one case per line.
     magcoupling-rs/tests/data/differential/helpers.json
         a corpus for the rounding and formatting helpers.
     magcoupling-rs/tests/data/static_data.json
         the static engine tables (magnet library so far), for tests/static_data.rs.
 
 Cases per module, all inside the slider ranges: the workbook defaults; each
-input at each end of its range and each selector at each choice (others at
-their defaults); the module's boundary probes; then seeded random sets (every
-input of the module varied at once) up to CASES_PER_MODULE. Python must not
-raise on any case, and every result must be finite: a failure means a slider
-range lets the engine leave its domain and must be fixed (or the behaviour
-becomes a registered deviation).
+input at each end of its range, each selector at each choice and each text
+input at each of its TEXT_CHOICES (others at their defaults); the module's
+boundary probes; then seeded random sets (every input of the module's input
+groups varied at once), enough to reach CASES_PER_MODULE and never fewer than
+RANDOM_MIN. Python must not raise on any case, and every result must be
+finite: a failure means a slider range lets the engine leave its domain and
+must be fixed (or the behaviour becomes a registered deviation).
 """
 from __future__ import annotations
 
@@ -40,6 +42,7 @@ import dataclasses
 import json
 import math
 import random
+import re
 import sys
 from pathlib import Path
 
@@ -61,10 +64,17 @@ if Path(magcoupling.__file__).resolve().parent != ORACLE / "magcoupling":
 
 SEED = 20260929
 CASES_PER_MODULE = 300
-# Ported modules, as top-level groups of DesignInputs/DesignResults. Add one
-# when its Rust port lands (and list it in magcoupling-rs/tests/common/mod.rs).
-MODULES = ("calibration",)
-# Hand-placed cases on branch boundaries, per module: (tag, input overrides).
+RANDOM_MIN = 100            # at least this many random cases, however many fixed cases a module has
+MAX_FILE_BYTES = 4_000_000  # a data file above this means: vary fewer groups or cut cases
+# Ported result groups -> the input groups each case varies (every group the
+# results read, directly or through upstream sheets). Add a line when a
+# module's Rust port lands, and list its groups in magcoupling-rs/tests/common/mod.rs.
+MODULES = {
+    "calibration": ["calibration"],
+}
+# Text inputs have no slider: the values each case may take (sampled like a selector).
+TEXT_CHOICES: dict[str, list[str]] = {}
+# Hand-placed cases on branch boundaries, keyed by result group: (tag, input overrides).
 PROBES = {
     # The 3D interpolation span 1.0 <= corner gap <= 1.5 is inclusive. With the
     # corner definition the corner gap equals the spacing, so these land on and
@@ -76,6 +86,11 @@ PROBES = {
         ("just above the interpolation span", {"calibration.gap_definition": 0, "calibration.spacing_mm": 1.501}),
     ],
 }
+
+
+def group_of(path: str) -> str:
+    """Top-level group of a dotted path; table rows ('gap_sweep[3].x') count as their table."""
+    return re.split(r"[.\[]", path, maxsplit=1)[0]
 
 
 def dumps(obj, compact=False) -> str:
@@ -124,6 +139,8 @@ def sample(field: dict, rng: random.Random):
     """A random value inside the field's slider range (or among its choices)."""
     if field["choices"]:
         return rng.choice([code for code, _ in field["choices"]])
+    if field["path"] in TEXT_CHOICES:
+        return rng.choice(TEXT_CHOICES[field["path"]])
     rng_ = field["range"]
     if rng_ is None:
         return field["default"]  # text inputs keep their default
@@ -147,14 +164,15 @@ def module_cases(module: str, fields: list, rng: random.Random) -> list:
         elif f["range"]:
             for end in ("min", "max"):
                 cases.append((f"{f['path']} = range {end}", {**defaults, f["path"]: typed(f, f["range"][end])}))
+        elif f["path"] in TEXT_CHOICES:
+            for text in TEXT_CHOICES[f["path"]]:
+                cases.append((f"{f['path']} = {text!r}", {**defaults, f["path"]: text}))
     for tag, overrides in PROBES.get(module, []):
         unknown = set(overrides) - set(defaults)
         if unknown:
-            raise KeyError(f"probe {tag!r} names inputs outside {module}: {sorted(unknown)}")
+            raise KeyError(f"probe {tag!r} names inputs outside {module}'s groups: {sorted(unknown)}")
         cases.append((tag, {**defaults, **overrides}))
-    if len(cases) > CASES_PER_MODULE:
-        raise ValueError(f"{module}: {len(cases)} fixed cases exceed CASES_PER_MODULE")
-    while len(cases) < CASES_PER_MODULE:
+    for _ in range(max(CASES_PER_MODULE - len(cases), RANDOM_MIN)):
         cases.append(("random", {f["path"]: sample(f, rng) for f in fields}))
     return cases
 
@@ -167,27 +185,39 @@ def run_case(module: str, tag: str, inputs: dict) -> dict:
         res = compute_all(inp)
     except Exception as exc:  # noqa: BLE001 - reported with the case, then re-raised
         raise RuntimeError(f"{module} case {tag!r} raised {type(exc).__name__}: {exc}\ninputs: {inputs}") from exc
-    prefix = module + "."
-    return {r["path"]: plain(r["value"], f"{tag}: {r['path']}")
-            for r in result_schema(res) if r["kind"] == "result" and r["path"].startswith(prefix)}
+    return {r["path"]: plain(r["value"], f"{tag}: {r['path']}") for r in result_schema(res)
+            if r["kind"] in ("result", "") and group_of(r["path"]) == module}
 
 
-def module_file(module: str, schema: list) -> str:
-    fields = [f for f in schema if f["path"].startswith(module + ".")]
-    if not fields:
-        raise KeyError(f"input_schema.json has no inputs under {module!r}")
+def module_file(module: str, groups: list, schema: list) -> str:
+    fields = [f for f in schema if group_of(f["path"]) in groups]
+    missing = sorted(set(groups) - {group_of(f["path"]) for f in fields})
+    if missing:
+        raise KeyError(f"input_schema.json has no inputs under {missing}")
+    input_paths = [f["path"] for f in fields]
     rng = random.Random(f"{SEED}:{module}")
-    cases = []
+    result_paths, cases = None, []
     for i, (tag, inputs) in enumerate(module_cases(module, fields, rng)):
-        inputs = {path: plain(value, f"{tag}: {path}") for path, value in inputs.items()}
-        cases.append({"id": i, "tag": tag, "inputs": inputs, "results": run_case(module, tag, inputs)})
-    header = {"about": f"Python engine results for seeded {module} inputs; compared by "
-                       "magcoupling-rs/tests/differential.rs. Written by "
-                       "reference/magcoupling-py/tools/gen_differential.py. Do not edit by hand.",
-              "engine": f"magcoupling {magcoupling.__version__}", "module": module, "seed": SEED}
+        results = run_case(module, tag, inputs)
+        if result_paths is None:
+            result_paths = list(results)
+        elif list(results) != result_paths:
+            raise ValueError(f"{module} case {tag!r}: result paths differ from case 0")
+        cases.append({"id": i, "tag": tag,
+                      "inputs": [plain(inputs[p], f"{tag}: {p}") for p in input_paths],
+                      "results": list(results.values())})
+    header = {"about": f"Python engine results for seeded inputs, result group {module}; compared by "
+                       "magcoupling-rs/tests/differential.rs. Paths are listed once; each case holds "
+                       "values in that order. Written by reference/magcoupling-py/tools/"
+                       "gen_differential.py. Do not edit by hand.",
+              "engine": f"magcoupling {magcoupling.__version__}", "module": module, "seed": SEED,
+              "input_groups": groups, "input_paths": input_paths, "result_paths": result_paths}
     head = dumps(header, compact=True)
     body = ",\n".join(dumps(c, compact=True) for c in cases)
-    return head[:-1] + ',"cases":[\n' + body + "\n]}\n"
+    text = head[:-1] + ',"cases":[\n' + body + "\n]}\n"
+    if len(text.encode("utf-8")) > MAX_FILE_BYTES:
+        raise ValueError(f"differential/{module}.json is {len(text.encode('utf-8'))} bytes, over {MAX_FILE_BYTES}")
+    return text
 
 
 # --------------------------------------------------------------------------- helpers corpus
@@ -242,8 +272,8 @@ def outputs() -> dict:
     files = {DATA / "python_schema.json": python_schema(),
              DATA / "differential" / "helpers.json": helpers_file(),
              DATA / "static_data.json": static_data()}
-    for module in MODULES:
-        files[DATA / "differential" / f"{module}.json"] = module_file(module, schema)
+    for module, groups in MODULES.items():
+        files[DATA / "differential" / f"{module}.json"] = module_file(module, groups, schema)
     return files
 
 

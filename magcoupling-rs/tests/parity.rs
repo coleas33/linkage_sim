@@ -10,7 +10,9 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use common::{PORTED, data_path, group_of, read_json, repo_path, report, snapshot};
+use common::{
+    PORTED_INPUTS, PORTED_RESULTS, data_path, group_of, read_json, repo_path, report, snapshot,
+};
 use magcoupling::engine::api::{DesignInputs, compute_all_with};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::Deviations;
@@ -41,9 +43,9 @@ fn every_result_cell_matches_the_workbook() {
         }
     }
     assert!(failures.is_empty(), "{}", report(&failures));
-    let expected: BTreeMap<String, usize> = PORTED
+    let expected: BTreeMap<String, usize> = PORTED_RESULTS
         .iter()
-        .map(|p| (p.group.to_owned(), p.result_cells))
+        .map(|p| (p.group.to_owned(), p.cells))
         .collect();
     assert_eq!(checked, expected, "result cells checked per ported group");
 }
@@ -73,9 +75,9 @@ fn every_default_input_matches_the_workbook() {
         }
     }
     assert!(failures.is_empty(), "{}", report(&failures));
-    let expected: BTreeMap<String, usize> = PORTED
+    let expected: BTreeMap<String, usize> = PORTED_INPUTS
         .iter()
-        .map(|p| (p.group.to_owned(), p.input_cells))
+        .map(|p| (p.group.to_owned(), p.cells))
         .collect();
     assert_eq!(checked, expected, "default inputs checked per ported group");
 }

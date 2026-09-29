@@ -11,9 +11,12 @@
 
 mod common;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use common::{PORTED, data_path, is_ported, json_to_value, read_json, report};
+use common::{
+    PORTED_INPUTS, PORTED_RESULTS, data_path, is_ported_input, is_ported_result, json_to_value,
+    read_json, report,
+};
 use magcoupling::engine::api::{DesignInputs, compute_all};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::Deviations;
@@ -151,38 +154,45 @@ fn every_python_field_of_a_ported_group_is_ported() {
     let python = python_rows();
     let inputs = input_rows(&DesignInputs::default());
     let results = result_rows(&compute_all(&DesignInputs::default()));
-    let rust_paths: Vec<&str> = inputs
+    let rust_paths: BTreeSet<&str> = inputs
         .iter()
         .map(|r| r.path.as_str())
         .chain(results.iter().map(|r| r.path.as_str()))
         .collect();
-    let missing: Vec<String> = python
-        .keys()
-        .filter(|p| is_ported(p) && !rust_paths.contains(&p.as_str()))
-        .cloned()
+    let missing: Vec<&String> = python
+        .iter()
+        .filter(|(path, row)| match row.kind.as_str() {
+            "input" => is_ported_input(path),
+            "result" => is_ported_result(path),
+            _ => false,
+        })
+        .filter(|(path, _)| !rust_paths.contains(path.as_str()))
+        .map(|(path, _)| path)
         .collect();
     assert!(missing.is_empty(), "Python fields not ported: {missing:?}");
 
-    // The ratchet counts in tests/common/mod.rs equal the Python engine's own,
-    // counted as test_parity.py does (cells only; inputs whose default is None skipped).
-    for p in PORTED {
-        let in_group = |kind: &str| {
-            python
-                .iter()
-                .filter(|(path, row)| {
-                    common::group_of(path) == p.group
-                        && row.kind == kind
-                        && row.cell.is_some()
-                        && row.default != Some(serde_json::Value::Null)
-                })
-                .count()
-        };
+    // The ratchet counts equal the Python engine's, counted as test_parity.py
+    // does (cells only; inputs whose default is None skipped).
+    let count = |group: &str, kind: &str| {
+        python
+            .iter()
+            .filter(|(path, row)| {
+                common::group_of(path) == group
+                    && row.kind == kind
+                    && row.cell.is_some()
+                    && row.default != Some(serde_json::Value::Null)
+            })
+            .count()
+    };
+    for p in PORTED_INPUTS {
+        assert_eq!(count(p.group, "input"), p.cells, "{}: input cells", p.group);
+    }
+    for p in PORTED_RESULTS {
         assert_eq!(
-            in_group("result"),
-            p.result_cells,
+            count(p.group, "result"),
+            p.cells,
             "{}: result cells",
             p.group
         );
-        assert_eq!(in_group("input"), p.input_cells, "{}: input cells", p.group);
     }
 }
