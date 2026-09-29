@@ -1,17 +1,19 @@
-//! Metal design sheet ('Metal design'): inputs and retainers so far.
+//! Metal design sheet ('Metal design').
 //!
-//! Port of `reference/magcoupling-py/magcoupling/metal_design.py`. This module
-//! holds [`MetalDesignInputs`] (48 fields) and the retainers ([`RetainerResults`],
-//! [`retainers`], 9 result cells); the sheet's results and `VALIDATION_ITEMS`
-//! follow with their ports.
+//! Port of `reference/magcoupling-py/magcoupling/metal_design.py`: the inputs
+//! ([`MetalDesignInputs`], 48 fields), the open validation checklist
+//! ([`VALIDATION_ITEMS`]), the retainers ([`RetainerResults`], [`retainers`],
+//! 9 result cells) and the sheet's results ([`MetalDesignResults`],
+//! [`compute`], 49 result cells).
 //!
 //! Planned deviations touching this sheet (see
 //! [`crate::engine::deviations::REGISTRY`]): E8 (Metal design!C175).
 
 use std::f64::consts::PI;
 
+use super::compat::py_max;
 use super::deviations::Deviations;
-use super::meta::{inputs, out, param, results};
+use super::meta::{NumOrText, inputs, out, param, results};
 
 inputs! {
     /// Metal design inputs (Metal design!C7:C190).
@@ -169,6 +171,73 @@ inputs! {
     }
 }
 
+/// Text of Metal design!C91 and C92 until a bench drag torque is entered.
+pub const NOT_MEASURED: &str = "not measured";
+
+/// Open validation items from the sheet: (label, status, what to do). A GUI checklist.
+pub const VALIDATION_ITEMS: [(&str, &str, &str); 12] = [
+    (
+        "Prototype metrology",
+        "Open",
+        "Record corner gap, flat gap, radii, overlap, magnet orientation and magnet temperature.",
+    ),
+    (
+        "Torque repeatability",
+        "Open",
+        "Slow torque-angle tests in both directions and multiple positions.",
+    ),
+    (
+        "Metal A/B test",
+        "Open",
+        "Test the metal candidate at the same measured face gap and temperature.",
+    ),
+    (
+        "Hot / cold torque",
+        "Open",
+        "Verify minimum 2.5 N·m and gearbox-safe torque at service temperature limits.",
+    ),
+    (
+        "Slip loss test",
+        "Open",
+        "Measure drag at the design slip speed; add laminations only if needed.",
+    ),
+    (
+        "Retention qualification",
+        "Open",
+        "Magnetic forces, hoop stress, liner buckling, attachment fatigue, bond-loss capture.",
+    ),
+    (
+        "Lifetime cycling",
+        "Open",
+        "Convert slip events to magnetic load cycles; test reversals, shock, vibration, dwell.",
+    ),
+    (
+        "Environmental test",
+        "Open",
+        "Thermal cycling, humidity/condensation and ingress, then recheck torque.",
+    ),
+    (
+        "Robot integration",
+        "Open",
+        "Record gearbox speed and torque, bus voltage, swing tracking, re-engagement.",
+    ),
+    (
+        "Fault handling",
+        "Open",
+        "Detect sustained clutch slip using wheel/vehicle feedback.",
+    ),
+    (
+        "Control tuning",
+        "Open",
+        "Measure resonance and slip ripple; tune the traction loop.",
+    ),
+    (
+        "Production acceptance",
+        "Open",
+        "Measure each assembly or establish process capability.",
+    ),
+];
+
 results! {
     /// Sleeve, liner, endplate and cap results (Metal design!C45:C46, C175:C181).
     pub struct RetainerResults {
@@ -182,6 +251,63 @@ results! {
             endplate_od_mm: f64 => out("mm", "Inner endplate nominal OD", "", "Metal design!C179"),
             cap_g: f64 => out("g", "Aluminium cap estimated gross mass", "", "Metal design!C180"),
             endplates_g: f64 => out("g", "Two inner endplates estimated mass", "", "Metal design!C181"),
+        }
+    }
+}
+
+results! {
+    /// Metal design sheet results (Metal design!C5:C192).
+    pub struct MetalDesignResults {
+        fields {
+            torque_op_Nm: f64 => out("N·m", "Predicted candidate torque at operating temperature", "", "Metal design!C5"),
+            torque_20C_Nm: f64 => out("N·m", "Predicted candidate torque at 20 °C", "", "Metal design!C6"),
+            torque_cold_Nm: f64 => out("N·m", "Predicted candidate torque at cold temperature", "", "Metal design!C8"),
+            torque_hot_low_Nm: f64 => out("N·m", "Hot-side low torque including assumed variation", "", "Metal design!C9"),
+            torque_cold_high_Nm: f64 => out("N·m", "Cold torque with assumed positive variation", "", "Metal design!C10"),
+            hot_min_check: String => out("", "Hot minimum with variation allowance", "", "Metal design!C11"),
+            running_clearance_mm: f64 => out("mm", "Remaining radial clearance, screening estimate", "", "Metal design!C12"),
+            op_temp_C: f64 => out("°C", "Operating / maximum magnet temperature", "", "Metal design!C15"),
+            alpha_br_per_C: f64 => out("1/°C", "Br temperature coefficient", "", "Metal design!C17"),
+            required_20C_Nm: f64 => out("N·m", "Required nominal 20 °C torque for hot minimum", "", "Metal design!C19"),
+            hot_margin: f64 => out("fraction", "Nominal hot margin above the requirement", "", "Metal design!C20"),
+            corner_gap_mm: f64 => out("mm", "Magnet corner-to-opposing-face gap", "", "Metal design!C24"),
+            sleeve_liner_clearance_mm: f64 => out("mm", "Nominal sleeve-to-liner radial clearance", "", "Metal design!C27"),
+            adverse_movement_mm: f64 => out("mm", "Total adverse radial movement", "", "Metal design!C34"),
+            min_running_clearance_mm: f64 => out("mm", "Minimum running clearance after allowances", "", "Metal design!C35"),
+            clearance_check: String => out("", "Clearance screening", "", "Metal design!C37"),
+            rotating_mass_g: f64 => out("g", "Modeled rotating coupling mass", "", "Metal design!C47"),
+            slip_freq_Hz: f64 => out("Hz", "Pole-pair slip frequency", "", "Metal design!C86"),
+            magnetic_cycles: f64 => out("cycles", "Approximate magnetic cycles over life", "", "Metal design!C89"),
+            slip_loss_W: NumOrText => out("W", "Slip-loss power", "'not measured' until a bench drag torque is entered.", "Metal design!C91"),
+            slip_energy_J: NumOrText => out("J", "Slip-loss energy per event", "", "Metal design!C92"),
+            required_20C_zero_scatter_Nm: f64 => out("N·m", "20 °C torque needed at hot limit, zero scatter", "", "Metal design!C111"),
+            torque_cold_zero_var_Nm: f64 => out("N·m", "Predicted cold torque, zero variation", "", "Metal design!C112"),
+            axial_stack_mm: f64 => out("mm", "Proposed total axial stack", "", "Metal design!C134"),
+            rotating_od_mm: f64 => out("mm", "Proposed rotating outside diameter", "", "Metal design!C135"),
+            diameter_reserve_mm: f64 => out("mm", "Diameter reserve", "", "Metal design!C136"),
+            large_dia_stack_mm: f64 => out("mm", "Proposed large-diameter axial stack", "", "Metal design!C137"),
+            large_dia_reserve_mm: f64 => out("mm", "Large-diameter axial reserve", "", "Metal design!C138"),
+            axial_reserve_mm: f64 => out("mm", "Overall axial reserve", "", "Metal design!C139"),
+            installed_magnets: f64 => out("count", "Installed magnets", "", "Metal design!C140"),
+            assembled_face_gap_mm: f64 => out("mm", "Assembled face gap", "", "Metal design!C141"),
+            corner_clearance_mm: f64 => out("mm", "Corner clearance before sleeves", "", "Metal design!C142"),
+            nominal_sleeve_liner_mm: f64 => out("mm", "Nominal sleeve-to-liner clearance", "", "Metal design!C143"),
+            allowed_radial_disp_mm: f64 => out("mm", "Allowed relative radial displacement", "", "Metal design!C144"),
+            steel_cup_mass_g: f64 => out("g", "Selected one-piece steel-cup mass", "", "Metal design!C147"),
+            adapter_variant_mass_g: f64 => out("g", "Optional aluminium-adapter variant mass", "", "Metal design!C148"),
+            adapter_mass_saved_g: f64 => out("g", "Mass saved by optional aluminium adapter", "", "Metal design!C149"),
+            retainers_mass_g: f64 => out("g", "Estimated mass of both thin retainers", "", "Metal design!C150"),
+            noiron_baseline_hot_Nm: f64 => out("N·m", "No-back-iron baseline hot torque", "Measured prototype, temperature-scaled.", "Metal design!C151"),
+            cold_for_hot_min_Nm: f64 => out("N·m", "Cold torque corresponding to the hot minimum", "", "Metal design!C155"),
+            cold_for_hot_min_input_Nm: f64 => out("N·m", "Input-equivalent torque for value above", "", "Metal design!C156"),
+            cold_high_Nm: f64 => out("N·m", "Predicted candidate cold high, with allowance", "", "Metal design!C157"),
+            cold_high_input_Nm: f64 => out("N·m", "Candidate cold high, input equivalent", "", "Metal design!C158"),
+            cup_body_od_mm: f64 => out("mm", "Steel cup body OD", "", "Metal design!C165"),
+            cap_face_mm: f64 => out("mm", "Front cap face thickness", "", "Metal design!C167"),
+            adapter_g: f64 => out("g", "Optional aluminium adapter gross mass", "", "Metal design!C188"),
+            adapter_steel_removed_g: f64 => out("g", "Steel removed for optional larger pilot bore", "", "Metal design!C189"),
+            hybrid_mass_g: f64 => out("g", "Optional hybrid gross mass", "", "Metal design!C191"),
+            hybrid_length_mm: f64 => out("mm", "Optional hybrid overall length", "", "Metal design!C192"),
         }
     }
 }
@@ -229,5 +355,194 @@ pub fn retainers(
         endplate_od_mm: endplate_od,
         cap_g: cap,
         endplates_g: endplates,
+    }
+}
+
+/// The Metal design sheet (Python `metal_design.compute`): torque at the hot and
+/// cold limits, the radial clearance stack, duty, the axial stack, the optional
+/// aluminium adapter and the hybrid mass. `ret` is [`retainers`]' result.
+#[allow(non_snake_case, clippy::too_many_arguments)] // Python names and signature
+pub fn compute(
+    md: &MetalDesignInputs,
+    torque_op_Nm: f64,
+    torque_20C_Nm: f64,
+    op_temp_C: f64,
+    alpha_br: f64,
+    corner_gap_mm: f64,
+    face_gap_mm: f64,
+    cup_od_mm: f64,
+    npole: i64,
+    bore_mm: f64,
+    gear_ratio: f64,
+    gear_eff: f64,
+    mass_total_g: f64,
+    boss_mass_g: f64,
+    ret: &RetainerResults,
+    proto_measured_Nm: f64,
+    proto_test_temp_C: f64,
+    _dev: Deviations,
+) -> MetalDesignResults {
+    let th = |T: f64| 1.0 + alpha_br * (T - 20.0); // Python lambda th
+    let cold = torque_20C_Nm * th(md.min_temp_C).powi(2);
+    let hot_low = torque_op_Nm * (1.0 - md.variation);
+    let cold_high = cold * (1.0 + md.variation);
+    let clearance = (ret.liner_id_mm - ret.sleeve_od_mm) / 2.0;
+    let adverse = md.shaft_displacement_mm
+        + md.runout_mm
+        + md.deflection_mm
+        + md.thermal_mm
+        + md.sleeve_form_mm
+        + md.magnet_position_mm;
+    let min_run = clearance - adverse;
+    let slip_f = npole as f64 / 2.0 * md.slip_rpm / 60.0;
+    let (loss, energy) = match md.measured_drag_Nm {
+        Some(drag) => {
+            let loss = drag * 2.0 * PI * md.slip_rpm / 60.0;
+            (NumOrText::Num(loss), NumOrText::Num(loss * md.slip_event_s))
+        }
+        None => (NumOrText::Text(NOT_MEASURED), NumOrText::Text(NOT_MEASURED)),
+    };
+    let stack = md.cap_axial_mm + md.cup_depth_mm + md.web_mm + md.boss_length_mm;
+    let rot_od = py_max(cup_od_mm, md.cap_od_mm);
+    let large = md.cap_axial_mm + md.cup_depth_mm + md.web_mm;
+    let adapter = PI / 4.0
+        * ((md.adapter_flange_dia_mm.powi(2) - bore_mm.powi(2)) * md.adapter_flange_mm
+            + (md.boss_od_mm.powi(2) - bore_mm.powi(2)) * md.adapter_boss_mm
+            + (md.adapter_pilot_dia_mm.powi(2) - bore_mm.powi(2)) * md.adapter_pilot_mm)
+        * md.al_density_g_mm3;
+    let removed = PI / 4.0
+        * (md.adapter_pilot_dia_mm.powi(2) - bore_mm.powi(2))
+        * md.web_mm
+        * md.steel_density_g_mm3;
+    let hybrid = mass_total_g - boss_mass_g - removed + adapter + md.adapter_hardware_g;
+    let cold_for_min = md.required_min_Nm * (th(md.min_temp_C) / th(op_temp_C)).powi(2);
+    MetalDesignResults {
+        torque_op_Nm,
+        torque_20C_Nm,
+        torque_cold_Nm: cold,
+        torque_hot_low_Nm: hot_low,
+        torque_cold_high_Nm: cold_high,
+        hot_min_check: if hot_low < md.required_min_Nm {
+            "Below hot minimum"
+        } else {
+            "Estimate covers hot min"
+        }
+        .to_owned(),
+        running_clearance_mm: min_run,
+        op_temp_C,
+        alpha_br_per_C: alpha_br,
+        required_20C_Nm: md.required_min_Nm / (th(op_temp_C).powi(2) * (1.0 - md.variation)),
+        hot_margin: torque_op_Nm / md.required_min_Nm - 1.0,
+        corner_gap_mm,
+        sleeve_liner_clearance_mm: clearance,
+        adverse_movement_mm: adverse,
+        min_running_clearance_mm: min_run,
+        clearance_check: if min_run < md.residual_target_mm {
+            "Below target"
+        } else {
+            "Meets assumed target"
+        }
+        .to_owned(),
+        rotating_mass_g: mass_total_g,
+        slip_freq_Hz: slip_f,
+        magnetic_cycles: slip_f * md.slip_event_s * md.life_events,
+        slip_loss_W: loss,
+        slip_energy_J: energy,
+        required_20C_zero_scatter_Nm: md.required_min_Nm / th(op_temp_C).powi(2),
+        torque_cold_zero_var_Nm: cold,
+        axial_stack_mm: stack,
+        rotating_od_mm: rot_od,
+        diameter_reserve_mm: md.max_diameter_mm - rot_od,
+        large_dia_stack_mm: large,
+        large_dia_reserve_mm: md.max_large_dia_axial_mm - large,
+        axial_reserve_mm: md.max_overall_axial_mm - stack,
+        installed_magnets: 2.0 * npole as f64,
+        assembled_face_gap_mm: face_gap_mm,
+        corner_clearance_mm: corner_gap_mm,
+        nominal_sleeve_liner_mm: clearance,
+        allowed_radial_disp_mm: clearance
+            - (md.runout_mm
+                + md.deflection_mm
+                + md.thermal_mm
+                + md.sleeve_form_mm
+                + md.magnet_position_mm)
+            - md.residual_target_mm,
+        steel_cup_mass_g: mass_total_g,
+        adapter_variant_mass_g: hybrid,
+        adapter_mass_saved_g: mass_total_g - hybrid,
+        retainers_mass_g: ret.retainers_g,
+        noiron_baseline_hot_Nm: proto_measured_Nm * (th(op_temp_C) / th(proto_test_temp_C)).powi(2),
+        cold_for_hot_min_Nm: cold_for_min,
+        cold_for_hot_min_input_Nm: cold_for_min / (gear_ratio * gear_eff),
+        cold_high_Nm: cold_high,
+        cold_high_input_Nm: cold_high / (gear_ratio * gear_eff),
+        cup_body_od_mm: cup_od_mm,
+        cap_face_mm: md.cap_axial_mm,
+        adapter_g: adapter,
+        adapter_steel_removed_g: removed,
+        hybrid_mass_g: hybrid,
+        hybrid_length_mm: md.cap_axial_mm
+            + md.cup_depth_mm
+            + md.web_mm
+            + md.adapter_flange_mm
+            + md.adapter_boss_mm,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checks_take_the_python_branch_at_exact_equality() {
+        // Architecture section 7 step 8. Neither left-hand side (hot_low, min_run) reads its
+        // right-hand side, so one run supplies it and a second run puts the check at equality.
+        // The default design's retainers, rounded:
+        let ret = RetainerResults {
+            retainer_span_mm: 14.5,
+            retainers_g: 3.131,
+            sleeve_id_mm: 27.436,
+            sleeve_od_mm: 27.636,
+            liner_od_mm: 29.39,
+            liner_id_mm: 28.99,
+            endplate_od_mm: 27.436,
+            cap_g: 2.322,
+            endplates_g: 6.653,
+        };
+        let run = |md: &MetalDesignInputs| {
+            compute(
+                md,
+                2.6473,
+                2.8487,
+                50.0,
+                -0.0012,
+                1.0268,
+                1.4,
+                41.2,
+                10,
+                10.0,
+                5.0,
+                0.95,
+                173.79,
+                30.778,
+                &ret,
+                0.9,
+                20.0,
+                Deviations::NONE,
+            )
+        };
+        let base = run(&MetalDesignInputs::default());
+        let md = MetalDesignInputs {
+            required_min_Nm: base.torque_hot_low_Nm,
+            residual_target_mm: base.min_running_clearance_mm,
+            ..MetalDesignInputs::default()
+        };
+        let r = run(&md);
+        assert_eq!(
+            (r.torque_hot_low_Nm, r.min_running_clearance_mm),
+            (md.required_min_Nm, md.residual_target_mm)
+        );
+        assert_eq!(r.hot_min_check, "Estimate covers hot min"); // `hot_low < required` is strict
+        assert_eq!(r.clearance_check, "Meets assumed target"); // `min_run < target` is strict
     }
 }

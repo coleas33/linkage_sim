@@ -175,6 +175,16 @@ const BRANCHES: &[(&str, &[Reach])] = &[
         "model.outer_temp_check",
         &[Text("unknown"), Text("OK"), Text("OVER the magnet rating")],
     ),
+    (
+        "metal.hot_min_check",
+        &[Text("Below hot minimum"), Text("Estimate covers hot min")],
+    ),
+    (
+        "metal.clearance_check",
+        &[Text("Below target"), Text("Meets assumed target")],
+    ),
+    ("metal.slip_loss_W", &[Number, Text("not measured")]),
+    ("metal.slip_energy_J", &[Number, Text("not measured")]),
 ];
 
 fn reached(value: &Value, reach: Reach) -> bool {
@@ -325,6 +335,11 @@ fn retainers_matches_python_on_every_case() {
 #[test]
 fn mass_matches_python_on_every_case() {
     check_module("mass");
+}
+
+#[test]
+fn metal_matches_python_on_every_case() {
+    check_module("metal");
 }
 
 /// A corpus key and the Rust helper call it records (as the engine calls it).

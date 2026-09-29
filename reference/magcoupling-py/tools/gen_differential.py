@@ -24,7 +24,7 @@ Writes:
     magcoupling-rs/tests/data/differential/helpers.json
         a corpus for the rounding and formatting helpers.
     magcoupling-rs/tests/data/static_data.json
-        the static engine tables (magnet library and the harmonic set so far), for tests/static_data.rs.
+        the static engine tables (magnet library, the harmonic set and the validation checklist so far), for tests/static_data.rs.
 
 Cases per module, all inside the slider ranges: the workbook defaults; each
 input at each end of its range, each selector at each choice and each text
@@ -56,6 +56,7 @@ import magcoupling  # noqa: E402
 from magcoupling import DesignInputs, compute_all, input_schema, result_schema, set_input  # noqa: E402
 from magcoupling._fields import ceiling, floor_  # noqa: E402
 from magcoupling.clamps import _fmt_num  # noqa: E402
+from magcoupling import metal_design as py_metal_design  # noqa: E402
 from magcoupling import model as py_model  # noqa: E402
 from magcoupling.library import _ROWS, MAGNET_LIBRARY  # noqa: E402
 from magcoupling.temperature import _text0  # noqa: E402
@@ -75,6 +76,7 @@ MODULES = {
     "model": ["coupling", "metal", "materials", "calibration"],
     "retainers": ["coupling", "metal"],
     "mass": ["coupling", "metal"],
+    "metal": ["coupling", "metal", "calibration"],
 }
 # every library part, blank (manual magnet) and a near miss of the default part
 PART_CHOICES = list(MAGNET_LIBRARY) + ["", "b842sh"]
@@ -109,6 +111,11 @@ PROBES = {
         ("operating temperature above the 80 C rating of the outer part",
          {"coupling.op_temp_C": 80.5, "coupling.magnets.part_outer": "B842"}),
         ("manual magnets in both rings", {"coupling.magnets.part_inner": "", "coupling.magnets.part_outer": ""}),
+    ],
+    # A bench drag replaces 'not measured' (random cases leave it None 20 % of the time).
+    "metal": [
+        ("measured drag at the slider minimum", {"metal.measured_drag_Nm": 0.001}),
+        ("measured drag 0.05 N m", {"metal.measured_drag_Nm": 0.05}),
     ],
 }
 
@@ -287,6 +294,8 @@ def static_data() -> str:
         "engine": f"magcoupling {magcoupling.__version__}",
         "magnet_library": [dataclasses.asdict(m) for m in _ROWS],
         "harmonics": list(py_model.HARMONICS),
+        "validation_items": [[label, status, action]
+                             for label, (status, action) in py_metal_design.VALIDATION_ITEMS.items()],
     }
     return dumps(doc) + "\n"
 

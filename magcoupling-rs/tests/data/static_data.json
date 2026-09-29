@@ -187,5 +187,67 @@
    "vendor": "SuperMagnetMan",
    "width_mm": 6.4
   }
+ ],
+ "validation_items": [
+  [
+   "Prototype metrology",
+   "Open",
+   "Record corner gap, flat gap, radii, overlap, magnet orientation and magnet temperature."
+  ],
+  [
+   "Torque repeatability",
+   "Open",
+   "Slow torque-angle tests in both directions and multiple positions."
+  ],
+  [
+   "Metal A/B test",
+   "Open",
+   "Test the metal candidate at the same measured face gap and temperature."
+  ],
+  [
+   "Hot / cold torque",
+   "Open",
+   "Verify minimum 2.5 N·m and gearbox-safe torque at service temperature limits."
+  ],
+  [
+   "Slip loss test",
+   "Open",
+   "Measure drag at the design slip speed; add laminations only if needed."
+  ],
+  [
+   "Retention qualification",
+   "Open",
+   "Magnetic forces, hoop stress, liner buckling, attachment fatigue, bond-loss capture."
+  ],
+  [
+   "Lifetime cycling",
+   "Open",
+   "Convert slip events to magnetic load cycles; test reversals, shock, vibration, dwell."
+  ],
+  [
+   "Environmental test",
+   "Open",
+   "Thermal cycling, humidity/condensation and ingress, then recheck torque."
+  ],
+  [
+   "Robot integration",
+   "Open",
+   "Record gearbox speed and torque, bus voltage, swing tracking, re-engagement."
+  ],
+  [
+   "Fault handling",
+   "Open",
+   "Detect sustained clutch slip using wheel/vehicle feedback."
+  ],
+  [
+   "Control tuning",
+   "Open",
+   "Measure resonance and slip ripple; tune the traction loop."
+  ],
+  [
+   "Production acceptance",
+   "Open",
+   "Measure each assembly or establish process capability."
+  ]
  ]
 }

@@ -82,3 +82,19 @@ fn harmonics_equal_the_python_list() {
         .collect();
     assert_eq!(rust, python);
 }
+
+#[test]
+fn validation_items_equal_the_python_checklist() {
+    let doc = python_static();
+    let python: Vec<[String; 3]> = doc["validation_items"]
+        .as_array()
+        .expect("validation_items")
+        .iter()
+        .map(|row| [0, 1, 2].map(|i| row[i].as_str().expect("text").to_owned()))
+        .collect();
+    let rust: Vec<[String; 3]> = magcoupling::engine::metal_design::VALIDATION_ITEMS
+        .iter()
+        .map(|&(a, b, c)| [a.to_owned(), b.to_owned(), c.to_owned()])
+        .collect();
+    assert_eq!(rust, python);
+}

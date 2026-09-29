@@ -8,8 +8,7 @@
 //! → Metal design → Materials → Temperature design → Shaft clamps → sweeps.
 //!
 //! Ported so far: Calibration, Calculator (model), Metal design retainers,
-//! Calculator mass; the rest of Metal design and Materials contribute their
-//! inputs only.
+//! Calculator mass, Metal design; Materials contributes its inputs only.
 //!
 //! Python API mapping: `compute_all(inp)` is [`compute_all`];
 //! `input_schema(inp)` and `result_schema(res)` are
@@ -24,7 +23,7 @@ use super::deviations::Deviations;
 use super::deviations::{REGISTRY, restore_workbook_defaults};
 use super::materials::MaterialsInputs;
 use super::meta::{inputs, results};
-use super::metal_design::{self, MetalDesignInputs, RetainerResults};
+use super::metal_design::{self, MetalDesignInputs, MetalDesignResults, RetainerResults};
 use super::model::{self, CouplingInputs, MassResults, ModelResults};
 
 inputs! {
@@ -49,6 +48,7 @@ results! {
             model: ModelResults,
             mass: MassResults,
             retainers: RetainerResults,
+            metal: MetalDesignResults,
         }
     }
 }
@@ -126,11 +126,32 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         ret.endplates_g,
         dev,
     );
+    let mdr = metal_design::compute(
+        md,
+        m.pullout_Nm,
+        m.pullout_20C_Nm,
+        ci.op_temp_C,
+        cal_in.alpha_br_per_C,
+        m.corner_gap_mm,
+        m.face_gap_mm,
+        m.cup_od_mm,
+        ci.npole,
+        ci.bore_mm,
+        ci.gear_ratio,
+        ci.gear_efficiency,
+        mass.total_g,
+        mass.boss_g,
+        &ret,
+        cal_in.measured_torque_Nm,
+        cal_in.test_temp_C,
+        dev,
+    );
     DesignResults {
         calibration: cal,
         model: m,
         mass,
         retainers: ret,
+        metal: mdr,
     }
 }
 
