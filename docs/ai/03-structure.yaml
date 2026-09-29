@@ -41,7 +41,7 @@ magcoupling_rs:
     compat: compat.rs (py_min/py_max, ceiling/floor_, text0, py_repr, fmt_num, fmt_fixed, parity_close)
     deviations: deviations.rs (REGISTRY of M1 corrections E1-E14, all Planned; Deviations switch; NONE/only() and restore_workbook_defaults behind the test-only workbook-parity feature)
     api: api.rs (DesignInputs/DesignResults groups in Python order; compute_all; test-only compute_all_with, DesignInputs::defaults_with)
-    ported: [constants.rs, calibration.rs, library.rs, model.rs (model and mass_estimate: MassResults, 6 result cells)]
+    ported: [constants.rs, calibration.rs, library.rs, "model.rs (model and mass_estimate; MassResults, 6 result cells)"]
     partial: "metal_design.rs holds the input structs and the retainers (RetainerResults, retainers; 9 result cells); materials.rs holds the input structs only so far (results, compute and static tables follow)"
     remaining: [metal_design (results, compute, VALIDATION_ITEMS), materials (results), temperature, clamps, sweeps, fields3d (M3)]
   features: gui and app (declared empty, M4); workbook-parity (test-only, enabled by a self dev-dependency)
