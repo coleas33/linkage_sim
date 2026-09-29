@@ -14,4 +14,5 @@ pub mod calibration;
 pub mod compat;
 pub mod constants;
 pub mod deviations;
+pub mod library;
 pub mod meta;

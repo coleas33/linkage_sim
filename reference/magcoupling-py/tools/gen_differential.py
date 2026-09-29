@@ -22,6 +22,8 @@ Writes:
         seeded cases for each ported module.
     magcoupling-rs/tests/data/differential/helpers.json
         a corpus for the rounding and formatting helpers.
+    magcoupling-rs/tests/data/static_data.json
+        the static engine tables (magnet library so far), for tests/static_data.rs.
 
 Cases per module, all inside the slider ranges: the workbook defaults; each
 input at each end of its range and each selector at each choice (others at
@@ -34,6 +36,7 @@ becomes a registered deviation).
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import math
 import random
@@ -50,6 +53,7 @@ import magcoupling  # noqa: E402
 from magcoupling import DesignInputs, compute_all, input_schema, result_schema, set_input  # noqa: E402
 from magcoupling._fields import ceiling, floor_  # noqa: E402
 from magcoupling.clamps import _fmt_num  # noqa: E402
+from magcoupling.library import _ROWS  # noqa: E402
 from magcoupling.temperature import _text0  # noqa: E402
 
 if Path(magcoupling.__file__).resolve().parent != ORACLE / "magcoupling":
@@ -219,12 +223,25 @@ def helpers_file() -> str:
     return head[:-1] + ',"entries":[\n' + body + "\n]}\n"
 
 
+# --------------------------------------------------------------------------- static data
+def static_data() -> str:
+    """Static engine tables, for magcoupling-rs/tests/static_data.rs."""
+    doc = {
+        "about": "Static tables of the magcoupling engine (plain data, no metadata). Written by "
+                 "reference/magcoupling-py/tools/gen_differential.py. Do not edit by hand.",
+        "engine": f"magcoupling {magcoupling.__version__}",
+        "magnet_library": [dataclasses.asdict(m) for m in _ROWS],
+    }
+    return dumps(doc) + "\n"
+
+
 # --------------------------------------------------------------------------- main
 def outputs() -> dict:
     schema_path = DATA / "input_schema.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))["inputs"]
     files = {DATA / "python_schema.json": python_schema(),
-             DATA / "differential" / "helpers.json": helpers_file()}
+             DATA / "differential" / "helpers.json": helpers_file(),
+             DATA / "static_data.json": static_data()}
     for module in MODULES:
         files[DATA / "differential" / f"{module}.json"] = module_file(module, schema)
     return files
@@ -249,7 +266,7 @@ def main(argv=None) -> int:
         if stale:
             print("stale differential data (run tools/gen_differential.py):\n  " + "\n  ".join(stale))
             return 1
-        print(f"differential data is current ({', '.join(MODULES)} + helpers + python schema)")
+        print(f"differential data is current ({', '.join(MODULES)} + helpers + python schema + static data)")
     return 0
 
 

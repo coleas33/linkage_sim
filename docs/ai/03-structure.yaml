@@ -12,7 +12,7 @@ reference:
     role: vendored magcoupling 1.0.0 (Python port of magnetic_coupling_torque_calculator.xlsx); read-only oracle for the magcoupling M1 audit and the planned Rust port (M2)
     engine: magcoupling/ (READ-ONLY, never edit; parity and differential tests compare against it unchanged)
     parity_suite: tests/ (test_parity.py checks every workbook formula cell against reference_values.json; test_api.py; test_optional.py needs the magpylib and matplotlib extras)
-    tools: tools/extract_reference.py (regenerates tests/reference_values.json from the workbook); tools/gen_differential.py (writes magcoupling-rs/tests/data/python_schema.json and differential/*.json from the engine, with slider ranges read from magcoupling-rs/tests/data/input_schema.json; --check verifies they are current)
+    tools: tools/extract_reference.py (regenerates tests/reference_values.json from the workbook); tools/gen_differential.py (writes magcoupling-rs/tests/data/python_schema.json, static_data.json and differential/*.json from the engine, with slider ranges read from magcoupling-rs/tests/data/input_schema.json; --check verifies they are current)
     venv: .venv/ (gitignored; created from requirements-audit.txt, see running below)
   audit:
     path: reference/magcoupling-py/audit/
@@ -41,11 +41,11 @@ magcoupling_rs:
     compat: compat.rs (py_min/py_max, ceiling/floor_, text0, py_repr, fmt_num, fmt_fixed, parity_close)
     deviations: deviations.rs (REGISTRY of M1 corrections E1-E14, all Planned; Deviations switch; NONE/only() and restore_workbook_defaults behind the test-only workbook-parity feature)
     api: api.rs (DesignInputs/DesignResults groups in Python order; compute_all; test-only compute_all_with, DesignInputs::defaults_with)
-    ported: [constants.rs, calibration.rs]
-    remaining: [library, model, metal_design, materials, temperature, clamps, sweeps, fields3d (M3)]
+    ported: [constants.rs, calibration.rs, library.rs]
+    remaining: [model, metal_design, materials, temperature, clamps, sweeps, fields3d (M3)]
   features: gui and app (declared empty, M4); workbook-parity (test-only, enabled by a self dev-dependency)
-  tests: tests/ (parity.rs, differential.rs, python_schema.rs, schema.rs, deviations.rs; common/mod.rs holds the PORTED ratchet)
-  test_data: tests/data/ (reference_values.json = copy of the vendored snapshot; input_schema.json via MAGCOUPLING_BLESS=1 cargo test --test schema; python_schema.json and differential/*.json via tools/gen_differential.py)
+  tests: tests/ (parity.rs, differential.rs, python_schema.rs, schema.rs, deviations.rs, static_data.rs; common/mod.rs holds the PORTED ratchet)
+  test_data: tests/data/ (reference_values.json = copy of the vendored snapshot; input_schema.json via MAGCOUPLING_BLESS=1 cargo test --test schema; python_schema.json, static_data.json and differential/*.json via tools/gen_differential.py)
   gate: linkage-sim-rs/scripts/gate.sh gates 4-7 (magcoupling-rs test, clippy -D warnings, wasm32 check; Python parity suite + gen_differential.py --check)
 
 modules:
