@@ -395,12 +395,15 @@ pub struct AppState {
     /// Body selected for point mass placement (phase 1 of PlaceMass tool).
     /// When Some, the tool is in phase 2: click anywhere to place the mass.
     pub place_mass_body: Option<String>,
-    /// Point mass being reassigned to a different link. (body_id, index)
+    /// Mass (kg) of the most recently added weight; the default for the next
+    /// placement. Set by `add_point_mass`.
+    pub last_point_mass_kg: f64,
+    /// Point mass being reassigned to a different link. (body_id, weight_id)
     /// When Some, next link click moves the mass to that body.
-    pub reassigning_point_mass: Option<(String, usize)>,
-    /// Point mass being repositioned via mouse click. (body_id, index)
+    pub reassigning_point_mass: Option<(String, String)>,
+    /// Point mass being repositioned via mouse click. (body_id, weight_id)
     /// When Some, next canvas click updates the mass position.
-    pub repositioning_point_mass: Option<(String, usize)>,
+    pub repositioning_point_mass: Option<(String, String)>,
     /// Body to add a new attachment point to. Set when user clicks "Add Joint Point".
     /// When Some, next canvas click places a new attachment point on this body.
     pub adding_joint_point: Option<String>,
@@ -700,6 +703,7 @@ impl Default for AppState {
             dismiss_welcome: false,
             show_load_path: true,
             place_mass_body: None,
+            last_point_mass_kg: 1.0,
             reassigning_point_mass: None,
             repositioning_point_mass: None,
             adding_joint_point: None,

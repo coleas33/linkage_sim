@@ -410,33 +410,27 @@ pub fn handle_interaction(
             let hit = find_nearest_body_segment(pos, body_segments, 60.0);
             if let Some(seg_hit) = hit {
                 let new_body_id = seg_hit.body_id.clone();
-                let (old_body_id, pm_index) = state.reassigning_point_mass.take().unwrap();
-                // Get the mass value and world position of the existing point mass
-                if let Some(bp) = &state.blueprint {
-                    if let Some(body) = bp.bodies.get(&old_body_id) {
-                        if let Some(pm) = body.point_masses.get(pm_index) {
-                            let [wx, wy] = {
-                                let lx = pm.local_pos[0];
-                                let ly = pm.local_pos[1];
-                                // Convert old body-local to world
-                                if old_body_id == "ground" {
-                                    [lx, ly]
-                                } else if let Some(mech) = &state.mechanism {
-                                    if let Ok(idx) = mech.state().get_index(&old_body_id) {
-                                        let bx = state.q[idx.q_start];
-                                        let by = state.q[idx.q_start + 1];
-                                        let theta = state.q[idx.q_start + 2];
-                                        let ct = theta.cos();
-                                        let st = theta.sin();
-                                        [bx + ct * lx - st * ly, by + st * lx + ct * ly]
-                                    } else { [lx, ly] }
-                                } else { [lx, ly] }
-                            };
-                            // Move from old body to new body in one undoable step
-                            let [nlx, nly] = state.world_to_body_local(&new_body_id, wx, wy);
-                            state.move_point_mass_to_body(&old_body_id, pm_index, &new_body_id, [nlx, nly]);
-                        }
-                    }
+                let (old_body_id, weight_id) = state.reassigning_point_mass.take().unwrap();
+                // Get the world position of the existing point mass
+                if let Some([lx, ly]) = state.find_point_mass(&old_body_id, &weight_id).map(|pm| pm.local_pos) {
+                    let [wx, wy] = {
+                        // Convert old body-local to world
+                        if old_body_id == "ground" {
+                            [lx, ly]
+                        } else if let Some(mech) = &state.mechanism {
+                            if let Ok(idx) = mech.state().get_index(&old_body_id) {
+                                let bx = state.q[idx.q_start];
+                                let by = state.q[idx.q_start + 1];
+                                let theta = state.q[idx.q_start + 2];
+                                let ct = theta.cos();
+                                let st = theta.sin();
+                                [bx + ct * lx - st * ly, by + st * lx + ct * ly]
+                            } else { [lx, ly] }
+                        } else { [lx, ly] }
+                    };
+                    // Move from old body to new body in one undoable step
+                    let [nlx, nly] = state.world_to_body_local(&new_body_id, wx, wy);
+                    state.move_point_mass(&old_body_id, &weight_id, &new_body_id, [nlx, nly]);
                 }
             }
         }
@@ -446,15 +440,9 @@ pub fn handle_interaction(
     if state.repositioning_point_mass.is_some() && response.clicked() {
         if let Some(pos) = response.interact_pointer_pos() {
             let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
-            let (body_id, pm_index) = state.repositioning_point_mass.take().unwrap();
+            let (body_id, weight_id) = state.repositioning_point_mass.take().unwrap();
             let [lx, ly] = state.world_to_body_local(&body_id, wx as f64, wy as f64);
-            // Get current mass value
-            let mass_val = state.blueprint.as_ref()
-                .and_then(|bp| bp.bodies.get(&body_id))
-                .and_then(|b| b.point_masses.get(pm_index))
-                .map(|pm| pm.mass)
-                .unwrap_or(1.0);
-            state.update_point_mass(&body_id, pm_index, mass_val, [lx, ly]);
+            state.move_point_mass(&body_id, &weight_id, &body_id, [lx, ly]);
         }
     }
 
@@ -1016,7 +1004,7 @@ fn handle_place_mass(
                 let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
                 let body_id = state.place_mass_body.clone().unwrap();
                 let [lx, ly] = state.world_to_body_local(&body_id, wx, wy);
-                state.add_point_mass(&body_id, 1.0, [lx, ly]); // 1 kg default
+                state.add_point_mass(&body_id, state.last_point_mass_kg, [lx, ly]);
                 state.place_mass_body = None;
                 state.active_tool = EditorTool::Select;
                 state.selected = Some(SelectedEntity::Body(body_id.clone()));

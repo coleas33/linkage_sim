@@ -131,6 +131,31 @@ impl AppState {
         }
     }
 
+    /// Put the blueprint's editable weights into `json_struct`, a
+    /// `mechanism_to_json` dump of the live mechanism.
+    ///
+    /// `mechanism_to_json` bakes point masses into the composite
+    /// (point-mass-inclusive) mass/CG/Izz and emits no list, while load
+    /// re-applies the list on top of the stored values. So for every body
+    /// with point masses, write the blueprint's BASE mass/CG/Izz plus its
+    /// point-mass list (ids, labels): each weight is then applied exactly
+    /// once (BL-023) and stays editable. Used by file/URL serialization and
+    /// by undo snapshots.
+    pub(crate) fn overlay_blueprint_point_masses(&self, json_struct: &mut crate::io::MechanismJson) {
+        let Some(bp) = &self.blueprint else { return };
+        for (body_id, bp_body) in &bp.bodies {
+            if bp_body.point_masses.is_empty() {
+                continue;
+            }
+            if let Some(json_body) = json_struct.bodies.get_mut(body_id) {
+                json_body.point_masses = bp_body.point_masses.clone();
+                json_body.mass = bp_body.mass;
+                json_body.cg_local = bp_body.cg_local;
+                json_body.izz_cg = bp_body.izz_cg;
+            }
+        }
+    }
+
     /// Serialize the current mechanism to a pretty-printed JSON string.
     ///
     /// Includes load cases, mounting angle, and blueprint point masses.
@@ -143,24 +168,7 @@ impl AppState {
         let mut json_struct = mechanism_to_json(mech).map_err(|e| e.to_string())?;
         json_struct.load_cases = self.load_cases.cases.clone();
         json_struct.mounting_angle = self.mounting_angle;
-        // Preserve blueprint point masses (baked into mass/CG/Izz at build time).
-        // `mechanism_to_json` emitted the composite (point-mass-inclusive)
-        // mass/CG/Izz, and load re-applies the point masses on top of the
-        // stored values, so for these bodies write the blueprint's BASE
-        // mass/CG/Izz instead or every point mass is counted twice (BL-023).
-        if let Some(ref bp) = self.blueprint {
-            for (body_id, bp_body) in &bp.bodies {
-                if bp_body.point_masses.is_empty() {
-                    continue;
-                }
-                if let Some(json_body) = json_struct.bodies.get_mut(body_id) {
-                    json_body.point_masses = bp_body.point_masses.clone();
-                    json_body.mass = bp_body.mass;
-                    json_body.cg_local = bp_body.cg_local;
-                    json_body.izz_cg = bp_body.izz_cg;
-                }
-            }
-        }
+        self.overlay_blueprint_point_masses(&mut json_struct);
         // Persist GUI sweep state (mode + trajectory severity) so reload
         // preserves the user's analysis configuration.
         json_struct.sweep_state = Some(crate::io::schema::SweepStateJson {

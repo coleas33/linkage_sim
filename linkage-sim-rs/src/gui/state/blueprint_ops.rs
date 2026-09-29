@@ -12,8 +12,8 @@ use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
 use crate::forces::elements::{ForceElement, GravityElement};
 use crate::io::{
-    load_mechanism_unbuilt_from_json,
-    DriverJson, JointJson, MechanismJson,
+    load_mechanism_unbuilt_from_json, next_point_mass_id, point_mass_skip_reason,
+    BodyJson, DriverJson, JointJson, MechanismJson, PointMassJson,
 };
 use crate::solver::kinematics::solve_velocity;
 use crate::solver::reactions::solve_reactions_with_actuator;
@@ -68,6 +68,29 @@ pub(crate) fn seed_q_by_body_id(
         }
     }
     q
+}
+
+/// Position of weight `weight_id` in `body`'s point-mass list. Blank ids
+/// never match (they are not addressable; see `io::assign_point_mass_ids`).
+fn point_mass_position(body: &BodyJson, weight_id: &str) -> Option<usize> {
+    if crate::io::schema::is_blank_point_mass_id(weight_id) {
+        return None;
+    }
+    body.point_masses.iter().position(|pm| pm.id == weight_id)
+}
+
+/// Mutable access to weight `weight_id` on body `body_id` of `bp`.
+fn point_mass_mut<'a>(bp: &'a mut MechanismJson, body_id: &str, weight_id: &str) -> Option<&'a mut PointMassJson> {
+    let body = bp.bodies.get_mut(body_id)?;
+    let i = point_mass_position(body, weight_id)?;
+    body.point_masses.get_mut(i)
+}
+
+/// Remove weight `weight_id` from body `body_id` of `bp` and return it.
+fn take_point_mass(bp: &mut MechanismJson, body_id: &str, weight_id: &str) -> Option<PointMassJson> {
+    let body = bp.bodies.get_mut(body_id)?;
+    let i = point_mass_position(body, weight_id)?;
+    Some(body.point_masses.remove(i))
 }
 
 /// Extract (body_i, point_i, body_j, point_j) from a JointJson.
@@ -971,100 +994,138 @@ impl AppState {
         self.compute_sweep();
     }
 
-    /// Add a point mass to a body in the blueprint.
+    // ── Weights (point masses), addressed by (body_id, weight_id) ─────────
+    //
+    // Every edit validates first and records exactly one undo entry (via
+    // `mutate_and_rebuild`) only when it changes the blueprint. A weight
+    // the edit would leave in a state the loader skips
+    // (`io::point_mass_skip_reason`: on ground, mass not positive and
+    // finite, non-finite position) is rejected. Call each once per committed
+    // edit (drag-stop / typed value / click), never per drag frame.
+
+    /// Add a weight to body `body_id` and return its new id (the smallest
+    /// unused `W<n>`).
     ///
-    /// Pushes undo, appends the point mass with the next free `W<n>` id, and
-    /// rebuilds (which recomputes composite mass, CG, and Izz via parallel
-    /// axis theorem).
-    pub fn add_point_mass(&mut self, body_id: &str, mass: f64, local_pos: [f64; 2]) {
-        self.push_undo();
-        let Some(bp) = &mut self.blueprint else { return };
-        let id = crate::io::next_point_mass_id(&bp.bodies);
-        let Some(body) = bp.bodies.get_mut(body_id) else { return };
-        body.point_masses.push(crate::io::PointMassJson {
-            id,
-            label: None,
-            mass,
-            local_pos,
+    /// One undo entry and one rebuild (which recomputes composite mass, CG
+    /// and Izz). Remembers `mass` in `last_point_mass_kg`, the default for
+    /// the next placement. Returns `None` (no undo entry, nothing changed)
+    /// when there is no blueprint, the body does not exist, or the loader
+    /// would skip the weight.
+    pub fn add_point_mass(&mut self, body_id: &str, mass: f64, local_pos: [f64; 2]) -> Option<String> {
+        let bp = self.blueprint.as_ref()?;
+        if !bp.bodies.contains_key(body_id) {
+            return None;
+        }
+        let weight = PointMassJson { id: next_point_mass_id(&bp.bodies), label: None, mass, local_pos };
+        if point_mass_skip_reason(body_id, &weight).is_some() {
+            return None;
+        }
+        let id = weight.id.clone();
+        self.mutate_and_rebuild(|s| {
+            if let Some(body) = s.blueprint.as_mut().and_then(|bp| bp.bodies.get_mut(body_id)) {
+                body.point_masses.push(weight);
+            }
         });
-        self.rebuild();
+        self.last_point_mass_kg = mass;
+        Some(id)
     }
 
-    /// True if the blueprint has `body_id` with a point mass at `index`.
-    fn point_mass_exists(&self, body_id: &str, index: usize) -> bool {
-        self.blueprint
-            .as_ref()
-            .and_then(|bp| bp.bodies.get(body_id))
-            .is_some_and(|b| index < b.point_masses.len())
+    /// The weight `weight_id` on body `body_id`, if both exist.
+    pub fn find_point_mass(&self, body_id: &str, weight_id: &str) -> Option<&PointMassJson> {
+        let body = self.blueprint.as_ref()?.bodies.get(body_id)?;
+        body.point_masses.get(point_mass_position(body, weight_id)?)
     }
 
-    /// Remove a point mass from a body in the blueprint by index.
+    /// Move weight `weight_id` from `body_id` to `local_pos` in
+    /// `target_body`'s frame.
     ///
-    /// Pushes undo, removes the point mass, and rebuilds.  No-op (no undo
-    /// entry) if the body or `index` does not exist.
-    pub fn remove_point_mass(&mut self, body_id: &str, index: usize) {
-        if !self.point_mass_exists(body_id, index) {
-            return;
-        }
-        self.push_undo();
-        let Some(bp) = &mut self.blueprint else { return };
-        let Some(body) = bp.bodies.get_mut(body_id) else { return };
-        body.point_masses.remove(index);
-        self.rebuild();
-    }
-
-    /// Move a point mass to another body, keeping its mass and placing it at
-    /// `new_local_pos` in the new body's frame.
-    ///
-    /// One undo entry and one rebuild (`remove_point_mass` + `add_point_mass`
-    /// would record two of each).  No-op (no undo entry, mass kept in place)
-    /// if the source point mass or the destination body does not exist.
-    pub fn move_point_mass_to_body(
-        &mut self,
-        old_body_id: &str,
-        index: usize,
-        new_body_id: &str,
-        new_local_pos: [f64; 2],
-    ) {
-        if !self.point_mass_exists(old_body_id, index) {
-            return;
-        }
-        if !self.blueprint.as_ref().is_some_and(|bp| bp.bodies.contains_key(new_body_id)) {
-            return;
-        }
-        self.push_undo();
-        let Some(bp) = &mut self.blueprint else { return };
-        let Some(old_body) = bp.bodies.get_mut(old_body_id) else { return };
-        let mut point_mass = old_body.point_masses.remove(index);
-        point_mass.local_pos = new_local_pos;
-        let Some(new_body) = bp.bodies.get_mut(new_body_id) else { return };
-        new_body.point_masses.push(point_mass);
-        self.rebuild();
-    }
-
-    /// Update a point mass on a body in the blueprint by index.
-    ///
-    /// One committed edit = one undo entry, so callers must invoke this once
-    /// per committed edit (drag-stop / typed value / Reposition click), not on
-    /// every frame of a drag.  Updates mass and/or local_pos, then rebuilds.
-    /// No-op (no undo entry) if the body or `index` does not exist.
-    pub fn update_point_mass(
+    /// `target_body == body_id` repositions the weight in place (list order
+    /// kept); another body reattaches it there (appended), keeping its id,
+    /// label and mass. Returns `false` (no undo entry, nothing changed) when
+    /// the weight or the target body does not exist, or the loader would skip
+    /// the weight at the target (ground target, non-finite position). Returns
+    /// `true` without an undo entry when the weight is already there.
+    pub fn move_point_mass(
         &mut self,
         body_id: &str,
-        index: usize,
-        mass: f64,
+        weight_id: &str,
+        target_body: &str,
         local_pos: [f64; 2],
-    ) {
-        if !self.point_mass_exists(body_id, index) {
-            return;
+    ) -> bool {
+        if target_body == body_id {
+            return self.edit_point_mass(body_id, weight_id, |pm| pm.local_pos = local_pos);
         }
-        self.push_undo();
-        let Some(bp) = &mut self.blueprint else { return };
-        let Some(body) = bp.bodies.get_mut(body_id) else { return };
-        let Some(pm) = body.point_masses.get_mut(index) else { return };
-        pm.mass = mass;
-        pm.local_pos = local_pos;
-        self.rebuild();
+        let Some(current) = self.find_point_mass(body_id, weight_id) else { return false };
+        let moved = PointMassJson { local_pos, ..current.clone() };
+        let target_exists = self.blueprint.as_ref().is_some_and(|bp| bp.bodies.contains_key(target_body));
+        if !target_exists || point_mass_skip_reason(target_body, &moved).is_some() {
+            return false;
+        }
+        self.mutate_and_rebuild(|s| {
+            let Some(bp) = s.blueprint.as_mut() else { return };
+            take_point_mass(bp, body_id, weight_id);
+            if let Some(target) = bp.bodies.get_mut(target_body) {
+                target.point_masses.push(moved);
+            }
+        });
+        true
+    }
+
+    /// Set the mass (kg) of weight `weight_id` on `body_id`. Returns `false`
+    /// (nothing recorded) for a missing weight or a mass that is not positive
+    /// and finite; `true` without an undo entry when unchanged.
+    pub fn set_point_mass_mass(&mut self, body_id: &str, weight_id: &str, mass: f64) -> bool {
+        self.edit_point_mass(body_id, weight_id, |pm| pm.mass = mass)
+    }
+
+    /// Set the display label of weight `weight_id` on `body_id`. Surrounding
+    /// whitespace is trimmed and a blank label clears it (`None`: the id is
+    /// shown). Returns `false` for a missing weight; `true` without an undo
+    /// entry when unchanged.
+    pub fn set_point_mass_label(&mut self, body_id: &str, weight_id: &str, label: Option<String>) -> bool {
+        let label = label.map(|l| l.trim().to_string()).filter(|l| !l.is_empty());
+        self.edit_point_mass(body_id, weight_id, |pm| pm.label = label)
+    }
+
+    /// Remove weight `weight_id` from `body_id`. Returns `false` (no undo
+    /// entry) when it does not exist.
+    pub fn remove_point_mass_by_id(&mut self, body_id: &str, weight_id: &str) -> bool {
+        if self.find_point_mass(body_id, weight_id).is_none() {
+            return false;
+        }
+        self.mutate_and_rebuild(|s| {
+            if let Some(bp) = s.blueprint.as_mut() {
+                take_point_mass(bp, body_id, weight_id);
+            }
+        });
+        true
+    }
+
+    /// Apply `edit` to weight `weight_id` on `body_id` in place: the shared
+    /// path of every same-body weight edit. Returns `false` (no undo entry)
+    /// when the weight is missing or the edited weight would be skipped by
+    /// the loader; `true` without an undo entry when `edit` changes nothing.
+    fn edit_point_mass(
+        &mut self,
+        body_id: &str,
+        weight_id: &str,
+        edit: impl FnOnce(&mut PointMassJson),
+    ) -> bool {
+        let Some(current) = self.find_point_mass(body_id, weight_id) else { return false };
+        let mut updated = current.clone();
+        edit(&mut updated);
+        if point_mass_skip_reason(body_id, &updated).is_some() {
+            return false;
+        }
+        if updated == *current {
+            return true;
+        }
+        self.mutate_and_rebuild(|s| {
+            if let Some(pm) = s.blueprint.as_mut().and_then(|bp| point_mass_mut(bp, body_id, weight_id)) {
+                *pm = updated;
+            }
+        });
+        true
     }
 
     /// Update the slide axis of a prismatic joint in the blueprint.

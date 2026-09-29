@@ -5,6 +5,33 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-29 — Payload weights Task 2: id-addressed weight editing API
+- `gui/state/blueprint_ops.rs`: index-based `remove_point_mass` /
+  `update_point_mass` / `move_point_mass_to_body` replaced by
+  `add_point_mass -> Option<String>` (sets `last_point_mass_kg`),
+  `find_point_mass`, `move_point_mass` (same body = reposition, other body =
+  reattach), `set_point_mass_mass`, `set_point_mass_label` (trimmed, blank
+  clears), `remove_point_mass_by_id`. Each validates with
+  `io::point_mass_skip_reason` and records exactly one undo entry through
+  `mutate_and_rebuild`; invalid = no entry; no-op = no entry.
+- Undo fidelity: `take_snapshot` now calls the extracted
+  `overlay_blueprint_point_masses` (shared with `serialize_to_json_string`),
+  so undo/redo restores the weight list with ids and labels instead of baking
+  weights into the link mass (gap noted in the BL-025 entry below).
+- Callers migrated with no visible UI change: property panel pending edits
+  (`SetPointMassMass`, `SetPointMassPosition`, `RemovePointMass`,
+  `ReassignPointMass`, `RepositionPointMass` carry `weight_id`), canvas Move
+  to Link / Reposition (`reassigning_point_mass` / `repositioning_point_mass`
+  are `(body_id, weight_id)`), Place Mass uses `last_point_mass_kg`
+  (`AppState` field, default 1.0). The weight mass DragValue no longer clamps
+  a loaded out-of-range mass (e.g. 1500 kg, or 0 kg) on an idle frame.
+- Tests: `gui/state/tests.rs` (BL-025 tests on the id API, now also asserting
+  undo restores the weight lists; add/move/label/remove, invalid targets,
+  no-op edits, undo/redo list restore, repairing loader-skipped weights),
+  `property_panel::tests` (idle-frame clamp), `property_panel::pending_edits::tests`,
+  `canvas::tests::weight_clicks` (headless Reposition, Move to Link, Place Mass clicks).
+  Their fixtures take link ids from `gui::test_support::sorted_link_ids`.
+
 ## 2026-09-29 — Payload weights Task 1: point-mass ids, labels and loader validation
 - Spec: `docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md`
   (Track 2, section 1 "Data model").

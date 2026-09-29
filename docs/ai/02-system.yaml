@@ -83,22 +83,27 @@ invariants_to_protect:
     BEFORE the mutation and rebuild() AFTER. Skipping push_undo loses undo
     history; skipping rebuild leaves mechanism out of sync with blueprint.
     Use AppState::mutate_and_rebuild(|s| ...) when possible.
-  - point_mass_ops_one_undo_step_per_commit — remove_point_mass /
-    update_point_mass / move_point_mass_to_body each push exactly one undo
-    entry, and only after validating the body + index (invalid target = no
-    entry, no rebuild). Call update_point_mass once per committed edit
-    (drag-stop / typed value / Reposition click), never per drag frame. Move
-    to Link must use move_point_mass_to_body, not remove + add (two entries)
-    (BL-025).
+  - point_mass_ops_one_undo_step_per_commit — the id-addressed weight API
+    (AppState::add_point_mass -> Option<id>, move_point_mass (same body =
+    reposition, other body = reattach keeping id/label/mass),
+    set_point_mass_mass, set_point_mass_label, remove_point_mass_by_id;
+    find_point_mass to read) validates first and pushes exactly one undo
+    entry via mutate_and_rebuild. Invalid target (missing weight/body, ground
+    target, mass not positive+finite, non-finite position) = false/None, no
+    entry, no rebuild; a no-op edit = true, no entry. Call once per committed
+    edit (drag-stop / typed value / click), never per drag frame. Move to
+    Link is one move_point_mass, not remove + add (BL-025).
   - blueprint_mass_is_base_live_mass_is_composite — state.blueprint bodies
     hold BASE mass/CG/Izz plus a point_masses list; the built Mechanism
     holds the composite (base + point masses). Anything that writes a
     file/URL from the live mechanism (AppState::serialize_to_json_string)
     must write the blueprint BASE values for bodies that have point_masses,
     because load re-applies the list on top. Writing composite + list
-    double-counts every point mass (BL-023). mechanism_to_json alone (undo
-    snapshots) bakes point masses in and emits an empty list, which is
-    self-consistent but loses the editable list. set_body_mass /
+    double-counts every point mass (BL-023). mechanism_to_json alone bakes
+    point masses in and emits an empty list, so every writer (file/URL
+    serialization AND undo snapshots, take_snapshot) calls
+    AppState::overlay_blueprint_point_masses; undo/redo then restores the
+    editable weight list with ids and labels. set_body_mass /
     set_body_izz edit the blueprint BASE value and then re-derive the live
     body's composite mass, CG and Izz (base + point masses) through
     sync_live_mass_props; never patch a single live field with a base value
@@ -200,6 +205,9 @@ lessons_learned:
     back to the bound variable on idle frames. Never gate a solve/rebuild on
     "value differs from before the widget" — gate on dragged()/drag_stopped()
     or typed edits, or bind a non-stepped slider (BL-020, BL-021).
+    DragValue::range also marks the response changed() when it clamps an
+    out-of-range stored value on an idle frame; use
+    .clamp_existing_to_range(false) on committed fields (weight mass field).
 
 current_statuses:
   solver: Rust port complete; 716 lib tests pass; trajectory-mode IK Stage 1

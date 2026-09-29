@@ -12,7 +12,10 @@ impl AppState {
     /// Returns `None` if no mechanism is loaded or serialization fails.
     pub fn take_snapshot(&self) -> Option<MechanismSnapshot> {
         let mech = self.mechanism.as_ref()?;
-        let json = mechanism_to_json(mech).ok()?;
+        let mut json = mechanism_to_json(mech).ok()?;
+        // Keep the editable weights (ids, labels, base mass) so undo/redo
+        // restores them instead of baking them into the composite mass.
+        self.overlay_blueprint_point_masses(&mut json);
         let json_str = serde_json::to_string(&json).ok()?;
         Some(MechanismSnapshot {
             mechanism_json: json_str,

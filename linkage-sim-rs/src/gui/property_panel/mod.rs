@@ -283,15 +283,18 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                                         egui::DragValue::new(&mut mass_val)
                                                             .speed(0.01)
                                                             .range(0.001..=1000.0)
+                                                            // Never clamp a loaded mass on an idle frame:
+                                                            // egui would report it as changed and the
+                                                            // panel would commit a silent edit.
+                                                            .clamp_existing_to_range(false)
                                                             .prefix("m: ")
                                                             .suffix(" kg"),
                                                     ).on_hover_text("Point mass magnitude in kg");
                                                     if mr.drag_stopped() || (mr.changed() && !mr.dragged()) {
-                                                        pending = Some(PendingPropertyEdit::UpdatePointMass {
+                                                        pending = Some(PendingPropertyEdit::SetPointMassMass {
                                                             body_id: body_id.clone(),
-                                                            index: i,
+                                                            weight_id: pm.id.clone(),
                                                             mass: mass_val,
-                                                            local_pos: pm.local_pos,
                                                         });
                                                     }
                                                 });
@@ -305,10 +308,9 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                                             .suffix(units.length_suffix()),
                                                     ).on_hover_text("Body-local X position");
                                                     if xr.drag_stopped() || (xr.changed() && !xr.dragged()) {
-                                                        pending = Some(PendingPropertyEdit::UpdatePointMass {
+                                                        pending = Some(PendingPropertyEdit::SetPointMassPosition {
                                                             body_id: body_id.clone(),
-                                                            index: i,
-                                                            mass: pm.mass,
+                                                            weight_id: pm.id.clone(),
                                                             local_pos: [units.length_to_si(x_display), pm.local_pos[1]],
                                                         });
                                                     }
@@ -321,10 +323,9 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                                             .suffix(units.length_suffix()),
                                                     ).on_hover_text("Body-local Y position");
                                                     if yr.drag_stopped() || (yr.changed() && !yr.dragged()) {
-                                                        pending = Some(PendingPropertyEdit::UpdatePointMass {
+                                                        pending = Some(PendingPropertyEdit::SetPointMassPosition {
                                                             body_id: body_id.clone(),
-                                                            index: i,
-                                                            mass: pm.mass,
+                                                            weight_id: pm.id.clone(),
                                                             local_pos: [pm.local_pos[0], units.length_to_si(y_display)],
                                                         });
                                                     }
@@ -335,7 +336,7 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                                     {
                                                         pending = Some(PendingPropertyEdit::RemovePointMass {
                                                             body_id: body_id.clone(),
-                                                            index: i,
+                                                            weight_id: pm.id.clone(),
                                                         });
                                                     }
                                                 });
@@ -347,7 +348,7 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                                     {
                                                         pending = Some(PendingPropertyEdit::ReassignPointMass {
                                                             body_id: body_id.clone(),
-                                                            index: i,
+                                                            weight_id: pm.id.clone(),
                                                         });
                                                     }
                                                     if ui.small_button("Reposition")
@@ -356,7 +357,7 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                                     {
                                                         pending = Some(PendingPropertyEdit::RepositionPointMass {
                                                             body_id: body_id.clone(),
-                                                            index: i,
+                                                            weight_id: pm.id.clone(),
                                                         });
                                                     }
                                                 });
@@ -813,4 +814,50 @@ fn draw_scale_mechanism_section(
                 ui.data_mut(|d| *d.get_temp_mut_or(id, 100.0) = 100.0);
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gui::samples::SampleMechanism;
+    use crate::gui::test_support::sorted_link_ids;
+
+    /// Run one frame of the property panel with no user input at all.
+    fn one_idle_frame(state: &mut AppState) {
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| draw_property_panel(ui, state));
+        });
+    }
+
+    /// Weight masses outside the mass field's 0.001..=1000 kg range (a heavy
+    /// payload, or a zero mass the loader skipped) must survive idle frames.
+    /// egui's DragValue clamps an out-of-range bound value and reports it as
+    /// changed, which the panel would commit as a silent edit + undo entry.
+    #[test]
+    fn idle_frames_do_not_clamp_out_of_range_weight_masses() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let links = sorted_link_ids(&state);
+        let body = links[0].clone();
+        let heavy = state.add_point_mass(&body, 2.0, [0.03, 0.0]).unwrap();
+        let skipped = state.add_point_mass(&body, 2.0, [-0.03, 0.0]).unwrap();
+        // Out-of-range masses only arrive from files; write them directly.
+        {
+            let pms = &mut state.blueprint.as_mut().unwrap().bodies.get_mut(&body).unwrap().point_masses;
+            pms[0].mass = 1500.0;
+            pms[1].mass = 0.0;
+        }
+        state.rebuild();
+        state.link_editor_body = Some(body.clone());
+        let depth = state.undo_history.undo_count();
+
+        // Two frames: the panel applies at most one pending edit per frame.
+        one_idle_frame(&mut state);
+        one_idle_frame(&mut state);
+
+        assert_eq!(state.find_point_mass(&body, &heavy).unwrap().mass, 1500.0);
+        assert_eq!(state.find_point_mass(&body, &skipped).unwrap().mass, 0.0);
+        assert_eq!(state.undo_history.undo_count(), depth, "idle frames must not record edits");
+    }
 }

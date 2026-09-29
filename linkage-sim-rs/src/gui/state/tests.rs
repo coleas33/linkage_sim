@@ -1870,13 +1870,13 @@
             bp.bodies.keys().find(|k| k.as_str() != GROUND_ID).unwrap().clone()
         };
 
-        state.add_point_mass(&body_id, 0.5, [0.01, 0.0]);
+        let weight_id = state.add_point_mass(&body_id, 0.5, [0.01, 0.0]).expect("add should succeed");
         assert_eq!(
             state.blueprint.as_ref().unwrap().bodies[&body_id].point_masses.len(),
             1
         );
 
-        state.remove_point_mass(&body_id, 0);
+        assert!(state.remove_point_mass_by_id(&body_id, &weight_id));
         assert!(
             state.blueprint.as_ref().unwrap().bodies[&body_id].point_masses.is_empty(),
             "point mass should be removed"
@@ -2092,8 +2092,8 @@
         // Point masses removed after a reload still leave the true base mass.
         let mut dst3 = dst2;
         let base_mass = blueprint_mass_props(&src)[&heavy_body].mass;
-        dst3.remove_point_mass(&heavy_body, 1);
-        dst3.remove_point_mass(&heavy_body, 0);
+        assert!(dst3.remove_point_mass_by_id(&heavy_body, "W2"));
+        assert!(dst3.remove_point_mass_by_id(&heavy_body, "W1"));
         let m = dst3.mechanism.as_ref().unwrap().bodies()[&heavy_body].mass;
         assert!((m - base_mass).abs() < 1e-12, "base mass after removing point masses: {m} vs {base_mass}");
     }
@@ -2229,26 +2229,39 @@
         assert_eq!(point_mass_ids(&dst, &other), ["neg", "W2"]);
     }
 
-    // ── BL-025: point-mass edits are single, undoable steps ──────────────
+    // ── Weight editing: id-addressed, one undo step per edit (BL-025) ──────
     //
-    // Undo snapshots bake point masses into the composite mass/CG/Izz and drop
-    // the editable list (see BL-023 notes), so "restores prior state" is
-    // asserted on the built composite properties, which is what the physics sees.
+    // Undo snapshots carry the editable weight list (ids, labels, base mass),
+    // so "restores prior state" is asserted on both the built composite
+    // properties (what the physics sees) and the blueprint weight lists.
 
-    /// Four-bar with one 2 kg point mass on the first (sorted) non-ground body.
-    /// Returns the state, that body id, and a second non-ground body id.
+    /// Four-bar with one 2 kg weight "W1" at (0.03, 0.02) on the first
+    /// (sorted) non-ground body. Returns the state, that body id, and a
+    /// second non-ground body id.
     fn four_bar_with_one_point_mass() -> (AppState, String, String) {
         let mut state = AppState::default();
         state.load_sample(SampleMechanism::FourBar);
         let ids = sorted_link_ids(&state);
-        state.add_point_mass(&ids[0], 2.0, [0.03, 0.02]);
+        assert_eq!(state.add_point_mass(&ids[0], 2.0, [0.03, 0.02]).as_deref(), Some("W1"));
         (state, ids[0].clone(), ids[1].clone())
+    }
+
+    /// Every blueprint body's weight list (ids, labels, masses, positions).
+    fn blueprint_weights(state: &AppState) -> std::collections::BTreeMap<String, Vec<crate::io::PointMassJson>> {
+        state
+            .blueprint
+            .as_ref()
+            .unwrap()
+            .bodies
+            .iter()
+            .map(|(id, b)| (id.clone(), b.point_masses.clone()))
+            .collect()
     }
 
     /// Run `edit` and assert it recorded exactly one undo entry, that it
     /// really changed the built composite mass properties (guards against a
     /// vacuous test), and that a single `undo()` restores the prior composite
-    /// mass properties and the prior undo depth.
+    /// mass properties, the prior weight lists and the prior undo depth.
     fn assert_edit_is_one_undoable_step(
         what: &str,
         state: &mut AppState,
@@ -2256,6 +2269,7 @@
     ) {
         let depth_before = state.undo_history.undo_count();
         let props_before = built_mass_props(state);
+        let weights_before = blueprint_weights(state);
 
         edit(state);
 
@@ -2281,13 +2295,14 @@
             "{what}: one undo should consume exactly the one entry"
         );
         assert_mass_props_match(&format!("{what}: after undo"), &props_before, &built_mass_props(state));
+        assert_eq!(blueprint_weights(state), weights_before, "{what}: undo must restore the weight lists");
     }
 
     #[test]
     fn point_mass_numeric_mass_edit_is_one_undo_step_bl025() {
         let (mut state, body, _) = four_bar_with_one_point_mass();
         assert_edit_is_one_undoable_step("mass edit", &mut state, |s| {
-            s.update_point_mass(&body, 0, 5.0, [0.03, 0.02]);
+            assert!(s.set_point_mass_mass(&body, "W1", 5.0));
         });
     }
 
@@ -2295,17 +2310,17 @@
     fn point_mass_numeric_position_edit_is_one_undo_step_bl025() {
         let (mut state, body, _) = four_bar_with_one_point_mass();
         assert_edit_is_one_undoable_step("position edit", &mut state, |s| {
-            s.update_point_mass(&body, 0, 2.0, [-0.04, 0.05]);
+            assert!(s.move_point_mass(&body, "W1", &body, [-0.04, 0.05]));
         });
     }
 
     #[test]
     fn point_mass_reposition_is_one_undo_step_bl025() {
         let (mut state, body, _) = four_bar_with_one_point_mass();
-        // Mirrors the canvas Reposition click: world point -> body-local -> update.
+        // Mirrors the canvas Reposition click: world point -> body-local -> move.
         assert_edit_is_one_undoable_step("reposition", &mut state, |s| {
             let [lx, ly] = s.world_to_body_local(&body, 0.07, 0.06);
-            s.update_point_mass(&body, 0, 2.0, [lx, ly]);
+            assert!(s.move_point_mass(&body, "W1", &body, [lx, ly]));
         });
     }
 
@@ -2313,13 +2328,14 @@
     fn point_mass_move_to_link_is_one_undo_step_bl025() {
         let (mut state, from_body, to_body) = four_bar_with_one_point_mass();
         assert_edit_is_one_undoable_step("move to link", &mut state, |s| {
-            s.move_point_mass_to_body(&from_body, 0, &to_body, [0.04, -0.01]);
+            assert!(s.move_point_mass(&from_body, "W1", &to_body, [0.04, -0.01]));
 
-            // The mass left the old body and landed, unchanged, on the new one.
+            // The weight left the old body and landed, unchanged, on the new one.
             let bp = s.blueprint.as_ref().unwrap();
             assert!(bp.bodies[&from_body].point_masses.is_empty(), "old body should lose the point mass");
             let moved = &bp.bodies[&to_body].point_masses;
             assert_eq!(moved.len(), 1, "new body should gain exactly one point mass");
+            assert_eq!(moved[0].id, "W1", "the weight keeps its id");
             assert!((moved[0].mass - 2.0).abs() < 1e-12);
             assert!((moved[0].local_pos[0] - 0.04).abs() < 1e-12);
             assert!((moved[0].local_pos[1] + 0.01).abs() < 1e-12);
@@ -2327,27 +2343,228 @@
     }
 
     #[test]
+    fn remove_point_mass_by_id_is_one_undo_step() {
+        let (mut state, body, _) = four_bar_with_one_point_mass();
+        assert_edit_is_one_undoable_step("remove", &mut state, |s| {
+            assert!(s.remove_point_mass_by_id(&body, "W1"));
+            assert!(s.find_point_mass(&body, "W1").is_none());
+        });
+    }
+
+    #[test]
+    fn add_point_mass_is_one_undo_step() {
+        let (mut state, _, other) = four_bar_with_one_point_mass();
+        assert_edit_is_one_undoable_step("add", &mut state, |s| {
+            assert_eq!(s.add_point_mass(&other, 3.0, [0.02, 0.01]).as_deref(), Some("W2"));
+        });
+    }
+
+    #[test]
+    fn last_point_mass_kg_defaults_to_one_kilogram() {
+        assert_eq!(AppState::default().last_point_mass_kg, 1.0);
+    }
+
+    #[test]
+    fn add_point_mass_returns_the_new_id_and_remembers_the_mass() {
+        let (mut state, body, other) = four_bar_with_one_point_mass();
+        assert_eq!(state.last_point_mass_kg, 2.0, "the fixture's add sets the last mass");
+
+        assert_eq!(state.add_point_mass(&other, 7.5, [0.01, 0.0]).as_deref(), Some("W2"));
+        assert_eq!(state.last_point_mass_kg, 7.5);
+        assert_eq!(state.add_point_mass(&body, 0.25, [0.0, 0.01]).as_deref(), Some("W3"));
+        assert_eq!(
+            state.find_point_mass(&body, "W3"),
+            Some(&crate::io::PointMassJson {
+                id: "W3".to_string(),
+                label: None,
+                mass: 0.25,
+                local_pos: [0.0, 0.01],
+            })
+        );
+
+        // A freed number is handed out again (smallest unused).
+        assert!(state.remove_point_mass_by_id(&other, "W2"));
+        assert_eq!(state.add_point_mass(&other, 1.0, [0.0, 0.0]).as_deref(), Some("W2"));
+    }
+
+    #[test]
+    fn add_point_mass_rejects_invalid_input_without_undo_entry() {
+        let (mut state, body, _) = four_bar_with_one_point_mass();
+        state.last_point_mass_kg = 4.0;
+        let depth = state.undo_history.undo_count();
+        let weights = blueprint_weights(&state);
+
+        let b = body.as_str();
+        for (what, target, mass, pos) in [
+            ("ground", GROUND_ID, 1.0, [0.0, 0.0]),
+            ("missing body", "no_such_body", 1.0, [0.0, 0.0]),
+            ("zero mass", b, 0.0, [0.0, 0.0]),
+            ("negative mass", b, -1.0, [0.0, 0.0]),
+            ("NaN mass", b, f64::NAN, [0.0, 0.0]),
+            ("infinite mass", b, f64::INFINITY, [0.0, 0.0]),
+            ("NaN position", b, 1.0, [f64::NAN, 0.0]),
+            ("infinite position", b, 1.0, [0.0, f64::INFINITY]),
+        ] {
+            assert_eq!(state.add_point_mass(target, mass, pos), None, "{what}");
+        }
+
+        assert_eq!(state.undo_history.undo_count(), depth, "rejected adds must not push undo entries");
+        assert_eq!(blueprint_weights(&state), weights, "rejected adds must not change the model");
+        assert_eq!(state.last_point_mass_kg, 4.0, "a rejected add must not change the last mass");
+    }
+
+    #[test]
+    fn move_point_mass_on_the_same_body_repositions_in_place() {
+        let (mut state, body, _) = four_bar_with_one_point_mass();
+        assert_eq!(state.add_point_mass(&body, 3.0, [0.05, 0.0]).as_deref(), Some("W2"));
+        assert!(state.set_point_mass_label(&body, "W1", Some("Torso".to_string())));
+
+        assert!(state.move_point_mass(&body, "W1", &body, [-0.02, 0.04]));
+
+        let pms = &state.blueprint.as_ref().unwrap().bodies[&body].point_masses;
+        assert_eq!(pms.len(), 2);
+        assert_eq!(
+            pms[0],
+            crate::io::PointMassJson {
+                id: "W1".to_string(),
+                label: Some("Torso".to_string()),
+                mass: 2.0,
+                local_pos: [-0.02, 0.04],
+            },
+            "same slot, same id/label/mass, new position"
+        );
+        assert_eq!(pms[1].id, "W2");
+    }
+
+    #[test]
+    fn move_point_mass_to_another_body_keeps_id_label_and_mass() {
+        let (mut state, body, other) = four_bar_with_one_point_mass();
+        assert!(state.set_point_mass_label(&body, "W1", Some("Torso".to_string())));
+
+        assert!(state.move_point_mass(&body, "W1", &other, [0.01, -0.02]));
+
+        assert!(state.find_point_mass(&body, "W1").is_none());
+        assert_eq!(
+            state.find_point_mass(&other, "W1"),
+            Some(&crate::io::PointMassJson {
+                id: "W1".to_string(),
+                label: Some("Torso".to_string()),
+                mass: 2.0,
+                local_pos: [0.01, -0.02],
+            })
+        );
+    }
+
+    #[test]
+    fn set_point_mass_label_is_one_undo_step_and_trims_or_clears() {
+        let (mut state, body, _) = four_bar_with_one_point_mass();
+        let label = |s: &AppState| s.find_point_mass(&body, "W1").expect("W1 must survive").label.clone();
+        let depth = state.undo_history.undo_count();
+
+        assert!(state.set_point_mass_label(&body, "W1", Some("  Robot torso ".to_string())));
+        assert_eq!(label(&state).as_deref(), Some("Robot torso"));
+        assert_eq!(state.undo_history.undo_count(), depth + 1);
+
+        assert!(state.set_point_mass_label(&body, "W1", Some("   ".to_string())));
+        assert_eq!(label(&state), None, "a blank label clears it");
+        assert_eq!(state.undo_history.undo_count(), depth + 2);
+
+        state.undo();
+        assert_eq!(label(&state).as_deref(), Some("Robot torso"), "undo restores the label");
+        state.undo();
+        assert_eq!(label(&state), None);
+        assert_eq!(state.undo_history.undo_count(), depth);
+    }
+
+    #[test]
+    fn undo_and_redo_restore_the_editable_weight_list() {
+        let (mut state, body, other) = four_bar_with_one_point_mass();
+        assert!(state.set_point_mass_label(&body, "W1", Some("Torso".to_string())));
+        let weights_before = blueprint_weights(&state);
+        let base = blueprint_mass_props(&state);
+        let built_before = built_mass_props(&state);
+
+        assert!(state.move_point_mass(&body, "W1", &other, [0.04, -0.01]));
+        let weights_after = blueprint_weights(&state);
+        let built_after = built_mass_props(&state);
+
+        state.undo();
+        assert_eq!(blueprint_weights(&state), weights_before, "undo puts W1 (id, label) back on its body");
+        assert_mass_props_match("undo: blueprint keeps base mass", &base, &blueprint_mass_props(&state));
+        assert_mass_props_match("undo: built composite", &built_before, &built_mass_props(&state));
+
+        state.redo();
+        assert_eq!(blueprint_weights(&state), weights_after, "redo re-applies the move");
+        assert_mass_props_match("redo: blueprint keeps base mass", &base, &blueprint_mass_props(&state));
+        assert_mass_props_match("redo: built composite", &built_after, &built_mass_props(&state));
+    }
+
+    #[test]
     fn point_mass_invalid_targets_create_no_undo_entry_bl025() {
         let (mut state, body, other) = four_bar_with_one_point_mass();
         let depth = state.undo_history.undo_count();
         let props = built_mass_props(&state);
+        let weights = blueprint_weights(&state);
 
-        state.remove_point_mass(&body, 1); // index past the end
-        state.remove_point_mass(&body, usize::MAX);
-        state.remove_point_mass(&other, 0); // body has no point masses
-        state.remove_point_mass("no_such_body", 0);
-        state.update_point_mass(&body, 1, 3.0, [0.0, 0.0]);
-        state.update_point_mass("no_such_body", 0, 3.0, [0.0, 0.0]);
-        state.move_point_mass_to_body(&body, 1, &other, [0.0, 0.0]); // bad index
-        state.move_point_mass_to_body(&body, 0, "no_such_body", [0.0, 0.0]); // bad destination
+        let origin = [0.0, 0.0];
+        assert!(!state.move_point_mass(&body, "W9", &body, origin), "unknown id");
+        assert!(!state.move_point_mass(&body, "", &body, origin), "blank id");
+        assert!(!state.move_point_mass(&other, "W1", &other, origin), "weight is on another body");
+        assert!(!state.move_point_mass("no_such_body", "W1", &body, origin), "missing source body");
+        assert!(!state.move_point_mass(&body, "W1", GROUND_ID, origin), "ground target");
+        assert!(!state.move_point_mass(&body, "W1", "no_such_body", origin), "missing target body");
+        assert!(!state.move_point_mass(&body, "W1", &body, [f64::NAN, 0.0]), "NaN position");
+        assert!(!state.move_point_mass(&body, "W1", &other, [0.0, f64::INFINITY]), "infinite position");
+        assert!(!state.set_point_mass_mass(&body, "W1", 0.0), "zero mass");
+        assert!(!state.set_point_mass_mass(&body, "W1", -2.0), "negative mass");
+        assert!(!state.set_point_mass_mass(&body, "W1", f64::NAN), "NaN mass");
+        assert!(!state.set_point_mass_mass(&body, "W9", 3.0), "unknown id");
+        assert!(!state.set_point_mass_label(&body, "W9", Some("x".to_string())), "unknown id");
+        assert!(!state.remove_point_mass_by_id(&body, "W9"), "unknown id");
+        assert!(!state.remove_point_mass_by_id(&body, ""), "blank id");
+        assert!(!state.remove_point_mass_by_id(&other, "W1"), "weight is on another body");
+        assert!(!state.remove_point_mass_by_id("no_such_body", "W1"), "missing body");
 
         assert_eq!(state.undo_history.undo_count(), depth, "invalid targets must not push undo entries");
         assert_mass_props_match("invalid targets leave the model untouched", &props, &built_mass_props(&state));
-        assert_eq!(
-            state.blueprint.as_ref().unwrap().bodies[&body].point_masses.len(),
-            1,
-            "a bad destination must not drop the source point mass"
-        );
+        assert_eq!(blueprint_weights(&state), weights, "invalid targets must not drop or change the weight");
+    }
+
+    #[test]
+    fn no_op_weight_edits_succeed_without_undo_entry() {
+        let (mut state, body, _) = four_bar_with_one_point_mass();
+        let depth = state.undo_history.undo_count();
+
+        assert!(state.move_point_mass(&body, "W1", &body, [0.03, 0.02]), "same position");
+        assert!(state.set_point_mass_mass(&body, "W1", 2.0), "same mass");
+        assert!(state.set_point_mass_label(&body, "W1", None), "same (absent) label");
+        assert!(state.set_point_mass_label(&body, "W1", Some("  ".to_string())), "blank = absent");
+
+        assert_eq!(state.undo_history.undo_count(), depth, "no-op edits must not push undo entries");
+    }
+
+    #[test]
+    fn weights_skipped_by_the_loader_can_be_repaired() {
+        let (src, body, _) = four_bar_with_one_point_mass();
+        let mut v: serde_json::Value =
+            serde_json::from_str(&src.serialize_to_json_string().unwrap()).unwrap();
+        v["bodies"][GROUND_ID]["point_masses"] =
+            serde_json::json!([{"id": "on_ground", "mass": 5.0, "local_pos": [0.0, 0.0]}]);
+        v["bodies"][body.as_str()]["point_masses"][0]["mass"] = serde_json::json!(0.0);
+        let mut state = AppState::default();
+        state.load_from_json_str(&v.to_string()).unwrap();
+        let base = blueprint_mass_props(&state)[&body].mass;
+        let built = |s: &AppState| built_mass_props(s)[&body].mass;
+        assert!((built(&state) - base).abs() < 1e-12, "both weights start skipped");
+
+        // A skipped zero-mass weight stays addressable; a valid mass applies it.
+        assert!(state.set_point_mass_mass(&body, "W1", 2.0));
+        assert!((built(&state) - (base + 2.0)).abs() < 1e-12);
+
+        // A weight on ground can be moved onto a link, where it applies.
+        assert!(state.move_point_mass(GROUND_ID, "on_ground", &body, [0.0, 0.0]));
+        assert!((built(&state) - (base + 7.0)).abs() < 1e-12);
+        assert!(state.find_point_mass(GROUND_ID, "on_ground").is_none());
     }
 
     // ── BL-024: base-mass edits must keep point masses in the live mechanism ──
