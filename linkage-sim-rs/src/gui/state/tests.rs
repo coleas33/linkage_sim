@@ -2133,6 +2133,136 @@
         assert_round_trip_preserves_mass("file save/load", &src, &dst);
     }
 
+    // ── BL-025: point-mass edits are single, undoable steps ──────────────
+    //
+    // Undo snapshots bake point masses into the composite mass/CG/Izz and drop
+    // the editable list (see BL-023 notes), so "restores prior state" is
+    // asserted on the built composite properties, which is what the physics sees.
+
+    /// Four-bar with one 2 kg point mass on the first (sorted) non-ground body.
+    /// Returns the state, that body id, and a second non-ground body id.
+    fn four_bar_with_one_point_mass() -> (AppState, String, String) {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let mut ids: Vec<String> = state
+            .blueprint
+            .as_ref()
+            .unwrap()
+            .bodies
+            .keys()
+            .filter(|k| k.as_str() != GROUND_ID)
+            .cloned()
+            .collect();
+        ids.sort();
+        state.add_point_mass(&ids[0], 2.0, [0.03, 0.02]);
+        (state, ids[0].clone(), ids[1].clone())
+    }
+
+    /// Run `edit` and assert it recorded exactly one undo entry, that it
+    /// really changed the built composite mass properties (guards against a
+    /// vacuous test), and that a single `undo()` restores the prior composite
+    /// mass properties and the prior undo depth.
+    fn assert_edit_is_one_undoable_step(
+        what: &str,
+        state: &mut AppState,
+        edit: impl FnOnce(&mut AppState),
+    ) {
+        let depth_before = state.undo_history.undo_count();
+        let props_before = built_mass_props(state);
+
+        edit(state);
+
+        assert_eq!(
+            state.undo_history.undo_count(),
+            depth_before + 1,
+            "{what}: expected exactly one new undo entry"
+        );
+        let props_after = built_mass_props(state);
+        let changed = props_before.iter().any(|(id, b)| {
+            let a = &props_after[id];
+            (b.mass - a.mass).abs() > 1e-9
+                || (b.cg[0] - a.cg[0]).abs() > 1e-9
+                || (b.cg[1] - a.cg[1]).abs() > 1e-9
+                || (b.izz - a.izz).abs() > 1e-9
+        });
+        assert!(changed, "{what}: edit did not change the built mass properties");
+
+        state.undo();
+        assert_eq!(
+            state.undo_history.undo_count(),
+            depth_before,
+            "{what}: one undo should consume exactly the one entry"
+        );
+        assert_mass_props_match(&format!("{what}: after undo"), &props_before, &built_mass_props(state));
+    }
+
+    #[test]
+    fn point_mass_numeric_mass_edit_is_one_undo_step_bl025() {
+        let (mut state, body, _) = four_bar_with_one_point_mass();
+        assert_edit_is_one_undoable_step("mass edit", &mut state, |s| {
+            s.update_point_mass(&body, 0, 5.0, [0.03, 0.02]);
+        });
+    }
+
+    #[test]
+    fn point_mass_numeric_position_edit_is_one_undo_step_bl025() {
+        let (mut state, body, _) = four_bar_with_one_point_mass();
+        assert_edit_is_one_undoable_step("position edit", &mut state, |s| {
+            s.update_point_mass(&body, 0, 2.0, [-0.04, 0.05]);
+        });
+    }
+
+    #[test]
+    fn point_mass_reposition_is_one_undo_step_bl025() {
+        let (mut state, body, _) = four_bar_with_one_point_mass();
+        // Mirrors the canvas Reposition click: world point -> body-local -> update.
+        assert_edit_is_one_undoable_step("reposition", &mut state, |s| {
+            let [lx, ly] = s.world_to_body_local(&body, 0.07, 0.06);
+            s.update_point_mass(&body, 0, 2.0, [lx, ly]);
+        });
+    }
+
+    #[test]
+    fn point_mass_move_to_link_is_one_undo_step_bl025() {
+        let (mut state, from_body, to_body) = four_bar_with_one_point_mass();
+        assert_edit_is_one_undoable_step("move to link", &mut state, |s| {
+            s.move_point_mass_to_body(&from_body, 0, &to_body, [0.04, -0.01]);
+
+            // The mass left the old body and landed, unchanged, on the new one.
+            let bp = s.blueprint.as_ref().unwrap();
+            assert!(bp.bodies[&from_body].point_masses.is_empty(), "old body should lose the point mass");
+            let moved = &bp.bodies[&to_body].point_masses;
+            assert_eq!(moved.len(), 1, "new body should gain exactly one point mass");
+            assert!((moved[0].mass - 2.0).abs() < 1e-12);
+            assert!((moved[0].local_pos[0] - 0.04).abs() < 1e-12);
+            assert!((moved[0].local_pos[1] + 0.01).abs() < 1e-12);
+        });
+    }
+
+    #[test]
+    fn point_mass_invalid_targets_create_no_undo_entry_bl025() {
+        let (mut state, body, other) = four_bar_with_one_point_mass();
+        let depth = state.undo_history.undo_count();
+        let props = built_mass_props(&state);
+
+        state.remove_point_mass(&body, 1); // index past the end
+        state.remove_point_mass(&body, usize::MAX);
+        state.remove_point_mass(&other, 0); // body has no point masses
+        state.remove_point_mass("no_such_body", 0);
+        state.update_point_mass(&body, 1, 3.0, [0.0, 0.0]);
+        state.update_point_mass("no_such_body", 0, 3.0, [0.0, 0.0]);
+        state.move_point_mass_to_body(&body, 1, &other, [0.0, 0.0]); // bad index
+        state.move_point_mass_to_body(&body, 0, "no_such_body", [0.0, 0.0]); // bad destination
+
+        assert_eq!(state.undo_history.undo_count(), depth, "invalid targets must not push undo entries");
+        assert_mass_props_match("invalid targets leave the model untouched", &props, &built_mass_props(&state));
+        assert_eq!(
+            state.blueprint.as_ref().unwrap().bodies[&body].point_masses.len(),
+            1,
+            "a bad destination must not drop the source point mass"
+        );
+    }
+
     #[test]
     fn new_empty_mechanism_resets_state() {
         let mut state = AppState::default();

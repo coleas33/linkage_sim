@@ -415,7 +415,6 @@ pub fn handle_interaction(
                 if let Some(bp) = &state.blueprint {
                     if let Some(body) = bp.bodies.get(&old_body_id) {
                         if let Some(pm) = body.point_masses.get(pm_index) {
-                            let mass_val = pm.mass;
                             let [wx, wy] = {
                                 let lx = pm.local_pos[0];
                                 let ly = pm.local_pos[1];
@@ -433,10 +432,9 @@ pub fn handle_interaction(
                                     } else { [lx, ly] }
                                 } else { [lx, ly] }
                             };
-                            // Remove from old body, add to new body
-                            state.remove_point_mass(&old_body_id, pm_index);
+                            // Move from old body to new body in one undoable step
                             let [nlx, nly] = state.world_to_body_local(&new_body_id, wx, wy);
-                            state.add_point_mass(&new_body_id, mass_val, [nlx, nly]);
+                            state.move_point_mass_to_body(&old_body_id, pm_index, &new_body_id, [nlx, nly]);
                         }
                     }
                 }

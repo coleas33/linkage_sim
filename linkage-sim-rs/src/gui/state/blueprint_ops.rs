@@ -966,24 +966,64 @@ impl AppState {
         self.rebuild();
     }
 
+    /// True if the blueprint has `body_id` with a point mass at `index`.
+    fn point_mass_exists(&self, body_id: &str, index: usize) -> bool {
+        self.blueprint
+            .as_ref()
+            .and_then(|bp| bp.bodies.get(body_id))
+            .is_some_and(|b| index < b.point_masses.len())
+    }
+
     /// Remove a point mass from a body in the blueprint by index.
     ///
-    /// Pushes undo, removes the point mass, and rebuilds.
+    /// Pushes undo, removes the point mass, and rebuilds.  No-op (no undo
+    /// entry) if the body or `index` does not exist.
     pub fn remove_point_mass(&mut self, body_id: &str, index: usize) {
+        if !self.point_mass_exists(body_id, index) {
+            return;
+        }
         self.push_undo();
         let Some(bp) = &mut self.blueprint else { return };
         let Some(body) = bp.bodies.get_mut(body_id) else { return };
-        if index < body.point_masses.len() {
-            body.point_masses.remove(index);
-            self.rebuild();
+        body.point_masses.remove(index);
+        self.rebuild();
+    }
+
+    /// Move a point mass to another body, keeping its mass and placing it at
+    /// `new_local_pos` in the new body's frame.
+    ///
+    /// One undo entry and one rebuild (`remove_point_mass` + `add_point_mass`
+    /// would record two of each).  No-op (no undo entry, mass kept in place)
+    /// if the source point mass or the destination body does not exist.
+    pub fn move_point_mass_to_body(
+        &mut self,
+        old_body_id: &str,
+        index: usize,
+        new_body_id: &str,
+        new_local_pos: [f64; 2],
+    ) {
+        if !self.point_mass_exists(old_body_id, index) {
+            return;
         }
+        if !self.blueprint.as_ref().is_some_and(|bp| bp.bodies.contains_key(new_body_id)) {
+            return;
+        }
+        self.push_undo();
+        let Some(bp) = &mut self.blueprint else { return };
+        let Some(old_body) = bp.bodies.get_mut(old_body_id) else { return };
+        let mut point_mass = old_body.point_masses.remove(index);
+        point_mass.local_pos = new_local_pos;
+        let Some(new_body) = bp.bodies.get_mut(new_body_id) else { return };
+        new_body.point_masses.push(point_mass);
+        self.rebuild();
     }
 
     /// Update a point mass on a body in the blueprint by index.
     ///
-    /// Continuous parameter tweak -- no undo snapshot pushed (caller should
-    /// push undo on drag-stop if desired).  Updates mass and/or local_pos,
-    /// then rebuilds.
+    /// One committed edit = one undo entry, so callers must invoke this once
+    /// per committed edit (drag-stop / typed value / Reposition click), not on
+    /// every frame of a drag.  Updates mass and/or local_pos, then rebuilds.
+    /// No-op (no undo entry) if the body or `index` does not exist.
     pub fn update_point_mass(
         &mut self,
         body_id: &str,
@@ -991,12 +1031,15 @@ impl AppState {
         mass: f64,
         local_pos: [f64; 2],
     ) {
+        if !self.point_mass_exists(body_id, index) {
+            return;
+        }
+        self.push_undo();
         let Some(bp) = &mut self.blueprint else { return };
         let Some(body) = bp.bodies.get_mut(body_id) else { return };
-        if let Some(pm) = body.point_masses.get_mut(index) {
-            pm.mass = mass;
-            pm.local_pos = local_pos;
-        }
+        let Some(pm) = body.point_masses.get_mut(index) else { return };
+        pm.mass = mass;
+        pm.local_pos = local_pos;
         self.rebuild();
     }
 

@@ -5,6 +5,32 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-28 — BL-025: point-mass edits, Reposition and Move to Link are single undo steps
+- Root cause: `update_point_mass` never called `push_undo` (its doc said the
+  caller should; neither caller did), so numeric mass/X/Y edits and the canvas
+  Reposition click could not be undone. `remove_point_mass` pushed an undo
+  entry before validating the body/index, so an invalid target left a phantom
+  entry. Move to Link (canvas handler) was `remove_point_mass` +
+  `add_point_mass` = two undo entries and two rebuilds.
+- Fix (`gui/state/blueprint_ops.rs`): `update_point_mass` and
+  `remove_point_mass` validate (private `point_mass_exists`) and only then push
+  undo; new `move_point_mass_to_body` does validate, one `push_undo`, move,
+  one `rebuild`, and keeps the mass in place if the destination body is
+  missing. `gui/canvas/interaction.rs` Move to Link calls it. The property
+  panel already emits `UpdatePointMass` only on drag-stop / typed commit
+  (never per drag frame), so one committed edit = one undo entry.
+- Tests (`gui/state/tests.rs`): `point_mass_{numeric_mass_edit,numeric_position_edit,
+  reposition,move_to_link}_is_one_undo_step_bl025` assert exactly one new undo
+  entry, a real change to the built composite mass/CG/Izz, and that one
+  `undo()` restores the prior composite properties and undo depth;
+  `point_mass_invalid_targets_create_no_undo_entry_bl025` covers bad
+  body/index for remove, update and move (no entry, model untouched).
+- Not fixed here: `add_point_mass` still pushes undo before checking the body
+  exists (no UI path hits it); undo snapshots still bake point masses in and
+  drop the editable list (see BL-023 note), so after an undo the composite is
+  correct but the point-mass list is empty.
+
+
 ## 2026-09-28 — BL-023: save / autosave / share URL no longer double-count point masses
 - Root cause: `AppState::serialize_to_json_string` built the body JSON from
   the live mechanism via `mechanism_to_json` (composite, point-mass-inclusive

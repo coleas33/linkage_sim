@@ -83,6 +83,13 @@ invariants_to_protect:
     BEFORE the mutation and rebuild() AFTER. Skipping push_undo loses undo
     history; skipping rebuild leaves mechanism out of sync with blueprint.
     Use AppState::mutate_and_rebuild(|s| ...) when possible.
+  - point_mass_ops_one_undo_step_per_commit — remove_point_mass /
+    update_point_mass / move_point_mass_to_body each push exactly one undo
+    entry, and only after validating the body + index (invalid target = no
+    entry, no rebuild). Call update_point_mass once per committed edit
+    (drag-stop / typed value / Reposition click), never per drag frame. Move
+    to Link must use move_point_mass_to_body, not remove + add (two entries)
+    (BL-025).
   - blueprint_mass_is_base_live_mass_is_composite — state.blueprint bodies
     hold BASE mass/CG/Izz plus a point_masses list; the built Mechanism
     holds the composite (base + point masses). Anything that writes a
