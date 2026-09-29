@@ -1,5 +1,5 @@
     use super::*;
-    use super::blueprint_ops::joint_body_ids;
+    use super::blueprint_ops::{joint_body_ids, seed_q_by_body_id};
     use crate::io::JointJson;
 
     #[test]
@@ -2723,3 +2723,41 @@
         assert!(!stepped);
         assert_eq!(state.trajectory_playback_t, t_before);
     }
+
+    // ── BL-022: warm start across a topology-changing rebuild ────────────
+
+    /// Seeding the expanded (cylinder + rod) mechanism from the direct one
+    /// keeps every surviving body's pose by id and starts new bodies at the
+    /// origin; it falls back to zeros without a usable previous state.
+    #[test]
+    fn seed_q_by_body_id_keeps_surviving_poses_bl022() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::ParallelogramActuator);
+        let prev = state.mechanism.as_ref().unwrap();
+        let prev_q = state.last_good_q.clone();
+        assert_eq!(prev_q.len(), prev.state().n_coords());
+
+        let mut expanded =
+            crate::io::load_mechanism_unbuilt_from_json(state.blueprint.as_ref().unwrap()).unwrap();
+        expanded.build().unwrap();
+        assert!(expanded.state().n_coords() > prev_q.len(), "fixture must add compound bodies");
+
+        let seeded = seed_q_by_body_id(Some(prev), &prev_q, &expanded);
+        assert_eq!(seeded.len(), expanded.state().n_coords());
+        for id in prev.state().body_ids() {
+            assert_eq!(
+                expanded.state().get_pose(&id, &seeded),
+                prev.state().get_pose(&id, &prev_q),
+                "surviving body {id} must keep its pose"
+            );
+        }
+        for id in ["force_0_cyl", "force_0_rod"] {
+            assert_eq!(expanded.state().get_pose(id, &seeded), (0.0, 0.0, 0.0));
+        }
+
+        let zeros = expanded.state().make_q();
+        assert_eq!(seed_q_by_body_id(None, &prev_q, &expanded), zeros);
+        let wrong_len = DVector::zeros(prev_q.len() + 1);
+        assert_eq!(seed_q_by_body_id(Some(prev), &wrong_len, &expanded), zeros);
+    }
+

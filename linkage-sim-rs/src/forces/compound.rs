@@ -8,7 +8,8 @@
 //! shock absorber or gas spring).  The cylinder is pinned at end A of the
 //! force and the rod is pinned at end B; a prismatic joint allows the rod to
 //! slide inside the cylinder.  The force element is then remapped to act
-//! between the slide points on those compound bodies.
+//! between the cylinder base and the rod tip — i.e. pin to pin — so it sees
+//! the same length, rate and line of action as the original two-body force.
 
 use std::collections::HashMap;
 
@@ -147,15 +148,22 @@ pub fn create_compound_rod(force_index: usize, half_len: f64) -> Body {
 
 /// Expand a compound force element into bodies, joints, and a remapped force.
 ///
-/// Given the world positions of the two force endpoints, this function:
-/// 1. Computes the initial length and splits it equally into `half_len`.
+/// Given the coordinates of the two force endpoints, this function:
+/// 1. Computes a nominal length and splits it equally into `half_len`.
 /// 2. Creates and registers a cylinder body and a rod body.
 /// 3. Adds three joints:
 ///    - Revolute at end A (cylinder `"base"` ↔ body A).
 ///    - Revolute at end B (rod `"tip"` ↔ body B).
 ///    - Prismatic between cylinder `"slide"` and rod `"slide"` along x.
-/// 4. Returns a remapped [`ForceElement`] that acts between the two `"slide"`
-///    points on the compound bodies instead of the original bodies.
+/// 4. Returns a remapped [`ForceElement`] that acts between the cylinder
+///    `"base"` and the rod `"tip"`, i.e. between the two pins.
+///
+/// `point_a_pos` / `point_b_pos` are body-local coordinates on two different
+/// bodies (the load path has no poses), so `half_len` is NOT the physical
+/// pin distance — it only proportions the massless cylinder and rod.  No
+/// physics depends on it: base, slides and tip are collinear along the
+/// cylinder axis, so the base-to-tip distance is always the pin-to-pin
+/// distance whatever the prismatic displacement or `half_len`.
 ///
 /// The caller is responsible for ensuring that the named attachment points
 /// referenced by `mount_a` / `mount_b` exist on the target bodies before
@@ -252,20 +260,20 @@ pub fn expand_compound_force(
         0.0,
     )?;
 
-    // Return the force remapped to act between the compound slide points.
-    Ok(remap_force_to_compound(force, force_index))
+    // Return the force remapped to act pin to pin (cylinder base → rod tip).
+    Ok(remap_force_to_compound(force, force_index, half_len))
 }
 
 // ── Remap helper ──────────────────────────────────────────────────────────────
 
-/// Remap a force element so that it acts between the `"slide"` attachment
-/// points of the compound cylinder and rod bodies.
-///
-/// The local coordinates for both slide points are `[0.0, 0.0]` because the
-/// slide points sit at the local origins of their respective compound bodies.
+/// Remap a force element so that it acts between the cylinder `"base"`
+/// (local `[0, 0]`, pinned to body A) and the rod `"tip"` (local
+/// `[half_len, 0]`, pinned to body B) — see [`create_compound_cylinder`] and
+/// [`create_compound_rod`].  Acting pin to pin keeps the element's length,
+/// rate and line of action identical to the original two-body force.
 /// Any named point references are cleared — the compound bodies use plain
 /// attachment points with no mount-point indirection.
-fn remap_force_to_compound(force: &ForceElement, idx: usize) -> ForceElement {
+fn remap_force_to_compound(force: &ForceElement, idx: usize, half_len: f64) -> ForceElement {
     let cyl_id = format!("force_{}_cyl", idx);
     let rod_id = format!("force_{}_rod", idx);
 
@@ -276,7 +284,7 @@ fn remap_force_to_compound(force: &ForceElement, idx: usize) -> ForceElement {
             r.point_a = [0.0, 0.0];
             r.point_a_name = None;
             r.body_b = rod_id;
-            r.point_b = [0.0, 0.0];
+            r.point_b = [half_len, 0.0];
             r.point_b_name = None;
             ForceElement::LinearSpring(r)
         }
@@ -286,7 +294,7 @@ fn remap_force_to_compound(force: &ForceElement, idx: usize) -> ForceElement {
             r.point_a = [0.0, 0.0];
             r.point_a_name = None;
             r.body_b = rod_id;
-            r.point_b = [0.0, 0.0];
+            r.point_b = [half_len, 0.0];
             r.point_b_name = None;
             ForceElement::LinearDamper(r)
         }
@@ -296,7 +304,7 @@ fn remap_force_to_compound(force: &ForceElement, idx: usize) -> ForceElement {
             r.point_a = [0.0, 0.0];
             r.point_a_name = None;
             r.body_b = rod_id;
-            r.point_b = [0.0, 0.0];
+            r.point_b = [half_len, 0.0];
             r.point_b_name = None;
             ForceElement::GasSpring(r)
         }
@@ -306,7 +314,7 @@ fn remap_force_to_compound(force: &ForceElement, idx: usize) -> ForceElement {
             r.point_a = [0.0, 0.0];
             r.point_a_name = None;
             r.body_b = rod_id;
-            r.point_b = [0.0, 0.0];
+            r.point_b = [half_len, 0.0];
             r.point_b_name = None;
             ForceElement::LinearActuator(r)
         }
@@ -319,7 +327,9 @@ fn remap_force_to_compound(force: &ForceElement, idx: usize) -> ForceElement {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forces::elements::{LinearSpringElement, LinearDamperElement};
+    use crate::forces::elements::{
+        GasSpringElement, LinearActuatorElement, LinearDamperElement, LinearSpringElement,
+    };
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -512,13 +522,14 @@ mod tests {
             free_length: 0.3,
         });
 
-        let remapped = remap_force_to_compound(&original, 2);
+        let remapped = remap_force_to_compound(&original, 2, 0.125);
         match remapped {
             ForceElement::LinearSpring(s) => {
                 assert_eq!(s.body_a, "force_2_cyl");
                 assert_eq!(s.body_b, "force_2_rod");
+                // Pin to pin: cylinder "base" and rod "tip".
                 assert_eq!(s.point_a, [0.0, 0.0]);
-                assert_eq!(s.point_b, [0.0, 0.0]);
+                assert_eq!(s.point_b, [0.125, 0.0]);
                 assert!(s.point_a_name.is_none());
                 assert!(s.point_b_name.is_none());
                 // Scalar parameters should be preserved
@@ -543,16 +554,77 @@ mod tests {
             damping: 200.0,
         });
 
-        let remapped = remap_force_to_compound(&original, 5);
+        let remapped = remap_force_to_compound(&original, 5, 0.2);
         match remapped {
             ForceElement::LinearDamper(d) => {
                 assert_eq!(d.body_a, "force_5_cyl");
                 assert_eq!(d.body_b, "force_5_rod");
+                assert_eq!(d.point_a, [0.0, 0.0]);
+                assert_eq!(d.point_b, [0.2, 0.0]);
                 assert!(d.point_a_name.is_none());
                 assert!(d.point_b_name.is_none());
                 assert!((d.damping - 200.0).abs() < 1e-12);
             }
             _ => panic!("expected LinearDamper after remap"),
+        }
+    }
+
+    // ── BL-022: every variant is remapped pin to pin (base → tip) ────────────
+
+    /// The remapped endpoints must be exactly the cylinder `"base"` and rod
+    /// `"tip"` attachment points (the two pins), for every expandable force
+    /// variant — acting between any other pair (e.g. base → rod slide) makes
+    /// the element see `|L_pin - half_len|` instead of the pin distance.
+    #[test]
+    fn remap_every_variant_acts_between_base_and_tip() {
+        let (a, b) = ("frame".to_string(), "arm".to_string());
+        let (pa, pb) = ([0.1, 0.2], [0.3, 0.4]);
+        let (na, nb) = (Some("m_a".to_string()), Some("m_b".to_string()));
+        let variants = [
+            ForceElement::LinearSpring(LinearSpringElement {
+                body_a: a.clone(), point_a: pa, point_a_name: na.clone(),
+                body_b: b.clone(), point_b: pb, point_b_name: nb.clone(),
+                stiffness: 1.0, free_length: 0.1,
+            }),
+            ForceElement::LinearDamper(LinearDamperElement {
+                body_a: a.clone(), point_a: pa, point_a_name: na.clone(),
+                body_b: b.clone(), point_b: pb, point_b_name: nb.clone(),
+                damping: 1.0,
+            }),
+            ForceElement::GasSpring(GasSpringElement {
+                body_a: a.clone(), point_a: pa, point_a_name: na.clone(),
+                body_b: b.clone(), point_b: pb, point_b_name: nb.clone(),
+                initial_force: 1.0, extended_length: 0.3, stroke: 0.1,
+                damping: 0.0, polytropic_exp: 1.0,
+            }),
+            ForceElement::LinearActuator(LinearActuatorElement {
+                body_a: a.clone(), point_a: pa, point_a_name: na.clone(),
+                body_b: b.clone(), point_b: pb, point_b_name: nb.clone(),
+                force: 1.0, speed_limit: 0.0, stroke_min: 0.0, stroke_max: 0.0,
+                end_stop_stiffness: 0.0, end_stop_damping: 0.0, end_stop_restitution: 0.0,
+            }),
+        ];
+
+        let half_len = 0.37;
+        let cyl = create_compound_cylinder(4, half_len);
+        let rod = create_compound_rod(4, half_len);
+        let base = cyl.attachment_points["base"];
+        let tip = rod.attachment_points["tip"];
+
+        for original in &variants {
+            let r = remap_force_to_compound(original, 4, half_len);
+            let (ba, pa, na, bb, pb, nb) = match &r {
+                ForceElement::LinearSpring(e) => (&e.body_a, e.point_a, &e.point_a_name, &e.body_b, e.point_b, &e.point_b_name),
+                ForceElement::LinearDamper(e) => (&e.body_a, e.point_a, &e.point_a_name, &e.body_b, e.point_b, &e.point_b_name),
+                ForceElement::GasSpring(e) => (&e.body_a, e.point_a, &e.point_a_name, &e.body_b, e.point_b, &e.point_b_name),
+                ForceElement::LinearActuator(e) => (&e.body_a, e.point_a, &e.point_a_name, &e.body_b, e.point_b, &e.point_b_name),
+                _ => panic!("remap changed the variant"),
+            };
+            assert_eq!(ba, &cyl.id);
+            assert_eq!(bb, &rod.id);
+            assert_eq!(pa, [base.x, base.y], "point_a must be the cylinder base pin");
+            assert_eq!(pb, [tip.x, tip.y], "point_b must be the rod tip pin");
+            assert!(na.is_none() && nb.is_none());
         }
     }
 }

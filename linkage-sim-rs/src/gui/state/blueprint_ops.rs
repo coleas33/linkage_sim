@@ -39,6 +39,36 @@ pub(crate) fn joint_body_ids(joint: &JointJson) -> (&str, &str) {
     }
 }
 
+/// Initial guess for a rebuilt mechanism whose coordinate layout differs from
+/// the previous one (bodies added or removed — e.g. the first rebuild after
+/// `load_sample` expands a mount-point actuator into cylinder + rod, BL-022).
+///
+/// Every body present in both mechanisms keeps its previous pose (matched by
+/// id, not by q index); bodies new to `mech` start at the origin. A cold start
+/// from all zeros can fail to converge at singular poses such as a
+/// parallelogram's change point. Falls back to all zeros when there is no
+/// previous mechanism or `prev_q` does not match its layout.
+pub(crate) fn seed_q_by_body_id(
+    prev: Option<&Mechanism>,
+    prev_q: &DVector<f64>,
+    mech: &Mechanism,
+) -> DVector<f64> {
+    let new_state = mech.state();
+    let mut q = new_state.make_q();
+    let Some(prev) = prev else { return q };
+    let prev_state = prev.state();
+    if prev_q.len() != prev_state.n_coords() {
+        return q;
+    }
+    for id in prev_state.body_ids() {
+        if new_state.get_index(&id).is_ok() {
+            let (x, y, theta) = prev_state.get_pose(&id, prev_q);
+            new_state.set_pose(&id, &mut q, x, y, theta);
+        }
+    }
+    q
+}
+
 /// Extract (body_i, point_i, body_j, point_j) from a JointJson.
 ///
 /// Returns `None` for `RevoluteDriver` which has no point fields.
@@ -294,11 +324,12 @@ impl AppState {
             0.0
         };
 
-        // Try solving with last_good_q if it has the right dimension
+        // Try solving with last_good_q if it has the right dimension;
+        // after a topology change, seed the surviving bodies by id.
         let try_q = if self.last_good_q.len() == mech.state().n_coords() {
             self.last_good_q.clone()
         } else {
-            mech.state().make_q()
+            seed_q_by_body_id(self.mechanism.as_ref(), &self.last_good_q, &mech)
         };
 
         if !self.solve_and_update(&mech, &try_q, t, 1e-10, 50, None) {

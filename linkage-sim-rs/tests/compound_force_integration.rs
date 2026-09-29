@@ -296,8 +296,12 @@ fn force_is_remapped_to_compound_bodies() {
                 s.body_b, "force_0_rod",
                 "force body_b should be remapped to rod"
             );
-            assert_eq!(s.point_a, [0.0, 0.0], "remapped point_a should be at origin");
-            assert_eq!(s.point_b, [0.0, 0.0], "remapped point_b should be at origin");
+            // BL-022: the force acts pin to pin — cylinder "base" to rod "tip".
+            let base = mech.bodies()["force_0_cyl"].attachment_points["base"];
+            let tip = mech.bodies()["force_0_rod"].attachment_points["tip"];
+            assert_eq!(s.point_a, [base.x, base.y], "remapped point_a should be the cylinder base");
+            assert_eq!(s.point_b, [tip.x, tip.y], "remapped point_b should be the rod tip");
+            assert!(tip.x > 0.0, "rod tip must not coincide with the rod slide");
             assert!(
                 s.point_a_name.is_none(),
                 "named point refs should be cleared"
