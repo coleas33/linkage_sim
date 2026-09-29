@@ -4,3 +4,4 @@
 //! (the port grows module by module; see `magcoupling-rs/README.md`).
 
 pub mod constants;
+pub mod meta;
