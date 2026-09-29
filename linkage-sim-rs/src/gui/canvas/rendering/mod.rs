@@ -10,7 +10,7 @@ use crate::forces::elements::*;
 use crate::gui::state::{AppState, SelectedEntity, ViewTransform, GridSettings};
 
 use super::colors::*;
-use super::hit_testing::{point_mass_screen_pos, AttachmentHit, BodySegment};
+use super::hit_testing::{AttachmentHit, BodySegment};
 
 
 // Submodules
@@ -362,38 +362,8 @@ pub fn render_mechanism(
         }
     }
 
-    // ── Draw point masses from blueprint ───────────────────────────
-    if let Some(bp) = &state.blueprint {
-        let point_mass_color = gc(WEIGHT_COLOR);
-        let selected_ring = Stroke::new(2.0, gc(BODY_SELECTED_COLOR));
-        for (body_id, bp_body) in &bp.bodies {
-            if body_id == GROUND_ID {
-                continue;
-            }
-            for pm in &bp_body.point_masses {
-                let Some(screen_pos) = point_mass_screen_pos(state, body_id, pm.local_pos) else {
-                    continue;
-                };
-                // A weight being dragged fades where it is; the drag preview
-                // (canvas interaction) draws it at the drop point.
-                let dragged = state.weight_drag.as_ref()
-                    .is_some_and(|d| d.body_id == *body_id && d.weight_id == pm.id);
-                let fill = if dragged { point_mass_color.linear_multiply(0.35) } else { point_mass_color };
-                painter.circle_filled(screen_pos, WEIGHT_RADIUS, fill);
-                let entity = SelectedEntity::Weight { body_id: body_id.clone(), weight_id: pm.id.clone() };
-                if selected.as_ref() == Some(&entity) || state.multi_selected.contains(&entity) {
-                    painter.circle_stroke(screen_pos, WEIGHT_RADIUS + 3.0, selected_ring);
-                }
-                painter.text(
-                    screen_pos + Vec2::new(8.0, -8.0),
-                    egui::Align2::LEFT_BOTTOM,
-                    format!("{:.2} kg", pm.mass),
-                    FontId::proportional(9.0),
-                    point_mass_color,
-                );
-            }
-        }
-    }
+    // ── Weights (point masses): markers, gravity arrows, readout ────
+    weights::draw_weights(painter, state);
 
     // ── Draw ground markers and collect ground hit targets ──────────
     if let Some(ground) = bodies.get(GROUND_ID) {
@@ -1199,9 +1169,10 @@ fn render_hover_tooltips(
 
     if let Some(hover_pos) = ui.input(|i| i.pointer.hover_pos()) {
         if canvas_rect.contains(hover_pos) && state.active_tool == EditorTool::Select {
-            let mut shown_tooltip = false;
+            // Weights first, as in click selection (they sit on pins).
+            let mut shown_tooltip = weights::show_weight_tooltip(ui, state, hover_pos);
 
-            // Check joints first (they're drawn on top)
+            // Then joints (they're drawn on top of links)
             if !shown_tooltip {
                 for (jpos, jid) in joint_hit_targets {
                     if jpos.distance(hover_pos) < HIT_RADIUS {

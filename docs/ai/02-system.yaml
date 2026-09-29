@@ -183,6 +183,40 @@ invariants_to_protect:
     skips click selection that frame (the snap can move the weight beyond
     the pick radius of the pointer). The link editor's Add weight button
     adds last_point_mass_kg at the link's base cg_local and selects it.
+  - canvas_readouts_read_the_current_sweep_sample — the canvas actuator
+    label and the weight arrows/readouts all read the sweep at
+    AppState::current_sweep_index (index_at_driver of the driver angle, or
+    of the stroke in a stroke sweep, i.e. the sample the plot cursor marks).
+    The actuator label (force_render.rs actuator_label_text calling
+    format_actuator_label) shows the magnitude ("1.2 kN", "875 N", "0.35 N"),
+    push for force >= SHOWN_AS_ZERO_N (0.005 N), pull for <= -0.005 N
+    (positive = extension), then ", motoring" or ", braking" from
+    AppState::actuator_label_power, which returns
+    (WeightBreakdown::total_power[k], BRAKE_TOL_REL * max|total_power|),
+    the rule of WeightBreakdown::braking and the braking bands. No word
+    without an actuator breakdown; "(stored)" when the label falls back to
+    the element's stored force (no finite sweep sample). Both words derive
+    from REQUIRED quantities in both modes since BL-026. The force is
+    sweep.actuator_forces (the plotted required force) and the power is
+    the required power, so the words match the Actuator Force and Actuator
+    Power plots whatever the stored force (tested at every sample with
+    stored force 0, the sample's 50 N, and one above every required force).
+    Weights (canvas/rendering/weights.rs draw_weights) draw a gold marker
+    plus an arrow in the gravity direction (gravity_screen_dir maps g
+    through the view, so it points straight down on screen under any
+    mounting angle; no arrow when gravity is off), 12-40 px scaled by mass
+    relative to the heaviest weight, coloured by
+    classification_color(WeightBreakdown::classification(source, k)).
+    weight_at_pose only uses a breakdown source with the weight's current
+    id, body, local_pos and mass (rebuilds keep the old sweep until the
+    debounced recompute); otherwise the arrow is WEIGHT_COLOR and the share
+    reads "-". No permanent weight labels. Hover (show_weight_tooltip, same
+    gate as the hover ring) or selection (card next to the marker) shows
+    the title, the mass (format_mass_kg) and the signed force share with
+    its classification word (a Torque share in N*m without an actuator),
+    "-" near stroke reversal (weight_readout_lines). Every straight canvas arrowhead goes through
+    primitives::draw_arrowhead (draw_arrow adds the shaft and clamps the
+    head to the arrow length).
   - delete_shortcut_ignores_focused_widgets — gui/mod.rs
     handle_delete_shortcut returns early while ctx.wants_keyboard_input();
     before this, Backspace in any text/number field deleted the selected

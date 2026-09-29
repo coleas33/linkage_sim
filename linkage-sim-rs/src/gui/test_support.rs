@@ -5,6 +5,7 @@ use eframe::egui;
 
 use crate::core::state::GROUND_ID;
 use crate::forces::elements::ForceElement;
+use crate::gui::samples::SampleMechanism;
 use crate::gui::state::AppState;
 
 /// Non-ground blueprint body (link) ids, sorted: a deterministic fixture
@@ -113,4 +114,46 @@ pub(crate) fn text_rect(output: &egui::FullOutput, needle: &str) -> Option<egui:
         }
     });
     found
+}
+
+/// The stroke colour of every line segment egui drew in a frame.
+pub(crate) fn drawn_line_colors(output: &egui::FullOutput) -> Vec<egui::Color32> {
+    let mut colors = Vec::new();
+    visit_shapes(output, |shape| {
+        if let egui::Shape::LineSegment { stroke, .. } = shape {
+            colors.push(stroke.color);
+        }
+    });
+    colors
+}
+
+/// The robot lift of the payload spec's hands-on checklist: Parallelogram +
+/// Actuator with the sample's stored force (50 N; since BL-026 the sweep
+/// reports the required force whatever it is), weight W1 (50 kg) at the
+/// rocker tip and W2 (20 kg) on the coupler, swept 0..=360 deg.
+pub(crate) fn swept_lift() -> AppState {
+    let mut state = AppState::default();
+    state.load_sample(SampleMechanism::ParallelogramActuator);
+    assert_eq!(state.add_point_mass("rocker", 50.0, [0.0, 0.0]).as_deref(), Some("W1"));
+    assert_eq!(state.add_point_mass("coupler", 20.0, [2.0, 0.0]).as_deref(), Some("W2"));
+    state.compute_sweep();
+    state
+}
+
+/// Index of the sweep sample at `deg` (the driver angle, in degrees).
+pub(crate) fn sample_at(state: &AppState, deg: f64) -> usize {
+    let sweep = state.sweep_data.as_ref().expect("sweep computed");
+    sweep
+        .angles_deg
+        .iter()
+        .position(|&a| (a - deg).abs() < 1e-9)
+        .unwrap_or_else(|| panic!("no sample at {deg} deg"))
+}
+
+/// Solve the mechanism at driver angle `deg`, so the canvas shows that pose
+/// and the readouts read the sweep sample there.
+pub(crate) fn pose_at(state: &mut AppState, deg: f64) {
+    state.solve_at_angle(deg.to_radians());
+    assert!(state.solver_status.converged, "the mechanism assembles at {deg} deg");
+    assert_eq!(state.current_sweep_index(), Some(sample_at(state, deg)));
 }

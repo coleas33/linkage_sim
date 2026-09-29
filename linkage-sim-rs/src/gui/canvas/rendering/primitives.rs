@@ -145,28 +145,10 @@ pub(super) fn draw_external_force_arrow(
     let tail = Pos2::new(origin.x - dx * px_len, origin.y - dy * px_len);
     let tip = origin;
 
-    // Shaft.
-    painter.line_segment(
-        [tail, tip],
-        Stroke::new(FORCE_ARROW_WIDTH, EXT_FORCE_COLOR),
-    );
-
-    // Arrowhead.
-    let head_len: f32 = 8.0;
-    let head_angle: f32 = 0.44;
-    let back_dx = -dx;
-    let back_dy = -dy;
-    for sign in [-1.0_f32, 1.0] {
-        let cos_a = head_angle.cos();
-        let sin_a = head_angle.sin() * sign;
-        let hx = back_dx * cos_a - back_dy * sin_a;
-        let hy = back_dx * sin_a + back_dy * cos_a;
-        let head_end = Pos2::new(tip.x + hx * head_len, tip.y + hy * head_len);
-        painter.line_segment(
-            [tip, head_end],
-            Stroke::new(FORCE_ARROW_WIDTH, EXT_FORCE_COLOR),
-        );
-    }
+    // Shaft and arrowhead (a full-size head even on a short arrow).
+    let stroke = Stroke::new(FORCE_ARROW_WIDTH, EXT_FORCE_COLOR);
+    painter.line_segment([tail, tip], stroke);
+    draw_arrowhead(painter, tip, Vec2::new(dx, dy), ARROW_HEAD_LEN_PX, stroke);
 
     // Magnitude label.
     painter.text(
@@ -369,6 +351,37 @@ pub(super) fn draw_rotary_badge(
     );
 }
 
+/// Default length (px) and half-angle (rad, about 25 degrees) of an
+/// arrowhead: force arrows, the actuator line, weight arrows.
+pub(super) const ARROW_HEAD_LEN_PX: f32 = 8.0;
+const ARROW_HEAD_HALF_ANGLE: f32 = 0.44;
+
+/// A two-line arrowhead at `tip` pointing along the unit screen vector
+/// `dir`: two `head_len` px lines at +/-`ARROW_HEAD_HALF_ANGLE` from the
+/// shaft, drawn back from the tip. The one arrowhead of every straight
+/// canvas arrow; the caller draws the shaft.
+pub(super) fn draw_arrowhead(painter: &egui::Painter, tip: Pos2, dir: Vec2, head_len: f32, stroke: Stroke) {
+    let back = -dir;
+    for angle in [-ARROW_HEAD_HALF_ANGLE, ARROW_HEAD_HALF_ANGLE] {
+        let (sin, cos) = angle.sin_cos();
+        let head = Vec2::new(back.x * cos - back.y * sin, back.x * sin + back.y * cos);
+        painter.line_segment([tip, tip + head * head_len], stroke);
+    }
+}
+
+/// A straight arrow from `tail` to `tip` with a two-line head at the tip,
+/// never longer than the arrow. Nothing for a zero-length or non-finite
+/// arrow.
+pub(super) fn draw_arrow(painter: &egui::Painter, tail: Pos2, tip: Pos2, stroke: Stroke) {
+    let delta = tip - tail;
+    let length = delta.length();
+    if !(length.is_finite() && length > 0.0) {
+        return;
+    }
+    painter.line_segment([tail, tip], stroke);
+    draw_arrowhead(painter, tip, delta / length, ARROW_HEAD_LEN_PX.min(length), stroke);
+}
+
 /// Draw a force arrow at a joint location.
 ///
 /// `fx`, `fy` are force components in Newtons (world frame). The arrow is
@@ -389,28 +402,10 @@ pub(super) fn draw_force_arrow(painter: &egui::Painter, origin: Pos2, fx: f32, f
 
     let tip = Pos2::new(origin.x + dx * px_len, origin.y + dy * px_len);
 
-    // Shaft line.
-    painter.line_segment(
-        [origin, tip],
-        Stroke::new(FORCE_ARROW_WIDTH, FORCE_ARROW_COLOR),
-    );
-
-    // Arrowhead: two lines at +/-25 degrees from the shaft, 8px long.
-    let head_len: f32 = 8.0;
-    let head_angle: f32 = 0.44; // ~25 degrees in radians
-    let back_dx = -dx;
-    let back_dy = -dy;
-    for sign in [-1.0_f32, 1.0] {
-        let cos_a = head_angle.cos();
-        let sin_a = head_angle.sin() * sign;
-        let hx = back_dx * cos_a - back_dy * sin_a;
-        let hy = back_dx * sin_a + back_dy * cos_a;
-        let head_end = Pos2::new(tip.x + hx * head_len, tip.y + hy * head_len);
-        painter.line_segment(
-            [tip, head_end],
-            Stroke::new(FORCE_ARROW_WIDTH, FORCE_ARROW_COLOR),
-        );
-    }
+    // Shaft and arrowhead (a full-size head even on a short arrow).
+    let stroke = Stroke::new(FORCE_ARROW_WIDTH, FORCE_ARROW_COLOR);
+    painter.line_segment([origin, tip], stroke);
+    draw_arrowhead(painter, tip, Vec2::new(dx, dy), ARROW_HEAD_LEN_PX, stroke);
 
     // Magnitude label near the tip.
     painter.text(
@@ -485,18 +480,7 @@ fn draw_axis_component(
 
     // Solid arrowhead in both modes — keeps the arrow legible regardless
     // of dash phase at the tip.
-    let head_len: f32 = 8.0;
-    let head_angle: f32 = 0.44;
-    let back_dx = -dx;
-    let back_dy = -dy;
-    for sign in [-1.0_f32, 1.0] {
-        let cos_a = head_angle.cos();
-        let sin_a = head_angle.sin() * sign;
-        let hx = back_dx * cos_a - back_dy * sin_a;
-        let hy = back_dx * sin_a + back_dy * cos_a;
-        let head_end = Pos2::new(tip.x + hx * head_len, tip.y + hy * head_len);
-        painter.line_segment([tip, head_end], stroke);
-    }
+    draw_arrowhead(painter, tip, Vec2::new(dx, dy), ARROW_HEAD_LEN_PX, stroke);
 
     // Signed component label near the tip — sign carries direction, so
     // the label is unambiguous even when the arrow is short.

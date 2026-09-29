@@ -16,6 +16,65 @@ use crate::gui::state::{ActuatorLabelForce, AppState, ViewTransform};
 
 use super::primitives::*;
 
+/// A magnitude (`value` >= 0) in `unit` for a canvas label: one decimal in
+/// k<unit> from 999.5 ("1.2 kN"), whole units from 9.995 ("875 N"), two
+/// decimals below ("0.35 N").
+pub(super) fn format_magnitude(value: f64, unit: &str) -> String {
+    if value >= 999.5 {
+        format!("{:.1} k{unit}", value / 1000.0)
+    } else if value >= 9.995 {
+        format!("{value:.0} {unit}")
+    } else {
+        format!("{value:.2} {unit}")
+    }
+}
+
+/// A force (N) whose size is below this shows as "0.00 N" and gets no
+/// push/pull word.
+const SHOWN_AS_ZERO_N: f64 = 0.005;
+
+/// Canvas actuator label: force magnitude, push or pull, motoring or
+/// braking, e.g. "1.2 kN push, braking".
+///
+/// Push/pull follows the element's sign convention (positive = extension,
+/// `forces/elements/evaluation.rs`); a force that shows as zero gets no
+/// direction. `power_w` is the required actuator power at this pose
+/// (`AppState::actuator_label_power`): motoring above `brake_tol_w`,
+/// braking below `-brake_tol_w` (the braking bands' rule), no word in
+/// between (the actuator is momentarily still) or when it is `None` or not
+/// finite. A non-finite force shows as "-".
+pub fn format_actuator_label(force_n: f64, power_w: Option<f64>, brake_tol_w: f64) -> String {
+    if !force_n.is_finite() {
+        return "-".to_string();
+    }
+    let mut label = format_magnitude(force_n.abs(), "N");
+    if force_n >= SHOWN_AS_ZERO_N {
+        label.push_str(" push");
+    } else if force_n <= -SHOWN_AS_ZERO_N {
+        label.push_str(" pull");
+    }
+    match power_w {
+        Some(p) if p > brake_tol_w => label.push_str(", motoring"),
+        Some(p) if p < -brake_tol_w => label.push_str(", braking"),
+        _ => {}
+    }
+    label
+}
+
+/// Text of the canvas label of actuator `la`: the statics force the
+/// Actuator Force plot draws at this pose (`AppState::actuator_label_force`)
+/// with motoring/braking from `AppState::actuator_label_power`; without a
+/// usable sweep sample, the element's stored force marked "(stored)".
+pub(super) fn actuator_label_text(state: &AppState, la: &LinearActuatorElement) -> String {
+    match state.actuator_label_force(la) {
+        ActuatorLabelForce::Computed(force) => match state.actuator_label_power() {
+            Some((power, tol)) => format_actuator_label(force, Some(power), tol),
+            None => format_actuator_label(force, None, 0.0),
+        },
+        ActuatorLabelForce::Stored(force) => format!("{} (stored)", format_actuator_label(force, None, 0.0)),
+    }
+}
+
 /// Compute the current world-space application point of a `ForceZoneElement`.
 ///
 /// - If `body_local_app_point` is `Some`, the override point is transformed
@@ -208,38 +267,14 @@ pub(super) fn draw_force_elements(
                 let length = delta.length();
                 if length > 2.0 {
                     let dir = delta / length;
-                    painter.line_segment(
-                        [start, end],
-                        Stroke::new(2.0, ACTUATOR_COLOR),
-                    );
+                    let stroke = Stroke::new(2.0, ACTUATOR_COLOR);
+                    painter.line_segment([start, end], stroke);
                     // Arrowhead at midpoint pointing A -> B.
-                    let mid = Pos2::new(
-                        start.x + delta.x * 0.5,
-                        start.y + delta.y * 0.5,
-                    );
-                    let head_len = 8.0_f32;
-                    let head_angle = 0.44_f32;
-                    let back_dx = -dir.x;
-                    let back_dy = -dir.y;
-                    for sign in [-1.0_f32, 1.0] {
-                        let cos_a = head_angle.cos();
-                        let sin_a = head_angle.sin() * sign;
-                        let hx = back_dx * cos_a - back_dy * sin_a;
-                        let hy = back_dx * sin_a + back_dy * cos_a;
-                        let head_end = Pos2::new(mid.x + hx * head_len, mid.y + hy * head_len);
-                        painter.line_segment(
-                            [mid, head_end],
-                            Stroke::new(2.0, ACTUATOR_COLOR),
-                        );
-                    }
-                    // Force magnitude label: the same statics sample the
-                    // Actuator Force plot draws at this pose, or the stored
-                    // force when no sweep value is available. Lookup lives in
-                    // `AppState::actuator_label_force` (unit-tested).
-                    let label = match state.actuator_label_force(la) {
-                        ActuatorLabelForce::Computed(f) => format!("{:.0} N (computed)", f),
-                        ActuatorLabelForce::Stored(f) => format!("{:.0} N", f),
-                    };
+                    let mid = start + delta * 0.5;
+                    draw_arrowhead(painter, mid, dir, ARROW_HEAD_LEN_PX, stroke);
+                    // Force label: magnitude, push/pull, motoring/braking
+                    // (`actuator_label_text`, unit-tested).
+                    let label = actuator_label_text(state, la);
                     painter.text(
                         Pos2::new(mid.x, mid.y - 10.0),
                         egui::Align2::CENTER_BOTTOM,
@@ -400,7 +435,6 @@ fn draw_force_zone(
         let zone_h = s_max_y - s_min_y;
         let arrow_len = (zone_w.min(zone_h) * 0.35).clamp(10.0, 40.0);
         let head_len = 6.0_f32;
-        let head_angle = 0.44_f32;
 
         for i in 0..3 {
             let frac = (i as f32 + 1.0) / 4.0;
@@ -411,20 +445,10 @@ fn draw_force_zone(
             let start = Pos2::new(cx - dir_x * half, cy - dir_y * half);
             let tip = Pos2::new(cx + dir_x * half, cy + dir_y * half);
 
-            // Arrow shaft.
-            painter.line_segment([start, tip], Stroke::new(1.5, FORCE_ZONE_COLOR));
-
-            // Arrowhead: two small lines forming a V at the tip.
-            let back_x = -dir_x;
-            let back_y = -dir_y;
-            for sign in [-1.0_f32, 1.0] {
-                let cos_a = head_angle.cos();
-                let sin_a = head_angle.sin() * sign;
-                let hx = back_x * cos_a - back_y * sin_a;
-                let hy = back_x * sin_a + back_y * cos_a;
-                let head_pt = Pos2::new(tip.x + hx * head_len, tip.y + hy * head_len);
-                painter.line_segment([tip, head_pt], Stroke::new(1.5, FORCE_ZONE_COLOR));
-            }
+            // Arrow shaft and a small arrowhead at the tip.
+            let stroke = Stroke::new(1.5, FORCE_ZONE_COLOR);
+            painter.line_segment([start, tip], stroke);
+            draw_arrowhead(painter, tip, Vec2::new(dir_x, dir_y), head_len, stroke);
         }
     }
 
@@ -598,4 +622,135 @@ pub(super) fn load_path_color_for_body(
 
     let t = (body_max / global_max) as f32;
     Some(heat_color(t))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analysis::gravity_breakdown::{max_abs_finite, BRAKE_TOL_REL};
+    use crate::gui::test_support::{set_actuator_stored_force, swept_lift};
+
+    /// Every force sign (push, pull, shown as zero) against every power
+    /// case (motoring, braking, inside the tolerance, unknown).
+    #[test]
+    fn format_actuator_label_words_for_every_sign_combination() {
+        let tol = 1.0;
+        let cases: [(f64, Option<f64>, &str); 16] = [
+            (1234.0, Some(500.0), "1.2 kN push, motoring"),
+            (1234.0, Some(-500.0), "1.2 kN push, braking"),
+            (-1234.0, Some(500.0), "1.2 kN pull, motoring"),
+            (-1234.0, Some(-500.0), "1.2 kN pull, braking"),
+            (875.0, Some(0.5), "875 N push"),
+            (-875.0, Some(-0.5), "875 N pull"),
+            (875.0, Some(1.0), "875 N push"),
+            (875.0, Some(-1.0), "875 N push"),
+            (875.0, None, "875 N push"),
+            (-875.0, None, "875 N pull"),
+            (875.0, Some(f64::NAN), "875 N push"),
+            (0.0, Some(500.0), "0.00 N, motoring"),
+            (0.004, Some(-500.0), "0.00 N, braking"),
+            (-0.004, None, "0.00 N"),
+            (-0.0, Some(0.0), "0.00 N"),
+            (0.005, None, "0.01 N push"),
+        ];
+        for (force, power, want) in cases {
+            assert_eq!(format_actuator_label(force, power, tol), want, "force {force}, power {power:?}");
+        }
+    }
+
+    #[test]
+    fn format_actuator_label_switches_units_at_the_rounding_edges() {
+        let label = |f: f64| format_actuator_label(f, None, 0.0);
+        assert_eq!(label(0.35), "0.35 N push");
+        assert_eq!(label(9.994), "9.99 N push");
+        assert_eq!(label(9.995), "10 N push");
+        assert_eq!(label(999.4), "999 N push");
+        assert_eq!(label(999.5), "1.0 kN push");
+        assert_eq!(label(-12_345.0), "12.3 kN pull");
+    }
+
+    #[test]
+    fn format_actuator_label_shows_a_dash_for_a_non_finite_force() {
+        assert_eq!(format_actuator_label(f64::NAN, Some(5.0), 1.0), "-");
+        assert_eq!(format_actuator_label(f64::INFINITY, None, 0.0), "-");
+    }
+
+    fn first_actuator(state: &AppState) -> LinearActuatorElement {
+        state
+            .mechanism
+            .as_ref()
+            .unwrap()
+            .forces()
+            .iter()
+            .find_map(|f| match f {
+                ForceElement::LinearActuator(la) => Some(la.clone()),
+                _ => None,
+            })
+            .expect("the sample has a LinearActuator")
+    }
+
+    /// Since BL-026 the Actuator Force and Actuator Power plots draw the
+    /// REQUIRED force and power whatever the element's stored force, and the
+    /// label's words follow them: push/pull from the plotted force's sign,
+    /// motoring/braking from the plotted power, i.e. the braking bands
+    /// (`WeightBreakdown::braking`). Checked at every sample in sizing mode
+    /// (stored force 0), with the sample's stored force, and with a stored
+    /// force above every required force, where a label that read
+    /// F_required - F_stored would say "pull" at every push sample.
+    #[test]
+    fn actuator_label_words_follow_the_plotted_required_force_and_power_in_every_mode() {
+        let mut state = swept_lift();
+        let shipped = first_actuator(&state).force;
+        assert!(shipped > 0.0, "fixture: the sample stores a force");
+        set_actuator_stored_force(&mut state, 0.0);
+        state.compute_sweep();
+        let required = state.sweep_data.as_ref().unwrap().actuator_forces.clone().unwrap();
+        let force_tol = 1e-9 * max_abs_finite(&required);
+
+        for stored in [0.0, shipped, 2.0 * max_abs_finite(&required)] {
+            set_actuator_stored_force(&mut state, stored);
+            state.compute_sweep();
+            let la = first_actuator(&state);
+            let sweep = state.sweep_data.clone().unwrap();
+            let forces = sweep.actuator_forces.clone().unwrap();
+            let power = sweep.actuator_power.clone().unwrap();
+            let breakdown = sweep.weight_breakdown.clone().unwrap();
+            let power_tol = BRAKE_TOL_REL * max_abs_finite(&breakdown.total_power);
+            let (mut push, mut motoring, mut braking) = (0, 0, 0);
+            for (k, &deg) in sweep.angles_deg.iter().enumerate() {
+                if deg >= 360.0 || !forces[k].is_finite() {
+                    continue; // 360 is the pose of 0; failed samples show the stored force
+                }
+                let what = format!("stored {stored} N, {deg} deg");
+                assert!((forces[k] - required[k]).abs() <= force_tol, "{what}: plotted {} N, required {} N", forces[k], required[k]);
+                state.driver_angle = deg.to_radians();
+                let label = actuator_label_text(&state, &la);
+                let what = format!("{what}: {label:?}");
+                assert_eq!(label.contains(" push"), forces[k] >= SHOWN_AS_ZERO_N, "{what}");
+                assert_eq!(label.contains(" pull"), forces[k] <= -SHOWN_AS_ZERO_N, "{what}");
+                assert_eq!(label.ends_with(", braking"), breakdown.braking[k], "{what}: the braking bands");
+                assert_eq!(label.ends_with(", motoring"), breakdown.total_power[k] > power_tol, "{what}");
+                if power[k].is_finite() && power[k].abs() > 2.0 * power_tol {
+                    assert_eq!(label.ends_with(", motoring"), power[k] > 0.0, "{what}: plotted power {} W", power[k]);
+                    assert_eq!(label.ends_with(", braking"), power[k] < 0.0, "{what}: plotted power {} W", power[k]);
+                }
+                push += usize::from(label.contains(" push"));
+                motoring += usize::from(label.ends_with(", motoring"));
+                braking += usize::from(label.ends_with(", braking"));
+            }
+            assert!(
+                push > 10 && motoring > 10 && braking > 10,
+                "fixture, stored {stored} N: the lift pushes ({push}), motors ({motoring}) and brakes ({braking})"
+            );
+        }
+    }
+
+    #[test]
+    fn actuator_label_falls_back_to_the_stored_force_without_a_sweep() {
+        let mut state = swept_lift();
+        let la = first_actuator(&state);
+        state.sweep_data = None;
+        assert_eq!(actuator_label_text(&state, &la), format!("{} (stored)", format_actuator_label(la.force, None, 0.0)));
+        assert_eq!(actuator_label_text(&state, &la), "50 N push (stored)", "the sample stores 50 N");
+    }
 }

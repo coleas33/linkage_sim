@@ -861,19 +861,44 @@ impl AppState {
         la: &crate::forces::elements::LinearActuatorElement,
     ) -> ActuatorLabelForce {
         let computed = self.sweep_data.as_ref().and_then(|sweep| {
-            let forces = sweep.actuator_forces.as_ref()?;
-            let driver_value = if sweep.sweep_mode.is_stroke() {
-                self.driver_stroke()
-            } else {
-                self.driver_angle
-            };
-            let f = *forces.get(sweep.index_at_driver(driver_value)?)?;
+            let f = *sweep.actuator_forces.as_ref()?.get(self.current_sweep_index()?)?;
             f.is_finite().then_some(f)
         });
         match computed {
             Some(f) => ActuatorLabelForce::Computed(f),
             None => ActuatorLabelForce::Stored(la.force),
         }
+    }
+
+    /// Index of the sweep sample nearest the current driver parameter: the
+    /// driver angle in an angle sweep, the stroke in a stroke sweep. It is
+    /// the sample the plot cursor marks and the one every canvas readout
+    /// reads (actuator label, weight arrows and weight readouts). `None`
+    /// without a sweep or without a finite sample.
+    pub fn current_sweep_index(&self) -> Option<usize> {
+        let sweep = self.sweep_data.as_ref()?;
+        let driver_value = if sweep.sweep_mode.is_stroke() { self.driver_stroke() } else { self.driver_angle };
+        sweep.index_at_driver(driver_value)
+    }
+
+    /// Required actuator power (W) at the current pose and the braking
+    /// tolerance, `(total_power[k], BRAKE_TOL_REL * max|total_power|)`, from
+    /// the sweep's weight breakdown. The canvas actuator label calls power
+    /// above the tolerance motoring and below minus it braking: the rule of
+    /// `WeightBreakdown::braking` and the plots' braking bands. `None` when
+    /// the sweep has no breakdown, its shares are driver shares (no
+    /// actuator), or the sample's power is not finite.
+    pub fn actuator_label_power(&self) -> Option<(f64, f64)> {
+        use crate::analysis::gravity_breakdown::{max_abs_finite, BRAKE_TOL_REL};
+
+        let breakdown = self.sweep_data.as_ref()?.weight_breakdown.as_ref()?;
+        if breakdown.basis != crate::gui::sweep::ShareBasis::ActuatorForce {
+            return None;
+        }
+        let power = *breakdown.total_power.get(self.current_sweep_index()?)?;
+        power
+            .is_finite()
+            .then(|| (power, BRAKE_TOL_REL * max_abs_finite(&breakdown.total_power)))
     }
 
     /// Set the active driver's rate parameter. Setter on `None` is a no-op.

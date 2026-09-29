@@ -5,6 +5,64 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-29 — Payload weights Task 9: canvas readout
+- `AppState::current_sweep_index` (the sample the plot cursor marks;
+  `actuator_label_force` now uses it) and `AppState::actuator_label_power`
+  (required power + braking tolerance from `WeightBreakdown`).
+- Actuator label (`force_render.rs actuator_label_text`,
+  `format_actuator_label`): "1.2 kN push, braking" - push/pull by sign
+  (positive = extension), motoring/braking by the braking-band rule;
+  "(stored)" on the stored-force fallback; "(computed)" is gone. Since
+  BL-026 both words derive from REQUIRED quantities: the force is
+  `sweep.actuator_forces` (the plotted required force in both modes) and
+  the power is `WeightBreakdown::total_power`. The drafts' BL-026 caveat
+  (push/pull from F_required - F_stored) is gone, and `swept_lift` no
+  longer zeroes the stored force to dodge it.
+- `canvas/rendering/weights.rs`: `draw_weights` replaces the point-mass
+  block of `render_mechanism`: gold marker plus a gravity-direction arrow
+  (`gravity_screen_dir`, 12-40 px by mass, `WEIGHT_ARROW_*` in colors.rs)
+  coloured by `classification_color` of the weight's classification at the
+  current sample (`weight_at_pose`; gold until the sweep has the weight at
+  its current mass and position). The permanent "2.00 kg" labels are gone:
+  hovering a weight shows a tooltip (`show_weight_tooltip`, weights before
+  joints) and the selected weight a card with the title, mass and force
+  share ("-" near stroke reversal). `interaction::weights_interactive` is
+  `pub(super)`.
+- Arrowheads (DRY): `primitives::draw_arrowhead(tip, dir, head_len,
+  stroke)` is the one head of every straight canvas arrow. `draw_arrow`
+  (shaft plus a head clamped to the arrow length, used by the weight
+  arrows) calls it, and so do `draw_force_arrow`,
+  `draw_external_force_arrow`, the Fx/Fy component arrows, the actuator
+  line's midpoint head and the force-zone arrows (6 px head), each with
+  its old head length, so their geometry is unchanged. The torque arc's
+  head (0.5 rad, 5 px) has a different angle and keeps its own code.
+- Test helpers (DRY): `test_support` gains `drawn_line_colors`,
+  `swept_lift`, `sample_at` and `pose_at`, and reuses
+  `set_actuator_stored_force` (no second copy). The canvas
+  `weight_readout` tests reuse `weight_clicks::frame` (now returns the
+  frame output) and `hit_testing::tests::weight_screen`, and the
+  duplicate `weight_screen` in `weight_clicks` is gone.
+- Tests: `force_render::tests` (every force/power sign combination, unit
+  edges, non-finite force,
+  `actuator_label_words_follow_the_plotted_required_force_and_power_in_every_mode`
+  at every sample with stored force 0, the sample's 50 N and one above
+  every required force, stored fallback "50 N push (stored)"),
+  `rendering::weights::tests` (arrow
+  length, gravity direction under mounting angles, weight_at_pose vs the
+  breakdown incl. stale entries, readout lines incl. reversal dash and
+  driver-torque shares, share format), `gui::state::tests`
+  (current_sweep_index, actuator_label_power), `gui::canvas::tests::
+  weight_readout` (arrow colours at 45/135/90 deg, gold for an unswept
+  weight, no arrows without gravity, no permanent labels, hover tooltip,
+  selected card, actuator label words on the canvas).
+- Mutation check: a label that reads F_required - F_stored fails the
+  every-mode test at the sample's own 50 N ("50 N pull" at 90 deg).
+- Docs: FEATURES (actuator label words, weight arrows), ENGINEERING_OUTPUTS
+  (canvas readout), 02-system `canvas_readouts_read_the_current_sweep_sample`
+  (BL-026 text rewritten), 03-structure (primitives, force_render,
+  rendering/weights, test_support). The spec checklist lines for the
+  readout land with the checklist in Task 10.
+
 ## 2026-09-29 — Payload weights Task 8: placement and the weight editor
 - `+ Mass` toolbar: a mass field (`draw_place_mass_field`, shown while the
   tool is active) edits `AppState::last_point_mass_kg`, so it starts at the

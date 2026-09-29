@@ -94,6 +94,11 @@ pub const WEIGHT_RADIUS: f32 = 5.0;
 /// stays below `HIT_RADIUS`: a joint under a weight is still reachable from
 /// its outer ring.
 pub const WEIGHT_HIT_RADIUS: f32 = 8.0;
+/// Length range (screen px) of a weight's gravity arrow: the heaviest weight
+/// gets the maximum, lighter ones scale down with mass to the minimum.
+pub const WEIGHT_ARROW_MIN_PX: f32 = 12.0;
+pub const WEIGHT_ARROW_MAX_PX: f32 = 40.0;
+pub const WEIGHT_ARROW_WIDTH: f32 = 2.0;
 /// Pick radius, in screen pixels, for choosing a link by clicking or dropping
 /// near its bar: Place Mass, Move to Link and dropping a dragged weight.
 pub const LINK_PICK_RADIUS: f32 = 60.0;

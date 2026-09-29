@@ -201,6 +201,8 @@ Sign conventions: actuator force positive = extension (the actuator pushes its e
 
 **Braking:** the actuator brakes (the load drives it) where the required actuator power is below `-1e-6 * max|P|` over the sweep. The Actuator Force and Actuator Power plots shade those driver ranges; a band runs halfway to the neighbouring samples on either side. In the quasi-static model the force to hold a load is the same up and down; gravity helping shows up as negative power (braking), not as a smaller force.
 
+**Canvas readout:** at the current pose (the sweep sample the plot cursor marks) each weight's gravity arrow takes its helping/hurting/neutral colour, hovering or selecting a weight shows its force share, and the actuator label reads like "1.2 kN push, braking" (push/pull from the sign of the plotted required force, motoring/braking from the braking rule above; both are required quantities, so the words do not depend on the stored force).
+
 ---
 
 ## Mechanism Health Panel

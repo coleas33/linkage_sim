@@ -3574,3 +3574,61 @@
         assert_eq!(seed_q_by_body_id(Some(prev), &wrong_len, &expanded), zeros);
     }
 
+    // ── Canvas readouts at the current pose (payload weights Task 8) ─────
+
+    #[test]
+    fn current_sweep_index_is_the_sample_nearest_the_driver() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.compute_sweep();
+        let angles = state.sweep_data.as_ref().unwrap().angles_deg.clone();
+        for k in [0, 45, 90, 200] {
+            state.driver_angle = angles[k].to_radians();
+            assert_eq!(state.current_sweep_index(), Some(k), "at {} deg", angles[k]);
+        }
+        state.driver_angle = (angles[45] + 0.3).to_radians();
+        assert_eq!(state.current_sweep_index(), Some(45), "nearest sample");
+
+        state.sweep_data = None;
+        assert_eq!(state.current_sweep_index(), None);
+    }
+
+    #[test]
+    fn actuator_label_power_is_the_required_power_and_braking_tolerance() {
+        use crate::analysis::gravity_breakdown::{max_abs_finite, BRAKE_TOL_REL};
+
+        let mut state = crate::gui::test_support::swept_lift();
+        let sweep = state.sweep_data.clone().unwrap();
+        let breakdown = sweep.weight_breakdown.clone().unwrap();
+        let tol = BRAKE_TOL_REL * max_abs_finite(&breakdown.total_power);
+        let mut checked = 0;
+        for (k, &deg) in sweep.angles_deg.iter().enumerate() {
+            if deg >= 360.0 {
+                continue; // the pose of 0 deg: the label reads sample 0
+            }
+            state.driver_angle = deg.to_radians();
+            let power = breakdown.total_power[k];
+            if power.is_finite() {
+                assert_eq!(state.actuator_label_power(), Some((power, tol)), "{deg} deg");
+                checked += 1;
+            } else {
+                assert_eq!(state.actuator_label_power(), None, "{deg} deg: no finite power");
+            }
+        }
+        assert!(checked > 300, "fixture: most samples have a power ({checked})");
+
+        state.sweep_data = None;
+        assert_eq!(state.actuator_label_power(), None, "no sweep");
+    }
+
+    #[test]
+    fn actuator_label_power_is_none_without_an_actuator() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.add_point_mass("coupler", 2.0, [0.03, 0.02]).unwrap();
+        state.compute_sweep();
+        assert!(state.sweep_data.as_ref().unwrap().weight_breakdown.is_some(), "fixture: driver-torque shares");
+        state.driver_angle = 60.0_f64.to_radians();
+        assert_eq!(state.actuator_label_power(), None);
+    }
+

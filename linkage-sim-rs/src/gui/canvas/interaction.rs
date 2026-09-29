@@ -543,7 +543,7 @@ pub fn handle_interaction(
 /// Whether weights answer the pointer (hover feedback, drag): only in plain
 /// Select mode, while no other canvas pick (trajectory target, Move to Link,
 /// Reposition, Add Joint Point, joint or link creation) waits for a click.
-fn weights_interactive(state: &AppState) -> bool {
+pub(super) fn weights_interactive(state: &AppState) -> bool {
     state.active_tool == EditorTool::Select
         && state.pending_canvas_pick.is_none()
         && state.reassigning_point_mass.is_none()

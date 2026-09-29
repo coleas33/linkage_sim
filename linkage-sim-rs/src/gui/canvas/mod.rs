@@ -241,6 +241,7 @@ mod tests {
         use crate::gui::state::{AppState, EditorTool, SelectedEntity};
         use crate::gui::test_support::{key_press, primary_button, primary_button_with, sorted_link_ids};
         use super::super::draw_canvas;
+        use super::super::hit_testing::tests::weight_screen;
 
         /// One canvas frame with `events`, `modifiers` held; returns egui's
         /// output (cursor icon etc.).
@@ -261,8 +262,9 @@ mod tests {
             })
         }
 
-        fn frame(ctx: &egui::Context, state: &mut AppState, events: Vec<egui::Event>) {
-            let _ = frame_with(ctx, state, events, egui::Modifiers::NONE);
+        /// One canvas frame with `events` and no modifiers.
+        pub(super) fn frame(ctx: &egui::Context, state: &mut AppState, events: Vec<egui::Event>) -> egui::FullOutput {
+            frame_with(ctx, state, events, egui::Modifiers::NONE)
         }
 
         fn click_with(ctx: &egui::Context, state: &mut AppState, pos: Pos2, modifiers: egui::Modifiers) {
@@ -299,7 +301,7 @@ mod tests {
         /// `state.view` is final), the second adapts the grid spacing to the
         /// fitted zoom (so `state.grid` snaps as a drag will). Returns the
         /// context, state, that link and a second link.
-        fn setup() -> (egui::Context, AppState, String, String) {
+        pub(super) fn setup() -> (egui::Context, AppState, String, String) {
             let mut state = AppState::default();
             state.load_sample(SampleMechanism::FourBar);
             let links = sorted_link_ids(&state);
@@ -325,12 +327,6 @@ mod tests {
         fn local_under(state: &AppState, body: &str, pos: Pos2) -> [f64; 2] {
             let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
             state.world_to_body_local(body, wx, wy)
-        }
-
-        /// Screen position of weight `id` on `body` at the current pose.
-        fn weight_screen(state: &AppState, body: &str, id: &str) -> Pos2 {
-            let pm = state.find_point_mass(body, id).expect("weight exists");
-            screen_of(state, world_of(state, body, pm.local_pos))
         }
 
         fn weight(body: &str, id: &str) -> SelectedEntity {
@@ -478,7 +474,7 @@ mod tests {
             state.active_tool = EditorTool::PlaceMass;
             state.place_mass_body = Some(body.clone());
 
-            let output = frame_with(&ctx, &mut state, Vec::new(), egui::Modifiers::NONE);
+            let output = frame(&ctx, &mut state, Vec::new());
 
             let want = format!("Click to place weight W2 (3.5 kg) on '{body}' (Esc to cancel)");
             assert!(crate::gui::test_support::drew_text(&output, &want), "hint {want:?}");
@@ -732,6 +728,136 @@ mod tests {
             assert!(state.weight_drag.is_none());
             assert_eq!(state.find_point_mass(&body, "W1").unwrap().local_pos, [0.03, 0.02]);
             assert_eq!(state.undo_history.undo_count(), depth);
+        }
+    }
+
+    /// Headless canvas frames checking the weight readout: arrows coloured
+    /// at the current pose, hover tooltip, selected-weight card.
+    mod weight_readout {
+        use eframe::egui::{self, Pos2};
+
+        use crate::gui::state::{AppState, SelectedEntity};
+        use crate::gui::test_support::{drawn_line_colors, drawn_texts, pose_at, swept_lift};
+        use super::super::colors::{
+            WEIGHT_COLOR, WEIGHT_HELPING_COLOR, WEIGHT_HURTING_COLOR, WEIGHT_NEUTRAL_COLOR,
+        };
+        use super::super::hit_testing::tests::weight_screen;
+        use super::weight_clicks::{frame, setup};
+
+        /// The swept robot lift after two idle frames (fit to view, grid).
+        fn lift() -> (egui::Context, AppState) {
+            let mut state = swept_lift();
+            let ctx = egui::Context::default();
+            frame(&ctx, &mut state, Vec::new());
+            frame(&ctx, &mut state, Vec::new());
+            (ctx, state)
+        }
+
+        #[test]
+        fn weight_arrows_take_the_classification_colour_of_the_current_pose() {
+            let (ctx, mut state) = lift();
+            for (deg, want, not) in [
+                (45.0, WEIGHT_HURTING_COLOR, WEIGHT_HELPING_COLOR),
+                (135.0, WEIGHT_HELPING_COLOR, WEIGHT_HURTING_COLOR),
+            ] {
+                pose_at(&mut state, deg);
+                let colors = drawn_line_colors(&frame(&ctx, &mut state, Vec::new()));
+                assert!(colors.contains(&want), "{deg} deg: an arrow in {want:?}");
+                assert!(!colors.contains(&not), "{deg} deg: no arrow in {not:?}");
+                assert!(!colors.contains(&WEIGHT_COLOR), "{deg} deg: every weight is classified");
+            }
+            pose_at(&mut state, 90.0);
+            let colors = drawn_line_colors(&frame(&ctx, &mut state, Vec::new()));
+            assert!(colors.contains(&WEIGHT_NEUTRAL_COLOR), "90 deg: the weights move sideways");
+        }
+
+        #[test]
+        fn a_weight_the_sweep_has_not_seen_gets_a_weight_coloured_arrow() {
+            let (ctx, mut state) = lift();
+            pose_at(&mut state, 45.0);
+            // Moving W1 rebuilds; the sweep is only recomputed later (debounced).
+            assert!(state.move_point_mass("rocker", "W1", "rocker", [0.05, 0.0]));
+
+            let colors = drawn_line_colors(&frame(&ctx, &mut state, Vec::new()));
+
+            assert!(colors.contains(&WEIGHT_COLOR), "W1's arrow waits for the new sweep");
+            assert!(colors.contains(&WEIGHT_HURTING_COLOR), "W2 keeps its colour");
+        }
+
+        #[test]
+        fn no_weight_arrows_without_gravity() {
+            let (ctx, mut state) = lift();
+            state.gravity_magnitude = 0.0;
+            state.sync_gravity();
+            state.compute_sweep();
+            pose_at(&mut state, 45.0);
+
+            let colors = drawn_line_colors(&frame(&ctx, &mut state, Vec::new()));
+
+            for color in [WEIGHT_HELPING_COLOR, WEIGHT_HURTING_COLOR, WEIGHT_NEUTRAL_COLOR, WEIGHT_COLOR] {
+                assert!(!colors.contains(&color), "no arrow in {color:?}");
+            }
+        }
+
+        #[test]
+        fn weights_have_no_permanent_label() {
+            let (ctx, mut state, _, _) = setup();
+            state.compute_sweep();
+            let texts = drawn_texts(&frame(&ctx, &mut state, Vec::new()));
+            assert!(!texts.iter().any(|t| t.contains("kg")), "{texts:?}");
+        }
+
+        /// Texts drawn while the pointer rests at `at`: a tooltip shows from
+        /// its second frame (egui lays it out unseen first).
+        fn texts_hovering(ctx: &egui::Context, state: &mut AppState, at: Pos2) -> Vec<String> {
+            frame(ctx, state, vec![egui::Event::PointerMoved(at)]);
+            drawn_texts(&frame(ctx, state, Vec::new()))
+        }
+
+        #[test]
+        fn hovering_a_weight_shows_its_name_mass_and_share() {
+            let (ctx, mut state, body, _) = setup();
+            state.compute_sweep();
+            let at = weight_screen(&state, &body, "W1");
+
+            let texts = texts_hovering(&ctx, &mut state, at);
+
+            assert!(texts.iter().any(|t| t == "W1"), "{texts:?}");
+            assert!(texts.iter().any(|t| t == "Mass: 2 kg"), "{texts:?}");
+            assert!(texts.iter().any(|t| t.starts_with("Torque share: ")), "four-bar: driver torque shares: {texts:?}");
+
+            let texts = texts_hovering(&ctx, &mut state, Pos2::new(120.0, 700.0));
+            assert!(!texts.iter().any(|t| t == "Mass: 2 kg"), "no tooltip away from the weight: {texts:?}");
+        }
+
+        #[test]
+        fn the_selected_weight_shows_its_readout_next_to_it() {
+            let (ctx, mut state, body, _) = setup();
+            state.compute_sweep();
+            state.selected = Some(SelectedEntity::Weight { body_id: body.clone(), weight_id: "W1".to_string() });
+
+            let texts = drawn_texts(&frame(&ctx, &mut state, Vec::new()));
+            let card = texts.iter().find(|t| t.starts_with("W1\nMass: 2 kg\n")).expect("the readout card");
+            assert!(card.contains("Torque share: "), "{card:?}");
+
+            // Hovering the selected weight adds no tooltip on top of its card.
+            let at = weight_screen(&state, &body, "W1");
+            let texts = texts_hovering(&ctx, &mut state, at);
+            assert!(!texts.iter().any(|t| t == "Mass: 2 kg"), "{texts:?}");
+            assert!(texts.iter().any(|t| t.starts_with("W1\nMass: 2 kg\n")), "the card stays: {texts:?}");
+        }
+
+        #[test]
+        fn the_actuator_label_names_the_direction_and_who_does_the_work() {
+            let (ctx, mut state) = lift();
+            for (deg, word) in [(45.0, ", motoring"), (135.0, ", braking")] {
+                pose_at(&mut state, deg);
+                let texts = drawn_texts(&frame(&ctx, &mut state, Vec::new()));
+                assert!(
+                    texts.iter().any(|t| (t.contains(" push") || t.contains(" pull")) && t.ends_with(word)),
+                    "{deg} deg: a label ending in {word:?} in {texts:?}"
+                );
+            }
         }
     }
 }

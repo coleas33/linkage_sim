@@ -154,7 +154,9 @@ pub(super) mod tests {
         state
     }
 
-    fn weight_screen(state: &AppState, body: &str, id: &str) -> Pos2 {
+    /// Screen position of weight `id` on `body` at the current pose (the
+    /// canvas tests share it).
+    pub(in crate::gui::canvas) fn weight_screen(state: &AppState, body: &str, id: &str) -> Pos2 {
         let pm = state.find_point_mass(body, id).expect("weight exists");
         point_mass_screen_pos(state, body, pm.local_pos).expect("finite position")
     }

@@ -53,9 +53,9 @@ gui_submodules:
       interaction: canvas/interaction.rs (drag, pan, zoom, tool handlers; weight hover/drag - weights_interactive, handle_weight_drag, weight_drop_target)
       rendering:
         mod: canvas/rendering/mod.rs (main render pass, overlays, tooltips, grid, background image)
-        primitives: canvas/rendering/primitives.rs (springs, dampers, arrows, arcs, markers, alignment guides)
-        force_render: canvas/rendering/force_render.rs (force element visualization + load-path heat map; actuator label value comes from AppState::actuator_label_force)
-        weights: canvas/rendering/weights.rs (payload weights on the canvas - place_mass_hint)
+        primitives: canvas/rendering/primitives.rs (springs, dampers, arrows - draw_arrowhead is the one straight-arrow head, draw_arrow = shaft + head; arcs, markers, alignment guides)
+        force_render: canvas/rendering/force_render.rs (force element visualization + load-path heat map; actuator label text actuator_label_text / format_actuator_label, with the required force from AppState::actuator_label_force and motoring/braking from AppState::actuator_label_power; format_magnitude)
+        weights: canvas/rendering/weights.rs (payload weights on the canvas - draw_weights draws markers + gravity arrows coloured by classification at AppState::current_sweep_index; show_weight_tooltip and the selected-weight card show weight_readout_lines; weight_at_pose, weight_arrow_length_px, gravity_screen_dir; place_mass_hint)
       hit_testing: canvas/hit_testing.rs (body-segment projection; weight picking find_point_mass_at + point_mass_screen_pos, which drawing shares)
       colors: canvas/colors.rs (includes classification_color, re-exported as canvas::classification_color — the one helping/hurting/neutral palette for weight arrows and Weight Breakdown lines)
       context_menu: canvas/context_menu.rs
@@ -111,7 +111,7 @@ gui_submodules:
     - tutorial.rs
     - undo.rs
     - dxf_import.rs
-    - test_support.rs (#[cfg(test)] helpers shared by GUI module tests, e.g. sorted_link_ids, set_actuator_stored_force, input events primary_button, primary_button_with, key_press, typed, the headless frame central_panel_frame, painted-output inspection drawn_texts, drew_text, text_rect; extend it instead of re-implementing fixtures per module)
+    - test_support.rs (#[cfg(test)] helpers shared by GUI module tests, e.g. sorted_link_ids, set_actuator_stored_force, input events primary_button, primary_button_with, key_press, typed, the headless frame central_panel_frame, painted-output inspection drawn_texts, drew_text, text_rect, drawn_line_colors; the robot-lift fixture swept_lift with sample_at and pose_at; extend it instead of re-implementing fixtures per module)
 
 entry_points:
   native_bin: src/bin/linkage_gui.rs (uses native feature)
