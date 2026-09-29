@@ -142,20 +142,24 @@ for that weight (the weight is momentarily moving horizontally).
 
 - **Near stroke reversal:** when `|Ldot| < ε_rel · max|Ldot|` over the sweep,
   with named constant `ε_rel = 0.01`, force shares are `NaN` (plotted as a gap;
-  hover shows "—"); power shares and the helping/hurting classification remain
+  hover shows "-"); power shares and the helping/hurting classification remain
   defined, because they do not divide by `Ldot`.
 - **Solver failure rows:** per-weight series get `NaN` via `push_nan_row`
   (`src/gui/sweep/mod.rs:843`), preserving the all-channels-same-length invariant
   (`docs/ai/02-system.yaml`).
 - **Stored-force mode:** shares are defined against the **required** force
   (after Track 1 item 5).
-- **Out of scope for v1:** stroke-mode sweeps with a `LinearDriver` and no
-  `LinearActuator` element (no actuator series exists today), and a per-weight
-  split of the "With Inertia" curve.
+- **Stroke-mode sweeps with a `LinearDriver` and no `LinearActuator`
+  element** get the same breakdown, as shares of the driver force (basis
+  `DriverTorque`, plotted as "Driver Force Share"). This was added during
+  implementation because it falls out of the same power balance; it was
+  originally out of scope (accepted deviation, 2026-09-29).
+- **Out of scope for v1:** a per-weight split of the "With Inertia" curve.
 
 **Integration:** the sweep loop calls the module once per converged sample and
-stores `SweepData::weight_shares` — one force series and one power series per
-weight id plus `other` and `total`, aligned with `angles_deg`.
+stores `SweepData::weight_breakdown: Option<WeightBreakdown>` (sources, basis,
+per-source gravity power, force share and power share, other and total force
+and power, braking flags), every series aligned with `angles_deg`.
 
 ### 3. GUI
 
@@ -173,9 +177,11 @@ weights get default names (`W1`, `W2`, …).
 - Press-drag shows a live preview; the blueprint mutation and rebuild happen
   **once on release** (`drag_stopped()`), per the existing lesson that per-frame
   rebuilds are too expensive.
-- Dropping within the existing 60 px pick radius of a different link reattaches
-  the weight there, preserving its world position; otherwise it moves on its
-  current link. Each drag is **one** undo step
+- On release the nearest link wins, within the existing 60 px pick radius:
+  if a different link is nearer than the weight's own link, the weight
+  reattaches there, preserving its world position; otherwise it moves on its
+  current link (accepted deviation, 2026-09-29: prevents accidental
+  reattachment while dragging along the weight's own link). Each drag is **one** undo step
   (`AppState::mutate_and_rebuild`). Delete removes the selected weight.
 
 **Property panel.** A selected weight shows name, mass, owning link, and
@@ -191,7 +197,7 @@ gains an **Add weight** button.
   labels, to avoid clutter).
 - The actuator label gains words: push/pull from the sign convention
   (positive = extension push, `src/forces/elements/evaluation.rs:424-425`) and
-  motoring/braking from the sign of `P_act`, e.g. "1.2 kN push · braking".
+  motoring/braking from the sign of `P_act`, e.g. "1.2 kN push, braking".
 
 **Plots.**
 
@@ -254,4 +260,3 @@ the user runs a hands-on checklist on a robot-lift model.
   force difference).
 - Parametric position study (peak force vs weight position).
 - Per-weight split of the "With Inertia" curve.
-- Stroke-mode `LinearDriver` sweeps without a `LinearActuator` element.

@@ -275,6 +275,16 @@
   status: open
   notes: "Independent of the BL-027 fix; noted during its review."
 
+- id: BL-030
+  title: "Driver > reassign on a sample rebuilds from the stock sample and discards user weights"
+  dimension: gui
+  risk: mechanical
+  evidence: "gui/state/driver_ops.rs:22-36 reassign_driver rebuilds the mechanism from the stock sample and resets the blueprint, silently discarding every point mass the user added (undoable). Found by the payload-plan critic 2026-09-29; the Track 2 hands-on checklist warns about it."
+  acceptance: "test: add a weight to a sample, reassign the driver, assert the weight (id, mass, position) survives; or the reassign path warns before discarding user edits"
+  priority: 2
+  status: open
+  notes: "Pre-existing; independent of Track 2."
+
 - id: BL-016
   title: "Investigate driving egui canvas UI for deeper GUI smoke (samples + plot tabs)"
   dimension: gui
