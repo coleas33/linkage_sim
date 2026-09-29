@@ -232,7 +232,6 @@ mod tests {
             _ => panic!("expected LinearActuator"),
         }
     }
-
     /// Headless canvas clicks driving the weight (point-mass) handlers.
     mod weight_clicks {
         use eframe::egui::{self, Pos2};
