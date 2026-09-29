@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "magcoupling"
+version = "1.0.0"
+description = "Magnetic slip coupling design calculator (Python port of magnetic_coupling_torque_calculator.xlsx)"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+fields3d = ["magpylib>=5", "numpy"]
+drawing = ["matplotlib"]
+dev = ["pytest", "openpyxl"]
+
+[tool.setuptools]
+packages = ["magcoupling"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
