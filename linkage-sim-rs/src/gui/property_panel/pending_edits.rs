@@ -7,7 +7,7 @@ use nalgebra::Vector2;
 use crate::core::body::BodyGeometry;
 use crate::forces::elements::ForceElement;
 use super::force_editor::draw_force_elements_panel;
-use crate::gui::state::AppState;
+use crate::gui::state::{AppState, SelectedEntity};
 
 /// Pending edit collected during UI rendering, applied after all reads
 /// are done to avoid borrow conflicts.
@@ -36,6 +36,12 @@ pub(super) enum PendingPropertyEdit {
     SetPointMassMass { body_id: String, weight_id: String, mass: f64 },
     /// Commit a typed / drag-stopped body-local X or Y of a weight.
     SetPointMassPosition { body_id: String, weight_id: String, local_pos: [f64; 2] },
+    /// Commit a typed weight name (trimmed; blank clears it).
+    SetPointMassLabel { body_id: String, weight_id: String, label: Option<String> },
+    /// Add a weight of `AppState::last_point_mass_kg` at `local_pos` on
+    /// `body_id` and select it (the link editor's Add weight button).
+    AddPointMass { body_id: String, local_pos: [f64; 2] },
+    /// Delete a weight; a selection of it is cleared.
     RemovePointMass { body_id: String, weight_id: String },
     /// Enter mode to reassign a point mass to a different body.
     ReassignPointMass { body_id: String, weight_id: String },
@@ -246,8 +252,23 @@ pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropert
             PendingPropertyEdit::SetPointMassPosition { body_id, weight_id, local_pos } => {
                 state.move_point_mass(&body_id, &weight_id, &body_id, local_pos);
             }
+            PendingPropertyEdit::SetPointMassLabel { body_id, weight_id, label } => {
+                state.set_point_mass_label(&body_id, &weight_id, label);
+            }
+            PendingPropertyEdit::AddPointMass { body_id, local_pos } => {
+                if let Some(weight_id) = state.add_point_mass(&body_id, state.last_point_mass_kg, local_pos) {
+                    state.multi_selected.clear();
+                    state.selected = Some(SelectedEntity::Weight { body_id, weight_id });
+                }
+            }
             PendingPropertyEdit::RemovePointMass { body_id, weight_id } => {
-                state.remove_point_mass_by_id(&body_id, &weight_id);
+                if state.remove_point_mass_by_id(&body_id, &weight_id) {
+                    let removed = SelectedEntity::Weight { body_id, weight_id };
+                    if state.selected.as_ref() == Some(&removed) {
+                        state.selected = None;
+                    }
+                    state.multi_selected.retain(|e| *e != removed);
+                }
             }
             PendingPropertyEdit::ReassignPointMass { body_id, weight_id } => {
                 state.reassigning_point_mass = Some((body_id, weight_id));
@@ -303,6 +324,7 @@ pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropert
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::state::GROUND_ID;
     use crate::gui::samples::SampleMechanism;
     use crate::gui::state::EditorTool;
     use crate::gui::test_support::sorted_link_ids;
@@ -371,6 +393,85 @@ mod tests {
         );
         assert_eq!(state.repositioning_point_mass, Some((body, w)));
         assert_eq!(state.reassigning_point_mass, None);
+    }
+
+    #[test]
+    fn add_point_mass_uses_the_last_mass_and_selects_the_new_weight() {
+        let (mut state, body, other, w) = four_bar_with_weight();
+        state.last_point_mass_kg = 4.5;
+        state.multi_selected = vec![SelectedEntity::Weight { body_id: body.clone(), weight_id: w }];
+        let depth = state.undo_history.undo_count();
+
+        apply_pending(
+            &mut state,
+            Some(PendingPropertyEdit::AddPointMass { body_id: other.clone(), local_pos: [0.01, -0.02] }),
+        );
+
+        let pm = state.find_point_mass(&other, "W2").expect("the next id");
+        assert_eq!(pm.mass, 4.5);
+        assert_eq!(pm.local_pos, [0.01, -0.02]);
+        assert_eq!(state.selected, Some(SelectedEntity::Weight { body_id: other, weight_id: "W2".to_string() }));
+        assert!(state.multi_selected.is_empty());
+        assert_eq!(state.undo_history.undo_count(), depth + 1);
+    }
+
+    #[test]
+    fn add_point_mass_on_ground_changes_nothing() {
+        let (mut state, body, _, w) = four_bar_with_weight();
+        let selected = Some(SelectedEntity::Weight { body_id: body, weight_id: w });
+        state.selected = selected.clone();
+        let depth = state.undo_history.undo_count();
+
+        apply_pending(
+            &mut state,
+            Some(PendingPropertyEdit::AddPointMass { body_id: GROUND_ID.to_string(), local_pos: [0.0, 0.0] }),
+        );
+
+        assert_eq!(state.selected, selected, "the selection stays");
+        assert_eq!(state.undo_history.undo_count(), depth);
+    }
+
+    #[test]
+    fn set_point_mass_label_trims_and_clears_as_one_undo_step_each() {
+        let (mut state, body, _, w) = four_bar_with_weight();
+        let depth = state.undo_history.undo_count();
+        let label = |state: &AppState| state.find_point_mass(&body, &w).unwrap().label.clone();
+
+        apply_pending(
+            &mut state,
+            Some(PendingPropertyEdit::SetPointMassLabel {
+                body_id: body.clone(),
+                weight_id: w.clone(),
+                label: Some("  Robot torso ".to_string()),
+            }),
+        );
+        assert_eq!(label(&state).as_deref(), Some("Robot torso"));
+        assert_eq!(state.undo_history.undo_count(), depth + 1);
+
+        apply_pending(
+            &mut state,
+            Some(PendingPropertyEdit::SetPointMassLabel {
+                body_id: body.clone(),
+                weight_id: w.clone(),
+                label: Some("   ".to_string()),
+            }),
+        );
+        assert_eq!(label(&state), None, "a blank name shows the id again");
+        assert_eq!(state.undo_history.undo_count(), depth + 2);
+    }
+
+    #[test]
+    fn removing_the_selected_weight_clears_it_from_the_selection() {
+        let (mut state, body, other, w) = four_bar_with_weight();
+        let removed = SelectedEntity::Weight { body_id: body.clone(), weight_id: w.clone() };
+        let kept = SelectedEntity::Body(other);
+        state.selected = Some(removed.clone());
+        state.multi_selected = vec![removed, kept.clone()];
+
+        apply_pending(&mut state, Some(PendingPropertyEdit::RemovePointMass { body_id: body, weight_id: w }));
+
+        assert_eq!(state.selected, None);
+        assert_eq!(state.multi_selected, vec![kept]);
     }
 
     #[test]

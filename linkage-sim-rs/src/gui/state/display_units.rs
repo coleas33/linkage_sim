@@ -88,3 +88,70 @@ impl DisplayUnits {
         }
     }
 }
+
+/// Decimal places [`format_decimal`] keeps: 1 um in mm, 1 mg in kg. Finer
+/// than anything a user types, coarse enough to read.
+pub const DISPLAY_DECIMALS: usize = 6;
+
+/// `value` with at most [`DISPLAY_DECIMALS`] decimals and no trailing
+/// zeros: "2", "0.5", "1.234568". Never "-0". The text parses back to the
+/// value rounded to those decimals, so a field that shows it and reads it
+/// back can tell "unchanged" from "edited".
+pub fn format_decimal(value: f64) -> String {
+    let fixed = format!("{value:.DISPLAY_DECIMALS$}");
+    let trimmed = if fixed.contains('.') { fixed.trim_end_matches('0').trim_end_matches('.') } else { fixed.as_str() };
+    match trimmed {
+        "-0" => "0".to_string(),
+        text => text.to_string(),
+    }
+}
+
+/// A mass in kg for display: "2 kg", "0.125 kg" ([`format_decimal`]).
+pub fn format_mass_kg(kg: f64) -> String {
+    format!("{} kg", format_decimal(kg))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_decimal_keeps_up_to_six_decimals_without_trailing_zeros() {
+        assert_eq!(format_decimal(2.0), "2");
+        assert_eq!(format_decimal(0.5), "0.5");
+        assert_eq!(format_decimal(50.25), "50.25");
+        assert_eq!(format_decimal(1.23456789), "1.234568");
+        assert_eq!(format_decimal(30.0004), "30.0004");
+        assert_eq!(format_decimal(-12.5), "-12.5");
+        assert_eq!(format_decimal(1500.0), "1500");
+    }
+
+    #[test]
+    fn format_decimal_never_prints_negative_zero() {
+        assert_eq!(format_decimal(0.0), "0");
+        assert_eq!(format_decimal(-0.0), "0");
+        assert_eq!(format_decimal(-0.0000001), "0");
+    }
+
+    #[test]
+    fn format_decimal_passes_non_finite_values_through() {
+        assert_eq!(format_decimal(f64::NAN), "NaN");
+        assert_eq!(format_decimal(f64::INFINITY), "inf");
+    }
+
+    /// What the text reads back as is what `format_decimal` rounds to.
+    #[test]
+    fn format_decimal_round_trips_through_parse() {
+        for v in [2.0, 0.5, 0.031234567, 30.0000004, 999.9999996] {
+            let shown: f64 = format_decimal(v).parse().unwrap();
+            assert!((shown - v).abs() <= 5e-7, "{v} shows as {shown}");
+            assert_eq!(format_decimal(shown), format_decimal(v), "{v}: the shown text is stable");
+        }
+    }
+
+    #[test]
+    fn format_mass_kg_appends_the_unit() {
+        assert_eq!(format_mass_kg(2.0), "2 kg");
+        assert_eq!(format_mass_kg(0.125), "0.125 kg");
+    }
+}

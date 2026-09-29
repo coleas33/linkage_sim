@@ -32,7 +32,7 @@ modules:
     path: src/analysis/
     files: [validation, grashof, transmission, coupler, energy, envelopes, motor_sizing, virtual_work, crank_selection, force_breakdown, gravity_breakdown]
     notes:
-      gravity_breakdown: per-weight gravity power P_g,i = m_i g.v_i (weight_sources from the blueprint = link self-weights + applied point masses; gravity_powers; gravity_vector; classify / force_share / is_braking with EPS_REL_LDOT, NEUTRAL_REL, BRAKE_TOL_REL). Pure, no GUI deps.
+      gravity_breakdown: per-weight gravity power P_g,i = m_i g.v_i (weight_sources from the blueprint = link self-weights + applied point masses; gravity_powers; gravity_vector; classify / force_share / is_braking with EPS_REL_LDOT, NEUTRAL_REL, BRAKE_TOL_REL; display names display_name, name_with_id, point_mass_title shared by the plot legend, the property panel and the canvas). Pure, no GUI deps.
 
   io:
     path: src/io/
@@ -55,6 +55,7 @@ gui_submodules:
         mod: canvas/rendering/mod.rs (main render pass, overlays, tooltips, grid, background image)
         primitives: canvas/rendering/primitives.rs (springs, dampers, arrows, arcs, markers, alignment guides)
         force_render: canvas/rendering/force_render.rs (force element visualization + load-path heat map; actuator label value comes from AppState::actuator_label_force)
+        weights: canvas/rendering/weights.rs (payload weights on the canvas - place_mass_hint)
       hit_testing: canvas/hit_testing.rs (body-segment projection; weight picking find_point_mass_at + point_mass_screen_pos, which drawing shares)
       colors: canvas/colors.rs (includes classification_color, re-exported as canvas::classification_color — the one helping/hurting/neutral palette for weight arrows and Weight Breakdown lines)
       context_menu: canvas/context_menu.rs
@@ -66,7 +67,9 @@ gui_submodules:
 
   property_panel:
     path: src/gui/property_panel/
-    files: [mod, diagnostics, force_editor, health, pending_edits, undo_panel]
+    files: [mod, diagnostics, force_editor, health, pending_edits, undo_panel, weight_editor]
+    notes:
+      weight_editor: selected-weight editor (draw_selected_weight) and the link editor's Weights section with Add weight (draw_link_weights); shared fields draw_weight_fields; committed_number (commit once per edit); weight_mass_drag_value (also the + Mass toolbar field)
 
   plot_panel:
     path: src/gui/plot_panel/
@@ -97,7 +100,7 @@ gui_submodules:
       weights: sweep/weights.rs (payload weights - WeightBreakdown {sources, basis, gravity_power, force_share, power_share, other_force, other_power, total_force, total_power, braking} + classification() and classifications() (per-sample class of one source, band computed once; the plot colours lines with it); ShareBasis {ActuatorForce, DriverTorque}; WeightBreakdownBuilder fed per sample by compute_sweep_data_with_weights; required_totals. AppState::compute_sweep passes gravity_breakdown::weight_sources(blueprint); plain compute_sweep_data = no breakdown)
 
   other_top_level_gui:
-    - mod.rs (LinkageApp + update loop orchestration; handle_delete_shortcut)
+    - mod.rs (LinkageApp + update loop orchestration; handle_delete_shortcut; draw_place_mass_field)
     - menu_bar.rs (File/Edit/Help/View/Image menus + sample gallery)
     - theme.rs (CAD dark visuals, Nathan Mode grayscale)
     - input_panel.rs
@@ -108,7 +111,7 @@ gui_submodules:
     - tutorial.rs
     - undo.rs
     - dxf_import.rs
-    - test_support.rs (#[cfg(test)] helpers shared by GUI module tests, e.g. sorted_link_ids, set_actuator_stored_force, input events primary_button, primary_button_with, key_press; extend it instead of re-implementing fixtures per module)
+    - test_support.rs (#[cfg(test)] helpers shared by GUI module tests, e.g. sorted_link_ids, set_actuator_stored_force, input events primary_button, primary_button_with, key_press, typed, the headless frame central_panel_frame, painted-output inspection drawn_texts, drew_text, text_rect; extend it instead of re-implementing fixtures per module)
 
 entry_points:
   native_bin: src/bin/linkage_gui.rs (uses native feature)

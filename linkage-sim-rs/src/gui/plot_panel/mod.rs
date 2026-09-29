@@ -716,6 +716,7 @@ mod tests {
     use super::*;
     use crate::gui::state::{AngleUnit, DisplayUnits, LengthUnit};
     use crate::gui::sweep::{empty_trajectory_sweep_data, SweepMode};
+    use crate::gui::test_support::central_panel_frame;
 
     fn deg_units() -> DisplayUnits {
         DisplayUnits {
@@ -892,13 +893,10 @@ mod tests {
     /// Run one idle frame of the plot panel with `tab` selected (the panel
     /// keeps its tab in egui memory under `ui.id().with("plot_tab")`).
     fn plot_panel_frame(state: &mut AppState, tab: PlotTab) {
-        let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                let tab_id = ui.id().with("plot_tab");
-                ui.memory_mut(|mem| mem.data.insert_temp(tab_id, tab));
-                draw_plot_panel(ui, state);
-            });
+        let _ = central_panel_frame(&egui::Context::default(), Vec::new(), |ui| {
+            let tab_id = ui.id().with("plot_tab");
+            ui.memory_mut(|mem| mem.data.insert_temp(tab_id, tab));
+            draw_plot_panel(ui, state);
         });
     }
 

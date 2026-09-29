@@ -1,4 +1,5 @@
-//! Helpers shared by the tests of the GUI modules.
+//! Helpers shared by the tests of the GUI modules (fixtures, input events,
+//! and inspection of what a headless egui frame painted).
 
 use eframe::egui;
 
@@ -48,4 +49,68 @@ pub(crate) fn primary_button(pos: egui::Pos2, pressed: bool) -> egui::Event {
 /// A key press event with no modifiers.
 pub(crate) fn key_press(key: egui::Key) -> egui::Event {
     egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE }
+}
+
+/// Text typed into the focused widget.
+pub(crate) fn typed(text: &str) -> egui::Event {
+    egui::Event::Text(text.to_string())
+}
+
+/// One headless frame of `draw` inside a central panel, with `events` as
+/// the frame's input. Returns what egui painted.
+pub(crate) fn central_panel_frame(
+    ctx: &egui::Context,
+    events: Vec<egui::Event>,
+    mut draw: impl FnMut(&mut egui::Ui),
+) -> egui::FullOutput {
+    let input = egui::RawInput { events, ..Default::default() };
+    ctx.run(input, |ctx| {
+        egui::CentralPanel::default().show(ctx, |ui| draw(ui));
+    })
+}
+
+/// Call `visit` on every shape egui painted in a frame, nested shapes
+/// included, in paint order.
+fn visit_shapes(output: &egui::FullOutput, mut visit: impl FnMut(&egui::Shape)) {
+    fn walk(shape: &egui::Shape, visit: &mut impl FnMut(&egui::Shape)) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, visit)),
+            other => visit(other),
+        }
+    }
+    for clipped in &output.shapes {
+        walk(&clipped.shape, &mut visit);
+    }
+}
+
+/// Every text egui drew in a frame (widgets, painter text, tooltips), in
+/// paint order.
+pub(crate) fn drawn_texts(output: &egui::FullOutput) -> Vec<String> {
+    let mut texts = Vec::new();
+    visit_shapes(output, |shape| {
+        if let egui::Shape::Text(text) = shape {
+            texts.push(text.galley.text().to_string());
+        }
+    });
+    texts
+}
+
+/// Whether egui drew the text `needle` (exactly) in a frame.
+pub(crate) fn drew_text(output: &egui::FullOutput, needle: &str) -> bool {
+    drawn_texts(output).iter().any(|t| t == needle)
+}
+
+/// Screen rect of the first drawn text equal to `needle`, e.g. a button
+/// label: lets a test click a widget whose id it cannot know.
+pub(crate) fn text_rect(output: &egui::FullOutput, needle: &str) -> Option<egui::Rect> {
+    let mut found = None;
+    visit_shapes(output, |shape| {
+        match shape {
+            egui::Shape::Text(text) if found.is_none() && text.galley.text() == needle => {
+                found = Some(text.galley.rect.translate(text.pos.to_vec2()));
+            }
+            _ => {}
+        }
+    });
+    found
 }

@@ -11,13 +11,16 @@ pub(super) mod force_editor;
 
 use eframe::egui;
 use crate::core::state::GROUND_ID;
-use crate::gui::state::{AppState, PropertyPanelTab};
+use crate::gui::state::{AppState, PropertyPanelTab, SelectedEntity};
 
 use pending_edits::{PendingPropertyEdit, apply_pending, draw_force_elements_inner};
 use diagnostics::draw_diagnostics_section;
 
 mod health;
 mod undo_panel;
+mod weight_editor;
+
+pub(crate) use weight_editor::weight_mass_drag_value;
 
 /// Draw the property panel showing info about the selected entity.
 ///
@@ -69,6 +72,11 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
     // ── Mechanism Health ──────────────────────────────────────────────
     health::draw_health_section(ui, state);
+
+    // ── Selected weight (name, mass, owning link, position) ──────────
+    if let Some(SelectedEntity::Weight { body_id, weight_id }) = &state.selected {
+        weight_editor::draw_selected_weight(ui, state, body_id, weight_id, &mut pending);
+    }
 
     // ── Link Editor (always visible, dropdown to pick body) ───────────
     let body_ids: Vec<String> = mech.body_order().to_vec();
@@ -258,113 +266,11 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                         }
                     }
 
-                    // ── Point Masses ─────────────────────────────────────
+                    // ── Weights (always shown for a moving link) ─────────
                     if body_id != GROUND_ID {
-                        if let Some(bp) = &state.blueprint {
-                            if let Some(bp_body) = bp.bodies.get(&body_id) {
-                                if !bp_body.point_masses.is_empty() {
-                                    ui.separator();
-                                    let pm_color = state.nc(egui::Color32::from_rgb(255, 200, 50));
-                                    egui::CollapsingHeader::new(
-                                        egui::RichText::new(format!(
-                                            "Point Masses ({})", bp_body.point_masses.len()
-                                        )).color(pm_color),
-                                    )
-                                        .id_salt(format!("point_masses_{}", body_id))
-                                        .default_open(true)
-                                        .show(ui, |ui| {
-                                            let units = &state.display_units;
-                                            for (i, pm) in bp_body.point_masses.iter().enumerate() {
-                                                ui.horizontal(|ui| {
-                                                    ui.label(format!("#{}", i + 1));
-
-                                                    let mut mass_val = pm.mass;
-                                                    let mr = ui.add(
-                                                        egui::DragValue::new(&mut mass_val)
-                                                            .speed(0.01)
-                                                            .range(0.001..=1000.0)
-                                                            // Never clamp a loaded mass on an idle frame:
-                                                            // egui would report it as changed and the
-                                                            // panel would commit a silent edit.
-                                                            .clamp_existing_to_range(false)
-                                                            .prefix("m: ")
-                                                            .suffix(" kg"),
-                                                    ).on_hover_text("Point mass magnitude in kg");
-                                                    if mr.drag_stopped() || (mr.changed() && !mr.dragged()) {
-                                                        pending = Some(PendingPropertyEdit::SetPointMassMass {
-                                                            body_id: body_id.clone(),
-                                                            weight_id: pm.id.clone(),
-                                                            mass: mass_val,
-                                                        });
-                                                    }
-                                                });
-                                                ui.horizontal(|ui| {
-                                                    ui.add_space(20.0);
-                                                    let mut x_display = units.length(pm.local_pos[0]);
-                                                    let xr = ui.add(
-                                                        egui::DragValue::new(&mut x_display)
-                                                            .speed(units.length(0.001))
-                                                            .prefix("X ")
-                                                            .suffix(units.length_suffix()),
-                                                    ).on_hover_text("Body-local X position");
-                                                    if xr.drag_stopped() || (xr.changed() && !xr.dragged()) {
-                                                        pending = Some(PendingPropertyEdit::SetPointMassPosition {
-                                                            body_id: body_id.clone(),
-                                                            weight_id: pm.id.clone(),
-                                                            local_pos: [units.length_to_si(x_display), pm.local_pos[1]],
-                                                        });
-                                                    }
-
-                                                    let mut y_display = units.length(pm.local_pos[1]);
-                                                    let yr = ui.add(
-                                                        egui::DragValue::new(&mut y_display)
-                                                            .speed(units.length(0.001))
-                                                            .prefix("Y ")
-                                                            .suffix(units.length_suffix()),
-                                                    ).on_hover_text("Body-local Y position");
-                                                    if yr.drag_stopped() || (yr.changed() && !yr.dragged()) {
-                                                        pending = Some(PendingPropertyEdit::SetPointMassPosition {
-                                                            body_id: body_id.clone(),
-                                                            weight_id: pm.id.clone(),
-                                                            local_pos: [pm.local_pos[0], units.length_to_si(y_display)],
-                                                        });
-                                                    }
-
-                                                    if ui.small_button("x")
-                                                        .on_hover_text("Remove this point mass")
-                                                        .clicked()
-                                                    {
-                                                        pending = Some(PendingPropertyEdit::RemovePointMass {
-                                                            body_id: body_id.clone(),
-                                                            weight_id: pm.id.clone(),
-                                                        });
-                                                    }
-                                                });
-                                                ui.horizontal(|ui| {
-                                                    ui.add_space(20.0);
-                                                    if ui.small_button("Move to Link")
-                                                        .on_hover_text("Click a different link to reassign this mass")
-                                                        .clicked()
-                                                    {
-                                                        pending = Some(PendingPropertyEdit::ReassignPointMass {
-                                                            body_id: body_id.clone(),
-                                                            weight_id: pm.id.clone(),
-                                                        });
-                                                    }
-                                                    if ui.small_button("Reposition")
-                                                        .on_hover_text("Click on the canvas to move this mass")
-                                                        .clicked()
-                                                    {
-                                                        pending = Some(PendingPropertyEdit::RepositionPointMass {
-                                                            body_id: body_id.clone(),
-                                                            weight_id: pm.id.clone(),
-                                                        });
-                                                    }
-                                                });
-                                            }
-                                        });
-                                }
-                            }
+                        if let Some(bp_body) = state.blueprint.as_ref().and_then(|bp| bp.bodies.get(&body_id)) {
+                            ui.separator();
+                            weight_editor::draw_link_weights(ui, state, &body_id, bp_body, &mut pending);
                         }
                     }
 
@@ -820,14 +726,11 @@ fn draw_scale_mechanism_section(
 mod tests {
     use super::*;
     use crate::gui::samples::SampleMechanism;
-    use crate::gui::test_support::sorted_link_ids;
+    use crate::gui::test_support::{central_panel_frame, sorted_link_ids};
 
     /// Run one frame of the property panel with no user input at all.
     fn one_idle_frame(state: &mut AppState) {
-        let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| draw_property_panel(ui, state));
-        });
+        let _ = central_panel_frame(&egui::Context::default(), Vec::new(), |ui| draw_property_panel(ui, state));
     }
 
     /// Weight masses outside the mass field's 0.001..=1000 kg range (a heavy

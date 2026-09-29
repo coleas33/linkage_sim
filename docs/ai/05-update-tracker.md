@@ -5,6 +5,56 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-29 — Payload weights Task 8: placement and the weight editor
+- `+ Mass` toolbar: a mass field (`draw_place_mass_field`, shown while the
+  tool is active) edits `AppState::last_point_mass_kg`, so it starts at the
+  last mass used. The placement click snaps to the grid (`snapped_world`,
+  shared with the weight drag), previews the snapped landing point, selects
+  the new weight and consumes the click (`handle_place_mass` returns true;
+  no click selection that frame). The hint names the next id and mass
+  (`canvas/rendering/weights.rs place_mass_hint`, "Click to place weight
+  W3 (2.5 kg) on 'coupler'"). A failed placement shows a status message.
+- `property_panel/weight_editor.rs` (new): `draw_selected_weight` (Weight
+  <name> header, Link: <owning link>, name, mass, body-local X/Y, Move to
+  Link / Reposition / Delete) above the Link Editor; `draw_link_weights`
+  replaces the Point Masses block: "Weights (n)", always shown for a moving
+  link, one editor per weight, Add weight (last mass at the link's base
+  CG, selected). Fields commit once per edit via `committed_number` (see
+  02-system `weight_fields_commit_once_per_edit`).
+- `PendingPropertyEdit::{SetPointMassLabel, AddPointMass}`; `RemovePointMass`
+  clears a selection of the removed weight.
+- `gui/state/display_units.rs`: `format_decimal` (6 decimals, trimmed),
+  `format_mass_kg`. `analysis::gravity_breakdown`: `display_name` is pub,
+  new `name_with_id` (also used by the Weight Breakdown legend) and
+  `point_mass_title` ("W1" / "Robot torso (W1)").
+  `canvas::WEIGHT_COLOR` is re-exported for the property panel.
+- Tests: `gui::property_panel::weight_editor::tests` (typed commit on Enter
+  and on Tab, clamping, no commit when leaving untouched or on Esc, drag
+  commit on release, idle frames; panel shows name/mass/link/position,
+  name commit, Esc drops a name, Tab to mass, stale selection, empty
+  Weights section, Add weight click), `pending_edits::tests`,
+  `gui::tests` (toolbar field visibility, starts at last mass, typing, idle
+  frames), `gui::canvas::tests::weight_clicks` (snapped placement selects
+  the weight, unsnapped placement, snap off the pointer still selects,
+  hint), `display_units::tests`, `gravity_breakdown` name helpers.
+- `gui/test_support.rs` (shared test helpers, DRY): adds `typed`,
+  `central_panel_frame` (one headless frame of a closure in a central
+  panel), `drawn_texts`, `drew_text` and `text_rect`. The new tests use
+  them instead of local copies, and the property panel's `one_idle_frame`
+  (Task 2) and the plot panel's `plot_panel_frame` (Task 7) now call
+  `central_panel_frame` too. The toolbar field tests use
+  `test_support::key_press`.
+- Mutation checks: dropping `!placed_weight` from the click-selection gate
+  fails `placing_a_weight_selects_it_even_when_the_snap_moves_it_off_the_pointer`
+  and the snapped-placement test; dropping `edited != shown` from
+  `committed_number` fails `leaving_a_field_without_typing_commits_nothing`.
+- Docs: FEATURES (Place Mass tool, Weight editor), ARCHITECTURE (property
+  panel weight editing), 02-system `weight_fields_commit_once_per_edit`,
+  `place_mass_click_snaps_and_selects` and the DragValue release-frame
+  lesson, 03-structure (weight_editor, rendering/weights, name helpers,
+  test_support). The spec's hands-on checklist wording for the Weights
+  section lands with the checklist in Task 10.
+
 ## 2026-09-29 — Payload weights Task 7: braking bands and the Weight Breakdown plot
 - `gui/plot_panel/weights.rs` (new): `PlotTab::WeightBreakdown` ("Weight
   Breakdown" tab, enabled when `SweepData::weight_breakdown` is `Some`): one

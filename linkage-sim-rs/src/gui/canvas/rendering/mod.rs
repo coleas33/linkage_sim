@@ -16,6 +16,7 @@ use super::hit_testing::{point_mass_screen_pos, AttachmentHit, BodySegment};
 // Submodules
 pub mod primitives;
 mod force_render;
+mod weights;
 
 // Re-export from submodules so external callers do not need to know the layout.
 pub use primitives::{draw_dashed_line, draw_ground_marker, draw_diamond_marker, fill_force_template};
@@ -813,7 +814,7 @@ pub fn render_overlays(
         }
         EditorTool::PlaceMass => {
             if let Some(ref body_id) = state.place_mass_body {
-                Some(format!("Click anywhere to place a point mass on '{}' (Esc to cancel)", body_id))
+                Some(weights::place_mass_hint(state, body_id))
             } else {
                 Some("Click a link to select the attachment body (Esc to cancel)".to_string())
             }

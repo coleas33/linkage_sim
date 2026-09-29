@@ -18,7 +18,7 @@ mod templates;
 mod preferences;
 
 // Re-export all public items so external code can use `crate::gui::state::*`.
-pub use display_units::{LengthUnit, AngleUnit, DisplayUnits};
+pub use display_units::{format_decimal, format_mass_kg, LengthUnit, AngleUnit, DisplayUnits};
 pub use grid::GridSettings;
 pub use view_transform::ViewTransform;
 pub use load_cases::{LoadCase, LoadCaseManager};

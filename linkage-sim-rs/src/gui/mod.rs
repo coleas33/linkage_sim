@@ -496,7 +496,7 @@ impl eframe::App for LinkageApp {
                     egui::Button::new(mass_text)
                 };
                 if ui.add(mass_btn)
-                    .on_hover_text("Place a point mass on a body")
+                    .on_hover_text("Place a weight (point mass): click a link, then the spot (snapped to the grid when snapping is on). The field next to this button sets its mass; it starts at the last mass used.")
                     .clicked()
                 {
                     self.state.active_tool = EditorTool::PlaceMass;
@@ -513,6 +513,7 @@ impl eframe::App for LinkageApp {
                         self.state.place_mass_body = None;
                     }
                 }
+                draw_place_mass_field(ui, &mut self.state);
 
                 ui.separator();
 
@@ -1271,6 +1272,18 @@ impl eframe::App for LinkageApp {
 
 // ── Delete shortcut ─────────────────────────────────────────────────────────
 
+/// The + Mass tool's mass field (kg), shown while the tool is active: the
+/// mass of the next weight placed. It edits `AppState::last_point_mass_kg`,
+/// which every added weight updates, so it starts at the last mass used. A
+/// setting, not an edit: no undo step.
+fn draw_place_mass_field(ui: &mut egui::Ui, state: &mut AppState) {
+    if state.active_tool != EditorTool::PlaceMass {
+        return;
+    }
+    ui.add(property_panel::weight_mass_drag_value(&mut state.last_point_mass_kg))
+        .on_hover_text("Mass of the next weight you place. Starts at the last mass used.");
+}
+
 /// Delete / Backspace removes the selection: every multi-selected item, else
 /// the single selected body, joint or weight (each removal is one undo step).
 /// Ignored while a widget has keyboard focus, so Backspace while typing in a
@@ -1415,7 +1428,7 @@ fn load_background_image(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gui::test_support::key_press;
+    use crate::gui::test_support::{central_panel_frame, drawn_texts, drew_text, key_press, typed};
 
     /// Four-bar with weights W1 and W2 on the coupler.
     fn fourbar_with_weights() -> AppState {
@@ -1489,6 +1502,67 @@ mod tests {
 
         assert!(state.find_point_mass("coupler", "W1").is_some());
         assert_eq!(state.selected, Some(weight("W1")));
+    }
+
+    /// One frame of the + Mass toolbar field, as the toolbar lays it out.
+    fn place_mass_field_frame(ctx: &egui::Context, state: &mut AppState, events: Vec<egui::Event>) -> egui::FullOutput {
+        central_panel_frame(ctx, events, |ui| {
+            ui.horizontal(|ui| draw_place_mass_field(ui, state));
+        })
+    }
+
+    #[test]
+    fn the_place_mass_field_shows_only_while_the_mass_tool_is_active() {
+        let ctx = egui::Context::default();
+        let mut state = fourbar_with_weights();
+        state.last_point_mass_kg = 7.5;
+
+        state.active_tool = EditorTool::Select;
+        let texts = drawn_texts(&place_mass_field_frame(&ctx, &mut state, Vec::new()));
+        assert!(texts.is_empty(), "nothing outside the + Mass tool: {texts:?}");
+
+        state.active_tool = EditorTool::PlaceMass;
+        assert!(drew_text(&place_mass_field_frame(&ctx, &mut state, Vec::new()), "7.5 kg"));
+    }
+
+    #[test]
+    fn the_place_mass_field_starts_at_the_last_mass_used() {
+        let ctx = egui::Context::default();
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.active_tool = EditorTool::PlaceMass;
+        assert!(drew_text(&place_mass_field_frame(&ctx, &mut state, Vec::new()), "1 kg"), "1 kg before any weight");
+
+        state.add_point_mass("coupler", 12.5, [0.0, 0.0]).expect("weight added");
+        assert!(drew_text(&place_mass_field_frame(&ctx, &mut state, Vec::new()), "12.5 kg"), "then the last mass added");
+    }
+
+    #[test]
+    fn typing_in_the_place_mass_field_sets_the_next_mass_without_an_undo_step() {
+        let ctx = egui::Context::default();
+        let mut state = fourbar_with_weights();
+        state.active_tool = EditorTool::PlaceMass;
+        let depth = state.undo_history.undo_count();
+
+        place_mass_field_frame(&ctx, &mut state, vec![key_press(egui::Key::Tab)]);
+        place_mass_field_frame(&ctx, &mut state, vec![typed("2.5")]);
+        place_mass_field_frame(&ctx, &mut state, vec![key_press(egui::Key::Enter)]);
+
+        assert_eq!(state.last_point_mass_kg, 2.5);
+        assert_eq!(state.undo_history.undo_count(), depth, "the next mass is a setting, not an edit");
+    }
+
+    #[test]
+    fn idle_frames_leave_an_out_of_range_next_mass_alone() {
+        let ctx = egui::Context::default();
+        let mut state = fourbar_with_weights();
+        state.active_tool = EditorTool::PlaceMass;
+        state.last_point_mass_kg = 1500.0;
+
+        place_mass_field_frame(&ctx, &mut state, Vec::new());
+        place_mass_field_frame(&ctx, &mut state, Vec::new());
+
+        assert_eq!(state.last_point_mass_kg, 1500.0);
     }
 
     #[test]

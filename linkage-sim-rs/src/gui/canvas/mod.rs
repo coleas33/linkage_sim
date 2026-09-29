@@ -18,7 +18,7 @@ use eframe::egui::{self, FontId, Pos2};
 
 use crate::gui::state::AppState;
 
-pub use colors::{classification_color, to_grayscale};
+pub use colors::{classification_color, to_grayscale, WEIGHT_COLOR};
 use colors::*;
 use hit_testing::{AttachmentHit, BodySegment};
 
@@ -412,9 +412,35 @@ mod tests {
         }
 
         #[test]
-        fn place_mass_click_uses_the_last_point_mass() {
+        fn place_mass_click_places_the_last_mass_on_the_snapped_grid_point() {
             let (ctx, mut state, body, _) = setup();
             state.last_point_mass_kg = 3.5;
+            state.active_tool = EditorTool::PlaceMass;
+            state.place_mass_body = Some(body.clone());
+            let target = Pos2::new(150.0, 650.0);
+            assert!(state.grid.snap_enabled, "fixture: snapping is on by default");
+            let world = drop_world(&state, target);
+            let [wx, wy] = state.view.screen_to_world(target.x, target.y);
+            assert_ne!(world, [wx, wy], "fixture: the snap moves the placement");
+            let expected = state.world_to_body_local(&body, world[0], world[1]);
+            let depth = state.undo_history.undo_count();
+
+            click(&ctx, &mut state, target);
+
+            let pm = state.find_point_mass(&body, "W2").expect("the new weight gets the next id");
+            assert_eq!(pm.mass, 3.5);
+            assert_close("placement on the snapped grid point", pm.local_pos, expected);
+            assert_eq!(state.last_point_mass_kg, 3.5);
+            assert_eq!(state.active_tool, EditorTool::Select);
+            assert_eq!(state.selected, Some(weight(&body, "W2")), "the new weight is selected");
+            assert_eq!(state.link_editor_body.as_deref(), Some(body.as_str()));
+            assert_eq!(state.undo_history.undo_count(), depth + 1, "one placement = one undo step");
+        }
+
+        #[test]
+        fn place_mass_with_snapping_off_lands_under_the_pointer() {
+            let (ctx, mut state, body, _) = setup();
+            state.grid.snap_enabled = false;
             state.active_tool = EditorTool::PlaceMass;
             state.place_mass_body = Some(body.clone());
             let target = Pos2::new(150.0, 650.0);
@@ -422,11 +448,40 @@ mod tests {
 
             click(&ctx, &mut state, target);
 
-            let pm = state.find_point_mass(&body, "W2").expect("the new weight gets the next id");
-            assert_eq!(pm.mass, 3.5);
-            assert_close("placement", pm.local_pos, expected);
-            assert_eq!(state.last_point_mass_kg, 3.5);
-            assert_eq!(state.active_tool, EditorTool::Select);
+            assert_close("unsnapped placement", state.find_point_mass(&body, "W2").unwrap().local_pos, expected);
+        }
+
+        /// The click that places a weight is not also a selection click: the
+        /// snap can move the weight beyond the pick radius of the pointer,
+        /// where selecting at the pointer would clear the selection.
+        #[test]
+        fn placing_a_weight_selects_it_even_when_the_snap_moves_it_off_the_pointer() {
+            let (ctx, mut state, body, _) = setup();
+            let pick = super::super::colors::WEIGHT_HIT_RADIUS;
+            let target = (0..40)
+                .flat_map(|i| (0..20).map(move |j| Pos2::new(110.0 + i as f32 * 3.7, 640.0 + j as f32 * 3.1)))
+                .find(|&p| screen_of(&state, drop_world(&state, p)).distance(p) > pick + 1.0)
+                .expect("fixture: an empty-canvas point the snap moves off the pointer");
+            state.active_tool = EditorTool::PlaceMass;
+            state.place_mass_body = Some(body.clone());
+
+            click(&ctx, &mut state, target);
+
+            assert!(state.find_point_mass(&body, "W2").is_some());
+            assert_eq!(state.selected, Some(weight(&body, "W2")));
+        }
+
+        #[test]
+        fn the_place_mass_hint_names_the_next_weight_and_its_mass() {
+            let (ctx, mut state, body, _) = setup();
+            state.last_point_mass_kg = 3.5;
+            state.active_tool = EditorTool::PlaceMass;
+            state.place_mass_body = Some(body.clone());
+
+            let output = frame_with(&ctx, &mut state, Vec::new(), egui::Modifiers::NONE);
+
+            let want = format!("Click to place weight W2 (3.5 kg) on '{body}' (Esc to cancel)");
+            assert!(crate::gui::test_support::drew_text(&output, &want), "hint {want:?}");
         }
 
         #[test]

@@ -163,6 +163,26 @@ invariants_to_protect:
     a release outside the canvas rect commits nothing. The drag starts from
     pointer.press_origin(): egui reports drag_started only after the pointer
     has moved > 6 px.
+  - weight_fields_commit_once_per_edit — in property_panel/weight_editor.rs
+    every weight field (name, mass, body-local X/Y, in the selected-weight
+    editor and the link editor's Weights section) edits a copy and emits
+    ONE PendingPropertyEdit when the user finishes. committed_number keeps
+    the copy in egui memory while the field is dragged or focused and
+    commits on drag_stopped() || lost_focus(), but not when the committed
+    number is the stored value or the number the field showed
+    (format_decimal round trip), so focusing and leaving a field records
+    nothing; update_while_editing(false) makes Esc drop typed text. The name
+    field buffers typed text the same way and commits on lost focus
+    without Esc. The + Mass toolbar field edits
+    AppState::last_point_mass_kg directly (a setting, so no undo step) with the
+    same weight_mass_drag_value (0.001..=1000 kg).
+  - place_mass_click_snaps_and_selects — the + Mass tool's placement click
+    snaps to the grid (canvas interaction.rs snapped_world, shared with the
+    weight drag), adds one weight of last_point_mass_kg (one undo step),
+    selects SelectedEntity::Weight and returns true so handle_interaction
+    skips click selection that frame (the snap can move the weight beyond
+    the pick radius of the pointer). The link editor's Add weight button
+    adds last_point_mass_kg at the link's base cg_local and selects it.
   - delete_shortcut_ignores_focused_widgets — gui/mod.rs
     handle_delete_shortcut returns early while ctx.wants_keyboard_input();
     before this, Backspace in any text/number field deleted the selected
@@ -283,6 +303,14 @@ lessons_learned:
     DragValue::range also marks the response changed() when it clamps an
     out-of-range stored value on an idle frame; use
     .clamp_existing_to_range(false) on committed fields (weight mass field).
+  - egui DragValue stops reporting dragged() on the release frame and
+    drops its precise-value memory on any pointer release, so a DragValue
+    over a copy rebuilt from the model every frame loses a mouse drag when
+    it commits on drag_stopped(), since the release frame sees the old value.
+    Keep the copy in egui memory while dragged/focused (weight_editor
+    committed_number). Existing per-frame-copy DragValues that commit on
+    drag_stopped() (ground pivot X/Y, Dist, Angle, driver RPM) still lose
+    drags.
   - egui_plot fits its auto bounds to every item plus a 5 % margin
     (margin_fraction), so a shaded band sized from plot_ui.plot_bounds()
     would widen the axes on every frame. Size bands from the data's finite

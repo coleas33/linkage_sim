@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize};
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
 use crate::forces::elements::ForceElement;
-use crate::io::{point_mass_skip_reason, MechanismJson};
+use crate::io::{point_mass_skip_reason, MechanismJson, PointMassJson};
 
 /// Force shares are NaN where `|rate| < EPS_REL_LDOT * max|rate|` over the
 /// sweep: near stroke reversal the actuator barely moves, so `-P_g / rate`
@@ -81,12 +81,29 @@ pub enum Classification {
     Neutral,
 }
 
-/// `label` when it has visible text, else `fallback`.
-fn display_name(label: Option<&String>, fallback: &str) -> String {
+/// `label` when it has visible text, else `fallback`: the display name of
+/// a weight (label or id) or a link (label or body id).
+pub fn display_name(label: Option<&String>, fallback: &str) -> String {
     match label {
         Some(text) if !text.trim().is_empty() => text.clone(),
         _ => fallback.to_string(),
     }
+}
+
+/// `name` with `id` in parentheses when they differ ("Robot (W1)"), else
+/// just `id`: a display name that stays unique when two labels are equal.
+pub fn name_with_id(name: &str, id: &str) -> String {
+    if name == id {
+        id.to_string()
+    } else {
+        format!("{name} ({id})")
+    }
+}
+
+/// Display title of point mass `pm`: "W1", or "Robot torso (W1)" when it
+/// has a label (the property panel's weight editors, the canvas readout).
+pub fn point_mass_title(pm: &PointMassJson) -> String {
+    name_with_id(&display_name(pm.label.as_ref(), &pm.id), &pm.id)
 }
 
 /// Every weight in blueprint `bp`, in a fixed order: first one link
@@ -608,6 +625,30 @@ mod tests {
         assert!(!is_braking(0.0, 100.0));
         assert!(!is_braking(5.0, 100.0));
         assert!(!is_braking(f64::NAN, 100.0));
+    }
+
+    #[test]
+    fn display_name_prefers_a_visible_label() {
+        assert_eq!(display_name(Some(&"Robot".to_string()), "W1"), "Robot");
+        assert_eq!(display_name(Some(&"  ".to_string()), "W1"), "W1");
+        assert_eq!(display_name(None, "W1"), "W1");
+    }
+
+    #[test]
+    fn name_with_id_adds_the_id_only_when_the_name_differs() {
+        assert_eq!(name_with_id("W1", "W1"), "W1");
+        assert_eq!(name_with_id("Robot torso", "W2"), "Robot torso (W2)");
+        assert_eq!(name_with_id("Arm", "b2"), "Arm (b2)");
+    }
+
+    #[test]
+    fn point_mass_title_is_the_id_or_the_label_with_the_id() {
+        let mut pm = PointMassJson { id: "W1".to_string(), label: None, mass: 1.0, local_pos: [0.0, 0.0] };
+        assert_eq!(point_mass_title(&pm), "W1");
+        pm.label = Some("Robot torso".to_string());
+        assert_eq!(point_mass_title(&pm), "Robot torso (W1)");
+        pm.label = Some(" ".to_string());
+        assert_eq!(point_mass_title(&pm), "W1", "a blank label shows the id");
     }
 
     #[test]

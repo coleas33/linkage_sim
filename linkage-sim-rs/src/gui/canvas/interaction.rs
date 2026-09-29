@@ -498,9 +498,9 @@ pub fn handle_interaction(
     }
 
     // ── Interaction: Place Mass tool ─────────────────────────────────────
-    if state.active_tool == EditorTool::PlaceMass {
-        handle_place_mass(ui, painter, response, state, body_segments);
-    }
+    // A click that places a weight is not also a selection click (below).
+    let placed_weight = state.active_tool == EditorTool::PlaceMass
+        && handle_place_mass(ui, painter, response, state, body_segments);
 
     // ── Interaction: Draw Body Geometry tool ──────────────────────────────
     // (Stubbed: full implementation pending in uncommitted work)
@@ -529,6 +529,7 @@ pub fn handle_interaction(
         && state.active_tool != EditorTool::CreateForceZone
         && state.active_tool != EditorTool::PlaceMass
         && state.active_tool != EditorTool::DrawBodyGeometry
+        && !placed_weight
         && response.clicked()
     {
         handle_click_selection(response, state, canvas_rect, joint_hit_targets, attachment_hit_targets, is_shift);
@@ -625,8 +626,7 @@ fn handle_weight_drag(
         return; // released outside the canvas: cancel
     }
 
-    let [wx, wy] = state.view.screen_to_world(pointer.x, pointer.y);
-    let (gx, gy) = state.grid.snap_point(wx, wy);
+    let [gx, gy] = snapped_world(state, pointer);
     drag.current_world = [gx, gy];
     let [sx, sy] = state.view.world_to_screen(gx, gy);
     let drop_screen = Pos2::new(sx, sy);
@@ -643,6 +643,14 @@ fn handle_weight_drag(
     draw_weight_drag_preview(painter, state, &drag, drop_screen, &target, body_segments);
     ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
     state.weight_drag = Some(drag);
+}
+
+/// The world point under screen point `screen`, snapped to the grid when
+/// snapping is on: where a dragged or placed weight lands.
+fn snapped_world(state: &AppState, screen: Pos2) -> [f64; 2] {
+    let [wx, wy] = state.view.screen_to_world(screen.x, screen.y);
+    let (gx, gy) = state.grid.snap_point(wx, wy);
+    [gx, gy]
 }
 
 /// The link a weight dropped at screen point `drop_screen` lands on: the
@@ -1135,43 +1143,31 @@ fn handle_draw_body_geometry(
 
 // ── Place Mass tool ─────────────────────────────────────────────────────────
 
+/// The + Mass tool.
+///
+/// Phase 1 (no link picked): a click near a link picks it. Phase 2: a
+/// preview shows where the weight lands; a click adds a weight of
+/// `state.last_point_mass_kg` (the toolbar field) to the picked link at the
+/// click point, snapped to the grid when snapping is on (one undo step),
+/// selects the new weight and returns to Select. Returns true when this
+/// frame's click placed a weight: the caller then skips click selection,
+/// which would pick at the pointer although the snap may have moved the
+/// weight away from it.
 fn handle_place_mass(
     ui: &mut egui::Ui,
     painter: &egui::Painter,
     response: &egui::Response,
     state: &mut AppState,
     body_segments: &[BodySegment],
-) {
-    let has_body = state.place_mass_body.is_some();
-
-    if has_body {
-        // Phase 2: body is selected, draw preview and place on click.
-        if let Some(hover) = ui.input(|i| i.pointer.hover_pos()) {
-            let point_mass_color = Color32::from_rgb(255, 200, 50);
-            // Draw gold circle preview at cursor
-            painter.circle_filled(hover, 5.0, point_mass_color.linear_multiply(0.5));
-            painter.circle_stroke(hover, 7.0, Stroke::new(1.0, point_mass_color));
-        }
-
-        if response.clicked() {
-            if let Some(pos) = response.interact_pointer_pos() {
-                let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
-                let body_id = state.place_mass_body.clone().unwrap();
-                let [lx, ly] = state.world_to_body_local(&body_id, wx, wy);
-                state.add_point_mass(&body_id, state.last_point_mass_kg, [lx, ly]);
-                state.place_mass_body = None;
-                state.active_tool = EditorTool::Select;
-                state.selected = Some(SelectedEntity::Body(body_id.clone()));
-                state.link_editor_body = Some(body_id);
-            }
-        }
-    } else {
+) -> bool {
+    let color = state.nc(WEIGHT_COLOR);
+    let Some(body_id) = state.place_mass_body.clone() else {
         // Phase 1: select a body by clicking near a link segment.
         // Highlight nearest body segment on hover.
         if let Some(hover) = ui.input(|i| i.pointer.hover_pos()) {
             if let Some(seg_hit) = find_nearest_body_segment(hover, body_segments, LINK_PICK_RADIUS) {
                 // Draw highlight on the hovered body segment
-                let highlight = Color32::from_rgb(255, 200, 50).linear_multiply(0.4);
+                let highlight = color.linear_multiply(0.4);
                 painter.line_segment(
                     [seg_hit.screen_pos, {
                         // Re-find the segment endpoints for drawing
@@ -1197,7 +1193,39 @@ fn handle_place_mass(
                 }
             }
         }
+        return false;
+    };
+
+    // Phase 2: preview the landing point; place on click.
+    if let Some(hover) = ui.input(|i| i.pointer.hover_pos()) {
+        let [gx, gy] = snapped_world(state, hover);
+        let [sx, sy] = state.view.world_to_screen(gx, gy);
+        let landing = Pos2::new(sx, sy);
+        painter.circle_filled(landing, WEIGHT_RADIUS, color.linear_multiply(0.5));
+        painter.circle_stroke(landing, WEIGHT_HIT_RADIUS, Stroke::new(1.0, color));
     }
+    if !response.clicked() {
+        return false;
+    }
+    let Some(pos) = response.interact_pointer_pos() else { return false };
+    let [gx, gy] = snapped_world(state, pos);
+    let local = state.world_to_body_local(&body_id, gx, gy);
+    let mass = state.last_point_mass_kg;
+    state.place_mass_body = None;
+    state.active_tool = EditorTool::Select;
+    state.link_editor_body = Some(body_id.clone());
+    state.multi_selected.clear();
+    match state.add_point_mass(&body_id, mass, local) {
+        Some(weight_id) => {
+            state.selected = Some(SelectedEntity::Weight { body_id, weight_id });
+        }
+        None => {
+            state.status_message = Some(format!("Could not place a {mass} kg weight on '{body_id}'"));
+            state.status_message_time = 3.0;
+            state.selected = Some(SelectedEntity::Body(body_id));
+        }
+    }
+    true
 }
 
 // ── Add Body tool ────────────────────────────────────────────────────────────

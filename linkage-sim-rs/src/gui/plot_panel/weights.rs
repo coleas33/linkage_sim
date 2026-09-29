@@ -17,7 +17,7 @@
 use eframe::egui;
 use egui_plot::{Plot, Polygon, VLine};
 
-use crate::analysis::gravity_breakdown::{Classification, WeightSource};
+use crate::analysis::gravity_breakdown::{name_with_id, Classification, WeightSource};
 use crate::gui::canvas::{classification_color, to_grayscale};
 use crate::gui::state::DisplayUnits;
 use crate::gui::sweep::{ShareBasis, SweepData, WeightBreakdown};
@@ -169,10 +169,8 @@ pub(super) fn source_line_name(source: &WeightSource) -> String {
         } else {
             format!("{} (link {})", source.name, source.body_id)
         }
-    } else if source.name == source.id {
-        source.id.clone()
     } else {
-        format!("{} ({})", source.name, source.id)
+        name_with_id(&source.name, &source.id)
     }
 }
 
