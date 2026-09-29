@@ -7,16 +7,19 @@
 //! Calibration → Calculator (model) → Metal design retainers → Calculator mass
 //! → Metal design → Materials → Temperature design → Shaft clamps → sweeps.
 //!
-//! Ported: every sheet of the Python `compute_all` (Calibration, Calculator
-//! (model), Metal design retainers, Calculator mass, Metal design, Materials,
-//! Temperature design, Shaft clamps, Gap sweep, Pole sweep).
+//! Ported: every module except `fields3d` (M3): every sheet of the Python
+//! `compute_all` (Calibration, Calculator (model), Metal design retainers,
+//! Calculator mass, Metal design, Materials, Temperature design, Shaft clamps,
+//! Gap sweep, Pole sweep), `headline` and the input check.
 //!
 //! Python API mapping: `compute_all(inp)` is [`compute_all`];
 //! `input_schema(inp)` and `result_schema(res)` are
 //! [`crate::engine::meta::input_rows`] and [`crate::engine::meta::result_rows`];
 //! `set_input(inp, path, value)` (returns a modified copy) is
 //! [`crate::engine::meta::InputSet::set`] (modifies in place; clone first to keep
-//! the original).
+//! the original); `headline(res)` is [`headline`] (a list of pairs in Python's
+//! order, not a dict). Rust-only: [`DesignInputs::validate`], for inputs that
+//! bypass `set`. `to_dict` is not ported: JSON export is M4.
 
 use super::calibration::{self, CalibrationInputs, CalibrationResults};
 use super::clamps::{self, ClampInputs, ClampResults};
@@ -24,7 +27,7 @@ use super::deviations::Deviations;
 #[cfg(feature = "workbook-parity")]
 use super::deviations::{REGISTRY, restore_workbook_defaults};
 use super::materials::{self, MaterialsInputs, MaterialsResults};
-use super::meta::{TableLayout, inputs, results};
+use super::meta::{SetError, TableLayout, Value, inputs, result_rows, results, validate};
 use super::metal_design::{self, MetalDesignInputs, MetalDesignResults, RetainerResults};
 use super::model::{self, CouplingInputs, MassResults, ModelResults};
 use super::sweeps::{self, SweepRow};
@@ -78,6 +81,54 @@ pub fn compute_all(inputs: &DesignInputs) -> DesignResults {
 #[cfg(feature = "workbook-parity")]
 pub fn compute_all_with(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
     compute(inputs, dev)
+}
+
+/// The numbers a dashboard shows first: (Python key, result path), in the order
+/// of Python's `headline()` (`api.py` lines 131-150).
+pub const HEADLINE: [(&str, &str); 15] = [
+    ("pullout_at_op_temp_Nm", "model.pullout_Nm"),
+    ("pullout_at_20C_Nm", "model.pullout_20C_Nm"),
+    ("hot_low_with_variation_Nm", "metal.torque_hot_low_Nm"),
+    ("hot_min_check", "metal.hot_min_check"),
+    ("cold_high_with_variation_Nm", "metal.torque_cold_high_Nm"),
+    ("gearbox_input_ripple_Nm", "model.gearbox_input_ripple_Nm"),
+    ("cup_od_mm", "model.cup_od_mm"),
+    ("rotating_mass_g", "mass.total_g"),
+    ("running_clearance_mm", "metal.min_running_clearance_mm"),
+    ("clearance_check", "metal.clearance_check"),
+    ("cup_wall_check", "materials.cup_wall_check"),
+    (
+        "governing_temp_limit_C",
+        "temperature.summary.governing_limit_C",
+    ),
+    ("hot_day_margin_C", "temperature.summary.margin_hot_day_C"),
+    ("temperature_verdict", "temperature.summary.verdict"),
+    ("clamp_screw", "clamps.recommended"),
+];
+
+/// Python `headline(res)`: the dashboard numbers, keyed and ordered as in Python.
+pub fn headline(results: &DesignResults) -> Vec<(&'static str, Value)> {
+    let rows = result_rows(results);
+    HEADLINE
+        .iter()
+        .map(|&(key, path)| {
+            (
+                key,
+                rows.iter()
+                    .find(|r| r.path == path)
+                    .map_or(Value::None, |r| r.value.clone()),
+            )
+        })
+        .collect()
+}
+
+impl DesignInputs {
+    /// Every selector code among its choices and every number finite (see
+    /// [`crate::engine::meta::validate`]). Decision D3: `compute_all` never
+    /// panics on invalid inputs; call this where inputs enter (design file, share link).
+    pub fn validate(&self) -> Result<(), Vec<SetError>> {
+        validate(self)
+    }
 }
 
 // Python api.compute_all lines 52-99; Python local names.
@@ -295,6 +346,15 @@ mod tests {
             |r| r.path == "calibration.f_cal_updated" && r.meta.cell == Some("Calibration!C9")
         ));
         assert_eq!(input_rows(&inputs)[0].path, "coupling.npole");
+    }
+
+    #[test]
+    fn headline_names_existing_results() {
+        assert!(
+            headline(&compute_all(&DesignInputs::default()))
+                .iter()
+                .all(|(_, v)| *v != Value::None)
+        );
     }
 
     #[test]

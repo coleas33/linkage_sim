@@ -96,3 +96,13 @@ fn snapshot_copy_equals_the_vendored_snapshot() {
          copy the vendored file again"
     );
 }
+
+#[test]
+fn the_port_checks_every_cell_test_parity_checks() {
+    // test_parity.py: 330 result cells, 494 sweep cells, 165 screw-table cells, 160 default inputs = 1,149.
+    let cells: usize = PORTED_RESULTS.iter().map(|p| p.cells).sum();
+    let table_cells: usize = PORTED_RESULTS.iter().map(|p| p.table_cells).sum();
+    let inputs: usize = PORTED_INPUTS.iter().map(|p| p.cells).sum();
+    assert_eq!((cells, table_cells, inputs), (330, 659, 160));
+    assert_eq!(cells + table_cells + inputs, 1149);
+}

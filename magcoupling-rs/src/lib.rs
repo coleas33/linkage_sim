@@ -10,11 +10,13 @@
 //! Spec: `docs/superpowers/specs/2026-09-28-magcoupling-calculator-design.md`.
 //!
 //! ```
-//! use magcoupling::{DesignInputs, compute_all};
+//! use magcoupling::{DesignInputs, compute_all, headline};
 //! let res = compute_all(&DesignInputs::default());
-//! assert!((res.calibration.f_cal_updated - 1.0658).abs() < 1e-4);
+//! // The production-variation allowance lowers the hot-side torque below the nominal pull-out.
+//! assert!(res.metal.torque_hot_low_Nm < res.model.pullout_Nm);
+//! assert_eq!(headline(&res)[0].0, "pullout_at_op_temp_Nm");
 //! ```
 
 pub mod engine;
 
-pub use engine::api::{DesignInputs, DesignResults, compute_all};
+pub use engine::api::{DesignInputs, DesignResults, compute_all, headline};

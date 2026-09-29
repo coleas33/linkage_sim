@@ -639,6 +639,21 @@ pub fn result_rows<T: ResultSet>(results: &T) -> Vec<ResultRow> {
     rows
 }
 
+/// Why `value` is not acceptable for the input `meta` describes, if it is not:
+/// a selector code outside the choices, or NaN or an infinity. What `set()` and
+/// `validate()` both check before the type conversion.
+fn check_value(meta: &InputMeta, value: &Value) -> Option<SetErrorKind> {
+    match *value {
+        Value::Int(code)
+            if !meta.choices.is_empty() && !meta.choices.iter().any(|&(c, _)| c == code) =>
+        {
+            Some(SetErrorKind::NotAChoice { code })
+        }
+        Value::Num(x) if !x.is_finite() => Some(SetErrorKind::NotFinite),
+        _ => None,
+    }
+}
+
 /// Converts and validates a value for the input described by `meta` (used by `inputs!`).
 #[doc(hidden)]
 pub fn convert_input<T: InputValue>(meta: &InputMeta, value: Value) -> Result<T, SetError> {
@@ -646,13 +661,32 @@ pub fn convert_input<T: InputValue>(meta: &InputMeta, value: Value) -> Result<T,
         path: meta.name.to_owned(),
         kind,
     };
-    if let Value::Int(code) = value
-        && !meta.choices.is_empty()
-        && !meta.choices.iter().any(|&(c, _)| c == code)
-    {
-        return Err(error(SetErrorKind::NotAChoice { code }));
+    if let Some(kind) = check_value(meta, &value) {
+        return Err(error(kind));
     }
     T::from_value(value).map_err(error)
+}
+
+/// Checks every input the way [`InputSet::set`] checks one: selector codes among
+/// their choices, numbers finite. For inputs built or edited without `set`
+/// (struct literals, design files, share links). `compute_all` never panics on
+/// invalid inputs, but its results are then meaningless: call this at input
+/// boundaries. Errors name full paths, in schema order.
+pub fn validate<T: InputSet>(inputs: &T) -> Result<(), Vec<SetError>> {
+    let errors: Vec<SetError> = input_rows(inputs)
+        .into_iter()
+        .filter_map(|row| {
+            check_value(row.meta, &row.value).map(|kind| SetError {
+                path: row.path,
+                kind,
+            })
+        })
+        .collect();
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }
 
 /// The metadata row of a named leaf field (used by `inputs!`; the name always
@@ -1100,6 +1134,25 @@ mod tests {
         assert_eq!(e.to_string(), "leaf.code: 2 is not one of the choices");
 
         assert_eq!(t, before, "a refused set leaves the inputs unchanged");
+    }
+
+    #[test]
+    fn validate_reports_what_set_would_refuse() {
+        let mut t = Top::default();
+        assert_eq!(validate(&t), Ok(()));
+        t.leaf.code = 5;
+        t.leaf.drag_Nm = Some(f64::INFINITY);
+        let errors = validate(&t).unwrap_err();
+        assert_eq!(
+            errors
+                .iter()
+                .map(|e| (e.path.as_str(), e.kind.clone()))
+                .collect::<Vec<_>>(),
+            [
+                ("leaf.code", SetErrorKind::NotAChoice { code: 5 }),
+                ("leaf.drag_Nm", SetErrorKind::NotFinite)
+            ]
+        );
     }
 
     #[test]

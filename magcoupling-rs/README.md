@@ -24,15 +24,30 @@ sizes `SCREW_SIZES`, the `MACHINING_STEPS`, and the 165-cell screw table; a scre
 class outside 1 to 3 gives NaN numbers and the text `"#N/A"`) and the **Gap sweep**
 and **Pole sweep** sheets (`sweeps::gap_sweep`, `sweeps::pole_sweep`, the sweep
 variables `GAP_SWEEP_CORNER_GAPS_MM` and `POLE_SWEEP_POLES`, 338 and 156 table
-cells). Every module except `fields3d` (M3) is ported; workbook parity is complete
-(1,149 checks: 330 result cells, 659 table cells and 160 default inputs).
-Deviations E1 to E14 are all registered as `Planned`; none is applied yet.
+cells) and the API completion (`headline`, `DesignInputs::validate`). Every module
+except `fields3d` (M3) is ported; workbook parity is complete (1,149 checks: 330
+result cells, 659 table cells and 160 default inputs). Deviations E1 to E14 are all
+registered as `Planned`; none is applied yet.
 
 ```rust
-use magcoupling::{DesignInputs, compute_all};
+use magcoupling::{DesignInputs, compute_all, headline};
 let res = compute_all(&DesignInputs::default());
-println!("{}", res.calibration.f_cal_updated); // 1.0658
+for (key, value) in headline(&res) {
+    println!("{key}: {value:?}"); // the dashboard numbers, in Python's order
+}
 ```
+
+## Invalid inputs
+
+`compute_all` never panics, whatever the inputs hold. `InputSet::set` refuses a
+wrong type, NaN, an infinity and a selector code outside its choices, but a struct
+literal, a design file or a share link can hold one anyway. Then the results are
+meaningless, not fatal. A selector code outside its choices gives NaN numbers or
+the Excel-style text `"#N/A"` where Python would raise or silently pick another
+row (the adhesive, the screw class), and the workbook's own IF fall-through where
+a two-way IF decides. A typed value far outside its slider gives results that may
+be inf or NaN. Call `DesignInputs::validate()` where inputs enter: it returns
+every offending path, in schema order, with the reason `set` would give.
 
 ## Layout
 
@@ -41,7 +56,7 @@ println!("{}", res.calibration.f_cal_updated); // 1.0658
 | `src/engine/meta.rs` | Field metadata: `inputs!`/`results!`, `param`/`out` builders, `Value`, get/set/visit by dotted path; table rows (`rows!`, `TableLayout`, `col`/`at_row` builders) with synthesized workbook cells |
 | `src/engine/compat.rs` | Python and Excel semantics the port reproduces (see the translation rules below) |
 | `src/engine/deviations.rs` | Registry of approved workbook corrections, and the `Deviations` switch |
-| `src/engine/api.rs` | `DesignInputs`, `DesignResults`, `compute_all` |
+| `src/engine/api.rs` | `DesignInputs`, `DesignResults`, `compute_all`, `headline` (with `HEADLINE`), `DesignInputs::validate` |
 | `src/engine/<module>.rs` | One module per Python module: `constants`, `calibration`, `library`, `model` (with the mass estimate), `metal_design`, `materials`, `temperature`, `clamps`, `sweeps` so far |
 | `tests/` | Parity, differential, metadata and registry tests (below) |
 | `tests/data/` | Workbook snapshot copy, exported schemas, differential data |
@@ -60,11 +75,11 @@ bash linkage-sim-rs/scripts/gate.sh   # everything, both crates and the Python o
 
 | Test | Checks |
 |---|---|
-| `tests/parity.rs` | Every result with a workbook cell (table values too: their cells are synthesized from the table layout) and every default input equals `tests/data/reference_values.json` (numbers 1e-9 relative, 1e-12 absolute; text exact), deviations off. Per-group cell counts are a ratchet (`PORTED_INPUTS`, `PORTED_RESULTS` with `cells` and `table_cells` in `tests/common/mod.rs`). |
+| `tests/parity.rs` | Every result with a workbook cell (table values too: their cells are synthesized from the table layout) and every default input equals `tests/data/reference_values.json` (numbers 1e-9 relative, 1e-12 absolute; text exact), deviations off. Per-group cell counts are a ratchet (`PORTED_INPUTS`, `PORTED_RESULTS` with `cells` and `table_cells` in `tests/common/mod.rs`); `the_port_checks_every_cell_test_parity_checks` pins their totals to `test_parity.py`'s 1,149. |
 | `tests/differential.rs` | Every result of every seeded case equals the Python engine (`tests/data/differential/<group>.json`), deviations off. `every_branch_is_reached` checks the `BRANCHES` table (every branch of every text result is hit) and `every_varied_input_takes_two_values` checks that each varied input changes; the helpers corpus checks `compat` against Python exactly. |
-| `tests/python_schema.rs` | Every ported field carries the Python label, unit, help, cell, choices and default; no Python field of a ported group is missing; each ported table has the Python field order, row count and cell of every value (`tables_match_the_python_layout`). |
+| `tests/python_schema.rs` | Every ported field carries the Python label, unit, help, cell, choices and default; no Python field of a ported group is missing; each ported table has the Python field order, row count and cell of every value (`tables_match_the_python_layout`); `headline` has Python's keys, order and values at the defaults; inputs and scalar results are listed in the Python order (the GUI's tables and CSV export follow it). |
 | `tests/static_data.rs` | Static tables equal the Python engine's, value for value (`tests/data/static_data.json`). |
-| `tests/robustness.rs` | Inputs no parity or differential case holds (the plan's Review Focus): a selector code outside its choices set directly on the struct (adhesive, screw class), a measured drag of exactly zero. The engine must never panic. |
+| `tests/robustness.rs` | Inputs no parity or differential case holds (the plan's Review Focus): a selector code outside its choices set directly on the struct (adhesive, screw class, and every selector at once with `validate()` naming each), a measured drag of exactly zero, every numeric input at 0, -1, a tenth of its minimum, ten times its maximum and 1e300 (`compute_all_never_panics_on_extreme_inputs`), and a debug-build time bound per `compute_all` call. The engine must never panic. |
 | `tests/schema.rs` | Slider ranges, selectors, labels, unique well-formed paths and cells; each table column's label, unit and note equal the workbook headers (`table_columns_match_the_workbook_headers`); exports `tests/data/input_schema.json`. |
 | `tests/deviations.rs` | Registry cells exist in the snapshot, entries are approved rows of the audit report, and one correction switched on changes exactly its registered cells. |
 

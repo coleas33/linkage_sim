@@ -2,9 +2,10 @@
 //! selector code outside its choices set on the struct, a measured drag of
 //! exactly zero, extreme typed values. The engine must never panic.
 
+use magcoupling::compute_all;
 use magcoupling::engine::api::{DesignInputs, compute_all_with};
 use magcoupling::engine::deviations::Deviations;
-use magcoupling::engine::meta::NumOrText;
+use magcoupling::engine::meta::{FieldType, InputSet, NumOrText, Value, input_rows};
 
 #[test]
 fn an_invalid_adhesive_code_selects_no_adhesive() {
@@ -52,4 +53,88 @@ fn an_invalid_screw_class_is_nan_not_a_panic() {
             c.recommended
         );
     }
+}
+
+#[test]
+fn compute_all_never_panics_on_extreme_inputs() {
+    // Review Focus 3 and 5: typed values far outside the sliders (set() accepts them,
+    // as Python does). Results may be inf or NaN; nothing may panic (no integer overflow).
+    let base = DesignInputs::default();
+    let mut tried = 0;
+    for row in input_rows(&base) {
+        let values: Vec<Value> = match (row.meta.ty, row.meta.choices.is_empty()) {
+            (FieldType::F64 | FieldType::OptF64, _) => {
+                let r = row
+                    .meta
+                    .range
+                    .expect("every numeric input has a range (tests/schema.rs)");
+                [0.0, -1.0, r.min / 10.0, r.max * 10.0, 1e300, -1e300]
+                    .map(Value::Num)
+                    .to_vec()
+            }
+            // 2: Review Focus 3's `coupling.npole = 2` (tan(pi/2) is huge but finite).
+            (FieldType::I64, true) => [0, 2, -2, 3, i64::MAX, i64::MIN].map(Value::Int).to_vec(),
+            _ => continue, // selectors: next test; text: any text is valid (manual magnet)
+        };
+        for value in values {
+            let mut inputs = base.clone();
+            inputs
+                .set(&row.path, value.clone())
+                .unwrap_or_else(|e| panic!("{e}"));
+            let _ = compute_all(&inputs);
+            tried += 1;
+        }
+    }
+    assert!(tried > 800, "only {tried} extreme cases");
+}
+
+#[test]
+fn compute_all_never_panics_on_selector_codes_outside_the_choices() {
+    // Review Focus 1: codes set on the struct, bypassing set(). validate() names every one.
+    let mut inputs = DesignInputs::default();
+    inputs.coupling.backiron = 7;
+    inputs.coupling.faceted = -1;
+    inputs.calibration.gap_definition = 9;
+    inputs.temperature.adhesive.selected = 0;
+    inputs.clamps.clamp_type = 3;
+    inputs.clamps.alloy = 0;
+    inputs.clamps.screw_class = i64::MIN;
+    let res = compute_all(&inputs);
+    assert_eq!(res.temperature.adhesive.selected_name, "#N/A");
+    let errors = inputs.validate().expect_err("seven invalid codes");
+    let paths: Vec<&str> = errors.iter().map(|e| e.path.as_str()).collect();
+    assert_eq!(
+        paths,
+        [
+            "coupling.backiron",
+            "coupling.faceted",
+            "calibration.gap_definition",
+            "temperature.adhesive.selected",
+            "clamps.clamp_type",
+            "clamps.alloy",
+            "clamps.screw_class",
+        ]
+    );
+    assert!(DesignInputs::default().validate().is_ok());
+    let mut nan = DesignInputs::default();
+    nan.metal.face_gap_mm = f64::NAN;
+    assert_eq!(
+        nan.validate().expect_err("NaN")[0].path,
+        "metal.face_gap_mm"
+    );
+}
+
+#[test]
+fn compute_all_is_cheap_enough_to_run_every_frame() {
+    // Spec: "milliseconds per call". Debug build, generous bound (a smoke check, not a benchmark).
+    let inputs = DesignInputs::default();
+    let start = std::time::Instant::now();
+    for _ in 0..200 {
+        std::hint::black_box(compute_all(std::hint::black_box(&inputs)));
+    }
+    let per_call = start.elapsed() / 200;
+    assert!(
+        per_call < std::time::Duration::from_millis(5),
+        "{per_call:?} per call"
+    );
 }

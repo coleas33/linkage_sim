@@ -1,6 +1,68 @@
 {
- "about": "Python metadata of every magcoupling input and result (kinds 'input' and 'result'; table rows without metadata are not listed; table layouts under 'tables'). Written by reference/magcoupling-py/tools/gen_differential.py. Do not edit by hand.",
+ "about": "Python metadata of every magcoupling input and result (kinds 'input' and 'result'; table rows without metadata are not listed; table layouts under 'tables'; the dashboard numbers of api.headline at the default inputs under 'headline'). Written by reference/magcoupling-py/tools/gen_differential.py. Do not edit by hand.",
  "engine": "magcoupling 1.0.0",
+ "headline": [
+  [
+   "pullout_at_op_temp_Nm",
+   2.6472742027214955
+  ],
+  [
+   "pullout_at_20C_Nm",
+   2.84868782682966
+  ],
+  [
+   "hot_low_with_variation_Nm",
+   2.250183072313271
+  ],
+  [
+   "hot_min_check",
+   "Below hot minimum"
+  ],
+  [
+   "cold_high_with_variation_Nm",
+   3.764716442325528
+  ],
+  [
+   "gearbox_input_ripple_Nm",
+   0.5573208847834727
+  ],
+  [
+   "cup_od_mm",
+   41.32646460566903
+  ],
+  [
+   "rotating_mass_g",
+   173.79326219996213
+  ],
+  [
+   "running_clearance_mm",
+   -0.10317439456607391
+  ],
+  [
+   "clearance_check",
+   "Below target"
+  ],
+  [
+   "cup_wall_check",
+   "Too thin: raise Metal design C122 to at least 2.0 mm"
+  ],
+  [
+   "governing_temp_limit_C",
+   92.55004986453575
+  ],
+  [
+   "hot_day_margin_C",
+   27.55004986453575
+  ],
+  [
+   "temperature_verdict",
+   "OK on temperature. Confirm drag torque and thermal cycling by test."
+  ],
+  [
+   "clamp_screw",
+   "ISO 4762 M4 x 12, class 12.9"
+  ]
+ ],
  "rows": [
   {
    "cell": "Calculator!C5",

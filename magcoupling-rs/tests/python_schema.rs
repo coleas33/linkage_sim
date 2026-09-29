@@ -17,10 +17,10 @@ use common::{
     PORTED_INPUTS, PORTED_RESULTS, data_path, is_ported_input, is_ported_result, is_table_path,
     json_to_value, read_json, report,
 };
-use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with};
+use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with, headline};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::Deviations;
-use magcoupling::engine::meta::{ResultRow, input_rows, result_rows};
+use magcoupling::engine::meta::{ResultRow, Value, input_rows, result_rows};
 
 /// One Python schema row.
 struct PyRow {
@@ -250,4 +250,57 @@ fn tables_match_the_python_layout() {
         }
     }
     assert!(failures.is_empty(), "{}", report(&failures));
+}
+
+#[test]
+fn headline_matches_the_python_api() {
+    let doc = read_json(&data_path("python_schema.json"));
+    let python: Vec<(String, Value)> = doc["headline"]
+        .as_array()
+        .expect("a headline array")
+        .iter()
+        .map(|pair| {
+            (
+                pair[0].as_str().expect("a key").to_owned(),
+                json_to_value(&pair[1]),
+            )
+        })
+        .collect();
+    let rust = headline(&compute_all_with(
+        &DesignInputs::defaults_with(Deviations::NONE),
+        Deviations::NONE,
+    ));
+    let keys: Vec<&str> = rust.iter().map(|(k, _)| *k).collect();
+    let py_keys: Vec<&str> = python.iter().map(|(k, _)| k.as_str()).collect();
+    assert_eq!(keys, py_keys, "keys and order");
+    for ((key, r), (_, p)) in rust.iter().zip(&python) {
+        assert!(parity_close(r, p), "{key}: rust={r:?} python={p:?}");
+    }
+}
+
+#[test]
+fn schemas_list_fields_in_the_python_order() {
+    // The GUI's results table and CSV export follow this order. Table paths are filtered:
+    // results! emits tables after the scalars (Python declares clamps.table mid-struct).
+    let doc = read_json(&data_path("python_schema.json"));
+    let python = |kind: &str| -> Vec<String> {
+        doc["rows"]
+            .as_array()
+            .expect("rows")
+            .iter()
+            .filter(|r| r["kind"] == kind)
+            .map(|r| r["path"].as_str().expect("a path").to_owned())
+            .collect()
+    };
+    let inputs: Vec<String> = input_rows(&DesignInputs::default())
+        .into_iter()
+        .map(|r| r.path)
+        .collect();
+    let results: Vec<String> = result_rows(&compute_all(&DesignInputs::default()))
+        .into_iter()
+        .filter(|r| !is_table_path(&r.path))
+        .map(|r| r.path)
+        .collect();
+    assert_eq!(inputs, python("input"));
+    assert_eq!(results, python("result"));
 }

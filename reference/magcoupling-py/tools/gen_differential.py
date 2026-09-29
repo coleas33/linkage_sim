@@ -17,8 +17,9 @@ Reads (slider ranges are defined once, in Rust):
 Writes:
     magcoupling-rs/tests/data/python_schema.json
         Python metadata of every input and result (label, unit, help, cell,
-        choices, input defaults) and the layout of each table (field order, row
-        count, cell of every field and row), for the Rust metadata-parity test.
+        choices, input defaults), the layout of each table (field order, row
+        count, cell of every field and row) and api.headline at the default
+        inputs, for the Rust metadata-parity test.
     magcoupling-rs/tests/data/differential/<group>.json
         seeded cases for each ported result group (MODULES): columnar, the
         input and result paths once in the header, one case per line.
@@ -55,7 +56,7 @@ DATA = REPO / "magcoupling-rs" / "tests" / "data"
 
 sys.path.insert(0, str(ORACLE))  # this checkout's engine, never an installed copy
 import magcoupling  # noqa: E402
-from magcoupling import DesignInputs, compute_all, input_schema, result_schema, set_input  # noqa: E402
+from magcoupling import DesignInputs, compute_all, headline, input_schema, result_schema, set_input  # noqa: E402
 from magcoupling._fields import ceiling, floor_  # noqa: E402
 from magcoupling.clamps import SCREW_SIZES, TABLE_COLUMNS, TABLE_ROWS, ScrewRow, _fmt_num  # noqa: E402
 from magcoupling import clamps as py_clamps  # noqa: E402
@@ -216,9 +217,11 @@ def python_schema() -> str:
             row["default"] = plain(r["value"], r["path"])
         rows.append(row)
     doc = {"about": "Python metadata of every magcoupling input and result (kinds 'input' and 'result'; "
-                    "table rows without metadata are not listed; table layouts under 'tables'). Written by "
+                    "table rows without metadata are not listed; table layouts under 'tables'; "
+                    "the dashboard numbers of api.headline at the default inputs under 'headline'). Written by "
                     "reference/magcoupling-py/tools/gen_differential.py. Do not edit by hand.",
-           "engine": f"magcoupling {magcoupling.__version__}", "rows": rows, "tables": table_layouts()}
+           "engine": f"magcoupling {magcoupling.__version__}", "rows": rows, "tables": table_layouts(),
+           "headline": [[key, plain(value, key)] for key, value in headline(res).items()]}
     return dumps(doc) + "\n"
 
 

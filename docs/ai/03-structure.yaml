@@ -34,13 +34,13 @@ magcoupling_rs:
   path: magcoupling-rs/ (repo root, sibling of linkage-sim-rs/; separate crate, NOT a workspace member)
   role: Rust port of reference/magcoupling-py (spec docs/superpowers/specs/2026-09-28-magcoupling-calculator-design.md, M2 in progress)
   guide: magcoupling-rs/README.md (tests, regenerating data, porting a module, Python-to-Rust translation rules, applying deviations)
-  lib: magcoupling (src/lib.rs re-exports compute_all, DesignInputs, DesignResults)
+  lib: magcoupling (src/lib.rs re-exports compute_all, headline, DesignInputs, DesignResults)
   engine: src/engine/ (pure std, wasm32-clean; one module per Python module)
   engine_files:
-    meta: meta.rs (inputs!/results!/rows! macros, param/out and col/at_row/uncelled_col builders, slider range, assumption flag, Value, InputSet/ResultSet get/set/visit by dotted path; table rows via RowSet and TableLayout with synthesized cells, results! tables section)
+    meta: meta.rs (inputs!/results!/rows! macros, param/out and col/at_row/uncelled_col builders, slider range, assumption flag, Value, InputSet/ResultSet get/set/visit by dotted path, validate (the set() checks on a whole input struct); table rows via RowSet and TableLayout with synthesized cells, results! tables section)
     compat: compat.rs (py_min/py_max, ceiling/floor_, text0, py_repr, fmt_num, fmt_fixed, parity_close)
     deviations: deviations.rs (REGISTRY of M1 corrections E1-E14, all Planned; Deviations switch; NONE/only() and restore_workbook_defaults behind the test-only workbook-parity feature)
-    api: api.rs (DesignInputs/DesignResults groups in Python order; compute_all; test-only compute_all_with, DesignInputs::defaults_with)
+    api: api.rs (DesignInputs/DesignResults groups in Python order; compute_all; headline and HEADLINE (the 15 dashboard numbers, Python order); DesignInputs::validate; test-only compute_all_with, DesignInputs::defaults_with)
     ported: [constants.rs, calibration.rs, library.rs, "model.rs (model and mass_estimate; MassResults, 6 result cells)", "metal_design.rs (retainers, 9 result cells; compute, MetalDesignResults, 49 result cells; VALIDATION_ITEMS)", "materials.rs (inputs; AL7075 and AL6061 alloys; ScrewClasses::proof, NaN for a code outside 1-3; compute, MaterialsResults, 7 result cells)", "temperature.rs (7 input groups, 37 cells; ADHESIVES table and selected_adhesive, NO_ADHESIVE (NaN, \"#N/A\") for a code outside 1-4; TemperatureLinks; compute, TemperatureResults, 130 result cells and the uncelled adhesive name; demag_onset_C, volkersen_peak_shear_MPa)", "clamps.rs (25 input cells; SCREW_SIZES, TABLE_COLUMNS, MACHINING_STEPS; ScrewRow with 34 fields and 165 table cells; screw_class_name, \"#N/A\" for a code outside 1-3; compute, ClampResults, 33 result cells; the screw table lists after the scalars)", "sweeps.rs (GAP_SWEEP_CORNER_GAPS_MM, POLE_SWEEP_POLES; SweepRow with 26 fields, 338 Gap sweep and 156 Pole sweep table cells; SweepContext with 19 fields; gap_sweep, pole_sweep; the complete Python DesignResults, workbook parity 1,149 checks)"]
     remaining: [fields3d (M3)]
   features: gui and app (declared empty, M4); workbook-parity (test-only, enabled by a self dev-dependency)
