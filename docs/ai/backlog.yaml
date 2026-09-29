@@ -304,3 +304,63 @@
   priority: 3
   status: open
   notes: "Discovered during BL-010; not fixed there (out of scope). Same mechanism is why the actuator force plot cannot use default_y_bounds as a soft outlier view."
+
+- id: BL-031
+  title: "apply_point_masses re-logs the same skipped-weight warning on every rebuild and live mass sync"
+  dimension: quality
+  risk: mechanical
+  evidence: "Payload Track 2 final review 2026-09-29. io/from_json.rs:100-110 apply_point_masses calls log::warn! for each rejected point mass (on ground, mass <= 0, non-finite) on every call; it runs on every rebuild and on every sync_live_mass_props (gui/state/blueprint_ops.rs:551), so each drag or edit repeats the warning (console.warn on WASM)."
+  acceptance: "test: a mechanism with one invalid weight; N rebuilds plus a live mass sync emit the skip warning once (at load), or apply_point_masses stays silent and only the loader's point_mass_warnings reports it; cargo test --all green"
+  priority: 3
+  status: open
+  notes: "Deferred Task 1 minor; not user-visible outside the browser console."
+
+- id: BL-032
+  title: "Load warning names a skipped blank-id weight 'W<n>' (an id the file never had) instead of '#k'"
+  dimension: gui
+  risk: mechanical
+  evidence: "Payload Track 2 final review 2026-09-29. gui/state/file_io.rs:290-292 load_from_json_str calls assign_point_mass_ids before point_mass_warnings, so a blank-id weight the loader rejects is reported under its freshly assigned id rather than by file position."
+  acceptance: "test: load JSON with a blank-id weight whose mass is 0; the warning text names it '#k' (its index in the file), not 'W<n>'"
+  priority: 3
+  status: open
+  notes: "Cosmetic; deferred Task 1 minor."
+
+- id: BL-033
+  title: "Delete/Backspace does nothing to a selected weight while a toolbar button has Tab focus"
+  dimension: gui
+  risk: mechanical
+  evidence: "Payload Track 2 final review 2026-09-29. gui/mod.rs:1292-1296 handle_delete_shortcut returns early on ctx.wants_keyboard_input(); in egui 0.32.3 that is true for any focused widget. Clicking the canvas surrenders focus, so the normal path works; only a Tab-focused button swallows Delete until Esc."
+  acceptance: "test: headless egui frame with a weight selected and a Button holding focus; Delete removes the weight, while a focused TextEdit still keeps Delete for itself (gate on text-edit focus, not any focus)"
+  priority: 3
+  status: open
+  notes: "Deferred Task 6 minor."
+
+- id: BL-034
+  title: "Weight mass fields cap typed values at 1000 kg"
+  dimension: gui
+  risk: mechanical
+  evidence: "Payload Track 2 final review 2026-09-29. property_panel/weight_editor.rs:27 WEIGHT_MASS_RANGE_KG = 0.001..=1000 clamps the editor and the + Mass toolbar field (gui/mod.rs:1283). Heavier payloads load from a file and idle frames leave them alone (tested), but cannot be typed. The spec is silent on an upper bound."
+  acceptance: "decision recorded (raise the cap, e.g. to 1e5 kg, or keep it with a hover note); if raised, test that typing 5000 kg stores 5000 kg and the breakdown scales with it"
+  priority: 3
+  status: open
+  notes: "User decision needed on the bound (robot payloads may exceed 1 t)."
+
+- id: BL-035
+  title: "Weight Breakdown legend swatch colour is arbitrary for multi-coloured weight lines"
+  dimension: gui
+  risk: mechanical
+  evidence: "Payload Track 2 final review 2026-09-29. plot_panel/weights.rs:278-283 draws each weight as several egui_plot lines (green helping, red hurting, grey gap runs) sharing one legend name, so the legend swatch takes whichever run egui_plot picks. The plotted runs carry the right colours (tested)."
+  acceptance: "the legend shows one neutral swatch per weight (e.g. a zero-length line in the weight's identity colour carrying the name, with the coloured runs unnamed), pinned by a test on the generated line specs"
+  priority: 3
+  status: open
+  notes: "Cosmetic."
+
+- id: BL-036
+  title: "Gravity breakdown uses the nominal constant omega for Expression drivers"
+  dimension: physics
+  risk: physics
+  evidence: "Payload Track 2 final review 2026-09-29. The DriverTorque share basis (gui/sweep/weights.rs:107-119 and the breakdown block in gui/sweep/mod.rs) takes rate = nominal omega and total power = T*omega, inheriting the sweep's constant-rate assumption. With an Expression driver (file-only) the true rate varies, so the shares do not leave a zero remainder."
+  acceptance: "test: an Expression-driven crank with a weight; per-sample shares use the driver's actual rate and share sum + other == total (rel 1e-9); or Expression drivers are documented as outside the breakdown's constant-speed model with the plot showing a note"
+  priority: 3
+  status: open
+  notes: "Pre-existing sweep limitation, outside the spec's constant-speed model."
