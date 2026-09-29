@@ -20,11 +20,4 @@ open_questions:
     TwinCAT NC PTP, Galil DMC) are each ~150 LoC behind the same
     `FirmwareAdapter` trait — implement on demand once a target controller
     is selected.
-  - |
-    Which magcoupling M1 corrections (E1..E14 in the audit report) to apply
-    in the M2 port? Report:
-    `docs/analyses/2026-09-29-magcoupling-math-audit.md` (Decision column
-    is _pending_ for every row; approved rows become the M2 deviation
-    registry). Also open: whether to reclassify M1 (cup back-iron
-    requirement, 12-16 % non-conservative) as an engine error.
-
+  - "RESOLVED 2026-09-29: the user approved all M1 corrections E1-E14 (E14 documentation-only); they enter the M2 deviation registry."
