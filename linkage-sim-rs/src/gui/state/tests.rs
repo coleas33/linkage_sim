@@ -3631,4 +3631,3 @@
         state.driver_angle = 60.0_f64.to_radians();
         assert_eq!(state.actuator_label_power(), None);
     }
-
