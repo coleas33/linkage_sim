@@ -195,6 +195,66 @@
   status: open
   notes: "Found while fixing BL-020; left out of that fix to keep it surgical and because the collapsed section needs extra test plumbing."
 
+- id: BL-022
+  title: "Compound actuator expansion: force anchored at cylinder base and stroke length from mixed body frames"
+  dimension: physics
+  risk: physics
+  evidence: 'Scouting probe 2026-09-28. Any rebuild (incl. add_point_mass) expands a mount-point actuator into cylinder+rod. (a) forces/compound.rs:306 remap_force_to_compound sets point_a=[0,0] (cylinder base) instead of the slide point (half_len,0) at compound.rs:124-126; doc comment at :265 is wrong. actuator_lengths == |L_pin - L0/2| at 360/360 parallelogram samples; plotted F flips sign at 83/361 angles (200 deg: -40/-501 N vs physical +40/+501 N); stored force physically reverses (240 deg: -186.5 vs +86.5). (b) compound.rs:175-176 initial_length/half_len from get_force_point_pos body-local points of two different bodies (io/from_json.rs:25-33, 272-273): Chebyshev lengths span [0.0003,0.1455] m vs stroke limits [0.1245,0.3275] m, phantom end-stop penalty up to ~1245 N at force=0 (evaluation.rs:407-416), sizing F differs by up to 1402 N with sign disagreement at 254/361. Topology switch cause: load_sample keeps the direct mechanism (gui/state/mod.rs:1001) but its blueprint keeps mount names (mod.rs:1024).'
+  acceptance: 'regression tests: after a no-op rebuild of ParallelogramActuator and ChebyshevLambdaActuator, actuator_lengths equal the pin-to-pin distance and sizing/stored actuator_forces match the freshly loaded mechanism at every angle (rel 1e-6); Chebyshev end-stop penalty inactive inside stroke limits; tests/braindump_repro.rs BL-017 repro no longer panics in debug'
+  priority: 1
+  status: open
+  notes: Prerequisite for the payload-weights feature (Track 2 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md). Likely root cause of BL-017.
+
+- id: BL-023
+  title: "Save/autosave/share URL double-counts every point mass"
+  dimension: physics
+  risk: mechanical
+  evidence: 'gui/state/file_io.rs:143 serializes composite (point-mass-inclusive) body mass via mechanism_to_json, then :150 re-attaches blueprint point_masses; load (file_io.rs:329 -> io/from_json.rs:122-126) applies them again. Verified 2026-09-28: rocker 1 kg + 50 kg point mass = 51 kg, becomes 101 kg after generate_share_url -> decode -> load. Existing test gui/state/tests.rs:1933-1962 checks only point-mass count.'
+  acceptance: round-trip test (save/load and share URL) asserts built body mass, cg and izz unchanged to 1e-12 with point masses present; blueprint base mass unchanged
+  priority: 1
+  status: open
+  notes: Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md.
+
+- id: BL-024
+  title: "set_body_mass / set_body_izz overwrite composite mass in the live mechanism, dropping point masses"
+  dimension: physics
+  risk: mechanical
+  evidence: gui/state/blueprint_ops.rs:449-486 patch the live Mechanism body with the BASE mass/izz, discarding point-mass contributions until the next rebuild; property panel (property_panel/mod.rs:232) and parametric BodyMass sweep (parametric_panel.rs:423) operate on base mass.
+  acceptance: 'test: body with a point mass, call set_body_mass, assert built composite mass = new base + point masses and gravity Q reflects it without an explicit rebuild; parametric BodyMass sweep documented or fixed to vary base mass while keeping point masses'
+  priority: 2
+  status: open
+  notes: Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md.
+
+- id: BL-025
+  title: "Point-mass edits and Reposition are not undoable; Move to Link records two undo steps"
+  dimension: gui
+  risk: mechanical
+  evidence: blueprint_ops.rs:956-970 update_point_mass never calls push_undo (doc says caller should; neither caller does), violating docs/ai/02-system.yaml invariant; remove_point_mass pushes undo even for an invalid index (:941-949); Move to Link = remove + add = two undo entries and two rebuilds (interaction.rs:408-445).
+  acceptance: 'tests: numeric mass/position edit and Reposition each create exactly one undo entry that restores prior state; Move to Link creates exactly one; invalid-index remove creates none'
+  priority: 2
+  status: open
+  notes: Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md.
+
+- id: BL-026
+  title: "Stored-force mode plots F_required - F_stored while the label says computed"
+  dimension: gui
+  risk: physics
+  evidence: gui/sweep/mod.rs:647-649 computes F from the pass-1 driver torque; solver/reactions.rs:579 skips pass 2 when |force|>=1e-12, so actuator_forces = F_required - F_stored (verified to 1.5e-11 on ParallelogramActuator); canvas label says '(computed)' (gui/state/mod.rs:846-864, force_render.rs:239-242). Sweep also duplicates the power-balance formula from reactions.rs:372-403 instead of using ReactionSolveResult::actuator_force.
+  acceptance: 'test: stored-force mechanism sweep reports the required actuator force (matches sizing-mode value at every angle) or the plot/label clearly show the residual with correct wording; single power-balance implementation shared by solver and sweep'
+  priority: 2
+  status: open
+  notes: Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md. Payload breakdown shares are defined against the required force.
+
+- id: BL-027
+  title: "Inverse dynamics omits the velocity-quadratic term (With Inertia curve wrong for off-pivot masses)"
+  dimension: physics
+  risk: physics
+  evidence: 'solver/inverse_dynamics.rs:67-70 uses only M(q)*q_ddot while M depends on configuration via CG offsets (solver/assembly.rs:133-145); no velocity-quadratic term exists in solver/core/forces. Verified 2026-09-28: parallelogram rocker mass at (0,0.8): tau_ID - tau_statics = -3158.273 N*m at every angle, correct value 0 (constant KE), error = 2*m*s_y*omega^2 exactly. Doc sign at inverse_dynamics.rs:1 opposite to line 70. Forward dynamics (forward_dynamics.rs:100) likely same flaw (unverified).'
+  acceptance: 'test: constant-KE case gives tau_ID == tau_statics (rel 1e-9); general case tau_ID - tau_statics == dKE/dtheta per unit rate (energy check) on two samples; forward dynamics checked or split into its own item'
+  priority: 2
+  status: open
+  notes: Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md; independent of Track 2.
+
 - id: BL-016
   title: "Investigate driving egui canvas UI for deeper GUI smoke (samples + plot tabs)"
   dimension: gui
