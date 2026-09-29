@@ -312,6 +312,27 @@ const BRANCHES: &[(&str, &[Reach])] = &[
         "clamps.table[*].head_check",
         &[Text("OK"), Text("Use a hardened washer")],
     ),
+    (
+        "gap_sweep[*].status",
+        &[
+            Text("inner flat too narrow"),
+            Text("outer flat too narrow"),
+            Text("outside OD envelope"),
+            Text("below hot minimum"),
+            Text("nominal: test needed"),
+        ],
+    ),
+    // "inner flat too narrow" cannot occur in the pole sweep: its apothem is chosen so that
+    // 2 a_i tan(pi/N) >= w_i + 0.1 tan(pi/N) > w_i.
+    (
+        "pole_sweep[*].status",
+        &[
+            Text("outer flat too narrow"),
+            Text("outside OD envelope"),
+            Text("below hot minimum"),
+            Text("nominal: test needed"),
+        ],
+    ),
 ];
 
 fn reached(value: &Value, reach: Reach) -> bool {
@@ -483,6 +504,16 @@ fn temperature_matches_python_on_every_case() {
 #[test]
 fn clamps_matches_python_on_every_case() {
     check_module("clamps");
+}
+
+#[test]
+fn gap_sweep_matches_python_on_every_case() {
+    check_module("gap_sweep");
+}
+
+#[test]
+fn pole_sweep_matches_python_on_every_case() {
+    check_module("pole_sweep");
 }
 
 /// A corpus key and the Rust helper call it records (as the engine calls it).

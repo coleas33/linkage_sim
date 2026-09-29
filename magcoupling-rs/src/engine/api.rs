@@ -7,8 +7,9 @@
 //! Calibration → Calculator (model) → Metal design retainers → Calculator mass
 //! → Metal design → Materials → Temperature design → Shaft clamps → sweeps.
 //!
-//! Ported so far: Calibration, Calculator (model), Metal design retainers,
-//! Calculator mass, Metal design, Materials, Temperature design, Shaft clamps.
+//! Ported: every sheet of the Python `compute_all` (Calibration, Calculator
+//! (model), Metal design retainers, Calculator mass, Metal design, Materials,
+//! Temperature design, Shaft clamps, Gap sweep, Pole sweep).
 //!
 //! Python API mapping: `compute_all(inp)` is [`compute_all`];
 //! `input_schema(inp)` and `result_schema(res)` are
@@ -23,9 +24,10 @@ use super::deviations::Deviations;
 #[cfg(feature = "workbook-parity")]
 use super::deviations::{REGISTRY, restore_workbook_defaults};
 use super::materials::{self, MaterialsInputs, MaterialsResults};
-use super::meta::{inputs, results};
+use super::meta::{TableLayout, inputs, results};
 use super::metal_design::{self, MetalDesignInputs, MetalDesignResults, RetainerResults};
 use super::model::{self, CouplingInputs, MassResults, ModelResults};
+use super::sweeps::{self, SweepRow};
 use super::temperature::{self, TemperatureInputs, TemperatureResults};
 
 inputs! {
@@ -57,6 +59,10 @@ results! {
             temperature: TemperatureResults,
             clamps: ClampResults,
         }
+        tables {
+            gap_sweep: SweepRow => TableLayout::RowsDown { sheet: "Gap sweep", first_row: 6 },
+            pole_sweep: SweepRow => TableLayout::RowsDown { sheet: "Pole sweep", first_row: 6 },
+        }
     }
 }
 
@@ -75,6 +81,7 @@ pub fn compute_all_with(inputs: &DesignInputs, dev: Deviations) -> DesignResults
 }
 
 // Python api.compute_all lines 52-99; Python local names.
+#[allow(non_snake_case)] // SweepContext has a field `L`
 fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
     let (ci, md, cal_in, mat_in) = (
         &inputs.coupling,
@@ -218,6 +225,36 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         mat_in.screws.proof(inputs.clamps.screw_class),
         dev,
     );
+    let ctx = sweeps::SweepContext {
+        faceted: ci.faceted,
+        backiron: ci.backiron,
+        t_i: m.inner_thickness_mm,
+        w_i: m.inner_width_mm,
+        t_o: m.outer_thickness_mm,
+        w_o: m.outer_width_mm,
+        L: m.active_length_mm,
+        br_i20: m.inner_br_T,
+        br_o20: m.outer_br_T,
+        br_i_op: m.br_inner_T_op,
+        br_o_op: m.br_outer_T_op,
+        bond_outer: md.bond_outer_mm,
+        cup_wall_corner: md.cup_wall_corner_mm,
+        c_end: ci.c_end,
+        mu0: ci.mu0,
+        gear_ratio: ci.gear_ratio,
+        gear_eff: ci.gear_efficiency,
+        required_floor_Nm: m.required_floor_Nm,
+        max_diameter_mm: md.max_diameter_mm,
+    };
+    let gap = sweeps::gap_sweep(&ctx, ci.npole, ci.inner_back_apothem_mm, f_cal, dev);
+    let pole = sweeps::pole_sweep(
+        &ctx,
+        m.corner_gap_mm,
+        ci.bore_mm,
+        ci.keyway_depth_mm,
+        cal_in.f_cal_original,
+        dev,
+    );
     DesignResults {
         calibration: cal,
         model: m,
@@ -227,6 +264,8 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         materials: matr,
         temperature: temp,
         clamps: clr,
+        gap_sweep: gap,
+        pole_sweep: pole,
     }
 }
 

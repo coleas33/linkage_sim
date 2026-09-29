@@ -21,7 +21,11 @@ with the validation checklist `VALIDATION_ITEMS`) and the **Materials** sheet
 `selected_adhesive`, which selects no adhesive for a code outside 1 to 4) and the
 **Shaft clamps** and **Clamp screw sizes** sheets (`clamps::compute`, the screw
 sizes `SCREW_SIZES`, the `MACHINING_STEPS`, and the 165-cell screw table; a screw
-class outside 1 to 3 gives NaN numbers and the text `"#N/A"`).
+class outside 1 to 3 gives NaN numbers and the text `"#N/A"`) and the **Gap sweep**
+and **Pole sweep** sheets (`sweeps::gap_sweep`, `sweeps::pole_sweep`, the sweep
+variables `GAP_SWEEP_CORNER_GAPS_MM` and `POLE_SWEEP_POLES`, 338 and 156 table
+cells). Every module except `fields3d` (M3) is ported; workbook parity is complete
+(1,149 checks: 330 result cells, 659 table cells and 160 default inputs).
 Deviations E1 to E14 are all registered as `Planned`; none is applied yet.
 
 ```rust
@@ -38,7 +42,7 @@ println!("{}", res.calibration.f_cal_updated); // 1.0658
 | `src/engine/compat.rs` | Python and Excel semantics the port reproduces (see the translation rules below) |
 | `src/engine/deviations.rs` | Registry of approved workbook corrections, and the `Deviations` switch |
 | `src/engine/api.rs` | `DesignInputs`, `DesignResults`, `compute_all` |
-| `src/engine/<module>.rs` | One module per Python module: `constants`, `calibration`, `library`, `model` (with the mass estimate), `metal_design`, `materials`, `temperature`, `clamps` so far |
+| `src/engine/<module>.rs` | One module per Python module: `constants`, `calibration`, `library`, `model` (with the mass estimate), `metal_design`, `materials`, `temperature`, `clamps`, `sweeps` so far |
 | `tests/` | Parity, differential, metadata and registry tests (below) |
 | `tests/data/` | Workbook snapshot copy, exported schemas, differential data |
 

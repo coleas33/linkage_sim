@@ -25,7 +25,7 @@ Writes:
     magcoupling-rs/tests/data/differential/helpers.json
         a corpus for the rounding and formatting helpers.
     magcoupling-rs/tests/data/static_data.json
-        the static engine tables (magnet library, the harmonic set, the validation checklist, the aluminium alloys, the adhesive candidates, the screw sizes, the machining steps and the screw table columns so far), for tests/static_data.rs.
+        the static engine tables (magnet library, the harmonic set, the validation checklist, the aluminium alloys, the adhesive candidates, the screw sizes, the machining steps, the screw table columns and the sweep variables so far), for tests/static_data.rs.
 
 Cases per module, all inside the slider ranges: the workbook defaults; each
 input at each end of its range, each selector at each choice and each text
@@ -61,6 +61,7 @@ from magcoupling.clamps import SCREW_SIZES, TABLE_COLUMNS, TABLE_ROWS, ScrewRow,
 from magcoupling import clamps as py_clamps  # noqa: E402
 from magcoupling import metal_design as py_metal_design  # noqa: E402
 from magcoupling import model as py_model  # noqa: E402
+from magcoupling import sweeps as py_sweeps  # noqa: E402
 from magcoupling.library import _ROWS, MAGNET_LIBRARY  # noqa: E402
 from magcoupling.materials import Aluminium  # noqa: E402
 from magcoupling import temperature as py_temperature  # noqa: E402
@@ -86,6 +87,8 @@ MODULES = {
     "materials": ["coupling", "metal", "materials", "calibration"],
     "temperature": ["coupling", "metal", "calibration", "materials", "temperature"],
     "clamps": ["coupling", "metal", "calibration", "materials", "clamps"],
+    "gap_sweep": ["coupling", "metal", "calibration"],
+    "pole_sweep": ["coupling", "metal", "calibration"],
 }
 # every library part, blank (manual magnet) and a near miss of the default part
 PART_CHOICES = list(MAGNET_LIBRARY) + ["", "b842sh"]
@@ -148,6 +151,21 @@ PROBES = {
         # of random clamp samples do). Checked in the oracle: recommended "ISO 4762 M6 x 26, class 12.9".
         ("M6 first size that works: key too large for the vent port",
          {"clamps.safety_factor": 3.0, "clamps.friction": 0.1, "clamps.boss_od_mm": 40.0, "clamps.clamp_length_mm": 13.0}),
+    ],
+    # Each status of the workbook's priority order (sweeps.py docstring).
+    "gap_sweep": [
+        ("small envelope: outside OD envelope", {"metal.max_diameter_mm": 20.0}),
+        ("low requirement: nominal everywhere", {"metal.required_min_Nm": 0.1, "coupling.drive_torque_Nm": 0.0}),
+        ("wide manual inner block: inner flat too narrow",
+         {"coupling.magnets.part_inner": "", "coupling.magnets.manual_inner_width_mm": 25.4}),
+        ("wide manual outer block: outer flat too narrow",
+         {"coupling.magnets.part_outer": "", "coupling.magnets.manual_outer_width_mm": 25.4}),
+    ],
+    "pole_sweep": [
+        ("small envelope: outside OD envelope", {"metal.max_diameter_mm": 20.0}),
+        ("low requirement: nominal everywhere", {"metal.required_min_Nm": 0.1, "coupling.drive_torque_Nm": 0.0}),
+        ("wide manual outer block: outer flat too narrow",
+         {"coupling.magnets.part_outer": "", "coupling.magnets.manual_outer_width_mm": 25.4}),
     ],
 }
 
@@ -344,6 +362,8 @@ def static_data() -> str:
         "screw_sizes": [dataclasses.asdict(s) for s in py_clamps.SCREW_SIZES],
         "machining_steps": list(py_clamps.MACHINING_STEPS),
         "table_columns": list(py_clamps.TABLE_COLUMNS),
+        "sweeps": {"gap_sweep_corner_gaps_mm": list(py_sweeps.GAP_SWEEP_CORNER_GAPS_MM),
+                   "pole_sweep_poles": list(py_sweeps.POLE_SWEEP_POLES)},
     }
     return dumps(doc) + "\n"
 

@@ -178,3 +178,23 @@ fn screw_sizes_and_machining_steps_equal_the_python_data() {
         .collect();
     assert_eq!(TABLE_COLUMNS.as_slice(), columns.as_slice());
 }
+
+#[test]
+fn sweep_variables_equal_the_python_lists() {
+    use magcoupling::engine::sweeps::{GAP_SWEEP_CORNER_GAPS_MM, POLE_SWEEP_POLES};
+    let doc = python_static();
+    let gaps: Vec<f64> = doc["sweeps"]["gap_sweep_corner_gaps_mm"]
+        .as_array()
+        .expect("gaps")
+        .iter()
+        .map(|g| g.as_f64().expect("a number"))
+        .collect();
+    let poles: Vec<i64> = doc["sweeps"]["pole_sweep_poles"]
+        .as_array()
+        .expect("poles")
+        .iter()
+        .map(|p| p.as_i64().expect("an int"))
+        .collect();
+    assert_eq!(GAP_SWEEP_CORNER_GAPS_MM.as_slice(), gaps.as_slice());
+    assert_eq!(POLE_SWEEP_POLES.as_slice(), poles.as_slice());
+}

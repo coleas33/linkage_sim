@@ -96,6 +96,16 @@ pub const PORTED_RESULTS: &[PortedResults] = &[
         cells: 33,
         table_cells: 165, // 33 celled screw-table fields x 5 sizes (the size name has no cell)
     },
+    PortedResults {
+        group: "gap_sweep",
+        cells: 0,
+        table_cells: 338,
+    },
+    PortedResults {
+        group: "pole_sweep",
+        cells: 0,
+        table_cells: 156,
+    },
 ];
 
 /// The top-level group of a dotted path (`"calibration.br_T"` gives `"calibration"`).
