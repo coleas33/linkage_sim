@@ -269,3 +269,179 @@ state independent of the linkage model. The standalone page stays at
 - A finite-element solver; saturation and eddy-current field solutions remain
   model approximations (documented in M1).
 - Any coupling between the magcoupling panel and the linkage model's data.
+
+## Addendum A — GUI v1 additions (approved 2026-09-29)
+
+Requested by the user after the spec was approved; design approved in chat the
+same day. These extend M2 (engine) and M4/M5 (GUI). None affects M1. At
+default inputs and default assumptions every result stays workbook-exact, so
+the M2 parity and differential tests are unchanged.
+
+### A1. Self-sizing geometry, two directions
+
+- **Mode switch** in the Key design group: **Magnets → Torque** (today's
+  forward calculation) and **Torque → Magnets** (inverse sizing).
+- **Inverse sizing** takes a target torque and makes the hot-low torque with
+  production variation (`metal.torque_hot_low_Nm`) meet it, by adjusting ONE
+  free variable the user picks: axial magnet length (default), magnets per
+  ring (discrete; poles stay even), or ring radius. Every other input stays
+  fixed. The engine solves with a bracketed 1-D search: bisection for the
+  continuous variables, stepping for the discrete one. It returns the
+  smallest value that meets the target, or "not reachable" with the best
+  value achieved inside the variable's slider range. It fails loudly and
+  never extrapolates past the range. A multi-variable optimizer is out of
+  scope for v1.
+- **Housing autofit.** Cup, sleeve, liner, cap and the axial stack are always
+  derived from the magnet layout and the calculator's existing clearance and
+  wall rules, in both modes, and the geometry view redraws them live.
+- **Space claim.** The envelope (43 mm diameter × 35 mm overall length, from
+  the metal-design inputs) is drawn as a dashed outline. Exceeding it shows a
+  red callout on the view naming the overshoot in mm per axis, plus a red
+  dashboard badge.
+
+### A2. Equation explorer
+
+- **Explanation layer.** Each explained result registers an equation record:
+  target id, display symbol, a display formula in a small markup (fractions,
+  sub/superscripts, Σ, √), its term ids, unit, workbook cell, and an `eval`
+  closure over term values. The engine code stays as ported (parity), and
+  the explanation layer is separate.
+- **Drift guard (test).** For every equation record, `eval` over the engine's
+  term values must reproduce the engine's result (1e-9 relative) at defaults
+  and at the M2 differential-test input sets. The equation shown is provably
+  the one that produced the number.
+- **Hover.** Any displayed value (dashboard, results table, geometry
+  callouts) shows a tooltip with its equation. Each term is coloured, and the
+  same colour marks that term wherever its value appears on screen.
+- **Equation panel** (docked, toggleable). It shows the open equation large,
+  its terms with values and units, a breadcrumb trail, and a "used by" list.
+  Clicking a term drills into that term's own equation. Leaf terms (inputs)
+  highlight their slider. One equation at a time: never a page of every
+  formula.
+- **Rendering.** A small egui typesetter for the markup: inline fractions,
+  sub/superscripts, Σ and √. No LaTeX dependency.
+
+### A3. Assumptions panel
+
+- **Toggle panel** that separates model **assumptions** from design inputs.
+  Each assumption shows its value, unit, rationale and source.
+- **The v1 set:** harmonics included (workbook 1, 3, 5; selectable up to 11),
+  end-effect coefficient, calibration factor, production variation (±15 %),
+  Br and Hcj temperature coefficients, demag knee fraction, demag margin,
+  back-iron design flux density (1.5 T), thermal conductance, driving rise,
+  slip-event duration, clamp friction coefficient, preload fraction of proof
+  load.
+- **Engine support.** Assumptions that are hard-coded in the Python engine
+  today (for example the harmonic list and the knee fraction) become engine
+  parameters in M2, with defaults equal to the workbook's.
+- **Traceability.** A changed assumption flows through every dependent
+  equation. In the equation panel the term is styled as an assumption, with a
+  changed-from-default dot. An "assumptions modified" banner shows
+  whenever any assumption differs from its workbook default, beside a
+  "reset to workbook defaults" button.
+
+### A4. Teaching notes
+
+- An optional **Explain** section per equation, hidden by default and
+  toggled in the equation panel. It always shows the note for the equation
+  currently open, so it follows what the user investigates.
+- **Content:** 2–6 plain-language sentences at Physics 2 level, an optional
+  "watch out" line, and an optional small diagram (for example the
+  square-wave magnetization and its harmonics, and the flux path with and
+  without back iron).
+- **Scope:** notes for about 15–20 genuinely tricky ideas, not every
+  equation. They cover: harmonic decomposition; the back-iron (sinh) vs
+  free-space factor; pull-out torque vs rotation angle; end effect; Br(T)
+  and torque ∝ Br²; demagnetization, knee and permeance; eddy-current slip
+  loss and skin depth; the thermal time constant; clamp preload and
+  friction; and the physics behind each A5 material warning.
+- **Start here:** a short suggested order (torque chain → back iron →
+  temperature → demagnetization → slip heating → clamps) opens the matching
+  equations in turn.
+- **Accuracy gate:** notes are drafted from the M1 derivations, and each one
+  is checked by a physics reviewer before release.
+
+### A5. Materials per part, with consequence warnings
+
+- **Per-part material pickers** backed by a small library. Each entry
+  carries: relative permeability (incremental), saturation flux density,
+  electrical conductivity, density, CTE, Young's modulus, yield strength,
+  specific heat, and ferromagnetic yes/no.
+- **Choices:**
+  - back iron (hub and cup): 4140 (default), 1018, 12L14, 416 stainless,
+    17-4PH, plus non-magnetic 304 and 6061 for demonstration;
+  - sleeve and liner: 316L (default), titanium grade 5, Inconel 625, PEEK;
+  - cap and housing: 6061-T6 (default), 7075-T6, acetal.
+- **Physics links:**
+  - a ferromagnetic back-iron choice selects the steel circuit, and a
+    non-ferromagnetic one selects the free-space circuit (replacing the bare
+    `backiron` selector, which stays available as an override);
+  - saturation feeds the wall-thickness check;
+  - conductivity feeds slip losses;
+  - density feeds mass and inertia;
+  - CTE and modulus feed the bond-stress screen.
+- **Warning rules** (plain language, colour-coded, linked to their teaching
+  note):
+  - non-ferromagnetic back iron: an open magnetic circuit, so torque drops,
+    a strong stray field extends outside, and the part collects ferrous chips
+    and debris;
+  - ferromagnetic sleeve or liner: short-circuits the gap flux, so torque
+    collapses;
+  - high-conductivity sleeve or liner: higher slip heating;
+  - low saturation: back-iron walls need to be thicker;
+  - uncoated low-alloy steel: needs plating (corrosion);
+  - large CTE mismatch with the magnets: higher bond stress.
+
+### A6. Magnet library: grades and parts
+
+- **Two tables** replace the single part list (DRY: grade data lives once).
+  - **Grade:** Br, Hcj, Hcb, (BH)max, α(Br) and β(Hcj) temperature
+    coefficients, recoil permeability, maximum operating temperature,
+    density.
+  - **Part:** vendor, part number, shape (block or arc), dimensions, grade,
+    coating, magnetization direction.
+- **Custom dimensions** stay available: pick any grade with manual
+  dimensions.
+- **Grades in v1:**
+  - NdFeB N35, N42, N48, N52 (80 °C);
+  - NdFeB N42M (100 °C), N42H (120 °C), N42SH (150 °C), N38UH (180 °C),
+    N35EH (200 °C), N33AH (220 °C);
+  - SmCo Sm2Co17 grade 26 and grade 30, and SmCo5;
+  - hard ferrite Y30;
+  - bonded NdFeB (about 0.65 T).
+- **Parts:** the existing 15 library parts, mapped to grades, plus K&J stock
+  block sizes in the added grades where they exist.
+- **Correctness fix in M2** (and reported in the M1 audit if its checks confirm it). Today the demagnetization check uses one
+  N42SH curve (a single Hcj input) for every magnet. With grade data, each
+  magnet's own Hcj(T) is used. Ferrite's opposite-sign β (coercivity falls
+  as it gets colder, so the demag risk is at cold) must be handled, and it
+  gets a teaching note. Sources for grade values: supplier datasheets
+  (K&J/Arnold/Electron Energy style), cited per grade in the library.
+
+### Addendum testing
+
+- **Inverse sizing:**
+  - for each free variable, solving for the forward result's torque returns
+    the original variable value (round trip, 1e-6);
+  - "not reachable" is reported when the target exceeds what the range
+    allows;
+  - poles stay even.
+- **Housing autofit:** the envelope-exceeded callout triggers exactly when a
+  derived dimension exceeds the space claim, per axis.
+- **Equation drift guard:** runs over every equation record (A2).
+- **Assumptions:**
+  - at defaults, results are bit-identical to workbook parity;
+  - changing each assumption changes every dependent result and no
+    independent one, using the equation registry's dependency graph.
+- **Materials:**
+  - each warning rule fires exactly on its condition;
+  - a non-ferromagnetic back iron switches the circuit factor.
+- **Grades:**
+  - every library part resolves to a grade;
+  - the demag check uses the part's own Hcj(T), including a ferrite
+    cold-case test.
+- **GUI (headless egui):**
+  - hover shows the equation;
+  - clicking a term drills in, and the breadcrumb returns;
+  - the Explain toggle shows the current equation's note;
+  - the assumptions banner appears on change and clears on reset.
