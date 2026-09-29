@@ -1,5 +1,6 @@
     use super::*;
     use super::blueprint_ops::{joint_body_ids, seed_q_by_body_id};
+    use crate::gui::test_support::sorted_link_ids;
     use crate::io::JointJson;
 
     #[test]
@@ -2027,17 +2028,7 @@
     fn four_bar_with_point_masses() -> (AppState, String) {
         let mut state = AppState::default();
         state.load_sample(SampleMechanism::FourBar);
-
-        let mut ids: Vec<String> = state
-            .blueprint
-            .as_ref()
-            .unwrap()
-            .bodies
-            .keys()
-            .filter(|k| k.as_str() != GROUND_ID)
-            .cloned()
-            .collect();
-        ids.sort();
+        let ids = sorted_link_ids(&state);
 
         let base = blueprint_mass_props(&state);
         state.add_point_mass(&ids[0], 50.0, [0.03, 0.02]);
@@ -2074,6 +2065,8 @@
             let db = &dst_bp.bodies[id];
             assert_eq!(sb.point_masses.len(), db.point_masses.len(), "{what}: body '{id}' point-mass count");
             for (s, d) in sb.point_masses.iter().zip(&db.point_masses) {
+                assert_eq!(s.id, d.id, "{what}: body '{id}' point-mass id");
+                assert_eq!(s.label, d.label, "{what}: body '{id}' point-mass label");
                 assert!((s.mass - d.mass).abs() < 1e-12, "{what}: body '{id}' point-mass mass");
                 assert!((s.local_pos[0] - d.local_pos[0]).abs() < 1e-12, "{what}: body '{id}' point-mass x");
                 assert!((s.local_pos[1] - d.local_pos[1]).abs() < 1e-12, "{what}: body '{id}' point-mass y");
@@ -2133,6 +2126,109 @@
         assert_round_trip_preserves_mass("file save/load", &src, &dst);
     }
 
+    // ── Payload weights: point-mass identity (ids, labels, loader validation) ──
+
+    /// Ids of the point masses on `body_id`, in list order.
+    fn point_mass_ids(state: &AppState, body_id: &str) -> Vec<String> {
+        state.blueprint.as_ref().unwrap().bodies[body_id]
+            .point_masses
+            .iter()
+            .map(|pm| pm.id.clone())
+            .collect()
+    }
+
+    #[test]
+    fn saved_file_carries_point_mass_ids() {
+        let (src, heavy) = four_bar_with_point_masses();
+        let links = sorted_link_ids(&src);
+        assert_eq!(point_mass_ids(&src, &heavy), ["W1", "W2"], "add_point_mass assigns W<n>");
+        assert_eq!(point_mass_ids(&src, &links[1]), ["W3"]);
+
+        let v: serde_json::Value =
+            serde_json::from_str(&src.serialize_to_json_string().unwrap()).unwrap();
+        assert_eq!(v["bodies"][heavy.as_str()]["point_masses"][1]["id"], "W2");
+        assert_eq!(v["bodies"][links[1].as_str()]["point_masses"][0]["id"], "W3");
+    }
+
+    #[test]
+    fn old_file_without_point_mass_ids_gets_ids_on_load() {
+        let (src, heavy) = four_bar_with_point_masses();
+        let links = sorted_link_ids(&src);
+        let mut v: serde_json::Value =
+            serde_json::from_str(&src.serialize_to_json_string().unwrap()).unwrap();
+        for body in v["bodies"].as_object_mut().unwrap().values_mut() {
+            if let Some(pms) = body.get_mut("point_masses").and_then(|p| p.as_array_mut()) {
+                for pm in pms {
+                    let pm = pm.as_object_mut().unwrap();
+                    pm.remove("id");
+                    pm.remove("label");
+                }
+            }
+        }
+
+        let mut dst = AppState::default();
+        dst.load_from_json_str(&v.to_string()).expect("old file should load");
+        // Bodies sorted by id, masses in list order.
+        assert_eq!(point_mass_ids(&dst, &heavy), ["W1", "W2"]);
+        assert_eq!(point_mass_ids(&dst, &links[1]), ["W3"]);
+        // Masses and positions intact and applied exactly once.
+        assert_round_trip_preserves_mass("old file", &src, &dst);
+        assert!(dst.error_log.is_empty(), "a valid file reports nothing: {:?}", dst.error_log);
+    }
+
+    #[test]
+    fn point_mass_ids_and_labels_round_trip_through_save_and_share() {
+        let (mut src, heavy) = four_bar_with_point_masses();
+        src.blueprint.as_mut().unwrap().bodies.get_mut(&heavy).unwrap().point_masses[1].label =
+            Some("Robot torso".to_string());
+
+        let mut dst = AppState::default();
+        dst.load_from_json_str(&src.serialize_to_json_string().unwrap()).unwrap();
+        assert_round_trip_preserves_mass("save/load with label", &src, &dst);
+
+        let url = src.generate_share_url().expect("generate_share_url failed");
+        let encoded = url.split("?m=").nth(1).expect("share URL missing ?m=");
+        let json = super::file_io::decode_mechanism_from_url(encoded).expect("decode failed");
+        let mut dst2 = AppState::default();
+        dst2.load_from_json_str(&json).unwrap();
+        assert_round_trip_preserves_mass("share URL with label", &src, &dst2);
+    }
+
+    #[test]
+    fn load_skips_and_reports_invalid_point_masses() {
+        let (src, body, other) = four_bar_with_one_point_mass();
+        let base = blueprint_mass_props(&src);
+        let mut v: serde_json::Value =
+            serde_json::from_str(&src.serialize_to_json_string().unwrap()).unwrap();
+        v["bodies"][GROUND_ID]["point_masses"] =
+            serde_json::json!([{"id": "on_ground", "mass": 5.0, "local_pos": [0.0, 0.0]}]);
+        v["bodies"][other.as_str()]["point_masses"] = serde_json::json!([
+            {"id": "neg", "mass": -3.0, "local_pos": [0.01, 0.0]},
+            {"mass": 0.0, "local_pos": [0.02, 0.0]}
+        ]);
+
+        let mut dst = AppState::default();
+        dst.load_from_json_str(&v.to_string()).expect("a file with bad weights still loads");
+
+        // Skipped: ground stays massless and `other` keeps its base mass; the
+        // valid 2 kg weight on `body` is still applied.
+        let built = built_mass_props(&dst);
+        assert_eq!(built[GROUND_ID].mass, 0.0);
+        assert!((built[&other].mass - base[&other].mass).abs() < 1e-12, "{}", built[&other].mass);
+        assert!((built[&body].mass - (base[&body].mass + 2.0)).abs() < 1e-12);
+
+        // Reported once each, naming the weight and body.
+        assert_eq!(dst.error_log.len(), 3, "{:?}", dst.error_log);
+        assert!(dst.error_log.iter().any(|w| w.contains("'on_ground'")), "{:?}", dst.error_log);
+        assert!(dst.error_log.iter().any(|w| w.contains("'neg'")), "{:?}", dst.error_log);
+        assert!(dst.show_error_panel, "load warnings must be visible");
+
+        // Kept in the blueprint (a save writes them back unchanged) and
+        // addressable: the blank id got the smallest unused W<n>.
+        assert_eq!(point_mass_ids(&dst, GROUND_ID), ["on_ground"]);
+        assert_eq!(point_mass_ids(&dst, &other), ["neg", "W2"]);
+    }
+
     // ── BL-025: point-mass edits are single, undoable steps ──────────────
     //
     // Undo snapshots bake point masses into the composite mass/CG/Izz and drop
@@ -2144,16 +2240,7 @@
     fn four_bar_with_one_point_mass() -> (AppState, String, String) {
         let mut state = AppState::default();
         state.load_sample(SampleMechanism::FourBar);
-        let mut ids: Vec<String> = state
-            .blueprint
-            .as_ref()
-            .unwrap()
-            .bodies
-            .keys()
-            .filter(|k| k.as_str() != GROUND_ID)
-            .cloned()
-            .collect();
-        ids.sort();
+        let ids = sorted_link_ids(&state);
         state.add_point_mass(&ids[0], 2.0, [0.03, 0.02]);
         (state, ids[0].clone(), ids[1].clone())
     }
@@ -2375,6 +2462,38 @@
         assert!((live[&body].mass - mass_before).abs() < 1e-12);
         assert!((live[&body].cg[0] - cg_before[0]).abs() < 1e-12);
         assert!((live[&body].cg[1] - cg_before[1]).abs() < 1e-12);
+    }
+
+    /// The no-rebuild mass sync must apply the loader's skip rules too: a
+    /// weight the loader rejected (here a negative mass, kept in the
+    /// blueprint) stays out of the live body after a base-mass edit.
+    #[test]
+    fn set_body_mass_skips_point_masses_the_loader_rejects() {
+        let (src, body, _) = four_bar_with_one_point_mass(); // valid 2 kg "W1"
+        let mut v: serde_json::Value =
+            serde_json::from_str(&src.serialize_to_json_string().unwrap()).unwrap();
+        v["bodies"][body.as_str()]["point_masses"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"id": "neg", "mass": -3.0, "local_pos": [0.05, 0.0]}));
+        let mut state = AppState::default();
+        state.load_from_json_str(&v.to_string()).expect("a file with a bad weight still loads");
+        assert_eq!(
+            state.blueprint.as_ref().unwrap().bodies[&body].point_masses.len(),
+            2,
+            "setup: the rejected weight stays in the blueprint"
+        );
+
+        let new_base = state.blueprint.as_ref().unwrap().bodies[&body].mass + 1.0;
+        state.set_body_mass(&body, new_base);
+
+        let live = built_mass_props(&state);
+        assert!(
+            (live[&body].mass - (new_base + 2.0)).abs() < 1e-12,
+            "live mass should be new base + the valid 2 kg weight only, got {}",
+            live[&body].mass
+        );
+        assert_mass_props_match("live vs fresh build with a rejected weight", &fresh_built_mass_props(&state), &live);
     }
 
     /// The parametric BodyMass / BodyIzz sweep varies the BASE value on a

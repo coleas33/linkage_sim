@@ -275,8 +275,13 @@ impl AppState {
     /// Returns `Err` with a human-readable message on any failure.
     pub fn load_from_json_str(&mut self, json_str: &str) -> Result<(), String> {
         // Parse JSON and store as blueprint before building
-        let json_struct: crate::io::MechanismJson =
+        let mut json_struct: crate::io::MechanismJson =
             serde_json::from_str(json_str).map_err(|e| e.to_string())?;
+        // Weights are addressed by id. Files written before ids existed (or
+        // hand-edited with blanks/duplicates) get W<n> ids here — the single
+        // funnel for file, autosave, share-URL, template and recent loads.
+        crate::io::assign_point_mass_ids(&mut json_struct.bodies);
+        let point_mass_warnings = crate::io::point_mass_warnings(&json_struct);
 
         // Restore GUI sweep state (mode + trajectory severity) if present.
         // Backward-compatible: missing field → leave defaults (Angle / Analysis).
@@ -517,6 +522,15 @@ impl AppState {
         self.recompute_driver_display_offset();
         self.dirty = false;
         self.autosave_timer = 0.0;
+
+        // Weights the loader skipped (on ground, non-positive mass, ...) stay
+        // in the blueprint so a save writes the file back unchanged; tell the
+        // user they are not in the physics. The error panel survives the
+        // status-bar message callers set after a successful load.
+        if !point_mass_warnings.is_empty() {
+            self.error_log.extend(point_mass_warnings);
+            self.show_error_panel = true;
+        }
 
         Ok(())
     }

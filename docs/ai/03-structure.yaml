@@ -104,6 +104,7 @@ gui_submodules:
     - tutorial.rs
     - undo.rs
     - dxf_import.rs
+    - test_support.rs (#[cfg(test)] helpers shared by GUI module tests, e.g. sorted_link_ids; extend it instead of re-implementing fixtures per module)
 
 entry_points:
   native_bin: src/bin/linkage_gui.rs (uses native feature)

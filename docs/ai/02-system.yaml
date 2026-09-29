@@ -112,6 +112,21 @@ invariants_to_protect:
     reduces to statics at rest; forward dynamics writes
     M q_ddot + Phi_q^T lambda = Q + Q_v, so its lambda has the opposite
     sign. The Python reference solvers still omit Q_v (BL-028) (BL-027).
+  - point_mass_ids_unique_per_mechanism — every blueprint point mass
+    (weight) has a non-blank id unique across the mechanism
+    (PointMassJson { id, label?, mass, local_pos }). AppState::load_from_json_str
+    calls io::assign_point_mass_ids (blank/duplicate ids -> smallest unused
+    W<n>, bodies sorted by id, list order); add_point_mass uses
+    io::next_point_mass_id. Address weights by (body_id, weight_id), never
+    by list index.
+  - point_mass_loader_validation — the loader skips (does not apply) a point
+    mass on ground, a mass that is not a positive finite number, or a
+    non-finite position (io::point_mass_skip_reason). Skipped weights stay in
+    the blueprint (saved back unchanged); load_from_json_str pushes
+    io::point_mass_warnings into error_log and opens the error panel.
+    io::from_json::apply_point_masses is the only place weights reach the
+    physics (the loader and sync_live_mass_props both call it), so a
+    no-rebuild mass edit skips exactly what a rebuild skips.
   - severity_controls_return_type_not_math — Trajectory mode's
     Severity::{Strict, Analysis} runs identical Newton/FD code; the only
     difference is whether failure status bubbles as Err or as a result

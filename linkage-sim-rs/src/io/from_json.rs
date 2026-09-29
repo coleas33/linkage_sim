@@ -46,6 +46,72 @@ fn get_force_body_ids(force: &ForceElement) -> Option<(String, String)> {
 }
 
 // ---------------------------------------------------------------------------
+// Point-mass validation
+// ---------------------------------------------------------------------------
+
+/// Why the loader does not apply point mass `pm` on body `body_id`, or `None`
+/// when it is applied.
+///
+/// A weight on ground is rejected: ground is fixed and massless, so the weight
+/// could never load the mechanism and accepting it would hide a modelling
+/// mistake. A mass that is not a positive finite number, or a non-finite
+/// position, would corrupt the composite mass/CG/Izz (`Body::add_point_mass`
+/// subtracts a negative mass). Shared by the loader, [`point_mass_warnings`],
+/// the GUI editing API and anything that lists the weights the physics sees.
+pub fn point_mass_skip_reason(body_id: &str, pm: &PointMassJson) -> Option<&'static str> {
+    if body_id == GROUND_ID {
+        Some("point masses on ground are not supported")
+    } else if !(pm.mass.is_finite() && pm.mass > 0.0) {
+        Some("mass must be a positive, finite number of kg")
+    } else if !(pm.local_pos[0].is_finite() && pm.local_pos[1].is_finite()) {
+        Some("position must be finite")
+    } else {
+        None
+    }
+}
+
+/// One human-readable warning per point mass the loader skips (see
+/// [`point_mass_skip_reason`]): bodies sorted by id, masses in list order.
+/// A weight without an id is named by its 1-based list position (`#2`).
+/// Empty when every point mass is applied.
+pub fn point_mass_warnings(json: &MechanismJson) -> Vec<String> {
+    let mut body_ids: Vec<&String> = json.bodies.keys().collect();
+    body_ids.sort();
+    let mut warnings = Vec::new();
+    for body_id in body_ids {
+        for (i, pm) in json.bodies[body_id].point_masses.iter().enumerate() {
+            let Some(reason) = point_mass_skip_reason(body_id, pm) else { continue };
+            let name = if is_blank_point_mass_id(&pm.id) {
+                format!("#{}", i + 1)
+            } else {
+                format!("'{}'", pm.id)
+            };
+            warnings.push(format!(
+                "Point mass {name} on body '{body_id}' skipped: {reason} (mass {} kg)",
+                pm.mass
+            ));
+        }
+    }
+    warnings
+}
+
+/// Fold `point_masses` into `body`'s composite mass, CG and Izz, skipping the
+/// ones [`point_mass_skip_reason`] rejects (named `body.id`).
+///
+/// The single place blueprint weights reach the physics: the loader and the
+/// GUI's no-rebuild mass sync (`AppState::sync_live_mass_props`) both call it,
+/// so a live body always equals a fresh build of the blueprint.
+pub(crate) fn apply_point_masses(body: &mut Body, point_masses: &[PointMassJson]) {
+    for pm in point_masses {
+        if let Some(reason) = point_mass_skip_reason(&body.id, pm) {
+            log::warn!("Skipping point mass '{}' on body '{}': {}", pm.id, body.id, reason);
+            continue;
+        }
+        body.add_point_mass(pm.mass, Vector2::new(pm.local_pos[0], pm.local_pos[1]));
+    }
+}
+
+// ---------------------------------------------------------------------------
 // JSON -> Mechanism
 // ---------------------------------------------------------------------------
 
@@ -96,7 +162,7 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
             .map(|(name, coords)| (name.clone(), Vector2::new(coords[0], coords[1])))
             .collect();
 
-        let body = Body {
+        let mut body = Body {
             id: body_id.clone(),
             attachment_points,
             mass: if body_id == GROUND_ID {
@@ -115,15 +181,11 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
             label: body_json.label.clone().unwrap_or_else(|| body_id.clone()),
             geometry: body_json.geometry.clone(),
         };
+        // Apply point masses to update composite mass/CG/Izz, skipping the
+        // ones the loader rejects (listed for the user by `point_mass_warnings`).
+        apply_point_masses(&mut body, &body_json.point_masses);
         mech.add_body(body)
             .map_err(|e| SerializationError::Build(e.to_string()))?;
-
-        // Apply point masses to update composite mass/CG/Izz
-        for pm in &body_json.point_masses {
-            if let Some(body_mut) = mech.body_mut(body_id) {
-                body_mut.add_point_mass(pm.mass, Vector2::new(pm.local_pos[0], pm.local_pos[1]));
-            }
-        }
     }
 
     // Rebuild joints (geometric constraints only; drivers are separate)
@@ -314,4 +376,110 @@ pub fn load_mechanism(json_str: &str) -> Result<Mechanism, SerializationError> {
     mech.build()
         .map_err(|e| SerializationError::Build(e.to_string()))?;
     Ok(mech)
+}
+
+#[cfg(test)]
+mod point_mass_validation_tests {
+    use super::*;
+
+    /// Ground plus one 2 kg bar (CG at x = 0.5 m, Izz 0.1). No joints are
+    /// needed to check composite mass properties.
+    fn ground_and_bar() -> MechanismJson {
+        serde_json::from_str(
+            r#"{
+                "schema_version": "1.1.0",
+                "bodies": {
+                    "ground": {"attachment_points": {"O": [0.0, 0.0]},
+                               "mass": 0.0, "cg_local": [0.0, 0.0], "izz_cg": 0.0},
+                    "bar": {"attachment_points": {"A": [0.0, 0.0], "B": [1.0, 0.0]},
+                            "mass": 2.0, "cg_local": [0.5, 0.0], "izz_cg": 0.1}
+                },
+                "joints": {}
+            }"#,
+        )
+        .unwrap()
+    }
+
+    fn pm(id: &str, mass: f64, x: f64, y: f64) -> PointMassJson {
+        PointMassJson { id: id.to_string(), label: None, mass, local_pos: [x, y] }
+    }
+
+    /// (mass, cg, izz) of body `id` after loading `json`.
+    fn mass_props(json: &MechanismJson, id: &str) -> (f64, [f64; 2], f64) {
+        let mech = load_mechanism_unbuilt_from_json(json).unwrap();
+        let b = &mech.bodies()[id];
+        (b.mass, [b.cg_local.x, b.cg_local.y], b.izz_cg)
+    }
+
+    #[test]
+    fn valid_point_mass_is_applied_and_not_reported() {
+        let mut json = ground_and_bar();
+        json.bodies.get_mut("bar").unwrap().point_masses.push(pm("W1", 2.0, 1.0, 0.0));
+        let (m, cg, izz) = mass_props(&json, "bar");
+        assert!((m - 4.0).abs() < 1e-12, "mass {m}");
+        assert!((cg[0] - 0.75).abs() < 1e-12 && cg[1].abs() < 1e-12, "cg {cg:?}");
+        // 0.1 + 2 kg * (0.25 m)^2 + 2 kg * (0.25 m)^2
+        assert!((izz - 0.35).abs() < 1e-12, "izz {izz}");
+        assert!(point_mass_warnings(&json).is_empty());
+    }
+
+    #[test]
+    fn point_mass_on_ground_is_skipped_and_reported() {
+        let mut json = ground_and_bar();
+        json.bodies.get_mut("ground").unwrap().point_masses.push(pm("W1", 5.0, 0.3, 0.0));
+        let (m, _, izz) = mass_props(&json, "ground");
+        assert_eq!(m, 0.0, "ground must stay massless");
+        assert_eq!(izz, 0.0);
+        let w = point_mass_warnings(&json);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("'W1'") && w[0].contains("'ground'"), "{w:?}");
+    }
+
+    #[test]
+    fn non_positive_or_non_finite_point_masses_are_skipped_and_reported() {
+        let base = mass_props(&ground_and_bar(), "bar");
+        let bad = [
+            pm("neg", -1.0, 1.0, 0.0), // used to be subtracted from the bar
+            pm("zero", 0.0, 1.0, 0.0),
+            pm("nan", f64::NAN, 1.0, 0.0),
+            pm("inf", f64::INFINITY, 1.0, 0.0),
+            pm("far", 1.0, f64::INFINITY, 0.0),
+            pm("nanpos", 1.0, 0.0, f64::NAN),
+        ];
+        for p in &bad {
+            let mut json = ground_and_bar();
+            json.bodies.get_mut("bar").unwrap().point_masses.push(p.clone());
+            assert_eq!(mass_props(&json, "bar"), base, "{}: must not change the bar", p.id);
+            let w = point_mass_warnings(&json);
+            assert_eq!(w.len(), 1, "{}: {w:?}", p.id);
+            assert!(w[0].contains(&format!("'{}'", p.id)) && w[0].contains("'bar'"), "{w:?}");
+        }
+    }
+
+    #[test]
+    fn invalid_point_mass_does_not_block_valid_ones_on_the_same_body() {
+        let mut json = ground_and_bar();
+        json.bodies
+            .get_mut("bar")
+            .unwrap()
+            .point_masses
+            .extend([pm("bad", -3.0, 1.0, 0.0), pm("good", 2.0, 1.0, 0.0)]);
+        let (m, cg, _) = mass_props(&json, "bar");
+        assert!((m - 4.0).abs() < 1e-12 && (cg[0] - 0.75).abs() < 1e-12, "{m} {cg:?}");
+    }
+
+    #[test]
+    fn warnings_are_sorted_by_body_and_name_blank_ids_by_list_position() {
+        let mut json = ground_and_bar();
+        json.bodies
+            .get_mut("bar")
+            .unwrap()
+            .point_masses
+            .extend([pm("ok", 1.0, 0.0, 0.0), pm("", -2.0, 0.0, 0.0)]);
+        json.bodies.get_mut("ground").unwrap().point_masses.push(pm("G", 1.0, 0.0, 0.0));
+        let w = point_mass_warnings(&json);
+        assert_eq!(w.len(), 2, "{w:?}");
+        assert!(w[0].contains("#2") && w[0].contains("'bar'"), "{w:?}");
+        assert!(w[1].contains("'G'") && w[1].contains("'ground'"), "{w:?}");
+    }
 }

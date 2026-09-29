@@ -194,6 +194,8 @@ When point masses are attached, the solver recomputes the body's composite mass 
 
 Multiple point masses can attach to the same body. The GUI displays them as markers on the body.
 
+In the Rust JSON schema a point mass ("weight") lives in its body's `point_masses` list as `{ "id": "W1", "label": "Robot torso", "mass": 50.0, "local_pos": [0.3, 0.0] }` (`label` optional). The `id` is unique across the mechanism; files written before ids existed load unchanged and get `W<n>` ids on load (smallest unused number; bodies sorted by id, list order). The loader skips, and reports in the error panel, a point mass on ground, a mass that is not a positive finite number, and a non-finite position; skipped weights stay in the file so a save writes them back unchanged.
+
 ### Mechanism
 
 ```

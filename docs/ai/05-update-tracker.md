@@ -5,6 +5,31 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-29 — Payload weights Task 1: point-mass ids, labels and loader validation
+- Spec: `docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md`
+  (Track 2, section 1 "Data model").
+- `io/schema.rs`: `PointMassJson` gains `id: String` (`#[serde(default)]`) and
+  `label: Option<String>` (skipped when absent). `assign_point_mass_ids` gives
+  blank/duplicate ids the smallest unused `W<n>` (bodies sorted by id, list
+  order; idempotent); `next_point_mass_id` for new weights.
+- `io/from_json.rs`: `point_mass_skip_reason` rejects weights on ground,
+  non-positive/non-finite masses (a negative mass used to be subtracted) and
+  non-finite positions; the loader skips them; `point_mass_warnings` lists them.
+  `apply_point_masses` is the one place weights reach the physics: the loader
+  and BL-024's `sync_live_mass_props` both call it, so a base-mass edit skips
+  the same weights a rebuild skips.
+- `gui/state/file_io.rs::load_from_json_str` assigns ids and pushes warnings
+  into `error_log` (error panel opens). `add_point_mass` assigns the next id.
+- New `gui/test_support.rs` (`#[cfg(test)]`): `sorted_link_ids`, the shared
+  "sorted non-ground link ids" fixture helper for GUI module tests.
+- Tests: `io::schema::point_mass_id_tests`,
+  `io::from_json::point_mass_validation_tests`, and in `gui/state/tests.rs`
+  old-file load gets ids, ids + labels round-trip through save and share URL,
+  invalid weights skipped and reported, and
+  `set_body_mass_skips_point_masses_the_loader_rejects` (mutation: applying
+  every weight in `sync_live_mass_props` turns it red); BL-023 round-trip
+  helper now compares ids and labels too.
+
 ## 2026-09-29 — BL-027: inverse and forward dynamics add the velocity-quadratic force Q_v
 - Root cause: `M(q)` depends on `theta` when a CG is offset from the body
   origin, but neither dynamics solver had the Lagrange term that goes with it,

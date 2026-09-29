@@ -507,10 +507,11 @@ impl AppState {
     /// Re-derive one body's composite mass, CG and Izz in the live mechanism
     /// from its blueprint base values plus point masses, without a rebuild.
     ///
-    /// Uses `Body::add_point_mass`, the same composite math the loader applies
-    /// (`io/from_json.rs`), so the live body equals a fresh build. The composite
-    /// CG and Izz depend on the base mass, so base edits must re-derive all
-    /// three rather than patching a single field.
+    /// Uses `io::from_json::apply_point_masses`, the loader's own composite
+    /// math and skip rules (weights the loader rejects stay out), so the live
+    /// body equals a fresh build. The composite CG and Izz depend on the base
+    /// mass, so base edits must re-derive all three rather than patching a
+    /// single field.
     fn sync_live_mass_props(&mut self, body_id: &str) {
         let Some(bp_body) = self.blueprint.as_ref().and_then(|bp| bp.bodies.get(body_id)) else {
             return;
@@ -523,9 +524,7 @@ impl AppState {
         composite.mass = bp_body.mass;
         composite.cg_local = Vector2::new(bp_body.cg_local[0], bp_body.cg_local[1]);
         composite.izz_cg = bp_body.izz_cg;
-        for pm in &bp_body.point_masses {
-            composite.add_point_mass(pm.mass, Vector2::new(pm.local_pos[0], pm.local_pos[1]));
-        }
+        crate::io::from_json::apply_point_masses(&mut composite, &bp_body.point_masses);
         live.mass = composite.mass;
         live.cg_local = composite.cg_local;
         live.izz_cg = composite.izz_cg;
@@ -974,13 +973,17 @@ impl AppState {
 
     /// Add a point mass to a body in the blueprint.
     ///
-    /// Pushes undo, appends the point mass, and rebuilds (which recomputes
-    /// composite mass, CG, and Izz via parallel axis theorem).
+    /// Pushes undo, appends the point mass with the next free `W<n>` id, and
+    /// rebuilds (which recomputes composite mass, CG, and Izz via parallel
+    /// axis theorem).
     pub fn add_point_mass(&mut self, body_id: &str, mass: f64, local_pos: [f64; 2]) {
         self.push_undo();
         let Some(bp) = &mut self.blueprint else { return };
+        let id = crate::io::next_point_mass_id(&bp.bodies);
         let Some(body) = bp.bodies.get_mut(body_id) else { return };
         body.point_masses.push(crate::io::PointMassJson {
+            id,
+            label: None,
             mass,
             local_pos,
         });

@@ -2,7 +2,7 @@
 //!
 //! All values are in SI units.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -208,9 +208,18 @@ pub enum DriverJson {
     },
 }
 
-/// A point mass attached to a body at a local position.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A point mass (a "weight") attached to a body at a local position.
+///
+/// `id` addresses the weight in the GUI and in analyses; it is unique across
+/// the mechanism. Files written before ids existed omit it (it deserializes
+/// as empty) and [`assign_point_mass_ids`] fills it in on load. `label` is an
+/// optional display name; the id is shown when it is absent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PointMassJson {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
     pub mass: f64,
     pub local_pos: [f64; 2],
 }
@@ -237,6 +246,66 @@ pub struct BodyJson {
     /// Optional visual geometry for rendering and force zone overlap.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub geometry: Option<crate::core::body::BodyGeometry>,
+}
+
+/// True when `id` cannot address a weight (empty or whitespace only).
+pub(crate) fn is_blank_point_mass_id(id: &str) -> bool {
+    id.trim().is_empty()
+}
+
+/// The smallest `W<n>` (n >= 1) that is not in `used`.
+fn smallest_unused_point_mass_id(used: &HashSet<String>) -> String {
+    let mut n: usize = 1;
+    loop {
+        let id = format!("W{n}");
+        if !used.contains(&id) {
+            return id;
+        }
+        n += 1;
+    }
+}
+
+/// Give every point mass in `bodies` a unique, non-blank id.
+///
+/// Non-blank ids are kept at their first occurrence. Blank ids, and every
+/// repeat of an id after its first occurrence, are replaced by `W<n>` with
+/// `n` the smallest positive integer whose `W<n>` is not used anywhere in the
+/// mechanism. The walk order is deterministic (bodies sorted by id, point
+/// masses in list order), so "first occurrence" and the numbers handed out do
+/// not depend on `HashMap` iteration order. Idempotent.
+pub fn assign_point_mass_ids(bodies: &mut HashMap<String, BodyJson>) {
+    let mut body_ids: Vec<String> = bodies.keys().cloned().collect();
+    body_ids.sort();
+
+    // Pass 1: keep the first occurrence of every non-blank id.
+    let mut used: HashSet<String> = HashSet::new();
+    let mut needs_id: Vec<(String, usize)> = Vec::new();
+    for body_id in &body_ids {
+        for (i, pm) in bodies[body_id].point_masses.iter().enumerate() {
+            if is_blank_point_mass_id(&pm.id) || !used.insert(pm.id.clone()) {
+                needs_id.push((body_id.clone(), i));
+            }
+        }
+    }
+
+    // Pass 2: hand out the smallest unused W<n>, in the same order.
+    for (body_id, i) in needs_id {
+        let id = smallest_unused_point_mass_id(&used);
+        used.insert(id.clone());
+        if let Some(body) = bodies.get_mut(&body_id) {
+            body.point_masses[i].id = id;
+        }
+    }
+}
+
+/// The id for a new point mass: the smallest `W<n>` not used by any point
+/// mass in `bodies`.
+pub fn next_point_mass_id(bodies: &HashMap<String, BodyJson>) -> String {
+    let used: HashSet<String> = bodies
+        .values()
+        .flat_map(|b| b.point_masses.iter().map(|pm| pm.id.clone()))
+        .collect();
+    smallest_unused_point_mass_id(&used)
 }
 
 /// JSON representation of a joint constraint.
@@ -297,4 +366,108 @@ pub enum JointJson {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
     },
+}
+
+#[cfg(test)]
+mod point_mass_id_tests {
+    use super::*;
+
+    /// A body whose point masses carry exactly `ids` (1 kg each, at the origin).
+    fn body_with(ids: &[&str]) -> BodyJson {
+        BodyJson {
+            attachment_points: HashMap::new(),
+            mass: 1.0,
+            cg_local: [0.0, 0.0],
+            izz_cg: 0.0,
+            mount_points: HashMap::new(),
+            coupler_points: HashMap::new(),
+            point_masses: ids
+                .iter()
+                .map(|id| PointMassJson {
+                    id: id.to_string(),
+                    label: None,
+                    mass: 1.0,
+                    local_pos: [0.0, 0.0],
+                })
+                .collect(),
+            label: None,
+            geometry: None,
+        }
+    }
+
+    fn bodies(spec: &[(&str, &[&str])]) -> HashMap<String, BodyJson> {
+        spec.iter().map(|(b, ids)| (b.to_string(), body_with(ids))).collect()
+    }
+
+    fn ids_of(bodies: &HashMap<String, BodyJson>, body: &str) -> Vec<String> {
+        bodies[body].point_masses.iter().map(|pm| pm.id.clone()).collect()
+    }
+
+    #[test]
+    fn point_mass_without_id_or_label_deserializes_with_defaults() {
+        let pm: PointMassJson =
+            serde_json::from_str(r#"{"mass": 2.5, "local_pos": [0.1, -0.2]}"#).unwrap();
+        assert_eq!(
+            pm,
+            PointMassJson { id: String::new(), label: None, mass: 2.5, local_pos: [0.1, -0.2] }
+        );
+    }
+
+    #[test]
+    fn point_mass_serializes_id_always_and_label_only_when_set() {
+        let mut pm = PointMassJson { id: "W1".into(), label: None, mass: 2.5, local_pos: [0.1, -0.2] };
+        let v = serde_json::to_value(&pm).unwrap();
+        assert_eq!(v["id"], "W1");
+        assert!(v.get("label").is_none(), "absent label must not be written: {v}");
+
+        pm.label = Some("Robot torso".into());
+        let v = serde_json::to_value(&pm).unwrap();
+        assert_eq!(v["label"], "Robot torso");
+        let back: PointMassJson = serde_json::from_value(v).unwrap();
+        assert_eq!(back, pm);
+    }
+
+    #[test]
+    fn assign_fills_blank_ids_in_sorted_body_then_list_order() {
+        let mut b = bodies(&[("rocker", &["", ""]), ("coupler", &["", "   "])]);
+        assign_point_mass_ids(&mut b);
+        assert_eq!(ids_of(&b, "coupler"), ["W1", "W2"]);
+        assert_eq!(ids_of(&b, "rocker"), ["W3", "W4"]);
+    }
+
+    #[test]
+    fn assign_keeps_unique_ids_and_hands_out_smallest_unused_number() {
+        // "W01" is a distinct string from "W1", so it does not reserve W1.
+        let mut b = bodies(&[("a", &["W2", ""]), ("b", &["", "payload", "W01"])]);
+        assign_point_mass_ids(&mut b);
+        assert_eq!(ids_of(&b, "a"), ["W2", "W1"]);
+        assert_eq!(ids_of(&b, "b"), ["W3", "payload", "W01"]);
+    }
+
+    #[test]
+    fn assign_renumbers_only_repeats_after_the_first_occurrence() {
+        let mut b = bodies(&[("a", &["W1", "W1", "x"]), ("b", &["W1", "x"])]);
+        assign_point_mass_ids(&mut b);
+        assert_eq!(ids_of(&b, "a"), ["W1", "W2", "x"]);
+        assert_eq!(ids_of(&b, "b"), ["W3", "W4"]);
+    }
+
+    #[test]
+    fn assign_is_idempotent_and_leaves_bodies_without_masses_alone() {
+        let mut b = bodies(&[("a", &["", "W1"]), ("empty", &[])]);
+        assign_point_mass_ids(&mut b);
+        assert_eq!(ids_of(&b, "a"), ["W2", "W1"]);
+        assert!(ids_of(&b, "empty").is_empty());
+
+        assign_point_mass_ids(&mut b);
+        assert_eq!(ids_of(&b, "a"), ["W2", "W1"], "second pass must change nothing");
+    }
+
+    #[test]
+    fn next_point_mass_id_is_smallest_unused_across_all_bodies() {
+        assert_eq!(next_point_mass_id(&HashMap::new()), "W1");
+        assert_eq!(next_point_mass_id(&bodies(&[("a", &[])])), "W1");
+        assert_eq!(next_point_mass_id(&bodies(&[("a", &["W1", "W3"]), ("b", &["W2"])])), "W4");
+        assert_eq!(next_point_mass_id(&bodies(&[("a", &["W1", "W3"]), ("b", &["payload"])])), "W2");
+    }
 }

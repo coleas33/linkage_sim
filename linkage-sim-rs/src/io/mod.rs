@@ -9,6 +9,9 @@ mod serialization;
 
 // Re-export for backward compatibility -- all public items from the old serialization module.
 pub use error::SerializationError;
-pub use from_json::{load_mechanism, load_mechanism_unbuilt, load_mechanism_unbuilt_from_json};
+pub use from_json::{
+    load_mechanism, load_mechanism_unbuilt, load_mechanism_unbuilt_from_json,
+    point_mass_skip_reason, point_mass_warnings,
+};
 pub use schema::*;
 pub use to_json::{mechanism_to_json, save_mechanism};
