@@ -196,6 +196,8 @@ Multiple point masses can attach to the same body. The GUI displays them as mark
 
 In the Rust JSON schema a point mass ("weight") lives in its body's `point_masses` list as `{ "id": "W1", "label": "Robot torso", "mass": 50.0, "local_pos": [0.3, 0.0] }` (`label` optional). The `id` is unique across the mechanism; files written before ids existed load unchanged and get `W<n>` ids on load (smallest unused number; bodies sorted by id, list order). The loader skips, and reports in the error panel, a point mass on ground, a mass that is not a positive finite number, and a non-finite position; skipped weights stay in the file so a save writes them back unchanged.
 
+Because gravity is linear in mass and the composite body is the mass-weighted sum, the gravity load of a body is exactly the sum of its link self-weight (base mass at the base CG) and its point masses. `analysis::gravity_breakdown` uses this to report, per weight, the gravity power `P_g = m g . v` (positive = the weight is coming down and helps the actuator); the per-weight shares always add up to the mechanism's total gravity load.
+
 ### Mechanism
 
 ```

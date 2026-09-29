@@ -5,6 +5,27 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-29 — Payload weights Task 3: gravity breakdown physics module
+- New pure module `analysis/gravity_breakdown.rs` (spec Track 2, section 2):
+  `weight_sources(&MechanismJson)` (link self-weights `link:<body>` at base
+  mass/CG for positive finite base mass, then every point mass the loader
+  applies; bodies sorted by id), `gravity_powers` (`P_g,i = m_i g . v_i`
+  from `State::body_point_velocity`; 0 on ground, NaN for a body missing
+  from the mechanism), `gravity_vector` (sum of the mechanism's Gravity
+  elements, so the mounting angle is respected), and the named rules
+  `classify` (`NEUTRAL_REL` = 0.01), `force_share` (NaN when
+  `|rate| < EPS_REL_LDOT * max|rate|`, `EPS_REL_LDOT` = 0.01),
+  `is_braking` (`BRAKE_TOL_REL` = 1e-6), `max_abs_finite`.
+- Tests: `analysis::gravity_breakdown::tests` (single bar hand calculation
+  rising / falling / horizontal; sign flip with direction; potential-energy
+  finite difference on a 4-bar under 30 deg tilted gravity; sources sum to
+  the built `Q_gravity . q_dot`; source ordering and skip rules; rule edge
+  cases) and `tests/gravity_breakdown_reference.rs` (energy finite
+  difference + sum check on ParallelogramActuator and ChebyshevLambdaActuator
+  with two weights each, compound actuator bodies included).
+- Mutation check done: negating `g` inside `gravity_powers` fails 4 unit
+  tests and both integration tests.
+
 ## 2026-09-29 — Payload weights Task 2: id-addressed weight editing API
 - `gui/state/blueprint_ops.rs`: index-based `remove_point_mass` /
   `update_point_mass` / `move_point_mass_to_body` replaced by

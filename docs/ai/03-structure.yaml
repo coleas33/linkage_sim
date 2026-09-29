@@ -30,7 +30,9 @@ modules:
 
   analysis:
     path: src/analysis/
-    files: [validation, grashof, transmission, coupler, energy, envelopes, motor_sizing, virtual_work, crank_selection, force_breakdown]
+    files: [validation, grashof, transmission, coupler, energy, envelopes, motor_sizing, virtual_work, crank_selection, force_breakdown, gravity_breakdown]
+    notes:
+      gravity_breakdown: per-weight gravity power P_g,i = m_i g.v_i (weight_sources from the blueprint = link self-weights + applied point masses; gravity_powers; gravity_vector; classify / force_share / is_braking with EPS_REL_LDOT, NEUTRAL_REL, BRAKE_TOL_REL). Pure, no GUI deps.
 
   io:
     path: src/io/

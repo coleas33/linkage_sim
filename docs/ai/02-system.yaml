@@ -42,7 +42,8 @@ major_subsystems:
     path: linkage-sim-rs/src/analysis/
     responsibility: validation (Grubler, Jacobian rank), Grashof,
       transmission angle, coupler trace, energy, envelopes, motor sizing,
-      virtual work, crank selection, force breakdown
+      virtual work, crank selection, force breakdown, per-weight gravity
+      breakdown (gravity_breakdown.rs)
     key_files: [validation.rs, grashof.rs, transmission.rs, coupler.rs, energy.rs, virtual_work.rs]
 
   io:
@@ -124,6 +125,15 @@ invariants_to_protect:
     W<n>, bodies sorted by id, list order); add_point_mass uses
     io::next_point_mass_id. Address weights by (body_id, weight_id), never
     by list index.
+  - gravity_breakdown_sources_sum_to_model_gravity — analysis::gravity_breakdown::weight_sources
+    lists one link self-weight per non-ground body with positive finite base
+    mass (base mass at base cg_local, id "link:<body>") plus every point mass
+    the loader applies (the io::point_mass_skip_reason filter that
+    io::from_json::apply_point_masses uses). Gravity is linear and the
+    composite body is the mass-weighted sum, so the sources' gravity powers
+    m g.v add up to the built mechanism's Q_gravity.q_dot (tested). Read g
+    from the mechanism (gravity_vector), never recompute it from
+    gravity_magnitude: the element carries the mounting angle.
   - point_mass_loader_validation — the loader skips (does not apply) a point
     mass on ground, a mass that is not a positive finite number, or a
     non-finite position (io::point_mass_skip_reason). Skipped weights stay in
