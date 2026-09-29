@@ -171,9 +171,9 @@
   risk: physics
   evidence: "CONFIRMED by audit 2026-08-08, 3/3 skeptics (repro: cargo test --test braindump_repro bl010_side_sizing_mode_sweep_panics_debug_assert -- --nocapture, #[should_panic] passes). Tutorial workflow (tutorial.rs:204 'Set Actuator Force to Zero') + compute_sweep on ChebyshevLambdaActuator: panic at src/solver/reactions.rs:666 — pass-2 driver collapse fails (driver_lambda=-195.4 N*m instead of ~0), likely near a dl_dt~0 pose (power-balance guard at reactions.rs:397 only rejects |dl_dt| <= 1e-6). Debug builds abort on a documented user workflow; release builds silently carry the failed validation."
   acceptance: "same repro test with #[should_panic] REMOVED passes: per-pose validation failure surfaces as status/NaN (existing ReactionValidation enum) instead of debug_assert abort; AND root cause of the non-collapsing driver at that pose understood/documented; cargo test --all green in debug profile"
-  priority: 1
+  priority: 2
   status: open
-  notes: "Audit side-discovery while reproducing BL-010. Two sub-issues: (1) replace data-dependent debug_assert with soft status; (2) physics: why does power-balance actuator force fail to collapse the driver there — interacts with two_pass_statics invariant (02-system.yaml) and BL-009. Repro in tests/braindump_repro.rs (untracked)."
+  notes: "2026-09-28: ROOT CAUSE FIXED by BL-022 (04f6f1b); tests/braindump_repro.rs now completes the Chebyshev sizing sweep in debug with finite forces. Remaining: sub-issue (1) replace the data-dependent debug_assert at solver/reactions.rs:666 with a soft per-pose status so a future failure reports instead of aborting. Audit side-discovery while reproducing BL-010. Two sub-issues: (1) replace data-dependent debug_assert with soft status; (2) physics: why does power-balance actuator force fail to collapse the driver there — interacts with two_pass_statics invariant (02-system.yaml) and BL-009. Repro in tests/braindump_repro.rs (untracked)."
 
 - id: BL-020
   title: Animation frozen below ~15 deg/s — crank-angle slider step_by(0.5) snaps the pose back every frame
@@ -202,8 +202,8 @@
   evidence: 'Scouting probe 2026-09-28. Any rebuild (incl. add_point_mass) expands a mount-point actuator into cylinder+rod. (a) forces/compound.rs:306 remap_force_to_compound sets point_a=[0,0] (cylinder base) instead of the slide point (half_len,0) at compound.rs:124-126; doc comment at :265 is wrong. actuator_lengths == |L_pin - L0/2| at 360/360 parallelogram samples; plotted F flips sign at 83/361 angles (200 deg: -40/-501 N vs physical +40/+501 N); stored force physically reverses (240 deg: -186.5 vs +86.5). (b) compound.rs:175-176 initial_length/half_len from get_force_point_pos body-local points of two different bodies (io/from_json.rs:25-33, 272-273): Chebyshev lengths span [0.0003,0.1455] m vs stroke limits [0.1245,0.3275] m, phantom end-stop penalty up to ~1245 N at force=0 (evaluation.rs:407-416), sizing F differs by up to 1402 N with sign disagreement at 254/361. Topology switch cause: load_sample keeps the direct mechanism (gui/state/mod.rs:1001) but its blueprint keeps mount names (mod.rs:1024).'
   acceptance: 'regression tests: after a no-op rebuild of ParallelogramActuator and ChebyshevLambdaActuator, actuator_lengths equal the pin-to-pin distance and sizing/stored actuator_forces match the freshly loaded mechanism at every angle (rel 1e-6); Chebyshev end-stop penalty inactive inside stroke limits; tests/braindump_repro.rs BL-017 repro no longer panics in debug'
   priority: 1
-  status: open
-  notes: Prerequisite for the payload-weights feature (Track 2 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md). Likely root cause of BL-017.
+  status: fixed
+  notes: "Fixed 2026-09-28 on agent/batch-2 (04f6f1b): remapped force now acts cylinder base -> rod tip (pin to pin), so actuator length is the pin distance regardless of half_len; the mixed-frame initial length only proportions the massless compound bodies (documented at compound.rs expand_compound_force). Tests: tests/compound_actuator_rebuild.rs (rebuild == fresh for stored + sizing on Parallelogram and Chebyshev; end-stop inactive inside limits), compound.rs remap_every_variant_acts_between_base_and_tip. Resolves BL-017 root cause. Prerequisite for the payload-weights feature (Track 2 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md). Likely root cause of BL-017."
 
 - id: BL-023
   title: "Save/autosave/share URL double-counts every point mass"
@@ -212,8 +212,8 @@
   evidence: 'gui/state/file_io.rs:143 serializes composite (point-mass-inclusive) body mass via mechanism_to_json, then :150 re-attaches blueprint point_masses; load (file_io.rs:329 -> io/from_json.rs:122-126) applies them again. Verified 2026-09-28: rocker 1 kg + 50 kg point mass = 51 kg, becomes 101 kg after generate_share_url -> decode -> load. Existing test gui/state/tests.rs:1933-1962 checks only point-mass count.'
   acceptance: round-trip test (save/load and share URL) asserts built body mass, cg and izz unchanged to 1e-12 with point masses present; blueprint base mass unchanged
   priority: 1
-  status: open
-  notes: Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md.
+  status: fixed
+  notes: "Fixed 2026-09-28 on agent/batch-2 (22bb581): serialization no longer re-applies point masses on top of composite mass; round-trip tests in gui/state/tests.rs. Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md."
 
 - id: BL-024
   title: "set_body_mass / set_body_izz overwrite composite mass in the live mechanism, dropping point masses"
@@ -232,8 +232,8 @@
   evidence: blueprint_ops.rs:956-970 update_point_mass never calls push_undo (doc says caller should; neither caller does), violating docs/ai/02-system.yaml invariant; remove_point_mass pushes undo even for an invalid index (:941-949); Move to Link = remove + add = two undo entries and two rebuilds (interaction.rs:408-445).
   acceptance: 'tests: numeric mass/position edit and Reposition each create exactly one undo entry that restores prior state; Move to Link creates exactly one; invalid-index remove creates none'
   priority: 2
-  status: open
-  notes: Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md.
+  status: fixed
+  notes: "Fixed 2026-09-28 on agent/batch-2 (8418edb): point-mass edits, Reposition and Move to Link are single undo steps; invalid-index remove records none; tests in gui/state/tests.rs. Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md."
 
 - id: BL-026
   title: "Stored-force mode plots F_required - F_stored while the label says computed"
