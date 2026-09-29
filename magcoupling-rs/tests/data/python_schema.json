@@ -1,0 +1,4670 @@
+{
+ "about": "Python metadata of every magcoupling input and result (kinds 'input' and 'result'; table rows without metadata are not listed). Written by reference/magcoupling-py/tools/gen_differential.py. Do not edit by hand.",
+ "engine": "magcoupling 1.0.0",
+ "rows": [
+  {
+   "cell": "Calculator!C5",
+   "choices": [],
+   "default": 10,
+   "help": "Even; one block per pole.",
+   "kind": "input",
+   "label": "Number of poles per ring",
+   "path": "coupling.npole",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C6",
+   "choices": [
+    [
+     1,
+     "steel circuit"
+    ],
+    [
+     0,
+     "no back iron"
+    ]
+   ],
+   "default": 1,
+   "help": "1 = steel circuit, 0 = no intentional back iron.",
+   "kind": "input",
+   "label": "Back iron",
+   "path": "coupling.backiron",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C7",
+   "choices": [
+    [
+     1,
+     "flat blocks"
+    ],
+    [
+     0,
+     "arcs"
+    ]
+   ],
+   "default": 1,
+   "help": "1 = flat blocks on polygons, 0 = true arcs.",
+   "kind": "input",
+   "label": "Geometry type",
+   "path": "coupling.faceted",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C8",
+   "choices": [],
+   "default": 10.15,
+   "help": "Machined hub apothem plus the inner bondline.",
+   "kind": "input",
+   "label": "Inner magnet back apothem, including bondline",
+   "path": "coupling.inner_back_apothem_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C10",
+   "choices": [],
+   "default": 50,
+   "help": "Br falls with temperature; torque ~ Br².",
+   "kind": "input",
+   "label": "Operating magnet temperature",
+   "path": "coupling.op_temp_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Calculator!C39",
+   "choices": [],
+   "default": 10,
+   "help": "",
+   "kind": "input",
+   "label": "Keyed bore diameter",
+   "path": "coupling.bore_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C40",
+   "choices": [],
+   "default": 1.7,
+   "help": "",
+   "kind": "input",
+   "label": "Keyway depth in the hub",
+   "path": "coupling.keyway_depth_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C41",
+   "choices": [],
+   "default": 0.15,
+   "help": "f_end = 1 − c_end · pole pitch / L.",
+   "kind": "input",
+   "label": "End-effect coefficient",
+   "path": "coupling.c_end",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C43",
+   "choices": [],
+   "default": 1.256637e-06,
+   "help": "",
+   "kind": "input",
+   "label": "Vacuum permeability",
+   "path": "coupling.mu0",
+   "unit": "T·m/A"
+  },
+  {
+   "cell": "Calculator!C45",
+   "choices": [],
+   "default": 5,
+   "help": "",
+   "kind": "input",
+   "label": "Gearbox ratio",
+   "path": "coupling.gear_ratio",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C46",
+   "choices": [],
+   "default": 0.95,
+   "help": "",
+   "kind": "input",
+   "label": "Gearbox efficiency",
+   "path": "coupling.gear_efficiency",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C47",
+   "choices": [],
+   "default": 0.6,
+   "help": "GAM 5:1 peak input rating.",
+   "kind": "input",
+   "label": "Gearbox input torque rating",
+   "path": "coupling.gearbox_input_rating_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Calculator!C48",
+   "choices": [],
+   "default": 0.7,
+   "help": "",
+   "kind": "input",
+   "label": "Torque the coupling must carry for driving (at the wheel)",
+   "path": "coupling.drive_torque_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Calculator!C49",
+   "choices": [],
+   "default": 1.3,
+   "help": "",
+   "kind": "input",
+   "label": "Safety factor wanted on the driving torque",
+   "path": "coupling.drive_safety_factor",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C11",
+   "choices": [],
+   "default": "B842SH",
+   "help": "Looked up in the library by exact text; blank = manual.",
+   "kind": "input",
+   "label": "Inner magnet part",
+   "path": "coupling.magnets.part_inner",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C12",
+   "choices": [],
+   "default": "B842SH",
+   "help": "",
+   "kind": "input",
+   "label": "Outer magnet part",
+   "path": "coupling.magnets.part_outer",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C14",
+   "choices": [],
+   "default": 12.7,
+   "help": "Used only if the part is not in the library.",
+   "kind": "input",
+   "label": "Manual inner length (axial)",
+   "path": "coupling.magnets.manual_inner_length_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C15",
+   "choices": [],
+   "default": 6.35,
+   "help": "",
+   "kind": "input",
+   "label": "Manual inner width (tangential)",
+   "path": "coupling.magnets.manual_inner_width_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C16",
+   "choices": [],
+   "default": 3.17,
+   "help": "",
+   "kind": "input",
+   "label": "Manual inner thickness (radial)",
+   "path": "coupling.magnets.manual_inner_thickness_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C17",
+   "choices": [],
+   "default": 1.29,
+   "help": "",
+   "kind": "input",
+   "label": "Manual inner Br at 20 °C",
+   "path": "coupling.magnets.manual_inner_br_T",
+   "unit": "T"
+  },
+  {
+   "cell": "Calculator!C24",
+   "choices": [],
+   "default": 12.7,
+   "help": "",
+   "kind": "input",
+   "label": "Manual outer length (axial)",
+   "path": "coupling.magnets.manual_outer_length_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C25",
+   "choices": [],
+   "default": 6.35,
+   "help": "",
+   "kind": "input",
+   "label": "Manual outer width (tangential)",
+   "path": "coupling.magnets.manual_outer_width_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C26",
+   "choices": [],
+   "default": 3.17,
+   "help": "",
+   "kind": "input",
+   "label": "Manual outer thickness (radial)",
+   "path": "coupling.magnets.manual_outer_thickness_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C27",
+   "choices": [],
+   "default": 1.29,
+   "help": "",
+   "kind": "input",
+   "label": "Manual outer Br at 20 °C",
+   "path": "coupling.magnets.manual_outer_br_T",
+   "unit": "T"
+  },
+  {
+   "cell": "Metal design!C7",
+   "choices": [],
+   "default": 2.5,
+   "help": "At the 50 °C magnet temperature.",
+   "kind": "input",
+   "label": "Required minimum service pull-out torque",
+   "path": "metal.required_min_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Metal design!C16",
+   "choices": [],
+   "default": -40,
+   "help": "Cold torque is reported, not capped.",
+   "kind": "input",
+   "label": "Minimum magnet temperature",
+   "path": "metal.min_temp_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Metal design!C18",
+   "choices": [],
+   "default": 0.15,
+   "help": "Engineering allowance, not measured.",
+   "kind": "input",
+   "label": "Symmetric torque variation allowance",
+   "path": "metal.variation",
+   "unit": "fraction"
+  },
+  {
+   "cell": "Metal design!C25",
+   "choices": [],
+   "default": 0.1,
+   "help": "316L band over the inner magnets.",
+   "kind": "input",
+   "label": "Inner rotating retaining sleeve thickness",
+   "path": "metal.sleeve_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C26",
+   "choices": [],
+   "default": 0.2,
+   "help": "316L liner inside the outer magnets.",
+   "kind": "input",
+   "label": "Outer rotating keeper liner thickness",
+   "path": "metal.liner_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C28",
+   "choices": [],
+   "default": 0.4,
+   "help": "UNCONFIRMED.",
+   "kind": "input",
+   "label": "Relative shaft radial displacement allowance",
+   "path": "metal.shaft_displacement_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C29",
+   "choices": [],
+   "default": 0.05,
+   "help": "",
+   "kind": "input",
+   "label": "Combined assembled runout allowance",
+   "path": "metal.runout_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C30",
+   "choices": [],
+   "default": 0.05,
+   "help": "",
+   "kind": "input",
+   "label": "Additional load deflection / tilt allowance",
+   "path": "metal.deflection_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C31",
+   "choices": [],
+   "default": 0.03,
+   "help": "",
+   "kind": "input",
+   "label": "Differential thermal movement allowance",
+   "path": "metal.thermal_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C32",
+   "choices": [],
+   "default": 0.05,
+   "help": "",
+   "kind": "input",
+   "label": "Sleeve fit / thickness / form allowance",
+   "path": "metal.sleeve_form_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C33",
+   "choices": [],
+   "default": 0.2,
+   "help": "UNCONFIRMED.",
+   "kind": "input",
+   "label": "Magnet position / size allowance",
+   "path": "metal.magnet_position_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C36",
+   "choices": [],
+   "default": 0.2,
+   "help": "",
+   "kind": "input",
+   "label": "Minimum desired residual running clearance",
+   "path": "metal.residual_target_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C42",
+   "choices": [],
+   "default": 0.0027,
+   "help": "",
+   "kind": "input",
+   "label": "Aluminium cap / adapter density",
+   "path": "metal.al_density_g_mm3",
+   "unit": "g/mm³"
+  },
+  {
+   "cell": "Metal design!C44",
+   "choices": [],
+   "default": 0.008,
+   "help": "",
+   "kind": "input",
+   "label": "Sleeve density",
+   "path": "metal.sleeve_density_g_mm3",
+   "unit": "g/mm³"
+  },
+  {
+   "cell": "Metal design!C132",
+   "choices": [],
+   "default": 0.00785,
+   "help": "",
+   "kind": "input",
+   "label": "Steel density (4140)",
+   "path": "metal.steel_density_g_mm3",
+   "unit": "g/mm³"
+  },
+  {
+   "cell": "Metal design!C85",
+   "choices": [],
+   "default": 2000,
+   "help": "User: 2,000 rpm at the wheel.",
+   "kind": "input",
+   "label": "Relative slip speed",
+   "path": "metal.slip_rpm",
+   "unit": "rpm"
+  },
+  {
+   "cell": "Metal design!C87",
+   "choices": [],
+   "default": 0.1,
+   "help": "Illustrative; replace with the recorded value.",
+   "kind": "input",
+   "label": "Slip duration per event",
+   "path": "metal.slip_event_s",
+   "unit": "s"
+  },
+  {
+   "cell": "Metal design!C88",
+   "choices": [],
+   "default": 20000000.0,
+   "help": "Supplied life target.",
+   "kind": "input",
+   "label": "Life events",
+   "path": "metal.life_events",
+   "unit": "events"
+  },
+  {
+   "cell": "Metal design!C90",
+   "choices": [],
+   "default": null,
+   "help": "Enter the bench result; None = not measured.",
+   "kind": "input",
+   "label": "Measured mean slip drag torque",
+   "path": "metal.measured_drag_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Metal design!C119",
+   "choices": [],
+   "default": 1.4,
+   "help": "Same as the measured prototype.",
+   "kind": "input",
+   "label": "Candidate flat-face magnetic gap",
+   "path": "metal.face_gap_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C120",
+   "choices": [],
+   "default": 0.05,
+   "help": "",
+   "kind": "input",
+   "label": "Inner magnet back bondline",
+   "path": "metal.bond_inner_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C121",
+   "choices": [],
+   "default": 0.05,
+   "help": "",
+   "kind": "input",
+   "label": "Outer magnet back bondline",
+   "path": "metal.bond_outer_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C122",
+   "choices": [],
+   "default": 1.8,
+   "help": "At the pocket corners. 4140 at 1.5 T needs about 1.9 mm (Materials check).",
+   "kind": "input",
+   "label": "Minimum outer return ring wall",
+   "path": "metal.cup_wall_corner_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C123",
+   "choices": [],
+   "default": 13,
+   "help": "",
+   "kind": "input",
+   "label": "Steel inner hub axial length",
+   "path": "metal.hub_length_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C124",
+   "choices": [],
+   "default": 15.5,
+   "help": "",
+   "kind": "input",
+   "label": "Cup cavity axial depth",
+   "path": "metal.cup_depth_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C125",
+   "choices": [],
+   "default": 2.5,
+   "help": "",
+   "kind": "input",
+   "label": "Integral steel rear web thickness",
+   "path": "metal.web_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C126",
+   "choices": [],
+   "default": 13,
+   "help": "",
+   "kind": "input",
+   "label": "Integral steel boss axial length",
+   "path": "metal.boss_length_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C127",
+   "choices": [],
+   "default": 22,
+   "help": "",
+   "kind": "input",
+   "label": "Shaft boss outside diameter",
+   "path": "metal.boss_od_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C128",
+   "choices": [],
+   "default": 6,
+   "help": "",
+   "kind": "input",
+   "label": "Keys / screws / lock tab mass allowance",
+   "path": "metal.hardware_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Metal design!C129",
+   "choices": [],
+   "default": 20,
+   "help": "User supplied.",
+   "kind": "input",
+   "label": "Maximum large-diameter axial region",
+   "path": "metal.max_large_dia_axial_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C130",
+   "choices": [],
+   "default": 35,
+   "help": "User supplied.",
+   "kind": "input",
+   "label": "Maximum overall axial length",
+   "path": "metal.max_overall_axial_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C131",
+   "choices": [],
+   "default": 43,
+   "help": "User supplied.",
+   "kind": "input",
+   "label": "Maximum rotating coupling diameter",
+   "path": "metal.max_diameter_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C133",
+   "choices": [],
+   "default": 0.8,
+   "help": "",
+   "kind": "input",
+   "label": "Front cap axial addition",
+   "path": "metal.cap_axial_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C166",
+   "choices": [],
+   "default": 42.8,
+   "help": "",
+   "kind": "input",
+   "label": "Threaded cap OD",
+   "path": "metal.cap_od_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C168",
+   "choices": [],
+   "default": 2,
+   "help": "",
+   "kind": "input",
+   "label": "Cap thread engagement length",
+   "path": "metal.cap_thread_engagement_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C169",
+   "choices": [],
+   "default": 41,
+   "help": "M41 × 0.5 concept.",
+   "kind": "input",
+   "label": "Cap thread nominal diameter",
+   "path": "metal.cap_thread_dia_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C170",
+   "choices": [],
+   "default": 0.5,
+   "help": "",
+   "kind": "input",
+   "label": "Inner front endplate thickness",
+   "path": "metal.front_endplate_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C171",
+   "choices": [],
+   "default": 1,
+   "help": "",
+   "kind": "input",
+   "label": "Inner rear endplate thickness",
+   "path": "metal.rear_endplate_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C172",
+   "choices": [],
+   "default": 14.5,
+   "help": "",
+   "kind": "input",
+   "label": "Nominal retainer axial span",
+   "path": "metal.retainer_span_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C173",
+   "choices": [],
+   "default": 0.025,
+   "help": "",
+   "kind": "input",
+   "label": "Inner sleeve minimum bedding clearance",
+   "path": "metal.sleeve_bedding_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C174",
+   "choices": [],
+   "default": 0.025,
+   "help": "",
+   "kind": "input",
+   "label": "Outer liner minimum bedding clearance",
+   "path": "metal.liner_bedding_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C182",
+   "choices": [],
+   "default": 4.5,
+   "help": "",
+   "kind": "input",
+   "label": "Rear endplate screw clearance diameter",
+   "path": "metal.rear_endplate_hole_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C183",
+   "choices": [],
+   "default": 30,
+   "help": "",
+   "kind": "input",
+   "label": "Optional adapter flange diameter",
+   "path": "metal.adapter_flange_dia_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C184",
+   "choices": [],
+   "default": 4.5,
+   "help": "",
+   "kind": "input",
+   "label": "Optional adapter flange thickness",
+   "path": "metal.adapter_flange_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C185",
+   "choices": [],
+   "default": 18,
+   "help": "",
+   "kind": "input",
+   "label": "Optional adapter pilot diameter",
+   "path": "metal.adapter_pilot_dia_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C186",
+   "choices": [],
+   "default": 2,
+   "help": "",
+   "kind": "input",
+   "label": "Optional adapter pilot length",
+   "path": "metal.adapter_pilot_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C187",
+   "choices": [],
+   "default": 10,
+   "help": "",
+   "kind": "input",
+   "label": "Optional adapter boss extension",
+   "path": "metal.adapter_boss_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C190",
+   "choices": [],
+   "default": 2,
+   "help": "",
+   "kind": "input",
+   "label": "Optional joint extra hardware allowance",
+   "path": "metal.adapter_hardware_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Calibration!C5",
+   "choices": [],
+   "default": 1.8,
+   "help": "User bench result. Method, repeatability and temperature not supplied.",
+   "kind": "input",
+   "label": "Measured pull-out torque",
+   "path": "calibration.measured_torque_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Calibration!C12",
+   "choices": [],
+   "default": 20,
+   "help": "Two equal rings, alternating polarity.",
+   "kind": "input",
+   "label": "Total installed magnets",
+   "path": "calibration.total_magnets",
+   "unit": "count"
+  },
+  {
+   "cell": "Calibration!C14",
+   "choices": [],
+   "default": 1.4,
+   "help": "Between the opposing flat faces.",
+   "kind": "input",
+   "label": "Reported spacing",
+   "path": "calibration.spacing_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calibration!C15",
+   "choices": [
+    [
+     0,
+     "corner"
+    ],
+    [
+     1,
+     "flat centre"
+    ]
+   ],
+   "default": 1,
+   "help": "0 = corner, 1 = flat centre.",
+   "kind": "input",
+   "label": "Gap definition",
+   "path": "calibration.gap_definition",
+   "unit": "selector"
+  },
+  {
+   "cell": "Calibration!C16",
+   "choices": [],
+   "default": 20,
+   "help": "ASSUMED; replace with the recorded value.",
+   "kind": "input",
+   "label": "Assumed test magnet temperature",
+   "path": "calibration.test_temp_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Calibration!C17",
+   "choices": [],
+   "default": 9.85,
+   "help": "",
+   "kind": "input",
+   "label": "Prototype inner hub apothem",
+   "path": "calibration.apothem_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calibration!C18",
+   "choices": [],
+   "default": 12.7,
+   "help": "",
+   "kind": "input",
+   "label": "Prototype magnet axial length",
+   "path": "calibration.magnet_length_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calibration!C19",
+   "choices": [],
+   "default": 6.35,
+   "help": "",
+   "kind": "input",
+   "label": "Prototype magnet tangential width",
+   "path": "calibration.magnet_width_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calibration!C20",
+   "choices": [],
+   "default": 3.17,
+   "help": "",
+   "kind": "input",
+   "label": "Prototype magnet radial thickness",
+   "path": "calibration.magnet_thickness_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calibration!C21",
+   "choices": [],
+   "default": 1.29,
+   "help": "",
+   "kind": "input",
+   "label": "Prototype remanence at 20 °C",
+   "path": "calibration.br_T",
+   "unit": "T"
+  },
+  {
+   "cell": "Calibration!C22",
+   "choices": [],
+   "default": -0.0012,
+   "help": "Used by every sheet. Torque scales with the square of the Br ratio.",
+   "kind": "input",
+   "label": "Reversible Br temperature coefficient",
+   "path": "calibration.alpha_br_per_C",
+   "unit": "1/°C"
+  },
+  {
+   "cell": "Calibration!C23",
+   "choices": [],
+   "default": 0.15,
+   "help": "",
+   "kind": "input",
+   "label": "Original end-effect coefficient",
+   "path": "calibration.c_end",
+   "unit": "-"
+  },
+  {
+   "cell": "Calibration!C24",
+   "choices": [],
+   "default": 0.95,
+   "help": "Kept separate from the measured correction.",
+   "kind": "input",
+   "label": "Original calibration coefficient",
+   "path": "calibration.f_cal_original",
+   "unit": "-"
+  },
+  {
+   "cell": "Calibration!C25",
+   "choices": [],
+   "default": 1.256637e-06,
+   "help": "",
+   "kind": "input",
+   "label": "Vacuum permeability",
+   "path": "calibration.mu0",
+   "unit": "H/m"
+  },
+  {
+   "cell": "Calibration!C47",
+   "choices": [],
+   "default": 2.06,
+   "help": "Supplied context, not rerun.",
+   "kind": "input",
+   "label": "3D result at 1.0 mm corner gap",
+   "path": "calibration.fea_torque1_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Calibration!C48",
+   "choices": [],
+   "default": 1.7,
+   "help": "",
+   "kind": "input",
+   "label": "3D result at 1.5 mm corner gap",
+   "path": "calibration.fea_torque2_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Materials!C13",
+   "choices": [],
+   "default": 1.5,
+   "help": "Annealed 4140. 1018 would be about 1.7 T; use about 1.4 T for pre-hardened stock.",
+   "kind": "input",
+   "label": "Design flux density for the back-iron check",
+   "path": "materials.steel.bsat_T",
+   "unit": "T"
+  },
+  {
+   "cell": "Materials!C14",
+   "choices": [],
+   "default": 4500000.0,
+   "help": "Resistivity about 0.22 µΩ·m.",
+   "kind": "input",
+   "label": "Electrical conductivity",
+   "path": "materials.steel.conductivity_S_m",
+   "unit": "S/m"
+  },
+  {
+   "cell": "Materials!C15",
+   "choices": [],
+   "default": 200,
+   "help": "",
+   "kind": "input",
+   "label": "Incremental relative permeability (with the magnet bias)",
+   "path": "materials.steel.mu_r_incremental",
+   "unit": "-"
+  },
+  {
+   "cell": "Materials!C16",
+   "choices": [],
+   "default": 473,
+   "help": "",
+   "kind": "input",
+   "label": "Specific heat",
+   "path": "materials.steel.specific_heat_J_kgK",
+   "unit": "J/(kg·K)"
+  },
+  {
+   "cell": "Materials!C17",
+   "choices": [],
+   "default": 1.23e-05,
+   "help": "",
+   "kind": "input",
+   "label": "Expansion coefficient",
+   "path": "materials.steel.cte_per_C",
+   "unit": "1/°C"
+  },
+  {
+   "cell": "Materials!C18",
+   "choices": [],
+   "default": 205,
+   "help": "",
+   "kind": "input",
+   "label": "Elastic modulus",
+   "path": "materials.steel.modulus_GPa",
+   "unit": "GPa"
+  },
+  {
+   "cell": "Materials!C19",
+   "choices": [],
+   "default": 7.85,
+   "help": "Same as 1018; the mass model uses Metal design C132.",
+   "kind": "input",
+   "label": "Density",
+   "path": "materials.steel.density_g_cm3",
+   "unit": "g/cm³"
+  },
+  {
+   "cell": "Materials!C26",
+   "choices": [],
+   "default": 0.015,
+   "help": "High-phosphorus EN (10–12 % P): non-magnetic as plated. Typical 0.013–0.025 mm.",
+   "kind": "input",
+   "label": "Plating thickness per surface",
+   "path": "materials.nickel.thickness_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Materials!C48",
+   "choices": [],
+   "default": 970,
+   "help": "ISO 898-1.",
+   "kind": "input",
+   "label": "Class 12.9 proof stress",
+   "path": "materials.screws.proof_12_9_MPa",
+   "unit": "MPa"
+  },
+  {
+   "cell": "Materials!C49",
+   "choices": [],
+   "default": 830,
+   "help": "",
+   "kind": "input",
+   "label": "Class 10.9 proof stress",
+   "path": "materials.screws.proof_10_9_MPa",
+   "unit": "MPa"
+  },
+  {
+   "cell": "Materials!C50",
+   "choices": [],
+   "default": 450,
+   "help": "",
+   "kind": "input",
+   "label": "Stainless A4-70 yield stress",
+   "path": "materials.screws.yield_A4_70_MPa",
+   "unit": "MPa"
+  },
+  {
+   "cell": "Temperature design!C34",
+   "choices": [],
+   "default": 2000,
+   "help": "Used for the centrifugal load.",
+   "kind": "input",
+   "label": "Wheel-side (inner) rotor maximum speed",
+   "path": "temperature.duty.wheel_rotor_rpm",
+   "unit": "rpm"
+  },
+  {
+   "cell": "Temperature design!C35",
+   "choices": [],
+   "default": 55,
+   "help": "User: 55 °C day.",
+   "kind": "input",
+   "label": "Hot-day ambient temperature",
+   "path": "temperature.duty.hot_ambient_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C36",
+   "choices": [],
+   "default": 10,
+   "help": "Placeholder: housing air, sun and gearbox heat. Measure it.",
+   "kind": "input",
+   "label": "Coupling rise above ambient while driving (no slip)",
+   "path": "temperature.duty.driving_rise_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C38",
+   "choices": [],
+   "default": 2,
+   "help": "",
+   "kind": "input",
+   "label": "Slip fault trip time (unbroken slip)",
+   "path": "temperature.duty.fault_trip_s",
+   "unit": "s"
+  },
+  {
+   "cell": "Temperature design!C39",
+   "choices": [],
+   "default": 20000,
+   "help": "Placeholder; used for the average slip duty.",
+   "kind": "input",
+   "label": "Operating hours over the system life",
+   "path": "temperature.duty.life_hours",
+   "unit": "h"
+  },
+  {
+   "cell": "Temperature design!C44",
+   "choices": [],
+   "default": 1592,
+   "help": "N42SH ≥ 20 kOe.",
+   "kind": "input",
+   "label": "Intrinsic coercivity Hcj at 20 °C (grade minimum)",
+   "path": "temperature.demag.hcj20_kA_m",
+   "unit": "kA/m"
+  },
+  {
+   "cell": "Temperature design!C45",
+   "choices": [],
+   "default": -0.005,
+   "help": "",
+   "kind": "input",
+   "label": "Hcj temperature coefficient (effective, 20–150 °C)",
+   "path": "temperature.demag.beta_hcj_per_C",
+   "unit": "1/°C"
+  },
+  {
+   "cell": "Temperature design!C46",
+   "choices": [],
+   "default": 0.9,
+   "help": "",
+   "kind": "input",
+   "label": "Knee field as a fraction of Hcj",
+   "path": "temperature.demag.knee_fraction",
+   "unit": "-"
+  },
+  {
+   "cell": "Temperature design!C51",
+   "choices": [],
+   "default": 10,
+   "help": "",
+   "kind": "input",
+   "label": "Design margin below the onset",
+   "path": "temperature.demag.design_margin_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C52",
+   "choices": [],
+   "default": 354,
+   "help": "Outer blocks (inner 341).",
+   "kind": "input",
+   "label": "3D worst reverse field, rings aligned",
+   "path": "temperature.demag.h_rev_aligned_kA_m",
+   "unit": "kA/m"
+  },
+  {
+   "cell": "Temperature design!C53",
+   "choices": [],
+   "default": 791,
+   "help": "Outer blocks (inner 760).",
+   "kind": "input",
+   "label": "3D worst reverse field at pull-out",
+   "path": "temperature.demag.h_rev_pullout_kA_m",
+   "unit": "kA/m"
+  },
+  {
+   "cell": "Temperature design!C54",
+   "choices": [],
+   "default": 863,
+   "help": "Outer blocks (inner 844); once per pole pass while skipping.",
+   "kind": "input",
+   "label": "3D worst reverse field, like poles facing",
+   "path": "temperature.demag.h_rev_likepole_kA_m",
+   "unit": "kA/m"
+  },
+  {
+   "cell": "Temperature design!C55",
+   "choices": [],
+   "default": 569,
+   "help": "Adhesive-cure case (inner ring alone: 545).",
+   "kind": "input",
+   "label": "3D worst reverse field, single ring on its carrier",
+   "path": "temperature.demag.h_rev_single_ring_kA_m",
+   "unit": "kA/m"
+  },
+  {
+   "cell": "Temperature design!C75",
+   "choices": [
+    [
+     1,
+     "AA 326"
+    ],
+    [
+     2,
+     "EA 9514"
+    ],
+    [
+     3,
+     "2214 Hi-Temp"
+    ],
+    [
+     4,
+     "DP460"
+    ]
+   ],
+   "default": 1,
+   "help": "1 = AA 326, 2 = EA 9514, 3 = 2214 Hi-Temp, 4 = DP460.",
+   "kind": "input",
+   "label": "Selected adhesive (code)",
+   "path": "temperature.adhesive.selected",
+   "unit": "-"
+  },
+  {
+   "cell": "Temperature design!C95",
+   "choices": [],
+   "default": -8e-07,
+   "help": "Across the magnetization.",
+   "kind": "input",
+   "label": "NdFeB expansion in the bond plane",
+   "path": "temperature.mismatch.ndfeb_cte_per_C",
+   "unit": "1/°C"
+  },
+  {
+   "cell": "Temperature design!C96",
+   "choices": [],
+   "default": 0.55,
+   "help": "",
+   "kind": "input",
+   "label": "Adhesive shear modulus",
+   "path": "temperature.mismatch.adhesive_shear_modulus_GPa",
+   "unit": "GPa"
+  },
+  {
+   "cell": "Temperature design!C97",
+   "choices": [],
+   "default": 160,
+   "help": "",
+   "kind": "input",
+   "label": "NdFeB elastic modulus",
+   "path": "temperature.mismatch.ndfeb_modulus_GPa",
+   "unit": "GPa"
+  },
+  {
+   "cell": "Temperature design!C103",
+   "choices": [],
+   "default": 0.1,
+   "help": "",
+   "kind": "input",
+   "label": "Recommended bondline",
+   "path": "temperature.mismatch.recommended_bondline_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Temperature design!C111",
+   "choices": [],
+   "default": 1350000.0,
+   "help": "",
+   "kind": "input",
+   "label": "316L conductivity",
+   "path": "temperature.slip_loss.sigma_316_S_m",
+   "unit": "S/m"
+  },
+  {
+   "cell": "Temperature design!C113",
+   "choices": [],
+   "default": 670000.0,
+   "help": "",
+   "kind": "input",
+   "label": "NdFeB conductivity",
+   "path": "temperature.slip_loss.sigma_ndfeb_S_m",
+   "unit": "S/m"
+  },
+  {
+   "cell": "Temperature design!C114",
+   "choices": [],
+   "default": 0.7,
+   "help": "",
+   "kind": "input",
+   "label": "End factor for thin shells and the cap",
+   "path": "temperature.slip_loss.end_factor",
+   "unit": "-"
+  },
+  {
+   "cell": "Temperature design!C116",
+   "choices": [],
+   "default": 0.207,
+   "help": "3D, doubled at the steel surface.",
+   "kind": "input",
+   "label": "Opposite-ring field at hub steel (fundamental)",
+   "path": "temperature.slip_loss.b_hub_T",
+   "unit": "T"
+  },
+  {
+   "cell": "Temperature design!C117",
+   "choices": [],
+   "default": 0.214,
+   "help": "3D.",
+   "kind": "input",
+   "label": "Opposite-ring field at cup steel (fundamental)",
+   "path": "temperature.slip_loss.b_cup_T",
+   "unit": "T"
+  },
+  {
+   "cell": "Temperature design!C118",
+   "choices": [],
+   "default": 0.416,
+   "help": "3D.",
+   "kind": "input",
+   "label": "Opposite-ring field at the inner sleeve (fundamental)",
+   "path": "temperature.slip_loss.b_sleeve_T",
+   "unit": "T"
+  },
+  {
+   "cell": "Temperature design!C119",
+   "choices": [],
+   "default": 0.419,
+   "help": "3D.",
+   "kind": "input",
+   "label": "Opposite-ring field at the outer liner (fundamental)",
+   "path": "temperature.slip_loss.b_liner_T",
+   "unit": "T"
+  },
+  {
+   "cell": "Temperature design!C120",
+   "choices": [],
+   "default": 5.27e-10,
+   "help": "3D.",
+   "kind": "input",
+   "label": "Cap-face end field, ∫Bz² r² dA",
+   "path": "temperature.slip_loss.cap_integral_T2m4",
+   "unit": "T²·m⁴"
+  },
+  {
+   "cell": "Temperature design!C121",
+   "choices": [],
+   "default": 1.035e-05,
+   "help": "3D.",
+   "kind": "input",
+   "label": "Rear-web end field, ∫B² dA",
+   "path": "temperature.slip_loss.web_integral_T2m2",
+   "unit": "T²·m²"
+  },
+  {
+   "cell": "Temperature design!C122",
+   "choices": [],
+   "default": 0.19,
+   "help": "3D.",
+   "kind": "input",
+   "label": "Alternating radial field inside the blocks",
+   "path": "temperature.slip_loss.b_magnet_T",
+   "unit": "T"
+  },
+  {
+   "cell": "Temperature design!C133",
+   "choices": [],
+   "default": 3,
+   "help": "Set to 1 once measured.",
+   "kind": "input",
+   "label": "High-case multiplier on the estimate",
+   "path": "temperature.slip_loss.high_multiplier",
+   "unit": "-"
+  },
+  {
+   "cell": "Temperature design!C138",
+   "choices": [],
+   "default": 440,
+   "help": "",
+   "kind": "input",
+   "label": "Specific heat, NdFeB",
+   "path": "temperature.thermal.c_ndfeb",
+   "unit": "J/(kg·K)"
+  },
+  {
+   "cell": "Temperature design!C139",
+   "choices": [],
+   "default": 500,
+   "help": "",
+   "kind": "input",
+   "label": "Specific heat, 316L",
+   "path": "temperature.thermal.c_316",
+   "unit": "J/(kg·K)"
+  },
+  {
+   "cell": "Temperature design!C140",
+   "choices": [],
+   "default": 900,
+   "help": "",
+   "kind": "input",
+   "label": "Specific heat, aluminium",
+   "path": "temperature.thermal.c_aluminium",
+   "unit": "J/(kg·K)"
+  },
+  {
+   "cell": "Temperature design!C142",
+   "choices": [],
+   "default": 0.3,
+   "help": "Both 10 mm shafts plus convection in the sealed housing. Measure it.",
+   "kind": "input",
+   "label": "Thermal conductance to the housing and shafts",
+   "path": "temperature.thermal.conductance_W_K",
+   "unit": "W/K"
+  },
+  {
+   "cell": "Temperature design!C194",
+   "choices": [],
+   "default": 0.5,
+   "help": "Placeholder; not published for AA 326.",
+   "kind": "input",
+   "label": "Share of lap-shear strength retained at the peak temperature",
+   "path": "temperature.adhesive_life.hot_strength_retained",
+   "unit": "-"
+  },
+  {
+   "cell": "Temperature design!C195",
+   "choices": [],
+   "default": 0.2,
+   "help": "",
+   "kind": "input",
+   "label": "Fatigue endurance at 10^8+ cycles, share of static strength",
+   "path": "temperature.adhesive_life.fatigue_endurance",
+   "unit": "-"
+  },
+  {
+   "cell": "Temperature design!C198",
+   "choices": [],
+   "default": 10,
+   "help": "Placeholder.",
+   "kind": "input",
+   "label": "Service life",
+   "path": "temperature.adhesive_life.service_years",
+   "unit": "years"
+  },
+  {
+   "cell": "Temperature design!C199",
+   "choices": [],
+   "default": 30,
+   "help": "Placeholder.",
+   "kind": "input",
+   "label": "Daily temperature swing at the coupling",
+   "path": "temperature.adhesive_life.daily_swing_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Shaft clamps!C16",
+   "choices": [],
+   "default": 2.0,
+   "help": "Reversing torque and vibration; the key is extra.",
+   "kind": "input",
+   "label": "Safety factor, clamp alone",
+   "path": "clamps.safety_factor",
+   "unit": "-"
+  },
+  {
+   "cell": "Shaft clamps!C18",
+   "choices": [],
+   "default": 0.15,
+   "help": "Degreased; 0.10 if the bore could be oily.",
+   "kind": "input",
+   "label": "Friction coefficient, shaft to bore",
+   "path": "clamps.friction",
+   "unit": "-"
+  },
+  {
+   "cell": "Shaft clamps!C19",
+   "choices": [
+    [
+     1,
+     "one-piece slotted"
+    ],
+    [
+     2,
+     "two-piece"
+    ]
+   ],
+   "default": 1,
+   "help": "1 = one-piece slotted, 2 = two-piece.",
+   "kind": "input",
+   "label": "Clamp type",
+   "path": "clamps.clamp_type",
+   "unit": "-"
+  },
+  {
+   "cell": "Shaft clamps!C20",
+   "choices": [],
+   "default": 0.8,
+   "help": "Share of screw force pressing the shaft.",
+   "kind": "input",
+   "label": "Clamp factor, one-piece",
+   "path": "clamps.factor_one_piece",
+   "unit": "-"
+  },
+  {
+   "cell": "Shaft clamps!C21",
+   "choices": [],
+   "default": 1.0,
+   "help": "",
+   "kind": "input",
+   "label": "Clamp factor, two-piece",
+   "path": "clamps.factor_two_piece",
+   "unit": "-"
+  },
+  {
+   "cell": "Shaft clamps!C23",
+   "choices": [
+    [
+     1,
+     "7075-T6"
+    ],
+    [
+     2,
+     "6061-T6"
+    ]
+   ],
+   "default": 1,
+   "help": "1 = 7075-T6, 2 = 6061-T6.",
+   "kind": "input",
+   "label": "Aluminium",
+   "path": "clamps.alloy",
+   "unit": "-"
+  },
+  {
+   "cell": "Shaft clamps!C27",
+   "choices": [
+    [
+     1,
+     "12.9"
+    ],
+    [
+     2,
+     "10.9"
+    ],
+    [
+     3,
+     "A4-70"
+    ]
+   ],
+   "default": 1,
+   "help": "1 = 12.9, 2 = 10.9, 3 = A4-70.",
+   "kind": "input",
+   "label": "Screw class",
+   "path": "clamps.screw_class",
+   "unit": "-"
+  },
+  {
+   "cell": "Shaft clamps!C29",
+   "choices": [],
+   "default": 0.75,
+   "help": "",
+   "kind": "input",
+   "label": "Preload as a share of proof load",
+   "path": "clamps.preload_fraction",
+   "unit": "-"
+  },
+  {
+   "cell": "Shaft clamps!C30",
+   "choices": [],
+   "default": 0.2,
+   "help": "Dry or with Loctite 243.",
+   "kind": "input",
+   "label": "Nut factor",
+   "path": "clamps.nut_factor",
+   "unit": "-"
+  },
+  {
+   "cell": "Shaft clamps!C31",
+   "choices": [],
+   "default": 2.0,
+   "help": "",
+   "kind": "input",
+   "label": "Thread engagement in aluminium (× screw diameter)",
+   "path": "clamps.engagement_x_d",
+   "unit": "-"
+  },
+  {
+   "cell": "Shaft clamps!C32",
+   "choices": [],
+   "default": 1.5,
+   "help": "",
+   "kind": "input",
+   "label": "Safety factor on thread stripping",
+   "path": "clamps.strip_sf",
+   "unit": "-"
+  },
+  {
+   "cell": "Shaft clamps!C35",
+   "choices": [],
+   "default": 25,
+   "help": "At 22 mm only M3 fits; two of them need a 14.5 mm clamp.",
+   "kind": "input",
+   "label": "Boss outside diameter",
+   "path": "clamps.boss_od_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C36",
+   "choices": [],
+   "default": 10,
+   "help": "",
+   "kind": "input",
+   "label": "Clamp length, free end to relief cut",
+   "path": "clamps.clamp_length_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C37",
+   "choices": [],
+   "default": 0.8,
+   "help": "",
+   "kind": "input",
+   "label": "Slit width",
+   "path": "clamps.slit_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C38",
+   "choices": [],
+   "default": 1.0,
+   "help": "",
+   "kind": "input",
+   "label": "Minimum ligament, bore to screw hole",
+   "path": "clamps.ligament_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C39",
+   "choices": [],
+   "default": 1.0,
+   "help": "",
+   "kind": "input",
+   "label": "Minimum wall outside the screw hole",
+   "path": "clamps.wall_out_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C40",
+   "choices": [],
+   "default": 3.0,
+   "help": "",
+   "kind": "input",
+   "label": "Minimum head-side jaw (grip)",
+   "path": "clamps.grip_min_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C41",
+   "choices": [],
+   "default": 1.0,
+   "help": "",
+   "kind": "input",
+   "label": "Axial margin, clamp end to counterbore edge",
+   "path": "clamps.axial_margin_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C42",
+   "choices": [],
+   "default": 1.0,
+   "help": "",
+   "kind": "input",
+   "label": "Relief cut width",
+   "path": "clamps.relief_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C43",
+   "choices": [],
+   "default": 8.0,
+   "help": "Measured up from the far side of the boss.",
+   "kind": "input",
+   "label": "Hinge left under the relief cut",
+   "path": "clamps.hinge_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C58",
+   "choices": [],
+   "default": 4,
+   "help": "",
+   "kind": "input",
+   "label": "Key width",
+   "path": "clamps.key_width_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C59",
+   "choices": [],
+   "default": 1.5,
+   "help": "",
+   "kind": "input",
+   "label": "Key contact height in the hub",
+   "path": "clamps.key_contact_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C64",
+   "choices": [],
+   "default": 3,
+   "help": "Pilot + 3 × M3 + dowel.",
+   "kind": "input",
+   "label": "Adapter joint screws",
+   "path": "clamps.joint_screws",
+   "unit": "-"
+  },
+  {
+   "cell": "Shaft clamps!C65",
+   "choices": [],
+   "default": 26,
+   "help": "",
+   "kind": "input",
+   "label": "Bolt circle diameter",
+   "path": "clamps.joint_bolt_circle_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C66",
+   "choices": [],
+   "default": 0.15,
+   "help": "",
+   "kind": "input",
+   "label": "Friction coefficient, nickel plate on aluminium",
+   "path": "clamps.joint_friction",
+   "unit": "-"
+  },
+  {
+   "cell": "Calibration!C6",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Original model at the assumed test conditions",
+   "path": "calibration.model_torque_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Calibration!C7",
+   "choices": [],
+   "help": "Negative means underprediction.",
+   "kind": "result",
+   "label": "Model error relative to measured torque",
+   "path": "calibration.model_error",
+   "unit": "fraction"
+  },
+  {
+   "cell": "Calibration!C8",
+   "choices": [],
+   "help": "One-point correction.",
+   "kind": "result",
+   "label": "Measured / original model",
+   "path": "calibration.measured_over_model",
+   "unit": "factor"
+  },
+  {
+   "cell": "Calibration!C9",
+   "choices": [],
+   "help": "Applies to the no-iron prototype only.",
+   "kind": "result",
+   "label": "Updated model calibration coefficient",
+   "path": "calibration.f_cal_updated",
+   "unit": "factor"
+  },
+  {
+   "cell": "Calibration!C13",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Poles per ring",
+   "path": "calibration.poles_per_ring",
+   "unit": "count"
+  },
+  {
+   "cell": "Calibration!C28",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Inner magnet flat-face radius",
+   "path": "calibration.face_radius_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calibration!C29",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Inner magnet corner radius",
+   "path": "calibration.corner_radius_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calibration!C30",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Equivalent minimum corner gap",
+   "path": "calibration.corner_gap_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calibration!C31",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Outer magnet face apothem",
+   "path": "calibration.outer_face_apothem_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calibration!C32",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Effective flat-centre gap",
+   "path": "calibration.flat_gap_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calibration!C33",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Mean gap radius",
+   "path": "calibration.gap_radius_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calibration!C34",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Inner magnet fill factor",
+   "path": "calibration.fill_inner",
+   "unit": "-"
+  },
+  {
+   "cell": "Calibration!C35",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Outer magnet fill factor",
+   "path": "calibration.fill_outer",
+   "unit": "-"
+  },
+  {
+   "cell": "Calibration!C36",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Br at assumed test temperature",
+   "path": "calibration.br_test_T",
+   "unit": "T"
+  },
+  {
+   "cell": "Calibration!C37",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Pole pitch",
+   "path": "calibration.pole_pitch_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calibration!C38",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "End-effect factor",
+   "path": "calibration.f_end",
+   "unit": "-"
+  },
+  {
+   "cell": "Calibration!C40",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Shear stress, harmonic 1",
+   "path": "calibration.tau1_Pa",
+   "unit": "Pa"
+  },
+  {
+   "cell": "Calibration!C41",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Shear stress, harmonic 3",
+   "path": "calibration.tau3_Pa",
+   "unit": "Pa"
+  },
+  {
+   "cell": "Calibration!C42",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Shear stress, harmonic 5",
+   "path": "calibration.tau5_Pa",
+   "unit": "Pa"
+  },
+  {
+   "cell": "Calibration!C43",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "2D torque before end and calibration factors",
+   "path": "calibration.torque_2d_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Calibration!C44",
+   "choices": [],
+   "help": "Same value as model_torque_Nm.",
+   "kind": "result",
+   "label": "Original model pull-out torque",
+   "path": "calibration.original_model_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Calibration!C49",
+   "choices": [],
+   "help": "Linear; 'outside range' if off the 1.0–1.5 mm span.",
+   "kind": "result",
+   "label": "3D interpolation at the prototype corner gap",
+   "path": "calibration.fea_interp_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Calibration!C50",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "3D interpolation error versus measured",
+   "path": "calibration.fea_interp_error",
+   "unit": "fraction"
+  },
+  {
+   "cell": "Calculator!C18",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Inner length (axial) used",
+   "path": "model.inner_length_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C19",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Inner width (tangential) used",
+   "path": "model.inner_width_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C20",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Inner thickness (radial) used",
+   "path": "model.inner_thickness_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C21",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Inner Br at 20 °C used",
+   "path": "model.inner_br_T",
+   "unit": "T"
+  },
+  {
+   "cell": "Calculator!C22",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Inner max operating temperature (library)",
+   "path": "model.inner_tmax_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Calculator!C28",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Outer length (axial) used",
+   "path": "model.outer_length_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C29",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Outer width (tangential) used",
+   "path": "model.outer_width_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C30",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Outer thickness (radial) used",
+   "path": "model.outer_thickness_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C31",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Outer Br at 20 °C used",
+   "path": "model.outer_br_T",
+   "unit": "T"
+  },
+  {
+   "cell": "Calculator!C32",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Outer max operating temperature (library)",
+   "path": "model.outer_tmax_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Calculator!C33",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Active (overlapping) length",
+   "path": "model.active_length_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C9",
+   "choices": [],
+   "help": "Derived from the flat-face gap.",
+   "kind": "result",
+   "label": "Corner gap: inner block corner to outer block face",
+   "path": "model.corner_gap_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C35",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Br temperature coefficient",
+   "path": "model.alpha_br_per_C",
+   "unit": "1/°C"
+  },
+  {
+   "cell": "Calculator!C36",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Back-iron saturation flux density",
+   "path": "model.bsat_T",
+   "unit": "T"
+  },
+  {
+   "cell": "Calculator!C37",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Cup wall thickness at the pocket corners",
+   "path": "model.cup_wall_corner_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C38",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Hub wall under flats",
+   "path": "model.hub_wall_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C42",
+   "choices": [],
+   "help": "0.95 for the steel-backed candidate.",
+   "kind": "result",
+   "label": "Calibration factor",
+   "path": "model.f_cal",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C51",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Inner flat width available",
+   "path": "model.inner_flat_width_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C52",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Inner flat check",
+   "path": "model.inner_flat_check",
+   "unit": ""
+  },
+  {
+   "cell": "Calculator!C53",
+   "choices": [],
+   "help": "Keep ≥ ~2.5 mm.",
+   "kind": "result",
+   "label": "Hub wall past the keyway",
+   "path": "model.hub_wall_past_key_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C54",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Inner block face radius",
+   "path": "model.inner_face_radius_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C55",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Inner block corner radius",
+   "path": "model.inner_corner_radius_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C56",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Outer block face apothem",
+   "path": "model.outer_face_apothem_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C57",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Gap at the flat centres (effective gap)",
+   "path": "model.face_gap_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C58",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Outer flat width at the faces",
+   "path": "model.outer_flat_width_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C59",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Outer flat check",
+   "path": "model.outer_flat_check",
+   "unit": ""
+  },
+  {
+   "cell": "Calculator!C60",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Outer block back apothem",
+   "path": "model.outer_back_apothem_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C61",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Pocket corner radius",
+   "path": "model.pocket_corner_radius_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C62",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Cup outer diameter",
+   "path": "model.cup_od_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C63",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Ring wall at the flats",
+   "path": "model.cup_wall_flat_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C64",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Gap mean radius",
+   "path": "model.gap_radius_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C65",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Pole pitch at the gap radius",
+   "path": "model.pole_pitch_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C66",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Inner fill factor",
+   "path": "model.fill_inner",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C67",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Outer fill factor",
+   "path": "model.fill_outer",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C69",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Br inner at operating temperature",
+   "path": "model.br_inner_T_op",
+   "unit": "T"
+  },
+  {
+   "cell": "Calculator!C70",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Br outer at operating temperature",
+   "path": "model.br_outer_T_op",
+   "unit": "T"
+  },
+  {
+   "cell": "Calculator!C71",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Harmonic 1 wave number",
+   "path": "model.k1",
+   "unit": "1/m"
+  },
+  {
+   "cell": "Calculator!C72",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Harmonic 1 inner amplitude",
+   "path": "model.b_i1",
+   "unit": "T"
+  },
+  {
+   "cell": "Calculator!C73",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Harmonic 1 outer amplitude",
+   "path": "model.b_o1",
+   "unit": "T"
+  },
+  {
+   "cell": "Calculator!C74",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Harmonic 1 geometry factor with back iron",
+   "path": "model.s1_iron",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C75",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Harmonic 1 geometry factor without back iron",
+   "path": "model.s1_free",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C76",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Harmonic 1 shear stress",
+   "path": "model.tau1_Pa",
+   "unit": "Pa"
+  },
+  {
+   "cell": "Calculator!C77",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Harmonic 3 wave number",
+   "path": "model.k3",
+   "unit": "1/m"
+  },
+  {
+   "cell": "Calculator!C78",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Harmonic 3 inner amplitude",
+   "path": "model.b_i3",
+   "unit": "T"
+  },
+  {
+   "cell": "Calculator!C79",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Harmonic 3 outer amplitude",
+   "path": "model.b_o3",
+   "unit": "T"
+  },
+  {
+   "cell": "Calculator!C80",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Harmonic 3 geometry factor with back iron",
+   "path": "model.s3_iron",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C81",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Harmonic 3 geometry factor without back iron",
+   "path": "model.s3_free",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C82",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Harmonic 3 shear stress",
+   "path": "model.tau3_Pa",
+   "unit": "Pa"
+  },
+  {
+   "cell": "Calculator!C83",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Harmonic 5 wave number",
+   "path": "model.k5",
+   "unit": "1/m"
+  },
+  {
+   "cell": "Calculator!C84",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Harmonic 5 inner amplitude",
+   "path": "model.b_i5",
+   "unit": "T"
+  },
+  {
+   "cell": "Calculator!C85",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Harmonic 5 outer amplitude",
+   "path": "model.b_o5",
+   "unit": "T"
+  },
+  {
+   "cell": "Calculator!C86",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Harmonic 5 geometry factor with back iron",
+   "path": "model.s5_iron",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C87",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Harmonic 5 geometry factor without back iron",
+   "path": "model.s5_free",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C88",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Harmonic 5 shear stress",
+   "path": "model.tau5_Pa",
+   "unit": "Pa"
+  },
+  {
+   "cell": "Calculator!C89",
+   "choices": [],
+   "help": "PM-PM couplings typically 100–250 kPa.",
+   "kind": "result",
+   "label": "Total magnetic shear stress at pull-out",
+   "path": "model.tau_Pa",
+   "unit": "Pa"
+  },
+  {
+   "cell": "Calculator!C90",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Gap area × lever arm (2π R_g² L)",
+   "path": "model.area_lever_m3",
+   "unit": "m³"
+  },
+  {
+   "cell": "Calculator!C91",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "2D pull-out torque (infinite length)",
+   "path": "model.torque_2d_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Calculator!C92",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "End-effect factor",
+   "path": "model.f_end",
+   "unit": "-"
+  },
+  {
+   "cell": "Calculator!C93",
+   "choices": [],
+   "help": "Analytical estimate, not a guaranteed minimum.",
+   "kind": "result",
+   "label": "Pull-out torque at operating temperature",
+   "path": "model.pullout_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Calculator!C94",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Pull-out torque at 20 °C",
+   "path": "model.pullout_20C_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Calculator!C95",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Same layout with steel back iron (factor 0.95)",
+   "path": "model.pullout_iron_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Calculator!C96",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Raw no-back-iron prediction, same layout",
+   "path": "model.pullout_noiron_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Calculator!C97",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Torque ripple frequency at the design slip speed",
+   "path": "model.ripple_freq_Hz",
+   "unit": "Hz"
+  },
+  {
+   "cell": "Calculator!C99",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Estimated gearbox input torque ripple amplitude",
+   "path": "model.gearbox_input_ripple_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Calculator!C100",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Legacy gearbox torque reference (informational)",
+   "path": "model.gearbox_reference_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Calculator!C101",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Required floor: larger of traction need and service minimum",
+   "path": "model.required_floor_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Calculator!C102",
+   "choices": [],
+   "help": "Only the hot minimum is evaluated.",
+   "kind": "result",
+   "label": "Verdict",
+   "path": "model.verdict",
+   "unit": ""
+  },
+  {
+   "cell": "Calculator!C103",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Estimated gap flux density (flat circuit)",
+   "path": "model.gap_flux_density_T",
+   "unit": "T"
+  },
+  {
+   "cell": "Calculator!C104",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Back-iron thickness needed (sinusoidal flux, B_sat)",
+   "path": "model.backiron_needed_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Calculator!C105",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Cup ring check",
+   "path": "model.cup_ring_check",
+   "unit": ""
+  },
+  {
+   "cell": "Calculator!C106",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Hub check",
+   "path": "model.hub_check",
+   "unit": ""
+  },
+  {
+   "cell": "Calculator!C107",
+   "choices": [],
+   "help": "Library rating only.",
+   "kind": "result",
+   "label": "Inner magnet temperature check",
+   "path": "model.inner_temp_check",
+   "unit": ""
+  },
+  {
+   "cell": "Calculator!C108",
+   "choices": [],
+   "help": "Library rating only.",
+   "kind": "result",
+   "label": "Outer magnet temperature check",
+   "path": "model.outer_temp_check",
+   "unit": ""
+  },
+  {
+   "cell": "Calculator!C110",
+   "choices": [],
+   "help": "7.5 g/cm³.",
+   "kind": "result",
+   "label": "Magnets (both rings)",
+   "path": "mass.magnets_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Calculator!C111",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Steel cup wall and integral rear web",
+   "path": "mass.cup_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Calculator!C112",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Steel keyed inner hub",
+   "path": "mass.hub_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Calculator!C113",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Integral steel shaft boss",
+   "path": "mass.boss_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Calculator!C114",
+   "choices": [],
+   "help": "Gross geometry plus hardware; holes, threads and slots not subtracted.",
+   "kind": "result",
+   "label": "Preliminary rotating mass, including retainers",
+   "path": "mass.total_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Calculator!C115",
+   "choices": [],
+   "help": "Point-mass estimate.",
+   "kind": "result",
+   "label": "Added inertia at 0.25 m from the swing axis",
+   "path": "mass.added_inertia_kgm2",
+   "unit": "kg·m²"
+  },
+  {
+   "cell": "Metal design!C45",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Proposed retainer axial span",
+   "path": "retainers.retainer_span_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C46",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Approximate sleeve / liner mass",
+   "path": "retainers.retainers_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Metal design!C175",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Inner sleeve nominal ID",
+   "path": "retainers.sleeve_id_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C176",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Inner sleeve nominal OD",
+   "path": "retainers.sleeve_od_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C177",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Outer liner nominal OD",
+   "path": "retainers.liner_od_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C178",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Outer liner nominal ID",
+   "path": "retainers.liner_id_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C179",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Inner endplate nominal OD",
+   "path": "retainers.endplate_od_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C180",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Aluminium cap estimated gross mass",
+   "path": "retainers.cap_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Metal design!C181",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Two inner endplates estimated mass",
+   "path": "retainers.endplates_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Metal design!C5",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Predicted candidate torque at operating temperature",
+   "path": "metal.torque_op_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Metal design!C6",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Predicted candidate torque at 20 °C",
+   "path": "metal.torque_20C_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Metal design!C8",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Predicted candidate torque at cold temperature",
+   "path": "metal.torque_cold_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Metal design!C9",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Hot-side low torque including assumed variation",
+   "path": "metal.torque_hot_low_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Metal design!C10",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Cold torque with assumed positive variation",
+   "path": "metal.torque_cold_high_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Metal design!C11",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Hot minimum with variation allowance",
+   "path": "metal.hot_min_check",
+   "unit": ""
+  },
+  {
+   "cell": "Metal design!C12",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Remaining radial clearance, screening estimate",
+   "path": "metal.running_clearance_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C15",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Operating / maximum magnet temperature",
+   "path": "metal.op_temp_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Metal design!C17",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Br temperature coefficient",
+   "path": "metal.alpha_br_per_C",
+   "unit": "1/°C"
+  },
+  {
+   "cell": "Metal design!C19",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Required nominal 20 °C torque for hot minimum",
+   "path": "metal.required_20C_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Metal design!C20",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Nominal hot margin above the requirement",
+   "path": "metal.hot_margin",
+   "unit": "fraction"
+  },
+  {
+   "cell": "Metal design!C24",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Magnet corner-to-opposing-face gap",
+   "path": "metal.corner_gap_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C27",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Nominal sleeve-to-liner radial clearance",
+   "path": "metal.sleeve_liner_clearance_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C34",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Total adverse radial movement",
+   "path": "metal.adverse_movement_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C35",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Minimum running clearance after allowances",
+   "path": "metal.min_running_clearance_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C37",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Clearance screening",
+   "path": "metal.clearance_check",
+   "unit": ""
+  },
+  {
+   "cell": "Metal design!C47",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Modeled rotating coupling mass",
+   "path": "metal.rotating_mass_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Metal design!C86",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Pole-pair slip frequency",
+   "path": "metal.slip_freq_Hz",
+   "unit": "Hz"
+  },
+  {
+   "cell": "Metal design!C89",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Approximate magnetic cycles over life",
+   "path": "metal.magnetic_cycles",
+   "unit": "cycles"
+  },
+  {
+   "cell": "Metal design!C91",
+   "choices": [],
+   "help": "'not measured' until a bench drag torque is entered.",
+   "kind": "result",
+   "label": "Slip-loss power",
+   "path": "metal.slip_loss_W",
+   "unit": "W"
+  },
+  {
+   "cell": "Metal design!C92",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Slip-loss energy per event",
+   "path": "metal.slip_energy_J",
+   "unit": "J"
+  },
+  {
+   "cell": "Metal design!C111",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "20 °C torque needed at hot limit, zero scatter",
+   "path": "metal.required_20C_zero_scatter_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Metal design!C112",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Predicted cold torque, zero variation",
+   "path": "metal.torque_cold_zero_var_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Metal design!C134",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Proposed total axial stack",
+   "path": "metal.axial_stack_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C135",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Proposed rotating outside diameter",
+   "path": "metal.rotating_od_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C136",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Diameter reserve",
+   "path": "metal.diameter_reserve_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C137",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Proposed large-diameter axial stack",
+   "path": "metal.large_dia_stack_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C138",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Large-diameter axial reserve",
+   "path": "metal.large_dia_reserve_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C139",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Overall axial reserve",
+   "path": "metal.axial_reserve_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C140",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Installed magnets",
+   "path": "metal.installed_magnets",
+   "unit": "count"
+  },
+  {
+   "cell": "Metal design!C141",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Assembled face gap",
+   "path": "metal.assembled_face_gap_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C142",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Corner clearance before sleeves",
+   "path": "metal.corner_clearance_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C143",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Nominal sleeve-to-liner clearance",
+   "path": "metal.nominal_sleeve_liner_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C144",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Allowed relative radial displacement",
+   "path": "metal.allowed_radial_disp_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C147",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Selected one-piece steel-cup mass",
+   "path": "metal.steel_cup_mass_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Metal design!C148",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Optional aluminium-adapter variant mass",
+   "path": "metal.adapter_variant_mass_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Metal design!C149",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Mass saved by optional aluminium adapter",
+   "path": "metal.adapter_mass_saved_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Metal design!C150",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Estimated mass of both thin retainers",
+   "path": "metal.retainers_mass_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Metal design!C151",
+   "choices": [],
+   "help": "Measured prototype, temperature-scaled.",
+   "kind": "result",
+   "label": "No-back-iron baseline hot torque",
+   "path": "metal.noiron_baseline_hot_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Metal design!C155",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Cold torque corresponding to the hot minimum",
+   "path": "metal.cold_for_hot_min_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Metal design!C156",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Input-equivalent torque for value above",
+   "path": "metal.cold_for_hot_min_input_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Metal design!C157",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Predicted candidate cold high, with allowance",
+   "path": "metal.cold_high_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Metal design!C158",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Candidate cold high, input equivalent",
+   "path": "metal.cold_high_input_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Metal design!C165",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Steel cup body OD",
+   "path": "metal.cup_body_od_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C167",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Front cap face thickness",
+   "path": "metal.cap_face_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Metal design!C188",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Optional aluminium adapter gross mass",
+   "path": "metal.adapter_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Metal design!C189",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Steel removed for optional larger pilot bore",
+   "path": "metal.adapter_steel_removed_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Metal design!C191",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Optional hybrid gross mass",
+   "path": "metal.hybrid_mass_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Metal design!C192",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Optional hybrid overall length",
+   "path": "metal.hybrid_length_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Materials!C20",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Back-iron thickness needed at this flux density",
+   "path": "materials.backiron_thickness_needed_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Materials!C21",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Cup wall at the pocket corners",
+   "path": "materials.cup_wall_corner_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Materials!C22",
+   "choices": [],
+   "help": "A thicker corner wall grows the cup OD by twice the change; recheck the cap thread and envelope.",
+   "kind": "result",
+   "label": "Cup wall check",
+   "path": "materials.cup_wall_check",
+   "unit": ""
+  },
+  {
+   "cell": "Materials!C27",
+   "choices": [],
+   "help": "On the apothem.",
+   "kind": "result",
+   "label": "Machine the hub flats under by",
+   "path": "materials.hub_flats_under_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Materials!C28",
+   "choices": [],
+   "help": "On the apothem.",
+   "kind": "result",
+   "label": "Machine the cup pockets over by",
+   "path": "materials.cup_pockets_over_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Materials!C29",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Machine bores over (on diameter)",
+   "path": "materials.bores_over_dia_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Materials!C30",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Machine outside diameters under (on diameter)",
+   "path": "materials.ods_under_dia_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Temperature design!C6",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Service maximum magnet temperature",
+   "path": "temperature.summary.service_max_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C7",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Demag onset, normal running (rings aligned)",
+   "path": "temperature.summary.onset_aligned_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C8",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Demag onset at pull-out",
+   "path": "temperature.summary.onset_pullout_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C9",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Demag onset while skipping (like poles facing)",
+   "path": "temperature.summary.onset_skipping_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C10",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Magnet design limit",
+   "path": "temperature.summary.magnet_limit_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C11",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Adhesive design limit (selected adhesive)",
+   "path": "temperature.summary.adhesive_limit_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C12",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Governing temperature limit",
+   "path": "temperature.summary.governing_limit_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!F12",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Which limit governs",
+   "path": "temperature.summary.governing_note",
+   "unit": ""
+  },
+  {
+   "cell": "Temperature design!C13",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Margin above the service maximum",
+   "path": "temperature.summary.margin_service_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C14",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Hot-day starting magnet temperature",
+   "path": "temperature.summary.hot_day_start_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C15",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Margin above the hot-day start",
+   "path": "temperature.summary.margin_hot_day_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C16",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Pull-out torque at the hot-day start (reversible)",
+   "path": "temperature.summary.torque_hot_day_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Temperature design!F16",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Against the requirement",
+   "path": "temperature.summary.torque_hot_day_note",
+   "unit": ""
+  },
+  {
+   "cell": "Temperature design!C17",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Continuous slip, steady magnet temp, estimate",
+   "path": "temperature.summary.steady_estimate_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C18",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Continuous slip, steady magnet temp, high case",
+   "path": "temperature.summary.steady_high_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C19",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Unbroken slip time to the limit, high case",
+   "path": "temperature.summary.time_to_limit_high",
+   "unit": "s"
+  },
+  {
+   "cell": "Temperature design!C20",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Peak magnet and bond temperature with the slip fault",
+   "path": "temperature.summary.peak_with_fault_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C21",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Relative slip rotations over life",
+   "path": "temperature.summary.life_rotations",
+   "unit": "rev"
+  },
+  {
+   "cell": "Temperature design!C22",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Average slip heating over life, high case",
+   "path": "temperature.summary.avg_slip_heating_high_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C23",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Slip drag torque that would reach the limit",
+   "path": "temperature.summary.critical_drag_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Temperature design!C24",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Cure margin below the single-ring demag onset",
+   "path": "temperature.summary.cure_margin_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C25",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Verdict",
+   "path": "temperature.summary.verdict",
+   "unit": ""
+  },
+  {
+   "cell": "Temperature design!C28",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Relative slip speed at the wheel",
+   "path": "temperature.duty.slip_rpm",
+   "unit": "rpm"
+  },
+  {
+   "cell": "Temperature design!C29",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Slip angular speed",
+   "path": "temperature.duty.slip_rad_s",
+   "unit": "rad/s"
+  },
+  {
+   "cell": "Temperature design!C30",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Pole pairs per ring",
+   "path": "temperature.duty.pole_pairs",
+   "unit": "-"
+  },
+  {
+   "cell": "Temperature design!C31",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Field frequency seen by the opposite ring",
+   "path": "temperature.duty.field_freq_Hz",
+   "unit": "Hz"
+  },
+  {
+   "cell": "Temperature design!C32",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Field angular frequency",
+   "path": "temperature.duty.field_omega_rad_s",
+   "unit": "rad/s"
+  },
+  {
+   "cell": "Temperature design!C33",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Slip duration per event",
+   "path": "temperature.duty.slip_event_s",
+   "unit": "s"
+  },
+  {
+   "cell": "Temperature design!C37",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Hot-day starting magnet temperature",
+   "path": "temperature.duty.hot_day_start_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C42",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Remanence at 20 °C",
+   "path": "temperature.demag.br20_T",
+   "unit": "T"
+  },
+  {
+   "cell": "Temperature design!C43",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Br temperature coefficient",
+   "path": "temperature.demag.alpha_br",
+   "unit": "1/°C"
+  },
+  {
+   "cell": "Temperature design!C47",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Library maximum operating temperature",
+   "path": "temperature.demag.tmax_lib_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C48",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Reverse field of a magnet at permeance coefficient 1",
+   "path": "temperature.demag.h_ref_kA_m",
+   "unit": "kA/m"
+  },
+  {
+   "cell": "Temperature design!C49",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Model onset for that reference magnet",
+   "path": "temperature.demag.t_ref_model_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C50",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Calibration offset (model minus library rating)",
+   "path": "temperature.demag.calibration_offset_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C56",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Onset, rings aligned",
+   "path": "temperature.demag.onset_aligned_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C57",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Onset at pull-out",
+   "path": "temperature.demag.onset_pullout_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C58",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Onset while skipping",
+   "path": "temperature.demag.onset_skipping_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C59",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Onset, single ring during an adhesive cure",
+   "path": "temperature.demag.onset_single_ring_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C60",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Magnet design limit",
+   "path": "temperature.demag.magnet_limit_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C61",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Pull-out torque at the magnet limit (reversible)",
+   "path": "temperature.demag.torque_at_limit_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Temperature design!C62",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Pull-out torque at the service maximum",
+   "path": "temperature.demag.torque_at_service_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": null,
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Selected adhesive",
+   "path": "temperature.adhesive.selected_name",
+   "unit": ""
+  },
+  {
+   "cell": "Temperature design!C76",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Selected adhesive design limit",
+   "path": "temperature.adhesive.design_limit_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C77",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Selected adhesive cure (stress-free) temperature",
+   "path": "temperature.adhesive.cure_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C78",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Selected adhesive lap shear at 22 °C (TDS)",
+   "path": "temperature.adhesive.lap_shear_MPa",
+   "unit": "MPa"
+  },
+  {
+   "cell": "Temperature design!C81",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Bond area per block (back face)",
+   "path": "temperature.adhesive.bond_area_mm2",
+   "unit": "mm²"
+  },
+  {
+   "cell": "Temperature design!C82",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Block mass",
+   "path": "temperature.adhesive.block_mass_g",
+   "unit": "g"
+  },
+  {
+   "cell": "Temperature design!C83",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Highest pull-out torque (cold, +variation)",
+   "path": "temperature.adhesive.cold_high_torque_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Temperature design!C84",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Inner block mid radius",
+   "path": "temperature.adhesive.inner_mid_radius_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Temperature design!C85",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Tangential force per inner block at pull-out",
+   "path": "temperature.adhesive.tangential_force_N",
+   "unit": "N"
+  },
+  {
+   "cell": "Temperature design!C86",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Bond shear stress from magnetic torque",
+   "path": "temperature.adhesive.bond_shear_MPa",
+   "unit": "MPa"
+  },
+  {
+   "cell": "Temperature design!C88",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Centrifugal force per inner block at wheel speed",
+   "path": "temperature.adhesive.centrifugal_force_N",
+   "unit": "N"
+  },
+  {
+   "cell": "Temperature design!C89",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Static strength ratio at 22 °C",
+   "path": "temperature.adhesive.static_ratio",
+   "unit": "-"
+  },
+  {
+   "cell": "Temperature design!C90",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Shear reversals over life while slipping",
+   "path": "temperature.adhesive.shear_reversals",
+   "unit": "cycles"
+  },
+  {
+   "cell": "Temperature design!C91",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Fatigue screen",
+   "path": "temperature.adhesive.fatigue_screen",
+   "unit": ""
+  },
+  {
+   "cell": "Temperature design!C94",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Steel expansion coefficient (4140)",
+   "path": "temperature.mismatch.steel_cte",
+   "unit": "1/°C"
+  },
+  {
+   "cell": "Temperature design!C98",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Steel elastic modulus (4140)",
+   "path": "temperature.mismatch.steel_E_GPa",
+   "unit": "GPa"
+  },
+  {
+   "cell": "Temperature design!C99",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Steel thickness under the inner blocks",
+   "path": "temperature.mismatch.steel_thickness_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Temperature design!C100",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Cold limit",
+   "path": "temperature.mismatch.cold_limit_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C101",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Worst swing from the stress-free (cure) temperature",
+   "path": "temperature.mismatch.worst_swing_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C102",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Current bondline",
+   "path": "temperature.mismatch.current_bondline_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Temperature design!C104",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Peak end shear, current bondline",
+   "path": "temperature.mismatch.peak_shear_current_MPa",
+   "unit": "MPa"
+  },
+  {
+   "cell": "Temperature design!C105",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Peak end shear, recommended bondline",
+   "path": "temperature.mismatch.peak_shear_recommended_MPa",
+   "unit": "MPa"
+  },
+  {
+   "cell": "Temperature design!C106",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Reading",
+   "path": "temperature.mismatch.reading",
+   "unit": ""
+  },
+  {
+   "cell": "Temperature design!C109",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Steel conductivity (4140)",
+   "path": "temperature.slip_loss.steel_sigma_S_m",
+   "unit": "S/m"
+  },
+  {
+   "cell": "Temperature design!C110",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Steel incremental relative permeability (4140)",
+   "path": "temperature.slip_loss.steel_mu_r",
+   "unit": "-"
+  },
+  {
+   "cell": "Temperature design!C112",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Aluminium cap conductivity (6061-T6)",
+   "path": "temperature.slip_loss.cap_sigma_S_m",
+   "unit": "S/m"
+  },
+  {
+   "cell": "Temperature design!C115",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Steel skin depth at the field frequency",
+   "path": "temperature.slip_loss.skin_depth_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Temperature design!C123",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Hub surface (solid steel)",
+   "path": "temperature.slip_loss.hub_W",
+   "unit": "W"
+  },
+  {
+   "cell": "Temperature design!C124",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Cup surface (solid steel)",
+   "path": "temperature.slip_loss.cup_W",
+   "unit": "W"
+  },
+  {
+   "cell": "Temperature design!C125",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Rear web (solid steel)",
+   "path": "temperature.slip_loss.web_W",
+   "unit": "W"
+  },
+  {
+   "cell": "Temperature design!C126",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Inner 316L sleeve",
+   "path": "temperature.slip_loss.sleeve_W",
+   "unit": "W"
+  },
+  {
+   "cell": "Temperature design!C127",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Outer 316L liner",
+   "path": "temperature.slip_loss.liner_W",
+   "unit": "W"
+  },
+  {
+   "cell": "Temperature design!C128",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Aluminium cap face",
+   "path": "temperature.slip_loss.cap_W",
+   "unit": "W"
+  },
+  {
+   "cell": "Temperature design!C129",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Magnet eddy currents (both rings)",
+   "path": "temperature.slip_loss.magnets_W",
+   "unit": "W"
+  },
+  {
+   "cell": "Temperature design!C130",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Total estimated slip loss",
+   "path": "temperature.slip_loss.total_W",
+   "unit": "W"
+  },
+  {
+   "cell": "Temperature design!C131",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Equivalent mean drag torque",
+   "path": "temperature.slip_loss.drag_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Temperature design!C132",
+   "choices": [],
+   "help": "Bench drag replaces the estimate once entered.",
+   "kind": "result",
+   "label": "Loss used below",
+   "path": "temperature.slip_loss.used_W",
+   "unit": "W"
+  },
+  {
+   "cell": "Temperature design!C134",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Loss, high case",
+   "path": "temperature.slip_loss.high_W",
+   "unit": "W"
+  },
+  {
+   "cell": "Temperature design!C137",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Specific heat, steel (4140)",
+   "path": "temperature.thermal.steel_c",
+   "unit": "J/(kg·K)"
+  },
+  {
+   "cell": "Temperature design!C141",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Heat capacity of the rotating coupling",
+   "path": "temperature.thermal.heat_capacity_J_K",
+   "unit": "J/K"
+  },
+  {
+   "cell": "Temperature design!C143",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Thermal time constant",
+   "path": "temperature.thermal.time_constant_s",
+   "unit": "s"
+  },
+  {
+   "cell": "Temperature design!C144",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Starting magnet temperature",
+   "path": "temperature.thermal.start_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C145",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Temperature rise per slip event",
+   "path": "temperature.thermal.rise_per_event_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C146",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Continuous slip: steady rise, estimate",
+   "path": "temperature.thermal.steady_rise_est_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C147",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Continuous slip: steady rise, high case",
+   "path": "temperature.thermal.steady_rise_high_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C148",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Continuous slip, steady magnet temp, estimate",
+   "path": "temperature.thermal.steady_est_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C149",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Continuous slip, steady magnet temp, high case",
+   "path": "temperature.thermal.steady_high_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C150",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Continuous slip, time to the limit (high case)",
+   "path": "temperature.thermal.time_to_limit_high",
+   "unit": "s"
+  },
+  {
+   "cell": "Temperature design!C151",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Continuous slip, rotations to the limit (high case)",
+   "path": "temperature.thermal.rotations_to_limit_high",
+   "unit": "rev"
+  },
+  {
+   "cell": "Temperature design!C152",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Continuous slip, time to the limit (estimate)",
+   "path": "temperature.thermal.time_to_limit_est",
+   "unit": "s"
+  },
+  {
+   "cell": "Temperature design!C153",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Slip drag torque that would reach the limit",
+   "path": "temperature.thermal.critical_drag_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Temperature design!C154",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Initial heating rate, estimate",
+   "path": "temperature.thermal.heating_rate_est_C_s",
+   "unit": "°C/s"
+  },
+  {
+   "cell": "Temperature design!C155",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Initial heating rate, high case",
+   "path": "temperature.thermal.heating_rate_high_C_s",
+   "unit": "°C/s"
+  },
+  {
+   "cell": "Temperature design!C156",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Relative rotations per °C at the start, estimate",
+   "path": "temperature.thermal.rev_per_C_est",
+   "unit": "rev/°C"
+  },
+  {
+   "cell": "Temperature design!C157",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Relative rotations per °C at the start, high case",
+   "path": "temperature.thermal.rev_per_C_high",
+   "unit": "rev/°C"
+  },
+  {
+   "cell": "Temperature design!C158",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Relative rotations per thermal time constant",
+   "path": "temperature.thermal.rev_per_tau",
+   "unit": "rev"
+  },
+  {
+   "cell": "Temperature design!C159",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Time to 95 % of the steady rise",
+   "path": "temperature.thermal.t95_s",
+   "unit": "s"
+  },
+  {
+   "cell": "Temperature design!C160",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Relative rotations to 95 % of the steady rise",
+   "path": "temperature.thermal.rev95",
+   "unit": "rev"
+  },
+  {
+   "cell": "Temperature design!C161",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Magnet temperature at the fault trip time, high case",
+   "path": "temperature.thermal.temp_at_fault_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C164",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Slip events over life",
+   "path": "temperature.slip_life.events",
+   "unit": "events"
+  },
+  {
+   "cell": "Temperature design!C165",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Relative rotations per event",
+   "path": "temperature.slip_life.rev_per_event",
+   "unit": "rev"
+  },
+  {
+   "cell": "Temperature design!C166",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Relative rotations over life",
+   "path": "temperature.slip_life.rotations",
+   "unit": "rev"
+  },
+  {
+   "cell": "Temperature design!C167",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Total slip time over life",
+   "path": "temperature.slip_life.slip_hours",
+   "unit": "h"
+  },
+  {
+   "cell": "Temperature design!C168",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Like-pole passes per magnet over life",
+   "path": "temperature.slip_life.like_pole_passes",
+   "unit": "passes"
+  },
+  {
+   "cell": "Temperature design!C169",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Heat per event, estimate",
+   "path": "temperature.slip_life.heat_per_event_est_J",
+   "unit": "J"
+  },
+  {
+   "cell": "Temperature design!C170",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Heat per event, high case",
+   "path": "temperature.slip_life.heat_per_event_high_J",
+   "unit": "J"
+  },
+  {
+   "cell": "Temperature design!C171",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Temperature rise per event, estimate",
+   "path": "temperature.slip_life.rise_per_event_est_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C172",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Temperature rise per event, high case",
+   "path": "temperature.slip_life.rise_per_event_high_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C173",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Total slip heat over life, high case",
+   "path": "temperature.slip_life.life_heat_high_MJ",
+   "unit": "MJ"
+  },
+  {
+   "cell": "Temperature design!C174",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Slip duty: share of operating time spent slipping",
+   "path": "temperature.slip_life.slip_duty",
+   "unit": "-"
+  },
+  {
+   "cell": "Temperature design!C175",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Average temperature rise from slip, estimate",
+   "path": "temperature.slip_life.avg_rise_est_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C176",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Average temperature rise from slip, high case",
+   "path": "temperature.slip_life.avg_rise_high_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C177",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Average rise per 1 % of time slipping, high case",
+   "path": "temperature.slip_life.rise_per_pct_duty_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C180",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Peak magnet temperature: hot day plus fault-limited slip",
+   "path": "temperature.magnet_life.peak_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C181",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Margin to the skipping onset",
+   "path": "temperature.magnet_life.margin_onset_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C182",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Margin to the magnet design limit",
+   "path": "temperature.magnet_life.margin_limit_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C184",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Pull-out torque at the hot-day start (reversible)",
+   "path": "temperature.magnet_life.torque_hot_day_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Temperature design!C185",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Against the requirement",
+   "path": "temperature.magnet_life.torque_hot_day_check",
+   "unit": ""
+  },
+  {
+   "cell": "Temperature design!C186",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Pull-out torque at the peak temperature (reversible)",
+   "path": "temperature.magnet_life.torque_peak_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Temperature design!C189",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Peak bond temperature",
+   "path": "temperature.adhesive_life.peak_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C190",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Margin to the adhesive design limit",
+   "path": "temperature.adhesive_life.margin_C",
+   "unit": "°C"
+  },
+  {
+   "cell": "Temperature design!C191",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Shear reversals over life",
+   "path": "temperature.adhesive_life.reversals",
+   "unit": "cycles"
+  },
+  {
+   "cell": "Temperature design!C192",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Pull-out torque at the peak temperature, with +variation",
+   "path": "temperature.adhesive_life.torque_peak_var_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Temperature design!C193",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Shear stress amplitude per reversal, hot",
+   "path": "temperature.adhesive_life.shear_amplitude_MPa",
+   "unit": "MPa"
+  },
+  {
+   "cell": "Temperature design!C196",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Hot fatigue margin",
+   "path": "temperature.adhesive_life.hot_fatigue_margin",
+   "unit": "x"
+  },
+  {
+   "cell": "Temperature design!C197",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Hot fatigue screen",
+   "path": "temperature.adhesive_life.hot_fatigue_screen",
+   "unit": ""
+  },
+  {
+   "cell": "Temperature design!C200",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Daily thermal cycles over life",
+   "path": "temperature.adhesive_life.daily_cycles",
+   "unit": "cycles"
+  },
+  {
+   "cell": "Temperature design!C201",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Peak end shear per daily cycle, recommended bondline",
+   "path": "temperature.adhesive_life.daily_peak_shear_MPa",
+   "unit": "MPa"
+  },
+  {
+   "cell": "Temperature design!C202",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Daily-cycle screen",
+   "path": "temperature.adhesive_life.daily_screen",
+   "unit": ""
+  },
+  {
+   "cell": "Shaft clamps!C14",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Shaft diameter",
+   "path": "clamps.shaft_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C15",
+   "choices": [],
+   "help": "Cold pull-out with +variation.",
+   "kind": "result",
+   "label": "Highest torque through the coupling",
+   "path": "clamps.max_torque_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Shaft clamps!C17",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Torque the clamp must hold",
+   "path": "clamps.required_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Shaft clamps!C22",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Clamp factor used",
+   "path": "clamps.clamp_factor",
+   "unit": "-"
+  },
+  {
+   "cell": "Shaft clamps!C24",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Aluminium shear strength",
+   "path": "clamps.al_shear_MPa",
+   "unit": "MPa"
+  },
+  {
+   "cell": "Shaft clamps!C25",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Limiting pressure under the screw head",
+   "path": "clamps.al_head_limit_MPa",
+   "unit": "MPa"
+  },
+  {
+   "cell": "Shaft clamps!C26",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Key bearing allowable",
+   "path": "clamps.al_key_allow_MPa",
+   "unit": "MPa"
+  },
+  {
+   "cell": "Shaft clamps!C28",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Screw proof stress",
+   "path": "clamps.screw_proof_MPa",
+   "unit": "MPa"
+  },
+  {
+   "cell": "Shaft clamps!C44",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Boss radius",
+   "path": "clamps.boss_radius_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C47",
+   "choices": [],
+   "help": "0 = none fits.",
+   "kind": "result",
+   "label": "Size index in the table",
+   "path": "clamps.index",
+   "unit": "-"
+  },
+  {
+   "cell": "Shaft clamps!C48",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Recommended screw",
+   "path": "clamps.recommended",
+   "unit": ""
+  },
+  {
+   "cell": "Shaft clamps!C49",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Screws per clamp",
+   "path": "clamps.screws",
+   "unit": "-"
+  },
+  {
+   "cell": "Shaft clamps!C50",
+   "choices": [],
+   "help": "With Loctite 243.",
+   "kind": "result",
+   "label": "Tightening torque",
+   "path": "clamps.tightening_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Shaft clamps!C51",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Hex key",
+   "path": "clamps.hex_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C52",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Clamp torque capacity",
+   "path": "clamps.capacity_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Shaft clamps!C53",
+   "choices": [],
+   "help": "Clamp alone, before the key.",
+   "kind": "result",
+   "label": "Safety factor on the coupling torque",
+   "path": "clamps.sf_coupling",
+   "unit": "-"
+  },
+  {
+   "cell": "Shaft clamps!C54",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Head pressure on the aluminium",
+   "path": "clamps.head_check",
+   "unit": ""
+  },
+  {
+   "cell": "Shaft clamps!C55",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Through the M6 vent port",
+   "path": "clamps.vent_port",
+   "unit": ""
+  },
+  {
+   "cell": "Shaft clamps!C60",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Key bearing pressure on the hub at the clamp design torque",
+   "path": "clamps.key_pressure_MPa",
+   "unit": "MPa"
+  },
+  {
+   "cell": "Shaft clamps!C61",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Key alone: allowable over actual",
+   "path": "clamps.key_sf",
+   "unit": "x"
+  },
+  {
+   "cell": "Shaft clamps!C67",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Allowable preload per M3",
+   "path": "clamps.joint_preload_N",
+   "unit": "N"
+  },
+  {
+   "cell": "Shaft clamps!C68",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Joint slip torque",
+   "path": "clamps.joint_torque_Nm",
+   "unit": "N·m"
+  },
+  {
+   "cell": "Shaft clamps!C69",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Joint torque over the clamp design torque",
+   "path": "clamps.joint_sf",
+   "unit": "x"
+  },
+  {
+   "cell": "Shaft clamps!C72",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Screw offset from the shaft axis",
+   "path": "clamps.layout_offset_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C73",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Screw spacing",
+   "path": "clamps.layout_pitch_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C74",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "First screw from the free end",
+   "path": "clamps.layout_first_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C75",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Counterbore diameter (head side)",
+   "path": "clamps.layout_cbore_dia_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C76",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Counterbore depth at the screw axis, from the OD",
+   "path": "clamps.layout_cbore_depth_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C77",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Head-side jaw (grip)",
+   "path": "clamps.layout_grip_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C78",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Tap drill, far jaw",
+   "path": "clamps.layout_tap_drill_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C79",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Thread length available in the far jaw",
+   "path": "clamps.layout_thread_avail_mm",
+   "unit": "mm"
+  },
+  {
+   "cell": "Shaft clamps!C80",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Slit",
+   "path": "clamps.layout_slit",
+   "unit": ""
+  },
+  {
+   "cell": "Shaft clamps!C81",
+   "choices": [],
+   "help": "",
+   "kind": "result",
+   "label": "Relief cut",
+   "path": "clamps.layout_relief",
+   "unit": ""
+  }
+ ]
+}

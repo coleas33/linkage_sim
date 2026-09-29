@@ -1,0 +1,188 @@
+//! Metadata parity with the Python engine.
+//!
+//! Every ported input and result carries the Python label, unit, help, workbook
+//! cell and choices exactly (the GUI shows them; a typo is a bug), every input
+//! default equals the Python default, and no Python field of a ported group is
+//! missing. `tests/data/python_schema.json` is written by
+//! `reference/magcoupling-py/tools/gen_differential.py`.
+//!
+//! When a documentation deviation (E14) rewords help text, this test must
+//! compare that field against the registry's corrected text instead.
+
+mod common;
+
+use std::collections::BTreeMap;
+
+use common::{PORTED, data_path, is_ported, json_to_value, read_json, report};
+use magcoupling::engine::api::{DesignInputs, compute_all};
+use magcoupling::engine::compat::parity_close;
+use magcoupling::engine::deviations::Deviations;
+use magcoupling::engine::meta::{input_rows, result_rows};
+
+/// One Python schema row.
+struct PyRow {
+    kind: String,
+    label: String,
+    unit: String,
+    help: String,
+    cell: Option<String>,
+    choices: Vec<(i64, String)>,
+    default: Option<serde_json::Value>,
+}
+
+fn python_rows() -> BTreeMap<String, PyRow> {
+    let doc = read_json(&data_path("python_schema.json"));
+    let text = |row: &serde_json::Value, key: &str| row[key].as_str().expect(key).to_owned();
+    doc["rows"]
+        .as_array()
+        .expect("a rows array")
+        .iter()
+        .map(|row| {
+            let choices = row["choices"]
+                .as_array()
+                .expect("choices")
+                .iter()
+                .map(|pair| {
+                    (
+                        pair[0].as_i64().expect("choice code"),
+                        pair[1].as_str().expect("choice text").to_owned(),
+                    )
+                })
+                .collect();
+            let py = PyRow {
+                kind: text(row, "kind"),
+                label: text(row, "label"),
+                unit: text(row, "unit"),
+                help: text(row, "help"),
+                cell: row["cell"].as_str().map(str::to_owned),
+                choices,
+                default: row.get("default").cloned(),
+            };
+            (text(row, "path"), py)
+        })
+        .collect()
+}
+
+/// Compares the metadata both sides share; pushes one line per difference.
+fn compare(
+    failures: &mut Vec<String>,
+    path: &str,
+    rust: (&str, &str, &str, Option<&str>),
+    py: &PyRow,
+) {
+    let (label, unit, help, cell) = rust;
+    for (what, r, p) in [
+        ("label", label, py.label.as_str()),
+        ("unit", unit, py.unit.as_str()),
+        ("help", help, py.help.as_str()),
+    ] {
+        if r != p {
+            failures.push(format!("{path}: {what} rust={r:?} python={p:?}"));
+        }
+    }
+    if cell != py.cell.as_deref() {
+        failures.push(format!("{path}: cell rust={cell:?} python={:?}", py.cell));
+    }
+}
+
+#[test]
+fn ported_inputs_carry_the_python_metadata_and_defaults() {
+    let python = python_rows();
+    let mut failures = Vec::new();
+    for row in input_rows(&DesignInputs::defaults_with(Deviations::NONE)) {
+        let Some(py) = python.get(&row.path) else {
+            failures.push(format!("{}: not a Python input", row.path));
+            continue;
+        };
+        let m = row.meta;
+        if py.kind != "input" {
+            failures.push(format!("{}: Python kind is {:?}", row.path, py.kind));
+        }
+        compare(
+            &mut failures,
+            &row.path,
+            (m.label, m.unit, m.help, m.cell),
+            py,
+        );
+        let choices: Vec<(i64, String)> =
+            m.choices.iter().map(|&(c, t)| (c, t.to_owned())).collect();
+        if choices != py.choices {
+            failures.push(format!(
+                "{}: choices rust={choices:?} python={:?}",
+                row.path, py.choices
+            ));
+        }
+        let py_default = json_to_value(py.default.as_ref().expect("inputs carry a default"));
+        if !parity_close(&row.value, &py_default) {
+            failures.push(format!(
+                "{}: default rust={:?} python={py_default:?}",
+                row.path, row.value
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", report(&failures));
+}
+
+#[test]
+fn ported_results_carry_the_python_metadata() {
+    let python = python_rows();
+    let mut failures = Vec::new();
+    for row in result_rows(&compute_all(&DesignInputs::default())) {
+        let Some(py) = python.get(&row.path) else {
+            failures.push(format!("{}: not a Python result", row.path));
+            continue;
+        };
+        let m = row.meta;
+        if py.kind != "result" {
+            failures.push(format!("{}: Python kind is {:?}", row.path, py.kind));
+        }
+        compare(
+            &mut failures,
+            &row.path,
+            (m.label, m.unit, m.help, m.cell),
+            py,
+        );
+    }
+    assert!(failures.is_empty(), "{}", report(&failures));
+}
+
+#[test]
+fn every_python_field_of_a_ported_group_is_ported() {
+    let python = python_rows();
+    let inputs = input_rows(&DesignInputs::default());
+    let results = result_rows(&compute_all(&DesignInputs::default()));
+    let rust_paths: Vec<&str> = inputs
+        .iter()
+        .map(|r| r.path.as_str())
+        .chain(results.iter().map(|r| r.path.as_str()))
+        .collect();
+    let missing: Vec<String> = python
+        .keys()
+        .filter(|p| is_ported(p) && !rust_paths.contains(&p.as_str()))
+        .cloned()
+        .collect();
+    assert!(missing.is_empty(), "Python fields not ported: {missing:?}");
+
+    // The ratchet counts in tests/common/mod.rs equal the Python engine's own,
+    // counted as test_parity.py does (cells only; inputs whose default is None skipped).
+    for p in PORTED {
+        let in_group = |kind: &str| {
+            python
+                .iter()
+                .filter(|(path, row)| {
+                    common::group_of(path) == p.group
+                        && row.kind == kind
+                        && row.cell.is_some()
+                        && row.default != Some(serde_json::Value::Null)
+                })
+                .count()
+        };
+        assert_eq!(
+            in_group("result"),
+            p.result_cells,
+            "{}: result cells",
+            p.group
+        );
+        assert_eq!(in_group("input"), p.input_cells, "{}: input cells", p.group);
+    }
+}

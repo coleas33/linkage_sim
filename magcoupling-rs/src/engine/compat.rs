@@ -35,13 +35,19 @@ pub fn py_max(a: f64, b: f64) -> f64 {
 /// multiple of `significance`, with Python's 1e-12 guard on the quotient.
 pub fn ceiling(x: f64, significance: f64) -> f64 {
     let q = x / significance;
-    (q - 1e-12).ceil() * significance
+    py_int((q - 1e-12).ceil()) * significance
 }
 
 /// Excel FLOOR for positive numbers, as `_fields.floor_`.
 pub fn floor_(x: f64, significance: f64) -> f64 {
     let q = x / significance;
-    (q + 1e-12).floor() * significance
+    py_int((q + 1e-12).floor()) * significance
+}
+
+/// A whole float as Python's `math.ceil`/`math.floor` return it: an `int`, so
+/// never negative zero (`math.ceil(-0.3)` is `0`, where Rust gives `-0.0`).
+fn py_int(whole: f64) -> f64 {
+    if whole == 0.0 { 0.0 } else { whole }
 }
 
 /// Excel `TEXT(x, "0")` as `temperature._text0`: round half away from zero and
@@ -63,7 +69,7 @@ pub fn text0(x: f64) -> String {
 }
 
 /// Python `repr(x)` (and `str(x)`) of a float: the shortest digits that round
-/// trip, in fixed notation for decimal exponents -4..=15 (`"0.0001"`,
+/// trip (an exact tie between two such strings goes to the even digit), in fixed notation for decimal exponents -4..=15 (`"0.0001"`,
 /// `"1000000000000000.0"`) and scientific otherwise (`"1e-05"`, `"1e+16"`).
 pub fn py_repr(x: f64) -> String {
     if x.is_nan() {
@@ -72,8 +78,17 @@ pub fn py_repr(x: f64) -> String {
     if x.is_infinite() {
         return if x > 0.0 { "inf" } else { "-inf" }.to_owned();
     }
-    // Rust's `{:e}` gives the same shortest round-trip digits: "-1.2345e-7".
-    let sci = format!("{x:e}");
+    // Rust's `{:e}` finds how many digits the shortest round trip needs, but when
+    // two such strings are equally close (the float is an exact decimal tie, e.g.
+    // 1662665358865589.25) it rounds half up, where Python's dtoa rounds half to
+    // even. Formatting to that many digits with an explicit precision rounds the
+    // exact value half to even, which is Python's choice.
+    let shortest = format!("{x:e}");
+    let significant = shortest
+        .split('e')
+        .next()
+        .map_or(1, |m| m.chars().filter(char::is_ascii_digit).count());
+    let sci = format!("{x:.*e}", significant - 1);
     let (mantissa, exponent) = sci
         .split_once('e')
         .expect("LowerExp output always has an exponent");
@@ -83,6 +98,10 @@ pub fn py_repr(x: f64) -> String {
         None => ("", mantissa),
     };
     let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
+    let digits = match digits.trim_end_matches('0') {
+        "" => "0".to_owned(),
+        trimmed => trimmed.to_owned(),
+    };
 
     if !(-4..16).contains(&exponent) {
         let (lead, rest) = digits.split_at(1);
@@ -209,6 +228,15 @@ mod tests {
     }
 
     #[test]
+    fn ceiling_and_floor_never_return_negative_zero() {
+        // Python: ceiling(-0.03, 0.1) == 0.0, floor_(-1e-13, 1) == 0, ceiling(-0.05, 0.1) == 0.0.
+        assert_eq!(ceiling(-0.03, 0.1).to_bits(), 0.0f64.to_bits());
+        assert_eq!(floor_(-1e-13, 1.0).to_bits(), 0.0f64.to_bits());
+        assert_eq!(ceiling(-0.05, 0.1).to_bits(), 0.0f64.to_bits());
+        assert_eq!(ceiling(-0.3, 0.1), -0.30000000000000004);
+    }
+
+    #[test]
     fn text0_rounds_half_away_from_zero() {
         let cases = [
             (0.5, "1"),
@@ -246,6 +274,9 @@ mod tests {
             (5e-324, "5e-324"),
             (1.7976931348623157e308, "1.7976931348623157e+308"),
             (1.256637e-06, "1.256637e-06"),
+            // Exact decimal ties at 17 digits: Python rounds half to even.
+            (1662665358865589.0 + 0.25, "1662665358865589.2"),
+            (-(85604403597793.0 + 0.625), "-85604403597793.62"),
         ];
         for (x, want) in cases {
             assert_eq!(py_repr(x), want, "py_repr({x:e})");
