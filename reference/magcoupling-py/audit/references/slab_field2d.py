@@ -116,3 +116,63 @@ def iron_face_coefficients(surface: str, layers: list[MagnetLayer], h_mm: float,
             a = _square_wave(lay.br_T, n, lay.fill)
             A += a * np.cos(k * lay.shift_mm); B += a * np.sin(k * lay.shift_mm)
     return n, A, B
+
+
+# =========================================================================== forces and energy (Task 5)
+# Maxwell stress in air: T_yy = (B_y^2 - B_x^2)/(2 mu0), T_xy = B_x B_y / mu0. The field is antiperiodic over one
+# pitch, so the stress is pitch-periodic: the sides of a pitch-wide strip cancel, and the force on one block of a
+# layer is the difference of the strip integrals of T_yy (T_xy) on planes in the air just above and just below it.
+# Odd harmonics are orthogonal over one pitch, so each strip integral is an exact sum over harmonics (no quadrature).
+# The field energy (1/2) * integral of sigma * phi over the charge sheets gives the same forces by virtual work,
+# which the Task 5 reference sanity tests use to check the stress sums.
+
+_MU0 = 4e-7 * math.pi
+
+
+def strip_stress_N_per_m(y_mm: float, layers: list[MagnetLayer], h_mm: float, pitch_mm: float,
+                         n_max: int = 2001) -> tuple[float, float]:
+    """(integral of T_yy dx, integral of T_xy dx) over one pole pitch at a height y in air [N per metre of depth]."""
+    _, A, B, C, D = harmonic_coefficients(y_mm, layers, h_mm, pitch_mm, n_max)
+    half_pitch_m = pitch_mm / 2.0 / 1000.0
+    t_yy = half_pitch_m / (2.0 * _MU0) * float(np.sum(A ** 2 + B ** 2 - C ** 2 - D ** 2))
+    t_xy = half_pitch_m / _MU0 * float(np.sum(A * D + B * C))
+    return t_yy, t_xy
+
+
+def layer_block_forces_N(layers: list[MagnetLayer], h_mm: float, pitch_mm: float, depth_mm: float,
+                         n_max: int = 2001) -> list[tuple[float, float]]:
+    """(F_x, F_y) on one block of each layer [N], for blocks ``depth_mm`` long (2D, no end effects).
+
+    Layers must be listed bottom to top with air between them and between the outer layers and the plates
+    (a bond gap): the cutting planes are the two plate faces and the mid-planes of the air between layers.
+    """
+    planes = [0.0]
+    for lower, upper in zip(layers, layers[1:]):
+        top = lower.y_bottom_mm + lower.thickness_mm
+        if upper.y_bottom_mm <= top:
+            raise ValueError("layers overlap or touch; list them bottom to top with air between")
+        planes.append((top + upper.y_bottom_mm) / 2.0)
+    planes.append(h_mm)
+    stress = [strip_stress_N_per_m(y, layers, h_mm, pitch_mm, n_max) for y in planes]
+    depth_m = depth_mm / 1000.0
+    return [((stress[i + 1][1] - stress[i][1]) * depth_m, (stress[i + 1][0] - stress[i][0]) * depth_m)
+            for i in range(len(layers))]
+
+
+def field_energy_J_per_m(layers: list[MagnetLayer], h_mm: float, pitch_mm: float, n_max: int = 2001) -> float:
+    """Magnetostatic energy (1/2) * integral of sigma * phi over the charge sheets, per pitch, per metre of depth.
+
+    For rigid magnetization the force on a movable part is minus the derivative of this energy.
+    """
+    n = np.arange(1, n_max + 1, 2, dtype=float)
+    k_per_m = n * math.pi / (pitch_mm / 1000.0)
+    h_m = h_mm / 1000.0
+    sheets = [(ys, _square_wave(br, n, fill), shift) for ys, br, fill, shift in _sheets(layers)]
+    total = 0.0
+    for yi, ai, si in sheets:
+        for yj, aj, sj in sheets:
+            lo, hi = min(yi, yj) / 1000.0, max(yi, yj) / 1000.0
+            green = _ratio(k_per_m, lo, h_m - hi, h_m, False) / k_per_m        # [m]
+            phase = np.cos(k_per_m * (si - sj) / 1000.0)
+            total += float(np.sum(ai * aj * green * phase))
+    return 0.5 / _MU0 * total * (pitch_mm / 2.0 / 1000.0)
