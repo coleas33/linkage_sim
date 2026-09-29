@@ -1,0 +1,33 @@
+[package]
+name = "magcoupling-rs"
+version = "0.1.0"
+edition = "2024"
+description = "Magnetic slip coupling design calculator: Rust port of the magcoupling 1.0.0 workbook engine"
+publish = false
+
+[lib]
+name = "magcoupling"
+path = "src/lib.rs"
+
+[features]
+default = []
+# egui panel hostable by any egui app (M4). Declared now so the feature layout
+# is fixed; empty until M4.
+gui = []
+# Standalone native + WASM binary `magcoupling-app` (M4). Empty until M4.
+app = ["gui"]
+# TEST-ONLY. Exposes the switch that turns the approved workbook corrections
+# (the deviation registry) off, so parity and differential tests compare
+# against the workbook exactly. Enabled only through the self dev-dependency
+# below, so `cargo test` and `cargo clippy --all-targets` get it and every
+# shipped build does not. Never enable it in the GUI or app.
+workbook-parity = []
+
+[dependencies]
+# The engine is pure std on purpose: no I/O, no global state, builds for
+# wasm32-unknown-unknown with nothing extra.
+
+[dev-dependencies]
+magcoupling-rs = { path = ".", features = ["workbook-parity"] }
+# float_roundtrip: parse JSON floats exactly (the default parser can be 1 ULP off).
+serde_json = { version = "1", features = ["float_roundtrip"] }
