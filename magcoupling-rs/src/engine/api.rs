@@ -7,7 +7,8 @@
 //! Calibration → Calculator (model) → Metal design retainers → Calculator mass
 //! → Metal design → Materials → Temperature design → Shaft clamps → sweeps.
 //!
-//! Ported so far: Calibration.
+//! Ported so far: Calibration, Calculator (model); Metal design and Materials
+//! contribute their inputs only.
 //!
 //! Python API mapping: `compute_all(inp)` is [`compute_all`];
 //! `input_schema(inp)` and `result_schema(res)` are
@@ -20,24 +21,31 @@ use super::calibration::{self, CalibrationInputs, CalibrationResults};
 use super::deviations::Deviations;
 #[cfg(feature = "workbook-parity")]
 use super::deviations::{REGISTRY, restore_workbook_defaults};
+use super::materials::MaterialsInputs;
 use super::meta::{inputs, results};
+use super::metal_design::MetalDesignInputs;
+use super::model::{self, CouplingInputs, ModelResults};
 
 inputs! {
-    /// Every editable input, grouped as the Python `DesignInputs`.
+    /// Every editable input, grouped as the Python `DesignInputs` (same order).
     pub struct DesignInputs {
         fields {}
         groups {
+            coupling: CouplingInputs,
+            metal: MetalDesignInputs,
             calibration: CalibrationInputs,
+            materials: MaterialsInputs,
         }
     }
 }
 
 results! {
-    /// Every computed value, grouped as the Python `DesignResults`.
+    /// Every computed value, grouped as the Python `DesignResults` (same order).
     pub struct DesignResults {
         fields {}
         groups {
             calibration: CalibrationResults,
+            model: ModelResults,
         }
     }
 }
@@ -56,9 +64,42 @@ pub fn compute_all_with(inputs: &DesignInputs, dev: Deviations) -> DesignResults
     compute(inputs, dev)
 }
 
+// Python api.compute_all lines 52-99; Python local names.
 fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
-    let calibration = calibration::compute(&inputs.calibration, dev);
-    DesignResults { calibration }
+    let (ci, md, cal_in, mat_in) = (
+        &inputs.coupling,
+        &inputs.metal,
+        &inputs.calibration,
+        &inputs.materials,
+    );
+    let cal = calibration::compute(cal_in, dev);
+    let f_cal = model::select_calibration_factor(
+        ci.backiron,
+        ci.npole,
+        &ci.magnets.part_inner,
+        &ci.magnets.part_outer,
+        cal.poles_per_ring,
+        cal.f_cal_updated,
+        cal_in.f_cal_original,
+    );
+    let m = model::compute(
+        ci,
+        md.face_gap_mm,
+        md.bond_inner_mm,
+        md.bond_outer_mm,
+        md.cup_wall_corner_mm,
+        cal_in.alpha_br_per_C,
+        mat_in.steel.bsat_T,
+        f_cal,
+        cal_in.f_cal_original,
+        md.slip_rpm,
+        md.required_min_Nm,
+        dev,
+    );
+    DesignResults {
+        calibration: cal,
+        model: m,
+    }
 }
 
 #[cfg(feature = "workbook-parity")]
@@ -86,11 +127,7 @@ mod tests {
         assert!(rows.iter().any(
             |r| r.path == "calibration.f_cal_updated" && r.meta.cell == Some("Calibration!C9")
         ));
-        assert!(
-            input_rows(&inputs)
-                .iter()
-                .all(|r| r.path.starts_with("calibration."))
-        );
+        assert_eq!(input_rows(&inputs)[0].path, "coupling.npole");
     }
 
     #[test]

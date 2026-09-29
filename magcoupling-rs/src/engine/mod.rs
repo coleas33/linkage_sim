@@ -15,4 +15,7 @@ pub mod compat;
 pub mod constants;
 pub mod deviations;
 pub mod library;
+pub mod materials;
 pub mod meta;
+pub mod metal_design;
+pub mod model;

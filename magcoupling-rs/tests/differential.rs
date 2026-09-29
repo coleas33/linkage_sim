@@ -122,7 +122,6 @@ enum Reach {
     /// Exactly this text.
     Text(&'static str),
     /// A text starting with this.
-    #[allow(dead_code)] // no BRANCHES row uses it until a module with built text lands
     Prefix(&'static str),
     /// A number (the numeric side of a number-or-text result).
     Number,
@@ -138,6 +137,44 @@ const BRANCHES: &[(&str, &[Reach])] = &[
         &[Number, Text("outside range")],
     ),
     ("calibration.fea_interp_error", &[Number, Text("n.a.")]),
+    ("model.inner_tmax_C", &[Number, Text("n/a")]),
+    ("model.outer_tmax_C", &[Number, Text("n/a")]),
+    (
+        "model.inner_flat_check",
+        &[
+            Prefix("OK, "),
+            Text("TOO NARROW: increase apothem or reduce poles"),
+            Text("n/a (arcs)"),
+        ],
+    ),
+    (
+        "model.outer_flat_check",
+        &[
+            Prefix("OK, blocks "),
+            Text("TOO NARROW: increase gap/apothem or reduce poles"),
+            Text("n/a (arcs)"),
+        ],
+    ),
+    (
+        "model.verdict",
+        &[Text("Below hot minimum"), Text("Nominal only: hot test")],
+    ),
+    (
+        "model.cup_ring_check",
+        &[Text("No back iron"), Text("Thickness OK"), Text("Too thin")],
+    ),
+    (
+        "model.hub_check",
+        &[Text("No back iron"), Text("Thickness OK"), Text("Too thin")],
+    ),
+    (
+        "model.inner_temp_check",
+        &[Text("unknown"), Text("OK"), Text("OVER the magnet rating")],
+    ),
+    (
+        "model.outer_temp_check",
+        &[Text("unknown"), Text("OK"), Text("OVER the magnet rating")],
+    ),
 ];
 
 fn reached(value: &Value, reach: Reach) -> bool {
@@ -265,6 +302,19 @@ fn calibration_matches_python_on_every_case() {
             "no case on the inclusive span end {end}"
         );
     }
+}
+
+#[test]
+fn model_matches_python_on_every_case() {
+    let cases = check_module("model");
+    let prototype = cases
+        .iter()
+        .find(|c| c.tag == "prototype circuit: measured calibration factor")
+        .expect("the prototype probe");
+    assert_ne!(
+        prototype.results["model.f_cal"], prototype.inputs["calibration.f_cal_original"],
+        "the prototype probe must select the measured factor"
+    );
 }
 
 /// A corpus key and the Rust helper call it records (as the engine calls it).

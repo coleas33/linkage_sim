@@ -24,7 +24,7 @@ Writes:
     magcoupling-rs/tests/data/differential/helpers.json
         a corpus for the rounding and formatting helpers.
     magcoupling-rs/tests/data/static_data.json
-        the static engine tables (magnet library so far), for tests/static_data.rs.
+        the static engine tables (magnet library and the harmonic set so far), for tests/static_data.rs.
 
 Cases per module, all inside the slider ranges: the workbook defaults; each
 input at each end of its range, each selector at each choice and each text
@@ -56,7 +56,8 @@ import magcoupling  # noqa: E402
 from magcoupling import DesignInputs, compute_all, input_schema, result_schema, set_input  # noqa: E402
 from magcoupling._fields import ceiling, floor_  # noqa: E402
 from magcoupling.clamps import _fmt_num  # noqa: E402
-from magcoupling.library import _ROWS  # noqa: E402
+from magcoupling import model as py_model  # noqa: E402
+from magcoupling.library import _ROWS, MAGNET_LIBRARY  # noqa: E402
 from magcoupling.temperature import _text0  # noqa: E402
 
 if Path(magcoupling.__file__).resolve().parent != ORACLE / "magcoupling":
@@ -71,9 +72,15 @@ MAX_FILE_BYTES = 4_000_000  # a data file above this means: vary fewer groups or
 # module's Rust port lands, and list its groups in magcoupling-rs/tests/common/mod.rs.
 MODULES = {
     "calibration": ["calibration"],
+    "model": ["coupling", "metal", "materials", "calibration"],
 }
+# every library part, blank (manual magnet) and a near miss of the default part
+PART_CHOICES = list(MAGNET_LIBRARY) + ["", "b842sh"]
 # Text inputs have no slider: the values each case may take (sampled like a selector).
-TEXT_CHOICES: dict[str, list[str]] = {}
+TEXT_CHOICES: dict[str, list[str]] = {
+    "coupling.magnets.part_inner": PART_CHOICES,
+    "coupling.magnets.part_outer": PART_CHOICES,
+}
 # Hand-placed cases on branch boundaries, keyed by result group: (tag, input overrides).
 PROBES = {
     # The 3D interpolation span 1.0 <= corner gap <= 1.5 is inclusive. With the
@@ -84,6 +91,22 @@ PROBES = {
         ("interpolation span, high end", {"calibration.gap_definition": 0, "calibration.spacing_mm": 1.5}),
         ("just below the interpolation span", {"calibration.gap_definition": 0, "calibration.spacing_mm": 0.999}),
         ("just above the interpolation span", {"calibration.gap_definition": 0, "calibration.spacing_mm": 1.501}),
+    ],
+    # The measured calibration factor applies only to the prototype's circuit
+    # (model.select_calibration_factor); random sampling almost never hits all four conditions.
+    "model": [
+        ("prototype circuit: measured calibration factor",
+         {"coupling.backiron": 0, "coupling.npole": 10, "calibration.total_magnets": 20,
+          "coupling.magnets.part_inner": "B842SH", "coupling.magnets.part_outer": "B842SH"}),
+        ("prototype circuit but 12 poles", {"coupling.backiron": 0, "coupling.npole": 12}),
+        ("prototype circuit, 12 poles against a 24-magnet prototype",
+         {"coupling.backiron": 0, "coupling.npole": 12, "calibration.total_magnets": 24}),
+        ("prototype circuit but an N52 inner part",
+         {"coupling.backiron": 0, "coupling.magnets.part_inner": "B842-N52"}),
+        ("operating temperature at the 150 C rating", {"coupling.op_temp_C": 150.0}),
+        ("operating temperature above the 80 C rating of the outer part",
+         {"coupling.op_temp_C": 80.5, "coupling.magnets.part_outer": "B842"}),
+        ("manual magnets in both rings", {"coupling.magnets.part_inner": "", "coupling.magnets.part_outer": ""}),
     ],
 }
 
@@ -261,6 +284,7 @@ def static_data() -> str:
                  "reference/magcoupling-py/tools/gen_differential.py. Do not edit by hand.",
         "engine": f"magcoupling {magcoupling.__version__}",
         "magnet_library": [dataclasses.asdict(m) for m in _ROWS],
+        "harmonics": list(py_model.HARMONICS),
     }
     return dumps(doc) + "\n"
 

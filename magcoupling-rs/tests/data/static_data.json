@@ -1,6 +1,11 @@
 {
  "about": "Static tables of the magcoupling engine (plain data, no metadata). Written by reference/magcoupling-py/tools/gen_differential.py. Do not edit by hand.",
  "engine": "magcoupling 1.0.0",
+ "harmonics": [
+  1,
+  3,
+  5
+ ],
  "magnet_library": [
   {
    "br_T": 1.29,

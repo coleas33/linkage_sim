@@ -66,3 +66,19 @@ fn every_part_resolves_to_its_own_row_by_exact_text() {
         assert_eq!(found, expected, "{near_miss:?}");
     }
 }
+
+#[test]
+fn harmonics_equal_the_python_list() {
+    let doc = python_static();
+    let python: Vec<u64> = doc["harmonics"]
+        .as_array()
+        .expect("harmonics")
+        .iter()
+        .map(|n| n.as_u64().expect("an int"))
+        .collect();
+    let rust: Vec<u64> = magcoupling::engine::model::HARMONICS
+        .iter()
+        .map(|&n| u64::from(n))
+        .collect();
+    assert_eq!(rust, python);
+}

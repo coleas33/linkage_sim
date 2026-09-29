@@ -25,16 +25,36 @@ pub struct PortedResults {
 /// Ported input groups, in Python `DesignInputs` order. The counts are a
 /// ratchet against silently dropped fields; `tests/python_schema.rs` checks
 /// them against the Python engine's own schema.
-pub const PORTED_INPUTS: &[PortedInputs] = &[PortedInputs {
-    group: "calibration",
-    cells: 16,
-}];
+pub const PORTED_INPUTS: &[PortedInputs] = &[
+    PortedInputs {
+        group: "coupling",
+        cells: 24,
+    },
+    PortedInputs {
+        group: "metal",
+        cells: 47, // metal.measured_drag_Nm defaults to None: not counted
+    },
+    PortedInputs {
+        group: "calibration",
+        cells: 16,
+    },
+    PortedInputs {
+        group: "materials",
+        cells: 11,
+    },
+];
 
 /// Ported result groups, in Python `DesignResults` order.
-pub const PORTED_RESULTS: &[PortedResults] = &[PortedResults {
-    group: "calibration",
-    cells: 23,
-}];
+pub const PORTED_RESULTS: &[PortedResults] = &[
+    PortedResults {
+        group: "calibration",
+        cells: 23,
+    },
+    PortedResults {
+        group: "model",
+        cells: 73,
+    },
+];
 
 /// The top-level group of a dotted path (`"calibration.br_T"` gives `"calibration"`).
 pub fn group_of(path: &str) -> &str {

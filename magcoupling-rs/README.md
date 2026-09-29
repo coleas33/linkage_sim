@@ -10,8 +10,9 @@ where an approved correction from the M1 math audit is registered in the
 deviation registry.
 
 **Status (M2, in progress):** engine infrastructure (metadata model, Python and
-Excel semantics helpers, deviation registry), the **Calibration** sheet and the
-magnet library.
+Excel semantics helpers, deviation registry), the **Calibration** sheet, the
+magnet library and the **Calculator model** (`model`). The Metal design and
+Materials sheets contribute their inputs only so far.
 Deviations E1 to E14 are all registered as `Planned`; none is applied yet.
 
 ```rust
@@ -28,7 +29,7 @@ println!("{}", res.calibration.f_cal_updated); // 1.0658
 | `src/engine/compat.rs` | Python and Excel semantics the port reproduces (see the translation rules below) |
 | `src/engine/deviations.rs` | Registry of approved workbook corrections, and the `Deviations` switch |
 | `src/engine/api.rs` | `DesignInputs`, `DesignResults`, `compute_all` |
-| `src/engine/<module>.rs` | One module per Python module: `constants`, `calibration`, `library` so far |
+| `src/engine/<module>.rs` | One module per Python module: `constants`, `calibration`, `library`, `model` so far (`metal_design` and `materials` hold inputs only) |
 | `tests/` | Parity, differential, metadata and registry tests (below) |
 | `tests/data/` | Workbook snapshot copy, exported schemas, differential data |
 
