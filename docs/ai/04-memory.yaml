@@ -22,14 +22,10 @@ open_questions:
     `FirmwareAdapter` trait — implement on demand once a target controller
     is selected.
   - |
-    Payload weights Track 2 decisions left to the user. (1) The sweep also
-    builds a DriverTorque-basis breakdown for stroke-mode LinearDriver
-    sweeps without a LinearActuator ("Driver Force Share (N)"), which the
-    spec's section 2 and Out of scope exclude for v1: keep it and update the
-    spec, or drop it (weight_breakdown None there)? (2) The spec text still
-    differs from the code in small ways: SweepData::weight_shares is
-    weight_breakdown, the actuator label reads "1.2 kN push, braking" (spec
-    uses a middle dot), the reversal dash is "-" (spec an em dash), and an
-    arrow is gold while the sweep lacks the weight (the spec names only
-    green/red/gray). Align the spec or the code?
+    Payload weights Track 2 decision left to the user. A weight's canvas
+    arrow is gold while the sweep lacks the weight (after a drag or Add
+    weight, until the sweep is recomputed). The spec's canvas-readout
+    section names only green, red and gray; only the hands-on checklist
+    mentions gold. Add the gold state to the spec's canvas-readout section,
+    or change the code?
 

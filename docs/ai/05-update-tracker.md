@@ -38,8 +38,12 @@ Reverse chronological (newest at top).
 - README and FEATURES: 15 plot tabs (was "10"). The list now includes
   actuator force/speed/power, weight breakdown and output force.
 - 04-memory: active issue (the checklist runs before merge) and an open
-  question: stroke-mode driver-share scope and the small spec/code
-  wording mismatches.
+  question: the gold stale-weight arrow is in the code and the checklist
+  but not in the spec's canvas-readout section, which names only
+  green/red/gray. The stroke-mode driver-share scope and the small wording
+  gaps (weight_breakdown, "push, braking", the "-" for the reversal) were
+  already settled by the spec's 2026-09-29 amendments, so they are not
+  open questions.
 
 ## 2026-09-29 — Payload weights Task 9: canvas readout
 - `AppState::current_sweep_index` (the sample the plot cursor marks;
