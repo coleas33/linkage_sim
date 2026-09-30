@@ -39,6 +39,15 @@ Reverse chronological (newest at top).
   `temperature.thermal.conductance_W_K` and `metal.measured_drag_Nm`, and a
   non-finite drag with `npole = i64::MAX`, under NONE and ALL; `validate()`
   must name exactly that path as `NotFinite`.
+- Cleanups (behaviour-neutral): `check_value` and `f64::from_value` share one
+  non-finite check (`meta::finite`); the no-op `#[allow(non_snake_case)]` on
+  `api::compute` is gone (clippy -D warnings stays clean without it); the
+  `retainers` `too_many_arguments` allow stays, since E8 made it 8 parameters,
+  with its comment saying so; `gen_differential.py` uses the clamps and sweeps
+  names it already imports (no `py_clamps`, `py_sweeps`), and the sweep probe
+  tag reads "low requirement: no row below the hot minimum" (its rows are
+  nominal or outside the OD envelope); only that tag changed in
+  `gap_sweep.json` and `pole_sweep.json`.
 
 ## 2026-09-29 — Magcoupling M2: engine port complete
 - Every Python module except `fields3d` (M3) is ported to `magcoupling-rs/`,

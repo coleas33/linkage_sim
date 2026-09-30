@@ -66,11 +66,9 @@ sys.path.insert(0, str(ORACLE))  # this checkout's engine, never an installed co
 import magcoupling  # noqa: E402
 from magcoupling import DesignInputs, compute_all, headline, input_schema, result_schema, set_input  # noqa: E402
 from magcoupling._fields import ceiling, floor_  # noqa: E402
-from magcoupling.clamps import SCREW_SIZES, TABLE_COLUMNS, TABLE_ROWS, ScrewRow, _fmt_num  # noqa: E402
-from magcoupling import clamps as py_clamps  # noqa: E402
+from magcoupling.clamps import MACHINING_STEPS, SCREW_SIZES, TABLE_COLUMNS, TABLE_ROWS, ScrewRow, _fmt_num  # noqa: E402
 from magcoupling import metal_design as py_metal_design  # noqa: E402
 from magcoupling import model as py_model  # noqa: E402
-from magcoupling import sweeps as py_sweeps  # noqa: E402
 from magcoupling.library import _ROWS, MAGNET_LIBRARY  # noqa: E402
 from magcoupling.materials import Aluminium  # noqa: E402
 from magcoupling import temperature as py_temperature  # noqa: E402
@@ -166,7 +164,7 @@ PROBES = {
     # Each status of the workbook's priority order (sweeps.py docstring).
     "gap_sweep": [
         ("small envelope: outside OD envelope", {"metal.max_diameter_mm": 20.0}),
-        ("low requirement: nominal everywhere", {"metal.required_min_Nm": 0.1, "coupling.drive_torque_Nm": 0.0}),
+        ("low requirement: no row below the hot minimum", {"metal.required_min_Nm": 0.1, "coupling.drive_torque_Nm": 0.0}),
         ("wide manual inner block: inner flat too narrow",
          {"coupling.magnets.part_inner": "", "coupling.magnets.manual_inner_width_mm": 25.4}),
         ("wide manual outer block: outer flat too narrow",
@@ -174,7 +172,7 @@ PROBES = {
     ],
     "pole_sweep": [
         ("small envelope: outside OD envelope", {"metal.max_diameter_mm": 20.0}),
-        ("low requirement: nominal everywhere", {"metal.required_min_Nm": 0.1, "coupling.drive_torque_Nm": 0.0}),
+        ("low requirement: no row below the hot minimum", {"metal.required_min_Nm": 0.1, "coupling.drive_torque_Nm": 0.0}),
         ("wide manual outer block: outer flat too narrow",
          {"coupling.magnets.part_outer": "", "coupling.magnets.manual_outer_width_mm": 25.4}),
     ],
@@ -391,11 +389,11 @@ def static_data() -> str:
                              for label, (status, action) in py_metal_design.VALIDATION_ITEMS.items()],
         "aluminium": [dataclasses.asdict(a) for a in (Aluminium().al7075, Aluminium().al6061)],
         "adhesives": [dataclasses.asdict(a) for a in py_temperature.default_adhesives()],
-        "screw_sizes": [dataclasses.asdict(s) for s in py_clamps.SCREW_SIZES],
-        "machining_steps": list(py_clamps.MACHINING_STEPS),
-        "table_columns": list(py_clamps.TABLE_COLUMNS),
-        "sweeps": {"gap_sweep_corner_gaps_mm": list(py_sweeps.GAP_SWEEP_CORNER_GAPS_MM),
-                   "pole_sweep_poles": list(py_sweeps.POLE_SWEEP_POLES)},
+        "screw_sizes": [dataclasses.asdict(s) for s in SCREW_SIZES],
+        "machining_steps": list(MACHINING_STEPS),
+        "table_columns": list(TABLE_COLUMNS),
+        "sweeps": {"gap_sweep_corner_gaps_mm": list(GAP_SWEEP_CORNER_GAPS_MM),
+                   "pole_sweep_poles": list(POLE_SWEEP_POLES)},
     }
     return dumps(doc) + "\n"
 

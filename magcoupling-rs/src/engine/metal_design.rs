@@ -315,7 +315,7 @@ results! {
 
 /// Sleeve, liner, endplate and cap geometry and mass (Metal design rows 45-46, 175-181).
 /// `inner_corner_radius_mm` is Calculator!C55; only E8 reads it (Python has no such parameter).
-#[allow(clippy::too_many_arguments)] // Python signature
+#[allow(clippy::too_many_arguments)] // Python signature plus C55 (E8): 8 parameters
 pub fn retainers(
     md: &MetalDesignInputs,
     inner_back_apothem_mm: f64,

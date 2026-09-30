@@ -498,13 +498,23 @@ impl FieldValue for f64 {
     }
 }
 
+/// The one non-finite check: NaN and infinities are [`SetErrorKind::NotFinite`].
+/// Shared by `check_value` (what `set()` and `validate()` check) and
+/// `f64::from_value`, so the two can never disagree.
+fn finite(x: f64) -> Result<f64, SetErrorKind> {
+    if x.is_finite() {
+        Ok(x)
+    } else {
+        Err(SetErrorKind::NotFinite)
+    }
+}
+
 impl InputValue for f64 {
     /// Accepts a float or an integer (Python float inputs often have int
     /// defaults, e.g. `test_temp_C = 20`); rejects NaN and infinities.
     fn from_value(value: Value) -> Result<Self, SetErrorKind> {
         match value {
-            Value::Num(x) if x.is_finite() => Ok(x),
-            Value::Num(_) => Err(SetErrorKind::NotFinite),
+            Value::Num(x) => finite(x),
             Value::Int(i) => Ok(i as f64),
             got => Err(SetErrorKind::TypeMismatch {
                 expected: FieldType::F64,
@@ -696,7 +706,7 @@ fn check_value(meta: &InputMeta, value: &Value) -> Option<SetErrorKind> {
         {
             Some(SetErrorKind::NotAChoice { code })
         }
-        Value::Num(x) if !x.is_finite() => Some(SetErrorKind::NotFinite),
+        Value::Num(x) => finite(x).err(),
         _ => None,
     }
 }

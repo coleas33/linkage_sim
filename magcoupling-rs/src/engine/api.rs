@@ -125,7 +125,6 @@ impl DesignInputs {
 }
 
 // Python api.compute_all lines 52-99; Python local names.
-#[allow(non_snake_case)] // SweepContext has a field `L`
 fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
     let (ci, md, cal_in, mat_in) = (
         &inputs.coupling,
