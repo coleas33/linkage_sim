@@ -1547,6 +1547,74 @@ fn e15_to_e17_together_match_the_reports_headline_table() {
 }
 
 #[test]
+fn e18_aluminium_hub_mismatch_matches_the_report() {
+    // Report row E18. On the workbook basis (C96 = 0.55 GPa) the screens already read
+    // "Above": only the numbers move. On the M2 basis (E1's 0.107 GPa) both verdicts flip.
+    let e18 = DeviationId::E18;
+    let workbook: ReportRows = &[
+        ("Temperature design!C104", 46.13, 73.87),
+        ("Temperature design!C105", 26.73, 45.1),
+        ("Temperature design!C201", 11.37, 19.18),
+    ];
+    assert_report_table(
+        "E18 workbook",
+        &NO_BACK_IRON,
+        Deviations::NONE,
+        Deviations::only(e18),
+        workbook,
+    );
+    let (b, a) = (
+        cells_with(&NO_BACK_IRON, m2()),
+        cells_with(&NO_BACK_IRON, m2().with(e18)),
+    );
+    let flips = [
+        (
+            "Temperature design!C106",
+            "Below the lap-shear strength",
+            "Above the lap-shear strength at the block ends",
+        ),
+        (
+            "Temperature design!C202",
+            "Below the fatigue endurance",
+            "Above the fatigue endurance: qualify by thermal cycling",
+        ),
+    ];
+    let mut want: BTreeSet<String> = ["C104", "C105", "C201"]
+        .iter()
+        .map(|c| format!("Temperature design!{c}"))
+        .collect();
+    want.extend(flips.iter().map(|(c, _, _)| (*c).to_owned()));
+    assert_eq!(changed_cells(&b, &a), want, "E18 on M2: changed cells");
+    for (cell, was, now) in [
+        ("Temperature design!C104", 11.68, 20.76),
+        ("Temperature design!C105", 6.071, 11.03),
+        ("Temperature design!C201", 2.563, 4.655),
+    ] {
+        assert_sig4(&format!("M2 {cell} before"), &b[cell], was);
+        assert_sig4(&format!("M2 {cell} after"), &a[cell], now);
+    }
+    for (cell, was, now) in flips {
+        assert_eq!(b[cell], Value::Text(was.into()), "{cell}");
+        assert_eq!(a[cell], Value::Text(now.into()), "{cell}");
+    }
+    // C94 and C98 still show the steel inputs.
+    assert_eq!(a["Temperature design!C94"], Value::Num(12.3e-6));
+    assert_eq!(a["Temperature design!C98"], Value::Num(205.0));
+    // What users see: every correction on, less E18, against every correction on.
+    let (without, with) = (
+        cells_with(&NO_BACK_IRON, Deviations::ALL.without(e18)),
+        cells_with(&NO_BACK_IRON, Deviations::ALL),
+    );
+    assert_eq!(changed_cells(&without, &with), want, "E18 on ALL");
+}
+
+#[test]
+fn e18_leaves_every_default_cell_bit_for_bit() {
+    // At defaults the hub is steel: the workbook's CTE and modulus stay.
+    assert_bit_for_bit_at_defaults(DeviationId::E18);
+}
+
+#[test]
 fn e17_leaves_every_default_cell_bit_for_bit() {
     // At defaults every loss term is steel: the skin-limited workbook formulas stay.
     assert_bit_for_bit_at_defaults(DeviationId::E17);

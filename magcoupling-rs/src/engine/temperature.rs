@@ -29,7 +29,9 @@
 //! and C157 instead of Python's ZeroDivisionError), E15 (C141 prices an
 //! aluminium cup, boss and hub at C140, on the gates the masses read), and
 //! E17 (with no back iron the aluminium hub, cup and web losses C123-C125 take
-//! the low-Reynolds closed form T1 with the Rust-only free-space fields).
+//! the low-Reynolds closed form T1 with the Rust-only free-space fields) and
+//! E18 (the mismatch screen C104-C106, C201, C202 bonds to an aluminium hub when
+//! C6 is not 1).
 
 use std::f64::consts::PI;
 
@@ -615,6 +617,14 @@ results! {
 }
 
 // =========================================================================== model
+/// E18: the expansion coefficient of the aluminium hub [1/°C] (6061-T6, Alliance
+/// datasheet <https://www.allianceorg.com/pdfs/alumext/6061t6.pdf>: 23.6e-6 /°C;
+/// Addendum A report, row E18).
+pub const AL_HUB_CTE_PER_C: f64 = 23.6e-6;
+/// E18: the elastic modulus of the aluminium hub [GPa] (6061-T6, the same Alliance
+/// datasheet: 68.9 GPa).
+pub const AL_HUB_MODULUS_GPA: f64 = 68.9;
+
 /// The text of an unbroken-slip time that never reaches the limit.
 pub const NEVER: &str = "never: steady state stays below the limit";
 /// The text of the matching rotation count.
@@ -770,7 +780,15 @@ pub fn compute(
     // ---- thermal mismatch screen
     let mm = &ti.mismatch;
     let dT = py_max(sel.cure_C - k.min_temp_C, gov - sel.cure_C);
-    let d_alpha = k.steel_cte - mm.ndfeb_cte_per_C;
+    // E18: the blocks bond to the hub, which the mass model makes aluminium when C6 != 1
+    // (E15's hub gate); the workbook screens 4140 whatever the hub is. C94 and C98 still
+    // show the steel inputs.
+    let (hub_cte, hub_E_GPa) = if dev.is_on(DeviationId::E18) && k.hub_aluminium {
+        (AL_HUB_CTE_PER_C, AL_HUB_MODULUS_GPA)
+    } else {
+        (k.steel_cte, k.steel_E_GPa)
+    };
+    let d_alpha = hub_cte - mm.ndfeb_cte_per_C;
     let s1 = volkersen_peak_shear_MPa(
         mm.adhesive_shear_modulus_GPa,
         d_alpha,
@@ -778,7 +796,7 @@ pub fn compute(
         k.bond_inner_mm,
         mm.ndfeb_modulus_GPa,
         k.inner_thickness_mm,
-        k.steel_E_GPa,
+        hub_E_GPa,
         k.hub_wall_mm,
         k.inner_length_mm,
     );
@@ -789,7 +807,7 @@ pub fn compute(
         mm.recommended_bondline_mm,
         mm.ndfeb_modulus_GPa,
         k.inner_thickness_mm,
-        k.steel_E_GPa,
+        hub_E_GPa,
         k.hub_wall_mm,
         k.inner_length_mm,
     );

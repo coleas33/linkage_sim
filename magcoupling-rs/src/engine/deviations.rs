@@ -1095,7 +1095,7 @@ pub const REGISTRY: &[Deviation] = &[
         class: DeviationClass::Engine,
         approval: Approval::Addendum { decisions: &[16] },
         depends_on: &[],
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &[
             "Calculator!C6",
             "Temperature design!C94",
@@ -1113,7 +1113,27 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: None,
-        probes: &[],
+        probes: &[Probe {
+            label: "no intentional back iron (coupling.backiron = 0), workbook basis (report row E18: C104 46.13 -> 73.87 MPa)",
+            inputs: &[("coupling.backiron", Literal::Int(0))],
+            expect: &[
+                CellChange {
+                    cell: "Temperature design!C104",
+                    workbook: Literal::Num(46.12653767935644),
+                    corrected: Literal::Num(73.8667679636259),
+                },
+                CellChange {
+                    cell: "Temperature design!C105",
+                    workbook: Literal::Num(26.728261752019268),
+                    corrected: Literal::Num(45.09855207959816),
+                },
+                CellChange {
+                    cell: "Temperature design!C201",
+                    workbook: Literal::Num(11.365659614702167),
+                    corrected: Literal::Num(19.1772587685732),
+                },
+            ],
+        }],
     },
     Deviation {
         id: DeviationId::E19,
