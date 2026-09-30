@@ -26,6 +26,13 @@ Reverse chronological (newest at top).
   sweeps, Calibration, Metal design and Temperature design. Bit for bit: every
   result of 1,504 seeded input sets hashed identically under NONE, ALL and
   only(E7) before and after (scratch harness, not committed).
+- `headline` reads its 15 paths with the new `ResultSet::get(path)` (results!
+  and rows! generate it, table rows as `table[i].field`) instead of building
+  all 996 result rows: 202 µs to 0.44 µs per call in release (381 to 2.6 µs in
+  debug), values bit for bit. Tests: `result_get_reads_fields_groups_and_table_rows`,
+  `result_get_agrees_with_every_result_row` (meta),
+  `get_and_headline_read_what_result_rows_lists` (every real result path, two
+  designs); the per-frame smoke test now times `compute_all` plus `headline`.
 
 ## 2026-09-29 — Magcoupling M2: engine port complete
 - Every Python module except `fields3d` (M3) is ported to `magcoupling-rs/`,

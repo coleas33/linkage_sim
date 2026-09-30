@@ -27,7 +27,7 @@ use super::deviations::Deviations;
 #[cfg(feature = "workbook-parity")]
 use super::deviations::{REGISTRY, restore_workbook_defaults};
 use super::materials::{self, MaterialsInputs, MaterialsResults};
-use super::meta::{SetError, TableLayout, Value, inputs, result_rows, results, validate};
+use super::meta::{ResultSet, SetError, TableLayout, Value, inputs, results, validate};
 use super::metal_design::{self, MetalDesignInputs, MetalDesignResults, RetainerResults};
 use super::model::{self, CouplingInputs, MassResults, ModelResults};
 use super::sweeps::{self, SweepRow};
@@ -107,18 +107,11 @@ pub const HEADLINE: [(&str, &str); 15] = [
 ];
 
 /// Python `headline(res)`: the dashboard numbers, keyed and ordered as in Python.
+/// Reads the 15 paths directly ([`ResultSet::get`]), cheap enough for every frame.
 pub fn headline(results: &DesignResults) -> Vec<(&'static str, Value)> {
-    let rows = result_rows(results);
     HEADLINE
         .iter()
-        .map(|&(key, path)| {
-            (
-                key,
-                rows.iter()
-                    .find(|r| r.path == path)
-                    .map_or(Value::None, |r| r.value.clone()),
-            )
-        })
+        .map(|&(key, path)| (key, results.get(path).unwrap_or(Value::None)))
         .collect()
 }
 
@@ -369,6 +362,38 @@ mod tests {
                 .iter()
                 .all(|(_, v)| *v != Value::None)
         );
+    }
+
+    #[test]
+    fn get_and_headline_read_what_result_rows_lists() {
+        // Every path result_rows writes (tables included) resolves through get() to the
+        // same value, bit for bit (NaN included), and headline() is those values.
+        let same = |a: &Value, b: &Value| match (a, b) {
+            (Value::Num(x), Value::Num(y)) => x.to_bits() == y.to_bits(),
+            _ => a == b,
+        };
+        let mut six_poles_no_iron = DesignInputs::default();
+        six_poles_no_iron.coupling.npole = 6;
+        six_poles_no_iron.coupling.backiron = 0;
+        for inputs in [DesignInputs::default(), six_poles_no_iron] {
+            let res = compute_all(&inputs);
+            let rows = result_rows(&res);
+            assert!(rows.len() > 900, "{} rows", rows.len()); // 996 at M2
+            for row in &rows {
+                let got = res.get(&row.path);
+                assert!(
+                    got.as_ref().is_some_and(|v| same(v, &row.value)),
+                    "{}: {got:?} vs {:?}",
+                    row.path,
+                    row.value
+                );
+            }
+            for ((key, value), (hkey, path)) in headline(&res).iter().zip(HEADLINE) {
+                let row = rows.iter().find(|r| r.path == path).expect("a result path");
+                assert_eq!(*key, hkey);
+                assert!(same(value, &row.value), "{key}");
+            }
+        }
     }
 
     #[test]

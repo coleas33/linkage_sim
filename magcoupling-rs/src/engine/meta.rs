@@ -406,6 +406,9 @@ pub trait RowSet {
     /// Field metadata, in declaration order.
     const COLUMNS: &'static [ColumnMeta];
 
+    /// The value of the field named `name`, or `None` if the row has no such field.
+    fn get(&self, name: &str) -> Option<Value>;
+
     /// Calls `f(path, meta, cell, value)` for every field of this row, row
     /// `index` of a table laid out by `layout`. `prefix` ends with `[index].`.
     fn visit_row(
@@ -611,6 +614,11 @@ pub trait ResultSet {
     /// Names of the nested groups declared on this struct, in declaration order.
     const GROUPS: &'static [&'static str];
 
+    /// The value at a dotted path relative to this struct, as [`result_rows`]
+    /// writes it (a table row's field as `table[i].field`), or `None` if no
+    /// result has that path. Reads the one value, without building the rows.
+    fn get(&self, path: &str) -> Option<Value>;
+
     /// Calls `f(path, meta, cell, value)` for every leaf result, fields before
     /// groups before tables, each in declaration order. `prefix` is prepended to
     /// every path; `cell` is the field's workbook cell: `meta.cell` for a scalar,
@@ -661,6 +669,21 @@ pub fn result_rows<T: ResultSet>(results: &T) -> Vec<ResultRow> {
         })
     });
     rows
+}
+
+/// The row index in a table path segment `name[i]`, exactly as [`result_rows`]
+/// writes it (decimal digits, no sign, no leading zero), or `None` if `segment`
+/// is not one (used by `results!`).
+#[doc(hidden)]
+pub fn table_index(segment: &str, name: &str) -> Option<usize> {
+    let digits = segment
+        .strip_prefix(name)?
+        .strip_prefix('[')?
+        .strip_suffix(']')?;
+    let canonical = !digits.is_empty()
+        && digits.bytes().all(|b| b.is_ascii_digit())
+        && (digits == "0" || !digits.starts_with('0'));
+    if canonical { digits.parse().ok() } else { None }
 }
 
 /// Why `value` is not acceptable for the input `meta` describes, if it is not:
@@ -884,6 +907,34 @@ macro_rules! results {
             ];
             const GROUPS: &'static [&'static str] = &[ $( $( stringify!($group), )* )? ];
 
+            #[allow(unused_variables, clippy::match_single_binding)]
+            fn get(&self, path: &str) -> ::core::option::Option<$crate::engine::meta::Value> {
+                match path.split_once('.') {
+                    ::core::option::Option::Some((head, rest)) => match head {
+                        $( $( stringify!($group) =>
+                            $crate::engine::meta::ResultSet::get(&self.$group, rest), )* )?
+                        _ => {
+                            $( $(
+                                if let ::core::option::Option::Some(index) =
+                                    $crate::engine::meta::table_index(head, stringify!($table))
+                                {
+                                    return self.$table.get(index).and_then(|row| {
+                                        $crate::engine::meta::RowSet::get(row, rest)
+                                    });
+                                }
+                            )* )?
+                            ::core::option::Option::None
+                        }
+                    },
+                    ::core::option::Option::None => match path {
+                        $( stringify!($field) => ::core::option::Option::Some(
+                            $crate::engine::meta::FieldValue::to_value(&self.$field),
+                        ), )*
+                        _ => ::core::option::Option::None,
+                    },
+                }
+            }
+
             fn visit(
                 &self,
                 prefix: &str,
@@ -944,6 +995,15 @@ macro_rules! rows {
                     <$ty as $crate::engine::meta::FieldValue>::TYPE,
                 ), )*
             ];
+
+            fn get(&self, name: &str) -> ::core::option::Option<$crate::engine::meta::Value> {
+                match name {
+                    $( stringify!($field) => ::core::option::Option::Some(
+                        $crate::engine::meta::FieldValue::to_value(&self.$field),
+                    ), )*
+                    _ => ::core::option::Option::None,
+                }
+            }
 
             fn visit_row(
                 &self,
@@ -1262,9 +1322,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn table_rows_get_synthesized_cells() {
-        let out = ToyOut {
+    /// Two rows in each toy table.
+    fn toy_out() -> ToyOut {
+        ToyOut {
             n: 1.0,
             table: vec![
                 ToyRow {
@@ -1288,7 +1348,12 @@ mod tests {
                     status: "b".into(),
                 },
             ],
-        };
+        }
+    }
+
+    #[test]
+    fn table_rows_get_synthesized_cells() {
+        let out = toy_out();
         let rows: Vec<(String, Option<String>, Value)> = result_rows(&out)
             .into_iter()
             .map(|r| (r.path, r.cell, r.value))
@@ -1320,6 +1385,51 @@ mod tests {
         );
         assert_eq!(ToyRow::COLUMNS[1].meta.name, "d_mm");
         assert_eq!(ToyRow::COLUMNS[2].meta.ty, FieldType::I64);
+    }
+
+    #[test]
+    fn result_get_reads_fields_groups_and_table_rows() {
+        let out = TopOut {
+            leaf: LeafOut {
+                x_mm: 2.0,
+                verdict: "OK".into(),
+                mixed: NumOrText::Text("n.a."),
+            },
+        };
+        assert_eq!(out.get("leaf.x_mm"), Some(Value::Num(2.0)));
+        assert_eq!(out.get("leaf.verdict"), Some(Value::Text("OK".into())));
+        assert_eq!(out.get("leaf.mixed"), Some(Value::Text("n.a.".into())));
+        for missing in ["leaf", "nope", "leaf.nope", "leaf.x_mm.deeper", ""] {
+            assert_eq!(out.get(missing), None, "{missing:?}");
+        }
+        let toy = toy_out();
+        assert_eq!(toy.get("n"), Some(Value::Num(1.0)));
+        assert_eq!(toy.get("table[1].d_mm"), Some(Value::Num(4.0)));
+        assert_eq!(toy.get("table[0].size"), Some(Value::Text("M3".into())));
+        assert_eq!(toy.get("sweep[1].status"), Some(Value::Text("b".into())));
+        for missing in [
+            "table[2].d_mm",        // past the last row
+            "table[0]",             // a row is not a leaf
+            "table[0].nope",        // no such column
+            "table[0].d_mm.deeper", // nothing below a leaf
+            "table[01].d_mm",       // result_rows never writes a leading zero
+            "table[+1].d_mm",       // or a sign
+            "table[].d_mm",
+            "table[x].d_mm",
+            "table.d_mm",
+            "tablex[0].d_mm",
+            "sweep[0]x.x",
+        ] {
+            assert_eq!(toy.get(missing), None, "{missing:?}");
+        }
+    }
+
+    #[test]
+    fn result_get_agrees_with_every_result_row() {
+        let toy = toy_out();
+        for row in result_rows(&toy) {
+            assert_eq!(toy.get(&row.path), Some(row.value), "{}", row.path);
+        }
     }
 
     #[test]

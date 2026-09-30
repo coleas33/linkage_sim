@@ -37,7 +37,7 @@ magcoupling_rs:
   lib: magcoupling (src/lib.rs re-exports compute_all, headline, DesignInputs, DesignResults)
   engine: src/engine/ (pure std, wasm32-clean; one module per Python module)
   engine_files:
-    meta: meta.rs (inputs!/results!/rows! macros, param/out and col/at_row/uncelled_col builders, slider range, assumption flag, Value, InputSet/ResultSet get/set/visit by dotted path, validate (the set() checks on a whole input struct); table rows via RowSet and TableLayout with synthesized cells, results! tables section)
+    meta: meta.rs (inputs!/results!/rows! macros, param/out and col/at_row/uncelled_col builders, slider range, assumption flag, Value, InputSet get/set/visit and ResultSet get/visit by dotted path (a table row's field as table[i].field), validate (the set() checks on a whole input struct); table rows via RowSet and TableLayout with synthesized cells, results! tables section)
     compat: compat.rs (py_min/py_max, ceiling/floor_, text0, py_repr, fmt_num, fmt_fixed, parity_close)
     deviations: deviations.rs (REGISTRY of the M1 corrections E1-E14, all fourteen Applied; Deviations switch; registry Probe entries and changes_file golden-file names; NONE/only() and restore_workbook_defaults behind the test-only workbook-parity feature)
     constants: constants.rs (MU0 = 1.256637e-06, the workbook's rounded value; NDFEB_DENSITY_G_MM3)
@@ -49,7 +49,7 @@ magcoupling_rs:
     temperature: "temperature.rs (Temperature design sheet: 7 input groups, 37 cells; ADHESIVES table and selected_adhesive, NO_ADHESIVE (NaN, \"#N/A\") for a code outside 1-4; TemperatureLinks; compute, TemperatureResults 130 result cells and the uncelled adhesive name; demag_onset_C, volkersen_peak_shear_MPa)"
     clamps: "clamps.rs (Shaft clamps and Clamp screw sizes sheets: 25 input cells; SCREW_SIZES, TABLE_COLUMNS, MACHINING_STEPS; ScrewRow with 34 fields and 165 table cells; screw_class_name, \"#N/A\" for a code outside 1-3; compute, ClampResults 33 result cells plus the Rust-only length_note; the screw table lists after the scalars)"
     sweeps: "sweeps.rs (Gap sweep and Pole sweep sheets: GAP_SWEEP_CORNER_GAPS_MM, POLE_SWEEP_POLES; SweepRow with 26 fields, 338 and 156 table cells; SweepContext with 20 fields (Python's 19 plus bond_inner, read only by E4); gap_sweep, pole_sweep)"
-    api: api.rs (DesignInputs/DesignResults groups in Python order, the complete Python DesignResults; compute_all applies Deviations::ALL; headline and HEADLINE (the 15 dashboard numbers, Python order); DesignInputs::validate; test-only compute_all_with, DesignInputs::defaults_with)
+    api: api.rs (DesignInputs/DesignResults groups in Python order, the complete Python DesignResults; compute_all applies Deviations::ALL; headline and HEADLINE (the 15 dashboard numbers, Python order, read with ResultSet::get, about 0.4 us per call in release); DesignInputs::validate; test-only compute_all_with, DesignInputs::defaults_with)
     ported: [meta.rs, compat.rs, constants.rs, calibration.rs, library.rs, model.rs, metal_design.rs, materials.rs, temperature.rs, clamps.rs, sweeps.rs, api.rs]
     remaining: [fields3d (M3)]
   features: gui and app (declared empty, M4); workbook-parity (test-only, enabled by a self dev-dependency)

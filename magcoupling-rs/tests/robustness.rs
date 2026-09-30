@@ -3,7 +3,7 @@
 //! exactly zero, extreme typed values. The engine must never panic.
 
 use magcoupling::compute_all;
-use magcoupling::engine::api::{DesignInputs, compute_all_with};
+use magcoupling::engine::api::{DesignInputs, compute_all_with, headline};
 use magcoupling::engine::deviations::Deviations;
 use magcoupling::engine::meta::{FieldType, InputSet, NumOrText, Value, input_rows};
 
@@ -127,10 +127,11 @@ fn compute_all_never_panics_on_selector_codes_outside_the_choices() {
 #[test]
 fn compute_all_is_cheap_enough_to_run_every_frame() {
     // Spec: "milliseconds per call". Debug build, generous bound (a smoke check, not a benchmark).
+    // A GUI frame recomputes and reads the dashboard numbers: compute_all plus headline.
     let inputs = DesignInputs::default();
     let start = std::time::Instant::now();
     for _ in 0..200 {
-        std::hint::black_box(compute_all(std::hint::black_box(&inputs)));
+        std::hint::black_box(headline(&compute_all(std::hint::black_box(&inputs))));
     }
     let per_call = start.elapsed() / 200;
     assert!(
