@@ -22,8 +22,9 @@
 //! [`crate::engine::deviations::REGISTRY`]): applied E1 (Temperature design!C96)
 //! and E5 (C121), both corrected defaults, and E9 (the heat capacity C141
 //! follows the aluminium cup and boss masses through `TemperatureLinks`; no code
-//! here), and E11 (the 22 °C fatigue screen C91 reads the fatigue-endurance input
-//! C195); planned E12 (C19, C23, C150 to C153), E13 (C156, C157).
+//! here), E11 (the 22 °C fatigue screen C91 reads the fatigue-endurance input
+//! C195), and E12 (a hot-day start at or above the governing limit gives 0 s,
+//! 0 rev and 0 N·m at C19, C23, C150 to C153); planned E13 (C156, C157).
 
 use std::f64::consts::PI;
 
@@ -859,15 +860,26 @@ pub fn compute(
     let tau_th = C / G;
     let (rise_e, rise_h) = (p_use / G, p_hi / G);
     let (Te, Th) = (T0 + rise_e, T0 + rise_h);
-    let t_lim_h = if Th <= gov {
-        NumOrText::Text(NEVER)
-    } else {
-        NumOrText::Num(-tau_th * (1.0 - (gov - T0) / rise_h).ln())
+    // E12: a start already at or above the limit reaches it at once; tested before "never".
+    let start_above = dev.is_on(DeviationId::E12) && T0 >= gov;
+    // Python: t_lim_h = never if Th <= gov else -tau_th * math.log(1 - (gov - T0) / rise_h),
+    // and t_lim_e the same with Te and rise_e: one closure, called twice.
+    let t_lim = |steady: f64, rise: f64| {
+        if start_above {
+            NumOrText::Num(0.0)
+        } else if steady <= gov {
+            NumOrText::Text(NEVER)
+        } else {
+            NumOrText::Num(-tau_th * (1.0 - (gov - T0) / rise).ln())
+        }
     };
-    let t_lim_e = if Te <= gov {
-        NumOrText::Text(NEVER)
+    let t_lim_h = t_lim(Th, rise_h);
+    let t_lim_e = t_lim(Te, rise_e);
+    // E12: slip never cools the magnets, so the critical drag is not negative.
+    let critical_drag = if dev.is_on(DeviationId::E12) {
+        py_max(0.0, gov - T0) * G / omega
     } else {
-        NumOrText::Num(-tau_th * (1.0 - (gov - T0) / rise_e).ln())
+        (gov - T0) * G / omega
     };
     let rev_s = k.slip_rpm / 60.0;
     let (ke, kh) = (p_use / C, p_hi / C);
@@ -888,7 +900,7 @@ pub fn compute(
             NumOrText::Text(_) => NumOrText::Text(NEVER_SHORT),
         },
         time_to_limit_est: t_lim_e,
-        critical_drag_Nm: (gov - T0) * G / omega,
+        critical_drag_Nm: critical_drag,
         heating_rate_est_C_s: ke,
         heating_rate_high_C_s: kh,
         rev_per_C_est: rev_s / ke,
@@ -1002,7 +1014,7 @@ pub fn compute(
         peak_with_fault_C: peak,
         life_rotations: rot,
         avg_slip_heating_high_C: duty_frac * rise_h,
-        critical_drag_Nm: (gov - T0) * G / omega,
+        critical_drag_Nm: critical_drag,
         cure_margin_C: cure_margin,
         verdict: if ok {
             "OK on temperature. Confirm drag torque and thermal cycling by test."
@@ -1408,5 +1420,131 @@ mod tests {
         assert_eq!(r.summary.verdict, VERDICT_CHECK);
         k.measured_drag_Nm = Some(drag * 0.99); // the peak drops to 59.95 °C
         assert_eq!(run(&ti, &k).summary.verdict, VERDICT_OK);
+    }
+
+    /// The number of a time to the limit; panics on the "never" text.
+    fn secs(t: NumOrText) -> f64 {
+        match t {
+            NumOrText::Num(x) => x,
+            NumOrText::Text(s) => panic!("expected a time, got {s:?}"),
+        }
+    }
+
+    #[test]
+    fn e12_start_at_exactly_the_limit_reaches_it_at_once() {
+        // `T0 >= gov` at equality, tested before `steady <= gov`. DP460's 60 °C limit governs and
+        // the hot-day start is 50 + 10 = 60 °C (the first assert proves both). With the estimated
+        // losses both steady states lie above the limit: the workbook's -tau ln(1 - 0 / rise) is
+        // -0.0 s, E12's is +0.0 s. The critical drag is (60 - 60) G / omega = +0.0 either way.
+        let e12 = Deviations::only(DeviationId::E12);
+        let mut k = links();
+        let mut ti = TemperatureInputs::default();
+        ti.adhesive.selected = 4;
+        ti.duty.hot_ambient_C = 50.0;
+        ti.duty.driving_rise_C = 10.0;
+        let (workbook, corrected) = (run(&ti, &k), compute(&ti, &k, e12));
+        assert_eq!(
+            (
+                workbook.summary.hot_day_start_C,
+                workbook.summary.governing_limit_C
+            ),
+            (60.0, 60.0)
+        );
+        assert!(workbook.thermal.steady_est_C > 60.0 && workbook.thermal.steady_high_C > 60.0);
+        for t in [
+            workbook.thermal.time_to_limit_high,
+            workbook.thermal.time_to_limit_est,
+            workbook.thermal.rotations_to_limit_high,
+            workbook.summary.time_to_limit_high,
+        ] {
+            let x = secs(t);
+            assert!(x == 0.0 && x.is_sign_negative(), "workbook {x}");
+        }
+        for t in [
+            corrected.thermal.time_to_limit_high,
+            corrected.thermal.time_to_limit_est,
+            corrected.thermal.rotations_to_limit_high,
+            corrected.summary.time_to_limit_high,
+        ] {
+            let x = secs(t);
+            assert!(x == 0.0 && x.is_sign_positive(), "E12 {x}");
+        }
+        for r in [&workbook, &corrected] {
+            for drag in [r.thermal.critical_drag_Nm, r.summary.critical_drag_Nm] {
+                assert!(drag == 0.0 && drag.is_sign_positive(), "{drag}");
+            }
+        }
+        // A bench drag of 0 puts both steady states at the limit: the workbook reads "never"
+        // (`limits_are_never_reached_when_the_steady_state_equals_the_limit`), E12 still 0 s.
+        k.measured_drag_Nm = Some(0.0);
+        let r = compute(&ti, &k, e12);
+        assert_eq!(
+            (r.thermal.steady_est_C, r.thermal.steady_high_C),
+            (60.0, 60.0)
+        );
+        assert_eq!(r.thermal.time_to_limit_high, NumOrText::Num(0.0));
+        assert_eq!(r.thermal.time_to_limit_est, NumOrText::Num(0.0));
+        assert_eq!(r.thermal.rotations_to_limit_high, NumOrText::Num(0.0));
+        assert_eq!(r.summary.time_to_limit_high, NumOrText::Num(0.0));
+    }
+
+    #[test]
+    fn e12_leaves_a_start_just_below_the_limit_alone() {
+        // 0.1 °C under DP460's 60 °C limit the guard is off: E12 and the workbook agree on every
+        // result, and the times and the critical drag are positive.
+        let mut ti = TemperatureInputs::default();
+        ti.adhesive.selected = 4;
+        ti.duty.hot_ambient_C = 50.0;
+        ti.duty.driving_rise_C = 9.9;
+        let k = links();
+        let r = compute(&ti, &k, Deviations::only(DeviationId::E12));
+        assert_eq!(r, run(&ti, &k));
+        assert!(r.summary.hot_day_start_C < r.summary.governing_limit_C);
+        assert!(
+            secs(r.thermal.time_to_limit_high) > 0.0 && secs(r.thermal.time_to_limit_est) > 0.0
+        );
+        assert!(r.thermal.critical_drag_Nm > 0.0);
+    }
+
+    #[test]
+    fn e12_changes_only_the_limit_times_and_the_critical_drag() {
+        // At the fixture (65 °C start, about 92.5 °C limit) E12 changes nothing. With a 40 °C
+        // driving rise (95 °C start) it changes the six registered results to 0 and nothing else.
+        let k = links();
+        let mut ti = TemperatureInputs::default();
+        let e12 = Deviations::only(DeviationId::E12);
+        assert_eq!(compute(&ti, &k, e12), run(&ti, &k));
+        ti.duty.driving_rise_C = 40.0;
+        let (workbook, corrected) = (run(&ti, &k), compute(&ti, &k, e12));
+        assert!(workbook.summary.hot_day_start_C > workbook.summary.governing_limit_C);
+        assert!(
+            secs(workbook.thermal.time_to_limit_high) < 0.0
+                && workbook.thermal.critical_drag_Nm < 0.0
+        );
+        let zero = NumOrText::Num(0.0);
+        assert_eq!(
+            (
+                corrected.thermal.time_to_limit_high,
+                corrected.thermal.rotations_to_limit_high,
+                corrected.thermal.time_to_limit_est,
+                corrected.summary.time_to_limit_high
+            ),
+            (zero, zero, zero, zero)
+        );
+        assert_eq!(
+            (
+                corrected.thermal.critical_drag_Nm,
+                corrected.summary.critical_drag_Nm
+            ),
+            (0.0, 0.0)
+        );
+        let mut put_back = corrected.clone();
+        put_back.thermal.time_to_limit_high = workbook.thermal.time_to_limit_high;
+        put_back.thermal.rotations_to_limit_high = workbook.thermal.rotations_to_limit_high;
+        put_back.thermal.time_to_limit_est = workbook.thermal.time_to_limit_est;
+        put_back.thermal.critical_drag_Nm = workbook.thermal.critical_drag_Nm;
+        put_back.summary.time_to_limit_high = workbook.summary.time_to_limit_high;
+        put_back.summary.critical_drag_Nm = workbook.summary.critical_drag_Nm;
+        assert_eq!(put_back, workbook);
     }
 }

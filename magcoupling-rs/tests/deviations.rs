@@ -826,6 +826,117 @@ fn e11_screen_follows_the_endurance_input_and_nothing_else_moves() {
 }
 
 #[test]
+fn e12_start_above_the_limit_matches_the_report() {
+    let e12 = &REGISTRY[DeviationId::E12.index()];
+    assert_eq!(e12.status, DeviationStatus::Applied);
+    let hot = &e12.probes[0];
+    let (workbook, corrected) = (Deviations::NONE, Deviations::only(DeviationId::E12));
+    assert_report(
+        "Temperature design!C150",
+        &at_probe("Temperature design!C150", hot, workbook),
+        -25.8,
+        0.05,
+    );
+    assert_report(
+        "Temperature design!C152",
+        &at_probe("Temperature design!C152", hot, workbook),
+        -71.2,
+        0.05,
+    );
+    assert_report(
+        "Temperature design!C151",
+        &at_probe("Temperature design!C151", hot, workbook),
+        -861.0,
+        0.5,
+    );
+    assert_report(
+        "Temperature design!C153",
+        &at_probe("Temperature design!C153", hot, workbook),
+        -0.0035,
+        0.00005,
+    );
+    for cell in [
+        "Temperature design!C19",
+        "Temperature design!C23",
+        "Temperature design!C150",
+        "Temperature design!C151",
+        "Temperature design!C152",
+        "Temperature design!C153",
+    ] {
+        assert_eq!(num(&at_probe(cell, hot, corrected)), 0.0, "{cell}");
+    }
+}
+
+#[test]
+fn e12_leaves_every_default_cell_bit_for_bit() {
+    // At defaults the hot-day start (65 C) is 27.55 C under the 92.55 C limit: the guard is off
+    // and max(0, T_lim - T0) is T_lim - T0.
+    assert_bit_for_bit_at_defaults(DeviationId::E12);
+}
+
+#[test]
+fn e12_changes_its_six_cells_to_zero_above_the_limit_and_nothing_below() {
+    // Cases checked against a patched-Python rerun (the guard and max(0, .) put into
+    // temperature.compute in memory): each case above the limit changes exactly these six
+    // fields and nothing else, and the case just below changes nothing.
+    let cells = [
+        "Temperature design!C19",
+        "Temperature design!C23",
+        "Temperature design!C150",
+        "Temperature design!C151",
+        "Temperature design!C152",
+        "Temperature design!C153",
+    ];
+    let run = |overrides: &[(&str, Value)], dev: Deviations| {
+        let mut inputs = DesignInputs::defaults_with(dev);
+        for (path, value) in overrides {
+            inputs.set(path, value.clone()).expect("a valid input");
+        }
+        cell_values_for(&inputs, dev)
+    };
+    let e12 = Deviations::only(DeviationId::E12);
+    let rise = "temperature.duty.driving_rise_C";
+    // Just below: a 92.5 C start under the 92.55 C limit.
+    let below = [(rise, Value::Num(37.5))];
+    assert!(changed_cells(&run(&below, Deviations::NONE), &run(&below, e12)).is_empty());
+    // (label, inputs, the workbook's time to the limit C150 there)
+    let above = [
+        (
+            "slider maximum: 115 C start",
+            vec![(rise, Value::Num(60.0))],
+            Value::Num(-176.76221972381924),
+        ),
+        (
+            "DP460 at defaults: 65 C start above its 60 C limit",
+            vec![("temperature.adhesive.selected", Value::Int(4))],
+            Value::Num(-50.37429883884748),
+        ),
+        (
+            // Python takes a negative bench drag; the steady state then sits below the limit
+            // and the workbook reads "never": the guard is tested first.
+            "95 C start, bench drag -0.01 N m",
+            vec![
+                (rise, Value::Num(40.0)),
+                ("metal.measured_drag_Nm", Value::Num(-0.01)),
+            ],
+            Value::Text("never: steady state stays below the limit".into()),
+        ),
+    ];
+    let wanted: BTreeSet<String> = cells.iter().map(|c| (*c).to_owned()).collect();
+    for (label, overrides, workbook_c150) in &above {
+        let (workbook, corrected) = (run(overrides, Deviations::NONE), run(overrides, e12));
+        assert_eq!(
+            &workbook["Temperature design!C150"], workbook_c150,
+            "{label}"
+        );
+        assert_eq!(changed_cells(&workbook, &corrected), wanted, "{label}");
+        for cell in cells {
+            assert_eq!(corrected[cell], Value::Num(0.0), "{label}: {cell}");
+        }
+    }
+}
+
+#[test]
 fn reworded_help_is_recorded_for_real_fields() {
     let inputs = input_rows(&DesignInputs::default());
     for d in REGISTRY

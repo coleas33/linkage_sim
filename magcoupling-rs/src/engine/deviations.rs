@@ -631,7 +631,7 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E12,
         title: "No guard for a hot-day start already above the temperature limit",
         class: DeviationClass::Engine,
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &[
             "Temperature design!C19",
             "Temperature design!C23",
@@ -646,7 +646,42 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: None,
-        probes: &[],
+        probes: &[Probe {
+            label: "driving rise 40 C: hot-day start 95 C above the 92.55 C limit",
+            inputs: &[("temperature.duty.driving_rise_C", Literal::Num(40.0))],
+            expect: &[
+                CellChange {
+                    cell: "Temperature design!C19",
+                    workbook: Literal::Num(-25.83996179152416),
+                    corrected: Literal::Num(0.0),
+                },
+                CellChange {
+                    cell: "Temperature design!C23",
+                    workbook: Literal::Num(-0.003509295069490145),
+                    corrected: Literal::Num(0.0),
+                },
+                CellChange {
+                    cell: "Temperature design!C150",
+                    workbook: Literal::Num(-25.83996179152416),
+                    corrected: Literal::Num(0.0),
+                },
+                CellChange {
+                    cell: "Temperature design!C151",
+                    workbook: Literal::Num(-861.3320597174721),
+                    corrected: Literal::Num(0.0),
+                },
+                CellChange {
+                    cell: "Temperature design!C152",
+                    workbook: Literal::Num(-71.1887399460417),
+                    corrected: Literal::Num(0.0),
+                },
+                CellChange {
+                    cell: "Temperature design!C153",
+                    workbook: Literal::Num(-0.003509295069490145),
+                    corrected: Literal::Num(0.0),
+                },
+            ],
+        }],
     },
     Deviation {
         id: DeviationId::E13,
