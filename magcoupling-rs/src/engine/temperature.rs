@@ -244,7 +244,7 @@ inputs! {
                 .range(1e-12, 1e-8, 1e-13)
                 .log(),
             web_integral_T2m2: f64 = 4.14e-5 => param("T²·m²", "Rear-web end field, ∫B² dA",
-                "3D, doubled at the steel surface (correction E5: the workbook's 1.035e-5 T²·m² is the free-space field, which made the web loss 4 times too low).",
+                "3D, doubled at the steel surface (correction E5: the workbook's 1.035e-5 T²·m² includes the steel hub's image but is not doubled at the web's own surface, which made the web loss 4 times too low; the free-space field of an aluminium web is E17's 6.837e-6).",
                 "Temperature design!C121")
                 .range(1e-7, 1e-3, 1e-8)
                 .log(), // the workbook's 1.035e-5 is inside too

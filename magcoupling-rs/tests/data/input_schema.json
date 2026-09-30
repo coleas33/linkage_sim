@@ -2420,7 +2420,7 @@
       "cell": "Temperature design!C121",
       "choices": [],
       "default": 0.00001035,
-      "help": "3D, doubled at the steel surface (correction E5: the workbook's 1.035e-5 T²·m² is the free-space field, which made the web loss 4 times too low).",
+      "help": "3D, doubled at the steel surface (correction E5: the workbook's 1.035e-5 T²·m² includes the steel hub's image but is not doubled at the web's own surface, which made the web loss 4 times too low; the free-space field of an aluminium web is E17's 6.837e-6).",
       "label": "Rear-web end field, ∫B² dA",
       "path": "temperature.slip_loss.web_integral_T2m2",
       "range": {
