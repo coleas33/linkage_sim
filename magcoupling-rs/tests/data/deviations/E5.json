@@ -1,0 +1,154 @@
+{
+  "about": "Every workbook cell correction E5 changes at default inputs, as [workbook, corrected]. Written by `MAGCOUPLING_BLESS=1 cargo test --test deviations each_deviation_alone_changes_exactly_its_registered_cells`; review the diff.",
+  "changes": {
+    "Temperature design!C121": [
+      0.00001035,
+      0.0000414
+    ],
+    "Temperature design!C125": [
+      0.09140096902640166,
+      0.36560387610560663
+    ],
+    "Temperature design!C130": [
+      2.4771082543421903,
+      2.7513111614213948
+    ],
+    "Temperature design!C131": [
+      0.011827320697568866,
+      0.013136543139723558
+    ],
+    "Temperature design!C132": [
+      2.4771082543421903,
+      2.7513111614213948
+    ],
+    "Temperature design!C134": [
+      7.431324763026571,
+      8.253933484264184
+    ],
+    "Temperature design!C145": [
+      0.0030137232645768407,
+      0.0033473266421565773
+    ],
+    "Temperature design!C146": [
+      8.257027514473968,
+      9.171037204737983
+    ],
+    "Temperature design!C147": [
+      24.771082543421905,
+      27.513111614213948
+    ],
+    "Temperature design!C148": [
+      73.25702751447398,
+      74.17103720473798
+    ],
+    "Temperature design!C149": [
+      89.7710825434219,
+      92.51311161421395
+    ],
+    "Temperature design!C154": [
+      0.030137232645768404,
+      0.03347326642156577
+    ],
+    "Temperature design!C155": [
+      0.09041169793730522,
+      0.10041979926469731
+    ],
+    "Temperature design!C156": [
+      1106.0515650236287,
+      995.8195568227462
+    ],
+    "Temperature design!C157": [
+      368.68385500787616,
+      331.9398522742487
+    ],
+    "Temperature design!C161": [
+      65.18016501356736,
+      65.20010833674976
+    ],
+    "Temperature design!C169": [
+      0.24771082543421905,
+      0.2751311161421395
+    ],
+    "Temperature design!C17": [
+      73.25702751447398,
+      74.17103720473798
+    ],
+    "Temperature design!C170": [
+      0.7431324763026571,
+      0.8253933484264184
+    ],
+    "Temperature design!C171": [
+      0.0030137232645768407,
+      0.0033473266421565773
+    ],
+    "Temperature design!C172": [
+      0.009041169793730522,
+      0.010041979926469732
+    ],
+    "Temperature design!C173": [
+      14.862649526053142,
+      16.50786696852837
+    ],
+    "Temperature design!C175": [
+      0.22936187540205466,
+      0.254751033464944
+    ],
+    "Temperature design!C176": [
+      0.688085626206164,
+      0.7642531003948319
+    ],
+    "Temperature design!C177": [
+      0.24771082543421905,
+      0.2751311161421395
+    ],
+    "Temperature design!C18": [
+      89.7710825434219,
+      92.51311161421395
+    ],
+    "Temperature design!C180": [
+      65.86825063977352,
+      65.96436143714459
+    ],
+    "Temperature design!C181": [
+      36.68179922476223,
+      36.58568842739116
+    ],
+    "Temperature design!C182": [
+      26.68179922476223,
+      26.585688427391162
+    ],
+    "Temperature design!C186": [
+      2.5437238569847667,
+      2.543102967464451
+    ],
+    "Temperature design!C189": [
+      65.86825063977352,
+      65.96436143714459
+    ],
+    "Temperature design!C190": [
+      54.13174936022648,
+      54.03563856285541
+    ],
+    "Temperature design!C192": [
+      2.9252824355324814,
+      2.9245684125841183
+    ],
+    "Temperature design!C193": [
+      0.3091058776970794,
+      0.3090304290198957
+    ],
+    "Temperature design!C196": [
+      4.852706170375655,
+      4.853890941281477
+    ],
+    "Temperature design!C20": [
+      65.86825063977352,
+      65.96436143714459
+    ],
+    "Temperature design!C22": [
+      0.688085626206164,
+      0.7642531003948319
+    ]
+  },
+  "id": "E5"
+}

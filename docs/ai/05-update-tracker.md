@@ -5,6 +5,136 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-29 — Magcoupling M2: final review fix wave
+- E7 (`model::peak_off_half_pitch`): the quadratic in cos² x now takes its
+  roots without cancellation (q = −(qb + sign(qb)·√disc)/2, roots q/qa and
+  qc/q). The textbook form lost the small root when the fifth harmonic
+  vanished (|a5/a1| up to about 1.5e-13, which a ring at a fill of exactly 0.4
+  or 0.8 reaches), so E7 kept half a pitch, a local minimum: at 6 poles, no
+  back iron and a 0.4-pitch manual inner block the harmonic sum was 13,121 Pa
+  against a true peak of 32,505 Pa (pull-out 0.162 against 0.40 N·m). Default
+  cells stay bit for bit (same `None`/`Some` decisions outside the band).
+  Tests: `peak_off_half_pitch_finds_the_brute_force_maximum` (3,000 random
+  amplitude triples against a grid, a third of them in the band),
+  `a_vanishing_fifth_harmonic_does_not_lose_the_peak`, and
+  `e7_finds_the_peak_at_a_fill_of_exactly_0_4` (Calculator and Calibration).
+- DRY: the E7 gate is one function, `model::peak_angle` (with `tau_at`, the
+  a·sin(n x) term), used by `at_pull_out` (pull-out and sweep rows), the two
+  circuit sums C95 and C96, and Calibration C40-C42. The corner radius
+  √(r_face² + (w/2)²) and the Br temperature factor 1 + α (T − 20 °C) are
+  `model::corner_radius` and `model::br_factor`, used by the Calculator, the
+  sweeps, Calibration, Metal design and Temperature design. Bit for bit: every
+  result of 1,504 seeded input sets hashed identically under NONE, ALL and
+  only(E7) before and after (scratch harness, not committed).
+- `headline` reads its 15 paths with the new `ResultSet::get(path)` (results!
+  and rows! generate it, table rows as `table[i].field`) instead of building
+  all 996 result rows: 202 µs to 0.44 µs per call in release (381 to 2.6 µs in
+  debug), values bit for bit. Tests: `result_get_reads_fields_groups_and_table_rows`,
+  `result_get_agrees_with_every_result_row` (meta),
+  `get_and_headline_read_what_result_rows_lists` (every real result path, two
+  designs); the per-frame smoke test now times `compute_all` plus `headline`.
+- Never-panic (D3) pinned for non-finite values that bypass `set()`:
+  `compute_all_never_panics_on_non_finite_struct_literals` writes NaN, +inf
+  and −inf into `metal.face_gap_mm`, `clamps.boss_od_mm`,
+  `temperature.thermal.conductance_W_K` and `metal.measured_drag_Nm`, and a
+  non-finite drag with `npole = i64::MAX`, under NONE and ALL; `validate()`
+  must name exactly that path as `NotFinite`.
+- Cleanups (behaviour-neutral): `check_value` and `f64::from_value` share one
+  non-finite check (`meta::finite`); the no-op `#[allow(non_snake_case)]` on
+  `api::compute` is gone (clippy -D warnings stays clean without it); the
+  `retainers` `too_many_arguments` allow stays, since E8 made it 8 parameters,
+  with its comment saying so; `gen_differential.py` uses the clamps and sweeps
+  names it already imports (no `py_clamps`, `py_sweeps`), and the sweep probe
+  tag reads "low requirement: no row below the hot minimum" (its rows are
+  nominal or outside the OD envelope); only that tag changed in
+  `gap_sweep.json` and `pole_sweep.json`.
+- Docs: the crate README says which tests switch the corrections off (all of
+  them go through the test-only feature, not only parity and differential)
+  and lists every `tests/data/` file, `static_data.json` and `deviations/`
+  included. Not changed on purpose, recorded as open items in
+  `docs/ai/04-memory.yaml`: E4's keyed-wall term takes the bondline input
+  while the block-fit term keeps the workbook's 0.05 literal (approved
+  formula; Addendum A3), a negative end factor f_end inside the slider ranges
+  (audit M9; M4/A3 guard or GUI flag), and the `workbook-parity` feature
+  guard (a `compile_error!` with `app` would break `cargo test --features
+  app` through the self dev-dependency; M4 decides).
+
+## 2026-09-29 — Magcoupling M2: engine port complete
+- Every Python module except `fields3d` (M3) is ported to `magcoupling-rs/`,
+  one Rust module per Python module, workbook-exact with the corrections off:
+  `calibration` (23 result cells), `library`, `model` (73; `mass_estimate` 6),
+  `metal_design` (retainers 9, sheet 49), `materials` (7), `temperature` (130),
+  `clamps` (33 result cells, 25 input cells, the 165-cell screw table),
+  `sweeps` (Gap sweep 338, Pole sweep 156 table cells) and the API completion
+  (`headline`, `DesignInputs::validate`). Workbook parity covers all 1,149
+  checks: 330 result cells, 494 sweep cells, 165 screw-table cells and 160
+  default inputs (`the_port_checks_every_cell_test_parity_checks` pins the
+  totals to `test_parity.py`).
+- Harness additions: modules that read several input groups (`MODULES` in
+  `gen_differential.py`), columnar differential data (one header, one line per
+  case), table rows in the metadata model (`rows!`, `TableLayout`, synthesized
+  cells), the full run (`differential/full.json` varies all 160 inputs at
+  once, plus one case for each pair of selector choices), the `BRANCHES` table
+  (every branch of every text result is reached, and no text result lacks a
+  row), and `tests/robustness.rs` (selector codes outside their choices,
+  extreme inputs, zero measured drag; `compute_all` never panics).
+- Corrections E1 to E14 are all applied, one commit each, through the
+  deviation registry: `compute_all` always applies them, and the workbook form
+  stays reachable only through the test-only `workbook-parity` feature.
+  Headline changes at the default design: pull-out at operating temperature
+  2.647 to 2.688 N·m and governing temperature limit 92.55 to 93.06 °C (E3),
+  clamp screw M4 x 12 to M4 x 14 (E2; it protrudes 0.34 mm, and the Rust-only
+  `clamps.length_note` says so), and Temperature design C106 and C202 change
+  from "Above ..." to "Below the lap-shear strength" and "Below the fatigue
+  endurance" (E1). E3, E4 and E5 (246, 47 and 37 changed cells) are reviewed
+  golden files, `tests/data/deviations/E<k>.json`; E7 to E13 leave every
+  default cell bit for bit and carry registry probes on off-default inputs;
+  E14 rewords a help text and one README sentence, no numbers.
+- Decisions D1 to D7, the recommended option each: D1 N42SH Br = 1.30 T; D2 E1
+  as the constant C96 = 0.107 GPa (per-adhesive modulus with Addendum A5); D3
+  a selector code outside its choices never panics (NaN or "#N/A"), plus
+  `validate()` at input boundaries; D4 corrections that change more than 15
+  cells at defaults use golden files; D5 `clippy -D warnings` for
+  `magcoupling-rs` only; D6 E2's warning is the Rust-only result
+  `clamps.length_note`; D7 the harmonic set stays the workbook's 1, 3, 5 until
+  the Addendum A engine plan.
+- Equality-edge unit tests: one per module with threshold comparisons (`model`,
+  `metal_design`, `materials`, `temperature`, `clamps`, `sweeps`), each
+  comparison at exact equality with the equality asserted first; step 8 of
+  "Porting a module" in the crate README.
+- Open items (docs/ai/04-memory.yaml): merge main into `magcoupling/m2` before
+  the Addendum A engine plan (Addendum A is on main, 7a9d2e8); M3 must apply E3
+  and E5 inside `fields3d`; the Addendum A engine plan makes the harmonic set a
+  parameter.
+
+## 2026-09-29 — Magcoupling M2: engine port tracer bullet (calibration)
+- New crate `magcoupling-rs/` beside `linkage-sim-rs/` (not a workspace):
+  library `magcoupling`, pure std engine, wasm32-clean; features `gui`/`app`
+  declared empty for M4, `workbook-parity` test-only via a self
+  dev-dependency. Branch `magcoupling/m2` (from `magcoupling/m1`).
+- Metadata model (`src/engine/meta.rs`): `inputs!`/`results!` declare each
+  field once with its default and a const builder in Python's `param()`/
+  `out()` argument order, plus slider range and the Addendum A3
+  `assumption` flag; field names keep the Python spelling so dotted paths
+  equal the Python `input_schema()` paths.
+- `compat.rs`: Python/Excel semantics (py_min/py_max, CEILING/FLOOR with the
+  1e-12 guard and no -0.0, TEXT(x,"0"), float repr with half-even ties,
+  _fmt_num, f-string rounding, parity rule).
+- Deviation registry: E1-E14 from the approved M1 report, all `Planned`;
+  `Deviations::ALL` for users, `NONE`/`only(id)` for tests.
+- Calibration sheet ported; parity (23 result cells, 16 default inputs),
+  differential vs Python (300 seeded cases, every range end, both selector
+  choices, inclusive span ends), helpers corpus (~1,250 values), metadata
+  parity with the Python schema, schema and registry checks.
+- Generator `reference/magcoupling-py/tools/gen_differential.py` reads the
+  Rust slider ranges from `tests/data/input_schema.json`; `--check` guards
+  staleness. The corpus found two real Python/Rust differences (repr ties,
+  ceil of (-1, 0]).
+- `linkage-sim-rs/scripts/gate.sh` now has 7 gates: + magcoupling-rs test,
+  clippy -D warnings, wasm32 check, and the vendored Python parity suite +
+  data freshness (SKIP line when no oracle venv is found).
+- Guide: `magcoupling-rs/README.md` (porting pattern, translation rules).
+
 ## 2026-09-29 — Payload weights Task 10: hands-on checklist and plot-tab counts
 - Payload spec: appended "Hands-on checklist (robot-lift model)", one pass
   over the finished feature. Section 0 is the gate, the WASM build/serve

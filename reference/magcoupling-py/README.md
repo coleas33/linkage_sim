@@ -192,7 +192,7 @@ These come straight from the defaults. They are open design items, not code issu
 - **Hot torque.** The hot low torque with the 15 % allowance is 2.25 N·m, against the 2.5 N·m requirement. The nominal value is 2.65 N·m.
 - **Running clearance.** It's −0.10 mm after allowances, below the 0.2 mm target.
 - **Cup wall.** With 4140 at 1.5 T the cup corners need 1.9 mm; the design has 1.8 mm. Raise `metal.cup_wall_corner_mm` to 2.0 mm and recheck the cap thread.
-- **Clamp boss.** The clamp calculator uses a 25 mm boss, which takes one M4. The Metal design sheet still has 22 mm. At 22 mm only M3 fits, and two of them need a 14.5 mm clamp.
+- **Clamp boss.** The clamp calculator uses a 25 mm boss, which takes one M4. The Metal design sheet still has 22 mm. At 22 mm M4 no longer fits. Two M3 need a 14.5 mm clamp; three M2.5 need 18 mm, and from 18 mm up the calculator recommends M2.5 x 3.
 
 ## Differences from the workbook
 

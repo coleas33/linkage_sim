@@ -1,0 +1,395 @@
+{
+ "about": "Static tables of the magcoupling engine (plain data, no metadata). Written by reference/magcoupling-py/tools/gen_differential.py. Do not edit by hand.",
+ "adhesives": [
+  {
+   "cure_C": 22,
+   "design_limit_C": 120,
+   "lap_shear_MPa": 15,
+   "name": "Loctite AA 326 + SF 7649",
+   "note": "No-mix acrylic for magnet bonding; room-temperature cure; 0.10 mm bondline; service to 120 °C.",
+   "role": "Recommended"
+  },
+  {
+   "cure_C": 120,
+   "design_limit_C": 113,
+   "lap_shear_MPa": 45,
+   "name": "Loctite EA 9514",
+   "note": "One-part toughened heat-cure epoxy; Tg 133 °C; cure 60 min at 120 °C (not 150 °C).",
+   "role": "Alternative: more hot strength"
+  },
+  {
+   "cure_C": 121,
+   "design_limit_C": 177,
+   "lap_shear_MPa": 17,
+   "name": "3M Scotch-Weld 2214 Hi-Temp",
+   "note": "Rated to 177 °C but brittle (1 % elongation, 9 N/cm T-peel).",
+   "role": "Not recommended"
+  },
+  {
+   "cure_C": 23,
+   "design_limit_C": 60,
+   "lap_shear_MPa": 19,
+   "name": "3M Scotch-Weld DP460",
+   "note": "Room-temperature epoxy; T-peel collapses by 82 °C.",
+   "role": "Not recommended"
+  }
+ ],
+ "aluminium": [
+  {
+   "conductivity_S_m": 19000000.0,
+   "head_pressure_limit_MPa": 400,
+   "key_bearing_allow_MPa": 100,
+   "name": "7075-T6",
+   "shear_MPa": 331,
+   "yield_MPa": 503
+  },
+  {
+   "conductivity_S_m": 25000000.0,
+   "head_pressure_limit_MPa": 250,
+   "key_bearing_allow_MPa": 60,
+   "name": "6061-T6",
+   "shear_MPa": 207,
+   "yield_MPa": 276
+  }
+ ],
+ "engine": "magcoupling 1.0.0",
+ "harmonics": [
+  1,
+  3,
+  5
+ ],
+ "machining_steps": [
+  "1. Turn the OD and bore (H7) in one setup; cut the keyway 90° from where the slit will go.",
+  "2. With the part still solid, drill the clearance hole and counterbore on the head-side jaw, then drill and tap the far jaw, square to the slit plane at the screw offset. Drilling before slitting keeps the holes aligned.",
+  "3. Cut the relief slot, then the slit (slitting saw), leaving the hinge.",
+  "4. Deburr, anodize, chase the thread, and assemble dry with Loctite 243 on the screw at the tightening torque."
+ ],
+ "magnet_library": [
+  {
+   "br_T": 1.29,
+   "grade": "N42SH",
+   "length_mm": 12.7,
+   "notes": "1/2 x 1/4 x 1/8 in, magnetized through 1/8 in",
+   "part": "B842SH",
+   "shape": "block",
+   "thickness_mm": 3.17,
+   "tmax_C": 150,
+   "vendor": "K&J",
+   "width_mm": 6.35
+  },
+  {
+   "br_T": 1.3,
+   "grade": "N42",
+   "length_mm": 12.7,
+   "notes": "",
+   "part": "B842",
+   "shape": "block",
+   "thickness_mm": 3.17,
+   "tmax_C": 80,
+   "vendor": "K&J",
+   "width_mm": 6.35
+  },
+  {
+   "br_T": 1.45,
+   "grade": "N52",
+   "length_mm": 12.7,
+   "notes": "",
+   "part": "B842-N52",
+   "shape": "block",
+   "thickness_mm": 3.17,
+   "tmax_C": 80,
+   "vendor": "K&J",
+   "width_mm": 6.35
+  },
+  {
+   "br_T": 1.3,
+   "grade": "N42",
+   "length_mm": 12.7,
+   "notes": "1/2 x 1/8 x 1/8 in",
+   "part": "B822",
+   "shape": "block",
+   "thickness_mm": 3.17,
+   "tmax_C": 80,
+   "vendor": "K&J",
+   "width_mm": 3.17
+  },
+  {
+   "br_T": 1.3,
+   "grade": "N42",
+   "length_mm": 12.7,
+   "notes": "1/2 x 3/8 x 1/8 in",
+   "part": "B862",
+   "shape": "block",
+   "thickness_mm": 3.17,
+   "tmax_C": 80,
+   "vendor": "K&J",
+   "width_mm": 9.5
+  },
+  {
+   "br_T": 1.3,
+   "grade": "N42",
+   "length_mm": 12.7,
+   "notes": "1/2 x 1/2 x 1/8 in",
+   "part": "B882",
+   "shape": "block",
+   "thickness_mm": 3.17,
+   "tmax_C": 80,
+   "vendor": "K&J",
+   "width_mm": 12.7
+  },
+  {
+   "br_T": 1.45,
+   "grade": "N52",
+   "length_mm": 12.7,
+   "notes": "",
+   "part": "B882-N52",
+   "shape": "block",
+   "thickness_mm": 3.17,
+   "tmax_C": 80,
+   "vendor": "K&J",
+   "width_mm": 12.7
+  },
+  {
+   "br_T": 1.3,
+   "grade": "N42",
+   "length_mm": 12.7,
+   "notes": "1/2 x 3/8 x 1/16 in",
+   "part": "B861",
+   "shape": "block",
+   "thickness_mm": 1.59,
+   "tmax_C": 80,
+   "vendor": "K&J",
+   "width_mm": 9.5
+  },
+  {
+   "br_T": 1.3,
+   "grade": "N42",
+   "length_mm": 12.7,
+   "notes": "1/2 x 1/2 x 1/16 in (check stock)",
+   "part": "B881",
+   "shape": "block",
+   "thickness_mm": 1.59,
+   "tmax_C": 80,
+   "vendor": "K&J",
+   "width_mm": 12.7
+  },
+  {
+   "br_T": 1.3,
+   "grade": "N42",
+   "length_mm": 6.35,
+   "notes": "1/4 x 1/4 x 1/8 in",
+   "part": "B442",
+   "shape": "block",
+   "thickness_mm": 3.17,
+   "tmax_C": 80,
+   "vendor": "K&J",
+   "width_mm": 6.35
+  },
+  {
+   "br_T": 1.29,
+   "grade": "N42SH",
+   "length_mm": 25.4,
+   "notes": "1 x 1/4 x 1/8 in",
+   "part": "BX042SH",
+   "shape": "block",
+   "thickness_mm": 3.17,
+   "tmax_C": 150,
+   "vendor": "K&J",
+   "width_mm": 6.35
+  },
+  {
+   "br_T": 1.29,
+   "grade": "N42SH",
+   "length_mm": 25.4,
+   "notes": "1 x 1/2 x 1/8 in",
+   "part": "BX082SH",
+   "shape": "block",
+   "thickness_mm": 3.17,
+   "tmax_C": 150,
+   "vendor": "K&J",
+   "width_mm": 12.7
+  },
+  {
+   "br_T": 1.42,
+   "grade": "N50",
+   "length_mm": 13,
+   "notes": "22.60 OD x 19.97 ID x 13, 29.8 deg, 12 pcs; width = mean arc length",
+   "part": "M5044",
+   "shape": "arc",
+   "thickness_mm": 1.31,
+   "tmax_C": 80,
+   "vendor": "SuperMagnetMan",
+   "width_mm": 5.5
+  },
+  {
+   "br_T": 1.42,
+   "grade": "N50M",
+   "length_mm": 6.56,
+   "notes": "22.70 OD x 20.47 ID x 6.56, 12 pcs",
+   "part": "M5045",
+   "shape": "arc",
+   "thickness_mm": 1.12,
+   "tmax_C": 100,
+   "vendor": "SuperMagnetMan",
+   "width_mm": 5.6
+  },
+  {
+   "br_T": 1.42,
+   "grade": "N50",
+   "length_mm": 15,
+   "notes": "26.60 OD x 23.26 ID x 15, 12 pcs",
+   "part": "M5026",
+   "shape": "arc",
+   "thickness_mm": 1.67,
+   "tmax_C": 80,
+   "vendor": "SuperMagnetMan",
+   "width_mm": 6.4
+  }
+ ],
+ "screw_sizes": [
+  {
+   "As_mm2": 3.39,
+   "d_mm": 2.5,
+   "head_h_mm": 2.5,
+   "head_mm": 4.5,
+   "hex_mm": 2,
+   "hole_mm": 2.9,
+   "name": "M2.5",
+   "pitch_mm": 0.45
+  },
+  {
+   "As_mm2": 5.03,
+   "d_mm": 3,
+   "head_h_mm": 3,
+   "head_mm": 5.5,
+   "hex_mm": 2.5,
+   "hole_mm": 3.4,
+   "name": "M3",
+   "pitch_mm": 0.5
+  },
+  {
+   "As_mm2": 8.78,
+   "d_mm": 4,
+   "head_h_mm": 4,
+   "head_mm": 7.0,
+   "hex_mm": 3,
+   "hole_mm": 4.5,
+   "name": "M4",
+   "pitch_mm": 0.7
+  },
+  {
+   "As_mm2": 14.2,
+   "d_mm": 5,
+   "head_h_mm": 5,
+   "head_mm": 8.5,
+   "hex_mm": 4,
+   "hole_mm": 5.5,
+   "name": "M5",
+   "pitch_mm": 0.8
+  },
+  {
+   "As_mm2": 20.1,
+   "d_mm": 6,
+   "head_h_mm": 6,
+   "head_mm": 10.0,
+   "hex_mm": 5,
+   "hole_mm": 6.6,
+   "name": "M6",
+   "pitch_mm": 1.0
+  }
+ ],
+ "sweeps": {
+  "gap_sweep_corner_gaps_mm": [
+   0.5,
+   0.75,
+   1,
+   1.25,
+   1.5,
+   1.75,
+   2,
+   2.25,
+   2.5,
+   2.75,
+   3,
+   3.5,
+   4
+  ],
+  "pole_sweep_poles": [
+   6,
+   8,
+   10,
+   12,
+   14,
+   16
+  ]
+ },
+ "table_columns": [
+  "C",
+  "D",
+  "E",
+  "F",
+  "G"
+ ],
+ "validation_items": [
+  [
+   "Prototype metrology",
+   "Open",
+   "Record corner gap, flat gap, radii, overlap, magnet orientation and magnet temperature."
+  ],
+  [
+   "Torque repeatability",
+   "Open",
+   "Slow torque-angle tests in both directions and multiple positions."
+  ],
+  [
+   "Metal A/B test",
+   "Open",
+   "Test the metal candidate at the same measured face gap and temperature."
+  ],
+  [
+   "Hot / cold torque",
+   "Open",
+   "Verify minimum 2.5 N·m and gearbox-safe torque at service temperature limits."
+  ],
+  [
+   "Slip loss test",
+   "Open",
+   "Measure drag at the design slip speed; add laminations only if needed."
+  ],
+  [
+   "Retention qualification",
+   "Open",
+   "Magnetic forces, hoop stress, liner buckling, attachment fatigue, bond-loss capture."
+  ],
+  [
+   "Lifetime cycling",
+   "Open",
+   "Convert slip events to magnetic load cycles; test reversals, shock, vibration, dwell."
+  ],
+  [
+   "Environmental test",
+   "Open",
+   "Thermal cycling, humidity/condensation and ingress, then recheck torque."
+  ],
+  [
+   "Robot integration",
+   "Open",
+   "Record gearbox speed and torque, bus voltage, swing tracking, re-engagement."
+  ],
+  [
+   "Fault handling",
+   "Open",
+   "Detect sustained clutch slip using wheel/vehicle feedback."
+  ],
+  [
+   "Control tuning",
+   "Open",
+   "Measure resonance and slip ripple; tune the traction loop."
+  ],
+  [
+   "Production acceptance",
+   "Open",
+   "Measure each assembly or establish process capability."
+  ]
+ ]
+}
