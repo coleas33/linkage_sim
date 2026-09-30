@@ -11,6 +11,8 @@
 //! ```
 //!
 //! then regenerate the differential data (see `magcoupling-rs/README.md`).
+//! Rust-only inputs (`InputMeta::rust_only`) are exported with `"rust_only": true`;
+//! the generator leaves them out, so the Python engine never sees them.
 
 mod common;
 
@@ -42,6 +44,7 @@ fn schema_json() -> String {
                 "choices": m.choices.iter().map(|(code, text)| json!([code, text])).collect::<Vec<_>>(),
                 "range": m.range.map(|r| json!({"min": r.min, "max": r.max, "step": r.step, "log": r.log})),
                 "assumption": m.assumption,
+                "rust_only": m.rust_only,
             })
         })
         .collect();
@@ -208,7 +211,16 @@ fn every_field_has_a_label_and_well_formed_unique_path_and_cell() {
         );
 
     let mut failures = Vec::new();
-    // A Rust-only result has no Python counterpart, so no workbook cell either.
+    // A Rust-only input or result has no Python counterpart, so no workbook cell
+    // either; every other input names its workbook cell.
+    for r in &inputs {
+        assert_eq!(
+            r.meta.rust_only,
+            r.meta.cell.is_none(),
+            "{}: an input is Rust-only exactly when it has no cell",
+            r.path
+        );
+    }
     for r in results.iter().filter(|r| r.meta.rust_only) {
         assert!(
             r.meta.cell.is_none(),

@@ -8,7 +8,8 @@
 //!
 //! Where an applied correction rewords a help text (its registry entry's
 //! `workbook_help`), Python still has the workbook text, so that field's help
-//! is compared against the recorded workbook text instead.
+//! is compared against the recorded workbook text instead. Rust-only inputs and
+//! results (`rust_only`) have no Python counterpart and are skipped.
 
 mod common;
 
@@ -94,7 +95,10 @@ fn ported_inputs_carry_the_python_metadata_and_defaults() {
     let python = python_rows();
     let reworded = reworded_help();
     let mut failures = Vec::new();
-    for row in input_rows(&DesignInputs::defaults_with(Deviations::NONE)) {
+    for row in input_rows(&DesignInputs::defaults_with(Deviations::NONE))
+        .into_iter()
+        .filter(|r| !r.meta.rust_only)
+    {
         let Some(py) = python.get(&row.path) else {
             failures.push(format!("{}: not a Python input", row.path));
             continue;
@@ -128,6 +132,21 @@ fn ported_inputs_carry_the_python_metadata_and_defaults() {
         }
     }
     assert!(failures.is_empty(), "{}", report(&failures));
+}
+
+#[test]
+fn rust_only_inputs_are_unknown_to_python() {
+    // A Rust-only input that Python also has would be skipped by the metadata test above.
+    let python = python_rows();
+    let clashes: Vec<String> = input_rows(&DesignInputs::default())
+        .into_iter()
+        .filter(|r| r.meta.rust_only && python.contains_key(&r.path))
+        .map(|r| r.path)
+        .collect();
+    assert!(
+        clashes.is_empty(),
+        "Rust-only inputs Python has: {clashes:?}"
+    );
 }
 
 #[test]
@@ -301,6 +320,7 @@ fn schemas_list_fields_in_the_python_order() {
     };
     let inputs: Vec<String> = input_rows(&DesignInputs::default())
         .into_iter()
+        .filter(|r| !r.meta.rust_only)
         .map(|r| r.path)
         .collect();
     let results: Vec<String> = result_rows(&compute_all(&DesignInputs::default()))
