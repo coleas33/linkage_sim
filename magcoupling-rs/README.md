@@ -47,9 +47,12 @@ Every correction below is approved in the M1 math audit report
 id) and registered in `src/engine/deviations.rs` with the cells it changes and
 their workbook and corrected values (for E3, E4 and E5, which change 246, 47 and
 37 cells, in the reviewed golden files `tests/data/deviations/E3.json`, `E4.json` and `E5.json`). The corrections are always on for users
-(`compute_all`); only the parity and differential tests switch them off,
-through the test-only `workbook-parity` feature, to compare against the workbook
-and the Python engine exactly.
+(`compute_all`). Only tests switch them off, through the test-only
+`workbook-parity` feature (`compute_all_with`, `Deviations::NONE`,
+`Deviations::only`, `DesignInputs::defaults_with`): the parity and differential
+tests to compare against the workbook and the Python engine exactly, and the
+registry, metadata, robustness and unit tests to isolate one correction or to
+start from the workbook's defaults.
 
 | Id | Cells | Workbook | This port | Report |
 |---|---|---|---|---|
@@ -89,7 +92,7 @@ Results can be +inf (E13); exporters must handle it.
 | `src/engine/sweeps.rs` | `Gap sweep` (338 table cells) and `Pole sweep` (156) sheets |
 | `src/engine/api.rs` | `DesignInputs`, `DesignResults`, `compute_all`, `headline` (with `HEADLINE`), `DesignInputs::validate` |
 | `tests/` | Parity, differential, metadata and registry tests (below) |
-| `tests/data/` | Workbook snapshot copy, exported schemas, differential data |
+| `tests/data/` | Workbook snapshot copy (`reference_values.json`), exported schemas (`input_schema.json`, `python_schema.json`), the Python static tables (`static_data.json`), differential data (`differential/`) and the golden files of the broad corrections (`deviations/E3.json`, `E4.json`, `E5.json`) |
 
 Not a Cargo workspace member: `linkage-sim-rs` will depend on it by path.
 Features: `gui` and `app` are declared for M4 and empty. `workbook-parity` is

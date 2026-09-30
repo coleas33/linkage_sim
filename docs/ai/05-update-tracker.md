@@ -48,6 +48,16 @@ Reverse chronological (newest at top).
   tag reads "low requirement: no row below the hot minimum" (its rows are
   nominal or outside the OD envelope); only that tag changed in
   `gap_sweep.json` and `pole_sweep.json`.
+- Docs: the crate README says which tests switch the corrections off (all of
+  them go through the test-only feature, not only parity and differential)
+  and lists every `tests/data/` file, `static_data.json` and `deviations/`
+  included. Not changed on purpose, recorded as open items in
+  `docs/ai/04-memory.yaml`: E4's keyed-wall term takes the bondline input
+  while the block-fit term keeps the workbook's 0.05 literal (approved
+  formula; Addendum A3), a negative end factor f_end inside the slider ranges
+  (audit M9; M4/A3 guard or GUI flag), and the `workbook-parity` feature
+  guard (a `compile_error!` with `app` would break `cargo test --features
+  app` through the self dev-dependency; M4 decides).
 
 ## 2026-09-29 — Magcoupling M2: engine port complete
 - Every Python module except `fields3d` (M3) is ported to `magcoupling-rs/`,
