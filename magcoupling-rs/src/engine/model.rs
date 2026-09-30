@@ -10,11 +10,12 @@
 //! more harmonics belongs to the Addendum A engine plan.
 //!
 //! Deviations touching this sheet (see
-//! [`crate::engine::deviations::REGISTRY`]): E3 is applied (the N42SH
+//! [`crate::engine::deviations::REGISTRY`]): applied are E3 (the N42SH
 //! remanence, via `resolve_magnets`, and the manual Br defaults C17 and C27),
-//! and E6 (Calculator!C63, the ring wall at the flats without the outer
-//! bondline); planned are E7 (pull-out over angle), E8 (Calculator!C9 and
-//! C111), E9 (masses), E10 (Calculator!C103).
+//! E6 (Calculator!C63, the ring wall at the flats without the outer
+//! bondline) and E7 (pull-out at the maximum over angle,
+//! [`peak_off_half_pitch`] and `at_pull_out`, shared with the sweeps); planned
+//! are E8 (Calculator!C9 and C111), E9 (masses), E10 (Calculator!C103).
 
 use std::f64::consts::PI;
 
@@ -400,6 +401,72 @@ pub fn shear_stress(
     })
 }
 
+/// E7: the electrical angle of the true pull-out, when half a pole pitch is not it.
+///
+/// Torque against electrical angle x is T(x) = a1 sin x + a3 sin 3x + a5 sin 5x,
+/// `a` the per-harmonic amplitudes. Half a pitch (x = π/2) is always a stationary
+/// point, and the workbook evaluates every harmonic there. The other stationary
+/// points solve dT/dx = 0; with c = cos x,
+/// dT/dx = c·[(a1 − 9 a3 + 25 a5) + (12 a3 − 100 a5) c² + 80 a5 c⁴],
+/// a quadratic in u = c². T is symmetric about π/2 (odd harmonics), so
+/// x in [0, π/2] suffices. Returns `None` when half a pitch is the maximum, so
+/// callers keep the workbook expression and default outputs stay bit-identical;
+/// otherwise the angle whose torque exceeds the half-pitch torque by more than
+/// 1e-12 relative. Valid for the harmonic set [1, 3, 5] only (`HARMONICS`); the
+/// Addendum A plan generalizes it with the harmonic parameter (decision D7).
+pub fn peak_off_half_pitch(a: [f64; 3]) -> Option<f64> {
+    let [a1, a3, a5] = a;
+    let torque = |x: f64| a1 * x.sin() + a3 * (3.0 * x).sin() + a5 * (5.0 * x).sin();
+    let half_pitch = a1 - a3 + a5; // sin(π/2) = 1, sin(3π/2) = −1, sin(5π/2) = 1
+    let (qa, qb, qc) = (80.0 * a5, 12.0 * a3 - 100.0 * a5, a1 - 9.0 * a3 + 25.0 * a5);
+    let roots: Vec<f64> = if qa != 0.0 {
+        let disc = qb * qb - 4.0 * qa * qc;
+        if disc < 0.0 {
+            Vec::new()
+        } else {
+            vec![
+                (-qb + disc.sqrt()) / (2.0 * qa),
+                (-qb - disc.sqrt()) / (2.0 * qa),
+            ]
+        }
+    } else if qb != 0.0 {
+        vec![-qc / qb]
+    } else {
+        Vec::new()
+    };
+    roots
+        .into_iter()
+        .filter(|u| (0.0..=1.0).contains(u))
+        .map(|u| u.sqrt().acos())
+        .map(|x| (x, torque(x)))
+        .filter(|&(_, t)| t - half_pitch > 1e-12 * half_pitch.abs())
+        .max_by(|p, q| p.1.total_cmp(&q.1))
+        .map(|(x, _)| x)
+}
+
+/// E7 for one circuit: every harmonic's `tau` at the true pull-out angle when
+/// half a pitch is not the maximum ([`peak_off_half_pitch`] on the amplitudes
+/// B_in,n·B_on,n/(2μ0)·S_n of the circuit `backiron` selects). Returns `h`
+/// unchanged, bit for bit, when E7 is off or half a pitch is the maximum.
+/// Shared by [`compute`] and the sweep rows.
+pub(crate) fn at_pull_out(
+    h: [Harmonic; 3],
+    backiron: i64,
+    mu0: f64,
+    dev: Deviations,
+) -> [Harmonic; 3] {
+    let amplitude = |x: &Harmonic| x.bi * x.bo / (2.0 * mu0) * x.s(backiron);
+    let mut h_pull = h;
+    if dev.is_on(DeviationId::E7)
+        && let Some(x) = peak_off_half_pitch(h.map(|hn| amplitude(&hn)))
+    {
+        for hn in h_pull.iter_mut() {
+            hn.tau = amplitude(hn) * (f64::from(hn.n) * x).sin();
+        }
+    }
+    h_pull
+}
+
 /// Calculator sheet. Linked values come from Metal design, Calibration and Materials (see `api`).
 #[allow(non_snake_case, clippy::too_many_arguments)] // Python names and signature
 pub fn compute(
@@ -495,17 +562,33 @@ pub fn compute(
         ci.backiron,
         ci.mu0,
     );
-    let tau = h.iter().fold(0.0, |acc, x| acc + x.tau); // Python sum(): left fold from 0
+    // E7: every harmonic at the true pull-out angle when half a pitch is not the maximum.
+    // `h` (the half-pitch terms) stays for the per-circuit sums below.
+    let h_pull = at_pull_out(h, ci.backiron, ci.mu0, dev);
+    let tau = h_pull.iter().fold(0.0, |acc, x| acc + x.tau); // Python sum(): left fold from 0
     let AL = 2.0 * PI * (R_g / 1000.0).powi(2) * (L / 1000.0);
     let T2D = tau * AL;
     let f_end = 1.0 - ci.c_end * tau_p / L;
     let T_pull = T2D * f_end * f_cal;
     let T_pull20 = T_pull * (mi.br_T * mo.br_T) / (bri * bro);
     // sum(bi * bo * S * sin(n pi/2) for n) / (2 mu0) * ...: note S inside the product, /(2 mu0) after the sum
+    // E7: each circuit at the maximum of its own torque-angle curve.
     let circuit = |s: fn(&Harmonic) -> f64| {
-        h.iter().fold(0.0, |acc, x| {
-            acc + x.bi * x.bo * s(x) * (f64::from(x.n) * PI / 2.0).sin()
-        })
+        let coefficients = h.map(|x| x.bi * x.bo * s(&x));
+        let peak = if dev.is_on(DeviationId::E7) {
+            peak_off_half_pitch(coefficients)
+        } else {
+            None
+        };
+        match peak {
+            Some(x) => h
+                .iter()
+                .zip(coefficients)
+                .fold(0.0, |acc, (hn, c)| acc + c * (f64::from(hn.n) * x).sin()),
+            None => h.iter().fold(0.0, |acc, x| {
+                acc + x.bi * x.bo * s(x) * (f64::from(x.n) * PI / 2.0).sin()
+            }),
+        }
     };
     let T_iron = circuit(|x| x.s_iron) / (2.0 * ci.mu0) * AL * f_end * f_cal_original;
     let T_noiron = circuit(|x| x.s_free) / (2.0 * ci.mu0) * AL * f_end * f_cal;
@@ -534,7 +617,7 @@ pub fn compute(
         };
         text.to_owned()
     };
-    let [h1, h3, h5] = h;
+    let [h1, h3, h5] = h_pull;
 
     ModelResults {
         inner_length_mm: mi.length_mm,
@@ -774,6 +857,57 @@ mod tests {
                 assert!(close(wall(dev), 1.8), "{bond} {dev:?}");
             }
         }
+    }
+
+    #[test]
+    fn half_pitch_stays_the_peak_when_the_third_harmonic_is_small() {
+        assert_eq!(peak_off_half_pitch([1.0, -0.011, 0.001]), None); // default design: A3/A1 = -0.011
+        assert_eq!(peak_off_half_pitch([1.0, 0.0, 0.0]), None);
+    }
+
+    #[test]
+    fn a_large_third_harmonic_moves_the_peak_and_raises_it() {
+        let a = [1.0, 0.2, 0.0]; // A1 < 9 A3: half a pitch is a local minimum
+        let x = peak_off_half_pitch(a).expect("the peak moves");
+        let t = |x: f64| a[0] * x.sin() + a[1] * (3.0 * x).sin() + a[2] * (5.0 * x).sin();
+        assert!(x > 0.0 && x < std::f64::consts::FRAC_PI_2);
+        assert!(t(x) > t(std::f64::consts::FRAC_PI_2));
+        // stationary: dT/dx = 0 at the returned angle
+        let slope = a[0] * x.cos() + 3.0 * a[1] * (3.0 * x).cos() + 5.0 * a[2] * (5.0 * x).cos();
+        assert!(slope.abs() < 1e-9, "{slope}");
+    }
+
+    #[test]
+    fn e7_circuit_sums_find_the_same_peak_as_the_pull_out() {
+        // 6 poles on the default hub (audit row E7): the peak leaves half a pitch in both
+        // circuits. Each circuit sum (C95 steel, C96 no iron) finds its own peak and must
+        // agree with the pull-out of the circuit `backiron` selects, as at half a pitch.
+        let e7 = Deviations::only(DeviationId::E7);
+        for backiron in [1, 0] {
+            let ci = CouplingInputs {
+                npole: 6,
+                backiron,
+                ..CouplingInputs::default()
+            };
+            let (off, on) = (at(&ci), at_with(&ci, 0.05, e7));
+            let own = if backiron == 1 {
+                on.pullout_iron_Nm
+            } else {
+                on.pullout_noiron_Nm
+            };
+            assert!(
+                close(own, on.pullout_Nm),
+                "{backiron}: {own} vs {}",
+                on.pullout_Nm
+            );
+            assert!(on.pullout_Nm > off.pullout_Nm, "{backiron}");
+            assert!(on.pullout_iron_Nm > off.pullout_iron_Nm, "{backiron}");
+            assert!(on.pullout_noiron_Nm > off.pullout_noiron_Nm, "{backiron}");
+            assert_eq!(on.tau_Pa, 0.0 + on.tau1_Pa + on.tau3_Pa + on.tau5_Pa);
+        }
+        // Default design (10 poles, steel): half a pitch is the peak; E7 changes no bit.
+        let ci = CouplingInputs::default();
+        assert_eq!(at_with(&ci, 0.05, e7), at(&ci));
     }
 
     #[test]

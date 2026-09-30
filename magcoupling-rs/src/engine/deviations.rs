@@ -21,6 +21,10 @@
 //!   (more than 15 changed cells, decision D4) names a reviewed golden file in
 //!   `changes_file` instead (E3: `tests/data/deviations/E3.json`, E4:
 //!   `tests/data/deviations/E4.json`, E5: `tests/data/deviations/E5.json`).
+//! - **Probes.** A correction that changes nothing at default inputs (E7 to
+//!   E13) lists `probes`: input overrides on which it shows (the report's
+//!   off-default example) and the cells it changes there, with the workbook
+//!   and the corrected value.
 //!
 //! # The test-only switch
 //!
@@ -143,6 +147,18 @@ pub struct CellChange {
     pub corrected: Literal,
 }
 
+/// Inputs on which a correction that is neutral at defaults shows (the report's
+/// off-default example), and the cells it changes there.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Probe {
+    /// What the inputs represent (the report's example).
+    pub label: &'static str,
+    /// Input overrides by path, applied to the defaults.
+    pub inputs: &'static [(&'static str, Literal)],
+    /// Cells with their workbook value and corrected value for these inputs.
+    pub expect: &'static [CellChange],
+}
+
 /// One approved correction.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Deviation {
@@ -172,6 +188,8 @@ pub struct Deviation {
     /// `MAGCOUPLING_BLESS=1 cargo test --test deviations each_deviation_alone_changes_exactly_its_registered_cells` and reviewed as a diff.
     /// `changes_at_defaults` stays empty for such entries.
     pub changes_file: Option<&'static str>,
+    /// Off-default checks for corrections neutral at defaults (E7 to E13).
+    pub probes: &'static [Probe],
 }
 
 impl Deviation {
@@ -236,6 +254,7 @@ pub const REGISTRY: &[Deviation] = &[
             },
         ],
         changes_file: None,
+        probes: &[],
     },
     Deviation {
         id: DeviationId::E2,
@@ -282,6 +301,7 @@ pub const REGISTRY: &[Deviation] = &[
             },
         ],
         changes_file: None,
+        probes: &[],
     },
     Deviation {
         id: DeviationId::E3,
@@ -306,6 +326,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: Some("tests/data/deviations/E3.json"),
+        probes: &[],
     },
     Deviation {
         id: DeviationId::E4,
@@ -326,6 +347,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: Some("tests/data/deviations/E4.json"),
+        probes: &[],
     },
     Deviation {
         id: DeviationId::E5,
@@ -347,6 +369,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_help: &[("temperature.slip_loss.web_integral_T2m2", "3D.")],
         changes_at_defaults: &[],
         changes_file: Some("tests/data/deviations/E5.json"),
+        probes: &[],
     },
     Deviation {
         id: DeviationId::E6,
@@ -363,12 +386,13 @@ pub const REGISTRY: &[Deviation] = &[
             corrected: Literal::Num(2.7232323028345142),
         }],
         changes_file: None,
+        probes: &[],
     },
     Deviation {
         id: DeviationId::E7,
         title: "Pull-out is taken at half a pole pitch, which is not always the maximum",
         class: DeviationClass::Engine,
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &[
             "Calculator!C76",
             "Calculator!C82",
@@ -389,6 +413,38 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: None,
+        probes: &[
+            Probe {
+                label: "6 poles on the default hub, steel circuit (report: 0.861 -> 0.911 N m)",
+                inputs: &[("coupling.npole", Literal::Int(6))],
+                expect: &[
+                    CellChange {
+                        cell: "Calculator!C89",
+                        workbook: Literal::Num(69917.71639509343),
+                        corrected: Literal::Num(73953.7345241203),
+                    },
+                    CellChange {
+                        cell: "Calculator!C93",
+                        workbook: Literal::Num(0.8611577121363674),
+                        corrected: Literal::Num(0.9108682621562417),
+                    },
+                    CellChange {
+                        cell: "Gap sweep!X6",
+                        workbook: Literal::Num(0.94859431918547),
+                        corrected: Literal::Num(1.038687728764382),
+                    },
+                ],
+            },
+            Probe {
+                label: "12-magnet no-iron prototype (calibration)",
+                inputs: &[("calibration.total_magnets", Literal::Int(12))],
+                expect: &[CellChange {
+                    cell: "Calibration!C44",
+                    workbook: Literal::Num(0.3518120782396669),
+                    corrected: Literal::Num(0.4420296708028627),
+                }],
+            },
+        ],
     },
     Deviation {
         id: DeviationId::E8,
@@ -407,6 +463,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: None,
+        probes: &[],
     },
     Deviation {
         id: DeviationId::E9,
@@ -425,6 +482,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: None,
+        probes: &[],
     },
     Deviation {
         id: DeviationId::E10,
@@ -445,6 +503,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: None,
+        probes: &[],
     },
     Deviation {
         id: DeviationId::E11,
@@ -457,6 +516,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: None,
+        probes: &[],
     },
     Deviation {
         id: DeviationId::E12,
@@ -477,6 +537,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: None,
+        probes: &[],
     },
     Deviation {
         id: DeviationId::E13,
@@ -490,6 +551,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: None,
+        probes: &[],
     },
     Deviation {
         id: DeviationId::E14,
@@ -504,6 +566,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: None,
+        probes: &[],
     },
 ];
 
@@ -610,6 +673,7 @@ mod tests {
                 "{} is Planned but names a golden file",
                 d.id
             );
+            assert!(d.probes.is_empty(), "{} is Planned but has probes", d.id);
         }
     }
 
@@ -684,6 +748,7 @@ mod tests {
             workbook_help: &[],
             changes_at_defaults: &[],
             changes_file: None,
+            probes: &[],
         }];
 
         #[test]

@@ -16,15 +16,17 @@
 //!   them) and `compute` never reads them: it uses the literals 1, 1.5 and 0.5.
 //!   They are omitted here, and the literals are kept.
 //! - Deviations touching this sheet: E3 is applied (the Calibration!C21 default
-//!   follows the corrected N42SH remanence, 1.30 T); E7 (the τ_n harmonic sum)
-//!   is planned, see [`crate::engine::deviations::REGISTRY`].
+//!   follows the corrected N42SH remanence, 1.30 T), and so is E7 (the τ_n
+//!   harmonic sum, C40-C42, at the maximum over angle), see
+//!   [`crate::engine::deviations::REGISTRY`].
 
 use std::f64::consts::PI;
 
 use super::compat::py_min;
 use super::constants::MU0;
-use super::deviations::Deviations;
+use super::deviations::{DeviationId, Deviations};
 use super::meta::{NumOrText, inputs, out, param, results};
+use super::model::peak_off_half_pitch;
 
 inputs! {
     /// Prototype inputs (Calibration!C5:C25, C47:C48).
@@ -118,12 +120,9 @@ pub const OUTSIDE_RANGE: &str = "outside range";
 /// Text of Calibration!C50 when C49 is [`OUTSIDE_RANGE`].
 pub const NOT_APPLICABLE: &str = "n.a.";
 
-/// The Calibration sheet. Line by line the Python `calibration.compute`.
-///
-/// `_dev` is unused until a correction to this sheet is applied (E7 is planned
-/// here); every module's `compute` takes it so applying one changes no
-/// signature.
-pub fn compute(c: &CalibrationInputs, _dev: Deviations) -> CalibrationResults {
+/// The Calibration sheet. Line by line the Python `calibration.compute`, with
+/// E7 (the τ_n harmonic sum at the maximum over angle) when `dev` has it on.
+pub fn compute(c: &CalibrationInputs, dev: Deviations) -> CalibrationResults {
     let poles = c.total_magnets as f64 / 2.0;
     let r_face = c.apothem_mm + c.magnet_thickness_mm;
     let r_corner = (r_face.powi(2) + (c.magnet_width_mm / 2.0).powi(2)).sqrt();
@@ -147,7 +146,8 @@ pub fn compute(c: &CalibrationInputs, _dev: Deviations) -> CalibrationResults {
     let tau_p = 2.0 * PI * r_g / poles;
     let f_end = 1.0 - c.c_end * tau_p / c.magnet_length_mm;
 
-    let tau_n = |n: u32| -> f64 {
+    // Python's tau_n up to its last factor, sin(n pi/2): the harmonic's amplitude.
+    let amp_n = |n: u32| -> f64 {
         let n = f64::from(n);
         let k = n * (poles / 2.0) / (r_g / 1000.0);
         (br_t * 4.0 / (n * PI)).powi(2)
@@ -157,10 +157,24 @@ pub fn compute(c: &CalibrationInputs, _dev: Deviations) -> CalibrationResults {
             * (1.0 - (-k * c.magnet_thickness_mm / 1000.0).exp()).powi(2)
             * (-k * g / 1000.0).exp()
             / 2.0
-            * (n * PI / 2.0).sin()
     };
 
-    let (t1, t3, t5) = (tau_n(1), tau_n(3), tau_n(5));
+    // E7: every harmonic at the true pull-out angle when half a pitch is not the maximum.
+    let amps = [amp_n(1), amp_n(3), amp_n(5)];
+    let peak = if dev.is_on(DeviationId::E7) {
+        peak_off_half_pitch(amps)
+    } else {
+        None
+    };
+    let tau_at = |a: f64, n: f64| match peak {
+        Some(x) => a * (n * x).sin(),
+        None => a * (n * PI / 2.0).sin(), // the workbook expression, bit for bit
+    };
+    let (t1, t3, t5) = (
+        tau_at(amps[0], 1.0),
+        tau_at(amps[1], 3.0),
+        tau_at(amps[2], 5.0),
+    );
     let t2d = (t1 + t3 + t5) * 2.0 * PI * (r_g / 1000.0).powi(2) * (c.magnet_length_mm / 1000.0);
     let model = t2d * f_end * c.f_cal_original;
     let (interp, interp_err) = if (1.0..=1.5).contains(&corner_gap) {

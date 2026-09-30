@@ -22,7 +22,7 @@ use common::{json_to_value, read_json, read_text, repo_path, report, snapshot, v
 use magcoupling::engine::api::{DesignInputs, compute_all_with};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::{
-    Deviation, DeviationClass, DeviationId, DeviationStatus, Deviations, REGISTRY, REPORT,
+    Deviation, DeviationClass, DeviationId, DeviationStatus, Deviations, Probe, REGISTRY, REPORT,
 };
 use magcoupling::engine::meta::{InputSet, Value, input_rows, result_rows};
 
@@ -144,6 +144,19 @@ fn assert_report(cell: &str, got: &Value, want: f64, half_step: f64) {
         (got - want).abs() <= half_step,
         "{cell}: {got} is not the report's {want} (± {half_step})"
     );
+}
+
+/// The value at one cell for a probe's inputs, applied to the defaults `dev` implies.
+fn at_probe(cell: &str, probe: &Probe, dev: Deviations) -> Value {
+    let mut inputs = DesignInputs::defaults_with(dev);
+    for &(path, value) in probe.inputs {
+        inputs
+            .set(path, value.to_value())
+            .unwrap_or_else(|e| panic!("probe {:?}: {e}", probe.label));
+    }
+    cell_values_for(&inputs, dev)
+        .remove(cell)
+        .unwrap_or_else(|| panic!("{cell} is not a cell of the port"))
 }
 
 /// With every correction off, the cell still holds the workbook snapshot value.
@@ -542,6 +555,80 @@ fn e6_cup_wall_at_the_flats_matches_the_report() {
     let e6 = Deviations::only(DeviationId::E6);
     assert_report("Calculator!C63", &at("Calculator!C63", e6), 2.723, 0.0005); // was 2.773
     assert_workbook("Calculator!C63");
+}
+
+#[test]
+fn each_probe_shows_its_correction() {
+    let mut failures = Vec::new();
+    for d in REGISTRY
+        .iter()
+        .filter(|d| d.status == DeviationStatus::Applied)
+    {
+        for probe in d.probes {
+            for change in probe.expect {
+                let workbook = at_probe(change.cell, probe, Deviations::NONE);
+                if !parity_close(&workbook, &change.workbook.to_value()) {
+                    failures.push(format!(
+                        "{} {:?}: {} workbook {workbook:?}, registered {:?}",
+                        d.id, probe.label, change.cell, change.workbook
+                    ));
+                }
+                let corrected = at_probe(change.cell, probe, Deviations::only(d.id));
+                if !parity_close(&corrected, &change.corrected.to_value()) {
+                    failures.push(format!(
+                        "{} {:?}: {} corrected {corrected:?}, registered {:?}",
+                        d.id, probe.label, change.cell, change.corrected
+                    ));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", report(&failures));
+}
+
+#[test]
+fn every_applied_engine_correction_is_visible_somewhere() {
+    // A correction that changes nothing at defaults must carry a probe, so no applied correction goes untested.
+    for d in REGISTRY
+        .iter()
+        .filter(|d| d.status == DeviationStatus::Applied && d.class == DeviationClass::Engine)
+    {
+        let shows_at_defaults = !d.changes_at_defaults.is_empty() || d.changes_file.is_some();
+        assert!(
+            shows_at_defaults || !d.probes.is_empty(),
+            "{} changes nothing at defaults and has no probe",
+            d.id
+        );
+    }
+}
+
+#[test]
+fn e7_pull_out_over_angle_matches_the_report() {
+    let e7 = &REGISTRY[DeviationId::E7.index()];
+    assert_eq!(e7.status, DeviationStatus::Applied);
+    let six_poles = &e7.probes[0];
+    let got = at_probe(
+        "Calculator!C93",
+        six_poles,
+        Deviations::only(DeviationId::E7),
+    );
+    assert_report("Calculator!C93", &got, 0.911, 0.0005); // 6 poles, steel: was 0.861 N m
+    let workbook = at_probe("Calculator!C93", six_poles, Deviations::NONE);
+    assert_report("Calculator!C93", &workbook, 0.861, 0.0005);
+}
+
+#[test]
+fn e7_leaves_every_default_cell_bit_for_bit() {
+    // Stronger than the parity rule of each_deviation_alone_changes_exactly_its_registered_cells:
+    // at defaults every row peaks at half a pitch, so E7 keeps the workbook expression exactly.
+    let workbook = cell_values(Deviations::NONE);
+    let corrected = cell_values(Deviations::only(DeviationId::E7));
+    let differ: Vec<&String> = workbook
+        .iter()
+        .filter(|(cell, v)| corrected.get(*cell) != Some(v))
+        .map(|(cell, _)| cell)
+        .collect();
+    assert!(differ.is_empty(), "E7 moved default cells: {differ:?}");
 }
 
 #[test]

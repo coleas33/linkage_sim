@@ -21,15 +21,16 @@
 //!
 //! Deviations touching these sheets (see
 //! [`crate::engine::deviations::REGISTRY`]): E4 is applied (Pole sweep C6:C11,
-//! the keyed-bore wall adds the inner bondline); planned is E7 (pull-out over
-//! angle).
+//! the keyed-bore wall adds the inner bondline), and so is E7 (columns N, Q, T
+//! and U, and through them V to AA: pull-out at the maximum over angle, through
+//! the model's `at_pull_out`).
 
 use std::f64::consts::PI;
 
 use super::compat::{py_max, py_min};
 use super::deviations::{DeviationId, Deviations};
 use super::meta::{col, rows};
-use super::model::shear_stress;
+use super::model::{at_pull_out, shear_stress};
 
 /// Corner gaps of the gap sweep [mm] (rows 6-18).
 pub const GAP_SWEEP_CORNER_GAPS_MM: [f64; 13] = [
@@ -108,7 +109,7 @@ fn row(
     a_i: f64,
     corner_gap: f64,
     factor: f64,
-    _dev: Deviations,
+    dev: Deviations,
 ) -> SweepRow {
     let n = npole as f64;
     let r_face = a_i + ctx.t_i;
@@ -143,7 +144,9 @@ fn row(
         ctx.mu0,
     );
     let s = h.map(|x| x.s(ctx.backiron));
-    let U = h.iter().fold(0.0, |acc, x| acc + x.tau);
+    // E7: every harmonic at the true pull-out angle when half a pitch is not the maximum (as the model).
+    let h_pull = at_pull_out(h, ctx.backiron, ctx.mu0, dev);
+    let U = h_pull.iter().fold(0.0, |acc, x| acc + x.tau);
     let V = U * 2.0 * PI * (H / 1000.0).powi(2) * (ctx.L / 1000.0);
     let W = 1.0 - ctx.c_end * I / ctx.L;
     let X = V * W * factor;
@@ -160,7 +163,7 @@ fn row(
     } else {
         "nominal: test needed"
     };
-    let [h1, h3, h5] = h;
+    let [h1, h3, h5] = h_pull;
     SweepRow {
         variable,
         inner_apothem_mm: a_i,
