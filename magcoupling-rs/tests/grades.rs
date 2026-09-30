@@ -7,8 +7,9 @@ mod common;
 
 use common::{ADDENDUM_DATA, read_json, repo_path};
 use magcoupling::engine::constants::NDFEB_DENSITY_G_MM3;
+use magcoupling::engine::deviations::Deviations;
 use magcoupling::engine::grades::{GRADES, Grade, GradeFamily, N42SH, grade};
-use magcoupling::engine::library::{MAGNET_LIBRARY, N42SH_BR_CORRECTED_T};
+use magcoupling::engine::library::{MAGNET_LIBRARY, N42SH_BR_CORRECTED_T, grade_id};
 use magcoupling::engine::temperature::DemagInputs;
 
 fn data() -> serde_json::Value {
@@ -113,6 +114,38 @@ fn every_library_part_resolves_to_a_grade() {
             spec.part,
             spec.grade
         );
+    }
+}
+
+#[test]
+fn each_grade_lists_the_parts_that_resolve_to_it() {
+    // The data file's `library_parts` is decision 2 A (E19 on: M5045 is N50);
+    // `library_parts_under_decision_2_B_or_C` is the workbook's own mapping (E19 off).
+    let doc = data();
+    for g in &GRADES {
+        for (dev, key) in [
+            (Deviations::ALL, "library_parts"),
+            (Deviations::NONE, "library_parts_under_decision_2_B_or_C"),
+        ] {
+            let listed = &doc["grades"][g.id][key];
+            let listed = if listed.is_null() {
+                &doc["grades"][g.id]["library_parts"]
+            } else {
+                listed
+            };
+            let want: Vec<&str> = listed
+                .as_array()
+                .expect("a part list")
+                .iter()
+                .map(|p| p.as_str().expect("a part"))
+                .collect();
+            let got: Vec<&str> = MAGNET_LIBRARY
+                .iter()
+                .filter(|spec| grade_id(spec, dev) == g.id)
+                .map(|spec| spec.part)
+                .collect();
+            assert_eq!(got, want, "{} {key}", g.id);
+        }
     }
 }
 

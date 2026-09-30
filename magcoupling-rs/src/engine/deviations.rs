@@ -1141,7 +1141,7 @@ pub const REGISTRY: &[Deviation] = &[
         class: DeviationClass::Engine,
         approval: Approval::Addendum { decisions: &[2] },
         depends_on: &[],
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &[
             "Calculator!C11",
             "Calculator!C12",
@@ -1181,7 +1181,56 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: None,
-        probes: &[],
+        probes: &[
+            Probe {
+                label: "M5044 on both rings (stored 80 C, vendor grid 60 C)",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("M5044")),
+                    ("coupling.magnets.part_outer", Literal::Text("M5044")),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Calculator!C22",
+                        workbook: Literal::Num(80.0),
+                        corrected: Literal::Num(60.0),
+                    },
+                    CellChange {
+                        cell: "Calculator!C32",
+                        workbook: Literal::Num(80.0),
+                        corrected: Literal::Num(60.0),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C50",
+                        workbook: Literal::Num(73.7958582391511),
+                        corrected: Literal::Num(93.7958582391511),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C12",
+                        workbook: Literal::Num(29.18110148932614),
+                        corrected: Literal::Num(9.181101489326139),
+                    },
+                ],
+            },
+            Probe {
+                label: "M5045 on both rings (stored 100 C, vendor grid 60 C)",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("M5045")),
+                    ("coupling.magnets.part_outer", Literal::Text("M5045")),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Calculator!C22",
+                        workbook: Literal::Num(100.0),
+                        corrected: Literal::Num(60.0),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C12",
+                        workbook: Literal::Num(49.18110148932614),
+                        corrected: Literal::Num(9.181101489326139),
+                    },
+                ],
+            },
+        ],
     },
     Deviation {
         id: DeviationId::E20,

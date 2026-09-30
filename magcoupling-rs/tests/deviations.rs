@@ -1609,6 +1609,55 @@ fn e18_aluminium_hub_mismatch_matches_the_report() {
 }
 
 #[test]
+fn e19_supermagnetman_arcs_follow_the_vendor_grid() {
+    // Decision 2 A: the vendor's 60 C on all three arcs moves every rating-calibrated demag
+    // cell by the rating change (the calibration offset absorbs it), and nothing else: 26
+    // cells on the workbook basis (the E12 guard zeroes 6 of them on the M2 basis). The
+    // temperature checks C107 and C108 stay "OK" at 50 C.
+    let e19 = DeviationId::E19;
+    for (part, stored) in [("M5044", 80.0), ("M5045", 100.0), ("M5026", 80.0)] {
+        let rings = [
+            ("coupling.magnets.part_inner", Value::Text(part.into())),
+            ("coupling.magnets.part_outer", Value::Text(part.into())),
+        ];
+        for (basis, before, count) in [("workbook", Deviations::NONE, 26), ("M2", m2(), 20)] {
+            let (b, a) = (
+                cells_with(&rings, before),
+                cells_with(&rings, before.with(e19)),
+            );
+            let changed = changed_cells(&b, &a);
+            assert_eq!(changed.len(), count, "{part} {basis}: {changed:?}");
+            assert_eq!(b["Calculator!C22"], Value::Num(stored), "{part}");
+            assert_eq!(a["Calculator!C22"], Value::Num(60.0), "{part}");
+            let shift = num(&b["Temperature design!C12"]) - num(&a["Temperature design!C12"]);
+            assert!(
+                (shift - (stored - 60.0)).abs() < 1e-9,
+                "{part} {basis}: C12 shift {shift}"
+            );
+            for cell in ["Calculator!C107", "Calculator!C108"] {
+                assert_eq!(a[cell], Value::Text("OK".into()), "{part} {cell}");
+            }
+        }
+    }
+    // M5045 maps to the grid's N50 (read by E20); its Br stays the workbook's 1.42 T.
+    let mut inputs = DesignInputs::defaults_with(Deviations::NONE);
+    inputs.coupling.magnets.part_inner = "M5045".into();
+    let off = compute_all_with(&inputs, Deviations::NONE).model;
+    let on = compute_all_with(&inputs, Deviations::only(e19)).model;
+    assert_eq!(
+        (off.inner_grade.as_str(), on.inner_grade.as_str()),
+        ("N50M", "N50")
+    );
+    assert_eq!((off.inner_br_T, on.inner_br_T), (1.42, 1.42));
+}
+
+#[test]
+fn e19_leaves_every_default_cell_bit_for_bit() {
+    // The default part is B842SH: the vendor grid applies to the arcs only.
+    assert_bit_for_bit_at_defaults(DeviationId::E19);
+}
+
+#[test]
 fn e18_leaves_every_default_cell_bit_for_bit() {
     // At defaults the hub is steel: the workbook's CTE and modulus stay.
     assert_bit_for_bit_at_defaults(DeviationId::E18);

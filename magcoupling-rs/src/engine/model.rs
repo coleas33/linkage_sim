@@ -283,7 +283,8 @@ pub struct ResolvedMagnet {
 /// Library values when the part is found (workbook IFERROR/INDEX/MATCH); else the
 /// manual dimensions, with the grade's Br and rating when a grade is picked
 /// (Addendum A6, a Rust-only mode) and the manual Br and no rating otherwise.
-/// A library part's Br comes from [`library::br_T`], which applies E3 (the N42SH remanence).
+/// A library part's Br comes from [`library::br_T`], which applies E3 (the N42SH remanence),
+/// its rating and grade from [`library::tmax_C`] and [`library::grade_id`], which apply E19.
 #[allow(non_snake_case)]
 pub fn resolve_magnets(m: &MagnetInputs, dev: Deviations) -> (ResolvedMagnet, ResolvedMagnet) {
     let resolve =
@@ -294,8 +295,8 @@ pub fn resolve_magnets(m: &MagnetInputs, dev: Deviations) -> (ResolvedMagnet, Re
                     width_mm: spec.width_mm,
                     thickness_mm: spec.thickness_mm,
                     br_T: library::br_T(spec, dev),
-                    tmax_C: NumOrText::Num(spec.tmax_C),
-                    grade: grades::grade(spec.grade),
+                    tmax_C: NumOrText::Num(library::tmax_C(spec, dev)),
+                    grade: grades::grade(library::grade_id(spec, dev)),
                 },
                 None => match grades::grade(grade) {
                     Some(g) => ResolvedMagnet {

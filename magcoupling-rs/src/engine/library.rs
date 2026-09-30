@@ -34,6 +34,26 @@ pub fn br_T(spec: &MagnetSpec, dev: Deviations) -> f64 {
     }
 }
 
+/// The maximum operating temperature the Calculator uses for a library part: the
+/// row's workbook value, or with E19 on the vendor's own statement where it differs
+/// (the SuperMagnetMan arcs: 60 °C, decision 2 A).
+#[allow(non_snake_case)]
+pub fn tmax_C(spec: &MagnetSpec, dev: Deviations) -> f64 {
+    match spec.vendor_tmax_C {
+        Some(vendor) if dev.is_on(DeviationId::E19) => vendor,
+        _ => spec.tmax_C,
+    }
+}
+
+/// The grade of a library part: the row's workbook grade, or with E19 on the
+/// vendor's specification grid where it contradicts it (M5045: N50, decision 2 A).
+pub fn grade_id(spec: &MagnetSpec, dev: Deviations) -> &'static str {
+    match spec.vendor_grade {
+        Some(vendor) if dev.is_on(DeviationId::E19) => vendor,
+        _ => spec.grade,
+    }
+}
+
 /// K&J's plating on every library block (product pages, 2026-09-30).
 pub const KJ_COATING: &str = "Nickel-Copper-Nickel (Ni-Cu-Ni)";
 /// K&J's magnetization direction on every library block.
@@ -68,6 +88,12 @@ pub struct MagnetSpec {
     pub coating: &'static str,
     /// Magnetization direction, as the vendor states it.
     pub magnetization: &'static str,
+    /// E19: the vendor's maximum working temperature where it differs from the
+    /// workbook row (read only through [`tmax_C`]).
+    pub vendor_tmax_C: Option<f64>,
+    /// E19: the vendor grid's grade where it contradicts the workbook row
+    /// (read only through [`grade_id`]).
+    pub vendor_grade: Option<&'static str>,
 }
 
 #[allow(clippy::too_many_arguments, non_snake_case)]
@@ -95,6 +121,8 @@ const fn row(
         page: "",
         coating: "",
         magnetization: "",
+        vendor_tmax_C: None,
+        vendor_grade: None,
     }
 }
 
@@ -110,6 +138,16 @@ impl MagnetSpec {
             page,
             coating,
             magnetization,
+            ..self
+        }
+    }
+
+    /// E19: what the vendor's page states where it differs from the workbook row.
+    #[allow(non_snake_case)]
+    const fn vendor_states(self, tmax_C: f64, grade: Option<&'static str>) -> Self {
+        Self {
+            vendor_tmax_C: Some(tmax_C),
+            vendor_grade: grade,
             ..self
         }
     }
@@ -311,7 +349,8 @@ pub const MAGNET_LIBRARY: [MagnetSpec; 15] = [
         "https://supermagnetman.com/products/m5044",
         SMM_COATING,
         SMM_MAGNETIZATION,
-    ),
+    )
+    .vendor_states(60.0, None),
     row(
         "M5045",
         "SuperMagnetMan",
@@ -326,7 +365,8 @@ pub const MAGNET_LIBRARY: [MagnetSpec; 15] = [
         "https://supermagnetman.com/products/m5045",
         SMM_COATING,
         SMM_MAGNETIZATION,
-    ),
+    )
+    .vendor_states(60.0, Some("N50")),
     row(
         "M5026",
         "SuperMagnetMan",
@@ -341,7 +381,8 @@ pub const MAGNET_LIBRARY: [MagnetSpec; 15] = [
         "https://supermagnetman.com/products/m5026",
         SMM_COATING,
         SMM_MAGNETIZATION,
-    ),
+    )
+    .vendor_states(60.0, None),
 ];
 
 /// Exact-text lookup (Python `lookup`): `None` for an empty or unknown part,
@@ -356,6 +397,36 @@ pub fn lookup(part: &str) -> Option<&'static MagnetSpec> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn e19_applies_the_vendor_grid_to_exactly_the_three_arcs() {
+        let e19 = Deviations::only(DeviationId::E19);
+        for spec in &MAGNET_LIBRARY {
+            let arc = spec.vendor == "SuperMagnetMan";
+            assert_eq!(spec.vendor_tmax_C.is_some(), arc, "{}", spec.part);
+            assert_eq!(tmax_C(spec, Deviations::NONE), spec.tmax_C, "{}", spec.part);
+            assert_eq!(
+                grade_id(spec, Deviations::NONE),
+                spec.grade,
+                "{}",
+                spec.part
+            );
+            let want = if arc { 60.0 } else { spec.tmax_C };
+            assert_eq!(tmax_C(spec, e19), want, "{}", spec.part);
+            assert_eq!(tmax_C(spec, Deviations::ALL), want, "{}", spec.part);
+            let want_grade = if spec.part == "M5045" {
+                "N50"
+            } else {
+                spec.grade
+            };
+            assert_eq!(grade_id(spec, e19), want_grade, "{}", spec.part);
+        }
+        assert_eq!(
+            lookup("M5045").map(|s| s.grade),
+            Some("N50M"),
+            "the workbook row"
+        );
+    }
 
     #[test]
     fn e3_corrects_exactly_the_three_n42sh_rows() {
