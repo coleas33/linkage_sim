@@ -122,6 +122,8 @@ pub enum Literal {
     Int(i64),
     Text(&'static str),
     None,
+    /// A workbook error value such as `#DIV/0!`, where the Python engine raises.
+    Error(&'static str),
 }
 
 impl Literal {
@@ -132,6 +134,7 @@ impl Literal {
             Literal::Int(i) => Value::Int(i),
             Literal::Text(s) => Value::Text(s.to_owned()),
             Literal::None => Value::None,
+            Literal::Error(e) => Value::Text(e.to_owned()),
         }
     }
 }
@@ -687,15 +690,51 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E13,
         title: "A measured drag of exactly 0 stops the whole calculation",
         class: DeviationClass::Engine,
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &["Temperature design!C156", "Temperature design!C157"],
         corrected_formula: "Rotations per °C = +inf when the heating power is 0; \
-            optionally reject a negative drag; document that infinity can appear in results.",
+            optionally reject a negative drag; document that infinity can appear in results. \
+            With the correction off, Rust arithmetic gives +inf for a drag of +0.0 but -inf for -0.0 \
+            (IEEE sign of zero); the guard makes both +inf. \
+            Negative drags are not rejected (optional part, not implemented).",
         workbook_input_defaults: &[],
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: None,
-        probes: &[],
+        probes: &[
+            Probe {
+                label: "measured drag exactly 0 (Python raises ZeroDivisionError; the workbook shows #DIV/0!)",
+                inputs: &[("metal.measured_drag_Nm", Literal::Num(0.0))],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C156",
+                        workbook: Literal::Error("#DIV/0!"),
+                        corrected: Literal::Num(f64::INFINITY),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C157",
+                        workbook: Literal::Error("#DIV/0!"),
+                        corrected: Literal::Num(f64::INFINITY),
+                    },
+                ],
+            },
+            Probe {
+                label: "measured drag typed as -0.0 (Python raises ZeroDivisionError too; without E13 Rust gives -inf)",
+                inputs: &[("metal.measured_drag_Nm", Literal::Num(-0.0))],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C156",
+                        workbook: Literal::Error("#DIV/0!"),
+                        corrected: Literal::Num(f64::INFINITY),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C157",
+                        workbook: Literal::Error("#DIV/0!"),
+                        corrected: Literal::Num(f64::INFINITY),
+                    },
+                ],
+            },
+        ],
     },
     Deviation {
         id: DeviationId::E14,
@@ -866,6 +905,10 @@ mod tests {
         assert_eq!(Literal::Int(3).to_value(), Value::Int(3));
         assert_eq!(Literal::Text("n/a").to_value(), Value::Text("n/a".into()));
         assert_eq!(Literal::None.to_value(), Value::None);
+        assert_eq!(
+            Literal::Error("#DIV/0!").to_value(),
+            Value::Text("#DIV/0!".into())
+        );
     }
 
     mod restore {

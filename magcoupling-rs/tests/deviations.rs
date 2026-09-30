@@ -19,12 +19,13 @@ use std::fs;
 use std::path::Path;
 
 use common::{json_to_value, read_json, read_text, repo_path, report, snapshot, value_to_json};
-use magcoupling::engine::api::{DesignInputs, compute_all_with};
+use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with, headline};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::{
-    Deviation, DeviationClass, DeviationId, DeviationStatus, Deviations, Probe, REGISTRY, REPORT,
+    Deviation, DeviationClass, DeviationId, DeviationStatus, Deviations, Literal, Probe, REGISTRY,
+    REPORT,
 };
-use magcoupling::engine::meta::{InputSet, Value, input_rows, result_rows};
+use magcoupling::engine::meta::{InputSet, NumOrText, Value, input_rows, result_rows};
 
 const BLESS_VAR: &str = "MAGCOUPLING_BLESS";
 
@@ -566,8 +567,12 @@ fn each_probe_shows_its_correction() {
     {
         for probe in d.probes {
             for change in probe.expect {
+                // Always run the workbook side (it must not panic); a workbook error value
+                // (`#DIV/0!`, where Python raises) has no Rust counterpart to compare with.
                 let workbook = at_probe(change.cell, probe, Deviations::NONE);
-                if !parity_close(&workbook, &change.workbook.to_value()) {
+                if !matches!(change.workbook, Literal::Error(_))
+                    && !parity_close(&workbook, &change.workbook.to_value())
+                {
                     failures.push(format!(
                         "{} {:?}: {} workbook {workbook:?}, registered {:?}",
                         d.id, probe.label, change.cell, change.workbook
@@ -934,6 +939,92 @@ fn e12_changes_its_six_cells_to_zero_above_the_limit_and_nothing_below() {
             assert_eq!(corrected[cell], Value::Num(0.0), "{label}: {cell}");
         }
     }
+}
+
+#[test]
+fn e13_zero_drag_matches_the_report() {
+    let e13 = &REGISTRY[DeviationId::E13.index()];
+    assert_eq!(e13.status, DeviationStatus::Applied);
+    let (zero, neg_zero) = (&e13.probes[0], &e13.probes[1]);
+    for cell in ["Temperature design!C156", "Temperature design!C157"] {
+        assert_eq!(
+            at_probe(cell, zero, Deviations::only(DeviationId::E13)),
+            Value::Num(f64::INFINITY),
+            "{cell}"
+        );
+        // +0.0 already gives +inf without the correction; -0.0 proves the guard does something:
+        // without it p_use = ke = -0.0 and rev_s / -0.0 = -inf; the guard (-0.0 == 0.0) gives +inf.
+        assert_eq!(
+            at_probe(cell, neg_zero, Deviations::NONE),
+            Value::Num(f64::NEG_INFINITY),
+            "{cell}: E13 off"
+        );
+        assert_eq!(
+            at_probe(cell, neg_zero, Deviations::only(DeviationId::E13)),
+            Value::Num(f64::INFINITY),
+            "{cell}: E13 on"
+        );
+    }
+}
+
+#[test]
+fn e13_leaves_every_default_cell_bit_for_bit() {
+    // At defaults no drag is measured: the estimated heating power (2.48 W) is not 0, so the
+    // guard is off and the rotations per degree keep the workbook's rev_s / rate.
+    assert_bit_for_bit_at_defaults(DeviationId::E13);
+}
+
+#[test]
+fn all_corrections_together_give_the_reviewed_headline() {
+    // What users see (compute_all, every correction on) at the default design, D1 = 1.30 T.
+    // Values from one Python rerun with E1, E2, E3 and E5 patched in together (E4, E6-E13 are
+    // neutral for these cells at defaults).
+    let res = compute_all(&DesignInputs::default());
+    let h: BTreeMap<&str, Value> = headline(&res).into_iter().collect();
+    let close = |key: &str, want: f64| {
+        let got = num(&h[key]);
+        assert!(
+            (got - want).abs() <= 1e-9 * want.abs(),
+            "{key}: {got} vs {want}"
+        );
+    };
+    close("pullout_at_op_temp_Nm", 2.6884762950539796);
+    close("hot_low_with_variation_Nm", 2.2852048507958824);
+    close("cold_high_with_variation_Nm", 3.823310370488638);
+    close("governing_temp_limit_C", 93.05566428111358);
+    close("running_clearance_mm", -0.10317439456607391);
+    assert_eq!(h["hot_min_check"], Value::Text("Below hot minimum".into()));
+    assert_eq!(h["clearance_check"], Value::Text("Below target".into()));
+    assert_eq!(
+        h["cup_wall_check"],
+        Value::Text("Too thin: raise Metal design C122 to at least 2.0 mm".into())
+    );
+    assert_eq!(
+        h["temperature_verdict"],
+        Value::Text("OK on temperature. Confirm drag torque and thermal cycling by test.".into())
+    );
+    assert_eq!(
+        h["clamp_screw"],
+        Value::Text("ISO 4762 M4 x 14, class 12.9".into())
+    );
+    assert_eq!(
+        res.temperature.mismatch.reading,
+        "Below the lap-shear strength"
+    );
+    assert_eq!(
+        res.temperature.adhesive_life.daily_screen,
+        "Below the fatigue endurance"
+    );
+    assert_eq!(res.temperature.adhesive.fatigue_screen, "OK: 7x margin");
+    assert!((res.temperature.thermal.steady_high_C - 92.51311161421395).abs() <= 1e-9 * 92.5);
+    assert_eq!(
+        res.temperature.thermal.time_to_limit_high,
+        NumOrText::Text("never: steady state stays below the limit")
+    );
+    assert_eq!(
+        res.clamps.length_note,
+        "No 2 mm length step of M4 both engages 8 mm of thread and stays inside the boss; M4 x 14 protrudes 0.34 mm"
+    );
 }
 
 #[test]

@@ -23,8 +23,10 @@
 //! and E5 (C121), both corrected defaults, and E9 (the heat capacity C141
 //! follows the aluminium cup and boss masses through `TemperatureLinks`; no code
 //! here), E11 (the 22 °C fatigue screen C91 reads the fatigue-endurance input
-//! C195), and E12 (a hot-day start at or above the governing limit gives 0 s,
-//! 0 rev and 0 N·m at C19, C23, C150 to C153); planned E13 (C156, C157).
+//! C195), E12 (a hot-day start at or above the governing limit gives 0 s,
+//! 0 rev and 0 N·m at C19, C23, C150 to C153), and E13 (a heating power of
+//! exactly 0, from a measured drag of 0, gives +inf rotations per °C at C156
+//! and C157 instead of Python's ZeroDivisionError).
 
 use std::f64::consts::PI;
 
@@ -883,6 +885,15 @@ pub fn compute(
     };
     let rev_s = k.slip_rpm / 60.0;
     let (ke, kh) = (p_use / C, p_hi / C);
+    // E13: no heating power means no heating: rotations per degree are +inf
+    // (Python divides by zero and aborts every sheet).
+    let per_degree = |power: f64, rate: f64| {
+        if dev.is_on(DeviationId::E13) && power == 0.0 {
+            f64::INFINITY
+        } else {
+            rev_s / rate
+        }
+    };
     let T_fault = T0 + rise_h * (1.0 - (-ti.duty.fault_trip_s / tau_th).exp());
     let thermal = ThermalResults {
         steel_c: k.steel_c,
@@ -903,8 +914,8 @@ pub fn compute(
         critical_drag_Nm: critical_drag,
         heating_rate_est_C_s: ke,
         heating_rate_high_C_s: kh,
-        rev_per_C_est: rev_s / ke,
-        rev_per_C_high: rev_s / kh,
+        rev_per_C_est: per_degree(p_use, ke),
+        rev_per_C_high: per_degree(p_hi, kh),
         rev_per_tau: tau_th * rev_s,
         t95_s: 3.0 * tau_th,
         rev95: 3.0 * tau_th * rev_s,
@@ -1546,5 +1557,53 @@ mod tests {
         put_back.summary.time_to_limit_high = workbook.summary.time_to_limit_high;
         put_back.summary.critical_drag_Nm = workbook.summary.critical_drag_Nm;
         assert_eq!(put_back, workbook);
+    }
+
+    #[test]
+    fn e13_changes_only_the_rotations_per_degree() {
+        // A bench drag of +0.0 or -0.0 is no heating power (Python raises ZeroDivisionError at
+        // C156/C157). The workbook form divides: rev_s / +0.0 = +inf, rev_s / -0.0 = -inf. E13
+        // gives +inf for both and changes nothing else; a non-zero drag leaves it inert.
+        let e13 = Deviations::only(DeviationId::E13);
+        let ti = TemperatureInputs::default();
+        let mut k = links();
+        for (drag, workbook_rev) in [(0.0, f64::INFINITY), (-0.0, f64::NEG_INFINITY)] {
+            k.measured_drag_Nm = Some(drag);
+            let (workbook, corrected) = (run(&ti, &k), compute(&ti, &k, e13));
+            let (p_use, p_hi) = (workbook.slip_loss.used_W, workbook.slip_loss.high_W);
+            assert!(p_use == 0.0 && p_hi == 0.0, "{drag}: {p_use} {p_hi}");
+            assert_eq!(
+                p_use.is_sign_negative(),
+                drag.is_sign_negative(),
+                "{drag}: the sign of zero reaches the power"
+            );
+            assert_eq!(
+                (
+                    workbook.thermal.rev_per_C_est,
+                    workbook.thermal.rev_per_C_high
+                ),
+                (workbook_rev, workbook_rev),
+                "{drag}"
+            );
+            assert_eq!(
+                (
+                    corrected.thermal.rev_per_C_est,
+                    corrected.thermal.rev_per_C_high
+                ),
+                (f64::INFINITY, f64::INFINITY),
+                "{drag}"
+            );
+            let mut put_back = corrected.clone();
+            put_back.thermal.rev_per_C_est = workbook.thermal.rev_per_C_est;
+            put_back.thermal.rev_per_C_high = workbook.thermal.rev_per_C_high;
+            assert_eq!(put_back, workbook, "{drag}");
+        }
+        // Non-zero drags, including a negative one (not rejected: optional part not implemented).
+        for drag in [0.05, -0.01, 1e-300] {
+            k.measured_drag_Nm = Some(drag);
+            assert_eq!(compute(&ti, &k, e13), run(&ti, &k), "{drag}");
+        }
+        k.measured_drag_Nm = None;
+        assert_eq!(compute(&ti, &k, e13), run(&ti, &k), "estimated losses");
     }
 }
