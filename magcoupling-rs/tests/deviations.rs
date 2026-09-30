@@ -460,6 +460,34 @@ fn e3_library_remanence_matches_the_report() {
 }
 
 #[test]
+fn e4_pole_sweep_hub_wall_matches_the_report() {
+    let e4 = Deviations::only(DeviationId::E4);
+    for cell in ["Pole sweep!C6", "Pole sweep!C7"] {
+        assert_report(cell, &at(cell, e4), 9.250, 0.0005); // 6 and 8 poles, was 9.200
+    }
+    assert_eq!(
+        at("Pole sweep!AA6", e4),
+        Value::Text("outside OD envelope".into())
+    ); // was "below hot minimum"
+    assert_report("Pole sweep!G6", &at("Pole sweep!G6", e4), 43.01, 0.005); // cup OD, was 42.90
+    assert_report("Pole sweep!X6", &at("Pole sweep!X6", e4), 0.954, 0.0005); // pull-out, was 0.958
+    assert_eq!(
+        at("Pole sweep!AA7", e4),
+        at("Pole sweep!AA7", Deviations::NONE),
+        "the 8-pole status does not change"
+    );
+    for cell in [
+        "Pole sweep!C6",
+        "Pole sweep!C7",
+        "Pole sweep!AA6",
+        "Pole sweep!G6",
+        "Pole sweep!X6",
+    ] {
+        assert_workbook(cell);
+    }
+}
+
+#[test]
 fn reworded_help_is_recorded_for_real_fields() {
     let inputs = input_rows(&DesignInputs::default());
     for d in REGISTRY

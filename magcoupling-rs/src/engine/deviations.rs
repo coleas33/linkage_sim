@@ -19,7 +19,8 @@
 //!   with `changes_at_defaults` listing every cell that changes at default
 //!   inputs, with the workbook and the corrected value. A broad correction
 //!   (more than 15 changed cells, decision D4) names a reviewed golden file in
-//!   `changes_file` instead (E3: `tests/data/deviations/E3.json`).
+//!   `changes_file` instead (E3: `tests/data/deviations/E3.json`, E4:
+//!   `tests/data/deviations/E4.json`).
 //!
 //! # The test-only switch
 //!
@@ -310,7 +311,7 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E4,
         title: "Pole sweep counts the inner bondline as hub wall",
         class: DeviationClass::Engine,
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &[
             "Pole sweep!C6",
             "Pole sweep!C7",
@@ -324,7 +325,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_input_defaults: &[],
         workbook_help: &[],
         changes_at_defaults: &[],
-        changes_file: None,
+        changes_file: Some("tests/data/deviations/E4.json"),
     },
     Deviation {
         id: DeviationId::E5,

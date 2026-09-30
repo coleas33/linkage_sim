@@ -289,6 +289,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         br_i_op: m.br_inner_T_op,
         br_o_op: m.br_outer_T_op,
         bond_outer: md.bond_outer_mm,
+        bond_inner: md.bond_inner_mm,
         cup_wall_corner: md.cup_wall_corner_mm,
         c_end: ci.c_end,
         mu0: ci.mu0,

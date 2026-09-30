@@ -19,14 +19,15 @@
 //! sweeps ([`gap_sweep`], [`pole_sweep`]). The rows reuse
 //! [`super::model::shear_stress`].
 //!
-//! Planned deviations touching these sheets (see
-//! [`crate::engine::deviations::REGISTRY`]): E4 (Pole sweep C6:C11) and E7
-//! (pull-out over angle).
+//! Deviations touching these sheets (see
+//! [`crate::engine::deviations::REGISTRY`]): E4 is applied (Pole sweep C6:C11,
+//! the keyed-bore wall adds the inner bondline); planned is E7 (pull-out over
+//! angle).
 
 use std::f64::consts::PI;
 
 use super::compat::{py_max, py_min};
-use super::deviations::Deviations;
+use super::deviations::{DeviationId, Deviations};
 use super::meta::{col, rows};
 use super::model::shear_stress;
 
@@ -87,6 +88,8 @@ pub struct SweepContext {
     pub br_i_op: f64,
     pub br_o_op: f64,
     pub bond_outer: f64,
+    /// Inner magnet bondline [mm] (Metal design C120), read only by correction E4.
+    pub bond_inner: f64,
     pub cup_wall_corner: f64,
     pub c_end: f64,
     pub mu0: f64,
@@ -202,7 +205,8 @@ pub fn gap_sweep(
         .collect()
 }
 
-/// Pull-out vs poles; smallest apothem that fits the block (+0.05 mm) and the keyed-bore wall (2.5 mm).
+/// Pull-out vs poles; smallest apothem that fits the block (+0.05 mm) and the keyed-bore wall (2.5 mm;
+/// with E4 the wall is 2.5 mm of steel under the inner bondline).
 pub fn pole_sweep(
     ctx: &SweepContext,
     corner_gap_mm: f64,
@@ -214,10 +218,13 @@ pub fn pole_sweep(
     POLE_SWEEP_POLES
         .iter()
         .map(|&n| {
-            let a_i = py_max(
-                ctx.w_i / (2.0 * (PI / n as f64).tan()) + 0.05,
-                bore_mm / 2.0 + keyway_depth_mm + 2.5,
-            );
+            // E4: the 2.5 mm keyed-bore wall is steel; the inner bondline sits on top of it.
+            let keyed_wall = if dev.is_on(DeviationId::E4) {
+                bore_mm / 2.0 + keyway_depth_mm + 2.5 + ctx.bond_inner
+            } else {
+                bore_mm / 2.0 + keyway_depth_mm + 2.5
+            };
+            let a_i = py_max(ctx.w_i / (2.0 * (PI / n as f64).tan()) + 0.05, keyed_wall);
             row(ctx, n as f64, n, a_i, corner_gap_mm, f_cal_original, dev)
         })
         .collect()
@@ -242,6 +249,7 @@ mod tests {
             br_i_op: 1.24356,
             br_o_op: 1.24356,
             bond_outer: 0.05,
+            bond_inner: 0.05,
             cup_wall_corner: 1.8,
             c_end: 0.15,
             mu0: 1.256637e-6,
