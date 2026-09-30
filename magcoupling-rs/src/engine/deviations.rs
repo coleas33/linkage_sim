@@ -20,7 +20,7 @@
 //!   inputs, with the workbook and the corrected value. A broad correction
 //!   (more than 15 changed cells, decision D4) names a reviewed golden file in
 //!   `changes_file` instead (E3: `tests/data/deviations/E3.json`, E4:
-//!   `tests/data/deviations/E4.json`).
+//!   `tests/data/deviations/E4.json`, E5: `tests/data/deviations/E5.json`).
 //!
 //! # The test-only switch
 //!
@@ -331,18 +331,22 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E5,
         title: "Rear-web eddy loss uses the free-space field instead of the field at the steel surface",
         class: DeviationClass::Engine,
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &[
             "Temperature design!C121",
             "Temperature design!C125",
             "Temperature design!C130",
         ],
         corrected_formula: "Multiply the web integral by 4 in fields3d.run; default \
-            Temperature design!C121 = 4.14e-5 T^2 m^2 (3D, doubled at the steel surface); C125 unchanged.",
-        workbook_input_defaults: &[],
-        workbook_help: &[],
+            Temperature design!C121 = 4.14e-5 T^2 m^2 (3D, doubled at the steel surface); C125 unchanged. \
+            M2 applies the default; the factor 4 inside fields3d.run is M3 scope.",
+        workbook_input_defaults: &[(
+            "temperature.slip_loss.web_integral_T2m2",
+            Literal::Num(1.035e-5),
+        )],
+        workbook_help: &[("temperature.slip_loss.web_integral_T2m2", "3D.")],
         changes_at_defaults: &[],
-        changes_file: None,
+        changes_file: Some("tests/data/deviations/E5.json"),
     },
     Deviation {
         id: DeviationId::E6,

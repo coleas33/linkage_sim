@@ -402,5 +402,8 @@ mod tests {
         };
         assert_eq!(br(&workbook), [1.29; 3]);
         assert_eq!(br(&corrected), [1.30; 3]);
+        // E5: the rear-web field integral is the field at the steel surface.
+        assert_eq!(workbook.temperature.slip_loss.web_integral_T2m2, 1.035e-5);
+        assert_eq!(corrected.temperature.slip_loss.web_integral_T2m2, 4.14e-5);
     }
 }

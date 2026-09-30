@@ -18,9 +18,10 @@
 //! A selector code outside 1 to 4 selects no adhesive (decision D3): Python's
 //! `candidates[selected - 1]` would silently take the last row for code 0.
 //!
-//! Planned deviations touching this sheet (see
-//! [`crate::engine::deviations::REGISTRY`]): E1 (Temperature design!C96), E5
-//! (C121), E9, E11 (C91), E12 (C19, C23, C150 to C153), E13 (C156, C157).
+//! Deviations touching this sheet (see
+//! [`crate::engine::deviations::REGISTRY`]): applied E1 (Temperature design!C96)
+//! and E5 (C121), both corrected defaults; planned E9, E11 (C91), E12 (C19,
+//! C23, C150 to C153), E13 (C156, C157).
 
 use std::f64::consts::PI;
 
@@ -223,10 +224,11 @@ inputs! {
                 "3D.", "Temperature design!C120")
                 .range(1e-12, 1e-8, 1e-13)
                 .log(),
-            web_integral_T2m2: f64 = 1.035e-5 => param("T²·m²", "Rear-web end field, ∫B² dA",
-                "3D.", "Temperature design!C121")
+            web_integral_T2m2: f64 = 4.14e-5 => param("T²·m²", "Rear-web end field, ∫B² dA",
+                "3D, doubled at the steel surface (correction E5: the workbook's 1.035e-5 T²·m² is the free-space field, which made the web loss 4 times too low).",
+                "Temperature design!C121")
                 .range(1e-7, 1e-3, 1e-8)
-                .log(), // E5 default 4.14e-5 inside
+                .log(), // the workbook's 1.035e-5 is inside too
             b_magnet_T: f64 = 0.19 => param("T", "Alternating radial field inside the blocks",
                 "3D.", "Temperature design!C122")
                 .range(0.0, 1.0, 0.001),

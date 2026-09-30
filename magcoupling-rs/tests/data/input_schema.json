@@ -2145,7 +2145,7 @@
       "cell": "Temperature design!C121",
       "choices": [],
       "default": 0.00001035,
-      "help": "3D.",
+      "help": "3D, doubled at the steel surface (correction E5: the workbook's 1.035e-5 T²·m² is the free-space field, which made the web loss 4 times too low).",
       "label": "Rear-web end field, ∫B² dA",
       "path": "temperature.slip_loss.web_integral_T2m2",
       "range": {

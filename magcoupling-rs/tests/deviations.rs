@@ -488,6 +488,56 @@ fn e4_pole_sweep_hub_wall_matches_the_report() {
 }
 
 #[test]
+fn e5_web_eddy_loss_matches_the_report() {
+    let e5 = Deviations::only(DeviationId::E5);
+    assert_eq!(at("Temperature design!C121", e5), Value::Num(4.14e-5));
+    // The report row truncates the web loss to 0.365; its evidence gives 4 x 0.091401 = 0.3656 W.
+    assert_report(
+        "Temperature design!C125",
+        &at("Temperature design!C125", e5),
+        0.3656,
+        0.00005,
+    ); // web loss, was 0.091 W
+    assert_report(
+        "Temperature design!C130",
+        &at("Temperature design!C130", e5),
+        2.751,
+        0.0005,
+    ); // total, was 2.477 W
+    assert_report(
+        "Temperature design!C131",
+        &at("Temperature design!C131", e5),
+        0.0131,
+        0.00005,
+    ); // drag, was 0.0118
+    assert_report(
+        "Temperature design!C148",
+        &at("Temperature design!C148", e5),
+        74.17,
+        0.005,
+    ); // was 73.26 C
+    assert_report(
+        "Temperature design!C149",
+        &at("Temperature design!C149", e5),
+        92.51,
+        0.005,
+    ); // was 89.77 C
+    // No text changes: the high case stays 0.04 C under the 92.55 C limit.
+    assert_eq!(
+        at("Temperature design!C19", e5),
+        Value::Text("never: steady state stays below the limit".into())
+    );
+    for cell in [
+        "Temperature design!C121",
+        "Temperature design!C125",
+        "Temperature design!C130",
+        "Temperature design!C149",
+    ] {
+        assert_workbook(cell);
+    }
+}
+
+#[test]
 fn reworded_help_is_recorded_for_real_fields() {
     let inputs = input_rows(&DesignInputs::default());
     for d in REGISTRY

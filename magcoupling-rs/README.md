@@ -27,8 +27,8 @@ variables `GAP_SWEEP_CORNER_GAPS_MM` and `POLE_SWEEP_POLES`, 338 and 156 table
 cells) and the API completion (`headline`, `DesignInputs::validate`). Every module
 except `fields3d` (M3) is ported; workbook parity is complete (1,149 checks: 330
 result cells, 659 table cells and 160 default inputs). Deviations E1 to E14 are
-registered: E1 to E4 are applied (see [Differences from the workbook](#differences-from-the-workbook)),
-E5 to E14 are `Planned`.
+registered: E1 to E5 are applied (see [Differences from the workbook](#differences-from-the-workbook)),
+E6 to E14 are `Planned`.
 
 ```rust
 use magcoupling::{DesignInputs, compute_all, headline};
@@ -55,8 +55,8 @@ every offending path, in schema order, with the reason `set` would give.
 Every correction below is approved in the M1 math audit report
 (`docs/analyses/2026-09-29-magcoupling-math-audit.md`, the row with the same
 id) and registered in `src/engine/deviations.rs` with the cells it changes and
-their workbook and corrected values (for E3 and E4, which change 246 and 47
-cells, in the reviewed golden files `tests/data/deviations/E3.json` and `E4.json`). The corrections are always on for users
+their workbook and corrected values (for E3, E4 and E5, which change 246, 47 and
+37 cells, in the reviewed golden files `tests/data/deviations/E3.json`, `E4.json` and `E5.json`). The corrections are always on for users
 (`compute_all`); only the parity and differential tests switch them off,
 through the test-only `workbook-parity` feature, to compare against the workbook
 and the Python engine exactly.
@@ -67,6 +67,7 @@ and the Python engine exactly.
 | E2 | Clamp screw sizes!C34:G35, Shaft clamps!C48 | length = CEILING(grip + 2d, 2); fits = length <= grip + thread | the slit (0.8 mm) is added to both; M4 x 12 becomes M4 x 14, which protrudes 0.34 mm: clamps.length_note says so | E2 |
 | E3 | Magnet library N42SH rows; Calculator!C17, C21, C27, C31; Calibration!C21 | 1.29 T | 1.30 T (vendor minimum); pull-out 2.688 N·m, limit 93.06 °C, C91 "OK: 7x margin"; fields3d rerun pending (M3) | E3 |
 | E4 | Pole sweep!C6:C11 | a_i = MAX(w/(2 tan(pi/N)) + 0.05, bore/2 + key + 2.5) | + inner bondline in the wall term; the 6-pole row reads "outside OD envelope" | E4 |
+| E5 | Temperature design!C121 (feeds C125, C130 and the thermal rows) | 1.035e-5 T²·m² (free-space field) | 4.14e-5 T²·m² (doubled at the steel surface); total slip loss 2.751 W; fields3d part is M3 | E5 |
 
 ## Layout
 
