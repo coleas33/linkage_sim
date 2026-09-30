@@ -75,6 +75,7 @@ decision 15), or to start from the workbook's defaults.
 | E13 | Temperature design!C156, C157 | #DIV/0! (Python: the whole calculation stops) | +inf; the other results are computed. JSON export must encode inf (M4) | E13 |
 | E14 | Shaft clamps!C35 help; README | "At 22 mm only M3 fits; two of them need a 14.5 mm clamp." | "At 22 mm M4 no longer fits. Two M3 need a 14.5 mm clamp; three M2.5 need 18 mm, and from 18 mm up the calculator recommends M2.5 x 3." | E14 (documentation) |
 | E15 | Temperature design!C141 (feeds C143, C145, C154-C161, C171, C172, C180-C182, C186, C189, C190, C192, C193, C196, C20) | cup, boss and hub at 4140's specific heat even when the mass model makes them aluminium | aluminium parts at C140 (900 J/(kg·K)): the cup and boss on E9's gate, the hub when C6 is not 1; hardware stays steel. Back iron 0 on E9: C141 45.78 → 63.02 J/K, no verdict changes | Addendum A row E15 (decisions 8, 15) |
+| E16 | Metal design!C189 → C191, C148, C149 (C147, C189 help) | the disc bored out of the web for the adapter pilot at steel density | at the web's density, one source with the mass model (`model::cup_boss_density`): aluminium with no back iron under E9. Back iron 0 on E9: C189 3.453 → 1.188 g, C191 101.5 → 103.8 g | Addendum A row E16 (decisions 9, 14, 15) |
 
 Results can be +inf (E13); exporters must handle it.
 
@@ -251,8 +252,9 @@ branch at the formula with `if dev.is_on(DeviationId::Ek) { corrected } else
 declare the corrected default and record the workbook value in the entry's
 `workbook_input_defaults`; set the entry to `Applied` and list every cell that
 changes at defaults in `changes_at_defaults`. Where the correction rewords a
-help text, record the workbook's text in `workbook_help` (an input path, or a
-table column as `group.table[*].field`): `tests/python_schema.rs` compares
+help text, record the workbook's text in `workbook_help` (an input path, a
+scalar result path (decision 14: E16 and E17 keep the workbook's labels and
+reword the help), or a table column as `group.table[*].field`): `tests/python_schema.rs` compares
 Python's help against it, `tests/schema.rs` the workbook note of a table
 column, and both `tests/deviations.rs` and `tests/schema.rs` require the port's
 help to differ. A result the Python engine does not have (E2's

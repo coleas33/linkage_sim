@@ -1318,6 +1318,40 @@ fn e15_heat_capacity_matches_the_report() {
 }
 
 #[test]
+fn e16_removed_disc_matches_the_report() {
+    // Report 5.4, E16: the same four cells in the main and M2 columns; standalone (E9 off:
+    // the web is steel) nothing moves. C147, C188, C47, C114 and C192 do not change.
+    let e9 = Deviations::NONE.with(DeviationId::E9);
+    let e16 = DeviationId::E16;
+    let rows: ReportRows = &[
+        ("Metal design!C148", 101.5, 103.8),
+        ("Metal design!C149", -4.689, -6.954),
+        ("Metal design!C189", 3.453, 1.188),
+        ("Metal design!C191", 101.5, 103.8),
+    ];
+    assert_report_table("E16 on E9", &NO_BACK_IRON, e9, e9.with(e16), rows);
+    assert_report_table("E16 on M2", &NO_BACK_IRON, m2(), m2().with(e16), rows);
+    assert_report_table(
+        "E16 alone",
+        &NO_BACK_IRON,
+        Deviations::NONE,
+        Deviations::only(e16),
+        &[],
+    );
+    // Full precision (report 5.4): the disc at 2.7 g/cm³.
+    let c = cells_with(&NO_BACK_IRON, e9.with(e16));
+    assert_eq!(c["Metal design!C189"], Value::Num(1.1875220230569419));
+    assert_eq!(c["Metal design!C191"], Value::Num(103.76539290918065));
+    assert_eq!(c["Metal design!C149"], Value::Num(-6.95366329618038));
+}
+
+#[test]
+fn e16_leaves_every_default_cell_bit_for_bit() {
+    // At defaults the web is steel: the density E16 reads is C132 itself.
+    assert_bit_for_bit_at_defaults(DeviationId::E16);
+}
+
+#[test]
 fn e15_leaves_every_default_cell_bit_for_bit() {
     // At defaults (C6 = 1) every part is steel and the workbook expression stays.
     assert_bit_for_bit_at_defaults(DeviationId::E15);
@@ -1409,7 +1443,10 @@ fn all_corrections_together_give_the_reviewed_headline() {
 
 #[test]
 fn reworded_help_is_recorded_for_real_fields() {
+    // An input path, a scalar result path (decision 14: E16's and E17's labels stay, their
+    // help is reworded), or a table column (checked against the workbook in tests/schema.rs).
     let inputs = input_rows(&DesignInputs::default());
+    let results = result_rows(&compute_all(&DesignInputs::default()));
     for d in REGISTRY
         .iter()
         .filter(|d| d.status == DeviationStatus::Applied)
@@ -1418,15 +1455,18 @@ fn reworded_help_is_recorded_for_real_fields() {
             if path.contains("[*]") {
                 continue; // table columns: checked against the workbook headers in tests/schema.rs
             }
-            let row = inputs
+            let help = inputs
                 .iter()
                 .find(|r| r.path == path)
-                .unwrap_or_else(|| panic!("{}: {path} is not an input", d.id));
-            assert_ne!(
-                row.meta.help, workbook,
-                "{}: {path} help is not reworded",
-                d.id
-            );
+                .map(|r| r.meta.help)
+                .or_else(|| {
+                    results
+                        .iter()
+                        .find(|r| r.path == path && !r.meta.rust_only)
+                        .map(|r| r.meta.help)
+                })
+                .unwrap_or_else(|| panic!("{}: {path} is not an input or a result", d.id));
+            assert_ne!(help, workbook, "{}: {path} help is not reworded", d.id);
         }
     }
 }

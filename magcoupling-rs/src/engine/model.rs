@@ -784,6 +784,22 @@ pub(crate) fn cup_is_aluminium(backiron: i64, dev: Deviations) -> bool {
     dev.is_on(DeviationId::E9) && backiron != 1
 }
 
+/// The density of the cup wall, rear web and boss [g/mm³]: aluminium (C42) when
+/// [`cup_is_aluminium`], else steel (C132). The mass model's C111 and C113 use it,
+/// and E16 prices the disc bored out of the web with it (one source of truth).
+pub(crate) fn cup_boss_density(
+    backiron: i64,
+    steel_density_g_mm3: f64,
+    al_density_g_mm3: f64,
+    dev: Deviations,
+) -> f64 {
+    if cup_is_aluminium(backiron, dev) {
+        al_density_g_mm3
+    } else {
+        steel_density_g_mm3
+    }
+}
+
 /// Whether the keyed hub is aluminium: the workbook prices it so whenever C6 is
 /// not 1 (C112), with or without E9. Read by the mass model, E15 and E18.
 pub(crate) fn hub_is_aluminium(backiron: i64) -> bool {
@@ -816,11 +832,8 @@ pub fn mass_estimate(
             + r.outer_length_mm * r.outer_width_mm * r.outer_thickness_mm)
         * NDFEB_DENSITY_G_MM3;
     // E9: with no intentional back iron the cup and boss are aluminium, as the hub already is.
-    let cup_boss_density = if cup_is_aluminium(ci.backiron, dev) {
-        al_density_g_mm3
-    } else {
-        steel_density_g_mm3
-    };
+    let cup_boss_density =
+        cup_boss_density(ci.backiron, steel_density_g_mm3, al_density_g_mm3, dev);
     let pocket = r.outer_back_apothem_mm + bond_outer_mm;
     // E8: arcs sit in a round pocket, not a polygon.
     let cavity = if dev.is_on(DeviationId::E8) && ci.faceted != 1 {

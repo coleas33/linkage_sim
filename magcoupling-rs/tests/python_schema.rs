@@ -152,6 +152,7 @@ fn rust_only_inputs_are_unknown_to_python() {
 #[test]
 fn ported_results_carry_the_python_metadata() {
     let python = python_rows();
+    let reworded = reworded_help();
     let mut failures = Vec::new();
     for row in result_rows(&compute_all(&DesignInputs::default()))
         .into_iter()
@@ -169,10 +170,12 @@ fn ported_results_carry_the_python_metadata() {
         if py.kind != "result" {
             failures.push(format!("{}: Python kind is {:?}", row.path, py.kind));
         }
+        // Python keeps the workbook help where a correction rewords it (decision 14).
+        let help = reworded.get(row.path.as_str()).copied().unwrap_or(m.help);
         compare(
             &mut failures,
             &row.path,
-            (m.label, m.unit, m.help, m.cell),
+            (m.label, m.unit, help, m.cell),
             py,
         );
     }

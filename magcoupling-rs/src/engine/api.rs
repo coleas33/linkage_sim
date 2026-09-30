@@ -202,6 +202,12 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         &ret,
         cal_in.measured_torque_Nm,
         cal_in.test_temp_C,
+        model::cup_boss_density(
+            ci.backiron,
+            md.steel_density_g_mm3,
+            md.al_density_g_mm3,
+            dev,
+        ),
         dev,
     );
     let matr = materials::compute(

@@ -924,7 +924,7 @@ pub const REGISTRY: &[Deviation] = &[
             decisions: &[9, 14, 15],
         },
         depends_on: &[DeviationId::E9],
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &[
             "Calculator!C6",
             "Calculator!C111",
@@ -938,10 +938,38 @@ pub const REGISTRY: &[Deviation] = &[
             Calculator!C111 uses for the web (C42 when aluminium under E9, otherwise C132), passed from the mass model \
             as one source of truth. The labels C147 and C189 stay (schema parity); their help is reworded (decision 14).",
         workbook_input_defaults: &[],
-        workbook_help: &[],
+        workbook_help: &[
+            ("metal.steel_cup_mass_g", ""),
+            ("metal.adapter_steel_removed_g", ""),
+        ],
         changes_at_defaults: &[],
         changes_file: None,
-        probes: &[],
+        probes: &[Probe {
+            label: "no intentional back iron (coupling.backiron = 0), on top of E9 (report 5.4, E16)",
+            inputs: &[("coupling.backiron", Literal::Int(0))],
+            expect: &[
+                CellChange {
+                    cell: "Metal design!C189",
+                    workbook: Literal::Num(3.4526103262951824),
+                    corrected: Literal::Num(1.1875220230569419),
+                },
+                CellChange {
+                    cell: "Metal design!C191",
+                    workbook: Literal::Num(101.5003046059424),
+                    corrected: Literal::Num(103.76539290918065),
+                },
+                CellChange {
+                    cell: "Metal design!C148",
+                    workbook: Literal::Num(101.5003046059424),
+                    corrected: Literal::Num(103.76539290918065),
+                },
+                CellChange {
+                    cell: "Metal design!C149",
+                    workbook: Literal::Num(-4.6885749929421365),
+                    corrected: Literal::Num(-6.95366329618038),
+                },
+            ],
+        }],
     },
     Deviation {
         id: DeviationId::E17,
