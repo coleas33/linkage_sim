@@ -916,13 +916,12 @@ pub fn resolve(
         cap: part(
             &CAP_HOUSING_CHOICES,
             choice.cap_housing,
-            props(
-                AL6061.conductivity_S_m,
-                md.al_density_g_mm3,
-                thermal.c_aluminium,
-                f64::NAN,
-                f64::NAN,
-            ),
+            // The workbook's 6061, as the body; no cap CTE or modulus, as the sleeve.
+            EngineProps {
+                cte_per_C: f64::NAN,
+                modulus_GPa: f64::NAN,
+                ..aluminium
+            },
         ),
     }
 }
