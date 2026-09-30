@@ -2,9 +2,13 @@
 //!
 //! The M1 math audit (`docs/analyses/2026-09-29-magcoupling-math-audit.md`)
 //! found fourteen engine errors, E1 to E14, and the user approved every
-//! correction on 2026-09-29 (E14 is documentation only). Everything else stays
-//! workbook-exact. This registry is the one place that says where the port
-//! departs from the workbook and why.
+//! correction on 2026-09-29 (E14 is documentation only). The Addendum A
+//! verification (`docs/analyses/2026-09-30-magcoupling-addendum-a-verification.md`)
+//! added E15 to E18 (its audit rows: the E9 residuals at back iron = 0 and the
+//! aluminium hub's mismatch screen), E19 (decision 2: the SuperMagnetMan arc
+//! parts) and E20 (decision 19: each magnet's own coercivity), all approved on
+//! 2026-09-30. Everything else stays workbook-exact. This registry is the one
+//! place that says where the port departs from the workbook and why.
 //!
 //! # How a deviation is applied
 //!
@@ -22,17 +26,21 @@
 //!   `changes_file` instead (E3: `tests/data/deviations/E3.json`, E4:
 //!   `tests/data/deviations/E4.json`, E5: `tests/data/deviations/E5.json`).
 //! - **Probes.** A correction that changes nothing at default inputs (E7 to
-//!   E13) lists `probes`: input overrides on which it shows (the report's
-//!   off-default example) and the cells it changes there, with the workbook
-//!   and the corrected value.
+//!   E13, E15 to E20) lists `probes`: input overrides on which it shows (the
+//!   report's off-default example) and the cells it changes there, with the
+//!   workbook and the corrected value.
+//! - **Dependencies.** A correction that refines another one lists it in
+//!   `depends_on` (E15, E16 and E17 refine E9: without it the cup is steel).
+//!   Its probes run with the dependencies on, on both sides (decision 15).
 //!
 //! # The test-only switch
 //!
 //! Users always get [`Deviations::ALL`] (`compute_all`). The `workbook-parity`
-//! feature, enabled only for tests, adds [`Deviations::NONE`] and
-//! [`Deviations::only`], so workbook parity and the differential tests compare
-//! against the workbook and the Python engine exactly, and each deviation can
-//! be checked alone. The GUI never shows the switch.
+//! feature, enabled only for tests, adds [`Deviations::NONE`],
+//! [`Deviations::only`], [`Deviations::with`] and [`Deviations::without`], so
+//! workbook parity and the differential tests compare against the workbook and
+//! the Python engine exactly, and each deviation can be checked alone or on top
+//! of the ones it refines. The GUI never shows the switch.
 
 use std::fmt;
 
@@ -40,8 +48,12 @@ use std::fmt;
 use super::meta::InputSet;
 use super::meta::Value;
 
-/// The M1 audit report every entry cites.
+/// The M1 audit report E1 to E14 cite.
 pub const REPORT: &str = "docs/analyses/2026-09-29-magcoupling-math-audit.md";
+
+/// The Addendum A verification report E15 to E20 cite (section 8 holds the
+/// decisions the user approved on 2026-09-30).
+pub const ADDENDUM_REPORT: &str = "docs/analyses/2026-09-30-magcoupling-addendum-a-verification.md";
 
 /// Identifier of an approved correction, numbered as in the audit report.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -60,11 +72,17 @@ pub enum DeviationId {
     E12,
     E13,
     E14,
+    E15,
+    E16,
+    E17,
+    E18,
+    E19,
+    E20,
 }
 
 impl DeviationId {
     /// Every identifier, in report order.
-    pub const ALL: [DeviationId; 14] = [
+    pub const ALL: [DeviationId; 20] = [
         DeviationId::E1,
         DeviationId::E2,
         DeviationId::E3,
@@ -79,6 +97,12 @@ impl DeviationId {
         DeviationId::E12,
         DeviationId::E13,
         DeviationId::E14,
+        DeviationId::E15,
+        DeviationId::E16,
+        DeviationId::E17,
+        DeviationId::E18,
+        DeviationId::E19,
+        DeviationId::E20,
     ];
 
     /// Position in [`DeviationId::ALL`] and in [`REGISTRY`].
@@ -104,6 +128,17 @@ pub enum DeviationClass {
     Engine,
     /// Help text or README wording only; no number changes.
     Documentation,
+}
+
+/// Where the user approved a correction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Approval {
+    /// Its row of the M1 audit report ([`REPORT`]), approved on 2026-09-29.
+    AuditRow,
+    /// These decisions of the Addendum A verification report
+    /// ([`ADDENDUM_REPORT`], section 8), approved (option A) on 2026-09-30.
+    /// E15 to E18 also have an audit row there; E19 and E20 have none.
+    Addendum { decisions: &'static [u32] },
 }
 
 /// Whether the correction is in the code yet.
@@ -169,6 +204,11 @@ pub struct Deviation {
     /// Short statement of the workbook error (the report's Group column).
     pub title: &'static str,
     pub class: DeviationClass,
+    /// Where the user approved it.
+    pub approval: Approval,
+    /// Corrections this one refines; its probes run with them on, on both
+    /// sides (decision 15). Empty for all but E15, E16 and E17 (on E9).
+    pub depends_on: &'static [DeviationId],
     pub status: DeviationStatus,
     /// Every workbook cell the report names for this entry (inputs, corrected
     /// formulas and named downstream cells). Each exists in the snapshot.
@@ -191,14 +231,34 @@ pub struct Deviation {
     /// `MAGCOUPLING_BLESS=1 cargo test --test deviations each_deviation_alone_changes_exactly_its_registered_cells` and reviewed as a diff.
     /// `changes_at_defaults` stays empty for such entries.
     pub changes_file: Option<&'static str>,
-    /// Off-default checks for corrections neutral at defaults (E7 to E13).
+    /// Off-default checks for corrections neutral at defaults (E7 to E13,
+    /// E15 to E20).
     pub probes: &'static [Probe],
 }
 
 impl Deviation {
-    /// Where the evidence is: the audit report entry.
+    /// The report that approves this entry.
+    pub fn report(&self) -> &'static str {
+        match self.approval {
+            Approval::AuditRow => REPORT,
+            Approval::Addendum { .. } => ADDENDUM_REPORT,
+        }
+    }
+
+    /// Where the evidence is: the audit report entry, or the Addendum A decisions.
     pub fn evidence(&self) -> String {
-        format!("{REPORT}, entry {}", self.id)
+        match self.approval {
+            Approval::AuditRow => format!("{REPORT}, entry {}", self.id),
+            Approval::Addendum { decisions } => {
+                let list: Vec<String> = decisions.iter().map(u32::to_string).collect();
+                let noun = if decisions.len() == 1 {
+                    "decision"
+                } else {
+                    "decisions"
+                };
+                format!("{ADDENDUM_REPORT}, section 8, {noun} {}", list.join(", "))
+            }
+        }
     }
 }
 
@@ -208,6 +268,8 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E1,
         title: "Adhesive shear modulus does not match the selected adhesive",
         class: DeviationClass::Engine,
+        approval: Approval::AuditRow,
+        depends_on: &[],
         status: DeviationStatus::Applied,
         cells: &[
             "Temperature design!C96",
@@ -263,6 +325,8 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E2,
         title: "Clamp screw length leaves out the clamp slit",
         class: DeviationClass::Engine,
+        approval: Approval::AuditRow,
+        depends_on: &[],
         status: DeviationStatus::Applied,
         cells: &[
             "Clamp screw sizes!C34",
@@ -310,6 +374,8 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E3,
         title: "Library remanence of the N42SH parts is below the vendor's published minimum",
         class: DeviationClass::Engine,
+        approval: Approval::AuditRow,
+        depends_on: &[],
         status: DeviationStatus::Applied,
         cells: &[
             "Calculator!C17",
@@ -335,6 +401,8 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E4,
         title: "Pole sweep counts the inner bondline as hub wall",
         class: DeviationClass::Engine,
+        approval: Approval::AuditRow,
+        depends_on: &[],
         status: DeviationStatus::Applied,
         cells: &[
             "Pole sweep!C6",
@@ -356,6 +424,8 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E5,
         title: "Rear-web eddy loss uses the free-space field instead of the field at the steel surface",
         class: DeviationClass::Engine,
+        approval: Approval::AuditRow,
+        depends_on: &[],
         status: DeviationStatus::Applied,
         cells: &[
             "Temperature design!C121",
@@ -378,6 +448,8 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E6,
         title: "Cup wall at the flats counts the outer bondline as steel",
         class: DeviationClass::Engine,
+        approval: Approval::AuditRow,
+        depends_on: &[],
         status: DeviationStatus::Applied,
         cells: &["Calculator!C63"],
         corrected_formula: "Calculator!C63 = C62/2 - (C60 + Metal design!C121).",
@@ -395,6 +467,8 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E7,
         title: "Pull-out is taken at half a pole pitch, which is not always the maximum",
         class: DeviationClass::Engine,
+        approval: Approval::AuditRow,
+        depends_on: &[],
         status: DeviationStatus::Applied,
         cells: &[
             "Calculator!C76",
@@ -453,6 +527,8 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E8,
         title: "Arc-magnet mode reuses flat-block corner geometry in three formulas",
         class: DeviationClass::Engine,
+        approval: Approval::AuditRow,
+        depends_on: &[],
         status: DeviationStatus::Applied,
         cells: &[
             "Calculator!C9",
@@ -517,6 +593,8 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E9,
         title: "'No back iron' is applied to the torque but not to the cup's mass and wall check",
         class: DeviationClass::Engine,
+        approval: Approval::AuditRow,
+        depends_on: &[],
         status: DeviationStatus::Applied,
         cells: &[
             "Calculator!C6",
@@ -566,6 +644,8 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E10,
         title: "Gap flux density averages Br instead of summing each magnet's MMF",
         class: DeviationClass::Engine,
+        approval: Approval::AuditRow,
+        depends_on: &[],
         status: DeviationStatus::Applied,
         cells: &[
             "Calculator!C103",
@@ -610,6 +690,8 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E11,
         title: "22 °C adhesive fatigue screen ignores the fatigue-endurance input",
         class: DeviationClass::Engine,
+        approval: Approval::AuditRow,
+        depends_on: &[],
         status: DeviationStatus::Applied,
         cells: &["Temperature design!C91", "Temperature design!C195"],
         corrected_formula: "C91 margin = C195 x C78 / C86.",
@@ -634,6 +716,8 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E12,
         title: "No guard for a hot-day start already above the temperature limit",
         class: DeviationClass::Engine,
+        approval: Approval::AuditRow,
+        depends_on: &[],
         status: DeviationStatus::Applied,
         cells: &[
             "Temperature design!C19",
@@ -690,6 +774,8 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E13,
         title: "A measured drag of exactly 0 stops the whole calculation",
         class: DeviationClass::Engine,
+        approval: Approval::AuditRow,
+        depends_on: &[],
         status: DeviationStatus::Applied,
         cells: &["Temperature design!C156", "Temperature design!C157"],
         corrected_formula: "Rotations per °C = +inf when the heating power is 0; \
@@ -740,6 +826,8 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E14,
         title: "README and help text say only M3 fits a 22 mm boss",
         class: DeviationClass::Documentation,
+        approval: Approval::AuditRow,
+        depends_on: &[],
         status: DeviationStatus::Applied,
         cells: &["Shaft clamps!C35"],
         corrected_formula: "Reword the README and the Shaft clamps!C35 help: \"At 22 mm M4 no longer fits. \
@@ -750,6 +838,292 @@ pub const REGISTRY: &[Deviation] = &[
             "clamps.boss_od_mm",
             "At 22 mm only M3 fits; two of them need a 14.5 mm clamp.",
         )],
+        changes_at_defaults: &[],
+        changes_file: None,
+        probes: &[],
+    },
+    Deviation {
+        id: DeviationId::E15,
+        title: "Heat capacity prices the aluminium cup, boss and hub at steel specific heat (E9 residual 1)",
+        class: DeviationClass::Engine,
+        approval: Approval::Addendum {
+            decisions: &[8, 15],
+        },
+        depends_on: &[DeviationId::E9],
+        status: DeviationStatus::Planned,
+        cells: &[
+            "Calculator!C6",
+            "Calculator!C111",
+            "Calculator!C112",
+            "Calculator!C113",
+            "Temperature design!C140",
+            "Temperature design!C141",
+            "Temperature design!C143",
+            "Temperature design!C145",
+            "Temperature design!C154",
+            "Temperature design!C155",
+            "Temperature design!C156",
+            "Temperature design!C157",
+            "Temperature design!C158",
+            "Temperature design!C159",
+            "Temperature design!C160",
+            "Temperature design!C161",
+            "Temperature design!C171",
+            "Temperature design!C172",
+            "Temperature design!C180",
+            "Temperature design!C181",
+            "Temperature design!C182",
+            "Temperature design!C186",
+            "Temperature design!C189",
+            "Temperature design!C190",
+            "Temperature design!C192",
+            "Temperature design!C193",
+            "Temperature design!C196",
+            "Temperature design!C20",
+        ],
+        corrected_formula: "C141 = [m_mag c_NdFeB + (Calculator!C111 + Calculator!C113) c_cup + Calculator!C112 c_hub \
+            + Metal design!C128 Materials!C16 + (retainers + endplates) Temperature design!C139 + cap Temperature design!C140] / 1000; \
+            c_cup = C140 when the cup is aluminium (E9's gate: C6 != 1 and E9 on), otherwise Materials!C16; \
+            c_hub = C140 when C6 != 1, otherwise Materials!C16. The gate reads the same flag the density reads.",
+        workbook_input_defaults: &[],
+        workbook_help: &[],
+        changes_at_defaults: &[],
+        changes_file: None,
+        probes: &[],
+    },
+    Deviation {
+        id: DeviationId::E16,
+        title: "The disc removed from the web in the aluminium-adapter variant is priced at steel density (E9 residual 2)",
+        class: DeviationClass::Engine,
+        approval: Approval::Addendum {
+            decisions: &[9, 14, 15],
+        },
+        depends_on: &[DeviationId::E9],
+        status: DeviationStatus::Planned,
+        cells: &[
+            "Calculator!C6",
+            "Calculator!C111",
+            "Metal design!C147",
+            "Metal design!C148",
+            "Metal design!C149",
+            "Metal design!C189",
+            "Metal design!C191",
+        ],
+        corrected_formula: "C189 = pi/4 (C185^2 - Calculator!C39^2) C125 rho_cup, where rho_cup is the density \
+            Calculator!C111 uses for the web (C42 when aluminium under E9, otherwise C132), passed from the mass model \
+            as one source of truth. The labels C147 and C189 stay (schema parity); their help is reworded (decision 14).",
+        workbook_input_defaults: &[],
+        workbook_help: &[],
+        changes_at_defaults: &[],
+        changes_file: None,
+        probes: &[],
+    },
+    Deviation {
+        id: DeviationId::E17,
+        title: "The cup, web and hub eddy losses use the steel skin-depth model, steel constants and steel-circuit fields for aluminium parts (E9 residual 3)",
+        class: DeviationClass::Engine,
+        approval: Approval::Addendum {
+            decisions: &[10, 11, 12, 13, 14, 15],
+        },
+        depends_on: &[DeviationId::E9],
+        status: DeviationStatus::Planned,
+        cells: &[
+            "Calculator!C6",
+            "Calculator!C8",
+            "Calculator!C20",
+            "Calculator!C33",
+            "Calculator!C38",
+            "Calculator!C60",
+            "Metal design!C120",
+            "Metal design!C121",
+            "Metal design!C122",
+            "Metal design!C125",
+            "Materials!C43",
+            "Temperature design!C114",
+            "Temperature design!C116",
+            "Temperature design!C17",
+            "Temperature design!C18",
+            "Temperature design!C19",
+            "Temperature design!C20",
+            "Temperature design!C22",
+            "Temperature design!C123",
+            "Temperature design!C124",
+            "Temperature design!C125",
+            "Temperature design!C130",
+            "Temperature design!C131",
+            "Temperature design!C132",
+            "Temperature design!C134",
+            "Temperature design!C145",
+            "Temperature design!C146",
+            "Temperature design!C147",
+            "Temperature design!C148",
+            "Temperature design!C149",
+            "Temperature design!C150",
+            "Temperature design!C151",
+            "Temperature design!C154",
+            "Temperature design!C155",
+            "Temperature design!C156",
+            "Temperature design!C157",
+            "Temperature design!C161",
+            "Temperature design!C169",
+            "Temperature design!C170",
+            "Temperature design!C171",
+            "Temperature design!C172",
+            "Temperature design!C173",
+            "Temperature design!C175",
+            "Temperature design!C176",
+            "Temperature design!C177",
+            "Temperature design!C180",
+            "Temperature design!C181",
+            "Temperature design!C182",
+            "Temperature design!C186",
+            "Temperature design!C189",
+            "Temperature design!C190",
+            "Temperature design!C192",
+            "Temperature design!C193",
+            "Temperature design!C196",
+        ],
+        corrected_formula: "At C6 = 0 price each aluminium part with the low-Reynolds closed form T1: \
+            P = f_end sigma_Al w_e^2 B_free^2 / (2 k^2) d_eff A, d_eff = (1 - e^(-2 k d)) / (2 k), k = p / r, \
+            sigma_Al = Materials!C43, f_end = C114, A = 2 pi r L (L = Calculator!C33). Hub: r = Calculator!C8 - Metal design!C120, \
+            d = Calculator!C38, B_free = 0.07832 T when the cup is aluminium (E9 on), C116 / 2 when it is steel. \
+            Cup: r = Calculator!C60 + Metal design!C121, d = Metal design!C122, B_free = 0.08764 T. \
+            Web: (r_mid / p)^2 replaces 1/k^2, r_mid = Calculator!C8 + Calculator!C20 / 2, d = Metal design!C125, \
+            and the free-space integral 6.837e-6 T^2 m^2 replaces A B^2. The three free-space fields are Rust-only inputs \
+            pinned at 4 s.f. (decision 12; M3 computes them live). The labels C123 to C125 stay; their help is reworded (decision 14).",
+        workbook_input_defaults: &[],
+        workbook_help: &[],
+        changes_at_defaults: &[],
+        changes_file: None,
+        probes: &[],
+    },
+    Deviation {
+        id: DeviationId::E18,
+        title: "The adhesive thermal-mismatch screen uses 4140's CTE and modulus for a hub that the mass model makes aluminium",
+        class: DeviationClass::Engine,
+        approval: Approval::Addendum { decisions: &[16] },
+        depends_on: &[],
+        status: DeviationStatus::Planned,
+        cells: &[
+            "Calculator!C6",
+            "Temperature design!C94",
+            "Temperature design!C98",
+            "Temperature design!C104",
+            "Temperature design!C105",
+            "Temperature design!C106",
+            "Temperature design!C201",
+            "Temperature design!C202",
+        ],
+        corrected_formula: "With C6 != 1 (E15's hub gate: the hub material follows the hub density rule) the Volkersen \
+            screen uses aluminium 6061-T6 for the hub: CTE 23.6e-6 /C and modulus 68.9 GPa (Alliance 6061-T6 datasheet); \
+            C94 and C98 still show Materials!C17 and C18.",
+        workbook_input_defaults: &[],
+        workbook_help: &[],
+        changes_at_defaults: &[],
+        changes_file: None,
+        probes: &[],
+    },
+    Deviation {
+        id: DeviationId::E19,
+        title: "The SuperMagnetMan arc parts carry a maximum temperature above the vendor's 60 C, and M5045's grade contradicts its specification grid",
+        class: DeviationClass::Engine,
+        approval: Approval::Addendum { decisions: &[2] },
+        depends_on: &[],
+        status: DeviationStatus::Planned,
+        cells: &[
+            "Calculator!C11",
+            "Calculator!C12",
+            "Calculator!C22",
+            "Calculator!C32",
+            "Calculator!C107",
+            "Calculator!C108",
+            "Temperature design!C7",
+            "Temperature design!C8",
+            "Temperature design!C9",
+            "Temperature design!C10",
+            "Temperature design!C12",
+            "Temperature design!C13",
+            "Temperature design!C15",
+            "Temperature design!C19",
+            "Temperature design!C23",
+            "Temperature design!C24",
+            "Temperature design!C47",
+            "Temperature design!C50",
+            "Temperature design!C56",
+            "Temperature design!C57",
+            "Temperature design!C58",
+            "Temperature design!C59",
+            "Temperature design!C60",
+            "Temperature design!C61",
+            "Temperature design!C150",
+            "Temperature design!C151",
+            "Temperature design!C152",
+            "Temperature design!C153",
+            "Temperature design!C181",
+            "Temperature design!C182",
+        ],
+        corrected_formula: "Tmax of library rows M5044, M5045 and M5026 = 60 C (the vendor's specification grid, \
+            supermagnetman.com/products/m5044, m5045, m5026); M5045 maps to grade N50 (the grid's 'Neodymium 50'; \
+            the title's N50M is the unsafe reading of a self-contradicting page). Br stays at the workbook's 1.42 T.",
+        workbook_input_defaults: &[],
+        workbook_help: &[],
+        changes_at_defaults: &[],
+        changes_file: None,
+        probes: &[],
+    },
+    Deviation {
+        id: DeviationId::E20,
+        title: "The demagnetization check uses one N42SH coercivity curve for every magnet and checks only the inner ring",
+        class: DeviationClass::Engine,
+        approval: Approval::Addendum { decisions: &[19] },
+        depends_on: &[],
+        status: DeviationStatus::Planned,
+        cells: &[
+            "Calculator!C11",
+            "Temperature design!C7",
+            "Temperature design!C8",
+            "Temperature design!C9",
+            "Temperature design!C10",
+            "Temperature design!C12",
+            "Temperature design!C13",
+            "Temperature design!C15",
+            "Temperature design!C19",
+            "Temperature design!C23",
+            "Temperature design!C24",
+            "Temperature design!C25",
+            "Temperature design!C42",
+            "Temperature design!C44",
+            "Temperature design!C45",
+            "Temperature design!C47",
+            "Temperature design!C48",
+            "Temperature design!C49",
+            "Temperature design!C50",
+            "Temperature design!C56",
+            "Temperature design!C57",
+            "Temperature design!C58",
+            "Temperature design!C59",
+            "Temperature design!C60",
+            "Temperature design!C61",
+            "Temperature design!C101",
+            "Temperature design!C104",
+            "Temperature design!C105",
+            "Temperature design!C150",
+            "Temperature design!C151",
+            "Temperature design!C152",
+            "Temperature design!C153",
+            "Temperature design!C181",
+            "Temperature design!C182",
+        ],
+        corrected_formula: "Each ring is checked against its own magnet: Hcj(20 C) and beta(Hcj) from its grade (a library \
+            part's, or the grade picked for manual dimensions), its Br (Calculator!C21, C31) and its rating (C22, C32); \
+            C44 and C45 stay as overrides that win when the coercivity source is set to the inputs, and a magnet without \
+            a grade uses them. Both rings meet the stored reverse fields C52 to C55, and the ring with the lower magnet \
+            limit governs: C42 and C47 to C61 show that ring (the inner ring on a tie; the A-1 plan's decision A13). A \
+            positive beta (hard ferrite) takes the signed onset form, where the knee falls as the magnet cools: the \
+            onset is a cold limit, and the cold check passes only if both rings pass. \
+            N42SH keeps the workbook's 1592 kA/m and -0.005 /C (decisions 17 A, 18 A), so the default design does not move.",
+        workbook_input_defaults: &[],
+        workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: None,
         probes: &[],
@@ -782,6 +1156,22 @@ impl Deviations {
     /// TEST-ONLY. Exactly one correction, to check it in isolation.
     pub const fn only(id: DeviationId) -> Self {
         Self { mask: id.bit() }
+    }
+
+    /// TEST-ONLY. This set with `id` switched on as well (decision 15: E15 to
+    /// E17 are probed on top of E9, `NONE.with(E9).with(E15)`).
+    pub const fn with(self, id: DeviationId) -> Self {
+        Self {
+            mask: self.mask | id.bit(),
+        }
+    }
+
+    /// TEST-ONLY. This set with `id` switched off (`ALL.without(E18)`: what
+    /// users see, less one correction).
+    pub const fn without(self, id: DeviationId) -> Self {
+        Self {
+            mask: self.mask & !id.bit(),
+        }
     }
 }
 
@@ -828,9 +1218,56 @@ mod tests {
                 d.id
             );
             assert!(!d.cells.is_empty(), "{} names no cell", d.id);
-            assert!(d.evidence().starts_with(REPORT), "{}", d.id);
-            assert!(d.evidence().ends_with(&format!("entry {}", d.id)));
+            assert!(d.evidence().starts_with(d.report()), "{}", d.id);
+            match d.approval {
+                Approval::AuditRow => {
+                    assert!(d.id.index() < 14, "{}: only E1 to E14 are M1 rows", d.id);
+                    assert!(d.evidence().ends_with(&format!("entry {}", d.id)));
+                }
+                Approval::Addendum { decisions } => {
+                    assert!(d.id.index() >= 14, "{}: E1 to E14 are M1 rows", d.id);
+                    assert!(!decisions.is_empty(), "{} cites no decision", d.id);
+                    assert!(decisions.iter().all(|n| (1..=31).contains(n)), "{}", d.id);
+                }
+            }
+            for dep in d.depends_on {
+                assert!(
+                    dep.index() < d.id.index(),
+                    "{} depends on a later {dep}",
+                    d.id
+                );
+            }
         }
+    }
+
+    #[test]
+    fn evidence_names_the_report_and_the_decisions() {
+        assert_eq!(
+            REGISTRY[DeviationId::E1.index()].evidence(),
+            format!("{REPORT}, entry E1")
+        );
+        assert_eq!(
+            REGISTRY[DeviationId::E18.index()].evidence(),
+            format!("{ADDENDUM_REPORT}, section 8, decision 16")
+        );
+        assert_eq!(
+            REGISTRY[DeviationId::E17.index()].evidence(),
+            format!("{ADDENDUM_REPORT}, section 8, decisions 10, 11, 12, 13, 14, 15")
+        );
+    }
+
+    #[test]
+    fn with_and_without_add_and_remove_one_correction() {
+        let (e9, e15) = (DeviationId::E9, DeviationId::E15);
+        let both = Deviations::NONE.with(e9).with(e15);
+        for id in DeviationId::ALL {
+            assert_eq!(both.is_on(id), id == e9 || id == e15, "{id}");
+            assert_eq!(Deviations::ALL.without(e15).is_on(id), id != e15, "{id}");
+        }
+        assert_eq!(Deviations::NONE.with(e9), Deviations::only(e9));
+        assert_eq!(both.without(e15), Deviations::only(e9));
+        assert_eq!(Deviations::ALL.without(e9).with(e9), Deviations::ALL);
+        assert_eq!(Deviations::NONE.without(e9), Deviations::NONE);
     }
 
     #[test]
@@ -931,6 +1368,8 @@ mod tests {
             id: DeviationId::E3,
             title: "fake",
             class: DeviationClass::Engine,
+            approval: Approval::AuditRow,
+            depends_on: &[],
             status: DeviationStatus::Applied,
             cells: &["X!C1"],
             corrected_formula: "fake",

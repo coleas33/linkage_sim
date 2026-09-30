@@ -22,8 +22,8 @@ use common::{json_to_value, read_json, read_text, repo_path, report, snapshot, v
 use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with, headline};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::{
-    Deviation, DeviationClass, DeviationId, DeviationStatus, Deviations, Literal, Probe, REGISTRY,
-    REPORT,
+    ADDENDUM_REPORT, Approval, Deviation, DeviationClass, DeviationId, DeviationStatus, Deviations,
+    Literal, Probe, REGISTRY, REPORT,
 };
 use magcoupling::engine::meta::{InputSet, NumOrText, Value, input_rows, result_rows};
 
@@ -147,17 +147,43 @@ fn assert_report(cell: &str, got: &Value, want: f64, half_step: f64) {
     );
 }
 
+/// The defaults `dev` implies with `overrides` applied; panics naming an invalid override.
+fn inputs_with(overrides: &[(&str, Value)], dev: Deviations) -> DesignInputs {
+    let mut inputs = DesignInputs::defaults_with(dev);
+    for (path, value) in overrides {
+        inputs
+            .set(path, value.clone())
+            .unwrap_or_else(|e| panic!("override {path} = {value:?}: {e}"));
+    }
+    inputs
+}
+
+/// A registry probe's inputs as overrides.
+fn probe_overrides(probe: &Probe) -> Vec<(&'static str, Value)> {
+    probe
+        .inputs
+        .iter()
+        .map(|&(path, value)| (path, value.to_value()))
+        .collect()
+}
+
+/// Every value with a workbook cell for a probe's inputs, applied to the defaults `dev` implies.
+fn probe_cells(probe: &Probe, dev: Deviations) -> BTreeMap<String, Value> {
+    cell_values_for(&inputs_with(&probe_overrides(probe), dev), dev)
+}
+
 /// The value at one cell for a probe's inputs, applied to the defaults `dev` implies.
 fn at_probe(cell: &str, probe: &Probe, dev: Deviations) -> Value {
-    let mut inputs = DesignInputs::defaults_with(dev);
-    for &(path, value) in probe.inputs {
-        inputs
-            .set(path, value.to_value())
-            .unwrap_or_else(|e| panic!("probe {:?}: {e}", probe.label));
-    }
-    cell_values_for(&inputs, dev)
+    probe_cells(probe, dev)
         .remove(cell)
         .unwrap_or_else(|| panic!("{cell} is not a cell of the port"))
+}
+
+/// The corrections a probe of `d` runs on, on both sides: those `d` refines (decision 15).
+fn probe_base(d: &Deviation) -> Deviations {
+    d.depends_on
+        .iter()
+        .fold(Deviations::NONE, |base, &id| base.with(id))
 }
 
 /// With every correction off, the cell still holds the workbook snapshot value.
@@ -190,26 +216,77 @@ fn every_registered_cell_is_in_the_snapshot() {
 }
 
 #[test]
-fn every_entry_is_an_approved_row_of_the_audit_report() {
-    let text = read_text(&repo_path(REPORT));
+fn every_entry_is_approved_in_its_report() {
+    let audit = read_text(&repo_path(REPORT));
+    let addendum = read_text(&repo_path(ADDENDUM_REPORT));
+    // Section 8 of the Addendum A report: the approval line and the numbered decisions.
+    let section8 = addendum
+        .split_once("\n## 8. Decisions for the user\n")
+        .map(|(_, rest)| rest)
+        .expect("the Addendum A report has a section 8");
+    assert!(
+        section8.contains("**Approved (user, 2026-09-30): option A on all 31 decisions.**"),
+        "section 8 records the approval"
+    );
     for d in REGISTRY {
-        let prefix = format!("| {} |", d.id);
-        let row = text
-            .lines()
-            .find(|line| line.starts_with(&prefix))
-            .unwrap_or_else(|| panic!("{REPORT} has no row for {}", d.id));
-        assert!(
-            row.contains("| approved (user, 2026-09-29) |"),
-            "{} is not approved in the report",
-            d.id
+        match d.approval {
+            Approval::AuditRow => {
+                let prefix = format!("| {} |", d.id);
+                let row = audit
+                    .lines()
+                    .find(|line| line.starts_with(&prefix))
+                    .unwrap_or_else(|| panic!("{REPORT} has no row for {}", d.id));
+                assert!(
+                    row.contains("| approved (user, 2026-09-29) |"),
+                    "{} is not approved in the report",
+                    d.id
+                );
+                let documentation = row.contains("(documentation)");
+                assert_eq!(
+                    documentation,
+                    d.class == DeviationClass::Documentation,
+                    "{}: class vs report",
+                    d.id
+                );
+            }
+            Approval::Addendum { decisions } => {
+                for n in decisions {
+                    let heading = format!("{n}. **");
+                    assert!(
+                        section8.lines().any(|line| line.starts_with(&heading)),
+                        "{}: section 8 has no decision {n}",
+                        d.id
+                    );
+                }
+                // E15 to E18 have an audit row ("| E18 (candidate) |" too); its status
+                // column names the first decision that approves the entry.
+                let prefix = format!("| {} ", d.id);
+                if let Some(row) = addendum.lines().find(|line| line.starts_with(&prefix)) {
+                    let status = row.trim_end_matches('|').rsplit('|').next().unwrap_or("");
+                    assert!(
+                        status.contains("decision") && status.contains(&decisions[0].to_string()),
+                        "{}: row status {status:?} does not name decision {}",
+                        d.id,
+                        decisions[0]
+                    );
+                }
+                assert_eq!(d.class, DeviationClass::Engine, "{}", d.id);
+            }
+        }
+    }
+}
+
+#[test]
+fn e15_to_e18_have_audit_rows_and_e19_e20_decisions_only() {
+    let addendum = read_text(&repo_path(ADDENDUM_REPORT));
+    for id in DeviationId::ALL.into_iter().skip(14) {
+        let prefix = format!("| {id} ");
+        let has_row = addendum.lines().any(|line| line.starts_with(&prefix));
+        let expected = matches!(
+            id,
+            DeviationId::E15 | DeviationId::E16 | DeviationId::E17 | DeviationId::E18
         );
-        let documentation = row.contains("(documentation)");
-        assert_eq!(
-            documentation,
-            d.class == DeviationClass::Documentation,
-            "{}: class vs report",
-            d.id
-        );
+        assert_eq!(has_row, expected, "{id}");
     }
 }
 
@@ -565,11 +642,13 @@ fn each_probe_shows_its_correction() {
         .iter()
         .filter(|d| d.status == DeviationStatus::Applied)
     {
+        // Decision 15: a correction that refines others is probed on top of them.
+        let base = probe_base(d);
         for probe in d.probes {
             for change in probe.expect {
                 // Always run the workbook side (it must not panic); a workbook error value
                 // (`#DIV/0!`, where Python raises) has no Rust counterpart to compare with.
-                let workbook = at_probe(change.cell, probe, Deviations::NONE);
+                let workbook = at_probe(change.cell, probe, base);
                 if !matches!(change.workbook, Literal::Error(_))
                     && !parity_close(&workbook, &change.workbook.to_value())
                 {
@@ -578,13 +657,41 @@ fn each_probe_shows_its_correction() {
                         d.id, probe.label, change.cell, change.workbook
                     ));
                 }
-                let corrected = at_probe(change.cell, probe, Deviations::only(d.id));
+                let corrected = at_probe(change.cell, probe, base.with(d.id));
                 if !parity_close(&corrected, &change.corrected.to_value()) {
                     failures.push(format!(
                         "{} {:?}: {} corrected {corrected:?}, registered {:?}",
                         d.id, probe.label, change.cell, change.corrected
                     ));
                 }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", report(&failures));
+}
+
+#[test]
+fn addendum_entries_name_every_cell_their_probes_change() {
+    // The Addendum A entries (E15 to E20) name every cell their probes change, downstream
+    // cells included, so the registry alone says where each correction shows. The M1 entries
+    // (E1 to E14) name the corrected and report-named cells only: their probes change
+    // hundreds of sweep and downstream cells (E7, E8), and the broad ones keep golden files.
+    let mut failures = Vec::new();
+    for d in REGISTRY
+        .iter()
+        .filter(|d| matches!(d.approval, Approval::Addendum { .. }))
+    {
+        let base = probe_base(d);
+        for probe in d.probes {
+            let changed = changed_cells(
+                &probe_cells(probe, base),
+                &probe_cells(probe, base.with(d.id)),
+            );
+            for cell in changed.iter().filter(|c| !d.cells.contains(&c.as_str())) {
+                failures.push(format!(
+                    "{} {:?}: {cell} changes but is not in cells",
+                    d.id, probe.label
+                ));
             }
         }
     }

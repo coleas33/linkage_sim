@@ -42,17 +42,21 @@ every offending path, in schema order, with the reason `set` would give.
 
 ## Differences from the workbook
 
-Every correction below is approved in the M1 math audit report
+Every correction below is approved, E1 to E14 in the M1 math audit report
 (`docs/analyses/2026-09-29-magcoupling-math-audit.md`, the row with the same
-id) and registered in `src/engine/deviations.rs` with the cells it changes and
+id) and E15 to E20 in the Addendum A verification report
+(`docs/analyses/2026-09-30-magcoupling-addendum-a-verification.md`, the decisions
+of its section 8 that each entry's `approval` cites), and registered in `src/engine/deviations.rs` with the cells it changes and
 their workbook and corrected values (for E3, E4 and E5, which change 246, 47 and
 37 cells, in the reviewed golden files `tests/data/deviations/E3.json`, `E4.json` and `E5.json`). The corrections are always on for users
 (`compute_all`). Only tests switch them off, through the test-only
 `workbook-parity` feature (`compute_all_with`, `Deviations::NONE`,
-`Deviations::only`, `DesignInputs::defaults_with`): the parity and differential
+`Deviations::only`, `Deviations::with`, `Deviations::without`,
+`DesignInputs::defaults_with`): the parity and differential
 tests to compare against the workbook and the Python engine exactly, and the
-registry, metadata, robustness and unit tests to isolate one correction or to
-start from the workbook's defaults.
+registry, metadata, robustness and unit tests to isolate one correction, to
+probe one on top of the corrections it refines (`depends_on`: E15 to E17 on E9,
+decision 15), or to start from the workbook's defaults.
 
 | Id | Cells | Workbook | This port | Report |
 |---|---|---|---|---|

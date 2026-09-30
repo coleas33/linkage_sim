@@ -39,7 +39,7 @@ magcoupling_rs:
   engine_files:
     meta: meta.rs (inputs!/results!/rows! macros, param/out and col/at_row/uncelled_col builders, slider range, assumption flag, Value, InputSet get/set/visit and ResultSet get/visit by dotted path (a table row's field as table[i].field), validate (the set() checks on a whole input struct); table rows via RowSet and TableLayout with synthesized cells, results! tables section)
     compat: compat.rs (py_min/py_max, ceiling/floor_, text0, py_repr, fmt_num, fmt_fixed, parity_close)
-    deviations: deviations.rs (REGISTRY of the M1 corrections E1-E14, all fourteen Applied; Deviations switch; registry Probe entries and changes_file golden-file names; NONE/only() and restore_workbook_defaults behind the test-only workbook-parity feature)
+    deviations: deviations.rs (REGISTRY of the M1 corrections E1-E14 and the Addendum A corrections E15-E20 (report docs/analyses/2026-09-30-magcoupling-addendum-a-verification.md, section 8 decisions via Approval::Addendum); depends_on (E15-E17 on E9); Deviations switch; registry Probe entries and changes_file golden-file names; NONE/only()/with()/without() and restore_workbook_defaults behind the test-only workbook-parity feature)
     constants: constants.rs (MU0 = 1.256637e-06, the workbook's rounded value; NDFEB_DENSITY_G_MM3)
     library: library.rs (Magnet library rows, workbook values, and the exact-text lookup; br_T applies E3)
     calibration: calibration.rs (Calibration sheet, 23 result cells, 16 default inputs)
