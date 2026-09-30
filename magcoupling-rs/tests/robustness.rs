@@ -166,6 +166,45 @@ fn compute_all_never_panics_on_selector_codes_outside_the_choices() {
 }
 
 #[test]
+fn an_invalid_coercivity_source_uses_the_inputs() {
+    // A Rust-only selector set on the struct (bypassing set()): any code but 1 means the Hcj
+    // and beta inputs for both rings, as the catch-all else of a two-way IF (Global
+    // Constraints); validate() names it.
+    let mut inputs = DesignInputs::default();
+    inputs.coupling.magnets.part_inner = "B842".into();
+    let graded = compute_all(&inputs).temperature.demag;
+    inputs.temperature.demag.coercivity_source = 7;
+    let res = compute_all(&inputs).temperature.demag;
+    assert_eq!(graded.hcj20_used_kA_m, 954.9);
+    assert_eq!(res.hcj20_used_kA_m, inputs.temperature.demag.hcj20_kA_m);
+    let errors = inputs.validate().expect_err("an invalid code");
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].path, "temperature.demag.coercivity_source");
+    assert_eq!(errors[0].kind, SetErrorKind::NotAChoice { code: 7 });
+}
+
+#[test]
+fn a_positive_beta_without_a_rating_has_no_hot_limit() {
+    // E20: a positive beta typed into C45 (coercivity source 0) for manual magnets without a
+    // grade: no knee on heating and no rating, so no magnet limit (+inf: the adhesive governs
+    // C12) and no torque at it (NaN, where the workbook formula would give +inf).
+    let mut inputs = DesignInputs::default();
+    inputs.coupling.magnets.part_inner = String::new();
+    inputs.coupling.magnets.part_outer = String::new();
+    inputs.temperature.demag.coercivity_source = 0;
+    inputs.temperature.demag.beta_hcj_per_C = 0.0035;
+    let t = compute_all(&inputs).temperature;
+    assert_eq!(t.demag.magnet_limit_C, f64::INFINITY);
+    assert!(t.demag.torque_at_limit_Nm.is_nan());
+    assert_eq!(t.summary.governing_limit_C, t.summary.adhesive_limit_C);
+    assert_eq!(t.summary.governing_note, "Adhesive governs.");
+    assert_eq!(
+        t.summary.verdict,
+        "OK on temperature. Confirm drag torque and thermal cycling by test."
+    );
+}
+
+#[test]
 fn compute_all_is_cheap_enough_to_run_every_frame() {
     // Spec: "milliseconds per call". Debug build, generous bound (a smoke check, not a benchmark).
     // A GUI frame recomputes and reads the dashboard numbers: compute_all plus headline.

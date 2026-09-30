@@ -1651,6 +1651,263 @@ fn e19_supermagnetman_arcs_follow_the_vendor_grid() {
     assert_eq!((off.inner_br_T, on.inner_br_T), (1.42, 1.42));
 }
 
+/// The demagnetization results for `overrides` under `dev`.
+fn demag_with(
+    overrides: &[(&str, Value)],
+    dev: Deviations,
+) -> magcoupling::engine::temperature::DemagResults {
+    compute_all_with(&inputs_with(overrides, dev), dev)
+        .temperature
+        .demag
+}
+
+fn both_rings(part: &str) -> [(&'static str, Value); 2] {
+    [
+        ("coupling.magnets.part_inner", Value::Text(part.into())),
+        ("coupling.magnets.part_outer", Value::Text(part.into())),
+    ]
+}
+
+#[test]
+fn e20_each_part_uses_its_own_coercivity() {
+    // Report 6.3, governing limit C12 with the part's own Hcj and beta (E20 alone: the
+    // stored ratings, M5045 as the workbook's N50M). The N42SH parts do not move: the grade
+    // keeps the workbook's 1592 kA/m and -0.005 /C (decisions 17 A, 18 A).
+    let e20 = DeviationId::E20;
+    for (part, workbook, corrected) in [
+        ("B842", 23.06, -3.52),
+        ("B822", 23.06, -3.52),
+        ("B862", 23.06, -3.52),
+        ("B882", 23.06, -3.52),
+        ("B861", 23.06, -3.52),
+        ("B881", 23.06, -3.52),
+        ("B442", 23.06, -3.52),
+        ("B842-N52", 30.73, 0.17),
+        ("B882-N52", 30.73, 0.17),
+        ("M5044", 29.18, -2.50),
+        ("M5045", 49.18, 42.50),
+        ("M5026", 29.18, -2.50),
+        ("B842SH", 92.55, 92.55),
+        ("BX042SH", 92.55, 92.55),
+        ("BX082SH", 92.55, 92.55),
+    ] {
+        let rings = both_rings(part);
+        let (b, a) = (
+            cells_with(&rings, Deviations::NONE),
+            cells_with(&rings, Deviations::only(e20)),
+        );
+        let limit = |c: &BTreeMap<String, Value>| num(&c["Temperature design!C12"]);
+        assert!(
+            (limit(&b) - workbook).abs() <= 0.005,
+            "{part}: {}",
+            limit(&b)
+        );
+        assert!(
+            (limit(&a) - corrected).abs() <= 0.005,
+            "{part}: {}",
+            limit(&a)
+        );
+    }
+    // B842 changes 24 cells (report 6.3) and shows the N42 grade's Hcj and beta.
+    let rings = both_rings("B842");
+    let changed = changed_cells(
+        &cells_with(&rings, Deviations::NONE),
+        &cells_with(&rings, Deviations::only(e20)),
+    );
+    assert_eq!(changed.len(), 24, "{changed:?}");
+    let demag = demag_with(&rings, Deviations::only(e20));
+    assert_eq!(
+        (demag.hcj20_used_kA_m, demag.beta_used_per_C),
+        (954.9, -0.0062)
+    );
+    let workbook = demag_with(&rings, Deviations::NONE);
+    assert_eq!(
+        (workbook.hcj20_used_kA_m, workbook.beta_used_per_C),
+        (1592.0, -0.005)
+    );
+    // With E19 too, M5045 is N50 (the vendor grid): Hcj 875.4, beta -0.62 %/C.
+    let m5045 = demag_with(&both_rings("M5045"), Deviations::ALL);
+    assert_eq!(
+        (m5045.hcj20_used_kA_m, m5045.beta_used_per_C),
+        (875.4, -0.0062)
+    );
+    let n50m = demag_with(&both_rings("M5045"), Deviations::only(e20));
+    assert_eq!(
+        (n50m.hcj20_used_kA_m, n50m.beta_used_per_C),
+        (1114.1, -0.00675)
+    );
+}
+
+#[test]
+fn e20_the_hcj_and_beta_inputs_override_the_grade_when_selected() {
+    // Decision 19: C44 and C45 stay as overrides that win when set: the coercivity source 0.
+    let mut rings = both_rings("B842").to_vec();
+    rings.push(("temperature.demag.coercivity_source", Value::Int(0)));
+    let e20 = Deviations::only(DeviationId::E20);
+    assert!(
+        changed_cells(
+            &cells_with(&rings, Deviations::NONE),
+            &cells_with(&rings, e20)
+        )
+        .is_empty()
+    );
+    rings.push(("temperature.demag.hcj20_kA_m", Value::Num(954.9)));
+    rings.push(("temperature.demag.beta_hcj_per_C", Value::Num(-0.0062)));
+    let typed = cells_with(&rings, e20);
+    let graded = cells_with(&both_rings("B842"), e20);
+    assert_eq!(
+        typed["Temperature design!C12"], graded["Temperature design!C12"],
+        "the grade's values typed into C44 and C45 give the same limit"
+    );
+    // Manual magnets without a grade always use the inputs (both rings manual: a library
+    // ring beside a manual one is checked with its own grade and rating, A13).
+    let manual = both_rings("");
+    assert!(
+        changed_cells(
+            &cells_with(&manual, Deviations::NONE),
+            &cells_with(&manual, e20)
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn e20_ferrite_is_limited_on_the_cold_side() {
+    // Spec, Addendum testing: "the demag check uses the part's own Hcj(T), including a
+    // ferrite cold-case test", through the custom-dimension mode (no library part is ferrite).
+    let e20 = &REGISTRY[DeviationId::E20.index()];
+    let ferrite = &e20.probes[1];
+    let overrides = probe_overrides(ferrite);
+    let on = demag_with(&overrides, Deviations::only(DeviationId::E20));
+    let off = demag_with(&overrides, Deviations::NONE);
+    // The workbook takes |beta| and reports hot onsets near 240 C: "OK" for a magnet that
+    // demagnetizes on every like-pole pass below about 100 C.
+    assert!(off.onset_skipping_C > 200.0 && off.cold_check.starts_with("n/a"));
+    assert_eq!((on.hcj20_used_kA_m, on.beta_used_per_C), (180.0, 0.0035));
+    assert_eq!(on.onset_skipping_C, f64::INFINITY, "no knee on heating");
+    assert_eq!(
+        on.calibration_offset_C, 0.0,
+        "the rating is not a cold-side knee rating"
+    );
+    assert_eq!(
+        on.magnet_limit_C, 250.0,
+        "the hot limit is the grade's rating"
+    );
+    let num_of = |x: NumOrText| match x {
+        NumOrText::Num(v) => v,
+        NumOrText::Text(t) => panic!("expected a number, got {t:?}"),
+    };
+    // The aligned field is below the knee at 20 C: its cold onset lies below 20 C. The
+    // skipping field is past it: the magnet survives only above about 101 C.
+    let aligned = num_of(on.cold_onset_aligned_C);
+    let skipping = num_of(on.cold_onset_skipping_C);
+    assert!(
+        aligned < 20.0 && (aligned - (-57.82)).abs() < 0.005,
+        "{aligned}"
+    );
+    assert!((skipping - 100.90).abs() < 0.005, "{skipping}");
+    assert_eq!(num_of(on.cold_limit_C), skipping + 10.0);
+    assert_eq!(on.cold_check, "Below the cold demagnetization limit");
+}
+
+#[test]
+fn e20_mixed_rings_use_the_weaker_grade() {
+    // A-1 plan decision A13: C52 to C55 are the outer blocks' reverse fields, and the workbook
+    // checks only the inner ring's Br and rating against them. With E20 each ring is checked
+    // with its own grade, Br and rating and the weaker ring governs, on either side: B842 (N42)
+    // beside B842SH (N42SH) gives B842's limit in both orders, and the block shows B842.
+    use magcoupling::engine::temperature::{RING_INNER, RING_OUTER};
+    let b842 = cells_with(&both_rings("B842"), Deviations::ALL);
+    for (inner, outer, governing) in [
+        ("B842SH", "B842", RING_OUTER),
+        ("B842", "B842SH", RING_INNER),
+    ] {
+        let rings = [
+            ("coupling.magnets.part_inner", Value::Text(inner.into())),
+            ("coupling.magnets.part_outer", Value::Text(outer.into())),
+        ];
+        let cells = cells_with(&rings, Deviations::ALL);
+        let limit = &cells["Temperature design!C12"];
+        assert_report("Temperature design!C12", limit, -3.52, 0.005);
+        assert_eq!(limit, &b842["Temperature design!C12"], "{inner}/{outer}");
+        assert_eq!(
+            cells["Temperature design!C25"],
+            Value::Text("CHECK: see the rows above.".into()),
+            "{inner}/{outer}"
+        );
+        let demag = demag_with(&rings, Deviations::ALL);
+        assert_eq!(demag.demag_ring, governing, "{inner}/{outer}");
+        assert_eq!(
+            (demag.hcj20_used_kA_m, demag.beta_used_per_C),
+            (954.9, -0.0062)
+        );
+        assert_eq!(
+            demag.tmax_lib_C,
+            NumOrText::Num(80.0),
+            "the block shows B842"
+        );
+    }
+    // Without E20 the workbook reads the inner ring only: B842SH inside reads OK.
+    let stronger_inside = [
+        ("coupling.magnets.part_inner", Value::Text("B842SH".into())),
+        ("coupling.magnets.part_outer", Value::Text("B842".into())),
+    ];
+    let workbook = cells_with(&stronger_inside, Deviations::NONE);
+    assert_report(
+        "Temperature design!C12",
+        &workbook["Temperature design!C12"],
+        92.55,
+        0.005,
+    );
+    assert_eq!(
+        demag_with(&stronger_inside, Deviations::NONE).demag_ring,
+        RING_INNER
+    );
+    // Identical rings tie: the inner ring's block, bit for bit (the default design).
+    assert_eq!(
+        demag_with(&both_rings("B842"), Deviations::ALL).demag_ring,
+        RING_INNER
+    );
+}
+
+#[test]
+fn e20_ferrite_with_the_stored_ndfeb_fields_is_past_its_knee_at_room_temperature() {
+    // Review Focus 4: a ferrite grade with the reverse fields left at the stored NdFeB
+    // values (354 to 863 kA/m, all above Y30's 162 kA/m knee). The cold onsets then lie
+    // ABOVE the operating temperature: the magnet is demagnetized wherever it runs, and the
+    // cold check and the verdict say so; nothing panics or reads as a cold-weather margin.
+    let ferrite = [
+        ("coupling.magnets.part_inner", Value::Text(String::new())),
+        ("coupling.magnets.part_outer", Value::Text(String::new())),
+        ("coupling.magnets.grade_inner", Value::Text("Y30".into())),
+        ("coupling.magnets.grade_outer", Value::Text("Y30".into())),
+    ];
+    let demag = demag_with(&ferrite, Deviations::ALL);
+    let cold = |x: NumOrText| match x {
+        NumOrText::Num(v) => v,
+        NumOrText::Text(t) => panic!("{t}"),
+    };
+    for onset in [
+        demag.cold_onset_aligned_C,
+        demag.cold_onset_pullout_C,
+        demag.cold_onset_skipping_C,
+        demag.cold_onset_single_ring_C,
+    ] {
+        assert!(cold(onset) > 50.0, "{onset:?}");
+    }
+    assert_eq!(demag.cold_check, "Below the cold demagnetization limit");
+    assert_eq!(
+        cells_with(&ferrite, Deviations::ALL)["Temperature design!C25"],
+        Value::Text("CHECK: see the rows above.".into())
+    );
+}
+
+#[test]
+fn e20_leaves_every_default_cell_bit_for_bit() {
+    // The default part's grade N42SH carries the workbook's own Hcj and beta.
+    assert_bit_for_bit_at_defaults(DeviationId::E20);
+}
+
 #[test]
 fn e19_leaves_every_default_cell_bit_for_bit() {
     // The default part is B842SH: the vendor grid applies to the arcs only.

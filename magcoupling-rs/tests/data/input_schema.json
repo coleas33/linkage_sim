@@ -1906,7 +1906,7 @@
       "cell": "Temperature design!C44",
       "choices": [],
       "default": 1592.0,
-      "help": "N42SH ≥ 20 kOe.",
+      "help": "N42SH ≥ 20 kOe. Correction E20: each magnet's grade supplies Hcj; this value is used for a magnet without a grade, or for both rings when the coercivity source is 0.",
       "label": "Intrinsic coercivity Hcj at 20 °C (grade minimum)",
       "path": "temperature.demag.hcj20_kA_m",
       "range": {
@@ -1924,7 +1924,7 @@
       "cell": "Temperature design!C45",
       "choices": [],
       "default": -0.005,
-      "help": "",
+      "help": "Correction E20: each magnet's grade supplies beta; this value is used for a magnet without a grade, or for both rings when the coercivity source is 0.",
       "label": "Hcj temperature coefficient (effective, 20–150 °C)",
       "path": "temperature.demag.beta_hcj_per_C",
       "range": {
@@ -2044,6 +2044,28 @@
       "rust_only": false,
       "type": "f64",
       "unit": "kA/m"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [
+        [
+          1,
+          "magnet grade"
+        ],
+        [
+          0,
+          "Hcj and beta inputs"
+        ]
+      ],
+      "default": 1,
+      "help": "Correction E20: 1 = each magnet's own grade (its library part, or the grade picked for manual dimensions); 0 = Hcj and beta above (C44, C45) for both rings, which then override the grades. A magnet without a grade always uses C44 and C45; a code other than 1 falls through to them, as the else of a two-way IF.",
+      "label": "Coercivity for the demagnetization check",
+      "path": "temperature.demag.coercivity_source",
+      "range": null,
+      "rust_only": true,
+      "type": "i64",
+      "unit": "-"
     },
     {
       "assumption": false,

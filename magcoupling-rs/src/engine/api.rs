@@ -26,6 +26,7 @@ use super::clamps::{self, ClampInputs, ClampResults};
 use super::deviations::Deviations;
 #[cfg(feature = "workbook-parity")]
 use super::deviations::{REGISTRY, restore_workbook_defaults};
+use super::grades;
 use super::materials::{self, MaterialsInputs, MaterialsResults};
 use super::meta::{ResultSet, SetError, TableLayout, Value, inputs, results, validate};
 use super::metal_design::{self, MetalDesignInputs, MetalDesignResults, RetainerResults};
@@ -261,6 +262,10 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         retainers_g: ret.retainers_g,
         cap_g: ret.cap_g,
         endplates_g: ret.endplates_g,
+        inner_grade: grades::grade(&m.inner_grade),
+        outer_br20_T: m.outer_br_T,
+        outer_tmax_lib_C: m.outer_tmax_C,
+        outer_grade: grades::grade(&m.outer_grade),
         steel_sigma_S_m: mat_in.steel.conductivity_S_m,
         steel_mu_r: mat_in.steel.mu_r_incremental,
         steel_c: mat_in.steel.specific_heat_J_kgK,

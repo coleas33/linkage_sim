@@ -29,15 +29,20 @@
 //! and C157 instead of Python's ZeroDivisionError), E15 (C141 prices an
 //! aluminium cup, boss and hub at C140, on the gates the masses read), and
 //! E17 (with no back iron the aluminium hub, cup and web losses C123-C125 take
-//! the low-Reynolds closed form T1 with the Rust-only free-space fields) and
-//! E18 (the mismatch screen C104-C106, C201, C202 bonds to an aluminium hub when
-//! C6 is not 1).
+//! the low-Reynolds closed form T1 with the Rust-only free-space fields), E18
+//! (the mismatch screen C104-C106, C201, C202 bonds to an aluminium hub when C6
+//! is not 1) and E20 (the demagnetization block checks each ring against its
+//! own grade, Br and rating, and shows the ring with the lower limit; a positive
+//! beta is limited on the cold side, [`cold_onset_C`]).
 
 use std::f64::consts::PI;
 
 use super::compat::{py_max, py_min, text0};
 use super::deviations::{DeviationId, Deviations};
-use super::meta::{NumOrText, inputs, out, out_uncelled, param, param_rust_only, results};
+use super::grades::Grade;
+use super::meta::{
+    NumOrText, inputs, out, out_rust_only, out_uncelled, param, param_rust_only, results,
+};
 use super::model::br_factor;
 
 // =========================================================================== inputs
@@ -71,10 +76,10 @@ inputs! {
     pub struct DemagInputs {
         fields {
             hcj20_kA_m: f64 = 1592.0 => param("kA/m", "Intrinsic coercivity Hcj at 20 °C (grade minimum)",
-                "N42SH ≥ 20 kOe.", "Temperature design!C44")
+                "N42SH ≥ 20 kOe. Correction E20: each magnet's grade supplies Hcj; this value is used for a magnet without a grade, or for both rings when the coercivity source is 0.", "Temperature design!C44")
                 .range(800.0, 3000.0, 1.0),
             beta_hcj_per_C: f64 = -0.005 => param("1/°C", "Hcj temperature coefficient (effective, 20–150 °C)",
-                "", "Temperature design!C45")
+                "Correction E20: each magnet's grade supplies beta; this value is used for a magnet without a grade, or for both rings when the coercivity source is 0.", "Temperature design!C45")
                 .range(-0.008, -0.001, 0.0001)
                 .assumption(),
             knee_fraction: f64 = 0.9 => param("-", "Knee field as a fraction of Hcj",
@@ -97,6 +102,9 @@ inputs! {
             h_rev_single_ring_kA_m: f64 = 569.0 => param("kA/m", "3D worst reverse field, single ring on its carrier",
                 "Adhesive-cure case (inner ring alone: 545).", "Temperature design!C55")
                 .range(0.0, 1500.0, 1.0),
+            coercivity_source: i64 = 1 => param_rust_only("-", "Coercivity for the demagnetization check",
+                "Correction E20: 1 = each magnet's own grade (its library part, or the grade picked for manual dimensions); 0 = Hcj and beta above (C44, C45) for both rings, which then override the grades. A magnet without a grade always uses C44 and C45; a code other than 1 falls through to them, as the else of a two-way IF.")
+                .choices(&[(1, "magnet grade"), (0, "Hcj and beta inputs")]),
         }
     }
 }
@@ -366,12 +374,19 @@ pub struct TemperatureLinks {
     pub retainers_g: f64,              // Metal design C46
     pub cap_g: f64,                    // Metal design C180
     pub endplates_g: f64,              // Metal design C181
-    pub steel_sigma_S_m: f64,          // Materials C14
-    pub steel_mu_r: f64,               // Materials C15
-    pub steel_c: f64,                  // Materials C16
-    pub steel_cte: f64,                // Materials C17
-    pub steel_E_GPa: f64,              // Materials C18
-    pub al6061_sigma_S_m: f64,         // Materials C43
+    /// The inner magnet's grade (`model::ResolvedMagnet::grade`): E20 reads its Hcj and beta.
+    pub inner_grade: Option<&'static Grade>,
+    /// E20 (Decisions to confirm, A13): the outer ring's Br at 20 °C (Calculator C31), rating
+    /// (C32) and grade, for its own demagnetization check.
+    pub outer_br20_T: f64,
+    pub outer_tmax_lib_C: NumOrText,
+    pub outer_grade: Option<&'static Grade>,
+    pub steel_sigma_S_m: f64,  // Materials C14
+    pub steel_mu_r: f64,       // Materials C15
+    pub steel_c: f64,          // Materials C16
+    pub steel_cte: f64,        // Materials C17
+    pub steel_E_GPa: f64,      // Materials C18
+    pub al6061_sigma_S_m: f64, // Materials C43
     /// E9: the cup and boss are aluminium (`model::cup_is_aluminium`).
     pub cup_aluminium: bool,
     /// The hub is aluminium, C6 != 1 (`model::hub_is_aluminium`).
@@ -442,6 +457,23 @@ results! {
             magnet_limit_C: f64 => out("°C", "Magnet design limit", "", "Temperature design!C60"),
             torque_at_limit_Nm: f64 => out("N·m", "Pull-out torque at the magnet limit (reversible)", "", "Temperature design!C61"),
             torque_at_service_Nm: f64 => out("N·m", "Pull-out torque at the service maximum", "", "Temperature design!C62"),
+            hcj20_used_kA_m: f64 => out_rust_only("kA/m", "Hcj at 20 °C used",
+                "Correction E20: the governing ring's grade, or C44 when that magnet has no grade or the source is set to the inputs."),
+            beta_used_per_C: f64 => out_rust_only("1/°C", "Hcj temperature coefficient used",
+                "Correction E20: the governing ring's grade's, or C45. Positive for hard ferrite: its coercivity falls as it cools."),
+            demag_ring: String => out_rust_only("", "Ring the demagnetization block shows",
+                "Correction E20: both rings are checked, each against its own grade, Br and rating; the ring with the lower magnet limit governs and the block shows it (the inner ring on a tie). Without E20 the workbook checks the inner ring only."),
+            cold_onset_aligned_C: NumOrText => out_rust_only("°C", "Cold demag onset, rings aligned",
+                "Correction E20, positive beta only: below this temperature the reverse field exceeds the knee. 'n/a' when coercivity rises as the magnet cools."),
+            cold_onset_pullout_C: NumOrText => out_rust_only("°C", "Cold demag onset at pull-out", ""),
+            cold_onset_skipping_C: NumOrText => out_rust_only("°C", "Cold demag onset while skipping", ""),
+            cold_onset_single_ring_C: NumOrText => out_rust_only("°C", "Cold demag onset, single ring on its carrier", ""),
+            cold_limit_C: NumOrText => out_rust_only("°C", "Cold magnet limit",
+                "The skipping cold onset plus the design margin (C51): the minimum magnet temperature (Metal design C16) must not be below it."),
+            cold_ring: String => out_rust_only("", "Ring the cold-side results show",
+                "Correction E20: the ring with the higher cold limit (the inner ring when neither has one)."),
+            cold_check: String => out_rust_only("", "Cold demagnetization check",
+                "Against the minimum magnet temperature (Metal design C16); it passes only if both rings pass."),
         }
     }
 }
@@ -644,6 +676,158 @@ pub fn demag_onset_C(
     20.0 + (hk - h_rev_kA_m) / (hk * beta.abs() - h_rev_kA_m * alpha_br.abs()) - offset_C
 }
 
+/// E20, positive beta (hard ferrite): the temperature at which the reverse field
+/// (scaling with Br, `alpha_br` signed) meets the knee (scaling with Hcj, `beta`
+/// signed): Hk (1 + beta dT) = H (1 + alpha dT). With beta > 0 the knee falls as
+/// the magnet cools, so the magnet demagnetizes BELOW this temperature: a cold
+/// limit, never calibrated to the (hot) rating. For beta <= 0 it equals
+/// [`demag_onset_C`] with no offset, but the engine keeps that form there (parity).
+#[allow(non_snake_case)]
+pub fn cold_onset_C(h_rev_kA_m: f64, hcj20: f64, beta: f64, knee: f64, alpha_br: f64) -> f64 {
+    let hk = knee * hcj20;
+    20.0 + (hk - h_rev_kA_m) / (h_rev_kA_m * alpha_br - hk * beta)
+}
+
+/// The text of a cold-side result when the coercivity rises as the magnet cools.
+pub const NO_COLD_ONSET: &str = "n/a";
+
+/// Which ring a demagnetization result shows (E20 checks both rings, Decisions to
+/// confirm A13).
+pub const RING_INNER: &str = "inner";
+/// See [`RING_INNER`].
+pub const RING_OUTER: &str = "outer";
+
+/// One ring's demagnetization check: the workbook's block (C47 to C61) for a ring with
+/// Br `br20_T`, rating `tmax_lib_C` and grade `grade`. The workbook checks the inner ring
+/// only; E20 checks the outer ring too (Decisions to confirm, A13).
+#[derive(Clone, Copy, Debug)]
+#[allow(non_snake_case)] // unit suffixes, as the result names
+struct RingDemag {
+    br20_T: f64,
+    tmax_lib_C: NumOrText,
+    hcj20: f64,
+    beta: f64,
+    h_ref: f64,
+    t_ref: f64,
+    offset: f64,
+    /// Aligned, pull-out, skipping, single ring (C56 to C59).
+    onsets: [f64; 4],
+    mag_lim: f64,
+    torque_at_limit_Nm: f64,
+    /// E20 cold side, in the order of `onsets`; "n/a" unless beta > 0.
+    cold_onsets: [NumOrText; 4],
+    cold_limit: NumOrText,
+    cold_ok: bool,
+}
+
+#[allow(non_snake_case)] // Python names (T)
+fn ring_demag(
+    d: &DemagInputs,
+    k: &TemperatureLinks,
+    br20_T: f64,
+    tmax_lib_C: NumOrText,
+    grade: Option<&'static Grade>,
+    dev: Deviations,
+) -> RingDemag {
+    // E20: the ring's own grade, unless the source is set to the inputs (C44, C45), which
+    // then win; a magnet without a grade uses the inputs, as the workbook does. A code other
+    // than 1 falls through to the inputs, as the else of a two-way IF.
+    let (hcj20, beta) = match grade {
+        Some(g) if dev.is_on(DeviationId::E20) && d.coercivity_source == 1 => {
+            (g.hcj20_kA_m, g.beta_hcj_per_C)
+        }
+        _ => (d.hcj20_kA_m, d.beta_hcj_per_C),
+    };
+    // E20: with a positive beta (hard ferrite) the knee is reached on cooling, never on
+    // heating: the hot onsets are +inf, the rating is the hot limit and the cold side below
+    // decides. The workbook takes |beta| whatever its sign.
+    let cold_side = dev.is_on(DeviationId::E20) && beta > 0.0;
+    let h_ref = br20_T / (2.0 * k.mu0) / 1000.0;
+    let t_ref = if cold_side {
+        f64::INFINITY
+    } else {
+        demag_onset_C(h_ref, hcj20, beta, d.knee_fraction, k.alpha_br, 0.0)
+    };
+    // the workbook errors out when the magnet is not in the library; Python leaves the onset uncalibrated
+    let offset = match tmax_lib_C {
+        _ if cold_side => 0.0, // E20: the rating is not a knee rating on the cold side
+        NumOrText::Num(tmax) => t_ref - tmax,
+        NumOrText::Text(_) => 0.0,
+    };
+    let on = |h: f64| {
+        if cold_side {
+            f64::INFINITY
+        } else {
+            demag_onset_C(h, hcj20, beta, d.knee_fraction, k.alpha_br, offset)
+        }
+    };
+    let onsets = [
+        on(d.h_rev_aligned_kA_m),
+        on(d.h_rev_pullout_kA_m),
+        on(d.h_rev_likepole_kA_m),
+        on(d.h_rev_single_ring_kA_m),
+    ];
+    let thf = |T: f64| br_factor(k.alpha_br, T).powi(2);
+    // E20 cold side: the hot limit is the rating. A magnet with no rating has no hot limit
+    // (+inf, so the adhesive governs C12) and no torque at it (NaN, where the workbook
+    // formula would give +inf).
+    let (mag_lim, torque_at_limit_Nm) = if cold_side {
+        match tmax_lib_C {
+            NumOrText::Num(tmax) => (tmax, k.pullout_20C_Nm * thf(tmax)),
+            NumOrText::Text(_) => (f64::INFINITY, f64::NAN),
+        }
+    } else {
+        let lim = onsets[2] - d.design_margin_C;
+        (lim, k.pullout_20C_Nm * thf(lim))
+    };
+    // E20 cold side: the skipping case (the largest reverse field) governs, as on the hot side.
+    let cold = |h: f64| {
+        if cold_side {
+            NumOrText::Num(cold_onset_C(h, hcj20, beta, d.knee_fraction, k.alpha_br))
+        } else {
+            NumOrText::Text(NO_COLD_ONSET)
+        }
+    };
+    let cold_onsets = [
+        cold(d.h_rev_aligned_kA_m),
+        cold(d.h_rev_pullout_kA_m),
+        cold(d.h_rev_likepole_kA_m),
+        cold(d.h_rev_single_ring_kA_m),
+    ];
+    let cold_limit = match cold_onsets[2] {
+        NumOrText::Num(c) => NumOrText::Num(c + d.design_margin_C),
+        NumOrText::Text(_) => NumOrText::Text(NO_COLD_ONSET),
+    };
+    let cold_ok = match cold_limit {
+        NumOrText::Num(limit) => k.min_temp_C >= limit,
+        NumOrText::Text(_) => true,
+    };
+    RingDemag {
+        br20_T,
+        tmax_lib_C,
+        hcj20,
+        beta,
+        h_ref,
+        t_ref,
+        offset,
+        onsets,
+        mag_lim,
+        torque_at_limit_Nm,
+        cold_onsets,
+        cold_limit,
+        cold_ok,
+    }
+}
+
+/// E20: whether cold limit `a` is higher than `b` (a number is higher than "n/a").
+fn higher_cold_limit(a: NumOrText, b: NumOrText) -> bool {
+    match (a, b) {
+        (NumOrText::Num(x), NumOrText::Num(y)) => x > y,
+        (NumOrText::Num(_), NumOrText::Text(_)) => true,
+        (NumOrText::Text(_), _) => false,
+    }
+}
+
 /// Linear-elastic shear-lag peak shear at the ends of a bonded block from thermal mismatch.
 #[allow(non_snake_case, clippy::too_many_arguments)] // Python names and signature
 pub fn volkersen_peak_shear_MPa(
@@ -690,52 +874,56 @@ pub fn compute(
 
     // ---- demagnetization
     let d = &ti.demag;
-    let h_ref = k.br20_T / (2.0 * k.mu0) / 1000.0;
-    let t_ref = demag_onset_C(
-        h_ref,
-        d.hcj20_kA_m,
-        d.beta_hcj_per_C,
-        d.knee_fraction,
-        k.alpha_br,
-        0.0,
-    );
-    // the workbook errors out when the magnet is not in the library; Python leaves the onset uncalibrated
-    let offset = match k.tmax_lib_C {
-        NumOrText::Num(tmax) => t_ref - tmax,
-        NumOrText::Text(_) => 0.0,
+    let inner = ring_demag(d, k, k.br20_T, k.tmax_lib_C, k.inner_grade, dev);
+    // E20 (Decisions to confirm, A13): the outer ring is checked too, with its own Br, rating
+    // and grade. The ring with the lower magnet limit governs and the block shows it whole
+    // (the inner ring on a tie, so identical rings keep the inner ring's block bit for bit);
+    // the cold side shows the ring with the higher cold limit and passes only if both rings
+    // pass. The workbook checks the inner ring only.
+    let outer = dev
+        .is_on(DeviationId::E20)
+        .then(|| ring_demag(d, k, k.outer_br20_T, k.outer_tmax_lib_C, k.outer_grade, dev));
+    let (hot, hot_ring) = match outer {
+        Some(o) if o.mag_lim < inner.mag_lim => (o, RING_OUTER),
+        _ => (inner, RING_INNER),
     };
-    let on = |h: f64| {
-        demag_onset_C(
-            h,
-            d.hcj20_kA_m,
-            d.beta_hcj_per_C,
-            d.knee_fraction,
-            k.alpha_br,
-            offset,
-        )
+    let (cold, cold_ring) = match outer {
+        Some(o) if higher_cold_limit(o.cold_limit, inner.cold_limit) => (o, RING_OUTER),
+        _ => (inner, RING_INNER),
     };
-    let (on_al, on_po, on_lp, on_cu) = (
-        on(d.h_rev_aligned_kA_m),
-        on(d.h_rev_pullout_kA_m),
-        on(d.h_rev_likepole_kA_m),
-        on(d.h_rev_single_ring_kA_m),
-    );
-    let mag_lim = on_lp - d.design_margin_C;
+    let cold_ok = inner.cold_ok && outer.is_none_or(|o| o.cold_ok);
+    let [on_al, on_po, on_lp, on_cu] = hot.onsets;
+    let mag_lim = hot.mag_lim;
     let thf = |T: f64| br_factor(k.alpha_br, T).powi(2);
     let demag = DemagResults {
-        br20_T: k.br20_T,
+        br20_T: hot.br20_T,
         alpha_br: k.alpha_br,
-        tmax_lib_C: k.tmax_lib_C,
-        h_ref_kA_m: h_ref,
-        t_ref_model_C: t_ref,
-        calibration_offset_C: offset,
+        tmax_lib_C: hot.tmax_lib_C,
+        h_ref_kA_m: hot.h_ref,
+        t_ref_model_C: hot.t_ref,
+        calibration_offset_C: hot.offset,
         onset_aligned_C: on_al,
         onset_pullout_C: on_po,
         onset_skipping_C: on_lp,
         onset_single_ring_C: on_cu,
         magnet_limit_C: mag_lim,
-        torque_at_limit_Nm: k.pullout_20C_Nm * thf(mag_lim),
+        torque_at_limit_Nm: hot.torque_at_limit_Nm,
         torque_at_service_Nm: k.pullout_op_Nm,
+        hcj20_used_kA_m: hot.hcj20,
+        beta_used_per_C: hot.beta,
+        demag_ring: hot_ring.to_owned(),
+        cold_onset_aligned_C: cold.cold_onsets[0],
+        cold_onset_pullout_C: cold.cold_onsets[1],
+        cold_onset_skipping_C: cold.cold_onsets[2],
+        cold_onset_single_ring_C: cold.cold_onsets[3],
+        cold_limit_C: cold.cold_limit,
+        cold_ring: cold_ring.to_owned(),
+        cold_check: match cold.cold_limit {
+            NumOrText::Text(_) => "n/a (coercivity rises as the magnet cools)",
+            NumOrText::Num(_) if cold_ok => "OK",
+            NumOrText::Num(_) => "Below the cold demagnetization limit",
+        }
+        .to_owned(),
     };
 
     // ---- adhesive selection and loads
@@ -1100,7 +1288,8 @@ pub fn compute(
     let ok = margin_hot > 0.0
         && (mag_lim - peak) > 0.0
         && (sel.design_limit_C - peak) > 0.0
-        && cure_margin >= 10.0;
+        && cure_margin >= 10.0
+        && cold_ok; // E20: always true unless the coercivity falls on cooling
     let summary = SummaryResults {
         service_max_C: k.op_temp_C,
         onset_aligned_C: on_al,
@@ -1223,6 +1412,10 @@ mod tests {
             al6061_sigma_S_m: 2.5e7,
             cup_aluminium: false,
             hub_aluminium: false,
+            inner_grade: crate::engine::grades::grade("N42SH"),
+            outer_br20_T: 1.29,
+            outer_tmax_lib_C: NumOrText::Num(150.0),
+            outer_grade: crate::engine::grades::grade("N42SH"),
         }
     }
 
@@ -1734,6 +1927,197 @@ mod tests {
         assert!(close(steel_cup.slip_loss.hub_W, want_hub));
         assert_eq!(steel_cup.slip_loss.cup_W, run(&ti, &k).slip_loss.cup_W);
         assert_eq!(steel_cup.slip_loss.web_W, run(&ti, &k).slip_loss.web_W);
+    }
+
+    /// The fixture with hard-ferrite magnets (Y30) on both rings and fields below their knee.
+    fn ferrite_links() -> TemperatureLinks {
+        let mut k = links();
+        k.inner_grade = crate::engine::grades::grade("Y30");
+        k.br20_T = 0.37;
+        k.alpha_br = -0.002;
+        k.tmax_lib_C = NumOrText::Num(250.0);
+        k.outer_grade = k.inner_grade;
+        k.outer_br20_T = k.br20_T;
+        k.outer_tmax_lib_C = k.tmax_lib_C;
+        k
+    }
+
+    /// `k` with the outer ring (Br, rating, grade) of `from`.
+    fn with_outer_of(mut k: TemperatureLinks, from: &TemperatureLinks) -> TemperatureLinks {
+        k.outer_br20_T = from.outer_br20_T;
+        k.outer_tmax_lib_C = from.outer_tmax_lib_C;
+        k.outer_grade = from.outer_grade;
+        k
+    }
+
+    #[test]
+    fn e20_checks_both_rings_each_side_from_the_weaker() {
+        // A-1 plan decision A13: an NdFeB inner ring (N42SH) with a ferrite outer ring (Y30).
+        // The hot side reads the NdFeB ring (the ferrite has no knee on heating), the cold side
+        // the ferrite ring (NdFeB has none), and the verdict needs both. Without E20 only the
+        // inner ring is read.
+        let e20 = Deviations::only(DeviationId::E20);
+        let ti = TemperatureInputs::default();
+        let mixed = with_outer_of(links(), &ferrite_links());
+        let mut ferrite = ferrite_links();
+        ferrite.alpha_br = mixed.alpha_br; // the calculator's one alpha (A4)
+        let r = compute(&ti, &mixed, e20);
+        assert_eq!(
+            (r.demag.demag_ring.as_str(), r.demag.cold_ring.as_str()),
+            (RING_INNER, RING_OUTER)
+        );
+        assert_eq!(r.demag, {
+            let mut want = compute(&ti, &links(), e20).demag;
+            let cold = compute(&ti, &ferrite, e20).demag;
+            want.cold_onset_aligned_C = cold.cold_onset_aligned_C;
+            want.cold_onset_pullout_C = cold.cold_onset_pullout_C;
+            want.cold_onset_skipping_C = cold.cold_onset_skipping_C;
+            want.cold_onset_single_ring_C = cold.cold_onset_single_ring_C;
+            want.cold_limit_C = cold.cold_limit_C;
+            want.cold_ring = RING_OUTER.to_owned();
+            want.cold_check = cold.cold_check;
+            want
+        });
+        // The stored NdFeB fields are past Y30's knee at room temperature: the cold check fails.
+        assert_eq!(r.demag.cold_check, "Below the cold demagnetization limit");
+        assert_eq!(r.summary.verdict, VERDICT_CHECK);
+        // Swapped, the rings trade places.
+        let mut swapped = with_outer_of(ferrite_links(), &links());
+        swapped.alpha_br = mixed.alpha_br;
+        let s = compute(&ti, &swapped, e20);
+        assert_eq!(
+            (s.demag.demag_ring.as_str(), s.demag.cold_ring.as_str()),
+            (RING_OUTER, RING_INNER)
+        );
+        assert_eq!(s.demag.magnet_limit_C, r.demag.magnet_limit_C);
+        assert_eq!(s.demag.cold_limit_C, r.demag.cold_limit_C);
+        assert_eq!(
+            run(&ti, &mixed),
+            run(&ti, &links()),
+            "the workbook reads the inner ring only"
+        );
+    }
+
+    #[test]
+    fn cold_onset_is_where_the_knee_meets_the_reverse_field() {
+        // Hk (1 + beta dT) = H (1 + alpha dT) at the cold onset, and the magnet is past the
+        // knee below it (beta > 0: the knee falls as it cools).
+        let (hcj, beta, knee, alpha) = (180.0, 0.0035, 0.9, -0.002);
+        for h in [50.0, 102.0, 160.0, 248.0] {
+            let t = cold_onset_C(h, hcj, beta, knee, alpha);
+            let hk_at = |temp: f64| knee * hcj * (1.0 + beta * (temp - 20.0));
+            let h_at = |temp: f64| h * (1.0 + alpha * (temp - 20.0));
+            assert!((hk_at(t) - h_at(t)).abs() <= 1e-9 * h, "{h}: {t}");
+            assert!(
+                hk_at(t - 1.0) < h_at(t - 1.0) && hk_at(t + 1.0) > h_at(t + 1.0),
+                "{h}"
+            );
+            assert_eq!(
+                t < 20.0,
+                h < knee * hcj,
+                "{h}: below 20 C exactly when under the knee"
+            );
+        }
+    }
+
+    #[test]
+    fn cold_check_passes_at_equality() {
+        // `min_temp >= cold_limit`: the cold onset does not read the minimum temperature, so
+        // one run supplies it and a second run puts the check at exact equality.
+        let e20 = Deviations::only(DeviationId::E20);
+        let mut ti = TemperatureInputs::default();
+        ti.demag.h_rev_aligned_kA_m = 90.0;
+        ti.demag.h_rev_pullout_kA_m = 120.0;
+        ti.demag.h_rev_likepole_kA_m = 140.0;
+        ti.demag.h_rev_single_ring_kA_m = 110.0;
+        let mut k = ferrite_links();
+        let limit = match compute(&ti, &k, e20).demag.cold_limit_C {
+            NumOrText::Num(x) => x,
+            NumOrText::Text(t) => panic!("{t}"),
+        };
+        k.min_temp_C = limit;
+        let r = compute(&ti, &k, e20);
+        assert_eq!(r.demag.cold_limit_C, NumOrText::Num(k.min_temp_C));
+        assert_eq!(r.demag.cold_check, "OK");
+        k.min_temp_C = limit - 0.001;
+        assert_eq!(
+            compute(&ti, &k, e20).demag.cold_check,
+            "Below the cold demagnetization limit"
+        );
+        assert_eq!(compute(&ti, &k, e20).summary.verdict, VERDICT_CHECK);
+    }
+
+    #[test]
+    fn identical_rings_show_the_inner_ring_at_equality() {
+        // Decisions to confirm, A13: both tie-breaks are strict, so identical rings show the
+        // inner ring on each side. Each tie is asserted exact before the pick (Global
+        // Constraints, equality edges).
+        let e20 = Deviations::only(DeviationId::E20);
+        let ti = TemperatureInputs::default();
+        let na = || NumOrText::Text(NO_COLD_ONSET);
+        assert!(!higher_cold_limit(
+            NumOrText::Num(-3.0),
+            NumOrText::Num(-3.0)
+        ));
+        assert!(higher_cold_limit(
+            NumOrText::Num(-2.999),
+            NumOrText::Num(-3.0)
+        ));
+        assert!(higher_cold_limit(NumOrText::Num(-3.0), na()));
+        assert!(!higher_cold_limit(na(), NumOrText::Num(-3.0)));
+        assert!(!higher_cold_limit(na(), na()));
+        for (k, numeric_cold) in [(links(), false), (ferrite_links(), true)] {
+            let d = &ti.demag;
+            let inner = ring_demag(d, &k, k.br20_T, k.tmax_lib_C, k.inner_grade, e20);
+            let outer = ring_demag(
+                d,
+                &k,
+                k.outer_br20_T,
+                k.outer_tmax_lib_C,
+                k.outer_grade,
+                e20,
+            );
+            assert_eq!(inner.mag_lim, outer.mag_lim, "hot tie");
+            assert_eq!(inner.cold_limit, outer.cold_limit, "cold tie");
+            assert_eq!(matches!(inner.cold_limit, NumOrText::Num(_)), numeric_cold);
+            let r = compute(&ti, &k, e20).demag;
+            assert_eq!(
+                (r.demag_ring.as_str(), r.cold_ring.as_str()),
+                (RING_INNER, RING_INNER)
+            );
+        }
+    }
+
+    #[test]
+    fn a_negative_beta_never_takes_the_cold_side() {
+        // NdFeB and SmCo (beta < 0) keep the workbook form under E20; the cold side is "n/a".
+        let e20 = Deviations::only(DeviationId::E20);
+        let ti = TemperatureInputs::default();
+        let k = links(); // N42SH: the workbook's own 1592 kA/m and -0.005 /C
+        let r = compute(&ti, &k, e20);
+        assert_eq!(r, run(&ti, &k), "the default grade is default-neutral");
+        assert_eq!(r.demag.cold_limit_C, NumOrText::Text(NO_COLD_ONSET));
+        assert_eq!(
+            r.demag.cold_check,
+            "n/a (coercivity rises as the magnet cools)"
+        );
+        // Without E20 a positive beta typed into C45 (set() takes it) keeps the workbook's |beta|.
+        let mut typed = TemperatureInputs::default();
+        typed.demag.coercivity_source = 0;
+        typed.demag.beta_hcj_per_C = 0.005;
+        let workbook = run(&typed, &k);
+        assert!(workbook.demag.onset_skipping_C.is_finite());
+        assert_eq!(
+            workbook.demag.cold_check,
+            "n/a (coercivity rises as the magnet cools)"
+        );
+        // With E20 the same typed beta takes the cold side.
+        let corrected = compute(&typed, &k, e20);
+        assert_eq!(corrected.demag.onset_skipping_C, f64::INFINITY);
+        assert!(matches!(
+            corrected.demag.cold_onset_skipping_C,
+            NumOrText::Num(_)
+        ));
     }
 
     #[test]

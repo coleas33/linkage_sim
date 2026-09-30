@@ -1238,7 +1238,7 @@ pub const REGISTRY: &[Deviation] = &[
         class: DeviationClass::Engine,
         approval: Approval::Addendum { decisions: &[19] },
         depends_on: &[],
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &[
             "Calculator!C11",
             "Temperature design!C7",
@@ -1284,10 +1284,107 @@ pub const REGISTRY: &[Deviation] = &[
             onset is a cold limit, and the cold check passes only if both rings pass. \
             N42SH keeps the workbook's 1592 kA/m and -0.005 /C (decisions 17 A, 18 A), so the default design does not move.",
         workbook_input_defaults: &[],
-        workbook_help: &[],
+        workbook_help: &[
+            ("temperature.demag.hcj20_kA_m", "N42SH ≥ 20 kOe."),
+            ("temperature.demag.beta_hcj_per_C", ""),
+        ],
         changes_at_defaults: &[],
         changes_file: None,
-        probes: &[],
+        probes: &[
+            Probe {
+                label: "B842 (N42: Hcj 954.9 kA/m, beta -0.62 %/C) on both rings (report 6.3: C12 23.06 -> -3.52 C)",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("B842")),
+                    ("coupling.magnets.part_outer", Literal::Text("B842")),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C50",
+                        workbook: Literal::Num(79.92129544736366),
+                        corrected: Literal::Num(12.681126305465526),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C58",
+                        workbook: Literal::Num(33.05566428111358),
+                        corrected: Literal::Num(6.482578384916511),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C12",
+                        workbook: Literal::Num(23.05566428111358),
+                        corrected: Literal::Num(-3.5174216150834887),
+                    },
+                ],
+            },
+            Probe {
+                label: "hard ferrite Y30 for manual dimensions on both rings, alpha(Br) -0.20 %/C, the four \
+                    reverse fields scaled from the stored NdFeB values by 0.37 / 1.29 (the M3 placeholder): \
+                    the knee is reached on cooling",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("")),
+                    ("coupling.magnets.part_outer", Literal::Text("")),
+                    ("coupling.magnets.grade_inner", Literal::Text("Y30")),
+                    ("coupling.magnets.grade_outer", Literal::Text("Y30")),
+                    ("calibration.alpha_br_per_C", Literal::Num(-0.002)),
+                    ("temperature.demag.h_rev_aligned_kA_m", Literal::Num(102.0)),
+                    ("temperature.demag.h_rev_pullout_kA_m", Literal::Num(227.0)),
+                    ("temperature.demag.h_rev_likepole_kA_m", Literal::Num(248.0)),
+                    (
+                        "temperature.demag.h_rev_single_ring_kA_m",
+                        Literal::Num(163.0),
+                    ),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C58",
+                        workbook: Literal::Num(240.54277641656867),
+                        corrected: Literal::Num(f64::INFINITY),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C60",
+                        workbook: Literal::Num(230.54277641656867),
+                        corrected: Literal::Num(250.0),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C25",
+                        workbook: Literal::Text(
+                            "OK on temperature. Confirm drag torque and thermal cycling by test.",
+                        ),
+                        corrected: Literal::Text("CHECK: see the rows above."),
+                    },
+                ],
+            },
+            Probe {
+                label: "B842SH inner (N42SH), B842 outer (N42): the outer ring governs (A-1 plan decision A13)",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("B842SH")),
+                    ("coupling.magnets.part_outer", Literal::Text("B842")),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C42",
+                        workbook: Literal::Num(1.29),
+                        corrected: Literal::Num(1.3),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C47",
+                        workbook: Literal::Num(150.0),
+                        corrected: Literal::Num(80.0),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C12",
+                        workbook: Literal::Num(92.55004986453575),
+                        corrected: Literal::Num(-3.5174216150834887),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C25",
+                        workbook: Literal::Text(
+                            "OK on temperature. Confirm drag torque and thermal cycling by test.",
+                        ),
+                        corrected: Literal::Text("CHECK: see the rows above."),
+                    },
+                ],
+            },
+        ],
     },
 ];
 
