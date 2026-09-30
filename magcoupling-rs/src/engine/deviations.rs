@@ -450,7 +450,7 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E8,
         title: "Arc-magnet mode reuses flat-block corner geometry in three formulas",
         class: DeviationClass::Engine,
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &[
             "Calculator!C9",
             "Calculator!C57",
@@ -463,7 +463,52 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: None,
-        probes: &[],
+        probes: &[Probe {
+            label: "arc magnets (coupling.faceted = 0), the report's arc-mode rerun",
+            inputs: &[("coupling.faceted", Literal::Int(0))],
+            expect: &[
+                CellChange {
+                    cell: "Calculator!C9",
+                    workbook: Literal::Num(1.0268256054339253),
+                    corrected: Literal::Num(1.4),
+                },
+                CellChange {
+                    cell: "Calculator!C93",
+                    workbook: Literal::Num(2.9915853633580882),
+                    corrected: Literal::Num(2.6472742027214955),
+                },
+                CellChange {
+                    cell: "Calculator!C111",
+                    workbook: Literal::Num(42.955452974403656),
+                    corrected: Literal::Num(48.40907404648711),
+                },
+                CellChange {
+                    cell: "Metal design!C11",
+                    workbook: Literal::Text("Estimate covers hot min"),
+                    corrected: Literal::Text("Below hot minimum"),
+                },
+                CellChange {
+                    cell: "Metal design!C35",
+                    workbook: Literal::Num(-0.4763487891321485),
+                    corrected: Literal::Num(0.2700000000000007),
+                },
+                CellChange {
+                    cell: "Metal design!C37",
+                    workbook: Literal::Text("Below target"),
+                    corrected: Literal::Text("Meets assumed target"),
+                },
+                CellChange {
+                    cell: "Metal design!C175",
+                    workbook: Literal::Num(27.43634878913215),
+                    corrected: Literal::Num(26.69),
+                },
+                CellChange {
+                    cell: "Shaft clamps!C48",
+                    workbook: Literal::Text("None: enlarge the boss or the clamp length"),
+                    corrected: Literal::Text("ISO 4762 M4 x 12, class 12.9"),
+                },
+            ],
+        }],
     },
     Deviation {
         id: DeviationId::E9,

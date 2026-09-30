@@ -13,9 +13,10 @@
 //! [`crate::engine::deviations::REGISTRY`]): applied are E3 (the N42SH
 //! remanence, via `resolve_magnets`, and the manual Br defaults C17 and C27),
 //! E6 (Calculator!C63, the ring wall at the flats without the outer
-//! bondline) and E7 (pull-out at the maximum over angle,
-//! [`peak_off_half_pitch`] and `at_pull_out`, shared with the sweeps); planned
-//! are E8 (Calculator!C9 and C111), E9 (masses), E10 (Calculator!C103).
+//! bondline), E7 (pull-out at the maximum over angle,
+//! [`peak_off_half_pitch`] and `at_pull_out`, shared with the sweeps) and E8
+//! (arc mode: Calculator!C9 from the corner radius C55, the round pocket in
+//! C111); planned are E9 (masses), E10 (Calculator!C103).
 
 use std::f64::consts::PI;
 
@@ -486,10 +487,21 @@ pub fn compute(
     let (mi, mo) = resolve_magnets(&ci.magnets, dev);
     let (N, a_i) = (ci.npole as f64, ci.inner_back_apothem_mm);
     let L = py_min(mi.length_mm, mo.length_mm);
-    // corner gap from the flat-face gap (formula always uses the corner geometry)
-    let corner_gap = face_gap_mm
-        - (((a_i + mi.thickness_mm).powi(2) + (mi.width_mm / 2.0).powi(2)).sqrt()
-            - (a_i + mi.thickness_mm));
+    let r_face_i = a_i + mi.thickness_mm;
+    let r_corner_i = if ci.faceted == 1 {
+        (r_face_i.powi(2) + (mi.width_mm / 2.0).powi(2)).sqrt()
+    } else {
+        r_face_i
+    };
+    // Corner gap from the flat-face gap. Workbook: always the flat-block corner
+    // geometry. E8: the inner corner radius C55, which is the face radius for arcs.
+    let corner_gap = if dev.is_on(DeviationId::E8) {
+        face_gap_mm - (r_corner_i - r_face_i)
+    } else {
+        face_gap_mm
+            - (((a_i + mi.thickness_mm).powi(2) + (mi.width_mm / 2.0).powi(2)).sqrt()
+                - (a_i + mi.thickness_mm))
+    };
     let hub_wall = a_i - bond_inner_mm - ci.bore_mm / 2.0;
 
     let flat_i = 2.0 * a_i * (PI / N).tan();
@@ -501,12 +513,6 @@ pub fn compute(
         }
     } else {
         "n/a (arcs)".to_owned()
-    };
-    let r_face_i = a_i + mi.thickness_mm;
-    let r_corner_i = if ci.faceted == 1 {
-        (r_face_i.powi(2) + (mi.width_mm / 2.0).powi(2)).sqrt()
-    } else {
-        r_face_i
     };
     let A_o = r_corner_i + corner_gap;
     let g_m = A_o - r_face_i;
@@ -719,16 +725,21 @@ pub fn mass_estimate(
     hardware_g: f64,
     cap_g: f64,
     endplates_g: f64,
-    _dev: Deviations,
+    dev: Deviations,
 ) -> MassResults {
     let N = ci.npole as f64;
     let m_mag = N
         * (r.inner_length_mm * r.inner_width_mm * r.inner_thickness_mm
             + r.outer_length_mm * r.outer_width_mm * r.outer_thickness_mm)
         * NDFEB_DENSITY_G_MM3;
-    let m_ring = ((PI * (r.cup_od_mm / 2.0).powi(2)
-        - N * (r.outer_back_apothem_mm + bond_outer_mm).powi(2) * (PI / N).tan())
-        * cup_depth_mm
+    let pocket = r.outer_back_apothem_mm + bond_outer_mm;
+    // E8: arcs sit in a round pocket, not a polygon.
+    let cavity = if dev.is_on(DeviationId::E8) && ci.faceted != 1 {
+        PI * pocket.powi(2)
+    } else {
+        N * pocket.powi(2) * (PI / N).tan()
+    };
+    let m_ring = ((PI * (r.cup_od_mm / 2.0).powi(2) - cavity) * cup_depth_mm
         + PI * ((r.cup_od_mm / 2.0).powi(2) - (ci.bore_mm / 2.0).powi(2)) * web_mm)
         * steel_density_g_mm3;
     let hub_area = if ci.faceted == 1 {

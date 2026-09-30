@@ -617,18 +617,79 @@ fn e7_pull_out_over_angle_matches_the_report() {
     assert_report("Calculator!C93", &workbook, 0.861, 0.0005);
 }
 
-#[test]
-fn e7_leaves_every_default_cell_bit_for_bit() {
-    // Stronger than the parity rule of each_deviation_alone_changes_exactly_its_registered_cells:
-    // at defaults every row peaks at half a pitch, so E7 keeps the workbook expression exactly.
+/// Every celled value at the defaults is exactly equal (`Value ==`) with only `id`
+/// on and with every correction off. Stronger than the parity rule of
+/// each_deviation_alone_changes_exactly_its_registered_cells.
+fn assert_bit_for_bit_at_defaults(id: DeviationId) {
     let workbook = cell_values(Deviations::NONE);
-    let corrected = cell_values(Deviations::only(DeviationId::E7));
+    let corrected = cell_values(Deviations::only(id));
     let differ: Vec<&String> = workbook
         .iter()
         .filter(|(cell, v)| corrected.get(*cell) != Some(v))
         .map(|(cell, _)| cell)
         .collect();
-    assert!(differ.is_empty(), "E7 moved default cells: {differ:?}");
+    assert!(differ.is_empty(), "{id} moved default cells: {differ:?}");
+}
+
+#[test]
+fn e7_leaves_every_default_cell_bit_for_bit() {
+    // At defaults every row peaks at half a pitch, so E7 keeps the workbook expression exactly.
+    assert_bit_for_bit_at_defaults(DeviationId::E7);
+}
+
+#[test]
+fn e8_leaves_flat_blocks_bit_for_bit() {
+    // The defaults use flat blocks (coupling.faceted = 1), where the corner radius C55 is
+    // the workbook's own corner expression and the pocket stays a polygon.
+    assert_bit_for_bit_at_defaults(DeviationId::E8);
+}
+
+#[test]
+fn e8_arc_mode_matches_the_report() {
+    let e8 = &REGISTRY[DeviationId::E8.index()];
+    assert_eq!(e8.status, DeviationStatus::Applied);
+    let arcs = &e8.probes[0];
+    let (workbook, corrected) = (Deviations::NONE, Deviations::only(DeviationId::E8));
+    assert_report(
+        "Calculator!C93",
+        &at_probe("Calculator!C93", arcs, workbook),
+        2.99,
+        0.005,
+    );
+    assert_report(
+        "Calculator!C93",
+        &at_probe("Calculator!C93", arcs, corrected),
+        2.65,
+        0.005,
+    );
+    assert_report(
+        "Metal design!C9",
+        &at_probe("Metal design!C9", arcs, corrected),
+        2.25,
+        0.005,
+    ); // hot low, was 2.54
+    assert_report(
+        "Metal design!C35",
+        &at_probe("Metal design!C35", arcs, corrected),
+        0.270,
+        0.0005,
+    ); // was -0.476
+    assert_report(
+        "Metal design!C175",
+        &at_probe("Metal design!C175", arcs, corrected),
+        26.69,
+        0.005,
+    ); // sleeve ID, was 27.44
+    assert_report(
+        "Calculator!C111",
+        &at_probe("Calculator!C111", arcs, corrected),
+        48.41,
+        0.005,
+    ); // cup mass, was 42.96
+    assert_eq!(
+        at_probe("Shaft clamps!C48", arcs, corrected),
+        Value::Text("ISO 4762 M4 x 12, class 12.9".into())
+    );
 }
 
 #[test]

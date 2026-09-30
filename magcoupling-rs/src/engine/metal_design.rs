@@ -6,13 +6,13 @@
 //! 9 result cells) and the sheet's results ([`MetalDesignResults`],
 //! [`compute`], 49 result cells).
 //!
-//! Planned deviations touching this sheet (see
-//! [`crate::engine::deviations::REGISTRY`]): E8 (Metal design!C175).
+//! Deviations touching this sheet (see
+//! [`crate::engine::deviations::REGISTRY`]): applied E8 (Metal design!C175).
 
 use std::f64::consts::PI;
 
 use super::compat::py_max;
-use super::deviations::Deviations;
+use super::deviations::{DeviationId, Deviations};
 use super::meta::{NumOrText, inputs, out, param, results};
 
 inputs! {
@@ -313,6 +313,7 @@ results! {
 }
 
 /// Sleeve, liner, endplate and cap geometry and mass (Metal design rows 45-46, 175-181).
+/// `inner_corner_radius_mm` is Calculator!C55; only E8 reads it (Python has no such parameter).
 #[allow(clippy::too_many_arguments)] // Python signature
 pub fn retainers(
     md: &MetalDesignInputs,
@@ -321,12 +322,18 @@ pub fn retainers(
     inner_width_mm: f64,
     outer_face_apothem_mm: f64,
     bore_mm: f64,
-    _dev: Deviations,
+    inner_corner_radius_mm: f64,
+    dev: Deviations,
 ) -> RetainerResults {
-    let sleeve_id = 2.0
-        * (((inner_back_apothem_mm + inner_thickness_mm).powi(2) + (inner_width_mm / 2.0).powi(2))
-            .sqrt()
-            + md.sleeve_bedding_mm);
+    // E8: the sleeve clears the inner corner radius C55 (the face radius for arcs).
+    let sleeve_id = if dev.is_on(DeviationId::E8) {
+        2.0 * (inner_corner_radius_mm + md.sleeve_bedding_mm)
+    } else {
+        2.0 * (((inner_back_apothem_mm + inner_thickness_mm).powi(2)
+            + (inner_width_mm / 2.0).powi(2))
+        .sqrt()
+            + md.sleeve_bedding_mm)
+    };
     let sleeve_od = sleeve_id + 2.0 * md.sleeve_mm;
     let liner_od = 2.0 * (outer_face_apothem_mm - md.liner_bedding_mm);
     let liner_id = liner_od - 2.0 * md.liner_mm;

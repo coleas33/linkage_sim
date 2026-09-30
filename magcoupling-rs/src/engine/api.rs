@@ -171,6 +171,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         m.inner_width_mm,
         m.outer_face_apothem_mm,
         ci.bore_mm,
+        m.inner_corner_radius_mm,
         dev,
     );
     let mass = model::mass_estimate(
