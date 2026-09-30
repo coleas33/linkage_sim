@@ -33,6 +33,12 @@ Reverse chronological (newest at top).
   `result_get_agrees_with_every_result_row` (meta),
   `get_and_headline_read_what_result_rows_lists` (every real result path, two
   designs); the per-frame smoke test now times `compute_all` plus `headline`.
+- Never-panic (D3) pinned for non-finite values that bypass `set()`:
+  `compute_all_never_panics_on_non_finite_struct_literals` writes NaN, +inf
+  and −inf into `metal.face_gap_mm`, `clamps.boss_od_mm`,
+  `temperature.thermal.conductance_W_K` and `metal.measured_drag_Nm`, and a
+  non-finite drag with `npole = i64::MAX`, under NONE and ALL; `validate()`
+  must name exactly that path as `NotFinite`.
 
 ## 2026-09-29 — Magcoupling M2: engine port complete
 - Every Python module except `fields3d` (M3) is ported to `magcoupling-rs/`,

@@ -5,7 +5,7 @@
 use magcoupling::compute_all;
 use magcoupling::engine::api::{DesignInputs, compute_all_with, headline};
 use magcoupling::engine::deviations::Deviations;
-use magcoupling::engine::meta::{FieldType, InputSet, NumOrText, Value, input_rows};
+use magcoupling::engine::meta::{FieldType, InputSet, NumOrText, SetErrorKind, Value, input_rows};
 
 #[test]
 fn an_invalid_adhesive_code_selects_no_adhesive() {
@@ -86,6 +86,47 @@ fn compute_all_never_panics_on_extreme_inputs() {
         }
     }
     assert!(tried > 800, "only {tried} extreme cases");
+}
+
+#[test]
+fn compute_all_never_panics_on_non_finite_struct_literals() {
+    // Decision D3: set() refuses NaN and infinities, but a struct literal, a design file or
+    // a share link can hold one. compute_all must not panic on it (gate 4 is a debug build,
+    // overflow checks on), with the corrections off or on; validate() names the one path.
+    type Put = fn(&mut DesignInputs, f64);
+    let cases: [(&str, Put); 4] = [
+        ("metal.face_gap_mm", |i, x| i.metal.face_gap_mm = x),
+        ("clamps.boss_od_mm", |i, x| i.clamps.boss_od_mm = x),
+        ("temperature.thermal.conductance_W_K", |i, x| {
+            i.temperature.thermal.conductance_W_K = x
+        }),
+        ("metal.measured_drag_Nm", |i, x| {
+            i.metal.measured_drag_Nm = Some(x)
+        }),
+    ];
+    for x in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for (path, put) in cases {
+            for dev in [Deviations::NONE, Deviations::ALL] {
+                let mut inputs = DesignInputs::defaults_with(dev);
+                put(&mut inputs, x);
+                let _ = compute_all_with(&inputs, dev);
+                let errors = inputs.validate().expect_err(path);
+                assert_eq!(errors.len(), 1, "{path} {x}: {errors:?}");
+                assert_eq!(
+                    (errors[0].path.as_str(), &errors[0].kind),
+                    (path, &SetErrorKind::NotFinite),
+                    "{x}"
+                );
+            }
+        }
+        // A non-finite measured drag together with a pole count far outside its slider.
+        for dev in [Deviations::NONE, Deviations::ALL] {
+            let mut inputs = DesignInputs::defaults_with(dev);
+            inputs.metal.measured_drag_Nm = Some(x);
+            inputs.coupling.npole = i64::MAX;
+            let _ = compute_all_with(&inputs, dev);
+        }
+    }
 }
 
 #[test]
