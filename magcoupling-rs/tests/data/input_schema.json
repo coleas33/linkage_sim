@@ -2347,6 +2347,60 @@
     },
     {
       "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": 0.07832,
+      "help": "Correction E17, no back iron with an aluminium cup: 3D, no steel image and not doubled (the steel-circuit field is C116). Stored at 4 significant figures (decision 12) until M3 computes it live.",
+      "label": "Opposite-ring field at an aluminium hub (fundamental, free space)",
+      "path": "temperature.slip_loss.b_hub_free_T",
+      "range": {
+        "log": false,
+        "max": 1.0,
+        "min": 0.0,
+        "step": 0.00001
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "T"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": 0.08764,
+      "help": "Correction E17, no back iron: 3D, no steel image and not doubled (the steel-circuit field is C117). Stored at 4 significant figures (decision 12) until M3 computes it live.",
+      "label": "Opposite-ring field at an aluminium cup (fundamental, free space)",
+      "path": "temperature.slip_loss.b_cup_free_T",
+      "range": {
+        "log": false,
+        "max": 1.0,
+        "min": 0.0,
+        "step": 0.00001
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "T"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": 6.837e-6,
+      "help": "Correction E17, no back iron: the inner ring alone, no steel image (the steel-circuit value is C121). Stored at 4 significant figures (decision 12) until M3 computes it live.",
+      "label": "Rear-web end field of an aluminium web, ∫B² dA (free space)",
+      "path": "temperature.slip_loss.web_integral_free_T2m2",
+      "range": {
+        "log": true,
+        "max": 0.001,
+        "min": 1e-8,
+        "step": 1e-9
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "T²·m²"
+    },
+    {
+      "assumption": false,
       "cell": "Temperature design!C138",
       "choices": [],
       "default": 440.0,

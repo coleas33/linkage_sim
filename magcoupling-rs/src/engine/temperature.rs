@@ -26,14 +26,16 @@
 //! C195), E12 (a hot-day start at or above the governing limit gives 0 s,
 //! 0 rev and 0 N·m at C19, C23, C150 to C153), E13 (a heating power of
 //! exactly 0, from a measured drag of 0, gives +inf rotations per °C at C156
-//! and C157 instead of Python's ZeroDivisionError), and E15 (C141 prices an
-//! aluminium cup, boss and hub at C140, on the gates the masses read).
+//! and C157 instead of Python's ZeroDivisionError), E15 (C141 prices an
+//! aluminium cup, boss and hub at C140, on the gates the masses read), and
+//! E17 (with no back iron the aluminium hub, cup and web losses C123-C125 take
+//! the low-Reynolds closed form T1 with the Rust-only free-space fields).
 
 use std::f64::consts::PI;
 
 use super::compat::{py_max, py_min, text0};
 use super::deviations::{DeviationId, Deviations};
-use super::meta::{NumOrText, inputs, out, out_uncelled, param, results};
+use super::meta::{NumOrText, inputs, out, out_uncelled, param, param_rust_only, results};
 use super::model::br_factor;
 
 // =========================================================================== inputs
@@ -242,6 +244,16 @@ inputs! {
             high_multiplier: f64 = 3.0 => param("-", "High-case multiplier on the estimate",
                 "Set to 1 once measured.", "Temperature design!C133")
                 .range(1.0, 10.0, 0.1),
+            b_hub_free_T: f64 = 0.07832 => param_rust_only("T", "Opposite-ring field at an aluminium hub (fundamental, free space)",
+                "Correction E17, no back iron with an aluminium cup: 3D, no steel image and not doubled (the steel-circuit field is C116). Stored at 4 significant figures (decision 12) until M3 computes it live.")
+                .range(0.0, 1.0, 0.00001),
+            b_cup_free_T: f64 = 0.08764 => param_rust_only("T", "Opposite-ring field at an aluminium cup (fundamental, free space)",
+                "Correction E17, no back iron: 3D, no steel image and not doubled (the steel-circuit field is C117). Stored at 4 significant figures (decision 12) until M3 computes it live.")
+                .range(0.0, 1.0, 0.00001),
+            web_integral_free_T2m2: f64 = 6.837e-6 => param_rust_only("T²·m²", "Rear-web end field of an aluminium web, ∫B² dA (free space)",
+                "Correction E17, no back iron: the inner ring alone, no steel image (the steel-circuit value is C121). Stored at 4 significant figures (decision 12) until M3 computes it live.")
+                .range(1e-8, 1e-3, 1e-9)
+                .log(),
         }
     }
 }
@@ -346,6 +358,8 @@ pub struct TemperatureLinks {
     pub liner_od_mm: f64,              // Metal design C177
     pub liner_id_mm: f64,              // Metal design C178
     pub cap_face_mm: f64,              // Metal design C167
+    pub cup_wall_mm: f64,              // Metal design C122 (E17: the aluminium cup's wall)
+    pub web_mm: f64,                   // Metal design C125 (E17: the aluminium web)
     pub hardware_g: f64,               // Metal design C128
     pub retainers_g: f64,              // Metal design C46
     pub cap_g: f64,                    // Metal design C180
@@ -477,9 +491,15 @@ results! {
             steel_mu_r: f64 => out("-", "Steel incremental relative permeability (4140)", "", "Temperature design!C110"),
             cap_sigma_S_m: f64 => out("S/m", "Aluminium cap conductivity (6061-T6)", "", "Temperature design!C112"),
             skin_depth_mm: f64 => out("mm", "Steel skin depth at the field frequency", "", "Temperature design!C115"),
-            hub_W: f64 => out("W", "Hub surface (solid steel)", "", "Temperature design!C123"),
-            cup_W: f64 => out("W", "Cup surface (solid steel)", "", "Temperature design!C124"),
-            web_W: f64 => out("W", "Rear web (solid steel)", "", "Temperature design!C125"),
+            hub_W: f64 => out("W", "Hub surface (solid steel)",
+                "Solid 4140 with back iron (skin-limited formula). With no back iron the hub is 6061 aluminium: low-Reynolds form of correction E17.",
+                "Temperature design!C123"),
+            cup_W: f64 => out("W", "Cup surface (solid steel)",
+                "Solid 4140 with back iron (skin-limited formula). With no back iron the cup is 6061 aluminium (E9): low-Reynolds form of correction E17.",
+                "Temperature design!C124"),
+            web_W: f64 => out("W", "Rear web (solid steel)",
+                "Solid 4140 with back iron (skin-limited formula). With no back iron the web is 6061 aluminium (E9): low-Reynolds form of correction E17.",
+                "Temperature design!C125"),
             sleeve_W: f64 => out("W", "Inner 316L sleeve", "", "Temperature design!C126"),
             liner_W: f64 => out("W", "Outer 316L liner", "", "Temperature design!C127"),
             cap_W: f64 => out("W", "Aluminium cap face", "", "Temperature design!C128"),
@@ -803,11 +823,50 @@ pub fn compute(
             * r
             * L
     };
-    let p_hub = surface(sl.b_hub_T, r_hub);
-    let p_cup = surface(sl.b_cup_T, r_cup);
-    let p_web = k.steel_sigma_S_m * we.powi(2) * (delta / 1000.0) / 4.0
-        * ((r_mid / 1000.0) / pp).powi(2)
-        * sl.web_integral_T2m2;
+    // E17 (report 5.5.3): an aluminium part is resistance-limited, not skin-limited, and
+    // sees the free-space field. Low-Reynolds closed form T1 with the thin-conductor end
+    // factor: P = f_end sigma_Al we^2 B^2 / (2 k^2) d_eff 2 pi r L, k = p / r and
+    // d_eff = (1 - e^(-2 k d)) / (2 k), d the part's thickness [m].
+    let e17 = dev.is_on(DeviationId::E17);
+    let d_eff = |kk: f64, d_m: f64| (1.0 - (-2.0 * kk * d_m).exp()) / (2.0 * kk);
+    let aluminium_surface = |B: f64, r: f64, d_m: f64| {
+        let kk = pp / r;
+        sl.end_factor * k.al6061_sigma_S_m * we.powi(2) * B.powi(2) / (2.0 * kk.powi(2))
+            * d_eff(kk, d_m)
+            * 2.0
+            * PI
+            * r
+            * L
+    };
+    let p_hub = if e17 && k.hub_aluminium {
+        // With a steel cup (E9 off) the outer ring has its first-order image in the cup:
+        // half the doubled steel-circuit field (report 5.6, amended).
+        let b = if k.cup_aluminium {
+            sl.b_hub_free_T
+        } else {
+            sl.b_hub_T / 2.0
+        };
+        aluminium_surface(b, r_hub, k.hub_wall_mm / 1000.0)
+    } else {
+        surface(sl.b_hub_T, r_hub)
+    };
+    let p_cup = if e17 && k.cup_aluminium {
+        aluminium_surface(sl.b_cup_free_T, r_cup, k.cup_wall_mm / 1000.0)
+    } else {
+        surface(sl.b_cup_T, r_cup)
+    };
+    let p_web = if e17 && k.cup_aluminium {
+        // (r_mid / p)^2 replaces 1 / k^2 and the free-space integral replaces A B^2.
+        let r_w = r_mid / 1000.0;
+        sl.end_factor * k.al6061_sigma_S_m * we.powi(2) / 2.0
+            * (r_w / pp).powi(2)
+            * d_eff(pp / r_w, k.web_mm / 1000.0)
+            * sl.web_integral_free_T2m2
+    } else {
+        k.steel_sigma_S_m * we.powi(2) * (delta / 1000.0) / 4.0
+            * ((r_mid / 1000.0) / pp).powi(2)
+            * sl.web_integral_T2m2
+    };
     let r_s = (k.sleeve_id_mm + k.sleeve_od_mm) / 4.0 / 1000.0;
     let r_l = (k.liner_od_mm + k.liner_id_mm) / 4.0 / 1000.0;
     let shell = |t_mm: f64, r: f64, B: f64| {
@@ -1132,6 +1191,8 @@ mod tests {
             liner_od_mm: 29.39,
             liner_id_mm: 28.99,
             cap_face_mm: 0.8,
+            cup_wall_mm: 1.8,
+            web_mm: 2.5,
             hardware_g: 6.0,
             retainers_g: 3.131,
             cap_g: 2.322,
@@ -1583,6 +1644,78 @@ mod tests {
         put_back.summary.time_to_limit_high = workbook.summary.time_to_limit_high;
         put_back.summary.critical_drag_Nm = workbook.summary.critical_drag_Nm;
         assert_eq!(put_back, workbook);
+    }
+
+    #[test]
+    fn e17_prices_aluminium_parts_with_the_low_reynolds_closed_form() {
+        // Report 5.5.2-5.5.3 at the fixture (10 poles, 2000 rpm slip): an independent
+        // evaluation of T1 per part, P = f_end sigma w^2 B^2 (1 - e^(-2kd)) / (4 k^3) 2 pi r L,
+        // against the engine's P = f_end sigma w^2 B^2 / (2 k^2) d_eff 2 pi r L.
+        use crate::engine::constants::MU0;
+        let e17 = Deviations::only(DeviationId::E17);
+        let mut k = links();
+        k.cup_aluminium = true; // E9 with no back iron
+        k.hub_aluminium = true;
+        let ti = TemperatureInputs::default();
+        let sl = &ti.slip_loss;
+        let r = compute(&ti, &k, e17);
+        let (pp, sigma, f_end) = (5.0_f64, k.al6061_sigma_S_m, sl.end_factor);
+        let we = 2.0 * PI * pp * k.slip_rpm / 60.0;
+        let length = k.active_length_mm / 1000.0;
+        let t1 = |b: f64, radius: f64, d: f64| {
+            let wave = pp / radius;
+            f_end * sigma * we * we * b * b * (1.0 - (-2.0 * wave * d).exp())
+                / (4.0 * wave * wave * wave)
+                * 2.0
+                * PI
+                * radius
+                * length
+        };
+        let r_cup = (k.outer_back_apothem_mm + k.bond_outer_mm) / 1000.0;
+        let r_hub = (k.inner_back_apothem_mm - k.bond_inner_mm) / 1000.0;
+        let r_web = (k.inner_back_apothem_mm + k.inner_thickness_mm / 2.0) / 1000.0;
+        let close = |got: f64, want: f64| (got - want).abs() <= 1e-12 * want.abs();
+        let want_cup = t1(sl.b_cup_free_T, r_cup, k.cup_wall_mm / 1000.0);
+        let want_hub = t1(sl.b_hub_free_T, r_hub, k.hub_wall_mm / 1000.0);
+        assert!(
+            close(r.slip_loss.cup_W, want_cup),
+            "{} {want_cup}",
+            r.slip_loss.cup_W
+        );
+        assert!(
+            close(r.slip_loss.hub_W, want_hub),
+            "{} {want_hub}",
+            r.slip_loss.hub_W
+        );
+        let wave_web = pp / r_web;
+        let want_web = f_end * sigma * we * we / 2.0
+            * (r_web / pp).powi(2)
+            * (1.0 - (-2.0 * wave_web * k.web_mm / 1000.0).exp())
+            / (2.0 * wave_web)
+            * sl.web_integral_free_T2m2;
+        assert!(
+            close(r.slip_loss.web_W, want_web),
+            "{} {want_web}",
+            r.slip_loss.web_W
+        );
+        // The report's regime numbers (4 s.f.): k = p / r and the aluminium skin depth, which
+        // exceeds every part (d / delta < 1): the premise of T1.
+        let sig4 = |x: f64, want: f64| {
+            (x - want).abs() <= 0.5 * 10f64.powi(want.log10().floor() as i32 - 3)
+        };
+        assert!(sig4(pp / r_cup, 278.7) && sig4(pp / r_hub, 495.0) && sig4(pp / r_web, 426.1));
+        let delta_al = (2.0 / (we * MU0 * sigma)).sqrt();
+        assert!(sig4(delta_al * 1000.0, 7.797), "{delta_al}");
+        for d_mm in [k.cup_wall_mm, k.web_mm, k.hub_wall_mm] {
+            assert!(d_mm / 1000.0 < delta_al, "{d_mm} mm");
+        }
+        // A steel cup (E9 off) gives the aluminium hub half the doubled steel-circuit field.
+        k.cup_aluminium = false;
+        let steel_cup = compute(&ti, &k, e17);
+        let want_hub = t1(sl.b_hub_T / 2.0, r_hub, k.hub_wall_mm / 1000.0);
+        assert!(close(steel_cup.slip_loss.hub_W, want_hub));
+        assert_eq!(steel_cup.slip_loss.cup_W, run(&ti, &k).slip_loss.cup_W);
+        assert_eq!(steel_cup.slip_loss.web_W, run(&ti, &k).slip_loss.web_W);
     }
 
     #[test]

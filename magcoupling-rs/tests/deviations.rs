@@ -1346,6 +1346,213 @@ fn e16_removed_disc_matches_the_report() {
 }
 
 #[test]
+fn e17_aluminium_eddy_losses_match_the_report() {
+    // Report 5.4, E17 (T1, end factor C114 = 0.7, the 4-s.f. free-space fields): 41 cells in
+    // the main column (workbook + E9, decision 15) and the M2 column. C152 stays "never" and
+    // no verdict text changes.
+    let e9 = Deviations::NONE.with(DeviationId::E9);
+    let e17 = DeviationId::E17;
+    let main: ReportRows = &[
+        ("Temperature design!C17", 73.26, 74.73),
+        ("Temperature design!C18", 89.77, 94.18),
+        ("Temperature design!C20", 66.01, 66.19),
+        ("Temperature design!C22", 0.6881, 0.8105),
+        ("Temperature design!C123", 0.2259, 0.1942),
+        ("Temperature design!C124", 1.353, 1.543),
+        ("Temperature design!C125", 0.0914, 0.3737),
+        ("Temperature design!C130", 2.477, 2.918),
+        ("Temperature design!C131", 0.01183, 0.01393),
+        ("Temperature design!C132", 2.477, 2.918),
+        ("Temperature design!C134", 7.431, 8.754),
+        ("Temperature design!C145", 0.005411, 0.006374),
+        ("Temperature design!C146", 8.257, 9.726),
+        ("Temperature design!C147", 24.77, 29.18),
+        ("Temperature design!C148", 73.26, 74.73),
+        ("Temperature design!C149", 89.77, 94.18),
+        ("Temperature design!C154", 0.05411, 0.06374),
+        ("Temperature design!C155", 0.1623, 0.1912),
+        ("Temperature design!C156", 616.1, 523.0),
+        ("Temperature design!C157", 205.4, 174.3),
+        ("Temperature design!C161", 65.32, 65.38),
+        ("Temperature design!C169", 0.2477, 0.2918),
+        ("Temperature design!C170", 0.7431, 0.8754),
+        ("Temperature design!C171", 0.005411, 0.006374),
+        ("Temperature design!C172", 0.01623, 0.01912),
+        ("Temperature design!C173", 14.86, 17.51),
+        ("Temperature design!C175", 0.2294, 0.2702),
+        ("Temperature design!C176", 0.6881, 0.8105),
+        ("Temperature design!C177", 0.2477, 0.2918),
+        ("Temperature design!C180", 66.01, 66.19),
+        ("Temperature design!C181", 36.54, 36.36),
+        ("Temperature design!C182", 26.54, 26.36),
+        ("Temperature design!C186", 1.63, 1.63),
+        ("Temperature design!C189", 66.01, 66.19),
+        ("Temperature design!C190", 53.99, 53.81),
+        ("Temperature design!C192", 1.875, 1.874),
+        ("Temperature design!C193", 0.1981, 0.198),
+        ("Temperature design!C196", 7.571, 7.575),
+    ];
+    // C19, C150 and C151 are text ("never") before and numbers after: checked below.
+    let text_cells = [
+        "Temperature design!C19",
+        "Temperature design!C150",
+        "Temperature design!C151",
+    ];
+    let check = |label: &str,
+                 before: Deviations,
+                 after: Deviations,
+                 rows: ReportRows,
+                 t19: f64,
+                 r151: f64| {
+        let (b, a) = (
+            cells_with(&NO_BACK_IRON, before),
+            cells_with(&NO_BACK_IRON, after),
+        );
+        let mut want: BTreeSet<String> = rows.iter().map(|(c, _, _)| (*c).to_owned()).collect();
+        want.extend(text_cells.iter().map(|c| (*c).to_owned()));
+        assert_eq!(changed_cells(&b, &a), want, "{label}: changed cells");
+        for &(cell, was, now) in rows {
+            assert_sig4(&format!("{label} {cell} before"), &b[cell], was);
+            assert_sig4(&format!("{label} {cell} after"), &a[cell], now);
+        }
+        for cell in ["Temperature design!C19", "Temperature design!C150"] {
+            assert_eq!(
+                b[cell],
+                Value::Text("never: steady state stays below the limit".into()),
+                "{label} {cell}"
+            );
+            assert_sig4(&format!("{label} {cell}"), &a[cell], t19);
+        }
+        assert_eq!(b["Temperature design!C151"], Value::Text("never".into()));
+        assert_sig4(
+            &format!("{label} C151"),
+            &a["Temperature design!C151"],
+            r151,
+        );
+        assert_eq!(
+            a["Temperature design!C152"],
+            Value::Text("never: steady state stays below the limit".into()),
+            "{label}: the estimate never reaches the limit"
+        );
+    };
+    check("E17 on E9", e9, e9.with(e17), main, 440.3, 1.468e4);
+    let m2_rows: ReportRows = &[
+        ("Temperature design!C17", 74.17, 74.73),
+        ("Temperature design!C18", 92.51, 94.18),
+        ("Temperature design!C20", 66.12, 66.19),
+        ("Temperature design!C22", 0.7643, 0.8105),
+        ("Temperature design!C123", 0.2259, 0.1942),
+        ("Temperature design!C124", 1.353, 1.543),
+        ("Temperature design!C125", 0.3656, 0.3737),
+        ("Temperature design!C130", 2.751, 2.918),
+        ("Temperature design!C131", 0.01314, 0.01393),
+        ("Temperature design!C132", 2.751, 2.918),
+        ("Temperature design!C134", 8.254, 8.754),
+        ("Temperature design!C145", 0.00601, 0.006374),
+        ("Temperature design!C146", 9.171, 9.726),
+        ("Temperature design!C147", 27.51, 29.18),
+        ("Temperature design!C148", 74.17, 74.73),
+        ("Temperature design!C149", 92.51, 94.18),
+        ("Temperature design!C154", 0.0601, 0.06374),
+        ("Temperature design!C155", 0.1803, 0.1912),
+        ("Temperature design!C156", 554.7, 523.0),
+        ("Temperature design!C157", 184.9, 174.3),
+        ("Temperature design!C161", 65.36, 65.38),
+        ("Temperature design!C169", 0.2751, 0.2918),
+        ("Temperature design!C170", 0.8254, 0.8754),
+        ("Temperature design!C171", 0.00601, 0.006374),
+        ("Temperature design!C172", 0.01803, 0.01912),
+        ("Temperature design!C173", 16.51, 17.51),
+        ("Temperature design!C175", 0.2548, 0.2702),
+        ("Temperature design!C176", 0.7643, 0.8105),
+        ("Temperature design!C177", 0.2751, 0.2918),
+        ("Temperature design!C180", 66.12, 66.19),
+        ("Temperature design!C181", 36.93, 36.87),
+        ("Temperature design!C182", 26.93, 26.87),
+        ("Temperature design!C186", 1.63, 1.63),
+        ("Temperature design!C189", 66.12, 66.19),
+        ("Temperature design!C190", 53.88, 53.81),
+        ("Temperature design!C192", 1.874, 1.874),
+        ("Temperature design!C193", 0.1981, 0.198),
+        ("Temperature design!C196", 7.573, 7.575),
+    ];
+    check("E17 on M2", m2(), m2().with(e17), m2_rows, 497.0, 1.657e4);
+
+    // Full precision, workbook + E9 basis, with the 4-s.f. fields pinned (report 5.4, decision 12).
+    let c = cells_with(&NO_BACK_IRON, e9.with(e17));
+    for (cell, want) in [
+        ("Temperature design!C123", 0.1942432063711941),
+        ("Temperature design!C124", 1.5432858065214725),
+        ("Temperature design!C125", 0.3736960055840505),
+        ("Temperature design!C130", 2.917946124198304),
+        ("Temperature design!C18", 94.17946124198303),
+        ("Temperature design!C19", 440.3079945062734),
+    ] {
+        assert!(
+            parity_close(&c[cell], &Value::Num(want)),
+            "{cell}: {:?} vs {want}",
+            c[cell]
+        );
+    }
+
+    // Standalone (E9 off, amended): the cup and web stay steel; the aluminium hub sees half
+    // the doubled steel-circuit field, C116 / 2 = 0.1035 T (report 5.6, correction 1).
+    let alone = cells_with(&NO_BACK_IRON, Deviations::only(e17));
+    let workbook = cells_with(&NO_BACK_IRON, Deviations::NONE);
+    assert_sig4("E17 alone C123", &alone["Temperature design!C123"], 0.3392);
+    assert_sig4("E17 alone C130", &alone["Temperature design!C130"], 2.590);
+    assert_sig4("E17 alone C18", &alone["Temperature design!C18"], 90.90);
+    for cell in ["Temperature design!C124", "Temperature design!C125"] {
+        assert_eq!(
+            alone[cell], workbook[cell],
+            "{cell}: the steel cup and web keep the workbook formula"
+        );
+    }
+}
+
+#[test]
+fn e15_to_e17_together_match_the_reports_headline_table() {
+    // Report 5.2 at back iron = 0: the combined columns. No correction changes the torque,
+    // the governing limit or the verdict C25.
+    let e9 = Deviations::NONE.with(DeviationId::E9);
+    let all3 = |base: Deviations| {
+        base.with(DeviationId::E15)
+            .with(DeviationId::E16)
+            .with(DeviationId::E17)
+    };
+    let c = cells_with(&NO_BACK_IRON, all3(e9));
+    assert_sig4("C18", &c["Temperature design!C18"], 94.18);
+    assert_sig4("C19", &c["Temperature design!C19"], 606.1);
+    assert_sig4("C151", &c["Temperature design!C151"], 2.020e4);
+    assert_sig4("C20", &c["Temperature design!C20"], 66.09);
+    let m = cells_with(&NO_BACK_IRON, all3(m2()));
+    assert_sig4("M2 C19", &m["Temperature design!C19"], 684.1);
+    assert_sig4("M2 C151", &m["Temperature design!C151"], 2.280e4);
+    assert_sig4("M2 C20", &m["Temperature design!C20"], 66.09);
+    assert_sig4("M2 C12", &m["Temperature design!C12"], 93.06);
+    assert_sig4("M2 C23", &m["Temperature design!C23"], 0.04019);
+    for (label, cells) in [("E9", &c), ("M2", &m)] {
+        assert_sig4(&format!("{label} C93"), &cells["Calculator!C93"], 1.697);
+        assert_eq!(
+            cells["Temperature design!C152"],
+            Value::Text("never: steady state stays below the limit".into())
+        );
+        assert_eq!(
+            cells["Temperature design!C25"],
+            Value::Text(
+                "OK on temperature. Confirm drag torque and thermal cycling by test.".into()
+            )
+        );
+    }
+}
+
+#[test]
+fn e17_leaves_every_default_cell_bit_for_bit() {
+    // At defaults every loss term is steel: the skin-limited workbook formulas stay.
+    assert_bit_for_bit_at_defaults(DeviationId::E17);
+}
+
+#[test]
 fn e16_leaves_every_default_cell_bit_for_bit() {
     // At defaults the web is steel: the density E16 reads is C132 itself.
     assert_bit_for_bit_at_defaults(DeviationId::E16);

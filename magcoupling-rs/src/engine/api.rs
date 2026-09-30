@@ -255,6 +255,8 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         liner_od_mm: ret.liner_od_mm,
         liner_id_mm: ret.liner_id_mm,
         cap_face_mm: md.cap_axial_mm,
+        cup_wall_mm: md.cup_wall_corner_mm,
+        web_mm: md.web_mm,
         hardware_g: md.hardware_g,
         retainers_g: ret.retainers_g,
         cap_g: ret.cap_g,

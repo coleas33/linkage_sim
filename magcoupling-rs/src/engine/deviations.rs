@@ -979,7 +979,7 @@ pub const REGISTRY: &[Deviation] = &[
             decisions: &[10, 11, 12, 13, 14, 15],
         },
         depends_on: &[DeviationId::E9],
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &[
             "Calculator!C6",
             "Calculator!C8",
@@ -1045,10 +1045,49 @@ pub const REGISTRY: &[Deviation] = &[
             and the free-space integral 6.837e-6 T^2 m^2 replaces A B^2. The three free-space fields are Rust-only inputs \
             pinned at 4 s.f. (decision 12; M3 computes them live). The labels C123 to C125 stay; their help is reworded (decision 14).",
         workbook_input_defaults: &[],
-        workbook_help: &[],
+        workbook_help: &[
+            ("temperature.slip_loss.hub_W", ""),
+            ("temperature.slip_loss.cup_W", ""),
+            ("temperature.slip_loss.web_W", ""),
+        ],
         changes_at_defaults: &[],
         changes_file: None,
-        probes: &[],
+        probes: &[Probe {
+            label: "no intentional back iron (coupling.backiron = 0), on top of E9 (report 5.4, E17, full precision)",
+            inputs: &[("coupling.backiron", Literal::Int(0))],
+            expect: &[
+                CellChange {
+                    cell: "Temperature design!C123",
+                    workbook: Literal::Num(0.22590854790913922),
+                    corrected: Literal::Num(0.1942432063711941),
+                },
+                CellChange {
+                    cell: "Temperature design!C124",
+                    workbook: Literal::Num(1.3530776316850626),
+                    corrected: Literal::Num(1.5432858065214725),
+                },
+                CellChange {
+                    cell: "Temperature design!C125",
+                    workbook: Literal::Num(0.09140096902640166),
+                    corrected: Literal::Num(0.3736960055840505),
+                },
+                CellChange {
+                    cell: "Temperature design!C130",
+                    workbook: Literal::Num(2.4771082543421903),
+                    corrected: Literal::Num(2.917946124198304),
+                },
+                CellChange {
+                    cell: "Temperature design!C18",
+                    workbook: Literal::Num(89.7710825434219),
+                    corrected: Literal::Num(94.17946124198303),
+                },
+                CellChange {
+                    cell: "Temperature design!C19",
+                    workbook: Literal::Text("never: steady state stays below the limit"),
+                    corrected: Literal::Num(440.3079945062734),
+                },
+            ],
+        }],
     },
     Deviation {
         id: DeviationId::E18,
