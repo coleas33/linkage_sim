@@ -5,6 +5,17 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-30 — Magcoupling Addendum A-1: final review fix wave
+- `docs/ai/03-structure.yaml` parses again (two quoted scalars) and lists `tests/material_links.rs`;
+  the invariant this branch added to `02-system.yaml` is quoted (that file's older parse failures,
+  from line 13 on, predate the branch and are untouched).
+- `magcoupling-rs/README.md`: status no longer puts M3 before M4, the registry row names E1-E20, and
+  the deviations and robustness test rows list the Addendum A tests. The E5 help on C121 and the E5
+  row now say the workbook's 1.035e-5 includes the steel hub's image (free space is E17's 6.837e-6).
+- `material_library::resolve`: the cap default reuses the body's workbook 6061 values (no number changes).
+- `04-memory.yaml` records that E20's rating calibration gives negative offsets (raised onsets) for
+  N52, N50, N50M, N38UH, N35EH and Recoma 26; a clamp at offset >= 0 is a candidate correction.
+
 ## 2026-09-30 — Magcoupling Addendum A-1: data and physics (grades, materials, E15-E20)
 - `magcoupling-rs`: the A6 grade table (`grades.rs`, 17 grades cited per value) and the parts' vendor
   data (coating, magnetization, vendor page); any grade with manual dimensions (Rust-only
