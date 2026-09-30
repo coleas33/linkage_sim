@@ -433,6 +433,32 @@
     },
     {
       "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": "",
+      "help": "Addendum A6: a grade of the grade table, by exact name (e.g. N42SH, Y30). Used only when the inner part is not in the library: the manual dimensions with the grade's Br at 20 °C and maximum temperature. Blank = the manual Br and no rating.",
+      "label": "Inner magnet grade (manual dimensions)",
+      "path": "coupling.magnets.grade_inner",
+      "range": null,
+      "rust_only": true,
+      "type": "text",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": "",
+      "help": "As the inner grade, for the outer ring.",
+      "label": "Outer magnet grade (manual dimensions)",
+      "path": "coupling.magnets.grade_outer",
+      "range": null,
+      "rust_only": true,
+      "type": "text",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
       "cell": "Metal design!C7",
       "choices": [],
       "default": 2.5,

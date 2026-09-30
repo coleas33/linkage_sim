@@ -89,7 +89,7 @@ Results can be +inf (E13); exporters must handle it.
 | `src/engine/library.rs` | `Magnet library` sheet: the stock magnet rows (the A6 part table: workbook Br and Tmax, grade, vendor page, coating, magnetization) and the exact-text lookup; `br_T` applies E3 with the N42SH grade's Br |
 | `src/engine/grades.rs` | Addendum A6 grade table `GRADES` (17 grades: Br, Hcj, Hcb, (BH)max, alpha, beta, mu_rec, Tmax, density), each value cited; `grade(id)` lookup |
 | `src/engine/calibration.rs` | `Calibration` sheet: prototype measurement and model calibration (23 result cells) |
-| `src/engine/model.rs` | `Calculator` sheet: coupling and magnet inputs, `ModelResults` (73 cells), the fixed harmonic set `HARMONICS` (1, 3, 5), and the mass estimate `MassResults` (6 cells) |
+| `src/engine/model.rs` | `Calculator` sheet: coupling and magnet inputs (plus the Rust-only grade per ring for manual dimensions, Addendum A6), `ModelResults` (73 cells, plus the Rust-only `inner_grade` and `outer_grade`), the fixed harmonic set `HARMONICS` (1, 3, 5), and the mass estimate `MassResults` (6 cells) |
 | `src/engine/metal_design.rs` | `Metal design` sheet: 48 inputs, retainers (9 cells), `MetalDesignResults` (49 cells), the validation checklist `VALIDATION_ITEMS` |
 | `src/engine/materials.rs` | `Materials` sheet: steel, nickel and screw-class inputs, the aluminium alloys, `ScrewClasses::proof`, `MaterialsResults` (7 cells) |
 | `src/engine/temperature.rs` | `Temperature design` sheet: 7 input groups (37 cells), the adhesive table `ADHESIVES` with `selected_adhesive`, `TemperatureLinks`, `TemperatureResults` (130 cells) |

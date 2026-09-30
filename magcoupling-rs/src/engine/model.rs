@@ -28,8 +28,9 @@ use std::f64::consts::PI;
 use super::compat::{fmt_fixed, py_max, py_min};
 use super::constants::{MU0, NDFEB_DENSITY_G_MM3};
 use super::deviations::{DeviationId, Deviations};
+use super::grades::{self, Grade};
 use super::library::{self, lookup};
-use super::meta::{NumOrText, inputs, out, param, results};
+use super::meta::{NumOrText, inputs, out, out_rust_only, param, param_rust_only, results};
 
 /// The odd space harmonics the model sums (the workbook's set).
 pub const HARMONICS: [u32; 3] = [1, 3, 5];
@@ -68,6 +69,10 @@ inputs! {
             manual_outer_br_T: f64 = 1.30 => param("T", "Manual outer Br at 20 °C",
                 "", "Calculator!C27")
                 .range(0.2, 1.5, 0.001),
+            grade_inner: String = "" => param_rust_only("-", "Inner magnet grade (manual dimensions)",
+                "Addendum A6: a grade of the grade table, by exact name (e.g. N42SH, Y30). Used only when the inner part is not in the library: the manual dimensions with the grade's Br at 20 °C and maximum temperature. Blank = the manual Br and no rating."),
+            grade_outer: String = "" => param_rust_only("-", "Outer magnet grade (manual dimensions)",
+                "As the inner grade, for the outer ring."),
         }
     }
 }
@@ -236,6 +241,10 @@ results! {
                 "Library rating only.", "Calculator!C107"),
             outer_temp_check: String => out("", "Outer magnet temperature check",
                 "Library rating only.", "Calculator!C108"),
+            inner_grade: String => out_rust_only("", "Inner magnet grade used",
+                "The library part's grade, or the grade picked for manual dimensions; blank for a manual magnet without a grade."),
+            outer_grade: String => out_rust_only("", "Outer magnet grade used",
+                "As the inner grade, for the outer ring."),
         }
     }
 }
@@ -257,7 +266,7 @@ results! {
     }
 }
 
-/// One magnet ring as the Calculator uses it (Python `ResolvedMagnet`).
+/// One magnet ring as the Calculator uses it (Python `ResolvedMagnet`, plus the grade).
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(non_snake_case)]
 pub struct ResolvedMagnet {
@@ -265,35 +274,53 @@ pub struct ResolvedMagnet {
     pub width_mm: f64,
     pub thickness_mm: f64,
     pub br_T: f64,
-    /// Library rating, or `NOT_IN_LIBRARY` for manual magnets.
+    /// Library or grade rating, or `NOT_IN_LIBRARY` for manual magnets without a grade.
     pub tmax_C: NumOrText,
+    /// The part's grade, or the grade picked for manual dimensions (Addendum A6).
+    pub grade: Option<&'static Grade>,
 }
 
-/// Library values when the part is found, else the manual values (workbook IFERROR/INDEX/MATCH).
+/// Library values when the part is found (workbook IFERROR/INDEX/MATCH); else the
+/// manual dimensions, with the grade's Br and rating when a grade is picked
+/// (Addendum A6, a Rust-only mode) and the manual Br and no rating otherwise.
 /// A library part's Br comes from [`library::br_T`], which applies E3 (the N42SH remanence).
 #[allow(non_snake_case)]
 pub fn resolve_magnets(m: &MagnetInputs, dev: Deviations) -> (ResolvedMagnet, ResolvedMagnet) {
-    let resolve = |part: &str, length_mm: f64, width_mm: f64, thickness_mm: f64, br_T: f64| {
-        match lookup(part) {
-            Some(spec) => ResolvedMagnet {
-                length_mm: spec.length_mm,
-                width_mm: spec.width_mm,
-                thickness_mm: spec.thickness_mm,
-                br_T: library::br_T(spec, dev),
-                tmax_C: NumOrText::Num(spec.tmax_C),
-            },
-            None => ResolvedMagnet {
-                length_mm,
-                width_mm,
-                thickness_mm,
-                br_T,
-                tmax_C: NumOrText::Text(NOT_IN_LIBRARY),
-            },
-        }
-    };
+    let resolve =
+        |part: &str, grade: &str, length_mm: f64, width_mm: f64, thickness_mm: f64, br_T: f64| {
+            match lookup(part) {
+                Some(spec) => ResolvedMagnet {
+                    length_mm: spec.length_mm,
+                    width_mm: spec.width_mm,
+                    thickness_mm: spec.thickness_mm,
+                    br_T: library::br_T(spec, dev),
+                    tmax_C: NumOrText::Num(spec.tmax_C),
+                    grade: grades::grade(spec.grade),
+                },
+                None => match grades::grade(grade) {
+                    Some(g) => ResolvedMagnet {
+                        length_mm,
+                        width_mm,
+                        thickness_mm,
+                        br_T: g.br_T,
+                        tmax_C: NumOrText::Num(g.tmax_C),
+                        grade: Some(g),
+                    },
+                    None => ResolvedMagnet {
+                        length_mm,
+                        width_mm,
+                        thickness_mm,
+                        br_T,
+                        tmax_C: NumOrText::Text(NOT_IN_LIBRARY),
+                        grade: None,
+                    },
+                },
+            }
+        };
     (
         resolve(
             &m.part_inner,
+            &m.grade_inner,
             m.manual_inner_length_mm,
             m.manual_inner_width_mm,
             m.manual_inner_thickness_mm,
@@ -301,6 +328,7 @@ pub fn resolve_magnets(m: &MagnetInputs, dev: Deviations) -> (ResolvedMagnet, Re
         ),
         resolve(
             &m.part_outer,
+            &m.grade_outer,
             m.manual_outer_length_mm,
             m.manual_outer_width_mm,
             m.manual_outer_thickness_mm,
@@ -743,6 +771,8 @@ pub fn compute(
         hub_check: thick_check(hub_wall),
         inner_temp_check: temp_check(mi.tmax_C),
         outer_temp_check: temp_check(mo.tmax_C),
+        inner_grade: mi.grade.map_or("", |g| g.id).to_owned(),
+        outer_grade: mo.grade.map_or("", |g| g.id).to_owned(),
     }
 }
 
@@ -858,6 +888,50 @@ mod tests {
             ("Too thin", "Thickness OK")
         ); // C105, C106
         assert_eq!(r.inner_tmax_C, NumOrText::Num(150.0)); // C22
+    }
+
+    #[test]
+    fn a_grade_gives_manual_dimensions_its_br_and_rating() {
+        let mut ci = CouplingInputs::default();
+        ci.magnets.part_inner = String::new();
+        ci.magnets.grade_inner = "Y30".to_owned();
+        ci.magnets.manual_inner_br_T = 1.2; // ignored: the grade supplies Br
+        let r = at(&ci);
+        assert_eq!(r.inner_br_T, 0.37);
+        assert_eq!(r.inner_tmax_C, NumOrText::Num(250.0));
+        assert_eq!(r.inner_temp_check, "OK");
+        assert_eq!(r.inner_grade, "Y30");
+        assert_eq!(
+            (r.inner_length_mm, r.inner_thickness_mm),
+            (
+                ci.magnets.manual_inner_length_mm,
+                ci.magnets.manual_inner_thickness_mm
+            )
+        );
+        // The outer ring keeps its library part.
+        assert_eq!((r.outer_br_T, r.outer_grade.as_str()), (1.29, "N42SH"));
+    }
+
+    #[test]
+    fn a_library_part_wins_over_a_grade_and_an_unknown_grade_is_manual() {
+        let mut ci = CouplingInputs::default();
+        ci.magnets.grade_inner = "Y30".to_owned(); // the part B842SH is in the library
+        let r = at(&ci);
+        assert_eq!(r, at(&CouplingInputs::default()));
+        assert_eq!(r.inner_grade, "N42SH");
+        for text in ["", "y30", "Y30 ", "N 42", "N42"] {
+            let mut ci = CouplingInputs::default();
+            ci.magnets.part_inner = String::new();
+            ci.magnets.grade_inner = text.to_owned();
+            let r = at(&ci);
+            if text == "N42" {
+                assert_eq!((r.inner_br_T, r.inner_grade.as_str()), (1.30, "N42"));
+                continue;
+            }
+            assert_eq!(r.inner_br_T, ci.magnets.manual_inner_br_T, "{text:?}");
+            assert_eq!(r.inner_tmax_C, NumOrText::Text(NOT_IN_LIBRARY), "{text:?}");
+            assert_eq!(r.inner_grade, "", "{text:?}");
+        }
     }
 
     #[test]
