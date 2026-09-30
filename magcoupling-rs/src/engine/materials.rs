@@ -8,8 +8,10 @@
 //! results ([`MaterialsResults`], [`compute`], 7 result cells).
 //!
 //! Deviations touching this sheet (see
-//! [`crate::engine::deviations::REGISTRY`]): applied E9 (Materials!C22 reads
-//! "No back iron" when Calculator!C6 = 0); planned E10 (Materials!C20 to C22).
+//! [`crate::engine::deviations::REGISTRY`]): applied are E9 (Materials!C22
+//! reads "No back iron" when Calculator!C6 = 0) and E10 (Materials!C20 to C22
+//! follow the corrected gap flux density through Calculator!C104; no code
+//! here).
 
 use super::compat::{ceiling, fmt_fixed};
 use super::deviations::{DeviationId, Deviations};

@@ -16,8 +16,9 @@
 //! bondline), E7 (pull-out at the maximum over angle,
 //! [`peak_off_half_pitch`] and `at_pull_out`, shared with the sweeps), E8
 //! (arc mode: Calculator!C9 from the corner radius C55, the round pocket in
-//! C111) and E9 (no back iron: aluminium cup and boss in C111 and C113, as the
-//! hub C112 already is); planned is E10 (Calculator!C103).
+//! C111), E9 (no back iron: aluminium cup and boss in C111 and C113, as the
+//! hub C112 already is) and E10 (Calculator!C103, the gap flux density from
+//! each magnet's MMF, Br·t, instead of the mean Br).
 
 use std::f64::consts::PI;
 
@@ -601,8 +602,13 @@ pub fn compute(
     let T_noiron = circuit(|x| x.s_free) / (2.0 * ci.mu0) * AL * f_end * f_cal;
 
     let floor_ = py_max(ci.drive_torque_Nm * ci.drive_safety_factor, required_min_Nm);
-    let B_gap = (bri + bro) / 2.0 * (mi.thickness_mm + mo.thickness_mm)
-        / (mi.thickness_mm + mo.thickness_mm + g_m);
+    // E10: in the series circuit each magnet contributes its own MMF (Br·t), not the mean Br.
+    let B_gap = if dev.is_on(DeviationId::E10) {
+        (bri * mi.thickness_mm + bro * mo.thickness_mm) / (mi.thickness_mm + mo.thickness_mm + g_m)
+    } else {
+        (bri + bro) / 2.0 * (mi.thickness_mm + mo.thickness_mm)
+            / (mi.thickness_mm + mo.thickness_mm + g_m)
+    };
     let t_bi = B_gap * tau_p / (PI * bsat_T);
 
     // (A block may not start with `if ... {}.to_owned()`: bind the &str first.)
@@ -1061,5 +1067,68 @@ mod tests {
             let total = on.magnets_g + on.cup_g + on.hub_g + on.boss_g;
             assert!(close(on.total_g, total), "{backiron}");
         }
+    }
+
+    #[test]
+    fn e10_gap_flux_density_sums_each_magnets_mmf() {
+        // Audit report row E10. Manual magnets make Br and thickness inputs; the
+        // outer thickness also moves the geometry, so each case reads g, t and the
+        // operating Br back from the results.
+        let e10 = Deviations::only(DeviationId::E10);
+        let case = |br_i: f64, t_i: f64, br_o: f64, t_o: f64| {
+            let mut ci = CouplingInputs::default();
+            ci.magnets.part_inner = String::new();
+            ci.magnets.part_outer = String::new();
+            ci.magnets.manual_inner_br_T = br_i;
+            ci.magnets.manual_inner_thickness_mm = t_i;
+            ci.magnets.manual_outer_br_T = br_o;
+            ci.magnets.manual_outer_thickness_mm = t_o;
+            (at(&ci), at_with(&ci, 0.05, e10))
+        };
+        for (br_i, t_i, br_o, t_o) in [
+            (1.44, 3.17, 1.32, 1.59), // higher Br on the thicker ring: workbook understates
+            (1.44, 1.59, 1.32, 3.17), // higher Br on the thinner ring: workbook overstates
+            (1.30, 3.17, 1.30, 1.59), // equal Br
+            (1.44, 3.17, 1.32, 3.17), // equal thickness
+            (1.30, 3.17, 1.30, 3.17), // identical rings
+        ] {
+            let (off, on) = case(br_i, t_i, br_o, t_o);
+            let label = format!("{br_i} T x {t_i} mm inside, {br_o} T x {t_o} mm outside");
+            // Everything upstream of C103 is untouched.
+            assert_eq!(
+                (on.br_inner_T_op, on.br_outer_T_op, on.face_gap_mm),
+                (off.br_inner_T_op, off.br_outer_T_op, off.face_gap_mm),
+                "{label}"
+            );
+            assert_eq!(on.pullout_Nm, off.pullout_Nm, "{label}");
+            let (bi, bo, g) = (on.br_inner_T_op, on.br_outer_T_op, on.face_gap_mm);
+            let d = t_i + t_o + g;
+            assert!(
+                close(on.gap_flux_density_T, (bi * t_i + bo * t_o) / d),
+                "{label}"
+            );
+            // The report's error term: workbook - corrected = -(Br_i - Br_o)(t_i - t_o) / (2 (t_i + t_o + g)).
+            let error = off.gap_flux_density_T - on.gap_flux_density_T;
+            let want = -(bi - bo) * (t_i - t_o) / (2.0 * d);
+            assert!((error - want).abs() <= 1e-12, "{label}: {error} vs {want}");
+            // C104 follows C103 with the same pole pitch and saturation flux density.
+            assert_eq!(on.pole_pitch_mm, off.pole_pitch_mm, "{label}");
+            assert!(
+                close(
+                    on.backiron_needed_mm / off.backiron_needed_mm,
+                    on.gap_flux_density_T / off.gap_flux_density_T
+                ),
+                "{label}"
+            );
+        }
+        // Identical rings: the same double, not just the parity rule.
+        let (off, on) = case(1.30, 3.17, 1.30, 3.17);
+        assert_eq!(on.gap_flux_density_T, off.gap_flux_density_T);
+        assert_eq!(on, off);
+        // Sign: the workbook understates B when the higher-Br ring is also the thicker one.
+        let (off, on) = case(1.44, 3.17, 1.32, 1.59);
+        assert!(on.gap_flux_density_T > off.gap_flux_density_T);
+        let (off, on) = case(1.44, 1.59, 1.32, 3.17);
+        assert!(on.gap_flux_density_T < off.gap_flux_density_T);
     }
 }

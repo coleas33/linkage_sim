@@ -735,6 +735,39 @@ fn e9_leaves_every_default_cell_bit_for_bit() {
 }
 
 #[test]
+fn e10_gap_flux_density_matches_the_report() {
+    let e10 = &REGISTRY[DeviationId::E10.index()];
+    assert_eq!(e10.status, DeviationStatus::Applied);
+    let mixed = &e10.probes[0];
+    let corrected = Deviations::only(DeviationId::E10);
+    assert_report(
+        "Calculator!C103",
+        &at_probe("Calculator!C103", mixed, Deviations::NONE),
+        1.024,
+        0.0005,
+    );
+    assert_report(
+        "Calculator!C103",
+        &at_probe("Calculator!C103", mixed, corrected),
+        1.043,
+        0.0005,
+    );
+    assert_report(
+        "Calculator!C104",
+        &at_probe("Calculator!C104", mixed, corrected),
+        1.949,
+        0.0005,
+    ); // was 1.915
+}
+
+#[test]
+fn e10_leaves_every_default_cell_bit_for_bit() {
+    // The defaults use identical rings (B842SH inside and out). Then Br_i t_i + Br_o t_o is
+    // 2 fl(Br t) and the workbook's (Br_i + Br_o)/2 (t_i + t_o) is fl(Br 2t): the same double.
+    assert_bit_for_bit_at_defaults(DeviationId::E10);
+}
+
+#[test]
 fn reworded_help_is_recorded_for_real_fields() {
     let inputs = input_rows(&DesignInputs::default());
     for d in REGISTRY

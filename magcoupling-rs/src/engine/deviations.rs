@@ -563,7 +563,7 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E10,
         title: "Gap flux density averages Br instead of summing each magnet's MMF",
         class: DeviationClass::Engine,
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &[
             "Calculator!C103",
             "Calculator!C104",
@@ -578,7 +578,30 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: None,
-        probes: &[],
+        probes: &[Probe {
+            label: "N52 inner (3.17 mm) with a B861 outer (1.59 mm)",
+            inputs: &[
+                ("coupling.magnets.part_inner", Literal::Text("B842-N52")),
+                ("coupling.magnets.part_outer", Literal::Text("B861")),
+            ],
+            expect: &[
+                CellChange {
+                    cell: "Calculator!C103",
+                    workbook: Literal::Num(1.0242499999999999),
+                    corrected: Literal::Num(1.0427944805194804),
+                },
+                CellChange {
+                    cell: "Calculator!C104",
+                    workbook: Literal::Num(1.9146646666666662),
+                    corrected: Literal::Num(1.9493304822510817),
+                },
+                CellChange {
+                    cell: "Materials!C20",
+                    workbook: Literal::Num(1.9146646666666662),
+                    corrected: Literal::Num(1.9493304822510817),
+                },
+            ],
+        }],
     },
     Deviation {
         id: DeviationId::E11,
