@@ -5,6 +5,20 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-29 — Magcoupling M2: final review fix wave
+- E7 (`model::peak_off_half_pitch`): the quadratic in cos² x now takes its
+  roots without cancellation (q = −(qb + sign(qb)·√disc)/2, roots q/qa and
+  qc/q). The textbook form lost the small root when the fifth harmonic
+  vanished (|a5/a1| up to about 1.5e-13, which a ring at a fill of exactly 0.4
+  or 0.8 reaches), so E7 kept half a pitch, a local minimum: at 6 poles, no
+  back iron and a 0.4-pitch manual inner block the harmonic sum was 13,121 Pa
+  against a true peak of 32,505 Pa (pull-out 0.162 against 0.40 N·m). Default
+  cells stay bit for bit (same `None`/`Some` decisions outside the band).
+  Tests: `peak_off_half_pitch_finds_the_brute_force_maximum` (3,000 random
+  amplitude triples against a grid, a third of them in the band),
+  `a_vanishing_fifth_harmonic_does_not_lose_the_peak`, and
+  `e7_finds_the_peak_at_a_fill_of_exactly_0_4` (Calculator and Calibration).
+
 ## 2026-09-29 — Magcoupling M2: engine port complete
 - Every Python module except `fields3d` (M3) is ported to `magcoupling-rs/`,
   one Rust module per Python module, workbook-exact with the corrections off:

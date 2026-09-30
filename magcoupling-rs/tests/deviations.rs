@@ -622,6 +622,89 @@ fn e7_pull_out_over_angle_matches_the_report() {
     assert_report("Calculator!C93", &workbook, 0.861, 0.0005);
 }
 
+/// Brute-force maximum over the electrical angle x in [0, π/2] of
+/// a1 sin x + a3 sin 3x + a5 sin 5x: a fine grid, then a ternary search around
+/// the best grid point. Never above the true maximum.
+fn max_over_angle(a: [f64; 3]) -> f64 {
+    use std::f64::consts::FRAC_PI_2;
+    let t = |x: f64| a[0] * x.sin() + a[1] * (3.0 * x).sin() + a[2] * (5.0 * x).sin();
+    let points = 200_001;
+    let step = FRAC_PI_2 / (points - 1) as f64;
+    let (best_i, best) = (0..points)
+        .map(|i| (i, t(i as f64 * step)))
+        .max_by(|p, q| p.1.total_cmp(&q.1))
+        .expect("points > 0");
+    let (mut lo, mut hi) = (
+        (best_i as f64 - 1.0).max(0.0) * step,
+        ((best_i + 1) as f64 * step).min(FRAC_PI_2),
+    );
+    for _ in 0..100 {
+        let (m1, m2) = (lo + (hi - lo) / 3.0, hi - (hi - lo) / 3.0);
+        if t(m1) < t(m2) {
+            lo = m1;
+        } else {
+            hi = m2;
+        }
+    }
+    best.max(t((lo + hi) / 2.0))
+}
+
+#[test]
+fn e7_finds_the_peak_at_a_fill_of_exactly_0_4() {
+    // Final review, E7: a ring at a fill of exactly 0.4 gives sin(5 * 0.4 * pi / 2) ~ 1e-16,
+    // a vanishing fifth harmonic, where the textbook quadratic cancelled and E7 silently
+    // kept half a pitch (a local minimum here). The harmonic sum with E7 on must be the
+    // maximum of the torque-angle curve built from the workbook's half-pitch terms
+    // (tau_n = a_n sin(n pi/2), so a = (tau1, -tau3, tau5)).
+    use std::f64::consts::PI;
+    let e7 = Deviations::only(DeviationId::E7);
+    let close = |got: f64, want: f64| (got - want).abs() <= 1e-9 * want.abs();
+
+    // Calculator: 6 poles, no back iron, a manual inner block 0.4 of the inner pitch wide.
+    let mut inputs = DesignInputs::defaults_with(e7);
+    let c = &mut inputs.coupling;
+    c.npole = 6;
+    c.backiron = 0;
+    c.magnets.part_inner = String::new(); // manual: the width below applies
+    let pitch = 2.0 * PI * (c.inner_back_apothem_mm + c.magnets.manual_inner_thickness_mm / 2.0)
+        / c.npole as f64;
+    c.magnets.manual_inner_width_mm = 0.4 * pitch; // 4.915545 mm
+    let off = compute_all_with(&inputs, Deviations::NONE).model;
+    let on = compute_all_with(&inputs, e7).model;
+    assert!((on.fill_inner - 0.4).abs() < 1e-15, "{}", on.fill_inner);
+    let peak = max_over_angle([off.tau1_Pa, -off.tau3_Pa, off.tau5_Pa]);
+    assert!(
+        on.tau_Pa > 2.0 * off.tau_Pa,
+        "{} vs half pitch {}",
+        on.tau_Pa,
+        off.tau_Pa
+    ); // about 32,505 against 13,121 Pa
+    assert!(close(on.tau_Pa, peak), "{} vs peak {peak}", on.tau_Pa);
+    assert!(close(
+        on.pullout_Nm / off.pullout_Nm,
+        on.tau_Pa / off.tau_Pa
+    ));
+    // The no-iron circuit sum (C96) finds the same peak: it is the circuit backiron selects.
+    assert!(close(on.pullout_noiron_Nm, on.pullout_Nm));
+
+    // Calibration: 12 magnets (6 poles per ring), the block 0.4 of the inner pitch wide.
+    let mut inputs = DesignInputs::defaults_with(e7);
+    let cal = &mut inputs.calibration;
+    cal.total_magnets = 12;
+    let pitch = 2.0 * PI * (cal.apothem_mm + cal.magnet_thickness_mm / 2.0) / 6.0;
+    cal.magnet_width_mm = 0.4 * pitch;
+    let off = compute_all_with(&inputs, Deviations::NONE).calibration;
+    let on = compute_all_with(&inputs, e7).calibration;
+    assert!((on.fill_inner - 0.4).abs() < 1e-15, "{}", on.fill_inner);
+    let peak = max_over_angle([off.tau1_Pa, -off.tau3_Pa, off.tau5_Pa]);
+    let sum = on.tau1_Pa + on.tau3_Pa + on.tau5_Pa;
+    assert!(
+        sum > off.tau1_Pa + off.tau3_Pa + off.tau5_Pa,
+        "{sum} not above half a pitch"
+    );
+    assert!(close(sum, peak), "{sum} vs peak {peak}");
+}
+
 /// Every celled value at the defaults is exactly equal (`Value ==`) with only `id`
 /// on and with every correction off. Stronger than the parity rule of
 /// each_deviation_alone_changes_exactly_its_registered_cells.

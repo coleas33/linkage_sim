@@ -427,10 +427,15 @@ pub fn peak_off_half_pitch(a: [f64; 3]) -> Option<f64> {
         if disc < 0.0 {
             Vec::new()
         } else {
-            vec![
-                (-qb + disc.sqrt()) / (2.0 * qa),
-                (-qb - disc.sqrt()) / (2.0 * qa),
-            ]
+            // Cancellation-free roots: q adds -qb and the root of the same sign, so a
+            // vanishing a5 (|qa| << |qb|, e.g. a fill of exactly 0.4) keeps the small root,
+            // qc / q -> -qc / qb, where (-qb ± √disc) / (2 qa) lost every digit.
+            let q = -0.5 * (qb + disc.sqrt().copysign(qb));
+            if q == 0.0 {
+                vec![0.0] // qb = 0 and disc = 0, so qc = 0: the double root u = 0
+            } else {
+                vec![q / qa, qc / q]
+            }
         }
     } else if qb != 0.0 {
         vec![-qc / qb]
@@ -899,6 +904,95 @@ mod tests {
         // stationary: dT/dx = 0 at the returned angle
         let slope = a[0] * x.cos() + 3.0 * a[1] * (3.0 * x).cos() + 5.0 * a[2] * (5.0 * x).cos();
         assert!(slope.abs() < 1e-9, "{slope}");
+    }
+
+    /// T(x) = a1 sin x + a3 sin 3x + a5 sin 5x, the curve [`peak_off_half_pitch`] maximizes.
+    fn torque_at(a: [f64; 3], x: f64) -> f64 {
+        a[0] * x.sin() + a[1] * (3.0 * x).sin() + a[2] * (5.0 * x).sin()
+    }
+
+    /// Brute-force maximum of `torque_at` on [0, π/2]: a grid, then a ternary search
+    /// around the best grid point. Never above the true maximum.
+    fn grid_maximum(a: [f64; 3], points: usize) -> f64 {
+        let step = std::f64::consts::FRAC_PI_2 / (points - 1) as f64;
+        let (best_i, best) = (0..points)
+            .map(|i| (i, torque_at(a, i as f64 * step)))
+            .max_by(|p, q| p.1.total_cmp(&q.1))
+            .expect("points > 0");
+        let (mut lo, mut hi) = (
+            (best_i as f64 - 1.0).max(0.0) * step,
+            ((best_i + 1) as f64 * step).min(std::f64::consts::FRAC_PI_2),
+        );
+        for _ in 0..100 {
+            let (m1, m2) = (lo + (hi - lo) / 3.0, hi - (hi - lo) / 3.0);
+            if torque_at(a, m1) < torque_at(a, m2) {
+                lo = m1;
+            } else {
+                hi = m2;
+            }
+        }
+        best.max(torque_at(a, (lo + hi) / 2.0))
+    }
+
+    #[test]
+    fn a_vanishing_fifth_harmonic_does_not_lose_the_peak() {
+        // Final review, E7: with a5 -> 0 the quadratic's small root must tend to the linear
+        // root -qc/qb (the a5 = 0 answer), not cancel to a wrong angle or to None.
+        let x0 = peak_off_half_pitch([1.0, 0.2, 0.0]).expect("the peak moves");
+        for a5 in [1e-20, -1e-20, 1e-16, -1e-16, 1e-14, 1.5e-13, -1.5e-13] {
+            let x = peak_off_half_pitch([1.0, 0.2, a5]).unwrap_or_else(|| panic!("{a5}: None"));
+            assert!((x - x0).abs() < 1e-9, "{a5}: {x} vs {x0}");
+        }
+    }
+
+    #[test]
+    fn peak_off_half_pitch_finds_the_brute_force_maximum() {
+        // Property test over random amplitude triples: the general case, a fifth harmonic
+        // in the band |a5/a1| <= 1.5e-13 where the textbook quadratic cancels (a ring at a
+        // fill of exactly 0.4 or 0.8 gives sin(5 fill pi/2) ~ 1e-16), and a5 = 0.
+        // a1 in [0.5, 1.5], a3 in +-a1/2 (A1 < 9 A3 moves the peak), so half a pitch
+        // stays positive and the maximum is a stationary point in (0, pi/2].
+        let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+        let mut uniform = move || {
+            // splitmix64
+            state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut z = state;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            ((z ^ (z >> 31)) >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let mut misses = Vec::new();
+        for i in 0..3000 {
+            let a1 = 0.5 + uniform();
+            let a3 = (uniform() - 0.5) * a1;
+            let sign = if uniform() < 0.5 { -1.0 } else { 1.0 };
+            let a5 = match i % 3 {
+                0 => (uniform() - 0.5) * 0.6 * a1,
+                1 => sign * a1 * 10f64.powf(-20.0 + 7.0 * uniform()) * 1.5,
+                _ => 0.0,
+            };
+            let a = [a1, a3, a5];
+            let got = match peak_off_half_pitch(a) {
+                Some(x) => {
+                    assert!(
+                        (0.0..=std::f64::consts::FRAC_PI_2).contains(&x),
+                        "{a:?}: {x}"
+                    );
+                    torque_at(a, x)
+                }
+                None => a1 - a3 + a5,
+            };
+            let want = grid_maximum(a, 1001);
+            if got < want - 4e-12 * (a1.abs() + a3.abs() + a5.abs()) {
+                misses.push(format!("{a:?}: {got} < {want}"));
+            }
+        }
+        assert!(
+            misses.is_empty(),
+            "{} misses, e.g. {:?}",
+            misses.len(),
+            &misses[..misses.len().min(5)]
+        );
     }
 
     #[test]
