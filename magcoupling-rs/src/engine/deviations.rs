@@ -352,12 +352,16 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E6,
         title: "Cup wall at the flats counts the outer bondline as steel",
         class: DeviationClass::Engine,
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &["Calculator!C63"],
         corrected_formula: "Calculator!C63 = C62/2 - (C60 + Metal design!C121).",
         workbook_input_defaults: &[],
         workbook_help: &[],
-        changes_at_defaults: &[],
+        changes_at_defaults: &[CellChange {
+            cell: "Calculator!C63",
+            workbook: Literal::Num(2.773232302834515),
+            corrected: Literal::Num(2.7232323028345142),
+        }],
         changes_file: None,
     },
     Deviation {

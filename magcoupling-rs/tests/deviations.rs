@@ -538,6 +538,13 @@ fn e5_web_eddy_loss_matches_the_report() {
 }
 
 #[test]
+fn e6_cup_wall_at_the_flats_matches_the_report() {
+    let e6 = Deviations::only(DeviationId::E6);
+    assert_report("Calculator!C63", &at("Calculator!C63", e6), 2.723, 0.0005); // was 2.773
+    assert_workbook("Calculator!C63");
+}
+
+#[test]
 fn reworded_help_is_recorded_for_real_fields() {
     let inputs = input_rows(&DesignInputs::default());
     for d in REGISTRY

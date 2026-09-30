@@ -11,15 +11,16 @@
 //!
 //! Deviations touching this sheet (see
 //! [`crate::engine::deviations::REGISTRY`]): E3 is applied (the N42SH
-//! remanence, via `resolve_magnets`, and the manual Br defaults C17 and C27);
-//! planned are E6 (Calculator!C63), E7 (pull-out over angle), E8
-//! (Calculator!C9 and C111), E9 (masses), E10 (Calculator!C103).
+//! remanence, via `resolve_magnets`, and the manual Br defaults C17 and C27),
+//! and E6 (Calculator!C63, the ring wall at the flats without the outer
+//! bondline); planned are E7 (pull-out over angle), E8 (Calculator!C9 and
+//! C111), E9 (masses), E10 (Calculator!C103).
 
 use std::f64::consts::PI;
 
 use super::compat::{fmt_fixed, py_max, py_min};
 use super::constants::{MU0, NDFEB_DENSITY_G_MM3};
-use super::deviations::Deviations;
+use super::deviations::{DeviationId, Deviations};
 use super::library::{self, lookup};
 use super::meta::{NumOrText, inputs, out, param, results};
 
@@ -462,7 +463,12 @@ pub fn compute(
         A_back + bond_outer_mm
     };
     let OD = 2.0 * (r_pocket + cup_wall_corner_mm);
-    let wall_f = OD / 2.0 - A_back;
+    // E6: the pocket flat sits at the block back plus the outer bondline (as C61, C62 place it).
+    let wall_f = if dev.is_on(DeviationId::E6) {
+        OD / 2.0 - (A_back + bond_outer_mm)
+    } else {
+        OD / 2.0 - A_back
+    };
     let R_g = r_face_i + g_m / 2.0;
     let tau_p = 2.0 * PI * R_g / N;
     let al_i = py_min(
@@ -672,15 +678,19 @@ pub fn mass_estimate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::deviations::DeviationId;
 
     /// The Calculator at the workbook defaults, links as `api::compute` passes them.
     fn at(ci: &CouplingInputs) -> ModelResults {
+        at_with(ci, 0.05, Deviations::NONE)
+    }
+
+    /// [`at`] with another outer bondline (Metal design!C121) and deviation set.
+    fn at_with(ci: &CouplingInputs, bond_outer_mm: f64, dev: Deviations) -> ModelResults {
         compute(
             ci,
             1.4,
             0.05,
-            0.05,
+            bond_outer_mm,
             1.8,
             -0.0012,
             1.5,
@@ -688,7 +698,7 @@ mod tests {
             0.95,
             2000.0,
             2.5,
-            Deviations::NONE,
+            dev,
         )
     }
 
@@ -747,6 +757,23 @@ mod tests {
         assert_eq!(br(Deviations::NONE), (1.29, 1.25));
         assert_eq!(br(Deviations::only(DeviationId::E3)), (1.30, 1.25));
         assert_eq!(br(Deviations::ALL), (1.30, 1.25));
+    }
+
+    #[test]
+    fn e6_round_pocket_wall_at_the_flats_is_the_corner_wall() {
+        // Audit report row E6: a round (arc-mode) pocket has a uniform wall, the
+        // corner wall (1.8 mm here); the workbook adds the outer bondline to it.
+        let ci = CouplingInputs {
+            faceted: 0,
+            ..CouplingInputs::default()
+        };
+        for bond in [0.0, 0.05, 0.2] {
+            let wall = |dev| at_with(&ci, bond, dev).cup_wall_flat_mm;
+            assert!(close(wall(Deviations::NONE), 1.8 + bond), "{bond}");
+            for dev in [Deviations::only(DeviationId::E6), Deviations::ALL] {
+                assert!(close(wall(dev), 1.8), "{bond} {dev:?}");
+            }
+        }
     }
 
     #[test]
