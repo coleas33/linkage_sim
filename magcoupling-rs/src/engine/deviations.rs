@@ -740,13 +740,16 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E14,
         title: "README and help text say only M3 fits a 22 mm boss",
         class: DeviationClass::Documentation,
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &["Shaft clamps!C35"],
         corrected_formula: "Reword the README and the Shaft clamps!C35 help: \"At 22 mm M4 no longer fits. \
             Two M3 need a 14.5 mm clamp; three M2.5 need 18 mm, and from 18 mm up the calculator \
             recommends M2.5 x 3.\"",
         workbook_input_defaults: &[],
-        workbook_help: &[],
+        workbook_help: &[(
+            "clamps.boss_od_mm",
+            "At 22 mm only M3 fits; two of them need a 14.5 mm clamp.",
+        )],
         changes_at_defaults: &[],
         changes_file: None,
         probes: &[],

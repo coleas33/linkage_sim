@@ -2535,7 +2535,7 @@
       "cell": "Shaft clamps!C35",
       "choices": [],
       "default": 25.0,
-      "help": "At 22 mm only M3 fits; two of them need a 14.5 mm clamp.",
+      "help": "At 22 mm M4 no longer fits. Two M3 need a 14.5 mm clamp; three M2.5 need 18 mm, and from 18 mm up the calculator recommends M2.5 x 3.",
       "label": "Boss outside diameter",
       "path": "clamps.boss_od_mm",
       "range": {

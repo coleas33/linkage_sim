@@ -24,7 +24,7 @@
 //!
 //! Deviations touching this sheet (see [`crate::engine::deviations::REGISTRY`]):
 //! E2, applied (Clamp screw sizes rows 34 and 35, Shaft clamps!C48, and the
-//! Rust-only `length_note`); E14, planned (help text only).
+//! Rust-only `length_note`); E14, applied (the `boss_od_mm` help text only).
 
 use std::f64::consts::PI;
 
@@ -154,7 +154,7 @@ inputs! {
                 "", "Shaft clamps!C32")
                 .range(1.0, 4.0, 0.1),
             boss_od_mm: f64 = 25.0 => param("mm", "Boss outside diameter",
-                "At 22 mm only M3 fits; two of them need a 14.5 mm clamp.", "Shaft clamps!C35")
+                "At 22 mm M4 no longer fits. Two M3 need a 14.5 mm clamp; three M2.5 need 18 mm, and from 18 mm up the calculator recommends M2.5 x 3.", "Shaft clamps!C35")
                 .range(12.0, 60.0, 0.1),
             clamp_length_mm: f64 = 10.0 => param("mm", "Clamp length, free end to relief cut",
                 "", "Shaft clamps!C36")

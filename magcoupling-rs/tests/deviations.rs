@@ -975,6 +975,37 @@ fn e13_leaves_every_default_cell_bit_for_bit() {
 }
 
 #[test]
+fn e14_the_22mm_boss_statement_is_true() {
+    let e14 = &REGISTRY[DeviationId::E14.index()];
+    assert_eq!(e14.status, DeviationStatus::Applied);
+    let clamp = |length: f64| {
+        let mut inputs = DesignInputs::defaults_with(Deviations::NONE);
+        inputs.clamps.boss_od_mm = 22.0;
+        inputs.clamps.clamp_length_mm = length;
+        compute_all_with(&inputs, Deviations::NONE).clamps
+    };
+    let c = clamp(14.0);
+    assert_eq!(c.index, 0, "below 14.5 mm nothing fits");
+    assert_eq!(c.table[2].works, 0, "M4 no longer fits at 22 mm");
+    let c = clamp(14.5);
+    assert!(
+        c.recommended.starts_with("ISO 4762 M3 x "),
+        "{}",
+        c.recommended
+    );
+    assert_eq!(c.screws, NumOrText::Num(2.0), "two M3 need a 14.5 mm clamp");
+    for length in [18.0, 25.0] {
+        let c = clamp(length);
+        assert!(
+            c.recommended.starts_with("ISO 4762 M2.5 x "),
+            "{length}: {}",
+            c.recommended
+        );
+        assert_eq!(c.screws, NumOrText::Num(3.0), "from 18 mm up: three M2.5");
+    }
+}
+
+#[test]
 fn all_corrections_together_give_the_reviewed_headline() {
     // What users see (compute_all, every correction on) at the default design, D1 = 1.30 T.
     // Values from one Python rerun with E1, E2, E3 and E5 patched in together (E4, E6-E13 are

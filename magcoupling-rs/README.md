@@ -27,8 +27,8 @@ variables `GAP_SWEEP_CORNER_GAPS_MM` and `POLE_SWEEP_POLES`, 338 and 156 table
 cells) and the API completion (`headline`, `DesignInputs::validate`). Every module
 except `fields3d` (M3) is ported; workbook parity is complete (1,149 checks: 330
 result cells, 659 table cells and 160 default inputs). Deviations E1 to E14 are
-registered: E1 to E13 are applied (see [Differences from the workbook](#differences-from-the-workbook)),
-E14 is `Planned`.
+registered and all fourteen are applied (see [Differences from the workbook](#differences-from-the-workbook));
+E14 rewords help text and README only, no number changes.
 
 ```rust
 use magcoupling::{DesignInputs, compute_all, headline};
@@ -76,6 +76,7 @@ and the Python engine exactly.
 | E11 | Temperature design!C91 | 0.2 typed into the formula | the fatigue-endurance input C195 | E11 |
 | E12 | Temperature design!C19, C23, C150-C153 | negative times and drag when the start is above the limit | 0 s, 0 rev, 0 N·m | E12 |
 | E13 | Temperature design!C156, C157 | #DIV/0! (Python: the whole calculation stops) | +inf; the other results are computed. JSON export must encode inf (M4) | E13 |
+| E14 | Shaft clamps!C35 help; README | "At 22 mm only M3 fits; two of them need a 14.5 mm clamp." | "At 22 mm M4 no longer fits. Two M3 need a 14.5 mm clamp; three M2.5 need 18 mm, and from 18 mm up the calculator recommends M2.5 x 3." | E14 (documentation) |
 
 Results can be +inf (E13); exporters must handle it.
 
