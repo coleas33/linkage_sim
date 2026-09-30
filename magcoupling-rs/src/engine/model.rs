@@ -777,33 +777,37 @@ pub fn compute(
     }
 }
 
-/// Whether the cup wall, rear web and boss are aluminium: E9, with no
-/// intentional back iron (`backiron` is Calculator!C6). The one gate the mass
-/// model (C111, C113), the heat capacity (E15) and the removed-disc mass (E16)
-/// read, so they cannot disagree.
-pub(crate) fn cup_is_aluminium(backiron: i64, dev: Deviations) -> bool {
+/// Whether the cup wall, rear web and boss are the body material
+/// (`PartProperties::body`: the workbook's aluminium, or a non-ferromagnetic
+/// back-iron pick), not the back-iron steel: E9, with no intentional back iron
+/// (`backiron` is Calculator!C6 in effect). The one gate the mass model (C111,
+/// C113), the heat capacity (E15) and the removed-disc mass (E16) read, so they
+/// cannot disagree.
+pub(crate) fn cup_is_body_material(backiron: i64, dev: Deviations) -> bool {
     dev.is_on(DeviationId::E9) && backiron != 1
 }
 
-/// The density of the cup wall, rear web and boss [g/mm³]: aluminium (C42) when
-/// [`cup_is_aluminium`], else steel (C132). The mass model's C111 and C113 use it,
-/// and E16 prices the disc bored out of the web with it (one source of truth).
+/// The density of the cup wall, rear web and boss [g/mm³]: the body material's
+/// (C42 by default) when [`cup_is_body_material`], else steel (C132). The mass
+/// model's C111 and C113 use it, and E16 prices the disc bored out of the web with
+/// it (one source of truth).
 pub(crate) fn cup_boss_density(
     backiron: i64,
     steel_density_g_mm3: f64,
-    al_density_g_mm3: f64,
+    body_density_g_mm3: f64,
     dev: Deviations,
 ) -> f64 {
-    if cup_is_aluminium(backiron, dev) {
-        al_density_g_mm3
+    if cup_is_body_material(backiron, dev) {
+        body_density_g_mm3
     } else {
         steel_density_g_mm3
     }
 }
 
-/// Whether the keyed hub is aluminium: the workbook prices it so whenever C6 is
-/// not 1 (C112), with or without E9. Read by the mass model, E15 and E18.
-pub(crate) fn hub_is_aluminium(backiron: i64) -> bool {
+/// Whether the keyed hub is the body material, not the back-iron steel: the
+/// workbook prices it as aluminium whenever C6 is not 1 (C112), with or without
+/// E9. Read by the mass model, E15 and E18.
+pub(crate) fn hub_is_body_material(backiron: i64) -> bool {
     backiron != 1
 }
 
@@ -852,7 +856,7 @@ pub fn mass_estimate(
     };
     let m_hub = (hub_area - PI * (ci.bore_mm / 2.0).powi(2))
         * hub_length_mm
-        * (if hub_is_aluminium(ci.backiron) {
+        * (if hub_is_body_material(ci.backiron) {
             al_density_g_mm3
         } else {
             steel_density_g_mm3

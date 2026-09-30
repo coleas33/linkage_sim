@@ -1813,6 +1813,108 @@
     },
     {
       "assumption": false,
+      "cell": null,
+      "choices": [
+        [
+          1,
+          "4140 annealed"
+        ],
+        [
+          2,
+          "1018 hot rolled"
+        ],
+        [
+          3,
+          "12L14 cold drawn"
+        ],
+        [
+          4,
+          "416 stainless, annealed"
+        ],
+        [
+          5,
+          "17-4PH H1150"
+        ],
+        [
+          6,
+          "17-4PH H900"
+        ],
+        [
+          7,
+          "304 stainless (non-magnetic)"
+        ],
+        [
+          8,
+          "6061-T6 aluminium"
+        ]
+      ],
+      "default": 1,
+      "help": "Addendum A5. 1 = the workbook's 4140: the steel inputs above. Another choice supplies its library conductivity, density, specific heat, expansion and modulus, and its design flux density where the library has one (else C13 stays). A non-ferromagnetic choice selects the free-space circuit and becomes the hub, cup and boss material; with a ferromagnetic one, Calculator C6 = 0 still selects the free-space circuit (the override).",
+      "label": "Back iron material (hub, cup and boss)",
+      "path": "materials.parts.back_iron",
+      "range": null,
+      "rust_only": true,
+      "type": "i64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [
+        [
+          1,
+          "316L annealed"
+        ],
+        [
+          2,
+          "Ti-6Al-4V grade 5"
+        ],
+        [
+          3,
+          "Inconel 625"
+        ],
+        [
+          4,
+          "PEEK"
+        ]
+      ],
+      "default": 1,
+      "help": "Addendum A5. 1 = the workbook's 316L (Temperature design C111 and C139, Metal design C44). Another choice supplies its conductivity, density and specific heat; the endplates follow it, as C44 prices them.",
+      "label": "Sleeve and liner material",
+      "path": "materials.parts.sleeve_liner",
+      "range": null,
+      "rust_only": true,
+      "type": "i64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [
+        [
+          1,
+          "6061-T6 aluminium"
+        ],
+        [
+          2,
+          "7075-T6 aluminium"
+        ],
+        [
+          3,
+          "Acetal (POM-H)"
+        ]
+      ],
+      "default": 1,
+      "help": "Addendum A5. 1 = the workbook's 6061-T6 (Materials C43, Temperature design C140, Metal design C42). Another choice supplies the cap's conductivity, density and specific heat; the aluminium adapter and the clamp alloy keep their own inputs.",
+      "label": "Cap and housing material",
+      "path": "materials.parts.cap_housing",
+      "range": null,
+      "rust_only": true,
+      "type": "i64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
       "cell": "Temperature design!C34",
       "choices": [],
       "default": 2000.0,

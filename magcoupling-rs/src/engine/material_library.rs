@@ -755,6 +755,178 @@ pub fn chosen(choices: &[(i64, &'static str)], code: i64) -> Option<&'static Mat
         .and_then(|&(_, id)| material(id))
 }
 
+/// What a code outside the choices supplies (decision D3: never another material):
+/// NaN properties, so the results say the input is invalid; `validate()` names it.
+const NO_PROPS: EngineProps = EngineProps {
+    sigma_S_m: f64::NAN,
+    density_g_mm3: f64::NAN,
+    cp_J_kgK: f64::NAN,
+    cte_per_C: f64::NAN,
+    modulus_GPa: f64::NAN,
+};
+
+/// The name results show for a code outside the choices.
+pub const NO_MATERIAL: &str = "#N/A";
+
+/// One part's material in effect.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PartMaterial {
+    /// The library record picked; `None` for a code outside the choices.
+    pub material: Option<&'static Material>,
+    /// Whether the pick is the part's default (the workbook's material: the inputs).
+    pub is_default: bool,
+    /// The values the engine reads for this part.
+    pub props: EngineProps,
+}
+
+impl PartMaterial {
+    /// The selector text of the pick, or [`NO_MATERIAL`].
+    pub fn label(&self) -> &'static str {
+        self.material.map_or(NO_MATERIAL, |m| m.label)
+    }
+}
+
+/// What the parts' materials feed into the engine. `api::compute` builds it from
+/// the selectors and the inputs; at the default choices every value is the input
+/// it stands for, bit for bit.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[allow(non_snake_case)] // unit suffixes, as the engine's names
+pub struct PartProperties {
+    /// The circuit Calculator C6 selects in effect: 0 (free space) for a
+    /// non-ferromagnetic back iron, else the C6 input, which thus overrides a
+    /// ferromagnetic choice toward "no back iron".
+    pub backiron: i64,
+    /// The design flux density of the wall check (Materials C13 in effect).
+    pub design_flux_T: f64,
+    /// The back-iron pick (its name and properties, for display and the warnings).
+    pub back_iron: PartMaterial,
+    /// The steel circuit's values: the Materials inputs, or a ferromagnetic pick's.
+    pub steel: EngineProps,
+    /// The hub, cup and boss when there is no back iron: the workbook's aluminium
+    /// (Metal design C42, Temperature design C140, Materials C43, and E18's 6061
+    /// expansion and modulus), or a non-ferromagnetic pick's own values.
+    pub body: EngineProps,
+    /// Sleeve, liner and endplates (expansion and modulus not read).
+    pub sleeve_liner: PartMaterial,
+    /// The cap (expansion and modulus not read).
+    pub cap: PartMaterial,
+}
+
+/// The workbook values of a part, as [`EngineProps`].
+#[allow(non_snake_case)]
+const fn props(
+    sigma_S_m: f64,
+    density_g_mm3: f64,
+    cp_J_kgK: f64,
+    cte_per_C: f64,
+    modulus_GPa: f64,
+) -> EngineProps {
+    EngineProps {
+        sigma_S_m,
+        density_g_mm3,
+        cp_J_kgK,
+        cte_per_C,
+        modulus_GPa,
+    }
+}
+
+/// A part's material: the default pick stands for `workbook` (the inputs); another
+/// pick supplies its engine values; a code outside the choices gives [`NO_PROPS`].
+fn part(choices: &[(i64, &'static str)], code: i64, workbook: EngineProps) -> PartMaterial {
+    let material = chosen(choices, code);
+    let is_default = code == choices[0].0;
+    let props = match material {
+        Some(_) if is_default => workbook,
+        Some(m) => m.engine,
+        None => NO_PROPS,
+    };
+    PartMaterial {
+        material,
+        is_default,
+        props,
+    }
+}
+
+/// Resolves the three part selectors against the inputs (Addendum A5 physics links):
+/// a ferromagnetic back iron keeps the steel circuit and supplies the steel values and
+/// its design flux density where the library has one (else Materials C13 stays); a
+/// non-ferromagnetic one selects the free-space circuit and becomes the hub, cup and
+/// boss material; the sleeve and cap picks supply their conductivity, density and
+/// specific heat. Incremental permeability always stays Materials C15 (no source
+/// gives it at the magnet bias).
+#[allow(non_snake_case)] // unit suffixes, as the engine's names
+pub fn resolve(
+    choice: &super::materials::PartMaterialInputs,
+    steel: &super::materials::Steel4140,
+    backiron: i64,
+    md: &super::metal_design::MetalDesignInputs,
+    slip: &super::temperature::SlipLossInputs,
+    thermal: &super::temperature::ThermalInputs,
+) -> PartProperties {
+    use super::materials::AL6061;
+    use super::temperature::{AL_HUB_CTE_PER_C, AL_HUB_MODULUS_GPA};
+    let workbook_steel = props(
+        steel.conductivity_S_m,
+        md.steel_density_g_mm3,
+        steel.specific_heat_J_kgK,
+        steel.cte_per_C,
+        steel.modulus_GPa,
+    );
+    let back_iron = part(&BACK_IRON_CHOICES, choice.back_iron, workbook_steel);
+    let non_magnetic = back_iron.material.is_some_and(|m| !m.ferromagnetic);
+    let design_flux_T = match back_iron.material {
+        Some(m) if !back_iron.is_default => m.design_flux_density_T.unwrap_or(steel.bsat_T),
+        Some(_) => steel.bsat_T,
+        None => f64::NAN,
+    };
+    let aluminium = props(
+        AL6061.conductivity_S_m,
+        md.al_density_g_mm3,
+        thermal.c_aluminium,
+        AL_HUB_CTE_PER_C,
+        AL_HUB_MODULUS_GPA,
+    );
+    PartProperties {
+        backiron: if non_magnetic { 0 } else { backiron },
+        design_flux_T,
+        back_iron,
+        // A non-magnetic pick leaves the steel values at the inputs: only cells the
+        // workbook still prices as steel with no back iron (E9 off) read them.
+        steel: if non_magnetic {
+            workbook_steel
+        } else {
+            back_iron.props
+        },
+        body: if non_magnetic {
+            back_iron.props
+        } else {
+            aluminium
+        },
+        sleeve_liner: part(
+            &SLEEVE_LINER_CHOICES,
+            choice.sleeve_liner,
+            props(
+                slip.sigma_316_S_m,
+                md.sleeve_density_g_mm3,
+                thermal.c_316,
+                f64::NAN,
+                f64::NAN,
+            ),
+        ),
+        cap: part(
+            &CAP_HOUSING_CHOICES,
+            choice.cap_housing,
+            props(
+                AL6061.conductivity_S_m,
+                md.al_density_g_mm3,
+                thermal.c_aluminium,
+                f64::NAN,
+                f64::NAN,
+            ),
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

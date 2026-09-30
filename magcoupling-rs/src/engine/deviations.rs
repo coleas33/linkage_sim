@@ -884,7 +884,9 @@ pub const REGISTRY: &[Deviation] = &[
         corrected_formula: "C141 = [m_mag c_NdFeB + (Calculator!C111 + Calculator!C113) c_cup + Calculator!C112 c_hub \
             + Metal design!C128 Materials!C16 + (retainers + endplates) Temperature design!C139 + cap Temperature design!C140] / 1000; \
             c_cup = C140 when the cup is aluminium (E9's gate: C6 != 1 and E9 on), otherwise Materials!C16; \
-            c_hub = C140 when C6 != 1, otherwise Materials!C16. The gate reads the same flag the density reads.",
+            c_hub = C140 when C6 != 1, otherwise Materials!C16. The gate reads the same flag the density reads. \
+            Addendum A5 (decision A7): the aluminium values above are the body material's: the workbook's aluminium by default \
+            and whenever C6 = 0 overrides a steel pick, else a non-ferromagnetic back-iron pick (304, 6061) with its own library values.",
         workbook_input_defaults: &[],
         workbook_help: &[],
         changes_at_defaults: &[],
@@ -936,7 +938,9 @@ pub const REGISTRY: &[Deviation] = &[
         ],
         corrected_formula: "C189 = pi/4 (C185^2 - Calculator!C39^2) C125 rho_cup, where rho_cup is the density \
             Calculator!C111 uses for the web (C42 when aluminium under E9, otherwise C132), passed from the mass model \
-            as one source of truth. The labels C147 and C189 stay (schema parity); their help is reworded (decision 14).",
+            as one source of truth. The labels C147 and C189 stay (schema parity); their help is reworded (decision 14). \
+            Addendum A5 (decision A7): the aluminium values above are the body material's: the workbook's aluminium by default \
+            and whenever C6 = 0 overrides a steel pick, else a non-ferromagnetic back-iron pick (304, 6061) with its own library values.",
         workbook_input_defaults: &[],
         workbook_help: &[
             ("metal.steel_cup_mass_g", ""),
@@ -1043,7 +1047,9 @@ pub const REGISTRY: &[Deviation] = &[
             Cup: r = Calculator!C60 + Metal design!C121, d = Metal design!C122, B_free = 0.08764 T. \
             Web: (r_mid / p)^2 replaces 1/k^2, r_mid = Calculator!C8 + Calculator!C20 / 2, d = Metal design!C125, \
             and the free-space integral 6.837e-6 T^2 m^2 replaces A B^2. The three free-space fields are Rust-only inputs \
-            pinned at 4 s.f. (decision 12; M3 computes them live). The labels C123 to C125 stay; their help is reworded (decision 14).",
+            pinned at 4 s.f. (decision 12; M3 computes them live). The labels C123 to C125 stay; their help is reworded (decision 14). \
+            Addendum A5 (decision A7): the aluminium values above are the body material's: the workbook's aluminium by default \
+            and whenever C6 = 0 overrides a steel pick, else a non-ferromagnetic back-iron pick (304, 6061) with its own library values.",
         workbook_input_defaults: &[],
         workbook_help: &[
             ("temperature.slip_loss.hub_W", ""),
@@ -1108,7 +1114,10 @@ pub const REGISTRY: &[Deviation] = &[
         ],
         corrected_formula: "With C6 != 1 (E15's hub gate: the hub material follows the hub density rule) the Volkersen \
             screen uses aluminium 6061-T6 for the hub: CTE 23.6e-6 /C and modulus 68.9 GPa (Alliance 6061-T6 datasheet); \
-            C94 and C98 still show Materials!C17 and C18.",
+            C94 and C98 still show Materials!C17 and C18. \
+            Addendum A5 (decision A7): the aluminium values above are the body material's: the workbook's aluminium by default \
+            and whenever C6 = 0 overrides a steel pick, else a non-ferromagnetic back-iron pick (304, 6061) with its own library values. \
+            A 6061 pick uses the library's 68.3 GPa (decision A8).",
         workbook_input_defaults: &[],
         workbook_help: &[],
         changes_at_defaults: &[],

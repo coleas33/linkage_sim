@@ -381,16 +381,25 @@ pub struct TemperatureLinks {
     pub outer_br20_T: f64,
     pub outer_tmax_lib_C: NumOrText,
     pub outer_grade: Option<&'static Grade>,
-    pub steel_sigma_S_m: f64,  // Materials C14
-    pub steel_mu_r: f64,       // Materials C15
-    pub steel_c: f64,          // Materials C16
-    pub steel_cte: f64,        // Materials C17
-    pub steel_E_GPa: f64,      // Materials C18
-    pub al6061_sigma_S_m: f64, // Materials C43
-    /// E9: the cup and boss are aluminium (`model::cup_is_aluminium`).
-    pub cup_aluminium: bool,
-    /// The hub is aluminium, C6 != 1 (`model::hub_is_aluminium`).
-    pub hub_aluminium: bool,
+    pub steel_sigma_S_m: f64, // Materials C14
+    pub steel_mu_r: f64,      // Materials C15
+    pub steel_c: f64,         // Materials C16
+    pub steel_cte: f64,       // Materials C17
+    pub steel_E_GPa: f64,     // Materials C18
+    pub cap_sigma_S_m: f64,   // the cap housing pick (Materials C43 by default)
+    /// E9: the cup and boss are the body material (`PartProperties::body`), not the
+    /// back-iron steel (`model::cup_is_body_material`).
+    pub cup_is_body_material: bool,
+    /// The hub is the body material, C6 != 1 (`model::hub_is_body_material`).
+    pub hub_is_body_material: bool,
+    /// The hub, cup and boss material without back iron (Addendum A5,
+    /// `material_library::PartProperties::body`): the workbook's aluminium by default
+    /// (C43, C140 and E18's 6061), or a non-ferromagnetic back-iron pick. E15, E17 and
+    /// E18 read it.
+    pub body_sigma_S_m: f64,
+    pub body_c: f64,
+    pub body_cte: f64,
+    pub body_E_GPa: f64,
 }
 
 // =========================================================================== results
@@ -526,13 +535,13 @@ results! {
             cap_sigma_S_m: f64 => out("S/m", "Aluminium cap conductivity (6061-T6)", "", "Temperature design!C112"),
             skin_depth_mm: f64 => out("mm", "Steel skin depth at the field frequency", "", "Temperature design!C115"),
             hub_W: f64 => out("W", "Hub surface (solid steel)",
-                "Solid 4140 with back iron (skin-limited formula). With no back iron the hub is 6061 aluminium: low-Reynolds form of correction E17.",
+                "Solid back-iron steel with back iron (skin-limited formula). With no back iron the hub is the body material (the workbook's 6061 aluminium, or a non-ferromagnetic back-iron pick): low-Reynolds form of correction E17.",
                 "Temperature design!C123"),
             cup_W: f64 => out("W", "Cup surface (solid steel)",
-                "Solid 4140 with back iron (skin-limited formula). With no back iron the cup is 6061 aluminium (E9): low-Reynolds form of correction E17.",
+                "Solid back-iron steel with back iron (skin-limited formula). With no back iron the cup is the body material (E9; the workbook's 6061 aluminium, or a non-ferromagnetic back-iron pick): low-Reynolds form of correction E17.",
                 "Temperature design!C124"),
             web_W: f64 => out("W", "Rear web (solid steel)",
-                "Solid 4140 with back iron (skin-limited formula). With no back iron the web is 6061 aluminium (E9): low-Reynolds form of correction E17.",
+                "Solid back-iron steel with back iron (skin-limited formula). With no back iron the web is the body material (E9; the workbook's 6061 aluminium, or a non-ferromagnetic back-iron pick): low-Reynolds form of correction E17.",
                 "Temperature design!C125"),
             sleeve_W: f64 => out("W", "Inner 316L sleeve", "", "Temperature design!C126"),
             liner_W: f64 => out("W", "Outer 316L liner", "", "Temperature design!C127"),
@@ -971,8 +980,8 @@ pub fn compute(
     // E18: the blocks bond to the hub, which the mass model makes aluminium when C6 != 1
     // (E15's hub gate); the workbook screens 4140 whatever the hub is. C94 and C98 still
     // show the steel inputs.
-    let (hub_cte, hub_E_GPa) = if dev.is_on(DeviationId::E18) && k.hub_aluminium {
-        (AL_HUB_CTE_PER_C, AL_HUB_MODULUS_GPA)
+    let (hub_cte, hub_E_GPa) = if dev.is_on(DeviationId::E18) && k.hub_is_body_material {
+        (k.body_cte, k.body_E_GPa)
     } else {
         (k.steel_cte, k.steel_E_GPa)
     };
@@ -1037,17 +1046,17 @@ pub fn compute(
     let d_eff = |kk: f64, d_m: f64| (1.0 - (-2.0 * kk * d_m).exp()) / (2.0 * kk);
     let aluminium_surface = |B: f64, r: f64, d_m: f64| {
         let kk = pp / r;
-        sl.end_factor * k.al6061_sigma_S_m * we.powi(2) * B.powi(2) / (2.0 * kk.powi(2))
+        sl.end_factor * k.body_sigma_S_m * we.powi(2) * B.powi(2) / (2.0 * kk.powi(2))
             * d_eff(kk, d_m)
             * 2.0
             * PI
             * r
             * L
     };
-    let p_hub = if e17 && k.hub_aluminium {
+    let p_hub = if e17 && k.hub_is_body_material {
         // With a steel cup (E9 off) the outer ring has its first-order image in the cup:
         // half the doubled steel-circuit field (report 5.6, amended).
-        let b = if k.cup_aluminium {
+        let b = if k.cup_is_body_material {
             sl.b_hub_free_T
         } else {
             sl.b_hub_T / 2.0
@@ -1056,15 +1065,15 @@ pub fn compute(
     } else {
         surface(sl.b_hub_T, r_hub)
     };
-    let p_cup = if e17 && k.cup_aluminium {
+    let p_cup = if e17 && k.cup_is_body_material {
         aluminium_surface(sl.b_cup_free_T, r_cup, k.cup_wall_mm / 1000.0)
     } else {
         surface(sl.b_cup_T, r_cup)
     };
-    let p_web = if e17 && k.cup_aluminium {
+    let p_web = if e17 && k.cup_is_body_material {
         // (r_mid / p)^2 replaces 1 / k^2 and the free-space integral replaces A B^2.
         let r_w = r_mid / 1000.0;
-        sl.end_factor * k.al6061_sigma_S_m * we.powi(2) / 2.0
+        sl.end_factor * k.body_sigma_S_m * we.powi(2) / 2.0
             * (r_w / pp).powi(2)
             * d_eff(pp / r_w, k.web_mm / 1000.0)
             * sl.web_integral_free_T2m2
@@ -1085,7 +1094,7 @@ pub fn compute(
     let p_slv = shell(k.sleeve_mm, r_s, sl.b_sleeve_T);
     let p_lin = shell(k.liner_mm, r_l, sl.b_liner_T);
     let p_cap = sl.end_factor
-        * k.al6061_sigma_S_m
+        * k.cap_sigma_S_m
         * (k.cap_face_mm / 1000.0)
         * omega.powi(2)
         * sl.cap_integral_T2m4;
@@ -1107,7 +1116,7 @@ pub fn compute(
     let loss = SlipLossResults {
         steel_sigma_S_m: k.steel_sigma_S_m,
         steel_mu_r: k.steel_mu_r,
-        cap_sigma_S_m: k.al6061_sigma_S_m,
+        cap_sigma_S_m: k.cap_sigma_S_m,
         skin_depth_mm: delta,
         hub_W: p_hub,
         cup_W: p_cup,
@@ -1127,15 +1136,15 @@ pub fn compute(
     // E15: an aluminium cup, boss or hub at aluminium's specific heat, on the gates the
     // masses read; the keys and screws (hardware) stay steel. With every part steel the
     // workbook expression stays, bit for bit.
-    let C = if dev.is_on(DeviationId::E15) && k.hub_aluminium {
-        let c_cup = if k.cup_aluminium {
-            th.c_aluminium
+    let C = if dev.is_on(DeviationId::E15) && k.hub_is_body_material {
+        let c_cup = if k.cup_is_body_material {
+            k.body_c
         } else {
             k.steel_c
         };
         (k.mass_magnets_g * th.c_ndfeb
             + (k.mass_cup_g + k.mass_boss_g) * c_cup
-            + k.mass_hub_g * th.c_aluminium
+            + k.mass_hub_g * k.body_c
             + k.hardware_g * k.steel_c
             + (k.retainers_g + k.endplates_g) * th.c_316
             + k.cap_g * th.c_aluminium)
@@ -1409,9 +1418,13 @@ mod tests {
             steel_c: 473.0,
             steel_cte: 12.3e-6,
             steel_E_GPa: 205.0,
-            al6061_sigma_S_m: 2.5e7,
-            cup_aluminium: false,
-            hub_aluminium: false,
+            cap_sigma_S_m: 2.5e7,
+            cup_is_body_material: false,
+            hub_is_body_material: false,
+            body_sigma_S_m: 2.5e7,
+            body_c: 900.0,
+            body_cte: AL_HUB_CTE_PER_C,
+            body_E_GPa: AL_HUB_MODULUS_GPA,
             inner_grade: crate::engine::grades::grade("N42SH"),
             outer_br20_T: 1.29,
             outer_tmax_lib_C: NumOrText::Num(150.0),
@@ -1865,12 +1878,12 @@ mod tests {
         use crate::engine::constants::MU0;
         let e17 = Deviations::only(DeviationId::E17);
         let mut k = links();
-        k.cup_aluminium = true; // E9 with no back iron
-        k.hub_aluminium = true;
+        k.cup_is_body_material = true; // E9 with no back iron
+        k.hub_is_body_material = true;
         let ti = TemperatureInputs::default();
         let sl = &ti.slip_loss;
         let r = compute(&ti, &k, e17);
-        let (pp, sigma, f_end) = (5.0_f64, k.al6061_sigma_S_m, sl.end_factor);
+        let (pp, sigma, f_end) = (5.0_f64, k.body_sigma_S_m, sl.end_factor);
         let we = 2.0 * PI * pp * k.slip_rpm / 60.0;
         let length = k.active_length_mm / 1000.0;
         let t1 = |b: f64, radius: f64, d: f64| {
@@ -1921,7 +1934,7 @@ mod tests {
             assert!(d_mm / 1000.0 < delta_al, "{d_mm} mm");
         }
         // A steel cup (E9 off) gives the aluminium hub half the doubled steel-circuit field.
-        k.cup_aluminium = false;
+        k.cup_is_body_material = false;
         let steel_cup = compute(&ti, &k, e17);
         let want_hub = t1(sl.b_hub_T / 2.0, r_hub, k.hub_wall_mm / 1000.0);
         assert!(close(steel_cup.slip_loss.hub_W, want_hub));

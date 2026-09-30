@@ -27,6 +27,7 @@ use super::deviations::Deviations;
 #[cfg(feature = "workbook-parity")]
 use super::deviations::{REGISTRY, restore_workbook_defaults};
 use super::grades;
+use super::material_library;
 use super::materials::{self, MaterialsInputs, MaterialsResults};
 use super::meta::{ResultSet, SetError, TableLayout, Value, inputs, results, validate};
 use super::metal_design::{self, MetalDesignInputs, MetalDesignResults, RetainerResults};
@@ -127,12 +128,35 @@ impl DesignInputs {
 
 // Python api.compute_all lines 52-99; Python local names.
 fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
-    let (ci, md, cal_in, mat_in) = (
-        &inputs.coupling,
+    let (cal_in, mat_in) = (&inputs.calibration, &inputs.materials);
+    // Addendum A5: the parts' materials in effect. At the default choices every value is
+    // the input it stands for, so the copies below equal the inputs bit for bit.
+    let parts = material_library::resolve(
+        &mat_in.parts,
+        &mat_in.steel,
+        inputs.coupling.backiron,
         &inputs.metal,
-        &inputs.calibration,
-        &inputs.materials,
+        &inputs.temperature.slip_loss,
+        &inputs.temperature.thermal,
     );
+    let ci = &CouplingInputs {
+        backiron: parts.backiron,
+        ..inputs.coupling.clone()
+    };
+    let md = &MetalDesignInputs {
+        steel_density_g_mm3: parts.steel.density_g_mm3,
+        sleeve_density_g_mm3: parts.sleeve_liner.props.density_g_mm3,
+        ..inputs.metal.clone()
+    };
+    // The cap is the only part the retainers price at Metal design C42.
+    let md_retainers = &MetalDesignInputs {
+        al_density_g_mm3: parts.cap.props.density_g_mm3,
+        ..md.clone()
+    };
+    let mut ti = inputs.temperature.clone();
+    ti.slip_loss.sigma_316_S_m = parts.sleeve_liner.props.sigma_S_m;
+    ti.thermal.c_316 = parts.sleeve_liner.props.cp_J_kgK;
+    ti.thermal.c_aluminium = parts.cap.props.cp_J_kgK;
     let cal = calibration::compute(cal_in, dev);
     let f_cal = model::select_calibration_factor(
         ci.backiron,
@@ -150,7 +174,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         md.bond_outer_mm,
         md.cup_wall_corner_mm,
         cal_in.alpha_br_per_C,
-        mat_in.steel.bsat_T,
+        parts.design_flux_T,
         f_cal,
         cal_in.f_cal_original,
         md.slip_rpm,
@@ -158,7 +182,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         dev,
     );
     let ret = metal_design::retainers(
-        md,
+        md_retainers,
         ci.inner_back_apothem_mm,
         m.inner_thickness_mm,
         m.inner_width_mm,
@@ -178,7 +202,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         md.boss_length_mm,
         md.boss_od_mm,
         md.steel_density_g_mm3,
-        md.al_density_g_mm3,
+        parts.body.density_g_mm3,
         ret.retainers_g,
         md.hardware_g,
         ret.cap_g,
@@ -206,7 +230,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         model::cup_boss_density(
             ci.backiron,
             md.steel_density_g_mm3,
-            md.al_density_g_mm3,
+            parts.body.density_g_mm3,
             dev,
         ),
         dev,
@@ -216,6 +240,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         m.backiron_needed_mm,
         md.cup_wall_corner_mm,
         ci.backiron,
+        &parts,
         dev,
     );
     let links = temperature::TemperatureLinks {
@@ -266,16 +291,20 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         outer_br20_T: m.outer_br_T,
         outer_tmax_lib_C: m.outer_tmax_C,
         outer_grade: grades::grade(&m.outer_grade),
-        steel_sigma_S_m: mat_in.steel.conductivity_S_m,
+        steel_sigma_S_m: parts.steel.sigma_S_m,
         steel_mu_r: mat_in.steel.mu_r_incremental,
-        steel_c: mat_in.steel.specific_heat_J_kgK,
-        steel_cte: mat_in.steel.cte_per_C,
-        steel_E_GPa: mat_in.steel.modulus_GPa,
-        al6061_sigma_S_m: materials::AL6061.conductivity_S_m,
-        cup_aluminium: model::cup_is_aluminium(ci.backiron, dev),
-        hub_aluminium: model::hub_is_aluminium(ci.backiron),
+        steel_c: parts.steel.cp_J_kgK,
+        steel_cte: parts.steel.cte_per_C,
+        steel_E_GPa: parts.steel.modulus_GPa,
+        cap_sigma_S_m: parts.cap.props.sigma_S_m,
+        cup_is_body_material: model::cup_is_body_material(ci.backiron, dev),
+        hub_is_body_material: model::hub_is_body_material(ci.backiron),
+        body_sigma_S_m: parts.body.sigma_S_m,
+        body_c: parts.body.cp_J_kgK,
+        body_cte: parts.body.cte_per_C,
+        body_E_GPa: parts.body.modulus_GPa,
     };
-    let temp = temperature::compute(&inputs.temperature, &links, dev);
+    let temp = temperature::compute(&ti, &links, dev);
 
     let alloy = if inputs.clamps.alloy == 1 {
         &materials::AL7075

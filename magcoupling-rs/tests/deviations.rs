@@ -18,7 +18,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use common::{json_to_value, read_json, read_text, repo_path, report, snapshot, value_to_json};
+use common::{
+    cell_values_for, json_to_value, num, read_json, read_text, repo_path, report, snapshot,
+    value_to_json,
+};
 use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with, headline};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::{
@@ -100,23 +103,6 @@ fn bless_changes(
     .expect("write the golden file");
 }
 
-/// Every value with a workbook cell (inputs and results) for `inputs` under `dev`.
-fn cell_values_for(inputs: &DesignInputs, dev: Deviations) -> BTreeMap<String, Value> {
-    let results = compute_all_with(inputs, dev);
-    let mut cells = BTreeMap::new();
-    for row in input_rows(inputs) {
-        if let Some(cell) = row.meta.cell {
-            cells.insert(cell.to_owned(), row.value);
-        }
-    }
-    for row in result_rows(&results) {
-        if let Some(cell) = row.cell {
-            cells.insert(cell, row.value);
-        }
-    }
-    cells
-}
-
 /// Every value with a workbook cell at the defaults `dev` implies.
 fn cell_values(dev: Deviations) -> BTreeMap<String, Value> {
     cell_values_for(&DesignInputs::defaults_with(dev), dev)
@@ -127,14 +113,6 @@ fn at(cell: &str, dev: Deviations) -> Value {
     cell_values(dev)
         .remove(cell)
         .unwrap_or_else(|| panic!("{cell} is not a cell of the port"))
-}
-
-fn num(value: &Value) -> f64 {
-    match value {
-        Value::Num(x) => *x,
-        Value::Int(i) => *i as f64,
-        other => panic!("expected a number, got {other:?}"),
-    }
 }
 
 /// `got` equals the audit report's figure `want`, which the report states to
