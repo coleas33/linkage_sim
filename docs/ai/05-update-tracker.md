@@ -5,6 +5,54 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-29 — Magcoupling M2: engine port complete
+- Every Python module except `fields3d` (M3) is ported to `magcoupling-rs/`,
+  one Rust module per Python module, workbook-exact with the corrections off:
+  `calibration` (23 result cells), `library`, `model` (73; `mass_estimate` 6),
+  `metal_design` (retainers 9, sheet 49), `materials` (7), `temperature` (130),
+  `clamps` (33 result cells, 25 input cells, the 165-cell screw table),
+  `sweeps` (Gap sweep 338, Pole sweep 156 table cells) and the API completion
+  (`headline`, `DesignInputs::validate`). Workbook parity covers all 1,149
+  checks: 330 result cells, 494 sweep cells, 165 screw-table cells and 160
+  default inputs (`the_port_checks_every_cell_test_parity_checks` pins the
+  totals to `test_parity.py`).
+- Harness additions: modules that read several input groups (`MODULES` in
+  `gen_differential.py`), columnar differential data (one header, one line per
+  case), table rows in the metadata model (`rows!`, `TableLayout`, synthesized
+  cells), the full run (`differential/full.json` varies all 160 inputs at
+  once, plus one case for each pair of selector choices), the `BRANCHES` table
+  (every branch of every text result is reached, and no text result lacks a
+  row), and `tests/robustness.rs` (selector codes outside their choices,
+  extreme inputs, zero measured drag; `compute_all` never panics).
+- Corrections E1 to E14 are all applied, one commit each, through the
+  deviation registry: `compute_all` always applies them, and the workbook form
+  stays reachable only through the test-only `workbook-parity` feature.
+  Headline changes at the default design: pull-out at operating temperature
+  2.647 to 2.688 N·m and governing temperature limit 92.55 to 93.06 °C (E3),
+  clamp screw M4 x 12 to M4 x 14 (E2; it protrudes 0.34 mm, and the Rust-only
+  `clamps.length_note` says so), and Temperature design C106 and C202 change
+  from "Above ..." to "Below the lap-shear strength" and "Below the fatigue
+  endurance" (E1). E3, E4 and E5 (246, 47 and 37 changed cells) are reviewed
+  golden files, `tests/data/deviations/E<k>.json`; E7 to E13 leave every
+  default cell bit for bit and carry registry probes on off-default inputs;
+  E14 rewords a help text and one README sentence, no numbers.
+- Decisions D1 to D7, the recommended option each: D1 N42SH Br = 1.30 T; D2 E1
+  as the constant C96 = 0.107 GPa (per-adhesive modulus with Addendum A5); D3
+  a selector code outside its choices never panics (NaN or "#N/A"), plus
+  `validate()` at input boundaries; D4 corrections that change more than 15
+  cells at defaults use golden files; D5 `clippy -D warnings` for
+  `magcoupling-rs` only; D6 E2's warning is the Rust-only result
+  `clamps.length_note`; D7 the harmonic set stays the workbook's 1, 3, 5 until
+  the Addendum A engine plan.
+- Equality-edge unit tests: one per module with threshold comparisons (`model`,
+  `metal_design`, `materials`, `temperature`, `clamps`, `sweeps`), each
+  comparison at exact equality with the equality asserted first; step 8 of
+  "Porting a module" in the crate README.
+- Open items (docs/ai/04-memory.yaml): merge main into `magcoupling/m2` before
+  the Addendum A engine plan (Addendum A is on main, 7a9d2e8); M3 must apply E3
+  and E5 inside `fields3d`; the Addendum A engine plan makes the harmonic set a
+  parameter.
+
 ## 2026-09-29 — Magcoupling M2: engine port tracer bullet (calibration)
 - New crate `magcoupling-rs/` beside `linkage-sim-rs/` (not a workspace):
   library `magcoupling`, pure std engine, wasm32-clean; features `gui`/`app`

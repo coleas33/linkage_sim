@@ -9,7 +9,7 @@ reference:
   path: reference/ (repo root, outside linkage-sim-rs/; upstream code kept verbatim as test oracles, see reference/README.md)
   magcoupling_py:
     path: reference/magcoupling-py/
-    role: vendored magcoupling 1.0.0 (Python port of magnetic_coupling_torque_calculator.xlsx); read-only oracle for the magcoupling M1 audit and the planned Rust port (M2)
+    role: vendored magcoupling 1.0.0 (Python port of magnetic_coupling_torque_calculator.xlsx); read-only oracle for the magcoupling M1 audit and the Rust port magcoupling-rs (M2)
     engine: magcoupling/ (READ-ONLY, never edit; parity and differential tests compare against it unchanged)
     parity_suite: tests/ (test_parity.py checks every workbook formula cell against reference_values.json; test_api.py; test_optional.py needs the magpylib and matplotlib extras)
     tools: tools/extract_reference.py (regenerates tests/reference_values.json from the workbook); tools/gen_differential.py (writes magcoupling-rs/tests/data/python_schema.json, static_data.json and differential/*.json (one file per result group, plus full.json, the run that varies all inputs at once) from the engine, with slider ranges read from magcoupling-rs/tests/data/input_schema.json; --check verifies they are current)
@@ -32,20 +32,29 @@ reference:
 
 magcoupling_rs:
   path: magcoupling-rs/ (repo root, sibling of linkage-sim-rs/; separate crate, NOT a workspace member)
-  role: Rust port of reference/magcoupling-py (spec docs/superpowers/specs/2026-09-28-magcoupling-calculator-design.md, M2 in progress)
+  role: Rust port of reference/magcoupling-py (spec docs/superpowers/specs/2026-09-28-magcoupling-calculator-design.md); M2 complete - every Python module except fields3d (M3) is ported, workbook parity covers all 1,149 checks, E1-E14 applied
   guide: magcoupling-rs/README.md (tests, regenerating data, porting a module, Python-to-Rust translation rules, applying deviations)
   lib: magcoupling (src/lib.rs re-exports compute_all, headline, DesignInputs, DesignResults)
   engine: src/engine/ (pure std, wasm32-clean; one module per Python module)
   engine_files:
     meta: meta.rs (inputs!/results!/rows! macros, param/out and col/at_row/uncelled_col builders, slider range, assumption flag, Value, InputSet/ResultSet get/set/visit by dotted path, validate (the set() checks on a whole input struct); table rows via RowSet and TableLayout with synthesized cells, results! tables section)
     compat: compat.rs (py_min/py_max, ceiling/floor_, text0, py_repr, fmt_num, fmt_fixed, parity_close)
-    deviations: deviations.rs (REGISTRY of M1 corrections E1-E14, E1-E14 Applied (all fourteen); Deviations switch; NONE/only() and restore_workbook_defaults behind the test-only workbook-parity feature)
-    api: api.rs (DesignInputs/DesignResults groups in Python order; compute_all; headline and HEADLINE (the 15 dashboard numbers, Python order); DesignInputs::validate; test-only compute_all_with, DesignInputs::defaults_with)
-    ported: [constants.rs, calibration.rs, library.rs, "model.rs (model and mass_estimate; MassResults, 6 result cells)", "metal_design.rs (retainers, 9 result cells; compute, MetalDesignResults, 49 result cells; VALIDATION_ITEMS)", "materials.rs (inputs; AL7075 and AL6061 alloys; ScrewClasses::proof, NaN for a code outside 1-3; compute, MaterialsResults, 7 result cells)", "temperature.rs (7 input groups, 37 cells; ADHESIVES table and selected_adhesive, NO_ADHESIVE (NaN, \"#N/A\") for a code outside 1-4; TemperatureLinks; compute, TemperatureResults, 130 result cells and the uncelled adhesive name; demag_onset_C, volkersen_peak_shear_MPa)", "clamps.rs (25 input cells; SCREW_SIZES, TABLE_COLUMNS, MACHINING_STEPS; ScrewRow with 34 fields and 165 table cells; screw_class_name, \"#N/A\" for a code outside 1-3; compute, ClampResults, 33 result cells; the screw table lists after the scalars)", "sweeps.rs (GAP_SWEEP_CORNER_GAPS_MM, POLE_SWEEP_POLES; SweepRow with 26 fields, 338 Gap sweep and 156 Pole sweep table cells; SweepContext with 20 fields (Python's 19 plus bond_inner, read only by E4); gap_sweep, pole_sweep; the complete Python DesignResults, workbook parity 1,149 checks)"]
+    deviations: deviations.rs (REGISTRY of the M1 corrections E1-E14, all fourteen Applied; Deviations switch; registry Probe entries and changes_file golden-file names; NONE/only() and restore_workbook_defaults behind the test-only workbook-parity feature)
+    constants: constants.rs (MU0 = 1.256637e-06, the workbook's rounded value; NDFEB_DENSITY_G_MM3)
+    library: library.rs (Magnet library rows, workbook values, and the exact-text lookup; br_T applies E3)
+    calibration: calibration.rs (Calibration sheet, 23 result cells, 16 default inputs)
+    model: "model.rs (Calculator sheet: inputs, ModelResults 73 result cells, HARMONICS [1, 3, 5], peak_off_half_pitch and at_pull_out (E7); mass_estimate and MassResults, 6 result cells)"
+    metal_design: "metal_design.rs (Metal design sheet: MetalDesignInputs 48 fields; retainers, 9 result cells; compute, MetalDesignResults 49 result cells; VALIDATION_ITEMS)"
+    materials: "materials.rs (Materials sheet: inputs; AL7075 and AL6061 alloys; ScrewClasses::proof, NaN for a code outside 1-3; compute, MaterialsResults 7 result cells)"
+    temperature: "temperature.rs (Temperature design sheet: 7 input groups, 37 cells; ADHESIVES table and selected_adhesive, NO_ADHESIVE (NaN, \"#N/A\") for a code outside 1-4; TemperatureLinks; compute, TemperatureResults 130 result cells and the uncelled adhesive name; demag_onset_C, volkersen_peak_shear_MPa)"
+    clamps: "clamps.rs (Shaft clamps and Clamp screw sizes sheets: 25 input cells; SCREW_SIZES, TABLE_COLUMNS, MACHINING_STEPS; ScrewRow with 34 fields and 165 table cells; screw_class_name, \"#N/A\" for a code outside 1-3; compute, ClampResults 33 result cells plus the Rust-only length_note; the screw table lists after the scalars)"
+    sweeps: "sweeps.rs (Gap sweep and Pole sweep sheets: GAP_SWEEP_CORNER_GAPS_MM, POLE_SWEEP_POLES; SweepRow with 26 fields, 338 and 156 table cells; SweepContext with 20 fields (Python's 19 plus bond_inner, read only by E4); gap_sweep, pole_sweep)"
+    api: api.rs (DesignInputs/DesignResults groups in Python order, the complete Python DesignResults; compute_all applies Deviations::ALL; headline and HEADLINE (the 15 dashboard numbers, Python order); DesignInputs::validate; test-only compute_all_with, DesignInputs::defaults_with)
+    ported: [meta.rs, compat.rs, constants.rs, calibration.rs, library.rs, model.rs, metal_design.rs, materials.rs, temperature.rs, clamps.rs, sweeps.rs, api.rs]
     remaining: [fields3d (M3)]
   features: gui and app (declared empty, M4); workbook-parity (test-only, enabled by a self dev-dependency)
-  tests: tests/ (parity.rs, differential.rs, python_schema.rs, schema.rs, deviations.rs, static_data.rs, robustness.rs; common/mod.rs holds the PORTED_INPUTS / PORTED_RESULTS ratchets)
-  test_data: tests/data/ (reference_values.json = copy of the vendored snapshot; input_schema.json via MAGCOUPLING_BLESS=1 cargo test --test schema; python_schema.json, static_data.json and differential/*.json via tools/gen_differential.py; deviations/E<k>.json golden files of broad corrections via MAGCOUPLING_BLESS=1 cargo test --test deviations each_deviation_alone_changes_exactly_its_registered_cells)
+  tests: tests/ (the seven integration tests parity.rs, differential.rs, python_schema.rs, schema.rs, deviations.rs, static_data.rs, robustness.rs; common/mod.rs holds the PORTED_INPUTS / PORTED_RESULTS ratchets)
+  test_data: tests/data/ (reference_values.json = copy of the vendored snapshot; input_schema.json via MAGCOUPLING_BLESS=1 cargo test --test schema; python_schema.json, static_data.json, differential/<group>.json (10 result groups plus helpers.json) and differential/full.json via tools/gen_differential.py; deviations/E3.json, E4.json and E5.json, the golden files of the broad corrections, via MAGCOUPLING_BLESS=1 cargo test --test deviations each_deviation_alone_changes_exactly_its_registered_cells)
   gate: linkage-sim-rs/scripts/gate.sh gates 4-7 (magcoupling-rs test, clippy -D warnings, wasm32 check; Python parity suite + gen_differential.py --check)
 
 modules:

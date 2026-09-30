@@ -21,12 +21,7 @@ open_questions:
     `FirmwareAdapter` trait — implement on demand once a target controller
     is selected.
   - "RESOLVED 2026-09-29: the user approved all M1 corrections E1-E14 (E14 documentation-only); they enter the M2 deviation registry."
-  - |
-    Magcoupling M2 decisions needed before the matching deviation is applied
-    (all E1-E14 are registered as Planned in magcoupling-rs; none applied):
-    E3 library Br value (1.30 T grade minimum, as the other K&J rows, or
-    about 1.315 T nominal; the report offers both); E1 form (constant
-    C96 = 0.107 GPa, or a per-adhesive shear modulus, which needs TDS values
-    for 2214 and DP460). Also open: engine semantics for an out-of-choices
-    selector code set directly on a struct (proposed: never panic; NaN or an
-    Excel-style error text, plus a validate() at input boundaries).
+  - "RESOLVED 2026-09-29: magcoupling M2 decisions D1-D7, the recommended option each. D1 E3 Br of the N42SH library rows = 1.30 T (vendor grade minimum). D2 E1 = constant C96 = 0.107 GPa (the per-adhesive modulus goes with Addendum A5). D3 a selector code outside its choices set on a struct = never panic (NaN or \"#N/A\"), plus validate() at input boundaries; compute_all keeps its signature. D4 corrections changing more than 15 cells at defaults (E3, E4, E5) = golden files tests/data/deviations/E<k>.json. D5 clippy -D warnings for magcoupling-rs only. D6 E2 length warning = the Rust-only result clamps.length_note. D7 the harmonic set stays the workbook's fixed 1, 3, 5 (E7 closed form valid for that set only); a parameter in the Addendum A engine plan."
+  - "Addendum A lives on main (7a9d2e8): merge main into magcoupling/m2 before the Addendum A engine plan"
+  - "M3 must apply E3 and E5 inside fields3d: rerun it with the corrected N42SH Br (E3) and multiply the web integral by 4 in fields3d.run (E5); see each entry's corrected_formula in magcoupling-rs/src/engine/deviations.rs"
+  - "Addendum A engine plan: make the harmonic set a parameter and generalize peak_off_half_pitch beyond [1, 3, 5] (decision D7)"
