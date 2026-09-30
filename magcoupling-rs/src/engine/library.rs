@@ -3,9 +3,29 @@
 //! Port of `reference/magcoupling-py/magcoupling/library.py`. The calculator
 //! looks magnets up by exact part text, like the workbook's INDEX/MATCH.
 //! Dimensions in mm, Br is the 20 °C remanence in tesla, tmax the supplier
-//! rating in °C. The rows hold the WORKBOOK values; the approved correction E3
-//! (N42SH remanence) is applied where the Calculator resolves a part
-//! (`model::resolve_magnets`), not here.
+//! rating in °C. The rows hold the WORKBOOK values (1.29 T for the N42SH rows),
+//! so the static-data test still compares them with the Python engine. The
+//! approved correction E3 (N42SH remanence, decision D1) is applied by
+//! [`br_T`], which the Calculator calls where it resolves a part
+//! (`model::resolve_magnets`). The 3D field run (`fields3d`, M3) must be rerun
+//! with the corrected Br.
+
+use super::deviations::{DeviationId, Deviations};
+
+/// E3: the N42SH rows' remanence with the approved correction: the vendor's
+/// grade minimum (K&J 13.0 kG), like the library's other K&J rows (decision D1).
+pub const N42SH_BR_CORRECTED_T: f64 = 1.30;
+
+/// The 20 °C remanence the Calculator uses for a library part: the row's
+/// workbook value, or with E3 on the corrected N42SH value.
+#[allow(non_snake_case)]
+pub fn br_T(spec: &MagnetSpec, dev: Deviations) -> f64 {
+    if dev.is_on(DeviationId::E3) && spec.grade == "N42SH" {
+        N42SH_BR_CORRECTED_T
+    } else {
+        spec.br_T
+    }
+}
 
 /// One library row (Python `MagnetSpec`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -214,4 +234,36 @@ pub fn lookup(part: &str) -> Option<&'static MagnetSpec> {
         return None;
     }
     MAGNET_LIBRARY.iter().find(|m| m.part == part)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn e3_corrects_exactly_the_three_n42sh_rows() {
+        // The report names B842SH, BX042SH and BX082SH (all at 1.29 T in the
+        // workbook); every other row keeps its workbook remanence.
+        let named = ["B842SH", "BX042SH", "BX082SH"];
+        for spec in &MAGNET_LIBRARY {
+            let corrected = named.contains(&spec.part);
+            assert_eq!(spec.grade == "N42SH", corrected, "{}", spec.part);
+            if corrected {
+                assert_eq!(spec.br_T, 1.29, "{}: the workbook row", spec.part);
+            }
+            let want = if corrected {
+                N42SH_BR_CORRECTED_T
+            } else {
+                spec.br_T
+            };
+            assert_eq!(br_T(spec, Deviations::NONE), spec.br_T, "{}", spec.part);
+            assert_eq!(
+                br_T(spec, Deviations::only(DeviationId::E3)),
+                want,
+                "{}",
+                spec.part
+            );
+            assert_eq!(br_T(spec, Deviations::ALL), want, "{}", spec.part);
+        }
+    }
 }

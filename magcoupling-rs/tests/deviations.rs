@@ -5,18 +5,99 @@
 //! (`tests/parity.rs`). Here: switching ONE correction on may change only the
 //! cells that correction registers, each to its registered corrected value; and
 //! switching all on changes nothing outside the registered cells.
+//!
+//! A broad correction (more than 15 changed cells, decision D4) registers its
+//! changes in a golden file (`Deviation::changes_file`) instead of by hand.
+//! Rewrite the golden files from this run with
+//! `MAGCOUPLING_BLESS=1 cargo test --test deviations each_deviation_alone_changes_exactly_its_registered_cells`
+//! and review the diff.
 
 mod common;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::Path;
 
-use common::{read_text, repo_path, report, snapshot};
+use common::{json_to_value, read_json, read_text, repo_path, report, snapshot, value_to_json};
 use magcoupling::engine::api::{DesignInputs, compute_all_with};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::{
-    DeviationClass, DeviationId, DeviationStatus, Deviations, REGISTRY, REPORT,
+    Deviation, DeviationClass, DeviationId, DeviationStatus, Deviations, REGISTRY, REPORT,
 };
 use magcoupling::engine::meta::{InputSet, Value, input_rows, result_rows};
+
+const BLESS_VAR: &str = "MAGCOUPLING_BLESS";
+
+fn golden_path(file: &str) -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(file)
+}
+
+/// The cells a correction changes at defaults, with their workbook and corrected
+/// values: hand-listed in the registry, or read from the correction's golden file.
+fn registered_changes(d: &Deviation) -> BTreeMap<String, (Value, Value)> {
+    match d.changes_file {
+        None => d
+            .changes_at_defaults
+            .iter()
+            .map(|c| {
+                (
+                    c.cell.to_owned(),
+                    (c.workbook.to_value(), c.corrected.to_value()),
+                )
+            })
+            .collect(),
+        Some(file) if !golden_path(file).exists() => BTreeMap::new(),
+        Some(file) => read_json(&golden_path(file))["changes"]
+            .as_object()
+            .expect("a changes object")
+            .iter()
+            .map(|(cell, pair)| {
+                (
+                    cell.clone(),
+                    (json_to_value(&pair[0]), json_to_value(&pair[1])),
+                )
+            })
+            .collect(),
+    }
+}
+
+/// Bless mode: writes the golden file of a broad correction from this run.
+fn bless_changes(
+    d: &Deviation,
+    workbook: &BTreeMap<String, Value>,
+    corrected: &BTreeMap<String, Value>,
+    changed: &BTreeSet<String>,
+) {
+    let file = d
+        .changes_file
+        .expect("only golden-file entries are blessed");
+    let changes: serde_json::Map<String, serde_json::Value> = changed
+        .iter()
+        .map(|cell| {
+            (
+                cell.clone(),
+                serde_json::json!([
+                    value_to_json(&workbook[cell]),
+                    value_to_json(&corrected[cell])
+                ]),
+            )
+        })
+        .collect();
+    let doc = serde_json::json!({
+        "about": format!("Every workbook cell correction {} changes at default inputs, as [workbook, corrected]. \
+                          Written by `MAGCOUPLING_BLESS=1 cargo test --test deviations each_deviation_alone_changes_exactly_its_registered_cells`; review the diff.", d.id),
+        "id": d.id.to_string(),
+        "changes": changes,
+    });
+    let path = golden_path(file);
+    fs::create_dir_all(path.parent().expect("a parent directory"))
+        .expect("create tests/data/deviations");
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(&doc).expect("serializes") + "\n",
+    )
+    .expect("write the golden file");
+}
 
 /// Every value with a workbook cell (inputs and results) for `inputs` under `dev`.
 fn cell_values_for(inputs: &DesignInputs, dev: Deviations) -> BTreeMap<String, Value> {
@@ -124,12 +205,12 @@ fn registered_workbook_values_equal_the_snapshot() {
     let defaults = DesignInputs::default();
     let mut failures = Vec::new();
     for d in REGISTRY {
-        for change in d.changes_at_defaults {
-            match snapshot.get(change.cell) {
-                Some(want) if parity_close(&change.workbook.to_value(), want) => {}
+        for (cell, (workbook, _)) in registered_changes(d) {
+            match snapshot.get(&cell) {
+                Some(want) if parity_close(&workbook, want) => {}
                 other => failures.push(format!(
-                    "{}: {} workbook value vs snapshot {other:?}",
-                    d.id, change.cell
+                    "{}: {cell} workbook value {workbook:?} vs snapshot {other:?}",
+                    d.id
                 )),
             }
         }
@@ -154,9 +235,11 @@ fn applied_engine_entries_list_their_changes_at_defaults_or_are_default_neutral(
     // An applied engine correction either changes some default output (listed)
     // or, like E7-E13, changes none at defaults; both are allowed, but a Planned
     // entry must not pretend to change anything (checked in the unit tests).
+    // Hand-listed changes must be cells the entry names; a golden-file entry
+    // (a broad correction) changes cells far downstream of the ones it names.
     for d in REGISTRY
         .iter()
-        .filter(|d| d.status == DeviationStatus::Applied)
+        .filter(|d| d.status == DeviationStatus::Applied && d.changes_file.is_none())
     {
         for change in d.changes_at_defaults {
             assert!(
@@ -177,23 +260,18 @@ fn each_deviation_alone_changes_exactly_its_registered_cells() {
         let d = &REGISTRY[id.index()];
         let corrected = cell_values(Deviations::only(id));
         let changed = changed_cells(&workbook, &corrected);
-        let registered: BTreeSet<String> = d
-            .changes_at_defaults
-            .iter()
-            .map(|c| c.cell.to_owned())
-            .collect();
-        if changed != registered {
-            failures.push(format!(
-                "{id}: changed {changed:?}, registered {registered:?}"
-            ));
+        if d.changes_file.is_some() && std::env::var_os(BLESS_VAR).is_some() {
+            bless_changes(d, &workbook, &corrected, &changed);
         }
-        for change in d.changes_at_defaults {
-            let got = &corrected[&change.cell.to_owned()];
-            if !parity_close(got, &change.corrected.to_value()) {
-                failures.push(format!(
-                    "{id}: {} = {got:?}, registered {:?}",
-                    change.cell, change.corrected
-                ));
+        let registered = registered_changes(d);
+        let keys: BTreeSet<String> = registered.keys().cloned().collect();
+        if changed != keys {
+            failures.push(format!("{id}: changed {changed:?}, registered {keys:?}"));
+        }
+        for (cell, (_, want)) in &registered {
+            match corrected.get(cell) {
+                Some(got) if parity_close(got, want) => {}
+                got => failures.push(format!("{id}: {cell} = {got:?}, registered {want:?}")),
             }
         }
     }
@@ -208,13 +286,47 @@ fn all_deviations_together_change_only_registered_cells() {
     );
     let registered: BTreeSet<String> = REGISTRY
         .iter()
-        .flat_map(|d| d.changes_at_defaults.iter().map(|c| c.cell.to_owned()))
+        .flat_map(|d| registered_changes(d).into_keys())
         .collect();
     let unexplained: Vec<_> = changed.difference(&registered).collect();
     assert!(
         unexplained.is_empty(),
         "cells changed by no registered deviation: {unexplained:?}"
     );
+}
+
+#[test]
+fn broad_corrections_use_golden_files_and_narrow_ones_list_their_cells() {
+    // Decision D4: more than 15 changed cells go to a golden file.
+    for d in REGISTRY
+        .iter()
+        .filter(|d| d.status == DeviationStatus::Applied)
+    {
+        match d.changes_file {
+            Some(file) => {
+                assert!(
+                    golden_path(file).exists(),
+                    "{}: {file} missing: bless it",
+                    d.id
+                );
+                assert!(
+                    d.changes_at_defaults.is_empty(),
+                    "{}: golden file and hand list",
+                    d.id
+                );
+                assert!(
+                    registered_changes(d).len() > 15,
+                    "{}: a golden file for 15 cells or fewer",
+                    d.id
+                );
+            }
+            None => assert!(
+                d.changes_at_defaults.len() <= 15,
+                "{}: more than 15 hand-listed cells",
+                d.id
+            ),
+        }
+    }
 }
 
 #[test]
@@ -294,6 +406,54 @@ fn e2_clamp_screw_length_matches_the_report() {
         "Shaft clamps!C48",
         "Clamp screw sizes!E34",
         "Clamp screw sizes!E35",
+    ] {
+        assert_workbook(cell);
+    }
+}
+
+#[test]
+fn e3_library_remanence_matches_the_report() {
+    let e3 = Deviations::only(DeviationId::E3);
+    assert_eq!(at("Calculator!C21", e3), Value::Num(1.30));
+    assert_report("Calculator!C93", &at("Calculator!C93", e3), 2.688, 0.0005); // pull-out, was 2.647
+    assert_report("Metal design!C9", &at("Metal design!C9", e3), 2.285, 0.0005); // hot low, was 2.250
+    assert_eq!(
+        at("Metal design!C11", e3),
+        Value::Text("Below hot minimum".into())
+    );
+    assert_report(
+        "Metal design!C10",
+        &at("Metal design!C10", e3),
+        3.823,
+        0.0005,
+    ); // cold high, was 3.765
+    assert_report(
+        "Temperature design!C12",
+        &at("Temperature design!C12", e3),
+        93.06,
+        0.005,
+    ); // limit, was 92.55
+    assert_eq!(
+        at("Temperature design!C91", e3),
+        Value::Text("OK: 7x margin".into())
+    );
+    assert_eq!(
+        at("Gap sweep!AA9", e3),
+        Value::Text("nominal: test needed".into())
+    ); // 1.25 mm row
+    assert_report("Gap sweep!X9", &at("Gap sweep!X9", e3), 2.500, 0.0005); // was 2.462
+    assert_eq!(
+        at("Shaft clamps!C48", e3),
+        Value::Text("ISO 4762 M4 x 12, class 12.9".into()),
+        "below 1.3025 T the clamp still fits"
+    );
+    for cell in [
+        "Calculator!C21",
+        "Calculator!C93",
+        "Metal design!C9",
+        "Temperature design!C12",
+        "Temperature design!C91",
+        "Gap sweep!AA9",
     ] {
         assert_workbook(cell);
     }

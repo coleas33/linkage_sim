@@ -15,8 +15,9 @@
 //!   fields without metadata, so they are not inputs (`input_schema()` omits
 //!   them) and `compute` never reads them: it uses the literals 1, 1.5 and 0.5.
 //!   They are omitted here, and the literals are kept.
-//! - Planned deviations touching this sheet: E3 (Calibration!C21 default) and
-//!   E7 (the τ_n harmonic sum), see [`crate::engine::deviations::REGISTRY`].
+//! - Deviations touching this sheet: E3 is applied (the Calibration!C21 default
+//!   follows the corrected N42SH remanence, 1.30 T); E7 (the τ_n harmonic sum)
+//!   is planned, see [`crate::engine::deviations::REGISTRY`].
 
 use std::f64::consts::PI;
 
@@ -52,7 +53,7 @@ inputs! {
                 .range(1.0, 25.4, 0.01),
             magnet_thickness_mm: f64 = 3.17 => param("mm", "Prototype magnet radial thickness", "", "Calibration!C20")
                 .range(0.5, 10.0, 0.01),
-            br_T: f64 = 1.29 => param("T", "Prototype remanence at 20 °C", "", "Calibration!C21")
+            br_T: f64 = 1.30 => param("T", "Prototype remanence at 20 °C", "", "Calibration!C21")
                 .range(0.2, 1.5, 0.001),
             alpha_br_per_C: f64 = -0.0012 => param("1/°C", "Reversible Br temperature coefficient",
                 "Used by every sheet. Torque scales with the square of the Br ratio.", "Calibration!C22")
@@ -208,14 +209,15 @@ pub fn compute(c: &CalibrationInputs, _dev: Deviations) -> CalibrationResults {
 mod tests {
     use super::*;
 
-    fn at_defaults() -> CalibrationResults {
-        compute(&CalibrationInputs::default(), Deviations::ALL)
-    }
-
     #[test]
     fn default_design_reproduces_the_bench_correction() {
         // Workbook values (tests/data/reference_values.json); the full check is tests/parity.rs.
-        let r = at_defaults();
+        // The workbook's Br (1.29 T) is restored by hand: E3 corrects the declared default.
+        let workbook = CalibrationInputs {
+            br_T: 1.29,
+            ..CalibrationInputs::default()
+        };
+        let r = compute(&workbook, Deviations::NONE);
         assert!((r.model_torque_Nm - 1.6044531397852).abs() < 1e-12);
         assert!((r.f_cal_updated - 1.06578369763353).abs() < 1e-12);
         assert_eq!(r.poles_per_ring, 10.0);

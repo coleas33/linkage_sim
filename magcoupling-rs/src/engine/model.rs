@@ -9,9 +9,10 @@
 //! The harmonic set is the workbook's fixed 1, 3, 5 ([`HARMONICS`]); selecting
 //! more harmonics belongs to the Addendum A engine plan.
 //!
-//! Planned deviations touching this sheet (see
-//! [`crate::engine::deviations::REGISTRY`]): E3 (via `resolve_magnets`, the
-//! N42SH remanence), E6 (Calculator!C63), E7 (pull-out over angle), E8
+//! Deviations touching this sheet (see
+//! [`crate::engine::deviations::REGISTRY`]): E3 is applied (the N42SH
+//! remanence, via `resolve_magnets`, and the manual Br defaults C17 and C27);
+//! planned are E6 (Calculator!C63), E7 (pull-out over angle), E8
 //! (Calculator!C9 and C111), E9 (masses), E10 (Calculator!C103).
 
 use std::f64::consts::PI;
@@ -19,7 +20,7 @@ use std::f64::consts::PI;
 use super::compat::{fmt_fixed, py_max, py_min};
 use super::constants::{MU0, NDFEB_DENSITY_G_MM3};
 use super::deviations::Deviations;
-use super::library::lookup;
+use super::library::{self, lookup};
 use super::meta::{NumOrText, inputs, out, param, results};
 
 /// The odd space harmonics the model sums (the workbook's set).
@@ -44,7 +45,7 @@ inputs! {
             manual_inner_thickness_mm: f64 = 3.17 => param("mm", "Manual inner thickness (radial)",
                 "", "Calculator!C16")
                 .range(0.5, 10.0, 0.01),
-            manual_inner_br_T: f64 = 1.29 => param("T", "Manual inner Br at 20 °C",
+            manual_inner_br_T: f64 = 1.30 => param("T", "Manual inner Br at 20 °C",
                 "", "Calculator!C17")
                 .range(0.2, 1.5, 0.001),
             manual_outer_length_mm: f64 = 12.7 => param("mm", "Manual outer length (axial)",
@@ -56,7 +57,7 @@ inputs! {
             manual_outer_thickness_mm: f64 = 3.17 => param("mm", "Manual outer thickness (radial)",
                 "", "Calculator!C26")
                 .range(0.5, 10.0, 0.01),
-            manual_outer_br_T: f64 = 1.29 => param("T", "Manual outer Br at 20 °C",
+            manual_outer_br_T: f64 = 1.30 => param("T", "Manual outer Br at 20 °C",
                 "", "Calculator!C27")
                 .range(0.2, 1.5, 0.001),
         }
@@ -261,15 +262,16 @@ pub struct ResolvedMagnet {
 }
 
 /// Library values when the part is found, else the manual values (workbook IFERROR/INDEX/MATCH).
+/// A library part's Br comes from [`library::br_T`], which applies E3 (the N42SH remanence).
 #[allow(non_snake_case)]
-pub fn resolve_magnets(m: &MagnetInputs, _dev: Deviations) -> (ResolvedMagnet, ResolvedMagnet) {
+pub fn resolve_magnets(m: &MagnetInputs, dev: Deviations) -> (ResolvedMagnet, ResolvedMagnet) {
     let resolve = |part: &str, length_mm: f64, width_mm: f64, thickness_mm: f64, br_T: f64| {
         match lookup(part) {
             Some(spec) => ResolvedMagnet {
                 length_mm: spec.length_mm,
                 width_mm: spec.width_mm,
                 thickness_mm: spec.thickness_mm,
-                br_T: spec.br_T,
+                br_T: library::br_T(spec, dev),
                 tmax_C: NumOrText::Num(spec.tmax_C),
             },
             None => ResolvedMagnet {
@@ -670,6 +672,7 @@ pub fn mass_estimate(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::deviations::DeviationId;
 
     /// The Calculator at the workbook defaults, links as `api::compute` passes them.
     fn at(ci: &CouplingInputs) -> ModelResults {
@@ -727,6 +730,23 @@ mod tests {
             select_calibration_factor(0, 10, "B842SH", "B842SH", 10.0, 1.0658, 0.95),
             1.0658
         );
+    }
+
+    #[test]
+    fn e3_reaches_library_parts_but_never_a_typed_manual_br() {
+        let mut m = MagnetInputs {
+            part_inner: "BX082SH".to_owned(),
+            part_outer: String::new(),
+            ..MagnetInputs::default()
+        };
+        m.manual_outer_br_T = 1.25;
+        let br = |dev| {
+            let (i, o) = resolve_magnets(&m, dev);
+            (i.br_T, o.br_T)
+        };
+        assert_eq!(br(Deviations::NONE), (1.29, 1.25));
+        assert_eq!(br(Deviations::only(DeviationId::E3)), (1.30, 1.25));
+        assert_eq!(br(Deviations::ALL), (1.30, 1.25));
     }
 
     #[test]

@@ -27,8 +27,8 @@ variables `GAP_SWEEP_CORNER_GAPS_MM` and `POLE_SWEEP_POLES`, 338 and 156 table
 cells) and the API completion (`headline`, `DesignInputs::validate`). Every module
 except `fields3d` (M3) is ported; workbook parity is complete (1,149 checks: 330
 result cells, 659 table cells and 160 default inputs). Deviations E1 to E14 are
-registered: E1 and E2 are applied (see [Differences from the workbook](#differences-from-the-workbook)),
-E3 to E14 are `Planned`.
+registered: E1 to E3 are applied (see [Differences from the workbook](#differences-from-the-workbook)),
+E4 to E14 are `Planned`.
 
 ```rust
 use magcoupling::{DesignInputs, compute_all, headline};
@@ -55,7 +55,8 @@ every offending path, in schema order, with the reason `set` would give.
 Every correction below is approved in the M1 math audit report
 (`docs/analyses/2026-09-29-magcoupling-math-audit.md`, the row with the same
 id) and registered in `src/engine/deviations.rs` with the cells it changes and
-their workbook and corrected values. The corrections are always on for users
+their workbook and corrected values (for E3, which changes 246 cells, in the
+reviewed golden file `tests/data/deviations/E3.json`). The corrections are always on for users
 (`compute_all`); only the parity and differential tests switch them off,
 through the test-only `workbook-parity` feature, to compare against the workbook
 and the Python engine exactly.
@@ -64,6 +65,7 @@ and the Python engine exactly.
 |---|---|---|---|---|
 | E1 | Temperature design!C96 (feeds C104-C106, C201, C202) | 0.55 GPa (EA 9514's modulus) | 0.107 GPa (AA 326 TDS); C106 and C202 now read "Below ..." | E1 |
 | E2 | Clamp screw sizes!C34:G35, Shaft clamps!C48 | length = CEILING(grip + 2d, 2); fits = length <= grip + thread | the slit (0.8 mm) is added to both; M4 x 12 becomes M4 x 14, which protrudes 0.34 mm: clamps.length_note says so | E2 |
+| E3 | Magnet library N42SH rows; Calculator!C17, C21, C27, C31; Calibration!C21 | 1.29 T | 1.30 T (vendor minimum); pull-out 2.688 N·m, limit 93.06 °C, C91 "OK: 7x margin"; fields3d rerun pending (M3) | E3 |
 
 ## Layout
 
@@ -97,7 +99,7 @@ bash linkage-sim-rs/scripts/gate.sh   # everything, both crates and the Python o
 | `tests/static_data.rs` | Static tables equal the Python engine's, value for value (`tests/data/static_data.json`). |
 | `tests/robustness.rs` | Inputs no parity or differential case holds (the plan's Review Focus): a selector code outside its choices set directly on the struct (adhesive, screw class, and every selector at once with `validate()` naming each), a measured drag of exactly zero, every numeric input at 0, -1, a tenth of its minimum, ten times its maximum and 1e300 (`compute_all_never_panics_on_extreme_inputs`), and a debug-build time bound per `compute_all` call. The engine must never panic. |
 | `tests/schema.rs` | Slider ranges, selectors, labels, unique well-formed paths and cells (a Rust-only result has none); each table column's label, unit and note equal the workbook headers (`table_columns_match_the_workbook_headers`; where a correction rewords a column's note, the recorded workbook text equals the note and the port's differs); exports `tests/data/input_schema.json`. |
-| `tests/deviations.rs` | Registry cells exist in the snapshot, entries are approved rows of the audit report, and one correction switched on changes exactly its registered cells; each applied correction's figures match the report (`e1_adhesive_shear_modulus_matches_the_report`, `e2_clamp_screw_length_matches_the_report`), and help a correction rewords belongs to a real input and differs from the workbook's. |
+| `tests/deviations.rs` | Registry cells exist in the snapshot, entries are approved rows of the audit report, and one correction switched on changes exactly its registered cells (hand-listed, or in the correction's golden file under `tests/data/deviations/`); a correction that changes more than 15 cells uses a golden file and one that changes 15 or fewer lists them (`broad_corrections_use_golden_files_and_narrow_ones_list_their_cells`); each applied correction's figures match the report (`e1_adhesive_shear_modulus_matches_the_report`, `e2_clamp_screw_length_matches_the_report`, `e3_library_remanence_matches_the_report`), and help a correction rewords belongs to a real input and differs from the workbook's. |
 
 ### Regenerating test data
 
@@ -225,3 +227,21 @@ then proves the correction changes exactly those cells, to those values; add a
 test of the report's figures (`assert_report`, `assert_workbook`) and a row to
 [Differences from the workbook](#differences-from-the-workbook). Physics
 changes get a dedicated physics reviewer (spec, testing summary).
+
+A broad correction, one that changes more than 15 cells at defaults (decision
+D4; E3 changes 246 through Br), is not hand-listed: its entry leaves
+`changes_at_defaults` empty and names a golden file in `changes_file`,
+`tests/data/deviations/E<k>.json`, which maps every changed cell to
+`[workbook, corrected]`. Write it from a run with the correction alone:
+
+```bash
+MAGCOUPLING_BLESS=1 cargo test --test deviations each_deviation_alone_changes_exactly_its_registered_cells
+```
+
+(run only this test: the rest of the `deviations` binary may run first and fail
+on a missing file). Then review the file as a diff: every changed cell should
+follow from the correction (for E3, Br-linear values move by 1.30/1.29, torques
+by its square, safety factors by the inverse), and the report's figures stay
+pinned by hand in the correction's `e<k>_..._matches_the_report` test, so a
+blessed file cannot quietly move them. Without `MAGCOUPLING_BLESS` the test
+compares against the file.

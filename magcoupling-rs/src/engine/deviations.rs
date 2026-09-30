@@ -17,7 +17,9 @@
 //!   (test-only) puts it back when the deviation is off.
 //! - **Status.** An entry is `Planned` until its code lands, then `Applied`
 //!   with `changes_at_defaults` listing every cell that changes at default
-//!   inputs, with the workbook and the corrected value.
+//!   inputs, with the workbook and the corrected value. A broad correction
+//!   (more than 15 changed cells, decision D4) names a reviewed golden file in
+//!   `changes_file` instead (E3: `tests/data/deviations/E3.json`).
 //!
 //! # The test-only switch
 //!
@@ -104,7 +106,7 @@ pub enum DeviationClass {
 pub enum DeviationStatus {
     /// Approved, not yet implemented: the engine is workbook-exact here.
     Planned,
-    /// Implemented; `changes_at_defaults` is complete.
+    /// Implemented; `changes_at_defaults` (or the `changes_file`) is complete.
     Applied,
 }
 
@@ -163,6 +165,12 @@ pub struct Deviation {
     pub workbook_help: &'static [(&'static str, &'static str)],
     /// Every cell that changes at default inputs (complete once `Applied`).
     pub changes_at_defaults: &'static [CellChange],
+    /// For a broad correction (decision D4: more than 15 cells change at
+    /// defaults): the golden file, relative to `magcoupling-rs/`, that lists
+    /// every changed cell as `{"cell": [workbook, corrected]}`. Rewritten by
+    /// `MAGCOUPLING_BLESS=1 cargo test --test deviations each_deviation_alone_changes_exactly_its_registered_cells` and reviewed as a diff.
+    /// `changes_at_defaults` stays empty for such entries.
+    pub changes_file: Option<&'static str>,
 }
 
 impl Deviation {
@@ -226,6 +234,7 @@ pub const REGISTRY: &[Deviation] = &[
                 corrected: Literal::Text("Below the fatigue endurance"),
             },
         ],
+        changes_file: None,
     },
     Deviation {
         id: DeviationId::E2,
@@ -271,12 +280,13 @@ pub const REGISTRY: &[Deviation] = &[
                 corrected: Literal::Text("ISO 4762 M4 x 14, class 12.9"),
             },
         ],
+        changes_file: None,
     },
     Deviation {
         id: DeviationId::E3,
         title: "Library remanence of the N42SH parts is below the vendor's published minimum",
         class: DeviationClass::Engine,
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &[
             "Calculator!C17",
             "Calculator!C21",
@@ -284,13 +294,17 @@ pub const REGISTRY: &[Deviation] = &[
             "Calculator!C31",
             "Calibration!C21",
         ],
-        corrected_formula: "Br of library rows B842SH, BX042SH and BX082SH at least 1.30 T \
-            (about 1.315 T if the library holds nominal values), with Calculator!C17, C27 and \
-            Calibration!C21 to match; rerun fields3d so the demagnetization fields follow the new Br. \
-            The value (1.30 or 1.315 T) is to be confirmed with the user before this is applied.",
-        workbook_input_defaults: &[],
+        corrected_formula: "Br of library rows B842SH, BX042SH and BX082SH = 1.30 T \
+            (vendor grade minimum; decision D1), with Calculator!C17, C27 and Calibration!C21 to match. \
+            Rerunning fields3d with the new Br is M3 scope.",
+        workbook_input_defaults: &[
+            ("coupling.magnets.manual_inner_br_T", Literal::Num(1.29)),
+            ("coupling.magnets.manual_outer_br_T", Literal::Num(1.29)),
+            ("calibration.br_T", Literal::Num(1.29)),
+        ],
         workbook_help: &[],
         changes_at_defaults: &[],
+        changes_file: Some("tests/data/deviations/E3.json"),
     },
     Deviation {
         id: DeviationId::E4,
@@ -310,6 +324,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_input_defaults: &[],
         workbook_help: &[],
         changes_at_defaults: &[],
+        changes_file: None,
     },
     Deviation {
         id: DeviationId::E5,
@@ -326,6 +341,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_input_defaults: &[],
         workbook_help: &[],
         changes_at_defaults: &[],
+        changes_file: None,
     },
     Deviation {
         id: DeviationId::E6,
@@ -337,6 +353,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_input_defaults: &[],
         workbook_help: &[],
         changes_at_defaults: &[],
+        changes_file: None,
     },
     Deviation {
         id: DeviationId::E7,
@@ -362,6 +379,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_input_defaults: &[],
         workbook_help: &[],
         changes_at_defaults: &[],
+        changes_file: None,
     },
     Deviation {
         id: DeviationId::E8,
@@ -379,6 +397,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_input_defaults: &[],
         workbook_help: &[],
         changes_at_defaults: &[],
+        changes_file: None,
     },
     Deviation {
         id: DeviationId::E9,
@@ -396,6 +415,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_input_defaults: &[],
         workbook_help: &[],
         changes_at_defaults: &[],
+        changes_file: None,
     },
     Deviation {
         id: DeviationId::E10,
@@ -415,6 +435,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_input_defaults: &[],
         workbook_help: &[],
         changes_at_defaults: &[],
+        changes_file: None,
     },
     Deviation {
         id: DeviationId::E11,
@@ -426,6 +447,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_input_defaults: &[],
         workbook_help: &[],
         changes_at_defaults: &[],
+        changes_file: None,
     },
     Deviation {
         id: DeviationId::E12,
@@ -445,6 +467,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_input_defaults: &[],
         workbook_help: &[],
         changes_at_defaults: &[],
+        changes_file: None,
     },
     Deviation {
         id: DeviationId::E13,
@@ -457,6 +480,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_input_defaults: &[],
         workbook_help: &[],
         changes_at_defaults: &[],
+        changes_file: None,
     },
     Deviation {
         id: DeviationId::E14,
@@ -470,6 +494,7 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_input_defaults: &[],
         workbook_help: &[],
         changes_at_defaults: &[],
+        changes_file: None,
     },
 ];
 
@@ -571,6 +596,11 @@ mod tests {
                 "{} is Planned but rewords help",
                 d.id
             );
+            assert!(
+                d.changes_file.is_none(),
+                "{} is Planned but names a golden file",
+                d.id
+            );
         }
     }
 
@@ -644,6 +674,7 @@ mod tests {
             workbook_input_defaults: &[("br_T", Literal::Num(1.29))],
             workbook_help: &[],
             changes_at_defaults: &[],
+            changes_file: None,
         }];
 
         #[test]

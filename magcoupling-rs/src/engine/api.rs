@@ -339,8 +339,14 @@ mod tests {
 
     #[test]
     fn paths_match_the_python_api() {
+        let workbook = DesignInputs::defaults_with(Deviations::NONE);
+        assert_eq!(workbook.get("calibration.br_T"), Some(Value::Num(1.29)));
         let inputs = DesignInputs::default();
-        assert_eq!(inputs.get("calibration.br_T"), Some(Value::Num(1.29)));
+        assert_eq!(
+            inputs.get("calibration.br_T"),
+            Some(Value::Num(1.30)),
+            "E3 corrects the default"
+        );
         let rows = result_rows(&compute_all(&inputs));
         assert!(rows.iter().any(
             |r| r.path == "calibration.f_cal_updated" && r.meta.cell == Some("Calibration!C9")
@@ -375,16 +381,25 @@ mod tests {
             DesignInputs::default()
         );
         let workbook = DesignInputs::defaults_with(Deviations::NONE);
+        let corrected = DesignInputs::default();
+        // E1: the adhesive shear modulus.
         assert_eq!(
             workbook.temperature.mismatch.adhesive_shear_modulus_GPa,
             0.55
         );
         assert_eq!(
-            DesignInputs::default()
-                .temperature
-                .mismatch
-                .adhesive_shear_modulus_GPa,
+            corrected.temperature.mismatch.adhesive_shear_modulus_GPa,
             0.107
         );
+        // E3: the manual and calibration remanence follow the N42SH library rows.
+        let br = |inputs: &DesignInputs| {
+            [
+                inputs.coupling.magnets.manual_inner_br_T,
+                inputs.coupling.magnets.manual_outer_br_T,
+                inputs.calibration.br_T,
+            ]
+        };
+        assert_eq!(br(&workbook), [1.29; 3]);
+        assert_eq!(br(&corrected), [1.30; 3]);
     }
 }
