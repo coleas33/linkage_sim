@@ -334,4 +334,72 @@ fn a_code_outside_the_choices_gives_nan_not_another_material() {
             ),
         ]
     );
+    // An unknown back iron is no material: no warning rule reads it (decision D3).
+    assert_eq!(fired(&inputs), Vec::<&str>::new());
+}
+
+/// The warning rules that fire for `inputs` (every correction on), by id.
+fn fired(inputs: &DesignInputs) -> Vec<&'static str> {
+    use magcoupling::engine::meta::ResultSet;
+    use magcoupling::engine::warnings::WARNING_RULES;
+    let w = compute_all(inputs).warnings;
+    WARNING_RULES
+        .iter()
+        .filter(|rule| w.get(rule.id) == Some(Value::Text(rule.text.to_owned())))
+        .map(|rule| rule.id)
+        .collect()
+}
+
+#[test]
+fn each_warning_fires_on_the_design_that_meets_its_condition() {
+    // Spec, Addendum testing: "each warning rule fires exactly on its condition", end to
+    // end. The ferromagnetic-sleeve rule has no listed sleeve that meets it (all four are
+    // non-magnetic); src/engine/warnings.rs tests it directly.
+    let open_circuit = ["non_ferromagnetic_back_iron", "cte_mismatch_with_magnets"];
+    assert_eq!(fired(&DesignInputs::default()), Vec::<&str>::new());
+    let mut no_iron = DesignInputs::default();
+    no_iron.coupling.backiron = 0; // the workbook's aluminium hub, cup and boss
+    assert_eq!(fired(&no_iron), open_circuit);
+    for code in [7, 8] {
+        assert_eq!(fired(&with_back_iron(code)), open_circuit, "{code}");
+    }
+    for code in [3, 4, 5, 6] {
+        // 12L14 and 17-4PH have no design flux density of their own; 416's Bsat is 1.60 T.
+        assert_eq!(fired(&with_back_iron(code)), ["low_saturation"], "{code}");
+    }
+    assert_eq!(
+        fired(&with_back_iron(2)),
+        Vec::<&str>::new(),
+        "1018: 1.7 T sourced"
+    );
+    for code in 2..=4 {
+        let mut inputs = DesignInputs::default();
+        inputs.materials.parts.sleeve_liner = code;
+        assert_eq!(fired(&inputs), Vec::<&str>::new(), "sleeve {code}");
+    }
+    let mut hot = DesignInputs::default();
+    hot.temperature.slip_loss.sigma_316_S_m = 5e6; // typed: more conductive than 316L
+    assert_eq!(fired(&hot), ["high_conductivity_sleeve_or_liner"]);
+    let mut stiff = DesignInputs::default();
+    stiff.materials.steel.cte_per_C = 16e-6; // typed: 16.8e-6 /°C from the magnets' -0.8e-6
+    assert_eq!(fired(&stiff), ["cte_mismatch_with_magnets"]);
+    for code in [1, 2, 3] {
+        let mut bare = with_back_iron(code);
+        bare.materials.nickel.thickness_mm = 0.0;
+        let want: Vec<&str> = if code == 3 {
+            vec!["low_saturation", "uncoated_low_alloy_steel"]
+        } else {
+            vec!["uncoated_low_alloy_steel"]
+        };
+        assert_eq!(fired(&bare), want, "{code}");
+    }
+    for code in [4, 5, 6] {
+        // 416 and 17-4PH are stainless: unplated, only their saturation warns.
+        let mut bare = with_back_iron(code);
+        bare.materials.nickel.thickness_mm = 0.0;
+        assert_eq!(fired(&bare), ["low_saturation"], "{code}");
+    }
+    let mut bare_304 = with_back_iron(7);
+    bare_304.materials.nickel.thickness_mm = 0.0;
+    assert_eq!(fired(&bare_304), open_circuit, "stainless needs no plating");
 }

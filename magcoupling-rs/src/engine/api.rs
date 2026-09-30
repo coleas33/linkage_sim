@@ -34,6 +34,7 @@ use super::metal_design::{self, MetalDesignInputs, MetalDesignResults, RetainerR
 use super::model::{self, CouplingInputs, MassResults, ModelResults};
 use super::sweeps::{self, SweepRow};
 use super::temperature::{self, TemperatureInputs, TemperatureResults};
+use super::warnings::{self, WarningResults};
 
 inputs! {
     /// Every editable input, grouped as the Python `DesignInputs` (same order).
@@ -63,6 +64,7 @@ results! {
             materials: MaterialsResults,
             temperature: TemperatureResults,
             clamps: ClampResults,
+            warnings: WarningResults,
         }
         tables {
             gap_sweep: SweepRow => TableLayout::RowsDown { sheet: "Gap sweep", first_row: 6 },
@@ -305,6 +307,25 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         body_E_GPa: parts.body.modulus_GPa,
     };
     let temp = temperature::compute(&ti, &links, dev);
+    // Addendum A5: the material consequence warnings, on the materials in effect.
+    let back_iron = parts.back_iron.material;
+    let warn = warnings::compute(&warnings::WarningInputs {
+        circuit_backiron: parts.backiron,
+        sleeve_ferromagnetic: parts.sleeve_liner.material.is_some_and(|m| m.ferromagnetic),
+        sleeve_sigma_S_m: parts.sleeve_liner.props.sigma_S_m,
+        back_iron_known: back_iron.is_some(),
+        back_iron_bsat_T: back_iron.and_then(|m| m.bsat_T.value),
+        back_iron_design_flux_sourced: back_iron
+            .is_some_and(|m| parts.back_iron.is_default || m.design_flux_density_T.is_some()),
+        back_iron_needs_plating: back_iron.is_some_and(|m| m.needs_plating),
+        plating_mm: mat_in.nickel.thickness_mm,
+        hub_cte_per_C: if parts.backiron == 1 {
+            parts.steel.cte_per_C
+        } else {
+            parts.body.cte_per_C
+        },
+        magnet_cte_per_C: ti.mismatch.ndfeb_cte_per_C,
+    });
 
     let alloy = if inputs.clamps.alloy == 1 {
         &materials::AL7075
@@ -359,6 +380,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         materials: matr,
         temperature: temp,
         clamps: clr,
+        warnings: warn,
         gap_sweep: gap,
         pole_sweep: pole,
     }
