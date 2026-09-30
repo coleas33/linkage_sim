@@ -11,7 +11,11 @@ deviation registry.
 
 **Status:** M2 complete: every Python module except `fields3d` (M3) is ported;
 workbook parity covers all 1,149 checks; E1 to E14 applied (decisions D1 to D7
-as recorded).
+as recorded). Addendum A-1 (data and physics) complete: the A6 grade table and
+the parts' vendor data, any grade with manual dimensions, the A5 materials
+library with per-part selectors, physics links and six warnings, and E15 to E20
+applied (Addendum A decisions, approved 2026-09-30). Next: Addendum A-2
+(parameters and sizing), A-3 (explanations), then M4.
 
 The 1,149 checks are 330 result cells, 659 table cells (494 sweep cells and 165
 screw-table cells) and 160 default inputs. The corrections are listed under

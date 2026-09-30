@@ -5,6 +5,23 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-30 — Magcoupling Addendum A-1: data and physics (grades, materials, E15-E20)
+- `magcoupling-rs`: the A6 grade table (`grades.rs`, 17 grades cited per value) and the parts' vendor
+  data (coating, magnetization, vendor page); any grade with manual dimensions (Rust-only
+  `coupling.magnets.grade_inner`/`grade_outer`); the A5 materials library (`material_library.rs`, 14
+  materials) with Rust-only per-part selectors `materials.parts.*` whose default is the workbook
+  material (the inputs), physics links (circuit, design flux density, conductivity, density, specific
+  heat, expansion and modulus; the C6 override) and six warnings (`warnings.rs`, `DesignResults::warnings`).
+- Corrections E15 (heat capacity), E16 (removed web disc), E17 (aluminium eddy losses, T1 with three
+  Rust-only free-space fields), E18 (aluminium hub mismatch screen), E19 (SuperMagnetMan arcs per the
+  vendor grid) and E20 (each ring's own coercivity, Br and rating, the weaker ring governing; ferrite limited
+  on the cold side), each with the
+  report's changed-cell tables or probes as expected values. Registry: `Approval`, `depends_on`,
+  `Deviations::with/without` (decision 15).
+- Rust-only inputs (`param_rust_only`): no cell, skipped by the metadata tests, left out by
+  gen_differential.py. Parity (1,149 checks) and the differential data are unchanged; the default
+  headline with every correction on is unchanged (2.688 N·m, 93.06 °C, M4 x 14).
+
 ## 2026-09-30 — Magcoupling Addendum A verification (data tables, E15-E18, defaults)
 - `docs/analyses/2026-09-30-magcoupling-addendum-a-verification.md` and
   `...-addendum-a-data.json`: the A6 grade table (17 grades, K&J-minimum

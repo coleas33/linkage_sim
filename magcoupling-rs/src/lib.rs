@@ -4,8 +4,11 @@
 //! `magnetic_coupling_torque_calculator.xlsx`. The vendored Python package in
 //! `reference/magcoupling-py/` is the oracle: every result must match the
 //! workbook snapshot and the Python engine, except where an approved
-//! correction from the M1 math audit is registered in
-//! [`engine::deviations::REGISTRY`].
+//! correction (the M1 math audit's E1 to E14, the Addendum A verification's E15
+//! to E20) is registered in [`engine::deviations::REGISTRY`]. The Addendum A
+//! inputs the Python engine does not have (part materials, grades, the
+//! coercivity source, the E17 free-space fields) are Rust-only and default to
+//! the ported behaviour.
 //!
 //! Spec: `docs/superpowers/specs/2026-09-28-magcoupling-calculator-design.md`.
 //!
