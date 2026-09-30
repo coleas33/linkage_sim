@@ -30,7 +30,7 @@ use std::f64::consts::PI;
 use super::compat::{py_max, py_min};
 use super::deviations::{DeviationId, Deviations};
 use super::meta::{col, rows};
-use super::model::{at_pull_out, shear_stress};
+use super::model::{at_pull_out, corner_radius, shear_stress};
 
 /// Corner gaps of the gap sweep [mm] (rows 6-18).
 pub const GAP_SWEEP_CORNER_GAPS_MM: [f64; 13] = [
@@ -114,7 +114,7 @@ fn row(
     let n = npole as f64;
     let r_face = a_i + ctx.t_i;
     let F = (if ctx.faceted == 1 {
-        (r_face.powi(2) + (ctx.w_i / 2.0).powi(2)).sqrt()
+        corner_radius(r_face, ctx.w_i)
     } else {
         r_face
     }) + corner_gap;

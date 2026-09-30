@@ -24,9 +24,9 @@ use std::f64::consts::PI;
 
 use super::compat::py_min;
 use super::constants::MU0;
-use super::deviations::{DeviationId, Deviations};
+use super::deviations::Deviations;
 use super::meta::{NumOrText, inputs, out, param, results};
-use super::model::peak_off_half_pitch;
+use super::model::{br_factor, corner_radius, peak_angle, tau_at};
 
 inputs! {
     /// Prototype inputs (Calibration!C5:C25, C47:C48).
@@ -125,7 +125,7 @@ pub const NOT_APPLICABLE: &str = "n.a.";
 pub fn compute(c: &CalibrationInputs, dev: Deviations) -> CalibrationResults {
     let poles = c.total_magnets as f64 / 2.0;
     let r_face = c.apothem_mm + c.magnet_thickness_mm;
-    let r_corner = (r_face.powi(2) + (c.magnet_width_mm / 2.0).powi(2)).sqrt();
+    let r_corner = corner_radius(r_face, c.magnet_width_mm);
     let corner_gap = if c.gap_definition == 0 {
         c.spacing_mm
     } else {
@@ -142,7 +142,7 @@ pub fn compute(c: &CalibrationInputs, dev: Deviations) -> CalibrationResults {
         1.0,
         c.magnet_width_mm / (2.0 * PI * (a_o + c.magnet_thickness_mm / 2.0) / poles),
     );
-    let br_t = c.br_T * (1.0 + c.alpha_br_per_C * (c.test_temp_C - 20.0));
+    let br_t = c.br_T * br_factor(c.alpha_br_per_C, c.test_temp_C);
     let tau_p = 2.0 * PI * r_g / poles;
     let f_end = 1.0 - c.c_end * tau_p / c.magnet_length_mm;
 
@@ -161,20 +161,12 @@ pub fn compute(c: &CalibrationInputs, dev: Deviations) -> CalibrationResults {
 
     // E7: every harmonic at the true pull-out angle when half a pitch is not the maximum.
     let amps = [amp_n(1), amp_n(3), amp_n(5)];
-    let peak = if dev.is_on(DeviationId::E7) {
-        peak_off_half_pitch(amps)
-    } else {
-        None
+    let peak = peak_angle(amps, dev);
+    let tau_n = |a: f64, n: u32| match peak {
+        Some(x) => tau_at(a, n, x),
+        None => a * (f64::from(n) * PI / 2.0).sin(), // the workbook expression, bit for bit
     };
-    let tau_at = |a: f64, n: f64| match peak {
-        Some(x) => a * (n * x).sin(),
-        None => a * (n * PI / 2.0).sin(), // the workbook expression, bit for bit
-    };
-    let (t1, t3, t5) = (
-        tau_at(amps[0], 1.0),
-        tau_at(amps[1], 3.0),
-        tau_at(amps[2], 5.0),
-    );
+    let (t1, t3, t5) = (tau_n(amps[0], 1), tau_n(amps[1], 3), tau_n(amps[2], 5));
     let t2d = (t1 + t3 + t5) * 2.0 * PI * (r_g / 1000.0).powi(2) * (c.magnet_length_mm / 1000.0);
     let model = t2d * f_end * c.f_cal_original;
     let (interp, interp_err) = if (1.0..=1.5).contains(&corner_gap) {

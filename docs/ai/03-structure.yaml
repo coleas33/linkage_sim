@@ -43,7 +43,7 @@ magcoupling_rs:
     constants: constants.rs (MU0 = 1.256637e-06, the workbook's rounded value; NDFEB_DENSITY_G_MM3)
     library: library.rs (Magnet library rows, workbook values, and the exact-text lookup; br_T applies E3)
     calibration: calibration.rs (Calibration sheet, 23 result cells, 16 default inputs)
-    model: "model.rs (Calculator sheet: inputs, ModelResults 73 result cells, HARMONICS [1, 3, 5], peak_off_half_pitch and at_pull_out (E7); mass_estimate and MassResults, 6 result cells)"
+    model: "model.rs (Calculator sheet: inputs, ModelResults 73 result cells, HARMONICS [1, 3, 5], peak_off_half_pitch, peak_angle (the one E7 gate), tau_at and at_pull_out (E7), corner_radius and br_factor (shared across sheets); mass_estimate and MassResults, 6 result cells)"
     metal_design: "metal_design.rs (Metal design sheet: MetalDesignInputs 48 fields; retainers, 9 result cells; compute, MetalDesignResults 49 result cells; VALIDATION_ITEMS)"
     materials: "materials.rs (Materials sheet: inputs; AL7075 and AL6061 alloys; ScrewClasses::proof, NaN for a code outside 1-3; compute, MaterialsResults 7 result cells)"
     temperature: "temperature.rs (Temperature design sheet: 7 input groups, 37 cells; ADHESIVES table and selected_adhesive, NO_ADHESIVE (NaN, \"#N/A\") for a code outside 1-4; TemperatureLinks; compute, TemperatureResults 130 result cells and the uncelled adhesive name; demag_onset_C, volkersen_peak_shear_MPa)"

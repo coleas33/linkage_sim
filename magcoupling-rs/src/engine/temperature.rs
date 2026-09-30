@@ -33,6 +33,7 @@ use std::f64::consts::PI;
 use super::compat::{py_max, py_min, text0};
 use super::deviations::{DeviationId, Deviations};
 use super::meta::{NumOrText, inputs, out, out_uncelled, param, results};
+use super::model::br_factor;
 
 // =========================================================================== inputs
 inputs! {
@@ -685,7 +686,7 @@ pub fn compute(
         on(d.h_rev_single_ring_kA_m),
     );
     let mag_lim = on_lp - d.design_margin_C;
-    let thf = |T: f64| (1.0 + k.alpha_br * (T - 20.0)).powi(2);
+    let thf = |T: f64| br_factor(k.alpha_br, T).powi(2);
     let demag = DemagResults {
         br20_T: k.br20_T,
         alpha_br: k.alpha_br,

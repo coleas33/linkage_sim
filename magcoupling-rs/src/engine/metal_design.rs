@@ -14,6 +14,7 @@ use std::f64::consts::PI;
 use super::compat::py_max;
 use super::deviations::{DeviationId, Deviations};
 use super::meta::{NumOrText, inputs, out, param, results};
+use super::model::{br_factor, corner_radius};
 
 inputs! {
     /// Metal design inputs (Metal design!C7:C190).
@@ -329,9 +330,7 @@ pub fn retainers(
     let sleeve_id = if dev.is_on(DeviationId::E8) {
         2.0 * (inner_corner_radius_mm + md.sleeve_bedding_mm)
     } else {
-        2.0 * (((inner_back_apothem_mm + inner_thickness_mm).powi(2)
-            + (inner_width_mm / 2.0).powi(2))
-        .sqrt()
+        2.0 * (corner_radius(inner_back_apothem_mm + inner_thickness_mm, inner_width_mm)
             + md.sleeve_bedding_mm)
     };
     let sleeve_od = sleeve_id + 2.0 * md.sleeve_mm;
@@ -389,7 +388,7 @@ pub fn compute(
     proto_test_temp_C: f64,
     _dev: Deviations,
 ) -> MetalDesignResults {
-    let th = |T: f64| 1.0 + alpha_br * (T - 20.0); // Python lambda th
+    let th = |T: f64| br_factor(alpha_br, T); // Python lambda th
     let cold = torque_20C_Nm * th(md.min_temp_C).powi(2);
     let hot_low = torque_op_Nm * (1.0 - md.variation);
     let cold_high = cold * (1.0 + md.variation);

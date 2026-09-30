@@ -3,7 +3,9 @@
 //! Port of `reference/magcoupling-py/magcoupling/model.py`: the magnet and
 //! coupling inputs, the 73 result cells ([`ModelResults`]), and the helpers
 //! (`resolve_magnets`, `select_calibration_factor`, `geometry_factor`,
-//! `harmonic_amplitude`, `shear_stress`, shared with the sweeps).
+//! `harmonic_amplitude`, `shear_stress`, shared with the sweeps). Two formulas
+//! several sheets share live here once, so they stay bit-identical everywhere:
+//! `corner_radius` (√(r_face² + (w/2)²)) and `br_factor` (1 + α (T − 20 °C)).
 //! `mass_estimate` (Calculator rows 110-115) is ported with `MassResults`.
 //!
 //! The harmonic set is the workbook's fixed 1, 3, 5 ([`HARMONICS`]); selecting
@@ -14,7 +16,8 @@
 //! remanence, via `resolve_magnets`, and the manual Br defaults C17 and C27),
 //! E6 (Calculator!C63, the ring wall at the flats without the outer
 //! bondline), E7 (pull-out at the maximum over angle,
-//! [`peak_off_half_pitch`] and `at_pull_out`, shared with the sweeps), E8
+//! [`peak_off_half_pitch`]; `peak_angle`, the one E7 gate, and `tau_at`, shared
+//! with the sweeps and Calibration through `at_pull_out` or directly), E8
 //! (arc mode: Calculator!C9 from the corner radius C55, the round pocket in
 //! C111), E9 (no back iron: aluminium cup and boss in C111 and C113, as the
 //! hub C112 already is) and E10 (Calculator!C103, the gap flux density from
@@ -368,6 +371,21 @@ pub fn harmonic_amplitude(br_T: f64, n: u32, fill: f64) -> f64 {
     br_T * (4.0 / (n * PI)) * (n * fill * PI / 2.0).sin()
 }
 
+/// Corner radius of a flat block on a polygon, √(r_face² + (w/2)²): `r_face_mm`
+/// the block's face apothem (back apothem plus thickness), `width_mm` its
+/// tangential width. The one formula for Calculator C55, the E8 workbook
+/// branches, the sweeps, Calibration and the Metal design sleeve.
+pub(crate) fn corner_radius(r_face_mm: f64, width_mm: f64) -> f64 {
+    (r_face_mm.powi(2) + (width_mm / 2.0).powi(2)).sqrt()
+}
+
+/// Reversible remanence factor at `temp_C`, 1 + α (T − 20 °C): Br(T) = Br20 · factor.
+/// The one formula for the Calculator, Calibration, Metal design and Temperature design.
+#[allow(non_snake_case)] // unit suffix, as the Python names
+pub(crate) fn br_factor(alpha_br: f64, temp_C: f64) -> f64 {
+    1.0 + alpha_br * (temp_C - 20.0)
+}
+
 /// Per-harmonic pull-out shear stress [Pa] and its parts, for HARMONICS.
 #[allow(clippy::too_many_arguments)] // Python signature
 pub fn shear_stress(
@@ -452,8 +470,26 @@ pub fn peak_off_half_pitch(a: [f64; 3]) -> Option<f64> {
         .map(|(x, _)| x)
 }
 
+/// The E7 gate every harmonic sum shares (the pull-out, the two circuit sums
+/// C95 and C96, the sweep rows, Calibration C40-C42): the angle of the true
+/// pull-out when E7 is on and half a pitch is not the maximum of the curve with
+/// amplitudes `a` ([`peak_off_half_pitch`]). `None` means: keep the workbook's
+/// half-pitch expression, bit for bit.
+pub(crate) fn peak_angle(a: [f64; 3], dev: Deviations) -> Option<f64> {
+    if dev.is_on(DeviationId::E7) {
+        peak_off_half_pitch(a)
+    } else {
+        None
+    }
+}
+
+/// One harmonic's term at electrical angle `x` (E7): amplitude `a` times sin(n x).
+pub(crate) fn tau_at(a: f64, n: u32, x: f64) -> f64 {
+    a * (f64::from(n) * x).sin()
+}
+
 /// E7 for one circuit: every harmonic's `tau` at the true pull-out angle when
-/// half a pitch is not the maximum ([`peak_off_half_pitch`] on the amplitudes
+/// half a pitch is not the maximum ([`peak_angle`] on the amplitudes
 /// B_in,n·B_on,n/(2μ0)·S_n of the circuit `backiron` selects). Returns `h`
 /// unchanged, bit for bit, when E7 is off or half a pitch is the maximum.
 /// Shared by [`compute`] and the sweep rows.
@@ -465,11 +501,9 @@ pub(crate) fn at_pull_out(
 ) -> [Harmonic; 3] {
     let amplitude = |x: &Harmonic| x.bi * x.bo / (2.0 * mu0) * x.s(backiron);
     let mut h_pull = h;
-    if dev.is_on(DeviationId::E7)
-        && let Some(x) = peak_off_half_pitch(h.map(|hn| amplitude(&hn)))
-    {
+    if let Some(x) = peak_angle(h.map(|hn| amplitude(&hn)), dev) {
         for hn in h_pull.iter_mut() {
-            hn.tau = amplitude(hn) * (f64::from(hn.n) * x).sin();
+            hn.tau = tau_at(amplitude(hn), hn.n, x);
         }
     }
     h_pull
@@ -496,7 +530,7 @@ pub fn compute(
     let L = py_min(mi.length_mm, mo.length_mm);
     let r_face_i = a_i + mi.thickness_mm;
     let r_corner_i = if ci.faceted == 1 {
-        (r_face_i.powi(2) + (mi.width_mm / 2.0).powi(2)).sqrt()
+        corner_radius(r_face_i, mi.width_mm)
     } else {
         r_face_i
     };
@@ -505,9 +539,7 @@ pub fn compute(
     let corner_gap = if dev.is_on(DeviationId::E8) {
         face_gap_mm - (r_corner_i - r_face_i)
     } else {
-        face_gap_mm
-            - (((a_i + mi.thickness_mm).powi(2) + (mi.width_mm / 2.0).powi(2)).sqrt()
-                - (a_i + mi.thickness_mm))
+        face_gap_mm - (corner_radius(r_face_i, mi.width_mm) - r_face_i)
     };
     let hub_wall = a_i - bond_inner_mm - ci.bore_mm / 2.0;
 
@@ -560,8 +592,8 @@ pub fn compute(
         mo.width_mm / (2.0 * PI * (A_o + mo.thickness_mm / 2.0) / N),
     );
 
-    let bri = mi.br_T * (1.0 + alpha_br * (ci.op_temp_C - 20.0));
-    let bro = mo.br_T * (1.0 + alpha_br * (ci.op_temp_C - 20.0));
+    let bri = mi.br_T * br_factor(alpha_br, ci.op_temp_C);
+    let bro = mo.br_T * br_factor(alpha_br, ci.op_temp_C);
     let h = shear_stress(
         bri,
         bro,
@@ -588,16 +620,11 @@ pub fn compute(
     // E7: each circuit at the maximum of its own torque-angle curve.
     let circuit = |s: fn(&Harmonic) -> f64| {
         let coefficients = h.map(|x| x.bi * x.bo * s(&x));
-        let peak = if dev.is_on(DeviationId::E7) {
-            peak_off_half_pitch(coefficients)
-        } else {
-            None
-        };
-        match peak {
+        match peak_angle(coefficients, dev) {
             Some(x) => h
                 .iter()
                 .zip(coefficients)
-                .fold(0.0, |acc, (hn, c)| acc + c * (f64::from(hn.n) * x).sin()),
+                .fold(0.0, |acc, (hn, c)| acc + tau_at(c, hn.n, x)),
             None => h.iter().fold(0.0, |acc, x| {
                 acc + x.bi * x.bo * s(x) * (f64::from(x.n) * PI / 2.0).sin()
             }),
@@ -932,6 +959,19 @@ mod tests {
             }
         }
         best.max(torque_at(a, (lo + hi) / 2.0))
+    }
+
+    #[test]
+    fn peak_angle_is_the_e7_gate() {
+        // The one gate every harmonic sum shares: E7 off keeps half a pitch even where it
+        // is a local minimum; E7 on is exactly peak_off_half_pitch.
+        let a = [1.0, 0.2, 0.0];
+        assert_eq!(peak_angle(a, Deviations::NONE), None);
+        let on = peak_angle(a, Deviations::only(DeviationId::E7));
+        assert!(on.is_some());
+        assert_eq!(on, peak_off_half_pitch(a));
+        assert_eq!(peak_angle(a, Deviations::ALL), on);
+        assert_eq!(tau_at(2.0, 3, on.unwrap()), 2.0 * (3.0 * on.unwrap()).sin());
     }
 
     #[test]

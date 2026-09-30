@@ -18,6 +18,14 @@ Reverse chronological (newest at top).
   amplitude triples against a grid, a third of them in the band),
   `a_vanishing_fifth_harmonic_does_not_lose_the_peak`, and
   `e7_finds_the_peak_at_a_fill_of_exactly_0_4` (Calculator and Calibration).
+- DRY: the E7 gate is one function, `model::peak_angle` (with `tau_at`, the
+  a·sin(n x) term), used by `at_pull_out` (pull-out and sweep rows), the two
+  circuit sums C95 and C96, and Calibration C40-C42. The corner radius
+  √(r_face² + (w/2)²) and the Br temperature factor 1 + α (T − 20 °C) are
+  `model::corner_radius` and `model::br_factor`, used by the Calculator, the
+  sweeps, Calibration, Metal design and Temperature design. Bit for bit: every
+  result of 1,504 seeded input sets hashed identically under NONE, ALL and
+  only(E7) before and after (scratch harness, not committed).
 
 ## 2026-09-29 — Magcoupling M2: engine port complete
 - Every Python module except `fields3d` (M3) is ported to `magcoupling-rs/`,
