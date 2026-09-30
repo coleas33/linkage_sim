@@ -168,6 +168,17 @@ fn the_cap_choice_prices_the_cap_only() {
             Value::Num(e.sigma_S_m),
             "{id}"
         );
+        // The heat capacity C141 carries the cap as cap mass (C180) x its specific heat
+        // (Temperature design C140 = 900 by default); the mass itself follows the density.
+        let heat = |m: &BTreeMap<String, Value>| num(&m["Temperature design!C141"]);
+        let cap_g = |m: &BTreeMap<String, Value>| num(&m["Metal design!C180"]);
+        assert!(
+            close(
+                heat(&c) - heat(&base),
+                (cap_g(&c) * e.cp_J_kgK - cap_g(&base) * 900.0) / 1000.0
+            ),
+            "{id} cap heat"
+        );
         assert_eq!(
             c["Metal design!C188"], base["Metal design!C188"],
             "{id} adapter"
@@ -201,18 +212,40 @@ fn a_non_ferromagnetic_back_iron_selects_the_free_space_circuit() {
 
 #[test]
 fn a_non_ferromagnetic_back_iron_is_the_hub_cup_and_boss_material() {
-    // With no back iron the body is the picked material: density (E9, C111-C113),
-    // specific heat (E15), conductivity (E17) and expansion and modulus (E18). The
-    // default choice with C6 = 0 keeps the workbook's aluminium.
+    // With no back iron the body is the picked material: density (E9, C111-C113, and
+    // E16's removed web disc, Metal design C189), specific heat (E15, C141), conductivity
+    // (E17) and expansion and modulus (E18). The default choice with C6 = 0 keeps the
+    // workbook's aluminium.
     let mut no_iron = DesignInputs::default();
     no_iron.coupling.backiron = 0;
     let aluminium = cell_values_for(&no_iron, Deviations::ALL);
     let c304 = cell_values_for(&with_back_iron(7), Deviations::ALL);
     let e304 = material("304_annealed").expect("304").engine;
     let ratio = |cell: &str| num(&c304[cell]) / num(&aluminium[cell]);
-    for cell in ["Calculator!C111", "Calculator!C112", "Calculator!C113"] {
+    for cell in [
+        "Calculator!C111",
+        "Calculator!C112",
+        "Calculator!C113",
+        "Metal design!C189",
+    ] {
         assert!(close(ratio(cell), e304.density_g_mm3 / 0.0027), "{cell}");
     }
+    // E15 prices the cup, boss and hub at the body's specific heat (the aluminium's
+    // Temperature design C140 = 900 by default); every other C141 term is the same.
+    let body_g = |m: &BTreeMap<String, Value>| {
+        ["Calculator!C111", "Calculator!C112", "Calculator!C113"]
+            .iter()
+            .map(|cell| num(&m[*cell]))
+            .sum::<f64>()
+    };
+    let heat = |m: &BTreeMap<String, Value>| num(&m["Temperature design!C141"]);
+    assert!(
+        close(
+            heat(&c304) - heat(&aluminium),
+            (body_g(&c304) * e304.cp_J_kgK - body_g(&aluminium) * 900.0) / 1000.0
+        ),
+        "304 body heat"
+    );
     // E17's closed form is linear in conductivity (same fields and geometry).
     for cell in [
         "Temperature design!C123",
