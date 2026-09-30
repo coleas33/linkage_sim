@@ -847,6 +847,8 @@ Seven headline paths lie outside the chains: `model.gearbox_input_ripple_Nm`, `m
 
 ## 8. Decisions for the user
 
+**Approved (user, 2026-09-30): option A on all 31 decisions.** The spec text fixes of decision 30 are applied in the same commit.
+
 The recommended option is always A, with a one-line reason. Decisions 1–7 concern the data tables, 8–16 the corrections, 17–28 the defaults mismatches (one each; defaults mismatch 4 is inside decision 2), 29 the harmonic peak search, 30 the spec text, and 31 the A2 scope.
 
 1. **A6 grade table and part mapping (NdFeB basis).**

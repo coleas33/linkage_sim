@@ -5,6 +5,21 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-30 — Magcoupling Addendum A verification (data tables, E15-E18, defaults)
+- `docs/analyses/2026-09-30-magcoupling-addendum-a-verification.md` and
+  `...-addendum-a-data.json`: the A6 grade table (17 grades, K&J-minimum
+  NdFeB basis, Arnold Recoma SmCo, ferrite Y30, bonded NdFeB), the 15-part
+  mapping and the A5 materials table (14 entries), every value cited and
+  re-checked by an independent skeptic; E15-E17 (plus candidate E18)
+  computed audit-style at back iron = 0; a defaults-exactness check of
+  grades, materials, housing autofit and the generalized harmonic search;
+  the A2 scope count (418 result fields; v1 covers about 159).
+- The user approved option A on all 31 decisions (2026-09-30). The spec's
+  Addendum A text gains N50/N50M, the 20 mm bay in the envelope, and
+  "design flux density feeds the wall check".
+- Next: the Addendum A engine plans (data and physics; parameters and
+  sizing; explainability), then M4.
+
 ## 2026-09-29 — Magcoupling M2: final review fix wave
 - E7 (`model::peak_off_half_pitch`): the quadratic in cos² x now takes its
   roots without cancellation (q = −(qb + sign(qb)·√disc)/2, roots q/qa and

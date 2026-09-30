@@ -294,8 +294,8 @@ the M2 parity and differential tests are unchanged.
 - **Housing autofit.** Cup, sleeve, liner, cap and the axial stack are always
   derived from the magnet layout and the calculator's existing clearance and
   wall rules, in both modes, and the geometry view redraws them live.
-- **Space claim.** The envelope (43 mm diameter × 35 mm overall length, from
-  the metal-design inputs) is drawn as a dashed outline. Exceeding it shows a
+- **Space claim.** The envelope (43 mm diameter × 35 mm overall length, and
+  the 20 mm large-diameter bay, from the metal-design inputs) is drawn as a dashed outline. Exceeding it shows a
   red callout on the view naming the overshoot in mm per axis, plus a red
   dashboard badge.
 
@@ -376,7 +376,8 @@ the M2 parity and differential tests are unchanged.
   - a ferromagnetic back-iron choice selects the steel circuit, and a
     non-ferromagnetic one selects the free-space circuit (replacing the bare
     `backiron` selector, which stays available as an override);
-  - saturation feeds the wall-thickness check;
+  - the design flux density feeds the wall-thickness check (saturation flux
+    density is informational and drives the low-saturation warning);
   - conductivity feeds slip losses;
   - density feeds mass and inertia;
   - CTE and modulus feed the bond-stress screen.
@@ -403,7 +404,7 @@ the M2 parity and differential tests are unchanged.
 - **Custom dimensions** stay available: pick any grade with manual
   dimensions.
 - **Grades in v1:**
-  - NdFeB N35, N42, N48, N52 (80 °C);
+  - NdFeB N35, N42, N48, N50, N52 (80 °C), and N50M (100 °C);
   - NdFeB N42M (100 °C), N42H (120 °C), N42SH (150 °C), N38UH (180 °C),
     N35EH (200 °C), N33AH (220 °C);
   - SmCo Sm2Co17 grade 26 and grade 30, and SmCo5;
