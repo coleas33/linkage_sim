@@ -72,7 +72,7 @@ major_subsystems:
       - A correction that changes more than 15 cells at defaults is a reviewed golden file (tests/data/deviations); one that changes none carries a registry probe.
       - The engine never panics on inputs; out-of-choice selector codes give NaN or "#N/A"; DesignInputs::validate() at input boundaries; no i64 arithmetic on input-derived values.
       - Rust-only inputs and results (rust_only metadata) have no cell and are skipped by the parity, metadata and differential tests; gen_differential.py never passes a Rust-only input to Python.
-      - Every Rust-only selector's default reproduces the ported behaviour bit for bit: part materials at code 1 are the workbook inputs, a blank grade is the manual mode, coercivity_source 1 with the N42SH grade gives the workbook's 1592 kA/m and -0.005 /C.
+      - "Every Rust-only selector's default reproduces the ported behaviour bit for bit: part materials at code 1 are the workbook inputs, a blank grade is the manual mode, coercivity_source 1 with the N42SH grade gives the workbook's 1592 kA/m and -0.005 /C."
 
 dataflow_on_user_change: |
   user edit -> state.blueprint mutation -> state.push_undo() -> state.rebuild()
