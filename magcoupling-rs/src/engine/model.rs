@@ -910,15 +910,69 @@ mod tests {
         );
         // The outer ring keeps its library part.
         assert_eq!((r.outer_br_T, r.outer_grade.as_str()), (1.29, "N42SH"));
+
+        // Mirror: each ring reads its own grade field. Different grades on the two rings, so a
+        // swapped or copy-pasted field cannot pass (Y30 on both rings would).
+        let mut ci = CouplingInputs::default();
+        ci.magnets.part_inner = String::new();
+        ci.magnets.part_outer = String::new();
+        ci.magnets.grade_inner = "Y30".to_owned();
+        ci.magnets.grade_outer = "N42".to_owned();
+        ci.magnets.manual_inner_br_T = 1.2; // both ignored: the grades supply Br
+        ci.magnets.manual_outer_br_T = 1.1;
+        ci.op_temp_C = 100.0; // over N42's 80 C rating, under Y30's 250 C
+        let r = at(&ci);
+        assert_eq!(
+            (r.outer_br_T, r.outer_tmax_C, r.outer_grade.as_str()),
+            (1.30, NumOrText::Num(80.0), "N42")
+        );
+        assert_eq!(r.outer_temp_check, "OVER the magnet rating");
+        assert_eq!(
+            (r.outer_length_mm, r.outer_thickness_mm),
+            (
+                ci.magnets.manual_outer_length_mm,
+                ci.magnets.manual_outer_thickness_mm
+            )
+        );
+        // The inner ring is unchanged by the outer grade.
+        assert_eq!(
+            (r.inner_br_T, r.inner_tmax_C, r.inner_grade.as_str()),
+            (0.37, NumOrText::Num(250.0), "Y30")
+        );
+        assert_eq!(r.inner_temp_check, "OK");
+
+        // Each grade field alone leaves the other, manual ring manual.
+        let mut ci = CouplingInputs::default();
+        ci.magnets.part_inner = String::new();
+        ci.magnets.grade_outer = "N42".to_owned(); // part_outer is still B842SH: no effect
+        let r = at(&ci);
+        assert_eq!(r.inner_br_T, ci.magnets.manual_inner_br_T);
+        assert_eq!(r.inner_tmax_C, NumOrText::Text(NOT_IN_LIBRARY));
+        assert_eq!(r.inner_grade, "");
+        assert_eq!(r.inner_temp_check, "unknown");
+        assert_eq!((r.outer_br_T, r.outer_grade.as_str()), (1.29, "N42SH"));
+        let mut ci = CouplingInputs::default();
+        ci.magnets.part_outer = String::new();
+        ci.magnets.grade_inner = "Y30".to_owned(); // part_inner is still B842SH: no effect
+        let r = at(&ci);
+        assert_eq!(r.outer_br_T, ci.magnets.manual_outer_br_T);
+        assert_eq!(r.outer_tmax_C, NumOrText::Text(NOT_IN_LIBRARY));
+        assert_eq!(r.outer_grade, "");
+        assert_eq!(r.outer_temp_check, "unknown");
+        assert_eq!((r.inner_br_T, r.inner_grade.as_str()), (1.29, "N42SH"));
     }
 
     #[test]
     fn a_library_part_wins_over_a_grade_and_an_unknown_grade_is_manual() {
         let mut ci = CouplingInputs::default();
         ci.magnets.grade_inner = "Y30".to_owned(); // the part B842SH is in the library
+        ci.magnets.grade_outer = "N42".to_owned(); // likewise for the outer ring
         let r = at(&ci);
         assert_eq!(r, at(&CouplingInputs::default()));
-        assert_eq!(r.inner_grade, "N42SH");
+        assert_eq!(
+            (r.inner_grade.as_str(), r.outer_grade.as_str()),
+            ("N42SH", "N42SH")
+        );
         for text in ["", "y30", "Y30 ", "N 42", "N42"] {
             let mut ci = CouplingInputs::default();
             ci.magnets.part_inner = String::new();
