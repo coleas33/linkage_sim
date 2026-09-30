@@ -693,6 +693,48 @@ fn e8_arc_mode_matches_the_report() {
 }
 
 #[test]
+fn e9_no_back_iron_matches_the_report() {
+    let e9 = &REGISTRY[DeviationId::E9.index()];
+    assert_eq!(e9.status, DeviationStatus::Applied);
+    let no_iron = &e9.probes[0];
+    let corrected = Deviations::only(DeviationId::E9);
+    assert_report(
+        "Calculator!C111",
+        &at_probe("Calculator!C111", no_iron, corrected),
+        20.90,
+        0.005,
+    ); // cup, was 60.75 g
+    assert_report(
+        "Calculator!C113",
+        &at_probe("Calculator!C113", no_iron, corrected),
+        10.59,
+        0.005,
+    ); // boss, was 30.78 g
+    assert_report(
+        "Calculator!C114",
+        &at_probe("Calculator!C114", no_iron, corrected),
+        96.8,
+        0.05,
+    ); // total, was 156.9 g
+    assert_report(
+        "Temperature design!C141",
+        &at_probe("Temperature design!C141", no_iron, corrected),
+        45.8,
+        0.05,
+    ); // was 74.2 J/K
+    assert_eq!(
+        at_probe("Materials!C22", no_iron, corrected),
+        Value::Text("No back iron".into())
+    );
+}
+
+#[test]
+fn e9_leaves_every_default_cell_bit_for_bit() {
+    // The defaults use the steel circuit (coupling.backiron = 1): steel cup and boss, wall advice.
+    assert_bit_for_bit_at_defaults(DeviationId::E9);
+}
+
+#[test]
 fn reworded_help_is_recorded_for_real_fields() {
     let inputs = input_rows(&DesignInputs::default());
     for d in REGISTRY

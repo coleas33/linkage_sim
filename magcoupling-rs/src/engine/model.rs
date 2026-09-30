@@ -14,9 +14,10 @@
 //! remanence, via `resolve_magnets`, and the manual Br defaults C17 and C27),
 //! E6 (Calculator!C63, the ring wall at the flats without the outer
 //! bondline), E7 (pull-out at the maximum over angle,
-//! [`peak_off_half_pitch`] and `at_pull_out`, shared with the sweeps) and E8
+//! [`peak_off_half_pitch`] and `at_pull_out`, shared with the sweeps), E8
 //! (arc mode: Calculator!C9 from the corner radius C55, the round pocket in
-//! C111); planned are E9 (masses), E10 (Calculator!C103).
+//! C111) and E9 (no back iron: aluminium cup and boss in C111 and C113, as the
+//! hub C112 already is); planned is E10 (Calculator!C103).
 
 use std::f64::consts::PI;
 
@@ -732,6 +733,12 @@ pub fn mass_estimate(
         * (r.inner_length_mm * r.inner_width_mm * r.inner_thickness_mm
             + r.outer_length_mm * r.outer_width_mm * r.outer_thickness_mm)
         * NDFEB_DENSITY_G_MM3;
+    // E9: with no intentional back iron the cup and boss are aluminium, as the hub already is.
+    let cup_boss_density = if dev.is_on(DeviationId::E9) && ci.backiron != 1 {
+        al_density_g_mm3
+    } else {
+        steel_density_g_mm3
+    };
     let pocket = r.outer_back_apothem_mm + bond_outer_mm;
     // E8: arcs sit in a round pocket, not a polygon.
     let cavity = if dev.is_on(DeviationId::E8) && ci.faceted != 1 {
@@ -741,7 +748,7 @@ pub fn mass_estimate(
     };
     let m_ring = ((PI * (r.cup_od_mm / 2.0).powi(2) - cavity) * cup_depth_mm
         + PI * ((r.cup_od_mm / 2.0).powi(2) - (ci.bore_mm / 2.0).powi(2)) * web_mm)
-        * steel_density_g_mm3;
+        * cup_boss_density;
     let hub_area = if ci.faceted == 1 {
         N * (ci.inner_back_apothem_mm - bond_inner_mm).powi(2) * (PI / N).tan()
     } else {
@@ -757,7 +764,7 @@ pub fn mass_estimate(
     let m_boss = PI
         * ((boss_od_mm / 2.0).powi(2) - (ci.bore_mm / 2.0).powi(2))
         * boss_length_mm
-        * steel_density_g_mm3;
+        * cup_boss_density;
     let total = m_mag + m_ring + m_hub + m_boss + retainers_g + hardware_g + cap_g + endplates_g;
     MassResults {
         magnets_g: m_mag,
@@ -1005,5 +1012,54 @@ mod tests {
         );
         assert_eq!(r.inner_flat_check, "OK, 0.00 mm slack");
         assert_eq!(r.outer_flat_check, "OK, blocks 0.00 mm apart at the faces");
+    }
+
+    #[test]
+    fn e9_cup_and_boss_follow_the_hub_density() {
+        // The Metal design defaults api::compute passes; retainers, hardware, cap and
+        // end plates are left at 0 because only the densities matter here.
+        let md = super::super::metal_design::MetalDesignInputs::default();
+        let mass = |backiron: i64, dev: Deviations| {
+            let ci = CouplingInputs {
+                backiron,
+                ..CouplingInputs::default()
+            };
+            let r = at(&ci);
+            mass_estimate(
+                &ci,
+                &r,
+                md.bond_inner_mm,
+                md.bond_outer_mm,
+                md.cup_depth_mm,
+                md.web_mm,
+                md.hub_length_mm,
+                md.boss_length_mm,
+                md.boss_od_mm,
+                md.steel_density_g_mm3,
+                md.al_density_g_mm3,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                dev,
+            )
+        };
+        let e9 = Deviations::only(DeviationId::E9);
+        // Steel circuit: the workbook's masses, bit for bit.
+        assert_eq!(mass(1, e9), mass(1, Deviations::NONE));
+        // No back iron (and, like the hub, any code but 1): aluminium cup and boss.
+        let ratio = md.al_density_g_mm3 / md.steel_density_g_mm3;
+        for backiron in [0, 2] {
+            let (off, on) = (mass(backiron, Deviations::NONE), mass(backiron, e9));
+            assert!(close(on.cup_g, off.cup_g * ratio), "{backiron}");
+            assert!(close(on.boss_g, off.boss_g * ratio), "{backiron}");
+            assert_eq!(
+                (on.magnets_g, on.hub_g),
+                (off.magnets_g, off.hub_g),
+                "{backiron}"
+            );
+            let total = on.magnets_g + on.cup_g + on.hub_g + on.boss_g;
+            assert!(close(on.total_g, total), "{backiron}");
+        }
     }
 }

@@ -7,11 +7,12 @@
 //! they are static data, not inputs), [`ScrewClasses::proof`] and the sheet's
 //! results ([`MaterialsResults`], [`compute`], 7 result cells).
 //!
-//! Planned deviations touching this sheet (see
-//! [`crate::engine::deviations::REGISTRY`]): E9 (Materials!C22), E10 (Materials!C20 to C22).
+//! Deviations touching this sheet (see
+//! [`crate::engine::deviations::REGISTRY`]): applied E9 (Materials!C22 reads
+//! "No back iron" when Calculator!C6 = 0); planned E10 (Materials!C20 to C22).
 
 use super::compat::{ceiling, fmt_fixed};
-use super::deviations::Deviations;
+use super::deviations::{DeviationId, Deviations};
 use super::meta::{inputs, out, param, results};
 
 inputs! {
@@ -149,13 +150,17 @@ results! {
 }
 
 /// Cup wall check against the back-iron need, and electroless-nickel pre-plate offsets.
+/// `backiron` is the Calculator selector C6 (1 steel, 0 none); only E9 reads it.
 pub fn compute(
     mat: &MaterialsInputs,
     t_bi_req_mm: f64,
     wall_corner_mm: f64,
-    _dev: Deviations,
+    backiron: i64,
+    dev: Deviations,
 ) -> MaterialsResults {
-    let check = if wall_corner_mm >= t_bi_req_mm {
+    let check = if dev.is_on(DeviationId::E9) && backiron == 0 {
+        "No back iron".to_owned() // as the Calculator's C105/C106 read
+    } else if wall_corner_mm >= t_bi_req_mm {
         "OK".to_owned()
     } else {
         format!(
@@ -186,12 +191,32 @@ mod tests {
         let (needed, corner) = (1.8, 1.8);
         assert_eq!(needed, corner);
         assert_eq!(
-            compute(&mat, needed, corner, Deviations::NONE).cup_wall_check,
+            compute(&mat, needed, corner, 1, Deviations::NONE).cup_wall_check,
             "OK"
         );
         assert_eq!(
-            compute(&mat, 1.90415278222222, 1.8, Deviations::NONE).cup_wall_check,
+            compute(&mat, 1.90415278222222, 1.8, 1, Deviations::NONE).cup_wall_check,
             "Too thin: raise Metal design C122 to at least 2.0 mm" // Materials!C22
+        );
+    }
+
+    #[test]
+    fn e9_no_back_iron_replaces_the_wall_advice_only_at_code_0() {
+        let mat = MaterialsInputs::default();
+        let too_thin = "Too thin: raise Metal design C122 to at least 2.0 mm";
+        let check =
+            |backiron, dev| compute(&mat, 1.90415278222222, 1.8, backiron, dev).cup_wall_check;
+        let e9 = Deviations::only(DeviationId::E9);
+        assert_eq!(check(0, e9), "No back iron");
+        assert_eq!(check(0, Deviations::NONE), too_thin); // the workbook ignores C6 here
+        assert_eq!(check(1, e9), too_thin);
+        // A code outside {0, 1} keeps the wall advice, as the Calculator's C105/C106
+        // test `== 0`; `DesignInputs::validate` reports the code.
+        assert_eq!(check(2, e9), too_thin);
+        // A wall that meets the need still reads "No back iron" with no back iron.
+        assert_eq!(
+            compute(&mat, 1.8, 1.8, 0, e9).cup_wall_check,
+            "No back iron"
         );
     }
 

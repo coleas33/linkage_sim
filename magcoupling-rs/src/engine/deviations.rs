@@ -514,7 +514,7 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E9,
         title: "'No back iron' is applied to the torque but not to the cup's mass and wall check",
         class: DeviationClass::Engine,
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &[
             "Calculator!C6",
             "Calculator!C111",
@@ -527,7 +527,37 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: None,
-        probes: &[],
+        probes: &[Probe {
+            label: "no intentional back iron (coupling.backiron = 0)",
+            inputs: &[("coupling.backiron", Literal::Int(0))],
+            expect: &[
+                CellChange {
+                    cell: "Calculator!C111",
+                    workbook: Literal::Num(60.753684123800234),
+                    corrected: Literal::Num(20.896171609459955),
+                },
+                CellChange {
+                    cell: "Calculator!C113",
+                    workbook: Literal::Num(30.777554908688483),
+                    corrected: Literal::Num(10.585910605536167),
+                },
+                CellChange {
+                    cell: "Calculator!C114",
+                    workbook: Literal::Num(156.86088643049283),
+                    corrected: Literal::Num(96.81172961300027),
+                },
+                CellChange {
+                    cell: "Temperature design!C141",
+                    workbook: Literal::Num(74.18527010448489),
+                    corrected: Literal::Num(45.78201892981087),
+                },
+                CellChange {
+                    cell: "Materials!C22",
+                    workbook: Literal::Text("Too thin: raise Metal design C122 to at least 2.0 mm"),
+                    corrected: Literal::Text("No back iron"),
+                },
+            ],
+        }],
     },
     Deviation {
         id: DeviationId::E10,

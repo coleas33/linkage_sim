@@ -20,8 +20,9 @@
 //!
 //! Deviations touching this sheet (see
 //! [`crate::engine::deviations::REGISTRY`]): applied E1 (Temperature design!C96)
-//! and E5 (C121), both corrected defaults; planned E9, E11 (C91), E12 (C19,
-//! C23, C150 to C153), E13 (C156, C157).
+//! and E5 (C121), both corrected defaults, and E9 (the heat capacity C141
+//! follows the aluminium cup and boss masses through `TemperatureLinks`; no code
+//! here); planned E11 (C91), E12 (C19, C23, C150 to C153), E13 (C156, C157).
 
 use std::f64::consts::PI;
 

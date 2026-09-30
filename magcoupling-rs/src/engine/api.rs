@@ -212,7 +212,13 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         cal_in.test_temp_C,
         dev,
     );
-    let matr = materials::compute(mat_in, m.backiron_needed_mm, md.cup_wall_corner_mm, dev);
+    let matr = materials::compute(
+        mat_in,
+        m.backiron_needed_mm,
+        md.cup_wall_corner_mm,
+        ci.backiron,
+        dev,
+    );
     let links = temperature::TemperatureLinks {
         op_temp_C: ci.op_temp_C,
         npole: ci.npole,
