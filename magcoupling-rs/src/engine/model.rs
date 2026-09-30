@@ -776,6 +776,20 @@ pub fn compute(
     }
 }
 
+/// Whether the cup wall, rear web and boss are aluminium: E9, with no
+/// intentional back iron (`backiron` is Calculator!C6). The one gate the mass
+/// model (C111, C113), the heat capacity (E15) and the removed-disc mass (E16)
+/// read, so they cannot disagree.
+pub(crate) fn cup_is_aluminium(backiron: i64, dev: Deviations) -> bool {
+    dev.is_on(DeviationId::E9) && backiron != 1
+}
+
+/// Whether the keyed hub is aluminium: the workbook prices it so whenever C6 is
+/// not 1 (C112), with or without E9. Read by the mass model, E15 and E18.
+pub(crate) fn hub_is_aluminium(backiron: i64) -> bool {
+    backiron != 1
+}
+
 /// Calculator rows 110-115. Gross solids: no holes, slots or threads subtracted.
 #[allow(non_snake_case, clippy::too_many_arguments)] // Python names and signature
 pub fn mass_estimate(
@@ -802,7 +816,7 @@ pub fn mass_estimate(
             + r.outer_length_mm * r.outer_width_mm * r.outer_thickness_mm)
         * NDFEB_DENSITY_G_MM3;
     // E9: with no intentional back iron the cup and boss are aluminium, as the hub already is.
-    let cup_boss_density = if dev.is_on(DeviationId::E9) && ci.backiron != 1 {
+    let cup_boss_density = if cup_is_aluminium(ci.backiron, dev) {
         al_density_g_mm3
     } else {
         steel_density_g_mm3
@@ -824,10 +838,10 @@ pub fn mass_estimate(
     };
     let m_hub = (hub_area - PI * (ci.bore_mm / 2.0).powi(2))
         * hub_length_mm
-        * (if ci.backiron == 1 {
-            steel_density_g_mm3
-        } else {
+        * (if hub_is_aluminium(ci.backiron) {
             al_density_g_mm3
+        } else {
+            steel_density_g_mm3
         });
     let m_boss = PI
         * ((boss_od_mm / 2.0).powi(2) - (ci.bore_mm / 2.0).powi(2))

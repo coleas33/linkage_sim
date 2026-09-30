@@ -850,7 +850,7 @@ pub const REGISTRY: &[Deviation] = &[
             decisions: &[8, 15],
         },
         depends_on: &[DeviationId::E9],
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &[
             "Calculator!C6",
             "Calculator!C111",
@@ -889,7 +889,32 @@ pub const REGISTRY: &[Deviation] = &[
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: None,
-        probes: &[],
+        probes: &[Probe {
+            label: "no intentional back iron (coupling.backiron = 0), on top of E9 (report 5.4, main column)",
+            inputs: &[("coupling.backiron", Literal::Int(0))],
+            expect: &[
+                CellChange {
+                    cell: "Temperature design!C141",
+                    workbook: Literal::Num(45.78201892981087),
+                    corrected: Literal::Num(63.01541872000666),
+                },
+                CellChange {
+                    cell: "Temperature design!C143",
+                    workbook: Literal::Num(152.60672976603624),
+                    corrected: Literal::Num(210.05139573335552),
+                },
+                CellChange {
+                    cell: "Temperature design!C145",
+                    workbook: Literal::Num(0.00541065752941102),
+                    corrected: Literal::Num(0.003930955795673762),
+                },
+                CellChange {
+                    cell: "Temperature design!C20",
+                    workbook: Literal::Num(66.01060704628003),
+                    corrected: Literal::Num(65.92282367380993),
+                },
+            ],
+        }],
     },
     Deviation {
         id: DeviationId::E16,

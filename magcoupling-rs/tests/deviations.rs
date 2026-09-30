@@ -1164,6 +1164,165 @@ fn e13_leaves_every_default_cell_bit_for_bit() {
     assert_bit_for_bit_at_defaults(DeviationId::E13);
 }
 
+/// `got` is the Addendum A report's figure `want`, printed to 4 significant
+/// figures (report section 5.1): within half a unit of the 4th figure.
+fn assert_sig4(what: &str, got: &Value, want: f64) {
+    let got = num(got);
+    let half = 0.5 * 10f64.powi(want.abs().log10().floor() as i32 - 3);
+    assert!(
+        (got - want).abs() <= half * (1.0 + 1e-9),
+        "{what}: {got} is not the report's {want} (4 s.f.)"
+    );
+}
+
+/// Every celled value for the defaults with `overrides` applied, under `dev`.
+fn cells_with(overrides: &[(&str, Value)], dev: Deviations) -> BTreeMap<String, Value> {
+    cell_values_for(&inputs_with(overrides, dev), dev)
+}
+
+/// A report table of changed cells: (cell, before, after) at 4 significant figures.
+type ReportRows<'a> = &'a [(&'a str, f64, f64)];
+
+/// `before` -> `after` changes exactly the report's cells, to the report's figures.
+fn assert_report_table(
+    label: &str,
+    overrides: &[(&str, Value)],
+    before: Deviations,
+    after: Deviations,
+    rows: ReportRows,
+) {
+    let (b, a) = (cells_with(overrides, before), cells_with(overrides, after));
+    let want: BTreeSet<String> = rows.iter().map(|(c, _, _)| (*c).to_owned()).collect();
+    assert_eq!(changed_cells(&b, &a), want, "{label}: changed cells");
+    for &(cell, was, now) in rows {
+        assert_sig4(&format!("{label} {cell} before"), &b[cell], was);
+        assert_sig4(&format!("{label} {cell} after"), &a[cell], now);
+    }
+}
+
+const NO_BACK_IRON: [(&str, Value); 1] = [("coupling.backiron", Value::Int(0))];
+
+/// The report's M2 basis: E1 to E14 on, the Addendum corrections off.
+fn m2() -> Deviations {
+    [
+        DeviationId::E15,
+        DeviationId::E16,
+        DeviationId::E17,
+        DeviationId::E18,
+        DeviationId::E19,
+        DeviationId::E20,
+    ]
+    .into_iter()
+    .fold(Deviations::ALL, Deviations::without)
+}
+
+#[test]
+fn e15_heat_capacity_matches_the_report() {
+    // Report 5.4, E15, all three columns: workbook + E9 (the probe basis, decision 15), M2
+    // (every other correction on) and standalone (E9 off: only the hub moves).
+    let e9 = Deviations::NONE.with(DeviationId::E9);
+    let e15 = DeviationId::E15;
+    let main: ReportRows = &[
+        ("Temperature design!C20", 66.01, 65.92),
+        ("Temperature design!C141", 45.78, 63.02),
+        ("Temperature design!C143", 152.6, 210.1),
+        ("Temperature design!C145", 0.005411, 0.003931),
+        ("Temperature design!C154", 0.05411, 0.03931),
+        ("Temperature design!C155", 0.1623, 0.1179),
+        ("Temperature design!C156", 616.1, 848.0),
+        ("Temperature design!C157", 205.4, 282.7),
+        ("Temperature design!C158", 5087.0, 7002.0),
+        ("Temperature design!C159", 457.8, 630.2),
+        ("Temperature design!C160", 1.526e4, 2.101e4),
+        ("Temperature design!C161", 65.32, 65.23),
+        ("Temperature design!C171", 0.005411, 0.003931),
+        ("Temperature design!C172", 0.01623, 0.01179),
+        ("Temperature design!C180", 66.01, 65.92),
+        ("Temperature design!C181", 36.54, 36.63),
+        ("Temperature design!C182", 26.54, 26.63),
+        ("Temperature design!C186", 1.63, 1.631),
+        ("Temperature design!C189", 66.01, 65.92),
+        ("Temperature design!C190", 53.99, 54.08),
+        ("Temperature design!C192", 1.875, 1.875),
+        ("Temperature design!C193", 0.1981, 0.1982),
+        ("Temperature design!C196", 7.571, 7.569),
+    ];
+    assert_report_table("E15 on E9", &NO_BACK_IRON, e9, e9.with(e15), main);
+    let m2_rows: ReportRows = &[
+        ("Temperature design!C20", 66.12, 66.02),
+        ("Temperature design!C141", 45.78, 63.02),
+        ("Temperature design!C143", 152.6, 210.1),
+        ("Temperature design!C145", 0.00601, 0.004366),
+        ("Temperature design!C154", 0.0601, 0.04366),
+        ("Temperature design!C155", 0.1803, 0.131),
+        ("Temperature design!C156", 554.7, 763.5),
+        ("Temperature design!C157", 184.9, 254.5),
+        ("Temperature design!C158", 5087.0, 7002.0),
+        ("Temperature design!C159", 457.8, 630.2),
+        ("Temperature design!C160", 1.526e4, 2.101e4),
+        ("Temperature design!C161", 65.36, 65.26),
+        ("Temperature design!C171", 0.00601, 0.004366),
+        ("Temperature design!C172", 0.01803, 0.0131),
+        ("Temperature design!C180", 66.12, 66.02),
+        ("Temperature design!C181", 36.93, 37.03),
+        ("Temperature design!C182", 26.93, 27.03),
+        ("Temperature design!C186", 1.63, 1.63),
+        ("Temperature design!C189", 66.12, 66.02),
+        ("Temperature design!C190", 53.88, 53.98),
+        ("Temperature design!C192", 1.874, 1.875),
+        ("Temperature design!C193", 0.1981, 0.1981),
+        ("Temperature design!C196", 7.573, 7.571),
+    ];
+    assert_report_table("E15 on M2", &NO_BACK_IRON, m2(), m2().with(e15), m2_rows);
+    let standalone: ReportRows = &[
+        ("Temperature design!C20", 65.89, 65.88),
+        ("Temperature design!C141", 74.19, 77.98),
+        ("Temperature design!C143", 247.3, 259.9),
+        ("Temperature design!C145", 0.003339, 0.003177),
+        ("Temperature design!C154", 0.03339, 0.03177),
+        ("Temperature design!C155", 0.1002, 0.0953),
+        ("Temperature design!C156", 998.3, 1049.0),
+        ("Temperature design!C157", 332.8, 349.8),
+        ("Temperature design!C158", 8243.0, 8664.0),
+        ("Temperature design!C159", 741.9, 779.8),
+        ("Temperature design!C160", 2.473e4, 2.599e4),
+        ("Temperature design!C161", 65.2, 65.19),
+        ("Temperature design!C171", 0.003339, 0.003177),
+        ("Temperature design!C172", 0.01002, 0.00953),
+        ("Temperature design!C180", 65.89, 65.88),
+        ("Temperature design!C181", 36.66, 36.67),
+        ("Temperature design!C182", 26.66, 26.67),
+        ("Temperature design!C186", 1.631, 1.631),
+        ("Temperature design!C189", 65.89, 65.88),
+        ("Temperature design!C190", 54.11, 54.12),
+        ("Temperature design!C192", 1.876, 1.876),
+        ("Temperature design!C193", 0.1982, 0.1982),
+        ("Temperature design!C196", 7.569, 7.569),
+    ];
+    assert_report_table(
+        "E15 alone",
+        &NO_BACK_IRON,
+        Deviations::NONE,
+        Deviations::only(e15),
+        standalone,
+    );
+    // C19 and C150 stay "never" in every column; C137 (the steel specific heat shown) does not move.
+    for dev in [e9.with(e15), m2().with(e15), Deviations::only(e15)] {
+        let c = cells_with(&NO_BACK_IRON, dev);
+        assert_eq!(
+            c["Temperature design!C19"],
+            Value::Text("never: steady state stays below the limit".into())
+        );
+        assert_eq!(c["Temperature design!C137"], Value::Num(473.0));
+    }
+}
+
+#[test]
+fn e15_leaves_every_default_cell_bit_for_bit() {
+    // At defaults (C6 = 1) every part is steel and the workbook expression stays.
+    assert_bit_for_bit_at_defaults(DeviationId::E15);
+}
+
 #[test]
 fn e14_the_22mm_boss_statement_is_true() {
     let e14 = &REGISTRY[DeviationId::E14.index()];

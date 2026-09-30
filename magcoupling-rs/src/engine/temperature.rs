@@ -24,9 +24,10 @@
 //! follows the aluminium cup and boss masses through `TemperatureLinks`; no code
 //! here), E11 (the 22 °C fatigue screen C91 reads the fatigue-endurance input
 //! C195), E12 (a hot-day start at or above the governing limit gives 0 s,
-//! 0 rev and 0 N·m at C19, C23, C150 to C153), and E13 (a heating power of
+//! 0 rev and 0 N·m at C19, C23, C150 to C153), E13 (a heating power of
 //! exactly 0, from a measured drag of 0, gives +inf rotations per °C at C156
-//! and C157 instead of Python's ZeroDivisionError).
+//! and C157 instead of Python's ZeroDivisionError), and E15 (C141 prices an
+//! aluminium cup, boss and hub at C140, on the gates the masses read).
 
 use std::f64::consts::PI;
 
@@ -355,6 +356,10 @@ pub struct TemperatureLinks {
     pub steel_cte: f64,                // Materials C17
     pub steel_E_GPa: f64,              // Materials C18
     pub al6061_sigma_S_m: f64,         // Materials C43
+    /// E9: the cup and boss are aluminium (`model::cup_is_aluminium`).
+    pub cup_aluminium: bool,
+    /// The hub is aluminium, C6 != 1 (`model::hub_is_aluminium`).
+    pub hub_aluminium: bool,
 }
 
 // =========================================================================== results
@@ -854,11 +859,29 @@ pub fn compute(
 
     // ---- thermal network
     let th = &ti.thermal;
-    let C = (k.mass_magnets_g * th.c_ndfeb
-        + (k.mass_cup_g + k.mass_hub_g + k.mass_boss_g + k.hardware_g) * k.steel_c
-        + (k.retainers_g + k.endplates_g) * th.c_316
-        + k.cap_g * th.c_aluminium)
-        / 1000.0;
+    // E15: an aluminium cup, boss or hub at aluminium's specific heat, on the gates the
+    // masses read; the keys and screws (hardware) stay steel. With every part steel the
+    // workbook expression stays, bit for bit.
+    let C = if dev.is_on(DeviationId::E15) && k.hub_aluminium {
+        let c_cup = if k.cup_aluminium {
+            th.c_aluminium
+        } else {
+            k.steel_c
+        };
+        (k.mass_magnets_g * th.c_ndfeb
+            + (k.mass_cup_g + k.mass_boss_g) * c_cup
+            + k.mass_hub_g * th.c_aluminium
+            + k.hardware_g * k.steel_c
+            + (k.retainers_g + k.endplates_g) * th.c_316
+            + k.cap_g * th.c_aluminium)
+            / 1000.0
+    } else {
+        (k.mass_magnets_g * th.c_ndfeb
+            + (k.mass_cup_g + k.mass_hub_g + k.mass_boss_g + k.hardware_g) * k.steel_c
+            + (k.retainers_g + k.endplates_g) * th.c_316
+            + k.cap_g * th.c_aluminium)
+            / 1000.0
+    };
     let G = th.conductance_W_K;
     let tau_th = C / G;
     let (rise_e, rise_h) = (p_use / G, p_hi / G);
@@ -1119,6 +1142,8 @@ mod tests {
             steel_cte: 12.3e-6,
             steel_E_GPa: 205.0,
             al6061_sigma_S_m: 2.5e7,
+            cup_aluminium: false,
+            hub_aluminium: false,
         }
     }
 

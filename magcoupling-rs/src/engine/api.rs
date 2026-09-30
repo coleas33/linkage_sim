@@ -259,6 +259,8 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         steel_cte: mat_in.steel.cte_per_C,
         steel_E_GPa: mat_in.steel.modulus_GPa,
         al6061_sigma_S_m: materials::AL6061.conductivity_S_m,
+        cup_aluminium: model::cup_is_aluminium(ci.backiron, dev),
+        hub_aluminium: model::hub_is_aluminium(ci.backiron),
     };
     let temp = temperature::compute(&inputs.temperature, &links, dev);
 
