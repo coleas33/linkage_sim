@@ -17,6 +17,7 @@ pub mod constants;
 pub mod deviations;
 pub mod grades;
 pub mod library;
+pub mod material_library;
 pub mod materials;
 pub mod meta;
 pub mod metal_design;
