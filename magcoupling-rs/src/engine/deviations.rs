@@ -607,14 +607,25 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E11,
         title: "22 °C adhesive fatigue screen ignores the fatigue-endurance input",
         class: DeviationClass::Engine,
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &["Temperature design!C91", "Temperature design!C195"],
         corrected_formula: "C91 margin = C195 x C78 / C86.",
         workbook_input_defaults: &[],
         workbook_help: &[],
         changes_at_defaults: &[],
         changes_file: None,
-        probes: &[],
+        probes: &[Probe {
+            label: "fatigue endurance 0.1 (report: margin 3.77, flips below 0.106)",
+            inputs: &[(
+                "temperature.adhesive_life.fatigue_endurance",
+                Literal::Num(0.1),
+            )],
+            expect: &[CellChange {
+                cell: "Temperature design!C91",
+                workbook: Literal::Text("OK: 8x margin"),
+                corrected: Literal::Text("CHECK"),
+            }],
+        }],
     },
     Deviation {
         id: DeviationId::E12,

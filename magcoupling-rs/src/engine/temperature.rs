@@ -22,12 +22,13 @@
 //! [`crate::engine::deviations::REGISTRY`]): applied E1 (Temperature design!C96)
 //! and E5 (C121), both corrected defaults, and E9 (the heat capacity C141
 //! follows the aluminium cup and boss masses through `TemperatureLinks`; no code
-//! here); planned E11 (C91), E12 (C19, C23, C150 to C153), E13 (C156, C157).
+//! here), and E11 (the 22 °C fatigue screen C91 reads the fatigue-endurance input
+//! C195); planned E12 (C19, C23, C150 to C153), E13 (C156, C157).
 
 use std::f64::consts::PI;
 
 use super::compat::{py_max, py_min, text0};
-use super::deviations::Deviations;
+use super::deviations::{DeviationId, Deviations};
 use super::meta::{NumOrText, inputs, out, out_uncelled, param, results};
 
 // =========================================================================== inputs
@@ -629,7 +630,7 @@ pub fn volkersen_peak_shear_MPa(
 pub fn compute(
     ti: &TemperatureInputs,
     k: &TemperatureLinks,
-    _dev: Deviations,
+    dev: Deviations,
 ) -> TemperatureResults {
     let npole = k.npole as f64; // integer overflow rule: arithmetic in f64
     // ---- duty
@@ -707,7 +708,13 @@ pub fn compute(
     let tau_b = Ft / area;
     let Fc =
         m_block / 1000.0 * (ti.duty.wheel_rotor_rpm * 2.0 * PI / 60.0).powi(2) * r_mid / 1000.0;
-    let fat = 0.2 * sel.lap_shear_MPa / tau_b;
+    // E11: the 22 °C screen reads the fatigue-endurance input (C195) like C196, C197 and C202.
+    let endurance = if dev.is_on(DeviationId::E11) {
+        ti.adhesive_life.fatigue_endurance
+    } else {
+        0.2
+    };
+    let fat = endurance * sel.lap_shear_MPa / tau_b;
     let adh = AdhesiveResults {
         selected_name: sel.name.to_owned(),
         design_limit_C: sel.design_limit_C,
@@ -1130,6 +1137,53 @@ mod tests {
             r.adhesive_life.hot_fatigue_screen,
             "CHECK: get hot fatigue data"
         );
+    }
+
+    #[test]
+    fn e11_screen_passes_at_a_margin_of_exactly_four_from_the_endurance_input() {
+        // E11 puts the endurance input where the workbook types 0.2, at the same `fat >= 4`.
+        // The fixture above with tau_b = 0.375 MPa and an endurance of 0.1: 0.1 * 15 rounds to
+        // exactly 1.5, so fat = 1.5 / 0.375 = 4 (the second assert proves it).
+        let e11 = Deviations::only(DeviationId::E11);
+        let mut k = links();
+        k.inner_back_apothem_mm = 99.0;
+        k.inner_thickness_mm = 2.0; // r_mid = 100 mm, npole * r_mid / 1000 = 1
+        k.inner_length_mm = 1.0;
+        k.inner_width_mm = 1.0;
+        k.cold_high_Nm = 0.375;
+        let mut ti = TemperatureInputs::default();
+        ti.adhesive.selected = 1;
+        ti.adhesive_life.fatigue_endurance = 0.1;
+        let r = compute(&ti, &k, e11);
+        assert_eq!(r.adhesive.bond_shear_MPa, 0.375);
+        assert_eq!(
+            ti.adhesive_life.fatigue_endurance * r.adhesive.lap_shear_MPa / 0.375,
+            4.0
+        );
+        assert_eq!(r.adhesive.fatigue_screen, "OK: 4x margin");
+        assert_eq!(run(&ti, &k).adhesive.fatigue_screen, "OK: 8x margin"); // the typed-in 0.2
+        ti.adhesive_life.fatigue_endurance = 0.0999999; // the margin just under 4
+        assert_eq!(compute(&ti, &k, e11).adhesive.fatigue_screen, "CHECK");
+        assert_eq!(run(&ti, &k).adhesive.fatigue_screen, "OK: 8x margin");
+    }
+
+    #[test]
+    fn e11_changes_only_the_22c_screen() {
+        // The endurance input already feeds C196, C197 and C202; E11 adds C91 and nothing else.
+        // At the default 0.2 the input and the typed-in 0.2 are the same double.
+        let k = links();
+        let mut ti = TemperatureInputs::default();
+        let e11 = Deviations::only(DeviationId::E11);
+        assert_eq!(compute(&ti, &k, e11), run(&ti, &k));
+        ti.adhesive_life.fatigue_endurance = 0.6;
+        let (workbook, corrected) = (run(&ti, &k), compute(&ti, &k, e11));
+        assert_ne!(
+            workbook.adhesive.fatigue_screen,
+            corrected.adhesive.fatigue_screen
+        );
+        let mut same_screen = corrected.clone();
+        same_screen.adhesive.fatigue_screen = workbook.adhesive.fatigue_screen.clone();
+        assert_eq!(same_screen, workbook);
     }
 
     #[test]

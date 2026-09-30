@@ -768,6 +768,64 @@ fn e10_leaves_every_default_cell_bit_for_bit() {
 }
 
 #[test]
+fn e11_fatigue_screen_matches_the_report() {
+    let e11 = &REGISTRY[DeviationId::E11.index()];
+    assert_eq!(e11.status, DeviationStatus::Applied);
+    let low = &e11.probes[0];
+    assert_eq!(
+        at_probe("Temperature design!C91", low, Deviations::NONE),
+        Value::Text("OK: 8x margin".into())
+    );
+    assert_eq!(
+        at_probe(
+            "Temperature design!C91",
+            low,
+            Deviations::only(DeviationId::E11)
+        ),
+        Value::Text("CHECK".into())
+    ); // margin 3.77
+}
+
+#[test]
+fn e11_leaves_every_default_cell_bit_for_bit() {
+    // At the default endurance (C195 = 0.2) the input and the workbook's typed-in 0.2 are the same double.
+    assert_bit_for_bit_at_defaults(DeviationId::E11);
+}
+
+#[test]
+fn e11_screen_follows_the_endurance_input_and_nothing_else_moves() {
+    // The report: the screen flips below an endurance of 0.106 (exactly 4 tau_b / lap shear =
+    // 0.10608 at defaults). C195 already fed C196, C197 and C202, so only C91 may change.
+    let path = "temperature.adhesive_life.fatigue_endurance";
+    let screen = "Temperature design!C91";
+    for (endurance, want) in [
+        (0.106, "CHECK"),
+        (0.107, "OK: 4x margin"),
+        (0.6, "OK: 23x margin"),
+    ] {
+        let at = |dev: Deviations| {
+            let mut inputs = DesignInputs::defaults_with(dev);
+            inputs
+                .set(path, Value::Num(endurance))
+                .expect("a valid endurance");
+            cell_values_for(&inputs, dev)
+        };
+        let (workbook, corrected) = (at(Deviations::NONE), at(Deviations::only(DeviationId::E11)));
+        assert_eq!(
+            workbook[screen],
+            Value::Text("OK: 8x margin".into()),
+            "{endurance}"
+        );
+        assert_eq!(corrected[screen], Value::Text(want.into()), "{endurance}");
+        assert_eq!(
+            changed_cells(&workbook, &corrected),
+            BTreeSet::from([screen.to_owned()]),
+            "{endurance}"
+        );
+    }
+}
+
+#[test]
 fn reworded_help_is_recorded_for_real_fields() {
     let inputs = input_rows(&DesignInputs::default());
     for d in REGISTRY
