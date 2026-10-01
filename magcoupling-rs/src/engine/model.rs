@@ -16,7 +16,8 @@
 //! remanence, via `resolve_magnets`, and the manual Br defaults C17 and C27),
 //! E6 (Calculator!C63, the ring wall at the flats without the outer
 //! bondline), E7 (pull-out at the maximum over angle,
-//! [`peak_off_half_pitch`]; `peak_angle`, the one E7 gate, and `tau_at`, shared
+//! [`peak_off_half_pitch`], one search for any odd harmonic set up to 11, decision 29 A;
+//! `peak_angle`, the one E7 gate, and `tau_at`, shared
 //! with the sweeps and Calibration through `at_pull_out` or directly), E8
 //! (arc mode: Calculator!C9 from the corner radius C55, the round pocket in
 //! C111), E9 (no back iron: aluminium cup and boss in C111 and C113, as the
@@ -34,6 +35,10 @@ use super::meta::{NumOrText, inputs, out, out_rust_only, param, param_rust_only,
 
 /// The odd space harmonics the model sums (the workbook's set).
 pub const HARMONICS: [u32; 3] = [1, 3, 5];
+
+/// The odd space harmonics the E7 peak search handles, 1 to 11 (Addendum A3: "selectable
+/// up to 11"); amplitude `a[i]` of [`peak_off_half_pitch`] belongs to `ODD_HARMONICS[i]`.
+pub const ODD_HARMONICS: [u32; 6] = [1, 3, 5, 7, 9, 11];
 
 /// Text of the maximum-temperature cells when the magnet is not a library part.
 pub const NOT_IN_LIBRARY: &str = "n/a";
@@ -453,45 +458,31 @@ pub fn shear_stress(
 
 /// E7: the electrical angle of the true pull-out, when half a pole pitch is not it.
 ///
-/// Torque against electrical angle x is T(x) = a1 sin x + a3 sin 3x + a5 sin 5x,
-/// `a` the per-harmonic amplitudes. Half a pitch (x = π/2) is always a stationary
-/// point, and the workbook evaluates every harmonic there. The other stationary
-/// points solve dT/dx = 0; with c = cos x,
-/// dT/dx = c·[(a1 − 9 a3 + 25 a5) + (12 a3 − 100 a5) c² + 80 a5 c⁴],
-/// a quadratic in u = c². T is symmetric about π/2 (odd harmonics), so
-/// x in [0, π/2] suffices. Returns `None` when half a pitch is the maximum, so
-/// callers keep the workbook expression and default outputs stay bit-identical;
-/// otherwise the angle whose torque exceeds the half-pitch torque by more than
-/// 1e-12 relative. Valid for the harmonic set [1, 3, 5] only (`HARMONICS`); the
-/// Addendum A plan generalizes it with the harmonic parameter (decision D7).
-pub fn peak_off_half_pitch(a: [f64; 3]) -> Option<f64> {
-    let [a1, a3, a5] = a;
-    let torque = |x: f64| a1 * x.sin() + a3 * (3.0 * x).sin() + a5 * (5.0 * x).sin();
-    let half_pitch = a1 - a3 + a5; // sin(π/2) = 1, sin(3π/2) = −1, sin(5π/2) = 1
-    let (qa, qb, qc) = (80.0 * a5, 12.0 * a3 - 100.0 * a5, a1 - 9.0 * a3 + 25.0 * a5);
-    let roots: Vec<f64> = if qa != 0.0 {
-        let disc = qb * qb - 4.0 * qa * qc;
-        if disc < 0.0 {
-            Vec::new()
-        } else {
-            // Cancellation-free roots: q adds -qb and the root of the same sign, so a
-            // vanishing a5 (|qa| << |qb|, e.g. a fill of exactly 0.4) keeps the small root,
-            // qc / q -> -qc / qb, where (-qb ± √disc) / (2 qa) lost every digit.
-            let q = -0.5 * (qb + disc.sqrt().copysign(qb));
-            if q == 0.0 {
-                vec![0.0] // qb = 0 and disc = 0, so qc = 0: the double root u = 0
-            } else {
-                vec![q / qa, qc / q]
-            }
-        }
-    } else if qb != 0.0 {
-        vec![-qc / qb]
-    } else {
-        Vec::new()
+/// Torque against electrical angle x is T(x) = Σ a_i sin((2i + 1) x): `a[i]` is the
+/// amplitude of the odd harmonic 2i + 1 ([`ODD_HARMONICS`], at most six). Half a pitch
+/// (x = π/2) is always a stationary point, and the workbook evaluates every harmonic there.
+/// The other stationary points solve dT/dx = Σ n a_n cos(n x) = cos x · Q(u) = 0 with
+/// u = cos² x, where Q is a polynomial of degree `a.len() − 1` ([`stationary_polynomial`]).
+/// T is symmetric about π/2 (odd harmonics), so x in [0, π/2] (u in [0, 1]) suffices.
+/// [`roots_in_unit_interval`] finds every root of Q there with no closed form, so a vanishing
+/// top amplitude (a ring at a fill of exactly 0.4 zeroes the fifth) cannot cancel digits, and
+/// with no scan grid, so no pair of roots can hide inside a cell (decision 29 A). Returns
+/// `None` when half a pitch is the maximum, so callers keep the workbook expression and
+/// default outputs stay bit-identical; otherwise the angle whose torque exceeds the half-pitch
+/// torque by more than 1e-12 relative.
+pub fn peak_off_half_pitch(a: &[f64]) -> Option<f64> {
+    let torque = |x: f64| {
+        a.iter()
+            .zip(ODD_HARMONICS)
+            .fold(0.0, |acc, (&an, n)| acc + an * (f64::from(n) * x).sin())
     };
-    roots
+    // sin(nπ/2) = 1, −1, 1, ... for n = 1, 3, 5, ...: a1 − a3 + a5 − ...
+    let half_pitch = a.iter().enumerate().fold(
+        0.0,
+        |acc, (i, &an)| if i % 2 == 0 { acc + an } else { acc - an },
+    );
+    roots_in_unit_interval(&stationary_polynomial(a))
         .into_iter()
-        .filter(|u| (0.0..=1.0).contains(u))
         .map(|u| u.sqrt().acos())
         .map(|x| (x, torque(x)))
         .filter(|&(_, t)| t - half_pitch > 1e-12 * half_pitch.abs())
@@ -499,12 +490,116 @@ pub fn peak_off_half_pitch(a: [f64; 3]) -> Option<f64> {
         .map(|(x, _)| x)
 }
 
+/// Q(u), the coefficients (Q = q[0] + q[1] u + ...) of dT/dx / cos x for
+/// T(x) = Σ a_i sin((2i + 1) x): Q = Σ n a_n P_n(u), where cos(n x) = cos x · P_n(cos² x)
+/// and P_{n+2} = 2 (2u − 1) P_n − P_{n−2}, P_1 = P_{−1} = 1 (so P_3 = 4u − 3,
+/// P_5 = 16u² − 20u + 5). For 1, 3, 5 that is (a1 − 9 a3 + 25 a5) + (12 a3 − 100 a5) u + 80 a5 u².
+fn stationary_polynomial(a: &[f64]) -> Vec<f64> {
+    let mut q = vec![0.0; a.len()];
+    let (mut p_before, mut p) = (vec![1.0], vec![1.0]); // P_{n−2} and P_n, from n = 1
+    for (&an, n) in a.iter().zip(ODD_HARMONICS) {
+        for (qk, &pk) in q.iter_mut().zip(&p) {
+            *qk += f64::from(n) * an * pk;
+        }
+        let mut next = vec![0.0; p.len() + 1]; // P_{n+2} = 4u P_n − 2 P_n − P_{n−2}
+        for (k, &pk) in p.iter().enumerate() {
+            next[k + 1] += 4.0 * pk;
+            next[k] -= 2.0 * pk;
+        }
+        for (k, &pk) in p_before.iter().enumerate() {
+            next[k] -= pk;
+        }
+        p_before = std::mem::replace(&mut p, next);
+    }
+    q
+}
+
+/// Every real root in [0, 1] of the polynomial c[0] + c[1] u + c[2] u² + ..., ascending.
+///
+/// A linear polynomial's root is −c[0] / c[1]. Above degree 1, the roots of the derivative
+/// (found the same way) split [0, 1] into intervals on which the polynomial is monotone, so
+/// each interval holds at most one root and bisection finds it to the last bit: no root pair
+/// can hide between samples, the failure mode of a sampled scan (decision 29 A's Q' guard,
+/// applied at every level).
+/// Trailing zero coefficients are dropped; a constant (zero included) has no isolated root.
+/// A double root is found only where the polynomial is exactly 0 there; that is an inflection
+/// of the torque curve, never its peak.
+fn roots_in_unit_interval(c: &[f64]) -> Vec<f64> {
+    let degree = match c.iter().rposition(|&ck| ck != 0.0) {
+        Some(d) if d > 0 => d,
+        _ => return Vec::new(),
+    };
+    let c = &c[..=degree];
+    if degree == 1 {
+        let root = -c[0] / c[1];
+        return if (0.0..=1.0).contains(&root) {
+            vec![root]
+        } else {
+            Vec::new()
+        };
+    }
+    let value = |u: f64| c.iter().rev().fold(0.0, |acc, &ck| acc * u + ck);
+    let derivative: Vec<f64> = c
+        .iter()
+        .enumerate()
+        .skip(1)
+        .map(|(k, &ck)| k as f64 * ck)
+        .collect();
+    let mut breaks = vec![0.0];
+    breaks.extend(
+        roots_in_unit_interval(&derivative)
+            .into_iter()
+            .filter(|&u| u > 0.0 && u < 1.0),
+    );
+    breaks.push(1.0);
+    let mut roots = Vec::new();
+    for w in breaks.windows(2) {
+        let (mut lo, mut hi) = (w[0], w[1]);
+        let (f_lo, f_hi) = (value(lo), value(hi));
+        if f_lo == 0.0 {
+            roots.push(lo);
+            continue;
+        }
+        // A root at `hi` is found as the next interval's `lo` (or at 1 below).
+        if f_hi == 0.0 || (f_lo < 0.0) == (f_hi < 0.0) {
+            continue;
+        }
+        let lo_negative = f_lo < 0.0;
+        let mut root = None;
+        for _ in 0..128 {
+            let mid = lo + (hi - lo) / 2.0;
+            if mid <= lo || mid >= hi {
+                break; // lo and hi are adjacent doubles
+            }
+            let f_mid = value(mid);
+            if f_mid == 0.0 {
+                root = Some(mid);
+                break;
+            }
+            if (f_mid < 0.0) == lo_negative {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        roots.push(root.unwrap_or(if value(lo).abs() <= value(hi).abs() {
+            lo
+        } else {
+            hi
+        }));
+    }
+    if value(1.0) == 0.0 {
+        roots.push(1.0);
+    }
+    roots
+}
+
 /// The E7 gate every harmonic sum shares (the pull-out, the two circuit sums
 /// C95 and C96, the sweep rows, Calibration C40-C42): the angle of the true
 /// pull-out when E7 is on and half a pitch is not the maximum of the curve with
 /// amplitudes `a` ([`peak_off_half_pitch`]). `None` means: keep the workbook's
 /// half-pitch expression, bit for bit.
-pub(crate) fn peak_angle(a: [f64; 3], dev: Deviations) -> Option<f64> {
+pub(crate) fn peak_angle(a: &[f64], dev: Deviations) -> Option<f64> {
     if dev.is_on(DeviationId::E7) {
         peak_off_half_pitch(a)
     } else {
@@ -530,7 +625,7 @@ pub(crate) fn at_pull_out(
 ) -> [Harmonic; 3] {
     let amplitude = |x: &Harmonic| x.bi * x.bo / (2.0 * mu0) * x.s(backiron);
     let mut h_pull = h;
-    if let Some(x) = peak_angle(h.map(|hn| amplitude(&hn)), dev) {
+    if let Some(x) = peak_angle(&h.map(|hn| amplitude(&hn)), dev) {
         for hn in h_pull.iter_mut() {
             hn.tau = tau_at(amplitude(hn), hn.n, x);
         }
@@ -649,7 +744,7 @@ pub fn compute(
     // E7: each circuit at the maximum of its own torque-angle curve.
     let circuit = |s: fn(&Harmonic) -> f64| {
         let coefficients = h.map(|x| x.bi * x.bo * s(&x));
-        match peak_angle(coefficients, dev) {
+        match peak_angle(&coefficients, dev) {
             Some(x) => h
                 .iter()
                 .zip(coefficients)
@@ -1077,14 +1172,14 @@ mod tests {
 
     #[test]
     fn half_pitch_stays_the_peak_when_the_third_harmonic_is_small() {
-        assert_eq!(peak_off_half_pitch([1.0, -0.011, 0.001]), None); // default design: A3/A1 = -0.011
-        assert_eq!(peak_off_half_pitch([1.0, 0.0, 0.0]), None);
+        assert_eq!(peak_off_half_pitch(&[1.0, -0.011, 0.001]), None); // default design: A3/A1 = -0.011
+        assert_eq!(peak_off_half_pitch(&[1.0, 0.0, 0.0]), None);
     }
 
     #[test]
     fn a_large_third_harmonic_moves_the_peak_and_raises_it() {
         let a = [1.0, 0.2, 0.0]; // A1 < 9 A3: half a pitch is a local minimum
-        let x = peak_off_half_pitch(a).expect("the peak moves");
+        let x = peak_off_half_pitch(&a).expect("the peak moves");
         let t = |x: f64| a[0] * x.sin() + a[1] * (3.0 * x).sin() + a[2] * (5.0 * x).sin();
         assert!(x > 0.0 && x < std::f64::consts::FRAC_PI_2);
         assert!(t(x) > t(std::f64::consts::FRAC_PI_2));
@@ -1093,14 +1188,16 @@ mod tests {
         assert!(slope.abs() < 1e-9, "{slope}");
     }
 
-    /// T(x) = a1 sin x + a3 sin 3x + a5 sin 5x, the curve [`peak_off_half_pitch`] maximizes.
-    fn torque_at(a: [f64; 3], x: f64) -> f64 {
-        a[0] * x.sin() + a[1] * (3.0 * x).sin() + a[2] * (5.0 * x).sin()
+    /// T(x) = Σ a_i sin((2i + 1) x), the curve [`peak_off_half_pitch`] maximizes.
+    fn torque_at(a: &[f64], x: f64) -> f64 {
+        a.iter()
+            .zip(ODD_HARMONICS)
+            .fold(0.0, |acc, (&an, n)| acc + an * (f64::from(n) * x).sin())
     }
 
     /// Brute-force maximum of `torque_at` on [0, π/2]: a grid, then a ternary search
     /// around the best grid point. Never above the true maximum.
-    fn grid_maximum(a: [f64; 3], points: usize) -> f64 {
+    fn grid_maximum(a: &[f64], points: usize) -> f64 {
         let step = std::f64::consts::FRAC_PI_2 / (points - 1) as f64;
         let (best_i, best) = (0..points)
             .map(|i| (i, torque_at(a, i as f64 * step)))
@@ -1121,16 +1218,48 @@ mod tests {
         best.max(torque_at(a, (lo + hi) / 2.0))
     }
 
+    /// A uniform source in [0, 1) (splitmix64), the property tests' generator.
+    fn uniform_source(seed: u64) -> impl FnMut() -> f64 {
+        let mut state = seed;
+        move || {
+            state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut z = state;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            ((z ^ (z >> 31)) >> 11) as f64 / (1u64 << 53) as f64
+        }
+    }
+
+    /// A random amplitude triple (a1, a3, a5), case `i` of three bands: the general case,
+    /// a fifth harmonic in the band |a5/a1| <= 1.5e-13 where the textbook quadratic cancels
+    /// (a ring at a fill of exactly 0.4 or 0.8 gives sin(5 fill pi/2) ~ 1e-16), and a5 = 0.
+    /// a1 in [0.5, 1.5], a3 in +-a1/2 (A1 < 9 A3 moves the peak), so half a pitch stays
+    /// positive and the maximum is a stationary point in (0, pi/2].
+    fn random_triple(uniform: &mut impl FnMut() -> f64, i: usize) -> [f64; 3] {
+        let a1 = 0.5 + uniform();
+        let a3 = (uniform() - 0.5) * a1;
+        let sign = if uniform() < 0.5 { -1.0 } else { 1.0 };
+        let a5 = match i % 3 {
+            0 => (uniform() - 0.5) * 0.6 * a1,
+            1 => sign * a1 * 10f64.powf(-20.0 + 7.0 * uniform()) * 1.5,
+            _ => 0.0,
+        };
+        [a1, a3, a5]
+    }
+
     #[test]
     fn peak_angle_is_the_e7_gate() {
         // The one gate every harmonic sum shares: E7 off keeps half a pitch even where it
-        // is a local minimum; E7 on is exactly peak_off_half_pitch.
+        // is a local minimum; E7 on is exactly peak_off_half_pitch, which agrees with the
+        // workbook set's closed form within 1e-12 rad (decision 29 A).
         let a = [1.0, 0.2, 0.0];
-        assert_eq!(peak_angle(a, Deviations::NONE), None);
-        let on = peak_angle(a, Deviations::only(DeviationId::E7));
+        assert_eq!(peak_angle(&a, Deviations::NONE), None);
+        let on = peak_angle(&a, Deviations::only(DeviationId::E7));
         assert!(on.is_some());
-        assert_eq!(on, peak_off_half_pitch(a));
-        assert_eq!(peak_angle(a, Deviations::ALL), on);
+        assert_eq!(on, peak_off_half_pitch(&a));
+        let closed = closed_form_peak(a).expect("the closed form moves the peak too");
+        assert!((on.unwrap() - closed).abs() <= 1e-12, "{on:?} vs {closed}");
+        assert_eq!(peak_angle(&a, Deviations::ALL), on);
         assert_eq!(tau_at(2.0, 3, on.unwrap()), 2.0 * (3.0 * on.unwrap()).sin());
     }
 
@@ -1138,52 +1267,33 @@ mod tests {
     fn a_vanishing_fifth_harmonic_does_not_lose_the_peak() {
         // Final review, E7: with a5 -> 0 the quadratic's small root must tend to the linear
         // root -qc/qb (the a5 = 0 answer), not cancel to a wrong angle or to None.
-        let x0 = peak_off_half_pitch([1.0, 0.2, 0.0]).expect("the peak moves");
+        let x0 = peak_off_half_pitch(&[1.0, 0.2, 0.0]).expect("the peak moves");
         for a5 in [1e-20, -1e-20, 1e-16, -1e-16, 1e-14, 1.5e-13, -1.5e-13] {
-            let x = peak_off_half_pitch([1.0, 0.2, a5]).unwrap_or_else(|| panic!("{a5}: None"));
+            let x = peak_off_half_pitch(&[1.0, 0.2, a5]).unwrap_or_else(|| panic!("{a5}: None"));
             assert!((x - x0).abs() < 1e-9, "{a5}: {x} vs {x0}");
         }
     }
 
     #[test]
     fn peak_off_half_pitch_finds_the_brute_force_maximum() {
-        // Property test over random amplitude triples: the general case, a fifth harmonic
-        // in the band |a5/a1| <= 1.5e-13 where the textbook quadratic cancels (a ring at a
-        // fill of exactly 0.4 or 0.8 gives sin(5 fill pi/2) ~ 1e-16), and a5 = 0.
-        // a1 in [0.5, 1.5], a3 in +-a1/2 (A1 < 9 A3 moves the peak), so half a pitch
-        // stays positive and the maximum is a stationary point in (0, pi/2].
-        let mut state = 0x9E37_79B9_7F4A_7C15_u64;
-        let mut uniform = move || {
-            // splitmix64
-            state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
-            let mut z = state;
-            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-            ((z ^ (z >> 31)) >> 11) as f64 / (1u64 << 53) as f64
-        };
+        // Property test over random amplitude triples (`random_triple`: the general case, a
+        // vanishing fifth harmonic, and a5 = 0).
+        let mut uniform = uniform_source(0x9E37_79B9_7F4A_7C15);
         let mut misses = Vec::new();
         for i in 0..3000 {
-            let a1 = 0.5 + uniform();
-            let a3 = (uniform() - 0.5) * a1;
-            let sign = if uniform() < 0.5 { -1.0 } else { 1.0 };
-            let a5 = match i % 3 {
-                0 => (uniform() - 0.5) * 0.6 * a1,
-                1 => sign * a1 * 10f64.powf(-20.0 + 7.0 * uniform()) * 1.5,
-                _ => 0.0,
-            };
-            let a = [a1, a3, a5];
-            let got = match peak_off_half_pitch(a) {
+            let a = random_triple(&mut uniform, i);
+            let got = match peak_off_half_pitch(&a) {
                 Some(x) => {
                     assert!(
                         (0.0..=std::f64::consts::FRAC_PI_2).contains(&x),
                         "{a:?}: {x}"
                     );
-                    torque_at(a, x)
+                    torque_at(&a, x)
                 }
-                None => a1 - a3 + a5,
+                None => a[0] - a[1] + a[2],
             };
-            let want = grid_maximum(a, 1001);
-            if got < want - 4e-12 * (a1.abs() + a3.abs() + a5.abs()) {
+            let want = grid_maximum(&a, 1001);
+            if got < want - 4e-12 * (a[0].abs() + a[1].abs() + a[2].abs()) {
                 misses.push(format!("{a:?}: {got} < {want}"));
             }
         }
@@ -1192,6 +1302,182 @@ mod tests {
             "{} misses, e.g. {:?}",
             misses.len(),
             &misses[..misses.len().min(5)]
+        );
+    }
+
+    /// The closed form E7 used for the workbook set 1, 3, 5 before the harmonic set became a
+    /// parameter (kept as the reference decision 29 A compares with): the real roots in
+    /// u = cos² x of 80 a5 u² + (12 a3 − 100 a5) u + (a1 − 9 a3 + 25 a5), taken
+    /// cancellation-free, filtered as `peak_off_half_pitch` filters.
+    fn closed_form_peak(a: [f64; 3]) -> Option<f64> {
+        let [a1, a3, a5] = a;
+        let torque = |x: f64| a1 * x.sin() + a3 * (3.0 * x).sin() + a5 * (5.0 * x).sin();
+        let half_pitch = a1 - a3 + a5;
+        let (qa, qb, qc) = (80.0 * a5, 12.0 * a3 - 100.0 * a5, a1 - 9.0 * a3 + 25.0 * a5);
+        let roots: Vec<f64> = if qa != 0.0 {
+            let disc = qb * qb - 4.0 * qa * qc;
+            if disc < 0.0 {
+                Vec::new()
+            } else {
+                let q = -0.5 * (qb + disc.sqrt().copysign(qb));
+                if q == 0.0 {
+                    vec![0.0]
+                } else {
+                    vec![q / qa, qc / q]
+                }
+            }
+        } else if qb != 0.0 {
+            vec![-qc / qb]
+        } else {
+            Vec::new()
+        };
+        roots
+            .into_iter()
+            .filter(|u| (0.0..=1.0).contains(u))
+            .map(|u| u.sqrt().acos())
+            .map(|x| (x, torque(x)))
+            .filter(|&(_, t)| t - half_pitch > 1e-12 * half_pitch.abs())
+            .max_by(|p, q| p.1.total_cmp(&q.1))
+            .map(|(x, _)| x)
+    }
+
+    #[test]
+    fn the_general_search_agrees_with_the_closed_form_on_the_workbook_set() {
+        // Decision 29 A: one general search replaces the closed form for 1, 3, 5. On 3,000
+        // random triples of the three bands both give None in the same cases and otherwise
+        // the same angle within 1e-12 rad.
+        let mut uniform = uniform_source(0x2545_F491_4F6C_DD1D);
+        let mut disagreements = Vec::new();
+        for i in 0..3000 {
+            let a = random_triple(&mut uniform, i);
+            let (general, closed) = (peak_off_half_pitch(&a), closed_form_peak(a));
+            let agree = match (general, closed) {
+                (Some(x), Some(y)) => (x - y).abs() <= 1e-12,
+                (None, None) => true,
+                _ => false,
+            };
+            if !agree {
+                disagreements.push(format!("{a:?}: {general:?} vs {closed:?}"));
+            }
+        }
+        assert!(
+            disagreements.is_empty(),
+            "{} disagreements, e.g. {:?}",
+            disagreements.len(),
+            &disagreements[..disagreements.len().min(5)]
+        );
+    }
+
+    #[test]
+    fn the_general_search_finds_the_brute_force_maximum_up_to_harmonic_11() {
+        // Decision 29 A: 3,000 random spectra of 1 to 6 odd harmonics (up to 11). a1 in
+        // [0.5, 1.5]; harmonic n in +-a1/n, so half a pitch is often a local minimum and the
+        // curve can have several peaks; every fourth spectrum of two or more harmonics has a
+        // vanishing top harmonic (|a/a1| <= 1.5e-13). The search is never below the brute
+        // force by more than 4e-12 of Σ|a|.
+        let mut uniform = uniform_source(0xD1B5_4A32_D192_ED03);
+        let mut misses = Vec::new();
+        for i in 0..3000 {
+            let count = 1 + i % 6;
+            let a1 = 0.5 + uniform();
+            let mut a = vec![a1];
+            for &n in &ODD_HARMONICS[1..count] {
+                a.push((uniform() - 0.5) * 2.0 * a1 / f64::from(n));
+            }
+            if count > 1 && (i / 6) % 4 == 0 {
+                let sign = if uniform() < 0.5 { -1.0 } else { 1.0 };
+                a[count - 1] = sign * a1 * 10f64.powf(-20.0 + 7.0 * uniform()) * 1.5;
+            }
+            let got = match peak_off_half_pitch(&a) {
+                Some(x) => {
+                    assert!(
+                        (0.0..=std::f64::consts::FRAC_PI_2).contains(&x),
+                        "{a:?}: {x}"
+                    );
+                    torque_at(&a, x)
+                }
+                None => torque_at(&a, std::f64::consts::FRAC_PI_2),
+            };
+            let want = grid_maximum(&a, 2001);
+            let scale: f64 = a.iter().map(|x| x.abs()).sum();
+            if got < want - 4e-12 * scale {
+                misses.push(format!("{a:?}: {got} < {want}"));
+            }
+        }
+        assert!(
+            misses.is_empty(),
+            "{} misses, e.g. {:?}",
+            misses.len(),
+            &misses[..misses.len().min(5)]
+        );
+    }
+
+    #[test]
+    fn roots_in_unit_interval_finds_every_root_of_a_quintic() {
+        // cos(11x) / cos(x) = P_11(u) with u = cos² x has five roots in (0, 1), at
+        // x = (2k + 1) π / 22 for k = 0 .. 4.
+        let p11 = [-11.0, 220.0, -1232.0, 2816.0, -2816.0, 1024.0];
+        let roots = roots_in_unit_interval(&p11);
+        let mut want: Vec<f64> = (0..5)
+            .map(|k| (f64::from(2 * k + 1) * PI / 22.0).cos().powi(2))
+            .collect();
+        want.sort_by(f64::total_cmp);
+        assert_eq!(roots.len(), 5, "{roots:?}");
+        for (got, want) in roots.iter().zip(&want) {
+            assert!((got - want).abs() < 1e-12, "{got} vs {want}");
+        }
+    }
+
+    #[test]
+    fn roots_in_unit_interval_finds_a_close_pair_a_scan_would_miss() {
+        // Decision 29's failure mode of a sampled scan: two roots inside one cell of a
+        // 1,024-cell scan, with the same sign at both cell ends. The roots of the derivative
+        // split the interval first, so each piece holds one root.
+        let q = [0.5002 * 0.5006, -(0.5002 + 0.5006), 1.0]; // (u - 0.5002)(u - 0.5006)
+        let value = |u: f64| q[0] + q[1] * u + q[2] * u * u;
+        let (cell_lo, cell_hi) = (512.0 / 1024.0, 513.0 / 1024.0);
+        assert!(
+            value(cell_lo) > 0.0 && value(cell_hi) > 0.0,
+            "same sign at the cell ends"
+        );
+        let roots = roots_in_unit_interval(&q);
+        assert_eq!(roots.len(), 2, "{roots:?}");
+        assert!((roots[0] - 0.5002).abs() < 1e-12, "{}", roots[0]);
+        assert!((roots[1] - 0.5006).abs() < 1e-12, "{}", roots[1]);
+    }
+
+    #[test]
+    fn roots_in_unit_interval_handles_the_edges() {
+        let none = Vec::<f64>::new();
+        assert_eq!(roots_in_unit_interval(&[]), none);
+        assert_eq!(roots_in_unit_interval(&[1.0]), none, "a constant");
+        assert_eq!(
+            roots_in_unit_interval(&[0.0, 0.0]),
+            none,
+            "zero: no isolated root"
+        );
+        assert_eq!(roots_in_unit_interval(&[-0.25, 1.0]), [0.25]);
+        assert_eq!(roots_in_unit_interval(&[0.0, 1.0]), [0.0], "a root at 0");
+        assert_eq!(roots_in_unit_interval(&[-1.0, 1.0]), [1.0], "a root at 1");
+        assert_eq!(
+            roots_in_unit_interval(&[2.0, -1.0]),
+            none,
+            "root at 2: outside"
+        );
+        assert_eq!(
+            roots_in_unit_interval(&[1.0, 0.0, 1.0]),
+            none,
+            "no real root"
+        );
+        assert_eq!(
+            roots_in_unit_interval(&[0.25, -1.0, 1.0]),
+            [0.5],
+            "double root"
+        );
+        assert_eq!(
+            roots_in_unit_interval(&[-0.25, 1.0, 0.0, 0.0]),
+            [0.25],
+            "trailing zeros dropped"
         );
     }
 

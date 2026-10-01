@@ -161,7 +161,7 @@ pub fn compute(c: &CalibrationInputs, dev: Deviations) -> CalibrationResults {
 
     // E7: every harmonic at the true pull-out angle when half a pitch is not the maximum.
     let amps = [amp_n(1), amp_n(3), amp_n(5)];
-    let peak = peak_angle(amps, dev);
+    let peak = peak_angle(&amps, dev);
     let tau_n = |a: f64, n: u32| match peak {
         Some(x) => tau_at(a, n, x),
         None => a * (f64::from(n) * PI / 2.0).sin(), // the workbook expression, bit for bit
