@@ -61,3 +61,16 @@ magcoupling-rs = { path = ".", features = ["workbook-parity"] }
 # float_roundtrip: parse JSON floats exactly (the default parser can be 1 ULP off).
 serde_json = { version = "1", features = ["float_roundtrip"] }
 
+# The standalone app (feature app). magcoupling-app is native only;
+# magcoupling-web is the wasm32 entry (on a desktop it opens the same window).
+# required-features keeps both out of builds without the app feature, so
+# plain cargo test and cargo clippy --all-targets skip them.
+[[bin]]
+name = "magcoupling-app"
+path = "src/bin/magcoupling_app.rs"
+required-features = ["app"]
+
+[[bin]]
+name = "magcoupling-web"
+path = "src/bin/magcoupling_web.rs"
+required-features = ["app"]

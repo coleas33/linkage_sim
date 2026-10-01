@@ -9,7 +9,7 @@
 mod format;
 mod panel;
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
 
 pub use format::{SIGNIFICANT_DIGITS, format_value, with_unit};
 pub use panel::{KEY_INPUTS, MagcouplingPanel};
