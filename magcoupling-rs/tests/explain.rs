@@ -7,10 +7,12 @@
 //! differential case (`tests/data/differential/*.json`, 3,391 cases, starting from the
 //! corrected defaults); and each of those again under every **augmentation**, the Rust-only
 //! inputs the Python generator never varies (the harmonic set, the back-iron material, the
-//! grade mode, the axial override), without which the tau7-tau11 records would compare
-//! 0 with 0. Anti-vacuity checks require every `cases` arm of every record to be taken, every
-//! numeric record and every value term of every record to take two values, and the E7
-//! angles to leave half a pitch.
+//! grade mode, the axial override, the coercivity from the inputs with two ferrite betas,
+//! the sleeve and cap materials, E17's free-space fields), without which the tau7-tau11
+//! records would compare 0 with 0 and the ferrite and material branches would never run.
+//! Anti-vacuity checks require every `cases` arm of every record to be taken, every numeric
+//! record and every value term of every record to take two values, and the E7 angles to
+//! leave half a pitch.
 //!
 //! **Traceability (A3).** For each input (the assumptions first, as the spec asks, then every
 //! input), at several design points: nudging it changes no explained result outside its
@@ -63,6 +65,28 @@ fn augmentations() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
     ] {
         v.push((label, vec![("materials.parts.back_iron", Value::Int(code))]));
     }
+    // The sleeve, liner and cap picks (A5): each supplies its library values in place of the inputs.
+    v.push((
+        "sleeve Ti, cap acetal",
+        vec![
+            ("materials.parts.sleeve_liner", Value::Int(2)),
+            ("materials.parts.cap_housing", Value::Int(3)),
+        ],
+    ));
+    // E17's free-space fields (Rust-only inputs) off their defaults, with an aluminium back
+    // iron so the free-space branches of the hub, cup and web losses read them.
+    v.push((
+        "E17 fields",
+        vec![
+            ("materials.parts.back_iron", Value::Int(8)),
+            ("temperature.slip_loss.b_hub_free_T", Value::Num(0.1)),
+            ("temperature.slip_loss.b_cup_free_T", Value::Num(0.12)),
+            (
+                "temperature.slip_loss.web_integral_free_T2m2",
+                Value::Num(1e-5),
+            ),
+        ],
+    ));
     v.push((
         "grade mode",
         vec![

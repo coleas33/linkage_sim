@@ -2,12 +2,17 @@
 //! flips its chain to `Explained` in [`super::scope`].
 
 pub mod demagnetization;
+pub mod slip_heating;
 pub mod torque;
 
 use super::record::{Family, Record};
 
 /// Every batch's plain records.
-pub const RECORDS: &[&[Record]] = &[torque::RECORDS, demagnetization::RECORDS];
+pub const RECORDS: &[&[Record]] = &[
+    torque::RECORDS,
+    demagnetization::RECORDS,
+    slip_heating::RECORDS,
+];
 
 /// Every batch's families.
 pub const FAMILIES: &[&[Family]] = &[torque::FAMILIES];

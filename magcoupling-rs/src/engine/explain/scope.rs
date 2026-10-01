@@ -137,7 +137,7 @@ pub const SCOPE: &[Chain] = &[
     },
     Chain {
         id: "demagnetization",
-        status: Status::Pending,
+        status: Status::Explained,
         paths: &[
             "temperature.demag.h_ref_kA_m",
             "temperature.demag.t_ref_model_C",
@@ -161,7 +161,7 @@ pub const SCOPE: &[Chain] = &[
     },
     Chain {
         id: "slip_heating",
-        status: Status::Pending,
+        status: Status::Explained,
         paths: &[
             "temperature.slip_loss.steel_sigma_S_m",
             "temperature.slip_loss.steel_mu_r",
