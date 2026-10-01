@@ -24,16 +24,18 @@
 //!   the cavity the outer and inner blocks, the liner, the sleeve and the hub, each centred on
 //!   the cavity (the workbook gives no axial positions); the space claim's overall length, bay
 //!   and diameter as dashed lines; the axial stack, the large-diameter stack and the rotating OD
-//!   as dimensions.
+//!   as dimensions. Its extent is the box around all of them (`extent`), so the cavity's parts
+//!   stay inside it at any length.
 //!
 //! A callout is red ([`Level::Bad`]) when it is violated (decision M42-4): a gap below zero, the
 //! running clearance below its target (the dashboard's clearance check), a space-claim axis
 //! exceeded; amber ([`Level::Caution`]) when its value is not a number.
 //!
 //! A design file can hold any finite number (`InputSet::set` checks no range), so each view's
-//! extent comes from its pieces: a claim line farther than [`CLAIM_REACH`] times the pieces'
-//! extent along its axis is left off with a note, and a piece or line that holds a number that
-//! is not finite is dropped and counted in a note.
+//! extent comes from what it draws (the end view's from its larger circle, the side view's from
+//! the box around its pieces and lines): a claim line farther than [`CLAIM_REACH`] times the
+//! pieces' extent along its axis is left off with a note, and a piece or line that holds a
+//! number that is not finite is dropped and counted in a note.
 
 use std::f64::consts::PI;
 
@@ -111,6 +113,39 @@ impl Outline {
             Outline::Rect { min, max } => finite(*min) && finite(*max),
         }
     }
+
+    /// The corners of the box around the outline, or `None` when a number of it is not finite
+    /// (such a piece is not drawn). A sector's box is that of the circle of its larger radius.
+    pub fn bounds(&self) -> Option<(Mm, Mm)> {
+        if !self.is_finite() {
+            return None;
+        }
+        let circle = |r: f64| Some(([-r.abs(), -r.abs()], [r.abs(), r.abs()]));
+        match self {
+            Outline::Disc { r } => circle(*r),
+            Outline::Ring { r_in, r_out } | Outline::Sector { r_in, r_out, .. } => {
+                circle(r_in.abs().max(r_out.abs()))
+            }
+            Outline::Polygon(points) => corners(points),
+            Outline::Rect { min, max } => corners(&[*min, *max]),
+        }
+    }
+}
+
+/// The union of two boxes.
+fn union((a_lo, a_hi): (Mm, Mm), (b_lo, b_hi): (Mm, Mm)) -> (Mm, Mm) {
+    (
+        [a_lo[0].min(b_lo[0]), a_lo[1].min(b_lo[1])],
+        [a_hi[0].max(b_hi[0]), a_hi[1].max(b_hi[1])],
+    )
+}
+
+/// The corners of the box around `points`, or `None` when it has none or one is not finite.
+fn corners(points: &[Mm]) -> Option<(Mm, Mm)> {
+    if !points.iter().all(|p| finite(*p)) {
+        return None;
+    }
+    points.iter().map(|p| (*p, *p)).reduce(union)
 }
 
 /// One filled piece of a view.
@@ -150,7 +185,9 @@ pub struct View {
     pub pieces: Vec<Piece>,
     pub dashed: Vec<Dashed>,
     pub callouts: Vec<Callout>,
-    /// The corners of the area the view needs [mm].
+    /// The corners of the area the view needs [mm]. The side view's holds all of its pieces,
+    /// dashed lines and dimension lines (`extent`); the end view's is a square round the
+    /// larger of the cup and the claim circle.
     pub min: Mm,
     pub max: Mm,
 }
@@ -493,6 +530,26 @@ fn end_view(
     }
 }
 
+/// The room round a view's parts [mm]: for the dimension tags beside their lines.
+const MARGIN_MM: f64 = 2.0;
+
+/// The corners of the box around everything of a view that is drawn, with [`MARGIN_MM`] added
+/// on every side: its pieces, dashed lines and dimension lines, leaving out those that hold a
+/// number that is not finite (dropped or not painted). `None` when nothing is left.
+fn extent(pieces: &[Piece], dashed: &[Dashed], callouts: &[Callout]) -> Option<(Mm, Mm)> {
+    let (lo, hi) = pieces
+        .iter()
+        .map(|p| p.outline.bounds())
+        .chain(dashed.iter().map(|d| corners(&d.points)))
+        .chain(callouts.iter().map(|c| corners(&[c.from, c.to])))
+        .flatten()
+        .reduce(union)?;
+    Some((
+        [lo[0] - MARGIN_MM, lo[1] - MARGIN_MM],
+        [hi[0] + MARGIN_MM, hi[1] + MARGIN_MM],
+    ))
+}
+
 /// The level of a space-claim axis from its overshoot: red past the claim, amber when not a
 /// number.
 fn overshoot_level(over: f64) -> Option<Level> {
@@ -641,17 +698,10 @@ fn side_view(
     let claim_top = radius.filter(|r| r.is_finite()).unwrap_or(body_top);
     let claim_end = length.filter(|l| l.is_finite()).unwrap_or(axial);
     let red = |over: f64| overshoot_level(over).filter(|l| *l == Level::Bad);
-    let right = claim_end.max(bay.unwrap_or(axial)).max(axial) + 2.0;
-    let mut dashed = vec![
-        Dashed {
-            points: vec![[-1.0, 0.0], [right, 0.0]],
-            level: None,
-        },
-        Dashed {
-            points: vec![[0.0, 0.0], [0.0, claim_top]],
-            level: None,
-        },
-    ];
+    let mut dashed = vec![Dashed {
+        points: vec![[0.0, 0.0], [0.0, claim_top]],
+        level: None,
+    }];
     if let Some(radius) = radius {
         dashed.push(Dashed {
             points: vec![[0.0, radius], [claim_end, radius]],
@@ -705,13 +755,23 @@ fn side_view(
             ([-2.0, 0.0], [-2.0, mt.rotating_od_mm / 2.0]),
         ),
     ];
-    let top = radius.map_or(body_top, |r| body_top.max(r.abs())) + 2.0;
+    // The extent is the box around everything the view draws, wherever the inputs put it: the
+    // cavity's parts at their own lengths, a claim line either side of the origin. The axis
+    // runs to its right edge, so it is added once the box is known (first in paint order).
+    let (min, max) = extent(&pieces, &dashed, &callouts).unwrap_or(([f64::NAN; 2], [f64::NAN; 2]));
+    dashed.insert(
+        0,
+        Dashed {
+            points: vec![[-1.0, 0.0], [max[0], 0.0]],
+            level: None,
+        },
+    );
     View {
         pieces,
         dashed,
         callouts,
-        min: [-4.0, -6.0],
-        max: [right, top],
+        min,
+        max,
     }
 }
 
@@ -1274,6 +1334,250 @@ mod tests {
         assert_eq!(
             off(&of(&design(|i| i.metal.max_diameter_mm = reach.next_up()))).len(),
             1
+        );
+    }
+
+    #[test]
+    fn an_outline_s_bounds_hold_it_and_are_none_for_a_number_that_is_not_finite() {
+        let nan = f64::NAN;
+        assert_eq!(
+            Outline::Disc { r: 3.0 }.bounds(),
+            Some(([-3.0, -3.0], [3.0, 3.0]))
+        );
+        assert_eq!(
+            Outline::Ring {
+                r_in: 2.0,
+                r_out: 5.0
+            }
+            .bounds(),
+            Some(([-5.0, -5.0], [5.0, 5.0]))
+        );
+        assert_eq!(
+            Outline::Rect {
+                min: [1.0, -2.0],
+                max: [4.0, 3.0]
+            }
+            .bounds(),
+            Some(([1.0, -2.0], [4.0, 3.0]))
+        );
+        // Written with its corners the other way round, a rectangle has the same box.
+        assert_eq!(
+            Outline::Rect {
+                min: [4.0, 3.0],
+                max: [1.0, -2.0]
+            }
+            .bounds(),
+            Some(([1.0, -2.0], [4.0, 3.0]))
+        );
+        assert_eq!(
+            Outline::Polygon(vec![[0.0, 1.0], [2.0, -1.0], [-3.0, 0.5]]).bounds(),
+            Some(([-3.0, -1.0], [2.0, 1.0]))
+        );
+        assert_eq!(Outline::Polygon(Vec::new()).bounds(), None);
+        // A sector's box is that of the circle of its larger radius: it holds every point.
+        let sector = Outline::Sector {
+            r_in: 4.0,
+            r_out: 6.0,
+            from: 0.3,
+            to: 1.2,
+        };
+        let (lo, hi) = sector.bounds().unwrap();
+        assert_eq!((lo, hi), ([-6.0, -6.0], [6.0, 6.0]));
+        for k in 0..=100 {
+            let a = 0.3 + 0.9 * f64::from(k) / 100.0;
+            for r in [4.0, 6.0] {
+                let p = [r * a.cos(), r * a.sin()];
+                assert!(p[0] >= lo[0] && p[0] <= hi[0] && p[1] >= lo[1] && p[1] <= hi[1]);
+            }
+        }
+        for bad in [
+            Outline::Disc { r: nan },
+            Outline::Ring {
+                r_in: 1.0,
+                r_out: f64::INFINITY,
+            },
+            Outline::Sector {
+                r_in: 1.0,
+                r_out: 2.0,
+                from: nan,
+                to: 1.0,
+            },
+            Outline::Polygon(vec![[0.0, 0.0], [1.0, nan]]),
+            Outline::Rect {
+                min: [0.0, 0.0],
+                max: [f64::NEG_INFINITY, 1.0],
+            },
+        ] {
+            assert_eq!(bad.bounds(), None, "{bad:?}");
+        }
+    }
+
+    /// How far the farthest point of what `view` draws lies outside its extent [mm]: zero or
+    /// negative while everything is inside (the axis line ends at the edge: zero).
+    fn overshoot(view: &View) -> f64 {
+        let mut worst = f64::NEG_INFINITY;
+        let mut check = |p: Mm| {
+            for (axis, x) in p.into_iter().enumerate() {
+                worst = worst.max(view.min[axis] - x).max(x - view.max[axis]);
+            }
+        };
+        for piece in &view.pieces {
+            let (lo, hi) = piece.outline.bounds().expect("a drawn piece is finite");
+            check(lo);
+            check(hi);
+        }
+        for line in &view.dashed {
+            line.points.iter().for_each(|p| check(*p));
+        }
+        for c in &view.callouts {
+            // The painter skips a dimension line that is not finite.
+            if finite(c.from) && finite(c.to) {
+                check(c.from);
+                check(c.to);
+            }
+        }
+        worst
+    }
+
+    #[test]
+    fn the_side_view_s_extent_holds_every_piece_and_line_it_draws() {
+        let default = of(&DesignInputs::default());
+        // Fitting the extent to the parts leaves the default drawing as it was: the callout
+        // lanes at x = -2 and y = -4, the claim lines at 35 mm and 43 mm / 2, 2 mm of margin.
+        assert_eq!(default.side.min, [-4.0, -6.0]);
+        assert_eq!(default.side.max, [37.0, 23.5]);
+        let override_inputs = design(|i| i.coupling.magnets.axial_length_mm = Some(50.8));
+        let long = of(&override_inputs);
+        assert_eq!(long.side.min, [-4.0, -6.0]);
+        assert_eq!(
+            long.side.max,
+            [
+                compute_all(&override_inputs).metal.axial_stack_mm + 2.0,
+                23.5
+            ]
+        );
+        for (name, inputs) in [
+            ("default", DesignInputs::default()),
+            // The cavity's parts are centred on the cavity at their own lengths: a hub or a
+            // retainer span longer than the cup is deep, or a cup shallower than they are long,
+            // reaches past the cap and the boss (the slider ends and the middle of one).
+            ("hub 40 mm", design(|i| i.metal.hub_length_mm = 40.0)),
+            ("span 50 mm", design(|i| i.metal.retainer_span_mm = 50.0)),
+            ("span 26.5 mm", design(|i| i.metal.retainer_span_mm = 26.5)),
+            ("cup depth 3 mm", design(|i| i.metal.cup_depth_mm = 3.0)),
+            ("length override", override_inputs.clone()),
+            // A claim line within the reach can lie left of the cap or below the axis: it is
+            // drawn, inside the view.
+            (
+                "length claim -100 mm",
+                design(|i| i.metal.max_overall_axial_mm = -100.0),
+            ),
+            (
+                "bay claim -100 mm",
+                design(|i| i.metal.max_large_dia_axial_mm = -100.0),
+            ),
+            (
+                "diameter claim -30 mm",
+                design(|i| i.metal.max_diameter_mm = -30.0),
+            ),
+        ] {
+            let g = of(&inputs);
+            let over = overshoot(&g.side);
+            assert!(over <= 0.0, "{name}: {over} mm outside the extent");
+            assert!(
+                g.notes.iter().all(|n| !n.text.starts_with(NOT_DRAWN)),
+                "{name}: nothing is left off"
+            );
+        }
+        // The negative claims' lines are all there: the extent reaches them.
+        let length = of(&design(|i| i.metal.max_overall_axial_mm = -100.0));
+        assert_eq!(length.side.dashed.len(), default.side.dashed.len());
+        assert_eq!(length.side.min[0], -100.0 - 2.0);
+        let bay = of(&design(|i| i.metal.max_large_dia_axial_mm = -100.0));
+        assert_eq!(bay.side.min[0], -100.0 - 2.0);
+        let diameter = of(&design(|i| i.metal.max_diameter_mm = -30.0));
+        assert_eq!(diameter.side.min[1], -15.0 - 2.0);
+        // The axis runs the width of the view, to its right edge.
+        assert_eq!(
+            diameter.side.dashed[0].points,
+            [[-1.0, 0.0], [diameter.side.max[0], 0.0]]
+        );
+    }
+
+    #[test]
+    fn the_ends_of_every_slider_leave_both_views_around_what_they_draw() {
+        use crate::engine::meta::{FieldType, InputSet, input_rows};
+        for row in input_rows(&DesignInputs::default()) {
+            let Some(range) = row.meta.range else {
+                continue;
+            };
+            if row.meta.ty != FieldType::F64 {
+                continue;
+            }
+            for v in [range.min, range.max] {
+                let mut inputs = DesignInputs::default();
+                if inputs.set(&row.path, Value::Num(v)).is_err() {
+                    continue;
+                }
+                let g = of(&inputs);
+                for (name, view) in [("end", &g.end), ("side", &g.side)] {
+                    assert!(
+                        overshoot(view) <= 0.0,
+                        "{} = {v}: the {name} view draws {} mm outside its extent",
+                        row.path,
+                        overshoot(view)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_extent_is_the_box_round_what_is_drawn_and_leaves_out_what_is_not() {
+        let rect = |min: Mm, max: Mm| Piece {
+            part: Part::Body,
+            outline: Outline::Rect { min, max },
+        };
+        let line = |points: Vec<Mm>| Dashed {
+            points,
+            level: None,
+        };
+        let dimension = |from: Mm, to: Mm| Callout {
+            tag: 1,
+            path: "model.face_gap_mm",
+            text: String::new(),
+            level: None,
+            from,
+            to,
+        };
+        let nan = f64::NAN;
+        // Nothing to draw: no extent.
+        assert_eq!(extent(&[], &[], &[]), None);
+        assert_eq!(
+            extent(
+                &[rect([0.0, 0.0], [nan, 1.0])],
+                &[line(vec![[0.0, 0.0], [f64::INFINITY, 0.0]])],
+                &[dimension([0.0, 0.0], [nan, 0.0])]
+            ),
+            None
+        );
+        // A piece, a line and a dimension line each reach their side, with 2 mm round them.
+        assert_eq!(
+            extent(
+                &[rect([0.0, 0.0], [10.0, 5.0])],
+                &[line(vec![[0.0, 0.0], [0.0, 8.0]])],
+                &[dimension([-3.0, 0.0], [12.0, 0.0])]
+            ),
+            Some(([-5.0, -2.0], [14.0, 10.0]))
+        );
+        // What holds a number that is not finite adds nothing, not even its finite points.
+        assert_eq!(
+            extent(
+                &[rect([0.0, 0.0], [10.0, 5.0]), rect([0.0, 0.0], [99.0, nan])],
+                &[line(vec![[0.0, 0.0], [77.0, 0.0], [nan, 0.0]])],
+                &[dimension([0.0, 0.0], [66.0, nan])]
+            ),
+            Some(([-2.0, -2.0], [12.0, 7.0]))
         );
     }
 }
