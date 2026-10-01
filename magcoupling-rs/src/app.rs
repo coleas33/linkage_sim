@@ -208,6 +208,56 @@ mod tests {
     }
 
     #[test]
+    fn the_smoke_test_share_link_opens_its_design() {
+        use crate::engine::sizing::FreeVariable;
+        use crate::gui::SIZING_LOG_PREFIX;
+        use crate::gui::session::{decode_share_payload, design_from_json};
+        use crate::gui::sizing::{SOLVED_PREFIX, SizingMode, SizingState};
+        // .claude/workflows/gui-smoke.js opens /magcoupling/ with this link, loads the design
+        // file through the picker and looks for the three log lines in the browser console.
+        let script = include_str!("../../.claude/workflows/gui-smoke.js");
+        let quoted = |name: &str| -> &str {
+            let marker = format!("const {name} = '");
+            let start = script.find(&marker).unwrap_or_else(|| panic!("no {name}")) + marker.len();
+            let end = start + script[start..].find('\'').expect("its closing quote");
+            &script[start..end]
+        };
+        let payload = quoted("MAGCOUPLING_SMOKE_PAYLOAD");
+        let design = decode_share_payload(payload).expect("a valid share link");
+        let mut want = Design::default();
+        want.inputs.metal.face_gap_mm = 1.5;
+        want.sizing = SizingState {
+            mode: SizingMode::TorqueToMagnets,
+            variable: FreeVariable::AxialLength,
+            target_Nm: 2.5,
+        };
+        assert_eq!(design, want);
+        assert!(script.contains(SHARE_LINK_LOADED));
+        let solved = format!("{SIZING_LOG_PREFIX}{}", SOLVED_PREFIX.trim_end());
+        assert!(script.contains(&solved), "{solved}");
+        let file =
+            design_from_json(quoted("MAGCOUPLING_SMOKE_DESIGN_FILE")).expect("a design file");
+        let mut want_file = Design::default();
+        want_file.inputs.metal.face_gap_mm = 2.0;
+        assert_eq!(file, want_file);
+        assert!(script.contains(DESIGN_FILE_LOADED));
+        // The app opens the link and the solve succeeds after its debounce.
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        app.open_share_payload(payload).unwrap();
+        for time in [0.0, 0.5, 0.6] {
+            let input = egui::RawInput {
+                time: Some(time),
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| app.ui(ctx));
+        }
+        let shown = app.panel().shown_inputs();
+        let length = shown.coupling.magnets.axial_length_mm.expect("sized");
+        assert!((14.0..14.5).contains(&length), "{length}");
+    }
+
+    #[test]
     fn the_canvas_id_matches_the_web_page() {
         let page = include_str!("../../linkage-sim-rs/web/magcoupling/index.html");
         assert!(

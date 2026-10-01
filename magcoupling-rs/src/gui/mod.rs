@@ -21,4 +21,4 @@ pub(crate) mod test_support;
 
 pub use format::{SIGNIFICANT_DIGITS, format_value, with_unit};
 pub use inputs::KEY_DESIGN;
-pub use panel::{CentreView, MagcouplingPanel, PanelRequest};
+pub use panel::{CentreView, MagcouplingPanel, PanelRequest, SIZING_LOG_PREFIX};

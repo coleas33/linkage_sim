@@ -81,6 +81,9 @@ pub const TARGET_LABEL: &str = "Target hot-low torque";
 /// The label of the free-variable picker.
 pub const FREE_VARIABLE_LABEL: &str = "Free variable";
 
+/// The start of the log line of each sizing outcome (the web smoke test looks for it).
+pub const SIZING_LOG_PREFIX: &str = "magcoupling sizing: ";
+
 /// The note under the free variable's row in Torque → Magnets.
 pub const SIZED_NOTE: &str = "Set by Torque -> Magnets";
 
@@ -413,7 +416,7 @@ impl MagcouplingPanel {
     /// Logs the outcome of the last solve (the web smoke reads it).
     fn log_sizing(&self) {
         log::info!(
-            "magcoupling sizing: {}",
+            "{SIZING_LOG_PREFIX}{}",
             self.runner.status(&self.inputs, &self.sizing)
         );
     }
