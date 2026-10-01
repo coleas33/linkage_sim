@@ -36,11 +36,11 @@ pub const RECORDS: &[Record] = &[
 
     // --- Running clearance (metal_design::compute) ---
     record("metal.sleeve_liner_clearance_mm", "c_{nom}", "({retainers.liner_id_mm} - {retainers.sleeve_od_mm}) / 2"),
-    record("metal.adverse_movement_mm", "Σ_{adv}",
+    record("metal.adverse_movement_mm", "δ_{adv}",
         "{metal.shaft_displacement_mm} + {metal.runout_mm} + {metal.deflection_mm} + {metal.thermal_mm} + {metal.sleeve_form_mm}
          + {metal.magnet_position_mm}"),
     record("metal.min_running_clearance_mm", "c_{run}", "{metal.sleeve_liner_clearance_mm} - {metal.adverse_movement_mm}"),
-    record("metal.clearance_check", "C_{run}",
+    record("metal.clearance_check", "C_{clr}",
         r#"cases({metal.min_running_clearance_mm} < {metal.residual_target_mm} => "Below target"; else => "Meets assumed target")"#),
 
     // --- The back-iron wall (model::compute, materials::compute) ---
@@ -53,7 +53,9 @@ pub const RECORDS: &[Record] = &[
     record("model.gap_flux_density_T", "B_{gap}",
         "frac({model.br_inner_T_op} * {model.inner_thickness_mm} + {model.br_outer_T_op} * {model.outer_thickness_mm},
               {model.inner_thickness_mm} + {model.outer_thickness_mm} + {model.face_gap_mm})").corrected(&[E10]),
-    // The flux of half a pole, B_gap τ_p / π per unit length, carried by the wall at B_des.
+    // Half a pole's flux, B_gap τ_p / π per unit length, carried by the wall at B_des. The rule
+    // takes the flat-circuit B_gap as a sine's peak; the M1 audit (M1, M2) finds it 12 to 16 % thin,
+    // a model approximation the engine keeps.
     record("model.backiron_needed_mm", "t_{bi}",
         "{model.gap_flux_density_T} * {model.pole_pitch_mm} / (π * {model.bsat_T})").corrected(&[E10]),
     // Decision 27: the rule's wall, rounded up to 0.1 mm (the number the check's advice quotes).
