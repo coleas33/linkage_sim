@@ -61,13 +61,15 @@ pub fn apply(ctx: &egui::Context) {
 mod tests {
     use super::*;
 
-    /// The body of `fn cad_dark_visuals`, from its signature to the closing brace.
-    fn body(source: &str) -> &str {
+    /// The body of `fn cad_dark_visuals`, from its signature to the closing brace,
+    /// with line endings normalized: a checkout may write either file with CRLF.
+    fn body(source: &str) -> String {
+        let source = source.replace("\r\n", "\n");
         let start = source
             .find("fn cad_dark_visuals() -> egui::Visuals {")
             .expect("the function is there");
         let end = source[start..].find("\n}\n").expect("it ends") + start;
-        &source[start..end]
+        source[start..end].to_owned()
     }
 
     #[test]
