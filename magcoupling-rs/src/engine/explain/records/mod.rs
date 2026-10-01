@@ -2,6 +2,7 @@
 //! flips its chain to `Explained` in [`super::scope`].
 
 pub mod clamps;
+pub mod dashboard;
 pub mod demagnetization;
 pub mod slip_heating;
 pub mod temperature;
@@ -16,7 +17,8 @@ pub const RECORDS: &[&[Record]] = &[
     slip_heating::RECORDS,
     temperature::RECORDS,
     clamps::RECORDS,
+    dashboard::RECORDS,
 ];
 
 /// Every batch's families.
-pub const FAMILIES: &[&[Family]] = &[torque::FAMILIES, clamps::FAMILIES];
+pub const FAMILIES: &[&[Family]] = &[torque::FAMILIES, clamps::FAMILIES, dashboard::FAMILIES];

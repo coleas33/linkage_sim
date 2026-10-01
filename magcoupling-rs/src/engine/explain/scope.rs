@@ -222,7 +222,7 @@ pub const SCOPE: &[Chain] = &[
     },
     Chain {
         id: "dashboard",
-        status: Status::Pending,
+        status: Status::Explained,
         paths: &[
             "model.gearbox_input_ripple_Nm",
             "model.cup_od_mm",
