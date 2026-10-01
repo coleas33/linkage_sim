@@ -3,6 +3,7 @@
 
 pub mod demagnetization;
 pub mod slip_heating;
+pub mod temperature;
 pub mod torque;
 
 use super::record::{Family, Record};
@@ -12,6 +13,7 @@ pub const RECORDS: &[&[Record]] = &[
     torque::RECORDS,
     demagnetization::RECORDS,
     slip_heating::RECORDS,
+    temperature::RECORDS,
 ];
 
 /// Every batch's families.

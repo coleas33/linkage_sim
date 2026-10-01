@@ -86,7 +86,7 @@ pub const SCOPE: &[Chain] = &[
     },
     Chain {
         id: "temperature",
-        status: Status::Pending,
+        status: Status::Explained,
         paths: &[
             "calibration.br_test_T",
             "model.inner_br_T",

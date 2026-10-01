@@ -276,7 +276,7 @@ caller: no global state. Formatted verdicts are stated in the markup too (`conca
 | torque | `records/torque.rs` | explained |
 | demagnetization | `records/demagnetization.rs` | explained |
 | slip heating | `records/slip_heating.rs` | explained |
-| temperature | `records/temperature.rs` | pending |
+| temperature | `records/temperature.rs` | explained |
 | clamps | `records/clamps.rs` | pending |
 | dashboard | `records/dashboard.rs` | pending |
 
