@@ -5,6 +5,16 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-01 — Magcoupling M4-1: final review fix wave
+- The whole-branch review found no Critical or Important issue; no code changes.
+- Deferred, recorded in `04-memory.yaml` (the "Open (M4-2, M4-3)" item): when M4-3 adds the equation text to
+  `result_tooltip`, `dashboard_ui` builds its hover text lazily (`on_hover_ui`, as the results table does);
+  M4-2 reworks the results table's fixed columns (a ~930 px window shows only the label column without
+  scrolling).
+- Checked in eframe 0.32.3's source: on an origin that is not secure (plain http, not localhost) the
+  web copy of the share link logs an error and copies nothing, with no panic, while the panel's status
+  still says "copied"; the deployed site is https, and the linkage app's copy takes the same path.
+
 ## 2026-10-01 — Magcoupling M4-1: GUI inputs, dashboard, results table and session (branch magcoupling/m4-1)
 - `magcoupling-rs` panel (`src/gui/`): every input generated from the metadata, grouped as the package
   groups them, with the Key design group on top (the A-2 axial length override, blank by default);
