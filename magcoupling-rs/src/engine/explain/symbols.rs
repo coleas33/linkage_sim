@@ -15,6 +15,18 @@
 //! difference, not a radial one); Σ the summation operator only, never a quantity's symbol;
 //! `^{cal}` marks the Calibration prototype; a selector is an upright word (`faceted`), which the
 //! typesetter writes with the choice's label in conditions.
+//!
+//! Letters the chains reuse, told apart by subscript (the M4 panel shows them side by side): C
+//! the heat capacity (`C`) or, with a subscript, a check's verdict text (`C_{hot}`, `C_{cold}`,
+//! `C_{clr}`, `C_{wall}`, `C_{T,hot}`, `C_{gov}`, `C_{ϑ,i}`); t a time (`t_{95}`, `t_{lim,hi}`,
+//! `t_{ev}`, `t_{slip}`) or a thickness (`t_i`, `t_{hub}`, `t_{sl}`, `t_{wall}`, `t_{bi}`); D a
+//! diameter, apart from the slip duty fraction `D_{slip}`; m a mass, apart from the hot torque
+//! margin ratio `m_{hot}`; A an apothem (`A_o`, `A_{back}`; the inner back apothem input is
+//! `a_i`), a harmonic amplitude (`A_{#}`), the area-lever product `A_L` or an area inside a
+//! formula (`[A_{cav}]`, `[A_{hub}]`). A Metal design row that restates a Temperature design or
+//! Calculator quantity carries `MD` (`ϑ_{op,MD}`; `f_{e,MD}` is the field frequency p n / 60
+//! the Temperature design calls `f_e`). Renaming any of these is M4's typesetting pass: a
+//! symbol an A4 note quotes changes with the note, and a changed note goes back to Draft.
 
 /// (path, symbol markup), grouped by input group.
 #[rustfmt::skip]

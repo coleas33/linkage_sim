@@ -276,7 +276,7 @@ pub const RECORDS: &[Record] = &[
          + {temperature.slip_life.slip_duty} * {temperature.thermal.steady_rise_high_C}"),
 
     // --- Metal design slip rows (metal_design::compute) ---
-    record("metal.slip_freq_Hz", "f_{slip}", "frac({coupling.npole}, 2) * frac({metal.slip_rpm}, 60)"),
+    record("metal.slip_freq_Hz", "f_{e,MD}", "frac({coupling.npole}, 2) * frac({metal.slip_rpm}, 60)"),
     record("metal.slip_loss_W", "P_{slip,MD}",
         r#"cases({metal.measured_drag_Nm} != none => {metal.measured_drag_Nm} * 2 * π * {metal.slip_rpm} / 60; else => "not measured")"#),
     record("metal.slip_energy_J", "E_{slip,MD}",
