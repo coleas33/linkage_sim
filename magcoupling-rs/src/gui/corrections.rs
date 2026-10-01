@@ -51,7 +51,7 @@ pub const GOLDEN_FILES: [(DeviationId, &str, &str); 3] = [
 #[derive(Clone, Debug, PartialEq)]
 pub enum Tie {
     /// The correction changes the cell at the default design: the workbook's value and the
-    /// corrected one.
+    /// value with this correction alone applied.
     AtDefaults { workbook: Value, corrected: Value },
     /// The report names the cell for the correction, or a probe shows it changing off the
     /// default design.
@@ -168,7 +168,9 @@ pub fn marker_text(marks: &[Mark]) -> String {
 }
 
 /// The tooltip lines of the markers: per correction its id and title, the workbook and
-/// corrected values where it changes the cell at the default design, and its evidence.
+/// corrected values where it changes the cell at the default design, and its evidence. The
+/// corrected value is the one with that correction alone (as the registry and the golden
+/// files record it), so on a cell two corrections change neither is the value shown.
 pub fn marker_tooltip(marks: &[Mark]) -> String {
     let mut lines = vec!["Corrected vs workbook:".to_owned()];
     for mark in marks {
@@ -180,7 +182,8 @@ pub fn marker_tooltip(marks: &[Mark]) -> String {
         } = &mark.tie
         {
             lines.push(format!(
-                "  at the default design: workbook {}, corrected {}",
+                "  at the default design, with {} alone: workbook {}, corrected {}",
+                mark.id,
                 format_value(workbook),
                 format_value(corrected)
             ));
@@ -193,7 +196,7 @@ pub fn marker_tooltip(marks: &[Mark]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::meta::result_rows;
+    use crate::engine::meta::{ResultSet, result_rows};
     use crate::{DesignInputs, compute_all};
 
     #[test]
@@ -236,10 +239,40 @@ mod tests {
             "{tooltip}"
         );
         assert!(
-            tooltip.contains("at the default design: workbook 2.647, corrected 2.688"),
+            tooltip
+                .contains("at the default design, with E3 alone: workbook 2.647, corrected 2.688"),
             "{tooltip}"
         );
         assert!(tooltip.contains("docs/analyses/2026-09-29-magcoupling-math-audit.md, entry E3"));
+    }
+
+    #[test]
+    fn a_cell_two_corrections_change_gives_each_value_with_that_correction_alone() {
+        // E1 and E3 both change the peak shear at the defaults; the registry and the golden
+        // files record each correction alone, so neither value is the one shown.
+        let path = "temperature.mismatch.peak_shear_current_MPa";
+        let cell = crate::gui::dashboard::result_info(path)
+            .unwrap()
+            .cell
+            .as_deref();
+        let marks = CorrectionIndex::get().marks(cell);
+        let shown = compute_all(&DesignInputs::default()).get(path).unwrap();
+        for id in [DeviationId::E1, DeviationId::E3] {
+            let mark = marks.iter().find(|m| m.id == id).expect("E1 and E3");
+            let Tie::AtDefaults { corrected, .. } = &mark.tie else {
+                panic!("{id} changes {cell:?} at the defaults")
+            };
+            assert_ne!(corrected, &shown, "{id}");
+        }
+        let tooltip = marker_tooltip(marks);
+        assert!(
+            tooltip.contains("\n  at the default design, with E1 alone: workbook "),
+            "{tooltip}"
+        );
+        assert!(
+            tooltip.contains("\n  at the default design, with E3 alone: workbook "),
+            "{tooltip}"
+        );
     }
 
     #[test]

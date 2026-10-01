@@ -128,7 +128,8 @@ pub const STORED_3D_NOTE: &str = "The demagnetization reverse fields and the sli
 /// The start of the banner shown when f_end ≤ 0.
 pub const END_EFFECT_BANNER: &str = END_EFFECT_OUT_OF_RANGE;
 
-/// The badge level of a check's verdict text; `None` for a path that is no check or a text the
+/// The badge level of a check's verdict text; `None` (no badge) for a path that is no check, a
+/// verdict that says the check does not apply (the cup wall's "No back iron"), or a text the
 /// check does not produce.
 pub fn verdict_level(path: &str, text: &str) -> Option<Level> {
     use Level::{Bad, Caution, Good};
@@ -138,6 +139,8 @@ pub fn verdict_level(path: &str, text: &str) -> Option<Level> {
         ("metal.clearance_check", "Meets assumed target") => Some(Good),
         ("metal.clearance_check", "Below target") => Some(Bad),
         ("materials.cup_wall_check", "OK") => Some(Good),
+        // E9: no magnetic rule sizes a cup without back iron (the suggested wall reads "n/a").
+        ("materials.cup_wall_check", "No back iron") => None,
         ("materials.cup_wall_check", t) if t.starts_with("Too thin: ") => Some(Bad),
         (TEMPERATURE_VERDICT, t) if t.starts_with("OK on temperature.") => Some(Good),
         (TEMPERATURE_VERDICT, t) if t.starts_with("CHECK:") => Some(Caution),
@@ -371,7 +374,7 @@ mod tests {
     }
 
     #[test]
-    fn every_verdict_each_check_gives_has_a_level() {
+    fn every_verdict_each_check_gives_is_classified() {
         use Level::{Bad, Caution, Good};
         let cases: Vec<(&str, DesignInputs, Level)> = vec![
             ("metal.hot_min_check", DesignInputs::default(), Bad),
@@ -430,6 +433,12 @@ mod tests {
             };
             assert_eq!(verdict_level(check, &text), Some(want), "{check}: {text:?}");
         }
+        // No back iron (E9): the wall rule does not apply, so the check gives no badge.
+        let text = compute_all(&design(|i| i.coupling.backiron = 0))
+            .materials
+            .cup_wall_check;
+        assert_eq!(text, "No back iron");
+        assert_eq!(verdict_level("materials.cup_wall_check", &text), None);
         assert_eq!(verdict_level("metal.hot_min_check", "OK"), None);
         assert_eq!(verdict_level("model.pullout_Nm", "OK"), None);
     }
@@ -510,7 +519,7 @@ mod tests {
         assert!(
             line("model.pullout_Nm")
                 .tooltip
-                .contains("workbook 2.647, corrected 2.688")
+                .contains("with E3 alone: workbook 2.647, corrected 2.688")
         );
         assert_eq!(line("metal.torque_hot_low_Nm").level, Some(Level::Bad));
         assert_eq!(line("materials.cup_wall_check").level, Some(Level::Bad));
