@@ -5,6 +5,25 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-30 — Magcoupling Addendum A-2: parameters and sizing (A3, A1)
+- `magcoupling-rs`: one general E7 peak search for any odd harmonic set (decision 29: every root of
+  dT/dx in cos^2 x by recursion on derivatives) and the harmonic set as the Rust-only assumption
+  `coupling.max_harmonic` (1 to 11, default 5), summed by the Calculator, both circuit sums, the
+  sweeps and the Calibration prototype (Rust-only tau7_Pa to tau11_Pa).
+- The assumptions registry (`assumptions.rs`: the spec's 14 rows over 15 inputs, rationale and
+  source, `modified`, `reset_to_workbook_defaults`); the audit M9 flag `end_effect_check`; the axial
+  length override `coupling.magnets.axial_length_mm`; inverse sizing (`sizing.rs`: axial length,
+  magnets per ring, ring radius; a 64-cell scan refined at the first crossing, each peak and each
+  validity edge; counts a value only if its blocks fit (flats, or arcs that do not overlap), the
+  keyway leaves hub wall and f_end > 0); the autofit wall suggestion
+  `materials.cup_wall_suggested_mm` and the space claim (`housing.rs`, `DesignResults::housing`,
+  overshoot per axis, at least 0.01 mm), with the hub length, cup cavity depth and retainer span
+  following the length override (decision A2-8, option B: `housing::axial_housing`).
+- Carry-overs: the library's 6061 takes E18's 68.9 GPa (A2-6); C45 keeps its NdFeB slider, a positive
+  beta is typed (A2-5); a grade-mode ring takes its grade's alpha(Br) and density (A2-7).
+- Parity (1,149 checks), the differential data and every registry probe unchanged; the default
+  headline with every correction on is unchanged (2.688 N·m, 93.06 °C, M4 x 14).
+
 ## 2026-09-30 — Magcoupling Addendum A-1: final review fix wave
 - `docs/ai/03-structure.yaml` parses again (two quoted scalars) and lists `tests/material_links.rs`;
   the invariant this branch added to `02-system.yaml` is quoted (that file's older parse failures,

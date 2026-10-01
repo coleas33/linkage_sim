@@ -7,8 +7,10 @@
 //! correction (the M1 math audit's E1 to E14, the Addendum A verification's E15
 //! to E20) is registered in [`engine::deviations::REGISTRY`]. The Addendum A
 //! inputs the Python engine does not have (part materials, grades, the
-//! coercivity source, the E17 free-space fields) are Rust-only and default to
-//! the ported behaviour.
+//! coercivity source, the E17 free-space fields, the harmonic set, the axial
+//! length override) are Rust-only and default to the ported behaviour. Beyond
+//! the forward calculation: [`engine::sizing::solve`] (inverse sizing, Addendum
+//! A1) and [`engine::assumptions`] (the A3 assumptions panel).
 //!
 //! Spec: `docs/superpowers/specs/2026-09-28-magcoupling-calculator-design.md`.
 //!

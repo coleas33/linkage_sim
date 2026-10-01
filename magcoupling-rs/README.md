@@ -14,8 +14,13 @@ workbook parity covers all 1,149 checks; E1 to E14 applied (decisions D1 to D7
 as recorded). Addendum A-1 (data and physics) complete: the A6 grade table and
 the parts' vendor data, any grade with manual dimensions, the A5 materials
 library with per-part selectors, physics links and six warnings, and E15 to E20
-applied (Addendum A decisions, approved 2026-09-30). Next: Addendum A-2
-(parameters and sizing), A-3 (explanations), then M4.
+applied (Addendum A decisions, approved 2026-09-30). Addendum A-2 (parameters
+and sizing) complete: the harmonic set up to 11 with one general E7 peak search,
+the assumptions registry (A3), the end-effect validity flag, the axial length
+override with the axial housing that follows it (hub length, cup cavity depth,
+retainer span), inverse sizing (A1), the housing autofit suggestion and the space
+claim, one aluminium modulus, and each grade-mode ring's own alpha and density
+(decisions A2-1 to A2-9). Next: Addendum A-3 (explanations), then M4.
 
 The 1,149 checks are 330 result cells, 659 table cells (494 sweep cells and 165
 screw-table cells) and 160 default inputs. The corrections are listed under
