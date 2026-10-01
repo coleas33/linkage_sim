@@ -3,6 +3,8 @@
 
 use magcoupling::compute_all;
 use magcoupling::engine::api::DesignInputs;
+use magcoupling::engine::housing::{INSIDE_THE_SPACE_CLAIM, SPACE_CLAIM_UNKNOWN};
+use magcoupling::engine::meta::NumOrText;
 use magcoupling::engine::meta::SetErrorKind;
 use magcoupling::engine::model::{END_EFFECT_OUT_OF_RANGE, blocks_fit, pitch_share};
 use magcoupling::engine::sizing::{
@@ -440,4 +442,215 @@ fn the_search_constants_are_the_documented_ones() {
         FreeVariable::RingRadius.path(),
         "coupling.inner_back_apothem_mm"
     );
+}
+
+#[test]
+fn the_default_design_is_inside_its_space_claim() {
+    // Report 6.5: rotating OD 42.8 mm (set by the cap) of 43; stack 31.8 of 35; large-diameter
+    // stack 18.8 of the 20 mm bay. The autofit suggests the rule's 2.0 mm cup wall (decision 27).
+    let r = compute_all(&DesignInputs::default());
+    let h = &r.housing;
+    assert_eq!(
+        (
+            h.diameter_overshoot_mm,
+            h.length_overshoot_mm,
+            h.bay_overshoot_mm
+        ),
+        (0.0, 0.0, 0.0)
+    );
+    assert_eq!(h.space_claim_check, INSIDE_THE_SPACE_CLAIM);
+    assert!((r.metal.diameter_reserve_mm - 0.2).abs() < 1e-12);
+    assert!((r.metal.axial_reserve_mm - 3.2).abs() < 1e-12);
+    assert!((r.metal.large_dia_reserve_mm - 1.2).abs() < 1e-12);
+    assert_eq!(r.materials.cup_wall_suggested_mm, NumOrText::Num(2.0));
+}
+
+#[test]
+fn the_space_claim_is_exceeded_exactly_when_a_dimension_exceeds_it_per_axis() {
+    // Spec "Addendum testing": the envelope-exceeded callout triggers exactly when a derived
+    // dimension exceeds the space claim, per axis. Each claim is put at its dimension exactly
+    // (the comparison at equality, asserted first), then 0.5 mm under and over it.
+    type Claim = fn(&mut DesignInputs, f64);
+    type Read = fn(&magcoupling::DesignResults) -> (f64, f64); // (dimension, overshoot)
+    let axes: [(&str, Claim, Read); 3] = [
+        (
+            "diameter",
+            |i, x| i.metal.max_diameter_mm = x,
+            |r| (r.metal.rotating_od_mm, r.housing.diameter_overshoot_mm),
+        ),
+        (
+            "overall length",
+            |i, x| i.metal.max_overall_axial_mm = x,
+            |r| (r.metal.axial_stack_mm, r.housing.length_overshoot_mm),
+        ),
+        (
+            "large-diameter bay",
+            |i, x| i.metal.max_large_dia_axial_mm = x,
+            |r| (r.metal.large_dia_stack_mm, r.housing.bay_overshoot_mm),
+        ),
+    ];
+    for (axis, set_claim, read) in axes {
+        let (dimension, _) = read(&compute_all(&DesignInputs::default()));
+        let at_claim = |claim: f64| {
+            let mut inputs = DesignInputs::default();
+            set_claim(&mut inputs, claim);
+            compute_all(&inputs)
+        };
+        let r = at_claim(dimension);
+        assert_eq!(
+            read(&r).0,
+            dimension,
+            "{axis}: the claim sits at the dimension"
+        );
+        assert_eq!(read(&r).1, 0.0, "{axis}: at the claim is inside");
+        assert_eq!(
+            r.housing.space_claim_check, INSIDE_THE_SPACE_CLAIM,
+            "{axis}"
+        );
+        let r = at_claim(dimension - 0.5);
+        assert_eq!(read(&r).1, dimension - (dimension - 0.5), "{axis}");
+        assert_eq!(
+            r.housing.space_claim_check,
+            format!("Exceeds the space claim: {axis} 0.50 mm over"),
+            "only this axis"
+        );
+        let r = at_claim(dimension + 0.5);
+        assert_eq!(read(&r).1, 0.0, "{axis}");
+        assert_eq!(
+            r.housing.space_claim_check, INSIDE_THE_SPACE_CLAIM,
+            "{axis}"
+        );
+    }
+}
+
+#[test]
+fn a_sized_design_shows_its_overshoot() {
+    // Both modes: the space claim is part of every forward calculation, so a design inverse
+    // sizing returns shows it too. Sized by ring radius to the 2.5 N m requirement, the cup
+    // grows past the 43 mm claim; the axial stack does not move.
+    let base = DesignInputs::default();
+    let p = solved(solve(
+        &base,
+        FreeVariable::RingRadius,
+        base.metal.required_min_Nm,
+    ));
+    let r = compute_all(&p.inputs);
+    let over = r.metal.rotating_od_mm - base.metal.max_diameter_mm;
+    assert!(over > 0.0, "{over}");
+    assert_eq!(r.housing.diameter_overshoot_mm, over);
+    assert_eq!(
+        (r.housing.length_overshoot_mm, r.housing.bay_overshoot_mm),
+        (0.0, 0.0)
+    );
+    assert!(
+        r.housing
+            .space_claim_check
+            .starts_with("Exceeds the space claim: diameter "),
+        "{}",
+        r.housing.space_claim_check
+    );
+}
+
+#[test]
+fn several_axes_are_named_in_order_and_nan_is_unknown() {
+    let mut inputs = DesignInputs::default();
+    inputs.metal.max_diameter_mm = 40.0;
+    inputs.metal.max_large_dia_axial_mm = 18.0;
+    let h = compute_all(&inputs).housing;
+    assert_eq!(
+        h.space_claim_check,
+        "Exceeds the space claim: diameter 2.80 mm over, large-diameter bay 0.80 mm over"
+    );
+    // A claim that is not a number (set on the struct: validate() names it) is not "inside",
+    // and it hides no known overshoot: the axis reads unknown among the exceeded ones.
+    inputs.metal.max_overall_axial_mm = f64::NAN;
+    let h = compute_all(&inputs).housing;
+    assert!(h.length_overshoot_mm.is_nan());
+    assert_eq!(
+        h.space_claim_check,
+        "Exceeds the space claim: diameter 2.80 mm over, overall length unknown, \
+         large-diameter bay 0.80 mm over"
+    );
+    // With nothing exceeded, a NaN axis makes the whole claim unknown.
+    let mut inputs = DesignInputs::default();
+    inputs.metal.max_overall_axial_mm = f64::NAN;
+    assert_eq!(
+        compute_all(&inputs).housing.space_claim_check,
+        SPACE_CLAIM_UNKNOWN
+    );
+}
+
+#[test]
+fn a_tiny_overshoot_reads_at_least_a_hundredth() {
+    // Any dimension past its claim reads at least "0.01 mm over", never "0.00 mm over": each
+    // claim 0.001 mm under its dimension (the overshoot itself stays exact).
+    type Claim = fn(&mut DesignInputs, f64);
+    let axes: [(&str, Claim, f64); 3] = [
+        ("diameter", |i, x| i.metal.max_diameter_mm = x, 42.8),
+        (
+            "overall length",
+            |i, x| i.metal.max_overall_axial_mm = x,
+            31.8,
+        ),
+        (
+            "large-diameter bay",
+            |i, x| i.metal.max_large_dia_axial_mm = x,
+            18.8,
+        ),
+    ];
+    let base = compute_all(&DesignInputs::default());
+    let dimensions = [
+        base.metal.rotating_od_mm,
+        base.metal.axial_stack_mm,
+        base.metal.large_dia_stack_mm,
+    ];
+    for ((axis, set_claim, nominal), dimension) in axes.into_iter().zip(dimensions) {
+        assert!((dimension - nominal).abs() < 1e-12, "{axis}: {dimension}");
+        let mut inputs = DesignInputs::default();
+        set_claim(&mut inputs, dimension - 0.001);
+        let h = compute_all(&inputs).housing;
+        let over = [
+            h.diameter_overshoot_mm,
+            h.length_overshoot_mm,
+            h.bay_overshoot_mm,
+        ];
+        assert!(
+            over.iter().any(|&o| o > 0.0 && o < 0.005),
+            "{axis}: {over:?}"
+        );
+        assert_eq!(
+            h.space_claim_check,
+            format!("Exceeds the space claim: {axis} 0.01 mm over"),
+            "{axis}"
+        );
+    }
+}
+
+#[test]
+fn a_length_sized_design_reads_inside_the_space_claim_at_any_length() {
+    // Decision A2-8 as recommended (no engine rule): the axial length moves no dimension the
+    // space claim reads (the axial stack C134 and the large-diameter stack C137 are sums of
+    // class N inputs), so a length-sized design reads "Inside the space claim" at any length.
+    // Sized to its own 2.5 N m requirement the default design's magnets (13.77 mm) outgrow
+    // the 13.0 mm hub; sized to 9.9 N m (50.6 mm) they outgrow the 15.5 mm cup and the
+    // 14.5 mm retainer span. The override's help says to recheck them; M4 decides the rule.
+    let base = DesignInputs::default();
+    for (target, longer_than) in [
+        (base.metal.required_min_Nm, base.metal.hub_length_mm),
+        (9.9, base.metal.cup_depth_mm),
+    ] {
+        let p = solved(solve(&base, FreeVariable::AxialLength, target));
+        assert!(p.value > longer_than, "{target}: {}", p.value);
+        let r = compute_all(&p.inputs);
+        assert_eq!(
+            r.housing.space_claim_check, INSIDE_THE_SPACE_CLAIM,
+            "{target}"
+        );
+        assert_eq!(
+            r.metal.axial_stack_mm,
+            compute_all(&base).metal.axial_stack_mm
+        );
+    }
+    let p = solved(solve(&base, FreeVariable::AxialLength, 9.9));
+    assert!(p.value > 50.0 && p.value > base.metal.retainer_span_mm);
 }

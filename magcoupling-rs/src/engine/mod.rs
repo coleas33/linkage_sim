@@ -17,6 +17,7 @@ pub mod compat;
 pub mod constants;
 pub mod deviations;
 pub mod grades;
+pub mod housing;
 pub mod library;
 pub mod material_library;
 pub mod materials;

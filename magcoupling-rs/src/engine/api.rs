@@ -27,6 +27,7 @@ use super::deviations::Deviations;
 #[cfg(feature = "workbook-parity")]
 use super::deviations::{REGISTRY, restore_workbook_defaults};
 use super::grades;
+use super::housing::{self, HousingResults};
 use super::material_library;
 use super::materials::{self, MaterialsInputs, MaterialsResults};
 use super::meta::{ResultSet, SetError, TableLayout, Value, inputs, results, validate};
@@ -65,6 +66,7 @@ results! {
             temperature: TemperatureResults,
             clamps: ClampResults,
             warnings: WarningResults,
+            housing: HousingResults,
         }
         tables {
             gap_sweep: SweepRow => TableLayout::RowsDown { sheet: "Gap sweep", first_row: 6 },
@@ -327,6 +329,9 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         magnet_cte_per_C: ti.mismatch.ndfeb_cte_per_C,
     });
 
+    // Addendum A1: the space claim, from the derived dimensions (both modes).
+    let housing = housing::compute(&mdr);
+
     let alloy = if inputs.clamps.alloy == 1 {
         &materials::AL7075
     } else {
@@ -382,6 +387,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         temperature: temp,
         clamps: clr,
         warnings: warn,
+        housing,
         gap_sweep: gap,
         pole_sweep: pole,
     }
