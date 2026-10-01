@@ -197,7 +197,7 @@ pub const SCOPE: &[Chain] = &[
     },
     Chain {
         id: "clamps",
-        status: Status::Pending,
+        status: Status::Explained,
         paths: &[
             "clamps.screw_proof_MPa",
             "clamps.joint_preload_N",
