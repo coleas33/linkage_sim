@@ -1817,4 +1817,25 @@ fn the_panel_labels_selector_codes_and_names_upstream_corrections() {
         r.corrections_upstream("coupling.npole").is_empty(),
         "an input"
     );
+    // The "used by" list follows the workbook's chain, with no hover dead end: Calculator C35
+    // feeds each ring's coefficient (C69, C70), and the governing cold limit reads the cold
+    // ring's skipping cold onset, as the magnet limit reads the skipping onset.
+    for (path, reader) in [
+        ("model.alpha_br_per_C", "model.inner_alpha_br_per_C"),
+        ("model.alpha_br_per_C", "model.outer_alpha_br_per_C"),
+        (
+            "temperature.demag.cold_onset_skipping_C",
+            "temperature.demag.cold_limit_C",
+        ),
+        (
+            "temperature.demag.onset_skipping_C",
+            "temperature.demag.magnet_limit_C",
+        ),
+    ] {
+        assert!(
+            r.used_by(path).iter().any(|u| u == reader),
+            "{path} is not used by {reader}: {:?}",
+            r.used_by(path)
+        );
+    }
 }

@@ -147,14 +147,15 @@ pub const RECORDS: &[Record] = &[
                else => {coupling.magnets.manual_outer_br_T})
            where [B_{lib}] = table("magnets", {coupling.magnets.part_outer}, "br_T"),
                  [B_{grade}] = table("grades", {coupling.magnets.grade_outer}, "br_T")"#).corrected(&[E3]),
-    // model::ResolvedMagnet::alpha_br: the grade's only in the grade mode (decision A2-7).
+    // model::ResolvedMagnet::alpha_br: the grade's only in the grade mode (decision A2-7), else
+    // the Calculator's coefficient C35 (which reads the Calibration's C22).
     record("model.inner_alpha_br_per_C", "α_i",
         r#"cases(table("magnets", {coupling.magnets.part_inner}, "br_T") = none and [α_{grade}] != none => [α_{grade}];
-               else => {calibration.alpha_br_per_C})
+               else => {model.alpha_br_per_C})
            where [α_{grade}] = table("grades", {coupling.magnets.grade_inner}, "alpha_br_per_C")"#),
     record("model.outer_alpha_br_per_C", "α_o",
         r#"cases(table("magnets", {coupling.magnets.part_outer}, "br_T") = none and [α_{grade}] != none => [α_{grade}];
-               else => {calibration.alpha_br_per_C})
+               else => {model.alpha_br_per_C})
            where [α_{grade}] = table("grades", {coupling.magnets.grade_outer}, "alpha_br_per_C")"#),
     // material_library::resolve: a non-ferromagnetic back iron selects the free-space circuit (A5).
     record("materials.circuit_backiron", "circuit",

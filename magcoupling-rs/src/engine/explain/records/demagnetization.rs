@@ -161,9 +161,11 @@ pub const RECORDS: &[Record] = &[
                    and {temperature.demag.outer_cold_limit_C} > {temperature.demag.inner_cold_limit_C} => "outer";
                {temperature.demag.outer_cold_limit_C} != "n/a" and {temperature.demag.inner_cold_limit_C} = "n/a" => "outer";
                else => "inner")"#).corrected(&[E20]),
+    // The cold ring's skipping cold onset plus the margin (temperature::ring_demag), as the
+    // magnet limit is the skipping onset minus it.
     record("temperature.demag.cold_limit_C", "ϑ_{cold}",
-        r#"cases({temperature.demag.cold_ring} = "outer" => {temperature.demag.outer_cold_limit_C};
-               else => {temperature.demag.inner_cold_limit_C})"#).corrected(&[E20]),
+        r#"cases({temperature.demag.cold_onset_skipping_C} = "n/a" => "n/a";
+               else => {temperature.demag.cold_onset_skipping_C} + {temperature.demag.design_margin_C})"#).corrected(&[E20]),
     // Both rings' checks, as the engine's: the inner ring passes, then the outer ring; a ring
     // with no cold limit passes. Not the higher limit's check alone: an undefined (NaN) limit
     // never holds the cold side, yet its ring fails.
