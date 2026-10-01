@@ -3,15 +3,45 @@
 //! pattern as `linkage-sim-rs/src/gui/test_support.rs` (a separate crate, so
 //! the few helpers used here are repeated, not shared).
 
-/// One headless frame of `draw` inside a central panel, with `events` as the
-/// frame's input. Returns what egui painted.
-pub(crate) fn central_panel_frame(
+/// A design with f_end below 0 (the engine's short-magnet test, audit M9): 2 mm manual
+/// blocks with c_end 0.5.
+pub(crate) fn short_magnets() -> crate::DesignInputs {
+    let mut inputs = crate::DesignInputs::default();
+    inputs.coupling.c_end = 0.5;
+    inputs.coupling.magnets.part_inner.clear();
+    inputs.coupling.magnets.part_outer.clear();
+    inputs.coupling.magnets.manual_inner_length_mm = 2.0;
+    inputs.coupling.magnets.manual_outer_length_mm = 2.0;
+    inputs
+}
+
+/// The screen of the headless frames [points]: a laptop window.
+pub(crate) const SCREEN: egui::Vec2 = egui::vec2(1280.0, 1024.0);
+
+/// One headless frame of `draw` inside a central panel on a screen of `size`, with `events`
+/// as the frame's input. Returns what egui painted.
+pub(crate) fn sized_frame(
     ctx: &egui::Context,
+    size: egui::Vec2,
+    events: Vec<egui::Event>,
+    draw: impl FnMut(&mut egui::Ui),
+) -> egui::FullOutput {
+    sized_frame_at(ctx, size, None, events, draw)
+}
+
+/// [`sized_frame`] at the input time `time` [s] (`None`: egui adds its predicted frame time,
+/// 1/60 s, to the last frame's).
+pub(crate) fn sized_frame_at(
+    ctx: &egui::Context,
+    size: egui::Vec2,
+    time: Option<f64>,
     events: Vec<egui::Event>,
     mut draw: impl FnMut(&mut egui::Ui),
 ) -> egui::FullOutput {
     let input = egui::RawInput {
         events,
+        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+        time,
         ..Default::default()
     };
     ctx.run(input, |ctx| {
@@ -19,15 +49,34 @@ pub(crate) fn central_panel_frame(
     })
 }
 
-/// A key press with no modifiers.
-pub(crate) fn key_press(key: egui::Key) -> egui::Event {
+/// A key event with no modifiers: a press, or (`pressed` false) its release.
+pub(crate) fn key_event(key: egui::Key, pressed: bool) -> egui::Event {
     egui::Event::Key {
         key,
         physical_key: None,
-        pressed: true,
+        pressed,
         repeat: false,
         modifiers: egui::Modifiers::NONE,
     }
+}
+
+/// A key tapped with no modifiers: pressed and released in one frame, as a user taps it. egui
+/// keeps a pressed key down until its release and reads another press of it as a repeat.
+pub(crate) fn key_tap(key: egui::Key) -> Vec<egui::Event> {
+    vec![key_event(key, true), key_event(key, false)]
+}
+
+/// Ctrl+A (Cmd+A on a Mac) tapped: select all in the focused text field.
+pub(crate) fn select_all() -> Vec<egui::Event> {
+    [true, false]
+        .map(|pressed| egui::Event::Key {
+            key: egui::Key::A,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND,
+        })
+        .to_vec()
 }
 
 /// A primary-button press (`pressed`) or release at `pos`.

@@ -17,18 +17,33 @@ fn main() {
 }
 
 /// Starts the app in the canvas `magcoupling::app::CANVAS_ID`; called by the
-/// wasm-bindgen glue when the module loads.
+/// wasm-bindgen glue when the module loads. A `?m=` share link in the page's
+/// address opens its design; share links made here point at this page.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen::prelude::wasm_bindgen(start)]
 pub async fn start() {
     use magcoupling::app::{CANVAS_ID, MagcouplingApp};
+    use magcoupling::gui::session::SHARE_PARAM;
     use wasm_bindgen::JsCast;
 
     // Route log macros to the browser console.
     eframe::WebLogger::init(log::LevelFilter::Debug).ok();
 
-    let canvas = web_sys::window()
-        .expect("no window")
+    let window = web_sys::window().expect("no window");
+    let location = window.location();
+    let base = format!(
+        "{}{}",
+        location.origin().unwrap_or_default(),
+        location.pathname().unwrap_or_default()
+    );
+    let payload = location
+        .search()
+        .ok()
+        .and_then(|search| web_sys::UrlSearchParams::new_with_str(&search).ok())
+        .and_then(|params| params.get(SHARE_PARAM))
+        .filter(|payload| !payload.is_empty());
+
+    let canvas = window
         .document()
         .expect("no document")
         .get_element_by_id(CANVAS_ID)
@@ -40,7 +55,15 @@ pub async fn start() {
         .start(
             canvas,
             eframe::WebOptions::default(),
-            Box::new(|_cc| Ok(Box::new(MagcouplingApp::default()))),
+            Box::new(move |cc| {
+                let mut app = MagcouplingApp::new(&cc.egui_ctx);
+                app.set_share_base(base);
+                if let Some(payload) = payload {
+                    // A refused link is logged and shown in the panel; the default design stays.
+                    let _ = app.open_share_payload(&payload);
+                }
+                Ok(Box::new(app))
+            }),
         )
         .await
         .expect("Failed to start eframe");
