@@ -74,7 +74,7 @@ pub const ASSUMPTIONS: [Assumption; 14] = [
         id: "br_temperature_coefficient",
         label: "Br temperature coefficient",
         paths: &["calibration.alpha_br_per_C"],
-        rationale: "Reversible remanence coefficient: Br(T) = Br(20 °C) · (1 + α (T − 20 °C)), and torque scales with Br², on every sheet. −0.12 %/°C is the sintered NdFeB value of every library part's grade.",
+        rationale: "Reversible remanence coefficient: Br(T) = Br(20 °C) · (1 + α (T − 20 °C)), and torque scales with Br², on every sheet. −0.12 %/°C is the sintered NdFeB value of every library part's grade; a ring in the grade mode (manual dimensions with a grade) takes its grade's own coefficient (decision A2-7).",
         source: "Workbook Calibration!C22 (−0.0012 /°C); Addendum A grade table (K&J, sintered NdFeB).",
     },
     Assumption {

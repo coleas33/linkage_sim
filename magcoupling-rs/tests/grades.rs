@@ -246,3 +246,38 @@ fn every_part_cites_its_vendor_page_for_coating_and_magnetization() {
         }
     }
 }
+
+#[test]
+fn a_grade_ring_scales_with_its_own_alpha_and_weighs_at_its_density() {
+    // Decision A2-7 end to end: hard ferrite Y30 picked for manual dimensions on both rings,
+    // with the calculator's alpha (Calibration C22) left at the NdFeB -0.0012: the rings take
+    // Y30's -0.20 %/C and 5.0 g/cm3. Setting C22 to Y30's value by hand (the A-1 way) gives
+    // the same Calculator torques and temperature limits; only C35 and the parts C22 alone
+    // drives (the Calibration prototype, C151) differ.
+    use magcoupling::{DesignInputs, compute_all};
+    let mut graded = DesignInputs::default();
+    let m = &mut graded.coupling.magnets;
+    m.part_inner = String::new();
+    m.part_outer = String::new();
+    m.grade_inner = "Y30".to_owned();
+    m.grade_outer = "Y30".to_owned();
+    let r = compute_all(&graded);
+    assert_eq!(
+        (r.model.inner_alpha_br_per_C, r.model.outer_alpha_br_per_C),
+        (-0.002, -0.002)
+    );
+    let volume = r.model.inner_length_mm * r.model.inner_width_mm * r.model.inner_thickness_mm;
+    let volume_o = r.model.outer_length_mm * r.model.outer_width_mm * r.model.outer_thickness_mm;
+    assert_eq!(r.mass.magnets_g, 10.0 * (volume + volume_o) * 0.005);
+    let mut by_hand = graded.clone();
+    by_hand.calibration.alpha_br_per_C = -0.002;
+    let h = compute_all(&by_hand);
+    assert_eq!(r.model.pullout_Nm, h.model.pullout_Nm);
+    assert_eq!(r.metal.torque_cold_high_Nm, h.metal.torque_cold_high_Nm);
+    assert_eq!(
+        r.temperature.summary.governing_limit_C,
+        h.temperature.summary.governing_limit_C
+    );
+    assert_eq!(r.temperature.demag.alpha_br, -0.002);
+    assert_eq!(r.model.alpha_br_per_C, -0.0012);
+}

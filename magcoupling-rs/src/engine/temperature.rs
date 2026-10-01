@@ -43,7 +43,7 @@ use super::grades::Grade;
 use super::meta::{
     NumOrText, inputs, out, out_rust_only, out_uncelled, param, param_rust_only, results,
 };
-use super::model::br_factor;
+use super::model::ring_pair_factor;
 
 // =========================================================================== inputs
 inputs! {
@@ -331,49 +331,55 @@ inputs! {
 #[derive(Clone, Debug, PartialEq)]
 #[allow(non_snake_case)]
 pub struct TemperatureLinks {
-    pub op_temp_C: f64,                // Calculator C10
-    pub npole: i64,                    // Calculator C5
-    pub br20_T: f64,                   // Calculator C21
-    pub alpha_br: f64,                 // Calibration C22
-    pub tmax_lib_C: NumOrText,         // Calculator C22 ("n/a" for manual magnets)
-    pub mu0: f64,                      // Calculator C43
-    pub pullout_op_Nm: f64,            // Calculator C93
-    pub pullout_20C_Nm: f64,           // Calculator C94
-    pub inner_back_apothem_mm: f64,    // Calculator C8
-    pub inner_length_mm: f64,          // Calculator C18
-    pub inner_width_mm: f64,           // Calculator C19
-    pub inner_thickness_mm: f64,       // Calculator C20
-    pub hub_wall_mm: f64,              // Calculator C38
-    pub active_length_mm: f64,         // Calculator C33
-    pub outer_back_apothem_mm: f64,    // Calculator C60
-    pub mass_magnets_g: f64,           // Calculator C110
-    pub mass_cup_g: f64,               // Calculator C111
-    pub mass_hub_g: f64,               // Calculator C112
-    pub mass_boss_g: f64,              // Calculator C113
-    pub slip_rpm: f64,                 // Metal design C85
-    pub slip_event_s: f64,             // Metal design C87
-    pub life_events: f64,              // Metal design C88
+    pub op_temp_C: f64, // Calculator C10
+    pub npole: i64,     // Calculator C5
+    pub br20_T: f64,    // Calculator C21
+    /// Decision A2-7: each ring's Br coefficient (`model.inner_alpha_br_per_C`,
+    /// `outer_alpha_br_per_C`): a grade-mode ring's grade, else Calibration C22.
+    pub inner_alpha_br: f64,
+    pub outer_alpha_br: f64,
+    /// Decision A2-7: the inner ring's magnet density (`model.inner_magnet_density_g_mm3`),
+    /// the bond-load block mass (C82; the workbook's literal 0.0075 for NdFeB).
+    pub inner_magnet_density_g_mm3: f64,
+    pub tmax_lib_C: NumOrText, // Calculator C22 ("n/a" for manual magnets)
+    pub mu0: f64,              // Calculator C43
+    pub pullout_op_Nm: f64,    // Calculator C93
+    pub pullout_20C_Nm: f64,   // Calculator C94
+    pub inner_back_apothem_mm: f64, // Calculator C8
+    pub inner_length_mm: f64,  // Calculator C18
+    pub inner_width_mm: f64,   // Calculator C19
+    pub inner_thickness_mm: f64, // Calculator C20
+    pub hub_wall_mm: f64,      // Calculator C38
+    pub active_length_mm: f64, // Calculator C33
+    pub outer_back_apothem_mm: f64, // Calculator C60
+    pub mass_magnets_g: f64,   // Calculator C110
+    pub mass_cup_g: f64,       // Calculator C111
+    pub mass_hub_g: f64,       // Calculator C112
+    pub mass_boss_g: f64,      // Calculator C113
+    pub slip_rpm: f64,         // Metal design C85
+    pub slip_event_s: f64,     // Metal design C87
+    pub life_events: f64,      // Metal design C88
     pub measured_drag_Nm: Option<f64>, // Metal design C90
-    pub cold_high_Nm: f64,             // Metal design C10
-    pub required_min_Nm: f64,          // Metal design C7
-    pub variation: f64,                // Metal design C18
-    pub min_temp_C: f64,               // Metal design C16
-    pub magnetic_cycles: f64,          // Metal design C89
-    pub bond_inner_mm: f64,            // Metal design C120
-    pub bond_outer_mm: f64,            // Metal design C121
-    pub sleeve_mm: f64,                // Metal design C25
-    pub liner_mm: f64,                 // Metal design C26
-    pub sleeve_id_mm: f64,             // Metal design C175
-    pub sleeve_od_mm: f64,             // Metal design C176
-    pub liner_od_mm: f64,              // Metal design C177
-    pub liner_id_mm: f64,              // Metal design C178
-    pub cap_face_mm: f64,              // Metal design C167
-    pub cup_wall_mm: f64,              // Metal design C122 (E17: the aluminium cup's wall)
-    pub web_mm: f64,                   // Metal design C125 (E17: the aluminium web)
-    pub hardware_g: f64,               // Metal design C128
-    pub retainers_g: f64,              // Metal design C46
-    pub cap_g: f64,                    // Metal design C180
-    pub endplates_g: f64,              // Metal design C181
+    pub cold_high_Nm: f64,     // Metal design C10
+    pub required_min_Nm: f64,  // Metal design C7
+    pub variation: f64,        // Metal design C18
+    pub min_temp_C: f64,       // Metal design C16
+    pub magnetic_cycles: f64,  // Metal design C89
+    pub bond_inner_mm: f64,    // Metal design C120
+    pub bond_outer_mm: f64,    // Metal design C121
+    pub sleeve_mm: f64,        // Metal design C25
+    pub liner_mm: f64,         // Metal design C26
+    pub sleeve_id_mm: f64,     // Metal design C175
+    pub sleeve_od_mm: f64,     // Metal design C176
+    pub liner_od_mm: f64,      // Metal design C177
+    pub liner_id_mm: f64,      // Metal design C178
+    pub cap_face_mm: f64,      // Metal design C167
+    pub cup_wall_mm: f64,      // Metal design C122 (E17: the aluminium cup's wall)
+    pub web_mm: f64,           // Metal design C125 (E17: the aluminium web)
+    pub hardware_g: f64,       // Metal design C128
+    pub retainers_g: f64,      // Metal design C46
+    pub cap_g: f64,            // Metal design C180
+    pub endplates_g: f64,      // Metal design C181
     /// The inner magnet's grade (`model::ResolvedMagnet::grade`): E20 reads its Hcj and beta.
     pub inner_grade: Option<&'static Grade>,
     /// E20 (Decisions to confirm, A13): the outer ring's Br at 20 °C (Calculator C31), rating
@@ -713,6 +719,8 @@ pub const RING_OUTER: &str = "outer";
 #[allow(non_snake_case)] // unit suffixes, as the result names
 struct RingDemag {
     br20_T: f64,
+    /// The ring's Br coefficient (decision A2-7).
+    alpha_br: f64,
     tmax_lib_C: NumOrText,
     hcj20: f64,
     beta: f64,
@@ -730,10 +738,12 @@ struct RingDemag {
 }
 
 #[allow(non_snake_case)] // Python names (T)
+#[allow(clippy::too_many_arguments)] // one ring's Br, coefficient, rating and grade
 fn ring_demag(
     d: &DemagInputs,
     k: &TemperatureLinks,
     br20_T: f64,
+    alpha_br: f64,
     tmax_lib_C: NumOrText,
     grade: Option<&'static Grade>,
     dev: Deviations,
@@ -755,7 +765,7 @@ fn ring_demag(
     let t_ref = if cold_side {
         f64::INFINITY
     } else {
-        demag_onset_C(h_ref, hcj20, beta, d.knee_fraction, k.alpha_br, 0.0)
+        demag_onset_C(h_ref, hcj20, beta, d.knee_fraction, alpha_br, 0.0)
     };
     // the workbook errors out when the magnet is not in the library; Python leaves the onset uncalibrated
     let offset = match tmax_lib_C {
@@ -767,7 +777,7 @@ fn ring_demag(
         if cold_side {
             f64::INFINITY
         } else {
-            demag_onset_C(h, hcj20, beta, d.knee_fraction, k.alpha_br, offset)
+            demag_onset_C(h, hcj20, beta, d.knee_fraction, alpha_br, offset)
         }
     };
     let onsets = [
@@ -776,7 +786,8 @@ fn ring_demag(
         on(d.h_rev_likepole_kA_m),
         on(d.h_rev_single_ring_kA_m),
     ];
-    let thf = |T: f64| br_factor(k.alpha_br, T).powi(2);
+    // Decision A2-7: both rings' Br, each with its own coefficient.
+    let thf = |T: f64| ring_pair_factor(k.inner_alpha_br, k.outer_alpha_br, T);
     // E20 cold side: the hot limit is the rating. A magnet with no rating has no hot limit
     // (+inf, so the adhesive governs C12) and no torque at it (NaN, where the workbook
     // formula would give +inf).
@@ -792,7 +803,7 @@ fn ring_demag(
     // E20 cold side: the skipping case (the largest reverse field) governs, as on the hot side.
     let cold = |h: f64| {
         if cold_side {
-            NumOrText::Num(cold_onset_C(h, hcj20, beta, d.knee_fraction, k.alpha_br))
+            NumOrText::Num(cold_onset_C(h, hcj20, beta, d.knee_fraction, alpha_br))
         } else {
             NumOrText::Text(NO_COLD_ONSET)
         }
@@ -813,6 +824,7 @@ fn ring_demag(
     };
     RingDemag {
         br20_T,
+        alpha_br,
         tmax_lib_C,
         hcj20,
         beta,
@@ -883,15 +895,31 @@ pub fn compute(
 
     // ---- demagnetization
     let d = &ti.demag;
-    let inner = ring_demag(d, k, k.br20_T, k.tmax_lib_C, k.inner_grade, dev);
+    let inner = ring_demag(
+        d,
+        k,
+        k.br20_T,
+        k.inner_alpha_br,
+        k.tmax_lib_C,
+        k.inner_grade,
+        dev,
+    );
     // E20 (Decisions to confirm, A13): the outer ring is checked too, with its own Br, rating
     // and grade. The ring with the lower magnet limit governs and the block shows it whole
     // (the inner ring on a tie, so identical rings keep the inner ring's block bit for bit);
     // the cold side shows the ring with the higher cold limit and passes only if both rings
     // pass. The workbook checks the inner ring only.
-    let outer = dev
-        .is_on(DeviationId::E20)
-        .then(|| ring_demag(d, k, k.outer_br20_T, k.outer_tmax_lib_C, k.outer_grade, dev));
+    let outer = dev.is_on(DeviationId::E20).then(|| {
+        ring_demag(
+            d,
+            k,
+            k.outer_br20_T,
+            k.outer_alpha_br,
+            k.outer_tmax_lib_C,
+            k.outer_grade,
+            dev,
+        )
+    });
     let (hot, hot_ring) = match outer {
         Some(o) if o.mag_lim < inner.mag_lim => (o, RING_OUTER),
         _ => (inner, RING_INNER),
@@ -903,10 +931,11 @@ pub fn compute(
     let cold_ok = inner.cold_ok && outer.is_none_or(|o| o.cold_ok);
     let [on_al, on_po, on_lp, on_cu] = hot.onsets;
     let mag_lim = hot.mag_lim;
-    let thf = |T: f64| br_factor(k.alpha_br, T).powi(2);
+    // Decision A2-7: both rings' Br, each with its own coefficient.
+    let thf = |T: f64| ring_pair_factor(k.inner_alpha_br, k.outer_alpha_br, T);
     let demag = DemagResults {
         br20_T: hot.br20_T,
-        alpha_br: k.alpha_br,
+        alpha_br: hot.alpha_br,
         tmax_lib_C: hot.tmax_lib_C,
         h_ref_kA_m: hot.h_ref,
         t_ref_model_C: hot.t_ref,
@@ -938,7 +967,9 @@ pub fn compute(
     // ---- adhesive selection and loads
     let sel = selected_adhesive(ti.adhesive.selected);
     let area = k.inner_length_mm * k.inner_width_mm;
-    let m_block = k.inner_length_mm * k.inner_width_mm * k.inner_thickness_mm * 0.0075; // literal, as Python
+    // Python's literal 0.0075 (NdFeB); decision A2-7: a grade-mode inner ring's density.
+    let m_block =
+        k.inner_length_mm * k.inner_width_mm * k.inner_thickness_mm * k.inner_magnet_density_g_mm3;
     let r_mid = k.inner_back_apothem_mm + k.inner_thickness_mm / 2.0;
     let Ft = k.cold_high_Nm / (npole * r_mid / 1000.0);
     let tau_b = Ft / area;
@@ -1350,6 +1381,7 @@ pub fn compute(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::model::br_factor;
 
     #[test]
     fn selected_adhesive_covers_the_four_codes_only() {
@@ -1373,7 +1405,9 @@ mod tests {
             op_temp_C: 50.0,
             npole: 10,
             br20_T: 1.29,
-            alpha_br: -0.0012,
+            inner_alpha_br: -0.0012,
+            outer_alpha_br: -0.0012,
+            inner_magnet_density_g_mm3: 0.0075,
             tmax_lib_C: NumOrText::Num(150.0),
             mu0: 1.256637e-6,
             pullout_op_Nm: 2.6473,
@@ -1446,7 +1480,8 @@ mod tests {
         k.inner_length_mm = 1.0;
         k.inner_width_mm = 1.0;
         k.cold_high_Nm = 0.75; // tau_b = 0.75 MPa: fat = 0.2 * 15 / 0.75 = 4 (AA 326, 15 MPa)
-        k.alpha_br = 0.0; // every temperature factor is exactly 1: amp = pullout_20C * (1 + variation)
+        k.inner_alpha_br = 0.0; // every temperature factor is exactly 1: amp = pullout_20C * (1 + variation)
+        k.outer_alpha_br = 0.0;
         k.variation = 0.0;
         k.pullout_20C_Nm = 0.9375;
         let mut ti = TemperatureInputs::default();
@@ -1947,17 +1982,20 @@ mod tests {
         let mut k = links();
         k.inner_grade = crate::engine::grades::grade("Y30");
         k.br20_T = 0.37;
-        k.alpha_br = -0.002;
+        k.inner_alpha_br = -0.002;
+        k.inner_magnet_density_g_mm3 = 0.005;
         k.tmax_lib_C = NumOrText::Num(250.0);
         k.outer_grade = k.inner_grade;
         k.outer_br20_T = k.br20_T;
+        k.outer_alpha_br = k.inner_alpha_br;
         k.outer_tmax_lib_C = k.tmax_lib_C;
         k
     }
 
-    /// `k` with the outer ring (Br, rating, grade) of `from`.
+    /// `k` with the outer ring (Br, alpha, rating, grade) of `from`.
     fn with_outer_of(mut k: TemperatureLinks, from: &TemperatureLinks) -> TemperatureLinks {
         k.outer_br20_T = from.outer_br20_T;
+        k.outer_alpha_br = from.outer_alpha_br;
         k.outer_tmax_lib_C = from.outer_tmax_lib_C;
         k.outer_grade = from.outer_grade;
         k
@@ -1972,8 +2010,7 @@ mod tests {
         let e20 = Deviations::only(DeviationId::E20);
         let ti = TemperatureInputs::default();
         let mixed = with_outer_of(links(), &ferrite_links());
-        let mut ferrite = ferrite_links();
-        ferrite.alpha_br = mixed.alpha_br; // the calculator's one alpha (A4)
+        let ferrite = ferrite_links();
         let r = compute(&ti, &mixed, e20);
         assert_eq!(
             (r.demag.demag_ring.as_str(), r.demag.cold_ring.as_str()),
@@ -1989,14 +2026,18 @@ mod tests {
             want.cold_limit_C = cold.cold_limit_C;
             want.cold_ring = RING_OUTER.to_owned();
             want.cold_check = cold.cold_check;
+            // Decision A2-7: the torque at the limit goes with both rings' Br, each ring with
+            // its own coefficient (the NdFeB inner, the ferrite outer).
+            want.torque_at_limit_Nm = mixed.pullout_20C_Nm
+                * (br_factor(-0.0012, want.magnet_limit_C)
+                    * br_factor(-0.002, want.magnet_limit_C));
             want
         });
         // The stored NdFeB fields are past Y30's knee at room temperature: the cold check fails.
         assert_eq!(r.demag.cold_check, "Below the cold demagnetization limit");
         assert_eq!(r.summary.verdict, VERDICT_CHECK);
         // Swapped, the rings trade places.
-        let mut swapped = with_outer_of(ferrite_links(), &links());
-        swapped.alpha_br = mixed.alpha_br;
+        let swapped = with_outer_of(ferrite_links(), &links());
         let s = compute(&ti, &swapped, e20);
         assert_eq!(
             (s.demag.demag_ring.as_str(), s.demag.cold_ring.as_str()),
@@ -2004,10 +2045,66 @@ mod tests {
         );
         assert_eq!(s.demag.magnet_limit_C, r.demag.magnet_limit_C);
         assert_eq!(s.demag.cold_limit_C, r.demag.cold_limit_C);
+        // Without E20 the workbook reads the inner ring's grade, Br and rating only (the outer
+        // ring's coefficient still scales the torques, decision A2-7).
+        let mut one_alpha = mixed.clone();
+        one_alpha.outer_alpha_br = links().outer_alpha_br;
         assert_eq!(
-            run(&ti, &mixed),
+            run(&ti, &one_alpha),
             run(&ti, &links()),
             "the workbook reads the inner ring only"
+        );
+    }
+
+    #[test]
+    fn each_ring_is_checked_with_its_own_coefficient() {
+        // Decision A2-7: with E20 each ring's onsets use its own Br coefficient (the reverse
+        // field scales with that ring's Br), the block shows the governing ring's, and the
+        // torques at the limits go with both rings' Br.
+        let e20 = Deviations::only(DeviationId::E20);
+        let ti = TemperatureInputs::default();
+        let mut k = links();
+        k.outer_alpha_br = -0.0009; // a hypothetical outer grade with a flatter Br curve
+        let r = compute(&ti, &k, e20);
+        let d = &ti.demag;
+        let onset = |alpha: f64| {
+            let offset = demag_onset_C(
+                1.29 / (2.0 * k.mu0) / 1000.0,
+                1592.0,
+                -0.005,
+                d.knee_fraction,
+                alpha,
+                0.0,
+            ) - 150.0;
+            demag_onset_C(
+                d.h_rev_likepole_kA_m,
+                1592.0,
+                -0.005,
+                d.knee_fraction,
+                alpha,
+                offset,
+            )
+        };
+        let (inner, outer) = (onset(-0.0012), onset(-0.0009));
+        let (governing, alpha) = if outer < inner {
+            (outer, -0.0009)
+        } else {
+            (inner, -0.0012)
+        };
+        assert_eq!(r.demag.onset_skipping_C, governing);
+        assert_eq!(r.demag.alpha_br, alpha);
+        let limit = governing - d.design_margin_C;
+        assert_eq!(
+            r.demag.torque_at_limit_Nm,
+            k.pullout_20C_Nm * (br_factor(-0.0012, limit) * br_factor(-0.0009, limit))
+        );
+        // The inner block's mass for the bond load uses the inner ring's density.
+        let mut ferrite = links();
+        ferrite.inner_magnet_density_g_mm3 = 0.005;
+        let a = compute(&ti, &ferrite, e20).adhesive;
+        assert_eq!(
+            a.block_mass_g,
+            k.inner_length_mm * k.inner_width_mm * k.inner_thickness_mm * 0.005
         );
     }
 
@@ -2081,11 +2178,20 @@ mod tests {
         assert!(!higher_cold_limit(na(), na()));
         for (k, numeric_cold) in [(links(), false), (ferrite_links(), true)] {
             let d = &ti.demag;
-            let inner = ring_demag(d, &k, k.br20_T, k.tmax_lib_C, k.inner_grade, e20);
+            let inner = ring_demag(
+                d,
+                &k,
+                k.br20_T,
+                k.inner_alpha_br,
+                k.tmax_lib_C,
+                k.inner_grade,
+                e20,
+            );
             let outer = ring_demag(
                 d,
                 &k,
                 k.outer_br20_T,
+                k.outer_alpha_br,
                 k.outer_tmax_lib_C,
                 k.outer_grade,
                 e20,

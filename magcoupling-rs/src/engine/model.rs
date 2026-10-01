@@ -6,7 +6,9 @@
 //! `harmonic_amplitude`, `shear_stress`, shared with the sweeps). Two formulas
 //! several sheets share live here once, so they stay bit-identical everywhere:
 //! `corner_radius` (√(r_face² + (w/2)²)) and `br_factor` (1 + α (T − 20 °C)).
-//! `mass_estimate` (Calculator rows 110-115) is ported with `MassResults`.
+//! `mass_estimate` (Calculator rows 110-115) is ported with `MassResults`. A ring in the
+//! grade mode (manual dimensions with a grade) takes its grade's alpha(Br) and density
+//! (Addendum A-2 decision A2-7, [`ResolvedMagnet::alpha_br`], [`ResolvedMagnet::density_g_mm3`]).
 //!
 //! The harmonic set is the Rust-only assumption `coupling.max_harmonic` (Addendum A3):
 //! the odd harmonics 1, 3, ... up to 11 ([`ODD_HARMONICS`], [`harmonic_count`]), the
@@ -329,6 +331,14 @@ results! {
                 "The library part's grade, or the grade picked for manual dimensions; blank for a manual magnet without a grade."),
             outer_grade: String => out_rust_only("", "Outer magnet grade used",
                 "As the inner grade, for the outer ring."),
+            inner_alpha_br_per_C: f64 => out_rust_only("1/°C", "Inner Br temperature coefficient used",
+                "Decision A2-7: the grade's for manual dimensions with a grade picked; else the calculator's alpha (Calibration C22, shown in C35)."),
+            outer_alpha_br_per_C: f64 => out_rust_only("1/°C", "Outer Br temperature coefficient used",
+                "As the inner coefficient, for the outer ring."),
+            inner_magnet_density_g_mm3: f64 => out_rust_only("g/mm³", "Inner magnet density used",
+                "Decision A2-7: the grade's for manual dimensions with a grade picked; else NdFeB, 7.5 g/cm³ (C110)."),
+            outer_magnet_density_g_mm3: f64 => out_rust_only("g/mm³", "Outer magnet density used",
+                "As the inner density, for the outer ring."),
         }
     }
 }
@@ -362,6 +372,30 @@ pub struct ResolvedMagnet {
     pub tmax_C: NumOrText,
     /// The part's grade, or the grade picked for manual dimensions (Addendum A6).
     pub grade: Option<&'static Grade>,
+    /// Whether the ring is in the grade mode: manual dimensions with a grade picked (the
+    /// part is not in the library). Only then does the grade supply alpha(Br) and density.
+    pub from_grade: bool,
+}
+
+impl ResolvedMagnet {
+    /// The ring's reversible Br coefficient [1/°C]: its grade's in the grade mode (decision
+    /// A2-7), else `calculator_alpha`, the calculator's single alpha (Calibration C22), which
+    /// equals every library part's sintered NdFeB grade at its default.
+    pub fn alpha_br(&self, calculator_alpha: f64) -> f64 {
+        match self.grade {
+            Some(g) if self.from_grade => g.alpha_br_per_C,
+            _ => calculator_alpha,
+        }
+    }
+
+    /// The ring's magnet density [g/mm³]: its grade's in the grade mode (decision A2-7), else
+    /// the NdFeB density the workbook uses for every magnet.
+    pub fn density_g_mm3(&self) -> f64 {
+        match self.grade {
+            Some(g) if self.from_grade => g.density_g_mm3,
+            _ => NDFEB_DENSITY_G_MM3,
+        }
+    }
 }
 
 /// Library values when the part is found (workbook IFERROR/INDEX/MATCH); else the
@@ -382,6 +416,7 @@ pub fn resolve_magnets(m: &MagnetInputs, dev: Deviations) -> (ResolvedMagnet, Re
                     br_T: library::br_T(spec, dev),
                     tmax_C: NumOrText::Num(library::tmax_C(spec, dev)),
                     grade: grades::grade(library::grade_id(spec, dev)),
+                    from_grade: false,
                 },
                 None => match grades::grade(grade) {
                     Some(g) => ResolvedMagnet {
@@ -391,6 +426,7 @@ pub fn resolve_magnets(m: &MagnetInputs, dev: Deviations) -> (ResolvedMagnet, Re
                         br_T: g.br_T,
                         tmax_C: NumOrText::Num(g.tmax_C),
                         grade: Some(g),
+                        from_grade: true,
                     },
                     None => ResolvedMagnet {
                         length_mm,
@@ -399,6 +435,7 @@ pub fn resolve_magnets(m: &MagnetInputs, dev: Deviations) -> (ResolvedMagnet, Re
                         br_T,
                         tmax_C: NumOrText::Text(NOT_IN_LIBRARY),
                         grade: None,
+                        from_grade: false,
                     },
                 },
             }
@@ -542,6 +579,15 @@ pub(crate) fn corner_radius(r_face_mm: f64, width_mm: f64) -> f64 {
 #[allow(non_snake_case)] // unit suffix, as the Python names
 pub(crate) fn br_factor(alpha_br: f64, temp_C: f64) -> f64 {
     1.0 + alpha_br * (temp_C - 20.0)
+}
+
+/// Torque at magnet temperature `temp_C` over torque at 20 °C, Br_i(T) Br_o(T) / (Br_i Br_o):
+/// each ring with its own coefficient (Addendum A-2 decision A2-7). With one coefficient it is
+/// the workbook's (1 + α (T − 20 °C))², bit for bit (`x.powi(2)` is `x * x`). The one formula
+/// for the Metal design and Temperature design torques at another temperature.
+#[allow(non_snake_case)] // unit suffix, as the Python names
+pub(crate) fn ring_pair_factor(alpha_inner: f64, alpha_outer: f64, temp_C: f64) -> f64 {
+    br_factor(alpha_inner, temp_C) * br_factor(alpha_outer, temp_C)
 }
 
 /// Per-harmonic pull-out shear stress [Pa] and its parts, for every harmonic of
@@ -837,8 +883,10 @@ pub fn compute(
     let al_i = py_min(1.0, pitch_share(mi.width_mm, a_i, mi.thickness_mm, N));
     let al_o = py_min(1.0, pitch_share(mo.width_mm, A_o, mo.thickness_mm, N));
 
-    let bri = mi.br_T * br_factor(alpha_br, ci.op_temp_C);
-    let bro = mo.br_T * br_factor(alpha_br, ci.op_temp_C);
+    // Decision A2-7: each ring with its own coefficient (a grade-mode ring's grade, else C22).
+    let (alpha_i, alpha_o) = (mi.alpha_br(alpha_br), mo.alpha_br(alpha_br));
+    let bri = mi.br_T * br_factor(alpha_i, ci.op_temp_C);
+    let bro = mo.br_T * br_factor(alpha_o, ci.op_temp_C);
     let h = shear_stress(
         bri,
         bro,
@@ -1003,6 +1051,10 @@ pub fn compute(
         outer_temp_check: temp_check(mo.tmax_C),
         inner_grade: mi.grade.map_or("", |g| g.id).to_owned(),
         outer_grade: mo.grade.map_or("", |g| g.id).to_owned(),
+        inner_alpha_br_per_C: alpha_i,
+        outer_alpha_br_per_C: alpha_o,
+        inner_magnet_density_g_mm3: mi.density_g_mm3(),
+        outer_magnet_density_g_mm3: mo.density_g_mm3(),
     }
 }
 
@@ -1061,10 +1113,16 @@ pub fn mass_estimate(
     dev: Deviations,
 ) -> MassResults {
     let N = ci.npole as f64;
-    let m_mag = N
-        * (r.inner_length_mm * r.inner_width_mm * r.inner_thickness_mm
-            + r.outer_length_mm * r.outer_width_mm * r.outer_thickness_mm)
-        * NDFEB_DENSITY_G_MM3;
+    let volume_i = r.inner_length_mm * r.inner_width_mm * r.inner_thickness_mm;
+    let volume_o = r.outer_length_mm * r.outer_width_mm * r.outer_thickness_mm;
+    let (rho_i, rho_o) = (r.inner_magnet_density_g_mm3, r.outer_magnet_density_g_mm3);
+    // Decision A2-7: each ring at its own density; rings of one density keep the workbook's
+    // single product (bit for bit: N (V_i + V_o) rho).
+    let m_mag = if rho_i == rho_o {
+        N * (volume_i + volume_o) * rho_i
+    } else {
+        N * (volume_i * rho_i + volume_o * rho_o)
+    };
     // E9: with no intentional back iron the cup and boss are aluminium, as the hub already is.
     let cup_boss_density =
         cup_boss_density(ci.backiron, steel_density_g_mm3, al_density_g_mm3, dev);
@@ -1221,6 +1279,63 @@ mod tests {
         assert_eq!(r.outer_grade, "");
         assert_eq!(r.outer_temp_check, "unknown");
         assert_eq!((r.inner_br_T, r.inner_grade.as_str()), (1.29, "N42SH"));
+    }
+
+    #[test]
+    fn a_grade_ring_takes_its_grade_alpha_and_density() {
+        // Decision A2-7: a ring in the grade mode (manual dimensions with a grade picked) takes
+        // its grade's Br temperature coefficient and density. A library part (every one
+        // sintered NdFeB) and a manual magnet without a grade keep the calculator's single
+        // alpha (Calibration C22, here the `alpha_br` argument) and the NdFeB density.
+        let mut ci = CouplingInputs::default();
+        ci.magnets.part_inner = String::new();
+        ci.magnets.grade_inner = "Y30".to_owned();
+        let r = at(&ci);
+        assert_eq!(
+            (r.inner_alpha_br_per_C, r.outer_alpha_br_per_C),
+            (-0.002, -0.0012)
+        );
+        assert_eq!(
+            (r.inner_magnet_density_g_mm3, r.outer_magnet_density_g_mm3),
+            (0.005, NDFEB_DENSITY_G_MM3)
+        );
+        assert_eq!(r.br_inner_T_op, 0.37 * br_factor(-0.002, 50.0));
+        assert_eq!(r.br_outer_T_op, r.outer_br_T * br_factor(-0.0012, 50.0));
+        assert_eq!(
+            r.alpha_br_per_C, -0.0012,
+            "C35 still shows the calculator's alpha"
+        );
+        // A gradeless manual magnet and a library part follow the argument, whatever it is.
+        let mut manual = CouplingInputs::default();
+        manual.magnets.part_inner = String::new();
+        let r = compute(
+            &manual,
+            1.4,
+            0.05,
+            0.05,
+            1.8,
+            -0.001,
+            1.5,
+            0.95,
+            0.95,
+            2000.0,
+            2.5,
+            Deviations::NONE,
+        );
+        assert_eq!(
+            (r.inner_alpha_br_per_C, r.outer_alpha_br_per_C),
+            (-0.001, -0.001)
+        );
+        assert_eq!(r.inner_magnet_density_g_mm3, NDFEB_DENSITY_G_MM3);
+        // An NdFeB grade in the grade mode has the calculator's default values: nothing moves.
+        let mut n42 = CouplingInputs::default();
+        n42.magnets.part_inner = String::new();
+        n42.magnets.grade_inner = "N42".to_owned();
+        let r = at(&n42);
+        assert_eq!(
+            (r.inner_alpha_br_per_C, r.inner_magnet_density_g_mm3),
+            (-0.0012, NDFEB_DENSITY_G_MM3)
+        );
     }
 
     #[test]
@@ -1933,6 +2048,48 @@ mod tests {
         );
         assert_eq!(r.inner_flat_check, "OK, 0.00 mm slack");
         assert_eq!(r.outer_flat_check, "OK, blocks 0.00 mm apart at the faces");
+    }
+
+    #[test]
+    fn a_grade_ring_weighs_at_its_grade_density() {
+        // Decision A2-7: the magnets' mass prices each ring at its own density; rings of one
+        // density keep the workbook's single product, bit for bit.
+        let md = super::super::metal_design::MetalDesignInputs::default();
+        let mass = |ci: &CouplingInputs| {
+            let r = at(ci);
+            let m = mass_estimate(
+                ci,
+                &r,
+                md.bond_inner_mm,
+                md.bond_outer_mm,
+                md.cup_depth_mm,
+                md.web_mm,
+                md.hub_length_mm,
+                md.boss_length_mm,
+                md.boss_od_mm,
+                md.steel_density_g_mm3,
+                md.al_density_g_mm3,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                Deviations::NONE,
+            );
+            (m.magnets_g, r)
+        };
+        let (workbook, r) = mass(&CouplingInputs::default());
+        let volume_i = r.inner_length_mm * r.inner_width_mm * r.inner_thickness_mm;
+        let volume_o = r.outer_length_mm * r.outer_width_mm * r.outer_thickness_mm;
+        assert_eq!(workbook, 10.0 * (volume_i + volume_o) * NDFEB_DENSITY_G_MM3);
+        let mut ci = CouplingInputs::default();
+        ci.magnets.part_inner = String::new();
+        ci.magnets.grade_inner = "Y30".to_owned();
+        let (ferrite, r) = mass(&ci);
+        let volume_i = r.inner_length_mm * r.inner_width_mm * r.inner_thickness_mm;
+        assert_eq!(
+            ferrite,
+            10.0 * (volume_i * 0.005 + volume_o * NDFEB_DENSITY_G_MM3)
+        );
     }
 
     #[test]
