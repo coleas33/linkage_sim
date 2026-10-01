@@ -1,0 +1,3021 @@
+{
+ "meta": {
+  "title": "Magnetic coupling calculator, Addendum A-4 data: per-grade magnet thermal properties (E22, E23) and E21 (calibration offset clamped at 0)",
+  "generated": "2026-10-01",
+  "report": "docs/analyses/2026-10-01-magcoupling-addendum-a4-verification.md",
+  "basis": "main at 05ec40a",
+  "status": "PENDING USER DECISIONS (report section 5). Every 'value' and 'engine_literals' entry is the recommended option; items with a 'decision' block carry every option.",
+  "approved_in_principle": "2026-10-01 (docs/ai/04-memory.yaml): E21 clamp; sourced per-grade CTE and specific heat for ferrite, SmCo and bonded grades, registered as corrections that move only non-NdFeB designs",
+  "resolution_rule": [
+   "1 condition match (the temperature range stated by the source)",
+   "2 vendor minimum for guaranteed properties (does not apply: CTE and cp are typical values)",
+   "3 primary over secondary (manufacturer grade sheet > manufacturer proxy grade > distributor > aggregator)",
+   "4 otherwise a user decision, conservative option recommended"
+  ],
+  "units": {
+   "cte": "1e-6/K (identical to 1e-6/°C and to 'ΔL/L per °C x10^-6' and 'µm/m·°C')",
+   "cp": "J/(kg·K)"
+  },
+  "conversions": {
+   "cal_per_g_C_to_J_per_kg_K": "x 4186.8 (0.11 -> 460.5)",
+   "kcal_per_kg_C_to_J_per_kg_K": "x 4186.8 (Eclipse 0.08 -> 334.9; 0.09 -> 376.8)",
+   "Ws_per_g_C_to_J_per_kg_K": "x 1000 (EAM 0.42 -> 420)",
+   "delta_L_over_L_per_C_x1e-6": "= 1e-6/K",
+   "engine_literal_rule": "Write literals as typed (13.0e-6, not 13/1e6)."
+  },
+  "engine_literal_rule": "Store engine-unit values as literals (engine_literals); write them into Rust as typed (13.0e-6, not 13/1e6).",
+  "skeptic": {
+   "properties": {
+    "value_items": 14,
+    "agreed": 6,
+    "disagreement_entries": 6,
+    "documents_rendered": 15
+   },
+   "e21": {
+    "agreed": 2045,
+    "disagreements": 6
+   }
+  },
+  "field_keys": {
+   "cte_perp_1e-6_per_K": "CTE perpendicular to the magnetization (the bond plane): the value the engine consumes (inner ring only)",
+   "cte_parallel_1e-6_per_K": "CTE parallel to the magnetization: recorded, not consumed",
+   "cp_J_kgK": "specific heat: consumed per ring"
+  }
+ },
+ "grades": {
+  "Y30": {
+   "family": "Hard ferrite (strontium ferrite, sintered)",
+   "source_grade_name": "Y30 (= C5)",
+   "grade_match_note": "No Y30 manufacturer sheet was retrievable (TDK FB summary returned HTTP 403 even with a browser agent and referer; Arnold ceramic sheets and Proterial pages showed no thermal rows; Alliance C-5 and Hyab print none). The Eclipse sheet names Y30/C5 but prints one family table. MS-Schramberg HF 26/24 (strontium, dry pressed, Br 370 min / 380 typ mT) is the nearest manufacturer grade by Br; the data JSON's own cross-reference is HF 26/18, which MS-Schramberg does not list.",
+   "fields": {
+    "cte_perp_1e-6_per_K": {
+     "unit": "1e-6/K",
+     "direction": "perpendicular to magnetization (in the bond plane); Eclipse 'C⊥', MS-Schramberg 'p.p.d.' (perpendicular to preferred direction), thyssenkrupp 'normal to mag. direction'",
+     "engine_consumes": true,
+     "value": 10,
+     "value_source_url": "https://www.eclipsemagnetics.com/site/assets/files/19602/ferrite_ceramic_datasheet.pdf",
+     "value_source_ref": "Eclipse ferrite_ceramic_datasheet.pdf PDF p3, Physical Characteristics (Typical), C⊥ = 10",
+     "min": 9.2,
+     "min_source_url": "https://ucpcdn.thyssenkrupp.com/_binary/UCPthyssenkruppBAMXSchulteMicrositeMagnettechnik/en/downloads/link-thyssenkruppMagnettechnik-Factsheet-ferrite-magnets.pdf",
+     "typ": 10,
+     "typ_source_url": "https://www.eclipsemagnetics.com/site/assets/files/19602/ferrite_ceramic_datasheet.pdf",
+     "max": 11,
+     "max_source_url": "https://magnete.de/fileadmin/user_upload/Magnetische_Kenndaten/Gesinterte_Hartferritmagnete/HF_26-24_Sr_E.pdf",
+     "temp_range_C": null,
+     "temp_range_note": "No temperature range is printed by Eclipse, MS-Schramberg or thyssenkrupp; none is borrowed. FLAG.",
+     "source_tier": 2,
+     "proxy": false,
+     "value_kind": "derived (the value common to three sources' ranges; Eclipse typical)",
+     "basis": "10 is the only value inside all three sources' perpendicular ranges (Eclipse 10, MS-Schramberg 10-11, thyssenkrupp 9.2-10). Eclipse is the sheet that names Y30 and prints 10 as a typical; the manufacturer sheet (proxy grade) corroborates it.",
+     "cross_source_range": [
+      9.2,
+      11
+     ],
+     "alternatives": [
+      {
+       "vendor": "Eclipse Magnetics ferrite datasheet (distributor; the sheet that names Y30/C5)",
+       "source_url": "https://www.eclipsemagnetics.com/site/assets/files/19602/ferrite_ceramic_datasheet.pdf",
+       "value": 10,
+       "min": null,
+       "typ": 10,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "PDF p3 'Physical Characteristics (Typical)': Coefficient of Thermal Expansion, C// = 15 and C⊥ = 10 (10-6/°C). No temperature range printed. Read from the rendered page. One table for the ferrite family (not Y30-specific)."
+      },
+      {
+       "vendor": "MS-Schramberg (Magnetfabrik Schramberg) HF 26/24 strontium ferrite, anisotropic dry pressed (Br typ 380 / min 370 mT, the Y30 Br window)",
+       "source_url": "https://magnete.de/fileadmin/user_upload/Magnetische_Kenndaten/Gesinterte_Hartferritmagnete/HF_26-24_Sr_E.pdf",
+       "value": null,
+       "min": 10,
+       "typ": null,
+       "max": 11,
+       "temp_range_C": null,
+       "source_tier": 1,
+       "proxy": true,
+       "value_kind": "sourced (manufacturer, proxy grade)",
+       "note": "Mechanical values table, 'Expansion coefficient approx. 10^-6/K': p.p.d. (perpendicular to preferred direction) 10-11; i.p.d. (in preferred direction) 12-13. Version 08/2022. No temperature range printed."
+      },
+      {
+       "vendor": "MS-Schramberg HF 30/26 strontium ferrite, wet pressed (Br typ 405 / min 395 mT)",
+       "source_url": "https://magnete.de/fileadmin/user_upload/Magnetische_Kenndaten/Gesinterte_Hartferritmagnete/HF_30-26_Sr_E.pdf",
+       "value": null,
+       "min": 10,
+       "typ": null,
+       "max": 11,
+       "temp_range_C": null,
+       "source_tier": 1,
+       "proxy": true,
+       "value_kind": "sourced (manufacturer, proxy grade)",
+       "note": "Same table and values as HF 26/24 (p.p.d. 10-11, i.p.d. 12-13). Version 08/2022."
+      },
+      {
+       "vendor": "thyssenkrupp Materials Services hard-ferrite factsheet (materials service / distributor, generic hard ferrite)",
+       "source_url": "https://ucpcdn.thyssenkrupp.com/_binary/UCPthyssenkruppBAMXSchulteMicrositeMagnettechnik/en/downloads/link-thyssenkruppMagnettechnik-Factsheet-ferrite-magnets.pdf",
+       "value": null,
+       "min": 9.2,
+       "typ": null,
+       "max": 10,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "PDF p3 Physical properties: 'normal to mag. direction' 9.2-10 (10-6/K); 'in magnetizing direction' 9.2-13.3. No temperature range."
+      }
+     ],
+     "note": null,
+     "resolutions": [
+      {
+       "id": "TH1",
+       "text": "value 10 rests on a distributor sheet that names Y30 and a manufacturer proxy grade (HF 26/24, HF 30/26); no Y30 manufacturer sheet; FLAG"
+      },
+      {
+       "id": "TH8",
+       "text": "no temperature range printed by any source; temp_range_C left null"
+      }
+     ],
+     "status": "resolved",
+     "skeptic": {
+      "verdict": "agreed",
+      "note": "Confirmed on the rendered Eclipse and MS-Schramberg sheets."
+     }
+    },
+    "cte_parallel_1e-6_per_K": {
+     "unit": "1e-6/K",
+     "direction": "parallel to magnetization (preferred direction); Eclipse 'C//', MS-Schramberg 'i.p.d.', thyssenkrupp 'in magnetizing direction'",
+     "engine_consumes": false,
+     "value": null,
+     "value_source_url": null,
+     "value_source_ref": null,
+     "min": 12,
+     "min_source_url": "https://magnete.de/fileadmin/user_upload/Magnetische_Kenndaten/Gesinterte_Hartferritmagnete/HF_26-24_Sr_E.pdf",
+     "typ": null,
+     "typ_source_url": null,
+     "max": 15,
+     "max_source_url": "https://www.maruwa-g.com/e/products/ceramic/000321.html",
+     "temp_range_C": null,
+     "temp_range_note": "No temperature range printed; none borrowed.",
+     "source_tier": 1,
+     "proxy": true,
+     "value_kind": "recorded range only (not consumed; two manufacturers disagree)",
+     "basis": "Not read by the engine. MS-Schramberg (manufacturer, proxy grade) prints i.p.d. 12-13; Maruwa (ferrite manufacturer) prints 14-15 in the anisotropic direction; Eclipse 15 and Vega 14 side with Maruwa; thyssenkrupp 9.2-13.3. The A-4 table's midpoint 12.5 is dropped: no single value is defensible and none is consumed.",
+     "cross_source_range": [
+      9.2,
+      15
+     ],
+     "alternatives": [
+      {
+       "vendor": "Eclipse Magnetics ferrite datasheet (distributor)",
+       "source_url": "https://www.eclipsemagnetics.com/site/assets/files/19602/ferrite_ceramic_datasheet.pdf",
+       "value": 15,
+       "min": null,
+       "typ": 15,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "C// = 15 (10-6/°C), no range."
+      },
+      {
+       "vendor": "MS-Schramberg HF 26/24 and HF 30/26 (manufacturer, proxy grades)",
+       "source_url": "https://magnete.de/fileadmin/user_upload/Magnetische_Kenndaten/Gesinterte_Hartferritmagnete/HF_26-24_Sr_E.pdf",
+       "value": null,
+       "min": 12,
+       "typ": null,
+       "max": 13,
+       "temp_range_C": null,
+       "source_tier": 1,
+       "proxy": true,
+       "value_kind": null,
+       "note": "i.p.d. (in preferred direction) 12-13; HF 30/26 prints the same (https://magnete.de/fileadmin/user_upload/Magnetische_Kenndaten/Gesinterte_Hartferritmagnete/HF_30-26_Sr_E.pdf)."
+      },
+      {
+       "vendor": "thyssenkrupp hard-ferrite factsheet (distributor)",
+       "source_url": "https://ucpcdn.thyssenkrupp.com/_binary/UCPthyssenkruppBAMXSchulteMicrositeMagnettechnik/en/downloads/link-thyssenkruppMagnettechnik-Factsheet-ferrite-magnets.pdf",
+       "value": null,
+       "min": 9.2,
+       "typ": null,
+       "max": 13.3,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "'in magnetizing direction' 9.2-13.3."
+      },
+      {
+       "vendor": "Maruwa ferrite magnets (manufacturer)",
+       "source_url": "https://www.maruwa-g.com/e/products/ceramic/000321.html",
+       "value": null,
+       "min": 14,
+       "typ": null,
+       "max": 15,
+       "temp_range_C": null,
+       "source_tier": 1,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Substance Characteristics table, 'anisotropic direction' 14-15 (1e-6/K); raw HTML read by the skeptic. No temperature printed.",
+       "added_by": "property skeptic, 2026-10-01"
+      },
+      {
+       "vendor": "Vega Technik magnets datasheet (distributor)",
+       "source_url": "https://www.vegatechnik.com/download/datasheet/vt_magnets.pdf",
+       "value": 14,
+       "min": null,
+       "typ": 14,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "p8: 1.4e-5 parallel; no range.",
+       "added_by": "property skeptic, 2026-10-01"
+      }
+     ],
+     "note": null,
+     "resolutions": [
+      {
+       "id": "TH3",
+       "text": "parallel sources disagree (9.2-15); not read by the engine; midpoint of the manufacturer range kept; FLAG"
+      }
+     ],
+     "status": "recorded (not consumed)",
+     "skeptic": {
+      "verdict": "disagreed",
+      "note": "12.5 sits 14-17 % below the 14-15 cluster (Eclipse, Maruwa, Vega). Resolved: range recorded, no single value."
+     }
+    },
+    "cp_J_kgK": {
+     "unit": "J/(kg·K)",
+     "direction": "scalar (no direction)",
+     "engine_consumes": true,
+     "value": 700,
+     "value_source_url": "https://magnete.de/fileadmin/user_upload/Magnetische_Kenndaten/Gesinterte_Hartferritmagnete/HF_26-24_Sr_E.pdf",
+     "value_source_ref": "MS-Schramberg HF_26-24_Sr_E.pdf (08/2022), Mechanical values, spec. heat capacity approx. 700 J/(kg·K)",
+     "min": 500,
+     "min_source_url": "https://ucpcdn.thyssenkrupp.com/_binary/UCPthyssenkruppBAMXSchulteMicrositeMagnettechnik/en/downloads/link-thyssenkruppMagnettechnik-Factsheet-ferrite-magnets.pdf",
+     "typ": 700,
+     "typ_source_url": "https://magnete.de/fileadmin/user_upload/Magnetische_Kenndaten/Gesinterte_Hartferritmagnete/HF_26-24_Sr_E.pdf",
+     "max": 855,
+     "max_source_url": "https://www.eclipsemagnetics.com/site/assets/files/19602/ferrite_ceramic_datasheet.pdf",
+     "temp_range_C": null,
+     "temp_range_note": "No temperature is printed by MS-Schramberg, Eclipse or thyssenkrupp; none borrowed. FLAG.",
+     "source_tier": 1,
+     "proxy": true,
+     "value_kind": "sourced (manufacturer, proxy grade)",
+     "basis": "Rule 3 (manufacturer over distributor): MS-Schramberg 700 (proxy grade). Sources span 500 (thyssenkrupp low end) to 855 (Eclipse high end); 700 is also the lower, heats-faster (conservative for time to the temperature limit) of the two grade-specific figures. Eclipse 795-855 is 14-22 % higher.",
+     "cross_source_range": [
+      500,
+      855
+     ],
+     "alternatives": [
+      {
+       "vendor": "MS-Schramberg HF 26/24 and HF 30/26 (manufacturer, proxy grades)",
+       "source_url": "https://magnete.de/fileadmin/user_upload/Magnetische_Kenndaten/Gesinterte_Hartferritmagnete/HF_26-24_Sr_E.pdf",
+       "value": 700,
+       "min": null,
+       "typ": 700,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 1,
+       "proxy": true,
+       "value_kind": null,
+       "note": "'spec. heat capacity approx. J/(kg·K)' = 700 (the same on HF 30/26: https://magnete.de/fileadmin/user_upload/Magnetische_Kenndaten/Gesinterte_Hartferritmagnete/HF_30-26_Sr_E.pdf). No temperature printed."
+      },
+      {
+       "vendor": "Eclipse Magnetics ferrite datasheet (distributor)",
+       "source_url": "https://www.eclipsemagnetics.com/site/assets/files/19602/ferrite_ceramic_datasheet.pdf",
+       "value": null,
+       "min": 795,
+       "typ": null,
+       "max": 855,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "'Specific Heat Capacity c, J/kg°C' = 795-855 ('Physical Characteristics (Typical)'); no temperature printed."
+      },
+      {
+       "vendor": "thyssenkrupp hard-ferrite factsheet (distributor)",
+       "source_url": "https://ucpcdn.thyssenkrupp.com/_binary/UCPthyssenkruppBAMXSchulteMicrositeMagnettechnik/en/downloads/link-thyssenkruppMagnettechnik-Factsheet-ferrite-magnets.pdf",
+       "value": null,
+       "min": 500,
+       "typ": null,
+       "max": 800,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "'Heat capacity C, J/kg K' = 500-800; no temperature."
+      },
+      {
+       "vendor": "Maruwa ferrite magnets (manufacturer)",
+       "source_url": "https://www.maruwa-g.com/e/products/ceramic/000321.html",
+       "value": null,
+       "min": 630,
+       "typ": null,
+       "max": 840,
+       "temp_range_C": null,
+       "source_tier": 1,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Specific heat 630-840 J/(kg K), midpoint 735; no temperature printed.",
+       "added_by": "property skeptic, 2026-10-01"
+      }
+     ],
+     "note": null,
+     "resolutions": [
+      {
+       "id": "TH2",
+       "text": "cp sources disagree by up to 22 % (700 vs 795-855; thyssenkrupp 500-800); 700 kept per rule 3 and as the conservative side; user decision if the Eclipse typical (about 825) is preferred; FLAG"
+      }
+     ],
+     "status": "resolved",
+     "skeptic": {
+      "verdict": "disagreed (resolved)",
+      "note": "700 confirmed on HF 26/24 and HF 30/26. Maruwa (630-840) and thyssenkrupp (500-800) bracket it; Eclipse 795-855 is the high outlier (TH2)."
+     },
+     "resolution": "Rule 3 (manufacturer over distributor) and conservative (a lower cp heats faster): 700.",
+     "decision": {
+      "id": 5,
+      "options": [
+       {
+        "letter": "A",
+        "value": 700.0,
+        "recommended": true,
+        "text": "MS-Schramberg 700 (with the other resolved values)"
+       },
+       {
+        "letter": "B",
+        "value": 825.0,
+        "recommended": false,
+        "text": "Eclipse 795-855 midpoint 825: C141 +3.8 %, time to the limit +2.5 %; less conservative"
+       }
+      ]
+     }
+    }
+   },
+   "display_name": "Ferrite Y30 (= C5)",
+   "engine_literals": {
+    "bond_plane_cte_per_C": 1e-05,
+    "bond_plane_cte_literal": "10.0e-6",
+    "specific_heat_J_kgK": 700.0,
+    "specific_heat_literal": "700.0",
+    "status": "recommended options (report section 5); pending the user's approval",
+    "note": "Write the literals into Rust as typed here; never convert at load time. null = the grade keeps the NdFeB input (C95 or C138)."
+   }
+  },
+  "SmCo_1_5_20": {
+   "family": "SmCo SmCo5 (1:5) sintered",
+   "source_grade_name": "Recoma 20",
+   "fields": {
+    "cte_perp_1e-6_per_K": {
+     "unit": "1e-6/K",
+     "direction": "perpendicular to magnetization (in the bond plane); Arnold column 'C ⊥'",
+     "engine_consumes": true,
+     "value": 14,
+     "value_source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+     "value_source_ref": "Recoma-Combined-160301.pdf PDF p4 (the Recoma 20 sheet, Rev. 131025), Thermal Properties table",
+     "min": null,
+     "min_source_url": null,
+     "typ": 14,
+     "typ_source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+     "max": null,
+     "max_source_url": null,
+     "temp_range_C": [
+      20,
+      200
+     ],
+     "temp_range_note": "Arnold footnote (2): between 20 and 200 °C",
+     "source_tier": 1,
+     "proxy": false,
+     "value_kind": "sourced",
+     "basis": "Arnold Recoma 20 sheet: 'Coefficient of Thermal Expansion (2)', ΔL/L per °C x10^-6, columns C // = 7 and C ⊥ = 14; footnote (2) 'Between 20 and 200 °C'. C is the easy axis, the magnetization direction, so C ⊥ is the in-plane (bond-plane) coefficient the engine needs. Arnold prints these as typical properties (no min/max).",
+     "cross_source_range": [
+      13,
+      15
+     ],
+     "alternatives": [
+      {
+       "vendor": "Eclipse Magnetics SmCo data sheet (distributor)",
+       "source_url": "https://www.eclipsemagnetics.com/site/assets/files/19544/eclipsemagnetics_smco_datasheet.pdf",
+       "value": 13,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Physical Characteristics table, row 'Coefficient of Thermal Expansion SmCo5 (1:5)', C⊥ = 13 (10^-6/°C). No temperature range printed. Read from the rendered page (the text layer drops the direction symbols)."
+      },
+      {
+       "vendor": "Allstar Magnetics SmCo technical data (distributor, generic SmCo, alloy not stated)",
+       "source_url": "https://allstarmagnetics.com/wp-content/uploads/2024/09/Samarium-Cobalt-Technical-Data-ASM-09-23-2023.pdf",
+       "value": 11.8,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": [
+        20,
+        100
+       ],
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "p2: '11.8x10-6/°C (20~100 °C ⊥C)' and '9.2x10-6/°C (20~100 °C ||C)'. Family-level, not split by alloy; shown as a cross-check only."
+      },
+      {
+       "vendor": "sourcemagnets.com physical-properties compendium (tier 3, via WebFetch summary)",
+       "source_url": "https://sourcemagnets.com/magnet-physical-properties/",
+       "value": 15,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": [
+        20,
+        200
+       ],
+       "source_tier": 3,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Sm1Co5, 20-200 °C: parallel 7, perpendicular 15 (differs from Arnold's 14 by 1; the compendium may quote another Arnold revision)."
+      }
+     ],
+     "note": null,
+     "resolutions": [
+      {
+       "id": "TH4",
+       "text": "kept Arnold's 14 (manufacturer grade sheet with a stated range); cross-source spread 13 (Eclipse) to 15 (compendium); FLAG"
+      }
+     ],
+     "status": "resolved",
+     "skeptic": {
+      "verdict": "agreed",
+      "note": "Confirmed on the rendered Arnold p4 sheet."
+     }
+    },
+    "cte_parallel_1e-6_per_K": {
+     "unit": "1e-6/K",
+     "direction": "parallel to magnetization (along the easy axis); Arnold column 'C //'",
+     "engine_consumes": false,
+     "value": 7,
+     "value_source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+     "value_source_ref": "Recoma-Combined-160301.pdf PDF p4 (the Recoma 20 sheet, Rev. 131025), Thermal Properties table",
+     "min": null,
+     "min_source_url": null,
+     "typ": 7,
+     "typ_source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+     "max": null,
+     "max_source_url": null,
+     "temp_range_C": [
+      20,
+      200
+     ],
+     "temp_range_note": "Arnold footnote (2): between 20 and 200 °C",
+     "source_tier": 1,
+     "proxy": false,
+     "value_kind": "sourced",
+     "basis": "Arnold Recoma 20 sheet: 'Coefficient of Thermal Expansion (2)', ΔL/L per °C x10^-6, columns C // = 7 and C ⊥ = 14; footnote (2) 'Between 20 and 200 °C'. C is the easy axis, the magnetization direction, so C ⊥ is the in-plane (bond-plane) coefficient the engine needs. Arnold prints these as typical properties (no min/max).",
+     "cross_source_range": null,
+     "alternatives": [
+      {
+       "vendor": "Eclipse Magnetics SmCo data sheet (distributor)",
+       "source_url": "https://www.eclipsemagnetics.com/site/assets/files/19544/eclipsemagnetics_smco_datasheet.pdf",
+       "value": 6,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Sm1Co5: C// = 6, C⊥ = 13 (10^-6/°C), no range; rendered page confirms."
+      },
+      {
+       "vendor": "Allstar Magnetics (distributor, generic SmCo)",
+       "source_url": "https://allstarmagnetics.com/wp-content/uploads/2024/09/Samarium-Cobalt-Technical-Data-ASM-09-23-2023.pdf",
+       "value": 9.2,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": [
+        20,
+        100
+       ],
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "'9.2x10-6/°C (20~100 °C ||C)'; family-level."
+      },
+      {
+       "vendor": "sourcemagnets.com compendium (tier 3, via WebFetch summary)",
+       "source_url": "https://sourcemagnets.com/magnet-physical-properties/",
+       "value": 7,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": [
+        20,
+        200
+       ],
+       "source_tier": 3,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Mirrors the Arnold parallel value."
+      }
+     ],
+     "note": "Recorded for completeness. The engine does not read the parallel coefficient.",
+     "resolutions": [],
+     "status": "resolved",
+     "skeptic": {
+      "verdict": "agreed",
+      "note": "Confirmed on the rendered Arnold p4 sheet."
+     }
+    },
+    "cp_J_kgK": {
+     "unit": "J/(kg·K)",
+     "direction": "scalar (no direction)",
+     "engine_consumes": true,
+     "value": 370,
+     "value_source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+     "value_source_ref": "Recoma-Combined-160301.pdf PDF p4 (the Recoma 20 sheet, Rev. 131025), Thermal Properties table",
+     "min": null,
+     "min_source_url": null,
+     "typ": 370,
+     "typ_source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+     "max": null,
+     "max_source_url": null,
+     "temp_range_C": [
+      20,
+      150
+     ],
+     "temp_range_note": "Arnold footnote (3): between 20 and 150 °C",
+     "source_tier": 1,
+     "proxy": false,
+     "value_kind": "sourced",
+     "basis": "Arnold Recoma 20 sheet: 'Specific Heat (3)' J/(kg•K) = 370; footnote (3) 'Between 20 and 150 °C'. A single typical value, no min/max.",
+     "cross_source_range": null,
+     "alternatives": [
+      {
+       "vendor": "Eclipse Magnetics SmCo data sheet (distributor)",
+       "source_url": "https://www.eclipsemagnetics.com/site/assets/files/19544/eclipsemagnetics_smco_datasheet.pdf",
+       "value": 334.9,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "'Specific Heat Capacity SmCo5 (1:5)' = 0.08 kCal/(kg.°C); x4186.8 = 334.9 J/(kg·K). No temperature stated."
+      },
+      {
+       "vendor": "Allstar Magnetics (distributor, generic SmCo)",
+       "source_url": "https://allstarmagnetics.com/wp-content/uploads/2024/09/Samarium-Cobalt-Technical-Data-ASM-09-23-2023.pdf",
+       "value": 370,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "'Specific Heat 370 J/(kg.°C)', no temperature, family-level (equals Arnold's SmCo5 figure, not the 2:17 one)."
+      },
+      {
+       "vendor": "sourcemagnets.com compendium (tier 3, via WebFetch summary)",
+       "source_url": "https://sourcemagnets.com/magnet-physical-properties/",
+       "value": 370,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 3,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Mirrors the Arnold value; no independent measurement."
+      }
+     ],
+     "note": null,
+     "resolutions": [
+      {
+       "id": "TH5",
+       "text": "kept Arnold's 370 (stated 20-150 °C); Eclipse's 0.08 kCal/(kg.°C) = 334.9 is 9.5 % lower and prints no temperature; FLAG"
+      }
+     ],
+     "status": "resolved",
+     "skeptic": {
+      "verdict": "agreed",
+      "note": "Confirmed on the rendered Arnold p4 sheet."
+     }
+    }
+   },
+   "display_name": "Recoma 20 (SmCo5 grade 20)",
+   "engine_literals": {
+    "bond_plane_cte_per_C": 1.4e-05,
+    "bond_plane_cte_literal": "14.0e-6",
+    "specific_heat_J_kgK": 370.0,
+    "specific_heat_literal": "370.0",
+    "status": "recommended options (report section 5); pending the user's approval",
+    "note": "Write the literals into Rust as typed here; never convert at load time. null = the grade keeps the NdFeB input (C95 or C138)."
+   }
+  },
+  "SmCo_2_17_26": {
+   "family": "SmCo Sm2Co17 (2:17) sintered",
+   "source_grade_name": "Recoma 26",
+   "fields": {
+    "cte_perp_1e-6_per_K": {
+     "unit": "1e-6/K",
+     "direction": "perpendicular to magnetization (in the bond plane); Arnold column 'C ⊥'",
+     "engine_consumes": true,
+     "value": 13,
+     "value_source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+     "value_source_ref": "Recoma-Combined-160301.pdf PDF p8 (the Recoma 26 sheet, Rev. 131025), Thermal Properties table",
+     "min": null,
+     "min_source_url": null,
+     "typ": 13,
+     "typ_source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+     "max": null,
+     "max_source_url": null,
+     "temp_range_C": [
+      20,
+      200
+     ],
+     "temp_range_note": "Arnold footnote (2): between 20 and 200 °C",
+     "source_tier": 1,
+     "proxy": false,
+     "value_kind": "sourced",
+     "basis": "Arnold Recoma 26 sheet: 'Coefficient of Thermal Expansion (2)', ΔL/L per °C x10^-6, columns C // = 11 and C ⊥ = 13; footnote (2) 'Between 20 and 200 °C'. C is the easy axis, the magnetization direction, so C ⊥ is the in-plane (bond-plane) coefficient the engine needs. Arnold prints these as typical properties (no min/max).",
+     "cross_source_range": [
+      11,
+      13
+     ],
+     "alternatives": [
+      {
+       "vendor": "Eclipse Magnetics SmCo data sheet (distributor)",
+       "source_url": "https://www.eclipsemagnetics.com/site/assets/files/19544/eclipsemagnetics_smco_datasheet.pdf",
+       "value": 11,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Physical Characteristics table, row 'Coefficient of Thermal Expansion Sm2Co17 (2:17)', C⊥ = 11 (10^-6/°C). No temperature range printed. Read from the rendered page (the text layer drops the direction symbols)."
+      },
+      {
+       "vendor": "Allstar Magnetics SmCo technical data (distributor, generic SmCo, alloy not stated)",
+       "source_url": "https://allstarmagnetics.com/wp-content/uploads/2024/09/Samarium-Cobalt-Technical-Data-ASM-09-23-2023.pdf",
+       "value": 11.8,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": [
+        20,
+        100
+       ],
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "p2: '11.8x10-6/°C (20~100 °C ⊥C)' and '9.2x10-6/°C (20~100 °C ||C)'. Family-level, not split by alloy; shown as a cross-check only."
+      },
+      {
+       "vendor": "magnet-materials.com Sm2Co17 page (tier 3 aggregator, via WebFetch summary)",
+       "source_url": "https://magnet-materials.com/1-1-2-sm2co17-magnets.html",
+       "value": 11,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 3,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Sm2Co17: parallel 8, perpendicular 11 (1e-6/°C); no temperature range; not visually verified."
+      },
+      {
+       "vendor": "sourcemagnets.com physical-properties compendium (tier 3, via WebFetch summary)",
+       "source_url": "https://sourcemagnets.com/magnet-physical-properties/",
+       "value": 13,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": [
+        20,
+        200
+       ],
+       "source_tier": 3,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Sm2Co17, 20-200 °C: parallel 11, perpendicular 13 (matches Arnold)."
+      },
+      {
+       "vendor": "thyssenkrupp Materials Services SmCo factsheet (materials service)",
+       "source_url": "https://ucpcdn.thyssenkrupp.com/_binary/UCPthyssenkruppBAMXSchulteMicrositeMagnettechnik/en/downloads/link-thyssenkruppMagnettechnik-Factsheet-samarium-cobalt-magnets.pdf",
+       "value": 11,
+       "min": null,
+       "typ": 11,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "p3 (rendered): Sm2Co17 'normal to mag. direction' 11; no range.",
+       "added_by": "property skeptic, 2026-10-01"
+      },
+      {
+       "vendor": "Dexter Magnetic Technologies SmCo page (distributor)",
+       "source_url": "https://www.dextermag.com/products/permanent-magnets/samarium-cobalt-magnets/",
+       "value": null,
+       "min": 11.0,
+       "typ": null,
+       "max": 12.0,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "2:17 perpendicular 11.0-12.0; HTML via WebFetch; no range.",
+       "added_by": "property skeptic, 2026-10-01"
+      },
+      {
+       "vendor": "Vega Technik magnets datasheet (distributor, generic SmCo)",
+       "source_url": "https://www.vegatechnik.com/download/datasheet/vt_magnets.pdf",
+       "value": 11.8,
+       "min": null,
+       "typ": 11.8,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Generic SmCo, not split by alloy; no range.",
+       "added_by": "property skeptic, 2026-10-01"
+      }
+     ],
+     "note": null,
+     "resolutions": [
+      {
+       "id": "TH4",
+       "text": "kept Arnold's 13 (manufacturer grade sheet with a stated range); cross-source spread 11 (Eclipse, magnet-materials.com, Allstar 11.8) to 13; FLAG"
+      }
+     ],
+     "status": "open",
+     "skeptic": {
+      "verdict": "disagreed",
+      "note": "Arnold's 13 is confirmed on the Recoma 26, 26HE, 30 and 30HE sheets (C-perp column, 20-200 C), but four independent sources cluster at 11-12 (|13-11|/13 = 15.4 %). A temperature-range effect (20-200 C mean against 20-100 C or unstated) could explain it."
+     },
+     "resolution": "Rule 3 (primary over secondary): Arnold 13 is the only grade-specific, range-stated source. Rule 4 (conservative) would give 11 (larger |d_alpha| on both hubs). No reading, warning or verdict differs between 13, 12 and 11 in any configuration (report 4.6).",
+     "decision": {
+      "id": 6,
+      "options": [
+       {
+        "letter": "A",
+        "value": 13.0,
+        "engine_literal": "13.0e-6",
+        "recommended": true,
+        "text": "Arnold 13 (rule 3)"
+       },
+       {
+        "letter": "B",
+        "value": 11.0,
+        "engine_literal": "11.0e-6",
+        "recommended": false,
+        "text": "Independent cluster 11 (conservative)"
+       },
+       {
+        "letter": "C",
+        "value": 12.0,
+        "engine_literal": "12.0e-6",
+        "recommended": false,
+        "text": "Midpoint 12"
+       }
+      ]
+     }
+    },
+    "cte_parallel_1e-6_per_K": {
+     "unit": "1e-6/K",
+     "direction": "parallel to magnetization (along the easy axis); Arnold column 'C //'",
+     "engine_consumes": false,
+     "value": 11,
+     "value_source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+     "value_source_ref": "Recoma-Combined-160301.pdf PDF p8 (the Recoma 26 sheet, Rev. 131025), Thermal Properties table",
+     "min": null,
+     "min_source_url": null,
+     "typ": 11,
+     "typ_source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+     "max": null,
+     "max_source_url": null,
+     "temp_range_C": [
+      20,
+      200
+     ],
+     "temp_range_note": "Arnold footnote (2): between 20 and 200 °C",
+     "source_tier": 1,
+     "proxy": false,
+     "value_kind": "sourced",
+     "basis": "Arnold Recoma 26 sheet: 'Coefficient of Thermal Expansion (2)', ΔL/L per °C x10^-6, columns C // = 11 and C ⊥ = 13; footnote (2) 'Between 20 and 200 °C'. C is the easy axis, the magnetization direction, so C ⊥ is the in-plane (bond-plane) coefficient the engine needs. Arnold prints these as typical properties (no min/max).",
+     "cross_source_range": null,
+     "alternatives": [
+      {
+       "vendor": "Eclipse Magnetics SmCo data sheet (distributor)",
+       "source_url": "https://www.eclipsemagnetics.com/site/assets/files/19544/eclipsemagnetics_smco_datasheet.pdf",
+       "value": 9,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Sm2Co17: C// = 8-10, C⊥ = 11 (10^-6/°C), no range; rendered page confirms."
+      },
+      {
+       "vendor": "Allstar Magnetics (distributor, generic SmCo)",
+       "source_url": "https://allstarmagnetics.com/wp-content/uploads/2024/09/Samarium-Cobalt-Technical-Data-ASM-09-23-2023.pdf",
+       "value": 9.2,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": [
+        20,
+        100
+       ],
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "'9.2x10-6/°C (20~100 °C ||C)'; family-level."
+      },
+      {
+       "vendor": "magnet-materials.com (tier 3, via WebFetch summary)",
+       "source_url": "https://magnet-materials.com/1-1-2-sm2co17-magnets.html",
+       "value": 8,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 3,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Sm2Co17 parallel 8; no range."
+      },
+      {
+       "vendor": "sourcemagnets.com compendium (tier 3, via WebFetch summary)",
+       "source_url": "https://sourcemagnets.com/magnet-physical-properties/",
+       "value": 11,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": [
+        20,
+        200
+       ],
+       "source_tier": 3,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Mirrors the Arnold parallel value."
+      },
+      {
+       "vendor": "thyssenkrupp Materials Services SmCo factsheet (materials service)",
+       "source_url": "https://ucpcdn.thyssenkrupp.com/_binary/UCPthyssenkruppBAMXSchulteMicrositeMagnettechnik/en/downloads/link-thyssenkruppMagnettechnik-Factsheet-samarium-cobalt-magnets.pdf",
+       "value": 8,
+       "min": null,
+       "typ": 8,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "'in magnetizing direction' 8.",
+       "added_by": "property skeptic, 2026-10-01"
+      },
+      {
+       "vendor": "Dexter Magnetic Technologies SmCo page (distributor)",
+       "source_url": "https://www.dextermag.com/products/permanent-magnets/samarium-cobalt-magnets/",
+       "value": null,
+       "min": 9.0,
+       "typ": null,
+       "max": 10.0,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "2:17 parallel 9.0-10.0.",
+       "added_by": "property skeptic, 2026-10-01"
+      }
+     ],
+     "note": "Recorded for completeness. The engine does not read the parallel coefficient.",
+     "resolutions": [],
+     "status": "recorded (not consumed)",
+     "skeptic": {
+      "verdict": "disagreed (resolved)",
+      "note": "Independent sources sit 9-27 % below Arnold's 11. Resolved by rule 3: Arnold 11 recorded, flagged; not read by the engine."
+     }
+    },
+    "cp_J_kgK": {
+     "unit": "J/(kg·K)",
+     "direction": "scalar (no direction)",
+     "engine_consumes": true,
+     "value": 350,
+     "value_source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+     "value_source_ref": "Recoma-Combined-160301.pdf PDF p8 (the Recoma 26 sheet, Rev. 131025), Thermal Properties table",
+     "min": null,
+     "min_source_url": null,
+     "typ": 350,
+     "typ_source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+     "max": null,
+     "max_source_url": null,
+     "temp_range_C": [
+      20,
+      150
+     ],
+     "temp_range_note": "Arnold footnote (3): between 20 and 150 °C",
+     "source_tier": 1,
+     "proxy": false,
+     "value_kind": "sourced",
+     "basis": "Arnold Recoma 26 sheet: 'Specific Heat (3)' J/(kg•K) = 350; footnote (3) 'Between 20 and 150 °C'. A single typical value, no min/max.",
+     "cross_source_range": null,
+     "alternatives": [
+      {
+       "vendor": "Eclipse Magnetics SmCo data sheet (distributor)",
+       "source_url": "https://www.eclipsemagnetics.com/site/assets/files/19544/eclipsemagnetics_smco_datasheet.pdf",
+       "value": 376.8,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "'Specific Heat Capacity Sm2Co17 (2:17)' = 0.09 kCal/(kg.°C); x4186.8 = 376.8 J/(kg·K). No temperature stated."
+      },
+      {
+       "vendor": "Allstar Magnetics (distributor, generic SmCo)",
+       "source_url": "https://allstarmagnetics.com/wp-content/uploads/2024/09/Samarium-Cobalt-Technical-Data-ASM-09-23-2023.pdf",
+       "value": 370,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "'Specific Heat 370 J/(kg.°C)', no temperature, family-level (equals Arnold's SmCo5 figure, not the 2:17 one)."
+      },
+      {
+       "vendor": "sourcemagnets.com compendium (tier 3, via WebFetch summary)",
+       "source_url": "https://sourcemagnets.com/magnet-physical-properties/",
+       "value": 350,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 3,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Mirrors the Arnold value; no independent measurement."
+      }
+     ],
+     "note": null,
+     "resolutions": [
+      {
+       "id": "TH5",
+       "text": "kept Arnold's 350 (stated 20-150 °C); Eclipse's 0.09 kCal/(kg.°C) = 376.8 is 7.7 % higher and prints no temperature (Eclipse orders SmCo5 below Sm2Co17, Arnold the reverse); FLAG"
+      }
+     ],
+     "status": "resolved",
+     "skeptic": {
+      "verdict": "agreed",
+      "note": "Confirmed on Arnold p8 and p12 (and 26HE p9)."
+     }
+    }
+   },
+   "sub_grade_check": "Recoma 26HE (PDF p9): C// 11, C⊥ 13, cp 350, identical, so the sub-grade question (Recoma 26 vs 26HE, data JSON grade_open_gaps) does not move these properties.",
+   "display_name": "Recoma 26 (Sm2Co17 grade 26)",
+   "engine_literals": {
+    "bond_plane_cte_per_C": 1.3e-05,
+    "bond_plane_cte_literal": "13.0e-6",
+    "specific_heat_J_kgK": 350.0,
+    "specific_heat_literal": "350.0",
+    "status": "recommended options (report section 5); pending the user's approval",
+    "note": "Write the literals into Rust as typed here; never convert at load time. null = the grade keeps the NdFeB input (C95 or C138)."
+   }
+  },
+  "SmCo_2_17_30": {
+   "family": "SmCo Sm2Co17 (2:17) sintered",
+   "source_grade_name": "Recoma 30",
+   "fields": {
+    "cte_perp_1e-6_per_K": {
+     "unit": "1e-6/K",
+     "direction": "perpendicular to magnetization (in the bond plane); Arnold column 'C ⊥'",
+     "engine_consumes": true,
+     "value": 13,
+     "value_source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+     "value_source_ref": "Recoma-Combined-160301.pdf PDF p12 (the Recoma 30 sheet, Rev. 131025), Thermal Properties table",
+     "min": null,
+     "min_source_url": null,
+     "typ": 13,
+     "typ_source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+     "max": null,
+     "max_source_url": null,
+     "temp_range_C": [
+      20,
+      200
+     ],
+     "temp_range_note": "Arnold footnote (2): between 20 and 200 °C",
+     "source_tier": 1,
+     "proxy": false,
+     "value_kind": "sourced",
+     "basis": "Arnold Recoma 30 sheet: 'Coefficient of Thermal Expansion (2)', ΔL/L per °C x10^-6, columns C // = 11 and C ⊥ = 13; footnote (2) 'Between 20 and 200 °C'. C is the easy axis, the magnetization direction, so C ⊥ is the in-plane (bond-plane) coefficient the engine needs. Arnold prints these as typical properties (no min/max).",
+     "cross_source_range": [
+      11,
+      13
+     ],
+     "alternatives": [
+      {
+       "vendor": "Eclipse Magnetics SmCo data sheet (distributor)",
+       "source_url": "https://www.eclipsemagnetics.com/site/assets/files/19544/eclipsemagnetics_smco_datasheet.pdf",
+       "value": 11,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Physical Characteristics table, row 'Coefficient of Thermal Expansion Sm2Co17 (2:17)', C⊥ = 11 (10^-6/°C). No temperature range printed. Read from the rendered page (the text layer drops the direction symbols)."
+      },
+      {
+       "vendor": "Allstar Magnetics SmCo technical data (distributor, generic SmCo, alloy not stated)",
+       "source_url": "https://allstarmagnetics.com/wp-content/uploads/2024/09/Samarium-Cobalt-Technical-Data-ASM-09-23-2023.pdf",
+       "value": 11.8,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": [
+        20,
+        100
+       ],
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "p2: '11.8x10-6/°C (20~100 °C ⊥C)' and '9.2x10-6/°C (20~100 °C ||C)'. Family-level, not split by alloy; shown as a cross-check only."
+      },
+      {
+       "vendor": "magnet-materials.com Sm2Co17 page (tier 3 aggregator, via WebFetch summary)",
+       "source_url": "https://magnet-materials.com/1-1-2-sm2co17-magnets.html",
+       "value": 11,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 3,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Sm2Co17: parallel 8, perpendicular 11 (1e-6/°C); no temperature range; not visually verified."
+      },
+      {
+       "vendor": "sourcemagnets.com physical-properties compendium (tier 3, via WebFetch summary)",
+       "source_url": "https://sourcemagnets.com/magnet-physical-properties/",
+       "value": 13,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": [
+        20,
+        200
+       ],
+       "source_tier": 3,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Sm2Co17, 20-200 °C: parallel 11, perpendicular 13 (matches Arnold)."
+      },
+      {
+       "vendor": "thyssenkrupp Materials Services SmCo factsheet (materials service)",
+       "source_url": "https://ucpcdn.thyssenkrupp.com/_binary/UCPthyssenkruppBAMXSchulteMicrositeMagnettechnik/en/downloads/link-thyssenkruppMagnettechnik-Factsheet-samarium-cobalt-magnets.pdf",
+       "value": 11,
+       "min": null,
+       "typ": 11,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "p3 (rendered): Sm2Co17 'normal to mag. direction' 11; no range.",
+       "added_by": "property skeptic, 2026-10-01"
+      },
+      {
+       "vendor": "Dexter Magnetic Technologies SmCo page (distributor)",
+       "source_url": "https://www.dextermag.com/products/permanent-magnets/samarium-cobalt-magnets/",
+       "value": null,
+       "min": 11.0,
+       "typ": null,
+       "max": 12.0,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "2:17 perpendicular 11.0-12.0; HTML via WebFetch; no range.",
+       "added_by": "property skeptic, 2026-10-01"
+      },
+      {
+       "vendor": "Vega Technik magnets datasheet (distributor, generic SmCo)",
+       "source_url": "https://www.vegatechnik.com/download/datasheet/vt_magnets.pdf",
+       "value": 11.8,
+       "min": null,
+       "typ": 11.8,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Generic SmCo, not split by alloy; no range.",
+       "added_by": "property skeptic, 2026-10-01"
+      }
+     ],
+     "note": null,
+     "resolutions": [
+      {
+       "id": "TH4",
+       "text": "kept Arnold's 13; cross-source spread 11 to 13; FLAG"
+      }
+     ],
+     "status": "open",
+     "skeptic": {
+      "verdict": "disagreed",
+      "note": "Arnold's 13 is confirmed on the Recoma 26, 26HE, 30 and 30HE sheets (C-perp column, 20-200 C), but four independent sources cluster at 11-12 (|13-11|/13 = 15.4 %). A temperature-range effect (20-200 C mean against 20-100 C or unstated) could explain it."
+     },
+     "resolution": "Rule 3 (primary over secondary): Arnold 13 is the only grade-specific, range-stated source. Rule 4 (conservative) would give 11 (larger |d_alpha| on both hubs). No reading, warning or verdict differs between 13, 12 and 11 in any configuration (report 4.6).",
+     "decision": {
+      "id": 6,
+      "options": [
+       {
+        "letter": "A",
+        "value": 13.0,
+        "engine_literal": "13.0e-6",
+        "recommended": true,
+        "text": "Arnold 13 (rule 3)"
+       },
+       {
+        "letter": "B",
+        "value": 11.0,
+        "engine_literal": "11.0e-6",
+        "recommended": false,
+        "text": "Independent cluster 11 (conservative)"
+       },
+       {
+        "letter": "C",
+        "value": 12.0,
+        "engine_literal": "12.0e-6",
+        "recommended": false,
+        "text": "Midpoint 12"
+       }
+      ]
+     }
+    },
+    "cte_parallel_1e-6_per_K": {
+     "unit": "1e-6/K",
+     "direction": "parallel to magnetization (along the easy axis); Arnold column 'C //'",
+     "engine_consumes": false,
+     "value": 11,
+     "value_source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+     "value_source_ref": "Recoma-Combined-160301.pdf PDF p12 (the Recoma 30 sheet, Rev. 131025), Thermal Properties table",
+     "min": null,
+     "min_source_url": null,
+     "typ": 11,
+     "typ_source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+     "max": null,
+     "max_source_url": null,
+     "temp_range_C": [
+      20,
+      200
+     ],
+     "temp_range_note": "Arnold footnote (2): between 20 and 200 °C",
+     "source_tier": 1,
+     "proxy": false,
+     "value_kind": "sourced",
+     "basis": "Arnold Recoma 30 sheet: 'Coefficient of Thermal Expansion (2)', ΔL/L per °C x10^-6, columns C // = 11 and C ⊥ = 13; footnote (2) 'Between 20 and 200 °C'. C is the easy axis, the magnetization direction, so C ⊥ is the in-plane (bond-plane) coefficient the engine needs. Arnold prints these as typical properties (no min/max).",
+     "cross_source_range": null,
+     "alternatives": [
+      {
+       "vendor": "Eclipse Magnetics SmCo data sheet (distributor)",
+       "source_url": "https://www.eclipsemagnetics.com/site/assets/files/19544/eclipsemagnetics_smco_datasheet.pdf",
+       "value": 9,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Sm2Co17: C// = 8-10, C⊥ = 11 (10^-6/°C), no range; rendered page confirms."
+      },
+      {
+       "vendor": "Allstar Magnetics (distributor, generic SmCo)",
+       "source_url": "https://allstarmagnetics.com/wp-content/uploads/2024/09/Samarium-Cobalt-Technical-Data-ASM-09-23-2023.pdf",
+       "value": 9.2,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": [
+        20,
+        100
+       ],
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "'9.2x10-6/°C (20~100 °C ||C)'; family-level."
+      },
+      {
+       "vendor": "magnet-materials.com (tier 3, via WebFetch summary)",
+       "source_url": "https://magnet-materials.com/1-1-2-sm2co17-magnets.html",
+       "value": 8,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 3,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Sm2Co17 parallel 8; no range."
+      },
+      {
+       "vendor": "sourcemagnets.com compendium (tier 3, via WebFetch summary)",
+       "source_url": "https://sourcemagnets.com/magnet-physical-properties/",
+       "value": 11,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": [
+        20,
+        200
+       ],
+       "source_tier": 3,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Mirrors the Arnold parallel value."
+      },
+      {
+       "vendor": "thyssenkrupp Materials Services SmCo factsheet (materials service)",
+       "source_url": "https://ucpcdn.thyssenkrupp.com/_binary/UCPthyssenkruppBAMXSchulteMicrositeMagnettechnik/en/downloads/link-thyssenkruppMagnettechnik-Factsheet-samarium-cobalt-magnets.pdf",
+       "value": 8,
+       "min": null,
+       "typ": 8,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "'in magnetizing direction' 8.",
+       "added_by": "property skeptic, 2026-10-01"
+      },
+      {
+       "vendor": "Dexter Magnetic Technologies SmCo page (distributor)",
+       "source_url": "https://www.dextermag.com/products/permanent-magnets/samarium-cobalt-magnets/",
+       "value": null,
+       "min": 9.0,
+       "typ": null,
+       "max": 10.0,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "2:17 parallel 9.0-10.0.",
+       "added_by": "property skeptic, 2026-10-01"
+      }
+     ],
+     "note": "Recorded for completeness. The engine does not read the parallel coefficient.",
+     "resolutions": [],
+     "status": "recorded (not consumed)",
+     "skeptic": {
+      "verdict": "disagreed (resolved)",
+      "note": "Independent sources sit 9-27 % below Arnold's 11. Resolved by rule 3: Arnold 11 recorded, flagged; not read by the engine."
+     }
+    },
+    "cp_J_kgK": {
+     "unit": "J/(kg·K)",
+     "direction": "scalar (no direction)",
+     "engine_consumes": true,
+     "value": 350,
+     "value_source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+     "value_source_ref": "Recoma-Combined-160301.pdf PDF p12 (the Recoma 30 sheet, Rev. 131025), Thermal Properties table",
+     "min": null,
+     "min_source_url": null,
+     "typ": 350,
+     "typ_source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+     "max": null,
+     "max_source_url": null,
+     "temp_range_C": [
+      20,
+      150
+     ],
+     "temp_range_note": "Arnold footnote (3): between 20 and 150 °C",
+     "source_tier": 1,
+     "proxy": false,
+     "value_kind": "sourced",
+     "basis": "Arnold Recoma 30 sheet: 'Specific Heat (3)' J/(kg•K) = 350; footnote (3) 'Between 20 and 150 °C'. A single typical value, no min/max.",
+     "cross_source_range": null,
+     "alternatives": [
+      {
+       "vendor": "Eclipse Magnetics SmCo data sheet (distributor)",
+       "source_url": "https://www.eclipsemagnetics.com/site/assets/files/19544/eclipsemagnetics_smco_datasheet.pdf",
+       "value": 376.8,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "'Specific Heat Capacity Sm2Co17 (2:17)' = 0.09 kCal/(kg.°C); x4186.8 = 376.8 J/(kg·K). No temperature stated."
+      },
+      {
+       "vendor": "Allstar Magnetics (distributor, generic SmCo)",
+       "source_url": "https://allstarmagnetics.com/wp-content/uploads/2024/09/Samarium-Cobalt-Technical-Data-ASM-09-23-2023.pdf",
+       "value": 370,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "'Specific Heat 370 J/(kg.°C)', no temperature, family-level (equals Arnold's SmCo5 figure, not the 2:17 one)."
+      },
+      {
+       "vendor": "sourcemagnets.com compendium (tier 3, via WebFetch summary)",
+       "source_url": "https://sourcemagnets.com/magnet-physical-properties/",
+       "value": 350,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 3,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Mirrors the Arnold value; no independent measurement."
+      }
+     ],
+     "note": null,
+     "resolutions": [
+      {
+       "id": "TH5",
+       "text": "kept Arnold's 350; Eclipse 376.8 (+7.7 %); FLAG"
+      }
+     ],
+     "status": "resolved",
+     "skeptic": {
+      "verdict": "agreed",
+      "note": "Confirmed on Arnold p8 and p12 (and 26HE p9)."
+     }
+    }
+   },
+   "sub_grade_check": "Recoma 30HE (PDF p13): C// 11, C⊥ 13 identical; its specific-heat cell reads 0 in the PDF (an apparent typo), so the 30HE sheet is not used for cp.",
+   "display_name": "Recoma 30 (Sm2Co17 grade 30)",
+   "engine_literals": {
+    "bond_plane_cte_per_C": 1.3e-05,
+    "bond_plane_cte_literal": "13.0e-6",
+    "specific_heat_J_kgK": 350.0,
+    "specific_heat_literal": "350.0",
+    "status": "recommended options (report section 5); pending the user's approval",
+    "note": "Write the literals into Rust as typed here; never convert at load time. null = the grade keeps the NdFeB input (C95 or C138)."
+   }
+  },
+  "Bonded_NdFeB_BCN19": {
+   "family": "NdFeB isotropic compression-bonded",
+   "source_grade_name": "Bonded NdFeB (Alliance BCN-19)",
+   "grade_match_note": "Alliance prints neither a CTE nor a specific heat for BCN-19 (allianceorg.com compression-bonded-neo page and alliancemagnets.com bonded grade page, both checked). The values below are a PROXY from Eneflux Armtek Magnetics (EAM), a compression-bonded neodymium manufacturer: one CTE and one cp printed for all five of its grades (EAM-A 9H, B 10, C 9H, D 10, O 8; density 6.0-6.1 g/cm3, Br 0.61-0.69 T), so they are class-level, not grade-specific. Vendor mismatch FLAGGED.",
+   "fields": {
+    "cte_perp_1e-6_per_K": {
+     "unit": "1e-6/K",
+     "direction": "isotropic powder: one value for every direction (EAM states no direction); read as the bond-plane value",
+     "engine_consumes": true,
+     "value": null,
+     "value_source_url": "https://eamagnetics.com/wp-content/uploads/2021/08/EAM-ComprBond-Neo-PhysProp-1.pdf",
+     "value_source_ref": "EAM-ComprBond-Neo-PhysProp-1.pdf PDF p1, PHYSICAL PROPERTIES, 'Coef of Thermal Expansion (25° to 200°C)' 4.8 µm/m°C, identical on all five grades",
+     "min": null,
+     "min_source_url": null,
+     "typ": 4.8,
+     "typ_source_url": "https://eamagnetics.com/wp-content/uploads/2021/08/EAM-ComprBond-Neo-PhysProp-1.pdf",
+     "max": null,
+     "max_source_url": null,
+     "temp_range_C": [
+      25,
+      200
+     ],
+     "temp_range_note": "EAM row label: 25° to 200°C",
+     "source_tier": 1,
+     "proxy": true,
+     "value_kind": "none recommended (decision 7 A): the bonded ring keeps C95's -0.8e-6",
+     "basis": "EAM compression-bonded neodymium (manufacturer, tier 1 but a different vendor and different grades than BCN-19). Direction not stated; the powder is isotropic, so the value is recorded for both directions. Any pressing-direction anisotropy is not documented in any source found.",
+     "cross_source_range": [
+      1,
+      20
+     ],
+     "alternatives": [
+      {
+       "vendor": "HGT Advanced Magnets, Bonded NdFeB Specifications (manufacturer, Chengdu)",
+       "source_url": "https://www.advancedmagnets.com/wp-content/uploads/2021/09/Bonded-Neodymium-Iron-Boron-NdFeB-Magnets-Specifications.pdf",
+       "value": null,
+       "min": 1,
+       "typ": null,
+       "max": 2,
+       "temp_range_C": null,
+       "source_tier": 1,
+       "proxy": false,
+       "value_kind": "sourced (rejection only partly supported)",
+       "note": "PDF p4, Table III 'Some Physical Properties of Bonded NdFeB Magnets': Thermal Expansivity (alpha) 10^-6/°C = 1-2; no direction, no range. The same table prints compressive strength 800-1000 MPa and tensile strength 200 MPa, the sintered-NdFeB scale (EAM prints 396 kg/cm2 = 38.8 MPa for compression-bonded), so the table looks like a sintered template and is not used. FLAG. Skeptic: the strength rows are sintered-scale but the density row (4.5-6.5 g/cm3) is bonded-scale, so the rejection is only partly supported."
+      },
+      {
+       "vendor": "Alliance LLC BCN-19 (the grade in the A6 table)",
+       "source_url": "https://allianceorg.com/magnetic-materials/bonded-magnets/compression-bonded-neo/",
+       "value": null,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 1,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Not published: the Magnetic, Temperature and Mechanical tables carry no CTE, specific heat or thermal conductivity. alliancemagnets.com/bonded-neodymium-magnet-grades/ also lists none."
+      },
+      {
+       "vendor": "Vega Technik magnets datasheet, bonded neodymium (compression and injection moulded, 5.6 g/cm3) (distributor)",
+       "source_url": "https://www.vegatechnik.com/download/datasheet/vt_magnets.pdf",
+       "value": 20,
+       "min": null,
+       "typ": 20,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "p17: 'c.ca 20 x 10-6 1/C'; no direction or range.",
+       "added_by": "property skeptic, 2026-10-01"
+      }
+     ],
+     "note": null,
+     "resolutions": [
+      {
+       "id": "TH6",
+       "text": "proxy: Alliance publishes no CTE for BCN-19; EAM compression-bonded value used; FLAG"
+      },
+      {
+       "id": "TH7",
+       "text": "HGT's 1-2 rejected: it comes from a sintered-scale table (compressive 800-1000 MPa), prints no direction or range, and is far below the one other compression-bonded source (4.8) and the epoxy binder's expansion; FLAG"
+      }
+     ],
+     "proposed_value_A4_table": 4.8,
+     "status": "open",
+     "skeptic": {
+      "verdict": "disagreed",
+      "note": "EAM 4.8 verified as printed, but the three bonded sources are 4x apart (1-2, 4.8, about 20) and unresolved. At 20e-6 the aluminium-hub warning would not fire. Recommend not proposing a single value."
+     },
+     "resolution": "Rule 4: two tier-1 proxies disagree; the conservative option is the lowest CTE (largest d_alpha): keep C95's -0.8e-6, close to HGT's 1-2.",
+     "decision": {
+      "id": 7,
+      "options": [
+       {
+        "letter": "A",
+        "value": null,
+        "engine_literal": null,
+        "recommended": true,
+        "text": "No per-grade CTE: C95 -0.8e-6 applies; bonded leaves E22's move set"
+       },
+       {
+        "letter": "B",
+        "value": 4.8,
+        "engine_literal": "4.8e-6",
+        "recommended": false,
+        "text": "EAM proxy 4.8 (as proposed)"
+       },
+       {
+        "letter": "C",
+        "value": 20.0,
+        "engine_literal": "20.0e-6",
+        "recommended": false,
+        "text": "Vega about 20"
+       }
+      ]
+     }
+    },
+    "cte_parallel_1e-6_per_K": {
+     "unit": "1e-6/K",
+     "direction": "isotropic powder: same value as the perpendicular entry (assumed, not stated by EAM)",
+     "engine_consumes": false,
+     "value": null,
+     "value_source_url": "https://eamagnetics.com/wp-content/uploads/2021/08/EAM-ComprBond-Neo-PhysProp-1.pdf",
+     "value_source_ref": "EAM-ComprBond-Neo-PhysProp-1.pdf PDF p1 (same row)",
+     "min": null,
+     "min_source_url": null,
+     "typ": 4.8,
+     "typ_source_url": "https://eamagnetics.com/wp-content/uploads/2021/08/EAM-ComprBond-Neo-PhysProp-1.pdf",
+     "max": null,
+     "max_source_url": null,
+     "temp_range_C": [
+      25,
+      200
+     ],
+     "temp_range_note": "EAM row label: 25° to 200°C",
+     "source_tier": 1,
+     "proxy": true,
+     "value_kind": "none recommended (decision 7 A): the bonded ring keeps C95's -0.8e-6",
+     "basis": "Same EAM row; recorded equal to the perpendicular value on the isotropy argument.",
+     "cross_source_range": [
+      1,
+      20
+     ],
+     "alternatives": [
+      {
+       "vendor": "Vega Technik magnets datasheet, bonded neodymium (compression and injection moulded, 5.6 g/cm3) (distributor)",
+       "source_url": "https://www.vegatechnik.com/download/datasheet/vt_magnets.pdf",
+       "value": 20,
+       "min": null,
+       "typ": 20,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 2,
+       "proxy": false,
+       "value_kind": null,
+       "note": "p17: 'c.ca 20 x 10-6 1/C'; no direction or range.",
+       "added_by": "property skeptic, 2026-10-01"
+      }
+     ],
+     "note": "Not read by the engine.",
+     "resolutions": [],
+     "proposed_value_A4_table": 4.8,
+     "status": "open",
+     "skeptic": {
+      "verdict": "disagreed",
+      "note": "EAM 4.8 verified as printed, but the three bonded sources are 4x apart (1-2, 4.8, about 20) and unresolved. At 20e-6 the aluminium-hub warning would not fire. Recommend not proposing a single value."
+     },
+     "resolution": "Rule 4: two tier-1 proxies disagree; the conservative option is the lowest CTE (largest d_alpha): keep C95's -0.8e-6, close to HGT's 1-2.",
+     "decision": {
+      "id": 7,
+      "options": [
+       {
+        "letter": "A",
+        "value": null,
+        "engine_literal": null,
+        "recommended": true,
+        "text": "No per-grade CTE: C95 -0.8e-6 applies; bonded leaves E22's move set"
+       },
+       {
+        "letter": "B",
+        "value": 4.8,
+        "engine_literal": "4.8e-6",
+        "recommended": false,
+        "text": "EAM proxy 4.8 (as proposed)"
+       },
+       {
+        "letter": "C",
+        "value": 20.0,
+        "engine_literal": "20.0e-6",
+        "recommended": false,
+        "text": "Vega about 20"
+       }
+      ]
+     }
+    },
+    "cp_J_kgK": {
+     "unit": "J/(kg·K)",
+     "direction": "scalar (no direction)",
+     "engine_consumes": true,
+     "value": 420,
+     "value_source_url": "https://eamagnetics.com/wp-content/uploads/2021/08/EAM-ComprBond-Neo-PhysProp-1.pdf",
+     "value_source_ref": "EAM-ComprBond-Neo-PhysProp-1.pdf PDF p1, 'Specific Heat' 0.42 Ws/g°C (rendered table; the text layer shifts the labels one row)",
+     "min": null,
+     "min_source_url": null,
+     "typ": 420,
+     "typ_source_url": "https://eamagnetics.com/wp-content/uploads/2021/08/EAM-ComprBond-Neo-PhysProp-1.pdf",
+     "max": null,
+     "max_source_url": null,
+     "temp_range_C": null,
+     "temp_range_note": "EAM footnote: 'Magnetic and physical properties are typical at room temperature'; no numeric temperature printed.",
+     "source_tier": 1,
+     "proxy": true,
+     "value_kind": "converted (manufacturer proxy)",
+     "basis": "0.42 W·s/(g·°C) x 1000 = 420 J/(kg·K). Same value on all five EAM grades (class-level).",
+     "cross_source_range": null,
+     "alternatives": [
+      {
+       "vendor": "Alliance LLC BCN-19",
+       "source_url": "https://allianceorg.com/magnetic-materials/bonded-magnets/compression-bonded-neo/",
+       "value": null,
+       "min": null,
+       "typ": null,
+       "max": null,
+       "temp_range_C": null,
+       "source_tier": 1,
+       "proxy": false,
+       "value_kind": null,
+       "note": "Not published."
+      },
+      {
+       "vendor": "Arnold sintered NdFeB N35 (plausibility only, not bonded)",
+       "source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/11/N35-151021.pdf",
+       "value": 460.5,
+       "min": null,
+       "typ": 460.5,
+       "max": null,
+       "temp_range_C": [
+        20,
+        140
+       ],
+       "source_tier": 1,
+       "proxy": false,
+       "value_kind": null,
+       "note": "0.11 cal/(g C) x 4186.8.",
+       "added_by": "property skeptic, 2026-10-01"
+      }
+     ],
+     "note": null,
+     "resolutions": [
+      {
+       "id": "TH6",
+       "text": "proxy: Alliance publishes no cp for BCN-19; EAM value used; FLAG"
+      }
+     ],
+     "status": "open",
+     "skeptic": {
+      "verdict": "disagreed (unverified)",
+      "note": "Confirmed as printed (0.42 W s/(g C) x 1000), same on all five EAM grades; no second source exists. Plausibility: Arnold sintered N35, N52, N42SH 0.11 cal/(g C) = 460.5, 8.8 % above."
+     },
+     "resolution": "Single source; on the conservative side of C138's 440 (heats faster). Flagged.",
+     "decision": {
+      "id": 8,
+      "options": [
+       {
+        "letter": "A",
+        "value": 420.0,
+        "recommended": true,
+        "text": "EAM proxy 420, flagged single-source"
+       },
+       {
+        "letter": "B",
+        "value": null,
+        "recommended": false,
+        "text": "Keep C138 440; bonded leaves E23's move set"
+       }
+      ]
+     }
+    }
+   },
+   "display_name": "Bonded NdFeB (Alliance BCN-19)",
+   "engine_literals": {
+    "bond_plane_cte_per_C": null,
+    "bond_plane_cte_literal": null,
+    "specific_heat_J_kgK": 420.0,
+    "specific_heat_literal": "420.0",
+    "status": "recommended options (report section 5); pending the user's approval",
+    "note": "Write the literals into Rust as typed here; never convert at load time. null = the grade keeps the NdFeB input (C95 or C138)."
+   }
+  }
+ },
+ "ndfeb_unchanged": {
+  "grades": [
+   "N35",
+   "N42",
+   "N48",
+   "N52",
+   "N50",
+   "N42M",
+   "N50M",
+   "N42H",
+   "N42SH",
+   "N38UH",
+   "N35EH",
+   "N33AH"
+  ],
+  "library_parts": "all (every library part is sintered NdFeB)",
+  "bond_plane_cte_per_C": -8e-07,
+  "bond_plane_cte_cell": "Temperature design!C95",
+  "specific_heat_J_kgK": 440.0,
+  "specific_heat_cell": "Temperature design!C138",
+  "comparison_only": {
+   "arnold_sintered_ndfeb": {
+    "source_url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/11/N35-151021.pdf",
+    "same_values_on_grades_checked": [
+     "N35",
+     "N42",
+     "N48",
+     "N52",
+     "N42M",
+     "N42H",
+     "N42SH",
+     "N38UH",
+     "N35EH"
+    ],
+    "not_checked": [
+     "N33AH",
+     "N50",
+     "N50M (sheet layout differs or not fetched)"
+    ],
+    "cte_parallel_1e-6_per_K": 7,
+    "cte_perp_1e-6_per_K": -1,
+    "cte_temp_range_C": [
+     20,
+     200
+    ],
+    "cp_cal_per_g_C": 0.11,
+    "cp_J_kgK": 460.5,
+    "cp_temp_range_C": [
+     20,
+     140
+    ],
+    "note": "Close to the engine's -0.8e-6 and 440 but not equal (-1 vs -0.8, 460.5 vs 440). NdFeB keeps the workbook values by the user's decision; recorded only so the comparison is visible."
+   }
+  }
+ },
+ "e21": {
+  "correction": {
+   "id": "E21",
+   "title": "The rating calibration raises a grade's demagnetization onsets above the model when its rating exceeds the model's reference onset",
+   "corrected_formula": "C50 = MAX(C49 - C47, 0) for each ring (E20 checks both), applied before E20 picks the weaker ring. Equivalently each onset is the lower of the calibrated and uncalibrated one. Gated on E20 and E21; `< 0.0` keeps NaN and every offset >= 0 bit for bit.",
+   "depends_on": [
+    "E20"
+   ],
+   "registry_basis": "NONE.with(E20) -> .with(E21) (decision 15)",
+   "cells": [
+    "Temperature design!C7",
+    "Temperature design!C8",
+    "Temperature design!C9",
+    "Temperature design!C10",
+    "Temperature design!C12",
+    "Temperature design!C13",
+    "Temperature design!C15",
+    "Temperature design!C19",
+    "Temperature design!C23",
+    "Temperature design!C24",
+    "Temperature design!C42",
+    "Temperature design!C43",
+    "Temperature design!C47",
+    "Temperature design!C48",
+    "Temperature design!C49",
+    "Temperature design!C50",
+    "Temperature design!C56",
+    "Temperature design!C57",
+    "Temperature design!C58",
+    "Temperature design!C59",
+    "Temperature design!C60",
+    "Temperature design!C61",
+    "Temperature design!C101",
+    "Temperature design!C104",
+    "Temperature design!C105",
+    "Temperature design!C106",
+    "Temperature design!C150",
+    "Temperature design!C151",
+    "Temperature design!C152",
+    "Temperature design!C153",
+    "Temperature design!C181",
+    "Temperature design!C182",
+    "Temperature design!F12"
+   ],
+   "cells_note": "33 cells: the PROVISIONAL entry's 31 plus C43 and C47 (skeptic: both change on a governing-ring flip, in 6 ordered pairs per basis). C201 changes by 1 ulp on the registry basis (parity-equal). Rust-only demag_ring, hcj20_used_kA_m and beta_used_per_C change on a flip.",
+   "help_text": "E21: clamped at 0; the rating never raises the onsets",
+   "status": "numbers for approval (decision 1)"
+  },
+  "grade_offsets": [
+   {
+    "grade": "N35",
+    "br_T": 1.17,
+    "alpha_br_per_C": -0.0012,
+    "hcj20_kA_m": 954.9,
+    "beta_hcj_per_C": -0.0062,
+    "tmax_C": 80,
+    "offset_before_clamp_C": 22.579847358822562,
+    "a1_basis_offset_C": 22.58,
+    "clamped": false
+   },
+   {
+    "grade": "N42",
+    "br_T": 1.3,
+    "alpha_br_per_C": -0.0012,
+    "hcj20_kA_m": 954.9,
+    "beta_hcj_per_C": -0.0062,
+    "tmax_C": 80,
+    "offset_before_clamp_C": 12.681126305465526,
+    "a1_basis_offset_C": 12.68,
+    "clamped": false
+   },
+   {
+    "grade": "N48",
+    "br_T": 1.38,
+    "alpha_br_per_C": -0.0012,
+    "hcj20_kA_m": 954.9,
+    "beta_hcj_per_C": -0.0062,
+    "tmax_C": 80,
+    "offset_before_clamp_C": 6.45880149101923,
+    "a1_basis_offset_C": 6.459,
+    "clamped": false
+   },
+   {
+    "grade": "N52",
+    "br_T": 1.45,
+    "alpha_br_per_C": -0.0012,
+    "hcj20_kA_m": 875.4,
+    "beta_hcj_per_C": -0.0062,
+    "tmax_C": 80,
+    "offset_before_clamp_C": -9.689222777921628,
+    "a1_basis_offset_C": -9.689,
+    "clamped": true
+   },
+   {
+    "grade": "N50",
+    "br_T": 1.41,
+    "alpha_br_per_C": -0.0012,
+    "hcj20_kA_m": 875.4,
+    "beta_hcj_per_C": -0.0062,
+    "tmax_C": 80,
+    "offset_before_clamp_C": -6.138324834690138,
+    "a1_basis_offset_C": -6.138,
+    "clamped": true
+   },
+   {
+    "grade": "N42M",
+    "br_T": 1.3,
+    "alpha_br_per_C": -0.0012,
+    "hcj20_kA_m": 1114.1,
+    "beta_hcj_per_C": -0.006,
+    "tmax_C": 100,
+    "offset_before_clamp_C": 9.971679287992004,
+    "a1_basis_offset_C": 9.972,
+    "clamped": false
+   },
+   {
+    "grade": "N50M",
+    "br_T": 1.41,
+    "alpha_br_per_C": -0.0012,
+    "hcj20_kA_m": 1114.1,
+    "beta_hcj_per_C": -0.00675,
+    "tmax_C": 100,
+    "offset_before_clamp_C": -7.535074388987951,
+    "a1_basis_offset_C": -7.535,
+    "clamped": true
+   },
+   {
+    "grade": "N42H",
+    "br_T": 1.3,
+    "alpha_br_per_C": -0.0012,
+    "hcj20_kA_m": 1352.8,
+    "beta_hcj_per_C": -0.0057,
+    "tmax_C": 120,
+    "offset_before_clamp_C": 10.816381265781843,
+    "a1_basis_offset_C": 10.82,
+    "clamped": false
+   },
+   {
+    "grade": "N42SH",
+    "br_T": 1.3,
+    "alpha_br_per_C": -0.0012,
+    "hcj20_kA_m": 1592,
+    "beta_hcj_per_C": -0.005,
+    "tmax_C": 150,
+    "offset_before_clamp_C": 9.921295447363661,
+    "a1_basis_offset_C": 9.921,
+    "clamped": false
+   },
+   {
+    "grade": "N38UH",
+    "br_T": 1.22,
+    "alpha_br_per_C": -0.0012,
+    "hcj20_kA_m": 1989.4,
+    "beta_hcj_per_C": -0.0051,
+    "tmax_C": 180,
+    "offset_before_clamp_C": -7.34331548572473,
+    "a1_basis_offset_C": -7.343,
+    "clamped": true
+   },
+   {
+    "grade": "N35EH",
+    "br_T": 1.17,
+    "alpha_br_per_C": -0.0012,
+    "hcj20_kA_m": 2387.3,
+    "beta_hcj_per_C": -0.0047,
+    "tmax_C": 200,
+    "offset_before_clamp_C": -3.573964534741748,
+    "a1_basis_offset_C": -3.574,
+    "clamped": true
+   },
+   {
+    "grade": "N33AH",
+    "br_T": 1.14,
+    "alpha_br_per_C": -0.0012,
+    "hcj20_kA_m": 2705.6,
+    "beta_hcj_per_C": -0.00375,
+    "tmax_C": 220,
+    "offset_before_clamp_C": 30.747363113480645,
+    "a1_basis_offset_C": 30.75,
+    "clamped": false
+   },
+   {
+    "grade": "SmCo_2_17_26",
+    "br_T": 1.0,
+    "alpha_br_per_C": -0.00035,
+    "hcj20_kA_m": 1200,
+    "beta_hcj_per_C": -0.00247,
+    "tmax_C": 350,
+    "offset_before_clamp_C": -60.21319132809839,
+    "a1_basis_offset_C": -18.55,
+    "clamped": true
+   },
+   {
+    "grade": "SmCo_2_17_30",
+    "br_T": 1.09,
+    "alpha_br_per_C": -0.00035,
+    "hcj20_kA_m": 1040,
+    "beta_hcj_per_C": -0.0025,
+    "tmax_C": 250,
+    "offset_before_clamp_C": -0.4499636840114931,
+    "a1_basis_offset_C": 46.06,
+    "clamped": true
+   },
+   {
+    "grade": "SmCo_1_5_20",
+    "br_T": 0.85,
+    "alpha_br_per_C": -0.00045,
+    "hcj20_kA_m": 2000,
+    "beta_hcj_per_C": -0.0019,
+    "tmax_C": 250,
+    "offset_before_clamp_C": 217.33218548989777,
+    "a1_basis_offset_C": 255.0,
+    "clamped": false
+   },
+   {
+    "grade": "Y30",
+    "br_T": 0.37,
+    "alpha_br_per_C": -0.002,
+    "hcj20_kA_m": 180,
+    "beta_hcj_per_C": 0.0035,
+    "tmax_C": 250,
+    "offset_before_clamp_C": 0.0,
+    "a1_basis_offset_C": null,
+    "clamped": false
+   },
+   {
+    "grade": "Bonded_NdFeB_BCN19",
+    "br_T": 0.65,
+    "alpha_br_per_C": -0.0014,
+    "hcj20_kA_m": 880,
+    "beta_hcj_per_C": -0.0036,
+    "tmax_C": 140,
+    "offset_before_clamp_C": 94.28162240620875,
+    "a1_basis_offset_C": 89.92,
+    "clamped": false
+   }
+  ],
+  "grade_offsets_note": "Grade mode on both rings, every correction but E21 (C50 before the clamp). a1_basis recomputes t_ref with alpha -0.0012 as at 8958deb (before decision A2-7).",
+  "probes": [
+   {
+    "label": "B842-N52 (N52) on both rings, library path",
+    "inputs": {
+     "coupling.magnets.part_inner": "B842-N52",
+     "coupling.magnets.part_outer": "B842-N52"
+    },
+    "expect": [
+     {
+      "cell": "Temperature design!C50",
+      "workbook": -9.689222777921628,
+      "corrected": 0.0
+     },
+     {
+      "cell": "Temperature design!C58",
+      "workbook": 10.16793849876467,
+      "corrected": 0.4787157208430415
+     },
+     {
+      "cell": "Temperature design!C12",
+      "workbook": 0.16793849876466993,
+      "corrected": -9.521284279156959
+     }
+    ]
+   },
+   {
+    "label": "Recoma 26 (SmCo_2_17_26) for manual dimensions on both rings",
+    "inputs": {
+     "coupling.magnets.part_inner": "",
+     "coupling.magnets.part_outer": "",
+     "coupling.magnets.grade_inner": "SmCo_2_17_26",
+     "coupling.magnets.grade_outer": "SmCo_2_17_26"
+    },
+    "expect": [
+     {
+      "cell": "Temperature design!C50",
+      "workbook": -60.21319132809839,
+      "corrected": 0.0
+     },
+     {
+      "cell": "Temperature design!C12",
+      "workbook": 120.0,
+      "corrected": 101.73342351672972
+     },
+     {
+      "cell": "Temperature design!F12",
+      "workbook": "Adhesive governs.",
+      "corrected": "Magnets govern (skipping case)."
+     }
+    ]
+   },
+   {
+    "label": "B842 inner (N42), B842-N52 outer: governing-ring flip",
+    "inputs": {
+     "coupling.magnets.part_inner": "B842",
+     "coupling.magnets.part_outer": "B842-N52"
+    },
+    "expect": [
+     {
+      "cell": "Temperature design!C42",
+      "workbook": 1.3,
+      "corrected": 1.45
+     },
+     {
+      "cell": "Temperature design!C50",
+      "workbook": 12.681126305465526,
+      "corrected": 0.0
+     },
+     {
+      "cell": "Temperature design!C12",
+      "workbook": -3.5174216150834887,
+      "corrected": -9.521284279156959
+     },
+     {
+      "cell": "Temperature design!C24",
+      "workbook": 47.83256962065032,
+      "corrected": 50.08556444987687
+     }
+    ]
+   },
+   {
+    "label": "PROPOSED: N38UH inner, Recoma 26 outer: flip that names C43 and C47",
+    "inputs": {
+     "coupling.magnets.part_inner": "",
+     "coupling.magnets.part_outer": "",
+     "coupling.magnets.grade_inner": "N38UH",
+     "coupling.magnets.grade_outer": "SmCo_2_17_26"
+    },
+    "expect": [
+     {
+      "cell": "Temperature design!C43",
+      "workbook": -0.0012,
+      "corrected": -0.00035
+     },
+     {
+      "cell": "Temperature design!C47",
+      "workbook": 180.0,
+      "corrected": 350.0
+     },
+     {
+      "cell": "Temperature design!C12",
+      "workbook": 120.0,
+      "corrected": 101.73342351672972
+     },
+     {
+      "cell": "Temperature design!C24",
+      "workbook": 149.91967217479288,
+      "corrected": 205.01249772124206
+     }
+    ],
+    "note": "Under decision 2 A (C24 = MIN of both rings' C59 - cure, proposed E24) the corrected C24 is 142.57635668906815."
+   }
+  ],
+  "clamped_configs": [
+   {
+    "config": "N52 grade; B842-N52; B882-N52 (both rings)",
+    "bases": [
+     "registry",
+     "user"
+    ],
+    "C50": [
+     -9.689222777921628,
+     0.0
+    ],
+    "C56": [
+     126.96873286910689,
+     117.27951009118526
+    ],
+    "C58": [
+     10.16793849876467,
+     0.4787157208430415
+    ],
+    "C59": [
+     81.7747872277985,
+     72.08556444987687
+    ],
+    "C60": [
+     0.16793849876466993,
+     -9.521284279156959
+    ],
+    "C12": [
+     0.16793849876466993,
+     -9.521284279156959
+    ],
+    "C24": [
+     59.7747872277985,
+     50.08556444987687
+    ]
+   },
+   {
+    "config": "N50 grade",
+    "bases": [
+     "registry",
+     "user"
+    ],
+    "C50": [
+     -6.138324834690138,
+     0.0
+    ],
+    "C56": [
+     123.4178349258754,
+     117.27951009118526
+    ],
+    "C58": [
+     6.61704055553318,
+     0.4787157208430415
+    ],
+    "C59": [
+     78.22388928456701,
+     72.08556444987687
+    ],
+    "C60": [
+     -3.3829594444668203,
+     -9.521284279156959
+    ],
+    "C12": [
+     -3.3829594444668203,
+     -9.521284279156959
+    ],
+    "C24": [
+     56.22388928456701,
+     50.08556444987687
+    ]
+   },
+   {
+    "config": "N50M grade",
+    "bases": [
+     "registry",
+     "user"
+    ],
+    "C50": [
+     -7.535074388987951,
+     0.0
+    ],
+    "C56": [
+     129.79795331391063,
+     122.26287892492266
+    ],
+    "C58": [
+     51.90290672211326,
+     44.36783233312531
+    ],
+    "C59": [
+     98.80286761231132,
+     91.26779322332337
+    ],
+    "C60": [
+     41.90290672211326,
+     34.36783233312531
+    ],
+    "C12": [
+     41.90290672211326,
+     34.36783233312531
+    ],
+    "C24": [
+     76.80286761231132,
+     69.26779322332337
+    ]
+   },
+   {
+    "config": "N38UH grade",
+    "bases": [
+     "registry",
+     "user"
+    ],
+    "C50": [
+     -7.34331548572473,
+     0.0
+    ],
+    "C56": [
+     192.3295224155451,
+     184.98620692982038
+    ],
+    "C58": [
+     141.9047160039722,
+     134.56140051824747
+    ],
+    "C59": [
+     171.91967217479288,
+     164.57635668906815
+    ],
+    "C60": [
+     131.9047160039722,
+     124.56140051824747
+    ],
+    "C12": [
+     120.0,
+     120.0
+    ],
+    "C24": [
+     149.91967217479288,
+     142.57635668906815
+    ]
+   },
+   {
+    "config": "N35EH grade",
+    "bases": [
+     "registry",
+     "user"
+    ],
+    "C50": [
+     -3.573964534741748,
+     0.0
+    ],
+    "C56": [
+     209.08840044761237,
+     205.51443591287062
+    ],
+    "C58": [
+     165.42716268950372,
+     161.85319815476197
+    ],
+    "C59": [
+     191.33707037354188,
+     187.76310583880013
+    ],
+    "C60": [
+     155.42716268950372,
+     151.85319815476197
+    ],
+    "C12": [
+     120.0,
+     120.0
+    ],
+    "C24": [
+     169.33707037354188,
+     165.76310583880013
+    ]
+   },
+   {
+    "config": "Recoma 26 grade",
+    "bases": [
+     "registry",
+     "user"
+    ],
+    "C50": [
+     -60.21319132809839,
+     0.0
+    ],
+    "C56": [
+     365.6242067780335,
+     305.4110154499351
+    ],
+    "C58": [
+     171.9466148448281,
+     111.73342351672972
+    ],
+    "C59": [
+     287.2256890493404,
+     227.01249772124206
+    ],
+    "C60": [
+     161.9466148448281,
+     101.73342351672972
+    ],
+    "C12": [
+     120.0,
+     101.73342351672972
+    ],
+    "C24": [
+     265.2256890493404,
+     205.01249772124206
+    ]
+   },
+   {
+    "config": "Recoma 30 grade",
+    "bases": [
+     "registry",
+     "user"
+    ],
+    "C50": [
+     -0.4499636840114931,
+     0.0
+    ],
+    "C56": [
+     283.0734915031532,
+     282.6235278191417
+    ],
+    "C58": [
+     56.270273308879624,
+     55.82030962486813
+    ],
+    "C59": [
+     191.87720052918982,
+     191.42723684517833
+    ],
+    "C60": [
+     46.270273308879624,
+     45.82030962486813
+    ],
+    "C12": [
+     46.270273308879624,
+     45.82030962486813
+    ],
+    "C24": [
+     169.87720052918982,
+     169.42723684517833
+    ]
+   },
+   {
+    "config": "M5044, M5026",
+    "bases": [
+     "registry"
+    ],
+    "C50": [
+     -7.023026613680059,
+     0.0
+    ],
+    "C56": [
+     124.30253670486532,
+     117.27951009118526
+    ],
+    "C58": [
+     7.501742334523101,
+     0.4787157208430415
+    ],
+    "C59": [
+     79.10859106355693,
+     72.08556444987687
+    ],
+    "C60": [
+     -2.498257665476899,
+     -9.521284279156959
+    ],
+    "C12": [
+     -2.498257665476899,
+     -9.521284279156959
+    ],
+    "C24": [
+     57.10859106355693,
+     50.08556444987687
+    ]
+   },
+   {
+    "config": "M5045 (N50M, 100 C)",
+    "bases": [
+     "registry"
+    ],
+    "C50": [
+     -8.13159086260417,
+     0.0
+    ],
+    "C56": [
+     130.39446978752682,
+     122.26287892492266
+    ],
+    "C58": [
+     52.49942319572948,
+     44.36783233312531
+    ],
+    "C59": [
+     99.39938408592754,
+     91.26779322332337
+    ],
+    "C60": [
+     42.49942319572948,
+     34.36783233312531
+    ],
+    "C12": [
+     42.49942319572948,
+     34.36783233312531
+    ],
+    "C24": [
+     77.39938408592754,
+     69.26779322332337
+    ]
+   }
+  ],
+  "source0_check": {
+   "inputs": {
+    "temperature.demag.hcj20_kA_m": 954.9,
+    "temperature.demag.beta_hcj_per_C": -0.0062,
+    "temperature.demag.coercivity_source": 0
+   },
+   "registry": {
+    "C50": [
+     -56.54817565771302,
+     0.0
+    ],
+    "C58": [
+     75.71188034809505,
+     19.163704690382037
+    ],
+    "C12": [
+     65.71188034809505,
+     9.163704690382037
+    ],
+    "C15": [
+     0.7118803480950504,
+     -55.83629530961797
+    ],
+    "C24": [
+     117.06187158382886,
+     60.513695926115844
+    ],
+    "C25": [
+     "CHECK",
+     "CHECK"
+    ]
+   },
+   "user": {
+    "C50": [
+     -57.318873694534474,
+     0.0
+    ],
+    "C58": [
+     76.48257838491651,
+     19.163704690382037
+    ],
+    "C12": [
+     66.48257838491651,
+     9.163704690382037
+    ],
+    "C15": [
+     1.4825783849165077,
+     -55.83629530961797
+    ],
+    "C24": [
+     117.8325696206503,
+     60.513695926115844
+    ],
+    "C25": [
+     "OK",
+     "CHECK"
+    ]
+   }
+  },
+  "pairs": {
+   "registry": {
+    "pairs": 482,
+    "moved": 214,
+    "flips": 71,
+    "verdict_changes": 0
+   },
+   "user": {
+    "pairs": 482,
+    "moved": 150,
+    "flips": 39,
+    "verdict_changes": 0
+   }
+  },
+  "ties": "Only N52 beside N50 is an exact tie (C58 0.4787157208430415). Recoma 26 101.73342351672972 against Recoma 20 101.74043173174721 C is a flip, not a tie.",
+  "knee_threshold_N42SH": 0.7834925165904798,
+  "knee_note": "First clamped C46 slider setting (step 0.01): 0.78. At 0.70 the default design's verdict goes OK -> CHECK.",
+  "c24_min_of_both": {
+   "cure_C": 22.0,
+   "single_ring_C59_after_E21": {
+    "N52": 72.08556444987687,
+    "N50": 72.08556444987687,
+    "N50M": 91.26779322332337,
+    "N38UH": 164.57635668906815,
+    "N35EH": 187.76310583880013,
+    "SmCo_2_17_26": 227.01249772124206,
+    "SmCo_2_17_30": 191.42723684517833,
+    "SmCo_1_5_20": 191.73843825573664
+   },
+   "examples": [
+    {
+     "pair": "N38UH / Recoma 26 (either order)",
+     "shown_before": 149.91967217479288,
+     "shown_after": 205.01249772124206,
+     "min_of_both_after": 142.57635668906815,
+     "overstatement_after": 62.44,
+     "created_by_E21": true
+    },
+    {
+     "pair": "N35EH / Recoma 26",
+     "shown_before": 169.33707037354188,
+     "shown_after": 205.01249772124206,
+     "min_of_both_after": 165.76310583880013,
+     "overstatement_after": 39.25,
+     "created_by_E21": true
+    },
+    {
+     "pair": "Recoma 26 / Recoma 20",
+     "shown_before": 169.73843825573664,
+     "shown_after": 205.01249772124206,
+     "min_of_both_after": 169.73843825573664,
+     "overstatement_after": 35.27,
+     "created_by_E21": true
+    },
+    {
+     "pair": "Recoma 30 / N38UH",
+     "overstatement_before": 19.96,
+     "overstatement_after": 26.85,
+     "created_by_E21": false
+    },
+    {
+     "pair": "Recoma 30 / N42H (pre-existing E20)",
+     "shown_before": 169.87720052918982,
+     "shown_after": 169.42723684517833,
+     "min_of_both_after": 90.83,
+     "overstatement_before": 79.05,
+     "overstatement_after": 78.6,
+     "created_by_E21": false
+    }
+   ],
+   "counts": {
+    "created_by_E21": {
+     "registry": 66,
+     "user": 38
+    },
+    "worsened_by_E21": {
+     "registry": 4,
+     "user": 4
+    },
+    "pre_existing_among_moved_pairs": {
+     "registry": 16,
+     "user": 16
+    }
+   },
+   "lowest_single_ring_C24_any_grade_or_part_C": 12.26,
+   "proposal": "C24 = MIN(C59_inner, C59_outer) - cure as its own correction (proposed id E24, gated on E20), landed with E21 (decision 2)."
+  }
+ },
+ "e22_e23": {
+  "computation": "crate-props = magcoupling-rs at 05ec40a + e21.patch + scratch E22/E23 (a4-verify/e22_e23_scratch.patch); harness tests/a4_props.rs.",
+  "E22": {
+   "title": "Magnet expansion in the bond plane: the inner ring's grade value for a non-NdFeB grade (C95 applies to sintered NdFeB and to manual magnets without a grade)",
+   "reach": "a non-NdFeB inner ring; an outer-only non-NdFeB ring is inert (the cup bond is not screened)",
+   "consumers": [
+    "temperature.rs mismatch screen: d_alpha = hub CTE - magnet CTE",
+    "api.rs warning rule 6: |hub - magnet| > 15e-6"
+   ],
+   "cells": [
+    "Temperature design!C104",
+    "Temperature design!C105",
+    "Temperature design!C106",
+    "Temperature design!C201",
+    "Temperature design!C202"
+   ],
+   "rust_only": [
+    "warnings.cte_mismatch_with_magnets"
+   ],
+   "pairs_moved_of_272": 80,
+   "pairs_note": "With the proposed table (bonded 4.8e-6). Under decision 7 A (recommended) bonded leaves E22: 4 grades, 64 pairs.",
+   "probes": [
+    {
+     "label": "Recoma 26 on both rings (grade mode), steel hub, NONE -> NONE.with(E22)",
+     "expect": [
+      {
+       "cell": "Temperature design!C104",
+       "workbook": 64.07367112080888,
+       "corrected": -3.423783953020314
+      },
+      {
+       "cell": "Temperature design!C106",
+       "workbook": "Above the lap-shear strength at the block ends",
+       "corrected": "Below the lap-shear strength"
+      },
+      {
+       "cell": "Temperature design!C201",
+       "workbook": 11.365659614702166,
+       "corrected": -0.6073253229230151
+      }
+     ]
+    },
+    {
+     "label": "Y30 on both rings (grade mode), steel hub",
+     "expect": [
+      {
+       "cell": "Temperature design!C104",
+       "workbook": 64.07367112080888,
+       "corrected": 11.249575845638201
+      },
+      {
+       "cell": "Temperature design!C202",
+       "workbook": "Above the fatigue endurance: qualify by thermal cycling",
+       "corrected": "Below the fatigue endurance"
+      }
+     ]
+    }
+   ],
+   "other_full_precision": {
+    "Recoma 20 both rings, registry steel": {
+     "C104": [
+      64.07367112080888,
+      -8.31490388590649
+     ],
+     "C201": [
+      11.365659614702166,
+      -1.4749329270987537
+     ]
+    },
+    "Bonded (4.8e-6) both rings, registry steel": {
+     "C104": [
+      40.536404178470924,
+      23.2078649876742
+     ],
+     "C105": [
+      23.489029870384478,
+      13.447917864723943
+     ],
+     "C201": [
+      11.365659614702167,
+      6.507057031318037
+     ]
+    }
+   }
+  },
+  "E23": {
+   "title": "Magnet specific heat: each ring at its grade's value for a non-NdFeB grade (C138 applies otherwise); C = m_i cp_i + m_o cp_o, or C110 cp when both rings share cp",
+   "reach": "a non-NdFeB ring on either side",
+   "cells_registry": [
+    "Temperature design!C19",
+    "Temperature design!C20",
+    "Temperature design!C141",
+    "Temperature design!C143",
+    "Temperature design!C145",
+    "Temperature design!C150",
+    "Temperature design!C151",
+    "Temperature design!C152",
+    "Temperature design!C154",
+    "Temperature design!C155",
+    "Temperature design!C156",
+    "Temperature design!C157",
+    "Temperature design!C158",
+    "Temperature design!C159",
+    "Temperature design!C160",
+    "Temperature design!C161",
+    "Temperature design!C171",
+    "Temperature design!C172",
+    "Temperature design!C180",
+    "Temperature design!C181",
+    "Temperature design!C182",
+    "Temperature design!C186",
+    "Temperature design!C189",
+    "Temperature design!C190",
+    "Temperature design!C192",
+    "Temperature design!C193",
+    "Temperature design!C196"
+   ],
+   "cells_user_note": "26: C152 does not move on the user basis.",
+   "pairs_moved_of_272": 140,
+   "pairs_note": "With the proposed table (bonded cp 420). Under decision 8 B bonded would leave E23: 116 pairs.",
+   "verdict_changes": 0,
+   "max_peak_change_C": 0.03135093867159355,
+   "heat_capacity_change_range": [
+    -0.05892651108906101,
+    0.11581491033503725
+   ],
+   "probes": [
+    {
+     "label": "Y30 on both rings, steel hub, NONE -> NONE.with(E23)",
+     "expect": [
+      {
+       "cell": "Temperature design!C141",
+       "workbook": 76.57010154344385,
+       "corrected": 83.21686244344386
+      },
+      {
+       "cell": "Temperature design!C143",
+       "workbook": 255.23367181147952,
+       "corrected": 277.3895414781462
+      },
+      {
+       "cell": "Temperature design!C180",
+       "workbook": 65.88143223919256,
+       "corrected": 65.86604472256508
+      }
+     ]
+    },
+    {
+     "label": "Recoma 26 inner, B842SH outer (the per-ring split)",
+     "expect": [
+      {
+       "cell": "Temperature design!C141",
+       "workbook": 83.09415301144385,
+       "corrected": 81.18448747594385
+      },
+      {
+       "cell": "Temperature design!C180",
+       "workbook": 65.86630657629901,
+       "corrected": 65.87048331422399
+      }
+     ]
+    }
+   ],
+   "other_full_precision": {
+    "Recoma 26 both rings, registry steel": {
+     "C141": [
+      83.99402217944386,
+      80.17469110844385
+     ],
+     "C143": [
+      279.9800739314795,
+      267.2489703614795
+     ],
+     "C180": [
+      65.86440401945036,
+      65.87277201909453
+     ]
+    },
+    "Bonded (420) both rings, registry steel": {
+     "C141": [
+      78.36983987944386,
+      77.77674429144385
+     ],
+     "C143": [
+      261.2327995981462,
+      259.2558143048128
+     ],
+     "C19": [
+      -102.85680559827998,
+      -102.07839495344572
+     ]
+    }
+   }
+  },
+  "defaults_unchanged": [
+   "default design bit-identical (every result field, both hubs, both bases, every correction set)",
+   "every sintered NdFeB grade (both rings, inner only, outer only) and every library part bit-identical",
+   "3,391 differential cases: NONE vs only(E22), only(E23), and ALL-without-both vs ALL: 0 moved",
+   "wiring: E22 == C95 set to the grade value; E23 == C138 set to the grade value (same-grade rings): 0 failures"
+  ],
+  "alternatives_aluminium_hub_user_both_rings_C104_MPa": {
+   "SmCo_2_17_26": {
+    "13": [
+     23.3,
+     10.12
+    ],
+    "12": [
+     23.3,
+     11.07
+    ],
+    "11": [
+     23.3,
+     12.03
+    ]
+   },
+   "SmCo_2_17_30": {
+    "13": [
+     18.11,
+     7.869
+    ],
+    "12": [
+     18.11,
+     8.612
+    ],
+    "11": [
+     18.11,
+     9.354
+    ]
+   },
+   "Bonded_NdFeB_BCN19": {
+    "-0.8 (C95)": [
+     18.11,
+     18.11
+    ],
+    "1.5": [
+     18.11,
+     16.41
+    ],
+    "4.8": [
+     18.11,
+     13.96
+    ],
+    "20": [
+     18.11,
+     2.673
+    ]
+   },
+   "note": "4 significant figures. AA 326 lap shear 15 MPa. Report section 4.6 has every basis and hub."
+  },
+  "implementation_notes": {
+   "IN1": "C106 and C202 compare signed values. Without E22 s1 > 0 at every slider setting (C95 <= 6e-6 < 9.0e-6, the lowest library hub CTE; swing >= 2 C). E22 makes d_alpha negative for every SmCo grade on a steel hub. With the proposed values |C104| <= 8.31 MPa and |C201| <= 1.48 MPa wherever negative, so no reading is wrong; at the Vega 20e-6 alternative the registry steel hub reads -23.83 MPa 'Below' a 15 MPa strength (decision 9).",
+   "IN2": "C95 (-3e-6 to 6e-6) and C138 (300 to 600) cannot carry the grade values; E22 and E23 bypass them for non-NdFeB rings (decision 10).",
+   "IN3": "C97 = 160 GPa for every grade; the sheets print 140 (Recoma) and 150 (ferrite). With E22 the shear at the sheet modulus is < 1 % lower (Recoma 26 aluminium hub 10.12 -> 10.05 MPa); 160 is conservative; carry-over, no decision.",
+   "IN4": "One constant per grade; the sources print 20-200, 20-150 or 25-200 C means, or none.",
+   "hub_gating": "The warning takes the body CTE whenever C6 != 1; the screen does so only under E18. On the registry basis with an aluminium hub the screen uses steel and the warning aluminium."
+  }
+ },
+ "decisions": [
+  {
+   "id": 1,
+   "title": "E21 numbers",
+   "recommended": "A",
+   "options": {
+    "A": "Approve E21 as specified, with the record corrections (C43 and C47 in the cells list, probe 4, corrected wording)",
+    "B": "Do nothing (keep negative offsets)",
+    "C": "Drop the calibration altogether"
+   }
+  },
+  {
+   "id": 2,
+   "title": "Cure margin C24 under E20",
+   "recommended": "A",
+   "options": {
+    "A": "Land C24 = MIN(C59_inner, C59_outer) - cure as its own correction (proposed E24, gated on E20) in the same change as E21",
+    "B": "Land E21 now, the C24 fix as a later follow-up",
+    "C": "Do nothing"
+   }
+  },
+  {
+   "id": 3,
+   "title": "Mismatch-screen relaxation under E21 (the swing's hot end is C12)",
+   "recommended": "A",
+   "options": {
+    "A": "Accept and document it in the C101 help text",
+    "B": "A correction that takes the swing's hot end from the adhesive limit C11"
+   }
+  },
+  {
+   "id": 4,
+   "title": "How the property correction is split",
+   "recommended": "A",
+   "options": {
+    "A": "Two corrections: E22 (inner ring's grade CTE in the bond plane) and E23 (each ring's grade specific heat)",
+    "B": "One combined correction"
+   }
+  },
+  {
+   "id": 5,
+   "title": "Resolved values (Y30 10.0e-6 and 700.0; Recoma 20 14.0e-6 and 370.0; Recoma 26 and 30 cp 350.0)",
+   "recommended": "A",
+   "options": {
+    "A": "Approve",
+    "B": "Approve with Eclipse's 825 for Y30 cp"
+   }
+  },
+  {
+   "id": 6,
+   "title": "Recoma 26 and Recoma 30 CTE perpendicular to the magnetization",
+   "recommended": "A",
+   "options": {
+    "A": "13.0e-6 (Arnold, rule 3)",
+    "B": "11.0e-6 (independent cluster, conservative)",
+    "C": "12.0e-6 (midpoint)"
+   }
+  },
+  {
+   "id": 7,
+   "title": "Bonded NdFeB (BCN-19) CTE",
+   "recommended": "A",
+   "options": {
+    "A": "No per-grade CTE: C95 -0.8e-6 applies; bonded leaves E22's move set",
+    "B": "4.8e-6 (EAM proxy)",
+    "C": "20e-6 (Vega)"
+   }
+  },
+  {
+   "id": 8,
+   "title": "Bonded NdFeB (BCN-19) specific heat",
+   "recommended": "A",
+   "options": {
+    "A": "420.0 (EAM proxy), flagged single-source",
+    "B": "Keep C138 440; bonded leaves E23's move set"
+   }
+  },
+  {
+   "id": 9,
+   "title": "Signed shear comparison (IN1)",
+   "recommended": "A",
+   "options": {
+    "A": "Under E22, compare |C104| (C106) and |C201| (C202) with their thresholds, keeping signed values on display",
+    "B": "A separate correction (E25) for the absolute value",
+    "C": "Do nothing"
+   }
+  },
+  {
+   "id": 10,
+   "title": "Display of the inputs E22 and E23 bypass (IN2)",
+   "recommended": "A",
+   "options": {
+    "A": "Keep C95 and C138 as the sintered-NdFeB inputs, add help text and Rust-only 'in effect' result fields",
+    "B": "Widen the ranges and write the grade values into C95 and C138 on a grade pick",
+    "C": "Do nothing"
+   }
+  }
+ ],
+ "decisions_verbatim": "1. **E21 numbers.**\n   - **A.** Approve E21 as specified, with the record corrections of section 2.10 (C43 and C47 in the cells list, probe 4, the corrected wording). *Why: every demag output moves only down, and every case with an offset of 0 or more is bit-identical, default design included.*\n   - B. Do nothing: N52 parts keep C12 0.17 °C, and Recoma 26 keeps a 161.9 °C magnet limit that its own model does not support.\n   - C. Drop the calibration altogether: this makes the default design 9.9 °C less conservative.\n2. **Cure margin C24 under E20.**\n   - **A.** Land C24 = MIN(C59_inner, C59_outer) − cure as its own correction (proposed E24, gated on E20) in the same change as E21. *Why: E21 makes the shown C24 overstate the real minimum by up to 62.4 °C, the same E20 defect already reaches 79.1 °C, and the fix flips no verdict at default inputs (the lowest single-ring C24 is 12.26 °C).*\n   - B. Land E21 now and the C24 fix as a later follow-up.\n   - C. Do nothing.\n3. **Mismatch-screen relaxation under E21** (the swing's hot end is the governing limit C12).\n   - **A.** Accept, and document it in the C101 help text. *Why: the design is rated to C12, so screening the bond over the range the design allows is consistent; E21 exposes the coupling but did not create it, and with E22 on only 3 of the 9 user-basis flips remain.*\n   - B. Add a correction that takes the swing's hot end from the adhesive limit C11, so the bond screen does not depend on the magnets.\n4. **How the property correction is split.**\n   - **A.** Two corrections: E22 (the inner ring's grade CTE in the bond plane: C104 to C106, C201, C202 and warning rule 6) and E23 (each ring's grade specific heat: C141 and the 25 thermal cells downstream). *Why: the cell sets do not overlap, so each can be probed and approved alone, and neither moves the default design, any NdFeB grade, any part or any differential case.*\n   - B. One combined correction.\n5. **The resolved values:** Y30 CTE ⊥ 10.0e-6 and cp 700.0; Recoma 20 CTE ⊥ 14.0e-6 and cp 370.0; Recoma 26 and Recoma 30 cp 350.0.\n   - **A.** Approve. *Why: each is the primary or primary-proxy value, independently confirmed or bracketed, and Y30's 700 is also the conservative end.*\n   - B. Approve, but with Eclipse's 825 for Y30 cp. This is less conservative: C141 is 3.8 % higher and the time to the limit 2.5 % longer.\n6. **Recoma 26 and Recoma 30 CTE perpendicular to the magnetization.**\n   - **A.** 13.0e-6 (Arnold). *Why: rule 3 (primary over secondary): it is the only grade-specific, range-stated source; and no reading, warning or verdict differs from 11.*\n   - B. 11.0e-6, the independent cluster (thyssenkrupp, Eclipse, Dexter, magnet-materials). This is conservative: it gives a larger |Δα| on both hubs, and the 20-200 °C range likely makes Arnold's 13 high for the engine's 20-120 °C swing.\n   - C. 12.0e-6, the midpoint.\n7. **Bonded NdFeB (BCN-19) CTE.**\n   - **A.** No per-grade CTE: the bonded ring keeps C95's −0.8e-6, and bonded leaves E22's move set. *Why: the three proxies are 4x apart (1-2, 4.8, about 20), none is BCN-19, and −0.8 is the most conservative value on both hubs (rule 4).*\n   - B. 4.8e-6 (EAM proxy, as proposed). On an aluminium hub it clears C106 (18.11 -> 13.96 MPa), and the warning still fires.\n   - C. 20e-6 (Vega). On an aluminium hub it clears C106, C202 and the warning, and it makes Δα negative on steel.\n8. **Bonded NdFeB (BCN-19) specific heat.**\n   - **A.** 420.0 (EAM proxy), flagged as single-source. *Why: it is the only source, and it is on the conservative side of 440 (heats faster); the effect is C141 −0.76 % and peak +0.002 °C (steel hub, both rings).*\n   - B. Keep C138's 440, and bonded leaves E23's move set.\n9. **Signed shear comparison (IN1).**\n   - **A.** Under E22, compare |C104| with the lap shear (C106) and |C201| with the endurance limit (C202), keeping the signed values on display. *Why: E22 makes a negative mismatch reachable for the first time, and a signed test reads any negative shear as \"Below\"; with the proposed values no reading changes, but at the Vega alternative −23.83 MPa reads \"Below\" a 15 MPa strength.*\n   - B. A separate correction (E25) for the absolute value.\n   - C. Do nothing.\n10. **Display of the inputs that E22 and E23 bypass (IN2).**\n    - **A.** Keep C95 and C138 as the sintered-NdFeB inputs, with labels and ranges unchanged (python_schema). Add help text, plus Rust-only result fields for the CTE in effect (inner ring) and each ring's specific heat in effect. *Why: explicit, with no hidden input mutation, mirroring E21's C50 treatment.*\n    - B. Widen the slider ranges and write the grade values into C95 and C138 when a grade is picked. The input state would then depend on the grade pick, and the workbook ranges would break.\n    - C. Do nothing: the engine silently ignores C95 and C138 for non-NdFeB rings.\n",
+ "sources": {
+  "recoma": {
+   "url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/10/Recoma-Combined-160301.pdf",
+   "existing_key": "recoma",
+   "title": "Arnold Magnetic Technologies, Recoma sintered SmCo, combined datasheet 160301 (individual sheets Rev. 131025): PDF p4 Recoma 20, p8 Recoma 26, p12 Recoma 30, p9 Recoma 26HE, p13 Recoma 30HE. Thermal Properties tables read from rendered pages.",
+   "tier": 1
+  },
+  "eclsmco": {
+   "url": "https://www.eclipsemagnetics.com/site/assets/files/19544/eclipsemagnetics_smco_datasheet.pdf",
+   "existing_key": "eclsmco",
+   "title": "Eclipse Magnetics SmCo technical data sheet (distributor): Physical Characteristics table (CTE C// and C⊥ by alloy, specific heat in kCal/(kg.°C)).",
+   "tier": 2
+  },
+  "eclfer": {
+   "url": "https://www.eclipsemagnetics.com/site/assets/files/19602/ferrite_ceramic_datasheet.pdf",
+   "existing_key": "eclfer",
+   "title": "Eclipse Magnetics ferrite/ceramic datasheet (distributor), PDF p3 Physical Characteristics (Typical): CTE C// 15, C⊥ 10 (10-6/°C), specific heat 795-855 J/kg°C.",
+   "tier": 2
+  },
+  "ms_hf2624": {
+   "url": "https://magnete.de/fileadmin/user_upload/Magnetische_Kenndaten/Gesinterte_Hartferritmagnete/HF_26-24_Sr_E.pdf",
+   "existing_key": null,
+   "title": "MS-Schramberg GmbH & Co. KG (sold via magnete.de), Strontium ferrite HF 26/24 anisotropic dry pressed, version 08/2022: Expansion coefficient p.p.d. 10-11 and i.p.d. 12-13 (10^-6/K), spec. heat capacity approx. 700 J/(kg·K). Direction notation: p.p.d. = perpendicular to preferred direction, i.p.d. = in preferred direction.",
+   "tier": 1,
+   "proxy": true
+  },
+  "ms_hf3026": {
+   "url": "https://magnete.de/fileadmin/user_upload/Magnetische_Kenndaten/Gesinterte_Hartferritmagnete/HF_30-26_Sr_E.pdf",
+   "existing_key": null,
+   "title": "MS-Schramberg Strontium ferrite HF 30/26 anisotropic wet pressed, version 08/2022: same expansion and specific-heat values as HF 26/24. (The URL magnete.de/.../HF_30-26_E.pdf returns 404; the file is HF_30-26_Sr_E.pdf.)",
+   "tier": 1,
+   "proxy": true
+  },
+  "tk_ferrite": {
+   "url": "https://ucpcdn.thyssenkrupp.com/_binary/UCPthyssenkruppBAMXSchulteMicrositeMagnettechnik/en/downloads/link-thyssenkruppMagnettechnik-Factsheet-ferrite-magnets.pdf",
+   "existing_key": null,
+   "title": "thyssenkrupp Materials Services, Hard ferrite magnets product information, PDF p3: heat capacity 500-800 J/kg K, CTE in magnetizing direction 9.2-13.3 and normal to mag. direction 9.2-10 (10-6/K), Tmax 250 C, Tc 450 C.",
+   "tier": 2
+  },
+  "eam_cbn": {
+   "url": "https://eamagnetics.com/wp-content/uploads/2021/08/EAM-ComprBond-Neo-PhysProp-1.pdf",
+   "existing_key": null,
+   "title": "Eneflux Armtek Magnetics (EAM), Magnetic and Physical Properties, Compression Bonded Neodymium, PDF p1 (grades EAM-A 9H, B 10, C 9H, D 10, O 8): CTE (25 to 200 C) 4.8 um/m C, specific heat 0.42 Ws/g C, thermal conductivity 0.02 W/cm C, density 6.0-6.1 g/cm3. The text layer shifts the row labels by one; values read from the rendered page.",
+   "tier": 1,
+   "proxy": true
+  },
+  "allstar_smco": {
+   "url": "https://allstarmagnetics.com/wp-content/uploads/2024/09/Samarium-Cobalt-Technical-Data-ASM-09-23-2023.pdf",
+   "existing_key": null,
+   "title": "Allstar Magnetics, Samarium Cobalt technical data, p2 (distributor, generic SmCo): CTE 11.8 perpendicular and 9.2 parallel (20-100 C), specific heat 370 J/(kg.C).",
+   "tier": 2
+  },
+  "magnet_materials_sm2co17": {
+   "url": "https://magnet-materials.com/1-1-2-sm2co17-magnets.html",
+   "existing_key": null,
+   "title": "magnet-materials.com Sm2Co17 page (aggregator, via WebFetch summary, not visually verified): CTE parallel 8, perpendicular 11 (1e-6/C).",
+   "tier": 3
+  },
+  "sourcemagnets": {
+   "url": "https://sourcemagnets.com/magnet-physical-properties/",
+   "existing_key": null,
+   "title": "sourcemagnets.com Magnet Physical Properties (compendium, via WebFetch summary, not visually verified): Sm1Co5 20-200 C parallel 7, perpendicular 15, cp 370; Sm2Co17 parallel 11, perpendicular 13, cp 350. Its bonded-NdFeB row lists no thermal values; a search-tool summary that attributed 11/13 and 350 to bonded NdFeB is the SmCo table reused and is NOT a source.",
+   "tier": 3
+  },
+  "hgt_bonded": {
+   "url": "https://www.advancedmagnets.com/wp-content/uploads/2021/09/Bonded-Neodymium-Iron-Boron-NdFeB-Magnets-Specifications.pdf",
+   "existing_key": null,
+   "title": "HGT Advanced Magnets, Bonded NdFeB Magnets' Specifications, PDF p4 Table III: Thermal Expansivity 1-2 (10^-6/C). Rejected (sintered-scale table; no direction or range).",
+   "tier": 1,
+   "rejected": true
+  },
+  "allbcn": {
+   "url": "https://allianceorg.com/magnetic-materials/bonded-magnets/compression-bonded-neo/",
+   "existing_key": "allbcn",
+   "title": "Alliance LLC, Compression Bonded Neo: no CTE, specific heat or thermal conductivity in any table.",
+   "tier": 1
+  },
+  "allbcn2": {
+   "url": "https://alliancemagnets.com/bonded-neodymium-magnet-grades/",
+   "existing_key": null,
+   "title": "Alliance (alliancemagnets.com) bonded neodymium grades page: no CTE, specific heat or thermal conductivity.",
+   "tier": 1
+  },
+  "allc5": {
+   "url": "https://allianceorg.com/magnetic-materials/ceramic-magnets/ferrite-c-5/",
+   "existing_key": "allc5",
+   "title": "Alliance LLC Ferrite C-5: no CTE or specific heat.",
+   "tier": 1
+  },
+  "arn_n35": {
+   "url": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/11/N35-151021.pdf",
+   "existing_key": "https://www.arnoldmagnetics.com/wp-content/uploads/2017/11/N35-151021.pdf",
+   "title": "Arnold sintered NdFeB per-grade sheets N35, N42, N48, N52, N42M, N42H, N42SH, N38UH, N35EH (same URL pattern, 2017/11/<grade>-151021.pdf): CTE C// 7, C⊥ -1 (20-200 C), specific heat 0.11 cal/g C (20-140 C), identical on all nine.",
+   "tier": 1
+  },
+  "tk_smco": {
+   "url": "https://ucpcdn.thyssenkrupp.com/_binary/UCPthyssenkruppBAMXSchulteMicrositeMagnettechnik/en/downloads/link-thyssenkruppMagnettechnik-Factsheet-samarium-cobalt-magnets.pdf",
+   "title": "thyssenkrupp Materials Services, samarium cobalt magnets factsheet, p3 (rendered by the skeptic): Sm2Co17 CTE 'normal to mag. direction' 11, 'in magnetizing direction' 8 (1e-6/K).",
+   "tier": 2,
+   "added_by": "property skeptic"
+  },
+  "dexter_smco": {
+   "url": "https://www.dextermag.com/products/permanent-magnets/samarium-cobalt-magnets/",
+   "title": "Dexter Magnetic Technologies, samarium cobalt magnets page (HTML via WebFetch): 2:17 CTE perpendicular 11.0-12.0, parallel 9.0-10.0.",
+   "tier": 2,
+   "added_by": "property skeptic"
+  },
+  "maruwa_ferrite": {
+   "url": "https://www.maruwa-g.com/e/products/ceramic/000321.html",
+   "title": "Maruwa ferrite magnets, Substance Characteristics (raw HTML): CTE anisotropic direction 14-15 (1e-6/K), specific heat 630-840 J/(kg K).",
+   "tier": 1,
+   "added_by": "property skeptic"
+  },
+  "vega": {
+   "url": "https://www.vegatechnik.com/download/datasheet/vt_magnets.pdf",
+   "title": "Vega Technik magnets datasheet: generic SmCo CTE 11.8 (page not recorded); ferrite parallel 1.4e-5 (p8); bonded neodymium 'c.ca 20 x 10-6 1/C' (p17).",
+   "tier": 2,
+   "added_by": "property skeptic"
+  }
+ }
+}
