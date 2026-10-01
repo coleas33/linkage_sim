@@ -1051,8 +1051,10 @@ fn nudges(meta: &InputMeta, value: &Value) -> Vec<Value> {
 
 /// Design points for the traceability test: the defaults; the measured prototype's own
 /// circuit (6061 back iron, so the bench correction is the calibration factor) at a test
-/// temperature off 20 °C; a grade-mode ring with eleven harmonics at six poles; and a dozen
-/// full-run cases under four of the drift guard's augmentations.
+/// temperature off 20 °C; a grade-mode ring with eleven harmonics at six poles; the
+/// coercivity from the inputs with a bench drag entered; a hot-day start above the limit
+/// (E12); and a dozen full-run cases under nine of the drift guard's augmentations (the
+/// back-iron, grade, axial-override, ferrite and part-material branches of every chain).
 fn trace_points() -> Vec<(String, DesignInputs)> {
     let design = |sets: &[(&str, Value)]| {
         let mut inputs = DesignInputs::default();
@@ -1081,6 +1083,23 @@ fn trace_points() -> Vec<(String, DesignInputs)> {
                 ("calibration.test_temp_C", Value::Num(35.0)),
             ]),
         ),
+        // The Hcj inputs act for both rings, and a bench drag replaces the loss estimate; a drag
+        // of exactly 0 is no heating at all (E13).
+        (
+            "coercivity from the inputs, drag measured".to_owned(),
+            design(&[
+                ("temperature.demag.coercivity_source", Value::Int(0)),
+                ("metal.measured_drag_Nm", Value::Num(0.02)),
+            ]),
+        ),
+        (
+            "drag measured as 0 (E13)".to_owned(),
+            design(&[("metal.measured_drag_Nm", Value::Num(0.0))]),
+        ),
+        (
+            "hot-day start above the limit (E12)".to_owned(),
+            design(&[("temperature.duty.driving_rise_C", Value::Num(45.0))]),
+        ),
     ];
     let augmentations: Vec<_> = augmentations()
         .into_iter()
@@ -1088,8 +1107,13 @@ fn trace_points() -> Vec<(String, DesignInputs)> {
             [
                 "as generated",
                 "harmonics 11",
+                "back iron 1018",
                 "back iron 6061",
                 "grade mode",
+                "axial 8 mm",
+                "ferrite inputs",
+                "unrated ferrite",
+                "sleeve Ti, cap acetal",
             ]
             .contains(l)
         })
@@ -1228,6 +1252,14 @@ fn check_traceability(paths: &[String], sensitivity: bool) -> Vec<String> {
             ));
         }
     }
+    // Not vacuous: every input checked moves some explained result at some point.
+    for input in paths {
+        if !moved_pairs.iter().any(|(i, _)| i == input) {
+            failures.push(format!(
+                "{input} moves no explained result at any design point"
+            ));
+        }
+    }
     failures
 }
 
@@ -1362,12 +1394,24 @@ const CANCELLATIONS: &[(&str, &str, &str)] = &[
 
 #[test]
 fn each_assumption_moves_what_depends_on_it_and_nothing_else() {
-    // Spec A3 testing: the fifteen assumption inputs (the fourteen rows; end effect is two).
+    // Spec A3 testing: the fifteen assumption inputs (the fourteen rows; end effect is two),
+    // every one of them with explained results downstream now that every chain is explained.
+    let r = Registry::build();
     let paths: Vec<String> = ASSUMPTIONS
         .iter()
         .flat_map(|a| a.paths.iter().map(|p| (*p).to_owned()))
         .collect();
     assert_eq!(paths.len(), 15);
+    assert!(
+        SCOPE.iter().all(|c| c.status == Status::Explained),
+        "every chain of decision 31 is explained"
+    );
+    for p in &paths {
+        assert!(
+            !r.downstream(p).is_empty(),
+            "{p}: no explained result depends on it"
+        );
+    }
     let failures = check_traceability(&paths, true);
     assert!(failures.is_empty(), "{}", report(&failures));
 }
@@ -1384,6 +1428,42 @@ fn no_input_moves_a_result_the_graph_says_is_independent_of_it() {
         .collect();
     let failures = check_traceability(&paths, false);
     assert!(failures.is_empty(), "{}", report(&failures));
+}
+
+#[test]
+fn records_never_panic_on_inputs_that_bypass_set() {
+    // The records are proven over validated inputs (the drift guard sets every input through
+    // `set`); a design file or share link can hold what `set` refuses (decision D3: the GUI
+    // validates at its boundaries). Evaluating every record over such inputs, written straight
+    // into the struct, gives a value or an EvalError, never a panic: an invalid harmonic code,
+    // selector codes outside their choices, a NaN temperature and a NaN reserve.
+    let r = Registry::build();
+    let mut inputs = DesignInputs::default();
+    inputs.coupling.max_harmonic = 4;
+    inputs.temperature.adhesive.selected = 0;
+    inputs.clamps.screw_class = 9;
+    inputs.materials.parts.back_iron = 99;
+    inputs.coupling.op_temp_C = f64::NAN;
+    inputs.metal.max_diameter_mm = f64::NAN;
+    assert!(
+        inputs.validate().is_err(),
+        "validate() names every one of them"
+    );
+    let results = compute_all(&inputs);
+    let src = Design {
+        inputs: &inputs,
+        results: &results,
+    };
+    let (mut values, mut errors) = (0, 0);
+    for eq in r.equations() {
+        match r.evaluate(eq, &src, None) {
+            Ok(_) => values += 1,
+            Err(_) => errors += 1,
+        }
+    }
+    // Every record returned (a value or an EvalError), and most give a value.
+    assert_eq!(values + errors, r.equations().len());
+    assert!(values > errors, "{values} values, {errors} errors");
 }
 
 #[test]
