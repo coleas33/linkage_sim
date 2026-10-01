@@ -9,6 +9,7 @@
 pub mod corrections;
 pub mod dashboard;
 mod format;
+pub mod geometry;
 pub mod history;
 pub mod input_ui;
 pub mod inputs;
