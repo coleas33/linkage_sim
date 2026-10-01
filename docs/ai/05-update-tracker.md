@@ -5,6 +5,22 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-01 — Magcoupling A4 notes: independent physics review fixes
+- `magcoupling-rs/src/engine/explain/notes.rs`: seven "imprecise" findings of an independent physics
+  review applied to six notes (text only; no equation, record or engine change):
+  - ferrite_cold_demag: the watch-out tells a ferrite design to enter its own reverse fields; the
+    defaults (354 to 863 kA/m) come from the NdFeB design and put a Y30 ring's cold limit at 336 C.
+  - calibration: the 2D model reads low (about 4 % without back iron, M4; less with steel, M5), and
+    the assumed 0.95 adds conservatism rather than correcting that bias; M5 added to the sources.
+  - harmonics: the third harmonic is negative even with no gaps (sin(3 pi/2) = -1) and the fill
+    decides which harmonics are negative (the default outer ring, fill 0.62, has a positive third);
+    higher harmonics are also smaller; 1, 3, 5 is the default and the calculator sums up to 11.
+  - br_temperature: the permanent loss starts at the demagnetization onset; the limit is 10 C below it.
+  - demagnetization: the watch-out's +/-20 % is on the Hcj slope (M13).
+  - slip_heating: the 316L skin depth (about 34 mm at the default slip) and the 0.7 end factor.
+- The six notes' Review records name the independent review (2026-10-01) and its commit; the other
+  eleven keep ee11bfd. All 17 stay reviewed; the release gate is green.
+
 ## 2026-10-01 — Magcoupling Addendum A-3: final review fix wave
 - Drift guard: 15 more edge points, one per comparison the review named (the hot minimum and
   hot-day torque checks, each ring's rating check, which limit governs, each of the verdict's four
