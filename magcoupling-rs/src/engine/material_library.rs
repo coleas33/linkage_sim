@@ -14,11 +14,17 @@
 //! [`Material::engine`] holds what the engine uses when a material is picked:
 //! the workbook's number where the workbook has one (4140, 316L, 6061, 7075:
 //! decisions 21 to 26 keep them as the defaults, the sourced value is the
-//! reference), else the sourced value, as engine-unit literals. The default
+//! reference), else the sourced value, as engine-unit literals; 6061-T6's expansion
+//! and modulus are correction E18's (the Alliance datasheet, 23.6e-6 /°C and 68.9 GPa:
+//! [`AL_HUB_CTE_PER_C`], [`AL_HUB_MODULUS_GPA`]), so a 6061 back iron equals the default
+//! aluminium body cell for cell (Addendum A-2 decision A2-6; Kaiser's 68.3 GPa stays the
+//! sourced reference). The default
 //! choice of each part is the workbook's material, whose values ARE the
 //! existing inputs (Materials C13 to C18, Temperature design C111, C139, C140,
 //! Metal design C42, C44, C132): picking it changes nothing, so parity and the
 //! differential tests hold (decision table of the A-1 plan).
+
+use super::temperature::{AL_HUB_CTE_PER_C, AL_HUB_MODULUS_GPA};
 
 /// A property as the data file selects it: the value in the data file's unit and
 /// its source, or `None` where no source was found or the property does not apply.
@@ -434,8 +440,8 @@ pub const MATERIALS: [Material; 14] = [
             sigma_S_m: 25000000.0,
             density_g_mm3: 0.0027,
             cp_J_kgK: 900.0,
-            cte_per_C: 23.6e-6,
-            modulus_GPa: 68.3,
+            cte_per_C: AL_HUB_CTE_PER_C,
+            modulus_GPa: AL_HUB_MODULUS_GPA,
         },
         needs_plating: false,
         notes: "Default cap and housing (the workbook's C42, C43 and C140). As a back iron: non-magnetic demonstration. mu_r: pure-aluminium proxy. M5.",
@@ -864,7 +870,6 @@ pub fn resolve(
     thermal: &super::temperature::ThermalInputs,
 ) -> PartProperties {
     use super::materials::AL6061;
-    use super::temperature::{AL_HUB_CTE_PER_C, AL_HUB_MODULUS_GPA};
     let workbook_steel = props(
         steel.conductivity_S_m,
         md.steel_density_g_mm3,

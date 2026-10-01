@@ -258,15 +258,12 @@ fn a_non_ferromagnetic_back_iron_is_the_hub_cup_and_boss_material() {
         c304["Temperature design!C104"],
         aluminium["Temperature design!C104"]
     );
-    // The library's 6061 differs from the workbook aluminium only in the modulus E18 reads
-    // (68.3 GPa Kaiser against 68.9 GPa Alliance; decision table of the A-1 plan).
+    // Decision A2-6: the library's 6061 engine values are the workbook aluminium's and E18's
+    // (its modulus is E18's 68.9 GPa, the sourced Kaiser 68.3 GPa stays the reference), so
+    // picking 6061 as back iron is the default no-back-iron design, cell for cell.
     let c6061 = with_back_iron(8);
     let changed = changed_results(&no_iron, &c6061, Deviations::ALL);
-    let want: BTreeSet<String> = ["C104", "C105", "C201"]
-        .iter()
-        .map(|c| format!("Temperature design!{c}"))
-        .collect();
-    assert_eq!(changed, want);
+    assert!(changed.is_empty(), "{changed:?}");
 }
 
 #[test]
