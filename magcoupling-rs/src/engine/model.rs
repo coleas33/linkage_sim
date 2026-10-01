@@ -143,7 +143,7 @@ inputs! {
             grade_outer: String = "" => param_rust_only("-", "Outer magnet grade (manual dimensions)",
                 "As the inner grade, for the outer ring."),
             axial_length_mm: Option<f64> = None => param_rust_only("mm", "Axial magnet length, both rings",
-                "Addendum A1. Blank = each ring's part or manual length. A value sets both rings' axial length and keeps everything else each ring has (part or manual cross-section, grade, Br, rating): blocks cut or stacked to length. The calibration factor still follows the part names (Calculator C42), and the retainer span, hub length and cup depth stay inputs (Metal design C172, C123, C124: no rule sizes them, Addendum A decision 28), so recheck them. Inverse sizing's default free variable.")
+                "Addendum A1. Blank = each ring's part or manual length. A value sets both rings' axial length and keeps everything else each ring has (part or manual cross-section, grade, Br, rating): blocks cut or stacked to length. The calibration factor still follows the part names (Calculator C42). The hub length, cup cavity depth and retainer span follow the length change (Metal design C123 with the inner ring, C124 with the outer ring, C172 with the longer ring; each at least its ring's length: decision A2-8), so both axial stacks and the space claim follow; housing.* shows them. Inverse sizing's default free variable.")
                 .range(2.0, 50.8, 0.01),
         }
     }

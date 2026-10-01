@@ -11,6 +11,25 @@
 //! endplates, cap), stay inputs (decision 28); the M41 cap thread below the cup OD and the
 //! 22 mm against 25 mm boss OD are M4 design questions.
 //!
+//! **The axial housing follows the magnets** (Addendum A decision A2-8, option B). With the
+//! Rust-only axial length override (`coupling.magnets.axial_length_mm`) set, the three class N
+//! dimensions a ring bounds follow that ring's length change from its own length (its part's,
+//! or its manual length), so the stacks the space claim reads grow and shrink with the magnets
+//! ([`axial_housing`]): the hub length (C123, the steel the inner ring sits on, priced at C112)
+//! with the inner ring; the cup cavity depth (C124, the pocket the outer ring sits in, summed by
+//! the axial stack C134 and the large-diameter stack C137 and priced at C111) with the outer
+//! ring; the retainer span (C172, one span for both the sleeve over the inner ring and the liner
+//! inside the outer ring, priced at C46) with the longer ring, since it must cover both. The
+//! other class N dimensions bound no magnet: the cap (C133) and the web (C125) are thicknesses
+//! at the two ends of the cavity, the boss (C126) is the shaft interface and the endplates
+//! (C170, C171) are plates. Each followed dimension keeps its input's margin over its ring and
+//! never ends shorter than the ring itself, the physical minimum (the workbook has no axial
+//! clearance input to add: its margins, 0.3, 2.8 and 1.8 mm at the defaults, are these inputs,
+//! and report 6.5 finds two identities for the cup depth, so neither is a rule). Blank, the
+//! three are the inputs, bit for bit. Every result that reads them (the masses and so the heat
+//! capacity, both stacks, the hybrid length) reads the values in effect, which `housing.*`
+//! shows.
+//!
 //! **Space claim** (spec A1: "43 mm diameter × 35 mm overall length, and the 20 mm
 //! large-diameter bay, from the metal-design inputs"). Each derived dimension against its
 //! claim: the rotating OD (Metal design C135) against the diameter (C131), the axial stack
@@ -21,8 +40,10 @@
 //! reads "0.00 mm over"; an axis that is not a number reads unknown, beside the exceeded ones.
 
 use super::compat::{fmt_fixed, py_max};
+use super::deviations::Deviations;
 use super::meta::{out_rust_only, results};
-use super::metal_design::MetalDesignResults;
+use super::metal_design::{MetalDesignInputs, MetalDesignResults};
+use super::model::{MagnetInputs, resolve_magnets};
 
 results! {
     /// The space claim, per axis (Addendum A1). Rust-only.
@@ -36,6 +57,12 @@ results! {
                 "The large-diameter stack (Metal design C137) minus the claimed bay (C129) when it is larger; 0 inside or at the claim."),
             space_claim_check: String => out_rust_only("", "Space claim",
                 "The dashboard badge: 'Inside the space claim', or 'Exceeds the space claim:' and each axis it exceeds with the overshoot in mm (at least 0.01), an axis that is not a number reading 'unknown'; 'Space claim unknown' when nothing is exceeded and an axis is not a number."),
+            hub_length_mm: f64 => out_rust_only("mm", "Steel inner hub axial length in effect",
+                "Metal design C123; with the axial length override set, C123 plus the inner ring's length change, and at least the ring's length (decision A2-8)."),
+            cup_depth_mm: f64 => out_rust_only("mm", "Cup cavity axial depth in effect",
+                "Metal design C124; with the axial length override set, C124 plus the outer ring's length change, and at least the ring's length (decision A2-8). Both axial stacks sum it."),
+            retainer_span_mm: f64 => out_rust_only("mm", "Retainer axial span in effect",
+                "Metal design C172; with the axial length override set, C172 plus the longer ring's length change, and at least that ring's length (decision A2-8)."),
         }
     }
 }
@@ -65,8 +92,56 @@ fn quoted_overshoot(over_mm: f64) -> String {
     fmt_fixed(py_max(over_mm, 0.01), 2)
 }
 
-/// The space claim of a design, from its Metal design results.
-pub fn compute(mdr: &MetalDesignResults) -> HousingResults {
+/// The axial housing dimensions in effect (decision A2-8): Metal design C123, C124 and C172.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AxialHousing {
+    pub hub_length_mm: f64,
+    pub cup_depth_mm: f64,
+    pub retainer_span_mm: f64,
+}
+
+/// A dimension that bounds a ring, following the ring's length change: the input plus
+/// (`length_mm` - `own_length_mm`), so it keeps the input's margin over the ring, and at least
+/// `length_mm`, the ring itself (the physical minimum). NaN in, NaN out ([`py_max`]).
+fn follow(input_mm: f64, length_mm: f64, own_length_mm: f64) -> f64 {
+    py_max(input_mm + (length_mm - own_length_mm), length_mm)
+}
+
+/// The hub length, cup cavity depth and retainer span in effect. With the override blank, the
+/// inputs, untouched. With it set, each follows the ring it bounds ([`follow`]) from the ring's
+/// own length (its part's, or its manual length; the override gives both rings one length):
+/// the hub the inner ring, the cup cavity the outer ring, the retainer span the longer ring.
+pub fn axial_housing(
+    md: &MetalDesignInputs,
+    magnets: &MagnetInputs,
+    dev: Deviations,
+) -> AxialHousing {
+    let Some(length_mm) = magnets.axial_length_mm else {
+        return AxialHousing {
+            hub_length_mm: md.hub_length_mm,
+            cup_depth_mm: md.cup_depth_mm,
+            retainer_span_mm: md.retainer_span_mm,
+        };
+    };
+    let own = MagnetInputs {
+        axial_length_mm: None,
+        ..magnets.clone()
+    };
+    let (inner, outer) = resolve_magnets(&own, dev);
+    AxialHousing {
+        hub_length_mm: follow(md.hub_length_mm, length_mm, inner.length_mm),
+        cup_depth_mm: follow(md.cup_depth_mm, length_mm, outer.length_mm),
+        retainer_span_mm: follow(
+            md.retainer_span_mm,
+            length_mm,
+            py_max(inner.length_mm, outer.length_mm),
+        ),
+    }
+}
+
+/// The space claim of a design, from its Metal design results, and the axial housing in
+/// effect ([`axial_housing`]), which it reports.
+pub fn compute(mdr: &MetalDesignResults, axial: &AxialHousing) -> HousingResults {
     let axes = [
         ("diameter", overshoot(mdr.diameter_reserve_mm)),
         ("overall length", overshoot(mdr.axial_reserve_mm)),
@@ -97,5 +172,8 @@ pub fn compute(mdr: &MetalDesignResults) -> HousingResults {
         length_overshoot_mm: axes[1].1,
         bay_overshoot_mm: axes[2].1,
         space_claim_check: check,
+        hub_length_mm: axial.hub_length_mm,
+        cup_depth_mm: axial.cup_depth_mm,
+        retainer_span_mm: axial.retainer_span_mm,
     }
 }

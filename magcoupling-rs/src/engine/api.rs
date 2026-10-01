@@ -147,9 +147,15 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         backiron: parts.backiron,
         ..inputs.coupling.clone()
     };
+    // Addendum A1 (decision A2-8): with the axial length override set, the hub length, the cup
+    // cavity depth and the retainer span follow the magnets; blank, they are the inputs.
+    let axial = housing::axial_housing(&inputs.metal, &ci.magnets, dev);
     let md = &MetalDesignInputs {
         steel_density_g_mm3: parts.steel.density_g_mm3,
         sleeve_density_g_mm3: parts.sleeve_liner.props.density_g_mm3,
+        hub_length_mm: axial.hub_length_mm,
+        cup_depth_mm: axial.cup_depth_mm,
+        retainer_span_mm: axial.retainer_span_mm,
         ..inputs.metal.clone()
     };
     // The cap is the only part the retainers price at Metal design C42.
@@ -330,7 +336,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
     });
 
     // Addendum A1: the space claim, from the derived dimensions (both modes).
-    let housing = housing::compute(&mdr);
+    let housing = housing::compute(&mdr, &axial);
 
     let alloy = if inputs.clamps.alloy == 1 {
         &materials::AL7075

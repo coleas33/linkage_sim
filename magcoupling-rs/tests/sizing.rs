@@ -1,11 +1,13 @@
-//! Addendum A1: the axial length override (Task 5), inverse sizing (Task 6) and the space
-//! claim (Task 7), end to end through `compute_all`.
+//! Addendum A1: the axial length override (Task 5), inverse sizing (Task 6), the space
+//! claim (Task 7) and the axial housing that follows the override (Task 7b, decision A2-8),
+//! end to end through `compute_all`.
 
 use magcoupling::compute_all;
 use magcoupling::engine::api::DesignInputs;
 use magcoupling::engine::housing::{INSIDE_THE_SPACE_CLAIM, SPACE_CLAIM_UNKNOWN};
 use magcoupling::engine::meta::NumOrText;
 use magcoupling::engine::meta::SetErrorKind;
+use magcoupling::engine::meta::{Value, result_rows};
 use magcoupling::engine::model::{END_EFFECT_OUT_OF_RANGE, blocks_fit, pitch_share};
 use magcoupling::engine::sizing::{
     FreeVariable, SCAN_CELLS, SizingError, SizingOutcome, SizingPoint, VALUE_TOLERANCE_MM,
@@ -25,12 +27,34 @@ fn solved(outcome: Result<SizingOutcome, SizingError>) -> SizingPoint {
     }
 }
 
+/// The default design with the axial length override at `length_mm`.
+fn with_length(length_mm: f64) -> DesignInputs {
+    let mut inputs = DesignInputs::default();
+    inputs.coupling.magnets.axial_length_mm = Some(length_mm);
+    inputs
+}
+
+/// Every result of a design as (path, bit pattern), so NaN equals NaN and nothing is rounded.
+fn result_bits(inputs: &DesignInputs) -> Vec<(String, String)> {
+    result_rows(&compute_all(inputs))
+        .into_iter()
+        .map(|row| {
+            let bits = match row.value {
+                Value::Num(x) => format!("{:016x}", x.to_bits()),
+                other => format!("{other:?}"),
+            };
+            (row.path, bits)
+        })
+        .collect()
+}
+
 #[test]
 fn a_length_override_keeps_the_measured_calibration_factor_and_moves_the_mass() {
     // Decision A2-3: the measured correction keys on the part names, as the workbook's C42
     // does, so a length override keeps it for the prototype's rings with no back iron (no
     // step in torque as a sized length passes the prototype's 12.7 mm). The magnets' mass
-    // follows the length; the housing inputs do not (decision 28: no rule sizes them).
+    // follows the length, and so do the axial stack and the retainer span (decision A2-8: the
+    // cup cavity and the span grow by the rings' change, 20 - 12.7 = 7.3 mm; Task 7b).
     let mut inputs = DesignInputs::default();
     inputs.coupling.backiron = 0;
     let at_part = compute_all(&inputs);
@@ -39,10 +63,11 @@ fn a_length_override_keeps_the_measured_calibration_factor_and_moves_the_mass() 
     assert_eq!(at_part.model.f_cal, at_part.calibration.f_cal_updated);
     assert_eq!(long.model.f_cal, at_part.model.f_cal);
     assert!((long.mass.magnets_g / at_part.mass.magnets_g - 20.0 / 12.7).abs() < 1e-12);
-    assert_eq!(long.metal.axial_stack_mm, at_part.metal.axial_stack_mm);
-    assert_eq!(
-        long.retainers.retainer_span_mm,
-        at_part.retainers.retainer_span_mm
+    let change = 20.0 - 12.7;
+    assert!((long.metal.axial_stack_mm - at_part.metal.axial_stack_mm - change).abs() < 1e-12);
+    assert!(
+        (long.retainers.retainer_span_mm - at_part.retainers.retainer_span_mm - change).abs()
+            < 1e-12
     );
 }
 
@@ -627,30 +652,317 @@ fn a_tiny_overshoot_reads_at_least_a_hundredth() {
 }
 
 #[test]
-fn a_length_sized_design_reads_inside_the_space_claim_at_any_length() {
-    // Decision A2-8 as recommended (no engine rule): the axial length moves no dimension the
-    // space claim reads (the axial stack C134 and the large-diameter stack C137 are sums of
-    // class N inputs), so a length-sized design reads "Inside the space claim" at any length.
-    // Sized to its own 2.5 N m requirement the default design's magnets (13.77 mm) outgrow
-    // the 13.0 mm hub; sized to 9.9 N m (50.6 mm) they outgrow the 15.5 mm cup and the
-    // 14.5 mm retainer span. The override's help says to recheck them; M4 decides the rule.
-    let base = DesignInputs::default();
-    for (target, longer_than) in [
-        (base.metal.required_min_Nm, base.metal.hub_length_mm),
-        (9.9, base.metal.cup_depth_mm),
-    ] {
-        let p = solved(solve(&base, FreeVariable::AxialLength, target));
-        assert!(p.value > longer_than, "{target}: {}", p.value);
-        let r = compute_all(&p.inputs);
+fn with_the_override_blank_the_axial_housing_is_the_inputs() {
+    // Decision A2-8 acts only through the override. Blank, the hub length, the cup cavity depth
+    // and the retainer span that every result reads are the inputs themselves, bit for bit (no
+    // floor either: a hub shorter than its ring stays as typed), so no existing result moves;
+    // parity and the differential data never set the override.
+    let mut odd = DesignInputs::default();
+    odd.metal.hub_length_mm = 9.0;
+    odd.metal.cup_depth_mm = 30.0;
+    odd.metal.retainer_span_mm = 3.0;
+    for inputs in [DesignInputs::default(), odd] {
+        let m = &inputs.metal;
+        let r = compute_all(&inputs);
+        let h = &r.housing;
         assert_eq!(
-            r.housing.space_claim_check, INSIDE_THE_SPACE_CLAIM,
-            "{target}"
+            (
+                h.hub_length_mm.to_bits(),
+                h.cup_depth_mm.to_bits(),
+                h.retainer_span_mm.to_bits(),
+                r.retainers.retainer_span_mm.to_bits()
+            ),
+            (
+                m.hub_length_mm.to_bits(),
+                m.cup_depth_mm.to_bits(),
+                m.retainer_span_mm.to_bits(),
+                m.retainer_span_mm.to_bits()
+            )
         );
+        // Metal design C134 and C137 as the workbook sums them, from the inputs.
         assert_eq!(
             r.metal.axial_stack_mm,
-            compute_all(&base).metal.axial_stack_mm
+            m.cap_axial_mm + m.cup_depth_mm + m.web_mm + m.boss_length_mm
+        );
+        assert_eq!(
+            r.metal.large_dia_stack_mm,
+            m.cap_axial_mm + m.cup_depth_mm + m.web_mm
         );
     }
-    let p = solved(solve(&base, FreeVariable::AxialLength, 9.9));
-    assert!(p.value > 50.0 && p.value > base.metal.retainer_span_mm);
+}
+
+#[test]
+fn setting_the_override_to_the_rings_own_length_changes_nothing() {
+    // The default rings are 12.7 mm library parts, and each followed dimension covers its ring
+    // (13.0, 15.5 and 14.5 mm), so the override at 12.7 mm moves no bit of any result.
+    assert_eq!(
+        result_bits(&with_length(12.7)),
+        result_bits(&DesignInputs::default())
+    );
+}
+
+#[test]
+fn a_design_sized_by_length_grows_its_housing_and_can_exceed_the_space_claim() {
+    // Decision A2-8. Sized by length to its own 2.5 N m requirement, the default design's
+    // magnets reach 13.77 mm and both stacks grow by the same 1.07 mm, to 32.87 mm of the 35 mm
+    // length and 19.87 mm of the 20 mm bay: inside. Sized to 9.9 N m (50.62 mm magnets) the cup
+    // cavity grows by 37.92 mm and both stacks pass their claims; the diameter does not move.
+    // The hand computation: Metal design C134 and C137 with the cavity in effect (C124 plus the
+    // outer ring's change from its 12.7 mm part), in the workbook's order.
+    let base = DesignInputs::default();
+    let m = &base.metal;
+    for target in [m.required_min_Nm, 9.9] {
+        let p = solved(solve(&base, FreeVariable::AxialLength, target));
+        let r = compute_all(&p.inputs);
+        let cavity = m.cup_depth_mm + (p.value - 12.7);
+        let stack = m.cap_axial_mm + cavity + m.web_mm + m.boss_length_mm;
+        let large = m.cap_axial_mm + cavity + m.web_mm;
+        assert_eq!(r.housing.cup_depth_mm, cavity, "{target}");
+        assert_eq!(
+            (r.metal.axial_stack_mm, r.metal.large_dia_stack_mm),
+            (stack, large),
+            "{target}"
+        );
+        assert_eq!(r.housing.diameter_overshoot_mm, 0.0, "{target}");
+        if target == m.required_min_Nm {
+            assert!((p.value - 13.77).abs() < 0.005, "{}", p.value);
+            assert_eq!(r.housing.space_claim_check, INSIDE_THE_SPACE_CLAIM);
+        } else {
+            assert!((p.value - 50.62).abs() < 0.005, "{}", p.value);
+            assert_eq!(
+                (r.housing.length_overshoot_mm, r.housing.bay_overshoot_mm),
+                (
+                    stack - m.max_overall_axial_mm,
+                    large - m.max_large_dia_axial_mm
+                )
+            );
+            assert_eq!(
+                r.housing.space_claim_check,
+                "Exceeds the space claim: overall length 34.72 mm over, \
+                 large-diameter bay 36.72 mm over"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_short_override_shrinks_the_axial_housing() {
+    // 6.0 mm magnets, 6.7 mm shorter than the 12.7 mm parts: the hub 6.3 mm, the cup cavity
+    // 8.8 mm and the retainer span 7.8 mm, each keeping its margin over the rings (0.3, 2.8 and
+    // 1.8 mm), and both stacks 6.7 mm shorter (25.1 and 12.1 mm).
+    let base = compute_all(&DesignInputs::default());
+    let r = compute_all(&with_length(6.0));
+    let change = 6.0 - 12.7;
+    let h = &r.housing;
+    assert_eq!(
+        (h.hub_length_mm, h.cup_depth_mm, h.retainer_span_mm),
+        (13.0 + change, 15.5 + change, 14.5 + change)
+    );
+    assert!((r.metal.axial_stack_mm - (base.metal.axial_stack_mm + change)).abs() < 1e-12);
+    assert!((r.metal.large_dia_stack_mm - (base.metal.large_dia_stack_mm + change)).abs() < 1e-12);
+    assert!((r.metal.axial_stack_mm - 25.1).abs() < 1e-12);
+    assert_eq!(h.space_claim_check, INSIDE_THE_SPACE_CLAIM);
+}
+
+#[test]
+fn each_dimension_follows_the_ring_it_bounds() {
+    // Manual rings of 10 mm (inner) and 15 mm (outer), both set to 20 mm. The hub follows the
+    // inner ring (+10 mm: 23.0), the cup cavity the outer ring (+5 mm: 20.5), and the retainer
+    // span, one span for the sleeve and the liner, the longer ring: 14.5 + 5 = 19.5 mm, shorter
+    // than the 20 mm rings (the typed span already left the 15 mm ring 0.5 mm uncovered), so
+    // it is raised to 20.0 mm, the physical minimum.
+    let manual = |inner_mm: f64, outer_mm: f64| {
+        let mut inputs = with_length(20.0);
+        inputs.coupling.magnets.part_inner = String::new();
+        inputs.coupling.magnets.part_outer = String::new();
+        inputs.coupling.magnets.manual_inner_length_mm = inner_mm;
+        inputs.coupling.magnets.manual_outer_length_mm = outer_mm;
+        compute_all(&inputs)
+    };
+    let r = manual(10.0, 15.0);
+    assert_eq!(
+        (r.model.inner_length_mm, r.model.outer_length_mm),
+        (20.0, 20.0)
+    );
+    let h = &r.housing;
+    assert_eq!(
+        (h.hub_length_mm, h.cup_depth_mm, h.retainer_span_mm),
+        (23.0, 20.5, 20.0)
+    );
+    assert_eq!(r.retainers.retainer_span_mm, 20.0);
+    // The inner ring the longer (12 mm inner, 10 mm outer), every input over its ring so no
+    // floor binds: the hub +8 mm (21.0), the cup cavity +10 mm (25.5, not the longer ring's
+    // +8 mm: 23.5) and the span the longer, inner ring's +8 mm (22.5, not the outer ring's
+    // +10 mm: 24.5).
+    let r = manual(12.0, 10.0);
+    let h = &r.housing;
+    assert_eq!(
+        (h.hub_length_mm, h.cup_depth_mm, h.retainer_span_mm),
+        (21.0, 25.5, 22.5)
+    );
+    assert_eq!(r.retainers.retainer_span_mm, 22.5);
+}
+
+#[test]
+fn a_housing_dimension_never_ends_shorter_than_its_ring() {
+    // The physical minimum: with the override set, each followed dimension is at least its
+    // ring's length (the workbook has no axial clearance input to add). An input with a margin
+    // over its ring keeps it and never reaches the floor. The equality edge first: a 12.7 mm hub
+    // under the 12.7 mm rings, set to 25.4 mm, where the margin rule lands on the ring exactly.
+    let mut inputs = with_length(25.4);
+    inputs.metal.hub_length_mm = 12.7;
+    assert_eq!(
+        12.7 + (25.4 - 12.7),
+        25.4,
+        "the margin rule lands on the ring"
+    );
+    assert_eq!(compute_all(&inputs).housing.hub_length_mm, 25.4);
+    // A hub already shorter than its ring (12.0 mm under 12.7 mm rings) is raised to the ring:
+    // at 20 mm the margin rule would give 19.3 mm. The one exception to "the ring's own length
+    // changes nothing": the override at 12.7 mm raises it to 12.7 mm.
+    inputs.metal.hub_length_mm = 12.0;
+    inputs.coupling.magnets.axial_length_mm = Some(20.0);
+    assert_eq!(compute_all(&inputs).housing.hub_length_mm, 20.0);
+    inputs.coupling.magnets.axial_length_mm = Some(12.7);
+    assert_eq!(compute_all(&inputs).housing.hub_length_mm, 12.7);
+    // The ranges' extremes: 50.8 mm manual rings set to 2 mm, with every followed input at its
+    // 3 mm minimum: the margin rule gives -45.8 mm, the floor 2 mm; the masses stay positive.
+    let mut inputs = with_length(2.0);
+    let magnets = &mut inputs.coupling.magnets;
+    magnets.part_inner = String::new();
+    magnets.part_outer = String::new();
+    magnets.manual_inner_length_mm = 50.8;
+    magnets.manual_outer_length_mm = 50.8;
+    inputs.metal.hub_length_mm = 3.0;
+    inputs.metal.cup_depth_mm = 3.0;
+    inputs.metal.retainer_span_mm = 3.0;
+    let r = compute_all(&inputs);
+    let h = &r.housing;
+    assert_eq!(
+        (h.hub_length_mm, h.cup_depth_mm, h.retainer_span_mm),
+        (2.0, 2.0, 2.0)
+    );
+    assert!(r.mass.hub_g > 0.0 && r.mass.cup_g > 0.0 && r.retainers.retainers_g > 0.0);
+    // The floor never hides a NaN input (`py_max`; `f64::max` would put the ring's 20 mm in
+    // its place): with the override set, a NaN hub, cup depth or span stays NaN.
+    let mut inputs = with_length(20.0);
+    inputs.metal.hub_length_mm = f64::NAN;
+    inputs.metal.cup_depth_mm = f64::NAN;
+    inputs.metal.retainer_span_mm = f64::NAN;
+    let h = compute_all(&inputs).housing;
+    assert!(h.hub_length_mm.is_nan() && h.cup_depth_mm.is_nan() && h.retainer_span_mm.is_nan());
+}
+
+/// The longest override length within 64 ulps of `start` whose derived dimension (`read`) is at
+/// most `claim`: the last bit of length inside it.
+fn last_length_inside(start: f64, claim: f64, read: fn(&magcoupling::DesignResults) -> f64) -> f64 {
+    let at = |length_mm: f64| read(&compute_all(&with_length(length_mm)));
+    let mut length_mm = start;
+    for _ in 0..64 {
+        if at(length_mm) <= claim {
+            break;
+        }
+        length_mm = length_mm.next_down();
+    }
+    for _ in 0..64 {
+        if at(length_mm.next_up()) > claim {
+            break;
+        }
+        length_mm = length_mm.next_up();
+    }
+    assert!(
+        at(length_mm) <= claim && at(length_mm.next_up()) > claim,
+        "no edge within 64 ulps of {start}"
+    );
+    length_mm
+}
+
+#[test]
+fn the_space_claim_trips_exactly_where_a_derived_stack_crosses_its_claim() {
+    // The override moves both stacks and the claim compares them as before: exceeded only
+    // above the claim. The cavity reaches the 20 mm bay first (about 13.9 mm magnets), then the
+    // 35 mm length (about 15.9 mm). Each edge to the last bit: the length whose stack equals
+    // the claim exactly (asserted first) is inside, one bit longer is over.
+    let bay_edge = last_length_inside(13.9, 20.0, |r| r.metal.large_dia_stack_mm);
+    let r = compute_all(&with_length(bay_edge));
+    assert_eq!(
+        r.metal.large_dia_stack_mm, 20.0,
+        "the stack sits at the claim"
+    );
+    assert_eq!(r.housing.bay_overshoot_mm, 0.0);
+    assert_eq!(r.housing.space_claim_check, INSIDE_THE_SPACE_CLAIM);
+    let r = compute_all(&with_length(bay_edge.next_up()));
+    assert!(r.housing.bay_overshoot_mm > 0.0);
+    assert_eq!(
+        r.housing.space_claim_check,
+        "Exceeds the space claim: large-diameter bay 0.01 mm over"
+    );
+    let length_edge = last_length_inside(15.9, 35.0, |r| r.metal.axial_stack_mm);
+    let r = compute_all(&with_length(length_edge));
+    assert_eq!(r.metal.axial_stack_mm, 35.0, "the stack sits at the claim");
+    assert_eq!(r.housing.length_overshoot_mm, 0.0);
+    assert_eq!(
+        r.housing.space_claim_check,
+        "Exceeds the space claim: large-diameter bay 2.00 mm over"
+    );
+    let r = compute_all(&with_length(length_edge.next_up()));
+    assert!(r.housing.length_overshoot_mm > 0.0);
+    assert_eq!(
+        r.housing.space_claim_check,
+        "Exceeds the space claim: overall length 0.01 mm over, large-diameter bay 2.00 mm over"
+    );
+}
+
+#[test]
+fn the_housing_masses_follow_the_dimensions_in_effect() {
+    // Bigger parts weigh more. At 20 mm magnets the hub, the cup and the retainers weigh
+    // exactly what the default design weighs with the dimensions in effect typed into Metal
+    // design C123, C124 and C172; the stacks and the hybrid length agree too, and the total
+    // differs only by the magnets. The heat capacity grows with the mass.
+    let base = compute_all(&DesignInputs::default());
+    let long = compute_all(&with_length(20.0));
+    let mut typed = DesignInputs::default();
+    typed.metal.hub_length_mm = long.housing.hub_length_mm;
+    typed.metal.cup_depth_mm = long.housing.cup_depth_mm;
+    typed.metal.retainer_span_mm = long.housing.retainer_span_mm;
+    let typed = compute_all(&typed);
+    assert_eq!(
+        (long.mass.hub_g, long.mass.cup_g, long.retainers.retainers_g),
+        (
+            typed.mass.hub_g,
+            typed.mass.cup_g,
+            typed.retainers.retainers_g
+        )
+    );
+    assert_eq!(
+        (
+            long.metal.axial_stack_mm,
+            long.metal.large_dia_stack_mm,
+            long.metal.hybrid_length_mm
+        ),
+        (
+            typed.metal.axial_stack_mm,
+            typed.metal.large_dia_stack_mm,
+            typed.metal.hybrid_length_mm
+        )
+    );
+    let extra = long.mass.magnets_g - typed.mass.magnets_g;
+    assert!((long.mass.total_g - typed.mass.total_g - extra).abs() < 1e-9);
+    assert!(long.mass.hub_g > base.mass.hub_g);
+    assert!(long.mass.cup_g > base.mass.cup_g);
+    assert!(long.retainers.retainers_g > base.retainers.retainers_g);
+    assert!(
+        long.temperature.thermal.heat_capacity_J_K > base.temperature.thermal.heat_capacity_J_K
+    );
+}
+
+#[test]
+fn a_nan_override_leaves_the_axial_housing_unknown() {
+    // A NaN set on the struct (validate() names the path): the dimensions in effect and both
+    // stacks are NaN, and the space claim reads unknown, not inside.
+    let r = compute_all(&with_length(f64::NAN));
+    let h = &r.housing;
+    assert!(h.hub_length_mm.is_nan() && h.cup_depth_mm.is_nan() && h.retainer_span_mm.is_nan());
+    assert!(r.metal.axial_stack_mm.is_nan() && r.metal.large_dia_stack_mm.is_nan());
+    assert_eq!(h.space_claim_check, SPACE_CLAIM_UNKNOWN);
 }
