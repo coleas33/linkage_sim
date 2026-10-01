@@ -79,7 +79,7 @@ inputs! {
                 "N42SH ≥ 20 kOe. Correction E20: each magnet's grade supplies Hcj; this value is used for a magnet without a grade, or for both rings when the coercivity source is 0.", "Temperature design!C44")
                 .range(800.0, 3000.0, 1.0),
             beta_hcj_per_C: f64 = -0.005 => param("1/°C", "Hcj temperature coefficient (effective, 20–150 °C)",
-                "Correction E20: each magnet's grade supplies beta; this value is used for a magnet without a grade, or for both rings when the coercivity source is 0.", "Temperature design!C45")
+                "Correction E20: each magnet's grade supplies beta; this value is used for a magnet without a grade, or for both rings when the coercivity source is 0. The slider covers sintered NdFeB (-0.8 to -0.1 %/°C); a positive value (hard ferrite, whose coercivity falls as it cools, e.g. +0.0035) is typed in, and E20's cold-side check then applies.", "Temperature design!C45")
                 .range(-0.008, -0.001, 0.0001)
                 .assumption(),
             knee_fraction: f64 = 0.9 => param("-", "Knee field as a fraction of Hcj",

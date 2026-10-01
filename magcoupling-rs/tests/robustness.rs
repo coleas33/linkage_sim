@@ -218,6 +218,40 @@ fn an_invalid_coercivity_source_uses_the_inputs() {
 }
 
 #[test]
+fn a_typed_positive_beta_takes_the_cold_side() {
+    // Decision A2-5: C45's slider stays the workbook's NdFeB range (the differential generator
+    // samples from it), and a positive beta is typed: set() refuses only NaN, infinities and
+    // codes outside choices. With the coercivity source at 0 (C44 and C45 for both rings) a
+    // typed +0.0035 on the default rings (rated 150 C) takes E20's cold side: no knee on
+    // heating, the rating as the hot limit, a cold limit that the -40 C minimum clears.
+    let meta = input_rows(&DesignInputs::default())
+        .into_iter()
+        .find(|r| r.path == "temperature.demag.beta_hcj_per_C")
+        .expect("C45")
+        .meta;
+    let range = meta.range.expect("a slider");
+    assert_eq!((range.min, range.max), (-0.008, -0.001));
+    assert!(meta.help.contains("typed"), "{}", meta.help);
+    let mut inputs = DesignInputs::default();
+    inputs
+        .set("temperature.demag.coercivity_source", Value::Int(0))
+        .unwrap();
+    inputs
+        .set("temperature.demag.beta_hcj_per_C", Value::Num(0.0035))
+        .unwrap();
+    let d = compute_all(&inputs).temperature.demag;
+    assert_eq!(d.beta_used_per_C, 0.0035);
+    assert_eq!(d.onset_skipping_C, f64::INFINITY);
+    assert_eq!(d.magnet_limit_C, 150.0);
+    assert!(
+        matches!(d.cold_limit_C, NumOrText::Num(c) if c < -40.0),
+        "{:?}",
+        d.cold_limit_C
+    );
+    assert_eq!(d.cold_check, "OK");
+}
+
+#[test]
 fn a_positive_beta_without_a_rating_has_no_hot_limit() {
     // E20: a positive beta typed into C45 (coercivity source 0) for manual magnets without a
     // grade: no knee on heating and no rating, so no magnet limit (+inf: the adhesive governs
