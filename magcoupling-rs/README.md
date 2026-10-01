@@ -278,6 +278,7 @@ caller: no global state. Formatted verdicts are stated in the markup too (`conca
 | slip heating | `records/slip_heating.rs` | explained |
 | temperature | `records/temperature.rs` | explained |
 | clamps | `records/clamps.rs` | explained |
+| geometry callouts (decision G1) | `records/geometry.rs` | explained |
 | dashboard | `records/dashboard.rs` | explained |
 
 ## Porting a module

@@ -5,7 +5,11 @@
 //!
 //! Each batch of plan A-3 writes one chain's records and flips its status to `Explained`;
 //! `tests/explain.rs` then requires a record for every path of every explained chain. The
-//! geometry callouts are listed when the A1 view is specified (M4).
+//! geometry callouts (plan A-3 decision G1) are the numbers the M4 geometry view draws: the
+//! face gap, the corner gap and the running clearance (spec M4 "Layout"), the clearance's
+//! two parts, and the overshoot per axis past the space claim with the dimension it measures
+//! (spec A1); 10 of the 11 are new (the running clearance is a dashboard path), so the
+//! scope holds 169 paths.
 
 /// Whether a chain's records are written.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -218,6 +222,23 @@ pub const SCOPE: &[Chain] = &[
             "clamps.table[].screws_needed",
             "clamps.table[].clamp_torque_Nm",
             "clamps.table[].sf_coupling",
+        ],
+    },
+    Chain {
+        id: "geometry",
+        status: Status::Explained,
+        paths: &[
+            "model.face_gap_mm",
+            "model.corner_gap_mm",
+            "metal.min_running_clearance_mm",
+            "metal.sleeve_liner_clearance_mm",
+            "metal.adverse_movement_mm",
+            "metal.rotating_od_mm",
+            "metal.axial_stack_mm",
+            "metal.large_dia_stack_mm",
+            "housing.diameter_overshoot_mm",
+            "housing.length_overshoot_mm",
+            "housing.bay_overshoot_mm",
         ],
     },
     Chain {

@@ -4,6 +4,7 @@
 pub mod clamps;
 pub mod dashboard;
 pub mod demagnetization;
+pub mod geometry;
 pub mod slip_heating;
 pub mod temperature;
 pub mod torque;
@@ -18,6 +19,7 @@ pub const RECORDS: &[&[Record]] = &[
     temperature::RECORDS,
     clamps::RECORDS,
     dashboard::RECORDS,
+    geometry::RECORDS,
 ];
 
 /// Every batch's families.

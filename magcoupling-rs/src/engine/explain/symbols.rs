@@ -80,6 +80,9 @@ pub const SYMBOLS: &[(&str, &str)] = &[
     ("metal.sleeve_form_mm", "δ_{form}"),
     ("metal.magnet_position_mm", "δ_{pos}"),
     ("metal.residual_target_mm", "c_{res}"),
+    ("metal.max_diameter_mm", "D_{max}"),
+    ("metal.max_overall_axial_mm", "L_{max}"),
+    ("metal.max_large_dia_axial_mm", "L_{bay}"),
     // calibration
     ("calibration.measured_torque_Nm", "T_{meas}"),
     ("calibration.total_magnets", "n_{mag}"),
