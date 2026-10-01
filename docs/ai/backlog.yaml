@@ -364,3 +364,13 @@
   priority: 3
   status: open
   notes: "Pre-existing sweep limitation, outside the spec's constant-speed model."
+
+- id: BL-037
+  title: "Linkage web app sends ViewportCommand::Title every frame, flooding the browser console with warnings"
+  dimension: gui
+  risk: mechanical
+  evidence: "Live smoke 2026-10-01 (linkage.colesorkness.com): zero errors but thousands of identical warnings, one per frame: '[eframe::web::app_runner] eframe-0.32.3/src/web/app_runner.rs:256: Unhandled egui viewport command: Title(\"Linkage Simulator\") - not implemented in web backend'. The web backend ignores the command; sending it each frame only spams the console and buries real warnings."
+  acceptance: "the title command is sent only when the title changes (or not at all on wasm32); a headless test counts the viewport commands over several idle frames (0 or 1); gui-smoke shows no Title warning"
+  priority: 3
+  status: open
+  notes: "Seen in every gui-smoke run; benign. The magcoupling page does not have it."
