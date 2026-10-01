@@ -15,7 +15,8 @@
 
 use super::compat::{ceiling, fmt_fixed};
 use super::deviations::{DeviationId, Deviations};
-use super::meta::{inputs, out, param, results};
+use super::material_library::PartProperties;
+use super::meta::{inputs, out, out_rust_only, param, param_rust_only, results};
 
 inputs! {
     /// 4140 steel properties (Materials!C13:C19).
@@ -123,13 +124,53 @@ impl ScrewClasses {
 }
 
 inputs! {
-    /// Every Materials input, grouped as the Python `MaterialsInputs`.
+    /// The material of each part (Addendum A5, Rust-only selectors). Code 1 of each
+    /// is the workbook's material, whose values are the inputs; the choices are the
+    /// library records of `material_library` (`BACK_IRON_CHOICES` and the others,
+    /// tested equal to these texts).
+    pub struct PartMaterialInputs {
+        fields {
+            back_iron: i64 = 1 => param_rust_only("-", "Back iron material (hub, cup and boss)",
+                "Addendum A5. 1 = the workbook's 4140: the steel inputs above. Another choice supplies its library conductivity, density, specific heat, expansion and modulus, and its design flux density where the library has one (else C13 stays). A non-ferromagnetic choice selects the free-space circuit and becomes the hub, cup and boss material; with a ferromagnetic one, Calculator C6 = 0 still selects the free-space circuit (the override).")
+                .choices(&[
+                    (1, "4140 annealed"),
+                    (2, "1018 hot rolled"),
+                    (3, "12L14 cold drawn"),
+                    (4, "416 stainless, annealed"),
+                    (5, "17-4PH H1150"),
+                    (6, "17-4PH H900"),
+                    (7, "304 stainless (non-magnetic)"),
+                    (8, "6061-T6 aluminium"),
+                ]),
+            sleeve_liner: i64 = 1 => param_rust_only("-", "Sleeve and liner material",
+                "Addendum A5. 1 = the workbook's 316L (Temperature design C111 and C139, Metal design C44). Another choice supplies its conductivity, density and specific heat; the endplates follow it, as C44 prices them.")
+                .choices(&[
+                    (1, "316L annealed"),
+                    (2, "Ti-6Al-4V grade 5"),
+                    (3, "Inconel 625"),
+                    (4, "PEEK"),
+                ]),
+            cap_housing: i64 = 1 => param_rust_only("-", "Cap and housing material",
+                "Addendum A5. 1 = the workbook's 6061-T6 (Materials C43, Temperature design C140, Metal design C42). Another choice supplies the cap's conductivity, density and specific heat; the aluminium adapter and the clamp alloy keep their own inputs.")
+                .choices(&[
+                    (1, "6061-T6 aluminium"),
+                    (2, "7075-T6 aluminium"),
+                    (3, "Acetal (POM-H)"),
+                ]),
+        }
+    }
+}
+
+inputs! {
+    /// Every Materials input, grouped as the Python `MaterialsInputs` (plus the
+    /// Rust-only part selectors).
     pub struct MaterialsInputs {
         fields {}
         groups {
             steel: Steel4140,
             nickel: ElectrolessNickel,
             screws: ScrewClasses,
+            parts: PartMaterialInputs,
         }
     }
 }
@@ -147,17 +188,24 @@ results! {
             cup_pockets_over_mm: f64 => out("mm", "Machine the cup pockets over by", "On the apothem.", "Materials!C28"),
             bores_over_dia_mm: f64 => out("mm", "Machine bores over (on diameter)", "", "Materials!C29"),
             ods_under_dia_mm: f64 => out("mm", "Machine outside diameters under (on diameter)", "", "Materials!C30"),
+            circuit_backiron: i64 => out_rust_only("-", "Back-iron circuit in effect",
+                "1 = steel circuit, 0 = free space: Calculator C6, or 0 for a non-ferromagnetic back iron (Addendum A5)."),
+            back_iron_material: String => out_rust_only("", "Back iron material", ""),
+            sleeve_liner_material: String => out_rust_only("", "Sleeve and liner material", ""),
+            cap_material: String => out_rust_only("", "Cap and housing material", ""),
         }
     }
 }
 
 /// Cup wall check against the back-iron need, and electroless-nickel pre-plate offsets.
-/// `backiron` is the Calculator selector C6 (1 steel, 0 none); only E9 reads it.
+/// `backiron` is the Calculator selector C6 in effect (1 steel, 0 none); only E9
+/// reads it. `parts` names the materials in effect (Rust-only results).
 pub fn compute(
     mat: &MaterialsInputs,
     t_bi_req_mm: f64,
     wall_corner_mm: f64,
     backiron: i64,
+    parts: &PartProperties,
     dev: Deviations,
 ) -> MaterialsResults {
     let check = if dev.is_on(DeviationId::E9) && backiron == 0 {
@@ -179,12 +227,32 @@ pub fn compute(
         cup_pockets_over_mm: t,
         bores_over_dia_mm: 2.0 * t,
         ods_under_dia_mm: 2.0 * t,
+        circuit_backiron: backiron,
+        back_iron_material: parts.back_iron.label().to_owned(),
+        sleeve_liner_material: parts.sleeve_liner.label().to_owned(),
+        cap_material: parts.cap.label().to_owned(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::material_library::resolve;
+    use crate::engine::metal_design::MetalDesignInputs;
+    use crate::engine::temperature::{SlipLossInputs, ThermalInputs};
+
+    /// The default parts (every selector at code 1).
+    fn parts() -> PartProperties {
+        let mat = MaterialsInputs::default();
+        resolve(
+            &mat.parts,
+            &mat.steel,
+            1,
+            &MetalDesignInputs::default(),
+            &SlipLossInputs::default(),
+            &ThermalInputs::default(),
+        )
+    }
 
     #[test]
     fn wall_check_passes_at_equality() {
@@ -193,11 +261,11 @@ mod tests {
         let (needed, corner) = (1.8, 1.8);
         assert_eq!(needed, corner);
         assert_eq!(
-            compute(&mat, needed, corner, 1, Deviations::NONE).cup_wall_check,
+            compute(&mat, needed, corner, 1, &parts(), Deviations::NONE).cup_wall_check,
             "OK"
         );
         assert_eq!(
-            compute(&mat, 1.90415278222222, 1.8, 1, Deviations::NONE).cup_wall_check,
+            compute(&mat, 1.90415278222222, 1.8, 1, &parts(), Deviations::NONE).cup_wall_check,
             "Too thin: raise Metal design C122 to at least 2.0 mm" // Materials!C22
         );
     }
@@ -206,8 +274,9 @@ mod tests {
     fn e9_no_back_iron_replaces_the_wall_advice_only_at_code_0() {
         let mat = MaterialsInputs::default();
         let too_thin = "Too thin: raise Metal design C122 to at least 2.0 mm";
-        let check =
-            |backiron, dev| compute(&mat, 1.90415278222222, 1.8, backiron, dev).cup_wall_check;
+        let check = |backiron, dev| {
+            compute(&mat, 1.90415278222222, 1.8, backiron, &parts(), dev).cup_wall_check
+        };
         let e9 = Deviations::only(DeviationId::E9);
         assert_eq!(check(0, e9), "No back iron");
         assert_eq!(check(0, Deviations::NONE), too_thin); // the workbook ignores C6 here
@@ -217,7 +286,7 @@ mod tests {
         assert_eq!(check(2, e9), too_thin);
         // A wall that meets the need still reads "No back iron" with no back iron.
         assert_eq!(
-            compute(&mat, 1.8, 1.8, 0, e9).cup_wall_check,
+            compute(&mat, 1.8, 1.8, 0, &parts(), e9).cup_wall_check,
             "No back iron"
         );
     }

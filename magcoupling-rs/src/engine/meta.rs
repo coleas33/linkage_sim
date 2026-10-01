@@ -143,6 +143,11 @@ pub struct InputMeta {
     pub range: Option<SliderRange>,
     /// A model assumption (Addendum A3) rather than a design input.
     pub assumption: bool,
+    /// An input the Python engine does not have (Addendum A5/A6 selectors, the
+    /// E17 free-space fields): no workbook cell; the metadata-parity tests skip
+    /// it and the differential generator never passes it to Python, so it
+    /// keeps its default in every parity and differential case.
+    pub rust_only: bool,
 }
 
 /// Declares an input's metadata, in the order of Python's
@@ -163,6 +168,29 @@ pub const fn param(
         choices: &[],
         range: None,
         assumption: false,
+        rust_only: false,
+    }
+}
+
+/// Declares an input the Python engine does not have (no workbook cell), in
+/// the order of [`param`] without the cell. Chain `.range()` or `.choices()`
+/// as for any input.
+pub const fn param_rust_only(
+    unit: &'static str,
+    label: &'static str,
+    help: &'static str,
+) -> InputMeta {
+    InputMeta {
+        name: "",
+        ty: FieldType::F64,
+        unit,
+        label,
+        help,
+        cell: None,
+        choices: &[],
+        range: None,
+        assumption: false,
+        rust_only: true,
     }
 }
 
@@ -1127,6 +1155,16 @@ mod tests {
             (m.name, m.ty, m.cell, m.help),
             ("mixed", FieldType::NumOrText, None, "help m")
         );
+    }
+
+    #[test]
+    fn only_param_rust_only_marks_an_input_rust_only() {
+        let rust = param_rust_only("-", "Grade", "").choices(&[(0, "none")]);
+        assert!(rust.rust_only && rust.cell.is_none());
+        assert_eq!(rust.choices, &[(0, "none")]);
+        let workbook = param("-", "Part", "", "S!C1");
+        assert!(!workbook.rust_only && workbook.cell == Some("S!C1"));
+        assert!(!Leaf::FIELDS.iter().any(|m| m.rust_only));
     }
 
     #[test]

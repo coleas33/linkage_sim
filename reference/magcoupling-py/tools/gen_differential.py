@@ -14,6 +14,9 @@ Reads (slider ranges are defined once, in Rust):
     magcoupling-rs/tests/data/input_schema.json
         types, workbook defaults, choices and slider ranges of every input;
         rewrite it with `MAGCOUPLING_BLESS=1 cargo test --test schema`.
+        Rust-only inputs ("rust_only": true: the Addendum A selectors and the
+        E17 free-space fields) are left out: the Python engine has no such
+        input, so every case keeps them at their Rust defaults.
 Writes:
     magcoupling-rs/tests/data/python_schema.json
         Python metadata of every input and result (label, unit, help, cell,
@@ -401,7 +404,8 @@ def static_data() -> str:
 # --------------------------------------------------------------------------- main
 def outputs() -> dict:
     schema_path = DATA / "input_schema.json"
-    schema = json.loads(schema_path.read_text(encoding="utf-8"))["inputs"]
+    schema = [f for f in json.loads(schema_path.read_text(encoding="utf-8"))["inputs"]
+              if not f.get("rust_only", False)]  # the Python engine has no Rust-only input
     files = {DATA / "python_schema.json": python_schema(),
              DATA / "differential" / "helpers.json": helpers_file(),
              DATA / "static_data.json": static_data()}

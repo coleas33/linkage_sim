@@ -7,8 +7,9 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use magcoupling::engine::deviations::{DeviationStatus, REGISTRY};
-use magcoupling::engine::meta::Value;
+use magcoupling::engine::api::{DesignInputs, compute_all_with};
+use magcoupling::engine::deviations::{DeviationStatus, Deviations, REGISTRY};
+use magcoupling::engine::meta::{Value, input_rows, result_rows};
 
 /// A ported input group of `DesignInputs` and its workbook input cells
 /// (inputs whose default is `None` are not counted, as in `test_parity.py`).
@@ -144,6 +145,9 @@ pub fn repo_path(relative: &str) -> PathBuf {
         .join(relative)
 }
 
+/// The Addendum A data file (evidence: never edited), relative to the repository root.
+pub const ADDENDUM_DATA: &str = "docs/analyses/2026-09-30-magcoupling-addendum-a-data.json";
+
 /// Reads a text file with its line endings normalized to `\n` (the checkout may
 /// have converted them to CRLF).
 pub fn read_text(path: &Path) -> String {
@@ -213,4 +217,30 @@ pub fn report(failures: &[String]) -> String {
         String::new()
     };
     format!("{} failure(s):\n{}{tail}", failures.len(), shown.join("\n"))
+}
+
+/// Every value with a workbook cell (inputs and results) for `inputs` under `dev`.
+pub fn cell_values_for(inputs: &DesignInputs, dev: Deviations) -> BTreeMap<String, Value> {
+    let results = compute_all_with(inputs, dev);
+    let mut cells = BTreeMap::new();
+    for row in input_rows(inputs) {
+        if let Some(cell) = row.meta.cell {
+            cells.insert(cell.to_owned(), row.value);
+        }
+    }
+    for row in result_rows(&results) {
+        if let Some(cell) = row.cell {
+            cells.insert(cell, row.value);
+        }
+    }
+    cells
+}
+
+/// A numeric value as f64 (an integer converts); panics on anything else.
+pub fn num(value: &Value) -> f64 {
+    match value {
+        Value::Num(x) => *x,
+        Value::Int(i) => *i as f64,
+        other => panic!("expected a number, got {other:?}"),
+    }
 }

@@ -5,6 +5,34 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-30 — Magcoupling Addendum A-1: final review fix wave
+- `docs/ai/03-structure.yaml` parses again (two quoted scalars) and lists `tests/material_links.rs`;
+  the invariant this branch added to `02-system.yaml` is quoted (that file's older parse failures,
+  from line 13 on, predate the branch and are untouched).
+- `magcoupling-rs/README.md`: status no longer puts M3 before M4, the registry row names E1-E20, and
+  the deviations and robustness test rows list the Addendum A tests. The E5 help on C121 and the E5
+  row now say the workbook's 1.035e-5 includes the steel hub's image (free space is E17's 6.837e-6).
+- `material_library::resolve`: the cap default reuses the body's workbook 6061 values (no number changes).
+- `04-memory.yaml` records that E20's rating calibration gives negative offsets (raised onsets) for
+  N52, N50, N50M, N38UH, N35EH and Recoma 26; a clamp at offset >= 0 is a candidate correction.
+
+## 2026-09-30 — Magcoupling Addendum A-1: data and physics (grades, materials, E15-E20)
+- `magcoupling-rs`: the A6 grade table (`grades.rs`, 17 grades cited per value) and the parts' vendor
+  data (coating, magnetization, vendor page); any grade with manual dimensions (Rust-only
+  `coupling.magnets.grade_inner`/`grade_outer`); the A5 materials library (`material_library.rs`, 14
+  materials) with Rust-only per-part selectors `materials.parts.*` whose default is the workbook
+  material (the inputs), physics links (circuit, design flux density, conductivity, density, specific
+  heat, expansion and modulus; the C6 override) and six warnings (`warnings.rs`, `DesignResults::warnings`).
+- Corrections E15 (heat capacity), E16 (removed web disc), E17 (aluminium eddy losses, T1 with three
+  Rust-only free-space fields), E18 (aluminium hub mismatch screen), E19 (SuperMagnetMan arcs per the
+  vendor grid) and E20 (each ring's own coercivity, Br and rating, the weaker ring governing; ferrite limited
+  on the cold side), each with the
+  report's changed-cell tables or probes as expected values. Registry: `Approval`, `depends_on`,
+  `Deviations::with/without` (decision 15).
+- Rust-only inputs (`param_rust_only`): no cell, skipped by the metadata tests, left out by
+  gen_differential.py. Parity (1,149 checks) and the differential data are unchanged; the default
+  headline with every correction on is unchanged (2.688 N·m, 93.06 °C, M4 x 14).
+
 ## 2026-09-30 — Magcoupling Addendum A verification (data tables, E15-E18, defaults)
 - `docs/analyses/2026-09-30-magcoupling-addendum-a-verification.md` and
   `...-addendum-a-data.json`: the A6 grade table (17 grades, K&J-minimum

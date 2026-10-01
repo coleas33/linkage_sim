@@ -11,14 +11,18 @@ deviation registry.
 
 **Status:** M2 complete: every Python module except `fields3d` (M3) is ported;
 workbook parity covers all 1,149 checks; E1 to E14 applied (decisions D1 to D7
-as recorded).
+as recorded). Addendum A-1 (data and physics) complete: the A6 grade table and
+the parts' vendor data, any grade with manual dimensions, the A5 materials
+library with per-part selectors, physics links and six warnings, and E15 to E20
+applied (Addendum A decisions, approved 2026-09-30). Next: Addendum A-2
+(parameters and sizing), A-3 (explanations), then M4.
 
 The 1,149 checks are 330 result cells, 659 table cells (494 sweep cells and 165
 screw-table cells) and 160 default inputs. The corrections are listed under
 [Differences from the workbook](#differences-from-the-workbook); E14 rewords help
 text and README only, no number changes. Decisions D1 to D7 are recorded in
-`docs/ai/04-memory.yaml` and `docs/ai/05-update-tracker.md`. Next: M3 (`fields3d`,
-which must also apply E3 and E5), then the M4 GUI.
+`docs/ai/04-memory.yaml` and `docs/ai/05-update-tracker.md`. M3 (`fields3d`,
+after M4 in the recorded phase order) must also apply E3 and E5.
 
 ```rust
 use magcoupling::{DesignInputs, compute_all, headline};
@@ -38,21 +42,28 @@ the Excel-style text `"#N/A"` where Python would raise or silently pick another
 row (the adhesive, the screw class), and the workbook's own IF fall-through where
 a two-way IF decides. A typed value far outside its slider gives results that may
 be inf or NaN. Call `DesignInputs::validate()` where inputs enter: it returns
-every offending path, in schema order, with the reason `set` would give.
+every offending path, in schema order, with the reason `set` would give. The
+Rust-only selectors follow the same rule: a material code outside its choices
+gives NaN properties and the name `"#N/A"`, never another material; the
+two-way coercivity source (E20) falls through to C44 and C45, as a workbook IF.
 
 ## Differences from the workbook
 
-Every correction below is approved in the M1 math audit report
+Every correction below is approved, E1 to E14 in the M1 math audit report
 (`docs/analyses/2026-09-29-magcoupling-math-audit.md`, the row with the same
-id) and registered in `src/engine/deviations.rs` with the cells it changes and
+id) and E15 to E20 in the Addendum A verification report
+(`docs/analyses/2026-09-30-magcoupling-addendum-a-verification.md`, the decisions
+of its section 8 that each entry's `approval` cites), and registered in `src/engine/deviations.rs` with the cells it changes and
 their workbook and corrected values (for E3, E4 and E5, which change 246, 47 and
 37 cells, in the reviewed golden files `tests/data/deviations/E3.json`, `E4.json` and `E5.json`). The corrections are always on for users
 (`compute_all`). Only tests switch them off, through the test-only
 `workbook-parity` feature (`compute_all_with`, `Deviations::NONE`,
-`Deviations::only`, `DesignInputs::defaults_with`): the parity and differential
+`Deviations::only`, `Deviations::with`, `Deviations::without`,
+`DesignInputs::defaults_with`): the parity and differential
 tests to compare against the workbook and the Python engine exactly, and the
-registry, metadata, robustness and unit tests to isolate one correction or to
-start from the workbook's defaults.
+registry, metadata, robustness and unit tests to isolate one correction, to
+probe one on top of the corrections it refines (`depends_on`: E15 to E17 on E9,
+decision 15), or to start from the workbook's defaults.
 
 | Id | Cells | Workbook | This port | Report |
 |---|---|---|---|---|
@@ -60,7 +71,7 @@ start from the workbook's defaults.
 | E2 | Clamp screw sizes!C34:G35, Shaft clamps!C48 | length = CEILING(grip + 2d, 2); fits = length <= grip + thread | the slit (0.8 mm) is added to both; M4 x 12 becomes M4 x 14, which protrudes 0.34 mm: clamps.length_note says so | E2 |
 | E3 | Magnet library N42SH rows; Calculator!C17, C21, C27, C31; Calibration!C21 | 1.29 T | 1.30 T (vendor minimum); pull-out 2.688 N·m, limit 93.06 °C, C91 "OK: 7x margin"; fields3d rerun pending (M3) | E3 |
 | E4 | Pole sweep!C6:C11 | a_i = MAX(w/(2 tan(pi/N)) + 0.05, bore/2 + key + 2.5) | + inner bondline in the wall term; the 6-pole row reads "outside OD envelope" | E4 |
-| E5 | Temperature design!C121 (feeds C125, C130 and the thermal rows) | 1.035e-5 T²·m² (free-space field) | 4.14e-5 T²·m² (doubled at the steel surface); total slip loss 2.751 W; fields3d part is M3 | E5 |
+| E5 | Temperature design!C121 (feeds C125, C130 and the thermal rows) | 1.035e-5 T²·m² (with the steel hub's image, not doubled at the web; free space alone is 6.837e-6, E17) | 4.14e-5 T²·m² (doubled at the steel surface); total slip loss 2.751 W; fields3d part is M3 | E5 |
 | E6 | Calculator!C63 | OD/2 − block-back apothem | OD/2 − (block back + outer bondline): 2.723 mm | E6 |
 | E7 | Calculator!C76, C82, C88 → C89-C96; sweeps N, Q, T, U; Calibration!C40-C42 | every harmonic at half a pole pitch | the maximum of the harmonic torque-angle curve (closed form); same at defaults; 6 poles 0.861 → 0.911 N·m | E7 |
 | E8 | Calculator!C9, C57, C111; Metal design!C175 | flat-block corner geometry in arc mode | the corner radius C55 (face radius for arcs), round pocket; arc-mode pull-out 2.99 → 2.65 N·m | E8 |
@@ -70,6 +81,14 @@ start from the workbook's defaults.
 | E12 | Temperature design!C19, C23, C150-C153 | negative times and drag when the start is above the limit | 0 s, 0 rev, 0 N·m | E12 |
 | E13 | Temperature design!C156, C157 | #DIV/0! (Python: the whole calculation stops) | +inf; the other results are computed. JSON export must encode inf (M4) | E13 |
 | E14 | Shaft clamps!C35 help; README | "At 22 mm only M3 fits; two of them need a 14.5 mm clamp." | "At 22 mm M4 no longer fits. Two M3 need a 14.5 mm clamp; three M2.5 need 18 mm, and from 18 mm up the calculator recommends M2.5 x 3." | E14 (documentation) |
+| E15 | Temperature design!C141 (feeds C143, C145, C154-C161, C171, C172, C180-C182, C186, C189, C190, C192, C193, C196, C20) | cup, boss and hub at 4140's specific heat even when the mass model makes them aluminium | aluminium parts at C140 (900 J/(kg·K)): the cup and boss on E9's gate, the hub when C6 is not 1; hardware stays steel. Back iron 0 on E9: C141 45.78 → 63.02 J/K, no verdict changes | Addendum A row E15 (decisions 8, 15) |
+| E16 | Metal design!C189 → C191, C148, C149 (C147, C189 help) | the disc bored out of the web for the adapter pilot at steel density | at the web's density, one source with the mass model (`model::cup_boss_density`): aluminium with no back iron under E9. Back iron 0 on E9: C189 3.453 → 1.188 g, C191 101.5 → 103.8 g | Addendum A row E16 (decisions 9, 14, 15) |
+| E17 | Temperature design!C123, C124, C125 → C130-C134 and the thermal rows (41 cells); 3 Rust-only inputs | the steel skin-limited formula, 4140's σ and μr and the steel-circuit fields for the aluminium hub, cup and web | at C6 = 0 the low-Reynolds closed form T1 (end factor C114, σ = Materials!C43) with the free-space fields `temperature.slip_loss.b_hub_free_T` 0.07832 T, `b_cup_free_T` 0.08764 T, `web_integral_free_T2m2` 6.837e-6 T²·m² (4 s.f., decision 12; M3 computes them live); with E9 off the hub sees C116/2. Back iron 0 on E9: C130 2.477 → 2.918 W, C18 89.77 → 94.18 °C, C19 "never" → 440.3 s (inside the model's uncertainty: finite only for f_end ≥ 0.646) | Addendum A row E17 (decisions 10-15) |
+| E18 | Temperature design!C104, C105, C201; verdicts C106, C202 | 4140's expansion coefficient and modulus (C94, C98) for a hub the mass model makes aluminium | at C6 ≠ 1 (E15's hub gate) the screen uses 6061-T6, 23.6e-6 /°C and 68.9 GPa (Alliance datasheet); C94 and C98 still show the steel inputs. M2 basis at back iron 0: C104 11.68 → 20.76 MPa, C106 and C202 read "Above ..." | Addendum A row E18 (decision 16) |
+| E19 | Calculator!C22, C32 → the rating-calibrated demag cells (C47, C50, C56-C61, C7-C10, C12, C13, C15, C24, C181, C182) | M5044, M5045, M5026 rated 80, 100, 80 °C; M5045 graded N50M | the vendor's specification grid: 60 °C for all three, M5045 graded N50; Br stays 1.42 T. M5044 on both rings: C12 29.18 → 9.18 °C | Addendum A decision 2 |
+| E20 | Temperature design!C44, C45 → C42, C47-C61, C7-C10, C12 and the margins | one N42SH coercivity curve (C44 1592 kA/m, C45 −0.5 %/°C) for every magnet, and only the inner ring's Br and rating against the outer blocks' reverse fields | each ring's own grade (library part, or the grade picked for manual dimensions), Br and rating, unless `temperature.demag.coercivity_source` = 0 picks C44 and C45; the ring with the lower magnet limit governs and the block shows it (`temperature.demag.demag_ring`); a positive beta (ferrite) has no knee on heating: hot onsets +inf, the grade's rating is the hot limit, and Rust-only cold onsets, cold limit and cold check (against Metal design C16, both rings) feed the verdict. A positive beta with no rating has no hot limit: C60 = +inf (the adhesive governs C12) and C61 = NaN, which exporters must handle as they handle E13's +inf. B842 on both rings: C12 23.06 → −3.52 °C; B842SH inside B842: 92.55 → −3.52 °C. N42SH keeps 1592 and −0.005 (decisions 17, 18), so defaults do not move | Addendum A decision 19 |
+
+With the Addendum A5 part selectors (decision A7), "aluminium" in E9 and E15-E18 means the body material: the workbook's aluminium (C42, C140, Materials!C43 and E18's 6061) by default and whenever C6 = 0 overrides a steel pick, else a non-ferromagnetic back-iron pick (304, 6061) with its own library values. The rows' figures are the report's, at the workbook's aluminium.
 
 Results can be +inf (E13); exporters must handle it.
 
@@ -80,16 +99,19 @@ Results can be +inf (E13); exporters must handle it.
 | `src/lib.rs` | Crate docs and re-exports: `compute_all`, `headline`, `DesignInputs`, `DesignResults` |
 | `src/engine/meta.rs` | Field metadata: `inputs!`/`results!`, `param`/`out` builders, `Value`, get/set/visit of inputs and get/visit of results by dotted path (a table row's field as `table[i].field`); table rows (`rows!`, `TableLayout`, `col`/`at_row` builders) with synthesized workbook cells |
 | `src/engine/compat.rs` | Python and Excel semantics the port reproduces (see the translation rules below) |
-| `src/engine/deviations.rs` | Registry of the approved workbook corrections E1 to E14 (all applied), probes, and the `Deviations` switch |
+| `src/engine/deviations.rs` | Registry of the approved workbook corrections E1 to E20 (all applied: E1 to E14 from the M1 audit, E15 to E20 from Addendum A), probes, and the `Deviations` switch |
 | `src/engine/constants.rs` | Physical constants (`MU0 = 1.256637e-06`, the workbook's rounded value) |
-| `src/engine/library.rs` | `Magnet library` sheet: the stock magnet rows and the exact-text lookup; `br_T` applies E3 |
+| `src/engine/library.rs` | `Magnet library` sheet: the stock magnet rows (the A6 part table: workbook Br and Tmax, grade, vendor page, coating, magnetization) and the exact-text lookup; `br_T` applies E3 with the N42SH grade's Br; `tmax_C` and `grade_id` apply E19 (the vendor's grid) |
+| `src/engine/grades.rs` | Addendum A6 grade table `GRADES` (17 grades: Br, Hcj, Hcb, (BH)max, alpha, beta, mu_rec, Tmax, density), each value cited; `grade(id)` lookup |
 | `src/engine/calibration.rs` | `Calibration` sheet: prototype measurement and model calibration (23 result cells) |
-| `src/engine/model.rs` | `Calculator` sheet: coupling and magnet inputs, `ModelResults` (73 cells), the fixed harmonic set `HARMONICS` (1, 3, 5), and the mass estimate `MassResults` (6 cells) |
+| `src/engine/model.rs` | `Calculator` sheet: coupling and magnet inputs (plus the Rust-only grade per ring for manual dimensions, Addendum A6), `ModelResults` (73 cells, plus the Rust-only `inner_grade` and `outer_grade`), the fixed harmonic set `HARMONICS` (1, 3, 5), and the mass estimate `MassResults` (6 cells) |
 | `src/engine/metal_design.rs` | `Metal design` sheet: 48 inputs, retainers (9 cells), `MetalDesignResults` (49 cells), the validation checklist `VALIDATION_ITEMS` |
-| `src/engine/materials.rs` | `Materials` sheet: steel, nickel and screw-class inputs, the aluminium alloys, `ScrewClasses::proof`, `MaterialsResults` (7 cells) |
+| `src/engine/material_library.rs` | Addendum A5 materials library `MATERIALS` (14 materials: ferromagnetic, mu_r, Bsat, sigma, density, CTE, E, yield, cp, design flux density), every value cited; `EngineProps` (what the engine uses when a material is picked: the workbook's number where one exists); each part's choices |
+| `src/engine/materials.rs` | `Materials` sheet: steel, nickel and screw-class inputs, the Rust-only part selectors `materials.parts` (Addendum A5), the aluminium alloys, `ScrewClasses::proof`, `MaterialsResults` (7 cells, plus the Rust-only circuit and material names) |
 | `src/engine/temperature.rs` | `Temperature design` sheet: 7 input groups (37 cells), the adhesive table `ADHESIVES` with `selected_adhesive`, `TemperatureLinks`, `TemperatureResults` (130 cells) |
 | `src/engine/clamps.rs` | `Shaft clamps` and `Clamp screw sizes` sheets: 25 input cells, `SCREW_SIZES`, `MACHINING_STEPS`, `ClampResults` (33 cells), the 165-cell screw table, `screw_class_name` |
 | `src/engine/sweeps.rs` | `Gap sweep` (338 table cells) and `Pole sweep` (156) sheets |
+| `src/engine/warnings.rs` | Addendum A5 material warnings: `WARNING_RULES` (six rules: text, `Severity`, teaching-note id), the three model-choice thresholds, `WarningResults` (Rust-only, `warnings.<rule id>`) |
 | `src/engine/api.rs` | `DesignInputs`, `DesignResults`, `compute_all`, `headline` (with `HEADLINE`), `DesignInputs::validate` |
 | `tests/` | Parity, differential, metadata and registry tests (below) |
 | `tests/data/` | Workbook snapshot copy (`reference_values.json`), exported schemas (`input_schema.json`, `python_schema.json`), the Python static tables (`static_data.json`), differential data (`differential/`) and the golden files of the broad corrections (`deviations/E3.json`, `E4.json`, `E5.json`) |
@@ -109,12 +131,15 @@ bash linkage-sim-rs/scripts/gate.sh   # everything, both crates and the Python o
 | Test | Checks |
 |---|---|
 | `tests/parity.rs` | Every result with a workbook cell (table values too: their cells are synthesized from the table layout) and every default input equals `tests/data/reference_values.json` (numbers 1e-9 relative, 1e-12 absolute; text exact), deviations off. Per-group cell counts are a ratchet (`PORTED_INPUTS`, `PORTED_RESULTS` with `cells` and `table_cells` in `tests/common/mod.rs`); `the_port_checks_every_cell_test_parity_checks` pins their totals to `test_parity.py`'s 1,149. |
-| `tests/differential.rs` | Every result of every seeded case equals the Python engine (`tests/data/differential/<group>.json`), deviations off. The full run (`differential/full.json`, `full_run_matches_python_on_every_case`) varies all 160 inputs at once and compares every result, groups and tables, so it also catches a `MODULES` entry that forgot an input group; `every_selector_pair_is_covered_in_the_full_run` checks that every pair of selector choices across groups occurs in it, and `every_selector_choice_appears_in_every_module_file` that each module file sets every selector it varies to every choice. `every_branch_is_reached` checks the `BRANCHES` table (every branch of every text result is hit), `every_text_result_has_a_branches_entry` that no text-producing result lacks a `BRANCHES` row (a new branch cannot land unchecked), and `every_varied_input_takes_two_values` that each varied input changes; the helpers corpus checks `compat` against Python exactly. Rust-only results (`ResultMeta::rust_only`, e.g. `clamps.length_note`) have no Python counterpart and are skipped. |
-| `tests/python_schema.rs` | Every ported field carries the Python label, unit, help, cell, choices and default; no Python field of a ported group is missing; each ported table has the Python field order, row count and cell of every value (`tables_match_the_python_layout`); `headline` has Python's keys, order and values at the defaults; inputs and scalar results are listed in the Python order (the GUI's tables and CSV export follow it); Rust-only results are skipped. |
+| `tests/differential.rs` | Every result of every seeded case equals the Python engine (`tests/data/differential/<group>.json`), deviations off. The full run (`differential/full.json`, `full_run_matches_python_on_every_case`) varies all 160 inputs at once and compares every result, groups and tables, so it also catches a `MODULES` entry that forgot an input group; `every_selector_pair_is_covered_in_the_full_run` checks that every pair of selector choices across groups occurs in it, and `every_selector_choice_appears_in_every_module_file` that each module file sets every selector it varies to every choice. `every_branch_is_reached` checks the `BRANCHES` table (every branch of every text result is hit), `every_text_result_has_a_branches_entry` that no text-producing result lacks a `BRANCHES` row (a new branch cannot land unchecked), and `every_varied_input_takes_two_values` that each varied input changes; the helpers corpus checks `compat` against Python exactly. Rust-only results (`ResultMeta::rust_only`, e.g. `clamps.length_note`) have no Python counterpart and are skipped; so are Rust-only selectors in the selector-coverage tests (`InputMeta::rust_only`: the generator never passes them to Python). |
+| `tests/python_schema.rs` | Every ported field carries the Python label, unit, help, cell, choices and default; no Python field of a ported group is missing; each ported table has the Python field order, row count and cell of every value (`tables_match_the_python_layout`); `headline` has Python's keys, order and values at the defaults; inputs and scalar results are listed in the Python order (the GUI's tables and CSV export follow it); Rust-only inputs and results are skipped, and no Rust-only input may share a path with a Python one (`rust_only_inputs_are_unknown_to_python`). |
+| `tests/grades.rs` | The grade table equals `docs/analyses/2026-09-30-magcoupling-addendum-a-data.json` value for value and citation for citation (engine literals bit for bit; the N42SH engine beta is the workbook's); every library part resolves to a grade; a part's workbook Br and Tmax equal its grade's except the registered differences; sintered NdFeB alpha and density equal the engine constants; only ferrite has a positive beta; every part cites its vendor page for coating and magnetization. |
+| `tests/material_library.rs` | The materials library equals `docs/analyses/2026-09-30-magcoupling-addendum-a-data.json` value for value and citation for citation (the 416 CTE re-sourced, decision 6); engine values are the workbook's where the data file records one, else the sourced ones; the default material of each part is bit-equal to the inputs it stands for; the choices match the spec's roles; plain and low-alloy steels need plating. |
+| `tests/material_links.rs` | Addendum A5 physics links: each selector offers the library's choices; the default choices change nothing; picking a steel or a sleeve equals typing its values into the inputs; the cap choice prices the cap only; a non-ferromagnetic back iron selects the free-space circuit and becomes the hub, cup and boss material; C6 = 0 overrides a ferromagnetic choice; the design flux density feeds the wall check; a code outside the choices gives NaN, not another material; each warning fires on the design that meets its condition (`src/engine/warnings.rs` tests each rule, its equality edges and the steel-only rules directly). |
 | `tests/static_data.rs` | Static tables equal the Python engine's, value for value (`tests/data/static_data.json`): the magnet library and its exact-text lookup, the harmonic set, the validation checklist, the aluminium alloys, the adhesives, the screw sizes and machining steps, and the sweep variables. |
-| `tests/robustness.rs` | Inputs no parity or differential case holds (the plan's Review Focus): a selector code outside its choices set directly on the struct (adhesive, screw class, and every selector at once with `validate()` naming each), a measured drag of exactly zero, every numeric input at 0, -1, a tenth of its minimum, ten times its maximum and 1e300 (`compute_all_never_panics_on_extreme_inputs`), NaN and infinities written straight into the struct, where `set` cannot refuse them, with the corrections off and on (`compute_all_never_panics_on_non_finite_struct_literals`; `validate()` names the path), and a debug-build time bound per frame (`compute_all` plus `headline`). The engine must never panic. |
-| `tests/schema.rs` | Slider ranges, selectors, labels, unique well-formed paths and cells (a Rust-only result has none); each table column's label, unit and note equal the workbook headers (`table_columns_match_the_workbook_headers`; where a correction rewords a column's note, the recorded workbook text equals the note and the port's differs); exports `tests/data/input_schema.json`. |
-| `tests/deviations.rs` | Registry cells exist in the snapshot, entries are approved rows of the audit report, and one correction switched on changes exactly its registered cells (hand-listed, or in the correction's golden file under `tests/data/deviations/`); a correction that changes more than 15 cells uses a golden file and one that changes 15 or fewer lists them (`broad_corrections_use_golden_files_and_narrow_ones_list_their_cells`); each applied correction's figures match the report (`e1_adhesive_shear_modulus_matches_the_report`, `e2_clamp_screw_length_matches_the_report`, `e3_library_remanence_matches_the_report`), and help a correction rewords belongs to a real input and differs from the workbook's. A correction that changes nothing at defaults (E7 to E13) carries registry probes, off-default inputs from the report whose cells are checked with the correction off and on (`each_probe_shows_its_correction`); `every_applied_engine_correction_is_visible_somewhere` requires every applied engine correction to show at defaults or in a probe. A probe's workbook value can be a workbook error (`Literal::Error`, e.g. `#DIV/0!` where Python raises): that side still runs but is not compared. E7, E8, E9, E10, E11, E12 and E13 must leave every default cell bit for bit (`e7_leaves_every_default_cell_bit_for_bit`, `e8_leaves_flat_blocks_bit_for_bit`, `e9_leaves_every_default_cell_bit_for_bit`, `e10_leaves_every_default_cell_bit_for_bit`, `e11_leaves_every_default_cell_bit_for_bit`, `e12_leaves_every_default_cell_bit_for_bit`, `e13_leaves_every_default_cell_bit_for_bit`). `e7_finds_the_peak_at_a_fill_of_exactly_0_4` pins E7 where the fifth harmonic vanishes (a ring at a fill of exactly 0.4). `all_corrections_together_give_the_reviewed_headline` pins what users see: the headline with every correction on at the default design. |
+| `tests/robustness.rs` | Inputs no parity or differential case holds (the plan's Review Focus): a selector code outside its choices set directly on the struct (adhesive, screw class, and every selector at once with `validate()` naming each), a measured drag of exactly zero, every numeric input at 0, -1, a tenth of its minimum, ten times its maximum and 1e300 (`compute_all_never_panics_on_extreme_inputs`), NaN and infinities written straight into the struct, where `set` cannot refuse them, with the corrections off and on (`compute_all_never_panics_on_non_finite_struct_literals`; `validate()` names the path), a coercivity source outside its choices (any code but 1 uses the Hcj and beta inputs, and `validate()` names it: `an_invalid_coercivity_source_uses_the_inputs`), a positive beta typed in for magnets with no grade and no rating (no hot limit: C60 = +inf, C61 = NaN, the adhesive governs C12: `a_positive_beta_without_a_rating_has_no_hot_limit`), and a debug-build time bound per frame (`compute_all` plus `headline`). The engine must never panic. |
+| `tests/schema.rs` | Slider ranges, selectors, labels, unique well-formed paths and cells (a Rust-only result has none; an input is Rust-only exactly when it has no cell); each table column's label, unit and note equal the workbook headers (`table_columns_match_the_workbook_headers`; where a correction rewords a column's note, the recorded workbook text equals the note and the port's differs); exports `tests/data/input_schema.json`. |
+| `tests/deviations.rs` | Registry cells exist in the snapshot, entries are approved rows of the audit report, and one correction switched on changes exactly its registered cells (hand-listed, or in the correction's golden file under `tests/data/deviations/`); a correction that changes more than 15 cells uses a golden file and one that changes 15 or fewer lists them (`broad_corrections_use_golden_files_and_narrow_ones_list_their_cells`); each applied correction's figures match the report (`e1_adhesive_shear_modulus_matches_the_report`, `e2_clamp_screw_length_matches_the_report`, `e3_library_remanence_matches_the_report`), and help a correction rewords belongs to a real input and differs from the workbook's. A correction that changes nothing at defaults (E7 to E13, E15 to E20) carries registry probes, off-default inputs from the report whose cells are checked with the correction off and on (`each_probe_shows_its_correction`); `every_applied_engine_correction_is_visible_somewhere` requires every applied engine correction to show at defaults or in a probe. A probe's workbook value can be a workbook error (`Literal::Error`, e.g. `#DIV/0!` where Python raises): that side still runs but is not compared. E7, E8, E9, E10, E11, E12 and E13 must leave every default cell bit for bit (`e7_leaves_every_default_cell_bit_for_bit`, `e8_leaves_flat_blocks_bit_for_bit`, `e9_leaves_every_default_cell_bit_for_bit`, `e10_leaves_every_default_cell_bit_for_bit`, `e11_leaves_every_default_cell_bit_for_bit`, `e12_leaves_every_default_cell_bit_for_bit`, `e13_leaves_every_default_cell_bit_for_bit`). `e7_finds_the_peak_at_a_fill_of_exactly_0_4` pins E7 where the fifth harmonic vanishes (a ring at a fill of exactly 0.4). The Addendum A entries name every cell their probes change, downstream cells included (`addendum_entries_name_every_cell_their_probes_change`); E15 to E18 have rows in the Addendum A report and E19 and E20 cite decisions only (`e15_to_e18_have_audit_rows_and_e19_e20_decisions_only`); each reproduces the report: `e15_heat_capacity_matches_the_report`, `e16_removed_disc_matches_the_report`, `e17_aluminium_eddy_losses_match_the_report` and `e15_to_e17_together_match_the_reports_headline_table` (on top of E9, decision 15), `e18_aluminium_hub_mismatch_matches_the_report`, `e19_supermagnetman_arcs_follow_the_vendor_grid`, and for E20 `e20_each_part_uses_its_own_coercivity`, `e20_the_hcj_and_beta_inputs_override_the_grade_when_selected`, `e20_ferrite_is_limited_on_the_cold_side`, `e20_mixed_rings_use_the_weaker_grade` and `e20_ferrite_with_the_stored_ndfeb_fields_is_past_its_knee_at_room_temperature`; `e15_leaves_every_default_cell_bit_for_bit` to `e20_leaves_every_default_cell_bit_for_bit` pin that none moves a default cell. `all_corrections_together_give_the_reviewed_headline` pins what users see: the headline with every correction on at the default design. |
 
 ### Regenerating test data
 
@@ -128,7 +153,10 @@ files; `cargo test` then compares:
 | 3 | `MAGCOUPLING_BLESS=1 cargo test --test deviations each_deviation_alone_changes_exactly_its_registered_cells` | `tests/data/deviations/E<k>.json`, the golden files of the broad corrections (E3, E4, E5); see [Deviations](#deviations). It writes what this engine computes with the correction alone, so review the diff |
 
 Run 1, then 2, when an input, a range, a choice or a table layout changes; run 3
-when a broad correction changes cells.
+when a broad correction changes cells. A Rust-only input (declared with
+`param_rust_only`, exported with `"rust_only": true`) is left out by generator 2:
+the Python engine has no such input, so every case keeps its Rust default and no
+data file changes when one is added.
 
 `MODULES` in `gen_differential.py` maps each ported **result group** to the
 **input groups** each case varies: every group the results read, directly or
@@ -241,8 +269,9 @@ branch at the formula with `if dev.is_on(DeviationId::Ek) { corrected } else
 declare the corrected default and record the workbook value in the entry's
 `workbook_input_defaults`; set the entry to `Applied` and list every cell that
 changes at defaults in `changes_at_defaults`. Where the correction rewords a
-help text, record the workbook's text in `workbook_help` (an input path, or a
-table column as `group.table[*].field`): `tests/python_schema.rs` compares
+help text, record the workbook's text in `workbook_help` (an input path, a
+scalar result path (decision 14: E16 and E17 keep the workbook's labels and
+reword the help), or a table column as `group.table[*].field`): `tests/python_schema.rs` compares
 Python's help against it, `tests/schema.rs` the workbook note of a table
 column, and both `tests/deviations.rs` and `tests/schema.rs` require the port's
 help to differ. A result the Python engine does not have (E2's

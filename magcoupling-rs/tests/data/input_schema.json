@@ -15,6 +15,7 @@
         "min": 4.0,
         "step": 2.0
       },
+      "rust_only": false,
       "type": "i64",
       "unit": "-"
     },
@@ -36,6 +37,7 @@
       "label": "Back iron",
       "path": "coupling.backiron",
       "range": null,
+      "rust_only": false,
       "type": "i64",
       "unit": "-"
     },
@@ -57,6 +59,7 @@
       "label": "Geometry type",
       "path": "coupling.faceted",
       "range": null,
+      "rust_only": false,
       "type": "i64",
       "unit": "-"
     },
@@ -74,6 +77,7 @@
         "min": 9.0,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -91,6 +95,7 @@
         "min": -40.0,
         "step": 0.5
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "°C"
     },
@@ -108,6 +113,7 @@
         "min": 4.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -125,6 +131,7 @@
         "min": 0.0,
         "step": 0.05
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -142,6 +149,7 @@
         "min": 0.0,
         "step": 0.005
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -159,6 +167,7 @@
         "min": 1.2566e-6,
         "step": 1e-11
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "T·m/A"
     },
@@ -176,6 +185,7 @@
         "min": 1.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -193,6 +203,7 @@
         "min": 0.5,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -210,6 +221,7 @@
         "min": 0.05,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "N·m"
     },
@@ -227,6 +239,7 @@
         "min": 0.0,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "N·m"
     },
@@ -244,6 +257,7 @@
         "min": 1.0,
         "step": 0.05
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -256,6 +270,7 @@
       "label": "Inner magnet part",
       "path": "coupling.magnets.part_inner",
       "range": null,
+      "rust_only": false,
       "type": "text",
       "unit": "-"
     },
@@ -268,6 +283,7 @@
       "label": "Outer magnet part",
       "path": "coupling.magnets.part_outer",
       "range": null,
+      "rust_only": false,
       "type": "text",
       "unit": "-"
     },
@@ -285,6 +301,7 @@
         "min": 2.0,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -302,6 +319,7 @@
         "min": 1.0,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -319,6 +337,7 @@
         "min": 0.5,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -336,6 +355,7 @@
         "min": 0.2,
         "step": 0.001
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "T"
     },
@@ -353,6 +373,7 @@
         "min": 2.0,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -370,6 +391,7 @@
         "min": 1.0,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -387,6 +409,7 @@
         "min": 0.5,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -404,8 +427,35 @@
         "min": 0.2,
         "step": 0.001
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "T"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": "",
+      "help": "Addendum A6: a grade of the grade table, by exact name (e.g. N42SH, Y30). Used only when the inner part is not in the library: the manual dimensions with the grade's Br at 20 °C and maximum temperature. Blank = the manual Br and no rating.",
+      "label": "Inner magnet grade (manual dimensions)",
+      "path": "coupling.magnets.grade_inner",
+      "range": null,
+      "rust_only": true,
+      "type": "text",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": "",
+      "help": "As the inner grade, for the outer ring.",
+      "label": "Outer magnet grade (manual dimensions)",
+      "path": "coupling.magnets.grade_outer",
+      "range": null,
+      "rust_only": true,
+      "type": "text",
+      "unit": "-"
     },
     {
       "assumption": false,
@@ -421,6 +471,7 @@
         "min": 0.1,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "N·m"
     },
@@ -438,6 +489,7 @@
         "min": -60.0,
         "step": 0.5
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "°C"
     },
@@ -455,6 +507,7 @@
         "min": 0.0,
         "step": 0.005
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "fraction"
     },
@@ -472,6 +525,7 @@
         "min": 0.0,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -489,6 +543,7 @@
         "min": 0.0,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -506,6 +561,7 @@
         "min": 0.0,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -523,6 +579,7 @@
         "min": 0.0,
         "step": 0.005
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -540,6 +597,7 @@
         "min": 0.0,
         "step": 0.005
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -557,6 +615,7 @@
         "min": 0.0,
         "step": 0.005
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -574,6 +633,7 @@
         "min": 0.0,
         "step": 0.005
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -591,6 +651,7 @@
         "min": 0.0,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -608,6 +669,7 @@
         "min": 0.0,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -625,6 +687,7 @@
         "min": 0.0025,
         "step": 0.00001
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "g/mm³"
     },
@@ -642,6 +705,7 @@
         "min": 0.004,
         "step": 0.0001
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "g/mm³"
     },
@@ -659,6 +723,7 @@
         "min": 0.0075,
         "step": 0.00001
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "g/mm³"
     },
@@ -676,6 +741,7 @@
         "min": 100.0,
         "step": 10.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "rpm"
     },
@@ -693,6 +759,7 @@
         "min": 0.01,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "s"
     },
@@ -710,6 +777,7 @@
         "min": 10000.0,
         "step": 1000.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "events"
     },
@@ -727,6 +795,7 @@
         "min": 0.001,
         "step": 0.0001
       },
+      "rust_only": false,
       "type": "opt_f64",
       "unit": "N·m"
     },
@@ -744,6 +813,7 @@
         "min": 0.3,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -761,6 +831,7 @@
         "min": 0.01,
         "step": 0.005
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -778,6 +849,7 @@
         "min": 0.0,
         "step": 0.005
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -795,6 +867,7 @@
         "min": 0.5,
         "step": 0.05
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -812,6 +885,7 @@
         "min": 3.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -829,6 +903,7 @@
         "min": 3.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -846,6 +921,7 @@
         "min": 0.5,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -863,6 +939,7 @@
         "min": 0.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -880,6 +957,7 @@
         "min": 12.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -897,6 +975,7 @@
         "min": 0.0,
         "step": 0.5
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "g"
     },
@@ -914,6 +993,7 @@
         "min": 5.0,
         "step": 0.5
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -931,6 +1011,7 @@
         "min": 10.0,
         "step": 0.5
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -948,6 +1029,7 @@
         "min": 20.0,
         "step": 0.5
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -965,6 +1047,7 @@
         "min": 0.2,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -982,6 +1065,7 @@
         "min": 20.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -999,6 +1083,7 @@
         "min": 0.5,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1016,6 +1101,7 @@
         "min": 20.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1033,6 +1119,7 @@
         "min": 0.1,
         "step": 0.05
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1050,6 +1137,7 @@
         "min": 0.1,
         "step": 0.05
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1067,6 +1155,7 @@
         "min": 3.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1084,6 +1173,7 @@
         "min": 0.0,
         "step": 0.005
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1101,6 +1191,7 @@
         "min": 0.0,
         "step": 0.005
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1118,6 +1209,7 @@
         "min": 0.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1135,6 +1227,7 @@
         "min": 10.0,
         "step": 0.5
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1152,6 +1245,7 @@
         "min": 0.5,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1169,6 +1263,7 @@
         "min": 5.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1186,6 +1281,7 @@
         "min": 0.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1203,6 +1299,7 @@
         "min": 0.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1220,6 +1317,7 @@
         "min": 0.0,
         "step": 0.5
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "g"
     },
@@ -1237,6 +1335,7 @@
         "min": 0.1,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "N·m"
     },
@@ -1254,6 +1353,7 @@
         "min": 4.0,
         "step": 2.0
       },
+      "rust_only": false,
       "type": "i64",
       "unit": "count"
     },
@@ -1271,6 +1371,7 @@
         "min": 0.2,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1292,6 +1393,7 @@
       "label": "Gap definition",
       "path": "calibration.gap_definition",
       "range": null,
+      "rust_only": false,
       "type": "i64",
       "unit": "selector"
     },
@@ -1309,6 +1411,7 @@
         "min": -40.0,
         "step": 0.5
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "°C"
     },
@@ -1326,6 +1429,7 @@
         "min": 4.0,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1343,6 +1447,7 @@
         "min": 2.0,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1360,6 +1465,7 @@
         "min": 1.0,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1377,6 +1483,7 @@
         "min": 0.5,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1394,6 +1501,7 @@
         "min": 0.2,
         "step": 0.001
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "T"
     },
@@ -1411,6 +1519,7 @@
         "min": -0.0025,
         "step": 0.00001
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "1/°C"
     },
@@ -1428,6 +1537,7 @@
         "min": 0.0,
         "step": 0.005
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -1445,6 +1555,7 @@
         "min": 0.5,
         "step": 0.005
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -1462,6 +1573,7 @@
         "min": 1.2566e-6,
         "step": 1e-11
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "H/m"
     },
@@ -1479,6 +1591,7 @@
         "min": 0.0,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "N·m"
     },
@@ -1496,6 +1609,7 @@
         "min": 0.0,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "N·m"
     },
@@ -1513,6 +1627,7 @@
         "min": 0.5,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "T"
     },
@@ -1530,6 +1645,7 @@
         "min": 1000000.0,
         "step": 10000.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "S/m"
     },
@@ -1547,6 +1663,7 @@
         "min": 1.0,
         "step": 1.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -1564,6 +1681,7 @@
         "min": 300.0,
         "step": 1.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "J/(kg·K)"
     },
@@ -1581,6 +1699,7 @@
         "min": 5e-6,
         "step": 1e-7
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "1/°C"
     },
@@ -1598,6 +1717,7 @@
         "min": 50.0,
         "step": 1.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "GPa"
     },
@@ -1615,6 +1735,7 @@
         "min": 7.0,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "g/cm³"
     },
@@ -1632,6 +1753,7 @@
         "min": 0.0,
         "step": 0.001
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -1649,6 +1771,7 @@
         "min": 500.0,
         "step": 5.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "MPa"
     },
@@ -1666,6 +1789,7 @@
         "min": 400.0,
         "step": 5.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "MPa"
     },
@@ -1683,8 +1807,111 @@
         "min": 200.0,
         "step": 5.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "MPa"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [
+        [
+          1,
+          "4140 annealed"
+        ],
+        [
+          2,
+          "1018 hot rolled"
+        ],
+        [
+          3,
+          "12L14 cold drawn"
+        ],
+        [
+          4,
+          "416 stainless, annealed"
+        ],
+        [
+          5,
+          "17-4PH H1150"
+        ],
+        [
+          6,
+          "17-4PH H900"
+        ],
+        [
+          7,
+          "304 stainless (non-magnetic)"
+        ],
+        [
+          8,
+          "6061-T6 aluminium"
+        ]
+      ],
+      "default": 1,
+      "help": "Addendum A5. 1 = the workbook's 4140: the steel inputs above. Another choice supplies its library conductivity, density, specific heat, expansion and modulus, and its design flux density where the library has one (else C13 stays). A non-ferromagnetic choice selects the free-space circuit and becomes the hub, cup and boss material; with a ferromagnetic one, Calculator C6 = 0 still selects the free-space circuit (the override).",
+      "label": "Back iron material (hub, cup and boss)",
+      "path": "materials.parts.back_iron",
+      "range": null,
+      "rust_only": true,
+      "type": "i64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [
+        [
+          1,
+          "316L annealed"
+        ],
+        [
+          2,
+          "Ti-6Al-4V grade 5"
+        ],
+        [
+          3,
+          "Inconel 625"
+        ],
+        [
+          4,
+          "PEEK"
+        ]
+      ],
+      "default": 1,
+      "help": "Addendum A5. 1 = the workbook's 316L (Temperature design C111 and C139, Metal design C44). Another choice supplies its conductivity, density and specific heat; the endplates follow it, as C44 prices them.",
+      "label": "Sleeve and liner material",
+      "path": "materials.parts.sleeve_liner",
+      "range": null,
+      "rust_only": true,
+      "type": "i64",
+      "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [
+        [
+          1,
+          "6061-T6 aluminium"
+        ],
+        [
+          2,
+          "7075-T6 aluminium"
+        ],
+        [
+          3,
+          "Acetal (POM-H)"
+        ]
+      ],
+      "default": 1,
+      "help": "Addendum A5. 1 = the workbook's 6061-T6 (Materials C43, Temperature design C140, Metal design C42). Another choice supplies the cap's conductivity, density and specific heat; the aluminium adapter and the clamp alloy keep their own inputs.",
+      "label": "Cap and housing material",
+      "path": "materials.parts.cap_housing",
+      "range": null,
+      "rust_only": true,
+      "type": "i64",
+      "unit": "-"
     },
     {
       "assumption": false,
@@ -1700,6 +1927,7 @@
         "min": 100.0,
         "step": 10.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "rpm"
     },
@@ -1717,6 +1945,7 @@
         "min": -20.0,
         "step": 0.5
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "°C"
     },
@@ -1734,6 +1963,7 @@
         "min": 0.0,
         "step": 0.5
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "°C"
     },
@@ -1751,6 +1981,7 @@
         "min": 0.1,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "s"
     },
@@ -1768,6 +1999,7 @@
         "min": 1000.0,
         "step": 100.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "h"
     },
@@ -1776,7 +2008,7 @@
       "cell": "Temperature design!C44",
       "choices": [],
       "default": 1592.0,
-      "help": "N42SH ≥ 20 kOe.",
+      "help": "N42SH ≥ 20 kOe. Correction E20: each magnet's grade supplies Hcj; this value is used for a magnet without a grade, or for both rings when the coercivity source is 0.",
       "label": "Intrinsic coercivity Hcj at 20 °C (grade minimum)",
       "path": "temperature.demag.hcj20_kA_m",
       "range": {
@@ -1785,6 +2017,7 @@
         "min": 800.0,
         "step": 1.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "kA/m"
     },
@@ -1793,7 +2026,7 @@
       "cell": "Temperature design!C45",
       "choices": [],
       "default": -0.005,
-      "help": "",
+      "help": "Correction E20: each magnet's grade supplies beta; this value is used for a magnet without a grade, or for both rings when the coercivity source is 0.",
       "label": "Hcj temperature coefficient (effective, 20–150 °C)",
       "path": "temperature.demag.beta_hcj_per_C",
       "range": {
@@ -1802,6 +2035,7 @@
         "min": -0.008,
         "step": 0.0001
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "1/°C"
     },
@@ -1819,6 +2053,7 @@
         "min": 0.5,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -1836,6 +2071,7 @@
         "min": 0.0,
         "step": 0.5
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "°C"
     },
@@ -1853,6 +2089,7 @@
         "min": 0.0,
         "step": 1.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "kA/m"
     },
@@ -1870,6 +2107,7 @@
         "min": 0.0,
         "step": 1.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "kA/m"
     },
@@ -1887,6 +2125,7 @@
         "min": 0.0,
         "step": 1.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "kA/m"
     },
@@ -1904,8 +2143,31 @@
         "min": 0.0,
         "step": 1.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "kA/m"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [
+        [
+          1,
+          "magnet grade"
+        ],
+        [
+          0,
+          "Hcj and beta inputs"
+        ]
+      ],
+      "default": 1,
+      "help": "Correction E20: 1 = each magnet's own grade (its library part, or the grade picked for manual dimensions); 0 = Hcj and beta above (C44, C45) for both rings, which then override the grades. A magnet without a grade always uses C44 and C45; a code other than 1 falls through to them, as the else of a two-way IF.",
+      "label": "Coercivity for the demagnetization check",
+      "path": "temperature.demag.coercivity_source",
+      "range": null,
+      "rust_only": true,
+      "type": "i64",
+      "unit": "-"
     },
     {
       "assumption": false,
@@ -1933,6 +2195,7 @@
       "label": "Selected adhesive (code)",
       "path": "temperature.adhesive.selected",
       "range": null,
+      "rust_only": false,
       "type": "i64",
       "unit": "-"
     },
@@ -1950,6 +2213,7 @@
         "min": -3e-6,
         "step": 1e-8
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "1/°C"
     },
@@ -1967,6 +2231,7 @@
         "min": 0.01,
         "step": 0.001
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "GPa"
     },
@@ -1984,6 +2249,7 @@
         "min": 100.0,
         "step": 1.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "GPa"
     },
@@ -2001,6 +2267,7 @@
         "min": 0.01,
         "step": 0.005
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -2018,6 +2285,7 @@
         "min": 100000.0,
         "step": 1000.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "S/m"
     },
@@ -2035,6 +2303,7 @@
         "min": 100000.0,
         "step": 1000.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "S/m"
     },
@@ -2052,6 +2321,7 @@
         "min": 0.0,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -2069,6 +2339,7 @@
         "min": 0.0,
         "step": 0.001
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "T"
     },
@@ -2086,6 +2357,7 @@
         "min": 0.0,
         "step": 0.001
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "T"
     },
@@ -2103,6 +2375,7 @@
         "min": 0.0,
         "step": 0.001
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "T"
     },
@@ -2120,6 +2393,7 @@
         "min": 0.0,
         "step": 0.001
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "T"
     },
@@ -2137,6 +2411,7 @@
         "min": 1e-12,
         "step": 1e-13
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "T²·m⁴"
     },
@@ -2145,7 +2420,7 @@
       "cell": "Temperature design!C121",
       "choices": [],
       "default": 0.00001035,
-      "help": "3D, doubled at the steel surface (correction E5: the workbook's 1.035e-5 T²·m² is the free-space field, which made the web loss 4 times too low).",
+      "help": "3D, doubled at the steel surface (correction E5: the workbook's 1.035e-5 T²·m² includes the steel hub's image but is not doubled at the web's own surface, which made the web loss 4 times too low; the free-space field of an aluminium web is E17's 6.837e-6).",
       "label": "Rear-web end field, ∫B² dA",
       "path": "temperature.slip_loss.web_integral_T2m2",
       "range": {
@@ -2154,6 +2429,7 @@
         "min": 1e-7,
         "step": 1e-8
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "T²·m²"
     },
@@ -2171,6 +2447,7 @@
         "min": 0.0,
         "step": 0.001
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "T"
     },
@@ -2188,8 +2465,63 @@
         "min": 1.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": 0.07832,
+      "help": "Correction E17, no back iron with an aluminium cup: 3D, no steel image and not doubled (the steel-circuit field is C116). Stored at 4 significant figures (decision 12) until M3 computes it live.",
+      "label": "Opposite-ring field at an aluminium hub (fundamental, free space)",
+      "path": "temperature.slip_loss.b_hub_free_T",
+      "range": {
+        "log": false,
+        "max": 1.0,
+        "min": 0.0,
+        "step": 0.00001
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "T"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": 0.08764,
+      "help": "Correction E17, no back iron: 3D, no steel image and not doubled (the steel-circuit field is C117). Stored at 4 significant figures (decision 12) until M3 computes it live.",
+      "label": "Opposite-ring field at an aluminium cup (fundamental, free space)",
+      "path": "temperature.slip_loss.b_cup_free_T",
+      "range": {
+        "log": false,
+        "max": 1.0,
+        "min": 0.0,
+        "step": 0.00001
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "T"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": 6.837e-6,
+      "help": "Correction E17, no back iron: the inner ring alone, no steel image (the steel-circuit value is C121). Stored at 4 significant figures (decision 12) until M3 computes it live.",
+      "label": "Rear-web end field of an aluminium web, ∫B² dA (free space)",
+      "path": "temperature.slip_loss.web_integral_free_T2m2",
+      "range": {
+        "log": true,
+        "max": 0.001,
+        "min": 1e-8,
+        "step": 1e-9
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "T²·m²"
     },
     {
       "assumption": false,
@@ -2205,6 +2537,7 @@
         "min": 300.0,
         "step": 1.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "J/(kg·K)"
     },
@@ -2222,6 +2555,7 @@
         "min": 300.0,
         "step": 1.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "J/(kg·K)"
     },
@@ -2239,6 +2573,7 @@
         "min": 700.0,
         "step": 1.0
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "J/(kg·K)"
     },
@@ -2256,6 +2591,7 @@
         "min": 0.01,
         "step": 0.001
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "W/K"
     },
@@ -2273,6 +2609,7 @@
         "min": 0.05,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -2290,6 +2627,7 @@
         "min": 0.02,
         "step": 0.005
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -2307,6 +2645,7 @@
         "min": 1.0,
         "step": 0.5
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "years"
     },
@@ -2324,6 +2663,7 @@
         "min": 0.0,
         "step": 0.5
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "°C"
     },
@@ -2341,6 +2681,7 @@
         "min": 1.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -2358,6 +2699,7 @@
         "min": 0.05,
         "step": 0.005
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -2379,6 +2721,7 @@
       "label": "Clamp type",
       "path": "clamps.clamp_type",
       "range": null,
+      "rust_only": false,
       "type": "i64",
       "unit": "-"
     },
@@ -2396,6 +2739,7 @@
         "min": 0.3,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -2413,6 +2757,7 @@
         "min": 0.3,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -2434,6 +2779,7 @@
       "label": "Aluminium",
       "path": "clamps.alloy",
       "range": null,
+      "rust_only": false,
       "type": "i64",
       "unit": "-"
     },
@@ -2459,6 +2805,7 @@
       "label": "Screw class",
       "path": "clamps.screw_class",
       "range": null,
+      "rust_only": false,
       "type": "i64",
       "unit": "-"
     },
@@ -2476,6 +2823,7 @@
         "min": 0.3,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -2493,6 +2841,7 @@
         "min": 0.1,
         "step": 0.01
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -2510,6 +2859,7 @@
         "min": 0.5,
         "step": 0.05
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -2527,6 +2877,7 @@
         "min": 1.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     },
@@ -2544,6 +2895,7 @@
         "min": 12.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -2561,6 +2913,7 @@
         "min": 3.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -2578,6 +2931,7 @@
         "min": 0.2,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -2595,6 +2949,7 @@
         "min": 0.3,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -2612,6 +2967,7 @@
         "min": 0.3,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -2629,6 +2985,7 @@
         "min": 0.5,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -2646,6 +3003,7 @@
         "min": 0.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -2663,6 +3021,7 @@
         "min": 0.3,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -2680,6 +3039,7 @@
         "min": 1.0,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -2697,6 +3057,7 @@
         "min": 1.0,
         "step": 0.5
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -2714,6 +3075,7 @@
         "min": 0.5,
         "step": 0.1
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -2731,6 +3093,7 @@
         "min": 1.0,
         "step": 1.0
       },
+      "rust_only": false,
       "type": "i64",
       "unit": "-"
     },
@@ -2748,6 +3111,7 @@
         "min": 10.0,
         "step": 0.5
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "mm"
     },
@@ -2765,6 +3129,7 @@
         "min": 0.05,
         "step": 0.005
       },
+      "rust_only": false,
       "type": "f64",
       "unit": "-"
     }

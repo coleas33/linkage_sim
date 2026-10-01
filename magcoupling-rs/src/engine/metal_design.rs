@@ -7,7 +7,9 @@
 //! [`compute`], 49 result cells).
 //!
 //! Deviations touching this sheet (see
-//! [`crate::engine::deviations::REGISTRY`]): applied E8 (Metal design!C175).
+//! [`crate::engine::deviations::REGISTRY`]): applied E8 (Metal design!C175)
+//! and E16 (C189: the disc bored out of the web for the adapter pilot is priced
+//! at the cup's density, aluminium with no back iron under E9).
 
 use std::f64::consts::PI;
 
@@ -294,7 +296,8 @@ results! {
             corner_clearance_mm: f64 => out("mm", "Corner clearance before sleeves", "", "Metal design!C142"),
             nominal_sleeve_liner_mm: f64 => out("mm", "Nominal sleeve-to-liner clearance", "", "Metal design!C143"),
             allowed_radial_disp_mm: f64 => out("mm", "Allowed relative radial displacement", "", "Metal design!C144"),
-            steel_cup_mass_g: f64 => out("g", "Selected one-piece steel-cup mass", "", "Metal design!C147"),
+            steel_cup_mass_g: f64 => out("g", "Selected one-piece steel-cup mass",
+                "The back-iron material at back iron = 1; with no back iron (correction E9) the body material: the workbook's aluminium, or a non-ferromagnetic back-iron pick (Addendum A5).", "Metal design!C147"),
             adapter_variant_mass_g: f64 => out("g", "Optional aluminium-adapter variant mass", "", "Metal design!C148"),
             adapter_mass_saved_g: f64 => out("g", "Mass saved by optional aluminium adapter", "", "Metal design!C149"),
             retainers_mass_g: f64 => out("g", "Estimated mass of both thin retainers", "", "Metal design!C150"),
@@ -306,7 +309,9 @@ results! {
             cup_body_od_mm: f64 => out("mm", "Steel cup body OD", "", "Metal design!C165"),
             cap_face_mm: f64 => out("mm", "Front cap face thickness", "", "Metal design!C167"),
             adapter_g: f64 => out("g", "Optional aluminium adapter gross mass", "", "Metal design!C188"),
-            adapter_steel_removed_g: f64 => out("g", "Steel removed for optional larger pilot bore", "", "Metal design!C189"),
+            adapter_steel_removed_g: f64 => out("g", "Steel removed for optional larger pilot bore",
+                "Priced at the cup's density: the back-iron material at back iron = 1; with no back iron the body material: the workbook's aluminium, or a non-ferromagnetic back-iron pick (corrections E9 and E16, Addendum A5).",
+                "Metal design!C189"),
             hybrid_mass_g: f64 => out("g", "Optional hybrid gross mass", "", "Metal design!C191"),
             hybrid_length_mm: f64 => out("mm", "Optional hybrid overall length", "", "Metal design!C192"),
         }
@@ -366,7 +371,9 @@ pub fn retainers(
 
 /// The Metal design sheet (Python `metal_design.compute`): torque at the hot and
 /// cold limits, the radial clearance stack, duty, the axial stack, the optional
-/// aluminium adapter and the hybrid mass. `ret` is [`retainers`]' result.
+/// aluminium adapter and the hybrid mass. `ret` is [`retainers`]' result;
+/// `cup_density_g_mm3` is the density the mass model gives the web
+/// (`model::cup_boss_density`), read only by E16.
 #[allow(non_snake_case, clippy::too_many_arguments)] // Python names and signature
 pub fn compute(
     md: &MetalDesignInputs,
@@ -386,7 +393,8 @@ pub fn compute(
     ret: &RetainerResults,
     proto_measured_Nm: f64,
     proto_test_temp_C: f64,
-    _dev: Deviations,
+    cup_density_g_mm3: f64,
+    dev: Deviations,
 ) -> MetalDesignResults {
     let th = |T: f64| br_factor(alpha_br, T); // Python lambda th
     let cold = torque_20C_Nm * th(md.min_temp_C).powi(2);
@@ -416,10 +424,15 @@ pub fn compute(
             + (md.boss_od_mm.powi(2) - bore_mm.powi(2)) * md.adapter_boss_mm
             + (md.adapter_pilot_dia_mm.powi(2) - bore_mm.powi(2)) * md.adapter_pilot_mm)
         * md.al_density_g_mm3;
-    let removed = PI / 4.0
-        * (md.adapter_pilot_dia_mm.powi(2) - bore_mm.powi(2))
-        * md.web_mm
-        * md.steel_density_g_mm3;
+    // E16: the disc lies in the web, so it is priced at the web's density (E9 makes it
+    // aluminium with no back iron); the workbook always uses steel.
+    let web_density = if dev.is_on(DeviationId::E16) {
+        cup_density_g_mm3
+    } else {
+        md.steel_density_g_mm3
+    };
+    let removed =
+        PI / 4.0 * (md.adapter_pilot_dia_mm.powi(2) - bore_mm.powi(2)) * md.web_mm * web_density;
     let hybrid = mass_total_g - boss_mass_g - removed + adapter + md.adapter_hardware_g;
     let cold_for_min = md.required_min_Nm * (th(md.min_temp_C) / th(op_temp_C)).powi(2);
     MetalDesignResults {
@@ -534,6 +547,7 @@ mod tests {
                 &ret,
                 0.9,
                 20.0,
+                0.00785,
                 Deviations::NONE,
             )
         };

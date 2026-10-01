@@ -18,12 +18,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use common::{json_to_value, read_json, read_text, repo_path, report, snapshot, value_to_json};
+use common::{
+    cell_values_for, json_to_value, num, read_json, read_text, repo_path, report, snapshot,
+    value_to_json,
+};
 use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with, headline};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::{
-    Deviation, DeviationClass, DeviationId, DeviationStatus, Deviations, Literal, Probe, REGISTRY,
-    REPORT,
+    ADDENDUM_REPORT, Approval, Deviation, DeviationClass, DeviationId, DeviationStatus, Deviations,
+    Literal, Probe, REGISTRY, REPORT,
 };
 use magcoupling::engine::meta::{InputSet, NumOrText, Value, input_rows, result_rows};
 
@@ -100,23 +103,6 @@ fn bless_changes(
     .expect("write the golden file");
 }
 
-/// Every value with a workbook cell (inputs and results) for `inputs` under `dev`.
-fn cell_values_for(inputs: &DesignInputs, dev: Deviations) -> BTreeMap<String, Value> {
-    let results = compute_all_with(inputs, dev);
-    let mut cells = BTreeMap::new();
-    for row in input_rows(inputs) {
-        if let Some(cell) = row.meta.cell {
-            cells.insert(cell.to_owned(), row.value);
-        }
-    }
-    for row in result_rows(&results) {
-        if let Some(cell) = row.cell {
-            cells.insert(cell, row.value);
-        }
-    }
-    cells
-}
-
 /// Every value with a workbook cell at the defaults `dev` implies.
 fn cell_values(dev: Deviations) -> BTreeMap<String, Value> {
     cell_values_for(&DesignInputs::defaults_with(dev), dev)
@@ -129,14 +115,6 @@ fn at(cell: &str, dev: Deviations) -> Value {
         .unwrap_or_else(|| panic!("{cell} is not a cell of the port"))
 }
 
-fn num(value: &Value) -> f64 {
-    match value {
-        Value::Num(x) => *x,
-        Value::Int(i) => *i as f64,
-        other => panic!("expected a number, got {other:?}"),
-    }
-}
-
 /// `got` equals the audit report's figure `want`, which the report states to
 /// within `half_step` (half a unit of its last digit).
 fn assert_report(cell: &str, got: &Value, want: f64, half_step: f64) {
@@ -147,17 +125,43 @@ fn assert_report(cell: &str, got: &Value, want: f64, half_step: f64) {
     );
 }
 
+/// The defaults `dev` implies with `overrides` applied; panics naming an invalid override.
+fn inputs_with(overrides: &[(&str, Value)], dev: Deviations) -> DesignInputs {
+    let mut inputs = DesignInputs::defaults_with(dev);
+    for (path, value) in overrides {
+        inputs
+            .set(path, value.clone())
+            .unwrap_or_else(|e| panic!("override {path} = {value:?}: {e}"));
+    }
+    inputs
+}
+
+/// A registry probe's inputs as overrides.
+fn probe_overrides(probe: &Probe) -> Vec<(&'static str, Value)> {
+    probe
+        .inputs
+        .iter()
+        .map(|&(path, value)| (path, value.to_value()))
+        .collect()
+}
+
+/// Every value with a workbook cell for a probe's inputs, applied to the defaults `dev` implies.
+fn probe_cells(probe: &Probe, dev: Deviations) -> BTreeMap<String, Value> {
+    cell_values_for(&inputs_with(&probe_overrides(probe), dev), dev)
+}
+
 /// The value at one cell for a probe's inputs, applied to the defaults `dev` implies.
 fn at_probe(cell: &str, probe: &Probe, dev: Deviations) -> Value {
-    let mut inputs = DesignInputs::defaults_with(dev);
-    for &(path, value) in probe.inputs {
-        inputs
-            .set(path, value.to_value())
-            .unwrap_or_else(|e| panic!("probe {:?}: {e}", probe.label));
-    }
-    cell_values_for(&inputs, dev)
+    probe_cells(probe, dev)
         .remove(cell)
         .unwrap_or_else(|| panic!("{cell} is not a cell of the port"))
+}
+
+/// The corrections a probe of `d` runs on, on both sides: those `d` refines (decision 15).
+fn probe_base(d: &Deviation) -> Deviations {
+    d.depends_on
+        .iter()
+        .fold(Deviations::NONE, |base, &id| base.with(id))
 }
 
 /// With every correction off, the cell still holds the workbook snapshot value.
@@ -190,26 +194,77 @@ fn every_registered_cell_is_in_the_snapshot() {
 }
 
 #[test]
-fn every_entry_is_an_approved_row_of_the_audit_report() {
-    let text = read_text(&repo_path(REPORT));
+fn every_entry_is_approved_in_its_report() {
+    let audit = read_text(&repo_path(REPORT));
+    let addendum = read_text(&repo_path(ADDENDUM_REPORT));
+    // Section 8 of the Addendum A report: the approval line and the numbered decisions.
+    let section8 = addendum
+        .split_once("\n## 8. Decisions for the user\n")
+        .map(|(_, rest)| rest)
+        .expect("the Addendum A report has a section 8");
+    assert!(
+        section8.contains("**Approved (user, 2026-09-30): option A on all 31 decisions.**"),
+        "section 8 records the approval"
+    );
     for d in REGISTRY {
-        let prefix = format!("| {} |", d.id);
-        let row = text
-            .lines()
-            .find(|line| line.starts_with(&prefix))
-            .unwrap_or_else(|| panic!("{REPORT} has no row for {}", d.id));
-        assert!(
-            row.contains("| approved (user, 2026-09-29) |"),
-            "{} is not approved in the report",
-            d.id
+        match d.approval {
+            Approval::AuditRow => {
+                let prefix = format!("| {} |", d.id);
+                let row = audit
+                    .lines()
+                    .find(|line| line.starts_with(&prefix))
+                    .unwrap_or_else(|| panic!("{REPORT} has no row for {}", d.id));
+                assert!(
+                    row.contains("| approved (user, 2026-09-29) |"),
+                    "{} is not approved in the report",
+                    d.id
+                );
+                let documentation = row.contains("(documentation)");
+                assert_eq!(
+                    documentation,
+                    d.class == DeviationClass::Documentation,
+                    "{}: class vs report",
+                    d.id
+                );
+            }
+            Approval::Addendum { decisions } => {
+                for n in decisions {
+                    let heading = format!("{n}. **");
+                    assert!(
+                        section8.lines().any(|line| line.starts_with(&heading)),
+                        "{}: section 8 has no decision {n}",
+                        d.id
+                    );
+                }
+                // E15 to E18 have an audit row ("| E18 (candidate) |" too); its status
+                // column names the first decision that approves the entry.
+                let prefix = format!("| {} ", d.id);
+                if let Some(row) = addendum.lines().find(|line| line.starts_with(&prefix)) {
+                    let status = row.trim_end_matches('|').rsplit('|').next().unwrap_or("");
+                    assert!(
+                        status.contains("decision") && status.contains(&decisions[0].to_string()),
+                        "{}: row status {status:?} does not name decision {}",
+                        d.id,
+                        decisions[0]
+                    );
+                }
+                assert_eq!(d.class, DeviationClass::Engine, "{}", d.id);
+            }
+        }
+    }
+}
+
+#[test]
+fn e15_to_e18_have_audit_rows_and_e19_e20_decisions_only() {
+    let addendum = read_text(&repo_path(ADDENDUM_REPORT));
+    for id in DeviationId::ALL.into_iter().skip(14) {
+        let prefix = format!("| {id} ");
+        let has_row = addendum.lines().any(|line| line.starts_with(&prefix));
+        let expected = matches!(
+            id,
+            DeviationId::E15 | DeviationId::E16 | DeviationId::E17 | DeviationId::E18
         );
-        let documentation = row.contains("(documentation)");
-        assert_eq!(
-            documentation,
-            d.class == DeviationClass::Documentation,
-            "{}: class vs report",
-            d.id
-        );
+        assert_eq!(has_row, expected, "{id}");
     }
 }
 
@@ -565,11 +620,13 @@ fn each_probe_shows_its_correction() {
         .iter()
         .filter(|d| d.status == DeviationStatus::Applied)
     {
+        // Decision 15: a correction that refines others is probed on top of them.
+        let base = probe_base(d);
         for probe in d.probes {
             for change in probe.expect {
                 // Always run the workbook side (it must not panic); a workbook error value
                 // (`#DIV/0!`, where Python raises) has no Rust counterpart to compare with.
-                let workbook = at_probe(change.cell, probe, Deviations::NONE);
+                let workbook = at_probe(change.cell, probe, base);
                 if !matches!(change.workbook, Literal::Error(_))
                     && !parity_close(&workbook, &change.workbook.to_value())
                 {
@@ -578,13 +635,41 @@ fn each_probe_shows_its_correction() {
                         d.id, probe.label, change.cell, change.workbook
                     ));
                 }
-                let corrected = at_probe(change.cell, probe, Deviations::only(d.id));
+                let corrected = at_probe(change.cell, probe, base.with(d.id));
                 if !parity_close(&corrected, &change.corrected.to_value()) {
                     failures.push(format!(
                         "{} {:?}: {} corrected {corrected:?}, registered {:?}",
                         d.id, probe.label, change.cell, change.corrected
                     ));
                 }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", report(&failures));
+}
+
+#[test]
+fn addendum_entries_name_every_cell_their_probes_change() {
+    // The Addendum A entries (E15 to E20) name every cell their probes change, downstream
+    // cells included, so the registry alone says where each correction shows. The M1 entries
+    // (E1 to E14) name the corrected and report-named cells only: their probes change
+    // hundreds of sweep and downstream cells (E7, E8), and the broad ones keep golden files.
+    let mut failures = Vec::new();
+    for d in REGISTRY
+        .iter()
+        .filter(|d| matches!(d.approval, Approval::Addendum { .. }))
+    {
+        let base = probe_base(d);
+        for probe in d.probes {
+            let changed = changed_cells(
+                &probe_cells(probe, base),
+                &probe_cells(probe, base.with(d.id)),
+            );
+            for cell in changed.iter().filter(|c| !d.cells.contains(&c.as_str())) {
+                failures.push(format!(
+                    "{} {:?}: {cell} changes but is not in cells",
+                    d.id, probe.label
+                ));
             }
         }
     }
@@ -1057,6 +1142,780 @@ fn e13_leaves_every_default_cell_bit_for_bit() {
     assert_bit_for_bit_at_defaults(DeviationId::E13);
 }
 
+/// `got` is the Addendum A report's figure `want`, printed to 4 significant
+/// figures (report section 5.1): within half a unit of the 4th figure.
+fn assert_sig4(what: &str, got: &Value, want: f64) {
+    let got = num(got);
+    let half = 0.5 * 10f64.powi(want.abs().log10().floor() as i32 - 3);
+    assert!(
+        (got - want).abs() <= half * (1.0 + 1e-9),
+        "{what}: {got} is not the report's {want} (4 s.f.)"
+    );
+}
+
+/// Every celled value for the defaults with `overrides` applied, under `dev`.
+fn cells_with(overrides: &[(&str, Value)], dev: Deviations) -> BTreeMap<String, Value> {
+    cell_values_for(&inputs_with(overrides, dev), dev)
+}
+
+/// A report table of changed cells: (cell, before, after) at 4 significant figures.
+type ReportRows<'a> = &'a [(&'a str, f64, f64)];
+
+/// `before` -> `after` changes exactly the report's cells, to the report's figures.
+fn assert_report_table(
+    label: &str,
+    overrides: &[(&str, Value)],
+    before: Deviations,
+    after: Deviations,
+    rows: ReportRows,
+) {
+    let (b, a) = (cells_with(overrides, before), cells_with(overrides, after));
+    let want: BTreeSet<String> = rows.iter().map(|(c, _, _)| (*c).to_owned()).collect();
+    assert_eq!(changed_cells(&b, &a), want, "{label}: changed cells");
+    for &(cell, was, now) in rows {
+        assert_sig4(&format!("{label} {cell} before"), &b[cell], was);
+        assert_sig4(&format!("{label} {cell} after"), &a[cell], now);
+    }
+}
+
+const NO_BACK_IRON: [(&str, Value); 1] = [("coupling.backiron", Value::Int(0))];
+
+/// The report's M2 basis: E1 to E14 on, the Addendum corrections off.
+fn m2() -> Deviations {
+    [
+        DeviationId::E15,
+        DeviationId::E16,
+        DeviationId::E17,
+        DeviationId::E18,
+        DeviationId::E19,
+        DeviationId::E20,
+    ]
+    .into_iter()
+    .fold(Deviations::ALL, Deviations::without)
+}
+
+#[test]
+fn e15_heat_capacity_matches_the_report() {
+    // Report 5.4, E15, all three columns: workbook + E9 (the probe basis, decision 15), M2
+    // (every other correction on) and standalone (E9 off: only the hub moves).
+    let e9 = Deviations::NONE.with(DeviationId::E9);
+    let e15 = DeviationId::E15;
+    let main: ReportRows = &[
+        ("Temperature design!C20", 66.01, 65.92),
+        ("Temperature design!C141", 45.78, 63.02),
+        ("Temperature design!C143", 152.6, 210.1),
+        ("Temperature design!C145", 0.005411, 0.003931),
+        ("Temperature design!C154", 0.05411, 0.03931),
+        ("Temperature design!C155", 0.1623, 0.1179),
+        ("Temperature design!C156", 616.1, 848.0),
+        ("Temperature design!C157", 205.4, 282.7),
+        ("Temperature design!C158", 5087.0, 7002.0),
+        ("Temperature design!C159", 457.8, 630.2),
+        ("Temperature design!C160", 1.526e4, 2.101e4),
+        ("Temperature design!C161", 65.32, 65.23),
+        ("Temperature design!C171", 0.005411, 0.003931),
+        ("Temperature design!C172", 0.01623, 0.01179),
+        ("Temperature design!C180", 66.01, 65.92),
+        ("Temperature design!C181", 36.54, 36.63),
+        ("Temperature design!C182", 26.54, 26.63),
+        ("Temperature design!C186", 1.63, 1.631),
+        ("Temperature design!C189", 66.01, 65.92),
+        ("Temperature design!C190", 53.99, 54.08),
+        ("Temperature design!C192", 1.875, 1.875),
+        ("Temperature design!C193", 0.1981, 0.1982),
+        ("Temperature design!C196", 7.571, 7.569),
+    ];
+    assert_report_table("E15 on E9", &NO_BACK_IRON, e9, e9.with(e15), main);
+    let m2_rows: ReportRows = &[
+        ("Temperature design!C20", 66.12, 66.02),
+        ("Temperature design!C141", 45.78, 63.02),
+        ("Temperature design!C143", 152.6, 210.1),
+        ("Temperature design!C145", 0.00601, 0.004366),
+        ("Temperature design!C154", 0.0601, 0.04366),
+        ("Temperature design!C155", 0.1803, 0.131),
+        ("Temperature design!C156", 554.7, 763.5),
+        ("Temperature design!C157", 184.9, 254.5),
+        ("Temperature design!C158", 5087.0, 7002.0),
+        ("Temperature design!C159", 457.8, 630.2),
+        ("Temperature design!C160", 1.526e4, 2.101e4),
+        ("Temperature design!C161", 65.36, 65.26),
+        ("Temperature design!C171", 0.00601, 0.004366),
+        ("Temperature design!C172", 0.01803, 0.0131),
+        ("Temperature design!C180", 66.12, 66.02),
+        ("Temperature design!C181", 36.93, 37.03),
+        ("Temperature design!C182", 26.93, 27.03),
+        ("Temperature design!C186", 1.63, 1.63),
+        ("Temperature design!C189", 66.12, 66.02),
+        ("Temperature design!C190", 53.88, 53.98),
+        ("Temperature design!C192", 1.874, 1.875),
+        ("Temperature design!C193", 0.1981, 0.1981),
+        ("Temperature design!C196", 7.573, 7.571),
+    ];
+    assert_report_table("E15 on M2", &NO_BACK_IRON, m2(), m2().with(e15), m2_rows);
+    let standalone: ReportRows = &[
+        ("Temperature design!C20", 65.89, 65.88),
+        ("Temperature design!C141", 74.19, 77.98),
+        ("Temperature design!C143", 247.3, 259.9),
+        ("Temperature design!C145", 0.003339, 0.003177),
+        ("Temperature design!C154", 0.03339, 0.03177),
+        ("Temperature design!C155", 0.1002, 0.0953),
+        ("Temperature design!C156", 998.3, 1049.0),
+        ("Temperature design!C157", 332.8, 349.8),
+        ("Temperature design!C158", 8243.0, 8664.0),
+        ("Temperature design!C159", 741.9, 779.8),
+        ("Temperature design!C160", 2.473e4, 2.599e4),
+        ("Temperature design!C161", 65.2, 65.19),
+        ("Temperature design!C171", 0.003339, 0.003177),
+        ("Temperature design!C172", 0.01002, 0.00953),
+        ("Temperature design!C180", 65.89, 65.88),
+        ("Temperature design!C181", 36.66, 36.67),
+        ("Temperature design!C182", 26.66, 26.67),
+        ("Temperature design!C186", 1.631, 1.631),
+        ("Temperature design!C189", 65.89, 65.88),
+        ("Temperature design!C190", 54.11, 54.12),
+        ("Temperature design!C192", 1.876, 1.876),
+        ("Temperature design!C193", 0.1982, 0.1982),
+        ("Temperature design!C196", 7.569, 7.569),
+    ];
+    assert_report_table(
+        "E15 alone",
+        &NO_BACK_IRON,
+        Deviations::NONE,
+        Deviations::only(e15),
+        standalone,
+    );
+    // C19 and C150 stay "never" in every column; C137 (the steel specific heat shown) does not move.
+    for dev in [e9.with(e15), m2().with(e15), Deviations::only(e15)] {
+        let c = cells_with(&NO_BACK_IRON, dev);
+        assert_eq!(
+            c["Temperature design!C19"],
+            Value::Text("never: steady state stays below the limit".into())
+        );
+        assert_eq!(c["Temperature design!C137"], Value::Num(473.0));
+    }
+}
+
+#[test]
+fn e16_removed_disc_matches_the_report() {
+    // Report 5.4, E16: the same four cells in the main and M2 columns; standalone (E9 off:
+    // the web is steel) nothing moves. C147, C188, C47, C114 and C192 do not change.
+    let e9 = Deviations::NONE.with(DeviationId::E9);
+    let e16 = DeviationId::E16;
+    let rows: ReportRows = &[
+        ("Metal design!C148", 101.5, 103.8),
+        ("Metal design!C149", -4.689, -6.954),
+        ("Metal design!C189", 3.453, 1.188),
+        ("Metal design!C191", 101.5, 103.8),
+    ];
+    assert_report_table("E16 on E9", &NO_BACK_IRON, e9, e9.with(e16), rows);
+    assert_report_table("E16 on M2", &NO_BACK_IRON, m2(), m2().with(e16), rows);
+    assert_report_table(
+        "E16 alone",
+        &NO_BACK_IRON,
+        Deviations::NONE,
+        Deviations::only(e16),
+        &[],
+    );
+    // Full precision (report 5.4): the disc at 2.7 g/cm³.
+    let c = cells_with(&NO_BACK_IRON, e9.with(e16));
+    assert_eq!(c["Metal design!C189"], Value::Num(1.1875220230569419));
+    assert_eq!(c["Metal design!C191"], Value::Num(103.76539290918065));
+    assert_eq!(c["Metal design!C149"], Value::Num(-6.95366329618038));
+}
+
+#[test]
+fn e17_aluminium_eddy_losses_match_the_report() {
+    // Report 5.4, E17 (T1, end factor C114 = 0.7, the 4-s.f. free-space fields): 41 cells in
+    // the main column (workbook + E9, decision 15) and the M2 column. C152 stays "never" and
+    // no verdict text changes.
+    let e9 = Deviations::NONE.with(DeviationId::E9);
+    let e17 = DeviationId::E17;
+    let main: ReportRows = &[
+        ("Temperature design!C17", 73.26, 74.73),
+        ("Temperature design!C18", 89.77, 94.18),
+        ("Temperature design!C20", 66.01, 66.19),
+        ("Temperature design!C22", 0.6881, 0.8105),
+        ("Temperature design!C123", 0.2259, 0.1942),
+        ("Temperature design!C124", 1.353, 1.543),
+        ("Temperature design!C125", 0.0914, 0.3737),
+        ("Temperature design!C130", 2.477, 2.918),
+        ("Temperature design!C131", 0.01183, 0.01393),
+        ("Temperature design!C132", 2.477, 2.918),
+        ("Temperature design!C134", 7.431, 8.754),
+        ("Temperature design!C145", 0.005411, 0.006374),
+        ("Temperature design!C146", 8.257, 9.726),
+        ("Temperature design!C147", 24.77, 29.18),
+        ("Temperature design!C148", 73.26, 74.73),
+        ("Temperature design!C149", 89.77, 94.18),
+        ("Temperature design!C154", 0.05411, 0.06374),
+        ("Temperature design!C155", 0.1623, 0.1912),
+        ("Temperature design!C156", 616.1, 523.0),
+        ("Temperature design!C157", 205.4, 174.3),
+        ("Temperature design!C161", 65.32, 65.38),
+        ("Temperature design!C169", 0.2477, 0.2918),
+        ("Temperature design!C170", 0.7431, 0.8754),
+        ("Temperature design!C171", 0.005411, 0.006374),
+        ("Temperature design!C172", 0.01623, 0.01912),
+        ("Temperature design!C173", 14.86, 17.51),
+        ("Temperature design!C175", 0.2294, 0.2702),
+        ("Temperature design!C176", 0.6881, 0.8105),
+        ("Temperature design!C177", 0.2477, 0.2918),
+        ("Temperature design!C180", 66.01, 66.19),
+        ("Temperature design!C181", 36.54, 36.36),
+        ("Temperature design!C182", 26.54, 26.36),
+        ("Temperature design!C186", 1.63, 1.63),
+        ("Temperature design!C189", 66.01, 66.19),
+        ("Temperature design!C190", 53.99, 53.81),
+        ("Temperature design!C192", 1.875, 1.874),
+        ("Temperature design!C193", 0.1981, 0.198),
+        ("Temperature design!C196", 7.571, 7.575),
+    ];
+    // C19, C150 and C151 are text ("never") before and numbers after: checked below.
+    let text_cells = [
+        "Temperature design!C19",
+        "Temperature design!C150",
+        "Temperature design!C151",
+    ];
+    let check = |label: &str,
+                 before: Deviations,
+                 after: Deviations,
+                 rows: ReportRows,
+                 t19: f64,
+                 r151: f64| {
+        let (b, a) = (
+            cells_with(&NO_BACK_IRON, before),
+            cells_with(&NO_BACK_IRON, after),
+        );
+        let mut want: BTreeSet<String> = rows.iter().map(|(c, _, _)| (*c).to_owned()).collect();
+        want.extend(text_cells.iter().map(|c| (*c).to_owned()));
+        assert_eq!(changed_cells(&b, &a), want, "{label}: changed cells");
+        for &(cell, was, now) in rows {
+            assert_sig4(&format!("{label} {cell} before"), &b[cell], was);
+            assert_sig4(&format!("{label} {cell} after"), &a[cell], now);
+        }
+        for cell in ["Temperature design!C19", "Temperature design!C150"] {
+            assert_eq!(
+                b[cell],
+                Value::Text("never: steady state stays below the limit".into()),
+                "{label} {cell}"
+            );
+            assert_sig4(&format!("{label} {cell}"), &a[cell], t19);
+        }
+        assert_eq!(b["Temperature design!C151"], Value::Text("never".into()));
+        assert_sig4(
+            &format!("{label} C151"),
+            &a["Temperature design!C151"],
+            r151,
+        );
+        assert_eq!(
+            a["Temperature design!C152"],
+            Value::Text("never: steady state stays below the limit".into()),
+            "{label}: the estimate never reaches the limit"
+        );
+    };
+    check("E17 on E9", e9, e9.with(e17), main, 440.3, 1.468e4);
+    let m2_rows: ReportRows = &[
+        ("Temperature design!C17", 74.17, 74.73),
+        ("Temperature design!C18", 92.51, 94.18),
+        ("Temperature design!C20", 66.12, 66.19),
+        ("Temperature design!C22", 0.7643, 0.8105),
+        ("Temperature design!C123", 0.2259, 0.1942),
+        ("Temperature design!C124", 1.353, 1.543),
+        ("Temperature design!C125", 0.3656, 0.3737),
+        ("Temperature design!C130", 2.751, 2.918),
+        ("Temperature design!C131", 0.01314, 0.01393),
+        ("Temperature design!C132", 2.751, 2.918),
+        ("Temperature design!C134", 8.254, 8.754),
+        ("Temperature design!C145", 0.00601, 0.006374),
+        ("Temperature design!C146", 9.171, 9.726),
+        ("Temperature design!C147", 27.51, 29.18),
+        ("Temperature design!C148", 74.17, 74.73),
+        ("Temperature design!C149", 92.51, 94.18),
+        ("Temperature design!C154", 0.0601, 0.06374),
+        ("Temperature design!C155", 0.1803, 0.1912),
+        ("Temperature design!C156", 554.7, 523.0),
+        ("Temperature design!C157", 184.9, 174.3),
+        ("Temperature design!C161", 65.36, 65.38),
+        ("Temperature design!C169", 0.2751, 0.2918),
+        ("Temperature design!C170", 0.8254, 0.8754),
+        ("Temperature design!C171", 0.00601, 0.006374),
+        ("Temperature design!C172", 0.01803, 0.01912),
+        ("Temperature design!C173", 16.51, 17.51),
+        ("Temperature design!C175", 0.2548, 0.2702),
+        ("Temperature design!C176", 0.7643, 0.8105),
+        ("Temperature design!C177", 0.2751, 0.2918),
+        ("Temperature design!C180", 66.12, 66.19),
+        ("Temperature design!C181", 36.93, 36.87),
+        ("Temperature design!C182", 26.93, 26.87),
+        ("Temperature design!C186", 1.63, 1.63),
+        ("Temperature design!C189", 66.12, 66.19),
+        ("Temperature design!C190", 53.88, 53.81),
+        ("Temperature design!C192", 1.874, 1.874),
+        ("Temperature design!C193", 0.1981, 0.198),
+        ("Temperature design!C196", 7.573, 7.575),
+    ];
+    check("E17 on M2", m2(), m2().with(e17), m2_rows, 497.0, 1.657e4);
+
+    // Full precision, workbook + E9 basis, with the 4-s.f. fields pinned (report 5.4, decision 12).
+    let c = cells_with(&NO_BACK_IRON, e9.with(e17));
+    for (cell, want) in [
+        ("Temperature design!C123", 0.1942432063711941),
+        ("Temperature design!C124", 1.5432858065214725),
+        ("Temperature design!C125", 0.3736960055840505),
+        ("Temperature design!C130", 2.917946124198304),
+        ("Temperature design!C18", 94.17946124198303),
+        ("Temperature design!C19", 440.3079945062734),
+    ] {
+        assert!(
+            parity_close(&c[cell], &Value::Num(want)),
+            "{cell}: {:?} vs {want}",
+            c[cell]
+        );
+    }
+
+    // Standalone (E9 off, amended): the cup and web stay steel; the aluminium hub sees half
+    // the doubled steel-circuit field, C116 / 2 = 0.1035 T (report 5.6, correction 1).
+    let alone = cells_with(&NO_BACK_IRON, Deviations::only(e17));
+    let workbook = cells_with(&NO_BACK_IRON, Deviations::NONE);
+    assert_sig4("E17 alone C123", &alone["Temperature design!C123"], 0.3392);
+    assert_sig4("E17 alone C130", &alone["Temperature design!C130"], 2.590);
+    assert_sig4("E17 alone C18", &alone["Temperature design!C18"], 90.90);
+    for cell in ["Temperature design!C124", "Temperature design!C125"] {
+        assert_eq!(
+            alone[cell], workbook[cell],
+            "{cell}: the steel cup and web keep the workbook formula"
+        );
+    }
+}
+
+#[test]
+fn e15_to_e17_together_match_the_reports_headline_table() {
+    // Report 5.2 at back iron = 0: the combined columns. No correction changes the torque,
+    // the governing limit or the verdict C25.
+    let e9 = Deviations::NONE.with(DeviationId::E9);
+    let all3 = |base: Deviations| {
+        base.with(DeviationId::E15)
+            .with(DeviationId::E16)
+            .with(DeviationId::E17)
+    };
+    let c = cells_with(&NO_BACK_IRON, all3(e9));
+    assert_sig4("C18", &c["Temperature design!C18"], 94.18);
+    assert_sig4("C19", &c["Temperature design!C19"], 606.1);
+    assert_sig4("C151", &c["Temperature design!C151"], 2.020e4);
+    assert_sig4("C20", &c["Temperature design!C20"], 66.09);
+    let m = cells_with(&NO_BACK_IRON, all3(m2()));
+    assert_sig4("M2 C19", &m["Temperature design!C19"], 684.1);
+    assert_sig4("M2 C151", &m["Temperature design!C151"], 2.280e4);
+    assert_sig4("M2 C20", &m["Temperature design!C20"], 66.09);
+    assert_sig4("M2 C12", &m["Temperature design!C12"], 93.06);
+    assert_sig4("M2 C23", &m["Temperature design!C23"], 0.04019);
+    for (label, cells) in [("E9", &c), ("M2", &m)] {
+        assert_sig4(&format!("{label} C93"), &cells["Calculator!C93"], 1.697);
+        assert_eq!(
+            cells["Temperature design!C152"],
+            Value::Text("never: steady state stays below the limit".into())
+        );
+        assert_eq!(
+            cells["Temperature design!C25"],
+            Value::Text(
+                "OK on temperature. Confirm drag torque and thermal cycling by test.".into()
+            )
+        );
+    }
+}
+
+#[test]
+fn e18_aluminium_hub_mismatch_matches_the_report() {
+    // Report row E18. On the workbook basis (C96 = 0.55 GPa) the screens already read
+    // "Above": only the numbers move. On the M2 basis (E1's 0.107 GPa) both verdicts flip.
+    let e18 = DeviationId::E18;
+    let workbook: ReportRows = &[
+        ("Temperature design!C104", 46.13, 73.87),
+        ("Temperature design!C105", 26.73, 45.1),
+        ("Temperature design!C201", 11.37, 19.18),
+    ];
+    assert_report_table(
+        "E18 workbook",
+        &NO_BACK_IRON,
+        Deviations::NONE,
+        Deviations::only(e18),
+        workbook,
+    );
+    let (b, a) = (
+        cells_with(&NO_BACK_IRON, m2()),
+        cells_with(&NO_BACK_IRON, m2().with(e18)),
+    );
+    let flips = [
+        (
+            "Temperature design!C106",
+            "Below the lap-shear strength",
+            "Above the lap-shear strength at the block ends",
+        ),
+        (
+            "Temperature design!C202",
+            "Below the fatigue endurance",
+            "Above the fatigue endurance: qualify by thermal cycling",
+        ),
+    ];
+    let mut want: BTreeSet<String> = ["C104", "C105", "C201"]
+        .iter()
+        .map(|c| format!("Temperature design!{c}"))
+        .collect();
+    want.extend(flips.iter().map(|(c, _, _)| (*c).to_owned()));
+    assert_eq!(changed_cells(&b, &a), want, "E18 on M2: changed cells");
+    for (cell, was, now) in [
+        ("Temperature design!C104", 11.68, 20.76),
+        ("Temperature design!C105", 6.071, 11.03),
+        ("Temperature design!C201", 2.563, 4.655),
+    ] {
+        assert_sig4(&format!("M2 {cell} before"), &b[cell], was);
+        assert_sig4(&format!("M2 {cell} after"), &a[cell], now);
+    }
+    for (cell, was, now) in flips {
+        assert_eq!(b[cell], Value::Text(was.into()), "{cell}");
+        assert_eq!(a[cell], Value::Text(now.into()), "{cell}");
+    }
+    // C94 and C98 still show the steel inputs.
+    assert_eq!(a["Temperature design!C94"], Value::Num(12.3e-6));
+    assert_eq!(a["Temperature design!C98"], Value::Num(205.0));
+    // What users see: every correction on, less E18, against every correction on.
+    let (without, with) = (
+        cells_with(&NO_BACK_IRON, Deviations::ALL.without(e18)),
+        cells_with(&NO_BACK_IRON, Deviations::ALL),
+    );
+    assert_eq!(changed_cells(&without, &with), want, "E18 on ALL");
+}
+
+#[test]
+fn e19_supermagnetman_arcs_follow_the_vendor_grid() {
+    // Decision 2 A: the vendor's 60 C on all three arcs moves every rating-calibrated demag
+    // cell by the rating change (the calibration offset absorbs it), and nothing else: 26
+    // cells on the workbook basis (the E12 guard zeroes 6 of them on the M2 basis). The
+    // temperature checks C107 and C108 stay "OK" at 50 C.
+    let e19 = DeviationId::E19;
+    for (part, stored) in [("M5044", 80.0), ("M5045", 100.0), ("M5026", 80.0)] {
+        let rings = [
+            ("coupling.magnets.part_inner", Value::Text(part.into())),
+            ("coupling.magnets.part_outer", Value::Text(part.into())),
+        ];
+        for (basis, before, count) in [("workbook", Deviations::NONE, 26), ("M2", m2(), 20)] {
+            let (b, a) = (
+                cells_with(&rings, before),
+                cells_with(&rings, before.with(e19)),
+            );
+            let changed = changed_cells(&b, &a);
+            assert_eq!(changed.len(), count, "{part} {basis}: {changed:?}");
+            assert_eq!(b["Calculator!C22"], Value::Num(stored), "{part}");
+            assert_eq!(a["Calculator!C22"], Value::Num(60.0), "{part}");
+            let shift = num(&b["Temperature design!C12"]) - num(&a["Temperature design!C12"]);
+            assert!(
+                (shift - (stored - 60.0)).abs() < 1e-9,
+                "{part} {basis}: C12 shift {shift}"
+            );
+            for cell in ["Calculator!C107", "Calculator!C108"] {
+                assert_eq!(a[cell], Value::Text("OK".into()), "{part} {cell}");
+            }
+        }
+    }
+    // M5045 maps to the grid's N50 (read by E20); its Br stays the workbook's 1.42 T.
+    let mut inputs = DesignInputs::defaults_with(Deviations::NONE);
+    inputs.coupling.magnets.part_inner = "M5045".into();
+    let off = compute_all_with(&inputs, Deviations::NONE).model;
+    let on = compute_all_with(&inputs, Deviations::only(e19)).model;
+    assert_eq!(
+        (off.inner_grade.as_str(), on.inner_grade.as_str()),
+        ("N50M", "N50")
+    );
+    assert_eq!((off.inner_br_T, on.inner_br_T), (1.42, 1.42));
+}
+
+/// The demagnetization results for `overrides` under `dev`.
+fn demag_with(
+    overrides: &[(&str, Value)],
+    dev: Deviations,
+) -> magcoupling::engine::temperature::DemagResults {
+    compute_all_with(&inputs_with(overrides, dev), dev)
+        .temperature
+        .demag
+}
+
+fn both_rings(part: &str) -> [(&'static str, Value); 2] {
+    [
+        ("coupling.magnets.part_inner", Value::Text(part.into())),
+        ("coupling.magnets.part_outer", Value::Text(part.into())),
+    ]
+}
+
+#[test]
+fn e20_each_part_uses_its_own_coercivity() {
+    // Report 6.3, governing limit C12 with the part's own Hcj and beta (E20 alone: the
+    // stored ratings, M5045 as the workbook's N50M). The N42SH parts do not move: the grade
+    // keeps the workbook's 1592 kA/m and -0.005 /C (decisions 17 A, 18 A).
+    let e20 = DeviationId::E20;
+    for (part, workbook, corrected) in [
+        ("B842", 23.06, -3.52),
+        ("B822", 23.06, -3.52),
+        ("B862", 23.06, -3.52),
+        ("B882", 23.06, -3.52),
+        ("B861", 23.06, -3.52),
+        ("B881", 23.06, -3.52),
+        ("B442", 23.06, -3.52),
+        ("B842-N52", 30.73, 0.17),
+        ("B882-N52", 30.73, 0.17),
+        ("M5044", 29.18, -2.50),
+        ("M5045", 49.18, 42.50),
+        ("M5026", 29.18, -2.50),
+        ("B842SH", 92.55, 92.55),
+        ("BX042SH", 92.55, 92.55),
+        ("BX082SH", 92.55, 92.55),
+    ] {
+        let rings = both_rings(part);
+        let (b, a) = (
+            cells_with(&rings, Deviations::NONE),
+            cells_with(&rings, Deviations::only(e20)),
+        );
+        let limit = |c: &BTreeMap<String, Value>| num(&c["Temperature design!C12"]);
+        assert!(
+            (limit(&b) - workbook).abs() <= 0.005,
+            "{part}: {}",
+            limit(&b)
+        );
+        assert!(
+            (limit(&a) - corrected).abs() <= 0.005,
+            "{part}: {}",
+            limit(&a)
+        );
+    }
+    // B842 changes 24 cells (report 6.3) and shows the N42 grade's Hcj and beta.
+    let rings = both_rings("B842");
+    let changed = changed_cells(
+        &cells_with(&rings, Deviations::NONE),
+        &cells_with(&rings, Deviations::only(e20)),
+    );
+    assert_eq!(changed.len(), 24, "{changed:?}");
+    let demag = demag_with(&rings, Deviations::only(e20));
+    assert_eq!(
+        (demag.hcj20_used_kA_m, demag.beta_used_per_C),
+        (954.9, -0.0062)
+    );
+    let workbook = demag_with(&rings, Deviations::NONE);
+    assert_eq!(
+        (workbook.hcj20_used_kA_m, workbook.beta_used_per_C),
+        (1592.0, -0.005)
+    );
+    // With E19 too, M5045 is N50 (the vendor grid): Hcj 875.4, beta -0.62 %/C.
+    let m5045 = demag_with(&both_rings("M5045"), Deviations::ALL);
+    assert_eq!(
+        (m5045.hcj20_used_kA_m, m5045.beta_used_per_C),
+        (875.4, -0.0062)
+    );
+    let n50m = demag_with(&both_rings("M5045"), Deviations::only(e20));
+    assert_eq!(
+        (n50m.hcj20_used_kA_m, n50m.beta_used_per_C),
+        (1114.1, -0.00675)
+    );
+}
+
+#[test]
+fn e20_the_hcj_and_beta_inputs_override_the_grade_when_selected() {
+    // Decision 19: C44 and C45 stay as overrides that win when set: the coercivity source 0.
+    let mut rings = both_rings("B842").to_vec();
+    rings.push(("temperature.demag.coercivity_source", Value::Int(0)));
+    let e20 = Deviations::only(DeviationId::E20);
+    assert!(
+        changed_cells(
+            &cells_with(&rings, Deviations::NONE),
+            &cells_with(&rings, e20)
+        )
+        .is_empty()
+    );
+    rings.push(("temperature.demag.hcj20_kA_m", Value::Num(954.9)));
+    rings.push(("temperature.demag.beta_hcj_per_C", Value::Num(-0.0062)));
+    let typed = cells_with(&rings, e20);
+    let graded = cells_with(&both_rings("B842"), e20);
+    assert_eq!(
+        typed["Temperature design!C12"], graded["Temperature design!C12"],
+        "the grade's values typed into C44 and C45 give the same limit"
+    );
+    // Manual magnets without a grade always use the inputs (both rings manual: a library
+    // ring beside a manual one is checked with its own grade and rating, A13).
+    let manual = both_rings("");
+    assert!(
+        changed_cells(
+            &cells_with(&manual, Deviations::NONE),
+            &cells_with(&manual, e20)
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn e20_ferrite_is_limited_on_the_cold_side() {
+    // Spec, Addendum testing: "the demag check uses the part's own Hcj(T), including a
+    // ferrite cold-case test", through the custom-dimension mode (no library part is ferrite).
+    let e20 = &REGISTRY[DeviationId::E20.index()];
+    let ferrite = &e20.probes[1];
+    let overrides = probe_overrides(ferrite);
+    let on = demag_with(&overrides, Deviations::only(DeviationId::E20));
+    let off = demag_with(&overrides, Deviations::NONE);
+    // The workbook takes |beta| and reports hot onsets near 240 C: "OK" for a magnet that
+    // demagnetizes on every like-pole pass below about 100 C.
+    assert!(off.onset_skipping_C > 200.0 && off.cold_check.starts_with("n/a"));
+    assert_eq!((on.hcj20_used_kA_m, on.beta_used_per_C), (180.0, 0.0035));
+    assert_eq!(on.onset_skipping_C, f64::INFINITY, "no knee on heating");
+    assert_eq!(
+        on.calibration_offset_C, 0.0,
+        "the rating is not a cold-side knee rating"
+    );
+    assert_eq!(
+        on.magnet_limit_C, 250.0,
+        "the hot limit is the grade's rating"
+    );
+    let num_of = |x: NumOrText| match x {
+        NumOrText::Num(v) => v,
+        NumOrText::Text(t) => panic!("expected a number, got {t:?}"),
+    };
+    // The aligned field is below the knee at 20 C: its cold onset lies below 20 C. The
+    // skipping field is past it: the magnet survives only above about 101 C.
+    let aligned = num_of(on.cold_onset_aligned_C);
+    let skipping = num_of(on.cold_onset_skipping_C);
+    assert!(
+        aligned < 20.0 && (aligned - (-57.82)).abs() < 0.005,
+        "{aligned}"
+    );
+    assert!((skipping - 100.90).abs() < 0.005, "{skipping}");
+    assert_eq!(num_of(on.cold_limit_C), skipping + 10.0);
+    assert_eq!(on.cold_check, "Below the cold demagnetization limit");
+}
+
+#[test]
+fn e20_mixed_rings_use_the_weaker_grade() {
+    // A-1 plan decision A13: C52 to C55 are the outer blocks' reverse fields, and the workbook
+    // checks only the inner ring's Br and rating against them. With E20 each ring is checked
+    // with its own grade, Br and rating and the weaker ring governs, on either side: B842 (N42)
+    // beside B842SH (N42SH) gives B842's limit in both orders, and the block shows B842.
+    use magcoupling::engine::temperature::{RING_INNER, RING_OUTER};
+    let b842 = cells_with(&both_rings("B842"), Deviations::ALL);
+    for (inner, outer, governing) in [
+        ("B842SH", "B842", RING_OUTER),
+        ("B842", "B842SH", RING_INNER),
+    ] {
+        let rings = [
+            ("coupling.magnets.part_inner", Value::Text(inner.into())),
+            ("coupling.magnets.part_outer", Value::Text(outer.into())),
+        ];
+        let cells = cells_with(&rings, Deviations::ALL);
+        let limit = &cells["Temperature design!C12"];
+        assert_report("Temperature design!C12", limit, -3.52, 0.005);
+        assert_eq!(limit, &b842["Temperature design!C12"], "{inner}/{outer}");
+        assert_eq!(
+            cells["Temperature design!C25"],
+            Value::Text("CHECK: see the rows above.".into()),
+            "{inner}/{outer}"
+        );
+        let demag = demag_with(&rings, Deviations::ALL);
+        assert_eq!(demag.demag_ring, governing, "{inner}/{outer}");
+        assert_eq!(
+            (demag.hcj20_used_kA_m, demag.beta_used_per_C),
+            (954.9, -0.0062)
+        );
+        assert_eq!(
+            demag.tmax_lib_C,
+            NumOrText::Num(80.0),
+            "the block shows B842"
+        );
+    }
+    // Without E20 the workbook reads the inner ring only: B842SH inside reads OK.
+    let stronger_inside = [
+        ("coupling.magnets.part_inner", Value::Text("B842SH".into())),
+        ("coupling.magnets.part_outer", Value::Text("B842".into())),
+    ];
+    let workbook = cells_with(&stronger_inside, Deviations::NONE);
+    assert_report(
+        "Temperature design!C12",
+        &workbook["Temperature design!C12"],
+        92.55,
+        0.005,
+    );
+    assert_eq!(
+        demag_with(&stronger_inside, Deviations::NONE).demag_ring,
+        RING_INNER
+    );
+    // Identical rings tie: the inner ring's block, bit for bit (the default design).
+    assert_eq!(
+        demag_with(&both_rings("B842"), Deviations::ALL).demag_ring,
+        RING_INNER
+    );
+}
+
+#[test]
+fn e20_ferrite_with_the_stored_ndfeb_fields_is_past_its_knee_at_room_temperature() {
+    // Review Focus 4: a ferrite grade with the reverse fields left at the stored NdFeB
+    // values (354 to 863 kA/m, all above Y30's 162 kA/m knee). The cold onsets then lie
+    // ABOVE the operating temperature: the magnet is demagnetized wherever it runs, and the
+    // cold check and the verdict say so; nothing panics or reads as a cold-weather margin.
+    let ferrite = [
+        ("coupling.magnets.part_inner", Value::Text(String::new())),
+        ("coupling.magnets.part_outer", Value::Text(String::new())),
+        ("coupling.magnets.grade_inner", Value::Text("Y30".into())),
+        ("coupling.magnets.grade_outer", Value::Text("Y30".into())),
+    ];
+    let demag = demag_with(&ferrite, Deviations::ALL);
+    let cold = |x: NumOrText| match x {
+        NumOrText::Num(v) => v,
+        NumOrText::Text(t) => panic!("{t}"),
+    };
+    for onset in [
+        demag.cold_onset_aligned_C,
+        demag.cold_onset_pullout_C,
+        demag.cold_onset_skipping_C,
+        demag.cold_onset_single_ring_C,
+    ] {
+        assert!(cold(onset) > 50.0, "{onset:?}");
+    }
+    assert_eq!(demag.cold_check, "Below the cold demagnetization limit");
+    assert_eq!(
+        cells_with(&ferrite, Deviations::ALL)["Temperature design!C25"],
+        Value::Text("CHECK: see the rows above.".into())
+    );
+}
+
+#[test]
+fn e20_leaves_every_default_cell_bit_for_bit() {
+    // The default part's grade N42SH carries the workbook's own Hcj and beta.
+    assert_bit_for_bit_at_defaults(DeviationId::E20);
+}
+
+#[test]
+fn e19_leaves_every_default_cell_bit_for_bit() {
+    // The default part is B842SH: the vendor grid applies to the arcs only.
+    assert_bit_for_bit_at_defaults(DeviationId::E19);
+}
+
+#[test]
+fn e18_leaves_every_default_cell_bit_for_bit() {
+    // At defaults the hub is steel: the workbook's CTE and modulus stay.
+    assert_bit_for_bit_at_defaults(DeviationId::E18);
+}
+
+#[test]
+fn e17_leaves_every_default_cell_bit_for_bit() {
+    // At defaults every loss term is steel: the skin-limited workbook formulas stay.
+    assert_bit_for_bit_at_defaults(DeviationId::E17);
+}
+
+#[test]
+fn e16_leaves_every_default_cell_bit_for_bit() {
+    // At defaults the web is steel: the density E16 reads is C132 itself.
+    assert_bit_for_bit_at_defaults(DeviationId::E16);
+}
+
+#[test]
+fn e15_leaves_every_default_cell_bit_for_bit() {
+    // At defaults (C6 = 1) every part is steel and the workbook expression stays.
+    assert_bit_for_bit_at_defaults(DeviationId::E15);
+}
+
 #[test]
 fn e14_the_22mm_boss_statement_is_true() {
     let e14 = &REGISTRY[DeviationId::E14.index()];
@@ -1143,7 +2002,10 @@ fn all_corrections_together_give_the_reviewed_headline() {
 
 #[test]
 fn reworded_help_is_recorded_for_real_fields() {
+    // An input path, a scalar result path (decision 14: E16's and E17's labels stay, their
+    // help is reworded), or a table column (checked against the workbook in tests/schema.rs).
     let inputs = input_rows(&DesignInputs::default());
+    let results = result_rows(&compute_all(&DesignInputs::default()));
     for d in REGISTRY
         .iter()
         .filter(|d| d.status == DeviationStatus::Applied)
@@ -1152,15 +2014,18 @@ fn reworded_help_is_recorded_for_real_fields() {
             if path.contains("[*]") {
                 continue; // table columns: checked against the workbook headers in tests/schema.rs
             }
-            let row = inputs
+            let help = inputs
                 .iter()
                 .find(|r| r.path == path)
-                .unwrap_or_else(|| panic!("{}: {path} is not an input", d.id));
-            assert_ne!(
-                row.meta.help, workbook,
-                "{}: {path} help is not reworded",
-                d.id
-            );
+                .map(|r| r.meta.help)
+                .or_else(|| {
+                    results
+                        .iter()
+                        .find(|r| r.path == path && !r.meta.rust_only)
+                        .map(|r| r.meta.help)
+                })
+                .unwrap_or_else(|| panic!("{}: {path} is not an input or a result", d.id));
+            assert_ne!(help, workbook, "{}: {path} help is not reworded", d.id);
         }
     }
 }

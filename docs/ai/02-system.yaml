@@ -62,15 +62,17 @@ major_subsystems:
     responsibility: magnetic slip coupling calculator, Rust port of the
       vendored Python oracle reference/magcoupling-py (workbook port).
       Workbook-exact except registered, approved corrections (deviation
-      registry, M1 audit E1-E14). Engine complete (M2), every module but fields3d.
+      registry, M1 audit E1-E14, Addendum A E15-E20). Engine complete (M2), every module but fields3d;
+      Addendum A-1 adds the grade table, materials per part with physics links, and six warnings.
     key_files: [src/engine/meta.rs, src/engine/compat.rs, src/engine/deviations.rs, src/engine/api.rs]
     invariants:
       - With Deviations::NONE every celled result, table cell and default input equals the workbook snapshot (1,149 checks; 1e-9 relative, 1e-12 absolute, text exact).
-      - Every departure from the workbook is an approved, registered deviation (E1-E14 in deviations.rs). compute_all always applies Deviations::ALL; the switch exists only behind the test-only workbook-parity feature.
+      - Every departure from the workbook is an approved, registered deviation (E1-E20 in deviations.rs; E15-E17 are probed on top of E9, decision 15). compute_all always applies Deviations::ALL; the switch exists only behind the test-only workbook-parity feature.
       - Differential data comes from the unchanged Python oracle; slider ranges are defined once in Rust (input_schema.json) and read by gen_differential.py; gate 7 fails on stale data.
       - A correction that changes more than 15 cells at defaults is a reviewed golden file (tests/data/deviations); one that changes none carries a registry probe.
       - The engine never panics on inputs; out-of-choice selector codes give NaN or "#N/A"; DesignInputs::validate() at input boundaries; no i64 arithmetic on input-derived values.
-      - Rust-only results (rust_only metadata) have no cell and are skipped by the parity, metadata and differential tests.
+      - Rust-only inputs and results (rust_only metadata) have no cell and are skipped by the parity, metadata and differential tests; gen_differential.py never passes a Rust-only input to Python.
+      - "Every Rust-only selector's default reproduces the ported behaviour bit for bit: part materials at code 1 are the workbook inputs, a blank grade is the manual mode, coercivity_source 1 with the N42SH grade gives the workbook's 1592 kA/m and -0.005 /C."
 
 dataflow_on_user_change: |
   user edit -> state.blueprint mutation -> state.push_undo() -> state.rebuild()
@@ -395,4 +397,4 @@ current_statuses:
   dxf_import: works native + WASM via drag-drop; selection-based conversions
   actuator_workflow: two-pass solve gives correct reactions with actuator loads
   non_grashof_sweep: NaN-padded across unreachable angles; playback ping-pongs
-  magcoupling: "M2 complete: engine ported except fields3d (M3); parity 1,149 checks; differential 10 group files + full run; E1-E14 applied; next: M3 fields3d, then M4 GUI"
+  magcoupling: "M2 complete: engine ported except fields3d (M3); parity 1,149 checks; differential 10 group files + full run; E1-E14 applied. Addendum A-1 complete: grades, materials per part, warnings, E15-E20 applied; next: Addendum A-2 (parameters and sizing), A-3, then M4 GUI"

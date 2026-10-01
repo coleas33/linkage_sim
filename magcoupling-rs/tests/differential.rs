@@ -530,11 +530,12 @@ fn full_run_matches_python_on_every_case() {
     check_module(FULL);
 }
 
-/// Selector inputs and their codes, from the Rust metadata.
+/// Selector inputs and their codes, from the Rust metadata. Rust-only selectors
+/// are not in the differential data (the generator never passes them to Python).
 fn selectors() -> Vec<(String, Vec<i64>)> {
     input_rows(&DesignInputs::default())
         .into_iter()
-        .filter(|r| !r.meta.choices.is_empty())
+        .filter(|r| !r.meta.choices.is_empty() && !r.meta.rust_only)
         .map(|r| (r.path, r.meta.choices.iter().map(|&(c, _)| c).collect()))
         .collect()
 }
