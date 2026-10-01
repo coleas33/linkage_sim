@@ -10,6 +10,7 @@ pub mod corrections;
 pub mod dashboard;
 mod format;
 pub mod geometry;
+pub mod geometry_view;
 pub mod history;
 pub mod input_ui;
 pub mod inputs;

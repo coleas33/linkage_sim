@@ -14,9 +14,7 @@ use serde_json::{Map, Value as Json};
 
 use crate::engine::meta::{ResultSet, Value, result_rows};
 use crate::gui::corrections::{CorrectionIndex, marker_text};
-use crate::gui::dashboard::{
-    ResultInfo, ResultNotes, end_effect_banner, result_info, result_tooltip,
-};
+use crate::gui::dashboard::{ResultInfo, hover_text, result_info};
 use crate::gui::format::{format_value, non_finite_text, with_unit};
 use crate::gui::session::{Design, design_json, json_value};
 use crate::{DesignInputs, DesignResults, compute_all};
@@ -182,14 +180,12 @@ impl ResultsTable {
         &self.query
     }
 
-    /// Draws the table: the end-effect banner when f_end ≤ 0, the search box and the export
-    /// buttons, then the rows on screen. Returns an export asked for.
+    /// Draws the table: the search box and the export buttons, then the rows on screen (the
+    /// end-effect banner is the centre region's, over every view: decision M42-1). Returns an
+    /// export asked for.
     pub fn ui(&mut self, ui: &mut egui::Ui, results: &DesignResults) -> Option<TableAction> {
         let entries = table_entries();
         let mut action = None;
-        if let Some(banner) = end_effect_banner(results) {
-            ui.colored_label(ui.visuals().error_fg_color, banner);
-        }
         ui.horizontal_wrapped(|ui| {
             ui.add(
                 egui::TextEdit::singleline(&mut self.query)
@@ -224,17 +220,9 @@ impl ResultsTable {
     }
 }
 
-/// A row's hover text: the hover hook's ([`result_tooltip`]) with the exact value.
+/// A row's hover text: the hover hook's ([`hover_text`]) with the exact value.
 pub fn row_tooltip(entry: &TableEntry, value: &Value) -> String {
-    let marks = CorrectionIndex::get().marks(entry.info.cell.as_deref());
-    let mut tooltip = result_tooltip(
-        &entry.path,
-        entry.info,
-        ResultNotes {
-            marks,
-            ..ResultNotes::default()
-        },
-    );
+    let mut tooltip = hover_text(&entry.path).expect("every table row is a result");
     if let Value::Num(x) = value {
         tooltip.push_str(&format!("\nExact value: {}", exact_number(*x)));
     }
