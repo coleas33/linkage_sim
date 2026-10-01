@@ -20,7 +20,10 @@ the assumptions registry (A3), the end-effect validity flag, the axial length
 override with the axial housing that follows it (hub length, cup cavity depth,
 retainer span), inverse sizing (A1), the housing autofit suggestion and the space
 claim, one aluminium modulus, and each grade-mode ring's own alpha and density
-(decisions A2-1 to A2-9). Next: Addendum A-3 (explanations), then M4.
+(decisions A2-1 to A2-9). M4 infrastructure in place: the `gui` and `app` features, a tracer panel
+(`gui::MagcouplingPanel`), the native and web binaries, and the second web
+bundle at `/magcoupling/` (see [Features and binaries](#features-and-binaries)).
+Next: Addendum A-3 (explanations), then the M4 GUI plans.
 
 The 1,149 checks are 330 result cells, 659 table cells (494 sweep cells and 165
 screw-table cells) and 160 default inputs. The corrections are listed under
@@ -123,18 +126,70 @@ Results can be +inf (E13); exporters must handle it.
 | `src/engine/housing.rs` | Addendum A1 housing autofit (which dimensions are derived, suggested or left as inputs: decisions 27, 28; with the axial length override set, `axial_housing` makes the hub length, the cup cavity depth and the retainer span follow the rings they bound, each at least its ring's length: decision A2-8) and the space claim: `HousingResults` (Rust-only, `housing.*`: the overshoot per axis, diameter, overall length and large-diameter bay, `space_claim_check`, and the hub length, cup depth and retainer span in effect) |
 | `src/engine/sizing.rs` | Addendum A1 inverse sizing (Torque → Magnets): `FreeVariable` (axial length, the default; magnets per ring, even only; ring radius), `solve` (a coarse scan of `SCAN_CELLS` cells, refined between samples at the first crossing, at each peak and at each validity edge to `VALUE_TOLERANCE_MM`; the smallest value that meets the target, or `NotReachable` with the best valid value it evaluated; the stated limit: a torque hump whose rise and fall both lie inside one cell), `is_valid` (a value counts only if its blocks fit, faceted blocks on their flats and arcs without overlapping, the keyway leaves hub wall and f_end > 0), `SizingOutcome`, `SizingError` |
 | `src/engine/assumptions.rs` | Addendum A3 assumptions panel: `ASSUMPTIONS` (the spec's 14 rows over the 15 inputs flagged `.assumption()`: label, input paths, rationale, source), `states`, `modified`, `any_modified` (the "assumptions modified" banner), `reset_to_workbook_defaults` |
+| `src/gui/` | Feature `gui`: `panel.rs` (`MagcouplingPanel`, `KEY_INPUTS`), `format.rs` (`format_value`, `with_unit`: the display text of every value, `+inf` and `NaN` included), `test_support.rs` (headless egui helpers, tests only) |
+| `src/app.rs` | Feature `app`: `MagcouplingApp` (the panel as a full page), `run_native`, `TITLE`, `CANVAS_ID` |
+| `src/bin/` | Feature `app`: `magcoupling_app.rs` (native window), `magcoupling_web.rs` (wasm32 entry, eframe WebRunner) |
 | `tests/` | Parity, differential, metadata and registry tests (below) |
 | `tests/data/` | Workbook snapshot copy (`reference_values.json`), exported schemas (`input_schema.json`, `python_schema.json`), the Python static tables (`static_data.json`), differential data (`differential/`) and the golden files of the broad corrections (`deviations/E3.json`, `E4.json`, `E5.json`) |
 
-Not a Cargo workspace member: `linkage-sim-rs` will depend on it by path.
-Features: `gui` and `app` are declared for M4 and empty. `workbook-parity` is
-**test-only**: it reaches the tests through a self dev-dependency, so shipped
-builds cannot switch corrections off.
+Not a Cargo workspace member: `linkage-sim-rs` will depend on it by path
+(feature `gui`, M5).
+
+## Features and binaries
+
+| Feature | Adds | Dependencies (all optional) |
+|---|---|---|
+| none (default) | The engine | none: pure std, builds for wasm32 as it is |
+| `gui` | `gui::MagcouplingPanel`: the design inputs and results, and `fn ui(&mut self, ui: &mut egui::Ui)`. Any egui app can host it: the standalone app as a full page, the linkage app in an `egui::Window` (M5) | egui 0.32 |
+| `app` | `app::MagcouplingApp` and the binaries below | `gui`, eframe 0.32, log; env_logger (native); wasm-bindgen, wasm-bindgen-futures, web-sys (wasm32) |
+| `workbook-parity` | **Test-only**: the switch that turns corrections off (see [Differences from the workbook](#differences-from-the-workbook)) | none |
+
+The panel is the M4 tracer: sliders for face gap, pole count and axial length
+(`KEY_INPUTS`), set up from the input metadata (label, unit, range, step, log
+scale, help and cell in the tooltip), "Reset all", and the headline numbers,
+recomputed with `compute_all` (every correction on) each frame after the inputs
+are drawn. Sliders clamp edits only (`SliderClamping::Edits`): the slider, arrow
+keys and typed values stay in the range, and an idle frame never rewrites a
+value. The axial length is the manual inner length, which only matters when
+the inner part is not a library part.
+
+**Versions.** egui and eframe use the same 0.32 line as `linkage-sim-rs`, so
+M5 embeds the panel with one egui; `Cargo.toml` has caret ranges, and
+`Cargo.lock` pins the versions of `linkage-sim-rs/Cargo.lock` (egui and eframe
+0.32.3, wasm-bindgen 0.2.114, which is the `wasm-bindgen-cli` version
+`deploy-web.yml` installs). Gate 11 fails when the two lock files or the CLI pin
+disagree; bump all three together.
+
+| Binary | Target | Run |
+|---|---|---|
+| `magcoupling-app` | native | `cargo run --release --features app --bin magcoupling-app` (from `magcoupling-rs/`) |
+| `magcoupling-web` | wasm32 | `bash linkage-sim-rs/scripts/build_magcoupling_web.sh` builds it into `linkage-sim-rs/web/magcoupling/`; `bash linkage-sim-rs/scripts/serve_web.sh [PORT]` serves it at `http://localhost:8080/magcoupling/`, next to the linkage app. `build_web.sh` builds both bundles. On a desktop, `cargo run --features app --bin magcoupling-web` opens the native window |
+
+The web page is `linkage-sim-rs/web/magcoupling/index.html` (committed; the JS
+glue and the wasm are gitignored build outputs). Its canvas id is
+`app::CANVAS_ID`, which a test checks. `deploy-web.yml` runs
+`build_magcoupling_web.sh` after the linkage build, so both bundles ship
+(`linkage.colesorkness.com/magcoupling/`).
+
+**workbook-parity never ships.** The feature reaches `cargo test` and
+`cargo clippy --all-targets` through the self dev-dependency, and cargo then
+unifies it into every unit of the build, binaries included, so a
+`compile_error!` on `app` plus `workbook-parity` would break
+`cargo test --features app`. The guard is
+`linkage-sim-rs/scripts/magcoupling_shipped.sh` instead. It defines the shipped
+cargo arguments once (`MAGCOUPLING_WEB_ARGS`, `MAGCOUPLING_NATIVE_ARGS`), and
+`magcoupling_assert_shipped` reads cargo's `--message-format=json` record of
+the units it compiled. It fails unless the shipped binary was compiled and no
+magcoupling-rs unit has the feature. `build_magcoupling_web.sh` pipes its
+release build through it, so the shipped path refuses such a bundle. Gate 10
+runs the guard on the native and wasm32 builds, plus a negative control that
+must trip.
 
 ## Tests
 
 ```bash
-cargo test                      # from magcoupling-rs/
+cargo test                      # from magcoupling-rs/: the engine
+cargo test --features app       # plus the panel and app tests (headless egui)
 bash linkage-sim-rs/scripts/gate.sh   # everything, both crates and the Python oracle
 ```
 
@@ -152,6 +207,9 @@ bash linkage-sim-rs/scripts/gate.sh   # everything, both crates and the Python o
 | `tests/robustness.rs` | Inputs no parity or differential case holds (the plan's Review Focus): a selector code outside its choices set directly on the struct (adhesive, screw class, and every selector at once with `validate()` naming each), a measured drag of exactly zero, every numeric input at 0, -1, a tenth of its minimum, ten times its maximum and 1e300, with the default back iron and with none, where E17's free-space field inputs act (`compute_all_never_panics_on_extreme_inputs`), NaN and infinities written straight into the struct, where `set` cannot refuse them, with the corrections off and on (`compute_all_never_panics_on_non_finite_struct_literals`; `validate()` names the path), a harmonic set outside its choices (NaN torques in the Calculator, the Calibration prototype and every sweep row, never another set, with the corrections off and on; `validate()` names it: `an_invalid_harmonic_set_is_nan_not_another_set`), a coercivity source outside its choices (any code but 1 uses the Hcj and beta inputs, and `validate()` names it: `an_invalid_coercivity_source_uses_the_inputs`), a positive beta typed in for magnets with no grade and no rating (no hot limit: C60 = +inf, C61 = NaN, the adhesive governs C12: `a_positive_beta_without_a_rating_has_no_hot_limit`), a positive beta typed into C45 with the coercivity source at 0 (E20's cold side; the slider stays the NdFeB range, decision A2-5), inverse sizing on designs no slider reaches (an outcome or an error for every free variable, never a panic: `sizing_never_panics_on_extreme_designs`), and a debug-build time bound per frame (`compute_all` plus `headline`). The engine must never panic. |
 | `tests/schema.rs` | Slider ranges, selectors, labels, unique well-formed paths and cells (a Rust-only result has none; an input is Rust-only exactly when it has no cell); each table column's label, unit and note equal the workbook headers (`table_columns_match_the_workbook_headers`; where a correction rewords a column's note, the recorded workbook text equals the note and the port's differs); exports `tests/data/input_schema.json`. |
 | `tests/deviations.rs` | Registry cells exist in the snapshot, entries are approved rows of the audit report, and one correction switched on changes exactly its registered cells (hand-listed, or in the correction's golden file under `tests/data/deviations/`); a correction that changes more than 15 cells uses a golden file and one that changes 15 or fewer lists them (`broad_corrections_use_golden_files_and_narrow_ones_list_their_cells`); each applied correction's figures match the report (`e1_adhesive_shear_modulus_matches_the_report`, `e2_clamp_screw_length_matches_the_report`, `e3_library_remanence_matches_the_report`), and help a correction rewords belongs to a real input and differs from the workbook's. A correction that changes nothing at defaults (E7 to E13, E15 to E20) carries registry probes, off-default inputs from the report whose cells are checked with the correction off and on (`each_probe_shows_its_correction`); `every_applied_engine_correction_is_visible_somewhere` requires every applied engine correction to show at defaults or in a probe. A probe's workbook value can be a workbook error (`Literal::Error`, e.g. `#DIV/0!` where Python raises): that side still runs but is not compared. E7, E8, E9, E10, E11, E12 and E13 must leave every default cell bit for bit (`e7_leaves_every_default_cell_bit_for_bit`, `e8_leaves_flat_blocks_bit_for_bit`, `e9_leaves_every_default_cell_bit_for_bit`, `e10_leaves_every_default_cell_bit_for_bit`, `e11_leaves_every_default_cell_bit_for_bit`, `e12_leaves_every_default_cell_bit_for_bit`, `e13_leaves_every_default_cell_bit_for_bit`). `e7_finds_the_peak_at_a_fill_of_exactly_0_4` pins E7 where the fifth harmonic vanishes (a ring at a fill of exactly 0.4). The Addendum A entries name every cell their probes change, downstream cells included (`addendum_entries_name_every_cell_their_probes_change`); E15 to E18 have rows in the Addendum A report and E19 and E20 cite decisions only (`e15_to_e18_have_audit_rows_and_e19_e20_decisions_only`); each reproduces the report: `e15_heat_capacity_matches_the_report`, `e16_removed_disc_matches_the_report`, `e17_aluminium_eddy_losses_match_the_report` and `e15_to_e17_together_match_the_reports_headline_table` (on top of E9, decision 15), `e18_aluminium_hub_mismatch_matches_the_report`, `e19_supermagnetman_arcs_follow_the_vendor_grid`, and for E20 `e20_each_part_uses_its_own_coercivity`, `e20_the_hcj_and_beta_inputs_override_the_grade_when_selected`, `e20_ferrite_is_limited_on_the_cold_side`, `e20_mixed_rings_use_the_weaker_grade` and `e20_ferrite_with_the_stored_ndfeb_fields_is_past_its_knee_at_room_temperature`; `e15_leaves_every_default_cell_bit_for_bit` to `e20_leaves_every_default_cell_bit_for_bit` pin that none moves a default cell. `all_corrections_together_give_the_reviewed_headline` pins what users see: the headline with every correction on at the default design. |
+| `src/gui/panel.rs` (feature `gui`) | Headless egui (`egui::Context::run` with injected input): an arrow key on the face-gap slider and a click on its rail update the headline in the same frame (drawn text equals `compute_all` of the edited inputs and differs from the default's); pole count steps by two and stays even; range ends stop arrow keys; idle frames change no input; an input outside its slider range is kept; "Reset all" restores the default design and headline; the panel draws inside an `egui::Window` (M5); each key input is a numeric input with a slider range; tooltips carry help, path and cell |
+| `src/gui/format.rs` (feature `gui`) | Four significant digits, scientific outside 1e-3 to 1e6, carries (9.99996 shows as 10.00), signed zero, `+inf`, `-inf`, `NaN`, integers, text, None, units |
+| `src/app.rs` (feature `app`) | The app draws the whole panel as a page; `web/magcoupling/index.html` has the canvas `CANVAS_ID` and the title `TITLE` |
 
 ### Regenerating test data
 

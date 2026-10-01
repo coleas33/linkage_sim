@@ -32,9 +32,9 @@ reference:
 
 magcoupling_rs:
   path: magcoupling-rs/ (repo root, sibling of linkage-sim-rs/; separate crate, NOT a workspace member)
-  role: Rust port of reference/magcoupling-py (spec docs/superpowers/specs/2026-09-28-magcoupling-calculator-design.md); M2 complete - every Python module except fields3d (M3) is ported, workbook parity covers all 1,149 checks, E1-E14 applied; Addendum A-1 (grades, materials, E15-E20) and A-2 (harmonic set, assumptions, inverse sizing, space claim) complete
+  role: Rust port of reference/magcoupling-py (spec docs/superpowers/specs/2026-09-28-magcoupling-calculator-design.md); M2 complete - every Python module except fields3d (M3) is ported, workbook parity covers all 1,149 checks, E1-E14 applied; Addendum A-1 (grades, materials, E15-E20) and A-2 (harmonic set, assumptions, inverse sizing, space claim) complete; M4 infrastructure adds the egui panel tracer, the standalone app binaries and the /magcoupling/ web bundle
   guide: magcoupling-rs/README.md (tests, regenerating data, porting a module, Python-to-Rust translation rules, applying deviations)
-  lib: magcoupling (src/lib.rs re-exports compute_all, headline, DesignInputs, DesignResults)
+  lib: magcoupling (src/lib.rs re-exports compute_all, headline, DesignInputs, DesignResults; mod gui behind feature gui, mod app behind feature app)
   engine: src/engine/ (pure std, wasm32-clean; one module per Python module)
   engine_files:
     meta: meta.rs (inputs!/results!/rows! macros, param/out and col/at_row/uncelled_col builders, slider range, assumption flag, Value, InputSet get/set/visit and ResultSet get/visit by dotted path (a table row's field as table[i].field), validate (the set() checks on a whole input struct); table rows via RowSet and TableLayout with synthesized cells, results! tables section)
@@ -59,10 +59,16 @@ magcoupling_rs:
     ported: [meta.rs, compat.rs, constants.rs, calibration.rs, library.rs, grades.rs, material_library.rs, warnings.rs, model.rs, metal_design.rs, materials.rs, temperature.rs, clamps.rs, sweeps.rs, api.rs]
     addendum_only: [assumptions.rs, sizing.rs, housing.rs]
     remaining: [fields3d (M3)]
-  features: gui and app (declared empty, M4); workbook-parity (test-only, enabled by a self dev-dependency)
+  features:
+    gui: "src/gui/ (egui 0.32 only, no eframe): panel.rs (MagcouplingPanel: inputs, results, fn ui(&mut self, ui: &mut egui::Ui) recomputing compute_all every frame after the inputs are drawn; KEY_INPUTS = face gap, pole count, axial length (manual inner length) as metadata-driven sliders, SliderClamping::Edits; Reset all; the HEADLINE numbers), format.rs (format_value: 4 significant digits, +inf/-inf/NaN; with_unit), test_support.rs (cfg(test) headless egui helpers: central_panel_frame, key_press, primary_button, drawn_texts, text_rect)"
+    app: "src/app.rs (MagcouplingApp, the panel as a full page; run_native shared by both bins; TITLE; CANVAS_ID = magcoupling_canvas); bins src/bin/magcoupling_app.rs (magcoupling-app, native) and src/bin/magcoupling_web.rs (magcoupling-web, wasm32 eframe WebRunner via wasm-bindgen start; native fallback = run_native), both required-features app"
+    workbook_parity: "test-only, enabled by a self dev-dependency; never in a shipped build (linkage-sim-rs/scripts/magcoupling_shipped.sh, gate 10)"
+    versions: "Cargo.toml caret ranges (egui 0.32, eframe 0.32, wasm-bindgen 0.2); Cargo.lock pins linkage-sim-rs/Cargo.lock's egui/eframe 0.32.3 and wasm-bindgen 0.2.114 (= the deploy-web.yml wasm-bindgen-cli pin); gate 11 checks"
+  web_bundle: "linkage-sim-rs/web/magcoupling/ (index.html committed, canvas magcoupling_canvas, absolute /magcoupling/ glue path; magcoupling-web.js and magcoupling-web_bg.wasm gitignored in web/.gitignore), built by linkage-sim-rs/scripts/build_magcoupling_web.sh (called by build_web.sh and by deploy-web.yml), served by serve_web.sh [PORT] at /magcoupling/; vercel.json revalidates /magcoupling/magcoupling-web.js"
+  shipped_builds: "linkage-sim-rs/scripts/magcoupling_shipped.sh (sourced by build_magcoupling_web.sh and gate.sh): MAGCOUPLING_WEB_ARGS, MAGCOUPLING_NATIVE_ARGS, magcoupling_assert_shipped (reads cargo --message-format=json; fails unless the shipped bin was compiled and no magcoupling-rs unit has workbook-parity)"
   tests: tests/ (the integration tests parity.rs, differential.rs, python_schema.rs, schema.rs, deviations.rs, static_data.rs, robustness.rs, grades.rs, material_library.rs, material_links.rs, assumptions.rs, sizing.rs; common/mod.rs holds the PORTED_INPUTS / PORTED_RESULTS ratchets)
   test_data: tests/data/ (reference_values.json = copy of the vendored snapshot; input_schema.json via MAGCOUPLING_BLESS=1 cargo test --test schema; python_schema.json, static_data.json, differential/<group>.json (10 result groups plus helpers.json) and differential/full.json via tools/gen_differential.py; deviations/E3.json, E4.json and E5.json, the golden files of the broad corrections, via MAGCOUPLING_BLESS=1 cargo test --test deviations each_deviation_alone_changes_exactly_its_registered_cells)
-  gate: linkage-sim-rs/scripts/gate.sh gates 4-7 (magcoupling-rs test, clippy -D warnings, wasm32 check; Python parity suite + gen_differential.py --check)
+  gate: "linkage-sim-rs/scripts/gate.sh gates 4-12: 4-6 the engine (test, clippy -D warnings, wasm32 check); 7 cargo test --features app (panel and app headless tests, bins built with workbook-parity unified); 8 clippy --all-targets --features app -D warnings; 9 wasm32 clippy -D warnings (gui lib, magcoupling-web); 10 workbook-parity guard (native and wasm32 shipped builds, negative control); 11 lock parity (egui, eframe, wasm-bindgen; deploy-web.yml CLI pin); 12 Python parity suite + gen_differential.py --check; --full adds 13, build_web.sh (both bundles)"
 
 modules:
   core:
@@ -176,6 +182,7 @@ entry_points:
   native_bin: src/bin/linkage_gui.rs (uses native feature)
   wasm_bin: src/bin/linkage_web.rs (WASM build)
   library: src/lib.rs
+  web_scripts: "scripts/build_web.sh (linkage bundle, then build_magcoupling_web.sh), scripts/build_magcoupling_web.sh (web/magcoupling/), scripts/serve_web.sh [PORT] (both bundles; default 8080), scripts/magcoupling_shipped.sh (sourced: shipped magcoupling-rs cargo args and the workbook-parity guard)"
 
 feature_flags:
   default: [native]

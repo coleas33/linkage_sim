@@ -29,7 +29,8 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             linkage-sim-rs/target/
-          key: wasm-cargo-${{ hashFiles('linkage-sim-rs/Cargo.lock') }}
+            magcoupling-rs/target/
+          key: wasm-cargo-${{ hashFiles('linkage-sim-rs/Cargo.lock', 'magcoupling-rs/Cargo.lock') }}
           restore-keys: wasm-cargo-
 
       - name: Install wasm-bindgen-cli
@@ -48,6 +49,13 @@ jobs:
             --out-dir web \
             --target web \
             --no-typescript
+
+      # The second bundle, the magnetic coupling calculator at /magcoupling/
+      # (web/magcoupling/). The script holds the build arguments and fails the
+      # job if cargo built it with the test-only workbook-parity feature.
+      - name: Build magcoupling WASM
+        working-directory: linkage-sim-rs
+        run: bash scripts/build_magcoupling_web.sh
 
       - name: Install Vercel CLI
         run: npm install -g vercel

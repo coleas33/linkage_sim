@@ -16,6 +16,9 @@
 //!
 //! Spec: `docs/superpowers/specs/2026-09-28-magcoupling-calculator-design.md`.
 //!
+//! Features: none by default (the engine, pure std); `gui` adds the egui panel
+//! `gui::MagcouplingPanel`; `app` adds the standalone app and its binaries.
+//!
 //! ```
 //! use magcoupling::{DesignInputs, compute_all, headline};
 //! let res = compute_all(&DesignInputs::default());
@@ -24,6 +27,10 @@
 //! assert_eq!(headline(&res)[0].0, "pullout_at_op_temp_Nm");
 //! ```
 
+#[cfg(feature = "app")]
+pub mod app;
 pub mod engine;
+#[cfg(feature = "gui")]
+pub mod gui;
 
 pub use engine::api::{DesignInputs, DesignResults, compute_all, headline};
