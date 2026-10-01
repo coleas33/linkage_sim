@@ -166,6 +166,26 @@ fn compute_all_never_panics_on_selector_codes_outside_the_choices() {
 }
 
 #[test]
+fn an_invalid_harmonic_set_is_nan_not_another_set() {
+    // A Rust-only selector set on the struct (bypassing set()): the Calculator, the
+    // Calibration prototype and every sweep row read NaN, never another harmonic set, with
+    // the corrections off and on; validate() names the path.
+    for dev in [Deviations::NONE, Deviations::ALL] {
+        let mut inputs = DesignInputs::defaults_with(dev);
+        inputs.coupling.max_harmonic = 4;
+        let res = compute_all_with(&inputs, dev);
+        assert!(res.model.pullout_Nm.is_nan() && res.metal.torque_hot_low_Nm.is_nan());
+        assert!(res.calibration.model_torque_Nm.is_nan());
+        assert!(res.gap_sweep.iter().all(|r| r.tau_Pa.is_nan()));
+        assert!(res.pole_sweep.iter().all(|r| r.pullout_op_Nm.is_nan()));
+        let errors = inputs.validate().expect_err("an invalid code");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].path, "coupling.max_harmonic");
+        assert_eq!(errors[0].kind, SetErrorKind::NotAChoice { code: 4 });
+    }
+}
+
+#[test]
 fn an_invalid_coercivity_source_uses_the_inputs() {
     // A Rust-only selector set on the struct (bypassing set()): any code but 1 means the Hcj
     // and beta inputs for both rings, as the catch-all else of a two-way IF (Global

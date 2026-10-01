@@ -154,6 +154,44 @@
       "unit": "-"
     },
     {
+      "assumption": true,
+      "cell": null,
+      "choices": [
+        [
+          1,
+          "1"
+        ],
+        [
+          3,
+          "1, 3"
+        ],
+        [
+          5,
+          "1, 3, 5 (workbook)"
+        ],
+        [
+          7,
+          "1, 3, 5, 7"
+        ],
+        [
+          9,
+          "1, 3, 5, 7, 9"
+        ],
+        [
+          11,
+          "1, 3, 5, 7, 9, 11"
+        ]
+      ],
+      "default": 5,
+      "help": "Addendum A3 assumption. The torque model sums the odd space harmonics 1, 3, ... up to this one: the pull-out, the two circuit sums (C95, C96), every sweep row and the Calibration prototype, so the measured correction compares like with like. Workbook: 1, 3, 5. The cells of harmonics 1, 3 and 5 keep their terms; a harmonic left out reads 0 shear stress, and harmonics 7 to 11 add the Rust-only tau7_Pa, tau9_Pa and tau11_Pa.",
+      "label": "Highest odd harmonic summed",
+      "path": "coupling.max_harmonic",
+      "range": null,
+      "rust_only": true,
+      "type": "i64",
+      "unit": "-"
+    },
+    {
       "assumption": false,
       "cell": "Calculator!C43",
       "choices": [],

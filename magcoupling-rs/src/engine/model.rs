@@ -8,8 +8,10 @@
 //! `corner_radius` (√(r_face² + (w/2)²)) and `br_factor` (1 + α (T − 20 °C)).
 //! `mass_estimate` (Calculator rows 110-115) is ported with `MassResults`.
 //!
-//! The harmonic set is the workbook's fixed 1, 3, 5 ([`HARMONICS`]); selecting
-//! more harmonics belongs to the Addendum A engine plan.
+//! The harmonic set is the Rust-only assumption `coupling.max_harmonic` (Addendum A3):
+//! the odd harmonics 1, 3, ... up to 11 ([`ODD_HARMONICS`], [`harmonic_count`]), the
+//! workbook's 1, 3, 5 ([`HARMONICS`]) by default. The Calculator, the sweeps and the
+//! Calibration prototype sum the same set.
 //!
 //! Deviations touching this sheet (see
 //! [`crate::engine::deviations::REGISTRY`]): applied are E3 (the N42SH
@@ -39,6 +41,47 @@ pub const HARMONICS: [u32; 3] = [1, 3, 5];
 /// The odd space harmonics the E7 peak search handles, 1 to 11 (Addendum A3: "selectable
 /// up to 11"); amplitude `a[i]` of [`peak_off_half_pitch`] belongs to `ODD_HARMONICS[i]`.
 pub const ODD_HARMONICS: [u32; 6] = [1, 3, 5, 7, 9, 11];
+
+/// The workbook's highest harmonic: the default of `coupling.max_harmonic`, the set [`HARMONICS`].
+pub const WORKBOOK_MAX_HARMONIC: i64 = 5;
+
+/// The choices of `coupling.max_harmonic` (Addendum A3): the highest odd harmonic summed.
+pub const MAX_HARMONIC_CHOICES: [(i64, &str); 6] = [
+    (1, "1"),
+    (3, "1, 3"),
+    (5, "1, 3, 5 (workbook)"),
+    (7, "1, 3, 5, 7"),
+    (9, "1, 3, 5, 7, 9"),
+    (11, "1, 3, 5, 7, 9, 11"),
+];
+
+/// How many harmonics of [`ODD_HARMONICS`] the model sums for a `max_harmonic` code (3 for
+/// the workbook's 5); `None` for a code outside [`MAX_HARMONIC_CHOICES`] (decision D3: every
+/// harmonic sum is then NaN, never another set).
+pub fn harmonic_count(max_harmonic: i64) -> Option<usize> {
+    MAX_HARMONIC_CHOICES
+        .iter()
+        .position(|&(code, _)| code == max_harmonic)
+        .map(|i| i + 1)
+}
+
+/// Σ `terms` of the harmonic set, a left fold from 0 as Python's `sum()`; NaN when the set
+/// is invalid (`count` is `None`, [`harmonic_count`]).
+pub(crate) fn harmonic_sum(count: Option<usize>, terms: impl Iterator<Item = f64>) -> f64 {
+    match count {
+        Some(_) => terms.fold(0.0, |acc, t| acc + t),
+        None => f64::NAN,
+    }
+}
+
+/// What the per-harmonic cell of `ODD_HARMONICS[i]` shows: `terms[i]` when the set sums
+/// that harmonic, 0 when the set leaves it out, NaN when the set is invalid.
+pub(crate) fn harmonic_slot(count: Option<usize>, terms: &[f64], i: usize) -> f64 {
+    match count {
+        Some(_) => terms.get(i).copied().unwrap_or(0.0),
+        None => f64::NAN,
+    }
+}
 
 /// Text of the maximum-temperature cells when the magnet is not a library part.
 pub const NOT_IN_LIBRARY: &str = "n/a";
@@ -109,6 +152,10 @@ inputs! {
             c_end: f64 = 0.15 => param("-", "End-effect coefficient",
                 "f_end = 1 − c_end · pole pitch / L.", "Calculator!C41")
                 .range(0.0, 0.5, 0.005)
+                .assumption(),
+            max_harmonic: i64 = WORKBOOK_MAX_HARMONIC => param_rust_only("-", "Highest odd harmonic summed",
+                "Addendum A3 assumption. The torque model sums the odd space harmonics 1, 3, ... up to this one: the pull-out, the two circuit sums (C95, C96), every sweep row and the Calibration prototype, so the measured correction compares like with like. Workbook: 1, 3, 5. The cells of harmonics 1, 3 and 5 keep their terms; a harmonic left out reads 0 shear stress, and harmonics 7 to 11 add the Rust-only tau7_Pa, tau9_Pa and tau11_Pa.")
+                .choices(&MAX_HARMONIC_CHOICES)
                 .assumption(),
             mu0: f64 = MU0 => param("T·m/A", "Vacuum permeability", "", "Calculator!C43")
                 .range(1.2566e-6, 1.2567e-6, 1e-11),
@@ -212,6 +259,12 @@ results! {
             s5_free: f64 => out("-", "Harmonic 5 geometry factor without back iron",
                 "", "Calculator!C87"),
             tau5_Pa: f64 => out("Pa", "Harmonic 5 shear stress", "", "Calculator!C88"),
+            tau7_Pa: f64 => out_rust_only("Pa", "Harmonic 7 shear stress",
+                "Addendum A3: summed when the highest harmonic (coupling.max_harmonic) is 7 or more; 0 otherwise."),
+            tau9_Pa: f64 => out_rust_only("Pa", "Harmonic 9 shear stress",
+                "Summed when the highest harmonic is 9 or more; 0 otherwise."),
+            tau11_Pa: f64 => out_rust_only("Pa", "Harmonic 11 shear stress",
+                "Summed when the highest harmonic is 11; 0 otherwise."),
             tau_Pa: f64 => out("Pa", "Total magnetic shear stress at pull-out",
                 "PM-PM couplings typically 100–250 kPa.", "Calculator!C89"),
             area_lever_m3: f64 => out("m³", "Gap area × lever arm (2π R_g² L)",
@@ -420,7 +473,9 @@ pub(crate) fn br_factor(alpha_br: f64, temp_C: f64) -> f64 {
     1.0 + alpha_br * (temp_C - 20.0)
 }
 
-/// Per-harmonic pull-out shear stress [Pa] and its parts, for HARMONICS.
+/// Per-harmonic pull-out shear stress [Pa] and its parts, for every harmonic of
+/// [`ODD_HARMONICS`] (Python: for `HARMONICS`); the model sums the first
+/// [`harmonic_count`] of them (Addendum A3).
 #[allow(clippy::too_many_arguments)] // Python signature
 pub fn shear_stress(
     br_i: f64,
@@ -434,8 +489,8 @@ pub fn shear_stress(
     g_mm: f64,
     backiron: i64,
     mu0: f64,
-) -> [Harmonic; 3] {
-    HARMONICS.map(|n| {
+) -> [Harmonic; 6] {
+    ODD_HARMONICS.map(|n| {
         let nf = f64::from(n);
         let k = nf * (npole as f64 / 2.0) / (r_g_mm / 1000.0);
         let bi = harmonic_amplitude(br_i, n, fill_i);
@@ -616,16 +671,17 @@ pub(crate) fn tau_at(a: f64, n: u32, x: f64) -> f64 {
 /// half a pitch is not the maximum ([`peak_angle`] on the amplitudes
 /// B_in,n·B_on,n/(2μ0)·S_n of the circuit `backiron` selects). Returns `h`
 /// unchanged, bit for bit, when E7 is off or half a pitch is the maximum.
-/// Shared by [`compute`] and the sweep rows.
+/// `h` is the harmonic set summed (Addendum A3). Shared by [`compute`] and the sweep rows.
 pub(crate) fn at_pull_out(
-    h: [Harmonic; 3],
+    h: &[Harmonic],
     backiron: i64,
     mu0: f64,
     dev: Deviations,
-) -> [Harmonic; 3] {
+) -> Vec<Harmonic> {
     let amplitude = |x: &Harmonic| x.bi * x.bo / (2.0 * mu0) * x.s(backiron);
-    let mut h_pull = h;
-    if let Some(x) = peak_angle(&h.map(|hn| amplitude(&hn)), dev) {
+    let mut h_pull = h.to_vec();
+    let amplitudes: Vec<f64> = h.iter().map(amplitude).collect();
+    if let Some(x) = peak_angle(&amplitudes, dev) {
         for hn in h_pull.iter_mut() {
             hn.tau = tau_at(amplitude(hn), hn.n, x);
         }
@@ -731,10 +787,14 @@ pub fn compute(
         ci.backiron,
         ci.mu0,
     );
+    // Addendum A3: the harmonics summed, 1, 3, ... up to coupling.max_harmonic.
+    let count = harmonic_count(ci.max_harmonic);
+    let used = &h[..count.unwrap_or(0)];
     // E7: every harmonic at the true pull-out angle when half a pitch is not the maximum.
-    // `h` (the half-pitch terms) stays for the per-circuit sums below.
-    let h_pull = at_pull_out(h, ci.backiron, ci.mu0, dev);
-    let tau = h_pull.iter().fold(0.0, |acc, x| acc + x.tau); // Python sum(): left fold from 0
+    // `used` (the half-pitch terms) stays for the per-circuit sums below.
+    let h_pull = at_pull_out(used, ci.backiron, ci.mu0, dev);
+    let taus: Vec<f64> = h_pull.iter().map(|x| x.tau).collect();
+    let tau = harmonic_sum(count, taus.iter().copied()); // Python sum(): left fold from 0
     let AL = 2.0 * PI * (R_g / 1000.0).powi(2) * (L / 1000.0);
     let T2D = tau * AL;
     let f_end = 1.0 - ci.c_end * tau_p / L;
@@ -743,15 +803,19 @@ pub fn compute(
     // sum(bi * bo * S * sin(n pi/2) for n) / (2 mu0) * ...: note S inside the product, /(2 mu0) after the sum
     // E7: each circuit at the maximum of its own torque-angle curve.
     let circuit = |s: fn(&Harmonic) -> f64| {
-        let coefficients = h.map(|x| x.bi * x.bo * s(&x));
+        let coefficients: Vec<f64> = used.iter().map(|x| x.bi * x.bo * s(x)).collect();
         match peak_angle(&coefficients, dev) {
-            Some(x) => h
-                .iter()
-                .zip(coefficients)
-                .fold(0.0, |acc, (hn, c)| acc + tau_at(c, hn.n, x)),
-            None => h.iter().fold(0.0, |acc, x| {
-                acc + x.bi * x.bo * s(x) * (f64::from(x.n) * PI / 2.0).sin()
-            }),
+            Some(x) => harmonic_sum(
+                count,
+                used.iter()
+                    .zip(&coefficients)
+                    .map(|(hn, &c)| tau_at(c, hn.n, x)),
+            ),
+            None => harmonic_sum(
+                count,
+                used.iter()
+                    .map(|x| x.bi * x.bo * s(x) * (f64::from(x.n) * PI / 2.0).sin()),
+            ),
         }
     };
     let T_iron = circuit(|x| x.s_iron) / (2.0 * ci.mu0) * AL * f_end * f_cal_original;
@@ -786,7 +850,8 @@ pub fn compute(
         };
         text.to_owned()
     };
-    let [h1, h3, h5] = h_pull;
+    let [h1, h3, h5, ..] = h;
+    let tau_n = |i: usize| harmonic_slot(count, &taus, i);
 
     ModelResults {
         inner_length_mm: mi.length_mm,
@@ -830,19 +895,22 @@ pub fn compute(
         b_o1: h1.bo,
         s1_iron: h1.s_iron,
         s1_free: h1.s_free,
-        tau1_Pa: h1.tau,
+        tau1_Pa: tau_n(0),
         k3: h3.k,
         b_i3: h3.bi,
         b_o3: h3.bo,
         s3_iron: h3.s_iron,
         s3_free: h3.s_free,
-        tau3_Pa: h3.tau,
+        tau3_Pa: tau_n(1),
         k5: h5.k,
         b_i5: h5.bi,
         b_o5: h5.bo,
         s5_iron: h5.s_iron,
         s5_free: h5.s_free,
-        tau5_Pa: h5.tau,
+        tau5_Pa: tau_n(2),
+        tau7_Pa: tau_n(3),
+        tau9_Pa: tau_n(4),
+        tau11_Pa: tau_n(5),
         tau_Pa: tau,
         area_lever_m3: AL,
         torque_2d_Nm: T2D,
@@ -1512,6 +1580,126 @@ mod tests {
         // Default design (10 poles, steel): half a pitch is the peak; E7 changes no bit.
         let ci = CouplingInputs::default();
         assert_eq!(at_with(&ci, 0.05, e7), at(&ci));
+    }
+
+    #[test]
+    fn harmonic_count_maps_each_choice_and_nothing_else() {
+        for (i, &(code, _)) in MAX_HARMONIC_CHOICES.iter().enumerate() {
+            assert_eq!(code, i64::from(ODD_HARMONICS[i]));
+            assert_eq!(harmonic_count(code), Some(i + 1), "{code}");
+        }
+        assert_eq!(harmonic_count(WORKBOOK_MAX_HARMONIC), Some(HARMONICS.len()));
+        assert_eq!(
+            CouplingInputs::default().max_harmonic,
+            WORKBOOK_MAX_HARMONIC
+        );
+        for code in [0, 2, 4, 6, 12, 13, -1, i64::MIN, i64::MAX] {
+            assert_eq!(harmonic_count(code), None, "{code}");
+        }
+    }
+
+    #[test]
+    fn the_harmonic_set_adds_or_drops_terms() {
+        // Addendum A3: the model sums 1, 3, ... up to the chosen harmonic. The terms of 1, 3
+        // and 5 (wave number, amplitudes, geometry factors) do not depend on the set; a left-out
+        // harmonic's shear stress reads 0, so the total is always the sum of the six cells.
+        let with = |max_harmonic| {
+            at(&CouplingInputs {
+                max_harmonic,
+                ..CouplingInputs::default()
+            })
+        };
+        let (one, workbook, eleven) = (with(1), with(5), with(11));
+        assert_eq!(workbook, at(&CouplingInputs::default()));
+        assert_eq!((one.tau3_Pa, one.tau5_Pa), (0.0, 0.0));
+        assert_eq!(one.tau_Pa, one.tau1_Pa);
+        assert_eq!(
+            (workbook.tau7_Pa, workbook.tau9_Pa, workbook.tau11_Pa),
+            (0.0, 0.0, 0.0)
+        );
+        for r in [&one, &eleven] {
+            assert_eq!(
+                (r.k3, r.b_i5, r.s5_iron, r.s1_free),
+                (
+                    workbook.k3,
+                    workbook.b_i5,
+                    workbook.s5_iron,
+                    workbook.s1_free
+                )
+            );
+        }
+        assert!(eleven.tau7_Pa != 0.0 && eleven.tau9_Pa != 0.0 && eleven.tau11_Pa != 0.0);
+        let cells = [
+            eleven.tau1_Pa,
+            eleven.tau3_Pa,
+            eleven.tau5_Pa,
+            eleven.tau7_Pa,
+            eleven.tau9_Pa,
+            eleven.tau11_Pa,
+        ];
+        assert_eq!(eleven.tau_Pa, cells.iter().fold(0.0, |acc, t| acc + t));
+        assert!(close(
+            eleven.pullout_Nm / workbook.pullout_Nm,
+            eleven.tau_Pa / workbook.tau_Pa
+        ));
+        // The steel circuit sum (C95) is the pull-out's circuit here (both factors 0.95).
+        for r in [&one, &workbook, &eleven] {
+            assert!(close(r.pullout_iron_Nm, r.pullout_Nm), "{}", r.tau_Pa);
+        }
+    }
+
+    #[test]
+    fn an_invalid_harmonic_set_gives_nan_not_another_set() {
+        // Decision D3: a code outside the choices, set on the struct, never selects another set.
+        let r = at(&CouplingInputs {
+            max_harmonic: 4,
+            ..CouplingInputs::default()
+        });
+        for (what, x) in [
+            ("tau", r.tau_Pa),
+            ("tau1", r.tau1_Pa),
+            ("tau5", r.tau5_Pa),
+            ("tau11", r.tau11_Pa),
+            ("pull-out", r.pullout_Nm),
+            ("steel circuit", r.pullout_iron_Nm),
+            ("free-space circuit", r.pullout_noiron_Nm),
+        ] {
+            assert!(x.is_nan(), "{what}: {x}");
+        }
+        assert!(r.k1.is_finite() && r.b_i1.is_finite() && r.s1_iron.is_finite());
+    }
+
+    #[test]
+    fn e7_finds_the_peak_of_an_eleven_harmonic_curve() {
+        // Decision 29 A through the model: 6 poles in free space (the layout of E7's probe),
+        // every harmonic up to 11. E7's pull-out is the maximum of the model's own curve built
+        // from the half-pitch terms (tau_n = a_n sin(n pi/2), so a_n = +-tau_n), and the
+        // free-space circuit sum (C96) finds the same peak.
+        let ci = CouplingInputs {
+            npole: 6,
+            backiron: 0,
+            max_harmonic: 11,
+            ..CouplingInputs::default()
+        };
+        let off = at(&ci);
+        let on = at_with(&ci, 0.05, Deviations::only(DeviationId::E7));
+        let half_pitch = [
+            off.tau1_Pa,
+            off.tau3_Pa,
+            off.tau5_Pa,
+            off.tau7_Pa,
+            off.tau9_Pa,
+            off.tau11_Pa,
+        ];
+        let a: Vec<f64> = half_pitch
+            .iter()
+            .enumerate()
+            .map(|(i, &t)| if i % 2 == 0 { t } else { -t })
+            .collect();
+        let peak = grid_maximum(&a, 20001);
+        assert!(on.tau_Pa > off.tau_Pa, "{} vs {}", on.tau_Pa, off.tau_Pa);
+        assert!(close(on.tau_Pa, peak), "{} vs {peak}", on.tau_Pa);
+        assert!(close(on.pullout_noiron_Nm, on.pullout_Nm));
     }
 
     #[test]

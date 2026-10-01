@@ -159,7 +159,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
     ti.slip_loss.sigma_316_S_m = parts.sleeve_liner.props.sigma_S_m;
     ti.thermal.c_316 = parts.sleeve_liner.props.cp_J_kgK;
     ti.thermal.c_aluminium = parts.cap.props.cp_J_kgK;
-    let cal = calibration::compute(cal_in, dev);
+    let cal = calibration::compute(cal_in, ci.max_harmonic, dev);
     let f_cal = model::select_calibration_factor(
         ci.backiron,
         ci.npole,
@@ -361,6 +361,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         gear_eff: ci.gear_efficiency,
         required_floor_Nm: m.required_floor_Nm,
         max_diameter_mm: md.max_diameter_mm,
+        max_harmonic: ci.max_harmonic,
     };
     let gap = sweeps::gap_sweep(&ctx, ci.npole, ci.inner_back_apothem_mm, f_cal, dev);
     let pole = sweeps::pole_sweep(
