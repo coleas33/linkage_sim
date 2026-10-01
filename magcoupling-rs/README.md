@@ -23,7 +23,11 @@ claim, one aluminium modulus, and each grade-mode ring's own alpha and density
 (decisions A2-1 to A2-9). M4 infrastructure in place: the `gui` and `app` features, a tracer panel
 (`gui::MagcouplingPanel`), the native and web binaries, and the second web
 bundle at `/magcoupling/` (see [Features and binaries](#features-and-binaries)).
-Next: Addendum A-3 (explanations), then the M4 GUI plans.
+Addendum A-3 (explanations) complete: the engine side of the equation
+explorer (`src/engine/explain/`: one evaluable markup per result, proven by the drift guard, over
+decision 31's paths, the geometry callouts and the terms they need to reach inputs), the A3
+traceability test over every assumption, and the 17 A4 teaching notes behind a physics-review gate.
+Next: the M4 GUI plans.
 
 The 1,149 checks are 330 result cells, 659 table cells (494 sweep cells and 165
 screw-table cells) and 160 default inputs. The corrections are listed under

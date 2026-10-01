@@ -5,6 +5,24 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-01 — Magcoupling Addendum A-3: explainability (A2, A3 traceability, A4)
+- `magcoupling-rs`: the engine side of the equation explorer (`src/engine/explain/`): one formula
+  markup per explained result that is both what the M4 panel typesets and what the drift guard
+  evaluates (no Rust closures); the registry (`Registry::build`, `equation_for`, `used_by`, the
+  dependency graph, term rows and A3 styles); 392 equations over decision 31's chains, the dashboard
+  and the geometry callouts (decision G1: 169 scope paths, every one drilling down to inputs).
+- The drift guard proves every record against the engine at the defaults and every differential
+  case under 16 augmentations (harmonic sets, back irons, grade mode, axial override, ferrite from
+  the inputs at two betas and unrated, the sleeve and cap picks, E17's free-space fields), every
+  `cases` arm taken and every value term of every record varied.
+- A3 traceability: soundness for every input, sensitivity for the 15 assumption inputs with five
+  cancellations listed; every assumption reaches and moves an explained result.
+- A4: 17 teaching notes drafted from the M1 derivations, physics-reviewed and signed off; the
+  start-here order; `note_for` shows reviewed notes only; the release gate is green.
+- Engine: Rust-only reads only (harmonics 7-11 parts, the amplitudes and E7 angles, each ring's E20
+  block, the materials in effect), plus decision G4's outer-ring block computed with E20 off;
+  parity, the differential data and every registry probe unchanged.
+
 ## 2026-09-30 — Magcoupling Addendum A-2: final review fix wave
 - E18's corrected_formula no longer quotes the library's 6061 at 68.3 GPa (decision A8): since A2-6 it is
   E18's 68.9 GPa. Text only; no number, probe or correction changes.

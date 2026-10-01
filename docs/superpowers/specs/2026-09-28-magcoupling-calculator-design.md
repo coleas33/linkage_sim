@@ -303,10 +303,12 @@ the M2 parity and differential tests are unchanged.
 
 - **Explanation layer.** Each explained result registers an equation record:
   target id, display symbol, a display formula in a small markup (fractions,
-  sub/superscripts, Σ, √), its term ids, unit, workbook cell, and an `eval`
-  closure over term values. The engine code stays as ported (parity), and
+  sub/superscripts, Σ, √), its term ids, unit and workbook cell. The formula
+  markup is itself what the drift guard evaluates over the term values; a
+  Rust closure only where the markup cannot state it, counted and reviewed
+  by hand (plan A-3: none). The engine code stays as ported (parity), and
   the explanation layer is separate.
-- **Drift guard (test).** For every equation record, `eval` over the engine's
+- **Drift guard (test).** For every equation record, its evaluation over the engine's
   term values must reproduce the engine's result (1e-9 relative) at defaults
   and at the M2 differential-test input sets. The equation shown is provably
   the one that produced the number.
@@ -432,8 +434,10 @@ the M2 parity and differential tests are unchanged.
 - **Equation drift guard:** runs over every equation record (A2).
 - **Assumptions:**
   - at defaults, results are bit-identical to workbook parity;
-  - changing each assumption changes every dependent result and no
-    independent one, using the equation registry's dependency graph.
+  - changing each assumption changes no result outside its dependents in the
+    equation registry's dependency graph, and every numeric result on its
+    active path at some design point, above rounding (algebraic
+    cancellations listed with their reasons).
 - **Materials:**
   - each warning rule fires exactly on its condition;
   - a non-ferromagnetic back iron switches the circuit factor.

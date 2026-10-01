@@ -67,6 +67,7 @@ major_subsystems:
       Addendum A-2 adds the harmonic set, the assumptions registry, inverse sizing and the space claim, with an axial housing that follows the length override.
       M4 infrastructure adds the egui panel (feature gui), the standalone app and its native and
       web binaries (feature app), and the second web bundle at /magcoupling/.
+      Addendum A-3 adds the equation explorer's engine side (evaluable equation records proven by a drift guard, the dependency graph, the A3 traceability test and the A4 teaching notes).
     key_files: [src/engine/meta.rs, src/engine/compat.rs, src/engine/deviations.rs, src/engine/api.rs, src/gui/panel.rs, src/app.rs]
     invariants:
       - With Deviations::NONE every celled result, table cell and default input equals the workbook snapshot (1,149 checks; 1e-9 relative, 1e-12 absolute, text exact).
@@ -83,6 +84,8 @@ major_subsystems:
       - "The engine stays pure std: egui and eframe are optional dependencies behind the gui and app features, and the no-feature wasm32 check (gate 6) proves it. egui, eframe and wasm-bindgen are locked at linkage-sim-rs's versions, and wasm-bindgen at deploy-web.yml's wasm-bindgen-cli pin (gate 11)."
       - "workbook-parity never reaches a shipped build. The shipped cargo arguments live once, in linkage-sim-rs/scripts/magcoupling_shipped.sh. build_magcoupling_web.sh and gate 10 read cargo's --message-format=json record of the compiled units, and they fail if a magcoupling-rs unit has the feature. Gate 10 also runs a negative control that must trip."
       - "The panel (gui::MagcouplingPanel) computes only through compute_all, with every correction on. It recomputes every frame after the inputs are drawn, so the readout shows the same frame's edits. Its sliders come from the input metadata and clamp edits only, so an idle frame never rewrites an input."
+      - "Every equation record (src/engine/explain/records/) reproduces the engine's result by the parity rule at the defaults and at every differential case under every augmentation, corrections on, every value term of every record taking two values there (the drift guard, tests/explain.rs); the registry refuses a formula that reads a path in two units or would typeset two ways; the formula shown is the one evaluated (no custom evals); a record reads its terms' engine values and never recomputes upstream; a value the engine computed but did not expose becomes a Rust-only result (a read); every path of the explorer's scope (169) drills down to inputs."
+      - "A3 traceability: nudging any input moves no explained result outside its dependency set (soundness; every input but the two no result reads changes some result at some design point), and each assumption moves every numeric result on its active path at some design point above rounding, with the algebraic cancellations listed with reasons (sensitivity)."
 
 dataflow_on_user_change: |
   user edit -> state.blueprint mutation -> state.push_undo() -> state.rebuild()
@@ -409,4 +412,4 @@ current_statuses:
   dxf_import: works native + WASM via drag-drop; selection-based conversions
   actuator_workflow: two-pass solve gives correct reactions with actuator loads
   non_grashof_sweep: NaN-padded across unreachable angles; playback ping-pongs
-  magcoupling: "M2 complete: engine ported except fields3d (M3); parity 1,149 checks; differential 10 group files + full run; E1-E14 applied. Addendum A-1 complete: grades, materials per part, warnings, E15-E20 applied. Addendum A-2 complete: harmonic set, assumptions registry, end-effect flag, inverse sizing, space claim. M4 infrastructure in place (gui panel tracer, app binaries, /magcoupling/ bundle, workbook-parity guard, gates 7-11); next: Addendum A-3 (explanations), then the M4 GUI plans"
+  magcoupling: "M2 complete: engine ported except fields3d (M3); parity 1,149 checks; differential 10 group files + full run; E1-E14 applied. Addendum A-1 complete: grades, materials per part, warnings, E15-E20 applied. Addendum A-2 complete: harmonic set, assumptions registry, end-effect flag, inverse sizing, space claim. M4 infrastructure in place (gui panel tracer, app binaries, /magcoupling/ bundle, workbook-parity guard, gates 7-11). Addendum A-3 complete: equation explorer engine side, A3 traceability, A4 notes; next: the M4 GUI plans"
