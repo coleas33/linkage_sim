@@ -155,7 +155,7 @@ fn row(
     // Addendum A3: the Calculator's harmonic set. E7: every harmonic at the true pull-out
     // angle when half a pitch is not the maximum (as the model).
     let count = harmonic_count(ctx.max_harmonic);
-    let h_pull = at_pull_out(&h[..count.unwrap_or(0)], ctx.backiron, ctx.mu0, dev);
+    let (h_pull, _) = at_pull_out(&h[..count.unwrap_or(0)], ctx.backiron, ctx.mu0, dev);
     let taus: Vec<f64> = h_pull.iter().map(|x| x.tau).collect();
     let U = harmonic_sum(count, taus.iter().copied());
     let V = U * 2.0 * PI * (H / 1000.0).powi(2) * (ctx.L / 1000.0);

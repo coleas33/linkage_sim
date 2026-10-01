@@ -291,6 +291,36 @@ results! {
                 "Summed when the highest harmonic is 9 or more; 0 otherwise."),
             tau11_Pa: f64 => out_rust_only("Pa", "Harmonic 11 shear stress",
                 "Summed when the highest harmonic is 11; 0 otherwise."),
+            k7: f64 => out_rust_only("1/m", "Harmonic 7 wave number",
+                "Plan A-3 (a term of the equation explorer): computed for every harmonic up to 11, summed or not, as k1 to k5 are."),
+            b_i7: f64 => out_rust_only("T", "Harmonic 7 inner amplitude", "As b_i1 to b_i5, for harmonic 7."),
+            b_o7: f64 => out_rust_only("T", "Harmonic 7 outer amplitude", "As b_o1 to b_o5, for harmonic 7."),
+            s7_iron: f64 => out_rust_only("-", "Harmonic 7 geometry factor with back iron", "As s1_iron to s5_iron, for harmonic 7."),
+            s7_free: f64 => out_rust_only("-", "Harmonic 7 geometry factor without back iron", "As s1_free to s5_free, for harmonic 7."),
+            k9: f64 => out_rust_only("1/m", "Harmonic 9 wave number",
+                "Plan A-3 (a term of the equation explorer): computed for every harmonic up to 11, summed or not, as k1 to k5 are."),
+            b_i9: f64 => out_rust_only("T", "Harmonic 9 inner amplitude", "As b_i1 to b_i5, for harmonic 9."),
+            b_o9: f64 => out_rust_only("T", "Harmonic 9 outer amplitude", "As b_o1 to b_o5, for harmonic 9."),
+            s9_iron: f64 => out_rust_only("-", "Harmonic 9 geometry factor with back iron", "As s1_iron to s5_iron, for harmonic 9."),
+            s9_free: f64 => out_rust_only("-", "Harmonic 9 geometry factor without back iron", "As s1_free to s5_free, for harmonic 9."),
+            k11: f64 => out_rust_only("1/m", "Harmonic 11 wave number",
+                "Plan A-3 (a term of the equation explorer): computed for every harmonic up to 11, summed or not, as k1 to k5 are."),
+            b_i11: f64 => out_rust_only("T", "Harmonic 11 inner amplitude", "As b_i1 to b_i5, for harmonic 11."),
+            b_o11: f64 => out_rust_only("T", "Harmonic 11 outer amplitude", "As b_o1 to b_o5, for harmonic 11."),
+            s11_iron: f64 => out_rust_only("-", "Harmonic 11 geometry factor with back iron", "As s1_iron to s5_iron, for harmonic 11."),
+            s11_free: f64 => out_rust_only("-", "Harmonic 11 geometry factor without back iron", "As s1_free to s5_free, for harmonic 11."),
+            amp1_Pa: f64 => out_rust_only("Pa", "Harmonic 1 torque-angle amplitude",
+                "Plan A-3 (a term of the equation explorer): B_i,1 B_o,1 S_1 / (2 μ0) in the circuit in effect, so harmonic 1's shear stress at electrical angle φ is this times sin(1φ); the E7 peak search reads these. Computed whether or not the harmonic is summed."),
+            amp3_Pa: f64 => out_rust_only("Pa", "Harmonic 3 torque-angle amplitude",
+                "Plan A-3 (a term of the equation explorer): B_i,3 B_o,3 S_3 / (2 μ0) in the circuit in effect, so harmonic 3's shear stress at electrical angle φ is this times sin(3φ); the E7 peak search reads these. Computed whether or not the harmonic is summed."),
+            amp5_Pa: f64 => out_rust_only("Pa", "Harmonic 5 torque-angle amplitude",
+                "Plan A-3 (a term of the equation explorer): B_i,5 B_o,5 S_5 / (2 μ0) in the circuit in effect, so harmonic 5's shear stress at electrical angle φ is this times sin(5φ); the E7 peak search reads these. Computed whether or not the harmonic is summed."),
+            amp7_Pa: f64 => out_rust_only("Pa", "Harmonic 7 torque-angle amplitude",
+                "Plan A-3 (a term of the equation explorer): B_i,7 B_o,7 S_7 / (2 μ0) in the circuit in effect, so harmonic 7's shear stress at electrical angle φ is this times sin(7φ); the E7 peak search reads these. Computed whether or not the harmonic is summed."),
+            amp9_Pa: f64 => out_rust_only("Pa", "Harmonic 9 torque-angle amplitude",
+                "Plan A-3 (a term of the equation explorer): B_i,9 B_o,9 S_9 / (2 μ0) in the circuit in effect, so harmonic 9's shear stress at electrical angle φ is this times sin(9φ); the E7 peak search reads these. Computed whether or not the harmonic is summed."),
+            amp11_Pa: f64 => out_rust_only("Pa", "Harmonic 11 torque-angle amplitude",
+                "Plan A-3 (a term of the equation explorer): B_i,11 B_o,11 S_11 / (2 μ0) in the circuit in effect, so harmonic 11's shear stress at electrical angle φ is this times sin(11φ); the E7 peak search reads these. Computed whether or not the harmonic is summed."),
             tau_Pa: f64 => out("Pa", "Total magnetic shear stress at pull-out",
                 "PM-PM couplings typically 100–250 kPa.", "Calculator!C89"),
             area_lever_m3: f64 => out("m³", "Gap area × lever arm (2π R_g² L)",
@@ -307,6 +337,12 @@ results! {
                 "", "Calculator!C95"),
             pullout_noiron_Nm: f64 => out("N·m", "Raw no-back-iron prediction, same layout",
                 "", "Calculator!C96"),
+            pullout_angle_rad: f64 => out_rust_only("rad", "Pull-out electrical angle",
+                "E7 (plan A-3: a term of the equation explorer): the electrical angle θ at which the torque-angle curve Σ τ_n sin(nθ) of the harmonics summed peaks; π/2 (half a pole pitch, the workbook's assumption) when that is the maximum. Every τ_n is taken at it."),
+            iron_circuit_angle_rad: f64 => out_rust_only("rad", "Pull-out electrical angle, steel circuit (C95)",
+                "E7: as pullout_angle_rad, for the steel-backed circuit sum of C95."),
+            free_circuit_angle_rad: f64 => out_rust_only("rad", "Pull-out electrical angle, free-space circuit (C96)",
+                "E7: as pullout_angle_rad, for the no-back-iron circuit sum of C96."),
             ripple_freq_Hz: f64 => out("Hz", "Torque ripple frequency at the design slip speed",
                 "", "Calculator!C97"),
             gearbox_input_ripple_Nm: f64 => out("N·m", "Estimated gearbox input torque ripple amplitude",
@@ -544,6 +580,13 @@ impl Harmonic {
             self.s_free
         }
     }
+
+    /// The torque-angle amplitude [Pa] in the circuit `backiron` selects, B_in B_on S_n / (2 μ0):
+    /// the harmonic's shear stress at electrical angle x is this times sin(n x) (E7). The one
+    /// expression for `shear_stress`, `at_pull_out` and the `amp*_Pa` results.
+    pub fn amplitude(&self, backiron: i64, mu0: f64) -> f64 {
+        self.bi * self.bo / (2.0 * mu0) * self.s(backiron)
+    }
 }
 
 /// S_n: sinh ratio for a steel-backed circuit, exponential form for free-space rings.
@@ -623,7 +666,7 @@ pub fn shear_stress(
             s_free,
             tau: 0.0,
         };
-        hn.tau = bi * bo / (2.0 * mu0) * hn.s(backiron) * (nf * PI / 2.0).sin();
+        hn.tau = hn.amplitude(backiron, mu0) * (nf * PI / 2.0).sin();
         hn
     })
 }
@@ -787,24 +830,31 @@ pub(crate) fn tau_at(a: f64, n: u32, x: f64) -> f64 {
 /// E7 for one circuit: every harmonic's `tau` at the true pull-out angle when
 /// half a pitch is not the maximum ([`peak_angle`] on the amplitudes
 /// B_in,n·B_on,n/(2μ0)·S_n of the circuit `backiron` selects). Returns `h`
-/// unchanged, bit for bit, when E7 is off or half a pitch is the maximum.
-/// `h` is the harmonic set summed (Addendum A3). Shared by [`compute`] and the sweep rows.
+/// unchanged, bit for bit, when E7 is off or half a pitch is the maximum, with the angle
+/// [`peak_angle`] found (`None`: half a pitch). `h` is the harmonic set summed (Addendum A3).
+/// Shared by [`compute`] and the sweep rows.
 pub(crate) fn at_pull_out(
     h: &[Harmonic],
     backiron: i64,
     mu0: f64,
     dev: Deviations,
-) -> Vec<Harmonic> {
-    let amplitude = |x: &Harmonic| x.bi * x.bo / (2.0 * mu0) * x.s(backiron);
+) -> (Vec<Harmonic>, Option<f64>) {
+    let amplitude = |x: &Harmonic| x.amplitude(backiron, mu0);
     let mut h_pull = h.to_vec();
     let amplitudes: Vec<f64> = h.iter().map(amplitude).collect();
-    if let Some(x) = peak_angle(&amplitudes, dev) {
+    let peak = peak_angle(&amplitudes, dev);
+    if let Some(x) = peak {
         for hn in h_pull.iter_mut() {
             hn.tau = tau_at(amplitude(hn), hn.n, x);
         }
     }
-    h_pull
+    (h_pull, peak)
 }
+
+/// Half a pole pitch as an electrical angle, π/2: where the workbook evaluates every
+/// harmonic, and what the angle results (`pullout_angle_rad`, the circuit angles and the
+/// Calibration's) read when [`peak_angle`] keeps it (returns `None`).
+pub const HALF_PITCH_RAD: f64 = PI / 2.0;
 
 /// Calculator sheet. Linked values come from Metal design, Calibration and Materials (see `api`).
 #[allow(non_snake_case, clippy::too_many_arguments)] // Python names and signature
@@ -905,7 +955,7 @@ pub fn compute(
     let used = &h[..count.unwrap_or(0)];
     // E7: every harmonic at the true pull-out angle when half a pitch is not the maximum.
     // `used` (the half-pitch terms) stays for the per-circuit sums below.
-    let h_pull = at_pull_out(used, ci.backiron, ci.mu0, dev);
+    let (h_pull, pull_peak) = at_pull_out(used, ci.backiron, ci.mu0, dev);
     let taus: Vec<f64> = h_pull.iter().map(|x| x.tau).collect();
     let tau = harmonic_sum(count, taus.iter().copied()); // Python sum(): left fold from 0
     let AL = 2.0 * PI * (R_g / 1000.0).powi(2) * (L / 1000.0);
@@ -915,9 +965,11 @@ pub fn compute(
     let T_pull20 = T_pull * (mi.br_T * mo.br_T) / (bri * bro);
     // sum(bi * bo * S * sin(n pi/2) for n) / (2 mu0) * ...: note S inside the product, /(2 mu0) after the sum
     // E7: each circuit at the maximum of its own torque-angle curve.
+    // Each gives the sum and the E7 angle it is taken at (`None`: half a pitch).
     let circuit = |s: fn(&Harmonic) -> f64| {
         let coefficients: Vec<f64> = used.iter().map(|x| x.bi * x.bo * s(x)).collect();
-        match peak_angle(&coefficients, dev) {
+        let peak = peak_angle(&coefficients, dev);
+        let sum = match peak {
             Some(x) => harmonic_sum(
                 count,
                 used.iter()
@@ -929,10 +981,13 @@ pub fn compute(
                 used.iter()
                     .map(|x| x.bi * x.bo * s(x) * (f64::from(x.n) * PI / 2.0).sin()),
             ),
-        }
+        };
+        (sum, peak)
     };
-    let T_iron = circuit(|x| x.s_iron) / (2.0 * ci.mu0) * AL * f_end * f_cal_original;
-    let T_noiron = circuit(|x| x.s_free) / (2.0 * ci.mu0) * AL * f_end * f_cal;
+    let (iron_sum, iron_peak) = circuit(|x| x.s_iron);
+    let (free_sum, free_peak) = circuit(|x| x.s_free);
+    let T_iron = iron_sum / (2.0 * ci.mu0) * AL * f_end * f_cal_original;
+    let T_noiron = free_sum / (2.0 * ci.mu0) * AL * f_end * f_cal;
 
     let floor_ = py_max(ci.drive_torque_Nm * ci.drive_safety_factor, required_min_Nm);
     // E10: in the series circuit each magnet contributes its own MMF (Br·t), not the mean Br.
@@ -963,7 +1018,7 @@ pub fn compute(
         };
         text.to_owned()
     };
-    let [h1, h3, h5, ..] = h;
+    let [h1, h3, h5, h7, h9, h11] = h;
     let tau_n = |i: usize| harmonic_slot(count, &taus, i);
 
     ModelResults {
@@ -1024,6 +1079,27 @@ pub fn compute(
         tau7_Pa: tau_n(3),
         tau9_Pa: tau_n(4),
         tau11_Pa: tau_n(5),
+        k7: h7.k,
+        b_i7: h7.bi,
+        b_o7: h7.bo,
+        s7_iron: h7.s_iron,
+        s7_free: h7.s_free,
+        k9: h9.k,
+        b_i9: h9.bi,
+        b_o9: h9.bo,
+        s9_iron: h9.s_iron,
+        s9_free: h9.s_free,
+        k11: h11.k,
+        b_i11: h11.bi,
+        b_o11: h11.bo,
+        s11_iron: h11.s_iron,
+        s11_free: h11.s_free,
+        amp1_Pa: h[0].amplitude(ci.backiron, ci.mu0),
+        amp3_Pa: h[1].amplitude(ci.backiron, ci.mu0),
+        amp5_Pa: h[2].amplitude(ci.backiron, ci.mu0),
+        amp7_Pa: h[3].amplitude(ci.backiron, ci.mu0),
+        amp9_Pa: h[4].amplitude(ci.backiron, ci.mu0),
+        amp11_Pa: h[5].amplitude(ci.backiron, ci.mu0),
         tau_Pa: tau,
         area_lever_m3: AL,
         torque_2d_Nm: T2D,
@@ -1033,6 +1109,9 @@ pub fn compute(
         pullout_20C_Nm: T_pull20,
         pullout_iron_Nm: T_iron,
         pullout_noiron_Nm: T_noiron,
+        pullout_angle_rad: pull_peak.unwrap_or(HALF_PITCH_RAD),
+        iron_circuit_angle_rad: iron_peak.unwrap_or(HALF_PITCH_RAD),
+        free_circuit_angle_rad: free_peak.unwrap_or(HALF_PITCH_RAD),
         ripple_freq_Hz: N / 2.0 * slip_rpm / 60.0,
         gearbox_input_ripple_Nm: T_pull / (ci.gear_ratio * ci.gear_efficiency),
         gearbox_reference_Nm: ci.gearbox_input_rating_Nm * ci.gear_ratio * ci.gear_efficiency,
@@ -2202,5 +2281,69 @@ mod tests {
         assert!(on.gap_flux_density_T > off.gap_flux_density_T);
         let (off, on) = case(1.44, 1.59, 1.32, 3.17);
         assert!(on.gap_flux_density_T < off.gap_flux_density_T);
+    }
+
+    #[test]
+    fn the_explorer_terms_are_the_engine_s_own_values() {
+        // Plan A-3: the Rust-only terms of the equation explorer are reads of what the engine
+        // computes. Every harmonic up to 11 has its parts whether or not it is summed; each
+        // amplitude is B_i B_o S / (2 mu0) in the circuit in effect (steel here); each summed
+        // shear stress is its amplitude at the pull-out angle; the angles are pi/2 or inside
+        // [0, pi/2]; the prototype's terms obey the same law at its own angle.
+        use crate::engine::api::{DesignInputs, compute_all};
+        use crate::engine::meta::{InputSet, Value};
+        let close = |a: f64, b: f64| (a - b).abs() <= 1e-12 * a.abs().max(b.abs());
+        for code in [5, 11] {
+            let mut inputs = DesignInputs::default();
+            inputs
+                .set("coupling.max_harmonic", Value::Int(code))
+                .unwrap();
+            let res = compute_all(&inputs);
+            let r = &res.model;
+            let parts = [
+                (1, r.b_i1, r.b_o1, r.s1_iron, r.amp1_Pa, r.tau1_Pa),
+                (3, r.b_i3, r.b_o3, r.s3_iron, r.amp3_Pa, r.tau3_Pa),
+                (5, r.b_i5, r.b_o5, r.s5_iron, r.amp5_Pa, r.tau5_Pa),
+                (7, r.b_i7, r.b_o7, r.s7_iron, r.amp7_Pa, r.tau7_Pa),
+                (9, r.b_i9, r.b_o9, r.s9_iron, r.amp9_Pa, r.tau9_Pa),
+                (11, r.b_i11, r.b_o11, r.s11_iron, r.amp11_Pa, r.tau11_Pa),
+            ];
+            for (n, bi, bo, s, amp, tau) in parts {
+                assert!(
+                    bi != 0.0 && s != 0.0,
+                    "harmonic {n}'s parts exist (code {code})"
+                );
+                assert!(
+                    close(amp, bi * bo * s / (2.0 * MU0)),
+                    "harmonic {n}: amplitude (code {code})"
+                );
+                let want = if i64::from(n) <= code {
+                    amp * (f64::from(n) * r.pullout_angle_rad).sin()
+                } else {
+                    0.0
+                };
+                assert!(close(tau, want), "harmonic {n}: shear stress (code {code})");
+            }
+            for angle in [
+                r.pullout_angle_rad,
+                r.iron_circuit_angle_rad,
+                r.free_circuit_angle_rad,
+            ] {
+                assert!((0.0..=HALF_PITCH_RAD).contains(&angle), "{angle}");
+            }
+            let c = &res.calibration;
+            for (n, amp, tau) in [
+                (1, c.amp1_Pa, c.tau1_Pa),
+                (3, c.amp3_Pa, c.tau3_Pa),
+                (11, c.amp11_Pa, c.tau11_Pa),
+            ] {
+                let want = if i64::from(n) <= code {
+                    amp * (f64::from(n) * c.pullout_angle_rad).sin()
+                } else {
+                    0.0
+                };
+                assert!(close(tau, want), "prototype harmonic {n} (code {code})");
+            }
+        }
     }
 }

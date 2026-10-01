@@ -29,8 +29,8 @@ use super::constants::MU0;
 use super::deviations::Deviations;
 use super::meta::{NumOrText, inputs, out, out_rust_only, param, results};
 use super::model::{
-    ODD_HARMONICS, br_factor, corner_radius, end_effect_check, harmonic_count, harmonic_slot,
-    harmonic_sum, peak_angle, tau_at,
+    HALF_PITCH_RAD, ODD_HARMONICS, br_factor, corner_radius, end_effect_check, harmonic_count,
+    harmonic_slot, harmonic_sum, peak_angle, tau_at,
 };
 
 inputs! {
@@ -118,6 +118,20 @@ results! {
                 "Summed when the highest harmonic is 9 or more; 0 otherwise."),
             tau11_Pa: f64 => out_rust_only("Pa", "Shear stress, harmonic 11",
                 "Summed when the highest harmonic is 11; 0 otherwise."),
+            amp1_Pa: f64 => out_rust_only("Pa", "Harmonic 1 torque-angle amplitude",
+                "Plan A-3 (a term of the equation explorer): the prototype's harmonic 1 shear stress at electrical angle φ is this times sin(1φ); the E7 peak search reads these. Computed whether or not the harmonic is summed."),
+            amp3_Pa: f64 => out_rust_only("Pa", "Harmonic 3 torque-angle amplitude",
+                "Plan A-3 (a term of the equation explorer): the prototype's harmonic 3 shear stress at electrical angle φ is this times sin(3φ); the E7 peak search reads these. Computed whether or not the harmonic is summed."),
+            amp5_Pa: f64 => out_rust_only("Pa", "Harmonic 5 torque-angle amplitude",
+                "Plan A-3 (a term of the equation explorer): the prototype's harmonic 5 shear stress at electrical angle φ is this times sin(5φ); the E7 peak search reads these. Computed whether or not the harmonic is summed."),
+            amp7_Pa: f64 => out_rust_only("Pa", "Harmonic 7 torque-angle amplitude",
+                "Plan A-3 (a term of the equation explorer): the prototype's harmonic 7 shear stress at electrical angle φ is this times sin(7φ); the E7 peak search reads these. Computed whether or not the harmonic is summed."),
+            amp9_Pa: f64 => out_rust_only("Pa", "Harmonic 9 torque-angle amplitude",
+                "Plan A-3 (a term of the equation explorer): the prototype's harmonic 9 shear stress at electrical angle φ is this times sin(9φ); the E7 peak search reads these. Computed whether or not the harmonic is summed."),
+            amp11_Pa: f64 => out_rust_only("Pa", "Harmonic 11 torque-angle amplitude",
+                "Plan A-3 (a term of the equation explorer): the prototype's harmonic 11 shear stress at electrical angle φ is this times sin(11φ); the E7 peak search reads these. Computed whether or not the harmonic is summed."),
+            pullout_angle_rad: f64 => out_rust_only("rad", "Pull-out electrical angle",
+                "E7 (plan A-3: a term of the equation explorer): the electrical angle θ at which the prototype's torque-angle curve Σ τ_n sin(nθ) peaks; π/2 (half a pole pitch) when that is the maximum."),
             torque_2d_Nm: f64 => out("N·m", "2D torque before end and calibration factors", "", "Calibration!C43"),
             original_model_Nm: f64 => out("N·m", "Original model pull-out torque",
                 "Same value as model_torque_Nm.", "Calibration!C44"),
@@ -238,6 +252,13 @@ pub fn compute(c: &CalibrationInputs, max_harmonic: i64, dev: Deviations) -> Cal
         tau7_Pa: t(3),
         tau9_Pa: t(4),
         tau11_Pa: t(5),
+        amp1_Pa: amp_n(1),
+        amp3_Pa: amp_n(3),
+        amp5_Pa: amp_n(5),
+        amp7_Pa: amp_n(7),
+        amp9_Pa: amp_n(9),
+        amp11_Pa: amp_n(11),
+        pullout_angle_rad: peak.unwrap_or(HALF_PITCH_RAD),
         torque_2d_Nm: t2d,
         original_model_Nm: model,
         fea_interp_Nm: interp,
