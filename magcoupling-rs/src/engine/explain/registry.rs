@@ -14,6 +14,7 @@ use super::records;
 use super::symbols::SYMBOLS;
 use super::tables;
 use crate::engine::api::{DesignInputs, DesignResults, compute_all};
+use crate::engine::assumptions::{self, Assumption};
 use crate::engine::deviations::DeviationId;
 use crate::engine::meta::{
     InputMeta, InputSet, ResultMeta, ResultSet, Value, input_rows, result_rows,
@@ -28,6 +29,10 @@ pub const CONVERSIONS: &[(&str, &str, f64)] = &[
     ("GPa", "Pa", 1e9),
     ("g", "kg", 1e-3),
 ];
+
+/// Results that hold a selector code, each with the input whose choices label it (the panel
+/// shows `materials.circuit_backiron = 1` as "steel circuit"): [`Registry::choices`].
+pub const RESULT_CHOICES: &[(&str, &str)] = &[("materials.circuit_backiron", "coupling.backiron")];
 
 /// The factor that converts a value in `from` to `to`.
 pub fn conversion(from: &str, to: &str) -> Option<f64> {
@@ -115,6 +120,16 @@ pub enum TermKind {
     CellOnly,
 }
 
+/// How the explorer styles a term for the current inputs (Addendum A3 traceability).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TermStyle {
+    pub kind: TermKind,
+    /// An input that differs from its default (the changed-from-default dot).
+    pub changed_from_default: bool,
+    /// A result some modified assumption flows into (by the dependency graph).
+    pub affected_by_modified_assumption: bool,
+}
+
 /// The registry.
 pub struct Registry {
     equations: Vec<Equation>,
@@ -124,6 +139,8 @@ pub struct Registry {
     family_symbols: BTreeMap<String, String>,
     inputs: BTreeMap<String, &'static InputMeta>,
     results: BTreeMap<String, &'static ResultMeta>,
+    upstream_inputs: BTreeMap<String, BTreeSet<String>>,
+    defaults: DesignInputs,
 }
 
 impl Registry {
@@ -169,6 +186,15 @@ impl Registry {
         let results: BTreeMap<String, &'static ResultMeta> =
             result_rows.into_iter().map(|r| (r.path, r.meta)).collect();
         let mut errors = Vec::new();
+        for &(result, input) in RESULT_CHOICES {
+            if !results.contains_key(result)
+                || inputs.get(input).is_none_or(|m| m.choices.is_empty())
+            {
+                errors.push(format!(
+                    "RESULT_CHOICES: {result} must be a result and {input} a selector input"
+                ));
+            }
+        }
 
         // Expand the families into one record per index.
         let mut authored: Vec<(Record, Option<u32>)> = plain.iter().map(|r| (*r, None)).collect();
@@ -384,13 +410,20 @@ impl Registry {
             .iter()
             .map(|e| (e.target.as_str(), e.terms.as_slice()))
             .collect();
+        let mut upstream_inputs = BTreeMap::new();
         for eq in &equations {
-            if closure(&graph, &eq.target).1 {
+            let (seen, cycle) = closure(&graph, &eq.target);
+            if cycle {
                 errors.push(format!(
                     "{}: its terms lead back to it (a cycle)",
                     eq.target
                 ));
             }
+            let leaves: BTreeSet<String> = seen
+                .into_iter()
+                .filter(|p| inputs.contains_key(p))
+                .collect();
+            upstream_inputs.insert(eq.target.clone(), leaves);
         }
 
         if errors.is_empty() {
@@ -402,6 +435,8 @@ impl Registry {
                 family_symbols,
                 inputs,
                 results,
+                upstream_inputs,
+                defaults,
             })
         } else {
             Err(errors)
@@ -449,6 +484,39 @@ impl Registry {
         self.symbols.get(path).map(String::as_str)
     }
 
+    /// The choice labels of the selector code at `path`: an input's own, or for a result that
+    /// holds a code ([`RESULT_CHOICES`]) its input's; empty for any other path.
+    pub fn choices(&self, path: &str) -> &'static [(i64, &'static str)] {
+        let input = RESULT_CHOICES
+            .iter()
+            .find(|&&(result, _)| result == path)
+            .map_or(path, |&(_, input)| input);
+        self.inputs.get(input).map_or(&[], |m| m.choices)
+    }
+
+    /// The corrections a result embodies: its own record's, then those of every explained
+    /// result upstream of it (in path order), each once. The M4 "corrected vs workbook" marker
+    /// reads this: a correction acts where it is applied (E7 in the pull-out angle) and flows
+    /// into everything downstream, so `model.pullout_Nm`, whose record names none, shows E7.
+    /// Empty for an input or a cell-only result.
+    pub fn corrections_upstream(&self, path: &str) -> Vec<DeviationId> {
+        let Some(eq) = self.equation_for(path) else {
+            return Vec::new();
+        };
+        let upstream = self.upstream(path);
+        let mut out: Vec<DeviationId> = Vec::new();
+        let theirs = upstream
+            .iter()
+            .filter_map(|p| self.equation_for(p))
+            .flat_map(|e| e.corrections.iter());
+        for c in eq.corrections.iter().chain(theirs) {
+            if !out.contains(c) {
+                out.push(*c);
+            }
+        }
+        out
+    }
+
     /// The generic symbol of a family term inside a Σ (`model.b_i#` gives `B_{i,n}`).
     pub fn family_symbol(&self, template: &str) -> Option<String> {
         self.family_symbols
@@ -481,6 +549,25 @@ impl Registry {
     pub fn upstream(&self, path: &str) -> BTreeSet<String> {
         let graph: BTreeMap<&str, &[String]> = self.graph().collect();
         closure(&graph, path).0
+    }
+
+    /// The inputs `path` depends on, transitively (precomputed).
+    pub fn upstream_inputs(&self, path: &str) -> Option<&BTreeSet<String>> {
+        self.upstream_inputs.get(path)
+    }
+
+    /// Every explained result that depends on `path`, transitively.
+    pub fn downstream(&self, path: &str) -> BTreeSet<String> {
+        let mut seen = BTreeSet::new();
+        let mut stack = vec![path.to_owned()];
+        while let Some(p) = stack.pop() {
+            for user in self.used_by(&p) {
+                if seen.insert(user.clone()) {
+                    stack.push(user.clone());
+                }
+            }
+        }
+        seen
     }
 
     /// The value of every term of `eq`, in `eq.terms` order, in each term's own unit.
@@ -553,6 +640,43 @@ impl Registry {
                 Ok(v)
             }
         }
+    }
+
+    /// How to style `path` for `inputs` (A3: assumption terms, the changed-from-default dot,
+    /// results a modified assumption flows into). It styles the panel's terms (inputs and
+    /// explained results): the registry knows no dependencies of a cell-only result, so one is
+    /// never marked affected.
+    pub fn term_style(&self, path: &str, inputs: &DesignInputs) -> Option<TermStyle> {
+        let kind = self.term_kind(path)?;
+        let changed_from_default = match kind {
+            TermKind::Input { .. } => inputs.get(path) != self.defaults.get(path),
+            _ => false,
+        };
+        let affected_by_modified_assumption =
+            !self.modified_assumptions_upstream(path, inputs).is_empty();
+        Some(TermStyle {
+            kind,
+            changed_from_default,
+            affected_by_modified_assumption,
+        })
+    }
+
+    /// The modified assumptions (A3 rows) that flow into `path`: the tooltip's
+    /// "depends on modified assumptions" list. An assumption input itself counts.
+    pub fn modified_assumptions_upstream(
+        &self,
+        path: &str,
+        inputs: &DesignInputs,
+    ) -> Vec<&'static Assumption> {
+        let upstream = self.upstream_inputs.get(path);
+        assumptions::modified(inputs)
+            .into_iter()
+            .filter(|a| {
+                a.paths
+                    .iter()
+                    .any(|p| *p == path || upstream.is_some_and(|u| u.contains(*p)))
+            })
+            .collect()
     }
 }
 

@@ -1,5 +1,5 @@
-//! Addendum A2 explanation layer: the drift guard, the registry's structure and the v1
-//! scope.
+//! Addendum A2/A3 explanation layer: the drift guard, the registry's structure, the v1
+//! scope and the A3 traceability test.
 //!
 //! **Drift guard.** Every equation record is evaluated over the engine's own term values and
 //! must reproduce the engine's result by the parity rule (1e-9 relative, 1e-12 absolute;
@@ -11,6 +11,11 @@
 //! 0 with 0. Anti-vacuity checks require every `cases` arm of every record to be taken, every
 //! numeric record and every value term of every record to take two values, and the E7
 //! angles to leave half a pitch.
+//!
+//! **Traceability (A3).** For each input (the assumptions first, as the spec asks, then every
+//! input), at several design points: nudging it changes no explained result outside its
+//! static dependency set (the registry's graph), and changes every numeric result on its
+//! active dependency path (the branch taken, the min/max winner; see `eval::Trace`).
 
 mod common;
 
@@ -18,14 +23,19 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::f64::consts::FRAC_PI_2;
 
 use common::{differential_files, load_cases, report};
-use magcoupling::engine::api::{DesignInputs, compute_all};
+use magcoupling::engine::api::{DesignInputs, DesignResults, compute_all};
+use magcoupling::engine::assumptions::{self, ASSUMPTIONS};
 use magcoupling::engine::compat::parity_close;
+use magcoupling::engine::deviations::DeviationId;
 use magcoupling::engine::explain::markup::{Expr, Symbol};
 use magcoupling::engine::explain::record::Eval;
 use magcoupling::engine::explain::registry::{Design, Registry, TermKind};
 use magcoupling::engine::explain::scope::{SCOPE, Status};
 use magcoupling::engine::explain::{TermSource, Trace, render};
-use magcoupling::engine::meta::{InputSet, ResultSet, Value, input_rows, result_rows};
+use magcoupling::engine::library;
+use magcoupling::engine::meta::{
+    FieldType, InputMeta, InputSet, ResultSet, Value, input_rows, result_rows,
+};
 
 /// One input set the guard evaluates at.
 struct Point {
@@ -519,5 +529,503 @@ fn explained_chains_have_every_record_and_scope_paths_exist() {
         union.len(),
         159,
         "decision 31: the chains and the dashboard (report section 7)"
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// A3 traceability
+// ---------------------------------------------------------------------------------------
+
+/// The nudged values of an input: a step both ways inside its slider for a number (around
+/// the value when it is typed outside the slider), one step for a count, and for either the
+/// slider's two ends; every other choice for a selector; another library part and "manual"
+/// for a part name; set and unset for an optional number.
+fn nudges(meta: &InputMeta, value: &Value) -> Vec<Value> {
+    match (meta.ty, value) {
+        (FieldType::I64, Value::Int(code)) if !meta.choices.is_empty() => meta
+            .choices
+            .iter()
+            .map(|&(c, _)| c)
+            .filter(|c| c != code)
+            .map(Value::Int)
+            .collect(),
+        (FieldType::I64, Value::Int(n)) => {
+            let r = meta.range.expect("a count has a slider");
+            let step = r.step.max(1.0) as i64;
+            let mut v = vec![if (*n + step) as f64 <= r.max {
+                n + step
+            } else {
+                n - step
+            }];
+            // The slider's ends too: a threshold flips its verdict only under a large move.
+            for end in [r.min as i64, r.max as i64] {
+                if end != *n && !v.contains(&end) {
+                    v.push(end);
+                }
+            }
+            v.into_iter().map(Value::Int).collect()
+        }
+        (FieldType::F64 | FieldType::OptF64, Value::Num(x)) => {
+            // Both ways inside the slider: a min() tie moves the result one way only. A value
+            // typed outside the slider (hard ferrite's positive beta) is nudged where it is.
+            let r = meta.range.expect("a number has a slider");
+            let inside = |y: &f64| (r.min..=r.max).contains(y);
+            let step = r.step.max(1e-3 * x.abs()).max(1e-12);
+            let mut ys: Vec<f64> = if inside(x) {
+                [x + step, x - step].into_iter().filter(inside).collect()
+            } else {
+                vec![x + step, x - step]
+            };
+            // The slider's ends too: a threshold (a minimum wall, a required torque) flips its
+            // verdict only under a large move, and a slider narrower than the step (μ0's) is
+            // still nudged.
+            for end in [r.min, r.max] {
+                if end != *x && !ys.contains(&end) {
+                    ys.push(end);
+                }
+            }
+            let mut v: Vec<Value> = ys.into_iter().map(Value::Num).collect();
+            if meta.ty == FieldType::OptF64 {
+                v.push(Value::None);
+            }
+            v
+        }
+        (FieldType::OptF64, Value::None) => {
+            let r = meta.range.expect("a number has a slider");
+            vec![Value::Num((r.min + r.max) / 2.0)]
+        }
+        (FieldType::Text, Value::Text(s)) if meta.name.starts_with("part_") => {
+            let other = library::MAGNET_LIBRARY
+                .iter()
+                .map(|m| m.part)
+                .find(|p| p != s)
+                .expect("two parts");
+            vec![Value::Text(other.to_owned()), Value::Text(String::new())]
+        }
+        (FieldType::Text, Value::Text(s)) if meta.name.starts_with("grade_") => {
+            let g = if s == "N52" { "Y30" } else { "N52" };
+            vec![Value::Text(g.to_owned()), Value::Text(String::new())]
+        }
+        (FieldType::Text, _) => vec![Value::Text("Loctite AA 326 + SF 7649".into())],
+        other => panic!("{}: no nudge for {other:?}", meta.name),
+    }
+}
+
+/// Design points for the traceability test: the defaults; the measured prototype's own
+/// circuit (6061 back iron, so the bench correction is the calibration factor) at a test
+/// temperature off 20 °C; a grade-mode ring with eleven harmonics at six poles; and a dozen
+/// full-run cases under four of the drift guard's augmentations.
+fn trace_points() -> Vec<(String, DesignInputs)> {
+    let design = |sets: &[(&str, Value)]| {
+        let mut inputs = DesignInputs::default();
+        for (p, v) in sets {
+            inputs.set(p, v.clone()).unwrap();
+        }
+        inputs
+    };
+    let text = |s: &str| Value::Text(s.to_owned());
+    let mut pts = vec![
+        ("defaults".to_owned(), DesignInputs::default()),
+        (
+            "prototype circuit, test at 35 °C".to_owned(),
+            design(&[
+                ("materials.parts.back_iron", Value::Int(8)),
+                ("calibration.test_temp_C", Value::Num(35.0)),
+            ]),
+        ),
+        (
+            "grade, 11 harmonics, 6 poles, test at 35 °C".to_owned(),
+            design(&[
+                ("coupling.max_harmonic", Value::Int(11)),
+                ("coupling.magnets.part_inner", text("")),
+                ("coupling.magnets.grade_inner", text("N52")),
+                ("coupling.npole", Value::Int(6)),
+                ("calibration.test_temp_C", Value::Num(35.0)),
+            ]),
+        ),
+    ];
+    let augmentations: Vec<_> = augmentations()
+        .into_iter()
+        .filter(|(l, _)| {
+            [
+                "as generated",
+                "harmonics 11",
+                "back iron 6061",
+                "grade mode",
+            ]
+            .contains(l)
+        })
+        .collect();
+    for case in load_cases("full").into_iter().take(12) {
+        for (label, sets) in &augmentations {
+            let mut inputs = DesignInputs::default();
+            for (path, value) in case
+                .inputs
+                .iter()
+                .map(|(p, v)| (p.as_str(), v))
+                .chain(sets.iter().map(|(p, v)| (*p, v)))
+            {
+                inputs.set(path, value.clone()).unwrap();
+            }
+            pts.push((format!("full case {}, {label}", case.id), inputs));
+        }
+    }
+    pts
+}
+
+/// Any change at all: what soundness forbids for an independent result.
+fn changed(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Num(x), Value::Num(y)) => x.to_bits() != y.to_bits() && !(x.is_nan() && y.is_nan()),
+        _ => a != b,
+    }
+}
+
+/// A change above rounding noise (1e-10 relative): what sensitivity requires, so that an
+/// algebraic cancellation cannot pass on its last-bit wobble.
+fn moved_beyond_rounding(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Num(x), Value::Num(y)) => (x - y).abs() > 1e-10 * x.abs().max(y.abs()),
+        _ => a != b,
+    }
+}
+
+/// Each term's users along value edges at a design point: the records whose value moves
+/// with that term there (each record's trace, `eval::Trace::value_terms`).
+fn value_edges(
+    r: &Registry,
+    inputs: &DesignInputs,
+    results: &DesignResults,
+) -> BTreeMap<String, Vec<String>> {
+    let src = Design { inputs, results };
+    let mut edges: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for eq in r.equations() {
+        let mut t = Trace::default();
+        r.evaluate(eq, &src, Some(&mut t))
+            .expect("the drift guard evaluates every record");
+        for term in t.value_terms {
+            edges.entry(term).or_default().push(eq.target.clone());
+        }
+    }
+    edges
+}
+
+/// The explained results on `input`'s active path: reachable from it along value edges.
+fn active_downstream(value_edges: &BTreeMap<String, Vec<String>>, input: &str) -> BTreeSet<String> {
+    let mut seen = BTreeSet::new();
+    let mut stack = vec![input.to_owned()];
+    while let Some(p) = stack.pop() {
+        for user in value_edges.get(&p).into_iter().flatten() {
+            if seen.insert(user.clone()) {
+                stack.push(user.clone());
+            }
+        }
+    }
+    seen
+}
+
+/// Checks both sides of traceability for every input in `paths`; returns failures.
+///
+/// Soundness (nothing independent moves) holds at every point and nudge. Sensitivity (the
+/// active path moves) is judged across the points together: an input need move a result at
+/// one point where it is on its active path, so a point where a factor happens to vanish
+/// (the test temperature at 20 °C in `1 + α (ϑ − 20)`) does not fail it. What never moves at
+/// any point although the graph says it depends is an algebraic cancellation, which must be
+/// listed in [`CANCELLATIONS`] with its reason (and a listed pair that does move fails).
+fn check_traceability(paths: &[String], sensitivity: bool) -> Vec<String> {
+    let r = Registry::build();
+    let points = trace_points();
+    let mut failures = Vec::new();
+    let mut must_move: BTreeMap<(String, String), String> = BTreeMap::new();
+    let mut moved_pairs: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut effective: BTreeSet<String> = BTreeSet::new();
+    std::thread::scope(|s| {
+        let handles: Vec<_> = points
+            .iter()
+            .map(|(label, base)| s.spawn(|| trace_at(&r, label, base, paths)))
+            .collect();
+        for h in handles {
+            let t = h.join().expect("a traceability thread");
+            failures.extend(t.failures);
+            for (k, at) in t.must_move {
+                must_move.entry(k).or_insert(at);
+            }
+            moved_pairs.extend(t.moved);
+            effective.extend(t.effective);
+        }
+    });
+    // Not vacuous: every input checked had a nudge `set` accepted that changed some result
+    // (explained or not) at some design point, so soundness was put to the test for it;
+    // an input no result reads is listed in INERT_INPUTS instead.
+    for input in paths {
+        let inert = INERT_INPUTS.iter().any(|&(i, _)| i == input);
+        match (effective.contains(input), inert) {
+            (false, false) => failures.push(format!(
+                "{input}: no accepted nudge changed any result at any design point"
+            )),
+            (true, true) => failures.push(format!(
+                "INERT_INPUTS lists {input}, but a nudge changed a result: remove the entry"
+            )),
+            _ => {}
+        }
+    }
+    if !sensitivity {
+        return failures;
+    }
+    for ((input, result), at) in &must_move {
+        let key = (input.clone(), result.clone());
+        let listed = CANCELLATIONS
+            .iter()
+            .any(|&(i, r, _)| i == input && r == result);
+        if !moved_pairs.contains(&key) && !listed {
+            failures.push(format!("{input} never moves {result}, which is on its active path (first at {at}): a spurious edge, or a cancellation to list"));
+        }
+    }
+    for &(input, result, _) in CANCELLATIONS {
+        if paths.iter().any(|p| p == input)
+            && moved_pairs.contains(&(input.to_owned(), result.to_owned()))
+        {
+            failures.push(format!(
+                "CANCELLATIONS lists {input} → {result}, but it moves: remove the entry"
+            ));
+        }
+    }
+    failures
+}
+
+/// Inputs no result reads (the workbook shows them, or only the drawing reads them): no
+/// nudge can change anything, so the non-vacuity check of [`check_traceability`] skips them
+/// (and fails if a listed one ever changes a result).
+const INERT_INPUTS: &[(&str, &str)] = &[
+    (
+        "materials.steel.density_g_cm3",
+        "Materials C19 is shown for reference: the mass model reads Metal design C132 (the input's help says so)",
+    ),
+    (
+        "clamps.key_width_mm",
+        "only the drawing reads it (Python drawing.py); the key pressure divides by the contact height",
+    ),
+];
+
+/// Pairs (input, result).
+type Pairs = BTreeSet<(String, String)>;
+
+/// What one design point of [`check_traceability`] found.
+struct PointTrace {
+    /// The soundness failures.
+    failures: Vec<String>,
+    /// The pairs on an active path that did not move, with where.
+    must_move: BTreeMap<(String, String), String>,
+    /// The pairs that moved above rounding.
+    moved: Pairs,
+    /// The inputs an accepted nudge changed some result of (explained or not).
+    effective: BTreeSet<String>,
+}
+
+/// One design point of [`check_traceability`].
+fn trace_at(r: &Registry, label: &str, base: &DesignInputs, paths: &[String]) -> PointTrace {
+    let metas: BTreeMap<String, &'static InputMeta> = input_rows(&DesignInputs::default())
+        .into_iter()
+        .map(|x| (x.path, x.meta))
+        .collect();
+    let mut failures = Vec::new();
+    let mut must_move: BTreeMap<(String, String), String> = BTreeMap::new();
+    let mut moved_pairs = Pairs::new();
+    let mut effective = BTreeSet::new();
+    {
+        let base_results = compute_all(base);
+        let base_rows = result_rows(&base_results);
+        let edges = value_edges(r, base, &base_results);
+        for path in paths {
+            let meta = metas[path];
+            let value = base.get(path).expect("an input path");
+            let statics = r.downstream(path);
+            let active = active_downstream(&edges, path);
+            let _ = &statics;
+            for nudged in nudges(meta, &value) {
+                let mut inputs = base.clone();
+                if inputs.set(path, nudged.clone()).is_err() {
+                    continue; // outside the choices this design allows
+                }
+                let results = compute_all(&inputs);
+                let mut any = false;
+                for eq in r.equations() {
+                    let (b, a) = (
+                        base_results.get(&eq.target).unwrap(),
+                        results.get(&eq.target).unwrap(),
+                    );
+                    let moved = changed(&b, &a);
+                    any |= moved;
+                    if moved && !statics.contains(&eq.target) {
+                        failures.push(format!("{label}: {path} → {nudged:?} moves {} ({b:?} → {a:?}), which the graph says does not depend on it", eq.target));
+                    }
+                    let key = (path.clone(), eq.target.clone());
+                    if moved_beyond_rounding(&b, &a) {
+                        moved_pairs.insert(key);
+                    } else if matches!(b, Value::Num(x) if x.is_finite())
+                        && active.contains(&eq.target)
+                    {
+                        must_move
+                            .entry(key)
+                            .or_insert_with(|| format!("{label}, {nudged:?}"));
+                    }
+                }
+                if !any && !effective.contains(path) {
+                    // No explained result moved: did anything (a result outside the scope)?
+                    any = result_rows(&results)
+                        .iter()
+                        .zip(&base_rows)
+                        .any(|(a, b)| changed(&a.value, &b.value));
+                }
+                if any {
+                    effective.insert(path.clone());
+                }
+            }
+        }
+    }
+    PointTrace {
+        failures,
+        must_move,
+        moved: moved_pairs,
+        effective,
+    }
+}
+
+/// Dependencies the graph names that cancel algebraically: the formula reads the input on
+/// the way, but the result never moves with it. Each is a fact worth knowing (a teaching
+/// note may cite it); `check_traceability` fails if a listed pair ever moves.
+const CANCELLATIONS: &[(&str, &str, &str)] = &[
+    (
+        "calibration.f_cal_original",
+        "calibration.f_cal_updated",
+        "f_cal,1 = f_cal,0 · T_meas / T_model and T_model = T_2D f_end f_cal,0: the assumed factor cancels, so the bench correction is T_meas / (T_2D f_end)",
+    ),
+    (
+        "calibration.alpha_br_per_C",
+        "model.pullout_angle_rad",
+        "alpha scales every harmonic amplitude by the same Br(T) ratio, and a common scale leaves the peak angle where it is",
+    ),
+    (
+        "calibration.alpha_br_per_C",
+        "model.iron_circuit_angle_rad",
+        "as model.pullout_angle_rad",
+    ),
+    (
+        "calibration.alpha_br_per_C",
+        "model.free_circuit_angle_rad",
+        "as model.pullout_angle_rad",
+    ),
+    (
+        "calibration.alpha_br_per_C",
+        "calibration.pullout_angle_rad",
+        "as model.pullout_angle_rad, through the prototype's Br at the test temperature",
+    ),
+];
+
+#[test]
+fn each_assumption_moves_what_depends_on_it_and_nothing_else() {
+    // Spec A3 testing: the fifteen assumption inputs (the fourteen rows; end effect is two).
+    let paths: Vec<String> = ASSUMPTIONS
+        .iter()
+        .flat_map(|a| a.paths.iter().map(|p| (*p).to_owned()))
+        .collect();
+    assert_eq!(paths.len(), 15);
+    let failures = check_traceability(&paths, true);
+    assert!(failures.is_empty(), "{}", report(&failures));
+}
+
+#[test]
+fn no_input_moves_a_result_the_graph_says_is_independent_of_it() {
+    // Soundness for every input: the graph is complete. (Sensitivity is asserted for the
+    // assumptions, as the spec asks: for all inputs the E8 corner geometry alone cancels
+    // dozens of structural paths, e.g. the inner width reaches A_o through r_corner twice
+    // with opposite signs.)
+    let paths: Vec<String> = input_rows(&DesignInputs::default())
+        .into_iter()
+        .map(|x| x.path)
+        .collect();
+    let failures = check_traceability(&paths, false);
+    assert!(failures.is_empty(), "{}", report(&failures));
+}
+
+#[test]
+fn a_modified_assumption_styles_its_term_and_what_it_flows_into() {
+    let r = Registry::build();
+    let mut inputs = DesignInputs::default();
+    assert!(!assumptions::any_modified(&inputs));
+    let style = |p: &str, i: &DesignInputs| r.term_style(p, i).expect("a known path");
+    assert!(!style("metal.variation", &inputs).changed_from_default);
+    inputs.set("metal.variation", Value::Num(0.2)).unwrap();
+    assert!(assumptions::any_modified(&inputs), "the banner shows");
+    let v = style("metal.variation", &inputs);
+    assert_eq!(v.kind, TermKind::Input { assumption: true });
+    assert!(v.changed_from_default);
+    assert!(style("metal.torque_hot_low_Nm", &inputs).affected_by_modified_assumption);
+    assert!(
+        !style("model.pullout_Nm", &inputs).affected_by_modified_assumption,
+        "variation does not reach the pull-out"
+    );
+    assert_eq!(
+        r.modified_assumptions_upstream("metal.torque_cold_high_Nm", &inputs)
+            .iter()
+            .map(|a| a.id)
+            .collect::<Vec<_>>(),
+        ["production_variation"]
+    );
+    // A design input changed from its default gets the dot but is not an assumption.
+    inputs.set("coupling.npole", Value::Int(12)).unwrap();
+    let n = style("coupling.npole", &inputs);
+    assert_eq!(n.kind, TermKind::Input { assumption: false });
+    assert!(n.changed_from_default);
+    assumptions::reset_to_workbook_defaults(&mut inputs);
+    assert!(!assumptions::any_modified(&inputs), "the banner clears");
+    assert!(!style("metal.torque_hot_low_Nm", &inputs).affected_by_modified_assumption);
+    assert!(
+        style("coupling.npole", &inputs).changed_from_default,
+        "the reset keeps design inputs"
+    );
+}
+
+#[test]
+fn the_panel_labels_selector_codes_and_names_upstream_corrections() {
+    let r = Registry::build();
+    // A selector input shows its choice labels; a result holding a code borrows its input's.
+    assert_eq!(
+        r.choices("coupling.backiron"),
+        [(1, "steel circuit"), (0, "no back iron")]
+    );
+    assert_eq!(
+        r.choices("materials.circuit_backiron"),
+        r.choices("coupling.backiron")
+    );
+    assert_eq!(
+        r.choices("materials.parts.back_iron")[0],
+        (1, "4140 annealed")
+    );
+    assert!(r.choices("coupling.npole").is_empty() && r.choices("model.pullout_Nm").is_empty());
+    // The "corrected vs workbook" marker: the pull-out's own record names no correction, but
+    // E7 acts upstream of it (the pull-out angle) and E8 in the corner gap.
+    assert!(
+        r.equation_for("model.pullout_Nm")
+            .unwrap()
+            .corrections
+            .is_empty()
+    );
+    let pullout = r.corrections_upstream("model.pullout_Nm");
+    assert!(
+        pullout.contains(&DeviationId::E7) && pullout.contains(&DeviationId::E8),
+        "{pullout:?}"
+    );
+    // A record's own corrections come first, each once.
+    assert_eq!(
+        r.corrections_upstream("model.pullout_angle_rad")[0],
+        DeviationId::E7
+    );
+    for (i, c) in pullout.iter().enumerate() {
+        assert!(!pullout[..i].contains(c), "{c:?} twice in {pullout:?}");
+    }
+    assert!(
+        r.corrections_upstream("coupling.npole").is_empty(),
+        "an input"
     );
 }

@@ -17,7 +17,7 @@
 //! - [`eval`]: the evaluator, with a trace of what a result depends on at a design point;
 //! - [`tables`]: the static engine tables a formula can read (magnet library, grades, back iron);
 //! - [`record`]: the authoring form, [`records`]: the records, one file per batch;
-//! - [`registry`]: `Registry::build`, `equation_for`, `used_by`, the dependency graph, term rows;
+//! - [`registry`]: `Registry::build`, `equation_for`, `used_by`, the dependency graph, term styles;
 //! - [`symbols`]: display symbols of inputs and other leaf terms;
 //! - [`scope`]: the v1 scope (decision 31) and which chains are written;
 //! - [`render`]: a plain-text rendering (tooltips fallback, export, tests).
@@ -33,4 +33,4 @@ pub mod symbols;
 pub mod tables;
 
 pub use eval::{EvalError, TermSource, Trace};
-pub use registry::{Design, Equation, Registry, TermKind, TermRow};
+pub use registry::{Design, Equation, Registry, TermKind, TermRow, TermStyle};
