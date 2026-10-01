@@ -42,7 +42,7 @@
 //! | `{model.gap_radius_mm\|m}` | the value converted to the unit after `\|` (the registry resolves the factor; unknown pairs are refused) | the same symbol; the term list shows the value in that unit |
 //! | `a * b` | a × b | a thin space (juxtaposition); `×` between two numbers |
 //! | `a · b` | a × b | a centred dot |
-//! | `a / b` | a ÷ b | inline `a/b` |
+//! | `a / b` | a ÷ b | inline `a/b` (never a factor: see below) |
 //! | `frac(a, b)` | a ÷ b | a stacked fraction |
 //! | `a ^ b` | a to the power b | b as a superscript (outer parentheses of b dropped) |
 //! | `sqrt(a)` | √a | a radical |
@@ -59,6 +59,14 @@
 //! | `peak(n in H: A)` | the electrical angle φ in [0, π/2] at which Σ_{n∈H} A_n sin(nφ) is largest, A_n the expression: π/2 unless another maximum beats it by more than 1e-12 relative, exactly as E7 decides (`model::peak_off_half_pitch`); π/2 for an invalid set | `arg max` over φ of Σ_{n∈H} A sin(nφ) |
 //! | `table("magnets", k, "br_T")` | a field of a static engine table, by key; `none` when the key is not in it ([`super::tables`] lists the tables and fields) | the field's symbol with the key: `B_{r,lib}(part_i)` |
 //! | `... where [S_n] = e` | `[S_n]` stands for e (evaluated when first used) | the formula, then one line per binding: `S_n = e` |
+//!
+//! The typesetter draws `a / b` inline and only the parentheses the markup writes, so the
+//! registry refuses markup that would read two ways: an inline `a / b` as an operand of `*`,
+//! `·` or `/` (`a/b c` reads as a/(b c): write `frac(a, b)` or `(a / b)`); a `sum` or `peak`
+//! as an operand of `*`, `·`, `/` or `^`, or left of `+` or `-` (write `(sum(...))`); and a
+//! power of a term, local or `exp` whose symbol already has a superscript (write
+//! `({calibration.gap_radius_mm})^2`, never `R_g^{cal}^2`). It also refuses a formula that
+//! reads one path in two units: the term list shows each term once, in the unit it is read in.
 //!
 //! # Symbol markup
 //!

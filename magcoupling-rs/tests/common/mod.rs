@@ -219,6 +219,70 @@ pub fn report(failures: &[String]) -> String {
     format!("{} failure(s):\n{}{tail}", failures.len(), shown.join("\n"))
 }
 
+/// The data file whose cases vary every input group and compare every result.
+pub const FULL: &str = "full";
+
+/// A generated differential case (`tests/data/differential/<module>.json`): inputs by path,
+/// and the Python results of its module. Shared by `differential.rs` and the drift guard.
+pub struct Case {
+    pub id: u64,
+    pub tag: String,
+    pub inputs: BTreeMap<String, Value>,
+    pub results: BTreeMap<String, Value>,
+}
+
+pub fn load_cases(module: &str) -> Vec<Case> {
+    let doc = read_json(&data_path(&format!("differential/{module}.json")));
+    assert_eq!(doc["module"], module);
+    let paths = |key: &str| -> Vec<String> {
+        doc[key]
+            .as_array()
+            .unwrap_or_else(|| panic!("{module}: {key} is an array"))
+            .iter()
+            .map(|p| p.as_str().expect("a path").to_owned())
+            .collect()
+    };
+    let (input_paths, result_paths) = (paths("input_paths"), paths("result_paths"));
+    doc["cases"]
+        .as_array()
+        .expect("a cases array")
+        .iter()
+        .map(|c| {
+            let id = c["id"].as_u64().expect("a case id");
+            let zip = |paths: &[String], key: &str| -> BTreeMap<String, Value> {
+                let values = c[key]
+                    .as_array()
+                    .unwrap_or_else(|| panic!("case {id}: {key}"));
+                assert_eq!(
+                    values.len(),
+                    paths.len(),
+                    "{module} case {id}: {key} length"
+                );
+                paths
+                    .iter()
+                    .cloned()
+                    .zip(values.iter().map(json_to_value))
+                    .collect()
+            };
+            Case {
+                id,
+                tag: c["tag"].as_str().expect("a case tag").to_owned(),
+                inputs: zip(&input_paths, "inputs"),
+                results: zip(&result_paths, "results"),
+            }
+        })
+        .collect()
+}
+
+/// Every differential data file with cases: one per ported result group, then the full run.
+pub fn differential_files() -> Vec<&'static str> {
+    PORTED_RESULTS
+        .iter()
+        .map(|p| p.group)
+        .chain([FULL])
+        .collect()
+}
+
 /// Every value with a workbook cell (inputs and results) for `inputs` under `dev`.
 pub fn cell_values_for(inputs: &DesignInputs, dev: Deviations) -> BTreeMap<String, Value> {
     let results = compute_all_with(inputs, dev);
