@@ -688,6 +688,169 @@ mod tests {
     }
 
     #[test]
+    fn the_torque_temperature_series_hold_the_engine_s_curve_and_its_band() {
+        // The default design and one with another allowance and minimum temperature: the band
+        // takes the design's own variation, the curve its own temperatures.
+        let mut variant = DesignInputs::default();
+        variant.metal.variation = 0.1;
+        variant.metal.min_temp_C = -20.0;
+        for inputs in [DesignInputs::default(), variant] {
+            let r = compute_all(&inputs);
+            let (min_temp, variation) = (inputs.metal.min_temp_C, inputs.metal.variation);
+            let s = torque_temperature(&inputs, &r);
+            let top = s.limit_C.expect("a finite governing limit") + PAST_THE_LIMIT_C;
+            let span = top - min_temp;
+            assert_eq!(s.nominal.len(), TEMPERATURE_SAMPLES);
+            assert_eq!(s.low.len(), TEMPERATURE_SAMPLES);
+            assert_eq!(s.high.len(), TEMPERATURE_SAMPLES);
+            for (i, nominal) in s.nominal.iter().enumerate() {
+                // An even grid from the minimum temperature to 10 degrees past the limit.
+                let t = min_temp + span * i as f64 / (TEMPERATURE_SAMPLES - 1) as f64;
+                assert!(
+                    (nominal[0] - t).abs() <= 1e-9 * span,
+                    "{i}: {nominal:?} vs {t}"
+                );
+                // The curve is the engine's pull-out at that magnet temperature ...
+                assert_eq!(
+                    nominal[1],
+                    torque_at_temperature(&r, nominal[0]),
+                    "nominal {i}"
+                );
+                // ... and the band is that curve at each end of the allowance: the low edge
+                // minus the variation, the high edge plus it, never the other way round.
+                let (low, high) = (s.low[i], s.high[i]);
+                assert_eq!((low[0], high[0]), (nominal[0], nominal[0]), "{i}");
+                assert!(
+                    close(low[1], nominal[1] * (1.0 - variation)),
+                    "low {i}: {low:?}"
+                );
+                assert!(
+                    close(high[1], nominal[1] * (1.0 + variation)),
+                    "high {i}: {high:?}"
+                );
+                assert!(low[1] < nominal[1] && nominal[1] < high[1], "{i}");
+            }
+            // The curve's first point is the minimum temperature: its high edge is the engine's
+            // cold-high torque there.
+            assert_eq!(s.nominal[0][0], min_temp);
+            assert!(
+                close(s.high[0][1], r.metal.torque_cold_high_Nm),
+                "{:?}",
+                s.high[0]
+            );
+        }
+    }
+
+    #[test]
+    fn the_slip_heating_curves_are_each_case_s_first_order_rise() {
+        let r = compute_all(&DesignInputs::default());
+        let th = &r.temperature.thermal;
+        assert!(
+            th.steady_rise_est_C < th.steady_rise_high_C,
+            "the two cases differ, so a curve drawn with the other's rise shows"
+        );
+        let s = slip_heating(&r);
+        let span = HEATING_SPAN_TAUS * th.time_constant_s;
+        for (name, series, steady) in [
+            ("estimate", &s.estimate, th.steady_rise_est_C),
+            ("high case", &s.high, th.steady_rise_high_C),
+        ] {
+            assert_eq!(series.len(), HEATING_SAMPLES, "{name}");
+            assert_eq!(
+                series[0],
+                [0.0, th.start_C],
+                "{name} starts at the starting temperature"
+            );
+            for (i, p) in series.iter().enumerate() {
+                let t = span * i as f64 / (HEATING_SAMPLES - 1) as f64;
+                assert!((p[0] - t).abs() <= 1e-9 * span, "{name} {i}: {p:?} vs {t}");
+                let want = th.start_C + steady * (1.0 - (-p[0] / th.time_constant_s).exp());
+                assert!(close(p[1], want), "{name} {i}: {p:?} vs {want}");
+            }
+            // Five time constants: within 1% of the way to the steady temperature.
+            let end = series[HEATING_SAMPLES - 1];
+            assert!(close(
+                end[1],
+                th.start_C + steady * (1.0 - (-HEATING_SPAN_TAUS).exp())
+            ));
+        }
+        // The estimate stays below the high case once it has started to rise.
+        assert!(
+            s.estimate
+                .iter()
+                .zip(&s.high)
+                .skip(1)
+                .all(|(e, h)| e[1] < h[1])
+        );
+    }
+
+    #[test]
+    fn the_torque_rotation_curve_is_the_engine_s_torque_at_each_angle() {
+        // 10 poles and another count: the mechanical angle runs over 720 / N degrees and the
+        // electrical angle is N / 2 times it.
+        for npole in [10, 12] {
+            let mut inputs = DesignInputs::default();
+            inputs.coupling.npole = npole;
+            let r = compute_all(&inputs);
+            let pairs = npole as f64 / 2.0;
+            let pair_deg = 360.0 / pairs;
+            let s = torque_angle(&inputs, &r);
+            assert_eq!(s.curve.len(), ANGLE_SAMPLES, "{npole} poles");
+            assert!(
+                close(s.curve[ANGLE_SAMPLES - 1][0], pair_deg),
+                "{npole} poles"
+            );
+            // The E7 pull-out sits a quarter of the way round a pole pair (90 electrical
+            // degrees); the curve is the engine's pull-out torque there ...
+            let quarter = (ANGLE_SAMPLES - 1) / 4;
+            assert!(
+                close(s.pull_out[0], pair_deg / 4.0),
+                "{npole} poles: {:?}",
+                s.pull_out
+            );
+            assert!(
+                close(s.curve[quarter][0], pair_deg / 4.0),
+                "{npole} poles: {:?}",
+                s.curve[quarter]
+            );
+            assert!(
+                close(s.curve[quarter][1], r.model.pullout_Nm),
+                "{npole} poles: {:?} vs {}",
+                s.curve[quarter],
+                r.model.pullout_Nm
+            );
+            // ... and, the harmonics being odd, zero at the start and half way, and the
+            // negative of the pull-out three quarters of the way.
+            let tolerance = 1e-12 * r.model.pullout_Nm;
+            for (index, want) in [
+                (0, 0.0),
+                (2 * quarter, 0.0),
+                (4 * quarter, 0.0),
+                (3 * quarter, -r.model.pullout_Nm),
+            ] {
+                let [deg, torque] = s.curve[index];
+                assert!(
+                    (torque - want).abs() <= tolerance,
+                    "{npole} poles, {deg} degrees: {torque} vs {want}"
+                );
+            }
+            // Every point is the torque at its own electrical angle.
+            for (i, [deg, torque]) in s.curve.iter().enumerate() {
+                assert!(
+                    (deg - pair_deg * i as f64 / (ANGLE_SAMPLES - 1) as f64).abs() <= 1e-9,
+                    "{npole} poles {i}"
+                );
+                let x = (deg * pairs).to_radians();
+                assert_eq!(
+                    *torque,
+                    torque_at_angle(&inputs, &r, x),
+                    "{npole} poles {i}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn out_of_range_end_effect_greys_the_torque_plots() {
         let inputs = short_magnets();
         let r = compute_all(&inputs);
