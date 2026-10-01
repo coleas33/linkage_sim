@@ -11,11 +11,21 @@ path = "src/lib.rs"
 
 [features]
 default = []
-# egui panel hostable by any egui app (M4). Declared now so the feature layout
-# is fixed; empty until M4.
-gui = []
-# Standalone native + WASM binary `magcoupling-app` (M4). Empty until M4.
-app = ["gui"]
+# The egui panel `gui::MagcouplingPanel`, hostable by any egui app (the
+# standalone app, M4, and a window in linkage-sim-rs, M5). egui only: no
+# windowing, no eframe.
+gui = ["dep:egui"]
+# The standalone app: `app::MagcouplingApp` and the binaries `magcoupling-app`
+# (native) and `magcoupling-web` (wasm32, eframe WebRunner + wasm-bindgen).
+app = [
+    "gui",
+    "dep:eframe",
+    "dep:log",
+    "dep:env_logger",
+    "dep:wasm-bindgen",
+    "dep:wasm-bindgen-futures",
+    "dep:web-sys",
+]
 # TEST-ONLY. Exposes the switch that turns the approved workbook corrections
 # (the deviation registry) off, so parity and differential tests compare
 # against the workbook exactly. Enabled only through the self dev-dependency
@@ -25,9 +35,29 @@ workbook-parity = []
 
 [dependencies]
 # The engine is pure std on purpose: no I/O, no global state, builds for
-# wasm32-unknown-unknown with nothing extra.
+# wasm32-unknown-unknown with nothing extra. Everything below is optional and
+# reached only through the gui and app features.
+#
+# egui and eframe: the same 0.32 line as linkage-sim-rs, so the panel embeds
+# there (M5) with one egui. The caret range unifies with linkage-sim-rs's;
+# the exact version (0.32.3, as in linkage-sim-rs/Cargo.lock) is pinned in
+# Cargo.lock, and gate.sh checks that both lock files agree.
+egui = { version = "0.32", optional = true }
+eframe = { version = "0.32", optional = true }
+log = { version = "0.4", optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+env_logger = { version = "0.11", optional = true }
+
+# The web entry. wasm-bindgen must equal the wasm-bindgen-cli version that
+# deploy-web.yml installs (0.2.114), pinned in Cargo.lock; gate.sh checks it.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+web-sys = { version = "0.3", optional = true, features = ["Document", "Element", "HtmlCanvasElement", "Window"] }
 
 [dev-dependencies]
 magcoupling-rs = { path = ".", features = ["workbook-parity"] }
 # float_roundtrip: parse JSON floats exactly (the default parser can be 1 ULP off).
 serde_json = { version = "1", features = ["float_roundtrip"] }
+
