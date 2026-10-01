@@ -8,9 +8,11 @@
 //! to E20) is registered in [`engine::deviations::REGISTRY`]. The Addendum A
 //! inputs the Python engine does not have (part materials, grades, the
 //! coercivity source, the E17 free-space fields, the harmonic set, the axial
-//! length override) are Rust-only and default to the ported behaviour. Beyond
-//! the forward calculation: [`engine::sizing::solve`] (inverse sizing, Addendum
-//! A1) and [`engine::assumptions`] (the A3 assumptions panel).
+//! length override) are Rust-only and default to the ported behaviour. The
+//! forward calculation also reports the A1 space claim ([`engine::housing`],
+//! with the axial housing that follows the length override). Beyond it:
+//! [`engine::sizing::solve`] (inverse sizing, Addendum A1) and
+//! [`engine::assumptions`] (the A3 assumptions panel).
 //!
 //! Spec: `docs/superpowers/specs/2026-09-28-magcoupling-calculator-design.md`.
 //!

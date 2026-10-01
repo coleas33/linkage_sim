@@ -4,8 +4,9 @@
 //! The spec's traceability test ("changing each assumption changes every dependent result
 //! and no independent one, using the equation registry's dependency graph") needs the A2
 //! equation registry and belongs to plan A-3. `each_assumption_moves_a_result_at_the_default_design`
-//! is the smoke version: each assumption moves at least one result, with the documented
-//! override.
+//! is the smoke version: each assumption moves at least one result. Of the three documented
+//! overrides (`src/engine/assumptions.rs`), only C45's shows at the default design: its
+//! library parts still read C22, and it has no 1018 back iron.
 
 use std::collections::BTreeSet;
 
@@ -208,6 +209,9 @@ fn each_assumption_moves_a_result_at_the_default_design() {
     // Documented override (A-1 plan decisions A2 and A9): with correction E20 and the coercivity
     // source at 1 (the default), the Hcj temperature coefficient (C45) acts only for a magnet
     // without a grade, and every library part has one; with the source at 0 it moves results.
+    // The other two overrides (a 1018 back iron's own flux density; a grade-mode ring's own
+    // alpha(Br) in place of C22, decision A2-7) do not apply here: the default design has
+    // library rings and no 1018 back iron, so the design flux density and C22 move results.
     let values = |inputs: &DesignInputs| -> Vec<Value> {
         result_rows(&compute_all(inputs))
             .into_iter()

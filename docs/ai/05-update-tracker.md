@@ -5,6 +5,20 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-30 — Magcoupling Addendum A-2: final review fix wave
+- E18's corrected_formula no longer quotes the library's 6061 at 68.3 GPa (decision A8): since A2-6 it is
+  E18's 68.9 GPa. Text only; no number, probe or correction changes.
+- `tests/grades.rs` `mixed_rings_each_take_their_own_alpha_and_density_either_way_round`: a library NdFeB
+  ring beside a Y30 grade-mode ring, each way round, pins decision A2-7's per-ring wiring (both rings'
+  factors in C8 and C155, the governing ring's E20 coefficient and onsets, the magnets' and the bond
+  block's mass); mutation-checked against swapped or shared coefficients and the inner density.
+- Docs: `assumptions.rs` and `tests/assumptions.rs` name three documented assumption overrides (C22 for a
+  grade-mode ring beside the A-1 two); `04-memory.yaml` tells plan A-3's traceability test to exempt
+  them; the crate docs (`lib.rs`) name `engine::housing`.
+- Deferred, recorded in `04-memory.yaml`: `model::shear_stress` still evaluates all six harmonics when
+  fewer are summed (part of the A-2 plan's measured 8.5 -> 17 us compute_all doubling, about 50x inside
+  the spec's budget).
+
 ## 2026-09-30 — Magcoupling Addendum A-2: parameters and sizing (A3, A1)
 - `magcoupling-rs`: one general E7 peak search for any odd harmonic set (decision 29: every root of
   dT/dx in cos^2 x by recursion on derivatives) and the harmonic set as the Rust-only assumption

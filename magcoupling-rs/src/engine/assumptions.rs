@@ -13,10 +13,13 @@
 //! assumption's default (E1, E3 and E5 correct other inputs; `tests/assumptions.rs`
 //! checks it), and the Rust-only harmonic set defaults to the workbook's 1, 3, 5.
 //!
-//! Two assumptions have documented overrides (A-1 plan decisions A2 and A9): with
-//! correction E20 and the coercivity source at 1, the Hcj temperature coefficient acts only
-//! for a magnet without a grade; a library back iron with its own design flux density
-//! (1018) replaces the back-iron design flux density in the wall check.
+//! Three assumptions have documented overrides (A-1 plan decisions A2 and A9, Addendum A-2
+//! decision A2-7): with correction E20 and the coercivity source at 1, the Hcj temperature
+//! coefficient acts only for a magnet without a grade; a library back iron with its own
+//! design flux density (1018) replaces the back-iron design flux density in the wall check;
+//! a ring in the grade mode (manual dimensions with a grade) takes its grade's Br
+//! temperature coefficient, so Calibration C22 reaches only library parts and gradeless
+//! magnets (the Calibration prototype always reads it).
 //!
 //! The spec's traceability test (each assumption changes every dependent result and no
 //! independent one, by the equation registry's dependency graph) needs the A2 equation
