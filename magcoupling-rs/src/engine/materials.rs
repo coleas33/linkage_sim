@@ -195,6 +195,24 @@ results! {
             back_iron_material: String => out_rust_only("", "Back iron material", ""),
             sleeve_liner_material: String => out_rust_only("", "Sleeve and liner material", ""),
             cap_material: String => out_rust_only("", "Cap and housing material", ""),
+            steel_density_g_mm3: f64 => out_rust_only("g/mm³", "Back-iron steel density in effect",
+                "Plan A-3 (a term of the equation explorer): Metal design C132, or a ferromagnetic back-iron pick's library density (Addendum A5); the mass model prices the steel parts with it."),
+            body_sigma_S_m: f64 => out_rust_only("S/m", "Hub, cup and boss conductivity without back iron",
+                "The workbook's 6061-T6 (Materials C43), or a non-ferromagnetic back-iron pick's (Addendum A5); correction E17 prices the aluminium parts' slip losses with it."),
+            body_density_g_mm3: f64 => out_rust_only("g/mm³", "Hub, cup and boss density without back iron",
+                "Metal design C42, or a non-ferromagnetic back-iron pick's (Addendum A5): the aluminium hub, cup and boss (E9)."),
+            body_c_J_kgK: f64 => out_rust_only("J/(kg·K)", "Hub, cup and boss specific heat without back iron",
+                "Temperature design C140, or a non-ferromagnetic back-iron pick's (Addendum A5): correction E15's heat capacity."),
+            sleeve_sigma_S_m: f64 => out_rust_only("S/m", "Sleeve and liner conductivity in effect",
+                "Temperature design C111, or the sleeve and liner pick's (Addendum A5)."),
+            sleeve_density_g_mm3: f64 => out_rust_only("g/mm³", "Sleeve, liner and endplate density in effect",
+                "Metal design C44, or the sleeve and liner pick's (Addendum A5)."),
+            sleeve_c_J_kgK: f64 => out_rust_only("J/(kg·K)", "Sleeve, liner and endplate specific heat in effect",
+                "Temperature design C139, or the sleeve and liner pick's (Addendum A5)."),
+            cap_density_g_mm3: f64 => out_rust_only("g/mm³", "Cap density in effect",
+                "Metal design C42, or the cap pick's (Addendum A5)."),
+            cap_c_J_kgK: f64 => out_rust_only("J/(kg·K)", "Cap specific heat in effect",
+                "Temperature design C140, or the cap pick's (Addendum A5)."),
         }
     }
 }
@@ -245,6 +263,15 @@ pub fn compute(
         back_iron_material: parts.back_iron.label().to_owned(),
         sleeve_liner_material: parts.sleeve_liner.label().to_owned(),
         cap_material: parts.cap.label().to_owned(),
+        steel_density_g_mm3: parts.steel.density_g_mm3,
+        body_sigma_S_m: parts.body.sigma_S_m,
+        body_density_g_mm3: parts.body.density_g_mm3,
+        body_c_J_kgK: parts.body.cp_J_kgK,
+        sleeve_sigma_S_m: parts.sleeve_liner.props.sigma_S_m,
+        sleeve_density_g_mm3: parts.sleeve_liner.props.density_g_mm3,
+        sleeve_c_J_kgK: parts.sleeve_liner.props.cp_J_kgK,
+        cap_density_g_mm3: parts.cap.props.density_g_mm3,
+        cap_c_J_kgK: parts.cap.props.cp_J_kgK,
     }
 }
 
@@ -338,6 +365,71 @@ mod tests {
         assert_eq!(
             compute(&mat, 1.8, 1.8, 0, &parts(), e9).cup_wall_check,
             "No back iron"
+        );
+    }
+
+    #[test]
+    fn the_materials_in_effect_are_the_picks_values() {
+        // Plan A-3: the Rust-only materials in effect read what `resolve` picked. At the
+        // defaults they are the inputs; a non-ferromagnetic back iron (6061) becomes the hub,
+        // cup and boss material and leaves the steel at the inputs; the sleeve and cap picks
+        // supply their library values.
+        use crate::engine::material_library::material;
+        let md = MetalDesignInputs::default();
+        let with = |back_iron: i64, sleeve_liner: i64, cap_housing: i64| {
+            let mut mat = MaterialsInputs::default();
+            mat.parts.back_iron = back_iron;
+            mat.parts.sleeve_liner = sleeve_liner;
+            mat.parts.cap_housing = cap_housing;
+            let p = resolve(
+                &mat.parts,
+                &mat.steel,
+                1,
+                &md,
+                &SlipLossInputs::default(),
+                &ThermalInputs::default(),
+            );
+            compute(&mat, 1.9, 1.8, p.backiron, &p, Deviations::NONE)
+        };
+        let r = with(1, 1, 1);
+        assert_eq!(
+            (
+                r.steel_density_g_mm3,
+                r.body_sigma_S_m,
+                r.body_density_g_mm3,
+                r.sleeve_density_g_mm3,
+                r.cap_density_g_mm3
+            ),
+            (
+                md.steel_density_g_mm3,
+                AL6061.conductivity_S_m,
+                md.al_density_g_mm3,
+                md.sleeve_density_g_mm3,
+                md.al_density_g_mm3
+            )
+        );
+        let al = material("6061_T6").unwrap().engine;
+        let r = with(8, 1, 1);
+        assert_eq!(
+            (r.body_sigma_S_m, r.body_density_g_mm3, r.body_c_J_kgK),
+            (al.sigma_S_m, al.density_g_mm3, al.cp_J_kgK)
+        );
+        assert_eq!(
+            r.steel_density_g_mm3, md.steel_density_g_mm3,
+            "a non-ferromagnetic pick leaves the steel at the inputs"
+        );
+        let (ti, pom) = (
+            material("Ti6Al4V_annealed").unwrap().engine,
+            material("POM_H_acetal").unwrap().engine,
+        );
+        let r = with(1, 2, 3);
+        assert_eq!(
+            (r.sleeve_sigma_S_m, r.sleeve_density_g_mm3, r.sleeve_c_J_kgK),
+            (ti.sigma_S_m, ti.density_g_mm3, ti.cp_J_kgK)
+        );
+        assert_eq!(
+            (r.cap_density_g_mm3, r.cap_c_J_kgK),
+            (pom.density_g_mm3, pom.cp_J_kgK)
         );
     }
 

@@ -15,7 +15,8 @@
 //!
 //! - [`markup`]: the formula and symbol grammar, parser and tree;
 //! - [`eval`]: the evaluator, with a trace of what a result depends on at a design point;
-//! - [`tables`]: the static engine tables a formula can read (magnet library, grades, back iron);
+//! - [`tables`]: the static engine tables a formula can read (magnet library, grades, part
+//!   materials, aluminium alloys, adhesives, screw sizes);
 //! - [`record`]: the authoring form, [`records`]: the records, one file per batch;
 //! - [`registry`]: `Registry::build`, `equation_for`, `used_by`, the dependency graph, term styles;
 //! - [`symbols`]: display symbols of inputs and other leaf terms;
