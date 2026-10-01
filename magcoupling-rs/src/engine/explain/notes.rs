@@ -87,7 +87,7 @@ pub const NOTES: &[Note] = &[
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations",
+            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
         },
     },
     Note {
@@ -110,7 +110,7 @@ pub const NOTES: &[Note] = &[
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations",
+            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
         },
     },
     Note {
@@ -139,7 +139,7 @@ pub const NOTES: &[Note] = &[
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations",
+            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
         },
     },
     Note {
@@ -159,7 +159,7 @@ pub const NOTES: &[Note] = &[
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations",
+            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
         },
     },
     Note {
@@ -190,7 +190,7 @@ pub const NOTES: &[Note] = &[
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations",
+            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
         },
     },
     Note {
@@ -222,7 +222,7 @@ pub const NOTES: &[Note] = &[
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations",
+            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
         },
     },
     Note {
@@ -260,7 +260,7 @@ pub const NOTES: &[Note] = &[
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations",
+            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
         },
     },
     Note {
@@ -294,7 +294,7 @@ pub const NOTES: &[Note] = &[
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations",
+            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
         },
     },
     Note {
@@ -330,7 +330,7 @@ pub const NOTES: &[Note] = &[
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations",
+            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
         },
     },
     Note {
@@ -365,7 +365,7 @@ pub const NOTES: &[Note] = &[
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations",
+            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
         },
     },
     Note {
@@ -397,7 +397,7 @@ pub const NOTES: &[Note] = &[
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations",
+            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
         },
     },
     Note {
@@ -419,7 +419,7 @@ pub const NOTES: &[Note] = &[
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations",
+            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
         },
     },
     Note {
@@ -441,7 +441,7 @@ pub const NOTES: &[Note] = &[
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations",
+            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
         },
     },
     Note {
@@ -466,7 +466,7 @@ pub const NOTES: &[Note] = &[
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations",
+            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
         },
     },
     Note {
@@ -490,7 +490,7 @@ pub const NOTES: &[Note] = &[
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations",
+            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
         },
     },
     Note {
@@ -511,7 +511,7 @@ pub const NOTES: &[Note] = &[
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations",
+            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
         },
     },
     Note {
@@ -533,7 +533,7 @@ pub const NOTES: &[Note] = &[
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations",
+            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
         },
     },
 ];
