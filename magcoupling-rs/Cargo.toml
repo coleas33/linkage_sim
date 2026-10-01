@@ -13,8 +13,9 @@ path = "src/lib.rs"
 default = []
 # The egui panel `gui::MagcouplingPanel`, hostable by any egui app (the
 # standalone app, M4, and a window in linkage-sim-rs, M5). egui only: no
-# windowing, no eframe.
-gui = ["dep:egui"]
+# windowing, no eframe, no file dialogs. serde_json, base64 and flate2 write
+# and read design files, share links and the results export.
+gui = ["dep:egui", "dep:serde_json", "dep:base64", "dep:flate2"]
 # The standalone app: `app::MagcouplingApp` and the binaries `magcoupling-app`
 # (native) and `magcoupling-web` (wasm32, eframe WebRunner + wasm-bindgen).
 app = [
@@ -45,6 +46,12 @@ workbook-parity = []
 egui = { version = "0.32", optional = true }
 eframe = { version = "0.32", optional = true }
 log = { version = "0.4", optional = true }
+# Design files, share links and the results export (feature gui). The same
+# crates and major versions as linkage-sim-rs's `?m=` share links (deflate,
+# then URL-safe base64). float_roundtrip: a design file reads back bit for bit.
+serde_json = { version = "1", optional = true, features = ["float_roundtrip"] }
+base64 = { version = "0.22", optional = true }
+flate2 = { version = "1", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = { version = "0.11", optional = true }

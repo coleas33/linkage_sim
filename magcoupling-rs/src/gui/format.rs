@@ -30,15 +30,25 @@ pub fn with_unit(text: String, unit: &str) -> String {
     }
 }
 
+/// The text of a number that is not finite: `+inf`, `-inf` or `NaN`; `None` for a finite
+/// number. The display and both results exports share it, so a non-finite value reads the
+/// same everywhere (JSON has no infinity or NaN: the exports write this text, decision M41-15).
+pub(crate) fn non_finite_text(x: f64) -> Option<&'static str> {
+    if x.is_nan() {
+        Some("NaN")
+    } else if x.is_infinite() {
+        Some(if x > 0.0 { "+inf" } else { "-inf" })
+    } else {
+        None
+    }
+}
+
 /// A number to [`SIGNIFICANT_DIGITS`] significant digits: fixed point when it
 /// rounds to at least 1e-3 and below 1e6, scientific outside; zero (either
 /// sign) as `0`.
 fn format_number(x: f64) -> String {
-    if x.is_nan() {
-        return "NaN".to_owned();
-    }
-    if x.is_infinite() {
-        return if x > 0.0 { "+inf" } else { "-inf" }.to_owned();
+    if let Some(text) = non_finite_text(x) {
+        return text.to_owned();
     }
     if x == 0.0 {
         return "0".to_owned();
@@ -104,6 +114,17 @@ mod tests {
         assert_eq!(num(f64::INFINITY), "+inf");
         assert_eq!(num(f64::NEG_INFINITY), "-inf");
         assert_eq!(num(f64::NAN), "NaN");
+    }
+
+    #[test]
+    fn only_non_finite_numbers_have_a_non_finite_text() {
+        assert_eq!(non_finite_text(f64::INFINITY), Some("+inf"));
+        assert_eq!(non_finite_text(f64::NEG_INFINITY), Some("-inf"));
+        assert_eq!(non_finite_text(f64::NAN), Some("NaN"));
+        assert_eq!(non_finite_text(-f64::NAN), Some("NaN"));
+        for finite in [0.0, -0.0, f64::MAX, f64::MIN, f64::MIN_POSITIVE, 2.5] {
+            assert_eq!(non_finite_text(finite), None, "{finite}");
+        }
     }
 
     #[test]

@@ -8,6 +8,8 @@
 
 mod format;
 mod panel;
+pub mod session;
+pub mod sizing;
 #[cfg(test)]
 pub(crate) mod test_support;
 
