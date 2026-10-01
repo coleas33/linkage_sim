@@ -16,6 +16,7 @@ pub mod clamps;
 pub mod compat;
 pub mod constants;
 pub mod deviations;
+pub mod explain;
 pub mod grades;
 pub mod housing;
 pub mod library;
