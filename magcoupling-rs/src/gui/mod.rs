@@ -8,6 +8,7 @@
 
 mod format;
 pub mod history;
+pub mod inputs;
 mod panel;
 pub mod session;
 pub mod sizing;
