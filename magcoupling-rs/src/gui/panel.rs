@@ -9,16 +9,28 @@
 //!
 //! The panel never touches files or the network: what needs the platform (saving a file,
 //! picking one) it queues as a [`PanelRequest`] for the host, which drains them with
-//! [`MagcouplingPanel::take_requests`] after each frame.
+//! [`MagcouplingPanel::take_requests`] after each frame and hands a picked design file back
+//! through [`MagcouplingPanel::load_design_file`].
+//!
+//! Session (spec M4 "Session"): undo and redo of every change to the design (the inputs and
+//! the sizing state, [`crate::gui::history`]: one step per settled edit), reset all, save and
+//! load a design file, and a share link copied to the clipboard ([`crate::gui::session`]). A
+//! host may open a design as the session's start ([`MagcouplingPanel::open_share_payload`]:
+//! no undo step) and may keep the undo keys for itself
+//! ([`MagcouplingPanel::set_keyboard_shortcuts`]).
 
 use crate::engine::meta::{InputSet, ResultSet, Value};
 use crate::gui::dashboard::dashboard_ui;
+use crate::gui::history::History;
 use crate::gui::input_ui::{RowEdit, input_row};
 use crate::gui::inputs::{InputCatalogue, InputEntry, optional_seed};
 use crate::gui::results_table::{
     CSV_FILE_NAME, JSON_FILE_NAME, ResultsTable, TableAction, results_csv, results_json,
 };
-use crate::gui::session::Design;
+use crate::gui::session::{
+    Design, LoadError, PUBLIC_BASE_URL, decode_share_payload, design_from_json, design_to_json,
+    share_link,
+};
 use crate::gui::sizing::SizingState;
 use crate::{DesignInputs, DesignResults, compute_all};
 
@@ -27,6 +39,29 @@ pub const HEADING: &str = "Magnetic coupling calculator";
 
 /// The label of the button that restores the default design.
 pub const RESET_ALL: &str = "Reset all";
+
+/// The session buttons.
+pub const UNDO: &str = "Undo";
+pub const REDO: &str = "Redo";
+pub const SAVE_DESIGN: &str = "Save design";
+pub const LOAD_DESIGN: &str = "Load design";
+pub const COPY_SHARE_LINK: &str = "Copy share link";
+
+/// The file name a saved design suggests.
+pub const DESIGN_FILE_NAME: &str = "magcoupling-design.json";
+
+/// Undo: Ctrl+Z (Cmd+Z on a Mac).
+pub const UNDO_SHORTCUT: egui::KeyboardShortcut =
+    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z);
+
+/// Redo: Ctrl+Shift+Z (Cmd+Shift+Z on a Mac), or Ctrl+Y.
+pub const REDO_SHORTCUTS: [egui::KeyboardShortcut; 2] = [
+    egui::KeyboardShortcut::new(
+        egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT),
+        egui::Key::Z,
+    ),
+    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Y),
+];
 
 /// The heading of the Key design group.
 pub const KEY_DESIGN_HEADING: &str = "Key design";
@@ -48,6 +83,9 @@ pub enum PanelRequest {
         mime: &'static str,
         contents: String,
     },
+    /// Let the user pick a design file, then hand its text to
+    /// [`MagcouplingPanel::load_design_file`].
+    OpenDesign,
 }
 
 /// The views of the centre region. Plan M4-2 adds the geometry view and the plot tabs.
@@ -77,10 +115,24 @@ impl CentreView {
 /// [`MagcouplingPanel::ui`] once per frame.
 pub struct MagcouplingPanel {
     inputs: DesignInputs,
+    /// The sizing mode, free variable and target torque.
+    sizing: SizingState,
+    /// Undo and redo of the design (inputs and sizing state).
+    history: History<Design>,
+    /// The address share links point at.
+    share_base: String,
+    /// What the last session action did, until the next one.
+    status: Option<String>,
     /// The results of `inputs`, recomputed by every [`MagcouplingPanel::ui`].
     results: DesignResults,
     /// The main widget of each Key design row in the last frame, by input path.
     key_widgets: Vec<(&'static str, egui::Id)>,
+    /// The main widget of every input row drawn in the last frame (a slider's value box while
+    /// it has focus): a text field among them edits the design.
+    design_widgets: Vec<egui::Id>,
+    /// Whether the panel acts on the undo and redo keys
+    /// ([`MagcouplingPanel::set_keyboard_shortcuts`]).
+    keyboard_shortcuts: bool,
     /// Why the last edit was refused, until the next accepted edit or reset.
     last_error: Option<String>,
     /// The view the centre region shows.
@@ -103,8 +155,14 @@ impl MagcouplingPanel {
         let results = compute_all(&inputs);
         Self {
             inputs,
+            sizing: SizingState::default(),
+            history: History::new(Design::default()),
+            share_base: PUBLIC_BASE_URL.to_owned(),
+            status: None,
             results,
             key_widgets: Vec::new(),
+            design_widgets: Vec::new(),
+            keyboard_shortcuts: true,
             last_error: None,
             centre: CentreView::Results,
             results_table: ResultsTable::default(),
@@ -117,11 +175,112 @@ impl MagcouplingPanel {
         std::mem::take(&mut self.requests)
     }
 
-    /// The design as a file holds it.
-    fn design(&self) -> Design {
+    /// The design: the inputs and the sizing state, as a file holds them.
+    pub fn design(&self) -> Design {
         Design {
             inputs: self.inputs.clone(),
-            sizing: SizingState::default(),
+            sizing: self.sizing,
+        }
+    }
+
+    /// Replaces the design (an edit like any other: it can be undone).
+    fn set_design(&mut self, design: Design) {
+        self.inputs = design.inputs;
+        self.sizing = design.sizing;
+        self.results = compute_all(&self.inputs);
+        self.last_error = None;
+    }
+
+    /// Sets the address share links point at: the page's own address on the web (so a link
+    /// made on a local server opens there), [`PUBLIC_BASE_URL`] by default.
+    pub fn set_share_base(&mut self, base: impl Into<String>) {
+        self.share_base = base.into();
+    }
+
+    /// The share link of the design.
+    pub fn share_link(&self) -> String {
+        share_link(&self.share_base, &self.design())
+    }
+
+    /// Loads a design file's text; on refusal the design is unchanged and the panel shows why.
+    pub fn load_design_file(&mut self, text: &str) -> Result<(), LoadError> {
+        self.load(design_from_json(text), "Design file loaded")
+    }
+
+    /// Loads the design a share link's `?m=` value holds; on refusal the design is unchanged
+    /// and the panel shows why.
+    pub fn load_share_payload(&mut self, payload: &str) -> Result<(), LoadError> {
+        self.load(
+            decode_share_payload(payload),
+            "Design loaded from the share link",
+        )
+    }
+
+    /// Opens `design` as the session's start: the design is replaced and the undo history
+    /// starts there, so the first Undo does not throw it away. Every other replacement of the
+    /// design (a loaded file, reset all) is an edit and can be undone.
+    pub fn open_design(&mut self, design: Design) {
+        self.history = History::new(design.clone());
+        self.set_design(design);
+    }
+
+    /// Opens the design a share link's `?m=` value holds as the session's start
+    /// ([`MagcouplingPanel::open_design`]: the web app's link at start-up); on refusal the
+    /// design and the history are unchanged and the panel shows why.
+    pub fn open_share_payload(&mut self, payload: &str) -> Result<(), LoadError> {
+        self.load_with(
+            decode_share_payload(payload),
+            "Design loaded from the share link",
+            Self::open_design,
+        )
+    }
+
+    /// Lets the panel act on Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y (`true`, the default) or leaves
+    /// the key events to the host. A host with its own undo turns them off while its own part
+    /// has the user's attention, so one key press never undoes both (M5: the linkage app reads
+    /// the same keys without consuming them).
+    pub fn set_keyboard_shortcuts(&mut self, enabled: bool) {
+        self.keyboard_shortcuts = enabled;
+    }
+
+    /// Applies a loaded design as an edit that can be undone.
+    fn load(&mut self, design: Result<Design, LoadError>, done: &str) -> Result<(), LoadError> {
+        self.load_with(design, done, Self::set_design)
+    }
+
+    /// Applies a loaded design with `apply` (an edit, or a new start) and says `done`; on
+    /// refusal changes nothing and shows why.
+    fn load_with(
+        &mut self,
+        design: Result<Design, LoadError>,
+        done: &str,
+        apply: fn(&mut Self, Design),
+    ) -> Result<(), LoadError> {
+        match design {
+            Ok(design) => {
+                apply(self, design);
+                self.status = Some(done.to_owned());
+                Ok(())
+            }
+            Err(error) => {
+                self.last_error = Some(error.to_string());
+                self.status = None;
+                Err(error)
+            }
+        }
+    }
+
+    /// Undoes the last change to the design, if any.
+    pub fn undo(&mut self) {
+        if let Some(design) = self.history.undo(&self.design()) {
+            self.set_design(design);
+        }
+    }
+
+    /// Redoes the last undone change, if any.
+    pub fn redo(&mut self) {
+        if let Some(design) = self.history.redo(&self.design()) {
+            self.set_design(design);
         }
     }
 
@@ -135,16 +294,15 @@ impl MagcouplingPanel {
         &self.results
     }
 
-    /// Back to the default design.
+    /// Back to the default design (inputs and sizing state); it can be undone.
     pub fn reset(&mut self) {
-        self.inputs = DesignInputs::default();
-        self.results = compute_all(&self.inputs);
-        self.last_error = None;
+        self.set_design(Design::default());
     }
 
     /// Draws the panel into `ui` and applies this frame's edits.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         ui.push_id("magcoupling_panel", |ui| {
+            self.shortcuts(ui);
             egui::TopBottomPanel::top("magcoupling_header").show_inside(ui, |ui| {
                 self.header_ui(ui);
             });
@@ -164,6 +322,37 @@ impl MagcouplingPanel {
                 });
             egui::CentralPanel::default().show_inside(ui, |ui| self.centre_ui(ui));
         });
+        // One undo step per settled edit.
+        let settled = !self.editing(ui);
+        self.history.observe(&self.design(), settled);
+    }
+
+    /// Whether an edit of the design is in progress: a pointer button down (a drag), a key held
+    /// down (an arrow key auto-repeating: the whole run is one step, decision M41-14), or a
+    /// text field of an input row focused (a typed value, a part name). Undo steps wait for it
+    /// to end. A focused text field elsewhere (the results search) edits no design, so it holds
+    /// nothing back.
+    fn editing(&self, ui: &egui::Ui) -> bool {
+        let design_text =
+            focused_text_field(ui.ctx()).is_some_and(|id| self.design_widgets.contains(&id));
+        design_text || ui.input(|i| i.pointer.any_down() || !i.keys_down.is_empty())
+    }
+
+    /// Ctrl+Z and Ctrl+Shift+Z or Ctrl+Y, unless the host keeps them
+    /// ([`MagcouplingPanel::set_keyboard_shortcuts`]) or a text field has focus (it undoes its
+    /// own typing).
+    fn shortcuts(&mut self, ui: &mut egui::Ui) {
+        if !self.keyboard_shortcuts || focused_text_field(ui.ctx()).is_some() {
+            return;
+        }
+        // The redo shortcuts first: Ctrl+Z would also match Ctrl+Shift+Z.
+        let redo = ui.input_mut(|i| REDO_SHORTCUTS.iter().any(|s| i.consume_shortcut(s)));
+        let undo = !redo && ui.input_mut(|i| i.consume_shortcut(&UNDO_SHORTCUT));
+        if redo {
+            self.redo();
+        } else if undo {
+            self.undo();
+        }
     }
 
     /// The centre region: the view tabs, then the view.
@@ -194,23 +383,69 @@ impl MagcouplingPanel {
         }
     }
 
-    /// The header line: heading, the session buttons, the last refusal.
+    /// The header line: heading, the session buttons, then the last refusal or what the last
+    /// session action did.
     fn header_ui(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+        let design = self.design();
+        ui.horizontal_wrapped(|ui| {
             ui.heading(HEADING);
             ui.separator();
+            let can_undo = self.history.can_undo(&design);
+            if ui
+                .add_enabled(can_undo, egui::Button::new(UNDO))
+                .on_hover_text("Ctrl+Z")
+                .clicked()
+            {
+                self.undo();
+            }
+            let can_redo = self.history.can_redo(&design);
+            if ui
+                .add_enabled(can_redo, egui::Button::new(REDO))
+                .on_hover_text("Ctrl+Shift+Z or Ctrl+Y")
+                .clicked()
+            {
+                self.redo();
+            }
             if ui.button(RESET_ALL).clicked() {
                 self.reset();
+                self.status = Some("Default design restored".to_owned());
+            }
+            ui.separator();
+            if ui.button(SAVE_DESIGN).clicked() {
+                self.requests.push(PanelRequest::SaveFile {
+                    file_name: DESIGN_FILE_NAME.to_owned(),
+                    mime: "application/json",
+                    contents: design_to_json(&design),
+                });
+            }
+            if ui.button(LOAD_DESIGN).clicked() {
+                self.requests.push(PanelRequest::OpenDesign);
+            }
+            if ui
+                .button(COPY_SHARE_LINK)
+                .on_hover_text("A link that opens this design, sizing state included")
+                .clicked()
+            {
+                let link = self.share_link();
+                self.status = Some(format!(
+                    "Share link copied to the clipboard ({} characters)",
+                    link.len()
+                ));
+                ui.ctx().copy_text(link);
             }
         });
         if let Some(error) = &self.last_error {
             ui.colored_label(ui.visuals().error_fg_color, error);
+        } else if let Some(status) = &self.status {
+            ui.weak(status);
         }
     }
 
     /// The left side: the Key design group, then every input by package group.
     fn inputs_ui(&mut self, ui: &mut egui::Ui) {
         let catalogue = InputCatalogue::get();
+        // This frame's rows only, whichever groups are open.
+        self.design_widgets.clear();
         egui::ScrollArea::vertical()
             .id_salt("magcoupling_inputs_scroll")
             .auto_shrink([false, false])
@@ -223,6 +458,7 @@ impl MagcouplingPanel {
                         for entry in &catalogue.key_design {
                             let widget = self.input_row_ui(ui, entry);
                             self.key_widgets.push((entry.path.as_str(), widget));
+                            self.design_widgets.push(widget);
                         }
                     });
                 for group in &catalogue.groups {
@@ -236,7 +472,8 @@ impl MagcouplingPanel {
                                     ui.strong(section.label);
                                 }
                                 for entry in &section.entries {
-                                    self.input_row_ui(ui, entry);
+                                    let widget = self.input_row_ui(ui, entry);
+                                    self.design_widgets.push(widget);
                                 }
                             }
                         });
@@ -276,6 +513,14 @@ impl MagcouplingPanel {
     }
 }
 
+/// The widget with keyboard focus if it is a text field: a text input, or a slider's value box
+/// being typed in (egui's `wants_keyboard_input` is true for any focused widget, a slider rail
+/// too).
+fn focused_text_field(ctx: &egui::Context) -> Option<egui::Id> {
+    ctx.memory(|m| m.focused())
+        .filter(|&id| egui::text_edit::TextEditState::load(ctx, id).is_some())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,9 +528,10 @@ mod tests {
     use crate::gui::dashboard::{END_EFFECT_BANNER, STORED_3D_LABEL, result_info};
     use crate::gui::format::{format_value, with_unit};
     use crate::gui::input_ui::{CHANGED_DOT, OUTSIDE_RANGE_NOTE, RESET_LABEL};
+    use crate::gui::session::encode_share_payload;
     use crate::gui::test_support::{
-        SCREEN, drawn_texts, key_tap, primary_button, select_all, short_magnets, sized_frame,
-        text_rect,
+        SCREEN, drawn_texts, key_event, key_tap, primary_button, select_all, short_magnets,
+        sized_frame, text_rect,
     };
     use crate::headline;
 
@@ -433,9 +679,10 @@ mod tests {
         // and a measured drag from a file, and the vacuum permeability's two defaults (every
         // group open, on a screen tall enough to draw every row).
         let mut harness = Harness::on_screen(egui::vec2(1280.0, 12000.0));
-        harness.panel.inputs.metal.face_gap_mm = 1.4123;
-        harness.panel.inputs.metal.measured_drag_Nm = Some(0.012345);
-        let design = harness.panel.inputs.clone();
+        let mut design = Design::default();
+        design.inputs.metal.face_gap_mm = 1.4123;
+        design.inputs.metal.measured_drag_Nm = Some(0.012345);
+        harness.panel.open_design(design.clone());
         // Bottom up: opening a group moves only the groups below it, so no click lands on a
         // row that an opening group above has just moved there.
         for group in InputCatalogue::get().groups.iter().rev() {
@@ -450,8 +697,14 @@ mod tests {
             2,
             "both mu0 rows drawn"
         );
-        assert_eq!(harness.panel.inputs(), &design);
+        assert_eq!(harness.panel.design(), design);
         assert_eq!(harness.panel.last_error, None);
+        assert_eq!(
+            harness.panel.history.undo_len(),
+            0,
+            "no row reported an edit"
+        );
+        assert!(!harness.panel.history.can_undo(&design));
     }
 
     #[test]
@@ -855,6 +1108,364 @@ mod tests {
         assert_eq!(panel.last_error, None);
         assert_eq!(panel.inputs(), &DesignInputs::default());
         assert_eq!(panel.results(), &compute_all(&DesignInputs::default()));
+    }
+
+    /// A keyboard shortcut tapped: pressed and released in one frame.
+    fn shortcut_tap(shortcut: egui::KeyboardShortcut) -> Vec<egui::Event> {
+        [true, false]
+            .map(|pressed| egui::Event::Key {
+                key: shortcut.logical_key,
+                physical_key: None,
+                pressed,
+                repeat: false,
+                modifiers: shortcut.modifiers,
+            })
+            .to_vec()
+    }
+
+    /// The design with the face gap at `gap`.
+    fn gap_design(gap: f64) -> Design {
+        let mut design = Design::default();
+        design.inputs.metal.face_gap_mm = gap;
+        design
+    }
+
+    #[test]
+    fn undo_reverses_a_change_and_redo_brings_it_back() {
+        let mut harness = Harness::new();
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        assert_eq!(harness.number(FACE_GAP), 1.41);
+        harness.click_text(UNDO);
+        assert_eq!(harness.panel.design(), Design::default());
+        assert_eq!(
+            harness.panel.results(),
+            &compute_all(&DesignInputs::default())
+        );
+        harness.click_text(REDO);
+        assert_eq!(harness.panel.design(), gap_design(1.41));
+        assert_eq!(
+            harness.panel.results(),
+            &compute_all(&gap_design(1.41).inputs)
+        );
+    }
+
+    #[test]
+    fn each_arrow_nudge_is_one_undo_step() {
+        let mut harness = Harness::new();
+        harness.focus(FACE_GAP);
+        for _ in 0..3 {
+            harness.frame(key_tap(egui::Key::ArrowRight));
+        }
+        assert_eq!(harness.panel.history.undo_len(), 3);
+        harness.panel.undo();
+        assert_eq!(harness.number(FACE_GAP), 1.42);
+    }
+
+    #[test]
+    fn a_held_arrow_key_is_one_undo_step() {
+        // A held arrow key auto-repeats (about 30 presses a second; egui reads every press after
+        // the first as a repeat). The run is one edit until the key is released (decision
+        // M41-14), so holding a key cannot flood the undo levels.
+        let mut harness = Harness::new();
+        harness.focus(FACE_GAP);
+        for _ in 0..20 {
+            harness.frame(vec![key_event(egui::Key::ArrowRight, true)]);
+        }
+        assert_eq!(harness.number(FACE_GAP), 1.6);
+        assert_eq!(harness.panel.history.undo_len(), 0, "still held");
+        harness.frame(vec![key_event(egui::Key::ArrowRight, false)]);
+        assert_eq!(harness.panel.history.undo_len(), 1);
+        harness.panel.undo();
+        assert_eq!(harness.panel.design(), Design::default());
+    }
+
+    #[test]
+    fn a_drag_is_one_undo_step() {
+        let mut harness = Harness::new();
+        let rail = harness.widget(FACE_GAP).rect;
+        let start = rail.left_center() + egui::vec2(20.0, 0.0);
+        harness.frame(vec![egui::Event::PointerMoved(start)]);
+        harness.frame(vec![primary_button(start, true)]);
+        for step in 1..=5 {
+            let at = start + egui::vec2(10.0 * step as f32, 0.0);
+            harness.frame(vec![egui::Event::PointerMoved(at)]);
+        }
+        let end = start + egui::vec2(50.0, 0.0);
+        harness.frame(vec![primary_button(end, false)]);
+        harness.frame(Vec::new());
+        let dragged = harness.number(FACE_GAP);
+        assert!(dragged > 1.4, "{dragged}");
+        assert_eq!(harness.panel.history.undo_len(), 1, "the whole drag");
+        harness.panel.undo();
+        assert_eq!(harness.panel.design(), Design::default());
+    }
+
+    #[test]
+    fn the_keyboard_shortcuts_undo_and_redo() {
+        let mut harness = Harness::new();
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        harness.frame(shortcut_tap(UNDO_SHORTCUT));
+        assert_eq!(harness.panel.design(), Design::default());
+        harness.frame(shortcut_tap(REDO_SHORTCUTS[0]));
+        assert_eq!(harness.panel.design(), gap_design(1.41));
+        harness.frame(shortcut_tap(UNDO_SHORTCUT));
+        harness.frame(shortcut_tap(REDO_SHORTCUTS[1]));
+        assert_eq!(harness.panel.design(), gap_design(1.41));
+    }
+
+    #[test]
+    fn a_host_can_keep_ctrl_z_for_itself() {
+        // M5 hosts the panel in an egui::Window of the linkage app, which undoes its own model
+        // on Ctrl+Z. With the panel's shortcuts off the key is the host's alone: the panel does
+        // not undo, and the event is still there for the host after the panel's frame.
+        let ctx = egui::Context::default();
+        let mut panel = MagcouplingPanel::new();
+        panel
+            .load_design_file(&design_to_json(&gap_design(2.0)))
+            .unwrap();
+        let frame = |panel: &mut MagcouplingPanel, events: Vec<egui::Event>| {
+            let mut host_saw_undo = false;
+            let input = egui::RawInput {
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                egui::Window::new("Magnetic coupling")
+                    .default_size([1100.0, 1200.0])
+                    .show(ctx, |ui| panel.ui(ui));
+                host_saw_undo = ctx.input_mut(|i| i.consume_shortcut(&UNDO_SHORTCUT));
+            });
+            host_saw_undo
+        };
+        frame(&mut panel, Vec::new());
+        panel.set_keyboard_shortcuts(false);
+        assert!(
+            frame(&mut panel, shortcut_tap(UNDO_SHORTCUT)),
+            "left to the host"
+        );
+        assert_eq!(panel.design(), gap_design(2.0), "the panel did not undo");
+        // On (the default), the panel undoes and takes the event.
+        panel.set_keyboard_shortcuts(true);
+        assert!(!frame(&mut panel, shortcut_tap(UNDO_SHORTCUT)));
+        assert_eq!(panel.design(), Design::default());
+    }
+
+    #[test]
+    fn ctrl_z_in_a_text_field_is_left_to_the_field() {
+        let mut harness = Harness::new();
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        harness.focus(PART_INNER);
+        harness.frame(vec![egui::Event::Text("X".to_owned())]);
+        harness.frame(shortcut_tap(UNDO_SHORTCUT));
+        // The design's undo did not run: the face gap step is still there, nothing to redo.
+        assert_eq!(harness.number(FACE_GAP), 1.41);
+        assert!(!harness.panel.history.can_redo(&harness.panel.design()));
+    }
+
+    #[test]
+    fn typing_a_part_name_is_one_undo_step_once_the_field_loses_focus() {
+        let mut harness = Harness::new();
+        harness.focus(PART_INNER);
+        for letter in ["A", "B", "C"] {
+            harness.frame(vec![egui::Event::Text(letter.to_owned())]);
+        }
+        assert_eq!(harness.panel.history.undo_len(), 0, "still typing");
+        harness.ctx.memory_mut(|m| m.stop_text_input());
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.history.undo_len(), 1);
+        harness.panel.undo();
+        assert_eq!(harness.panel.design(), Design::default());
+    }
+
+    #[test]
+    fn a_slider_s_value_box_being_typed_in_is_an_edit_of_the_design() {
+        // egui gives a Slider's response its value box's id while the box has focus, so the
+        // row's widget id names the focused text field: typing a value is an edit in progress.
+        let mut harness = Harness::new();
+        harness.click_text("1.40 mm");
+        let focused = focused_text_field(&harness.ctx).expect("the value box has focus");
+        assert!(harness.panel.design_widgets.contains(&focused));
+        harness.frame([select_all(), vec![egui::Event::Text("2".to_owned())]].concat());
+        assert_eq!(harness.panel.history.undo_len(), 0, "still typing");
+        harness.frame(key_tap(egui::Key::Enter));
+        harness.frame(Vec::new());
+        assert_eq!(harness.number(FACE_GAP), 2.0);
+        assert_eq!(harness.panel.history.undo_len(), 1);
+    }
+
+    #[test]
+    fn a_focused_results_search_holds_back_no_undo_step() {
+        // The search box is a text field, but it edits no design: a change while it has focus
+        // (a design file the host's picker delivers) is an undo step at once.
+        let mut harness = Harness::new();
+        harness.click_text(crate::gui::results_table::SEARCH_HINT);
+        harness.frame(vec![egui::Event::Text("pull".to_owned())]);
+        assert!(
+            focused_text_field(&harness.ctx).is_some(),
+            "typing in the search"
+        );
+        harness
+            .panel
+            .load_design_file(&design_to_json(&gap_design(2.5)))
+            .unwrap();
+        harness.frame(Vec::new());
+        assert!(
+            focused_text_field(&harness.ctx).is_some(),
+            "still in the search"
+        );
+        assert_eq!(harness.panel.history.undo_len(), 1);
+    }
+
+    #[test]
+    fn only_the_rows_drawn_this_frame_count_as_design_fields() {
+        let mut harness = Harness::new();
+        let key_rows = InputCatalogue::get().key_design.len();
+        assert_eq!(harness.panel.design_widgets.len(), key_rows);
+        // Every group closed: no row is drawn, so none counts (no stale ids, no growth).
+        harness.click_text(KEY_DESIGN_HEADING);
+        for _ in 0..10 {
+            harness.frame(Vec::new());
+        }
+        assert!(harness.panel.design_widgets.is_empty());
+    }
+
+    #[test]
+    fn reset_all_can_be_undone() {
+        let mut harness = Harness::new();
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        harness.click_text(RESET_ALL);
+        assert_eq!(harness.panel.design(), Design::default());
+        harness.click_text(UNDO);
+        assert_eq!(harness.panel.design(), gap_design(1.41));
+    }
+
+    #[test]
+    fn save_design_queues_the_design_file_and_load_design_asks_for_one() {
+        let mut harness = Harness::new();
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        harness.click_text(SAVE_DESIGN);
+        harness.click_text(LOAD_DESIGN);
+        assert_eq!(
+            harness.panel.take_requests(),
+            vec![
+                PanelRequest::SaveFile {
+                    file_name: DESIGN_FILE_NAME.to_owned(),
+                    mime: "application/json",
+                    contents: design_to_json(&gap_design(1.41)),
+                },
+                PanelRequest::OpenDesign,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_loaded_design_file_replaces_the_design_and_can_be_undone() {
+        let mut harness = Harness::new();
+        let mut loaded = gap_design(2.5);
+        loaded.sizing.target_Nm = 3.0;
+        harness
+            .panel
+            .load_design_file(&design_to_json(&loaded))
+            .unwrap();
+        // The header grows to the status line on the next frame.
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(harness.panel.design(), loaded);
+        assert_eq!(harness.panel.results(), &compute_all(&loaded.inputs));
+        assert_eq!(count(&output, "Design file loaded"), 1);
+        harness.panel.undo();
+        assert_eq!(harness.panel.design(), Design::default());
+    }
+
+    #[test]
+    fn a_refused_design_file_changes_nothing_and_says_why() {
+        let mut harness = Harness::new();
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        let text =
+            r#"{"format": "magcoupling-design", "version": 1, "inputs": {"coupling.backiron": 7}}"#;
+        let error = harness.panel.load_design_file(text).unwrap_err();
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(harness.panel.design(), gap_design(1.41));
+        assert_eq!(count(&output, &error.to_string()), 1);
+        assert_eq!(
+            error.to_string(),
+            "inputs refused: coupling.backiron: 7 is not one of the choices"
+        );
+    }
+
+    #[test]
+    fn copy_share_link_puts_the_design_s_link_on_the_clipboard() {
+        let mut harness = Harness::new();
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        harness
+            .panel
+            .set_share_base("http://localhost:8080/magcoupling/");
+        let output = harness.click_text(COPY_SHARE_LINK);
+        let copied: Vec<&String> = output
+            .platform_output
+            .commands
+            .iter()
+            .filter_map(|c| match c {
+                egui::OutputCommand::CopyText(text) => Some(text),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(copied, [&harness.panel.share_link()]);
+        let payload = copied[0]
+            .strip_prefix("http://localhost:8080/magcoupling/?m=")
+            .expect("the page's own address");
+        // The link opens the same design in another panel.
+        let mut other = MagcouplingPanel::new();
+        other.load_share_payload(payload).unwrap();
+        assert_eq!(other.design(), gap_design(1.41));
+    }
+
+    #[test]
+    fn a_broken_share_link_changes_nothing_and_says_why() {
+        let mut panel = MagcouplingPanel::new();
+        let error = panel.load_share_payload("not-a-design").unwrap_err();
+        assert!(matches!(error, LoadError::Link(_)), "{error}");
+        assert_eq!(panel.design(), Design::default());
+        assert_eq!(panel.last_error, Some(error.to_string()));
+    }
+
+    #[test]
+    fn a_share_link_opened_at_start_up_is_not_an_undo_step() {
+        // The web app opens a ?m= link as the session's start: the first Undo must not throw
+        // the shared design away.
+        let shared = gap_design(2.0);
+        let mut harness = Harness::new();
+        harness
+            .panel
+            .open_share_payload(&encode_share_payload(&shared))
+            .unwrap();
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.design(), shared);
+        assert!(!harness.panel.history.can_undo(&shared));
+        harness.frame(shortcut_tap(UNDO_SHORTCUT));
+        assert_eq!(harness.panel.design(), shared);
+        // An edit after it undoes back to the shared design, not to the defaults.
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        assert_eq!(harness.panel.design(), gap_design(2.01));
+        harness.panel.undo();
+        assert_eq!(harness.panel.design(), shared);
+        // A refused link changes neither the design nor the history.
+        let error = harness
+            .panel
+            .open_share_payload("not-a-design")
+            .unwrap_err();
+        assert_eq!(harness.panel.last_error, Some(error.to_string()));
+        assert_eq!(harness.panel.design(), shared);
+        assert!(harness.panel.history.can_redo(&shared));
     }
 
     #[test]
