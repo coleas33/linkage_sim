@@ -163,10 +163,11 @@ fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
     // not a strict or a loose twin. Read from the defaults, those values cannot go stale (the
     // span point's length is a dyadic constant, explained there).
     let defaults = compute_all(&DesignInputs::default());
-    let m4 = |field: &str| match defaults.get(&format!("clamps.table[2].{field}")) {
+    let default_num = |path: &str| match defaults.get(path) {
         Some(Value::Num(x)) => x,
-        other => panic!("clamps.table[2].{field}: {other:?}"),
+        other => panic!("{path}: {other:?}"),
     };
+    let m4 = |field: &str| default_num(&format!("clamps.table[2].{field}"));
     vec![
         (
             // The outer ring (manual, ferrite's beta) has a 0/0 cold onset, so its cold limit is
@@ -223,6 +224,27 @@ fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
             // so 9.5 mm (every value dyadic: exact), the engine's own unit test's length.
             "clamp M4 span exactly zero",
             vec![("clamps.clamp_length_mm", Value::Num(9.5))],
+        ),
+        // The dashboard's two verdict comparisons, on the default design, each input set to the
+        // value it is compared with (both inputs, read from the defaults like the clamp values).
+        (
+            // materials.cup_wall_check says OK at `wall >= need` (materials.rs): a cup wall of
+            // exactly the back-iron thickness needed is not too thin.
+            "cup wall exactly the back iron needed",
+            vec![(
+                "metal.cup_wall_corner_mm",
+                Value::Num(default_num("model.backiron_needed_mm")),
+            )],
+        ),
+        (
+            // metal.clearance_check says Below target only at `min run < target`
+            // (metal_design.rs, whose own unit test pins the same edge): a residual target of
+            // exactly the minimum running clearance is met.
+            "residual target exactly the minimum running clearance",
+            vec![(
+                "metal.residual_target_mm",
+                Value::Num(default_num("metal.min_running_clearance_mm")),
+            )],
         ),
         // The clamp counts outside i64 (`saturation_artifact`), one point per kind, each
         // reaching every screw size the exemption's liveness assertion names.
