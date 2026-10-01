@@ -475,6 +475,8 @@ Both rings. Registry and user bases; E22 alone on the registry basis.
 
 ## 5. Decisions for the user
 
+**Approved (user, 2026-10-01): option A on all 10 decisions.**
+
 Each decision lists the recommended option first.
 
 1. **E21 numbers.**
