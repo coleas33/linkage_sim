@@ -150,10 +150,10 @@ fn augmentations() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
     v
 }
 
-/// Input sets `set` accepts that no differential case or augmentation reaches, each with
-/// what it pins, applied on top of the defaults (records hold over every input `set` accepts,
-/// except a clamp count outside i64, which the engine holds as its saturating cast:
-/// `saturation_artifact`).
+/// Input sets `set` accepts that pin what no differential case or augmentation is built to
+/// reach, each with what it pins, applied on top of the defaults (records hold over every input
+/// `set` accepts, except a clamp count outside i64, which the engine holds as its saturating
+/// cast: `saturation_artifact`).
 fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
     let text = |s: &str| Value::Text(s.to_owned());
     // The clamp comparisons the differential data never lands on exactly (the engine's own unit
@@ -168,6 +168,23 @@ fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
         other => panic!("{path}: {other:?}"),
     };
     let m4 = |field: &str| default_num(&format!("clamps.table[2].{field}"));
+    // The temperature chain's points check that they sit on their edge: `on_edge` applies the
+    // sets to the defaults and asserts that each listed result holds exactly the given value
+    // there, so a change to the defaults or the engine cannot leave a point pinning nothing.
+    let on_edge = |label: &'static str, sets: Vec<(&'static str, Value)>, ties: &[(&str, f64)]| {
+        let results = compute_all(&defaults_with(label, &sets));
+        for &(path, want) in ties {
+            assert_eq!(
+                results.get(path),
+                Some(Value::Num(want)),
+                "edge point {label}: {path} is not on its edge"
+            );
+        }
+        (label, sets)
+    };
+    let num = Value::Num;
+    let onset = default_num("temperature.demag.onset_skipping_C");
+    let hot_day_start = default_num("temperature.duty.hot_day_start_C");
     vec![
         (
             // The outer ring (manual, ferrite's beta) has a 0/0 cold onset, so its cold limit is
@@ -246,6 +263,189 @@ fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
                 Value::Num(default_num("metal.min_running_clearance_mm")),
             )],
         ),
+        // The temperature chain's comparisons (the engine's own unit tests pin the same edges,
+        // metal_design.rs and temperature.rs), each on the default design with an input set from
+        // the defaults so that the comparison holds with equality. Where a magnet limit must
+        // equal a value X, the design margin is set to onset - X: the magnet limit is the
+        // skipping onset minus the margin, the onset does not read the margin, and both
+        // subtractions are exact (Sterbenz: the onset, about 103 °C, lies within a factor 2 of
+        // each X used), so the limit is exactly X.
+        on_edge(
+            // metal.hot_min_check says Below hot minimum only at `hot low < required minimum`;
+            // the hot low torque does not read the required minimum.
+            "required minimum exactly the hot low torque",
+            vec![(
+                "metal.required_min_Nm",
+                num(default_num("metal.torque_hot_low_Nm")),
+            )],
+            &[(
+                "metal.torque_hot_low_Nm",
+                default_num("metal.torque_hot_low_Nm"),
+            )],
+        ),
+        on_edge(
+            // torque_hot_day_check meets it at `hot-day torque >= required minimum`.
+            "required minimum exactly the hot-day torque",
+            vec![(
+                "metal.required_min_Nm",
+                num(default_num("temperature.magnet_life.torque_hot_day_Nm")),
+            )],
+            &[(
+                "temperature.magnet_life.torque_hot_day_Nm",
+                default_num("temperature.magnet_life.torque_hot_day_Nm"),
+            )],
+        ),
+        // The rating checks say OK at `operating temperature <= rating`, one point per ring
+        // (a differential case lands there too today: the slider's maximum is the 150 °C
+        // rating; these points do not depend on it).
+        on_edge(
+            "operating temperature exactly the inner ring's rating",
+            vec![("coupling.op_temp_C", num(default_num("model.inner_tmax_C")))],
+            &[("model.inner_tmax_C", default_num("model.inner_tmax_C"))],
+        ),
+        on_edge(
+            "operating temperature exactly the outer ring's rating",
+            vec![("coupling.op_temp_C", num(default_num("model.outer_tmax_C")))],
+            &[("model.outer_tmax_C", default_num("model.outer_tmax_C"))],
+        ),
+        on_edge(
+            // governing_note says the magnets govern at `magnet limit <= adhesive limit`.
+            "magnet limit exactly the adhesive limit",
+            vec![(
+                "temperature.demag.design_margin_C",
+                num(onset - default_num("temperature.adhesive.design_limit_C")),
+            )],
+            &[(
+                "temperature.demag.magnet_limit_C",
+                default_num("temperature.adhesive.design_limit_C"),
+            )],
+        ),
+        // The verdict's four terms, each alone on its edge with the other three holding
+        // (temperature.rs `verdict_*`). With heat flowing the peak lies above the hot-day
+        // start, so a hot-day margin of 0 leaves the magnet or the adhesive margin at most 0;
+        // only a negative bench drag (`set` takes it, as Python does) separates the two.
+        on_edge(
+            // `margin_hot > 0`: the drag cools the coupling, so the peak stays below the hot-day
+            // start, which the governing magnet limit equals.
+            "hot-day margin exactly 0 (a negative bench drag)",
+            vec![
+                ("metal.measured_drag_Nm", num(-1.0)),
+                (
+                    "temperature.demag.design_margin_C",
+                    num(onset - hot_day_start),
+                ),
+            ],
+            &[("temperature.summary.margin_hot_day_C", 0.0)],
+        ),
+        on_edge(
+            // `magnet margin > 0`: the peak does not read the margin.
+            "magnet margin exactly 0",
+            vec![(
+                "temperature.demag.design_margin_C",
+                num(onset - default_num("temperature.magnet_life.peak_C")),
+            )],
+            &[("temperature.magnet_life.margin_limit_C", 0.0)],
+        ),
+        on_edge(
+            // `adhesive margin > 0`: DP460's 60 °C limit governs, and the hot-day ambient that
+            // puts the peak exactly on it is searched (the peak follows the ambient one for one).
+            "adhesive margin exactly 0",
+            vec![
+                ("temperature.adhesive.selected", Value::Int(4)),
+                (
+                    "temperature.duty.hot_ambient_C",
+                    num(exact_input(
+                        &[("temperature.adhesive.selected", Value::Int(4))],
+                        "temperature.duty.hot_ambient_C",
+                        (1.0, 60.0),
+                        "temperature.adhesive_life.margin_C",
+                        0.0,
+                    )),
+                ),
+            ],
+            &[("temperature.adhesive_life.margin_C", 0.0)],
+        ),
+        on_edge(
+            // `cure margin >= 10`: EA 9514 cures at 120 °C, and the single-ring reverse field
+            // that puts its onset exactly at 130 °C is searched.
+            "cure margin exactly 10",
+            vec![
+                ("temperature.adhesive.selected", Value::Int(2)),
+                (
+                    "temperature.demag.h_rev_single_ring_kA_m",
+                    num(exact_input(
+                        &[("temperature.adhesive.selected", Value::Int(2))],
+                        "temperature.demag.h_rev_single_ring_kA_m",
+                        (1.0, 1000.0),
+                        "temperature.summary.cure_margin_C",
+                        10.0,
+                    )),
+                ),
+            ],
+            &[("temperature.summary.cure_margin_C", 10.0)],
+        ),
+        // calibration.fea_interp_Nm interpolates the two FEA torques only for a corner gap in
+        // [1, 1.5] mm. With the gap defined as the spacing (code 0) the corner gap is the
+        // spacing, so each end exactly (differential cases land there too today).
+        on_edge(
+            "Calibration corner gap exactly 1 mm (the FEA range's low end)",
+            vec![
+                ("calibration.gap_definition", Value::Int(0)),
+                ("calibration.spacing_mm", num(1.0)),
+            ],
+            &[("calibration.corner_gap_mm", 1.0)],
+        ),
+        on_edge(
+            "Calibration corner gap exactly 1.5 mm (the FEA range's high end)",
+            vec![
+                ("calibration.gap_definition", Value::Int(0)),
+                ("calibration.spacing_mm", num(1.5)),
+            ],
+            &[("calibration.corner_gap_mm", 1.5)],
+        ),
+        on_edge(
+            // The time to the limit (E12): `start >= limit => 0` at equality, tested before
+            // `steady <= limit`. A bench drag of 0 puts both steady states at the start too, so a
+            // strict `>` would read "never" (with heat flowing it would give -tau ln(1 - 0) =
+            // -0 s, which the parity rule takes for 0: that point would pin nothing).
+            "hot-day start exactly the governing limit, no slip heating",
+            vec![
+                ("metal.measured_drag_Nm", num(0.0)),
+                (
+                    "temperature.demag.design_margin_C",
+                    num(onset - hot_day_start),
+                ),
+            ],
+            &[
+                ("temperature.summary.governing_limit_C", hot_day_start),
+                ("temperature.thermal.steady_high_C", hot_day_start),
+                ("temperature.thermal.steady_est_C", hot_day_start),
+            ],
+        ),
+        // `steady <= limit => "never"` at equality, with the start below the limit: the
+        // governing magnet limit set to each steady state in turn (neither reads the margin).
+        on_edge(
+            "governing limit exactly the high-loss steady state",
+            vec![(
+                "temperature.demag.design_margin_C",
+                num(onset - default_num("temperature.thermal.steady_high_C")),
+            )],
+            &[(
+                "temperature.summary.governing_limit_C",
+                default_num("temperature.thermal.steady_high_C"),
+            )],
+        ),
+        on_edge(
+            "governing limit exactly the estimated steady state",
+            vec![(
+                "temperature.demag.design_margin_C",
+                num(onset - default_num("temperature.thermal.steady_est_C")),
+            )],
+            &[(
+                "temperature.summary.governing_limit_C",
+                default_num("temperature.thermal.steady_est_C"),
+            )],
+        ),
         // The clamp counts outside i64 (`saturation_artifact`), one point per kind, each
         // reaching every screw size the exemption's liveness assertion names.
         (
@@ -295,6 +495,62 @@ fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
     ]
 }
 
+/// The defaults with `sets` applied (`label` names the point in a refusal).
+fn defaults_with(label: &str, sets: &[(&str, Value)]) -> DesignInputs {
+    let mut inputs = DesignInputs::default();
+    for (path, value) in sets {
+        inputs
+            .set(path, value.clone())
+            .unwrap_or_else(|e| panic!("{label}: {e}"));
+    }
+    inputs
+}
+
+/// The value in `[lo, hi]` of the input `path` (set on top of the defaults with `base`) at
+/// which the result `out` is exactly `target`, for `out` monotone in it with `target` between
+/// its values at the ends. It bisects on the floats themselves (positive floats order as their
+/// bit patterns), so it ends on two adjacent floats, one of which must give `target` exactly;
+/// it panics if neither does, since an edge point off its edge would pin nothing.
+fn exact_input(
+    base: &[(&'static str, Value)],
+    path: &'static str,
+    (lo, hi): (f64, f64),
+    out: &str,
+    target: f64,
+) -> f64 {
+    assert!(0.0 < lo && lo < hi, "{path}: a positive bracket");
+    let at = |x: f64| {
+        let mut sets = base.to_vec();
+        sets.push((path, Value::Num(x)));
+        match compute_all(&defaults_with(path, &sets)).get(out) {
+            Some(Value::Num(y)) => y,
+            other => panic!("{out}: {other:?}"),
+        }
+    };
+    let below = at(lo) < target;
+    assert_ne!(
+        below,
+        at(hi) < target,
+        "{out} = {target} is not between {path} = {lo} and {hi}"
+    );
+    let (mut a, mut b) = (lo.to_bits(), hi.to_bits());
+    while b - a > 1 {
+        let m = a + (b - a) / 2;
+        if (at(f64::from_bits(m)) < target) == below {
+            a = m;
+        } else {
+            b = m;
+        }
+    }
+    let (a, b) = (f64::from_bits(a), f64::from_bits(b));
+    [a, b]
+        .into_iter()
+        .find(|&x| at(x) == target)
+        .unwrap_or_else(|| {
+            panic!("no {path} gives {out} = {target} exactly: {a} and {b} straddle it")
+        })
+}
+
 /// The defaults, the edge points, then every differential case under every augmentation.
 fn guard_points() -> Vec<Point> {
     let mut points = vec![Point {
@@ -302,15 +558,9 @@ fn guard_points() -> Vec<Point> {
         inputs: DesignInputs::default(),
     }];
     for (label, sets) in edge_points() {
-        let mut inputs = DesignInputs::default();
-        for (path, value) in sets {
-            inputs
-                .set(path, value)
-                .unwrap_or_else(|e| panic!("{label}: {e}"));
-        }
         points.push(Point {
             label: format!("edge point: {label}"),
-            inputs,
+            inputs: defaults_with(label, &sets),
         });
     }
     let augmentations = augmentations();
