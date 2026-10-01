@@ -18,14 +18,15 @@
 //! product  = unary , { ( "*" | "·" | "/" ) , unary } ;
 //! unary    = "-" , unary | power ;
 //! power    = atom , [ "^" , unary ] ;             (* right-associative *)
-//! atom     = number | text | term | local | "n" | "pi" | "π" | "none"
+//! atom     = number | text | term | local | "n" | "pi" | "π" | "none" | "inf" | "nan"
 //!          | call | cases | sum | peak | table | "(" , expr , ")" ;
 //! number   = digit , { digit } , [ "." , digit , { digit } ] , [ ( "e" | "E" ) , [ "-" | "+" ] , digit , { digit } ] ;
 //! text     = '"' , { char - '"' } , '"' ;
 //! term     = "{" , path , [ "|" , unit ] , "}" ;   (* an input or result path; "#" = the index *)
 //! call     = func , "(" , expr , { "," , expr } , ")" ;
 //! func     = "frac" | "sqrt" | "sin" | "cos" | "tan" | "sinh" | "cosh" | "tanh" | "exp"
-//!          | "ln" | "abs" | "min" | "max" | "ceil" | "floor" ;
+//!          | "ln" | "abs" | "min" | "max" | "ceil" | "floor" | "ceilto" | "floorto"
+//!          | "fmt" | "fmtnum" | "concat" ;
 //! sum      = "sum" , "(" , "n" , "in" , "H" , ":" , expr , ")" ;
 //! peak     = "peak" , "(" , "n" , "in" , "H" , ":" , expr , ")" ;
 //! table    = "table" , "(" , text , "," , expr , "," , text , ")" ;
@@ -48,6 +49,12 @@
 //! | `sqrt(a)` | √a | a radical |
 //! | `exp(a)` | e to the a | `e` with a as a superscript |
 //! | `abs(a)`, `ceil(a)`, `floor(a)` | \|a\|, ⌈a⌉, ⌊a⌋ | those brackets |
+//! | `ceilto(a, s)`, `floorto(a, s)` | a rounded up (down) to a multiple of s, as Excel's CEILING (FLOOR) with the engine's 1e-12 guard (`compat::ceiling`, `compat::floor_`) | ⌈a⌉ with s beneath (⌊a⌋ likewise) |
+//! | `fmt(a, d)` | the text of a with d decimals (`compat::fmt_fixed`, Python's `f"{a:.{d}f}"`); d a whole number 0 to 12 | a, with d decimals |
+//! | `fmtnum(a)` | the text of a as the workbook prints a number (`compat::fmt_num`: a whole number without ".0") | a |
+//! | `concat(t, ...)` | the texts joined (every argument a text) | the texts side by side |
+//! | `inf` | +∞ (an onset the knee is never reached at) | ∞ |
+//! | `nan` | not a number: a quantity the engine leaves undefined (a torque at a limit that does not exist) | "undefined" |
 //! | `sin(a)` .. `ln(a)` | the function | upright name, argument in parentheses |
 //! | `min(a, b, ..)`, `max(..)` | Python's `min`/`max`, folded left to right (`compat::py_min`) | upright name |
 //! | `(a)` | a | parentheses (always shown) |
@@ -133,6 +140,11 @@ pub enum Func {
     Max,
     Ceil,
     Floor,
+    CeilTo,
+    FloorTo,
+    Fmt,
+    FmtNum,
+    Concat,
 }
 
 impl Func {
@@ -152,6 +164,11 @@ impl Func {
             "max" => Func::Max,
             "ceil" => Func::Ceil,
             "floor" => Func::Floor,
+            "ceilto" => Func::CeilTo,
+            "floorto" => Func::FloorTo,
+            "fmt" => Func::Fmt,
+            "fmtnum" => Func::FmtNum,
+            "concat" => Func::Concat,
             _ => return None,
         })
     }
@@ -173,12 +190,21 @@ impl Func {
             Func::Max => "max",
             Func::Ceil => "ceil",
             Func::Floor => "floor",
+            Func::CeilTo => "ceilto",
+            Func::FloorTo => "floorto",
+            Func::Fmt => "fmt",
+            Func::FmtNum => "fmtnum",
+            Func::Concat => "concat",
         }
     }
 
-    /// Whether the function takes any number (at least two) of arguments.
-    const fn variadic(self) -> bool {
-        matches!(self, Func::Min | Func::Max)
+    /// How many arguments the function takes: `(least, most)`, `None` for no upper bound.
+    const fn arity(self) -> (usize, Option<usize>) {
+        match self {
+            Func::Min | Func::Max | Func::Concat => (2, None),
+            Func::CeilTo | Func::FloorTo | Func::Fmt => (2, Some(2)),
+            _ => (1, Some(1)),
+        }
     }
 }
 
@@ -466,7 +492,7 @@ struct Parser {
 
 const KEYWORDS: &[&str] = &[
     "cases", "else", "and", "or", "where", "sum", "peak", "table", "in", "n", "pi", "none", "H",
-    "frac",
+    "frac", "inf", "nan",
 ];
 
 impl Parser {
@@ -826,6 +852,14 @@ impl Parser {
                 match word.as_str() {
                     "pi" => Ok(Expr::Pi),
                     "none" => Ok(Expr::NoneLit),
+                    "inf" => Ok(Expr::Num {
+                        value: f64::INFINITY,
+                        text: "∞".into(),
+                    }),
+                    "nan" => Ok(Expr::Num {
+                        value: f64::NAN,
+                        text: "undefined".into(),
+                    }),
                     "cases" => self.cases(),
                     "n" => match self.index {
                         Some(n) => Ok(Expr::Num {
@@ -892,23 +926,16 @@ impl Parser {
                             args.push(self.expr()?);
                         }
                         self.expect(')')?;
-                        let ok = if func.variadic() {
-                            args.len() >= 2
-                        } else {
-                            args.len() == 1
-                        };
-                        if !ok {
+                        let (least, most) = func.arity();
+                        if args.len() < least || most.is_some_and(|m| args.len() > m) {
+                            let wanted = match (least, most) {
+                                (1, Some(1)) => "one".to_owned(),
+                                (l, Some(m)) if l == m => format!("{l}"),
+                                (l, _) => format!("{l} or more"),
+                            };
                             return Err(self.error_at(
                                 at,
-                                format!(
-                                    "{name} takes {} argument(s), got {}",
-                                    if func.variadic() {
-                                        "two or more"
-                                    } else {
-                                        "one"
-                                    },
-                                    args.len()
-                                ),
+                                format!("{name} takes {wanted} argument(s), got {}", args.len()),
                             ));
                         }
                         Ok(Expr::Call(func, args))
@@ -1193,6 +1220,30 @@ mod tests {
         );
         assert!(parse("{a b}", None).is_err());
         assert!(parse("(1 + 2", None).is_err());
+    }
+
+    #[test]
+    fn the_text_and_rounding_functions_check_their_arity() {
+        assert!(parse("ceilto({a.x}, 0.1) + floorto({a.x}, 1)", None).is_ok());
+        assert!(parse("ceilto({a.x})", None).is_err(), "ceilto takes 2");
+        assert!(parse("fmt({a.x}, 1, 2)", None).is_err(), "fmt takes 2");
+        assert!(
+            parse(r#"concat("a")"#, None).is_err(),
+            "concat takes 2 or more"
+        );
+        assert!(parse(r#"concat("a", fmt({a.x}, 1), fmtnum({a.y}), " mm")"#, None).is_ok());
+        let f = parse("inf", None).unwrap();
+        assert!(
+            matches!(f.body, Expr::Num { value, ref text } if value == f64::INFINITY && text == "∞")
+        );
+        let f = parse("nan", None).unwrap();
+        assert!(
+            matches!(f.body, Expr::Num { value, ref text } if value.is_nan() && text == "undefined")
+        );
+        assert!(
+            parse("[inf] where [inf] = 1", None).is_ok(),
+            "a local's name is a symbol, not a keyword"
+        );
     }
 
     #[test]

@@ -8,7 +8,7 @@ use std::fmt;
 
 use super::markup::{BinOp, Cond, Expr, Formula, Func, IndexSet, RelOp};
 use super::tables;
-use crate::engine::compat::{py_max, py_min};
+use crate::engine::compat::{ceiling, floor_, fmt_fixed, fmt_num, py_max, py_min};
 use crate::engine::meta::Value;
 use crate::engine::model::{HALF_PITCH_RAD, ODD_HARMONICS, harmonic_count, peak_off_half_pitch};
 
@@ -34,7 +34,8 @@ impl fmt::Display for EvalError {
 /// (arithmetically, through the chosen `cases` arm, through the winner of a `min`/`max`),
 /// so nudging it moves the result. It is a **condition term** when it was read only to
 /// decide something piecewise-constant: a `cases` condition, the loser of a `min`/`max`, the
-/// argument of `ceil`/`floor`, the selector of a Σ's index set.
+/// arguments of `ceil`/`floor`/`ceilto`/`floorto`, the selector of a Σ's index set. A
+/// formatted number (`fmt`, `fmtnum`) is a value term: its text moves with it.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Trace {
     pub value_terms: BTreeSet<String>,
@@ -297,6 +298,51 @@ impl Evaluator<'_> {
             t.absorb(bt, false);
             return Ok(V::Num(x));
         }
+        match func {
+            Func::Concat => {
+                // Texts only: a number must be formatted explicitly (fmt, fmtnum).
+                let mut out = String::new();
+                for a in args {
+                    match self.expr(a, n, t)? {
+                        V::Text(s) => out.push_str(&s),
+                        other => {
+                            return Err(EvalError(format!(
+                                "concat: expected a text, got {other:?}"
+                            )));
+                        }
+                    }
+                }
+                return Ok(V::Text(out));
+            }
+            Func::CeilTo | Func::FloorTo => {
+                // Rounding to a step is piecewise constant in both arguments.
+                let mut at = Trace::default();
+                let (x, step) = (
+                    self.num(&args[0], n, &mut at)?,
+                    self.num(&args[1], n, &mut at)?,
+                );
+                t.absorb(at, true);
+                return Ok(V::Num(if func == Func::CeilTo {
+                    ceiling(x, step)
+                } else {
+                    floor_(x, step)
+                }));
+            }
+            Func::Fmt => {
+                let x = self.num(&args[0], n, t)?;
+                let mut dt = Trace::default();
+                let d = self.num(&args[1], n, &mut dt)?;
+                t.absorb(dt, true);
+                if d.fract() != 0.0 || !(0.0..=12.0).contains(&d) {
+                    return Err(EvalError(format!(
+                        "fmt: {d} decimals (a whole number 0 to 12)"
+                    )));
+                }
+                return Ok(V::Text(fmt_fixed(x, d as usize)));
+            }
+            Func::FmtNum => return Ok(V::Text(fmt_num(self.num(&args[0], n, t)?))),
+            _ => {}
+        }
         let mut at = Trace::default();
         let x = self.num(&args[0], n, &mut at)?;
         let piecewise = matches!(func, Func::Ceil | Func::Floor);
@@ -314,7 +360,15 @@ impl Evaluator<'_> {
             Func::Abs => x.abs(),
             Func::Ceil => x.ceil(),
             Func::Floor => x.floor(),
-            Func::Min | Func::Max => unreachable!("handled above"),
+            Func::Min
+            | Func::Max
+            | Func::CeilTo
+            | Func::FloorTo
+            | Func::Fmt
+            | Func::FmtNum
+            | Func::Concat => {
+                unreachable!("handled above")
+            }
         }))
     }
 
@@ -388,6 +442,47 @@ mod tests {
             Value::Num(5.0)
         );
         assert_eq!(eval("2^0.5", &s).0, Value::Num(2f64.powf(0.5)));
+    }
+
+    #[test]
+    fn rounding_to_a_step_and_formatting_follow_the_engine() {
+        let s = src(&[
+            ("a.t", Value::Num(1.90415278222222)),
+            ("a.l", Value::Num(12.0)),
+            ("a.w", Value::Num(1.9)),
+        ]);
+        let (v, t) = eval("ceilto({a.t}, 0.1)", &s);
+        assert_eq!(v, Value::Num(ceiling(1.90415278222222, 0.1)));
+        assert!(
+            t.value_terms.is_empty() && t.condition_terms.contains("a.t"),
+            "piecewise constant"
+        );
+        assert_eq!(
+            eval("ceilto({a.w}, 0.1)", &s).0,
+            Value::Num(19.0 * 0.1),
+            "the 1e-12 guard"
+        );
+        assert_eq!(eval("floorto(7.5, 2)", &s).0, Value::Num(6.0));
+        let (v, t) = eval(
+            r#"concat("at least ", fmt(ceilto({a.t}, 0.1), 1), " mm")"#,
+            &s,
+        );
+        assert_eq!(v, Value::Text("at least 2.0 mm".into()));
+        assert!(t.condition_terms.contains("a.t"));
+        let (v, t) = eval(r#"concat("M3 x ", fmtnum({a.l}))"#, &s);
+        assert_eq!(v, Value::Text("M3 x 12".into()));
+        assert!(
+            t.value_terms.contains("a.l"),
+            "a formatted number moves its text"
+        );
+        assert_eq!(eval("inf", &s).0, Value::Num(f64::INFINITY));
+        assert!(matches!(eval("nan", &s).0, Value::Num(x) if x.is_nan()));
+        for bad in [r#"concat("a", 1)"#, "fmt({a.t}, 0.5)", "fmt({a.t}, 13)"] {
+            assert!(
+                evaluate(&parse(bad, None).unwrap(), &s, None).is_err(),
+                "{bad}"
+            );
+        }
     }
 
     #[test]

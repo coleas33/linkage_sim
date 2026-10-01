@@ -125,6 +125,11 @@ impl Renderer<'_> {
                     Func::Abs => format!("|{}|", a[0]),
                     Func::Ceil => format!("⌈{}⌉", a[0]),
                     Func::Floor => format!("⌊{}⌋", a[0]),
+                    Func::CeilTo => format!("⌈{}⌉_{{{}}}", a[0], a[1]),
+                    Func::FloorTo => format!("⌊{}⌋_{{{}}}", a[0], a[1]),
+                    Func::Fmt => format!("{} (to {} decimals)", a[0], a[1]),
+                    Func::FmtNum => a[0].clone(),
+                    Func::Concat => a.join(" ⧺ "),
                     _ => format!("{}({})", f.name(), a.join(", ")),
                 }
             }
