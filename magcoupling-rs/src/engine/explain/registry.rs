@@ -2,8 +2,13 @@
 //! dependency graph the explorer and the traceability test read.
 //!
 //! Built explicitly ([`Registry::build`]) and owned by the caller (the GUI builds it once at
-//! start-up), so the engine keeps no global state. Everything a frame needs is a map lookup
-//! plus `ResultSet::get`/`InputSet::get` per term.
+//! start-up), so the engine keeps no global state. What a frame asks per shown value is a map
+//! lookup (`equation_for`, `symbol`, `term_kind`, `used_by`, `upstream_inputs`,
+//! `corrections_upstream`, the last two precomputed at build) plus `ResultSet::get`/
+//! `InputSet::get` per term (`term_rows`, `evaluate`); `term_style` also compares the
+//! assumptions with their defaults. `upstream` and `downstream` walk the graph on every call
+//! (tens of microseconds each in a release build): for the drill-down and the tests, not for
+//! every value of a frame.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -140,6 +145,7 @@ pub struct Registry {
     inputs: BTreeMap<String, &'static InputMeta>,
     results: BTreeMap<String, &'static ResultMeta>,
     upstream_inputs: BTreeMap<String, BTreeSet<String>>,
+    corrections_upstream: BTreeMap<String, Vec<DeviationId>>,
     defaults: DesignInputs,
 }
 
@@ -411,14 +417,28 @@ impl Registry {
             .map(|e| (e.target.as_str(), e.terms.as_slice()))
             .collect();
         let mut upstream_inputs = BTreeMap::new();
+        let mut corrections_upstream = BTreeMap::new();
         for eq in &equations {
-            let (seen, cycle) = closure(&graph, &eq.target);
+            let (seen, cycle) = closure(|p| graph.get(p).copied(), &eq.target);
             if cycle {
                 errors.push(format!(
                     "{}: its terms lead back to it (a cycle)",
                     eq.target
                 ));
             }
+            // The record's own corrections, then those of every explained result upstream of it
+            // (in path order), each once.
+            let theirs = seen
+                .iter()
+                .filter_map(|p| by_target.get(p).map(|&i| &equations[i]))
+                .flat_map(|e| e.corrections.iter());
+            let mut corrections: Vec<DeviationId> = Vec::new();
+            for c in eq.corrections.iter().chain(theirs) {
+                if !corrections.contains(c) {
+                    corrections.push(*c);
+                }
+            }
+            corrections_upstream.insert(eq.target.clone(), corrections);
             let leaves: BTreeSet<String> = seen
                 .into_iter()
                 .filter(|p| inputs.contains_key(p))
@@ -436,6 +456,7 @@ impl Registry {
                 inputs,
                 results,
                 upstream_inputs,
+                corrections_upstream,
                 defaults,
             })
         } else {
@@ -498,23 +519,12 @@ impl Registry {
     /// result upstream of it (in path order), each once. The M4 "corrected vs workbook" marker
     /// reads this: a correction acts where it is applied (E7 in the pull-out angle) and flows
     /// into everything downstream, so `model.pullout_Nm`, whose record names none, shows E7.
-    /// Empty for an input or a cell-only result.
-    pub fn corrections_upstream(&self, path: &str) -> Vec<DeviationId> {
-        let Some(eq) = self.equation_for(path) else {
-            return Vec::new();
-        };
-        let upstream = self.upstream(path);
-        let mut out: Vec<DeviationId> = Vec::new();
-        let theirs = upstream
-            .iter()
-            .filter_map(|p| self.equation_for(p))
-            .flat_map(|e| e.corrections.iter());
-        for c in eq.corrections.iter().chain(theirs) {
-            if !out.contains(c) {
-                out.push(*c);
-            }
-        }
-        out
+    /// Empty for an input or a cell-only result. Precomputed at build: a lookup, cheap enough
+    /// to mark every value a frame shows.
+    pub fn corrections_upstream(&self, path: &str) -> &[DeviationId] {
+        self.corrections_upstream
+            .get(path)
+            .map_or(&[], Vec::as_slice)
     }
 
     /// The generic symbol of a family term inside a Σ (`model.b_i#` gives `B_{i,n}`).
@@ -545,10 +555,10 @@ impl Registry {
             .map(|e| (e.target.as_str(), e.terms.as_slice()))
     }
 
-    /// Every path `path` depends on, transitively (terms of terms), itself excluded.
+    /// Every path `path` depends on, transitively (terms of terms), itself excluded. Walks the
+    /// graph on every call.
     pub fn upstream(&self, path: &str) -> BTreeSet<String> {
-        let graph: BTreeMap<&str, &[String]> = self.graph().collect();
-        closure(&graph, path).0
+        closure(|p| self.equation_for(p).map(|e| e.terms.as_slice()), path).0
     }
 
     /// The inputs `path` depends on, transitively (precomputed).
@@ -727,14 +737,17 @@ fn typesetting_problems(
     out
 }
 
-/// Every node reachable from `start` along `graph`'s edges, `start` excluded, and whether
-/// `start` is reachable from itself (a cycle).
-fn closure(graph: &BTreeMap<&str, &[String]>, start: &str) -> (BTreeSet<String>, bool) {
+/// Every node reachable from `start` along the graph's edges (`terms_of` gives a node's terms,
+/// `None` for a leaf), `start` excluded, and whether `start` is reachable from itself (a cycle).
+fn closure<'a>(
+    terms_of: impl Fn(&str) -> Option<&'a [String]>,
+    start: &'a str,
+) -> (BTreeSet<String>, bool) {
     let mut seen = BTreeSet::new();
     let mut stack: Vec<&str> = vec![start];
     let mut cycle = false;
     while let Some(p) = stack.pop() {
-        for t in graph.get(p).copied().unwrap_or(&[]) {
+        for t in terms_of(p).unwrap_or(&[]) {
             if t == start {
                 cycle = true;
             }
@@ -755,6 +768,35 @@ mod tests {
     fn the_shipped_records_build() {
         let r = Registry::build();
         assert!(!r.equations().is_empty());
+    }
+
+    #[test]
+    fn precomputed_corrections_are_the_records_own_then_every_upstream_records() {
+        // The build's list against a walk through `upstream` (which reads no precomputed
+        // value), for every equation: the same corrections, in the same order, each once.
+        let r = Registry::build();
+        let mut marked = 0;
+        for eq in r.equations() {
+            let mut want: Vec<DeviationId> = Vec::new();
+            let upstream = r.upstream(&eq.target);
+            let theirs = upstream
+                .iter()
+                .filter_map(|p| r.equation_for(p))
+                .flat_map(|e| e.corrections.iter());
+            for c in eq.corrections.iter().chain(theirs) {
+                if !want.contains(c) {
+                    want.push(*c);
+                }
+            }
+            assert_eq!(r.corrections_upstream(&eq.target), want, "{}", eq.target);
+            marked += usize::from(!want.is_empty());
+        }
+        assert!(marked > 0, "some result embodies a correction");
+        assert!(
+            r.corrections_upstream("coupling.npole").is_empty(),
+            "an input"
+        );
+        assert!(r.corrections_upstream("no.such.path").is_empty());
     }
 
     #[test]
