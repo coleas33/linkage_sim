@@ -694,7 +694,7 @@ mod tests {
     use crate::engine::sizing::SizingOutcome;
     use crate::gui::dashboard::{END_EFFECT_BANNER, STORED_3D_LABEL, result_info};
     use crate::gui::format::{format_value, with_unit};
-    use crate::gui::input_ui::{CHANGED_DOT, OUTSIDE_RANGE_NOTE, RESET_LABEL};
+    use crate::gui::input_ui::{BLANK_TEXT, CHANGED_DOT, OUTSIDE_RANGE_NOTE, RESET_LABEL};
     use crate::gui::session::encode_share_payload;
     use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
@@ -832,6 +832,19 @@ mod tests {
 
     fn count(output: &egui::FullOutput, text: &str) -> usize {
         drawn_texts(output).iter().filter(|t| *t == text).count()
+    }
+
+    /// Asserts the locked free-variable row draws `value` in its value box: on the line
+    /// between the row's `label` and the sized note under the row. The results table draws
+    /// the same text elsewhere; the inputs side paints first, so `text_rect` finds the row's
+    /// copy when the row draws it.
+    fn assert_locked_row_shows(output: &egui::FullOutput, label: &str, value: &str) {
+        let rect = |text: &str| text_rect(output, text).unwrap_or_else(|| panic!("no {text:?}"));
+        let (label_rect, value_rect, note_rect) = (rect(label), rect(value), rect(SIZED_NOTE));
+        assert!(
+            label_rect.bottom() <= value_rect.top() && value_rect.bottom() <= note_rect.top(),
+            "{value:?} at {value_rect:?} is not in the row between {label_rect:?} and {note_rect:?}"
+        );
     }
 
     #[test]
@@ -1722,25 +1735,41 @@ mod tests {
 
     #[test]
     fn the_solve_waits_for_the_debounce_and_never_runs_per_frame() {
+        let repaint_delay = |output: &egui::FullOutput| {
+            output.viewport_output[&egui::ViewportId::ROOT].repaint_delay
+        };
+        // An idle web page draws no frame unless asked: a pending solve asks for one by the
+        // end of its debounce (`<=`: egui's own hover animation asks for one sooner at first).
+        let asks_within_the_debounce = |output: &egui::FullOutput| {
+            let delay = repaint_delay(output);
+            let debounce = std::time::Duration::from_secs_f64(DEBOUNCE_S);
+            assert!(delay <= debounce, "repaint after {delay:?}");
+        };
         let mut harness = Harness::new();
         harness.click_text(SizingMode::TorqueToMagnets.label());
         for _ in 0..5 {
-            harness.frame_after(0.02, Vec::new());
+            asks_within_the_debounce(&harness.frame_after(0.02, Vec::new()));
         }
         assert_eq!(harness.panel.runner.solves, 0, "still waiting");
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, SOLVING), 1);
+        asks_within_the_debounce(&output);
         let solved = harness.frame_after(DEBOUNCE_S, Vec::new());
         assert_eq!(harness.panel.runner.solves, 1);
         // The solve asks for one more frame, so the inputs side shows its outcome.
-        let repaint = solved.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
-        assert_eq!(repaint, std::time::Duration::ZERO);
+        assert_eq!(repaint_delay(&solved), std::time::Duration::ZERO);
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, SOLVING), 0);
         for _ in 0..10 {
             harness.frame_after(0.1, Vec::new());
         }
         assert_eq!(harness.panel.runner.solves, 1, "idle frames never solve");
+        let idle = harness.frame_after(0.1, Vec::new());
+        assert_eq!(
+            repaint_delay(&idle),
+            std::time::Duration::MAX,
+            "nothing pending"
+        );
     }
 
     #[test]
@@ -1769,13 +1798,20 @@ mod tests {
     #[test]
     fn the_free_variable_s_row_shows_the_solved_value_locked() {
         let mut harness = Harness::new();
+        // Magnets -> Torque: the axial length override and the measured drag are blank.
+        assert_eq!(count(&harness.frame(Vec::new()), BLANK_TEXT), 2);
         let output = harness.size();
         let point = harness.solved();
         assert_eq!(count(&output, SIZED_NOTE), 1);
         assert!(!harness.widget(AXIAL_LENGTH).enabled(), "locked");
-        // Its value box shows the solved length.
-        let shown = format!("{:.2} mm", point.value);
-        assert!(count(&output, &shown) >= 1, "{shown}");
+        // Its value box shows the solved length, not the blank of the inputs.
+        assert_eq!(count(&output, BLANK_TEXT), 1, "only the measured drag");
+        let label = InputCatalogue::get()
+            .entry(AXIAL_LENGTH)
+            .unwrap()
+            .meta
+            .label;
+        assert_locked_row_shows(&output, label, &format!("{:.2} mm", point.value));
         // Arrow keys on it change nothing.
         let id = harness.widget(AXIAL_LENGTH).id;
         harness.ctx.memory_mut(|m| m.request_focus(id));
@@ -1913,6 +1949,8 @@ mod tests {
             .meta
             .label;
         assert_eq!(count(&output, label), 1);
+        // Its value box shows the solved radius, not the inputs' own.
+        assert_locked_row_shows(&output, label, &format!("{:.2} mm", point.value));
         assert_eq!(
             harness.panel.shown_inputs().coupling.inner_back_apothem_mm,
             point.value
