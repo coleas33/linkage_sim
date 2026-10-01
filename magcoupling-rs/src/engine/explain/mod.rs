@@ -11,7 +11,10 @@
 //!
 //! The engine code stays as ported. Where a formula needs a term the engine computed but did
 //! not expose (the harmonics 7 to 11 parts, the torque-angle amplitudes, the E7 angles), the
-//! engine exposes it as a Rust-only result: a pure read, no formula change.
+//! engine exposes it as a Rust-only result: a pure read, no formula change. One exception,
+//! decision G4: with E20 off the outer ring's demagnetization block is computed anew (from the
+//! C44 and C45 inputs, as the workbook would) for the per-ring results; it governs nothing and
+//! moves no workbook cell.
 //!
 //! - [`markup`]: the formula and symbol grammar, parser and tree;
 //! - [`eval`]: the evaluator, with a trace of what a result depends on at a design point;

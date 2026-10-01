@@ -4,8 +4,10 @@
 //! The accuracy gate: a note is drafted from the M1 derivations it cites (`sources`) and
 //! shows in the GUI only once a physics reviewer has checked it (`Review::Reviewed`, naming
 //! the review record). [`note_for`] returns reviewed notes only; [`note_for_any_status`] is
-//! for the review tooling. `tests/explain.rs` checks the links, the 2-6 sentence rule of a
-//! reviewed note, and that each equation has at most one note.
+//! for the review tooling. The unit tests below check the warning and start-here links and
+//! hold every note, reviewed or not, to 2-6 sentences and a cited source; `tests/explain.rs`
+//! checks that each note names records and each equation has at most one note, and holds the
+//! M4 release gate (`release_notes_are_reviewed`).
 
 /// A small diagram the M4 panel paints beside a note (egui painter, no image files).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,7 +47,7 @@ pub struct Note {
     pub title: &'static str,
     /// The equations it explains: result paths, or a family's target with `#` (all its members).
     pub equations: &'static [&'static str],
-    /// 2 to 6 plain sentences at Physics 2 level (empty while a stub).
+    /// 2 to 6 plain sentences at Physics 2 level.
     pub sentences: &'static [&'static str],
     pub watch_out: Option<&'static str>,
     pub diagram: Option<Diagram>,
