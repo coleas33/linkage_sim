@@ -154,21 +154,75 @@ fn augmentations() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
 /// what it pins, applied on top of the defaults (records hold over every input `set` accepts).
 fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
     let text = |s: &str| Value::Text(s.to_owned());
-    vec![(
-        // The outer ring (manual, ferrite's beta) has a 0/0 cold onset, so its cold limit is
-        // NaN, while the inner Y30 ring's is finite and below the minimum temperature: the
-        // inner ring holds the cold side, yet the outer ring's check fails (min >= NaN is
-        // false), so `cold_check` must state both rings' checks, not the higher limit's.
-        "outer cold limit undefined (NaN), inner Y30",
-        vec![
-            ("temperature.demag.h_rev_likepole_kA_m", Value::Num(0.0)),
-            ("temperature.demag.hcj20_kA_m", Value::Num(0.0)),
-            ("temperature.demag.beta_hcj_per_C", Value::Num(0.0035)),
-            ("coupling.magnets.part_inner", text("")),
-            ("coupling.magnets.grade_inner", text("Y30")),
-            ("coupling.magnets.part_outer", text("")),
-        ],
-    )]
+    // The clamp comparisons the differential data never lands on exactly (the engine's own unit
+    // tests pin the same edges, clamps.rs). Each point sets one input to a value of the default
+    // design's M4 column (row 2 of the clamp table, the size that works there), so the
+    // comparison holds with equality: the records' `<=`, `<` and `>=` must be the engine's and
+    // not a strict or a loose twin. Read from the defaults, those values cannot go stale (the
+    // span point's length is a dyadic constant, explained there).
+    let defaults = compute_all(&DesignInputs::default());
+    let m4 = |field: &str| match defaults.get(&format!("clamps.table[2].{field}")) {
+        Some(Value::Num(x)) => x,
+        other => panic!("clamps.table[2].{field}: {other:?}"),
+    };
+    vec![
+        (
+            // The outer ring (manual, ferrite's beta) has a 0/0 cold onset, so its cold limit is
+            // NaN, while the inner Y30 ring's is finite and below the minimum temperature: the
+            // inner ring holds the cold side, yet the outer ring's check fails (min >= NaN is
+            // false), so `cold_check` must state both rings' checks, not the higher limit's.
+            "outer cold limit undefined (NaN), inner Y30",
+            vec![
+                ("temperature.demag.h_rev_likepole_kA_m", Value::Num(0.0)),
+                ("temperature.demag.hcj20_kA_m", Value::Num(0.0)),
+                ("temperature.demag.beta_hcj_per_C", Value::Num(0.0035)),
+                ("coupling.magnets.part_inner", text("")),
+                ("coupling.magnets.grade_inner", text("Y30")),
+                ("coupling.magnets.part_outer", text("")),
+            ],
+        ),
+        (
+            // head_fits is `offset + head / 2 <= R`: the head's edge on the boss wall (a 23.5 mm
+            // boss at the defaults) still fits, and its grip takes the square-root branch at 0.
+            "clamp M4 head edge exactly on the boss wall",
+            vec![(
+                "clamps.boss_od_mm",
+                Value::Num(2.0 * (m4("offset_mm") + m4("head_mm") / 2.0)),
+            )],
+        ),
+        (
+            // thread_avail is the square root only while `offset < R`: with the screw axis on
+            // the wall (a 16.5 mm boss at the defaults) it is 0, not the root's -slit / 2.
+            "clamp M4 screw axis exactly on the boss wall",
+            vec![("clamps.boss_od_mm", Value::Num(2.0 * m4("offset_mm")))],
+        ),
+        (
+            // geometry_ok needs `wall >= minimum wall`.
+            "clamp M4 wall outside the hole exactly the minimum",
+            vec![("clamps.wall_out_mm", Value::Num(m4("wall_out_mm")))],
+        ),
+        (
+            // geometry_ok needs `grip >= minimum grip`.
+            "clamp M4 grip exactly the minimum",
+            vec![("clamps.grip_min_mm", Value::Num(m4("grip_mm")))],
+        ),
+        (
+            // geometry_ok needs `thread available >= engagement`, engagement = factor x d. M4's d
+            // is 4 mm, a power of two, so dividing by it and multiplying back is exact.
+            "clamp M4 thread available exactly the engagement required",
+            vec![(
+                "clamps.engagement_x_d",
+                Value::Num(m4("thread_avail_mm") / m4("d_mm")),
+            )],
+        ),
+        (
+            // screws_fit counts screws only while the span `length - 2 margin - (head + 0.5)` is
+            // not negative: a span of exactly 0 fits one. M4's head is 7 mm and the margin 1 mm,
+            // so 9.5 mm (every value dyadic: exact), the engine's own unit test's length.
+            "clamp M4 span exactly zero",
+            vec![("clamps.clamp_length_mm", Value::Num(9.5))],
+        ),
+    ]
 }
 
 /// The defaults, the edge points, then every differential case under every augmentation.
