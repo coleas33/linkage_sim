@@ -15,8 +15,16 @@ default = []
 # standalone app, M4, and a window in linkage-sim-rs, M5). egui only: no
 # windowing, no eframe, no file dialogs. serde_json, base64 and flate2 write
 # and read design files, share links and the results export; log reports the
-# sizing outcome (the host chooses the logger: the browser console on the web).
-gui = ["dep:egui", "dep:log", "dep:serde_json", "dep:base64", "dep:flate2"]
+# sizing outcome (the host chooses the logger: the browser console on the web);
+# egui_plot draws the plot tabs.
+gui = [
+    "dep:egui",
+    "dep:egui_plot",
+    "dep:log",
+    "dep:serde_json",
+    "dep:base64",
+    "dep:flate2",
+]
 # The standalone app: `app::MagcouplingApp` and the binaries `magcoupling-app`
 # (native) and `magcoupling-web` (wasm32, eframe WebRunner + wasm-bindgen).
 # rfd: the native save and open dialogs, and the web file picker.
@@ -48,6 +56,9 @@ workbook-parity = []
 # the exact version (0.32.3, as in linkage-sim-rs/Cargo.lock) is pinned in
 # Cargo.lock, and gate.sh checks that both lock files agree.
 egui = { version = "0.32", optional = true }
+# The plot tabs (feature gui): the 0.33 line linkage-sim-rs uses, built on egui
+# 0.32; Cargo.lock pins linkage-sim-rs's 0.33.0 and gate 11 checks it.
+egui_plot = { version = "0.33", optional = true }
 eframe = { version = "0.32", optional = true }
 log = { version = "0.4", optional = true }
 # Design files, share links and the results export (feature gui). The same

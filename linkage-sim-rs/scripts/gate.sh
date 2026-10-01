@@ -10,7 +10,8 @@
 # app): their tests, clippy on native and wasm32, the guard that no shipped
 # build has the test-only workbook-parity feature (with a negative control
 # that proves the guard trips), and the check that both crates lock the same
-# egui, eframe and wasm-bindgen (the CLI version deploy-web.yml installs).
+# egui, egui_plot, eframe and wasm-bindgen (the CLI version deploy-web.yml
+# installs).
 # Gate 12: the vendored Python oracle, reference/magcoupling-py: its parity
 # suite, and a check that the committed differential test data is current.
 # Gate 12 needs a Python with the oracle's dependencies; see oracle_python
@@ -98,10 +99,10 @@ if magcoupling_assert_shipped magcoupling-web <<<"$FORCED_BUILD" 2>/dev/null; th
 fi
 echo "negative control: the guard trips when workbook-parity is forced on"
 
-echo "== gate 11/12: lock parity (egui, eframe, wasm-bindgen; wasm-bindgen-cli pin in deploy-web.yml) =="
+echo "== gate 11/12: lock parity (egui, egui_plot, eframe, wasm-bindgen; wasm-bindgen-cli pin in deploy-web.yml) =="
 LINKAGE_LOCK="Cargo.lock"
 MAGCOUPLING_LOCK="$REPO_ROOT/magcoupling-rs/Cargo.lock"
-for pkg in egui eframe wasm-bindgen; do
+for pkg in egui egui_plot eframe wasm-bindgen; do
   linkage_version="$(lock_versions "$LINKAGE_LOCK" "$pkg")"
   magcoupling_version="$(lock_versions "$MAGCOUPLING_LOCK" "$pkg")"
   if [[ -z "$linkage_version" || "$linkage_version" != "$magcoupling_version" ]]; then

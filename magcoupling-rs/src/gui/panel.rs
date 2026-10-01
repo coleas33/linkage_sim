@@ -31,6 +31,7 @@ use crate::gui::geometry_view::geometry_ui;
 use crate::gui::history::History;
 use crate::gui::input_ui::{RowEdit, input_row, slider};
 use crate::gui::inputs::{InputCatalogue, InputEntry, KEY_DESIGN, optional_seed};
+use crate::gui::plots::{PlotKind, plot_ui};
 use crate::gui::results_table::{
     CSV_FILE_NAME, JSON_FILE_NAME, ResultsTable, TableAction, results_csv, results_json,
 };
@@ -116,18 +117,29 @@ pub enum CentreView {
     /// The end view and the side view to scale, with the dimension callouts (the default view:
     /// decision M42-2).
     Geometry,
+    /// One of the plots (egui_plot).
+    Plot(PlotKind),
     /// Every result: label, value, unit, cell; searchable; CSV and JSON export.
     Results,
 }
 
 impl CentreView {
     /// Every view, in tab order.
-    pub const ALL: [CentreView; 2] = [CentreView::Geometry, CentreView::Results];
+    pub const ALL: [CentreView; 7] = [
+        CentreView::Geometry,
+        CentreView::Plot(PlotKind::TorqueTemperature),
+        CentreView::Plot(PlotKind::GapSweep),
+        CentreView::Plot(PlotKind::PoleSweep),
+        CentreView::Plot(PlotKind::SlipHeating),
+        CentreView::Plot(PlotKind::TorqueAngle),
+        CentreView::Results,
+    ];
 
     /// The tab text.
     pub const fn label(self) -> &'static str {
         match self {
             CentreView::Geometry => "Geometry",
+            CentreView::Plot(kind) => kind.label(),
             CentreView::Results => "Results table",
         }
     }
@@ -535,6 +547,7 @@ impl MagcouplingPanel {
             CentreView::Geometry => {
                 geometry_ui(ui, shown, &self.results);
             }
+            CentreView::Plot(kind) => plot_ui(ui, kind, shown, &self.results),
             CentreView::Results => {
                 let action = self.results_table.ui(ui, &self.results);
                 match action {
@@ -917,6 +930,62 @@ mod tests {
         );
         harness.click_text(CentreView::Geometry.label());
         assert_eq!(harness.panel.centre, CentreView::Geometry);
+    }
+
+    #[test]
+    fn each_plot_tab_draws_its_plot_from_this_frame_s_results() {
+        use crate::gui::plots::{
+            HIGH_CASE, POINT_RADIUS, PULL_OUT, PULL_OUT_POINT, PULL_OUT_SMALLEST_APOTHEM,
+        };
+        use crate::gui::test_support::flat_shapes;
+        let mut harness = Harness::new();
+        for kind in PlotKind::ALL {
+            let legend = match kind {
+                PlotKind::SlipHeating => HIGH_CASE,
+                PlotKind::TorqueAngle => PULL_OUT_POINT,
+                PlotKind::PoleSweep => PULL_OUT_SMALLEST_APOTHEM,
+                _ => PULL_OUT,
+            };
+            let output = harness.click_text(kind.label());
+            assert_eq!(harness.panel.centre, CentreView::Plot(kind));
+            let output = [output, harness.frame(Vec::new())];
+            assert!(
+                output
+                    .iter()
+                    .any(|o| drawn_texts(o).iter().any(|t| t == legend)),
+                "{kind:?} draws its legend"
+            );
+        }
+        // The series come from this frame's results: in the edit's frame the design's marker
+        // is painted at the new pull-out, where that frame's plot transform puts it.
+        harness.click_text(PlotKind::TorqueTemperature.label());
+        harness.focus(FACE_GAP);
+        let before = harness.panel.results().model.pullout_Nm;
+        let output = harness.frame(key_tap(egui::Key::ArrowRight));
+        let after = harness.panel.results().model.pullout_Nm;
+        assert_ne!(after, before);
+        let memory = egui_plot::PlotMemory::load(&harness.ctx, PlotKind::TorqueTemperature.id())
+            .expect("the plot ran this frame");
+        let op = harness.panel.inputs().coupling.op_temp_C;
+        let at = |torque: f64| {
+            memory
+                .transform()
+                .position_from_point(&egui_plot::PlotPoint::new(op, torque))
+        };
+        assert!((at(after) - at(before)).length() > 0.5, "the edit moves it");
+        let markers: Vec<egui::Pos2> = flat_shapes(&output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Circle(c) if c.radius == POINT_RADIUS + 1.0 => Some(c.center),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            markers.iter().any(|c| (*c - at(after)).length() < 1e-3),
+            "{markers:?} vs {:?}",
+            at(after)
+        );
+        assert!(markers.iter().all(|c| (*c - at(before)).length() > 0.5));
     }
 
     #[test]
