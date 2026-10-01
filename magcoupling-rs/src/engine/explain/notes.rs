@@ -160,12 +160,13 @@ pub const NOTES: &[Note] = &[
             "Every other design keeps the assumed 0.95, since one measurement cannot say how the model's error changes with the design.",
         ],
         watch_out: Some(
-            "The bench value has two significant figures and an assumed 20 °C test temperature; it sits 2.5 % above the 3D pull-out (M1 audit P2).",
+            "The bench value has two significant figures and an assumed 20 °C test temperature; it sits about 1 % above the 3D pull-out at the corrected remanence of 1.30 T (correction E3), and 2.5 % above it at the audit's 1.29 T (M1 audit P2).",
         ),
         diagram: None,
         sources: &[
             "M1 audit M4 and M6 (the model's bias and the calibration that absorbs it)",
             "M1 audit P2 (the bench value against physics)",
+            "M1 audit E3 (the N42SH remanence corrected from 1.29 T to 1.30 T, Calibration!C21 included)",
             "Plan A-3 traceability: the f_cal,0 cancellation (tests/explain.rs CANCELLATIONS)",
         ],
         review: Review::Draft,
@@ -215,7 +216,7 @@ pub const NOTES: &[Note] = &[
             "temperature.demag.demag_ring",
         ],
         sentences: &[
-            "Inside a magnet the field points against its magnetization; the stronger this reverse field H, the closer the magnet is to losing magnetization for good.",
+            "Inside a magnet the demagnetizing field H points against its magnetization (B still points along it); the stronger this reverse field, the closer the magnet is to losing magnetization for good.",
             "The loss starts at the knee of the intrinsic curve, taken as H_k = 0.9 · Hcj, and Hcj falls as NdFeB heats (β about −0.5 %/°C), so each reverse field has an onset temperature where the falling knee meets it; the reverse field itself shrinks with Br(T), which is why the onset needs both α and β.",
             "The reverse field depends on the magnet's surroundings, its permeance: a reference magnet on the load line B = −μ0 H (permeance coefficient 1) sees Br/(2 μ0), and like poles of the other ring facing it while the coupling skips push it highest, 863 kA/m here, so the skipping onset sets the limit.",
             "The onsets are shifted so the reference magnet reaches its knee exactly at its rated temperature, and the design limit keeps a 10 °C margin below the skipping onset.",
@@ -359,7 +360,7 @@ pub const NOTES: &[Note] = &[
         equations: &["materials.circuit_backiron"],
         sentences: &[
             "Steel behind the magnets gives each ring's flux an easy return path, so the flux crosses the gap and closes through the steel instead of spreading out behind the magnets.",
-            "Stainless 304 and aluminium have a relative permeability near 1, like air, so choosing one switches the calculator to the free-space circuit: the geometry factor loses its sinh form and the torque drops by more than a third (2.69 to 1.70 N·m at the default design).",
+            "Stainless 304 and aluminium have a relative permeability near 1, like air, so choosing one switches the calculator to the free-space circuit: the geometry factor loses its sinh form and the torque drops by more than 40 % (2.69 to 1.54 N·m); the default design has the measured prototype's pole count and grade, so the calculator also switches to the bench calibration (0.95 to 1.049) and shows 1.70 N·m.",
             "The flux that no longer closes through steel leaks out around the coupling, so a strong stray field extends outside it and pulls in steel chips and debris.",
         ],
         watch_out: None,
