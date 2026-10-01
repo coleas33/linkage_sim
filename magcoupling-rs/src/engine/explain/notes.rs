@@ -72,9 +72,9 @@ pub const NOTES: &[Note] = &[
         ],
         sentences: &[
             "Each ring's magnetization alternates north and south around the circle, so along the gap it is a rectangular wave, blocks separated by gaps, not a smooth sine.",
-            "Such a wave is a sum of sine waves at odd multiples of its basic frequency: harmonic n has n times as many wavelengths around the ring and an amplitude of 4/(nπ) times the remanence, scaled by sin(nπλ/2), where λ is the fraction of each pole the magnet fills; that factor, which depends on the gaps between blocks (λ < 1), sets each harmonic's size and sign, so some amplitudes come out negative.",
+            "Such a wave is a sum of sine waves at odd multiples of its basic frequency: harmonic n has n times as many wavelengths around the ring and an amplitude of 4/(nπ) times the remanence, scaled by sin(nπλ/2), where λ is the fraction of each pole the magnet fills (λ < 1 when there are gaps between blocks); that factor sets each harmonic's size and sign, so some amplitudes come out negative even with no gaps (sin(3π/2) = −1), and the fill decides which ones.",
             "Harmonic n of one ring pulls only on harmonic n of the other, so the total shear stress is a sum with one term per harmonic.",
-            "Higher harmonics have shorter wavelengths, and their fields fade across the gap much faster, which is why the workbook keeps only 1, 3 and 5.",
+            "Higher harmonics have shorter wavelengths and a lower amplitude ceiling, 4/(nπ) times the remanence (the fill can still make a higher one larger than a lower one), and above all their fields fade across the gap much faster, which is why the workbook keeps only 1, 3 and 5 (the calculator's default; it can sum the odd harmonics up to 11).",
         ],
         watch_out: Some(
             "A fill of exactly 0.4 makes the fifth harmonic vanish, because sin(5π·0.4/2) = sin(π) = 0: that is geometry, not an error.",
@@ -85,9 +85,9 @@ pub const NOTES: &[Note] = &[
             "Addendum A decision 29 (odd harmonics up to 11)",
         ],
         review: Review::Reviewed {
-            reviewer: "physics reviewer (session model)",
+            reviewer: "independent physics review 2026-10-01",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
+            record: "independent physics review 2026-10-01 of the A4 notes: commit \"docs(magcoupling-rs): apply the independent physics review to six A4 notes\" (the seven findings and their fixes)",
         },
     },
     Note {
@@ -152,7 +152,7 @@ pub const NOTES: &[Note] = &[
             "It is empirical: at the default design it is within about 1 % of 3D for magnets longer than about 3 mm (about a third of a pole pitch), it has no gap term (one M1 skeptic found it 11 % high at a 4.4 mm gap), and it turns negative for very short magnets, which the end-effect check flags.",
         ],
         watch_out: Some(
-            "At or below L = c_end·τ_p (1.3 mm at the default pole pitch) the factor is zero or negative and every torque computed from it is meaningless.",
+            "At or below L = c_end·τ_p (1.3 mm at the default pole pitch) the factor is zero or negative and every torque computed from it is meaningless; between that and about 3 mm the check still reads OK, yet the factor is far off (21 % below 3D at 2 mm, M1 audit M9).",
         ),
         diagram: Some(Diagram::EndFringing),
         sources: &["M1 audit M8 and M9 (T3-RC1, T3-RC3)"],
@@ -172,7 +172,7 @@ pub const NOTES: &[Note] = &[
             "calibration.model_error",
         ],
         sentences: &[
-            "The 2D harmonic model is a few per cent off real flat blocks, so the workbook scales it by a calibration factor.",
+            "The 2D harmonic model reads a few per cent low against real flat blocks (about 4 % without back iron, M1 audit M4; less with steel, M5), so the workbook scales it by a calibration factor: an assumed f_cal,0 (0.95, which adds conservatism rather than correcting that bias) or one measured on the bench.",
             "When a design has the measured prototype's circuit (no back iron), pole count and magnet part (B842SH on both rings), it uses the bench result: f_cal,1 = f_cal,0 · T_meas / T_model, which puts the model of the prototype on the 1.8 N·m measurement.",
             "Because T_model already contains f_cal,0, the assumed factor cancels: the bench correction is T_meas divided by the uncalibrated model, whatever f_cal,0 was.",
             "Every other design keeps the assumed 0.95, since one measurement cannot say how the model's error changes with the design; the rule does not compare gaps or radii, so a resized design with the prototype's circuit, pole count and magnet part still gets the bench factor.",
@@ -182,15 +182,15 @@ pub const NOTES: &[Note] = &[
         ),
         diagram: None,
         sources: &[
-            "M1 audit M4 and M6 (the model's bias and the calibration that absorbs it)",
+            "M1 audit M4, M5 and M6 (the model's bias without and with back iron, and the calibration that absorbs it)",
             "M1 audit P2 (the bench value against physics)",
             "M1 audit E3 (the N42SH remanence corrected from 1.29 T to 1.30 T, Calibration!C21 included)",
             "Plan A-3 traceability: the f_cal,0 cancellation (tests/explain.rs CANCELLATIONS)",
         ],
         review: Review::Reviewed {
-            reviewer: "physics reviewer (session model)",
+            reviewer: "independent physics review 2026-10-01",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
+            record: "independent physics review 2026-10-01 of the A4 notes: commit \"docs(magcoupling-rs): apply the independent physics review to six A4 notes\" (the seven findings and their fixes)",
         },
     },
     Note {
@@ -209,7 +209,7 @@ pub const NOTES: &[Note] = &[
             "A magnet's remanence Br, the flux density it keeps with no applied field, falls reversibly as it warms: Br(ϑ) = Br(20 °C) · (1 + α (ϑ − 20 °C)), with α about −0.12 %/°C for sintered NdFeB.",
             "Each ring's field is proportional to its own Br, and the shear stress is a product of the two rings' fields, so the torque scales as Br,i · Br,o: the square of Br when both rings are one grade.",
             "So a 30 °C rise costs about 7 % of the torque: (1 − 0.0012 · 30)² ≈ 0.93.",
-            "The loss is reversible: cool the magnet and the torque comes back, unless it passed its demagnetization limit on the way, which is a separate, permanent loss.",
+            "The loss is reversible: cool the magnet and the torque comes back, unless on the way it passed a demagnetization onset, the temperature where its reverse field reaches the knee, which is a separate, permanent loss; the calculator's demagnetization limit sits 10 °C below the lowest onset, the one while the coupling skips.",
         ],
         watch_out: Some(
             "Each ring keeps its own coefficient: a ferrite ring (α about −0.2 %/°C) loses torque faster with heat than an NdFeB one.",
@@ -220,9 +220,9 @@ pub const NOTES: &[Note] = &[
             "Addendum A decision A2-7 (each ring with its own coefficient)",
         ],
         review: Review::Reviewed {
-            reviewer: "physics reviewer (session model)",
+            reviewer: "independent physics review 2026-10-01",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
+            record: "independent physics review 2026-10-01 of the A4 notes: commit \"docs(magcoupling-rs): apply the independent physics review to six A4 notes\" (the seven findings and their fixes)",
         },
     },
     Note {
@@ -249,7 +249,7 @@ pub const NOTES: &[Note] = &[
             "With correction E20 each ring is checked with its own grade, and the ring with the lower limit governs.",
         ],
         watch_out: Some(
-            "The default N42SH's temperature coefficients hold over 20–150 °C only: onsets above 150 °C are extrapolations, and so is the reference magnet's model knee near 160 °C that sets the shift, so a ±20 % change of the slope above 150 °C moves even the default limit by up to about 3 °C (M1 audit M13).",
+            "The default N42SH's temperature coefficients hold over 20–150 °C only: onsets above 150 °C are extrapolations, and so is the reference magnet's model knee near 160 °C that sets the shift, so a ±20 % change of the Hcj slope above 150 °C moves even the default limit by up to about 3 °C (M1 audit M13).",
         ),
         diagram: Some(Diagram::DemagKnee),
         sources: &[
@@ -258,9 +258,9 @@ pub const NOTES: &[Note] = &[
             "Addendum A decision 19 (E20: each ring's own grade)",
         ],
         review: Review::Reviewed {
-            reviewer: "physics reviewer (session model)",
+            reviewer: "independent physics review 2026-10-01",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
+            record: "independent physics review 2026-10-01 of the A4 notes: commit \"docs(magcoupling-rs): apply the independent physics review to six A4 notes\" (the seven findings and their fixes)",
         },
     },
     Note {
@@ -283,7 +283,7 @@ pub const NOTES: &[Note] = &[
             "The calculator finds that cold onset, ϑ = 20 + (H_k − H)/(H α − H_k β), and checks the minimum magnet temperature against the skipping cold onset plus the 10 °C margin; heating moves a ferrite magnet's knee away from the reverse field, so its rating is the hot limit.",
         ],
         watch_out: Some(
-            "A ferrite ring can pass every hot check and still fail at −40 °C: read the cold check too.",
+            "A ferrite ring can pass every hot check and still fail at −40 °C: read the cold check too, and enter the ferrite design's own reverse fields, since the defaults (354 to 863 kA/m) come from the NdFeB default design and put a Y30 ring's cold limit at 336 °C.",
         ),
         diagram: Some(Diagram::DemagKnee),
         sources: &[
@@ -292,9 +292,9 @@ pub const NOTES: &[Note] = &[
             "A-1 plan decision A13 (both rings; the cold side from the ring with the higher cold limit)",
         ],
         review: Review::Reviewed {
-            reviewer: "physics reviewer (session model)",
+            reviewer: "independent physics review 2026-10-01",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
+            record: "independent physics review 2026-10-01 of the A4 notes: commit \"docs(magcoupling-rs): apply the independent physics review to six A4 notes\" (the seven findings and their fixes)",
         },
     },
     Note {
@@ -315,7 +315,7 @@ pub const NOTES: &[Note] = &[
             "When the coupling slips, each ring's alternating field sweeps past the other ring's parts at the field frequency f_e = p · n / 60, with p the pole pairs and n the slip speed in rev/min, and by Faraday's law it drives eddy currents in every conductor it crosses: the steel cup and hub, the sleeve, the liner, the cap and the magnets themselves.",
             "The currents turn power into heat, and that power is also the drag torque times the slip speed.",
             "In steel the currents crowd into a skin of depth δ = √(2/(ω_e μ0 μr σ)), with ω_e = 2πf_e the field's angular frequency, about 1.3 mm at the default slip, so the steel loss grows as speed to the power 1.5 rather than 2.",
-            "Thin shells such as the sleeve and liner are thinner than their skin depth, so their loss follows σ (ω_s r B)²/2 per unit volume, with ω_s the slip speed in rad/s, the square of speed.",
+            "Thin shells such as the sleeve and liner are thinner than their skin depth (about 34 mm in 316L), so their loss follows σ (ω_s r B)²/2 per unit volume times the 0.7 end factor, with ω_s the slip speed in rad/s, the square of speed.",
         ],
         watch_out: Some(
             "Aluminium parts (no back iron) are resistance-limited, not skin-limited, and see the weaker free-space field (correction E17); every loss here is an estimate with a factor-3 high case until a bench drag is measured.",
@@ -328,9 +328,9 @@ pub const NOTES: &[Note] = &[
             "Addendum A report section 5.5 (E17: the low-Reynolds form for aluminium parts)",
         ],
         review: Review::Reviewed {
-            reviewer: "physics reviewer (session model)",
+            reviewer: "independent physics review 2026-10-01",
             date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
+            record: "independent physics review 2026-10-01 of the A4 notes: commit \"docs(magcoupling-rs): apply the independent physics review to six A4 notes\" (the seven findings and their fixes)",
         },
     },
     Note {
