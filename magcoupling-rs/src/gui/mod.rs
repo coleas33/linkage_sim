@@ -6,6 +6,8 @@
 //! window and event loop. The engine stays pure std; nothing here is compiled
 //! without the feature.
 
+pub mod corrections;
+pub mod dashboard;
 mod format;
 pub mod history;
 pub mod input_ui;

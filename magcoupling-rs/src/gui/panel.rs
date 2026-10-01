@@ -6,12 +6,11 @@
 //! on ([`compute_all`]) each frame after the inputs are drawn, so the readouts show this
 //! frame's edits.
 
-use crate::engine::api::HEADLINE;
-use crate::engine::meta::{InputSet, ResultMeta, ResultSet, Value, result_rows};
-use crate::gui::format::{format_value, with_unit};
+use crate::engine::meta::{InputSet, ResultSet, Value};
+use crate::gui::dashboard::dashboard_ui;
 use crate::gui::input_ui::{RowEdit, input_row};
 use crate::gui::inputs::{InputCatalogue, InputEntry, optional_seed};
-use crate::{DesignInputs, DesignResults, compute_all, headline};
+use crate::{DesignInputs, DesignResults, compute_all};
 
 /// The heading of the panel.
 pub const HEADING: &str = "Magnetic coupling calculator";
@@ -38,8 +37,6 @@ pub struct MagcouplingPanel {
     inputs: DesignInputs,
     /// The results of `inputs`, recomputed by every [`MagcouplingPanel::ui`].
     results: DesignResults,
-    /// Metadata of each [`HEADLINE`] result, in order.
-    headline_meta: [&'static ResultMeta; HEADLINE.len()],
     /// The main widget of each Key design row in the last frame, by input path.
     key_widgets: Vec<(&'static str, egui::Id)>,
     /// Why the last edit was refused, until the next accepted edit or reset.
@@ -57,16 +54,9 @@ impl MagcouplingPanel {
     pub fn new() -> Self {
         let inputs = DesignInputs::default();
         let results = compute_all(&inputs);
-        let result_meta = result_rows(&results);
-        let headline_meta = HEADLINE.map(|(key, path)| {
-            let row = result_meta.iter().find(|row| row.path == path);
-            row.unwrap_or_else(|| panic!("HEADLINE {key}: no result {path}"))
-                .meta
-        });
         Self {
             inputs,
             results,
-            headline_meta,
             key_widgets: Vec::new(),
             last_error: None,
         }
@@ -104,7 +94,11 @@ impl MagcouplingPanel {
             egui::SidePanel::right("magcoupling_dashboard")
                 .resizable(true)
                 .default_width(DASHBOARD_WIDTH)
-                .show_inside(ui, |ui| self.headline_ui(ui));
+                .show_inside(ui, |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("magcoupling_dashboard_scroll")
+                        .show(ui, |ui| dashboard_ui(ui, &self.results));
+                });
             egui::CentralPanel::default().show_inside(ui, |_ui| {});
         });
     }
@@ -189,37 +183,19 @@ impl MagcouplingPanel {
             _ => None,
         }
     }
-
-    /// The headline numbers: label, then value with unit; the hover shows the
-    /// Python key, the result path and the workbook cell.
-    fn headline_ui(&self, ui: &mut egui::Ui) {
-        egui::Grid::new("magcoupling_headline")
-            .num_columns(2)
-            .striped(true)
-            .show(ui, |ui| {
-                let rows = headline(&self.results)
-                    .into_iter()
-                    .zip(HEADLINE)
-                    .zip(self.headline_meta);
-                for (((key, value), (_, path)), meta) in rows {
-                    ui.label(meta.label).on_hover_text(format!(
-                        "{key}\n{path}\n{}",
-                        meta.cell.unwrap_or("no workbook cell")
-                    ));
-                    ui.label(with_unit(format_value(&value), meta.unit));
-                    ui.end_row();
-                }
-            });
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::api::HEADLINE;
+    use crate::gui::dashboard::{END_EFFECT_BANNER, STORED_3D_LABEL, result_info};
+    use crate::gui::format::{format_value, with_unit};
     use crate::gui::input_ui::{CHANGED_DOT, OUTSIDE_RANGE_NOTE, RESET_LABEL};
     use crate::gui::test_support::{
         central_panel_frame, drawn_texts, key_tap, primary_button, select_all, text_rect,
     };
+    use crate::headline;
 
     const FACE_GAP: &str = "metal.face_gap_mm";
     const POLES: &str = "coupling.npole";
@@ -295,11 +271,12 @@ mod tests {
 
     /// The headline of `inputs`, as the panel displays it (value with unit).
     fn displayed_headline(inputs: &DesignInputs) -> Vec<String> {
-        let panel = MagcouplingPanel::new();
         headline(&compute_all(inputs))
             .into_iter()
-            .zip(panel.headline_meta)
-            .map(|((_, value), meta)| with_unit(format_value(&value), meta.unit))
+            .zip(HEADLINE)
+            .map(|((_, value), (_, path))| {
+                with_unit(format_value(&value), result_info(path).unwrap().meta.unit)
+            })
             .collect()
     }
 
@@ -333,12 +310,9 @@ mod tests {
         let output = harness.frame(Vec::new());
         assert_drew_headline(&output, &DesignInputs::default());
         let texts = drawn_texts(&output);
-        for meta in harness.panel.headline_meta {
-            assert!(
-                texts.iter().any(|t| t == meta.label),
-                "missing {:?}",
-                meta.label
-            );
+        for (_, path) in HEADLINE {
+            let label = result_info(path).unwrap().meta.label;
+            assert!(texts.iter().any(|t| t == label), "missing {label:?}");
         }
         for entry in &InputCatalogue::get().key_design {
             assert!(
@@ -664,6 +638,55 @@ mod tests {
     }
 
     #[test]
+    fn the_dashboard_shows_the_stored_3d_label_and_the_corrected_markers() {
+        let mut harness = Harness::new();
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, STORED_3D_LABEL), 1);
+        // The pull-out's marker: E3 changes it at the defaults, E7 and E8 have probes on it.
+        assert!(count(&output, "E3 E7 E8") >= 1);
+        assert_eq!(count(&output, "Inside the space claim"), 1);
+        assert!(
+            !drawn_texts(&output)
+                .iter()
+                .any(|t| t.starts_with(END_EFFECT_BANNER))
+        );
+    }
+
+    #[test]
+    fn an_out_of_range_end_effect_shows_the_banner() {
+        let mut harness = Harness::new();
+        let inputs = &mut harness.panel.inputs;
+        inputs.coupling.c_end = 0.5;
+        inputs.coupling.magnets.part_inner.clear();
+        inputs.coupling.magnets.part_outer.clear();
+        inputs.coupling.magnets.manual_inner_length_mm = 2.0;
+        inputs.coupling.magnets.manual_outer_length_mm = 2.0;
+        let output = harness.frame(Vec::new());
+        let banner: Vec<String> = drawn_texts(&output)
+            .into_iter()
+            .filter(|t| t.starts_with(&format!("{END_EFFECT_BANNER} (")))
+            .collect();
+        assert_eq!(
+            banner,
+            [
+                "End-effect model out of range (f_end = -1.202): the pull-out and the numbers computed from it are greyed."
+            ]
+        );
+    }
+
+    #[test]
+    fn a_design_past_the_space_claim_shows_its_overshoot() {
+        let mut harness = Harness::new();
+        harness.panel.inputs.coupling.magnets.axial_length_mm = Some(50.8);
+        let output = harness.frame(Vec::new());
+        let claim = drawn_texts(&output)
+            .into_iter()
+            .find(|t| t.starts_with("Exceeds the space claim:"))
+            .expect("the badge text");
+        assert!(claim.contains("overall length"), "{claim}");
+    }
+
+    #[test]
     fn reset_all_restores_the_default_design_and_headline() {
         let mut harness = Harness::new();
         harness.focus(FACE_GAP);
@@ -702,7 +725,7 @@ mod tests {
             // A window sizes itself on its first frame and paints on the next.
             output = Some(ctx.run(egui::RawInput::default(), |ctx| {
                 egui::Window::new("Magnetic coupling")
-                    .default_size([1100.0, 700.0])
+                    .default_size([1100.0, 1200.0])
                     .show(ctx, |ui| panel.ui(ui));
             }));
         }
