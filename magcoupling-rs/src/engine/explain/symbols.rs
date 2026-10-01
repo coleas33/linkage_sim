@@ -8,9 +8,13 @@
 //! subscript and unit; ϑ temperature; φ electrical angle; τ_p pole pitch, τ a material's shear
 //! strength (`τ_{Al}`, `τ_{lap}`); c a specific heat (`c_{st}`), the end-effect coefficient
 //! (`c_{end}`) or a radial clearance (`c_{nom}`, `c_{res}`), told apart by subscript and unit; δ
-//! the skin depth (`δ`) or a radial movement (`δ_{shaft}`, `δ_{adv}`); Σ the summation operator
-//! only, never a quantity's symbol; `^{cal}` marks the Calibration prototype; a selector is an
-//! upright word (`faceted`), which the typesetter writes with the choice's label in conditions.
+//! the skin depth (`δ`) or a radial movement (`δ_{shaft}`, `δ_{adv}`); r and R a radius
+//! (`r_{mid}`, `R_g`), apart from the Calibration's measured-to-model ratio `r^{cal}`; Δ before a
+//! quantity's letter a difference: a rise (`Δϑ_{ss,est}`), or a margin or reserve, the limit or
+//! claim minus the value (`Δϑ_{mag}`; the space claim's `ΔD`, `ΔL`, `ΔL_{bay}`, a diameter
+//! difference, not a radial one); Σ the summation operator only, never a quantity's symbol;
+//! `^{cal}` marks the Calibration prototype; a selector is an upright word (`faceted`), which the
+//! typesetter writes with the choice's label in conditions.
 
 /// (path, symbol markup), grouped by input group.
 #[rustfmt::skip]

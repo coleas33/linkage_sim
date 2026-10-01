@@ -17,9 +17,9 @@ pub const RECORDS: &[Record] = &[
     record("metal.axial_stack_mm", "L_{stack}",
         "{metal.cap_axial_mm} + {housing.cup_depth_mm} + {metal.web_mm} + {metal.boss_length_mm}"),
     record("metal.large_dia_stack_mm", "L_{large}", "{metal.cap_axial_mm} + {housing.cup_depth_mm} + {metal.web_mm}"),
-    record("metal.diameter_reserve_mm", "r_D", "{metal.max_diameter_mm} - {metal.rotating_od_mm}"),
-    record("metal.axial_reserve_mm", "r_L", "{metal.max_overall_axial_mm} - {metal.axial_stack_mm}"),
-    record("metal.large_dia_reserve_mm", "r_{bay}", "{metal.max_large_dia_axial_mm} - {metal.large_dia_stack_mm}"),
+    record("metal.diameter_reserve_mm", "ΔD", "{metal.max_diameter_mm} - {metal.rotating_od_mm}"),
+    record("metal.axial_reserve_mm", "ΔL", "{metal.max_overall_axial_mm} - {metal.axial_stack_mm}"),
+    record("metal.large_dia_reserve_mm", "ΔL_{bay}", "{metal.max_large_dia_axial_mm} - {metal.large_dia_stack_mm}"),
 
     // --- The space claim per axis (housing::compute): how far past the claim, 0 inside it ---
     record("housing.diameter_overshoot_mm", "o_D", "max(-{metal.diameter_reserve_mm}, 0)"),
