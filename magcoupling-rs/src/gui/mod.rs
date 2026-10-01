@@ -13,6 +13,7 @@ pub mod history;
 pub mod input_ui;
 pub mod inputs;
 mod panel;
+pub mod results_table;
 pub mod session;
 pub mod sizing;
 #[cfg(test)]
@@ -20,4 +21,4 @@ pub(crate) mod test_support;
 
 pub use format::{SIGNIFICANT_DIGITS, format_value, with_unit};
 pub use inputs::KEY_DESIGN;
-pub use panel::MagcouplingPanel;
+pub use panel::{CentreView, MagcouplingPanel, PanelRequest};

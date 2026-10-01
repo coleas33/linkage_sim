@@ -2,14 +2,24 @@
 //!
 //! Layout (spec M4 "Layout"): a header line, the inputs on the left (the Key design group,
 //! then every input by package group, [`crate::gui::inputs`]), the dashboard on the right and
-//! the centre region between them. Every result is recomputed with every approved correction
+//! the centre region between them ([`CentreView`]: the results table; plan M4-2 adds the
+//! geometry view and the plots). Every result is recomputed with every approved correction
 //! on ([`compute_all`]) each frame after the inputs are drawn, so the readouts show this
 //! frame's edits.
+//!
+//! The panel never touches files or the network: what needs the platform (saving a file,
+//! picking one) it queues as a [`PanelRequest`] for the host, which drains them with
+//! [`MagcouplingPanel::take_requests`] after each frame.
 
 use crate::engine::meta::{InputSet, ResultSet, Value};
 use crate::gui::dashboard::dashboard_ui;
 use crate::gui::input_ui::{RowEdit, input_row};
 use crate::gui::inputs::{InputCatalogue, InputEntry, optional_seed};
+use crate::gui::results_table::{
+    CSV_FILE_NAME, JSON_FILE_NAME, ResultsTable, TableAction, results_csv, results_json,
+};
+use crate::gui::session::Design;
+use crate::gui::sizing::SizingState;
 use crate::{DesignInputs, DesignResults, compute_all};
 
 /// The heading of the panel.
@@ -27,6 +37,38 @@ const INPUTS_WIDTH: f32 = 320.0;
 /// Starting width of the dashboard side [points].
 const DASHBOARD_WIDTH: f32 = 300.0;
 
+/// What the panel asks of its host: the platform work an egui panel cannot do itself.
+#[derive(Clone, Debug, PartialEq)]
+pub enum PanelRequest {
+    /// Save `contents` to a file the user picks (native) or download it (web).
+    SaveFile {
+        /// The suggested file name.
+        file_name: String,
+        /// The media type (the web download's Blob type).
+        mime: &'static str,
+        contents: String,
+    },
+}
+
+/// The views of the centre region. Plan M4-2 adds the geometry view and the plot tabs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CentreView {
+    /// Every result: label, value, unit, cell; searchable; CSV and JSON export.
+    Results,
+}
+
+impl CentreView {
+    /// Every view, in tab order.
+    pub const ALL: [CentreView; 1] = [CentreView::Results];
+
+    /// The tab text.
+    pub const fn label(self) -> &'static str {
+        match self {
+            CentreView::Results => "Results table",
+        }
+    }
+}
+
 /// The calculator panel: design inputs, their results, and the UI that edits the one and
 /// shows the other.
 ///
@@ -41,6 +83,11 @@ pub struct MagcouplingPanel {
     key_widgets: Vec<(&'static str, egui::Id)>,
     /// Why the last edit was refused, until the next accepted edit or reset.
     last_error: Option<String>,
+    /// The view the centre region shows.
+    centre: CentreView,
+    results_table: ResultsTable,
+    /// Platform work for the host, oldest first.
+    requests: Vec<PanelRequest>,
 }
 
 impl Default for MagcouplingPanel {
@@ -59,6 +106,22 @@ impl MagcouplingPanel {
             results,
             key_widgets: Vec::new(),
             last_error: None,
+            centre: CentreView::Results,
+            results_table: ResultsTable::default(),
+            requests: Vec::new(),
+        }
+    }
+
+    /// The platform work queued since the last call (the host saves files), oldest first.
+    pub fn take_requests(&mut self) -> Vec<PanelRequest> {
+        std::mem::take(&mut self.requests)
+    }
+
+    /// The design as a file holds it.
+    fn design(&self) -> Design {
+        Design {
+            inputs: self.inputs.clone(),
+            sizing: SizingState::default(),
         }
     }
 
@@ -99,8 +162,36 @@ impl MagcouplingPanel {
                         .id_salt("magcoupling_dashboard_scroll")
                         .show(ui, |ui| dashboard_ui(ui, &self.results));
                 });
-            egui::CentralPanel::default().show_inside(ui, |_ui| {});
+            egui::CentralPanel::default().show_inside(ui, |ui| self.centre_ui(ui));
         });
+    }
+
+    /// The centre region: the view tabs, then the view.
+    fn centre_ui(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            for view in CentreView::ALL {
+                ui.selectable_value(&mut self.centre, view, view.label());
+            }
+        });
+        ui.separator();
+        match self.centre {
+            CentreView::Results => {
+                let action = self.results_table.ui(ui, &self.results);
+                match action {
+                    Some(TableAction::ExportCsv) => self.requests.push(PanelRequest::SaveFile {
+                        file_name: CSV_FILE_NAME.to_owned(),
+                        mime: "text/csv",
+                        contents: results_csv(&self.results),
+                    }),
+                    Some(TableAction::ExportJson) => self.requests.push(PanelRequest::SaveFile {
+                        file_name: JSON_FILE_NAME.to_owned(),
+                        mime: "application/json",
+                        contents: results_json(&self.design(), &self.results),
+                    }),
+                    None => {}
+                }
+            }
+        }
     }
 
     /// The header line: heading, the session buttons, the last refusal.
@@ -193,7 +284,8 @@ mod tests {
     use crate::gui::format::{format_value, with_unit};
     use crate::gui::input_ui::{CHANGED_DOT, OUTSIDE_RANGE_NOTE, RESET_LABEL};
     use crate::gui::test_support::{
-        central_panel_frame, drawn_texts, key_tap, primary_button, select_all, text_rect,
+        SCREEN, drawn_texts, key_tap, primary_button, select_all, short_magnets, sized_frame,
+        text_rect,
     };
     use crate::headline;
 
@@ -207,13 +299,20 @@ mod tests {
     pub(crate) struct Harness {
         pub(crate) ctx: egui::Context,
         pub(crate) panel: MagcouplingPanel,
+        screen: egui::Vec2,
     }
 
     impl Harness {
         pub(crate) fn new() -> Self {
+            Self::on_screen(SCREEN)
+        }
+
+        /// A harness on a screen of `size`.
+        pub(crate) fn on_screen(size: egui::Vec2) -> Self {
             let mut harness = Self {
                 ctx: egui::Context::default(),
                 panel: MagcouplingPanel::new(),
+                screen: size,
             };
             harness.frame(Vec::new());
             harness
@@ -221,7 +320,7 @@ mod tests {
 
         pub(crate) fn frame(&mut self, events: Vec<egui::Event>) -> egui::FullOutput {
             let panel = &mut self.panel;
-            central_panel_frame(&self.ctx, events, |ui| panel.ui(ui))
+            sized_frame(&self.ctx, self.screen, events, |ui| panel.ui(ui))
         }
 
         /// The Key design row's main widget as drawn in the last frame.
@@ -332,8 +431,8 @@ mod tests {
         // Decision M41-2 (`SliderClamping::Edits`): a slider writes only on an edit, so idle
         // frames keep every value as it is, values off their step grid included: a face gap
         // and a measured drag from a file, and the vacuum permeability's two defaults (every
-        // group open, so every row is drawn).
-        let mut harness = Harness::new();
+        // group open, on a screen tall enough to draw every row).
+        let mut harness = Harness::on_screen(egui::vec2(1280.0, 12000.0));
         harness.panel.inputs.metal.face_gap_mm = 1.4123;
         harness.panel.inputs.metal.measured_drag_Nm = Some(0.012345);
         let design = harness.panel.inputs.clone();
@@ -617,7 +716,8 @@ mod tests {
     fn every_group_opens_and_draws_a_row_for_each_of_its_inputs() {
         let catalogue = InputCatalogue::get();
         for group in &catalogue.groups {
-            let mut harness = Harness::new();
+            // Tall enough for the longest group (temperature) to fit without scrolling.
+            let mut harness = Harness::on_screen(egui::vec2(1280.0, 6000.0));
             harness.click_text(group.label);
             // The header opens over a few frames (its animation).
             let mut output = harness.frame(Vec::new());
@@ -655,23 +755,15 @@ mod tests {
     #[test]
     fn an_out_of_range_end_effect_shows_the_banner() {
         let mut harness = Harness::new();
-        let inputs = &mut harness.panel.inputs;
-        inputs.coupling.c_end = 0.5;
-        inputs.coupling.magnets.part_inner.clear();
-        inputs.coupling.magnets.part_outer.clear();
-        inputs.coupling.magnets.manual_inner_length_mm = 2.0;
-        inputs.coupling.magnets.manual_outer_length_mm = 2.0;
+        harness.panel.inputs = short_magnets();
         let output = harness.frame(Vec::new());
         let banner: Vec<String> = drawn_texts(&output)
             .into_iter()
             .filter(|t| t.starts_with(&format!("{END_EFFECT_BANNER} (")))
             .collect();
-        assert_eq!(
-            banner,
-            [
-                "End-effect model out of range (f_end = -1.202): the pull-out and the numbers computed from it are greyed."
-            ]
-        );
+        // Over the dashboard and over the results table.
+        let text = "End-effect model out of range (f_end = -1.202): the pull-out and the numbers computed from it are greyed.";
+        assert_eq!(banner, [text, text]);
     }
 
     #[test]
@@ -684,6 +776,56 @@ mod tests {
             .find(|t| t.starts_with("Exceeds the space claim:"))
             .expect("the badge text");
         assert!(claim.contains("overall length"), "{claim}");
+    }
+
+    #[test]
+    fn the_results_table_lists_results_and_filters_by_the_search() {
+        let entries = crate::gui::results_table::table_entries();
+        let cell = |index: usize| entries[index].info.cell.clone().unwrap();
+        let (first, last) = (cell(0), cell(entries.len() - 1));
+        let mut harness = Harness::new();
+        let output = harness.frame(Vec::new());
+        let total = entries.len();
+        assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
+        // The first rows are on screen (they show their cells), the last is far below.
+        assert_eq!(count(&output, &first), 1, "{first}");
+        assert_eq!(count(&output, &last), 0, "{last}");
+        harness.click_text(crate::gui::results_table::SEARCH_HINT);
+        harness.frame(vec![egui::Event::Text(last.to_lowercase())]);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &format!("1 of {total} results")), 1);
+        assert_eq!(count(&output, &last), 1);
+        assert_eq!(count(&output, &first), 0);
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn the_export_buttons_queue_the_files_for_the_host() {
+        use crate::gui::results_table::{EXPORT_CSV, EXPORT_JSON};
+        let mut harness = Harness::new();
+        assert!(harness.panel.take_requests().is_empty());
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        harness.click_text(EXPORT_CSV);
+        harness.click_text(EXPORT_JSON);
+        let results = harness.panel.results().clone();
+        let requests = harness.panel.take_requests();
+        assert_eq!(
+            requests,
+            vec![
+                PanelRequest::SaveFile {
+                    file_name: "magcoupling-results.csv".to_owned(),
+                    mime: "text/csv",
+                    contents: results_csv(&results),
+                },
+                PanelRequest::SaveFile {
+                    file_name: "magcoupling-results.json".to_owned(),
+                    mime: "application/json",
+                    contents: results_json(&harness.panel.design(), &results),
+                },
+            ]
+        );
+        assert!(harness.panel.take_requests().is_empty(), "drained");
     }
 
     #[test]

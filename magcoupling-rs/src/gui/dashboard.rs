@@ -242,6 +242,16 @@ pub fn end_effect_out_of_range(results: &DesignResults) -> Option<f64> {
     (results.model.end_effect_check == END_EFFECT_OUT_OF_RANGE).then_some(results.model.f_end)
 }
 
+/// The banner shown over the dashboard and the results table when f_end ≤ 0.
+pub fn end_effect_banner(results: &DesignResults) -> Option<String> {
+    end_effect_out_of_range(results).map(|f_end| {
+        format!(
+            "{END_EFFECT_BANNER} (f_end = {}): the pull-out and the numbers computed from it are greyed.",
+            format_value(&Value::Num(f_end))
+        )
+    })
+}
+
 /// The dashboard rows of `results`.
 pub fn dashboard_lines(results: &DesignResults) -> Vec<DashboardLine> {
     let out_of_range = end_effect_out_of_range(results).is_some();
@@ -287,14 +297,8 @@ pub fn dashboard_lines(results: &DesignResults) -> Vec<DashboardLine> {
 /// stored-3D label after the last temperature row.
 pub fn dashboard_ui(ui: &mut egui::Ui, results: &DesignResults) {
     let lines = dashboard_lines(results);
-    if let Some(f_end) = end_effect_out_of_range(results) {
-        ui.colored_label(
-            ui.visuals().error_fg_color,
-            format!(
-                "{END_EFFECT_BANNER} (f_end = {}): the pull-out and the numbers computed from it are greyed.",
-                format_value(&Value::Num(f_end))
-            ),
-        );
+    if let Some(banner) = end_effect_banner(results) {
+        ui.colored_label(ui.visuals().error_fg_color, banner);
         ui.separator();
     }
     let last_3d = lines.iter().rposition(|line| line.stored_3d);
@@ -339,6 +343,7 @@ mod tests {
     use super::*;
     use crate::engine::api::HEADLINE;
     use crate::engine::meta::InputSet;
+    use crate::gui::test_support::short_magnets;
     use std::collections::BTreeSet;
 
     #[test]
@@ -360,17 +365,6 @@ mod tests {
         let mut inputs = DesignInputs::default();
         edit(&mut inputs);
         inputs
-    }
-
-    /// A design with f_end below 0 (the engine's short-magnet test): 2 mm manual blocks, c_end 0.5.
-    pub(crate) fn short_magnets() -> DesignInputs {
-        design(|i| {
-            i.coupling.c_end = 0.5;
-            i.coupling.magnets.part_inner.clear();
-            i.coupling.magnets.part_outer.clear();
-            i.coupling.magnets.manual_inner_length_mm = 2.0;
-            i.coupling.magnets.manual_outer_length_mm = 2.0;
-        })
     }
 
     #[test]

@@ -3,15 +3,32 @@
 //! pattern as `linkage-sim-rs/src/gui/test_support.rs` (a separate crate, so
 //! the few helpers used here are repeated, not shared).
 
-/// One headless frame of `draw` inside a central panel, with `events` as the
-/// frame's input. Returns what egui painted.
-pub(crate) fn central_panel_frame(
+/// A design with f_end below 0 (the engine's short-magnet test, audit M9): 2 mm manual
+/// blocks with c_end 0.5.
+pub(crate) fn short_magnets() -> crate::DesignInputs {
+    let mut inputs = crate::DesignInputs::default();
+    inputs.coupling.c_end = 0.5;
+    inputs.coupling.magnets.part_inner.clear();
+    inputs.coupling.magnets.part_outer.clear();
+    inputs.coupling.magnets.manual_inner_length_mm = 2.0;
+    inputs.coupling.magnets.manual_outer_length_mm = 2.0;
+    inputs
+}
+
+/// The screen of the headless frames [points]: a laptop window.
+pub(crate) const SCREEN: egui::Vec2 = egui::vec2(1280.0, 1024.0);
+
+/// One headless frame of `draw` inside a central panel on a screen of `size`, with `events`
+/// as the frame's input. Returns what egui painted.
+pub(crate) fn sized_frame(
     ctx: &egui::Context,
+    size: egui::Vec2,
     events: Vec<egui::Event>,
     mut draw: impl FnMut(&mut egui::Ui),
 ) -> egui::FullOutput {
     let input = egui::RawInput {
         events,
+        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
         ..Default::default()
     };
     ctx.run(input, |ctx| {

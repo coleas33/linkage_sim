@@ -149,8 +149,8 @@ pub(crate) fn json_value(value: &Value) -> Json {
     }
 }
 
-/// The design as a JSON object.
-fn design_json(design: &Design) -> Json {
+/// The design as a JSON object (the results export embeds it).
+pub(crate) fn design_json(design: &Design) -> Json {
     let mut inputs = Map::new();
     for row in input_rows(&design.inputs) {
         inputs.insert(row.path, json_value(&row.value));
