@@ -1,5 +1,5 @@
 //! Addendum A2/A3 explanation layer: the drift guard, the registry's structure, the v1
-//! scope and the A3 traceability test.
+//! scope, the teaching-note links and the A3 traceability test.
 //!
 //! **Drift guard.** Every equation record is evaluated over the engine's own term values and
 //! must reproduce the engine's result by the parity rule (1e-9 relative, 1e-12 absolute;
@@ -31,7 +31,7 @@ use magcoupling::engine::explain::markup::{Expr, Symbol};
 use magcoupling::engine::explain::record::Eval;
 use magcoupling::engine::explain::registry::{Design, Registry, TermKind};
 use magcoupling::engine::explain::scope::{SCOPE, Status};
-use magcoupling::engine::explain::{TermSource, Trace, render};
+use magcoupling::engine::explain::{TermSource, Trace, notes, render};
 use magcoupling::engine::library;
 use magcoupling::engine::meta::{
     FieldType, InputMeta, InputSet, ResultSet, Value, input_rows, result_rows,
@@ -489,6 +489,30 @@ fn the_registry_is_consistent() {
     }
 }
 
+/// The A4 accuracy gate for release (the M4 hands-on checklist runs it): every note the
+/// "start here" order opens and every note an A5 warning links to has passed the physics
+/// review. Red until the notes are reviewed; drafts never reach users meanwhile (`note_for`).
+#[test]
+#[ignore = "the M4 release gate: red until the notes are reviewed"]
+fn release_notes_are_reviewed() {
+    let mut ids: Vec<&str> = notes::START_HERE.iter().map(|(id, _)| *id).collect();
+    ids.extend(
+        magcoupling::engine::warnings::WARNING_RULES
+            .iter()
+            .map(|r| r.note_id),
+    );
+    let drafts: Vec<&str> = ids
+        .into_iter()
+        .filter(|id| {
+            !matches!(
+                notes::note(id).map(|n| n.review),
+                Some(notes::Review::Reviewed { .. })
+            )
+        })
+        .collect();
+    assert!(drafts.is_empty(), "not yet reviewed: {drafts:?}");
+}
+
 /// The physics reviewer's sheet for a batch: every record's path, cell, symbol, rendered
 /// formula and corrections, as a Markdown table on stdout. Run with
 /// `cargo test --test explain review_sheet -- --ignored --nocapture`.
@@ -562,6 +586,56 @@ fn explained_chains_have_every_record_and_scope_paths_exist() {
         159,
         "decision 31: the chains and the dashboard (report section 7)"
     );
+}
+
+#[test]
+fn notes_link_to_records_and_each_equation_has_at_most_one() {
+    let r = Registry::build();
+    let results: BTreeSet<String> = result_rows(&compute_all(&DesignInputs::default()))
+        .into_iter()
+        .map(|x| x.path)
+        .collect();
+    for n in notes::NOTES {
+        for entry in n.equations {
+            let members: Vec<&String> =
+                results.iter().filter(|p| notes::covers(entry, p)).collect();
+            assert!(
+                !members.is_empty(),
+                "note {}: {entry} names no result",
+                n.id
+            );
+            if n.sentences.is_empty() {
+                continue; // a stub fixes an id; its links are checked when it is drafted
+            }
+            for m in members {
+                assert!(
+                    r.equation_for(m).is_some(),
+                    "note {}: {m} has no record",
+                    n.id
+                );
+            }
+        }
+    }
+    for eq in r.equations() {
+        let owners: Vec<&str> = notes::NOTES
+            .iter()
+            .filter(|n| n.equations.iter().any(|e| notes::covers(e, &eq.target)))
+            .map(|n| n.id)
+            .collect();
+        assert!(owners.len() <= 1, "{}: notes {owners:?}", eq.target);
+    }
+    for (id, path) in notes::START_HERE {
+        assert!(results.contains(*path), "start here {id}: {path}");
+        let explained_chain = SCOPE
+            .iter()
+            .any(|c| c.status == Status::Explained && c.paths.contains(path));
+        if explained_chain {
+            assert!(
+                r.equation_for(path).is_some(),
+                "start here {id}: {path} has no record"
+            );
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------------------
