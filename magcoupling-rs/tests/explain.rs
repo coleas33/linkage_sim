@@ -936,9 +936,6 @@ fn notes_link_to_records_and_each_equation_has_at_most_one() {
                 "note {}: {entry} names no result",
                 n.id
             );
-            if n.sentences.is_empty() {
-                continue; // a stub fixes an id; its links are checked when it is drafted
-            }
             for m in members {
                 assert!(
                     r.equation_for(m).is_some(),
