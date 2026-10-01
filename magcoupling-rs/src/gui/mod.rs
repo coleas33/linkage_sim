@@ -7,6 +7,7 @@
 //! without the feature.
 
 mod format;
+pub mod history;
 mod panel;
 pub mod session;
 pub mod sizing;
