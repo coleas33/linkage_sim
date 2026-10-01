@@ -14,8 +14,9 @@ default = []
 # The egui panel `gui::MagcouplingPanel`, hostable by any egui app (the
 # standalone app, M4, and a window in linkage-sim-rs, M5). egui only: no
 # windowing, no eframe, no file dialogs. serde_json, base64 and flate2 write
-# and read design files, share links and the results export.
-gui = ["dep:egui", "dep:serde_json", "dep:base64", "dep:flate2"]
+# and read design files, share links and the results export; log reports the
+# sizing outcome (the host chooses the logger: the browser console on the web).
+gui = ["dep:egui", "dep:log", "dep:serde_json", "dep:base64", "dep:flate2"]
 # The standalone app: `app::MagcouplingApp` and the binaries `magcoupling-app`
 # (native) and `magcoupling-web` (wasm32, eframe WebRunner + wasm-bindgen).
 app = [

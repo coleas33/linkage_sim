@@ -18,12 +18,18 @@
 //! host may open a design as the session's start ([`MagcouplingPanel::open_share_payload`]:
 //! no undo step) and may keep the undo keys for itself
 //! ([`MagcouplingPanel::set_keyboard_shortcuts`]).
+//!
+//! Sizing (spec Addendum A1): the mode switch tops the Key design group. In Torque → Magnets
+//! the panel shows the design with the free variable at the solved value
+//! ([`crate::gui::sizing::SizingRunner`], debounced, never per frame), and the free variable's
+//! row shows that value, locked.
 
 use crate::engine::meta::{InputSet, ResultSet, Value};
-use crate::gui::dashboard::dashboard_ui;
+use crate::engine::sizing::FreeVariable;
+use crate::gui::dashboard::{Level, dashboard_ui};
 use crate::gui::history::History;
-use crate::gui::input_ui::{RowEdit, input_row};
-use crate::gui::inputs::{InputCatalogue, InputEntry, optional_seed};
+use crate::gui::input_ui::{RowEdit, input_row, slider};
+use crate::gui::inputs::{InputCatalogue, InputEntry, KEY_DESIGN, optional_seed};
 use crate::gui::results_table::{
     CSV_FILE_NAME, JSON_FILE_NAME, ResultsTable, TableAction, results_csv, results_json,
 };
@@ -31,7 +37,10 @@ use crate::gui::session::{
     Design, LoadError, PUBLIC_BASE_URL, decode_share_payload, design_from_json, design_to_json,
     share_link,
 };
-use crate::gui::sizing::SizingState;
+use crate::gui::sizing::{
+    SOLVED_PREFIX, SOLVING, SizingMode, SizingRunner, SizingState, TARGET_RANGE_INPUT,
+    variable_label,
+};
 use crate::{DesignInputs, DesignResults, compute_all};
 
 /// The heading of the panel.
@@ -65,6 +74,15 @@ pub const REDO_SHORTCUTS: [egui::KeyboardShortcut; 2] = [
 
 /// The heading of the Key design group.
 pub const KEY_DESIGN_HEADING: &str = "Key design";
+
+/// The label of the target torque slider (Torque → Magnets).
+pub const TARGET_LABEL: &str = "Target hot-low torque";
+
+/// The label of the free-variable picker.
+pub const FREE_VARIABLE_LABEL: &str = "Free variable";
+
+/// The note under the free variable's row in Torque → Magnets.
+pub const SIZED_NOTE: &str = "Set by Torque -> Magnets";
 
 /// Starting width of the inputs side [points].
 const INPUTS_WIDTH: f32 = 320.0;
@@ -117,13 +135,16 @@ pub struct MagcouplingPanel {
     inputs: DesignInputs,
     /// The sizing mode, free variable and target torque.
     sizing: SizingState,
+    /// Runs inverse sizing in Torque → Magnets.
+    runner: SizingRunner,
     /// Undo and redo of the design (inputs and sizing state).
     history: History<Design>,
     /// The address share links point at.
     share_base: String,
     /// What the last session action did, until the next one.
     status: Option<String>,
-    /// The results of `inputs`, recomputed by every [`MagcouplingPanel::ui`].
+    /// The results of the design shown ([`MagcouplingPanel::shown_inputs`]), recomputed by
+    /// every [`MagcouplingPanel::ui`].
     results: DesignResults,
     /// The main widget of each Key design row in the last frame, by input path.
     key_widgets: Vec<(&'static str, egui::Id)>,
@@ -156,6 +177,7 @@ impl MagcouplingPanel {
         Self {
             inputs,
             sizing: SizingState::default(),
+            runner: SizingRunner::default(),
             history: History::new(Design::default()),
             share_base: PUBLIC_BASE_URL.to_owned(),
             status: None,
@@ -187,8 +209,22 @@ impl MagcouplingPanel {
     fn set_design(&mut self, design: Design) {
         self.inputs = design.inputs;
         self.sizing = design.sizing;
-        self.results = compute_all(&self.inputs);
+        self.results = compute_all(&self.shown_inputs());
         self.last_error = None;
+    }
+
+    /// The design the panel shows: the inputs, or in Torque → Magnets the inputs with the free
+    /// variable at the solved value (the best value when the target is out of reach).
+    pub fn shown_inputs(&self) -> DesignInputs {
+        match self.sizing.mode {
+            SizingMode::MagnetsToTorque => self.inputs.clone(),
+            SizingMode::TorqueToMagnets => self.runner.shown(&self.inputs, &self.sizing),
+        }
+    }
+
+    /// The sizing state.
+    pub fn sizing(&self) -> &SizingState {
+        &self.sizing
     }
 
     /// Sets the address share links point at: the page's own address on the web (so a link
@@ -289,7 +325,8 @@ impl MagcouplingPanel {
         &self.inputs
     }
 
-    /// The results of [`MagcouplingPanel::inputs`], as of the last frame or reset.
+    /// The results of the design shown ([`MagcouplingPanel::shown_inputs`]), as of the last
+    /// frame or edit.
     pub fn results(&self) -> &DesignResults {
         &self.results
     }
@@ -310,8 +347,9 @@ impl MagcouplingPanel {
                 .resizable(true)
                 .default_width(INPUTS_WIDTH)
                 .show_inside(ui, |ui| self.inputs_ui(ui));
+            self.run_sizing(ui);
             // After the inputs: the readouts show this frame's edits.
-            self.results = compute_all(&self.inputs);
+            self.results = compute_all(&self.shown_inputs());
             egui::SidePanel::right("magcoupling_dashboard")
                 .resizable(true)
                 .default_width(DASHBOARD_WIDTH)
@@ -336,6 +374,110 @@ impl MagcouplingPanel {
         let design_text =
             focused_text_field(ui.ctx()).is_some_and(|id| self.design_widgets.contains(&id));
         design_text || ui.input(|i| i.pointer.any_down() || !i.keys_down.is_empty())
+    }
+
+    /// In Torque → Magnets, lets the runner solve if the design has settled, asks for a frame
+    /// when a solve is pending, and logs each outcome.
+    fn run_sizing(&mut self, ui: &egui::Ui) {
+        if self.sizing.mode != SizingMode::TorqueToMagnets {
+            return;
+        }
+        let now = ui.input(|i| i.time);
+        let solves = self.runner.solves;
+        if let Some(wait) = self
+            .runner
+            .update(&self.inputs, &self.sizing, now, self.editing(ui))
+        {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_secs_f64(wait));
+        }
+        if self.runner.solves != solves {
+            self.log_sizing();
+            // The inputs side was drawn before the solve: one more frame shows its outcome
+            // there (an idle page would otherwise keep showing "Solving...").
+            ui.ctx().request_repaint();
+        }
+    }
+
+    /// Logs the outcome of the last solve (the web smoke reads it).
+    fn log_sizing(&self) {
+        log::info!(
+            "magcoupling sizing: {}",
+            self.runner.status(&self.inputs, &self.sizing)
+        );
+    }
+
+    /// The sizing controls at the top of the Key design group: the mode switch, then in
+    /// Torque → Magnets the free variable, the target torque and the outcome.
+    fn sizing_ui(&mut self, ui: &mut egui::Ui) {
+        let mut mode = self.sizing.mode;
+        ui.horizontal(|ui| {
+            for choice in SizingMode::ALL {
+                ui.selectable_value(&mut mode, choice, choice.label());
+            }
+        });
+        if mode != self.sizing.mode {
+            if mode == SizingMode::MagnetsToTorque {
+                // Decision M41-7: leaving inverse sizing keeps the value it shows, solved for
+                // this design: a change still waiting for its debounce is solved first.
+                if !self.runner.is_current(&self.inputs, &self.sizing) {
+                    self.runner.solve_now(&self.inputs, &self.sizing);
+                    self.log_sizing();
+                }
+                self.inputs = self.runner.shown(&self.inputs, &self.sizing);
+            }
+            self.sizing.mode = mode;
+        }
+        if self.sizing.mode != SizingMode::TorqueToMagnets {
+            return;
+        }
+        egui::ComboBox::from_label(FREE_VARIABLE_LABEL)
+            .selected_text(variable_label(self.sizing.variable))
+            .show_ui(ui, |ui| {
+                for variable in FreeVariable::ALL {
+                    ui.selectable_value(
+                        &mut self.sizing.variable,
+                        variable,
+                        variable_label(variable),
+                    );
+                }
+            });
+        let entry = InputCatalogue::get()
+            .entry(TARGET_RANGE_INPUT)
+            .expect("the target's metadata input exists");
+        let range = entry.meta.range.expect("the hot minimum has a slider");
+        ui.horizontal(|ui| {
+            ui.label(TARGET_LABEL).on_hover_text(
+                "The hot-low torque with production variation (metal.torque_hot_low_Nm) the free variable must reach",
+            );
+            let mut target = self.sizing.target_Nm;
+            let response = ui.add(slider(&mut target, entry.meta, range));
+            // Its value box is a text field of the design, as an input row's is.
+            self.design_widgets.push(response.id);
+            if response.changed() && target != self.sizing.target_Nm {
+                self.sizing.target_Nm = target;
+            }
+        });
+        let status = self.runner.status(&self.inputs, &self.sizing);
+        let color = if status.starts_with(SOLVED_PREFIX) {
+            Level::Good.color(ui.visuals())
+        } else if status == SOLVING {
+            ui.visuals().weak_text_color()
+        } else {
+            Level::Bad.color(ui.visuals())
+        };
+        ui.colored_label(color, status);
+        // The free variable's row, locked at the value shown, when the Key design group does
+        // not list it (the ring radius is in the Coupling group, closed by default).
+        let path = self.sizing.variable.path();
+        if !KEY_DESIGN.contains(&path) {
+            let entry = InputCatalogue::get()
+                .entry(path)
+                .expect("every free variable is an input");
+            let widget = self.input_row_ui(ui, entry);
+            self.design_widgets.push(widget);
+        }
+        ui.separator();
     }
 
     /// Ctrl+Z and Ctrl+Shift+Z or Ctrl+Y, unless the host keeps them
@@ -375,7 +517,15 @@ impl MagcouplingPanel {
                     Some(TableAction::ExportJson) => self.requests.push(PanelRequest::SaveFile {
                         file_name: JSON_FILE_NAME.to_owned(),
                         mime: "application/json",
-                        contents: results_json(&self.design(), &self.results),
+                        // The design that produced the results: in Torque -> Magnets the
+                        // inputs with the free variable at the value shown.
+                        contents: results_json(
+                            &Design {
+                                inputs: self.shown_inputs(),
+                                sizing: self.sizing,
+                            },
+                            &self.results,
+                        ),
                     }),
                     None => {}
                 }
@@ -454,6 +604,7 @@ impl MagcouplingPanel {
                     .id_salt("key_design")
                     .default_open(true)
                     .show(ui, |ui| {
+                        self.sizing_ui(ui);
                         self.key_widgets.clear();
                         for entry in &catalogue.key_design {
                             let widget = self.input_row_ui(ui, entry);
@@ -481,11 +632,26 @@ impl MagcouplingPanel {
             });
     }
 
-    /// One input row; applies its edit. Returns the id of its main widget.
+    /// One input row; applies its edit. Returns the id of its main widget. In Torque →
+    /// Magnets the free variable's row shows the value the panel shows, locked.
     fn input_row_ui(&mut self, ui: &mut egui::Ui, entry: &'static InputEntry) -> egui::Id {
-        let current = self.inputs.get(&entry.path).unwrap_or(Value::None);
+        let locked = self.sizing.mode == SizingMode::TorqueToMagnets
+            && entry.path == self.sizing.variable.path();
+        // The locked row reads the design shown (one clone, for that row only).
+        let current = if locked {
+            self.shown_inputs().get(&entry.path)
+        } else {
+            self.inputs.get(&entry.path)
+        }
+        .unwrap_or(Value::None);
         let seed = self.seed(entry);
-        let output = input_row(ui, entry, &current, seed);
+        let output = ui
+            .add_enabled_ui(!locked, |ui| input_row(ui, entry, &current, seed))
+            .inner;
+        if locked {
+            ui.weak(SIZED_NOTE);
+            return output.widget.id;
+        }
         if let Some(edit) = output.edit {
             let value = match edit {
                 RowEdit::Set(value) => value,
@@ -525,13 +691,15 @@ fn focused_text_field(ctx: &egui::Context) -> Option<egui::Id> {
 mod tests {
     use super::*;
     use crate::engine::api::HEADLINE;
+    use crate::engine::sizing::SizingOutcome;
     use crate::gui::dashboard::{END_EFFECT_BANNER, STORED_3D_LABEL, result_info};
     use crate::gui::format::{format_value, with_unit};
     use crate::gui::input_ui::{CHANGED_DOT, OUTSIDE_RANGE_NOTE, RESET_LABEL};
     use crate::gui::session::encode_share_payload;
+    use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
         SCREEN, drawn_texts, key_event, key_tap, primary_button, select_all, short_magnets,
-        sized_frame, text_rect,
+        sized_frame, sized_frame_at, text_rect,
     };
     use crate::headline;
 
@@ -567,6 +735,31 @@ mod tests {
         pub(crate) fn frame(&mut self, events: Vec<egui::Event>) -> egui::FullOutput {
             let panel = &mut self.panel;
             sized_frame(&self.ctx, self.screen, events, |ui| panel.ui(ui))
+        }
+
+        /// A frame `dt` seconds after the last one.
+        fn frame_after(&mut self, dt: f64, events: Vec<egui::Event>) -> egui::FullOutput {
+            let time = self.ctx.input(|i| i.time) + dt;
+            let panel = &mut self.panel;
+            sized_frame_at(&self.ctx, self.screen, Some(time), events, |ui| {
+                panel.ui(ui)
+            })
+        }
+
+        /// Switches to Torque \u{2192} Magnets and lets the solve run.
+        fn size(&mut self) -> egui::FullOutput {
+            self.click_text(SizingMode::TorqueToMagnets.label());
+            self.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+            self.frame(Vec::new());
+            self.frame(Vec::new())
+        }
+
+        /// The solved point of the last solve.
+        fn solved(&self) -> crate::engine::sizing::SizingPoint {
+            match self.panel.runner.outcome(self.panel.sizing.variable) {
+                Some(Ok(SizingOutcome::Solved(point))) => point.clone(),
+                other => panic!("not solved: {other:?}"),
+            }
         }
 
         /// The Key design row's main widget as drawn in the last frame.
@@ -1466,6 +1659,292 @@ mod tests {
         assert_eq!(harness.panel.last_error, Some(error.to_string()));
         assert_eq!(harness.panel.design(), shared);
         assert!(harness.panel.history.can_redo(&shared));
+    }
+
+    #[test]
+    fn every_text_the_panel_shows_has_glyphs_in_the_default_fonts() {
+        // egui draws an empty box for a character its default fonts lack (U+2192, the
+        // spec's arrow, is one): every drawn text, in each state, and every hover text.
+        let mut harness = Harness::on_screen(egui::vec2(1280.0, 12000.0));
+        let mut texts = drawn_texts(&harness.frame(Vec::new()));
+        texts.extend(drawn_texts(&harness.size()));
+        for group in &InputCatalogue::get().groups {
+            harness.click_text(group.label);
+        }
+        for _ in 0..10 {
+            harness.frame(Vec::new());
+        }
+        texts.extend(drawn_texts(&harness.frame(Vec::new())));
+        harness.panel.inputs = short_magnets();
+        texts.extend(drawn_texts(&harness.frame(Vec::new())));
+        let catalogue = InputCatalogue::get();
+        texts.extend(catalogue.all().map(crate::gui::inputs::input_tooltip));
+        let results = harness.panel.results().clone();
+        texts.extend(
+            crate::gui::dashboard::dashboard_lines(&results)
+                .into_iter()
+                .map(|line| line.tooltip),
+        );
+        for entry in crate::gui::results_table::table_entries() {
+            let value = results.get(&entry.path).unwrap_or(Value::None);
+            texts.push(crate::gui::results_table::row_tooltip(entry, &value));
+        }
+        let font = egui::FontId::proportional(14.0);
+        for text in &texts {
+            for c in text.chars().filter(|c| !c.is_whitespace()) {
+                assert!(
+                    harness.ctx.fonts(|f| f.has_glyph(&font, c)),
+                    "no glyph for {c:?} (U+{:04X}) in {text:?}",
+                    c as u32
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn torque_to_magnets_shows_the_solved_design() {
+        let mut harness = Harness::new();
+        let output = harness.size();
+        let point = harness.solved();
+        // The axial length (the default free variable) meets the 2.5 N\u{b7}m target.
+        assert!((point.torque_hot_low_Nm - 2.5).abs() < 1e-6);
+        let status = format!(
+            "Solved at {} mm (hot-low torque 2.500 N\u{b7}m)",
+            format_value(&Value::Num(point.value))
+        );
+        assert_eq!(count(&output, &status), 1, "{:?}", drawn_texts(&output));
+        // The panel shows the sized design; the inputs keep their own (blank) length.
+        assert_eq!(harness.panel.shown_inputs(), point.inputs);
+        assert_eq!(harness.panel.results(), &compute_all(&point.inputs));
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        assert_drew_headline(&output, &point.inputs);
+    }
+
+    #[test]
+    fn the_solve_waits_for_the_debounce_and_never_runs_per_frame() {
+        let mut harness = Harness::new();
+        harness.click_text(SizingMode::TorqueToMagnets.label());
+        for _ in 0..5 {
+            harness.frame_after(0.02, Vec::new());
+        }
+        assert_eq!(harness.panel.runner.solves, 0, "still waiting");
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, SOLVING), 1);
+        let solved = harness.frame_after(DEBOUNCE_S, Vec::new());
+        assert_eq!(harness.panel.runner.solves, 1);
+        // The solve asks for one more frame, so the inputs side shows its outcome.
+        let repaint = solved.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
+        assert_eq!(repaint, std::time::Duration::ZERO);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, SOLVING), 0);
+        for _ in 0..10 {
+            harness.frame_after(0.1, Vec::new());
+        }
+        assert_eq!(harness.panel.runner.solves, 1, "idle frames never solve");
+    }
+
+    #[test]
+    fn a_drag_in_progress_defers_the_solve() {
+        let mut harness = Harness::new();
+        harness.size();
+        assert_eq!(harness.panel.runner.solves, 1);
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        // A pointer held down (a drag) over empty space of the centre region.
+        let blank = egui::pos2(700.0, 1000.0);
+        harness.frame(vec![egui::Event::PointerMoved(blank)]);
+        harness.frame(vec![primary_button(blank, true)]);
+        for _ in 0..5 {
+            harness.frame_after(0.2, Vec::new());
+        }
+        assert_eq!(
+            harness.panel.runner.solves, 1,
+            "not while the button is down"
+        );
+        harness.frame_after(0.01, vec![primary_button(blank, false)]);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        assert_eq!(harness.panel.runner.solves, 2);
+    }
+
+    #[test]
+    fn the_free_variable_s_row_shows_the_solved_value_locked() {
+        let mut harness = Harness::new();
+        let output = harness.size();
+        let point = harness.solved();
+        assert_eq!(count(&output, SIZED_NOTE), 1);
+        assert!(!harness.widget(AXIAL_LENGTH).enabled(), "locked");
+        // Its value box shows the solved length.
+        let shown = format!("{:.2} mm", point.value);
+        assert!(count(&output, &shown) >= 1, "{shown}");
+        // Arrow keys on it change nothing.
+        let id = harness.widget(AXIAL_LENGTH).id;
+        harness.ctx.memory_mut(|m| m.request_focus(id));
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn leaving_torque_to_magnets_while_solving_writes_the_current_solution() {
+        // Decision M41-7: the value written into the inputs is this design's solution, even
+        // when the user leaves before the debounce ran out ("Solving...").
+        let mut harness = Harness::new();
+        harness.size();
+        harness.panel.sizing.target_Nm = 3.0;
+        assert_eq!(count(&harness.frame(Vec::new()), SOLVING), 1);
+        harness.click_text(SizingMode::MagnetsToTorque.label());
+        assert_eq!(harness.panel.sizing().mode, SizingMode::MagnetsToTorque);
+        assert_eq!(harness.panel.runner.solves, 2, "solved on leaving");
+        let Ok(SizingOutcome::Solved(point)) =
+            crate::engine::sizing::solve(&DesignInputs::default(), FreeVariable::AxialLength, 3.0)
+        else {
+            panic!("3.0 N·m is reachable by the axial length")
+        };
+        assert_eq!(harness.panel.inputs(), &point.inputs);
+        assert!((point.torque_hot_low_Nm - 3.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn typing_in_the_results_search_does_not_defer_the_solve() {
+        let mut harness = Harness::new();
+        harness.size();
+        harness.panel.sizing.target_Nm = 3.0;
+        harness.click_text(crate::gui::results_table::SEARCH_HINT);
+        harness.frame(vec![egui::Event::Text("pull".to_owned())]);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        assert!(
+            focused_text_field(&harness.ctx).is_some(),
+            "typing in the search"
+        );
+        assert_eq!(harness.panel.runner.solves, 2, "the search edits no design");
+        // A text field of the design does defer it.
+        harness.panel.sizing.target_Nm = 3.5;
+        harness.focus(PART_INNER);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        assert_eq!(
+            harness.panel.runner.solves, 2,
+            "not while a part name is typed"
+        );
+    }
+
+    #[test]
+    fn the_json_export_in_torque_to_magnets_holds_the_inputs_that_produced_the_results() {
+        use crate::gui::results_table::EXPORT_JSON;
+        let mut harness = Harness::new();
+        harness.size();
+        harness.click_text(EXPORT_JSON);
+        let requests = harness.panel.take_requests();
+        let [PanelRequest::SaveFile { contents, .. }] = &requests[..] else {
+            panic!("one export: {requests:?}")
+        };
+        let json: serde_json::Value = serde_json::from_str(contents).unwrap();
+        let design = design_from_json(&json["design"].to_string()).unwrap();
+        assert_eq!(design.inputs, harness.panel.shown_inputs());
+        assert_eq!(&compute_all(&design.inputs), harness.panel.results());
+        assert_ne!(
+            &design.inputs,
+            harness.panel.inputs(),
+            "the solved length, not the blank override"
+        );
+        assert_eq!(design.sizing, *harness.panel.sizing());
+    }
+
+    #[test]
+    fn leaving_torque_to_magnets_keeps_the_sized_value_as_one_undo_step() {
+        let mut harness = Harness::new();
+        harness.size();
+        let point = harness.solved();
+        let steps = harness.panel.history.undo_len();
+        harness.click_text(SizingMode::MagnetsToTorque.label());
+        assert_eq!(harness.panel.sizing().mode, SizingMode::MagnetsToTorque);
+        assert_eq!(harness.panel.inputs(), &point.inputs, "decision M41-7");
+        assert_eq!(harness.panel.results(), &compute_all(&point.inputs));
+        assert_eq!(harness.panel.history.undo_len(), steps + 1);
+        harness.panel.undo();
+        assert_eq!(harness.panel.sizing().mode, SizingMode::TorqueToMagnets);
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn an_unreachable_target_shows_the_best_value_and_its_overshoot() {
+        let mut harness = Harness::new();
+        harness.size();
+        harness.panel.sizing.target_Nm = 50.0;
+        harness.frame(Vec::new());
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(
+            count(&output, "Not reachable (best 9.937 N\u{b7}m at 50.80 mm)"),
+            1
+        );
+        assert_eq!(
+            harness
+                .panel
+                .shown_inputs()
+                .coupling
+                .magnets
+                .axial_length_mm,
+            Some(50.8),
+            "decision M41-8: the best value"
+        );
+        assert!(
+            drawn_texts(&output)
+                .iter()
+                .any(|t| t.starts_with("Exceeds the space claim:"))
+        );
+    }
+
+    #[test]
+    fn the_free_variable_picker_switches_the_variable() {
+        let mut harness = Harness::new();
+        harness.size();
+        harness.click_text(variable_label(FreeVariable::AxialLength));
+        harness.click_text(variable_label(FreeVariable::RingRadius));
+        assert_eq!(harness.panel.sizing().variable, FreeVariable::RingRadius);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        let point = harness.solved();
+        // The ring radius is not in the Key design group: its locked row shows there anyway,
+        // with the Coupling group closed.
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, SIZED_NOTE), 1);
+        let label = InputCatalogue::get()
+            .entry(FreeVariable::RingRadius.path())
+            .unwrap()
+            .meta
+            .label;
+        assert_eq!(count(&output, label), 1);
+        assert_eq!(
+            harness.panel.shown_inputs().coupling.inner_back_apothem_mm,
+            point.value
+        );
+        assert_eq!(
+            harness
+                .panel
+                .shown_inputs()
+                .coupling
+                .magnets
+                .axial_length_mm,
+            None,
+            "the axial length is no longer sized"
+        );
+    }
+
+    #[test]
+    fn a_share_link_carries_the_sizing_state() {
+        let mut harness = Harness::new();
+        harness.size();
+        harness.panel.sizing.target_Nm = 3.0;
+        let link = harness.panel.share_link();
+        let payload = link.split("?m=").nth(1).unwrap();
+        let mut other = Harness::new();
+        other.panel.load_share_payload(payload).unwrap();
+        assert_eq!(other.panel.design(), harness.panel.design());
+        other.frame(Vec::new());
+        other.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        harness.frame(Vec::new());
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        assert_eq!(other.panel.shown_inputs(), harness.panel.shown_inputs());
+        assert_eq!(other.panel.results(), harness.panel.results());
     }
 
     #[test]

@@ -24,11 +24,24 @@ pub(crate) fn sized_frame(
     ctx: &egui::Context,
     size: egui::Vec2,
     events: Vec<egui::Event>,
+    draw: impl FnMut(&mut egui::Ui),
+) -> egui::FullOutput {
+    sized_frame_at(ctx, size, None, events, draw)
+}
+
+/// [`sized_frame`] at the input time `time` [s] (`None`: egui adds its predicted frame time,
+/// 1/60 s, to the last frame's).
+pub(crate) fn sized_frame_at(
+    ctx: &egui::Context,
+    size: egui::Vec2,
+    time: Option<f64>,
+    events: Vec<egui::Event>,
     mut draw: impl FnMut(&mut egui::Ui),
 ) -> egui::FullOutput {
     let input = egui::RawInput {
         events,
         screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+        time,
         ..Default::default()
     };
     ctx.run(input, |ctx| {
