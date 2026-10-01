@@ -306,6 +306,17 @@ impl MagcouplingPanel {
         }
     }
 
+    /// Shows what a host's work for a request did: a message in the header, or why it failed.
+    pub fn report(&mut self, outcome: Result<String, String>) {
+        match outcome {
+            Ok(message) => {
+                self.status = Some(message);
+                self.last_error = None;
+            }
+            Err(error) => self.last_error = Some(error),
+        }
+    }
+
     /// Undoes the last change to the design, if any.
     pub fn undo(&mut self) {
         if let Some(design) = self.history.undo(&self.design()) {
@@ -1632,6 +1643,26 @@ mod tests {
         let mut other = MagcouplingPanel::new();
         other.load_share_payload(payload).unwrap();
         assert_eq!(other.design(), gap_design(1.41));
+    }
+
+    #[test]
+    fn the_host_reports_what_a_save_did() {
+        let mut harness = Harness::new();
+        harness
+            .panel
+            .report(Ok("Saved C:/designs/a.json".to_owned()));
+        harness.frame(Vec::new());
+        assert_eq!(
+            count(&harness.frame(Vec::new()), "Saved C:/designs/a.json"),
+            1
+        );
+        harness
+            .panel
+            .report(Err("Could not save: disk full".to_owned()));
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Could not save: disk full"), 1);
+        assert_eq!(count(&output, "Saved C:/designs/a.json"), 0);
     }
 
     #[test]
