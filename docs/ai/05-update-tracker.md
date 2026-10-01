@@ -5,6 +5,36 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-09-30 — Magcoupling M4 infrastructure (branch magcoupling/m4-infra)
+- `magcoupling-rs` features: `gui` (egui 0.32) adds `gui::MagcouplingPanel`, a panel any egui app
+  can host (`fn ui(&mut self, &mut egui::Ui)`). The tracer content: metadata-driven sliders for face
+  gap, pole count and axial length, "Reset all", and the headline recomputed with `compute_all`
+  every frame. `app` (eframe 0.32) adds `app::MagcouplingApp` and the binaries `magcoupling-app`
+  (native) and `magcoupling-web` (wasm32, eframe WebRunner + wasm-bindgen). The engine stays pure
+  std; every new dependency is optional.
+- Versions: `magcoupling-rs/Cargo.lock` pins `linkage-sim-rs/Cargo.lock`'s egui and eframe 0.32.3
+  and wasm-bindgen 0.2.114, the `wasm-bindgen-cli` version that `deploy-web.yml` installs. The
+  engine's existing lock entries are unchanged.
+- Second web bundle: `linkage-sim-rs/scripts/build_magcoupling_web.sh` builds into
+  `linkage-sim-rs/web/magcoupling/` (index.html committed; glue and wasm gitignored).
+  `build_web.sh` calls it, and `serve_web.sh [PORT]` serves it at `/magcoupling/`. Proven with
+  Playwright: zero console errors, live slider click, `/magcoupling` without a slash.
+  `deploy-web.yml` (committed, not pushed) runs the script and caches `magcoupling-rs/target/`, with
+  a key over both lock files. `vercel.json` revalidates `/magcoupling/magcoupling-web.js`.
+- workbook-parity guard: `linkage-sim-rs/scripts/magcoupling_shipped.sh` holds the shipped cargo
+  arguments once and `magcoupling_assert_shipped` (cargo `--message-format=json` features per
+  compiled unit). The web build pipes through it, and gate 10 runs it on the native and wasm32
+  builds plus a negative control. A `compile_error!` cannot work: the self dev-dependency unifies
+  the feature into the bins of `cargo test --features app` (demonstrated).
+- `gate.sh` now has 12 gates: 7 `cargo test --features app`, 8 clippy `--features app` with
+  `-D warnings`, 9 wasm32 clippy (gui lib, web bin), 10 the guard, 11 lock parity; the Python
+  oracle moved to 12.
+- Headless egui tests (`src/gui/panel.rs`, `format.rs`, `src/app.rs`): a slider change (arrow key,
+  rail click) updates the headline in the same frame; reset restores the defaults; the pole count
+  stays even; range ends stop; idle frames write nothing; the panel draws inside an egui::Window.
+- Open for the M4 plans (`04-memory.yaml`): the axial-length input mapping, step-snapping float
+  noise, the clamping policy for typed values, gui-smoke on `/magcoupling/`, theme, bundle size.
+
 ## 2026-09-30 — Magcoupling Addendum A-1: final review fix wave
 - `docs/ai/03-structure.yaml` parses again (two quoted scalars) and lists `tests/material_links.rs`;
   the invariant this branch added to `02-system.yaml` is quoted (that file's older parse failures,
