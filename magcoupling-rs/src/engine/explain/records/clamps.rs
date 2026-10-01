@@ -90,7 +90,7 @@ pub const RECORDS: &[Record] = &[
         r#"cases({clamps.index} = 1 => {clamps.table[0].tightening_Nm}; {clamps.index} = 2 => {clamps.table[1].tightening_Nm};
                {clamps.index} = 3 => {clamps.table[2].tightening_Nm}; {clamps.index} = 4 => {clamps.table[3].tightening_Nm};
                {clamps.index} = 5 => {clamps.table[4].tightening_Nm}; else => "")"#),
-    record("clamps.capacity_Nm", "T_{cap}",
+    record("clamps.capacity_Nm", "T_{cl}",
         r#"cases({clamps.index} = 1 => {clamps.table[0].clamp_torque_Nm}; {clamps.index} = 2 => {clamps.table[1].clamp_torque_Nm};
                {clamps.index} = 3 => {clamps.table[2].clamp_torque_Nm}; {clamps.index} = 4 => {clamps.table[3].clamp_torque_Nm};
                {clamps.index} = 5 => {clamps.table[4].clamp_torque_Nm}; else => "")"#),

@@ -3,9 +3,11 @@
 //! record's symbol. The registry refuses a term without a symbol, an entry no formula
 //! reads, an entry for a path with a record, and two paths with one symbol.
 //!
-//! Conventions (plan A-3): T torque, σ shear stress, ϑ temperature, φ electrical
-//! angle, τ_p pole pitch; `^{cal}` marks the Calibration prototype; a selector is an upright
-//! word (`faceted`), which the typesetter writes with the choice's label in conditions.
+//! Conventions (plan A-3): T torque; σ the air-gap shear stress (`σ`, `σ_{#}`), a
+//! conductivity (`σ_{st}`, `σ_{Al}`) or a screw's proof or yield stress (`σ_p`), told apart by
+//! subscript and unit; ϑ temperature; φ electrical angle; τ_p pole pitch, τ a material's shear
+//! strength (`τ_{Al}`, `τ_{lap}`); `^{cal}` marks the Calibration prototype; a selector is an
+//! upright word (`faceted`), which the typesetter writes with the choice's label in conditions.
 
 /// (path, symbol markup), grouped by input group.
 #[rustfmt::skip]
@@ -136,7 +138,7 @@ pub const SYMBOLS: &[(&str, &str)] = &[
     ("clamps.factor_two_piece", "k_{2p}"),
     ("clamps.alloy", "alloy"),
     ("clamps.screw_class", "class"),
-    ("clamps.preload_fraction", "φ_p"),
+    ("clamps.preload_fraction", "f_{pre}"),
     ("clamps.nut_factor", "K"),
     ("clamps.engagement_x_d", "k_{eng}"),
     ("clamps.strip_sf", "S_{strip}"),
