@@ -151,7 +151,9 @@ fn augmentations() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
 }
 
 /// Input sets `set` accepts that no differential case or augmentation reaches, each with
-/// what it pins, applied on top of the defaults (records hold over every input `set` accepts).
+/// what it pins, applied on top of the defaults (records hold over every input `set` accepts,
+/// except a clamp count outside i64, which the engine holds as its saturating cast:
+/// `saturation_artifact`).
 fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
     let text = |s: &str| Value::Text(s.to_owned());
     // The clamp comparisons the differential data never lands on exactly (the engine's own unit
@@ -222,6 +224,52 @@ fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
             "clamp M4 span exactly zero",
             vec![("clamps.clamp_length_mm", Value::Num(9.5))],
         ),
+        // The clamp counts outside i64 (`saturation_artifact`), one point per kind, each
+        // reaching every screw size the exemption's liveness assertion names.
+        (
+            // A friction coefficient of 0 holds nothing: the torque per screw is 0 and the screws
+            // needed are +inf in the record, i64::MAX in the engine's cast.
+            "clamp friction exactly 0",
+            vec![("clamps.friction", Value::Num(0.0))],
+        ),
+        (
+            // Nothing to hold either (required torque 0) is 0 / 0: NaN in the record, 0 in the
+            // engine's cast.
+            "clamp friction exactly 0 and safety factor 0",
+            vec![
+                ("clamps.friction", Value::Num(0.0)),
+                ("clamps.safety_factor", Value::Num(0.0)),
+            ],
+        ),
+        (
+            // A negative required torque over a torque per screw of 0 is -inf in the record,
+            // i64::MIN in the engine's cast.
+            "clamp friction exactly 0 and safety factor -1",
+            vec![
+                ("clamps.friction", Value::Num(0.0)),
+                ("clamps.safety_factor", Value::Num(-1.0)),
+            ],
+        ),
+        (
+            // A friction coefficient of almost 0: every size's screws needed are finite but
+            // past 2^63 (about 1e29), i64::MAX in the engine's cast.
+            "clamp friction 1e-30",
+            vec![("clamps.friction", Value::Num(1e-30))],
+        ),
+        (
+            // The same with a negative required torque: past -2^63, i64::MIN in the cast.
+            "clamp friction 1e-30 and safety factor -1",
+            vec![
+                ("clamps.friction", Value::Num(1e-30)),
+                ("clamps.safety_factor", Value::Num(-1.0)),
+            ],
+        ),
+        (
+            // An absurdly long clamp: every size's screws that fit are past 2^63 (about 1e299),
+            // i64::MAX in the engine's cast (saturating_add keeps it there).
+            "clamp length 1e300",
+            vec![("clamps.clamp_length_mm", Value::Num(1e300))],
+        ),
     ]
 }
 
@@ -268,6 +316,41 @@ fn guard_points() -> Vec<Point> {
     points
 }
 
+/// The pairs the guard accepts although they differ: a clamp count the engine stores as an
+/// integer when the record's count lies outside i64. The record states the count, the screws
+/// needed `ceilto(required / torque per screw, 1)` or the screws that fit `floorto(span /
+/// pitch, 1) + 1`: +inf, -inf or NaN (0 / 0) when a screw holds no torque, finite but past
+/// 2^63 when it holds almost none or the clamp is absurdly long. The engine's `as i64`
+/// (clamps.rs `need` and `fit`, the only float-to-integer casts behind a result) saturates
+/// (README, the port's Python-to-Rust table: Python's `int(inf)` raises, outside every slider
+/// range), so it holds i64::MAX, i64::MIN or 0. None of these is a physical count. Keyed by
+/// path, by the record lying outside i64 and by the engine holding exactly the record's
+/// saturating cast, so an in-range record, any other engine value or any other path still
+/// fails. Returns the kind's name.
+fn saturation_artifact(target: &str, record: &Value, engine: &Value) -> Option<&'static str> {
+    // 2^63, the first f64 past i64::MAX; i64::MIN is exactly -2^63, so it is in range.
+    const PAST_I64: f64 = 9_223_372_036_854_775_808.0;
+    let (row, column) = target.strip_prefix("clamps.table[")?.split_once("].")?;
+    row.parse::<usize>().ok()?;
+    if column != "screws_needed" && column != "screws_fit" {
+        return None;
+    }
+    let (Value::Num(r), Value::Int(e)) = (record, engine) else {
+        return None;
+    };
+    let outside = r.is_nan() || *r >= PAST_I64 || *r < -PAST_I64;
+    if !outside || *e != *r as i64 {
+        return None;
+    }
+    Some(match *r {
+        r if r.is_nan() => "NaN",
+        f64::INFINITY => "+inf",
+        f64::NEG_INFINITY => "-inf",
+        r if r > 0.0 => "past i64::MAX",
+        _ => "past i64::MIN",
+    })
+}
+
 fn same(a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::Num(x), Value::Num(y)) if x.is_nan() && y.is_nan() => true,
@@ -281,6 +364,8 @@ struct Coverage {
     arms: BTreeMap<String, BTreeSet<(usize, usize)>>,
     values: BTreeMap<String, BTreeSet<u64>>,
     angles_off_half_pitch: BTreeMap<String, usize>,
+    /// The "target: kind" entries `saturation_artifact` accepted (the exemption is live).
+    saturated: BTreeSet<String>,
     /// Per equation (in `Registry::equations` order): each value term's distinct values,
     /// up to two.
     term_values: Vec<BTreeMap<String, Vec<Value>>>,
@@ -318,10 +403,15 @@ fn guard(registry: &Registry, points: &[Point]) -> (Vec<String>, Coverage) {
             let mut trace = Trace::default();
             match registry.evaluate(eq, &src, Some(&mut trace)) {
                 Ok(got) if same(&got, &want) => {}
-                Ok(got) => failures.push(format!(
-                    "{} at {}: record {got:?}, engine {want:?}",
-                    eq.target, p.label
-                )),
+                Ok(got) => match saturation_artifact(&eq.target, &got, &want) {
+                    Some(kind) => {
+                        cov.saturated.insert(format!("{}: {kind}", eq.target));
+                    }
+                    None => failures.push(format!(
+                        "{} at {}: record {got:?}, engine {want:?}",
+                        eq.target, p.label
+                    )),
+                },
                 Err(e) => failures.push(format!("{} at {}: {e}", eq.target, p.label)),
             }
             cov.arms
@@ -369,6 +459,7 @@ impl Coverage {
         for (k, n) in other.angles_off_half_pitch {
             *self.angles_off_half_pitch.entry(k).or_default() += n;
         }
+        self.saturated.extend(other.saturated);
         if self.term_values.is_empty() {
             self.term_values = other.term_values;
         } else {
@@ -429,6 +520,36 @@ fn every_record_reproduces_the_engine_everywhere() {
         }
     });
     assert!(failures.is_empty(), "drift guard: {}", report(&failures));
+    // The saturation exemption is live and exactly as wide as stated: each of the five sizes'
+    // screws needed met each kind (the friction edge points) and its screws that fit met
+    // "past i64::MAX" (the long clamp); no other record met any.
+    let kinds = ["+inf", "-inf", "NaN", "past i64::MAX", "past i64::MIN"];
+    let want: BTreeSet<String> = (0..5)
+        .flat_map(|n| {
+            kinds
+                .map(|kind| format!("clamps.table[{n}].screws_needed: {kind}"))
+                .into_iter()
+                .chain([format!("clamps.table[{n}].screws_fit: past i64::MAX")])
+        })
+        .collect();
+    assert_eq!(cov.saturated, want, "the saturation exemption");
+    // And no wider: an in-range count, an engine value that is not the record's cast, another
+    // column, another path or a target that is not a table row still fails.
+    for (target, record, engine) in [
+        ("clamps.table[0].screws_needed", 3.5, 3),
+        ("clamps.table[0].screws_needed", f64::INFINITY, 0),
+        ("clamps.table[0].screws_fit", -1e300, i64::MAX),
+        ("clamps.table[0].preload_N", f64::INFINITY, i64::MAX),
+        ("clamps.screws", f64::INFINITY, i64::MAX),
+        ("clamps.table[].screws_needed", f64::INFINITY, i64::MAX),
+    ] {
+        let (record, engine) = (Value::Num(record), Value::Int(engine));
+        assert_eq!(
+            saturation_artifact(target, &record, &engine),
+            None,
+            "{target}: record {record:?}, engine {engine:?}"
+        );
+    }
 
     // Anti-vacuity: every arm of every `cases` taken somewhere.
     let mut untaken = Vec::new();
