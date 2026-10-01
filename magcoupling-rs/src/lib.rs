@@ -23,10 +23,10 @@
 //! assert_eq!(headline(&res)[0].0, "pullout_at_op_temp_Nm");
 //! ```
 
+#[cfg(feature = "app")]
+pub mod app;
 pub mod engine;
 #[cfg(feature = "gui")]
 pub mod gui;
-#[cfg(feature = "app")]
-pub mod app;
 
 pub use engine::api::{DesignInputs, DesignResults, compute_all, headline};

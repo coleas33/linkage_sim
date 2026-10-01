@@ -61,17 +61,30 @@ mod tests {
         let ctx = egui::Context::default();
         let mut app = MagcouplingApp::default();
         let texts = drawn_texts(&ctx.run(egui::RawInput::default(), |ctx| app.ui(ctx)));
-        assert!(texts.iter().any(|t| t == "Magnetic coupling calculator"), "{texts:?}");
+        assert!(
+            texts.iter().any(|t| t == "Magnetic coupling calculator"),
+            "{texts:?}"
+        );
         // The clamp screw is the last headline row: the whole panel was laid out.
-        let (key, screw) = headline(&compute_all(&DesignInputs::default())).pop().expect("15 rows");
-        let Value::Text(screw) = screw else { panic!("{key}: {screw:?}") };
+        let (key, screw) = headline(&compute_all(&DesignInputs::default()))
+            .pop()
+            .expect("15 rows");
+        let Value::Text(screw) = screw else {
+            panic!("{key}: {screw:?}")
+        };
         assert!(texts.contains(&screw), "missing {screw:?} in {texts:?}");
     }
 
     #[test]
     fn the_canvas_id_matches_the_web_page() {
         let page = include_str!("../../linkage-sim-rs/web/magcoupling/index.html");
-        assert!(page.contains(&format!("id=\"{CANVAS_ID}\"")), "index.html has no canvas {CANVAS_ID}");
-        assert!(page.contains(&format!("<title>{TITLE}</title>")), "index.html title");
+        assert!(
+            page.contains(&format!("id=\"{CANVAS_ID}\"")),
+            "index.html has no canvas {CANVAS_ID}"
+        );
+        assert!(
+            page.contains(&format!("<title>{TITLE}</title>")),
+            "index.html title"
+        );
     }
 }

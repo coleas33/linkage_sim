@@ -59,11 +59,16 @@ impl MagcouplingPanel {
         let result_meta = result_rows(&results);
         let key_inputs = KEY_INPUTS.map(|path| {
             let row = input_meta.iter().find(|row| row.path == path);
-            (path, row.unwrap_or_else(|| panic!("KEY_INPUTS: no input {path}")).meta)
+            (
+                path,
+                row.unwrap_or_else(|| panic!("KEY_INPUTS: no input {path}"))
+                    .meta,
+            )
         });
         let headline_meta = HEADLINE.map(|(key, path)| {
             let row = result_meta.iter().find(|row| row.path == path);
-            row.unwrap_or_else(|| panic!("HEADLINE {key}: no result {path}")).meta
+            row.unwrap_or_else(|| panic!("HEADLINE {key}: no result {path}"))
+                .meta
         });
         Self {
             inputs,
@@ -167,7 +172,10 @@ impl MagcouplingPanel {
             .num_columns(2)
             .striped(true)
             .show(ui, |ui| {
-                let rows = headline(&self.results).into_iter().zip(HEADLINE).zip(self.headline_meta);
+                let rows = headline(&self.results)
+                    .into_iter()
+                    .zip(HEADLINE)
+                    .zip(self.headline_meta);
                 for (((key, value), (_, path)), meta) in rows {
                     ui.label(meta.label).on_hover_text(format!(
                         "{key}\n{path}\n{}",
@@ -228,7 +236,9 @@ mod tests {
         /// The key input's slider (its rail) as drawn in the last frame.
         fn slider(&self, key: usize) -> egui::Response {
             let id = self.panel.slider_ids[key].expect("the slider was drawn");
-            self.ctx.read_response(id).expect("the slider has a response")
+            self.ctx
+                .read_response(id)
+                .expect("the slider has a response")
         }
 
         /// Gives the key input's slider keyboard focus.
@@ -236,7 +246,10 @@ mod tests {
             let id = self.slider(key).id;
             self.ctx.memory_mut(|m| m.request_focus(id));
             self.frame(Vec::new());
-            assert!(self.ctx.memory(|m| m.has_focus(id)), "slider {key} has focus");
+            assert!(
+                self.ctx.memory(|m| m.has_focus(id)),
+                "slider {key} has focus"
+            );
         }
 
         /// A click (move, press, release) at `at`.
@@ -281,9 +294,16 @@ mod tests {
     fn key_inputs_are_numeric_inputs_with_slider_ranges() {
         let panel = MagcouplingPanel::new();
         for (path, meta) in panel.key_inputs {
-            assert!(matches!(meta.ty, FieldType::F64 | FieldType::I64), "{path}: {:?}", meta.ty);
+            assert!(
+                matches!(meta.ty, FieldType::F64 | FieldType::I64),
+                "{path}: {:?}",
+                meta.ty
+            );
             let range = meta.range.unwrap_or_else(|| panic!("{path}: no range"));
-            assert!(range.min < range.max && range.step > 0.0, "{path}: {range:?}");
+            assert!(
+                range.min < range.max && range.step > 0.0,
+                "{path}: {range:?}"
+            );
             assert!(meta.choices.is_empty(), "{path} is a selector");
         }
         assert_eq!(panel.key_inputs.map(|(path, _)| path), KEY_INPUTS);
@@ -304,10 +324,18 @@ mod tests {
         assert_drew_headline(&output, &DesignInputs::default());
         let texts = drawn_texts(&output);
         for meta in harness.panel.headline_meta {
-            assert!(texts.iter().any(|t| t == meta.label), "missing label {:?}", meta.label);
+            assert!(
+                texts.iter().any(|t| t == meta.label),
+                "missing label {:?}",
+                meta.label
+            );
         }
         for (_, meta) in harness.panel.key_inputs {
-            assert!(texts.iter().any(|t| t == meta.label), "missing slider {:?}", meta.label);
+            assert!(
+                texts.iter().any(|t| t == meta.label),
+                "missing slider {:?}",
+                meta.label
+            );
         }
         // The corrected headline (E2: M4 x 14), not the workbook's (M4 x 12).
         assert!(texts.iter().any(|t| t.contains("M4 x 14")), "{texts:?}");
@@ -343,15 +371,26 @@ mod tests {
         let output = harness.frame(vec![key_press(egui::Key::ArrowRight)]);
 
         // One step (0.01 mm) up from 1.4 mm, snapped from the range start.
-        assert!((harness.number(FACE_GAP) - 1.41).abs() < 1e-12, "{}", harness.number(FACE_GAP));
+        assert!(
+            (harness.number(FACE_GAP) - 1.41).abs() < 1e-12,
+            "{}",
+            harness.number(FACE_GAP)
+        );
         let mut expected = DesignInputs::default();
         expected.metal.face_gap_mm = harness.panel.inputs.metal.face_gap_mm;
-        assert_eq!(harness.panel.inputs(), &expected, "only the face gap changed");
+        assert_eq!(
+            harness.panel.inputs(),
+            &expected,
+            "only the face gap changed"
+        );
 
         // The same frame shows the recomputed headline, and it differs from the default's.
         assert_eq!(harness.panel.results(), &compute_all(&expected));
         assert_drew_headline(&output, &expected);
-        assert_ne!(displayed_pullout(&expected), displayed_pullout(&DesignInputs::default()));
+        assert_ne!(
+            displayed_pullout(&expected),
+            displayed_pullout(&DesignInputs::default())
+        );
     }
 
     #[test]
@@ -361,7 +400,10 @@ mod tests {
         let output = harness.click(rail.right_center() - egui::vec2(1.0, 0.0));
         assert_eq!(harness.number(FACE_GAP), 5.0);
         assert_drew_headline(&output, harness.panel.inputs());
-        assert_ne!(displayed_pullout(harness.panel.inputs()), displayed_pullout(&DesignInputs::default()));
+        assert_ne!(
+            displayed_pullout(harness.panel.inputs()),
+            displayed_pullout(&DesignInputs::default())
+        );
     }
 
     #[test]
@@ -401,7 +443,10 @@ mod tests {
         let length = harness.panel.inputs.coupling.magnets.manual_inner_length_mm;
         assert!((length - 12.71).abs() < 1e-12, "{length}");
         // A library part (the default) ignores the manual length.
-        assert_eq!(harness.panel.results(), &compute_all(&DesignInputs::default()));
+        assert_eq!(
+            harness.panel.results(),
+            &compute_all(&DesignInputs::default())
+        );
     }
 
     #[test]
@@ -417,7 +462,10 @@ mod tests {
         let button = text_rect(&output, "Reset all").expect("the reset button is drawn");
         harness.click(button.center());
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
-        assert_eq!(harness.panel.results(), &compute_all(&DesignInputs::default()));
+        assert_eq!(
+            harness.panel.results(),
+            &compute_all(&DesignInputs::default())
+        );
         assert_drew_headline(&harness.frame(Vec::new()), &DesignInputs::default());
     }
 
@@ -456,6 +504,8 @@ mod tests {
             "Same as the measured prototype.\nmetal.face_gap_mm\nMetal design!C119"
         );
         let (path, meta) = panel.key_inputs[AXIAL_LENGTH];
-        assert!(input_tooltip(path, meta).starts_with("Used only if the part is not in the library."));
+        assert!(
+            input_tooltip(path, meta).starts_with("Used only if the part is not in the library.")
+        );
     }
 }

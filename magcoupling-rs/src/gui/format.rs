@@ -110,7 +110,10 @@ mod tests {
     fn integers_text_and_none_show_as_they_are() {
         assert_eq!(format_value(&Value::Int(10)), "10");
         assert_eq!(format_value(&Value::Int(-3)), "-3");
-        assert_eq!(format_value(&Value::Text("ISO 4762 M4 x 14".into())), "ISO 4762 M4 x 14");
+        assert_eq!(
+            format_value(&Value::Text("ISO 4762 M4 x 14".into())),
+            "ISO 4762 M4 x 14"
+        );
         assert_eq!(format_value(&Value::Text(String::new())), "");
         assert_eq!(format_value(&Value::None), "\u{2014}");
     }

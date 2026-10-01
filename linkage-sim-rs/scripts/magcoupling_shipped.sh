@@ -29,7 +29,9 @@ magcoupling_assert_shipped() {
     echo "parity guard: cargo compiled no binary $bin; nothing was checked" >&2
     return 1
   fi
-  units="$(grep -E '"package_id":"path\+file://[^"]*/magcoupling-rs#' <<<"$artifacts" || true)"
+  # Match the package by name, wherever its folder lives: path+file://<dir>#magcoupling-rs@<ver>
+  # when the folder name differs, path+file://<dir>/magcoupling-rs#<ver> when it matches.
+  units="$(grep -E '"package_id":"path\+file://[^"]*(/magcoupling-rs#|#magcoupling-rs@)' <<<"$artifacts" || true)"
   if [[ -z "$units" ]]; then
     echo "parity guard: cargo compiled no magcoupling-rs unit for $bin; nothing was checked" >&2
     return 1
