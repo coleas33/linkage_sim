@@ -360,7 +360,7 @@ pub const NOTES: &[Note] = &[
         equations: &["materials.circuit_backiron"],
         sentences: &[
             "Steel behind the magnets gives each ring's flux an easy return path, so the flux crosses the gap and closes through the steel instead of spreading out behind the magnets.",
-            "Stainless 304 and aluminium have a relative permeability near 1, like air, so choosing one switches the calculator to the free-space circuit: the geometry factor loses its sinh form and the torque drops by more than 40 % (2.69 to 1.54 N·m); the default design has the measured prototype's pole count and grade, so the calculator also switches to the bench calibration (0.95 to 1.049) and shows 1.70 N·m.",
+            "Stainless 304 and aluminium have a relative permeability near 1, like air, so choosing one switches the calculator to the free-space circuit: the geometry factor loses its sinh form and the torque drops by more than 40 % (2.69 to 1.54 N·m); the default design has the measured prototype's pole count and magnet part (B842SH on both rings), so the calculator also switches to the bench calibration (0.95 to 1.049) and shows 1.70 N·m.",
             "The flux that no longer closes through steel leaks out around the coupling, so a strong stray field extends outside it and pulls in steel chips and debris.",
         ],
         watch_out: None,
