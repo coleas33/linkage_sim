@@ -1117,7 +1117,7 @@ pub const REGISTRY: &[Deviation] = &[
             C94 and C98 still show Materials!C17 and C18. \
             Addendum A5 (decision A7): the aluminium values above are the body material's: the workbook's aluminium by default \
             and whenever C6 = 0 overrides a steel pick, else a non-ferromagnetic back-iron pick (304, 6061) with its own library values. \
-            A 6061 pick uses the library's 68.3 GPa (decision A8).",
+            A 6061 pick uses the same 68.9 GPa (Addendum A-2 decision A2-6).",
         workbook_input_defaults: &[],
         workbook_help: &[],
         changes_at_defaults: &[],
