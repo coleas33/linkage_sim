@@ -26,6 +26,7 @@
 
 use crate::engine::meta::{InputSet, ResultSet, Value};
 use crate::engine::sizing::FreeVariable;
+use crate::gui::clamp_drawing::clamp_ui;
 use crate::gui::dashboard::{Level, dashboard_ui, end_effect_banner};
 use crate::gui::geometry_view::geometry_ui;
 use crate::gui::history::History;
@@ -119,19 +120,22 @@ pub enum CentreView {
     Geometry,
     /// One of the plots (egui_plot).
     Plot(PlotKind),
+    /// The clamp drawing (drawing.py's end and top views) and the clamp table.
+    Clamp,
     /// Every result: label, value, unit, cell; searchable; CSV and JSON export.
     Results,
 }
 
 impl CentreView {
     /// Every view, in tab order.
-    pub const ALL: [CentreView; 7] = [
+    pub const ALL: [CentreView; 8] = [
         CentreView::Geometry,
         CentreView::Plot(PlotKind::TorqueTemperature),
         CentreView::Plot(PlotKind::GapSweep),
         CentreView::Plot(PlotKind::PoleSweep),
         CentreView::Plot(PlotKind::SlipHeating),
         CentreView::Plot(PlotKind::TorqueAngle),
+        CentreView::Clamp,
         CentreView::Results,
     ];
 
@@ -140,6 +144,7 @@ impl CentreView {
         match self {
             CentreView::Geometry => "Geometry",
             CentreView::Plot(kind) => kind.label(),
+            CentreView::Clamp => "Clamp",
             CentreView::Results => "Results table",
         }
     }
@@ -548,6 +553,7 @@ impl MagcouplingPanel {
                 geometry_ui(ui, shown, &self.results);
             }
             CentreView::Plot(kind) => plot_ui(ui, kind, shown, &self.results),
+            CentreView::Clamp => clamp_ui(ui, shown, &self.results),
             CentreView::Results => {
                 let action = self.results_table.ui(ui, &self.results);
                 match action {
@@ -986,6 +992,22 @@ mod tests {
             at(after)
         );
         assert!(markers.iter().all(|c| (*c - at(before)).length() > 0.5));
+    }
+
+    #[test]
+    fn the_clamp_tab_draws_the_recommended_clamp_and_follows_the_design() {
+        let mut harness = Harness::new();
+        harness.click_text(CentreView::Clamp.label());
+        assert_eq!(harness.panel.centre, CentreView::Clamp);
+        let output = harness.frame(Vec::new());
+        let title = "One-piece slotted clamp, \u{d8}10 keyed shaft: ISO 4762 M4 x 14, class 12.9, 5.1 N\u{b7}m, 3 mm key";
+        assert_eq!(count(&output, title), 1);
+        // A boss too small for any screw: drawing.py's message instead of the drawing.
+        harness.panel.inputs.clamps.boss_od_mm = 12.0;
+        harness.panel.inputs.clamps.clamp_length_mm = 3.0;
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, crate::gui::clamp_drawing::NO_SCREW_FITS), 1);
+        assert_eq!(count(&output, title), 0);
     }
 
     #[test]
