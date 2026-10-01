@@ -8,6 +8,7 @@
 
 mod format;
 pub mod history;
+pub mod input_ui;
 pub mod inputs;
 mod panel;
 pub mod session;
@@ -16,4 +17,5 @@ pub mod sizing;
 pub(crate) mod test_support;
 
 pub use format::{SIGNIFICANT_DIGITS, format_value, with_unit};
-pub use panel::{KEY_INPUTS, MagcouplingPanel};
+pub use inputs::KEY_DESIGN;
+pub use panel::MagcouplingPanel;

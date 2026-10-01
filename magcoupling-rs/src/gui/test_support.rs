@@ -19,15 +19,34 @@ pub(crate) fn central_panel_frame(
     })
 }
 
-/// A key press with no modifiers.
-pub(crate) fn key_press(key: egui::Key) -> egui::Event {
+/// A key event with no modifiers: a press, or (`pressed` false) its release.
+pub(crate) fn key_event(key: egui::Key, pressed: bool) -> egui::Event {
     egui::Event::Key {
         key,
         physical_key: None,
-        pressed: true,
+        pressed,
         repeat: false,
         modifiers: egui::Modifiers::NONE,
     }
+}
+
+/// A key tapped with no modifiers: pressed and released in one frame, as a user taps it. egui
+/// keeps a pressed key down until its release and reads another press of it as a repeat.
+pub(crate) fn key_tap(key: egui::Key) -> Vec<egui::Event> {
+    vec![key_event(key, true), key_event(key, false)]
+}
+
+/// Ctrl+A (Cmd+A on a Mac) tapped: select all in the focused text field.
+pub(crate) fn select_all() -> Vec<egui::Event> {
+    [true, false]
+        .map(|pressed| egui::Event::Key {
+            key: egui::Key::A,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND,
+        })
+        .to_vec()
 }
 
 /// A primary-button press (`pressed`) or release at `pos`.

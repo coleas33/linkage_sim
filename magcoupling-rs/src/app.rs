@@ -18,11 +18,9 @@ pub struct MagcouplingApp {
 }
 
 impl MagcouplingApp {
-    /// Draws one frame: the panel in a scrolling central panel.
+    /// Draws one frame: the panel fills the window (its sides scroll on their own).
     pub fn ui(&mut self, ctx: &egui::Context) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| self.panel.ui(ui));
-        });
+        egui::CentralPanel::default().show(ctx, |ui| self.panel.ui(ui));
     }
 }
 
