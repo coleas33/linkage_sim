@@ -5,6 +5,39 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-01 — Magcoupling M4-2: geometry view, plots and clamp drawing (branch magcoupling/m4-2)
+- `magcoupling-rs` panel: the centre region is one tab row (`CentreView`): the geometry view (the
+  default), five plots, the clamp and the results table, under the end-effect banner when
+  f_end <= 0 (decisions M42-1, M42-2).
+- Geometry view (`gui/geometry.rs`, `gui/geometry_view.rs`): the end view (cup and pocket, both rings
+  of blocks on the flats or as arcs, liner, sleeve, hub, shaft, key) and the upper half side view
+  (cap, cup wall, web, boss, and the parts in the cavity, centred), both at one scale, drawn from the
+  results of the design shown with the housing in effect, so they follow every edit, the length
+  override and Torque -> Magnets. Tagged dimension callouts listed under the views: face gap, corner
+  gap (along face 1's normal, from the circle the inner corners sweep to the outer flat), running
+  clearance, and the space claim per axis; red when violated (a gap below zero, the
+  clearance below its target, an axis exceeded), amber when not a number (M42-3, M42-4). The space
+  claim dashed; the autofit wall as a hint; the two workbook design checks (cap thread below the cup
+  body OD, boss OD 22 vs 25 mm) as notes while they hold (flag only, no engine change; M42-9). Hovering a
+  dimension shows its result's hover text (`dashboard::hover_text`, the M4-3 hook). A claim line
+  farther than ten times the pieces' extent (a design file's finite but huge claim) is left off
+  with a note, and parts holding a number that is not finite are counted in a note.
+- Plots (`gui/plots.rs`, egui_plot 0.33.0, locked to linkage-sim-rs's and added to gate 11):
+  torque vs temperature with the variation band, the requirement and the limit; the gap and pole
+  sweeps by row status, greyed outside the end-effect model; slip heating vs the governing limit;
+  torque vs rotation with the pull-out point. Series from the same frame's results through the
+  engine's closed forms, pinned by tests to the engine's torques; the torque plots grey when
+  f_end <= 0 (M42-5, M42-6).
+- Clamp (`gui/clamp_drawing.rs`): a painter port of drawing.py's end and top views, its texts and
+  limits, cuts clipped to the boss, drawing.py's message when no screw fits; the clamp table
+  (summary, machining steps, the screw sizes table with the recommended column) (M42-7).
+- Results table: the label column flexes (`column_widths`; the value, cell and marker columns keep
+  M4-1's 130, 130 and 60 points), so a ~930 px window shows the label and the value (M42-8). `gui-smoke` judges the geometry view in its first screenshot (no click).
+- `docs/ai/02-system.yaml`: the three unresolved merge-conflict hunks the M4-1 merge (42ab370) left
+  in the magcoupling block and its status line are resolved, keeping both sides (A-3 and M4-1); the
+  M4-1 sentence is reworded so the block parses as YAML.
+- The engine, parity, differential data and registry are unchanged. Nothing pushed.
+
 ## 2026-10-01 — Magcoupling M4-1: final review fix wave
 - The whole-branch review found no Critical or Important issue; no code changes.
 - Deferred, recorded in `04-memory.yaml` (the "Open (M4-2, M4-3)" item): when M4-3 adds the equation text to
