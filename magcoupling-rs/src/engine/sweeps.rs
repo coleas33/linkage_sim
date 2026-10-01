@@ -25,7 +25,9 @@
 //! and U, and through them V to AA: pull-out at the maximum over angle, through
 //! the model's `at_pull_out`). Addendum A3: a row sums the Calculator's harmonic
 //! set (`coupling.max_harmonic`); column U includes harmonics 7 to 11 when the set
-//! does, which have no column of their own.
+//! does, which have no column of their own. A row whose `f_end` (column W) is 0 or
+//! below is outside the end-effect model (audit M9): the GUI flags it with
+//! `model::end_effect_in_range`, as the Calculator's `end_effect_check` does.
 
 use std::f64::consts::PI;
 

@@ -86,6 +86,27 @@ pub(crate) fn harmonic_slot(count: Option<usize>, terms: &[f64], i: usize) -> f6
 /// Text of the maximum-temperature cells when the magnet is not a library part.
 pub const NOT_IN_LIBRARY: &str = "n/a";
 
+/// Text of the end-effect checks (`model.end_effect_check`, `calibration.end_effect_check`)
+/// when f_end = 1 − c_end · pole pitch / L is 0 or below. Audit M9: the empirical form turns
+/// negative for short magnets, and the pull-out with it; the user's decision (2026-09-30) is
+/// a flag, no physics change (the GUI greys the numbers computed from the pull-out).
+pub const END_EFFECT_OUT_OF_RANGE: &str = "End-effect model out of range";
+
+/// Whether an end-effect factor is inside the model's range (positive; NaN is not). The
+/// sweep rows' `f_end` column and inverse sizing use it too.
+pub fn end_effect_in_range(f_end: f64) -> bool {
+    f_end > 0.0
+}
+
+/// "OK" or [`END_EFFECT_OUT_OF_RANGE`], by [`end_effect_in_range`].
+pub fn end_effect_check(f_end: f64) -> &'static str {
+    if end_effect_in_range(f_end) {
+        "OK"
+    } else {
+        END_EFFECT_OUT_OF_RANGE
+    }
+}
+
 inputs! {
     /// Magnet parts and the manual fallbacks (Calculator!C11:C27).
     pub struct MagnetInputs {
@@ -272,6 +293,8 @@ results! {
             torque_2d_Nm: f64 => out("N·m", "2D pull-out torque (infinite length)",
                 "", "Calculator!C91"),
             f_end: f64 => out("-", "End-effect factor", "", "Calculator!C92"),
+            end_effect_check: String => out_rust_only("", "End-effect model check",
+                "Audit M9 (the user's decision: a flag, no physics change): 'End-effect model out of range' when f_end is 0 or below, which makes the pull-out and every number computed from it meaningless; 'OK' otherwise."),
             pullout_Nm: f64 => out("N·m", "Pull-out torque at operating temperature",
                 "Analytical estimate, not a guaranteed minimum.", "Calculator!C93"),
             pullout_20C_Nm: f64 => out("N·m", "Pull-out torque at 20 °C", "", "Calculator!C94"),
@@ -915,6 +938,7 @@ pub fn compute(
         area_lever_m3: AL,
         torque_2d_Nm: T2D,
         f_end,
+        end_effect_check: end_effect_check(f_end).to_owned(),
         pullout_Nm: T_pull,
         pullout_20C_Nm: T_pull20,
         pullout_iron_Nm: T_iron,
@@ -1715,6 +1739,43 @@ mod tests {
             1.0658,
             "a 24-magnet prototype matches 12 poles"
         );
+    }
+
+    #[test]
+    fn the_end_effect_check_is_strict_at_zero() {
+        // Audit M9, the user's decision: a flag, no physics change. Architecture section 7
+        // step 8: the comparison `f_end > 0` at exact equality, then either side of it.
+        assert_eq!(end_effect_check(0.0), END_EFFECT_OUT_OF_RANGE);
+        assert_eq!(end_effect_check(-0.0), END_EFFECT_OUT_OF_RANGE);
+        assert_eq!(end_effect_check(f64::MIN_POSITIVE), "OK");
+        assert_eq!(end_effect_check(-1e-300), END_EFFECT_OUT_OF_RANGE);
+        assert_eq!(end_effect_check(f64::NAN), END_EFFECT_OUT_OF_RANGE);
+        assert!(end_effect_in_range(1.0) && !end_effect_in_range(f64::NEG_INFINITY));
+    }
+
+    #[test]
+    fn short_magnets_flag_the_end_effect_model() {
+        // Audit M9: f_end = 1 - c_end * pole pitch / L turns negative below L = c_end * pole
+        // pitch (1.32 mm at the defaults), and the pull-out with it. 2 mm manual blocks with
+        // c_end = 0.5, both inside their sliders, reach it.
+        let r = at(&CouplingInputs::default());
+        assert_eq!((r.f_end > 0.0, r.end_effect_check.as_str()), (true, "OK"));
+        let mut ci = CouplingInputs {
+            c_end: 0.5,
+            ..CouplingInputs::default()
+        };
+        ci.magnets.part_inner = String::new();
+        ci.magnets.part_outer = String::new();
+        ci.magnets.manual_inner_length_mm = 2.0;
+        ci.magnets.manual_outer_length_mm = 2.0;
+        let r = at(&ci);
+        assert!(
+            r.f_end < 0.0 && r.pullout_Nm < 0.0,
+            "{} {}",
+            r.f_end,
+            r.pullout_Nm
+        );
+        assert_eq!(r.end_effect_check, END_EFFECT_OUT_OF_RANGE);
     }
 
     #[test]

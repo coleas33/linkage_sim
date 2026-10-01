@@ -29,8 +29,8 @@ use super::constants::MU0;
 use super::deviations::Deviations;
 use super::meta::{NumOrText, inputs, out, out_rust_only, param, results};
 use super::model::{
-    ODD_HARMONICS, br_factor, corner_radius, harmonic_count, harmonic_slot, harmonic_sum,
-    peak_angle, tau_at,
+    ODD_HARMONICS, br_factor, corner_radius, end_effect_check, harmonic_count, harmonic_slot,
+    harmonic_sum, peak_angle, tau_at,
 };
 
 inputs! {
@@ -107,6 +107,8 @@ results! {
             br_test_T: f64 => out("T", "Br at assumed test temperature", "", "Calibration!C36"),
             pole_pitch_mm: f64 => out("mm", "Pole pitch", "", "Calibration!C37"),
             f_end: f64 => out("-", "End-effect factor", "", "Calibration!C38"),
+            end_effect_check: String => out_rust_only("", "End-effect model check",
+                "Audit M9 on the prototype: 'End-effect model out of range' when f_end is 0 or below; 'OK' otherwise."),
             tau1_Pa: f64 => out("Pa", "Shear stress, harmonic 1", "", "Calibration!C40"),
             tau3_Pa: f64 => out("Pa", "Shear stress, harmonic 3", "", "Calibration!C41"),
             tau5_Pa: f64 => out("Pa", "Shear stress, harmonic 5", "", "Calibration!C42"),
@@ -229,6 +231,7 @@ pub fn compute(c: &CalibrationInputs, max_harmonic: i64, dev: Deviations) -> Cal
         br_test_T: br_t,
         pole_pitch_mm: tau_p,
         f_end,
+        end_effect_check: end_effect_check(f_end).to_owned(),
         tau1_Pa: t(0),
         tau3_Pa: t(1),
         tau5_Pa: t(2),
@@ -354,6 +357,28 @@ mod tests {
         };
         assert_eq!(at(1.0), NumOrText::Num(2.06));
         assert_eq!(at(1.5), NumOrText::Num(1.7));
+    }
+
+    #[test]
+    fn a_short_prototype_flags_the_end_effect_model() {
+        // Audit M9 on the prototype: the same end-effect factor, the same flag.
+        let r = compute(
+            &CalibrationInputs::default(),
+            WORKBOOK_MAX_HARMONIC,
+            Deviations::NONE,
+        );
+        assert_eq!(r.end_effect_check, "OK");
+        let c = CalibrationInputs {
+            magnet_length_mm: 2.0,
+            c_end: 0.5,
+            ..CalibrationInputs::default()
+        };
+        let r = compute(&c, WORKBOOK_MAX_HARMONIC, Deviations::NONE);
+        assert!(r.f_end < 0.0, "{}", r.f_end);
+        assert_eq!(
+            r.end_effect_check,
+            crate::engine::model::END_EFFECT_OUT_OF_RANGE
+        );
     }
 
     #[test]
