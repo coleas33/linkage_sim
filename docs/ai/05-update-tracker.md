@@ -5,6 +5,34 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-01 — Magcoupling M4-1: GUI inputs, dashboard, results table and session (branch magcoupling/m4-1)
+- `magcoupling-rs` panel (`src/gui/`): every input generated from the metadata, grouped as the package
+  groups them, with the Key design group on top (the A-2 axial length override, blank by default);
+  sliders with value boxes, arrow nudges, log scales, values rounded to the step's decimals, edits
+  clamped to the range, per-field reset, the changed dot, tooltips; selectors, optional inputs and text
+  inputs. The dashboard: the headline with green/amber/red badges from the check verdicts, the
+  corrected-vs-workbook markers from the registry and the golden files, the audit M9 greying with its
+  banner, the "3D values from the workbook" label, the space claim. The results table: search, CSV and
+  JSON export (`+inf`/`NaN` as text).
+- Session: undo/redo (one step per settled edit), reset all, design files and share links in one
+  schema-versioned JSON format (every input and the sizing state; `?m=` deflate + URL-safe base64),
+  loading all or nothing. The sizing mode switch (Torque -> Magnets): `sizing::solve` debounced
+  (0.25 s, never per frame), the solved or best value shown and its row locked, kept on leaving.
+- Edits in progress: a drag, a held key (a held arrow key is one undo step) or a text field of an input
+  row; the results search is no edit. A start-up share link is the session's start (no undo step);
+  leaving Torque -> Magnets solves a change still waiting for its debounce first; the JSON export holds
+  the design that produced the results; a host can keep the undo keys (M5). Old files' renamed paths
+  migrate through `session::PATH_MIGRATIONS`; a refused file names every problem of the inputs and
+  the sizing state.
+- App: the linkage app's CAD dark theme, forced dark; native file dialogs and web downloads (rfd); the
+  web entry opens `?m=` links. `gui-smoke` opens `/magcoupling/` through a pinned link and loads a
+  design file through rfd's web picker (zero console errors, share link loaded, sizing solved, design
+  file loaded).
+- Decisions M41-1 to M41-15 as recommended in the plan
+  (`docs/superpowers/plans/2026-10-01-magcoupling-m4-1-gui-inputs-dashboard-session.md`). The engine,
+  parity, differential data and registry are unchanged. Nothing pushed: the next push of `main` deploys
+  `/magcoupling/` and needs the user's go.
+
 ## 2026-09-30 — Magcoupling Addendum A-2: final review fix wave
 - E18's corrected_formula no longer quotes the library's 6061 at 68.3 GPa (decision A8): since A2-6 it is
   E18's 68.9 GPa. Text only; no number, probe or correction changes.

@@ -20,10 +20,16 @@ the assumptions registry (A3), the end-effect validity flag, the axial length
 override with the axial housing that follows it (hub length, cup cavity depth,
 retainer span), inverse sizing (A1), the housing autofit suggestion and the space
 claim, one aluminium modulus, and each grade-mode ring's own alpha and density
-(decisions A2-1 to A2-9). M4 infrastructure in place: the `gui` and `app` features, a tracer panel
+(decisions A2-1 to A2-9). M4 infrastructure in place: the `gui` and `app` features, the panel
 (`gui::MagcouplingPanel`), the native and web binaries, and the second web
 bundle at `/magcoupling/` (see [Features and binaries](#features-and-binaries)).
-Next: Addendum A-3 (explanations), then the M4 GUI plans.
+M4-1 complete: every input generated from the metadata (the Key design group first), the
+dashboard (badges, corrected-vs-workbook markers, the end-effect greying, the stored-3D label,
+the space claim), the searchable results table with CSV and JSON export, undo and redo, design
+files and share links, the sizing mode switch and the linkage app's theme (see
+[The panel](#the-panel); decisions M41-1 to M41-15). Next: Addendum A-3 (explanations), M4-2
+(geometry view, plots, clamp drawing) and M4-3 (equation explorer, assumptions panel, teaching
+notes, material and grade pickers).
 
 The 1,149 checks are 330 result cells, 659 table cells (494 sweep cells and 165
 screw-table cells) and 160 default inputs. The corrections are listed under
@@ -126,9 +132,9 @@ Results can be +inf (E13); exporters must handle it.
 | `src/engine/housing.rs` | Addendum A1 housing autofit (which dimensions are derived, suggested or left as inputs: decisions 27, 28; with the axial length override set, `axial_housing` makes the hub length, the cup cavity depth and the retainer span follow the rings they bound, each at least its ring's length: decision A2-8) and the space claim: `HousingResults` (Rust-only, `housing.*`: the overshoot per axis, diameter, overall length and large-diameter bay, `space_claim_check`, and the hub length, cup depth and retainer span in effect) |
 | `src/engine/sizing.rs` | Addendum A1 inverse sizing (Torque → Magnets): `FreeVariable` (axial length, the default; magnets per ring, even only; ring radius), `solve` (a coarse scan of `SCAN_CELLS` cells, refined between samples at the first crossing, at each peak and at each validity edge to `VALUE_TOLERANCE_MM`; the smallest value that meets the target, or `NotReachable` with the best valid value it evaluated; the stated limit: a torque hump whose rise and fall both lie inside one cell), `is_valid` (a value counts only if its blocks fit, faceted blocks on their flats and arcs without overlapping, the keyway leaves hub wall and f_end > 0), `SizingOutcome`, `SizingError` |
 | `src/engine/assumptions.rs` | Addendum A3 assumptions panel: `ASSUMPTIONS` (the spec's 14 rows over the 15 inputs flagged `.assumption()`: label, input paths, rationale, source), `states`, `modified`, `any_modified` (the "assumptions modified" banner), `reset_to_workbook_defaults` |
-| `src/gui/` | Feature `gui`: `panel.rs` (`MagcouplingPanel`, `KEY_INPUTS`), `format.rs` (`format_value`, `with_unit`: the display text of every value, `+inf` and `NaN` included), `test_support.rs` (headless egui helpers, tests only) |
-| `src/app.rs` | Feature `app`: `MagcouplingApp` (the panel as a full page), `run_native`, `TITLE`, `CANVAS_ID` |
-| `src/bin/` | Feature `app`: `magcoupling_app.rs` (native window), `magcoupling_web.rs` (wasm32 entry, eframe WebRunner) |
+| `src/gui/` | Feature `gui`: `panel.rs` (`MagcouplingPanel`: the layout, the session buttons and shortcuts, `PanelRequest`, `CentreView`, the sizing controls), `inputs.rs` (`InputCatalogue`, `KEY_DESIGN`, `SECTION_LABELS`, `OPTIONAL_SEEDS`, `step_decimals`, `text_hint`, `input_tooltip`), `input_ui.rs` (`input_row`, `slider`: one input row of any type), `dashboard.rs` (`DASHBOARD`, `verdict_level`, `END_EFFECT_ROWS`, `STORED_3D_ROWS`, `result_info`, `result_tooltip`, the hover hook), `corrections.rs` (`CorrectionIndex`: the corrected-vs-workbook markers from the registry and the golden files), `results_table.rs` (`table_entries`, `search`, `results_csv`, `results_json`), `session.rs` (design files and share links: `Design`, `design_to_json`, `design_from_json`, `encode_share_payload`, `decode_share_payload`, `LoadError`), `history.rs` (`History`: undo and redo), `sizing.rs` (`SizingMode`, `SizingState`, `SizingRunner`: debounced inverse sizing), `format.rs` (`format_value`, `with_unit`: the display text of every value, `+inf` and `NaN` included), `test_support.rs` (headless egui helpers, tests only) |
+| `src/app.rs` | Feature `app`: `MagcouplingApp` (the panel as a full page; does its requests), `run_native`, `TITLE`, `CANVAS_ID`, `SHARE_LINK_LOADED`, `DESIGN_FILE_LOADED`; `app/theme.rs` (the linkage app's CAD dark visuals, forced dark), `app/files.rs` (saving: a file dialog natively, a download on the web; `DesignPicker`) |
+| `src/bin/` | Feature `app`: `magcoupling_app.rs` (native window), `magcoupling_web.rs` (wasm32 entry, eframe WebRunner; opens a `?m=` share link) |
 | `tests/` | Parity, differential, metadata and registry tests (below) |
 | `tests/data/` | Workbook snapshot copy (`reference_values.json`), exported schemas (`input_schema.json`, `python_schema.json`), the Python static tables (`static_data.json`), differential data (`differential/`) and the golden files of the broad corrections (`deviations/E3.json`, `E4.json`, `E5.json`) |
 
@@ -140,18 +146,77 @@ Not a Cargo workspace member: `linkage-sim-rs` will depend on it by path
 | Feature | Adds | Dependencies (all optional) |
 |---|---|---|
 | none (default) | The engine | none: pure std, builds for wasm32 as it is |
-| `gui` | `gui::MagcouplingPanel`: the design inputs and results, and `fn ui(&mut self, ui: &mut egui::Ui)`. Any egui app can host it: the standalone app as a full page, the linkage app in an `egui::Window` (M5) | egui 0.32 |
-| `app` | `app::MagcouplingApp` and the binaries below | `gui`, eframe 0.32, log; env_logger (native); wasm-bindgen, wasm-bindgen-futures, web-sys (wasm32) |
+| `gui` | `gui::MagcouplingPanel`: the design inputs and results, and `fn ui(&mut self, ui: &mut egui::Ui)`. Any egui app can host it: the standalone app as a full page, the linkage app in an `egui::Window` (M5) | egui 0.32, serde_json, base64, flate2, log |
+| `app` | `app::MagcouplingApp` and the binaries below | `gui`, eframe 0.32, log, rfd 0.15; env_logger (native); wasm-bindgen, wasm-bindgen-futures, web-sys, js-sys (wasm32) |
 | `workbook-parity` | **Test-only**: the switch that turns corrections off (see [Differences from the workbook](#differences-from-the-workbook)) | none |
 
-The panel is the M4 tracer: sliders for face gap, pole count and axial length
-(`KEY_INPUTS`), set up from the input metadata (label, unit, range, step, log
-scale, help and cell in the tooltip), "Reset all", and the headline numbers,
-recomputed with `compute_all` (every correction on) each frame after the inputs
-are drawn. Sliders clamp edits only (`SliderClamping::Edits`): the slider, arrow
-keys and typed values stay in the range, and an idle frame never rewrites a
-value. The axial length is the manual inner length, which only matters when
-the inner part is not a library part.
+### The panel
+
+M4-1 (plan `docs/superpowers/plans/2026-10-01-magcoupling-m4-1-gui-inputs-dashboard-session.md`).
+A header with the session buttons; the inputs on the left; the dashboard on the right; the
+centre region between them (`CentreView`: the results table; M4-2 adds the geometry view and the
+plots). Every result is recomputed with `compute_all` (every correction on) each frame after the
+inputs are drawn, so the readouts show the same frame's edits.
+
+- **Inputs** (`inputs.rs`, `input_ui.rs`): every input, generated from its metadata and grouped as
+  the package groups them, each nested group under its heading; the Key design group on top
+  (`KEY_DESIGN`: face gap, pole count, both magnet parts, the A-2 axial length override (blank
+  by default), operating temperature, back iron, cup wall, conductance, measured drag), whose
+  inputs also stay in their groups. A number is a slider with a value box (live while dragging,
+  arrow-key nudges by the step, a logarithmic scale where flagged, values rounded to the step's
+  decimals: decision M41-1; every default sits on its step grid except the vacuum permeability's
+  two, an open item); edits are clamped to the slider range, typed values included, while a value
+  already outside it (from a file or a link) is kept and flagged "outside the slider range"
+  (M41-2). A selector is a drop-down; an optional input a checkbox and a slider, entered at the
+  result it overrides, unrounded (`OPTIONAL_SEEDS`, M41-12: the axial length override at the
+  ring's length in use moves nothing; the measured drag at the model's drag switches the thermal
+  summary to the measured branch); a text input a text field with a note (library part or not,
+  grade or not). Each row shows a dot when changed from the default, a
+  reset button, and a tooltip with help, path, workbook cell, slider range and default.
+- **Dashboard** (`dashboard.rs`): the 15 headline numbers in Python's order, the space claim
+  badge and the end-effect flag (`DASHBOARD`). Green, amber or red badges come from the check
+  verdicts (`verdict_level`). A value whose workbook cell the deviation registry ties to an applied
+  correction carries the ids (`E3 E7 E8`) with the corrections, the at-defaults workbook and
+  corrected values and the evidence in its tooltip (`corrections.rs`, M41-10). When f_end <= 0
+  (audit M9) the rows computed from the pull-out (`END_EFFECT_ROWS`) are greyed without badges
+  under the banner "End-effect model out of range"; the temperature rows that read the stored 3D
+  fields carry "3D values from the workbook" (M3 comes after M4). `result_tooltip` is the one
+  hover hook of every readout, keyed by result path.
+- **Results table** (`results_table.rs`): every result with label, value, unit, workbook cell and
+  marker; search by label, path or cell; CSV (`path,label,value,unit,cell`) and JSON (with the
+  design that produced the results: in Torque -> Magnets the inputs with the free variable at the
+  value shown) at full precision, a non-finite number written `+inf`, `-inf` or `NaN` (M41-15).
+- **Session** (`session.rs`, `history.rs`): undo and redo (buttons, Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y)
+  of every change to the design, one step per settled edit (a drag, a typed value, a part name
+  typed letter by letter), one per arrow nudge and one for a held arrow key's whole auto-repeat
+  run (M41-14): an edit is in progress while a pointer button is down, a key is held down or a
+  text field of an input row has focus (the results search is no edit); reset all; save and load
+  a design file; a share link copied to the clipboard. A link the web app opens at start-up is
+  the session's start (`open_share_payload`: the first Undo keeps it). A host with its own undo
+  can keep the keys (`set_keyboard_shortcuts(false)`: M5's linkage window). One format for files and links: JSON
+  `{"format": "magcoupling-design", "version": 1, "inputs": {path: value}, "sizing": {...}}` with
+  every input (M41-5) and the sizing state (M41-4); a link is that JSON deflated and URL-safe
+  base64 in `?m=` (the linkage tool's scheme; about 2.5 kB at the defaults). Loading is all or
+  nothing (M41-6): an unknown path, a wrong type, a code outside its choices, a newer version or
+  a malformed sizing state changes nothing and the panel names every problem, the inputs' and the
+  sizing state's. A later version that renames or removes an input path adds a
+  `session::PATH_MIGRATIONS` entry and bumps `DESIGN_VERSION`, so older files and links keep
+  opening.
+- **Sizing** (`sizing.rs`, Addendum A1): the mode switch tops the Key design group. In
+  Torque -> Magnets the free variable (axial length, magnets per ring, ring radius) and the target
+  hot-low torque (2.5 N·m to start, M41-9) feed `sizing::solve`, which runs once the design has
+  been still for 0.25 s and no edit is in progress, never per frame. The panel then shows the
+  design with the free variable at the solved value, "Solved at X", or at the best value it
+  found, "Not reachable (best Y at X)" (M41-8); the free variable's row shows that value, locked
+  (under the status line when the Key design group does not list it: the ring radius). Leaving the
+  mode keeps the value, solving first a change still waiting for its debounce (M41-7).
+- **No I/O in the panel.** Saving and picking a file are `PanelRequest`s the host does
+  (`take_requests`, then `load_design_file` and `report`), so the M5 linkage window can host the
+  panel with its own file handling; the share link base is the host's (`set_share_base`).
+- **Theme** (`app/theme.rs`): the standalone app applies the linkage app's CAD dark visuals and
+  spacing, dark whatever the system prefers (M41-3; a test keeps the visuals equal to
+  `linkage-sim-rs/src/gui/theme.rs`), and the web page's background is the same panel colour.
+  The panel sets no theme: in M5 the host's applies.
 
 **Versions.** egui and eframe use the same 0.32 line as `linkage-sim-rs`, so
 M5 embeds the panel with one egui; `Cargo.toml` has caret ranges, and
@@ -169,7 +234,13 @@ The web page is `linkage-sim-rs/web/magcoupling/index.html` (committed; the JS
 glue and the wasm are gitignored build outputs). Its canvas id is
 `app::CANVAS_ID`, which a test checks. `deploy-web.yml` runs
 `build_magcoupling_web.sh` after the linkage build, so both bundles ship
-(`linkage.colesorkness.com/magcoupling/`).
+(`linkage.colesorkness.com/magcoupling/`) on the next push of `main`; pushing needs the user's
+go. The web smoke test is the `gui-smoke` workflow (`.claude/workflows/gui-smoke.js`): it opens
+`/magcoupling/` through a pinned share link and checks the canvas, the console lines
+`magcoupling: loaded the design from the share link` and `magcoupling sizing: Solved at`, then
+clicks "Load design" once (found in a screenshot), uploads a pinned design file through rfd's web
+picker and checks `magcoupling: loaded a design file`, with zero console errors (a test decodes
+the pinned link and the design file).
 
 **workbook-parity never ships.** The feature reaches `cargo test` and
 `cargo clippy --all-targets` through the self dev-dependency, and cargo then
@@ -207,9 +278,11 @@ bash linkage-sim-rs/scripts/gate.sh   # everything, both crates and the Python o
 | `tests/robustness.rs` | Inputs no parity or differential case holds (the plan's Review Focus): a selector code outside its choices set directly on the struct (adhesive, screw class, and every selector at once with `validate()` naming each), a measured drag of exactly zero, every numeric input at 0, -1, a tenth of its minimum, ten times its maximum and 1e300, with the default back iron and with none, where E17's free-space field inputs act (`compute_all_never_panics_on_extreme_inputs`), NaN and infinities written straight into the struct, where `set` cannot refuse them, with the corrections off and on (`compute_all_never_panics_on_non_finite_struct_literals`; `validate()` names the path), a harmonic set outside its choices (NaN torques in the Calculator, the Calibration prototype and every sweep row, never another set, with the corrections off and on; `validate()` names it: `an_invalid_harmonic_set_is_nan_not_another_set`), a coercivity source outside its choices (any code but 1 uses the Hcj and beta inputs, and `validate()` names it: `an_invalid_coercivity_source_uses_the_inputs`), a positive beta typed in for magnets with no grade and no rating (no hot limit: C60 = +inf, C61 = NaN, the adhesive governs C12: `a_positive_beta_without_a_rating_has_no_hot_limit`), a positive beta typed into C45 with the coercivity source at 0 (E20's cold side; the slider stays the NdFeB range, decision A2-5), inverse sizing on designs no slider reaches (an outcome or an error for every free variable, never a panic: `sizing_never_panics_on_extreme_designs`), and a debug-build time bound per frame (`compute_all` plus `headline`). The engine must never panic. |
 | `tests/schema.rs` | Slider ranges, selectors, labels, unique well-formed paths and cells (a Rust-only result has none; an input is Rust-only exactly when it has no cell); each table column's label, unit and note equal the workbook headers (`table_columns_match_the_workbook_headers`; where a correction rewords a column's note, the recorded workbook text equals the note and the port's differs); exports `tests/data/input_schema.json`. |
 | `tests/deviations.rs` | Registry cells exist in the snapshot, entries are approved rows of the audit report, and one correction switched on changes exactly its registered cells (hand-listed, or in the correction's golden file under `tests/data/deviations/`); a correction that changes more than 15 cells uses a golden file and one that changes 15 or fewer lists them (`broad_corrections_use_golden_files_and_narrow_ones_list_their_cells`); each applied correction's figures match the report (`e1_adhesive_shear_modulus_matches_the_report`, `e2_clamp_screw_length_matches_the_report`, `e3_library_remanence_matches_the_report`), and help a correction rewords belongs to a real input and differs from the workbook's. A correction that changes nothing at defaults (E7 to E13, E15 to E20) carries registry probes, off-default inputs from the report whose cells are checked with the correction off and on (`each_probe_shows_its_correction`); `every_applied_engine_correction_is_visible_somewhere` requires every applied engine correction to show at defaults or in a probe. A probe's workbook value can be a workbook error (`Literal::Error`, e.g. `#DIV/0!` where Python raises): that side still runs but is not compared. E7, E8, E9, E10, E11, E12 and E13 must leave every default cell bit for bit (`e7_leaves_every_default_cell_bit_for_bit`, `e8_leaves_flat_blocks_bit_for_bit`, `e9_leaves_every_default_cell_bit_for_bit`, `e10_leaves_every_default_cell_bit_for_bit`, `e11_leaves_every_default_cell_bit_for_bit`, `e12_leaves_every_default_cell_bit_for_bit`, `e13_leaves_every_default_cell_bit_for_bit`). `e7_finds_the_peak_at_a_fill_of_exactly_0_4` pins E7 where the fifth harmonic vanishes (a ring at a fill of exactly 0.4). The Addendum A entries name every cell their probes change, downstream cells included (`addendum_entries_name_every_cell_their_probes_change`); E15 to E18 have rows in the Addendum A report and E19 and E20 cite decisions only (`e15_to_e18_have_audit_rows_and_e19_e20_decisions_only`); each reproduces the report: `e15_heat_capacity_matches_the_report`, `e16_removed_disc_matches_the_report`, `e17_aluminium_eddy_losses_match_the_report` and `e15_to_e17_together_match_the_reports_headline_table` (on top of E9, decision 15), `e18_aluminium_hub_mismatch_matches_the_report`, `e19_supermagnetman_arcs_follow_the_vendor_grid`, and for E20 `e20_each_part_uses_its_own_coercivity`, `e20_the_hcj_and_beta_inputs_override_the_grade_when_selected`, `e20_ferrite_is_limited_on_the_cold_side`, `e20_mixed_rings_use_the_weaker_grade` and `e20_ferrite_with_the_stored_ndfeb_fields_is_past_its_knee_at_room_temperature`; `e15_leaves_every_default_cell_bit_for_bit` to `e20_leaves_every_default_cell_bit_for_bit` pin that none moves a default cell. `all_corrections_together_give_the_reviewed_headline` pins what users see: the headline with every correction on at the default design. |
-| `src/gui/panel.rs` (feature `gui`) | Headless egui (`egui::Context::run` with injected input): an arrow key on the face-gap slider and a click on its rail update the headline in the same frame (drawn text equals `compute_all` of the edited inputs and differs from the default's); pole count steps by two and stays even; range ends stop arrow keys; idle frames change no input; an input outside its slider range is kept; "Reset all" restores the default design and headline; the panel draws inside an `egui::Window` (M5); each key input is a numeric input with a slider range; tooltips carry help, path and cell |
-| `src/gui/format.rs` (feature `gui`) | Four significant digits, scientific outside 1e-3 to 1e6, carries (9.99996 shows as 10.00), signed zero, `+inf`, `-inf`, `NaN`, integers, text, None, units |
-| `src/app.rs` (feature `app`) | The app draws the whole panel as a page; `web/magcoupling/index.html` has the canvas `CANVAS_ID` and the title `TITLE` |
+| `src/gui/panel.rs` (feature `gui`) | Headless egui (`egui::Context::run` with injected input, a 1280 x 1024 screen): an arrow key on the face-gap slider and a click on its rail update the headline in the same frame; the value lands on the step's decimals (1.41) and stepping back lands on the default exactly; a typed value snaps to the step and is clamped into the range; pole count steps by two and stays even; range ends stop arrow keys; idle frames change no input; an input outside its slider range is kept until edited and flagged; the changed dot and per-field reset; the axial length override starts blank and enters at the ring's length; a selector switches the branch (no back iron); a text input edits the part name and its note follows; every group opens and draws every input; the dashboard's stored-3D label, markers, end-effect banner (over the dashboard and the table) and space-claim overshoot; the results table's search and its export requests; undo and redo (buttons and shortcuts; one step per drag, per nudge, per typed name; Ctrl+Z in a text field left to the field; reset all undoable); save and load requests, a loaded and a refused design file, the share link on the clipboard and a broken link; the host's report; Torque -> Magnets: the solved design shown, the debounce (no solve per frame, none while a button is down, a repaint after a solve), the locked free-variable row (also under the status line for the ring radius), leaving the mode keeps the value as one undo step and solves a pending change first, an unreachable target shows the best value, the free-variable picker, a share link carries the sizing state, the JSON export holds the design shown, typing in the results search does not defer the solve; a held arrow key is one undo step, a slider's value box being typed in is an edit of the design (one step on Enter), the results search holds back no undo step, only this frame's rows count as design fields, a start-up share link is no undo step, a host can keep Ctrl+Z for itself; idle frames change nothing with every group open and off-grid values; the measured drag enters at the model's drag, unrounded; every drawn text and hover text has glyphs in egui's default fonts; the panel draws inside an `egui::Window` (M5) |
+| `src/gui/inputs.rs`, `src/gui/dashboard.rs`, `src/gui/corrections.rs`, `src/gui/results_table.rs` (feature `gui`) | Every input in exactly one section in schema order, every heading used, the Key design list, every input type covered; step decimals; every slider default on its step grid except the listed two; the optional seeds (entering the axial length at its seed moves nothing); text hints; tooltips. The dashboard starts with `HEADLINE`; every verdict each check gives has a level (designs that reach each branch); `END_EFFECT_ROWS` are exactly the headline rows that move with c_end (0 included: it flips the hot-minimum verdict) at back iron 1 and 0, `STORED_3D_ROWS` exactly those that move with the 14 stored 3D inputs at their slider ends; greying drops badges. The compiled golden files are the registry's; the headline pull-out carries E3 with the workbook's 2.647. The table lists every result once; the search; exact numbers read back bit for bit; CSV quoting; `+inf` and `NaN` in CSV and JSON (E20's positive-beta design); the JSON export holds the design |
+| `src/gui/session.rs`, `src/gui/history.rs`, `src/gui/sizing.rs` (feature `gui`) | A design file and a share link round-trip bit for bit (every input type, the sizing state); a file names every input; a missing path or sizing state takes the default; every problem reported, nothing loaded, the inputs' and the sizing state's together; an older file's renamed and removed paths migrate (a made-up table) and `PATH_MIGRATIONS` leads to inputs of this version; not a design, a newer or malformed version, a malformed sizing state, a broken link, a link that inflates past 1 MB are refused; the default link stays under 2,500 characters. Undo and redo walk settled steps, coalesce an unsettled edit, drop redo on a new change, cap at 100. The runner waits for the debounce and runs once, restarts on a new change or an edit in progress, ignores the free variable's own value, solves a pending change at once on request; solved, unreachable and refused outcomes and their status lines |
+| `src/gui/format.rs` (feature `gui`) | Four significant digits, scientific outside 1e-3 to 1e6, carries (9.99996 shows as 10.00), signed zero, `+inf`, `-inf`, `NaN` (one text for the display and both exports), integers, text, None, units |
+| `src/app.rs`, `src/app/theme.rs` (feature `app`) | The app draws the whole panel as a page in the CAD dark theme; a share link opens its design as the session's start (the first Ctrl+Z keeps it) and a broken one changes nothing; a picked design file loads and a refused one changes nothing; the `gui-smoke` workflow's pinned share link and design file decode to their designs and the app solves the link; `web/magcoupling/index.html` has the canvas `CANVAS_ID`, the title `TITLE` and the panel colour as its background; the visuals are `linkage-sim-rs`'s, function body for body; the theme stays dark when the system turns light |
 
 ### Regenerating test data
 
@@ -223,7 +296,12 @@ files; `cargo test` then compares:
 | 3 | `MAGCOUPLING_BLESS=1 cargo test --test deviations each_deviation_alone_changes_exactly_its_registered_cells` | `tests/data/deviations/E<k>.json`, the golden files of the broad corrections (E3, E4, E5); see [Deviations](#deviations). It writes what this engine computes with the correction alone, so review the diff |
 
 Run 1, then 2, when an input, a range, a choice or a table layout changes; run 3
-when a broad correction changes cells. A Rust-only input (declared with
+when a broad correction changes cells. The `gui-smoke` share link
+(`MAGCOUPLING_SMOKE_PAYLOAD` in `.claude/workflows/gui-smoke.js`) carries every input (decision
+M41-5): regenerate it with `MagcouplingPanel::share_link` (the default design, face gap 1.5 mm,
+Torque -> Magnets on the axial length at 2.5 N·m) when the design format changes, a default
+changes, or an input path is renamed or removed; `the_smoke_test_share_link_opens_its_design`
+fails until then. A Rust-only input (declared with
 `param_rust_only`, exported with `"rust_only": true`) is left out by generator 2:
 the Python engine has no such input, so every case keeps its Rust default and no
 data file changes when one is added.
