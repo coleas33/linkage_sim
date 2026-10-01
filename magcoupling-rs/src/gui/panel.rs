@@ -747,7 +747,7 @@ mod tests {
     use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
         SCREEN, drawn_texts, key_event, key_tap, primary_button, select_all, short_magnets,
-        sized_frame, sized_frame_at, text_rect,
+        sized_frame, sized_frame_at, text_rect, text_rects,
     };
     use crate::headline;
 
@@ -1420,6 +1420,44 @@ mod tests {
         assert_eq!(count(&output, &last), 1);
         assert_eq!(count(&output, &first), 0);
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn a_narrow_window_shows_each_row_s_label_and_value_without_scrolling() {
+        // The M4-1 review's ~930 px window: the inputs (320) and the dashboard (300) leave the
+        // table about 294 points. The row's value must end left of the dashboard.
+        let mut harness = Harness::on_screen(egui::vec2(930.0, 1024.0));
+        // The wrapped tab row settles on the second frame (egui wraps from the last frame's
+        // widths).
+        harness.frame(Vec::new());
+        harness.click_text(CentreView::Results.label());
+        assert_eq!(harness.panel.centre, CentreView::Results);
+        harness.click_text(crate::gui::results_table::SEARCH_HINT);
+        harness.frame(vec![egui::Event::Text("calculator!c93".to_owned())]);
+        let output = harness.frame(Vec::new());
+        let value = displayed_pullout(&DesignInputs::default());
+        let in_table: Vec<egui::Rect> = text_rects(&output, &value)
+            .into_iter()
+            .filter(|r| r.right() <= 930.0 - 300.0)
+            .collect();
+        assert_eq!(in_table.len(), 1, "the row's value is on screen: {value}");
+        // And the row's label (truncated to its column, but there).
+        let label = crate::gui::results_table::table_entries()
+            .iter()
+            .find(|e| e.info.cell.as_deref() == Some("Calculator!C93"))
+            .expect("the pull-out's row")
+            .info
+            .meta
+            .label;
+        let labels: Vec<egui::Rect> = text_rects(&output, label)
+            .into_iter()
+            .filter(|r| r.left() >= 0.0 && r.right() <= 930.0 - 300.0)
+            .collect();
+        assert_eq!(labels.len(), 1, "the row's label is on screen: {label}");
+        // It fills its column, at least 120 points, and ends left of the value.
+        let min = crate::gui::results_table::LABEL_MIN_WIDTH;
+        assert!(labels[0].width() >= min - 1.0, "{:?}", labels[0]);
+        assert!(labels[0].right() <= in_table[0].left());
     }
 
     #[test]

@@ -39,6 +39,28 @@ pub const EXPORT_JSON: &str = "Export JSON";
 /// The search box's hint.
 pub const SEARCH_HINT: &str = "Search label, path or cell";
 
+/// The value, cell and marker columns' widths [points], M4-1's; the label column takes the rest.
+pub const VALUE_WIDTH: f32 = 130.0;
+pub const CELL_WIDTH: f32 = 130.0;
+pub const MARKER_WIDTH: f32 = 60.0;
+
+/// The narrowest label column [points]: below it the rows scroll sideways.
+pub const LABEL_MIN_WIDTH: f32 = 120.0;
+
+/// The widths of the label, value, cell and marker columns of a table `available` points wide
+/// with `spacing` points between columns (decision M42-8): the label column flexes, at least
+/// [`LABEL_MIN_WIDTH`], so a narrow centre region (a ~930 px window, where the M4-1 table showed
+/// only its labels) still shows the label and the value without scrolling.
+pub fn column_widths(available: f32, spacing: f32) -> [f32; 4] {
+    let fixed = VALUE_WIDTH + CELL_WIDTH + MARKER_WIDTH + 3.0 * spacing;
+    [
+        (available - fixed).max(LABEL_MIN_WIDTH),
+        VALUE_WIDTH,
+        CELL_WIDTH,
+        MARKER_WIDTH,
+    ]
+}
+
 /// One row of the table: what does not change with the inputs.
 #[derive(Clone, Debug)]
 pub struct TableEntry {
@@ -208,12 +230,13 @@ impl ResultsTable {
         ui.separator();
         let matches = self.matches.as_deref().unwrap_or(&[]);
         let row_height = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
+        let widths = column_widths(ui.available_width(), ui.spacing().item_spacing.x);
         egui::ScrollArea::both()
             .id_salt("magcoupling_results_scroll")
             .auto_shrink([false, false])
             .show_rows(ui, row_height, matches.len(), |ui, range| {
                 for &index in &matches[range] {
-                    row_ui(ui, &entries[index], results, row_height);
+                    row_ui(ui, &entries[index], results, row_height, widths);
                 }
             });
         action
@@ -229,9 +252,16 @@ pub fn row_tooltip(entry: &TableEntry, value: &Value) -> String {
     tooltip
 }
 
-/// One table row: label, value with unit, workbook cell, marker (the path is in the hover
-/// text, which is built only while the row is hovered).
-fn row_ui(ui: &mut egui::Ui, entry: &TableEntry, results: &DesignResults, height: f32) {
+/// One table row: label, value with unit, workbook cell, marker, in columns `widths` wide
+/// ([`column_widths`]; the path is in the hover text, which is built only while the row is
+/// hovered).
+fn row_ui(
+    ui: &mut egui::Ui,
+    entry: &TableEntry,
+    results: &DesignResults,
+    height: f32,
+    widths: [f32; 4],
+) {
     let value = results.get(&entry.path).unwrap_or(Value::None);
     let row = ui.horizontal(|ui| {
         // Left-aligned columns of fixed width (add_sized would centre the text).
@@ -242,14 +272,19 @@ fn row_ui(ui: &mut egui::Ui, entry: &TableEntry, results: &DesignResults, height
                 ui.add(egui::Label::new(text).truncate());
             });
         };
-        cell(ui, 260.0, entry.info.meta.label);
+        let [label, number, workbook, marker] = widths;
+        cell(ui, label, entry.info.meta.label);
         cell(
             ui,
-            130.0,
+            number,
             &with_unit(format_value(&value), entry.info.meta.unit),
         );
-        cell(ui, 130.0, entry.info.cell.as_deref().unwrap_or("Rust-only"));
-        cell(ui, 60.0, &entry.marker);
+        cell(
+            ui,
+            workbook,
+            entry.info.cell.as_deref().unwrap_or("Rust-only"),
+        );
+        cell(ui, marker, &entry.marker);
     });
     row.response.on_hover_ui(|ui| {
         ui.label(row_tooltip(entry, &value));
@@ -285,6 +320,17 @@ mod tests {
             .find(|e| e.path == "model.pullout_Nm")
             .unwrap();
         assert_eq!(pullout.marker, "E3 E7 E8");
+    }
+
+    #[test]
+    fn the_label_column_flexes_down_to_its_minimum() {
+        // The 1280 x 800 default window: the label column widens past the M4-1 260 points.
+        assert_eq!(column_widths(644.0, 8.0), [300.0, 130.0, 130.0, 60.0]);
+        // A ~930 px window leaves about 294 points: the label shrinks to its minimum, so the
+        // value column ends at 120 + 8 + 130 = 258 points, on screen.
+        assert_eq!(column_widths(294.0, 8.0), [120.0, 130.0, 130.0, 60.0]);
+        assert_eq!(column_widths(0.0, 8.0)[0], LABEL_MIN_WIDTH);
+        assert_eq!(column_widths(f32::NAN, 8.0)[0], LABEL_MIN_WIDTH);
     }
 
     #[test]
