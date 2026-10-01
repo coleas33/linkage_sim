@@ -74,7 +74,7 @@ pub const NOTES: &[Note] = &[
             "Each ring's magnetization alternates north and south around the circle, so along the gap it is a rectangular wave, blocks separated by gaps, not a smooth sine.",
             "Such a wave is a sum of sine waves at odd multiples of its basic frequency: harmonic n has n times as many wavelengths around the ring and an amplitude of 4/(nπ) times the remanence, scaled by sin(nπλ/2), where λ is the fraction of each pole the magnet fills (λ < 1 when there are gaps between blocks); that factor sets each harmonic's size and sign, so some amplitudes come out negative even with no gaps (sin(3π/2) = −1), and the fill decides which ones.",
             "Harmonic n of one ring pulls only on harmonic n of the other, so the total shear stress is a sum with one term per harmonic.",
-            "Higher harmonics have shorter wavelengths and smaller amplitudes, and their fields fade across the gap much faster, which is why the workbook keeps only 1, 3 and 5 (the calculator's default; it can sum the odd harmonics up to 11).",
+            "Higher harmonics have shorter wavelengths and a lower amplitude ceiling, 4/(nπ) times the remanence (the fill can still make a higher one larger than a lower one), and above all their fields fade across the gap much faster, which is why the workbook keeps only 1, 3 and 5 (the calculator's default; it can sum the odd harmonics up to 11).",
         ],
         watch_out: Some(
             "A fill of exactly 0.4 makes the fifth harmonic vanish, because sin(5π·0.4/2) = sin(π) = 0: that is geometry, not an error.",
@@ -152,7 +152,7 @@ pub const NOTES: &[Note] = &[
             "It is empirical: at the default design it is within about 1 % of 3D for magnets longer than about 3 mm (about a third of a pole pitch), it has no gap term (one M1 skeptic found it 11 % high at a 4.4 mm gap), and it turns negative for very short magnets, which the end-effect check flags.",
         ],
         watch_out: Some(
-            "At or below L = c_end·τ_p (1.3 mm at the default pole pitch) the factor is zero or negative and every torque computed from it is meaningless.",
+            "At or below L = c_end·τ_p (1.3 mm at the default pole pitch) the factor is zero or negative and every torque computed from it is meaningless; between that and about 3 mm the check still reads OK, yet the factor is far off (21 % below 3D at 2 mm, M1 audit M9).",
         ),
         diagram: Some(Diagram::EndFringing),
         sources: &["M1 audit M8 and M9 (T3-RC1, T3-RC3)"],
@@ -209,7 +209,7 @@ pub const NOTES: &[Note] = &[
             "A magnet's remanence Br, the flux density it keeps with no applied field, falls reversibly as it warms: Br(ϑ) = Br(20 °C) · (1 + α (ϑ − 20 °C)), with α about −0.12 %/°C for sintered NdFeB.",
             "Each ring's field is proportional to its own Br, and the shear stress is a product of the two rings' fields, so the torque scales as Br,i · Br,o: the square of Br when both rings are one grade.",
             "So a 30 °C rise costs about 7 % of the torque: (1 − 0.0012 · 30)² ≈ 0.93.",
-            "The loss is reversible: cool the magnet and the torque comes back, unless it passed its demagnetization onset (the knee) on the way, which is a separate, permanent loss; the calculator's demagnetization limit sits 10 °C below that onset.",
+            "The loss is reversible: cool the magnet and the torque comes back, unless on the way it passed a demagnetization onset, the temperature where its reverse field reaches the knee, which is a separate, permanent loss; the calculator's demagnetization limit sits 10 °C below the lowest onset, the one while the coupling skips.",
         ],
         watch_out: Some(
             "Each ring keeps its own coefficient: a ferrite ring (α about −0.2 %/°C) loses torque faster with heat than an NdFeB one.",

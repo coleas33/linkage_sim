@@ -64,7 +64,7 @@ pub const WARNING_RULES: [WarningRule; 6] = [
         id: "ferromagnetic_sleeve_or_liner",
         severity: Severity::Warning,
         note_id: "a5.ferromagnetic_sleeve_or_liner",
-        text: "Ferromagnetic sleeve or liner: it short-circuits the gap flux, so torque collapses.",
+        text: "Ferromagnetic sleeve or liner: it short-circuits part of the gap flux, so torque drops, more for a thicker shell.",
     },
     WarningRule {
         id: "high_conductivity_sleeve_or_liner",
