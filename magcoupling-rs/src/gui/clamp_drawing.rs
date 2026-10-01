@@ -9,6 +9,11 @@
 //! scale with drawing.py's four pens mapped to the panel's dark theme (decision M42-7), then
 //! the clamp table: the Shaft clamps summary, the machining steps and the 'Clamp screw sizes'
 //! table with the recommended size's column marked; every value shows its result's hover text.
+//!
+//! A design file or share link can hold any finite slit, and a struct written by hand any
+//! dimension, which make a cut rectangle millions of millimetres long. The painter therefore
+//! cuts each area and centre line to the part of the plane it shows (`visible_mm`, exact on the
+//! box's sides) before it dashes it: no outline is longer than the region, whatever the design.
 
 use std::sync::OnceLock;
 
@@ -148,6 +153,32 @@ fn rect(x: f64, y: f64, w: f64, h: f64) -> Vec<Mm> {
     vec![[x, y], [x + w, y], [x + w, y + h], [x, y + h]]
 }
 
+/// The point of the edge `p` to `q` where a function linear in the point, `sp` at `p` and `sq`
+/// at `q` (of opposite signs), is zero.
+fn crossing(p: Mm, q: Mm, sp: f64, sq: f64) -> Mm {
+    let t = sp / (sp - sq);
+    [p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])]
+}
+
+/// One Sutherland–Hodgman step: the convex polygon `points` clipped to the half-plane where
+/// `side` (linear in the point) is not negative; an edge that crosses it is cut where `side`
+/// changes sign, and `snap` puts that new point exactly on the plane. A polygon wholly inside
+/// comes back unchanged, point for point.
+fn clip_half_plane(points: &[Mm], side: impl Fn(Mm) -> f64, snap: impl Fn(Mm) -> Mm) -> Vec<Mm> {
+    let mut out = Vec::with_capacity(points.len() + 1);
+    for (j, &p) in points.iter().enumerate() {
+        let q = points[(j + 1) % points.len()];
+        let (sp, sq) = (side(p), side(q));
+        if sp >= 0.0 {
+            out.push(p);
+        }
+        if (sp >= 0.0) != (sq >= 0.0) {
+            out.push(snap(crossing(p, q, sp, sq)));
+        }
+    }
+    out
+}
+
 /// The convex polygon `points` clipped to the disc of radius `r` at the origin (approximated by
 /// the regular 96-gon inside it): Sutherland–Hodgman against each of its edges. Empty when
 /// nothing is inside.
@@ -161,24 +192,83 @@ pub fn clip_to_disc(points: &[Mm], r: f64) -> Vec<Mm> {
     for i in 0..SIDES {
         let (a, b) = (corner(i), corner(i + 1));
         // Inside: to the left of the edge a -> b (the polygon runs anticlockwise).
-        let side = |p: Mm| (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
-        let input = std::mem::take(&mut out);
-        for (j, &p) in input.iter().enumerate() {
-            let q = input[(j + 1) % input.len()];
-            let (sp, sq) = (side(p), side(q));
-            if sp >= 0.0 {
-                out.push(p);
-            }
-            if (sp >= 0.0) != (sq >= 0.0) {
-                let t = sp / (sp - sq);
-                out.push([p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])]);
-            }
-        }
+        let left = |p: Mm| (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+        out = clip_half_plane(&out, left, |p| p);
         if out.is_empty() {
             break;
         }
     }
     out
+}
+
+/// One side of an axis-aligned clip box: the part where coordinate `axis` is at least `bound`
+/// (`keep_above`) or at most `bound`.
+#[derive(Clone, Copy)]
+struct BoxSide {
+    axis: usize,
+    bound: f64,
+    keep_above: bool,
+}
+
+impl BoxSide {
+    /// The four sides of the box `lo` to `hi`.
+    fn of_box(lo: Mm, hi: Mm) -> [BoxSide; 4] {
+        let side = |axis, bound, keep_above| BoxSide {
+            axis,
+            bound,
+            keep_above,
+        };
+        [
+            side(0, lo[0], true),
+            side(0, hi[0], false),
+            side(1, lo[1], true),
+            side(1, hi[1], false),
+        ]
+    }
+
+    /// Not negative where `p` is on the side to keep.
+    fn depth(self, p: Mm) -> f64 {
+        let over = p[self.axis] - self.bound;
+        if self.keep_above { over } else { -over }
+    }
+
+    /// `p` with the coordinate the side bounds set to the bound itself. A point cut from an edge
+    /// is on the side's line only up to rounding, which at coordinates of 1e30 mm is a distance
+    /// of 1e14 mm: far outside the box, and an outline that long never ends.
+    fn snap(self, mut p: Mm) -> Mm {
+        p[self.axis] = self.bound;
+        p
+    }
+}
+
+/// The convex polygon `points` clipped to the box `lo` to `hi` [mm]. Empty when nothing is
+/// inside (and for a box with `lo` past `hi`); a polygon wholly inside comes back unchanged.
+/// Every point of the result is inside the box.
+fn clip_to_box(points: &[Mm], lo: Mm, hi: Mm) -> Vec<Mm> {
+    let mut out = points.to_vec();
+    for side in BoxSide::of_box(lo, hi) {
+        out = clip_half_plane(&out, |p| side.depth(p), |p| side.snap(p));
+        if out.is_empty() {
+            break;
+        }
+    }
+    out
+}
+
+/// The part of the segment `a` to `b` inside the box `lo` to `hi` [mm], `None` when none is. A
+/// segment wholly inside comes back unchanged; both ends of the result are inside the box.
+fn clip_segment(a: Mm, b: Mm, lo: Mm, hi: Mm) -> Option<[Mm; 2]> {
+    let (mut a, mut b) = (a, b);
+    for side in BoxSide::of_box(lo, hi) {
+        let (da, db) = (side.depth(a), side.depth(b));
+        match (da >= 0.0, db >= 0.0) {
+            (true, true) => {}
+            (false, false) => return None,
+            (true, false) => b = side.snap(crossing(a, b, da, db)),
+            (false, true) => a = side.snap(crossing(a, b, da, db)),
+        }
+    }
+    Some([a, b])
 }
 
 /// A number result that may be text: the number, or NaN.
@@ -491,9 +581,35 @@ fn fill_color(fill: Fill, visuals: &egui::Visuals) -> Color32 {
     }
 }
 
+/// How far beyond the painter's clip rectangle a mark is still built [points]: more than any
+/// stroke is wide, so the edges that cutting a mark to it adds lie off the screen.
+const CLIP_MARGIN: f32 = 16.0;
+
+/// The part of the drawing plane [mm] the painter shows through `t` (the corners `lo` and `hi`):
+/// its clip rectangle, widened by [`CLIP_MARGIN`]. `t.scale` is positive and finite
+/// ([`side_by_side`] returns no transform otherwise).
+fn visible_mm(clip: egui::Rect, t: Transform) -> (Mm, Mm) {
+    let clip = clip.expand(CLIP_MARGIN);
+    let scale = f64::from(t.scale);
+    let x = |px: f32| (f64::from(px) - f64::from(t.origin.x)) / scale;
+    let y = |px: f32| (f64::from(t.origin.y) - f64::from(px)) / scale;
+    (
+        [x(clip.min.x), y(clip.max.y)],
+        [x(clip.max.x), y(clip.min.y)],
+    )
+}
+
 /// Paints one view with `t`. The texts scale with the drawing (drawing.py's 9-point text is
 /// about 0.9 mm on its figure), between 8 and 12 points, so they do not crowd a small drawing.
+///
+/// Areas and centre lines are cut to [`visible_mm`] before they are converted to points and
+/// dashed: a design file or share link can hold any finite slit, and a struct written by hand
+/// any dimension, which make a cut rectangle millions of millimetres long (or a point beyond
+/// f32). Dashed as it stands, such an outline never ends (`Shape::dashed_line` walks it with an
+/// f32 position that stops advancing); cut to the part the painter shows, it costs what the
+/// region's size allows, and the part it shows is the same.
 fn paint_view(painter: &egui::Painter, view: &DrawingView, t: Transform, visuals: &egui::Visuals) {
+    let (lo, hi) = visible_mm(painter.clip_rect(), t);
     let font = egui::FontId::proportional((t.scale * 0.9).clamp(8.0, 12.0));
     let arrow = |from: egui::Pos2, to: egui::Pos2, color: Color32| {
         let stroke = Stroke::new(1.0, color);
@@ -521,6 +637,11 @@ fn paint_view(painter: &egui::Painter, view: &DrawingView, t: Transform, visuals
                 dashed,
                 width,
             } if points.len() >= 3 && points.iter().all(|p| finite(*p)) => {
+                let points = clip_to_box(points, lo, hi);
+                // Nothing of it shows (or its cut overflowed): nothing to paint.
+                if points.len() < 3 || !points.iter().all(|p| finite(*p)) {
+                    continue;
+                }
                 let px: Vec<egui::Pos2> = points.iter().map(|p| t.to_px(*p)).collect();
                 let stroke = Stroke::new(*width, pen_color(*pen, visuals));
                 let fill = fill_color(*fill, visuals);
@@ -534,9 +655,12 @@ fn paint_view(painter: &egui::Painter, view: &DrawingView, t: Transform, visuals
                 }
             }
             Mark::CentreLine { from, to } if finite(*from) && finite(*to) => {
-                let points = [t.to_px(*from), t.to_px(*to)];
-                let stroke = Stroke::new(0.8, pen_color(Pen::Hidden, visuals));
-                painter.extend(egui::Shape::dashed_line(&points, stroke, 8.0, 3.0));
+                let visible = clip_segment(*from, *to, lo, hi);
+                if let Some(line) = visible.filter(|line| line.iter().all(|p| finite(*p))) {
+                    let points = line.map(|p| t.to_px(p));
+                    let stroke = Stroke::new(0.8, pen_color(Pen::Hidden, visuals));
+                    painter.extend(egui::Shape::dashed_line(&points, stroke, 8.0, 3.0));
+                }
             }
             Mark::Dimension {
                 from,
@@ -765,6 +889,99 @@ mod tests {
         assert!(clip_to_disc(&rect(20.0, 20.0, 1.0, 1.0), 10.0).is_empty());
     }
 
+    /// Every point of `points` is inside the box `lo` to `hi`.
+    fn assert_inside(points: &[Mm], lo: Mm, hi: Mm, what: &str) {
+        for p in points {
+            assert!(
+                (lo[0]..=hi[0]).contains(&p[0]) && (lo[1]..=hi[1]).contains(&p[1]),
+                "{what}: {p:?} is outside {lo:?} to {hi:?} in {points:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn clipping_a_polygon_to_a_box_keeps_the_inside_and_bounds_the_rest() {
+        let (lo, hi) = ([-5.0, -3.0], [5.0, 3.0]);
+        // Wholly inside: the same points in the same order.
+        let inside = rect(-1.0, -1.0, 2.0, 2.0);
+        assert_eq!(clip_to_box(&inside, lo, hi), inside);
+        // Wholly outside, and a box that is empty: nothing.
+        assert!(clip_to_box(&rect(6.0, 0.0, 1.0, 1.0), lo, hi).is_empty());
+        assert!(clip_to_box(&inside, hi, lo).is_empty());
+        // A cut rectangle 1e8 mm long (a slit of -1e8): the part inside the box, exactly.
+        let long = clip_to_box(&rect(0.0, -1.0, 1e8, 2.0), lo, hi);
+        assert_eq!(long, rect(0.0, -1.0, 5.0, 2.0));
+        // A rectangle reaching 1e8 mm up and to the right: its corner inside the box.
+        let corner = clip_to_box(&rect(2.0, 1.0, 1e8, 1e8), lo, hi);
+        assert_eq!(corner, rect(2.0, 1.0, 3.0, 2.0));
+        // Past what rounding keeps apart: a coordinate of 1e30 cannot tell where the box's side
+        // is, but no point may land outside the box (a point 1e13 mm off would make an outline
+        // that never ends).
+        for (y0, h) in [
+            (-7e29, 1.7e30),
+            (-1e30, 2e30),
+            (-3e29, 9e29),
+            (-1e300, 2e300),
+        ] {
+            let cut = clip_to_box(&rect(-1e30, y0, 2e30, h), lo, hi);
+            assert!(cut.len() >= 3, "{y0}: {cut:?}");
+            assert_inside(&cut, lo, hi, &format!("{y0}"));
+        }
+    }
+
+    #[test]
+    fn clipping_a_segment_to_a_box() {
+        let (lo, hi) = ([-5.0, -3.0], [5.0, 3.0]);
+        // Wholly inside: unchanged, exactly.
+        let inside = [[-1.0, 0.1], [2.0, 0.3]];
+        assert_eq!(clip_segment(inside[0], inside[1], lo, hi), Some(inside));
+        // Wholly outside, parallel to a side and outside it, and crossing no side inside.
+        assert_eq!(clip_segment([6.0, 0.0], [9.0, 1.0], lo, hi), None);
+        assert_eq!(clip_segment([-9.0, 4.0], [9.0, 4.0], lo, hi), None);
+        assert_eq!(clip_segment([-9.0, 2.0], [-2.0, 9.0], lo, hi), None);
+        // Along an axis and through the box: the part inside, exactly, in either direction.
+        assert_eq!(
+            clip_segment([-1e8, 1.0], [1e8, 1.0], lo, hi),
+            Some([[-5.0, 1.0], [5.0, 1.0]])
+        );
+        assert_eq!(
+            clip_segment([2.0, 1e8], [2.0, -1e8], lo, hi),
+            Some([[2.0, 3.0], [2.0, -3.0]])
+        );
+        // One end inside: the other end moves to the side.
+        assert_eq!(
+            clip_segment([0.0, 0.0], [10.0, 0.0], lo, hi),
+            Some([[0.0, 0.0], [5.0, 0.0]])
+        );
+        // Oblique, through a corner region, and at a size rounding cannot resolve.
+        let [a, b] = clip_segment([-1e30, -1e30], [1e30, 1e30], lo, hi).expect("it crosses");
+        assert_inside(&[a, b], lo, hi, "1e30");
+        let [a, b] = clip_segment([0.0, -1e30], [0.0, 1e30], lo, hi).expect("it crosses");
+        assert_eq!([a, b], [[0.0, -3.0], [0.0, 3.0]]);
+    }
+
+    #[test]
+    fn the_visible_part_of_the_plane_follows_the_transform() {
+        // 2 points per mm, the origin at (100, 200) on the screen, y up.
+        let t = Transform {
+            origin: egui::pos2(100.0, 200.0),
+            scale: 2.0,
+        };
+        let clip = egui::Rect::from_min_max(egui::pos2(90.0, 150.0), egui::pos2(130.0, 210.0));
+        let m = f64::from(CLIP_MARGIN);
+        let (lo, hi) = visible_mm(clip, t);
+        // x: (90 - m - 100) / 2 to (130 + m - 100) / 2; y: (200 - (210 + m)) / 2 to
+        // (200 - (150 - m)) / 2.
+        assert_eq!(lo, [(-10.0 - m) / 2.0, (-10.0 - m) / 2.0]);
+        assert_eq!(hi, [(30.0 + m) / 2.0, (50.0 + m) / 2.0]);
+        // A mark at the screen's corner is inside; one far past it is not.
+        assert_eq!(
+            clip_to_box(&[[-5.0, -5.0], [15.0, -5.0], [5.0, 25.0]], lo, hi).len(),
+            3
+        );
+        assert!(clip_to_box(&rect(1e3, 1e3, 1.0, 1.0), lo, hi).is_empty());
+    }
+
     #[test]
     fn the_default_clamp_is_drawn_with_drawing_py_s_texts() {
         let inputs = DesignInputs::default();
@@ -963,5 +1180,143 @@ mod tests {
             scale = Some(drawing_ui(ui, &drawing, egui::Vec2::ZERO));
         });
         assert_eq!(scale, Some(0.0));
+    }
+
+    /// What one frame of the clamp tab painted: the shapes, the line segments among them (dashes,
+    /// dimension lines and arrowheads), the texts and the circles' radii.
+    struct Painted {
+        shapes: usize,
+        segments: usize,
+        texts: Vec<String>,
+        radii: Vec<f32>,
+    }
+
+    /// One frame of the clamp tab for `inputs` and `results`, run on its own thread: a frame
+    /// that stalls (a dashed line has no end) fails the test after 20 s instead of hanging the
+    /// whole test binary.
+    fn paint_clamp_tab(inputs: DesignInputs, results: DesignResults) -> Painted {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let ctx = egui::Context::default();
+            let output = sized_frame(&ctx, egui::vec2(1000.0, 1400.0), Vec::new(), |ui| {
+                clamp_ui(ui, &inputs, &results)
+            });
+            let shapes = flat_shapes(&output);
+            let painted = Painted {
+                shapes: shapes.len(),
+                segments: shapes
+                    .iter()
+                    .filter(|s| matches!(s, egui::Shape::LineSegment { .. }))
+                    .count(),
+                texts: drawn_texts(&output),
+                radii: shapes
+                    .iter()
+                    .filter_map(|s| match s {
+                        egui::Shape::Circle(c) => Some(c.radius),
+                        _ => None,
+                    })
+                    .collect(),
+            };
+            let _ = sender.send(painted);
+        });
+        match receiver.recv_timeout(std::time::Duration::from_secs(20)) {
+            Ok(painted) => painted,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                panic!("the clamp tab's frame took over 20 s: a mark outside the view stalls it")
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                panic!("the clamp tab's frame panicked")
+            }
+        }
+    }
+
+    /// The drawing was painted (not drawing.py's message), its boss circle at the default
+    /// drawing's scale (the pieces keep their scale), and the frame holds a bounded number of
+    /// shapes: what is outside the drawing's area adds none.
+    fn assert_painted_like_the_default(painted: &Painted, default: &Painted, what: &str) {
+        assert!(
+            painted.texts.iter().any(|t| t == "Ø25 boss"),
+            "{what}: no drawing painted"
+        );
+        assert!(!painted.texts.iter().any(|t| t == NO_SCREW_FITS), "{what}");
+        let boss = default.radii.iter().copied().fold(0.0, f32::max);
+        assert!(boss > 0.0);
+        assert!(
+            painted.radii.contains(&boss),
+            "{what}: the scale moved: {:?} against the boss {boss}",
+            painted.radii
+        );
+        assert!(
+            painted.shapes < 10 * default.shapes,
+            "{what}: {} shapes against the default's {}",
+            painted.shapes,
+            default.shapes
+        );
+    }
+
+    #[test]
+    fn a_slit_far_outside_its_slider_paints_a_bounded_frame() {
+        // A design file or share link can hold any finite slit (session.rs checks no range);
+        // a negative one makes the head-side jaw (grip = 4.26 - slit / 2) and the cut rectangles
+        // built on it astronomically long, past anything the dashed outline can walk.
+        let inputs = DesignInputs::default();
+        let default = paint_clamp_tab(inputs.clone(), compute_all(&inputs));
+        assert!(
+            default.segments > 50,
+            "the default's segments: {}",
+            default.segments
+        );
+        for slit in [-1e7, -1e8, -1e12] {
+            let mut inputs = DesignInputs::default();
+            inputs.clamps.slit_mm = slit;
+            let results = compute_all(&inputs);
+            assert_eq!(
+                results.clamps.index, 3,
+                "slit {slit}: the M4 is still the size"
+            );
+            assert!(clamp_drawing(&inputs, &results).is_ok(), "slit {slit}");
+            let painted = paint_clamp_tab(inputs, results);
+            assert_painted_like_the_default(&painted, &default, &format!("slit {slit}"));
+            // What the cuts show inside the drawing is still dashed.
+            assert!(painted.segments > default.segments / 2, "slit {slit}");
+        }
+    }
+
+    #[test]
+    fn a_clamp_result_far_outside_its_range_paints_a_bounded_frame() {
+        // A struct written by hand (Review Focus 6) can hold a row's dimension of any size, up
+        // to a size whose pixel position is not even a finite f32.
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let default = paint_clamp_tab(inputs.clone(), results.clone());
+        let row = (results.clamps.index - 1) as usize;
+        type Set = fn(&mut DesignResults, usize, f64);
+        let fields: [(&str, Set); 9] = [
+            ("hole_mm", |r, row, x| r.clamps.table[row].hole_mm = x),
+            ("cbore_dia_mm", |r, row, x| {
+                r.clamps.table[row].cbore_dia_mm = x
+            }),
+            ("d_mm", |r, row, x| r.clamps.table[row].d_mm = x),
+            ("grip_mm", |r, row, x| r.clamps.table[row].grip_mm = x),
+            ("offset_mm", |r, row, x| r.clamps.table[row].offset_mm = x),
+            ("tap_drill_mm", |r, row, x| {
+                r.clamps.table[row].tap_drill_mm = x
+            }),
+            ("shaft_mm", |r, _, x| r.clamps.shaft_mm = x),
+            ("layout_first_mm", |r, _, x| {
+                r.clamps.layout_first_mm = NumOrText::Num(x)
+            }),
+            ("layout_pitch_mm", |r, _, x| {
+                r.clamps.layout_pitch_mm = NumOrText::Num(x)
+            }),
+        ];
+        for (name, set) in fields {
+            for x in [1e30, -1e30, 1e300, -1e300] {
+                let mut odd = results.clone();
+                set(&mut odd, row, x);
+                let painted = paint_clamp_tab(inputs.clone(), odd);
+                assert_painted_like_the_default(&painted, &default, &format!("{name} {x:e}"));
+            }
+        }
     }
 }
