@@ -142,6 +142,9 @@ inputs! {
                 "Addendum A6: a grade of the grade table, by exact name (e.g. N42SH, Y30). Used only when the inner part is not in the library: the manual dimensions with the grade's Br at 20 °C and maximum temperature. Blank = the manual Br and no rating."),
             grade_outer: String = "" => param_rust_only("-", "Outer magnet grade (manual dimensions)",
                 "As the inner grade, for the outer ring."),
+            axial_length_mm: Option<f64> = None => param_rust_only("mm", "Axial magnet length, both rings",
+                "Addendum A1. Blank = each ring's part or manual length. A value sets both rings' axial length and keeps everything else each ring has (part or manual cross-section, grade, Br, rating): blocks cut or stacked to length. The calibration factor still follows the part names (Calculator C42), and the retainer span, hub length and cup depth stay inputs (Metal design C172, C123, C124: no rule sizes them, Addendum A decision 28), so recheck them. Inverse sizing's default free variable.")
+                .range(2.0, 50.8, 0.01),
         }
     }
 }
@@ -366,6 +369,7 @@ pub struct ResolvedMagnet {
 /// (Addendum A6, a Rust-only mode) and the manual Br and no rating otherwise.
 /// A library part's Br comes from [`library::br_T`], which applies E3 (the N42SH remanence),
 /// its rating and grade from [`library::tmax_C`] and [`library::grade_id`], which apply E19.
+/// The Rust-only `axial_length_mm` (Addendum A1), when set, replaces both rings' length.
 #[allow(non_snake_case)]
 pub fn resolve_magnets(m: &MagnetInputs, dev: Deviations) -> (ResolvedMagnet, ResolvedMagnet) {
     let resolve =
@@ -399,23 +403,27 @@ pub fn resolve_magnets(m: &MagnetInputs, dev: Deviations) -> (ResolvedMagnet, Re
                 },
             }
         };
+    let with_length = |ring: ResolvedMagnet| match m.axial_length_mm {
+        Some(length_mm) => ResolvedMagnet { length_mm, ..ring },
+        None => ring,
+    };
     (
-        resolve(
+        with_length(resolve(
             &m.part_inner,
             &m.grade_inner,
             m.manual_inner_length_mm,
             m.manual_inner_width_mm,
             m.manual_inner_thickness_mm,
             m.manual_inner_br_T,
-        ),
-        resolve(
+        )),
+        with_length(resolve(
             &m.part_outer,
             &m.grade_outer,
             m.manual_outer_length_mm,
             m.manual_outer_width_mm,
             m.manual_outer_thickness_mm,
             m.manual_outer_br_T,
-        ),
+        )),
     )
 }
 
@@ -1226,6 +1234,50 @@ mod tests {
             select_calibration_factor(0, 10, "B842SH", "B842SH", 10.0, 1.0658, 0.95),
             1.0658
         );
+    }
+
+    #[test]
+    fn the_axial_length_override_sets_both_rings_and_keeps_the_rest() {
+        // Addendum A1: blocks of the parts' cross-section, grade, Br and rating, cut or stacked
+        // to one axial length. Torque ~ L * f_end = L - c_end * pole pitch (the pitch does not
+        // depend on L).
+        let base = at(&CouplingInputs::default());
+        let mut ci = CouplingInputs::default();
+        ci.magnets.axial_length_mm = Some(20.0);
+        let r = at(&ci);
+        assert_eq!(
+            (r.inner_length_mm, r.outer_length_mm, r.active_length_mm),
+            (20.0, 20.0, 20.0)
+        );
+        assert_eq!(
+            (r.inner_width_mm, r.inner_thickness_mm, r.outer_width_mm),
+            (
+                base.inner_width_mm,
+                base.inner_thickness_mm,
+                base.outer_width_mm
+            )
+        );
+        assert_eq!(
+            (r.inner_br_T, r.inner_tmax_C),
+            (base.inner_br_T, base.inner_tmax_C)
+        );
+        assert_eq!((r.inner_grade.as_str(), r.f_cal), ("N42SH", base.f_cal));
+        assert_eq!(r.pole_pitch_mm, base.pole_pitch_mm);
+        let excess = |l: f64| l - CouplingInputs::default().c_end * base.pole_pitch_mm;
+        assert!(close(
+            r.pullout_Nm / base.pullout_Nm,
+            excess(20.0) / excess(12.7)
+        ));
+        // It overrides manual lengths too, and a blank override changes nothing.
+        let mut manual = CouplingInputs::default();
+        manual.magnets.part_inner = String::new();
+        manual.magnets.manual_inner_length_mm = 30.0;
+        manual.magnets.axial_length_mm = Some(15.0);
+        let r = at(&manual);
+        assert_eq!((r.inner_length_mm, r.outer_length_mm), (15.0, 15.0));
+        let mut blank = CouplingInputs::default();
+        blank.magnets.axial_length_mm = None;
+        assert_eq!(at(&blank), base);
     }
 
     #[test]

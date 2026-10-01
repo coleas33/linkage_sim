@@ -59,33 +59,44 @@ fn an_invalid_screw_class_is_nan_not_a_panic() {
 fn compute_all_never_panics_on_extreme_inputs() {
     // Review Focus 3 and 5: typed values far outside the sliders (set() accepts them,
     // as Python does). Results may be inf or NaN; nothing may panic (no integer overflow).
-    let base = DesignInputs::default();
-    let mut tried = 0;
-    for row in input_rows(&base) {
-        let values: Vec<Value> = match (row.meta.ty, row.meta.choices.is_empty()) {
-            (FieldType::F64 | FieldType::OptF64, _) => {
-                let r = row
-                    .meta
-                    .range
-                    .expect("every numeric input has a range (tests/schema.rs)");
-                [0.0, -1.0, r.min / 10.0, r.max * 10.0, 1e300, -1e300]
-                    .map(Value::Num)
-                    .to_vec()
+    // Once with the default steel back iron and once with none (backiron 0): the free-space
+    // circuit is where E17's inputs (b_hub_free_T, b_cup_free_T, web_integral_free_T2m2) act.
+    // compute_all applies every correction.
+    for backiron in [1, 0] {
+        let mut base = DesignInputs::default();
+        base.coupling.backiron = backiron;
+        let mut tried = 0;
+        for row in input_rows(&base) {
+            let values: Vec<Value> = match (row.meta.ty, row.meta.choices.is_empty()) {
+                (FieldType::F64 | FieldType::OptF64, _) => {
+                    let r = row
+                        .meta
+                        .range
+                        .expect("every numeric input has a range (tests/schema.rs)");
+                    [0.0, -1.0, r.min / 10.0, r.max * 10.0, 1e300, -1e300]
+                        .map(Value::Num)
+                        .to_vec()
+                }
+                // 2: Review Focus 3's `coupling.npole = 2` (tan(pi/2) is huge but finite).
+                (FieldType::I64, true) => {
+                    [0, 2, -2, 3, i64::MAX, i64::MIN].map(Value::Int).to_vec()
+                }
+                _ => continue, // selectors: next test; text: any text is valid (manual magnet)
+            };
+            for value in values {
+                let mut inputs = base.clone();
+                inputs
+                    .set(&row.path, value.clone())
+                    .unwrap_or_else(|e| panic!("{e}"));
+                let _ = compute_all(&inputs);
+                tried += 1;
             }
-            // 2: Review Focus 3's `coupling.npole = 2` (tan(pi/2) is huge but finite).
-            (FieldType::I64, true) => [0, 2, -2, 3, i64::MAX, i64::MIN].map(Value::Int).to_vec(),
-            _ => continue, // selectors: next test; text: any text is valid (manual magnet)
-        };
-        for value in values {
-            let mut inputs = base.clone();
-            inputs
-                .set(&row.path, value.clone())
-                .unwrap_or_else(|e| panic!("{e}"));
-            let _ = compute_all(&inputs);
-            tried += 1;
         }
+        assert!(
+            tried > 800,
+            "backiron {backiron}: only {tried} extreme cases"
+        );
     }
-    assert!(tried > 800, "only {tried} extreme cases");
 }
 
 #[test]
@@ -94,7 +105,7 @@ fn compute_all_never_panics_on_non_finite_struct_literals() {
     // a share link can hold one. compute_all must not panic on it (gate 4 is a debug build,
     // overflow checks on), with the corrections off or on; validate() names the one path.
     type Put = fn(&mut DesignInputs, f64);
-    let cases: [(&str, Put); 4] = [
+    let cases: [(&str, Put); 5] = [
         ("metal.face_gap_mm", |i, x| i.metal.face_gap_mm = x),
         ("clamps.boss_od_mm", |i, x| i.clamps.boss_od_mm = x),
         ("temperature.thermal.conductance_W_K", |i, x| {
@@ -102,6 +113,9 @@ fn compute_all_never_panics_on_non_finite_struct_literals() {
         }),
         ("metal.measured_drag_Nm", |i, x| {
             i.metal.measured_drag_Nm = Some(x)
+        }),
+        ("coupling.magnets.axial_length_mm", |i, x| {
+            i.coupling.magnets.axial_length_mm = Some(x)
         }),
     ];
     for x in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
