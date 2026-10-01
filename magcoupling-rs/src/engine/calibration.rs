@@ -19,14 +19,19 @@
 //!   follows the corrected N42SH remanence, 1.30 T), and so is E7 (the τ_n
 //!   harmonic sum, C40-C42, at the maximum over angle), see
 //!   [`crate::engine::deviations::REGISTRY`].
+//! - Addendum A3: the prototype sums the Calculator's harmonic set
+//!   (`coupling.max_harmonic`, passed in), with the Rust-only τ7 to τ11.
 
 use std::f64::consts::PI;
 
 use super::compat::py_min;
 use super::constants::MU0;
 use super::deviations::Deviations;
-use super::meta::{NumOrText, inputs, out, param, results};
-use super::model::{br_factor, corner_radius, peak_angle, tau_at};
+use super::meta::{NumOrText, inputs, out, out_rust_only, param, results};
+use super::model::{
+    ODD_HARMONICS, br_factor, corner_radius, end_effect_check, harmonic_count, harmonic_slot,
+    harmonic_sum, peak_angle, tau_at,
+};
 
 inputs! {
     /// Prototype inputs (Calibration!C5:C25, C47:C48).
@@ -102,9 +107,17 @@ results! {
             br_test_T: f64 => out("T", "Br at assumed test temperature", "", "Calibration!C36"),
             pole_pitch_mm: f64 => out("mm", "Pole pitch", "", "Calibration!C37"),
             f_end: f64 => out("-", "End-effect factor", "", "Calibration!C38"),
+            end_effect_check: String => out_rust_only("", "End-effect model check",
+                "Audit M9 on the prototype: 'End-effect model out of range' when f_end is 0 or below; 'OK' otherwise."),
             tau1_Pa: f64 => out("Pa", "Shear stress, harmonic 1", "", "Calibration!C40"),
             tau3_Pa: f64 => out("Pa", "Shear stress, harmonic 3", "", "Calibration!C41"),
             tau5_Pa: f64 => out("Pa", "Shear stress, harmonic 5", "", "Calibration!C42"),
+            tau7_Pa: f64 => out_rust_only("Pa", "Shear stress, harmonic 7",
+                "Addendum A3: summed when the highest harmonic (coupling.max_harmonic) is 7 or more; 0 otherwise."),
+            tau9_Pa: f64 => out_rust_only("Pa", "Shear stress, harmonic 9",
+                "Summed when the highest harmonic is 9 or more; 0 otherwise."),
+            tau11_Pa: f64 => out_rust_only("Pa", "Shear stress, harmonic 11",
+                "Summed when the highest harmonic is 11; 0 otherwise."),
             torque_2d_Nm: f64 => out("N·m", "2D torque before end and calibration factors", "", "Calibration!C43"),
             original_model_Nm: f64 => out("N·m", "Original model pull-out torque",
                 "Same value as model_torque_Nm.", "Calibration!C44"),
@@ -121,8 +134,9 @@ pub const OUTSIDE_RANGE: &str = "outside range";
 pub const NOT_APPLICABLE: &str = "n.a.";
 
 /// The Calibration sheet. Line by line the Python `calibration.compute`, with
-/// E7 (the τ_n harmonic sum at the maximum over angle) when `dev` has it on.
-pub fn compute(c: &CalibrationInputs, dev: Deviations) -> CalibrationResults {
+/// E7 (the τ_n harmonic sum at the maximum over angle) when `dev` has it on, over
+/// the Calculator's harmonic set `max_harmonic` (`coupling.max_harmonic`, Addendum A3).
+pub fn compute(c: &CalibrationInputs, max_harmonic: i64, dev: Deviations) -> CalibrationResults {
     let poles = c.total_magnets as f64 / 2.0;
     let r_face = c.apothem_mm + c.magnet_thickness_mm;
     let r_corner = corner_radius(r_face, c.magnet_width_mm);
@@ -159,15 +173,31 @@ pub fn compute(c: &CalibrationInputs, dev: Deviations) -> CalibrationResults {
             / 2.0
     };
 
-    // E7: every harmonic at the true pull-out angle when half a pitch is not the maximum.
-    let amps = [amp_n(1), amp_n(3), amp_n(5)];
-    let peak = peak_angle(amps, dev);
+    // Addendum A3: the Calculator's harmonic set, so the one-point correction compares like
+    // with like (the workbook's 1, 3, 5 by default). E7: every harmonic at the true pull-out
+    // angle when half a pitch is not the maximum.
+    let count = harmonic_count(max_harmonic);
+    let amps: Vec<f64> = ODD_HARMONICS[..count.unwrap_or(0)]
+        .iter()
+        .map(|&n| amp_n(n))
+        .collect();
+    let peak = peak_angle(&amps, dev);
     let tau_n = |a: f64, n: u32| match peak {
         Some(x) => tau_at(a, n, x),
         None => a * (f64::from(n) * PI / 2.0).sin(), // the workbook expression, bit for bit
     };
-    let (t1, t3, t5) = (tau_n(amps[0], 1), tau_n(amps[1], 3), tau_n(amps[2], 5));
-    let t2d = (t1 + t3 + t5) * 2.0 * PI * (r_g / 1000.0).powi(2) * (c.magnet_length_mm / 1000.0);
+    let taus: Vec<f64> = amps
+        .iter()
+        .zip(ODD_HARMONICS)
+        .map(|(&a, n)| tau_n(a, n))
+        .collect();
+    let t = |i: usize| harmonic_slot(count, &taus, i);
+    // (t1 + t3 + t5) in the workbook: the same left fold.
+    let t2d = harmonic_sum(count, taus.iter().copied())
+        * 2.0
+        * PI
+        * (r_g / 1000.0).powi(2)
+        * (c.magnet_length_mm / 1000.0);
     let model = t2d * f_end * c.f_cal_original;
     let (interp, interp_err) = if (1.0..=1.5).contains(&corner_gap) {
         let interp =
@@ -201,9 +231,13 @@ pub fn compute(c: &CalibrationInputs, dev: Deviations) -> CalibrationResults {
         br_test_T: br_t,
         pole_pitch_mm: tau_p,
         f_end,
-        tau1_Pa: t1,
-        tau3_Pa: t3,
-        tau5_Pa: t5,
+        end_effect_check: end_effect_check(f_end).to_owned(),
+        tau1_Pa: t(0),
+        tau3_Pa: t(1),
+        tau5_Pa: t(2),
+        tau7_Pa: t(3),
+        tau9_Pa: t(4),
+        tau11_Pa: t(5),
         torque_2d_Nm: t2d,
         original_model_Nm: model,
         fea_interp_Nm: interp,
@@ -214,6 +248,7 @@ pub fn compute(c: &CalibrationInputs, dev: Deviations) -> CalibrationResults {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::model::WORKBOOK_MAX_HARMONIC;
 
     #[test]
     fn default_design_reproduces_the_bench_correction() {
@@ -223,7 +258,7 @@ mod tests {
             br_T: 1.29,
             ..CalibrationInputs::default()
         };
-        let r = compute(&workbook, Deviations::NONE);
+        let r = compute(&workbook, WORKBOOK_MAX_HARMONIC, Deviations::NONE);
         assert!((r.model_torque_Nm - 1.6044531397852).abs() < 1e-12);
         assert!((r.f_cal_updated - 1.06578369763353).abs() < 1e-12);
         assert_eq!(r.poles_per_ring, 10.0);
@@ -234,12 +269,52 @@ mod tests {
     }
 
     #[test]
+    fn the_harmonic_set_reaches_the_prototype_model() {
+        // Addendum A3: the prototype's model sums the same harmonics as the Calculator, so the
+        // one-point correction compares like with like. A left-out harmonic reads 0.
+        let c = CalibrationInputs::default();
+        let (one, workbook, eleven) = (
+            compute(&c, 1, Deviations::NONE),
+            compute(&c, WORKBOOK_MAX_HARMONIC, Deviations::NONE),
+            compute(&c, 11, Deviations::NONE),
+        );
+        assert_eq!((one.tau3_Pa, one.tau5_Pa, one.tau7_Pa), (0.0, 0.0, 0.0));
+        assert_eq!(one.tau1_Pa, workbook.tau1_Pa);
+        assert_eq!(
+            (workbook.tau7_Pa, workbook.tau9_Pa, workbook.tau11_Pa),
+            (0.0, 0.0, 0.0)
+        );
+        assert!(eleven.tau7_Pa != 0.0 && eleven.tau11_Pa != 0.0);
+        let sum = [
+            eleven.tau1_Pa,
+            eleven.tau3_Pa,
+            eleven.tau5_Pa,
+            eleven.tau7_Pa,
+            eleven.tau9_Pa,
+            eleven.tau11_Pa,
+        ]
+        .iter()
+        .fold(0.0, |acc, t| acc + t);
+        assert_eq!(
+            eleven.torque_2d_Nm,
+            sum * 2.0
+                * PI
+                * (eleven.gap_radius_mm / 1000.0).powi(2)
+                * (c.magnet_length_mm / 1000.0)
+        );
+        assert!(eleven.model_torque_Nm != workbook.model_torque_Nm);
+        // A code outside the choices: NaN, never another set (decision D3).
+        let invalid = compute(&c, 4, Deviations::NONE);
+        assert!(invalid.model_torque_Nm.is_nan() && invalid.tau1_Pa.is_nan());
+    }
+
+    #[test]
     fn corner_definition_uses_the_spacing_as_the_corner_gap() {
         let c = CalibrationInputs {
             gap_definition: 0,
             ..CalibrationInputs::default()
         };
-        let r = compute(&c, Deviations::ALL);
+        let r = compute(&c, WORKBOOK_MAX_HARMONIC, Deviations::ALL);
         assert_eq!(r.corner_gap_mm, c.spacing_mm);
         assert!(
             r.flat_gap_mm > c.spacing_mm,
@@ -261,7 +336,7 @@ mod tests {
                 spacing_mm: spacing,
                 ..CalibrationInputs::default()
             };
-            let r = compute(&c, Deviations::ALL);
+            let r = compute(&c, WORKBOOK_MAX_HARMONIC, Deviations::ALL);
             match (inside, r.fea_interp_Nm, r.fea_interp_error) {
                 (true, NumOrText::Num(_), NumOrText::Num(_)) => {}
                 (false, NumOrText::Text(OUTSIDE_RANGE), NumOrText::Text(NOT_APPLICABLE)) => {}
@@ -278,10 +353,32 @@ mod tests {
                 spacing_mm: spacing,
                 ..CalibrationInputs::default()
             };
-            compute(&c, Deviations::ALL).fea_interp_Nm
+            compute(&c, WORKBOOK_MAX_HARMONIC, Deviations::ALL).fea_interp_Nm
         };
         assert_eq!(at(1.0), NumOrText::Num(2.06));
         assert_eq!(at(1.5), NumOrText::Num(1.7));
+    }
+
+    #[test]
+    fn a_short_prototype_flags_the_end_effect_model() {
+        // Audit M9 on the prototype: the same end-effect factor, the same flag.
+        let r = compute(
+            &CalibrationInputs::default(),
+            WORKBOOK_MAX_HARMONIC,
+            Deviations::NONE,
+        );
+        assert_eq!(r.end_effect_check, "OK");
+        let c = CalibrationInputs {
+            magnet_length_mm: 2.0,
+            c_end: 0.5,
+            ..CalibrationInputs::default()
+        };
+        let r = compute(&c, WORKBOOK_MAX_HARMONIC, Deviations::NONE);
+        assert!(r.f_end < 0.0, "{}", r.f_end);
+        assert_eq!(
+            r.end_effect_check,
+            crate::engine::model::END_EFFECT_OUT_OF_RANGE
+        );
     }
 
     #[test]
@@ -291,7 +388,7 @@ mod tests {
             total_magnets: 40,
             ..CalibrationInputs::default()
         };
-        let r = compute(&c, Deviations::ALL);
+        let r = compute(&c, WORKBOOK_MAX_HARMONIC, Deviations::ALL);
         assert_eq!((r.fill_inner, r.fill_outer), (1.0, 1.0));
     }
 }

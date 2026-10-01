@@ -16,7 +16,7 @@
 use super::compat::{ceiling, fmt_fixed};
 use super::deviations::{DeviationId, Deviations};
 use super::material_library::PartProperties;
-use super::meta::{inputs, out, out_rust_only, param, param_rust_only, results};
+use super::meta::{NumOrText, inputs, out, out_rust_only, param, param_rust_only, results};
 
 inputs! {
     /// 4140 steel properties (Materials!C13:C19).
@@ -184,6 +184,8 @@ results! {
             cup_wall_check: String => out("", "Cup wall check",
                 "A thicker corner wall grows the cup OD by twice the change; recheck the cap thread and envelope.",
                 "Materials!C22"),
+            cup_wall_suggested_mm: NumOrText => out_rust_only("mm", "Suggested cup wall at the pocket corners (autofit)",
+                "Addendum A1 autofit, decision 27: the wall check's rule, the back-iron thickness needed rounded up to 0.1 mm (the number the check's advice quotes). The wall stays an input (Metal design C122). 'n/a' when the check reads 'No back iron'."),
             hub_flats_under_mm: f64 => out("mm", "Machine the hub flats under by", "On the apothem.", "Materials!C27"),
             cup_pockets_over_mm: f64 => out("mm", "Machine the cup pockets over by", "On the apothem.", "Materials!C28"),
             bores_over_dia_mm: f64 => out("mm", "Machine bores over (on diameter)", "", "Materials!C29"),
@@ -197,6 +199,10 @@ results! {
     }
 }
 
+/// Text of `materials.cup_wall_suggested_mm` when the wall check reads "No back iron":
+/// no magnetic rule sizes an aluminium cup's wall.
+pub const NO_WALL_RULE: &str = "n/a";
+
 /// Cup wall check against the back-iron need, and electroless-nickel pre-plate offsets.
 /// `backiron` is the Calculator selector C6 in effect (1 steel, 0 none); only E9
 /// reads it. `parts` names the materials in effect (Rust-only results).
@@ -208,14 +214,17 @@ pub fn compute(
     parts: &PartProperties,
     dev: Deviations,
 ) -> MaterialsResults {
-    let check = if dev.is_on(DeviationId::E9) && backiron == 0 {
+    // Addendum A1 autofit (decision 27): the rule's wall, the number the advice quotes.
+    let suggested = ceiling(t_bi_req_mm, 0.1);
+    let no_back_iron = dev.is_on(DeviationId::E9) && backiron == 0;
+    let check = if no_back_iron {
         "No back iron".to_owned() // as the Calculator's C105/C106 read
     } else if wall_corner_mm >= t_bi_req_mm {
         "OK".to_owned()
     } else {
         format!(
             "Too thin: raise Metal design C122 to at least {} mm",
-            fmt_fixed(ceiling(t_bi_req_mm, 0.1), 1)
+            fmt_fixed(suggested, 1)
         )
     };
     let t = mat.nickel.thickness_mm;
@@ -223,6 +232,11 @@ pub fn compute(
         backiron_thickness_needed_mm: t_bi_req_mm,
         cup_wall_corner_mm: wall_corner_mm,
         cup_wall_check: check,
+        cup_wall_suggested_mm: if no_back_iron {
+            NumOrText::Text(NO_WALL_RULE)
+        } else {
+            NumOrText::Num(suggested)
+        },
         hub_flats_under_mm: t,
         cup_pockets_over_mm: t,
         bores_over_dia_mm: 2.0 * t,
@@ -268,6 +282,42 @@ mod tests {
             compute(&mat, 1.90415278222222, 1.8, 1, &parts(), Deviations::NONE).cup_wall_check,
             "Too thin: raise Metal design C122 to at least 2.0 mm" // Materials!C22
         );
+    }
+
+    #[test]
+    fn the_wall_suggestion_is_the_number_the_advice_quotes() {
+        // Addendum A1 autofit, decision 27: the wall stays an input and the rule's wall is a
+        // suggestion, the back-iron need rounded up to 0.1 mm (the advice's own number).
+        let mat = MaterialsInputs::default();
+        let r = compute(&mat, 1.90415278222222, 1.8, 1, &parts(), Deviations::NONE);
+        assert_eq!(r.cup_wall_suggested_mm, NumOrText::Num(2.0));
+        assert_eq!(
+            r.cup_wall_check,
+            "Too thin: raise Metal design C122 to at least 2.0 mm"
+        );
+        // The suggestion does not depend on the wall, and a need of exactly 1.9 mm stays 1.9 mm
+        // (the 1e-12 guard of `ceiling`): 19 steps of 0.1, as Excel's CEILING gives it.
+        let r = compute(&mat, 1.90415278222222, 2.5, 1, &parts(), Deviations::NONE);
+        assert_eq!(
+            (r.cup_wall_suggested_mm, r.cup_wall_check.as_str()),
+            (NumOrText::Num(2.0), "OK")
+        );
+        let r = compute(&mat, 1.9, 1.8, 1, &parts(), Deviations::NONE);
+        assert_eq!(r.cup_wall_suggested_mm, NumOrText::Num(19.0 * 0.1));
+        assert_eq!(
+            r.cup_wall_check,
+            "Too thin: raise Metal design C122 to at least 1.9 mm"
+        );
+        // No back iron (E9): no magnetic rule, as the check reads "No back iron"; without E9 the
+        // workbook still advises a wall, and so does the suggestion.
+        let e9 = Deviations::only(DeviationId::E9);
+        let r = compute(&mat, 1.90415278222222, 1.8, 0, &parts(), e9);
+        assert_eq!(
+            (r.cup_wall_suggested_mm, r.cup_wall_check.as_str()),
+            (NumOrText::Text(NO_WALL_RULE), "No back iron")
+        );
+        let r = compute(&mat, 1.90415278222222, 1.8, 0, &parts(), Deviations::NONE);
+        assert_eq!(r.cup_wall_suggested_mm, NumOrText::Num(2.0));
     }
 
     #[test]

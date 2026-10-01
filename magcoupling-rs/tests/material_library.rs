@@ -11,7 +11,7 @@ use magcoupling::engine::material_library::{
 };
 use magcoupling::engine::materials::{AL6061, Steel4140};
 use magcoupling::engine::metal_design::MetalDesignInputs;
-use magcoupling::engine::temperature::{SlipLossInputs, ThermalInputs};
+use magcoupling::engine::temperature::{AL_HUB_MODULUS_GPA, SlipLossInputs, ThermalInputs};
 
 /// Decision 6 A re-sources the 416 expansion coefficient (the data file keeps a placeholder).
 const RA_416: &str = "https://www.rolledalloys.com/wp-content/uploads/416_stainless-steel-data-sheet-rolled-alloys.pdf";
@@ -109,7 +109,15 @@ fn materials_equal_the_addendum_data_file() {
             "{id} engine sigma"
         );
         assert_eq!(e.cp_J_kgK, engine_expected(j, "cp_J_kgK"), "{id} engine cp");
-        assert_eq!(e.modulus_GPa, engine_expected(j, "E_GPa"), "{id} engine E");
+        // Decision A2-6: 6061-T6's engine modulus is E18's registered 68.9 GPa (Alliance), so
+        // a 6061 back iron equals the default aluminium body; its sourced value (Kaiser 68.3)
+        // is compared with the data file above.
+        let modulus = if id == "6061_T6" {
+            AL_HUB_MODULUS_GPA
+        } else {
+            engine_expected(j, "E_GPa")
+        };
+        assert_eq!(e.modulus_GPa, modulus, "{id} engine E");
         assert!(
             close(
                 e.density_g_mm3,

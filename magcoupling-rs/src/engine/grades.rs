@@ -16,9 +16,10 @@
 //! E20 the Hcj and beta of each ring's grade (the demagnetization block checks
 //! both rings; the weaker governs, A-1 plan decision A13).
 //! Hcb, (BH)max, mu_rec, the coefficient ranges and the reference beta are for
-//! display. alpha(Br) and density are recorded but not read: the calculator
-//! keeps its single alpha input (Calibration!C22) and the NdFeB magnet density
-//! for every magnet (decision table of the A-1 plan).
+//! display. alpha(Br) and density are read for a ring in the grade mode (manual
+//! dimensions with a grade: Addendum A-2 decision A2-7); a library part (every one
+//! sintered NdFeB, whose grade values equal them) keeps the calculator's single alpha
+//! (Calibration!C22) and the NdFeB density.
 
 /// K&J Magnetics, Neodymium Magnet Specifications & Tolerances (the NdFeB basis, decision D1/1).
 pub const KJ_SPECS: &str = "https://www.kjmagnetics.com/neodymium-magnet-specifications.asp";
@@ -90,7 +91,7 @@ pub struct Grade {
     pub hcb_kA_m: f64,
     /// Maximum energy product [kJ/m³] (display).
     pub bhmax_kJ_m3: f64,
-    /// Reversible temperature coefficient of Br [1/°C] (recorded, not read).
+    /// Reversible temperature coefficient of Br [1/°C] (read in the grade mode, decision A2-7).
     pub alpha_br_per_C: f64,
     /// beta(Hcj) the engine uses with E20 [1/°C]: the reference value, except
     /// N42SH, which keeps the workbook's -0.005 (decision 18 A).
@@ -104,7 +105,7 @@ pub struct Grade {
     pub mu_rec: Option<f64>,
     /// Maximum operating temperature [°C] (the calibration rating of the demag block).
     pub tmax_C: f64,
-    /// Density [g/mm³] (recorded, not read).
+    /// Density [g/mm³] (read in the grade mode, decision A2-7).
     pub density_g_mm3: f64,
     pub sources: GradeSources,
     /// The report's resolutions (R#) and flags for this grade.

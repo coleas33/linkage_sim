@@ -166,14 +166,19 @@ fn every_selector_is_an_integer_with_its_default_among_the_choices() {
 }
 
 #[test]
-fn assumptions_are_numeric_inputs_with_sliders() {
+fn assumptions_are_numeric_inputs_with_sliders_or_selectors() {
+    // Addendum A3: every assumption but the harmonic set is a number with a slider; the
+    // harmonic set (`coupling.max_harmonic`) is a selector of odd harmonics.
     for row in input_rows(&DesignInputs::default())
         .iter()
         .filter(|r| r.meta.assumption)
     {
+        let slider =
+            matches!(row.meta.ty, FieldType::F64 | FieldType::I64) && row.meta.range.is_some();
+        let selector = row.meta.ty == FieldType::I64 && !row.meta.choices.is_empty();
         assert!(
-            matches!(row.meta.ty, FieldType::F64 | FieldType::I64) && row.meta.range.is_some(),
-            "{}: an assumption is a numeric input with a range",
+            slider || selector,
+            "{}: an assumption is a numeric input with a range, or a selector",
             row.path
         );
     }

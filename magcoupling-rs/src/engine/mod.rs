@@ -10,18 +10,21 @@
 //! - [`deviations`]: the registry of approved corrections to the workbook.
 
 pub mod api;
+pub mod assumptions;
 pub mod calibration;
 pub mod clamps;
 pub mod compat;
 pub mod constants;
 pub mod deviations;
 pub mod grades;
+pub mod housing;
 pub mod library;
 pub mod material_library;
 pub mod materials;
 pub mod meta;
 pub mod metal_design;
 pub mod model;
+pub mod sizing;
 pub mod sweeps;
 pub mod temperature;
 pub mod warnings;

@@ -16,7 +16,7 @@ use std::f64::consts::PI;
 use super::compat::py_max;
 use super::deviations::{DeviationId, Deviations};
 use super::meta::{NumOrText, inputs, out, param, results};
-use super::model::{br_factor, corner_radius};
+use super::model::{br_factor, corner_radius, ring_pair_factor};
 
 inputs! {
     /// Metal design inputs (Metal design!C7:C190).
@@ -373,7 +373,10 @@ pub fn retainers(
 /// cold limits, the radial clearance stack, duty, the axial stack, the optional
 /// aluminium adapter and the hybrid mass. `ret` is [`retainers`]' result;
 /// `cup_density_g_mm3` is the density the mass model gives the web
-/// (`model::cup_boss_density`), read only by E16.
+/// (`model::cup_boss_density`), read only by E16. `alpha_br` is the calculator's single
+/// alpha (C17; the prototype's baseline C151); `alpha_inner` and `alpha_outer` are each
+/// ring's (decision A2-7: a grade-mode ring's grade, else `alpha_br`), and the torques go with
+/// their product.
 #[allow(non_snake_case, clippy::too_many_arguments)] // Python names and signature
 pub fn compute(
     md: &MetalDesignInputs,
@@ -381,6 +384,8 @@ pub fn compute(
     torque_20C_Nm: f64,
     op_temp_C: f64,
     alpha_br: f64,
+    alpha_inner: f64,
+    alpha_outer: f64,
     corner_gap_mm: f64,
     face_gap_mm: f64,
     cup_od_mm: f64,
@@ -397,7 +402,14 @@ pub fn compute(
     dev: Deviations,
 ) -> MetalDesignResults {
     let th = |T: f64| br_factor(alpha_br, T); // Python lambda th
-    let cold = torque_20C_Nm * th(md.min_temp_C).powi(2);
+    // Decision A2-7: torque ~ Br_i(T) Br_o(T), each ring with its coefficient; with one
+    // coefficient these are th(T)**2 and (th(a) / th(b))**2, bit for bit.
+    let th2 = |T: f64| ring_pair_factor(alpha_inner, alpha_outer, T);
+    let ratio2 = |a: f64, b: f64| {
+        (br_factor(alpha_inner, a) / br_factor(alpha_inner, b))
+            * (br_factor(alpha_outer, a) / br_factor(alpha_outer, b))
+    };
+    let cold = torque_20C_Nm * th2(md.min_temp_C);
     let hot_low = torque_op_Nm * (1.0 - md.variation);
     let cold_high = cold * (1.0 + md.variation);
     let clearance = (ret.liner_id_mm - ret.sleeve_od_mm) / 2.0;
@@ -434,7 +446,7 @@ pub fn compute(
     let removed =
         PI / 4.0 * (md.adapter_pilot_dia_mm.powi(2) - bore_mm.powi(2)) * md.web_mm * web_density;
     let hybrid = mass_total_g - boss_mass_g - removed + adapter + md.adapter_hardware_g;
-    let cold_for_min = md.required_min_Nm * (th(md.min_temp_C) / th(op_temp_C)).powi(2);
+    let cold_for_min = md.required_min_Nm * ratio2(md.min_temp_C, op_temp_C);
     MetalDesignResults {
         torque_op_Nm,
         torque_20C_Nm,
@@ -450,7 +462,7 @@ pub fn compute(
         running_clearance_mm: min_run,
         op_temp_C,
         alpha_br_per_C: alpha_br,
-        required_20C_Nm: md.required_min_Nm / (th(op_temp_C).powi(2) * (1.0 - md.variation)),
+        required_20C_Nm: md.required_min_Nm / (th2(op_temp_C) * (1.0 - md.variation)),
         hot_margin: torque_op_Nm / md.required_min_Nm - 1.0,
         corner_gap_mm,
         sleeve_liner_clearance_mm: clearance,
@@ -467,7 +479,7 @@ pub fn compute(
         magnetic_cycles: slip_f * md.slip_event_s * md.life_events,
         slip_loss_W: loss,
         slip_energy_J: energy,
-        required_20C_zero_scatter_Nm: md.required_min_Nm / th(op_temp_C).powi(2),
+        required_20C_zero_scatter_Nm: md.required_min_Nm / th2(op_temp_C),
         torque_cold_zero_var_Nm: cold,
         axial_stack_mm: stack,
         rotating_od_mm: rot_od,
@@ -513,6 +525,71 @@ mod tests {
     use super::*;
 
     #[test]
+    fn each_ring_scales_the_torque_with_its_own_coefficient() {
+        // Decision A2-7: torque goes with Br_inner * Br_outer, each ring with its coefficient;
+        // with one coefficient the products are the workbook's squares, bit for bit.
+        let ret = RetainerResults {
+            retainer_span_mm: 14.5,
+            retainers_g: 3.131,
+            sleeve_id_mm: 27.436,
+            sleeve_od_mm: 27.636,
+            liner_od_mm: 29.39,
+            liner_id_mm: 28.99,
+            endplate_od_mm: 27.436,
+            cap_g: 2.322,
+            endplates_g: 6.653,
+        };
+        let run = |alpha_inner: f64, alpha_outer: f64| {
+            compute(
+                &MetalDesignInputs::default(),
+                2.6473,
+                2.8487,
+                50.0,
+                -0.0012,
+                alpha_inner,
+                alpha_outer,
+                1.0268,
+                1.4,
+                41.2,
+                10,
+                10.0,
+                5.0,
+                0.95,
+                173.79,
+                30.778,
+                &ret,
+                0.9,
+                20.0,
+                0.00785,
+                Deviations::NONE,
+            )
+        };
+        let md = MetalDesignInputs::default();
+        let th = |alpha: f64, t: f64| br_factor(alpha, t);
+        let one = run(-0.0012, -0.0012);
+        assert_eq!(
+            one.torque_cold_Nm,
+            2.8487 * th(-0.0012, md.min_temp_C).powi(2)
+        );
+        assert_eq!(
+            one.cold_for_hot_min_Nm,
+            md.required_min_Nm * (th(-0.0012, md.min_temp_C) / th(-0.0012, 50.0)).powi(2)
+        );
+        let mixed = run(-0.002, -0.0012);
+        assert_eq!(
+            mixed.torque_cold_Nm,
+            2.8487 * (th(-0.002, md.min_temp_C) * th(-0.0012, md.min_temp_C))
+        );
+        assert_eq!(
+            mixed.required_20C_zero_scatter_Nm,
+            md.required_min_Nm / (th(-0.002, 50.0) * th(-0.0012, 50.0))
+        );
+        // The prototype's baseline (C151) keeps the calculator's alpha: B842SH rings.
+        assert_eq!(mixed.noiron_baseline_hot_Nm, one.noiron_baseline_hot_Nm);
+        assert_eq!(mixed.alpha_br_per_C, -0.0012);
+    }
+
+    #[test]
     fn checks_take_the_python_branch_at_exact_equality() {
         // Architecture section 7 step 8. Neither left-hand side (hot_low, min_run) reads its
         // right-hand side, so one run supplies it and a second run puts the check at equality.
@@ -534,6 +611,8 @@ mod tests {
                 2.6473,
                 2.8487,
                 50.0,
+                -0.0012,
+                -0.0012,
                 -0.0012,
                 1.0268,
                 1.4,

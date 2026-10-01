@@ -6,17 +6,22 @@
 //! `harmonic_amplitude`, `shear_stress`, shared with the sweeps). Two formulas
 //! several sheets share live here once, so they stay bit-identical everywhere:
 //! `corner_radius` (√(r_face² + (w/2)²)) and `br_factor` (1 + α (T − 20 °C)).
-//! `mass_estimate` (Calculator rows 110-115) is ported with `MassResults`.
+//! `mass_estimate` (Calculator rows 110-115) is ported with `MassResults`. A ring in the
+//! grade mode (manual dimensions with a grade) takes its grade's alpha(Br) and density
+//! (Addendum A-2 decision A2-7, [`ResolvedMagnet::alpha_br`], [`ResolvedMagnet::density_g_mm3`]).
 //!
-//! The harmonic set is the workbook's fixed 1, 3, 5 ([`HARMONICS`]); selecting
-//! more harmonics belongs to the Addendum A engine plan.
+//! The harmonic set is the Rust-only assumption `coupling.max_harmonic` (Addendum A3):
+//! the odd harmonics 1, 3, ... up to 11 ([`ODD_HARMONICS`], [`harmonic_count`]), the
+//! workbook's 1, 3, 5 ([`HARMONICS`]) by default. The Calculator, the sweeps and the
+//! Calibration prototype sum the same set.
 //!
 //! Deviations touching this sheet (see
 //! [`crate::engine::deviations::REGISTRY`]): applied are E3 (the N42SH
 //! remanence, via `resolve_magnets`, and the manual Br defaults C17 and C27),
 //! E6 (Calculator!C63, the ring wall at the flats without the outer
 //! bondline), E7 (pull-out at the maximum over angle,
-//! [`peak_off_half_pitch`]; `peak_angle`, the one E7 gate, and `tau_at`, shared
+//! [`peak_off_half_pitch`], one search for any odd harmonic set up to 11, decision 29 A;
+//! `peak_angle`, the one E7 gate, and `tau_at`, shared
 //! with the sweeps and Calibration through `at_pull_out` or directly), E8
 //! (arc mode: Calculator!C9 from the corner radius C55, the round pocket in
 //! C111), E9 (no back iron: aluminium cup and boss in C111 and C113, as the
@@ -35,8 +40,74 @@ use super::meta::{NumOrText, inputs, out, out_rust_only, param, param_rust_only,
 /// The odd space harmonics the model sums (the workbook's set).
 pub const HARMONICS: [u32; 3] = [1, 3, 5];
 
+/// The odd space harmonics the E7 peak search handles, 1 to 11 (Addendum A3: "selectable
+/// up to 11"); amplitude `a[i]` of [`peak_off_half_pitch`] belongs to `ODD_HARMONICS[i]`.
+pub const ODD_HARMONICS: [u32; 6] = [1, 3, 5, 7, 9, 11];
+
+/// The workbook's highest harmonic: the default of `coupling.max_harmonic`, the set [`HARMONICS`].
+pub const WORKBOOK_MAX_HARMONIC: i64 = 5;
+
+/// The choices of `coupling.max_harmonic` (Addendum A3): the highest odd harmonic summed.
+pub const MAX_HARMONIC_CHOICES: [(i64, &str); 6] = [
+    (1, "1"),
+    (3, "1, 3"),
+    (5, "1, 3, 5 (workbook)"),
+    (7, "1, 3, 5, 7"),
+    (9, "1, 3, 5, 7, 9"),
+    (11, "1, 3, 5, 7, 9, 11"),
+];
+
+/// How many harmonics of [`ODD_HARMONICS`] the model sums for a `max_harmonic` code (3 for
+/// the workbook's 5); `None` for a code outside [`MAX_HARMONIC_CHOICES`] (decision D3: every
+/// harmonic sum is then NaN, never another set).
+pub fn harmonic_count(max_harmonic: i64) -> Option<usize> {
+    MAX_HARMONIC_CHOICES
+        .iter()
+        .position(|&(code, _)| code == max_harmonic)
+        .map(|i| i + 1)
+}
+
+/// Σ `terms` of the harmonic set, a left fold from 0 as Python's `sum()`; NaN when the set
+/// is invalid (`count` is `None`, [`harmonic_count`]).
+pub(crate) fn harmonic_sum(count: Option<usize>, terms: impl Iterator<Item = f64>) -> f64 {
+    match count {
+        Some(_) => terms.fold(0.0, |acc, t| acc + t),
+        None => f64::NAN,
+    }
+}
+
+/// What the per-harmonic cell of `ODD_HARMONICS[i]` shows: `terms[i]` when the set sums
+/// that harmonic, 0 when the set leaves it out, NaN when the set is invalid.
+pub(crate) fn harmonic_slot(count: Option<usize>, terms: &[f64], i: usize) -> f64 {
+    match count {
+        Some(_) => terms.get(i).copied().unwrap_or(0.0),
+        None => f64::NAN,
+    }
+}
+
 /// Text of the maximum-temperature cells when the magnet is not a library part.
 pub const NOT_IN_LIBRARY: &str = "n/a";
+
+/// Text of the end-effect checks (`model.end_effect_check`, `calibration.end_effect_check`)
+/// when f_end = 1 − c_end · pole pitch / L is 0 or below. Audit M9: the empirical form turns
+/// negative for short magnets, and the pull-out with it; the user's decision (2026-09-30) is
+/// a flag, no physics change (the GUI greys the numbers computed from the pull-out).
+pub const END_EFFECT_OUT_OF_RANGE: &str = "End-effect model out of range";
+
+/// Whether an end-effect factor is inside the model's range (positive; NaN is not). The
+/// sweep rows' `f_end` column and inverse sizing use it too.
+pub fn end_effect_in_range(f_end: f64) -> bool {
+    f_end > 0.0
+}
+
+/// "OK" or [`END_EFFECT_OUT_OF_RANGE`], by [`end_effect_in_range`].
+pub fn end_effect_check(f_end: f64) -> &'static str {
+    if end_effect_in_range(f_end) {
+        "OK"
+    } else {
+        END_EFFECT_OUT_OF_RANGE
+    }
+}
 
 inputs! {
     /// Magnet parts and the manual fallbacks (Calculator!C11:C27).
@@ -73,6 +144,9 @@ inputs! {
                 "Addendum A6: a grade of the grade table, by exact name (e.g. N42SH, Y30). Used only when the inner part is not in the library: the manual dimensions with the grade's Br at 20 °C and maximum temperature. Blank = the manual Br and no rating."),
             grade_outer: String = "" => param_rust_only("-", "Outer magnet grade (manual dimensions)",
                 "As the inner grade, for the outer ring."),
+            axial_length_mm: Option<f64> = None => param_rust_only("mm", "Axial magnet length, both rings",
+                "Addendum A1. Blank = each ring's part or manual length. A value sets both rings' axial length and keeps everything else each ring has (part or manual cross-section, grade, Br, rating): blocks cut or stacked to length. The calibration factor still follows the part names (Calculator C42). The hub length, cup cavity depth and retainer span follow the length change (Metal design C123 with the inner ring, C124 with the outer ring, C172 with the longer ring; each at least its ring's length: decision A2-8), so both axial stacks and the space claim follow; housing.* shows them. Inverse sizing's default free variable.")
+                .range(2.0, 50.8, 0.01),
         }
     }
 }
@@ -104,6 +178,10 @@ inputs! {
             c_end: f64 = 0.15 => param("-", "End-effect coefficient",
                 "f_end = 1 − c_end · pole pitch / L.", "Calculator!C41")
                 .range(0.0, 0.5, 0.005)
+                .assumption(),
+            max_harmonic: i64 = WORKBOOK_MAX_HARMONIC => param_rust_only("-", "Highest odd harmonic summed",
+                "Addendum A3 assumption. The torque model sums the odd space harmonics 1, 3, ... up to this one: the pull-out, the two circuit sums (C95, C96), every sweep row and the Calibration prototype, so the measured correction compares like with like. Workbook: 1, 3, 5. The cells of harmonics 1, 3 and 5 keep their terms; a harmonic left out reads 0 shear stress, and harmonics 7 to 11 add the Rust-only tau7_Pa, tau9_Pa and tau11_Pa.")
+                .choices(&MAX_HARMONIC_CHOICES)
                 .assumption(),
             mu0: f64 = MU0 => param("T·m/A", "Vacuum permeability", "", "Calculator!C43")
                 .range(1.2566e-6, 1.2567e-6, 1e-11),
@@ -207,6 +285,12 @@ results! {
             s5_free: f64 => out("-", "Harmonic 5 geometry factor without back iron",
                 "", "Calculator!C87"),
             tau5_Pa: f64 => out("Pa", "Harmonic 5 shear stress", "", "Calculator!C88"),
+            tau7_Pa: f64 => out_rust_only("Pa", "Harmonic 7 shear stress",
+                "Addendum A3: summed when the highest harmonic (coupling.max_harmonic) is 7 or more; 0 otherwise."),
+            tau9_Pa: f64 => out_rust_only("Pa", "Harmonic 9 shear stress",
+                "Summed when the highest harmonic is 9 or more; 0 otherwise."),
+            tau11_Pa: f64 => out_rust_only("Pa", "Harmonic 11 shear stress",
+                "Summed when the highest harmonic is 11; 0 otherwise."),
             tau_Pa: f64 => out("Pa", "Total magnetic shear stress at pull-out",
                 "PM-PM couplings typically 100–250 kPa.", "Calculator!C89"),
             area_lever_m3: f64 => out("m³", "Gap area × lever arm (2π R_g² L)",
@@ -214,6 +298,8 @@ results! {
             torque_2d_Nm: f64 => out("N·m", "2D pull-out torque (infinite length)",
                 "", "Calculator!C91"),
             f_end: f64 => out("-", "End-effect factor", "", "Calculator!C92"),
+            end_effect_check: String => out_rust_only("", "End-effect model check",
+                "Audit M9 (the user's decision: a flag, no physics change): 'End-effect model out of range' when f_end is 0 or below, which makes the pull-out and every number computed from it meaningless; 'OK' otherwise."),
             pullout_Nm: f64 => out("N·m", "Pull-out torque at operating temperature",
                 "Analytical estimate, not a guaranteed minimum.", "Calculator!C93"),
             pullout_20C_Nm: f64 => out("N·m", "Pull-out torque at 20 °C", "", "Calculator!C94"),
@@ -245,6 +331,14 @@ results! {
                 "The library part's grade, or the grade picked for manual dimensions; blank for a manual magnet without a grade."),
             outer_grade: String => out_rust_only("", "Outer magnet grade used",
                 "As the inner grade, for the outer ring."),
+            inner_alpha_br_per_C: f64 => out_rust_only("1/°C", "Inner Br temperature coefficient used",
+                "Decision A2-7: the grade's for manual dimensions with a grade picked; else the calculator's alpha (Calibration C22, shown in C35)."),
+            outer_alpha_br_per_C: f64 => out_rust_only("1/°C", "Outer Br temperature coefficient used",
+                "As the inner coefficient, for the outer ring."),
+            inner_magnet_density_g_mm3: f64 => out_rust_only("g/mm³", "Inner magnet density used",
+                "Decision A2-7: the grade's for manual dimensions with a grade picked; else NdFeB, 7.5 g/cm³ (C110)."),
+            outer_magnet_density_g_mm3: f64 => out_rust_only("g/mm³", "Outer magnet density used",
+                "As the inner density, for the outer ring."),
         }
     }
 }
@@ -278,6 +372,30 @@ pub struct ResolvedMagnet {
     pub tmax_C: NumOrText,
     /// The part's grade, or the grade picked for manual dimensions (Addendum A6).
     pub grade: Option<&'static Grade>,
+    /// Whether the ring is in the grade mode: manual dimensions with a grade picked (the
+    /// part is not in the library). Only then does the grade supply alpha(Br) and density.
+    pub from_grade: bool,
+}
+
+impl ResolvedMagnet {
+    /// The ring's reversible Br coefficient [1/°C]: its grade's in the grade mode (decision
+    /// A2-7), else `calculator_alpha`, the calculator's single alpha (Calibration C22), which
+    /// equals every library part's sintered NdFeB grade at its default.
+    pub fn alpha_br(&self, calculator_alpha: f64) -> f64 {
+        match self.grade {
+            Some(g) if self.from_grade => g.alpha_br_per_C,
+            _ => calculator_alpha,
+        }
+    }
+
+    /// The ring's magnet density [g/mm³]: its grade's in the grade mode (decision A2-7), else
+    /// the NdFeB density the workbook uses for every magnet.
+    pub fn density_g_mm3(&self) -> f64 {
+        match self.grade {
+            Some(g) if self.from_grade => g.density_g_mm3,
+            _ => NDFEB_DENSITY_G_MM3,
+        }
+    }
 }
 
 /// Library values when the part is found (workbook IFERROR/INDEX/MATCH); else the
@@ -285,6 +403,7 @@ pub struct ResolvedMagnet {
 /// (Addendum A6, a Rust-only mode) and the manual Br and no rating otherwise.
 /// A library part's Br comes from [`library::br_T`], which applies E3 (the N42SH remanence),
 /// its rating and grade from [`library::tmax_C`] and [`library::grade_id`], which apply E19.
+/// The Rust-only `axial_length_mm` (Addendum A1), when set, replaces both rings' length.
 #[allow(non_snake_case)]
 pub fn resolve_magnets(m: &MagnetInputs, dev: Deviations) -> (ResolvedMagnet, ResolvedMagnet) {
     let resolve =
@@ -297,6 +416,7 @@ pub fn resolve_magnets(m: &MagnetInputs, dev: Deviations) -> (ResolvedMagnet, Re
                     br_T: library::br_T(spec, dev),
                     tmax_C: NumOrText::Num(library::tmax_C(spec, dev)),
                     grade: grades::grade(library::grade_id(spec, dev)),
+                    from_grade: false,
                 },
                 None => match grades::grade(grade) {
                     Some(g) => ResolvedMagnet {
@@ -306,6 +426,7 @@ pub fn resolve_magnets(m: &MagnetInputs, dev: Deviations) -> (ResolvedMagnet, Re
                         br_T: g.br_T,
                         tmax_C: NumOrText::Num(g.tmax_C),
                         grade: Some(g),
+                        from_grade: true,
                     },
                     None => ResolvedMagnet {
                         length_mm,
@@ -314,28 +435,73 @@ pub fn resolve_magnets(m: &MagnetInputs, dev: Deviations) -> (ResolvedMagnet, Re
                         br_T,
                         tmax_C: NumOrText::Text(NOT_IN_LIBRARY),
                         grade: None,
+                        from_grade: false,
                     },
                 },
             }
         };
+    let with_length = |ring: ResolvedMagnet| match m.axial_length_mm {
+        Some(length_mm) => ResolvedMagnet { length_mm, ..ring },
+        None => ring,
+    };
     (
-        resolve(
+        with_length(resolve(
             &m.part_inner,
             &m.grade_inner,
             m.manual_inner_length_mm,
             m.manual_inner_width_mm,
             m.manual_inner_thickness_mm,
             m.manual_inner_br_T,
-        ),
-        resolve(
+        )),
+        with_length(resolve(
             &m.part_outer,
             &m.grade_outer,
             m.manual_outer_length_mm,
             m.manual_outer_width_mm,
             m.manual_outer_thickness_mm,
             m.manual_outer_br_T,
-        ),
+        )),
     )
+}
+
+/// Whether a block fits its polygon flat: the comparison of the flat checks C52 and C59.
+fn flat_fits(flat_mm: f64, width_mm: f64) -> bool {
+    flat_mm >= width_mm
+}
+
+/// A block's share of its pole pitch at the magnet mid-radius: the width over
+/// 2π (back apothem + thickness / 2) / N, the fill C66 (inner ring) and C67 (outer ring, from
+/// the outer face apothem) before their min(1, ...). Above 1 the blocks overlap there.
+pub fn pitch_share(width_mm: f64, back_apothem_mm: f64, thickness_mm: f64, npole: f64) -> f64 {
+    width_mm / (2.0 * PI * (back_apothem_mm + thickness_mm / 2.0) / npole)
+}
+
+/// Whether both rings' blocks fit (Addendum A decision A2-4). Faceted blocks (`faceted` 1)
+/// fit their polygon flats: the Calculator's C52 and C59 checks pass (their comparison,
+/// [`flat_fits`]). Arcs (any other code; the flat checks read "n/a (arcs)") fit when neither
+/// ring's blocks overlap at the magnet mid-radius: a [`pitch_share`] of at most 1, where C66
+/// and C67 would otherwise clamp the fill and price overlapping arcs as if they fitted.
+/// Inverse sizing counts only layouts that fit.
+pub fn blocks_fit(ci: &CouplingInputs, r: &ModelResults) -> bool {
+    if ci.faceted == 1 {
+        flat_fits(r.inner_flat_width_mm, r.inner_width_mm)
+            && flat_fits(r.outer_flat_width_mm, r.outer_width_mm)
+    } else {
+        let n = ci.npole as f64;
+        let inner = pitch_share(
+            r.inner_width_mm,
+            ci.inner_back_apothem_mm,
+            r.inner_thickness_mm,
+            n,
+        );
+        let outer = pitch_share(
+            r.outer_width_mm,
+            r.outer_face_apothem_mm,
+            r.outer_thickness_mm,
+            n,
+        );
+        inner <= 1.0 && outer <= 1.0
+    }
 }
 
 /// Measured correction only for the prototype's circuit (no iron, same poles, B842SH both rings).
@@ -415,7 +581,18 @@ pub(crate) fn br_factor(alpha_br: f64, temp_C: f64) -> f64 {
     1.0 + alpha_br * (temp_C - 20.0)
 }
 
-/// Per-harmonic pull-out shear stress [Pa] and its parts, for HARMONICS.
+/// Torque at magnet temperature `temp_C` over torque at 20 °C, Br_i(T) Br_o(T) / (Br_i Br_o):
+/// each ring with its own coefficient (Addendum A-2 decision A2-7). With one coefficient it is
+/// the workbook's (1 + α (T − 20 °C))², bit for bit (`x.powi(2)` is `x * x`). The one formula
+/// for the Metal design and Temperature design torques at another temperature.
+#[allow(non_snake_case)] // unit suffix, as the Python names
+pub(crate) fn ring_pair_factor(alpha_inner: f64, alpha_outer: f64, temp_C: f64) -> f64 {
+    br_factor(alpha_inner, temp_C) * br_factor(alpha_outer, temp_C)
+}
+
+/// Per-harmonic pull-out shear stress [Pa] and its parts, for every harmonic of
+/// [`ODD_HARMONICS`] (Python: for `HARMONICS`); the model sums the first
+/// [`harmonic_count`] of them (Addendum A3).
 #[allow(clippy::too_many_arguments)] // Python signature
 pub fn shear_stress(
     br_i: f64,
@@ -429,8 +606,8 @@ pub fn shear_stress(
     g_mm: f64,
     backiron: i64,
     mu0: f64,
-) -> [Harmonic; 3] {
-    HARMONICS.map(|n| {
+) -> [Harmonic; 6] {
+    ODD_HARMONICS.map(|n| {
         let nf = f64::from(n);
         let k = nf * (npole as f64 / 2.0) / (r_g_mm / 1000.0);
         let bi = harmonic_amplitude(br_i, n, fill_i);
@@ -453,45 +630,31 @@ pub fn shear_stress(
 
 /// E7: the electrical angle of the true pull-out, when half a pole pitch is not it.
 ///
-/// Torque against electrical angle x is T(x) = a1 sin x + a3 sin 3x + a5 sin 5x,
-/// `a` the per-harmonic amplitudes. Half a pitch (x = π/2) is always a stationary
-/// point, and the workbook evaluates every harmonic there. The other stationary
-/// points solve dT/dx = 0; with c = cos x,
-/// dT/dx = c·[(a1 − 9 a3 + 25 a5) + (12 a3 − 100 a5) c² + 80 a5 c⁴],
-/// a quadratic in u = c². T is symmetric about π/2 (odd harmonics), so
-/// x in [0, π/2] suffices. Returns `None` when half a pitch is the maximum, so
-/// callers keep the workbook expression and default outputs stay bit-identical;
-/// otherwise the angle whose torque exceeds the half-pitch torque by more than
-/// 1e-12 relative. Valid for the harmonic set [1, 3, 5] only (`HARMONICS`); the
-/// Addendum A plan generalizes it with the harmonic parameter (decision D7).
-pub fn peak_off_half_pitch(a: [f64; 3]) -> Option<f64> {
-    let [a1, a3, a5] = a;
-    let torque = |x: f64| a1 * x.sin() + a3 * (3.0 * x).sin() + a5 * (5.0 * x).sin();
-    let half_pitch = a1 - a3 + a5; // sin(π/2) = 1, sin(3π/2) = −1, sin(5π/2) = 1
-    let (qa, qb, qc) = (80.0 * a5, 12.0 * a3 - 100.0 * a5, a1 - 9.0 * a3 + 25.0 * a5);
-    let roots: Vec<f64> = if qa != 0.0 {
-        let disc = qb * qb - 4.0 * qa * qc;
-        if disc < 0.0 {
-            Vec::new()
-        } else {
-            // Cancellation-free roots: q adds -qb and the root of the same sign, so a
-            // vanishing a5 (|qa| << |qb|, e.g. a fill of exactly 0.4) keeps the small root,
-            // qc / q -> -qc / qb, where (-qb ± √disc) / (2 qa) lost every digit.
-            let q = -0.5 * (qb + disc.sqrt().copysign(qb));
-            if q == 0.0 {
-                vec![0.0] // qb = 0 and disc = 0, so qc = 0: the double root u = 0
-            } else {
-                vec![q / qa, qc / q]
-            }
-        }
-    } else if qb != 0.0 {
-        vec![-qc / qb]
-    } else {
-        Vec::new()
+/// Torque against electrical angle x is T(x) = Σ a_i sin((2i + 1) x): `a[i]` is the
+/// amplitude of the odd harmonic 2i + 1 ([`ODD_HARMONICS`], at most six). Half a pitch
+/// (x = π/2) is always a stationary point, and the workbook evaluates every harmonic there.
+/// The other stationary points solve dT/dx = Σ n a_n cos(n x) = cos x · Q(u) = 0 with
+/// u = cos² x, where Q is a polynomial of degree `a.len() − 1` ([`stationary_polynomial`]).
+/// T is symmetric about π/2 (odd harmonics), so x in [0, π/2] (u in [0, 1]) suffices.
+/// [`roots_in_unit_interval`] finds every root of Q there with no closed form, so a vanishing
+/// top amplitude (a ring at a fill of exactly 0.4 zeroes the fifth) cannot cancel digits, and
+/// with no scan grid, so no pair of roots can hide inside a cell (decision 29 A). Returns
+/// `None` when half a pitch is the maximum, so callers keep the workbook expression and
+/// default outputs stay bit-identical; otherwise the angle whose torque exceeds the half-pitch
+/// torque by more than 1e-12 relative.
+pub fn peak_off_half_pitch(a: &[f64]) -> Option<f64> {
+    let torque = |x: f64| {
+        a.iter()
+            .zip(ODD_HARMONICS)
+            .fold(0.0, |acc, (&an, n)| acc + an * (f64::from(n) * x).sin())
     };
-    roots
+    // sin(nπ/2) = 1, −1, 1, ... for n = 1, 3, 5, ...: a1 − a3 + a5 − ...
+    let half_pitch = a.iter().enumerate().fold(
+        0.0,
+        |acc, (i, &an)| if i % 2 == 0 { acc + an } else { acc - an },
+    );
+    roots_in_unit_interval(&stationary_polynomial(a))
         .into_iter()
-        .filter(|u| (0.0..=1.0).contains(u))
         .map(|u| u.sqrt().acos())
         .map(|x| (x, torque(x)))
         .filter(|&(_, t)| t - half_pitch > 1e-12 * half_pitch.abs())
@@ -499,12 +662,116 @@ pub fn peak_off_half_pitch(a: [f64; 3]) -> Option<f64> {
         .map(|(x, _)| x)
 }
 
+/// Q(u), the coefficients (Q = q[0] + q[1] u + ...) of dT/dx / cos x for
+/// T(x) = Σ a_i sin((2i + 1) x): Q = Σ n a_n P_n(u), where cos(n x) = cos x · P_n(cos² x)
+/// and P_{n+2} = 2 (2u − 1) P_n − P_{n−2}, P_1 = P_{−1} = 1 (so P_3 = 4u − 3,
+/// P_5 = 16u² − 20u + 5). For 1, 3, 5 that is (a1 − 9 a3 + 25 a5) + (12 a3 − 100 a5) u + 80 a5 u².
+fn stationary_polynomial(a: &[f64]) -> Vec<f64> {
+    let mut q = vec![0.0; a.len()];
+    let (mut p_before, mut p) = (vec![1.0], vec![1.0]); // P_{n−2} and P_n, from n = 1
+    for (&an, n) in a.iter().zip(ODD_HARMONICS) {
+        for (qk, &pk) in q.iter_mut().zip(&p) {
+            *qk += f64::from(n) * an * pk;
+        }
+        let mut next = vec![0.0; p.len() + 1]; // P_{n+2} = 4u P_n − 2 P_n − P_{n−2}
+        for (k, &pk) in p.iter().enumerate() {
+            next[k + 1] += 4.0 * pk;
+            next[k] -= 2.0 * pk;
+        }
+        for (k, &pk) in p_before.iter().enumerate() {
+            next[k] -= pk;
+        }
+        p_before = std::mem::replace(&mut p, next);
+    }
+    q
+}
+
+/// Every real root in [0, 1] of the polynomial c[0] + c[1] u + c[2] u² + ..., ascending.
+///
+/// A linear polynomial's root is −c[0] / c[1]. Above degree 1, the roots of the derivative
+/// (found the same way) split [0, 1] into intervals on which the polynomial is monotone, so
+/// each interval holds at most one root and bisection finds it to the last bit: no root pair
+/// can hide between samples, the failure mode of a sampled scan (decision 29 A's Q' guard,
+/// applied at every level).
+/// Trailing zero coefficients are dropped; a constant (zero included) has no isolated root.
+/// A double root is found only where the polynomial is exactly 0 there; that is an inflection
+/// of the torque curve, never its peak.
+fn roots_in_unit_interval(c: &[f64]) -> Vec<f64> {
+    let degree = match c.iter().rposition(|&ck| ck != 0.0) {
+        Some(d) if d > 0 => d,
+        _ => return Vec::new(),
+    };
+    let c = &c[..=degree];
+    if degree == 1 {
+        let root = -c[0] / c[1];
+        return if (0.0..=1.0).contains(&root) {
+            vec![root]
+        } else {
+            Vec::new()
+        };
+    }
+    let value = |u: f64| c.iter().rev().fold(0.0, |acc, &ck| acc * u + ck);
+    let derivative: Vec<f64> = c
+        .iter()
+        .enumerate()
+        .skip(1)
+        .map(|(k, &ck)| k as f64 * ck)
+        .collect();
+    let mut breaks = vec![0.0];
+    breaks.extend(
+        roots_in_unit_interval(&derivative)
+            .into_iter()
+            .filter(|&u| u > 0.0 && u < 1.0),
+    );
+    breaks.push(1.0);
+    let mut roots = Vec::new();
+    for w in breaks.windows(2) {
+        let (mut lo, mut hi) = (w[0], w[1]);
+        let (f_lo, f_hi) = (value(lo), value(hi));
+        if f_lo == 0.0 {
+            roots.push(lo);
+            continue;
+        }
+        // A root at `hi` is found as the next interval's `lo` (or at 1 below).
+        if f_hi == 0.0 || (f_lo < 0.0) == (f_hi < 0.0) {
+            continue;
+        }
+        let lo_negative = f_lo < 0.0;
+        let mut root = None;
+        for _ in 0..128 {
+            let mid = lo + (hi - lo) / 2.0;
+            if mid <= lo || mid >= hi {
+                break; // lo and hi are adjacent doubles
+            }
+            let f_mid = value(mid);
+            if f_mid == 0.0 {
+                root = Some(mid);
+                break;
+            }
+            if (f_mid < 0.0) == lo_negative {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        roots.push(root.unwrap_or(if value(lo).abs() <= value(hi).abs() {
+            lo
+        } else {
+            hi
+        }));
+    }
+    if value(1.0) == 0.0 {
+        roots.push(1.0);
+    }
+    roots
+}
+
 /// The E7 gate every harmonic sum shares (the pull-out, the two circuit sums
 /// C95 and C96, the sweep rows, Calibration C40-C42): the angle of the true
 /// pull-out when E7 is on and half a pitch is not the maximum of the curve with
 /// amplitudes `a` ([`peak_off_half_pitch`]). `None` means: keep the workbook's
 /// half-pitch expression, bit for bit.
-pub(crate) fn peak_angle(a: [f64; 3], dev: Deviations) -> Option<f64> {
+pub(crate) fn peak_angle(a: &[f64], dev: Deviations) -> Option<f64> {
     if dev.is_on(DeviationId::E7) {
         peak_off_half_pitch(a)
     } else {
@@ -521,16 +788,17 @@ pub(crate) fn tau_at(a: f64, n: u32, x: f64) -> f64 {
 /// half a pitch is not the maximum ([`peak_angle`] on the amplitudes
 /// B_in,n·B_on,n/(2μ0)·S_n of the circuit `backiron` selects). Returns `h`
 /// unchanged, bit for bit, when E7 is off or half a pitch is the maximum.
-/// Shared by [`compute`] and the sweep rows.
+/// `h` is the harmonic set summed (Addendum A3). Shared by [`compute`] and the sweep rows.
 pub(crate) fn at_pull_out(
-    h: [Harmonic; 3],
+    h: &[Harmonic],
     backiron: i64,
     mu0: f64,
     dev: Deviations,
-) -> [Harmonic; 3] {
+) -> Vec<Harmonic> {
     let amplitude = |x: &Harmonic| x.bi * x.bo / (2.0 * mu0) * x.s(backiron);
-    let mut h_pull = h;
-    if let Some(x) = peak_angle(h.map(|hn| amplitude(&hn)), dev) {
+    let mut h_pull = h.to_vec();
+    let amplitudes: Vec<f64> = h.iter().map(amplitude).collect();
+    if let Some(x) = peak_angle(&amplitudes, dev) {
         for hn in h_pull.iter_mut() {
             hn.tau = tau_at(amplitude(hn), hn.n, x);
         }
@@ -574,7 +842,7 @@ pub fn compute(
 
     let flat_i = 2.0 * a_i * (PI / N).tan();
     let chk_i = if ci.faceted == 1 {
-        if flat_i >= mi.width_mm {
+        if flat_fits(flat_i, mi.width_mm) {
             format!("OK, {} mm slack", fmt_fixed(flat_i - mi.width_mm, 2))
         } else {
             "TOO NARROW: increase apothem or reduce poles".to_owned()
@@ -586,7 +854,7 @@ pub fn compute(
     let g_m = A_o - r_face_i;
     let flat_o = 2.0 * A_o * (PI / N).tan();
     let chk_o = if ci.faceted == 1 {
-        if flat_o >= mo.width_mm {
+        if flat_fits(flat_o, mo.width_mm) {
             format!(
                 "OK, blocks {} mm apart at the faces",
                 fmt_fixed(flat_o - mo.width_mm, 2)
@@ -612,17 +880,13 @@ pub fn compute(
     };
     let R_g = r_face_i + g_m / 2.0;
     let tau_p = 2.0 * PI * R_g / N;
-    let al_i = py_min(
-        1.0,
-        mi.width_mm / (2.0 * PI * (a_i + mi.thickness_mm / 2.0) / N),
-    );
-    let al_o = py_min(
-        1.0,
-        mo.width_mm / (2.0 * PI * (A_o + mo.thickness_mm / 2.0) / N),
-    );
+    let al_i = py_min(1.0, pitch_share(mi.width_mm, a_i, mi.thickness_mm, N));
+    let al_o = py_min(1.0, pitch_share(mo.width_mm, A_o, mo.thickness_mm, N));
 
-    let bri = mi.br_T * br_factor(alpha_br, ci.op_temp_C);
-    let bro = mo.br_T * br_factor(alpha_br, ci.op_temp_C);
+    // Decision A2-7: each ring with its own coefficient (a grade-mode ring's grade, else C22).
+    let (alpha_i, alpha_o) = (mi.alpha_br(alpha_br), mo.alpha_br(alpha_br));
+    let bri = mi.br_T * br_factor(alpha_i, ci.op_temp_C);
+    let bro = mo.br_T * br_factor(alpha_o, ci.op_temp_C);
     let h = shear_stress(
         bri,
         bro,
@@ -636,10 +900,14 @@ pub fn compute(
         ci.backiron,
         ci.mu0,
     );
+    // Addendum A3: the harmonics summed, 1, 3, ... up to coupling.max_harmonic.
+    let count = harmonic_count(ci.max_harmonic);
+    let used = &h[..count.unwrap_or(0)];
     // E7: every harmonic at the true pull-out angle when half a pitch is not the maximum.
-    // `h` (the half-pitch terms) stays for the per-circuit sums below.
-    let h_pull = at_pull_out(h, ci.backiron, ci.mu0, dev);
-    let tau = h_pull.iter().fold(0.0, |acc, x| acc + x.tau); // Python sum(): left fold from 0
+    // `used` (the half-pitch terms) stays for the per-circuit sums below.
+    let h_pull = at_pull_out(used, ci.backiron, ci.mu0, dev);
+    let taus: Vec<f64> = h_pull.iter().map(|x| x.tau).collect();
+    let tau = harmonic_sum(count, taus.iter().copied()); // Python sum(): left fold from 0
     let AL = 2.0 * PI * (R_g / 1000.0).powi(2) * (L / 1000.0);
     let T2D = tau * AL;
     let f_end = 1.0 - ci.c_end * tau_p / L;
@@ -648,15 +916,19 @@ pub fn compute(
     // sum(bi * bo * S * sin(n pi/2) for n) / (2 mu0) * ...: note S inside the product, /(2 mu0) after the sum
     // E7: each circuit at the maximum of its own torque-angle curve.
     let circuit = |s: fn(&Harmonic) -> f64| {
-        let coefficients = h.map(|x| x.bi * x.bo * s(&x));
-        match peak_angle(coefficients, dev) {
-            Some(x) => h
-                .iter()
-                .zip(coefficients)
-                .fold(0.0, |acc, (hn, c)| acc + tau_at(c, hn.n, x)),
-            None => h.iter().fold(0.0, |acc, x| {
-                acc + x.bi * x.bo * s(x) * (f64::from(x.n) * PI / 2.0).sin()
-            }),
+        let coefficients: Vec<f64> = used.iter().map(|x| x.bi * x.bo * s(x)).collect();
+        match peak_angle(&coefficients, dev) {
+            Some(x) => harmonic_sum(
+                count,
+                used.iter()
+                    .zip(&coefficients)
+                    .map(|(hn, &c)| tau_at(c, hn.n, x)),
+            ),
+            None => harmonic_sum(
+                count,
+                used.iter()
+                    .map(|x| x.bi * x.bo * s(x) * (f64::from(x.n) * PI / 2.0).sin()),
+            ),
         }
     };
     let T_iron = circuit(|x| x.s_iron) / (2.0 * ci.mu0) * AL * f_end * f_cal_original;
@@ -691,7 +963,8 @@ pub fn compute(
         };
         text.to_owned()
     };
-    let [h1, h3, h5] = h_pull;
+    let [h1, h3, h5, ..] = h;
+    let tau_n = |i: usize| harmonic_slot(count, &taus, i);
 
     ModelResults {
         inner_length_mm: mi.length_mm,
@@ -735,23 +1008,27 @@ pub fn compute(
         b_o1: h1.bo,
         s1_iron: h1.s_iron,
         s1_free: h1.s_free,
-        tau1_Pa: h1.tau,
+        tau1_Pa: tau_n(0),
         k3: h3.k,
         b_i3: h3.bi,
         b_o3: h3.bo,
         s3_iron: h3.s_iron,
         s3_free: h3.s_free,
-        tau3_Pa: h3.tau,
+        tau3_Pa: tau_n(1),
         k5: h5.k,
         b_i5: h5.bi,
         b_o5: h5.bo,
         s5_iron: h5.s_iron,
         s5_free: h5.s_free,
-        tau5_Pa: h5.tau,
+        tau5_Pa: tau_n(2),
+        tau7_Pa: tau_n(3),
+        tau9_Pa: tau_n(4),
+        tau11_Pa: tau_n(5),
         tau_Pa: tau,
         area_lever_m3: AL,
         torque_2d_Nm: T2D,
         f_end,
+        end_effect_check: end_effect_check(f_end).to_owned(),
         pullout_Nm: T_pull,
         pullout_20C_Nm: T_pull20,
         pullout_iron_Nm: T_iron,
@@ -774,6 +1051,10 @@ pub fn compute(
         outer_temp_check: temp_check(mo.tmax_C),
         inner_grade: mi.grade.map_or("", |g| g.id).to_owned(),
         outer_grade: mo.grade.map_or("", |g| g.id).to_owned(),
+        inner_alpha_br_per_C: alpha_i,
+        outer_alpha_br_per_C: alpha_o,
+        inner_magnet_density_g_mm3: mi.density_g_mm3(),
+        outer_magnet_density_g_mm3: mo.density_g_mm3(),
     }
 }
 
@@ -832,10 +1113,16 @@ pub fn mass_estimate(
     dev: Deviations,
 ) -> MassResults {
     let N = ci.npole as f64;
-    let m_mag = N
-        * (r.inner_length_mm * r.inner_width_mm * r.inner_thickness_mm
-            + r.outer_length_mm * r.outer_width_mm * r.outer_thickness_mm)
-        * NDFEB_DENSITY_G_MM3;
+    let volume_i = r.inner_length_mm * r.inner_width_mm * r.inner_thickness_mm;
+    let volume_o = r.outer_length_mm * r.outer_width_mm * r.outer_thickness_mm;
+    let (rho_i, rho_o) = (r.inner_magnet_density_g_mm3, r.outer_magnet_density_g_mm3);
+    // Decision A2-7: each ring at its own density; rings of one density keep the workbook's
+    // single product (bit for bit: N (V_i + V_o) rho).
+    let m_mag = if rho_i == rho_o {
+        N * (volume_i + volume_o) * rho_i
+    } else {
+        N * (volume_i * rho_i + volume_o * rho_o)
+    };
     // E9: with no intentional back iron the cup and boss are aluminium, as the hub already is.
     let cup_boss_density =
         cup_boss_density(ci.backiron, steel_density_g_mm3, al_density_g_mm3, dev);
@@ -995,6 +1282,63 @@ mod tests {
     }
 
     #[test]
+    fn a_grade_ring_takes_its_grade_alpha_and_density() {
+        // Decision A2-7: a ring in the grade mode (manual dimensions with a grade picked) takes
+        // its grade's Br temperature coefficient and density. A library part (every one
+        // sintered NdFeB) and a manual magnet without a grade keep the calculator's single
+        // alpha (Calibration C22, here the `alpha_br` argument) and the NdFeB density.
+        let mut ci = CouplingInputs::default();
+        ci.magnets.part_inner = String::new();
+        ci.magnets.grade_inner = "Y30".to_owned();
+        let r = at(&ci);
+        assert_eq!(
+            (r.inner_alpha_br_per_C, r.outer_alpha_br_per_C),
+            (-0.002, -0.0012)
+        );
+        assert_eq!(
+            (r.inner_magnet_density_g_mm3, r.outer_magnet_density_g_mm3),
+            (0.005, NDFEB_DENSITY_G_MM3)
+        );
+        assert_eq!(r.br_inner_T_op, 0.37 * br_factor(-0.002, 50.0));
+        assert_eq!(r.br_outer_T_op, r.outer_br_T * br_factor(-0.0012, 50.0));
+        assert_eq!(
+            r.alpha_br_per_C, -0.0012,
+            "C35 still shows the calculator's alpha"
+        );
+        // A gradeless manual magnet and a library part follow the argument, whatever it is.
+        let mut manual = CouplingInputs::default();
+        manual.magnets.part_inner = String::new();
+        let r = compute(
+            &manual,
+            1.4,
+            0.05,
+            0.05,
+            1.8,
+            -0.001,
+            1.5,
+            0.95,
+            0.95,
+            2000.0,
+            2.5,
+            Deviations::NONE,
+        );
+        assert_eq!(
+            (r.inner_alpha_br_per_C, r.outer_alpha_br_per_C),
+            (-0.001, -0.001)
+        );
+        assert_eq!(r.inner_magnet_density_g_mm3, NDFEB_DENSITY_G_MM3);
+        // An NdFeB grade in the grade mode has the calculator's default values: nothing moves.
+        let mut n42 = CouplingInputs::default();
+        n42.magnets.part_inner = String::new();
+        n42.magnets.grade_inner = "N42".to_owned();
+        let r = at(&n42);
+        assert_eq!(
+            (r.inner_alpha_br_per_C, r.inner_magnet_density_g_mm3),
+            (-0.0012, NDFEB_DENSITY_G_MM3)
+        );
+    }
+
+    #[test]
     fn a_library_part_wins_over_a_grade_and_an_unknown_grade_is_manual() {
         let mut ci = CouplingInputs::default();
         ci.magnets.grade_inner = "Y30".to_owned(); // the part B842SH is in the library
@@ -1042,6 +1386,50 @@ mod tests {
     }
 
     #[test]
+    fn the_axial_length_override_sets_both_rings_and_keeps_the_rest() {
+        // Addendum A1: blocks of the parts' cross-section, grade, Br and rating, cut or stacked
+        // to one axial length. Torque ~ L * f_end = L - c_end * pole pitch (the pitch does not
+        // depend on L).
+        let base = at(&CouplingInputs::default());
+        let mut ci = CouplingInputs::default();
+        ci.magnets.axial_length_mm = Some(20.0);
+        let r = at(&ci);
+        assert_eq!(
+            (r.inner_length_mm, r.outer_length_mm, r.active_length_mm),
+            (20.0, 20.0, 20.0)
+        );
+        assert_eq!(
+            (r.inner_width_mm, r.inner_thickness_mm, r.outer_width_mm),
+            (
+                base.inner_width_mm,
+                base.inner_thickness_mm,
+                base.outer_width_mm
+            )
+        );
+        assert_eq!(
+            (r.inner_br_T, r.inner_tmax_C),
+            (base.inner_br_T, base.inner_tmax_C)
+        );
+        assert_eq!((r.inner_grade.as_str(), r.f_cal), ("N42SH", base.f_cal));
+        assert_eq!(r.pole_pitch_mm, base.pole_pitch_mm);
+        let excess = |l: f64| l - CouplingInputs::default().c_end * base.pole_pitch_mm;
+        assert!(close(
+            r.pullout_Nm / base.pullout_Nm,
+            excess(20.0) / excess(12.7)
+        ));
+        // It overrides manual lengths too, and a blank override changes nothing.
+        let mut manual = CouplingInputs::default();
+        manual.magnets.part_inner = String::new();
+        manual.magnets.manual_inner_length_mm = 30.0;
+        manual.magnets.axial_length_mm = Some(15.0);
+        let r = at(&manual);
+        assert_eq!((r.inner_length_mm, r.outer_length_mm), (15.0, 15.0));
+        let mut blank = CouplingInputs::default();
+        blank.magnets.axial_length_mm = None;
+        assert_eq!(at(&blank), base);
+    }
+
+    #[test]
     fn e3_reaches_library_parts_but_never_a_typed_manual_br() {
         let mut m = MagnetInputs {
             part_inner: "BX082SH".to_owned(),
@@ -1077,14 +1465,14 @@ mod tests {
 
     #[test]
     fn half_pitch_stays_the_peak_when_the_third_harmonic_is_small() {
-        assert_eq!(peak_off_half_pitch([1.0, -0.011, 0.001]), None); // default design: A3/A1 = -0.011
-        assert_eq!(peak_off_half_pitch([1.0, 0.0, 0.0]), None);
+        assert_eq!(peak_off_half_pitch(&[1.0, -0.011, 0.001]), None); // default design: A3/A1 = -0.011
+        assert_eq!(peak_off_half_pitch(&[1.0, 0.0, 0.0]), None);
     }
 
     #[test]
     fn a_large_third_harmonic_moves_the_peak_and_raises_it() {
         let a = [1.0, 0.2, 0.0]; // A1 < 9 A3: half a pitch is a local minimum
-        let x = peak_off_half_pitch(a).expect("the peak moves");
+        let x = peak_off_half_pitch(&a).expect("the peak moves");
         let t = |x: f64| a[0] * x.sin() + a[1] * (3.0 * x).sin() + a[2] * (5.0 * x).sin();
         assert!(x > 0.0 && x < std::f64::consts::FRAC_PI_2);
         assert!(t(x) > t(std::f64::consts::FRAC_PI_2));
@@ -1093,14 +1481,16 @@ mod tests {
         assert!(slope.abs() < 1e-9, "{slope}");
     }
 
-    /// T(x) = a1 sin x + a3 sin 3x + a5 sin 5x, the curve [`peak_off_half_pitch`] maximizes.
-    fn torque_at(a: [f64; 3], x: f64) -> f64 {
-        a[0] * x.sin() + a[1] * (3.0 * x).sin() + a[2] * (5.0 * x).sin()
+    /// T(x) = Σ a_i sin((2i + 1) x), the curve [`peak_off_half_pitch`] maximizes.
+    fn torque_at(a: &[f64], x: f64) -> f64 {
+        a.iter()
+            .zip(ODD_HARMONICS)
+            .fold(0.0, |acc, (&an, n)| acc + an * (f64::from(n) * x).sin())
     }
 
     /// Brute-force maximum of `torque_at` on [0, π/2]: a grid, then a ternary search
     /// around the best grid point. Never above the true maximum.
-    fn grid_maximum(a: [f64; 3], points: usize) -> f64 {
+    fn grid_maximum(a: &[f64], points: usize) -> f64 {
         let step = std::f64::consts::FRAC_PI_2 / (points - 1) as f64;
         let (best_i, best) = (0..points)
             .map(|i| (i, torque_at(a, i as f64 * step)))
@@ -1121,16 +1511,48 @@ mod tests {
         best.max(torque_at(a, (lo + hi) / 2.0))
     }
 
+    /// A uniform source in [0, 1) (splitmix64), the property tests' generator.
+    fn uniform_source(seed: u64) -> impl FnMut() -> f64 {
+        let mut state = seed;
+        move || {
+            state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut z = state;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            ((z ^ (z >> 31)) >> 11) as f64 / (1u64 << 53) as f64
+        }
+    }
+
+    /// A random amplitude triple (a1, a3, a5), case `i` of three bands: the general case,
+    /// a fifth harmonic in the band |a5/a1| <= 1.5e-13 where the textbook quadratic cancels
+    /// (a ring at a fill of exactly 0.4 or 0.8 gives sin(5 fill pi/2) ~ 1e-16), and a5 = 0.
+    /// a1 in [0.5, 1.5], a3 in +-a1/2 (A1 < 9 A3 moves the peak), so half a pitch stays
+    /// positive and the maximum is a stationary point in (0, pi/2].
+    fn random_triple(uniform: &mut impl FnMut() -> f64, i: usize) -> [f64; 3] {
+        let a1 = 0.5 + uniform();
+        let a3 = (uniform() - 0.5) * a1;
+        let sign = if uniform() < 0.5 { -1.0 } else { 1.0 };
+        let a5 = match i % 3 {
+            0 => (uniform() - 0.5) * 0.6 * a1,
+            1 => sign * a1 * 10f64.powf(-20.0 + 7.0 * uniform()) * 1.5,
+            _ => 0.0,
+        };
+        [a1, a3, a5]
+    }
+
     #[test]
     fn peak_angle_is_the_e7_gate() {
         // The one gate every harmonic sum shares: E7 off keeps half a pitch even where it
-        // is a local minimum; E7 on is exactly peak_off_half_pitch.
+        // is a local minimum; E7 on is exactly peak_off_half_pitch, which agrees with the
+        // workbook set's closed form within 1e-12 rad (decision 29 A).
         let a = [1.0, 0.2, 0.0];
-        assert_eq!(peak_angle(a, Deviations::NONE), None);
-        let on = peak_angle(a, Deviations::only(DeviationId::E7));
+        assert_eq!(peak_angle(&a, Deviations::NONE), None);
+        let on = peak_angle(&a, Deviations::only(DeviationId::E7));
         assert!(on.is_some());
-        assert_eq!(on, peak_off_half_pitch(a));
-        assert_eq!(peak_angle(a, Deviations::ALL), on);
+        assert_eq!(on, peak_off_half_pitch(&a));
+        let closed = closed_form_peak(a).expect("the closed form moves the peak too");
+        assert!((on.unwrap() - closed).abs() <= 1e-12, "{on:?} vs {closed}");
+        assert_eq!(peak_angle(&a, Deviations::ALL), on);
         assert_eq!(tau_at(2.0, 3, on.unwrap()), 2.0 * (3.0 * on.unwrap()).sin());
     }
 
@@ -1138,52 +1560,33 @@ mod tests {
     fn a_vanishing_fifth_harmonic_does_not_lose_the_peak() {
         // Final review, E7: with a5 -> 0 the quadratic's small root must tend to the linear
         // root -qc/qb (the a5 = 0 answer), not cancel to a wrong angle or to None.
-        let x0 = peak_off_half_pitch([1.0, 0.2, 0.0]).expect("the peak moves");
+        let x0 = peak_off_half_pitch(&[1.0, 0.2, 0.0]).expect("the peak moves");
         for a5 in [1e-20, -1e-20, 1e-16, -1e-16, 1e-14, 1.5e-13, -1.5e-13] {
-            let x = peak_off_half_pitch([1.0, 0.2, a5]).unwrap_or_else(|| panic!("{a5}: None"));
+            let x = peak_off_half_pitch(&[1.0, 0.2, a5]).unwrap_or_else(|| panic!("{a5}: None"));
             assert!((x - x0).abs() < 1e-9, "{a5}: {x} vs {x0}");
         }
     }
 
     #[test]
     fn peak_off_half_pitch_finds_the_brute_force_maximum() {
-        // Property test over random amplitude triples: the general case, a fifth harmonic
-        // in the band |a5/a1| <= 1.5e-13 where the textbook quadratic cancels (a ring at a
-        // fill of exactly 0.4 or 0.8 gives sin(5 fill pi/2) ~ 1e-16), and a5 = 0.
-        // a1 in [0.5, 1.5], a3 in +-a1/2 (A1 < 9 A3 moves the peak), so half a pitch
-        // stays positive and the maximum is a stationary point in (0, pi/2].
-        let mut state = 0x9E37_79B9_7F4A_7C15_u64;
-        let mut uniform = move || {
-            // splitmix64
-            state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
-            let mut z = state;
-            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-            ((z ^ (z >> 31)) >> 11) as f64 / (1u64 << 53) as f64
-        };
+        // Property test over random amplitude triples (`random_triple`: the general case, a
+        // vanishing fifth harmonic, and a5 = 0).
+        let mut uniform = uniform_source(0x9E37_79B9_7F4A_7C15);
         let mut misses = Vec::new();
         for i in 0..3000 {
-            let a1 = 0.5 + uniform();
-            let a3 = (uniform() - 0.5) * a1;
-            let sign = if uniform() < 0.5 { -1.0 } else { 1.0 };
-            let a5 = match i % 3 {
-                0 => (uniform() - 0.5) * 0.6 * a1,
-                1 => sign * a1 * 10f64.powf(-20.0 + 7.0 * uniform()) * 1.5,
-                _ => 0.0,
-            };
-            let a = [a1, a3, a5];
-            let got = match peak_off_half_pitch(a) {
+            let a = random_triple(&mut uniform, i);
+            let got = match peak_off_half_pitch(&a) {
                 Some(x) => {
                     assert!(
                         (0.0..=std::f64::consts::FRAC_PI_2).contains(&x),
                         "{a:?}: {x}"
                     );
-                    torque_at(a, x)
+                    torque_at(&a, x)
                 }
-                None => a1 - a3 + a5,
+                None => a[0] - a[1] + a[2],
             };
-            let want = grid_maximum(a, 1001);
-            if got < want - 4e-12 * (a1.abs() + a3.abs() + a5.abs()) {
+            let want = grid_maximum(&a, 1001);
+            if got < want - 4e-12 * (a[0].abs() + a[1].abs() + a[2].abs()) {
                 misses.push(format!("{a:?}: {got} < {want}"));
             }
         }
@@ -1192,6 +1595,182 @@ mod tests {
             "{} misses, e.g. {:?}",
             misses.len(),
             &misses[..misses.len().min(5)]
+        );
+    }
+
+    /// The closed form E7 used for the workbook set 1, 3, 5 before the harmonic set became a
+    /// parameter (kept as the reference decision 29 A compares with): the real roots in
+    /// u = cos² x of 80 a5 u² + (12 a3 − 100 a5) u + (a1 − 9 a3 + 25 a5), taken
+    /// cancellation-free, filtered as `peak_off_half_pitch` filters.
+    fn closed_form_peak(a: [f64; 3]) -> Option<f64> {
+        let [a1, a3, a5] = a;
+        let torque = |x: f64| a1 * x.sin() + a3 * (3.0 * x).sin() + a5 * (5.0 * x).sin();
+        let half_pitch = a1 - a3 + a5;
+        let (qa, qb, qc) = (80.0 * a5, 12.0 * a3 - 100.0 * a5, a1 - 9.0 * a3 + 25.0 * a5);
+        let roots: Vec<f64> = if qa != 0.0 {
+            let disc = qb * qb - 4.0 * qa * qc;
+            if disc < 0.0 {
+                Vec::new()
+            } else {
+                let q = -0.5 * (qb + disc.sqrt().copysign(qb));
+                if q == 0.0 {
+                    vec![0.0]
+                } else {
+                    vec![q / qa, qc / q]
+                }
+            }
+        } else if qb != 0.0 {
+            vec![-qc / qb]
+        } else {
+            Vec::new()
+        };
+        roots
+            .into_iter()
+            .filter(|u| (0.0..=1.0).contains(u))
+            .map(|u| u.sqrt().acos())
+            .map(|x| (x, torque(x)))
+            .filter(|&(_, t)| t - half_pitch > 1e-12 * half_pitch.abs())
+            .max_by(|p, q| p.1.total_cmp(&q.1))
+            .map(|(x, _)| x)
+    }
+
+    #[test]
+    fn the_general_search_agrees_with_the_closed_form_on_the_workbook_set() {
+        // Decision 29 A: one general search replaces the closed form for 1, 3, 5. On 3,000
+        // random triples of the three bands both give None in the same cases and otherwise
+        // the same angle within 1e-12 rad.
+        let mut uniform = uniform_source(0x2545_F491_4F6C_DD1D);
+        let mut disagreements = Vec::new();
+        for i in 0..3000 {
+            let a = random_triple(&mut uniform, i);
+            let (general, closed) = (peak_off_half_pitch(&a), closed_form_peak(a));
+            let agree = match (general, closed) {
+                (Some(x), Some(y)) => (x - y).abs() <= 1e-12,
+                (None, None) => true,
+                _ => false,
+            };
+            if !agree {
+                disagreements.push(format!("{a:?}: {general:?} vs {closed:?}"));
+            }
+        }
+        assert!(
+            disagreements.is_empty(),
+            "{} disagreements, e.g. {:?}",
+            disagreements.len(),
+            &disagreements[..disagreements.len().min(5)]
+        );
+    }
+
+    #[test]
+    fn the_general_search_finds_the_brute_force_maximum_up_to_harmonic_11() {
+        // Decision 29 A: 3,000 random spectra of 1 to 6 odd harmonics (up to 11). a1 in
+        // [0.5, 1.5]; harmonic n in +-a1/n, so half a pitch is often a local minimum and the
+        // curve can have several peaks; every fourth spectrum of two or more harmonics has a
+        // vanishing top harmonic (|a/a1| <= 1.5e-13). The search is never below the brute
+        // force by more than 4e-12 of Σ|a|.
+        let mut uniform = uniform_source(0xD1B5_4A32_D192_ED03);
+        let mut misses = Vec::new();
+        for i in 0..3000 {
+            let count = 1 + i % 6;
+            let a1 = 0.5 + uniform();
+            let mut a = vec![a1];
+            for &n in &ODD_HARMONICS[1..count] {
+                a.push((uniform() - 0.5) * 2.0 * a1 / f64::from(n));
+            }
+            if count > 1 && (i / 6) % 4 == 0 {
+                let sign = if uniform() < 0.5 { -1.0 } else { 1.0 };
+                a[count - 1] = sign * a1 * 10f64.powf(-20.0 + 7.0 * uniform()) * 1.5;
+            }
+            let got = match peak_off_half_pitch(&a) {
+                Some(x) => {
+                    assert!(
+                        (0.0..=std::f64::consts::FRAC_PI_2).contains(&x),
+                        "{a:?}: {x}"
+                    );
+                    torque_at(&a, x)
+                }
+                None => torque_at(&a, std::f64::consts::FRAC_PI_2),
+            };
+            let want = grid_maximum(&a, 2001);
+            let scale: f64 = a.iter().map(|x| x.abs()).sum();
+            if got < want - 4e-12 * scale {
+                misses.push(format!("{a:?}: {got} < {want}"));
+            }
+        }
+        assert!(
+            misses.is_empty(),
+            "{} misses, e.g. {:?}",
+            misses.len(),
+            &misses[..misses.len().min(5)]
+        );
+    }
+
+    #[test]
+    fn roots_in_unit_interval_finds_every_root_of_a_quintic() {
+        // cos(11x) / cos(x) = P_11(u) with u = cos² x has five roots in (0, 1), at
+        // x = (2k + 1) π / 22 for k = 0 .. 4.
+        let p11 = [-11.0, 220.0, -1232.0, 2816.0, -2816.0, 1024.0];
+        let roots = roots_in_unit_interval(&p11);
+        let mut want: Vec<f64> = (0..5)
+            .map(|k| (f64::from(2 * k + 1) * PI / 22.0).cos().powi(2))
+            .collect();
+        want.sort_by(f64::total_cmp);
+        assert_eq!(roots.len(), 5, "{roots:?}");
+        for (got, want) in roots.iter().zip(&want) {
+            assert!((got - want).abs() < 1e-12, "{got} vs {want}");
+        }
+    }
+
+    #[test]
+    fn roots_in_unit_interval_finds_a_close_pair_a_scan_would_miss() {
+        // Decision 29's failure mode of a sampled scan: two roots inside one cell of a
+        // 1,024-cell scan, with the same sign at both cell ends. The roots of the derivative
+        // split the interval first, so each piece holds one root.
+        let q = [0.5002 * 0.5006, -(0.5002 + 0.5006), 1.0]; // (u - 0.5002)(u - 0.5006)
+        let value = |u: f64| q[0] + q[1] * u + q[2] * u * u;
+        let (cell_lo, cell_hi) = (512.0 / 1024.0, 513.0 / 1024.0);
+        assert!(
+            value(cell_lo) > 0.0 && value(cell_hi) > 0.0,
+            "same sign at the cell ends"
+        );
+        let roots = roots_in_unit_interval(&q);
+        assert_eq!(roots.len(), 2, "{roots:?}");
+        assert!((roots[0] - 0.5002).abs() < 1e-12, "{}", roots[0]);
+        assert!((roots[1] - 0.5006).abs() < 1e-12, "{}", roots[1]);
+    }
+
+    #[test]
+    fn roots_in_unit_interval_handles_the_edges() {
+        let none = Vec::<f64>::new();
+        assert_eq!(roots_in_unit_interval(&[]), none);
+        assert_eq!(roots_in_unit_interval(&[1.0]), none, "a constant");
+        assert_eq!(
+            roots_in_unit_interval(&[0.0, 0.0]),
+            none,
+            "zero: no isolated root"
+        );
+        assert_eq!(roots_in_unit_interval(&[-0.25, 1.0]), [0.25]);
+        assert_eq!(roots_in_unit_interval(&[0.0, 1.0]), [0.0], "a root at 0");
+        assert_eq!(roots_in_unit_interval(&[-1.0, 1.0]), [1.0], "a root at 1");
+        assert_eq!(
+            roots_in_unit_interval(&[2.0, -1.0]),
+            none,
+            "root at 2: outside"
+        );
+        assert_eq!(
+            roots_in_unit_interval(&[1.0, 0.0, 1.0]),
+            none,
+            "no real root"
+        );
+        assert_eq!(
+            roots_in_unit_interval(&[0.25, -1.0, 1.0]),
+            [0.5],
+            "double root"
+        );
+        assert_eq!(
+            roots_in_unit_interval(&[-0.25, 1.0, 0.0, 0.0]),
+            [0.25],
+            "trailing zeros dropped"
         );
     }
 
@@ -1229,6 +1808,126 @@ mod tests {
     }
 
     #[test]
+    fn harmonic_count_maps_each_choice_and_nothing_else() {
+        for (i, &(code, _)) in MAX_HARMONIC_CHOICES.iter().enumerate() {
+            assert_eq!(code, i64::from(ODD_HARMONICS[i]));
+            assert_eq!(harmonic_count(code), Some(i + 1), "{code}");
+        }
+        assert_eq!(harmonic_count(WORKBOOK_MAX_HARMONIC), Some(HARMONICS.len()));
+        assert_eq!(
+            CouplingInputs::default().max_harmonic,
+            WORKBOOK_MAX_HARMONIC
+        );
+        for code in [0, 2, 4, 6, 12, 13, -1, i64::MIN, i64::MAX] {
+            assert_eq!(harmonic_count(code), None, "{code}");
+        }
+    }
+
+    #[test]
+    fn the_harmonic_set_adds_or_drops_terms() {
+        // Addendum A3: the model sums 1, 3, ... up to the chosen harmonic. The terms of 1, 3
+        // and 5 (wave number, amplitudes, geometry factors) do not depend on the set; a left-out
+        // harmonic's shear stress reads 0, so the total is always the sum of the six cells.
+        let with = |max_harmonic| {
+            at(&CouplingInputs {
+                max_harmonic,
+                ..CouplingInputs::default()
+            })
+        };
+        let (one, workbook, eleven) = (with(1), with(5), with(11));
+        assert_eq!(workbook, at(&CouplingInputs::default()));
+        assert_eq!((one.tau3_Pa, one.tau5_Pa), (0.0, 0.0));
+        assert_eq!(one.tau_Pa, one.tau1_Pa);
+        assert_eq!(
+            (workbook.tau7_Pa, workbook.tau9_Pa, workbook.tau11_Pa),
+            (0.0, 0.0, 0.0)
+        );
+        for r in [&one, &eleven] {
+            assert_eq!(
+                (r.k3, r.b_i5, r.s5_iron, r.s1_free),
+                (
+                    workbook.k3,
+                    workbook.b_i5,
+                    workbook.s5_iron,
+                    workbook.s1_free
+                )
+            );
+        }
+        assert!(eleven.tau7_Pa != 0.0 && eleven.tau9_Pa != 0.0 && eleven.tau11_Pa != 0.0);
+        let cells = [
+            eleven.tau1_Pa,
+            eleven.tau3_Pa,
+            eleven.tau5_Pa,
+            eleven.tau7_Pa,
+            eleven.tau9_Pa,
+            eleven.tau11_Pa,
+        ];
+        assert_eq!(eleven.tau_Pa, cells.iter().fold(0.0, |acc, t| acc + t));
+        assert!(close(
+            eleven.pullout_Nm / workbook.pullout_Nm,
+            eleven.tau_Pa / workbook.tau_Pa
+        ));
+        // The steel circuit sum (C95) is the pull-out's circuit here (both factors 0.95).
+        for r in [&one, &workbook, &eleven] {
+            assert!(close(r.pullout_iron_Nm, r.pullout_Nm), "{}", r.tau_Pa);
+        }
+    }
+
+    #[test]
+    fn an_invalid_harmonic_set_gives_nan_not_another_set() {
+        // Decision D3: a code outside the choices, set on the struct, never selects another set.
+        let r = at(&CouplingInputs {
+            max_harmonic: 4,
+            ..CouplingInputs::default()
+        });
+        for (what, x) in [
+            ("tau", r.tau_Pa),
+            ("tau1", r.tau1_Pa),
+            ("tau5", r.tau5_Pa),
+            ("tau11", r.tau11_Pa),
+            ("pull-out", r.pullout_Nm),
+            ("steel circuit", r.pullout_iron_Nm),
+            ("free-space circuit", r.pullout_noiron_Nm),
+        ] {
+            assert!(x.is_nan(), "{what}: {x}");
+        }
+        assert!(r.k1.is_finite() && r.b_i1.is_finite() && r.s1_iron.is_finite());
+    }
+
+    #[test]
+    fn e7_finds_the_peak_of_an_eleven_harmonic_curve() {
+        // Decision 29 A through the model: 6 poles in free space (the layout of E7's probe),
+        // every harmonic up to 11. E7's pull-out is the maximum of the model's own curve built
+        // from the half-pitch terms (tau_n = a_n sin(n pi/2), so a_n = +-tau_n), and the
+        // free-space circuit sum (C96) finds the same peak.
+        let ci = CouplingInputs {
+            npole: 6,
+            backiron: 0,
+            max_harmonic: 11,
+            ..CouplingInputs::default()
+        };
+        let off = at(&ci);
+        let on = at_with(&ci, 0.05, Deviations::only(DeviationId::E7));
+        let half_pitch = [
+            off.tau1_Pa,
+            off.tau3_Pa,
+            off.tau5_Pa,
+            off.tau7_Pa,
+            off.tau9_Pa,
+            off.tau11_Pa,
+        ];
+        let a: Vec<f64> = half_pitch
+            .iter()
+            .enumerate()
+            .map(|(i, &t)| if i % 2 == 0 { t } else { -t })
+            .collect();
+        let peak = grid_maximum(&a, 20001);
+        assert!(on.tau_Pa > off.tau_Pa, "{} vs {}", on.tau_Pa, off.tau_Pa);
+        assert!(close(on.tau_Pa, peak), "{} vs {peak}", on.tau_Pa);
+        assert!(close(on.pullout_noiron_Nm, on.pullout_Nm));
+    }
+
+    #[test]
     fn calibration_factor_needs_every_prototype_condition() {
         let f = |backiron, npole, poles| {
             select_calibration_factor(backiron, npole, "B842SH", "B842SH", poles, 1.0658, 0.95)
@@ -1241,6 +1940,43 @@ mod tests {
             1.0658,
             "a 24-magnet prototype matches 12 poles"
         );
+    }
+
+    #[test]
+    fn the_end_effect_check_is_strict_at_zero() {
+        // Audit M9, the user's decision: a flag, no physics change. Architecture section 7
+        // step 8: the comparison `f_end > 0` at exact equality, then either side of it.
+        assert_eq!(end_effect_check(0.0), END_EFFECT_OUT_OF_RANGE);
+        assert_eq!(end_effect_check(-0.0), END_EFFECT_OUT_OF_RANGE);
+        assert_eq!(end_effect_check(f64::MIN_POSITIVE), "OK");
+        assert_eq!(end_effect_check(-1e-300), END_EFFECT_OUT_OF_RANGE);
+        assert_eq!(end_effect_check(f64::NAN), END_EFFECT_OUT_OF_RANGE);
+        assert!(end_effect_in_range(1.0) && !end_effect_in_range(f64::NEG_INFINITY));
+    }
+
+    #[test]
+    fn short_magnets_flag_the_end_effect_model() {
+        // Audit M9: f_end = 1 - c_end * pole pitch / L turns negative below L = c_end * pole
+        // pitch (1.32 mm at the defaults), and the pull-out with it. 2 mm manual blocks with
+        // c_end = 0.5, both inside their sliders, reach it.
+        let r = at(&CouplingInputs::default());
+        assert_eq!((r.f_end > 0.0, r.end_effect_check.as_str()), (true, "OK"));
+        let mut ci = CouplingInputs {
+            c_end: 0.5,
+            ..CouplingInputs::default()
+        };
+        ci.magnets.part_inner = String::new();
+        ci.magnets.part_outer = String::new();
+        ci.magnets.manual_inner_length_mm = 2.0;
+        ci.magnets.manual_outer_length_mm = 2.0;
+        let r = at(&ci);
+        assert!(
+            r.f_end < 0.0 && r.pullout_Nm < 0.0,
+            "{} {}",
+            r.f_end,
+            r.pullout_Nm
+        );
+        assert_eq!(r.end_effect_check, END_EFFECT_OUT_OF_RANGE);
     }
 
     #[test]
@@ -1312,6 +2048,48 @@ mod tests {
         );
         assert_eq!(r.inner_flat_check, "OK, 0.00 mm slack");
         assert_eq!(r.outer_flat_check, "OK, blocks 0.00 mm apart at the faces");
+    }
+
+    #[test]
+    fn a_grade_ring_weighs_at_its_grade_density() {
+        // Decision A2-7: the magnets' mass prices each ring at its own density; rings of one
+        // density keep the workbook's single product, bit for bit.
+        let md = super::super::metal_design::MetalDesignInputs::default();
+        let mass = |ci: &CouplingInputs| {
+            let r = at(ci);
+            let m = mass_estimate(
+                ci,
+                &r,
+                md.bond_inner_mm,
+                md.bond_outer_mm,
+                md.cup_depth_mm,
+                md.web_mm,
+                md.hub_length_mm,
+                md.boss_length_mm,
+                md.boss_od_mm,
+                md.steel_density_g_mm3,
+                md.al_density_g_mm3,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                Deviations::NONE,
+            );
+            (m.magnets_g, r)
+        };
+        let (workbook, r) = mass(&CouplingInputs::default());
+        let volume_i = r.inner_length_mm * r.inner_width_mm * r.inner_thickness_mm;
+        let volume_o = r.outer_length_mm * r.outer_width_mm * r.outer_thickness_mm;
+        assert_eq!(workbook, 10.0 * (volume_i + volume_o) * NDFEB_DENSITY_G_MM3);
+        let mut ci = CouplingInputs::default();
+        ci.magnets.part_inner = String::new();
+        ci.magnets.grade_inner = "Y30".to_owned();
+        let (ferrite, r) = mass(&ci);
+        let volume_i = r.inner_length_mm * r.inner_width_mm * r.inner_thickness_mm;
+        assert_eq!(
+            ferrite,
+            10.0 * (volume_i * 0.005 + volume_o * NDFEB_DENSITY_G_MM3)
+        );
     }
 
     #[test]

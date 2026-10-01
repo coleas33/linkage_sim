@@ -246,3 +246,140 @@ fn every_part_cites_its_vendor_page_for_coating_and_magnetization() {
         }
     }
 }
+
+#[test]
+fn a_grade_ring_scales_with_its_own_alpha_and_weighs_at_its_density() {
+    // Decision A2-7 end to end: hard ferrite Y30 picked for manual dimensions on both rings,
+    // with the calculator's alpha (Calibration C22) left at the NdFeB -0.0012: the rings take
+    // Y30's -0.20 %/C and 5.0 g/cm3. Setting C22 to Y30's value by hand (the A-1 way) gives
+    // the same Calculator torques and temperature limits; only C35 and the parts C22 alone
+    // drives (the Calibration prototype, C151) differ.
+    use magcoupling::{DesignInputs, compute_all};
+    let mut graded = DesignInputs::default();
+    let m = &mut graded.coupling.magnets;
+    m.part_inner = String::new();
+    m.part_outer = String::new();
+    m.grade_inner = "Y30".to_owned();
+    m.grade_outer = "Y30".to_owned();
+    let r = compute_all(&graded);
+    assert_eq!(
+        (r.model.inner_alpha_br_per_C, r.model.outer_alpha_br_per_C),
+        (-0.002, -0.002)
+    );
+    let volume = r.model.inner_length_mm * r.model.inner_width_mm * r.model.inner_thickness_mm;
+    let volume_o = r.model.outer_length_mm * r.model.outer_width_mm * r.model.outer_thickness_mm;
+    assert_eq!(r.mass.magnets_g, 10.0 * (volume + volume_o) * 0.005);
+    let mut by_hand = graded.clone();
+    by_hand.calibration.alpha_br_per_C = -0.002;
+    let h = compute_all(&by_hand);
+    assert_eq!(r.model.pullout_Nm, h.model.pullout_Nm);
+    assert_eq!(r.metal.torque_cold_high_Nm, h.metal.torque_cold_high_Nm);
+    assert_eq!(
+        r.temperature.summary.governing_limit_C,
+        h.temperature.summary.governing_limit_C
+    );
+    assert_eq!(r.temperature.demag.alpha_br, -0.002);
+    assert_eq!(r.model.alpha_br_per_C, -0.0012);
+}
+
+#[test]
+fn mixed_rings_each_take_their_own_alpha_and_density_either_way_round() {
+    // Decision A2-7 end to end with two different coefficients, where a swap of the rings'
+    // wiring shows (with identical rings every product commutes): the library NdFeB part
+    // (B842SH: C22's -0.12 %/C and the NdFeB density) beside a Y30 ring in the grade mode
+    // (-0.20 %/C, 5.0 g/cm3), each way round. Under E20 with the coercivity source at 1,
+    // Y30's positive beta puts that ring on the cold side, so the NdFeB ring governs the hot
+    // limit, with the onsets it has in the default design (two NdFeB parts), and the Y30 ring
+    // the cold one.
+    use magcoupling::engine::temperature::{RING_INNER, RING_OUTER};
+    use magcoupling::{DesignInputs, compute_all};
+    let th = |alpha: f64, t: f64| 1.0 + alpha * (t - 20.0); // model::br_factor, t in °C
+    let ndfeb = (-0.0012, NDFEB_DENSITY_G_MM3);
+    let y30 = (-0.002, 0.005);
+    let default_demag = compute_all(&DesignInputs::default()).temperature.demag;
+    for (y30_inner, ((alpha_i, rho_i), (alpha_o, rho_o)), (hot_ring, cold_ring)) in [
+        (false, (ndfeb, y30), (RING_INNER, RING_OUTER)),
+        (true, (y30, ndfeb), (RING_OUTER, RING_INNER)),
+    ] {
+        let label = if y30_inner { "Y30 inner" } else { "Y30 outer" };
+        let mut d = DesignInputs::default();
+        let m = &mut d.coupling.magnets;
+        if y30_inner {
+            m.part_inner = String::new();
+            m.grade_inner = "Y30".to_owned();
+        } else {
+            m.part_outer = String::new();
+            m.grade_outer = "Y30".to_owned();
+        }
+        let r = compute_all(&d);
+        assert_eq!(
+            (r.model.inner_alpha_br_per_C, r.model.outer_alpha_br_per_C),
+            (alpha_i, alpha_o),
+            "{label}"
+        );
+        assert_eq!(
+            (
+                r.model.inner_magnet_density_g_mm3,
+                r.model.outer_magnet_density_g_mm3
+            ),
+            (rho_i, rho_o),
+            "{label}"
+        );
+        // Torques at another temperature: both rings' factors, in the engine's operand order.
+        let (t_min, t_op) = (d.metal.min_temp_C, r.metal.op_temp_C);
+        assert_eq!(
+            r.metal.torque_cold_Nm,
+            r.metal.torque_20C_Nm * (th(alpha_i, t_min) * th(alpha_o, t_min)),
+            "{label}"
+        );
+        assert_eq!(
+            r.metal.cold_for_hot_min_Nm,
+            d.metal.required_min_Nm
+                * ((th(alpha_i, t_min) / th(alpha_i, t_op))
+                    * (th(alpha_o, t_min) / th(alpha_o, t_op))),
+            "{label}"
+        );
+        // Each ring's E20 check with its own coefficient: the block (C43) shows the governing
+        // NdFeB ring's, and that ring's onsets are the default design's bit for bit.
+        let demag = &r.temperature.demag;
+        assert_eq!(
+            (demag.demag_ring.as_str(), demag.cold_ring.as_str()),
+            (hot_ring, cold_ring),
+            "{label}"
+        );
+        assert_eq!(demag.alpha_br, ndfeb.0, "{label}");
+        assert_eq!(
+            (
+                demag.onset_aligned_C,
+                demag.onset_pullout_C,
+                demag.onset_skipping_C,
+                demag.onset_single_ring_C,
+                demag.magnet_limit_C
+            ),
+            (
+                default_demag.onset_aligned_C,
+                default_demag.onset_pullout_C,
+                default_demag.onset_skipping_C,
+                default_demag.onset_single_ring_C,
+                default_demag.magnet_limit_C
+            ),
+            "{label}"
+        );
+        // Each ring weighs at its own density; the bond block is the inner ring's.
+        let volume_i =
+            r.model.inner_length_mm * r.model.inner_width_mm * r.model.inner_thickness_mm;
+        let volume_o =
+            r.model.outer_length_mm * r.model.outer_width_mm * r.model.outer_thickness_mm;
+        let n = d.coupling.npole as f64;
+        assert_eq!(
+            r.mass.magnets_g,
+            n * (volume_i * rho_i + volume_o * rho_o),
+            "{label}"
+        );
+        assert_eq!(
+            r.temperature.adhesive.block_mass_g,
+            volume_i * rho_i,
+            "{label}"
+        );
+    }
+}

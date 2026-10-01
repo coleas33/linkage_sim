@@ -27,6 +27,7 @@ use super::deviations::Deviations;
 #[cfg(feature = "workbook-parity")]
 use super::deviations::{REGISTRY, restore_workbook_defaults};
 use super::grades;
+use super::housing::{self, HousingResults};
 use super::material_library;
 use super::materials::{self, MaterialsInputs, MaterialsResults};
 use super::meta::{ResultSet, SetError, TableLayout, Value, inputs, results, validate};
@@ -65,6 +66,7 @@ results! {
             temperature: TemperatureResults,
             clamps: ClampResults,
             warnings: WarningResults,
+            housing: HousingResults,
         }
         tables {
             gap_sweep: SweepRow => TableLayout::RowsDown { sheet: "Gap sweep", first_row: 6 },
@@ -145,9 +147,15 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         backiron: parts.backiron,
         ..inputs.coupling.clone()
     };
+    // Addendum A1 (decision A2-8): with the axial length override set, the hub length, the cup
+    // cavity depth and the retainer span follow the magnets; blank, they are the inputs.
+    let axial = housing::axial_housing(&inputs.metal, &ci.magnets, dev);
     let md = &MetalDesignInputs {
         steel_density_g_mm3: parts.steel.density_g_mm3,
         sleeve_density_g_mm3: parts.sleeve_liner.props.density_g_mm3,
+        hub_length_mm: axial.hub_length_mm,
+        cup_depth_mm: axial.cup_depth_mm,
+        retainer_span_mm: axial.retainer_span_mm,
         ..inputs.metal.clone()
     };
     // The cap is the only part the retainers price at Metal design C42.
@@ -159,7 +167,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
     ti.slip_loss.sigma_316_S_m = parts.sleeve_liner.props.sigma_S_m;
     ti.thermal.c_316 = parts.sleeve_liner.props.cp_J_kgK;
     ti.thermal.c_aluminium = parts.cap.props.cp_J_kgK;
-    let cal = calibration::compute(cal_in, dev);
+    let cal = calibration::compute(cal_in, ci.max_harmonic, dev);
     let f_cal = model::select_calibration_factor(
         ci.backiron,
         ci.npole,
@@ -217,6 +225,8 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         m.pullout_20C_Nm,
         ci.op_temp_C,
         cal_in.alpha_br_per_C,
+        m.inner_alpha_br_per_C,
+        m.outer_alpha_br_per_C,
         m.corner_gap_mm,
         m.face_gap_mm,
         m.cup_od_mm,
@@ -249,7 +259,9 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         op_temp_C: ci.op_temp_C,
         npole: ci.npole,
         br20_T: m.inner_br_T,
-        alpha_br: cal_in.alpha_br_per_C,
+        inner_alpha_br: m.inner_alpha_br_per_C,
+        outer_alpha_br: m.outer_alpha_br_per_C,
+        inner_magnet_density_g_mm3: m.inner_magnet_density_g_mm3,
         tmax_lib_C: m.inner_tmax_C,
         mu0: ci.mu0,
         pullout_op_Nm: m.pullout_Nm,
@@ -327,6 +339,9 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         magnet_cte_per_C: ti.mismatch.ndfeb_cte_per_C,
     });
 
+    // Addendum A1: the space claim, from the derived dimensions (both modes).
+    let housing = housing::compute(&mdr, &axial);
+
     let alloy = if inputs.clamps.alloy == 1 {
         &materials::AL7075
     } else {
@@ -361,6 +376,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         gear_eff: ci.gear_efficiency,
         required_floor_Nm: m.required_floor_Nm,
         max_diameter_mm: md.max_diameter_mm,
+        max_harmonic: ci.max_harmonic,
     };
     let gap = sweeps::gap_sweep(&ctx, ci.npole, ci.inner_back_apothem_mm, f_cal, dev);
     let pole = sweeps::pole_sweep(
@@ -381,6 +397,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         temperature: temp,
         clamps: clr,
         warnings: warn,
+        housing,
         gap_sweep: gap,
         pole_sweep: pole,
     }

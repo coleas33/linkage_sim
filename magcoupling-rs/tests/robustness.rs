@@ -59,33 +59,44 @@ fn an_invalid_screw_class_is_nan_not_a_panic() {
 fn compute_all_never_panics_on_extreme_inputs() {
     // Review Focus 3 and 5: typed values far outside the sliders (set() accepts them,
     // as Python does). Results may be inf or NaN; nothing may panic (no integer overflow).
-    let base = DesignInputs::default();
-    let mut tried = 0;
-    for row in input_rows(&base) {
-        let values: Vec<Value> = match (row.meta.ty, row.meta.choices.is_empty()) {
-            (FieldType::F64 | FieldType::OptF64, _) => {
-                let r = row
-                    .meta
-                    .range
-                    .expect("every numeric input has a range (tests/schema.rs)");
-                [0.0, -1.0, r.min / 10.0, r.max * 10.0, 1e300, -1e300]
-                    .map(Value::Num)
-                    .to_vec()
+    // Once with the default steel back iron and once with none (backiron 0): the free-space
+    // circuit is where E17's inputs (b_hub_free_T, b_cup_free_T, web_integral_free_T2m2) act.
+    // compute_all applies every correction.
+    for backiron in [1, 0] {
+        let mut base = DesignInputs::default();
+        base.coupling.backiron = backiron;
+        let mut tried = 0;
+        for row in input_rows(&base) {
+            let values: Vec<Value> = match (row.meta.ty, row.meta.choices.is_empty()) {
+                (FieldType::F64 | FieldType::OptF64, _) => {
+                    let r = row
+                        .meta
+                        .range
+                        .expect("every numeric input has a range (tests/schema.rs)");
+                    [0.0, -1.0, r.min / 10.0, r.max * 10.0, 1e300, -1e300]
+                        .map(Value::Num)
+                        .to_vec()
+                }
+                // 2: Review Focus 3's `coupling.npole = 2` (tan(pi/2) is huge but finite).
+                (FieldType::I64, true) => {
+                    [0, 2, -2, 3, i64::MAX, i64::MIN].map(Value::Int).to_vec()
+                }
+                _ => continue, // selectors: next test; text: any text is valid (manual magnet)
+            };
+            for value in values {
+                let mut inputs = base.clone();
+                inputs
+                    .set(&row.path, value.clone())
+                    .unwrap_or_else(|e| panic!("{e}"));
+                let _ = compute_all(&inputs);
+                tried += 1;
             }
-            // 2: Review Focus 3's `coupling.npole = 2` (tan(pi/2) is huge but finite).
-            (FieldType::I64, true) => [0, 2, -2, 3, i64::MAX, i64::MIN].map(Value::Int).to_vec(),
-            _ => continue, // selectors: next test; text: any text is valid (manual magnet)
-        };
-        for value in values {
-            let mut inputs = base.clone();
-            inputs
-                .set(&row.path, value.clone())
-                .unwrap_or_else(|e| panic!("{e}"));
-            let _ = compute_all(&inputs);
-            tried += 1;
         }
+        assert!(
+            tried > 800,
+            "backiron {backiron}: only {tried} extreme cases"
+        );
     }
-    assert!(tried > 800, "only {tried} extreme cases");
 }
 
 #[test]
@@ -94,7 +105,7 @@ fn compute_all_never_panics_on_non_finite_struct_literals() {
     // a share link can hold one. compute_all must not panic on it (gate 4 is a debug build,
     // overflow checks on), with the corrections off or on; validate() names the one path.
     type Put = fn(&mut DesignInputs, f64);
-    let cases: [(&str, Put); 4] = [
+    let cases: [(&str, Put); 5] = [
         ("metal.face_gap_mm", |i, x| i.metal.face_gap_mm = x),
         ("clamps.boss_od_mm", |i, x| i.clamps.boss_od_mm = x),
         ("temperature.thermal.conductance_W_K", |i, x| {
@@ -102,6 +113,9 @@ fn compute_all_never_panics_on_non_finite_struct_literals() {
         }),
         ("metal.measured_drag_Nm", |i, x| {
             i.metal.measured_drag_Nm = Some(x)
+        }),
+        ("coupling.magnets.axial_length_mm", |i, x| {
+            i.coupling.magnets.axial_length_mm = Some(x)
         }),
     ];
     for x in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
@@ -166,6 +180,26 @@ fn compute_all_never_panics_on_selector_codes_outside_the_choices() {
 }
 
 #[test]
+fn an_invalid_harmonic_set_is_nan_not_another_set() {
+    // A Rust-only selector set on the struct (bypassing set()): the Calculator, the
+    // Calibration prototype and every sweep row read NaN, never another harmonic set, with
+    // the corrections off and on; validate() names the path.
+    for dev in [Deviations::NONE, Deviations::ALL] {
+        let mut inputs = DesignInputs::defaults_with(dev);
+        inputs.coupling.max_harmonic = 4;
+        let res = compute_all_with(&inputs, dev);
+        assert!(res.model.pullout_Nm.is_nan() && res.metal.torque_hot_low_Nm.is_nan());
+        assert!(res.calibration.model_torque_Nm.is_nan());
+        assert!(res.gap_sweep.iter().all(|r| r.tau_Pa.is_nan()));
+        assert!(res.pole_sweep.iter().all(|r| r.pullout_op_Nm.is_nan()));
+        let errors = inputs.validate().expect_err("an invalid code");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].path, "coupling.max_harmonic");
+        assert_eq!(errors[0].kind, SetErrorKind::NotAChoice { code: 4 });
+    }
+}
+
+#[test]
 fn an_invalid_coercivity_source_uses_the_inputs() {
     // A Rust-only selector set on the struct (bypassing set()): any code but 1 means the Hcj
     // and beta inputs for both rings, as the catch-all else of a two-way IF (Global
@@ -181,6 +215,40 @@ fn an_invalid_coercivity_source_uses_the_inputs() {
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0].path, "temperature.demag.coercivity_source");
     assert_eq!(errors[0].kind, SetErrorKind::NotAChoice { code: 7 });
+}
+
+#[test]
+fn a_typed_positive_beta_takes_the_cold_side() {
+    // Decision A2-5: C45's slider stays the workbook's NdFeB range (the differential generator
+    // samples from it), and a positive beta is typed: set() refuses only NaN, infinities and
+    // codes outside choices. With the coercivity source at 0 (C44 and C45 for both rings) a
+    // typed +0.0035 on the default rings (rated 150 C) takes E20's cold side: no knee on
+    // heating, the rating as the hot limit, a cold limit that the -40 C minimum clears.
+    let meta = input_rows(&DesignInputs::default())
+        .into_iter()
+        .find(|r| r.path == "temperature.demag.beta_hcj_per_C")
+        .expect("C45")
+        .meta;
+    let range = meta.range.expect("a slider");
+    assert_eq!((range.min, range.max), (-0.008, -0.001));
+    assert!(meta.help.contains("typed"), "{}", meta.help);
+    let mut inputs = DesignInputs::default();
+    inputs
+        .set("temperature.demag.coercivity_source", Value::Int(0))
+        .unwrap();
+    inputs
+        .set("temperature.demag.beta_hcj_per_C", Value::Num(0.0035))
+        .unwrap();
+    let d = compute_all(&inputs).temperature.demag;
+    assert_eq!(d.beta_used_per_C, 0.0035);
+    assert_eq!(d.onset_skipping_C, f64::INFINITY);
+    assert_eq!(d.magnet_limit_C, 150.0);
+    assert!(
+        matches!(d.cold_limit_C, NumOrText::Num(c) if c < -40.0),
+        "{:?}",
+        d.cold_limit_C
+    );
+    assert_eq!(d.cold_check, "OK");
 }
 
 #[test]
@@ -202,6 +270,33 @@ fn a_positive_beta_without_a_rating_has_no_hot_limit() {
         t.summary.verdict,
         "OK on temperature. Confirm drag torque and thermal cycling by test."
     );
+}
+
+#[test]
+fn sizing_never_panics_on_extreme_designs() {
+    // Inverse sizing on designs no slider reaches: it must return an outcome or an error for
+    // every free variable, never panic (gate 4 is a debug build, overflow checks on).
+    use magcoupling::engine::sizing::{FreeVariable, solve};
+    let mut designs = Vec::new();
+    let mut d = DesignInputs::default();
+    d.coupling.npole = i64::MAX;
+    designs.push(d);
+    let mut d = DesignInputs::default();
+    d.metal.face_gap_mm = 1e300;
+    designs.push(d);
+    let mut d = DesignInputs::default();
+    d.coupling.magnets.part_inner = String::new();
+    d.coupling.magnets.manual_inner_thickness_mm = 0.0;
+    d.coupling.backiron = 0;
+    designs.push(d);
+    let mut d = DesignInputs::default();
+    d.metal.variation = 1.0; // the hot low torque is 0
+    designs.push(d);
+    for design in &designs {
+        for variable in FreeVariable::ALL {
+            let _ = solve(design, variable, 1.0);
+        }
+    }
 }
 
 #[test]

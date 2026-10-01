@@ -23,14 +23,20 @@
 //! [`crate::engine::deviations::REGISTRY`]): E4 is applied (Pole sweep C6:C11,
 //! the keyed-bore wall adds the inner bondline), and so is E7 (columns N, Q, T
 //! and U, and through them V to AA: pull-out at the maximum over angle, through
-//! the model's `at_pull_out`).
+//! the model's `at_pull_out`). Addendum A3: a row sums the Calculator's harmonic
+//! set (`coupling.max_harmonic`); column U includes harmonics 7 to 11 when the set
+//! does, which have no column of their own. A row whose `f_end` (column W) is 0 or
+//! below is outside the end-effect model (audit M9): the GUI flags it with
+//! `model::end_effect_in_range`, as the Calculator's `end_effect_check` does.
 
 use std::f64::consts::PI;
 
 use super::compat::{py_max, py_min};
 use super::deviations::{DeviationId, Deviations};
 use super::meta::{col, rows};
-use super::model::{at_pull_out, corner_radius, shear_stress};
+use super::model::{
+    at_pull_out, corner_radius, harmonic_count, harmonic_slot, harmonic_sum, shear_stress,
+};
 
 /// Corner gaps of the gap sweep [mm] (rows 6-18).
 pub const GAP_SWEEP_CORNER_GAPS_MM: [f64; 13] = [
@@ -98,6 +104,8 @@ pub struct SweepContext {
     pub gear_eff: f64,
     pub required_floor_Nm: f64,
     pub max_diameter_mm: f64,
+    /// The Calculator's highest harmonic (`coupling.max_harmonic`, Addendum A3).
+    pub max_harmonic: i64,
 }
 
 /// One sweep row (Python `_row`), columns C-AA with the workbook's status priority.
@@ -144,9 +152,12 @@ fn row(
         ctx.mu0,
     );
     let s = h.map(|x| x.s(ctx.backiron));
-    // E7: every harmonic at the true pull-out angle when half a pitch is not the maximum (as the model).
-    let h_pull = at_pull_out(h, ctx.backiron, ctx.mu0, dev);
-    let U = h_pull.iter().fold(0.0, |acc, x| acc + x.tau);
+    // Addendum A3: the Calculator's harmonic set. E7: every harmonic at the true pull-out
+    // angle when half a pitch is not the maximum (as the model).
+    let count = harmonic_count(ctx.max_harmonic);
+    let h_pull = at_pull_out(&h[..count.unwrap_or(0)], ctx.backiron, ctx.mu0, dev);
+    let taus: Vec<f64> = h_pull.iter().map(|x| x.tau).collect();
+    let U = harmonic_sum(count, taus.iter().copied());
     let V = U * 2.0 * PI * (H / 1000.0).powi(2) * (ctx.L / 1000.0);
     let W = 1.0 - ctx.c_end * I / ctx.L;
     let X = V * W * factor;
@@ -163,7 +174,7 @@ fn row(
     } else {
         "nominal: test needed"
     };
-    let [h1, h3, h5] = h_pull;
+    let [h1, h3, h5, ..] = h;
     SweepRow {
         variable,
         inner_apothem_mm: a_i,
@@ -177,13 +188,13 @@ fn row(
         fill_outer: K,
         k1: h1.k,
         s1: s[0],
-        tau1_Pa: h1.tau,
+        tau1_Pa: harmonic_slot(count, &taus, 0),
         k3: h3.k,
         s3: s[1],
-        tau3_Pa: h3.tau,
+        tau3_Pa: harmonic_slot(count, &taus, 1),
         k5: h5.k,
         s5: s[2],
-        tau5_Pa: h5.tau,
+        tau5_Pa: harmonic_slot(count, &taus, 2),
         tau_Pa: U,
         torque_2d_Nm: V,
         f_end: W,
@@ -236,6 +247,7 @@ pub fn pole_sweep(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::model::WORKBOOK_MAX_HARMONIC;
 
     /// The default design's sweep context (`api::compute` at the workbook defaults).
     fn ctx() -> SweepContext {
@@ -260,7 +272,35 @@ mod tests {
             gear_eff: 0.95,
             required_floor_Nm: 2.5,
             max_diameter_mm: 43.0,
+            max_harmonic: WORKBOOK_MAX_HARMONIC,
         }
+    }
+
+    #[test]
+    fn the_harmonic_set_reaches_every_row() {
+        // Addendum A3: a row sums the harmonics the Calculator sums; a left-out one reads 0,
+        // and a code outside the choices gives NaN (decision D3).
+        let run = |max_harmonic| {
+            let c = SweepContext {
+                max_harmonic,
+                ..ctx()
+            };
+            row(&c, 1.25, 10, 10.15, 1.25, 0.95, Deviations::NONE)
+        };
+        let (one, workbook, eleven) = (run(1), run(WORKBOOK_MAX_HARMONIC), run(11));
+        assert_eq!((one.tau3_Pa, one.tau5_Pa), (0.0, 0.0));
+        assert_eq!(one.tau_Pa, one.tau1_Pa);
+        assert_eq!(
+            workbook.tau_Pa,
+            0.0 + workbook.tau1_Pa + workbook.tau3_Pa + workbook.tau5_Pa
+        );
+        assert!(eleven.tau_Pa != workbook.tau_Pa);
+        assert_eq!(
+            (eleven.tau1_Pa, eleven.s3, eleven.k5),
+            (workbook.tau1_Pa, workbook.s3, workbook.k5)
+        );
+        let invalid = run(4);
+        assert!(invalid.tau_Pa.is_nan() && invalid.pullout_op_Nm.is_nan());
     }
 
     #[test]
