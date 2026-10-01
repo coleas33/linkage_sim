@@ -126,12 +126,45 @@ fn augmentations() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
     v
 }
 
-/// The defaults, then every differential case under every augmentation.
+/// Input sets `set` accepts that no differential case or augmentation reaches, each with
+/// what it pins, applied on top of the defaults (records hold over every input `set` accepts).
+fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
+    let text = |s: &str| Value::Text(s.to_owned());
+    vec![(
+        // The outer ring (manual, ferrite's beta) has a 0/0 cold onset, so its cold limit is
+        // NaN, while the inner Y30 ring's is finite and below the minimum temperature: the
+        // inner ring holds the cold side, yet the outer ring's check fails (min >= NaN is
+        // false), so `cold_check` must state both rings' checks, not the higher limit's.
+        "outer cold limit undefined (NaN), inner Y30",
+        vec![
+            ("temperature.demag.h_rev_likepole_kA_m", Value::Num(0.0)),
+            ("temperature.demag.hcj20_kA_m", Value::Num(0.0)),
+            ("temperature.demag.beta_hcj_per_C", Value::Num(0.0035)),
+            ("coupling.magnets.part_inner", text("")),
+            ("coupling.magnets.grade_inner", text("Y30")),
+            ("coupling.magnets.part_outer", text("")),
+        ],
+    )]
+}
+
+/// The defaults, the edge points, then every differential case under every augmentation.
 fn guard_points() -> Vec<Point> {
     let mut points = vec![Point {
         label: "defaults".into(),
         inputs: DesignInputs::default(),
     }];
+    for (label, sets) in edge_points() {
+        let mut inputs = DesignInputs::default();
+        for (path, value) in sets {
+            inputs
+                .set(path, value)
+                .unwrap_or_else(|e| panic!("{label}: {e}"));
+        }
+        points.push(Point {
+            label: format!("edge point: {label}"),
+            inputs,
+        });
+    }
     let augmentations = augmentations();
     for file in differential_files() {
         for case in load_cases(file) {
@@ -288,8 +321,8 @@ const UNREACHABLE_ARMS: &[(&str, usize, usize, &str)] = &[
 fn every_record_reproduces_the_engine_everywhere() {
     let registry = Registry::build();
     let points = guard_points();
-    // The defaults, then every differential case under every augmentation (no stale count:
-    // the data files are regenerated).
+    // The defaults, the edge points, then every differential case under every augmentation
+    // (no stale count: the data files are regenerated).
     let cases: usize = differential_files()
         .into_iter()
         .map(|f| load_cases(f).len())
@@ -297,7 +330,7 @@ fn every_record_reproduces_the_engine_everywhere() {
     assert!(cases > 0);
     assert_eq!(
         points.len(),
-        1 + cases * augmentations().len(),
+        1 + edge_points().len() + cases * augmentations().len(),
         "{} points",
         points.len()
     );

@@ -164,10 +164,14 @@ pub const RECORDS: &[Record] = &[
     record("temperature.demag.cold_limit_C", "ϑ_{cold}",
         r#"cases({temperature.demag.cold_ring} = "outer" => {temperature.demag.outer_cold_limit_C};
                else => {temperature.demag.inner_cold_limit_C})"#).corrected(&[E20]),
-    // Both rings pass exactly when the minimum temperature is at or above the higher cold limit.
+    // Both rings' checks, as the engine's: the inner ring passes, then the outer ring; a ring
+    // with no cold limit passes. Not the higher limit's check alone: an undefined (NaN) limit
+    // never holds the cold side, yet its ring fails.
     record("temperature.demag.cold_check", "C_{cold}",
         r#"cases({temperature.demag.cold_limit_C} = "n/a" => "n/a (coercivity rises as the magnet cools)";
-               {metal.min_temp_C} >= {temperature.demag.cold_limit_C} => "OK";
+               {temperature.demag.inner_cold_limit_C} = "n/a" or {metal.min_temp_C} >= {temperature.demag.inner_cold_limit_C}
+                   => cases({temperature.demag.outer_cold_limit_C} = "n/a" or {metal.min_temp_C} >= {temperature.demag.outer_cold_limit_C} => "OK";
+                            else => "Below the cold demagnetization limit");
                else => "Below the cold demagnetization limit")"#).corrected(&[E20]),
     record("temperature.demag.cold_onset_aligned_C", "ϑ_{cold,al}",
         r#"cases([β_c] > 0 => 20 + frac([H_k] - {temperature.demag.h_rev_aligned_kA_m}, {temperature.demag.h_rev_aligned_kA_m} · [α_c] - [H_k] · [β_c]);
