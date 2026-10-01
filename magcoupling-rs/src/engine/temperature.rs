@@ -489,6 +489,22 @@ results! {
                 "Correction E20: the ring with the higher cold limit (the inner ring when neither has one)."),
             cold_check: String => out_rust_only("", "Cold demagnetization check",
                 "Against the minimum magnet temperature (Metal design C16); it passes only if both rings pass."),
+            inner_hcj20_kA_m: f64 => out_rust_only("kA/m", "Inner ring: Hcj at 20 °C used",
+                "Plan A-3 (a term of the equation explorer): correction E20, the inner ring's grade, or C44 when it has no grade or the coercivity source is set to the inputs."),
+            inner_beta_per_C: f64 => out_rust_only("1/°C", "Inner ring: Hcj temperature coefficient used",
+                "Correction E20: the inner ring's grade's, or C45."),
+            inner_magnet_limit_C: f64 => out_rust_only("°C", "Inner ring: magnet design limit",
+                "Correction E20: the inner ring's own block (C47 to C60), whichever ring governs: its skipping onset minus the design margin, or with a positive beta its rating (+inf without one)."),
+            inner_cold_limit_C: NumOrText => out_rust_only("°C", "Inner ring: cold magnet limit",
+                "Correction E20, positive beta only: the inner ring's skipping cold onset plus the design margin; 'n/a' otherwise."),
+            outer_hcj20_kA_m: f64 => out_rust_only("kA/m", "Outer ring: Hcj at 20 °C used",
+                "Correction E20: the outer ring's grade, or C44. Without E20 the workbook checks the inner ring only, and the outer ring's block (from C44 and C45) governs nothing."),
+            outer_beta_per_C: f64 => out_rust_only("1/°C", "Outer ring: Hcj temperature coefficient used",
+                "Correction E20: the outer ring's grade's, or C45."),
+            outer_magnet_limit_C: f64 => out_rust_only("°C", "Outer ring: magnet design limit",
+                "Correction E20: as the inner ring's, for the outer ring."),
+            outer_cold_limit_C: NumOrText => out_rust_only("°C", "Outer ring: cold magnet limit",
+                "Correction E20: as the inner ring's, for the outer ring."),
         }
     }
 }
@@ -920,6 +936,19 @@ pub fn compute(
             dev,
         )
     });
+    // Plan A-3: the outer ring's own block for the per-ring results the explorer reads; without
+    // E20 it governs nothing (the workbook checks the inner ring only).
+    let outer_block = outer.unwrap_or_else(|| {
+        ring_demag(
+            d,
+            k,
+            k.outer_br20_T,
+            k.outer_alpha_br,
+            k.outer_tmax_lib_C,
+            k.outer_grade,
+            dev,
+        )
+    });
     let (hot, hot_ring) = match outer {
         Some(o) if o.mag_lim < inner.mag_lim => (o, RING_OUTER),
         _ => (inner, RING_INNER),
@@ -962,6 +991,16 @@ pub fn compute(
             NumOrText::Num(_) => "Below the cold demagnetization limit",
         }
         .to_owned(),
+        // Plan A-3: each ring's own values, read from its block, so the explorer can show which
+        // ring governs and why.
+        inner_hcj20_kA_m: inner.hcj20,
+        inner_beta_per_C: inner.beta,
+        inner_magnet_limit_C: inner.mag_lim,
+        inner_cold_limit_C: inner.cold_limit,
+        outer_hcj20_kA_m: outer_block.hcj20,
+        outer_beta_per_C: outer_block.beta,
+        outer_magnet_limit_C: outer_block.mag_lim,
+        outer_cold_limit_C: outer_block.cold_limit,
     };
 
     // ---- adhesive selection and loads
@@ -2026,6 +2065,11 @@ mod tests {
             want.cold_limit_C = cold.cold_limit_C;
             want.cold_ring = RING_OUTER.to_owned();
             want.cold_check = cold.cold_check;
+            // Plan A-3's per-ring results: the outer ring is the ferrite one.
+            want.outer_hcj20_kA_m = cold.outer_hcj20_kA_m;
+            want.outer_beta_per_C = cold.outer_beta_per_C;
+            want.outer_magnet_limit_C = cold.outer_magnet_limit_C;
+            want.outer_cold_limit_C = cold.outer_cold_limit_C;
             // Decision A2-7: the torque at the limit goes with both rings' Br, each ring with
             // its own coefficient (the NdFeB inner, the ferrite outer).
             want.torque_at_limit_Nm = mixed.pullout_20C_Nm
@@ -2047,13 +2091,62 @@ mod tests {
         assert_eq!(s.demag.cold_limit_C, r.demag.cold_limit_C);
         // Without E20 the workbook reads the inner ring's grade, Br and rating only (the outer
         // ring's coefficient still scales the torques, decision A2-7).
+        // Plan A-3's outer-ring results show that ring's block all the same; it governs nothing.
+        let workbook_cells = |mut r: TemperatureResults| {
+            r.demag.outer_hcj20_kA_m = 0.0;
+            r.demag.outer_beta_per_C = 0.0;
+            r.demag.outer_magnet_limit_C = 0.0;
+            r.demag.outer_cold_limit_C = NumOrText::Text("");
+            r
+        };
         let mut one_alpha = mixed.clone();
         one_alpha.outer_alpha_br = links().outer_alpha_br;
         assert_eq!(
-            run(&ti, &one_alpha),
-            run(&ti, &links()),
+            workbook_cells(run(&ti, &one_alpha)),
+            workbook_cells(run(&ti, &links())),
             "the workbook reads the inner ring only"
         );
+    }
+
+    #[test]
+    fn each_ring_shows_its_own_block() {
+        // Plan A-3: the per-ring results read each ring's own block. On the mixed rings (an
+        // NdFeB inner ring, a ferrite outer ring) the inner ring's equal the NdFeB-only run's
+        // and the outer ring's the ferrite-only run's, whichever ring the sheet shows.
+        let e20 = Deviations::only(DeviationId::E20);
+        let ti = TemperatureInputs::default();
+        let mixed = compute(&ti, &with_outer_of(links(), &ferrite_links()), e20).demag;
+        let ndfeb = compute(&ti, &links(), e20).demag;
+        let ferrite = compute(&ti, &ferrite_links(), e20).demag;
+        assert_eq!(
+            (
+                mixed.inner_hcj20_kA_m,
+                mixed.inner_beta_per_C,
+                mixed.inner_magnet_limit_C
+            ),
+            (
+                ndfeb.hcj20_used_kA_m,
+                ndfeb.beta_used_per_C,
+                ndfeb.magnet_limit_C
+            )
+        );
+        assert_eq!(
+            (
+                mixed.outer_hcj20_kA_m,
+                mixed.outer_beta_per_C,
+                mixed.outer_magnet_limit_C
+            ),
+            (
+                ferrite.hcj20_used_kA_m,
+                ferrite.beta_used_per_C,
+                ferrite.magnet_limit_C
+            )
+        );
+        assert_eq!(mixed.inner_cold_limit_C, NumOrText::Text(NO_COLD_ONSET));
+        assert_eq!(mixed.outer_cold_limit_C, ferrite.cold_limit_C);
+        // The sheet shows the ring with the lower magnet limit: the NdFeB ring.
+        assert!(mixed.inner_magnet_limit_C < mixed.outer_magnet_limit_C);
+        assert_eq!(mixed.magnet_limit_C, mixed.inner_magnet_limit_C);
     }
 
     #[test]

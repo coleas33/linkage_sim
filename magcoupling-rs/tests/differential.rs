@@ -13,67 +13,13 @@ mod common;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use common::{PORTED_RESULTS, data_path, group_of, json_to_value, read_json, report};
+use common::{Case, FULL, PORTED_RESULTS, data_path, group_of, load_cases, read_json, report};
 use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with};
 use magcoupling::engine::compat::{
     ceiling, floor_, fmt_fixed, fmt_num, parity_close, py_repr, text0,
 };
 use magcoupling::engine::deviations::Deviations;
 use magcoupling::engine::meta::{FieldType, InputSet, Value, input_rows, result_rows};
-
-/// The data file whose cases vary every input group and compare every result.
-const FULL: &str = "full";
-
-/// A generated case: inputs by path, and the Python results of its module.
-struct Case {
-    id: u64,
-    tag: String,
-    inputs: BTreeMap<String, Value>,
-    results: BTreeMap<String, Value>,
-}
-
-fn load_cases(module: &str) -> Vec<Case> {
-    let doc = read_json(&data_path(&format!("differential/{module}.json")));
-    assert_eq!(doc["module"], module);
-    let paths = |key: &str| -> Vec<String> {
-        doc[key]
-            .as_array()
-            .unwrap_or_else(|| panic!("{module}: {key} is an array"))
-            .iter()
-            .map(|p| p.as_str().expect("a path").to_owned())
-            .collect()
-    };
-    let (input_paths, result_paths) = (paths("input_paths"), paths("result_paths"));
-    doc["cases"]
-        .as_array()
-        .expect("a cases array")
-        .iter()
-        .map(|c| {
-            let id = c["id"].as_u64().expect("a case id");
-            let zip = |paths: &[String], key: &str| -> BTreeMap<String, Value> {
-                let values = c[key]
-                    .as_array()
-                    .unwrap_or_else(|| panic!("case {id}: {key}"));
-                assert_eq!(
-                    values.len(),
-                    paths.len(),
-                    "{module} case {id}: {key} length"
-                );
-                paths
-                    .iter()
-                    .cloned()
-                    .zip(values.iter().map(json_to_value))
-                    .collect()
-            };
-            Case {
-                id,
-                tag: c["tag"].as_str().expect("a case tag").to_owned(),
-                inputs: zip(&input_paths, "inputs"),
-                results: zip(&result_paths, "results"),
-            }
-        })
-        .collect()
-}
 
 /// The Rust results of `module` for a case, deviations off.
 fn rust_results(module: &str, case: &Case) -> Result<BTreeMap<String, Value>, String> {

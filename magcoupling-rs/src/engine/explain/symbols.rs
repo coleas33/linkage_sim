@@ -1,0 +1,185 @@
+//! Display symbols of the terms that have no record of their own: every input a formula
+//! reads, and any result shown with its workbook cell only. A record's target takes the
+//! record's symbol. The registry refuses a term without a symbol, an entry no formula
+//! reads, an entry for a path with a record, and two paths with one symbol.
+//!
+//! Conventions (plan A-3): T torque; σ the air-gap shear stress (`σ`, `σ_{#}`), a
+//! conductivity (`σ_{st}`, `σ_{Al}`) or a screw's proof or yield stress (`σ_p`), told apart by
+//! subscript and unit; ϑ temperature; φ electrical angle; τ_p pole pitch, τ a material's shear
+//! strength (`τ_{Al}`, `τ_{lap}`); c a specific heat (`c_{st}`), the end-effect coefficient
+//! (`c_{end}`) or a radial clearance (`c_{nom}`, `c_{res}`), told apart by subscript and unit; δ
+//! the skin depth (`δ`) or a radial movement (`δ_{shaft}`, `δ_{adv}`); r and R a radius
+//! (`r_{mid}`, `R_g`), apart from the Calibration's measured-to-model ratio `r^{cal}`; Δ before a
+//! quantity's letter a difference: a rise (`Δϑ_{ss,est}`), or a margin or reserve, the limit or
+//! claim minus the value (`Δϑ_{mag}`; the space claim's `ΔD`, `ΔL`, `ΔL_{bay}`, a diameter
+//! difference, not a radial one); Σ the summation operator only, never a quantity's symbol;
+//! `^{cal}` marks the Calibration prototype; a selector is an upright word (`faceted`), which the
+//! typesetter writes with the choice's label in conditions.
+//!
+//! Letters the chains reuse, told apart by subscript (the M4 panel shows them side by side): C
+//! the heat capacity (`C`) or, with a subscript, a check's verdict text (`C_{hot}`, `C_{cold}`,
+//! `C_{clr}`, `C_{wall}`, `C_{T,hot}`, `C_{gov}`, `C_{ϑ,i}`); t a time (`t_{95}`, `t_{lim,hi}`,
+//! `t_{ev}`, `t_{slip}`) or a thickness (`t_i`, `t_{hub}`, `t_{sl}`, `t_{wall}`, `t_{bi}`); D a
+//! diameter, apart from the slip duty fraction `D_{slip}`; m a mass, apart from the hot torque
+//! margin ratio `m_{hot}`; A an apothem (`A_o`, `A_{back}`; the inner back apothem input is
+//! `a_i`), a harmonic amplitude (`A_{#}`), the area-lever product `A_L` or an area inside a
+//! formula (`[A_{cav}]`, `[A_{hub}]`). A Metal design row that restates a Temperature design or
+//! Calculator quantity carries `MD` (`ϑ_{op,MD}`; `f_{e,MD}` is the field frequency p n / 60
+//! the Temperature design calls `f_e`). Renaming any of these is M4's typesetting pass: a
+//! symbol an A4 note quotes changes with the note, and a changed note goes back to Draft.
+
+/// (path, symbol markup), grouped by input group.
+#[rustfmt::skip]
+pub const SYMBOLS: &[(&str, &str)] = &[
+    // coupling
+    ("coupling.npole", "N"),
+    ("coupling.backiron", "backiron"),
+    ("coupling.faceted", "faceted"),
+    ("coupling.inner_back_apothem_mm", "a_i"),
+    ("coupling.op_temp_C", "ϑ_{op}"),
+    ("coupling.c_end", "c_{end}"),
+    ("coupling.max_harmonic", "N_h"),
+    ("coupling.mu0", "μ_0"),
+    ("coupling.gear_ratio", "i_g"),
+    ("coupling.gear_efficiency", "η_g"),
+    ("coupling.bore_mm", "d_{bore}"),
+    ("coupling.magnets.part_inner", "part_i"),
+    ("coupling.magnets.part_outer", "part_o"),
+    ("coupling.magnets.grade_inner", "grade_i"),
+    ("coupling.magnets.grade_outer", "grade_o"),
+    ("coupling.magnets.axial_length_mm", "L_{ax}"),
+    ("coupling.magnets.manual_inner_length_mm", "L_{i,man}"),
+    ("coupling.magnets.manual_outer_length_mm", "L_{o,man}"),
+    ("coupling.magnets.manual_inner_width_mm", "w_{i,man}"),
+    ("coupling.magnets.manual_outer_width_mm", "w_{o,man}"),
+    ("coupling.magnets.manual_inner_thickness_mm", "t_{i,man}"),
+    ("coupling.magnets.manual_outer_thickness_mm", "t_{o,man}"),
+    ("coupling.magnets.manual_inner_br_T", "B_{r,i,man}"),
+    ("coupling.magnets.manual_outer_br_T", "B_{r,o,man}"),
+    // metal
+    ("metal.face_gap_mm", "g_{face}"),
+    ("metal.min_temp_C", "ϑ_{min}"),
+    ("metal.variation", "v"),
+    ("metal.required_min_Nm", "T_{req}"),
+    ("metal.slip_rpm", "n_s"),
+    ("metal.slip_event_s", "t_{ev}"),
+    ("metal.life_events", "N_{ev}"),
+    ("metal.measured_drag_Nm", "T_{drag,meas}"),
+    ("metal.bond_inner_mm", "b_i"),
+    ("metal.bond_outer_mm", "b_o"),
+    ("metal.sleeve_mm", "t_{sl}"),
+    ("metal.liner_mm", "t_{ln}"),
+    ("metal.sleeve_bedding_mm", "g_{sl}"),
+    ("metal.liner_bedding_mm", "g_{ln}"),
+    ("metal.cup_wall_corner_mm", "t_{wall}"),
+    ("metal.hub_length_mm", "L_{hub,in}"),
+    ("metal.cup_depth_mm", "L_{cav,in}"),
+    ("metal.retainer_span_mm", "L_{ret,in}"),
+    ("metal.web_mm", "t_{web}"),
+    ("metal.boss_length_mm", "L_{boss}"),
+    ("metal.boss_od_mm", "D_{boss}"),
+    ("metal.hardware_g", "m_{hw}"),
+    ("metal.cap_axial_mm", "t_{cap}"),
+    ("metal.cap_od_mm", "D_{cap}"),
+    ("metal.cap_thread_dia_mm", "D_{thr}"),
+    ("metal.cap_thread_engagement_mm", "L_{thr}"),
+    ("metal.front_endplate_mm", "t_{ep,f}"),
+    ("metal.rear_endplate_mm", "t_{ep,r}"),
+    ("metal.rear_endplate_hole_mm", "d_{ep}"),
+    ("metal.steel_density_g_mm3", "ρ_{st,in}"),
+    ("metal.al_density_g_mm3", "ρ_{Al,in}"),
+    ("metal.sleeve_density_g_mm3", "ρ_{316,in}"),
+    ("metal.shaft_displacement_mm", "δ_{shaft}"),
+    ("metal.runout_mm", "δ_{ro}"),
+    ("metal.deflection_mm", "δ_{defl}"),
+    ("metal.thermal_mm", "δ_{th}"),
+    ("metal.sleeve_form_mm", "δ_{form}"),
+    ("metal.magnet_position_mm", "δ_{pos}"),
+    ("metal.residual_target_mm", "c_{res}"),
+    ("metal.max_diameter_mm", "D_{max}"),
+    ("metal.max_overall_axial_mm", "L_{max}"),
+    ("metal.max_large_dia_axial_mm", "L_{bay}"),
+    // calibration
+    ("calibration.measured_torque_Nm", "T_{meas}"),
+    ("calibration.total_magnets", "n_{mag}"),
+    ("calibration.spacing_mm", "s^{cal}"),
+    ("calibration.gap_definition", "gapdef"),
+    ("calibration.test_temp_C", "ϑ_{test}"),
+    ("calibration.apothem_mm", "a^{cal}"),
+    ("calibration.magnet_length_mm", "L^{cal}"),
+    ("calibration.magnet_width_mm", "w^{cal}"),
+    ("calibration.magnet_thickness_mm", "t^{cal}"),
+    ("calibration.br_T", "B_r^{cal}"),
+    ("calibration.alpha_br_per_C", "α"),
+    ("calibration.c_end", "c_{end}^{cal}"),
+    ("calibration.f_cal_original", "f_{cal,0}"),
+    ("calibration.mu0", "μ_0^{cal}"),
+    ("calibration.fea_torque1_Nm", "T_{3D,1}"),
+    ("calibration.fea_torque2_Nm", "T_{3D,2}"),
+    // materials
+    ("materials.parts.back_iron", "material_{BI}"),
+    ("materials.parts.sleeve_liner", "material_{SL}"),
+    ("materials.parts.cap_housing", "material_{cap}"),
+    ("materials.steel.bsat_T", "B_{des,in}"),
+    ("materials.steel.conductivity_S_m", "σ_{st,in}"),
+    ("materials.steel.mu_r_incremental", "μ_{r,in}"),
+    ("materials.steel.specific_heat_J_kgK", "c_{st,in}"),
+    ("materials.screws.proof_12_9_MPa", "σ_{p,12.9}"),
+    ("materials.screws.proof_10_9_MPa", "σ_{p,10.9}"),
+    ("materials.screws.yield_A4_70_MPa", "σ_{y,A4-70}"),
+    // temperature
+    ("temperature.duty.hot_ambient_C", "ϑ_{amb}"),
+    ("temperature.duty.driving_rise_C", "Δϑ_{drive}"),
+    ("temperature.duty.fault_trip_s", "t_{trip}"),
+    ("temperature.duty.life_hours", "t_{life}"),
+    ("temperature.demag.hcj20_kA_m", "H_{cj,in}"),
+    ("temperature.demag.beta_hcj_per_C", "β_{in}"),
+    ("temperature.demag.knee_fraction", "k_{knee}"),
+    ("temperature.demag.design_margin_C", "Δϑ_m"),
+    ("temperature.demag.h_rev_aligned_kA_m", "H_{al}"),
+    ("temperature.demag.h_rev_pullout_kA_m", "H_{po}"),
+    ("temperature.demag.h_rev_likepole_kA_m", "H_{sk}"),
+    ("temperature.demag.h_rev_single_ring_kA_m", "H_{sr}"),
+    ("temperature.demag.coercivity_source", "source"),
+    ("temperature.adhesive.selected", "adhesive"),
+    ("temperature.slip_loss.sigma_316_S_m", "σ_{316,in}"),
+    ("temperature.slip_loss.sigma_ndfeb_S_m", "σ_{NdFeB}"),
+    ("temperature.slip_loss.end_factor", "f_{thin}"),
+    ("temperature.slip_loss.b_hub_T", "B_{hub}"),
+    ("temperature.slip_loss.b_cup_T", "B_{cup}"),
+    ("temperature.slip_loss.b_sleeve_T", "B_{sl}"),
+    ("temperature.slip_loss.b_liner_T", "B_{ln}"),
+    ("temperature.slip_loss.cap_integral_T2m4", "I_{cap}"),
+    ("temperature.slip_loss.web_integral_T2m2", "I_{web}"),
+    ("temperature.slip_loss.b_magnet_T", "B_{mag}"),
+    ("temperature.slip_loss.high_multiplier", "k_{hi}"),
+    ("temperature.slip_loss.b_hub_free_T", "B_{hub,free}"),
+    ("temperature.slip_loss.b_cup_free_T", "B_{cup,free}"),
+    ("temperature.slip_loss.web_integral_free_T2m2", "I_{web,free}"),
+    ("temperature.thermal.c_ndfeb", "c_{NdFeB}"),
+    ("temperature.thermal.c_316", "c_{316,in}"),
+    ("temperature.thermal.c_aluminium", "c_{Al,in}"),
+    ("temperature.thermal.conductance_W_K", "G"),
+    // clamps
+    ("clamps.safety_factor", "S_{req}"),
+    ("clamps.friction", "μ"),
+    ("clamps.clamp_type", "type"),
+    ("clamps.factor_one_piece", "k_{1p}"),
+    ("clamps.factor_two_piece", "k_{2p}"),
+    ("clamps.alloy", "alloy"),
+    ("clamps.screw_class", "class"),
+    ("clamps.preload_fraction", "f_{pre}"),
+    ("clamps.nut_factor", "K"),
+    ("clamps.engagement_x_d", "k_{eng}"),
+    ("clamps.strip_sf", "S_{strip}"),
+    ("clamps.boss_od_mm", "D_{boss,cl}"),
+    ("clamps.clamp_length_mm", "L_{cl}"),
+    ("clamps.slit_mm", "s_{slit}"),
+    ("clamps.ligament_mm", "l_{lig}"),
+    ("clamps.wall_out_mm", "w_{out,min}"),
+    ("clamps.grip_min_mm", "g_{grip,min}"),
+    ("clamps.axial_margin_mm", "a_{ax}"),
+    ("clamps.joint_screws", "n_{joint}"),
+    ("clamps.joint_bolt_circle_mm", "D_{bc}"),
+    ("clamps.joint_friction", "μ_{joint}"),
+];

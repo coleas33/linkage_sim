@@ -1,0 +1,1841 @@
+//! Addendum A2/A3 explanation layer: the drift guard, the registry's structure, the v1
+//! scope, the teaching-note links and the A3 traceability test.
+//!
+//! **Drift guard.** Every equation record is evaluated over the engine's own term values and
+//! must reproduce the engine's result by the parity rule (1e-9 relative, 1e-12 absolute;
+//! text exact), corrections on (`compute_all`, what users see), at: the defaults; every
+//! differential case (`tests/data/differential/*.json`, 3,391 cases, starting from the
+//! corrected defaults); and each of those again under every **augmentation**, the Rust-only
+//! inputs the Python generator never varies (the harmonic set, the back-iron material, the
+//! grade mode, the axial override, the coercivity from the inputs with two ferrite betas,
+//! the sleeve and cap materials, E17's free-space fields), without which the tau7-tau11
+//! records would compare 0 with 0 and the ferrite and material branches would never run.
+//! Anti-vacuity checks require every `cases` arm of every record to be taken, every numeric
+//! record and every value term of every record to take two values, and the E7 angles to
+//! leave half a pitch.
+//!
+//! **Traceability (A3).** For each input (the assumptions first, as the spec asks, then every
+//! input), at several design points: nudging it changes no explained result outside its
+//! static dependency set (the registry's graph), and changes every numeric result on its
+//! active dependency path (the branch taken, the min/max winner; see `eval::Trace`).
+
+mod common;
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::f64::consts::FRAC_PI_2;
+
+use common::{differential_files, load_cases, report};
+use magcoupling::engine::api::{DesignInputs, DesignResults, compute_all};
+use magcoupling::engine::assumptions::{self, ASSUMPTIONS};
+use magcoupling::engine::compat::parity_close;
+use magcoupling::engine::deviations::DeviationId;
+use magcoupling::engine::explain::markup::{Expr, Symbol};
+use magcoupling::engine::explain::record::Eval;
+use magcoupling::engine::explain::registry::{Design, Registry, TermKind};
+use magcoupling::engine::explain::scope::{SCOPE, Status};
+use magcoupling::engine::explain::{TermSource, Trace, notes, render};
+use magcoupling::engine::library;
+use magcoupling::engine::meta::{
+    FieldType, InputMeta, InputSet, ResultSet, Value, input_rows, result_rows,
+};
+
+/// One input set the guard evaluates at.
+struct Point {
+    label: String,
+    inputs: DesignInputs,
+}
+
+/// Rust-only inputs the differential generator never varies, applied on top of each case.
+fn augmentations() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
+    let text = |s: &str| Value::Text(s.to_owned());
+    let mut v: Vec<(&'static str, Vec<(&'static str, Value)>)> = vec![("as generated", vec![])];
+    for (label, code) in [
+        ("harmonics 1", 1),
+        ("harmonics 3", 3),
+        ("harmonics 7", 7),
+        ("harmonics 9", 9),
+        ("harmonics 11", 11),
+    ] {
+        v.push((label, vec![("coupling.max_harmonic", Value::Int(code))]));
+    }
+    for (label, code) in [
+        ("back iron 1018", 2),
+        ("back iron 304", 7),
+        ("back iron 6061", 8),
+    ] {
+        v.push((label, vec![("materials.parts.back_iron", Value::Int(code))]));
+    }
+    // The sleeve, liner and cap picks (A5): each supplies its library values in place of the inputs.
+    v.push((
+        "sleeve Ti, cap acetal",
+        vec![
+            ("materials.parts.sleeve_liner", Value::Int(2)),
+            ("materials.parts.cap_housing", Value::Int(3)),
+        ],
+    ));
+    // E17's free-space fields (Rust-only inputs) off their defaults, with an aluminium back
+    // iron so the free-space branches of the hub, cup and web losses read them.
+    v.push((
+        "E17 fields",
+        vec![
+            ("materials.parts.back_iron", Value::Int(8)),
+            ("temperature.slip_loss.b_hub_free_T", Value::Num(0.1)),
+            ("temperature.slip_loss.b_cup_free_T", Value::Num(0.12)),
+            (
+                "temperature.slip_loss.web_integral_free_T2m2",
+                Value::Num(1e-5),
+            ),
+        ],
+    ));
+    v.push((
+        "grade mode",
+        vec![
+            ("coupling.magnets.part_inner", text("")),
+            ("coupling.magnets.grade_inner", text("N52")),
+            ("coupling.magnets.part_outer", text("")),
+            ("coupling.magnets.grade_outer", text("Y30")),
+        ],
+    ));
+    v.push((
+        "axial 8 mm",
+        vec![("coupling.magnets.axial_length_mm", Value::Num(8.0))],
+    ));
+    // E20's cold side from the inputs: hard ferrite's positive beta for both rings, first on
+    // rated magnets (both rings in the grade mode, bonded NdFeB and ferrite, so the rings' Br
+    // coefficients and densities differ and either ring can hold the higher cold limit), then
+    // on manual magnets with no grade and so no rating (no hot limit).
+    v.push((
+        "ferrite inputs",
+        vec![
+            ("temperature.demag.coercivity_source", Value::Int(0)),
+            ("temperature.demag.beta_hcj_per_C", Value::Num(0.0035)),
+            ("coupling.magnets.part_inner", text("")),
+            ("coupling.magnets.grade_inner", text("Bonded_NdFeB_BCN19")),
+            ("coupling.magnets.part_outer", text("")),
+            ("coupling.magnets.grade_outer", text("Y30")),
+        ],
+    ));
+    v.push((
+        "unrated ferrite",
+        vec![
+            ("coupling.magnets.part_inner", text("")),
+            ("coupling.magnets.part_outer", text("")),
+            ("temperature.demag.beta_hcj_per_C", Value::Num(0.0035)),
+        ],
+    ));
+    // A second positive beta from the inputs with the rings swapped (ferrite inside, bonded
+    // NdFeB outside), so every cold-side record sees two betas, and the outer ring a second
+    // Br coefficient and density.
+    v.push((
+        "ferrite inputs, beta 0.002",
+        vec![
+            ("temperature.demag.coercivity_source", Value::Int(0)),
+            ("temperature.demag.beta_hcj_per_C", Value::Num(0.002)),
+            ("coupling.magnets.part_inner", text("")),
+            ("coupling.magnets.grade_inner", text("Y30")),
+            ("coupling.magnets.part_outer", text("")),
+            ("coupling.magnets.grade_outer", text("Bonded_NdFeB_BCN19")),
+        ],
+    ));
+    v.push((
+        "everything",
+        vec![
+            ("coupling.max_harmonic", Value::Int(11)),
+            ("materials.parts.back_iron", Value::Int(8)),
+            ("coupling.magnets.part_inner", text("")),
+            ("coupling.magnets.grade_inner", text("N35EH")),
+            ("coupling.magnets.axial_length_mm", Value::Num(20.0)),
+        ],
+    ));
+    v
+}
+
+/// Input sets `set` accepts that pin what no differential case or augmentation is built to
+/// reach, each with what it pins, applied on top of the defaults (records hold over every input
+/// `set` accepts, except a clamp count outside i64, which the engine holds as its saturating
+/// cast: `saturation_artifact`).
+fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
+    let text = |s: &str| Value::Text(s.to_owned());
+    // The clamp comparisons the differential data never lands on exactly (the engine's own unit
+    // tests pin the same edges, clamps.rs). Each point sets one input to a value of the default
+    // design's M4 column (row 2 of the clamp table, the size that works there), so the
+    // comparison holds with equality: the records' `<=`, `<` and `>=` must be the engine's and
+    // not a strict or a loose twin. Read from the defaults, those values cannot go stale (the
+    // span point's length is a dyadic constant, explained there).
+    let defaults = compute_all(&DesignInputs::default());
+    let default_num = |path: &str| match defaults.get(path) {
+        Some(Value::Num(x)) => x,
+        other => panic!("{path}: {other:?}"),
+    };
+    let m4 = |field: &str| default_num(&format!("clamps.table[2].{field}"));
+    // The temperature chain's points check that they sit on their edge: `on_edge` applies the
+    // sets to the defaults and asserts that each listed result holds exactly the given value
+    // there, so a change to the defaults or the engine cannot leave a point pinning nothing.
+    let on_edge = |label: &'static str, sets: Vec<(&'static str, Value)>, ties: &[(&str, f64)]| {
+        let results = compute_all(&defaults_with(label, &sets));
+        for &(path, want) in ties {
+            assert_eq!(
+                results.get(path),
+                Some(Value::Num(want)),
+                "edge point {label}: {path} is not on its edge"
+            );
+        }
+        (label, sets)
+    };
+    let num = Value::Num;
+    let onset = default_num("temperature.demag.onset_skipping_C");
+    let hot_day_start = default_num("temperature.duty.hot_day_start_C");
+    vec![
+        (
+            // The outer ring (manual, ferrite's beta) has a 0/0 cold onset, so its cold limit is
+            // NaN, while the inner Y30 ring's is finite and below the minimum temperature: the
+            // inner ring holds the cold side, yet the outer ring's check fails (min >= NaN is
+            // false), so `cold_check` must state both rings' checks, not the higher limit's.
+            "outer cold limit undefined (NaN), inner Y30",
+            vec![
+                ("temperature.demag.h_rev_likepole_kA_m", Value::Num(0.0)),
+                ("temperature.demag.hcj20_kA_m", Value::Num(0.0)),
+                ("temperature.demag.beta_hcj_per_C", Value::Num(0.0035)),
+                ("coupling.magnets.part_inner", text("")),
+                ("coupling.magnets.grade_inner", text("Y30")),
+                ("coupling.magnets.part_outer", text("")),
+            ],
+        ),
+        (
+            // head_fits is `offset + head / 2 <= R`: the head's edge on the boss wall (a 23.5 mm
+            // boss at the defaults) still fits, and its grip takes the square-root branch at 0.
+            "clamp M4 head edge exactly on the boss wall",
+            vec![(
+                "clamps.boss_od_mm",
+                Value::Num(2.0 * (m4("offset_mm") + m4("head_mm") / 2.0)),
+            )],
+        ),
+        (
+            // thread_avail is the square root only while `offset < R`: with the screw axis on
+            // the wall (a 16.5 mm boss at the defaults) it is 0, not the root's -slit / 2.
+            "clamp M4 screw axis exactly on the boss wall",
+            vec![("clamps.boss_od_mm", Value::Num(2.0 * m4("offset_mm")))],
+        ),
+        (
+            // geometry_ok needs `wall >= minimum wall`.
+            "clamp M4 wall outside the hole exactly the minimum",
+            vec![("clamps.wall_out_mm", Value::Num(m4("wall_out_mm")))],
+        ),
+        (
+            // geometry_ok needs `grip >= minimum grip`.
+            "clamp M4 grip exactly the minimum",
+            vec![("clamps.grip_min_mm", Value::Num(m4("grip_mm")))],
+        ),
+        (
+            // geometry_ok needs `thread available >= engagement`, engagement = factor x d. M4's d
+            // is 4 mm, a power of two, so dividing by it and multiplying back is exact.
+            "clamp M4 thread available exactly the engagement required",
+            vec![(
+                "clamps.engagement_x_d",
+                Value::Num(m4("thread_avail_mm") / m4("d_mm")),
+            )],
+        ),
+        (
+            // screws_fit counts screws only while the span `length - 2 margin - (head + 0.5)` is
+            // not negative: a span of exactly 0 fits one. M4's head is 7 mm and the margin 1 mm,
+            // so 9.5 mm (every value dyadic: exact), the engine's own unit test's length.
+            "clamp M4 span exactly zero",
+            vec![("clamps.clamp_length_mm", Value::Num(9.5))],
+        ),
+        // The dashboard's two verdict comparisons, on the default design, each input set to the
+        // value it is compared with (both inputs, read from the defaults like the clamp values).
+        (
+            // materials.cup_wall_check says OK at `wall >= need` (materials.rs): a cup wall of
+            // exactly the back-iron thickness needed is not too thin.
+            "cup wall exactly the back iron needed",
+            vec![(
+                "metal.cup_wall_corner_mm",
+                Value::Num(default_num("model.backiron_needed_mm")),
+            )],
+        ),
+        (
+            // metal.clearance_check says Below target only at `min run < target`
+            // (metal_design.rs, whose own unit test pins the same edge): a residual target of
+            // exactly the minimum running clearance is met.
+            "residual target exactly the minimum running clearance",
+            vec![(
+                "metal.residual_target_mm",
+                Value::Num(default_num("metal.min_running_clearance_mm")),
+            )],
+        ),
+        // The temperature chain's comparisons (the engine's own unit tests pin the same edges,
+        // metal_design.rs and temperature.rs), each on the default design with an input set from
+        // the defaults so that the comparison holds with equality. Where a magnet limit must
+        // equal a value X, the design margin is set to onset - X: the magnet limit is the
+        // skipping onset minus the margin, the onset does not read the margin, and both
+        // subtractions are exact (Sterbenz: the onset, about 103 °C, lies within a factor 2 of
+        // each X used), so the limit is exactly X.
+        on_edge(
+            // metal.hot_min_check says Below hot minimum only at `hot low < required minimum`;
+            // the hot low torque does not read the required minimum.
+            "required minimum exactly the hot low torque",
+            vec![(
+                "metal.required_min_Nm",
+                num(default_num("metal.torque_hot_low_Nm")),
+            )],
+            &[(
+                "metal.torque_hot_low_Nm",
+                default_num("metal.torque_hot_low_Nm"),
+            )],
+        ),
+        on_edge(
+            // torque_hot_day_check meets it at `hot-day torque >= required minimum`.
+            "required minimum exactly the hot-day torque",
+            vec![(
+                "metal.required_min_Nm",
+                num(default_num("temperature.magnet_life.torque_hot_day_Nm")),
+            )],
+            &[(
+                "temperature.magnet_life.torque_hot_day_Nm",
+                default_num("temperature.magnet_life.torque_hot_day_Nm"),
+            )],
+        ),
+        // The rating checks say OK at `operating temperature <= rating`, one point per ring
+        // (a differential case lands there too today: the slider's maximum is the 150 °C
+        // rating; these points do not depend on it).
+        on_edge(
+            "operating temperature exactly the inner ring's rating",
+            vec![("coupling.op_temp_C", num(default_num("model.inner_tmax_C")))],
+            &[("model.inner_tmax_C", default_num("model.inner_tmax_C"))],
+        ),
+        on_edge(
+            "operating temperature exactly the outer ring's rating",
+            vec![("coupling.op_temp_C", num(default_num("model.outer_tmax_C")))],
+            &[("model.outer_tmax_C", default_num("model.outer_tmax_C"))],
+        ),
+        on_edge(
+            // governing_note says the magnets govern at `magnet limit <= adhesive limit`.
+            "magnet limit exactly the adhesive limit",
+            vec![(
+                "temperature.demag.design_margin_C",
+                num(onset - default_num("temperature.adhesive.design_limit_C")),
+            )],
+            &[(
+                "temperature.demag.magnet_limit_C",
+                default_num("temperature.adhesive.design_limit_C"),
+            )],
+        ),
+        // The verdict's four terms, each alone on its edge with the other three holding
+        // (temperature.rs `verdict_*`). With heat flowing the peak lies above the hot-day
+        // start, so a hot-day margin of 0 leaves the magnet or the adhesive margin at most 0;
+        // only a negative bench drag (`set` takes it, as Python does) separates the two.
+        on_edge(
+            // `margin_hot > 0`: the drag cools the coupling, so the peak stays below the hot-day
+            // start, which the governing magnet limit equals.
+            "hot-day margin exactly 0 (a negative bench drag)",
+            vec![
+                ("metal.measured_drag_Nm", num(-1.0)),
+                (
+                    "temperature.demag.design_margin_C",
+                    num(onset - hot_day_start),
+                ),
+            ],
+            &[("temperature.summary.margin_hot_day_C", 0.0)],
+        ),
+        on_edge(
+            // `magnet margin > 0`: the peak does not read the margin.
+            "magnet margin exactly 0",
+            vec![(
+                "temperature.demag.design_margin_C",
+                num(onset - default_num("temperature.magnet_life.peak_C")),
+            )],
+            &[("temperature.magnet_life.margin_limit_C", 0.0)],
+        ),
+        on_edge(
+            // `adhesive margin > 0`: DP460's 60 °C limit governs, and the hot-day ambient that
+            // puts the peak exactly on it is searched (the peak follows the ambient one for one).
+            "adhesive margin exactly 0",
+            vec![
+                ("temperature.adhesive.selected", Value::Int(4)),
+                (
+                    "temperature.duty.hot_ambient_C",
+                    num(exact_input(
+                        &[("temperature.adhesive.selected", Value::Int(4))],
+                        "temperature.duty.hot_ambient_C",
+                        (1.0, 60.0),
+                        "temperature.adhesive_life.margin_C",
+                        0.0,
+                    )),
+                ),
+            ],
+            &[("temperature.adhesive_life.margin_C", 0.0)],
+        ),
+        on_edge(
+            // `cure margin >= 10`: EA 9514 cures at 120 °C, and the single-ring reverse field
+            // that puts its onset exactly at 130 °C is searched.
+            "cure margin exactly 10",
+            vec![
+                ("temperature.adhesive.selected", Value::Int(2)),
+                (
+                    "temperature.demag.h_rev_single_ring_kA_m",
+                    num(exact_input(
+                        &[("temperature.adhesive.selected", Value::Int(2))],
+                        "temperature.demag.h_rev_single_ring_kA_m",
+                        (1.0, 1000.0),
+                        "temperature.summary.cure_margin_C",
+                        10.0,
+                    )),
+                ),
+            ],
+            &[("temperature.summary.cure_margin_C", 10.0)],
+        ),
+        // calibration.fea_interp_Nm interpolates the two FEA torques only for a corner gap in
+        // [1, 1.5] mm. With the gap defined as the spacing (code 0) the corner gap is the
+        // spacing, so each end exactly (differential cases land there too today).
+        on_edge(
+            "Calibration corner gap exactly 1 mm (the FEA range's low end)",
+            vec![
+                ("calibration.gap_definition", Value::Int(0)),
+                ("calibration.spacing_mm", num(1.0)),
+            ],
+            &[("calibration.corner_gap_mm", 1.0)],
+        ),
+        on_edge(
+            "Calibration corner gap exactly 1.5 mm (the FEA range's high end)",
+            vec![
+                ("calibration.gap_definition", Value::Int(0)),
+                ("calibration.spacing_mm", num(1.5)),
+            ],
+            &[("calibration.corner_gap_mm", 1.5)],
+        ),
+        on_edge(
+            // The time to the limit (E12): `start >= limit => 0` at equality, tested before
+            // `steady <= limit`. A bench drag of 0 puts both steady states at the start too, so a
+            // strict `>` would read "never" (with heat flowing it would give -tau ln(1 - 0) =
+            // -0 s, which the parity rule takes for 0: that point would pin nothing).
+            "hot-day start exactly the governing limit, no slip heating",
+            vec![
+                ("metal.measured_drag_Nm", num(0.0)),
+                (
+                    "temperature.demag.design_margin_C",
+                    num(onset - hot_day_start),
+                ),
+            ],
+            &[
+                ("temperature.summary.governing_limit_C", hot_day_start),
+                ("temperature.thermal.steady_high_C", hot_day_start),
+                ("temperature.thermal.steady_est_C", hot_day_start),
+            ],
+        ),
+        // `steady <= limit => "never"` at equality, with the start below the limit: the
+        // governing magnet limit set to each steady state in turn (neither reads the margin).
+        on_edge(
+            "governing limit exactly the high-loss steady state",
+            vec![(
+                "temperature.demag.design_margin_C",
+                num(onset - default_num("temperature.thermal.steady_high_C")),
+            )],
+            &[(
+                "temperature.summary.governing_limit_C",
+                default_num("temperature.thermal.steady_high_C"),
+            )],
+        ),
+        on_edge(
+            "governing limit exactly the estimated steady state",
+            vec![(
+                "temperature.demag.design_margin_C",
+                num(onset - default_num("temperature.thermal.steady_est_C")),
+            )],
+            &[(
+                "temperature.summary.governing_limit_C",
+                default_num("temperature.thermal.steady_est_C"),
+            )],
+        ),
+        // The clamp counts outside i64 (`saturation_artifact`), one point per kind, each
+        // reaching every screw size the exemption's liveness assertion names.
+        (
+            // A friction coefficient of 0 holds nothing: the torque per screw is 0 and the screws
+            // needed are +inf in the record, i64::MAX in the engine's cast.
+            "clamp friction exactly 0",
+            vec![("clamps.friction", Value::Num(0.0))],
+        ),
+        (
+            // Nothing to hold either (required torque 0) is 0 / 0: NaN in the record, 0 in the
+            // engine's cast.
+            "clamp friction exactly 0 and safety factor 0",
+            vec![
+                ("clamps.friction", Value::Num(0.0)),
+                ("clamps.safety_factor", Value::Num(0.0)),
+            ],
+        ),
+        (
+            // A negative required torque over a torque per screw of 0 is -inf in the record,
+            // i64::MIN in the engine's cast.
+            "clamp friction exactly 0 and safety factor -1",
+            vec![
+                ("clamps.friction", Value::Num(0.0)),
+                ("clamps.safety_factor", Value::Num(-1.0)),
+            ],
+        ),
+        (
+            // A friction coefficient of almost 0: every size's screws needed are finite but
+            // past 2^63 (about 1e29), i64::MAX in the engine's cast.
+            "clamp friction 1e-30",
+            vec![("clamps.friction", Value::Num(1e-30))],
+        ),
+        (
+            // The same with a negative required torque: past -2^63, i64::MIN in the cast.
+            "clamp friction 1e-30 and safety factor -1",
+            vec![
+                ("clamps.friction", Value::Num(1e-30)),
+                ("clamps.safety_factor", Value::Num(-1.0)),
+            ],
+        ),
+        (
+            // An absurdly long clamp: every size's screws that fit are past 2^63 (about 1e299),
+            // i64::MAX in the engine's cast (saturating_add keeps it there).
+            "clamp length 1e300",
+            vec![("clamps.clamp_length_mm", Value::Num(1e300))],
+        ),
+    ]
+}
+
+/// The defaults with `sets` applied (`label` names the point in a refusal).
+fn defaults_with(label: &str, sets: &[(&str, Value)]) -> DesignInputs {
+    let mut inputs = DesignInputs::default();
+    for (path, value) in sets {
+        inputs
+            .set(path, value.clone())
+            .unwrap_or_else(|e| panic!("{label}: {e}"));
+    }
+    inputs
+}
+
+/// The value in `[lo, hi]` of the input `path` (set on top of the defaults with `base`) at
+/// which the result `out` is exactly `target`, for `out` monotone in it with `target` between
+/// its values at the ends. It bisects on the floats themselves (positive floats order as their
+/// bit patterns), so it ends on two adjacent floats, one of which must give `target` exactly;
+/// it panics if neither does, since an edge point off its edge would pin nothing.
+fn exact_input(
+    base: &[(&'static str, Value)],
+    path: &'static str,
+    (lo, hi): (f64, f64),
+    out: &str,
+    target: f64,
+) -> f64 {
+    assert!(0.0 < lo && lo < hi, "{path}: a positive bracket");
+    let at = |x: f64| {
+        let mut sets = base.to_vec();
+        sets.push((path, Value::Num(x)));
+        match compute_all(&defaults_with(path, &sets)).get(out) {
+            Some(Value::Num(y)) => y,
+            other => panic!("{out}: {other:?}"),
+        }
+    };
+    let below = at(lo) < target;
+    assert_ne!(
+        below,
+        at(hi) < target,
+        "{out} = {target} is not between {path} = {lo} and {hi}"
+    );
+    let (mut a, mut b) = (lo.to_bits(), hi.to_bits());
+    while b - a > 1 {
+        let m = a + (b - a) / 2;
+        if (at(f64::from_bits(m)) < target) == below {
+            a = m;
+        } else {
+            b = m;
+        }
+    }
+    let (a, b) = (f64::from_bits(a), f64::from_bits(b));
+    [a, b]
+        .into_iter()
+        .find(|&x| at(x) == target)
+        .unwrap_or_else(|| {
+            panic!("no {path} gives {out} = {target} exactly: {a} and {b} straddle it")
+        })
+}
+
+/// The defaults, the edge points, then every differential case under every augmentation.
+fn guard_points() -> Vec<Point> {
+    let mut points = vec![Point {
+        label: "defaults".into(),
+        inputs: DesignInputs::default(),
+    }];
+    for (label, sets) in edge_points() {
+        points.push(Point {
+            label: format!("edge point: {label}"),
+            inputs: defaults_with(label, &sets),
+        });
+    }
+    let augmentations = augmentations();
+    for file in differential_files() {
+        for case in load_cases(file) {
+            let mut base = DesignInputs::default();
+            for (path, value) in &case.inputs {
+                base.set(path, value.clone())
+                    .unwrap_or_else(|e| panic!("{file} case {}: {e}", case.id));
+            }
+            for (label, sets) in &augmentations {
+                let mut inputs = base.clone();
+                for (path, value) in sets {
+                    inputs
+                        .set(path, value.clone())
+                        .unwrap_or_else(|e| panic!("{label}: {e}"));
+                }
+                points.push(Point {
+                    label: format!("{file} case {} ({}), {label}", case.id, case.tag),
+                    inputs,
+                });
+            }
+        }
+    }
+    points
+}
+
+/// The pairs the guard accepts although they differ: a clamp count the engine stores as an
+/// integer when the record's count lies outside i64. The record states the count, the screws
+/// needed `ceilto(required / torque per screw, 1)` or the screws that fit `floorto(span /
+/// pitch, 1) + 1`: +inf, -inf or NaN (0 / 0) when a screw holds no torque, finite but past
+/// 2^63 when it holds almost none or the clamp is absurdly long. The engine's `as i64`
+/// (clamps.rs `need` and `fit`, the only float-to-integer casts behind a result) saturates
+/// (README, the port's Python-to-Rust table: Python's `int(inf)` raises, outside every slider
+/// range), so it holds i64::MAX, i64::MIN or 0. None of these is a physical count. Keyed by
+/// path, by the record lying outside i64 and by the engine holding exactly the record's
+/// saturating cast, so an in-range record, any other engine value or any other path still
+/// fails. Returns the kind's name.
+fn saturation_artifact(target: &str, record: &Value, engine: &Value) -> Option<&'static str> {
+    // 2^63, the first f64 past i64::MAX; i64::MIN is exactly -2^63, so it is in range.
+    const PAST_I64: f64 = 9_223_372_036_854_775_808.0;
+    let (row, column) = target.strip_prefix("clamps.table[")?.split_once("].")?;
+    row.parse::<usize>().ok()?;
+    if column != "screws_needed" && column != "screws_fit" {
+        return None;
+    }
+    let (Value::Num(r), Value::Int(e)) = (record, engine) else {
+        return None;
+    };
+    let outside = r.is_nan() || *r >= PAST_I64 || *r < -PAST_I64;
+    if !outside || *e != *r as i64 {
+        return None;
+    }
+    Some(match *r {
+        r if r.is_nan() => "NaN",
+        f64::INFINITY => "+inf",
+        f64::NEG_INFINITY => "-inf",
+        r if r > 0.0 => "past i64::MAX",
+        _ => "past i64::MIN",
+    })
+}
+
+fn same(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Num(x), Value::Num(y)) if x.is_nan() && y.is_nan() => true,
+        _ => parity_close(a, b),
+    }
+}
+
+/// What the guard learned across all points.
+#[derive(Default)]
+struct Coverage {
+    arms: BTreeMap<String, BTreeSet<(usize, usize)>>,
+    values: BTreeMap<String, BTreeSet<u64>>,
+    angles_off_half_pitch: BTreeMap<String, usize>,
+    /// The "target: kind" entries `saturation_artifact` accepted (the exemption is live).
+    saturated: BTreeSet<String>,
+    /// Per equation (in `Registry::equations` order): each value term's distinct values,
+    /// up to two.
+    term_values: Vec<BTreeMap<String, Vec<Value>>>,
+}
+
+/// Adds `v` to `seen` unless it holds it already or holds two (two show the term varies;
+/// every NaN is one value).
+fn note_value(seen: &mut Vec<Value>, v: Value) {
+    let same = |a: &Value| match (a, &v) {
+        (Value::Num(x), Value::Num(y)) => x.to_bits() == y.to_bits() || (x.is_nan() && y.is_nan()),
+        (a, b) => a == b,
+    };
+    if seen.len() < 2 && !seen.iter().any(same) {
+        seen.push(v);
+    }
+}
+
+/// Evaluates every record at every point of `points`: the failures and the coverage.
+fn guard(registry: &Registry, points: &[Point]) -> (Vec<String>, Coverage) {
+    let mut failures = Vec::new();
+    let mut cov = Coverage {
+        term_values: vec![BTreeMap::new(); registry.equations().len()],
+        ..Coverage::default()
+    };
+    for p in points {
+        let results = compute_all(&p.inputs);
+        let src = Design {
+            inputs: &p.inputs,
+            results: &results,
+        };
+        for (i, eq) in registry.equations().iter().enumerate() {
+            let want = results
+                .get(&eq.target)
+                .expect("a record targets a result path");
+            let mut trace = Trace::default();
+            match registry.evaluate(eq, &src, Some(&mut trace)) {
+                Ok(got) if same(&got, &want) => {}
+                Ok(got) => match saturation_artifact(&eq.target, &got, &want) {
+                    Some(kind) => {
+                        cov.saturated.insert(format!("{}: {kind}", eq.target));
+                    }
+                    None => failures.push(format!(
+                        "{} at {}: record {got:?}, engine {want:?}",
+                        eq.target, p.label
+                    )),
+                },
+                Err(e) => failures.push(format!("{} at {}: {e}", eq.target, p.label)),
+            }
+            cov.arms
+                .entry(eq.target.clone())
+                .or_default()
+                .extend(trace.arms);
+            let terms = &mut cov.term_values[i];
+            for term in trace.value_terms {
+                match terms.get_mut(&term) {
+                    Some(seen) => {
+                        if seen.len() < 2 {
+                            note_value(seen, src.value(&term).unwrap_or(Value::None));
+                        }
+                    }
+                    None => {
+                        let v = src.value(&term).unwrap_or(Value::None);
+                        terms.insert(term, vec![v]);
+                    }
+                }
+            }
+            if let Value::Num(x) = want {
+                cov.values
+                    .entry(eq.target.clone())
+                    .or_default()
+                    .insert(x.to_bits());
+                if eq.target.ends_with("angle_rad") && x != FRAC_PI_2 {
+                    *cov.angles_off_half_pitch
+                        .entry(eq.target.clone())
+                        .or_default() += 1;
+                }
+            }
+        }
+    }
+    (failures, cov)
+}
+
+impl Coverage {
+    fn merge(&mut self, other: Coverage) {
+        for (k, v) in other.arms {
+            self.arms.entry(k).or_default().extend(v);
+        }
+        for (k, v) in other.values {
+            self.values.entry(k).or_default().extend(v);
+        }
+        for (k, n) in other.angles_off_half_pitch {
+            *self.angles_off_half_pitch.entry(k).or_default() += n;
+        }
+        self.saturated.extend(other.saturated);
+        if self.term_values.is_empty() {
+            self.term_values = other.term_values;
+        } else {
+            for (mine, theirs) in self.term_values.iter_mut().zip(other.term_values) {
+                for (term, values) in theirs {
+                    let seen = mine.entry(term).or_default();
+                    for v in values {
+                        note_value(seen, v);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// `cases` arms no input can reach, each with its reason (the anti-vacuity check skips them).
+const UNREACHABLE_ARMS: &[(&str, usize, usize, &str)] = &[
+    (
+        "model.tau1_Pa",
+        0,
+        1,
+        "the fundamental is in every harmonic set (the smallest choice is 1)",
+    ),
+    ("calibration.tau1_Pa", 0, 1, "as model.tau1_Pa"),
+];
+
+#[test]
+fn every_record_reproduces_the_engine_everywhere() {
+    let registry = Registry::build();
+    let points = guard_points();
+    // The defaults, the edge points, then every differential case under every augmentation
+    // (no stale count: the data files are regenerated).
+    let cases: usize = differential_files()
+        .into_iter()
+        .map(|f| load_cases(f).len())
+        .sum();
+    assert!(cases > 0);
+    assert_eq!(
+        points.len(),
+        1 + edge_points().len() + cases * augmentations().len(),
+        "{} points",
+        points.len()
+    );
+    // The points are independent: evaluate them on every core (about 1 s instead of 30 in a
+    // debug build).
+    let threads = std::thread::available_parallelism().map_or(4, usize::from);
+    let chunk = points.len().div_ceil(threads);
+    let (mut failures, mut cov) = (Vec::new(), Coverage::default());
+    std::thread::scope(|s| {
+        let handles: Vec<_> = points
+            .chunks(chunk)
+            .map(|c| s.spawn(|| guard(&registry, c)))
+            .collect();
+        for h in handles {
+            let (f, c) = h.join().expect("a guard thread");
+            failures.extend(f);
+            cov.merge(c);
+        }
+    });
+    assert!(failures.is_empty(), "drift guard: {}", report(&failures));
+    // The saturation exemption is live and exactly as wide as stated: each of the five sizes'
+    // screws needed met each kind (the friction edge points) and its screws that fit met
+    // "past i64::MAX" (the long clamp); no other record met any.
+    let kinds = ["+inf", "-inf", "NaN", "past i64::MAX", "past i64::MIN"];
+    let want: BTreeSet<String> = (0..5)
+        .flat_map(|n| {
+            kinds
+                .map(|kind| format!("clamps.table[{n}].screws_needed: {kind}"))
+                .into_iter()
+                .chain([format!("clamps.table[{n}].screws_fit: past i64::MAX")])
+        })
+        .collect();
+    assert_eq!(cov.saturated, want, "the saturation exemption");
+    // And no wider: an in-range count, an engine value that is not the record's cast, another
+    // column, another path or a target that is not a table row still fails.
+    for (target, record, engine) in [
+        ("clamps.table[0].screws_needed", 3.5, 3),
+        ("clamps.table[0].screws_needed", f64::INFINITY, 0),
+        ("clamps.table[0].screws_fit", -1e300, i64::MAX),
+        ("clamps.table[0].preload_N", f64::INFINITY, i64::MAX),
+        ("clamps.screws", f64::INFINITY, i64::MAX),
+        ("clamps.table[].screws_needed", f64::INFINITY, i64::MAX),
+    ] {
+        let (record, engine) = (Value::Num(record), Value::Int(engine));
+        assert_eq!(
+            saturation_artifact(target, &record, &engine),
+            None,
+            "{target}: record {record:?}, engine {engine:?}"
+        );
+    }
+
+    // Anti-vacuity: every arm of every `cases` taken somewhere.
+    let mut untaken = Vec::new();
+    for eq in registry.equations() {
+        let mut ids = BTreeMap::new();
+        eq.formula.visit(&mut |e| {
+            if let Expr::Cases { id, arms, .. } = e {
+                ids.insert(*id, arms.len());
+            }
+        });
+        let taken = cov.arms.get(&eq.target).cloned().unwrap_or_default();
+        for (id, n) in ids {
+            for arm in 0..=n {
+                let exempt = UNREACHABLE_ARMS
+                    .iter()
+                    .any(|&(t, i, a, _)| t == eq.target && i == id && a == arm);
+                if taken.contains(&(id, arm)) {
+                    assert!(
+                        !exempt,
+                        "{}: cases {id} arm {arm} is listed unreachable but is taken",
+                        eq.target
+                    );
+                } else if !exempt {
+                    untaken.push(format!("{}: cases {id} arm {arm}", eq.target));
+                }
+            }
+        }
+    }
+    assert!(untaken.is_empty(), "arms never taken: {}", report(&untaken));
+    // Every value term of every record takes two values somewhere: a term the guard sees at
+    // one value only is indistinguishable there from a literal of that value, so a record
+    // could lose a real dependency and still pass.
+    let mut single = Vec::new();
+    for (eq, terms) in registry.equations().iter().zip(&cov.term_values) {
+        for (term, seen) in terms {
+            if seen.len() < 2 {
+                single.push(format!("{} reads {term} only as {:?}", eq.target, seen[0]));
+            }
+        }
+    }
+    assert!(
+        single.is_empty(),
+        "value terms seen at one value only: {}",
+        report(&single)
+    );
+    // Every numeric record varies across the points (it is exercised, not a constant).
+    let constant: Vec<&String> = cov
+        .values
+        .iter()
+        .filter(|(_, v)| v.len() < 2)
+        .map(|(k, _)| k)
+        .collect();
+    assert!(constant.is_empty(), "records that never vary: {constant:?}");
+    // E7 leaves half a pitch for every angle record somewhere.
+    for eq in registry
+        .equations()
+        .iter()
+        .filter(|e| e.target.ends_with("angle_rad"))
+    {
+        let n = cov
+            .angles_off_half_pitch
+            .get(&eq.target)
+            .copied()
+            .unwrap_or(0);
+        assert!(n > 0, "{}: never off half a pitch", eq.target);
+    }
+    // The harmonic 7 to 11 records are nonzero somewhere (the augmentations reach them).
+    for n in [7, 9, 11] {
+        for t in [format!("model.tau{n}_Pa"), format!("calibration.tau{n}_Pa")] {
+            let values = &cov.values[&t];
+            assert!(
+                values.iter().any(|&b| f64::from_bits(b) != 0.0),
+                "{t} is always 0"
+            );
+        }
+    }
+}
+
+#[test]
+fn input_and_result_paths_are_disjoint() {
+    // `Design` looks a term up among the results, then the inputs: no path may be both.
+    let inputs = DesignInputs::default();
+    let ins: BTreeSet<String> = input_rows(&inputs).into_iter().map(|r| r.path).collect();
+    let outs: BTreeSet<String> = result_rows(&compute_all(&inputs))
+        .into_iter()
+        .map(|r| r.path)
+        .collect();
+    assert!(
+        ins.is_disjoint(&outs),
+        "{:?}",
+        ins.intersection(&outs).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn the_registry_is_consistent() {
+    let r = Registry::build();
+    for eq in r.equations() {
+        assert_eq!(
+            r.equation_for(&eq.target).map(|e| &e.target),
+            Some(&eq.target)
+        );
+        assert_eq!(r.term_kind(&eq.target), Some(TermKind::Explained));
+        for t in &eq.terms {
+            assert!(
+                r.used_by(t).contains(&eq.target),
+                "{t} used by {}",
+                eq.target
+            );
+            assert!(r.term_kind(t).is_some(), "{t}");
+            assert!(Symbol::parse(r.symbol(t).expect("every term has a symbol")).is_ok());
+        }
+        // The plain rendering names every term by its symbol, never by its path.
+        let text = render::plain(&r, &eq.symbol, &eq.formula);
+        assert!(!text.contains('['), "{}: {text}", eq.target);
+    }
+    // A stacked fraction as a factor is parenthesized in the plain line, so it reads as the
+    // tree does.
+    let f_end = r.equation_for("model.f_end").unwrap();
+    assert_eq!(
+        render::plain(&r, &f_end.symbol, &f_end.formula),
+        "f_{end} = 1 − c_{end} · (τ_p/L)"
+    );
+    // No custom evals in the tracer: every displayed formula is the evaluated one.
+    let custom: Vec<&str> = r
+        .equations()
+        .iter()
+        .filter(|e| matches!(e.eval, Eval::Custom(_)))
+        .map(|e| e.target.as_str())
+        .collect();
+    assert!(custom.is_empty(), "{custom:?}");
+    assert!(r.is_leaf_input("metal.variation") && !r.is_leaf_input("metal.torque_hot_low_Nm"));
+    assert_eq!(
+        r.term_kind("metal.variation"),
+        Some(TermKind::Input { assumption: true })
+    );
+    assert_eq!(r.family_symbol("model.b_i#").as_deref(), Some("B_{i,n}"));
+    // The term list shows each term in the unit the formula reads it in.
+    let inputs = DesignInputs::default();
+    let results = compute_all(&inputs);
+    let src = Design {
+        inputs: &inputs,
+        results: &results,
+    };
+    let rows = r.term_rows(r.equation_for("model.k3").unwrap(), &src);
+    let rg = rows
+        .iter()
+        .find(|x| x.path == "model.gap_radius_mm")
+        .unwrap();
+    assert_eq!(rg.unit, "m");
+    assert_eq!(
+        rg.value,
+        Some(Value::Num(results.model.gap_radius_mm * 1e-3))
+    );
+    assert_eq!(rg.symbol, "R_g");
+    let n = rows.iter().find(|x| x.path == "coupling.npole").unwrap();
+    assert_eq!(
+        (n.unit.as_str(), n.kind),
+        ("-", TermKind::Input { assumption: false })
+    );
+    let mut eleven = DesignInputs::default();
+    eleven.set("coupling.max_harmonic", Value::Int(11)).unwrap();
+    for (inputs, want) in [(DesignInputs::default(), 3), (eleven, 6)] {
+        let results = compute_all(&inputs);
+        let members = r.family_members(
+            "model.b_i#",
+            &Design {
+                inputs: &inputs,
+                results: &results,
+            },
+        );
+        assert_eq!(members.len(), want);
+        assert_eq!(members[0], "model.b_i1");
+    }
+    // The three dependency queries agree, each as an exact set. `downstream` walks the
+    // reverse edges (`used_by`), `upstream` walks the terms (the closure), and
+    // `upstream_inputs` is the build's precomputed filter of that closure, so each half
+    // checks a different one: the mirror catches a `downstream` that is too large (which
+    // would make A3 soundness impossible to fail) or a closure that stops at the direct
+    // terms; the intersection catches upstream inputs taken from the direct terms only
+    // (which would leave results several hops down unstyled).
+    let input_paths: BTreeSet<String> = input_rows(&DesignInputs::default())
+        .into_iter()
+        .map(|x| x.path)
+        .collect();
+    let upstream: BTreeMap<&str, BTreeSet<String>> = r
+        .equations()
+        .iter()
+        .map(|e| (e.target.as_str(), r.upstream(&e.target)))
+        .collect();
+    for p in input_paths
+        .iter()
+        .map(String::as_str)
+        .chain(upstream.keys().copied())
+    {
+        let mirror: BTreeSet<String> = upstream
+            .iter()
+            .filter(|(_, up)| up.contains(p))
+            .map(|(&t, _)| t.to_owned())
+            .collect();
+        assert_eq!(r.downstream(p), mirror, "downstream of {p}");
+    }
+    for (&t, up) in &upstream {
+        let want: BTreeSet<String> = up.intersection(&input_paths).cloned().collect();
+        assert_eq!(r.upstream_inputs(t), Some(&want), "upstream inputs of {t}");
+    }
+}
+
+/// The A4 accuracy gate for release (the M4 hands-on checklist runs it): every note the
+/// "start here" order opens and every note an A5 warning links to has passed the physics
+/// review. Red until the notes are reviewed; drafts never reach users meanwhile (`note_for`).
+#[test]
+#[ignore = "the M4 release gate: red until the notes are reviewed"]
+fn release_notes_are_reviewed() {
+    let mut ids: Vec<&str> = notes::START_HERE.iter().map(|(id, _)| *id).collect();
+    ids.extend(
+        magcoupling::engine::warnings::WARNING_RULES
+            .iter()
+            .map(|r| r.note_id),
+    );
+    let drafts: Vec<&str> = ids
+        .into_iter()
+        .filter(|id| {
+            !matches!(
+                notes::note(id).map(|n| n.review),
+                Some(notes::Review::Reviewed { .. })
+            )
+        })
+        .collect();
+    assert!(drafts.is_empty(), "not yet reviewed: {drafts:?}");
+}
+
+/// The physics reviewer's sheet for a batch: every record's path, cell, symbol, rendered
+/// formula and corrections, as a Markdown table on stdout. Run with
+/// `cargo test --test explain review_sheet -- --ignored --nocapture`.
+#[test]
+#[ignore = "a review tool, not a check"]
+fn review_sheet() {
+    let r = Registry::build();
+    println!("| Result | Cell | Formula | Corrections |\n|---|---|---|---|");
+    for eq in r.equations() {
+        let formula = render::plain(&r, &eq.symbol, &eq.formula).replace('|', "\\|");
+        let cell = eq.cell.as_deref().unwrap_or("Rust-only");
+        println!(
+            "| `{}` | {cell} | {formula} | {:?} |",
+            eq.target, eq.corrections
+        );
+    }
+}
+
+/// The terms below `path` (transitively) that are neither inputs nor explained: where a
+/// drill-down from `path` would stop at a cell-only result. Empty when it reaches inputs.
+fn cell_only_below(r: &Registry, path: &str) -> Vec<String> {
+    r.upstream(path)
+        .into_iter()
+        .filter(|up| {
+            !matches!(
+                r.term_kind(up),
+                Some(TermKind::Input { .. } | TermKind::Explained)
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn every_explained_chain_drills_down_to_inputs() {
+    // Every term below every record of an explained chain is an input or has a record:
+    // nothing stops at a cell-only result.
+    let r = Registry::build();
+    let explained: Vec<_> = SCOPE
+        .iter()
+        .filter(|c| c.status == Status::Explained)
+        .collect();
+    assert!(explained.iter().any(|c| c.id == "torque"));
+    for chain in explained {
+        for path in chain.paths {
+            let stops = cell_only_below(&r, &path.replace("[]", "[0]"));
+            assert!(
+                stops.is_empty(),
+                "{}: {path} depends on {stops:?}, neither inputs nor explained",
+                chain.id
+            );
+        }
+    }
+}
+
+#[test]
+fn the_demagnetization_block_and_the_governing_limit_drill_down_to_inputs() {
+    // Batch 2: both rings' blocks (E20), the block the sheet shows, the cold side and the
+    // governing limit reach inputs; the chains that read them flip once their other terms do.
+    let r = Registry::build();
+    for path in [
+        "temperature.summary.governing_limit_C",
+        "temperature.demag.h_ref_kA_m",
+        "temperature.demag.t_ref_model_C",
+        "temperature.demag.calibration_offset_C",
+        "temperature.demag.onset_aligned_C",
+        "temperature.demag.onset_pullout_C",
+        "temperature.demag.onset_skipping_C",
+        "temperature.demag.onset_single_ring_C",
+        "temperature.demag.magnet_limit_C",
+        "temperature.demag.torque_at_limit_Nm",
+        "temperature.demag.torque_at_service_Nm",
+        "temperature.demag.cold_check",
+        "temperature.demag.cold_onset_skipping_C",
+        "temperature.duty.hot_day_start_C",
+        "temperature.adhesive.cure_C",
+    ] {
+        assert!(r.equation_for(path).is_some(), "{path} has no record");
+        let stops = cell_only_below(&r, path);
+        assert!(
+            stops.is_empty(),
+            "{path} depends on {stops:?}, neither inputs nor explained"
+        );
+    }
+}
+
+#[test]
+fn explained_chains_have_every_record_and_scope_paths_exist() {
+    let r = Registry::build();
+    let results: BTreeSet<String> = result_rows(&compute_all(&DesignInputs::default()))
+        .into_iter()
+        .map(|x| x.path)
+        .collect();
+    let mut missing = Vec::new();
+    for chain in SCOPE {
+        for path in chain.paths {
+            // A table column (`clamps.table[].x`) exists when its first row does.
+            let first_row = path.replace("[]", "[0]");
+            assert!(
+                results.contains(&first_row),
+                "{}: {path} is not a result path",
+                chain.id
+            );
+            if chain.status == Status::Explained && r.equation_for(&first_row).is_none() {
+                missing.push(format!("{}: {path}", chain.id));
+            }
+        }
+    }
+    assert!(missing.is_empty(), "{missing:?}");
+    let union: BTreeSet<&str> = SCOPE.iter().flat_map(|c| c.paths.iter().copied()).collect();
+    assert_eq!(
+        union.len(),
+        169,
+        "decision 31: the chains and the dashboard (report section 7), and plan A-3 decision G1's 10 new geometry callouts"
+    );
+}
+
+#[test]
+fn notes_link_to_records_and_each_equation_has_at_most_one() {
+    let r = Registry::build();
+    let results: BTreeSet<String> = result_rows(&compute_all(&DesignInputs::default()))
+        .into_iter()
+        .map(|x| x.path)
+        .collect();
+    for n in notes::NOTES {
+        for entry in n.equations {
+            let members: Vec<&String> =
+                results.iter().filter(|p| notes::covers(entry, p)).collect();
+            assert!(
+                !members.is_empty(),
+                "note {}: {entry} names no result",
+                n.id
+            );
+            for m in members {
+                assert!(
+                    r.equation_for(m).is_some(),
+                    "note {}: {m} has no record",
+                    n.id
+                );
+            }
+        }
+    }
+    for eq in r.equations() {
+        let owners: Vec<&str> = notes::NOTES
+            .iter()
+            .filter(|n| n.equations.iter().any(|e| notes::covers(e, &eq.target)))
+            .map(|n| n.id)
+            .collect();
+        assert!(owners.len() <= 1, "{}: notes {owners:?}", eq.target);
+    }
+    for (id, path) in notes::START_HERE {
+        assert!(results.contains(*path), "start here {id}: {path}");
+        let explained_chain = SCOPE
+            .iter()
+            .any(|c| c.status == Status::Explained && c.paths.contains(path));
+        if explained_chain {
+            assert!(
+                r.equation_for(path).is_some(),
+                "start here {id}: {path} has no record"
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// A3 traceability
+// ---------------------------------------------------------------------------------------
+
+/// The nudged values of an input: a step both ways inside its slider for a number (around
+/// the value when it is typed outside the slider), one step for a count, and for either the
+/// slider's two ends; every other choice for a selector; another library part and "manual"
+/// for a part name; set and unset for an optional number.
+fn nudges(meta: &InputMeta, value: &Value) -> Vec<Value> {
+    match (meta.ty, value) {
+        (FieldType::I64, Value::Int(code)) if !meta.choices.is_empty() => meta
+            .choices
+            .iter()
+            .map(|&(c, _)| c)
+            .filter(|c| c != code)
+            .map(Value::Int)
+            .collect(),
+        (FieldType::I64, Value::Int(n)) => {
+            let r = meta.range.expect("a count has a slider");
+            let step = r.step.max(1.0) as i64;
+            let mut v = vec![if (*n + step) as f64 <= r.max {
+                n + step
+            } else {
+                n - step
+            }];
+            // The slider's ends too: a threshold flips its verdict only under a large move.
+            for end in [r.min as i64, r.max as i64] {
+                if end != *n && !v.contains(&end) {
+                    v.push(end);
+                }
+            }
+            v.into_iter().map(Value::Int).collect()
+        }
+        (FieldType::F64 | FieldType::OptF64, Value::Num(x)) => {
+            // Both ways inside the slider: a min() tie moves the result one way only. A value
+            // typed outside the slider (hard ferrite's positive beta) is nudged where it is.
+            let r = meta.range.expect("a number has a slider");
+            let inside = |y: &f64| (r.min..=r.max).contains(y);
+            let step = r.step.max(1e-3 * x.abs()).max(1e-12);
+            let mut ys: Vec<f64> = if inside(x) {
+                [x + step, x - step].into_iter().filter(inside).collect()
+            } else {
+                vec![x + step, x - step]
+            };
+            // The slider's ends too: a threshold (a minimum wall, a required torque) flips its
+            // verdict only under a large move, and a slider narrower than the step (μ0's) is
+            // still nudged.
+            for end in [r.min, r.max] {
+                if end != *x && !ys.contains(&end) {
+                    ys.push(end);
+                }
+            }
+            let mut v: Vec<Value> = ys.into_iter().map(Value::Num).collect();
+            if meta.ty == FieldType::OptF64 {
+                v.push(Value::None);
+            }
+            v
+        }
+        (FieldType::OptF64, Value::None) => {
+            let r = meta.range.expect("a number has a slider");
+            vec![Value::Num((r.min + r.max) / 2.0)]
+        }
+        (FieldType::Text, Value::Text(s)) if meta.name.starts_with("part_") => {
+            let other = library::MAGNET_LIBRARY
+                .iter()
+                .map(|m| m.part)
+                .find(|p| p != s)
+                .expect("two parts");
+            vec![Value::Text(other.to_owned()), Value::Text(String::new())]
+        }
+        (FieldType::Text, Value::Text(s)) if meta.name.starts_with("grade_") => {
+            let g = if s == "N52" { "Y30" } else { "N52" };
+            vec![Value::Text(g.to_owned()), Value::Text(String::new())]
+        }
+        (FieldType::Text, _) => vec![Value::Text("Loctite AA 326 + SF 7649".into())],
+        other => panic!("{}: no nudge for {other:?}", meta.name),
+    }
+}
+
+/// Design points for the traceability test: the defaults; the measured prototype's own
+/// circuit (6061 back iron, so the bench correction is the calibration factor) at a test
+/// temperature off 20 °C; a grade-mode ring with eleven harmonics at six poles; the
+/// coercivity from the inputs with a bench drag entered; a hot-day start above the limit
+/// (E12); and a dozen full-run cases under nine of the drift guard's augmentations (the
+/// back-iron, grade, axial-override, ferrite and part-material branches of every chain).
+fn trace_points() -> Vec<(String, DesignInputs)> {
+    let design = |sets: &[(&str, Value)]| {
+        let mut inputs = DesignInputs::default();
+        for (p, v) in sets {
+            inputs.set(p, v.clone()).unwrap();
+        }
+        inputs
+    };
+    let text = |s: &str| Value::Text(s.to_owned());
+    let mut pts = vec![
+        ("defaults".to_owned(), DesignInputs::default()),
+        (
+            "prototype circuit, test at 35 °C".to_owned(),
+            design(&[
+                ("materials.parts.back_iron", Value::Int(8)),
+                ("calibration.test_temp_C", Value::Num(35.0)),
+            ]),
+        ),
+        (
+            "grade, 11 harmonics, 6 poles, test at 35 °C".to_owned(),
+            design(&[
+                ("coupling.max_harmonic", Value::Int(11)),
+                ("coupling.magnets.part_inner", text("")),
+                ("coupling.magnets.grade_inner", text("N52")),
+                ("coupling.npole", Value::Int(6)),
+                ("calibration.test_temp_C", Value::Num(35.0)),
+            ]),
+        ),
+        // The Hcj inputs act for both rings, and a bench drag replaces the loss estimate; a drag
+        // of exactly 0 is no heating at all (E13).
+        (
+            "coercivity from the inputs, drag measured".to_owned(),
+            design(&[
+                ("temperature.demag.coercivity_source", Value::Int(0)),
+                ("metal.measured_drag_Nm", Value::Num(0.02)),
+            ]),
+        ),
+        (
+            "drag measured as 0 (E13)".to_owned(),
+            design(&[("metal.measured_drag_Nm", Value::Num(0.0))]),
+        ),
+        (
+            "hot-day start above the limit (E12)".to_owned(),
+            design(&[("temperature.duty.driving_rise_C", Value::Num(45.0))]),
+        ),
+    ];
+    let augmentations: Vec<_> = augmentations()
+        .into_iter()
+        .filter(|(l, _)| {
+            [
+                "as generated",
+                "harmonics 11",
+                "back iron 1018",
+                "back iron 6061",
+                "grade mode",
+                "axial 8 mm",
+                "ferrite inputs",
+                "unrated ferrite",
+                "sleeve Ti, cap acetal",
+            ]
+            .contains(l)
+        })
+        .collect();
+    for case in load_cases("full").into_iter().take(12) {
+        for (label, sets) in &augmentations {
+            let mut inputs = DesignInputs::default();
+            for (path, value) in case
+                .inputs
+                .iter()
+                .map(|(p, v)| (p.as_str(), v))
+                .chain(sets.iter().map(|(p, v)| (*p, v)))
+            {
+                inputs.set(path, value.clone()).unwrap();
+            }
+            pts.push((format!("full case {}, {label}", case.id), inputs));
+        }
+    }
+    pts
+}
+
+/// Any change at all: what soundness forbids for an independent result.
+fn changed(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Num(x), Value::Num(y)) => x.to_bits() != y.to_bits() && !(x.is_nan() && y.is_nan()),
+        _ => a != b,
+    }
+}
+
+/// A change above rounding noise (1e-10 relative): what sensitivity requires, so that an
+/// algebraic cancellation cannot pass on its last-bit wobble.
+fn moved_beyond_rounding(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Num(x), Value::Num(y)) => (x - y).abs() > 1e-10 * x.abs().max(y.abs()),
+        _ => a != b,
+    }
+}
+
+/// Each term's users along value edges at a design point: the records whose value moves
+/// with that term there (each record's trace, `eval::Trace::value_terms`).
+fn value_edges(
+    r: &Registry,
+    inputs: &DesignInputs,
+    results: &DesignResults,
+) -> BTreeMap<String, Vec<String>> {
+    let src = Design { inputs, results };
+    let mut edges: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for eq in r.equations() {
+        let mut t = Trace::default();
+        r.evaluate(eq, &src, Some(&mut t))
+            .expect("the drift guard evaluates every record");
+        for term in t.value_terms {
+            edges.entry(term).or_default().push(eq.target.clone());
+        }
+    }
+    edges
+}
+
+/// The explained results on `input`'s active path: reachable from it along value edges.
+fn active_downstream(value_edges: &BTreeMap<String, Vec<String>>, input: &str) -> BTreeSet<String> {
+    let mut seen = BTreeSet::new();
+    let mut stack = vec![input.to_owned()];
+    while let Some(p) = stack.pop() {
+        for user in value_edges.get(&p).into_iter().flatten() {
+            if seen.insert(user.clone()) {
+                stack.push(user.clone());
+            }
+        }
+    }
+    seen
+}
+
+/// Checks both sides of traceability for every input in `paths`; returns failures.
+///
+/// Soundness (nothing independent moves) holds at every point and nudge. Sensitivity (the
+/// active path moves) is judged across the points together: an input need move a result at
+/// one point where it is on its active path, so a point where a factor happens to vanish
+/// (the test temperature at 20 °C in `1 + α (ϑ − 20)`) does not fail it. What never moves at
+/// any point although the graph says it depends is an algebraic cancellation, which must be
+/// listed in [`CANCELLATIONS`] with its reason (and a listed pair that does move fails).
+fn check_traceability(paths: &[String], sensitivity: bool) -> Vec<String> {
+    let r = Registry::build();
+    let points = trace_points();
+    let mut failures = Vec::new();
+    let mut must_move: BTreeMap<(String, String), String> = BTreeMap::new();
+    let mut moved_pairs: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut effective: BTreeSet<String> = BTreeSet::new();
+    std::thread::scope(|s| {
+        let handles: Vec<_> = points
+            .iter()
+            .map(|(label, base)| s.spawn(|| trace_at(&r, label, base, paths)))
+            .collect();
+        for h in handles {
+            let t = h.join().expect("a traceability thread");
+            failures.extend(t.failures);
+            for (k, at) in t.must_move {
+                must_move.entry(k).or_insert(at);
+            }
+            moved_pairs.extend(t.moved);
+            effective.extend(t.effective);
+        }
+    });
+    // Not vacuous: every input checked had a nudge `set` accepted that changed some result
+    // (explained or not) at some design point, so soundness was put to the test for it;
+    // an input no result reads is listed in INERT_INPUTS instead.
+    for input in paths {
+        let inert = INERT_INPUTS.iter().any(|&(i, _)| i == input);
+        match (effective.contains(input), inert) {
+            (false, false) => failures.push(format!(
+                "{input}: no accepted nudge changed any result at any design point"
+            )),
+            (true, true) => failures.push(format!(
+                "INERT_INPUTS lists {input}, but a nudge changed a result: remove the entry"
+            )),
+            _ => {}
+        }
+    }
+    if !sensitivity {
+        return failures;
+    }
+    for ((input, result), at) in &must_move {
+        let key = (input.clone(), result.clone());
+        let listed = CANCELLATIONS
+            .iter()
+            .any(|&(i, r, _)| i == input && r == result);
+        if !moved_pairs.contains(&key) && !listed {
+            failures.push(format!("{input} never moves {result}, which is on its active path (first at {at}): a spurious edge, or a cancellation to list"));
+        }
+    }
+    for &(input, result, _) in CANCELLATIONS {
+        if paths.iter().any(|p| p == input)
+            && moved_pairs.contains(&(input.to_owned(), result.to_owned()))
+        {
+            failures.push(format!(
+                "CANCELLATIONS lists {input} → {result}, but it moves: remove the entry"
+            ));
+        }
+    }
+    // Not vacuous: every input checked moves some explained result at some point.
+    for input in paths {
+        if !moved_pairs.iter().any(|(i, _)| i == input) {
+            failures.push(format!(
+                "{input} moves no explained result at any design point"
+            ));
+        }
+    }
+    failures
+}
+
+/// Inputs no result reads (the workbook shows them, or only the drawing reads them): no
+/// nudge can change anything, so the non-vacuity check of [`check_traceability`] skips them
+/// (and fails if a listed one ever changes a result).
+const INERT_INPUTS: &[(&str, &str)] = &[
+    (
+        "materials.steel.density_g_cm3",
+        "Materials C19 is shown for reference: the mass model reads Metal design C132 (the input's help says so)",
+    ),
+    (
+        "clamps.key_width_mm",
+        "only the drawing reads it (Python drawing.py); the key pressure divides by the contact height",
+    ),
+];
+
+/// Pairs (input, result).
+type Pairs = BTreeSet<(String, String)>;
+
+/// What one design point of [`check_traceability`] found.
+struct PointTrace {
+    /// The soundness failures.
+    failures: Vec<String>,
+    /// The pairs on an active path that did not move, with where.
+    must_move: BTreeMap<(String, String), String>,
+    /// The pairs that moved above rounding.
+    moved: Pairs,
+    /// The inputs an accepted nudge changed some result of (explained or not).
+    effective: BTreeSet<String>,
+}
+
+/// One design point of [`check_traceability`].
+fn trace_at(r: &Registry, label: &str, base: &DesignInputs, paths: &[String]) -> PointTrace {
+    let metas: BTreeMap<String, &'static InputMeta> = input_rows(&DesignInputs::default())
+        .into_iter()
+        .map(|x| (x.path, x.meta))
+        .collect();
+    let mut failures = Vec::new();
+    let mut must_move: BTreeMap<(String, String), String> = BTreeMap::new();
+    let mut moved_pairs = Pairs::new();
+    let mut effective = BTreeSet::new();
+    {
+        let base_results = compute_all(base);
+        let base_rows = result_rows(&base_results);
+        let edges = value_edges(r, base, &base_results);
+        for path in paths {
+            let meta = metas[path];
+            let value = base.get(path).expect("an input path");
+            let statics = r.downstream(path);
+            let active = active_downstream(&edges, path);
+            let _ = &statics;
+            for nudged in nudges(meta, &value) {
+                let mut inputs = base.clone();
+                if inputs.set(path, nudged.clone()).is_err() {
+                    continue; // outside the choices this design allows
+                }
+                let results = compute_all(&inputs);
+                let mut any = false;
+                for eq in r.equations() {
+                    let (b, a) = (
+                        base_results.get(&eq.target).unwrap(),
+                        results.get(&eq.target).unwrap(),
+                    );
+                    let moved = changed(&b, &a);
+                    any |= moved;
+                    if moved && !statics.contains(&eq.target) {
+                        failures.push(format!("{label}: {path} → {nudged:?} moves {} ({b:?} → {a:?}), which the graph says does not depend on it", eq.target));
+                    }
+                    let key = (path.clone(), eq.target.clone());
+                    if moved_beyond_rounding(&b, &a) {
+                        moved_pairs.insert(key);
+                    } else if matches!(b, Value::Num(x) if x.is_finite())
+                        && active.contains(&eq.target)
+                    {
+                        must_move
+                            .entry(key)
+                            .or_insert_with(|| format!("{label}, {nudged:?}"));
+                    }
+                }
+                if !any && !effective.contains(path) {
+                    // No explained result moved: did anything (a result outside the scope)?
+                    any = result_rows(&results)
+                        .iter()
+                        .zip(&base_rows)
+                        .any(|(a, b)| changed(&a.value, &b.value));
+                }
+                if any {
+                    effective.insert(path.clone());
+                }
+            }
+        }
+    }
+    PointTrace {
+        failures,
+        must_move,
+        moved: moved_pairs,
+        effective,
+    }
+}
+
+/// Dependencies the graph names that cancel algebraically: the formula reads the input on
+/// the way, but the result never moves with it. Each is a fact worth knowing (a teaching
+/// note may cite it); `check_traceability` fails if a listed pair ever moves.
+const CANCELLATIONS: &[(&str, &str, &str)] = &[
+    (
+        "calibration.f_cal_original",
+        "calibration.f_cal_updated",
+        "f_cal,1 = f_cal,0 · T_meas / T_model and T_model = T_2D f_end f_cal,0: the assumed factor cancels, so the bench correction is T_meas / (T_2D f_end)",
+    ),
+    (
+        "calibration.alpha_br_per_C",
+        "model.pullout_angle_rad",
+        "alpha scales every harmonic amplitude by the same Br(T) ratio, and a common scale leaves the peak angle where it is",
+    ),
+    (
+        "calibration.alpha_br_per_C",
+        "model.iron_circuit_angle_rad",
+        "as model.pullout_angle_rad",
+    ),
+    (
+        "calibration.alpha_br_per_C",
+        "model.free_circuit_angle_rad",
+        "as model.pullout_angle_rad",
+    ),
+    (
+        "calibration.alpha_br_per_C",
+        "calibration.pullout_angle_rad",
+        "as model.pullout_angle_rad, through the prototype's Br at the test temperature",
+    ),
+];
+
+#[test]
+fn each_assumption_moves_what_depends_on_it_and_nothing_else() {
+    // Spec A3 testing: the fifteen assumption inputs (the fourteen rows; end effect is two),
+    // every one of them with explained results downstream now that every chain is explained.
+    let r = Registry::build();
+    let paths: Vec<String> = ASSUMPTIONS
+        .iter()
+        .flat_map(|a| a.paths.iter().map(|p| (*p).to_owned()))
+        .collect();
+    assert_eq!(paths.len(), 15);
+    assert!(
+        SCOPE.iter().all(|c| c.status == Status::Explained),
+        "every chain of decision 31 is explained"
+    );
+    for p in &paths {
+        assert!(
+            !r.downstream(p).is_empty(),
+            "{p}: no explained result depends on it"
+        );
+    }
+    let failures = check_traceability(&paths, true);
+    assert!(failures.is_empty(), "{}", report(&failures));
+}
+
+#[test]
+fn no_input_moves_a_result_the_graph_says_is_independent_of_it() {
+    // Soundness for every input: the graph is complete. (Sensitivity is asserted for the
+    // assumptions, as the spec asks: for all inputs the E8 corner geometry alone cancels
+    // dozens of structural paths, e.g. the inner width reaches A_o through r_corner twice
+    // with opposite signs.)
+    let paths: Vec<String> = input_rows(&DesignInputs::default())
+        .into_iter()
+        .map(|x| x.path)
+        .collect();
+    let failures = check_traceability(&paths, false);
+    assert!(failures.is_empty(), "{}", report(&failures));
+}
+
+#[test]
+fn records_never_panic_on_inputs_that_bypass_set() {
+    // The records are proven over validated inputs (the drift guard sets every input through
+    // `set`); a design file or share link can hold what `set` refuses (decision D3: the GUI
+    // validates at its boundaries). Evaluating every record over such inputs, written straight
+    // into the struct, gives a value or an EvalError, never a panic: an invalid harmonic code,
+    // selector codes outside their choices, a NaN temperature and a NaN reserve.
+    let r = Registry::build();
+    let mut inputs = DesignInputs::default();
+    inputs.coupling.max_harmonic = 4;
+    inputs.temperature.adhesive.selected = 0;
+    inputs.clamps.screw_class = 9;
+    inputs.materials.parts.back_iron = 99;
+    inputs.coupling.op_temp_C = f64::NAN;
+    inputs.metal.max_diameter_mm = f64::NAN;
+    assert!(
+        inputs.validate().is_err(),
+        "validate() names every one of them"
+    );
+    let results = compute_all(&inputs);
+    let src = Design {
+        inputs: &inputs,
+        results: &results,
+    };
+    let (mut values, mut errors) = (0, 0);
+    for eq in r.equations() {
+        match r.evaluate(eq, &src, None) {
+            Ok(_) => values += 1,
+            Err(_) => errors += 1,
+        }
+    }
+    // Every record returned (a value or an EvalError), and most give a value.
+    assert_eq!(values + errors, r.equations().len());
+    assert!(values > errors, "{values} values, {errors} errors");
+}
+
+#[test]
+fn a_modified_assumption_styles_its_term_and_what_it_flows_into() {
+    let r = Registry::build();
+    let mut inputs = DesignInputs::default();
+    assert!(!assumptions::any_modified(&inputs));
+    let style = |p: &str, i: &DesignInputs| r.term_style(p, i).expect("a known path");
+    assert!(!style("metal.variation", &inputs).changed_from_default);
+    inputs.set("metal.variation", Value::Num(0.2)).unwrap();
+    assert!(assumptions::any_modified(&inputs), "the banner shows");
+    let v = style("metal.variation", &inputs);
+    assert_eq!(v.kind, TermKind::Input { assumption: true });
+    assert!(v.changed_from_default);
+    assert!(style("metal.torque_hot_low_Nm", &inputs).affected_by_modified_assumption);
+    assert!(
+        !style("model.pullout_Nm", &inputs).affected_by_modified_assumption,
+        "variation does not reach the pull-out"
+    );
+    assert_eq!(
+        r.modified_assumptions_upstream("metal.torque_cold_high_Nm", &inputs)
+            .iter()
+            .map(|a| a.id)
+            .collect::<Vec<_>>(),
+        ["production_variation"]
+    );
+    // Two hops: T_cold,high,MD reads only T_cold,high (a result), which reads the variation.
+    assert!(style("metal.cold_high_Nm", &inputs).affected_by_modified_assumption);
+    assert_eq!(
+        r.modified_assumptions_upstream("metal.cold_high_Nm", &inputs)
+            .iter()
+            .map(|a| a.id)
+            .collect::<Vec<_>>(),
+        ["production_variation"]
+    );
+    // Several hops: T_pull's own terms (T_2D, f_end, f_cal) are all results, so α reaches
+    // it only through them.
+    let mut alpha = DesignInputs::default();
+    alpha
+        .set("calibration.alpha_br_per_C", Value::Num(-0.002))
+        .unwrap();
+    assert!(style("model.pullout_Nm", &alpha).affected_by_modified_assumption);
+    assert_eq!(
+        r.modified_assumptions_upstream("model.pullout_Nm", &alpha)
+            .iter()
+            .map(|a| a.id)
+            .collect::<Vec<_>>(),
+        ["br_temperature_coefficient"]
+    );
+    // A design input changed from its default gets the dot but is not an assumption.
+    inputs.set("coupling.npole", Value::Int(12)).unwrap();
+    let n = style("coupling.npole", &inputs);
+    assert_eq!(n.kind, TermKind::Input { assumption: false });
+    assert!(n.changed_from_default);
+    assumptions::reset_to_workbook_defaults(&mut inputs);
+    assert!(!assumptions::any_modified(&inputs), "the banner clears");
+    assert!(!style("metal.torque_hot_low_Nm", &inputs).affected_by_modified_assumption);
+    assert!(!style("metal.cold_high_Nm", &inputs).affected_by_modified_assumption);
+    assert!(
+        style("coupling.npole", &inputs).changed_from_default,
+        "the reset keeps design inputs"
+    );
+}
+
+#[test]
+fn the_panel_labels_selector_codes_and_names_upstream_corrections() {
+    let r = Registry::build();
+    // A selector input shows its choice labels; a result holding a code borrows its input's.
+    assert_eq!(
+        r.choices("coupling.backiron"),
+        [(1, "steel circuit"), (0, "no back iron")]
+    );
+    assert_eq!(
+        r.choices("materials.circuit_backiron"),
+        r.choices("coupling.backiron")
+    );
+    assert_eq!(
+        r.choices("materials.parts.back_iron")[0],
+        (1, "4140 annealed")
+    );
+    assert!(r.choices("coupling.npole").is_empty() && r.choices("model.pullout_Nm").is_empty());
+    // The "corrected vs workbook" marker: the pull-out's own record names no correction, but
+    // E7 acts upstream of it (the pull-out angle) and E8 in the corner gap.
+    assert!(
+        r.equation_for("model.pullout_Nm")
+            .unwrap()
+            .corrections
+            .is_empty()
+    );
+    let pullout = r.corrections_upstream("model.pullout_Nm");
+    assert!(
+        pullout.contains(&DeviationId::E7) && pullout.contains(&DeviationId::E8),
+        "{pullout:?}"
+    );
+    // A record's own corrections come first, each once.
+    assert_eq!(
+        r.corrections_upstream("model.pullout_angle_rad")[0],
+        DeviationId::E7
+    );
+    for (i, c) in pullout.iter().enumerate() {
+        assert!(!pullout[..i].contains(c), "{c:?} twice in {pullout:?}");
+    }
+    assert!(
+        r.corrections_upstream("coupling.npole").is_empty(),
+        "an input"
+    );
+    // The "used by" list follows the workbook's chain, with no hover dead end: Calculator C35
+    // feeds each ring's coefficient (C69, C70), and the governing cold limit reads the cold
+    // ring's skipping cold onset, as the magnet limit reads the skipping onset.
+    for (path, reader) in [
+        ("model.alpha_br_per_C", "model.inner_alpha_br_per_C"),
+        ("model.alpha_br_per_C", "model.outer_alpha_br_per_C"),
+        (
+            "temperature.demag.cold_onset_skipping_C",
+            "temperature.demag.cold_limit_C",
+        ),
+        (
+            "temperature.demag.onset_skipping_C",
+            "temperature.demag.magnet_limit_C",
+        ),
+    ] {
+        assert!(
+            r.used_by(path).iter().any(|u| u == reader),
+            "{path} is not used by {reader}: {:?}",
+            r.used_by(path)
+        );
+    }
+}
