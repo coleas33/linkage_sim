@@ -455,6 +455,38 @@ fn the_registry_is_consistent() {
         assert_eq!(members.len(), want);
         assert_eq!(members[0], "model.b_i1");
     }
+    // The three dependency queries agree, each as an exact set. `downstream` walks the
+    // reverse edges (`used_by`), `upstream` walks the terms (the closure), and
+    // `upstream_inputs` is the build's precomputed filter of that closure, so each half
+    // checks a different one: the mirror catches a `downstream` that is too large (which
+    // would make A3 soundness impossible to fail) or a closure that stops at the direct
+    // terms; the intersection catches upstream inputs taken from the direct terms only
+    // (which would leave results several hops down unstyled).
+    let input_paths: BTreeSet<String> = input_rows(&DesignInputs::default())
+        .into_iter()
+        .map(|x| x.path)
+        .collect();
+    let upstream: BTreeMap<&str, BTreeSet<String>> = r
+        .equations()
+        .iter()
+        .map(|e| (e.target.as_str(), r.upstream(&e.target)))
+        .collect();
+    for p in input_paths
+        .iter()
+        .map(String::as_str)
+        .chain(upstream.keys().copied())
+    {
+        let mirror: BTreeSet<String> = upstream
+            .iter()
+            .filter(|(_, up)| up.contains(p))
+            .map(|(&t, _)| t.to_owned())
+            .collect();
+        assert_eq!(r.downstream(p), mirror, "downstream of {p}");
+    }
+    for (&t, up) in &upstream {
+        let want: BTreeSet<String> = up.intersection(&input_paths).cloned().collect();
+        assert_eq!(r.upstream_inputs(t), Some(&want), "upstream inputs of {t}");
+    }
 }
 
 /// The physics reviewer's sheet for a batch: every record's path, cell, symbol, rendered
@@ -972,6 +1004,29 @@ fn a_modified_assumption_styles_its_term_and_what_it_flows_into() {
             .collect::<Vec<_>>(),
         ["production_variation"]
     );
+    // Two hops: T_cold,high,MD reads only T_cold,high (a result), which reads the variation.
+    assert!(style("metal.cold_high_Nm", &inputs).affected_by_modified_assumption);
+    assert_eq!(
+        r.modified_assumptions_upstream("metal.cold_high_Nm", &inputs)
+            .iter()
+            .map(|a| a.id)
+            .collect::<Vec<_>>(),
+        ["production_variation"]
+    );
+    // Several hops: T_pull's own terms (T_2D, f_end, f_cal) are all results, so α reaches
+    // it only through them.
+    let mut alpha = DesignInputs::default();
+    alpha
+        .set("calibration.alpha_br_per_C", Value::Num(-0.002))
+        .unwrap();
+    assert!(style("model.pullout_Nm", &alpha).affected_by_modified_assumption);
+    assert_eq!(
+        r.modified_assumptions_upstream("model.pullout_Nm", &alpha)
+            .iter()
+            .map(|a| a.id)
+            .collect::<Vec<_>>(),
+        ["br_temperature_coefficient"]
+    );
     // A design input changed from its default gets the dot but is not an assumption.
     inputs.set("coupling.npole", Value::Int(12)).unwrap();
     let n = style("coupling.npole", &inputs);
@@ -980,6 +1035,7 @@ fn a_modified_assumption_styles_its_term_and_what_it_flows_into() {
     assumptions::reset_to_workbook_defaults(&mut inputs);
     assert!(!assumptions::any_modified(&inputs), "the banner clears");
     assert!(!style("metal.torque_hot_low_Nm", &inputs).affected_by_modified_assumption);
+    assert!(!style("metal.cold_high_Nm", &inputs).affected_by_modified_assumption);
     assert!(
         style("coupling.npole", &inputs).changed_from_default,
         "the reset keeps design inputs"
