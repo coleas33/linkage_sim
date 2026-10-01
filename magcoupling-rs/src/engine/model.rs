@@ -427,6 +427,46 @@ pub fn resolve_magnets(m: &MagnetInputs, dev: Deviations) -> (ResolvedMagnet, Re
     )
 }
 
+/// Whether a block fits its polygon flat: the comparison of the flat checks C52 and C59.
+fn flat_fits(flat_mm: f64, width_mm: f64) -> bool {
+    flat_mm >= width_mm
+}
+
+/// A block's share of its pole pitch at the magnet mid-radius: the width over
+/// 2π (back apothem + thickness / 2) / N, the fill C66 (inner ring) and C67 (outer ring, from
+/// the outer face apothem) before their min(1, ...). Above 1 the blocks overlap there.
+pub fn pitch_share(width_mm: f64, back_apothem_mm: f64, thickness_mm: f64, npole: f64) -> f64 {
+    width_mm / (2.0 * PI * (back_apothem_mm + thickness_mm / 2.0) / npole)
+}
+
+/// Whether both rings' blocks fit (Addendum A decision A2-4). Faceted blocks (`faceted` 1)
+/// fit their polygon flats: the Calculator's C52 and C59 checks pass (their comparison,
+/// [`flat_fits`]). Arcs (any other code; the flat checks read "n/a (arcs)") fit when neither
+/// ring's blocks overlap at the magnet mid-radius: a [`pitch_share`] of at most 1, where C66
+/// and C67 would otherwise clamp the fill and price overlapping arcs as if they fitted.
+/// Inverse sizing counts only layouts that fit.
+pub fn blocks_fit(ci: &CouplingInputs, r: &ModelResults) -> bool {
+    if ci.faceted == 1 {
+        flat_fits(r.inner_flat_width_mm, r.inner_width_mm)
+            && flat_fits(r.outer_flat_width_mm, r.outer_width_mm)
+    } else {
+        let n = ci.npole as f64;
+        let inner = pitch_share(
+            r.inner_width_mm,
+            ci.inner_back_apothem_mm,
+            r.inner_thickness_mm,
+            n,
+        );
+        let outer = pitch_share(
+            r.outer_width_mm,
+            r.outer_face_apothem_mm,
+            r.outer_thickness_mm,
+            n,
+        );
+        inner <= 1.0 && outer <= 1.0
+    }
+}
+
 /// Measured correction only for the prototype's circuit (no iron, same poles, B842SH both rings).
 pub fn select_calibration_factor(
     backiron: i64,
@@ -756,7 +796,7 @@ pub fn compute(
 
     let flat_i = 2.0 * a_i * (PI / N).tan();
     let chk_i = if ci.faceted == 1 {
-        if flat_i >= mi.width_mm {
+        if flat_fits(flat_i, mi.width_mm) {
             format!("OK, {} mm slack", fmt_fixed(flat_i - mi.width_mm, 2))
         } else {
             "TOO NARROW: increase apothem or reduce poles".to_owned()
@@ -768,7 +808,7 @@ pub fn compute(
     let g_m = A_o - r_face_i;
     let flat_o = 2.0 * A_o * (PI / N).tan();
     let chk_o = if ci.faceted == 1 {
-        if flat_o >= mo.width_mm {
+        if flat_fits(flat_o, mo.width_mm) {
             format!(
                 "OK, blocks {} mm apart at the faces",
                 fmt_fixed(flat_o - mo.width_mm, 2)
@@ -794,14 +834,8 @@ pub fn compute(
     };
     let R_g = r_face_i + g_m / 2.0;
     let tau_p = 2.0 * PI * R_g / N;
-    let al_i = py_min(
-        1.0,
-        mi.width_mm / (2.0 * PI * (a_i + mi.thickness_mm / 2.0) / N),
-    );
-    let al_o = py_min(
-        1.0,
-        mo.width_mm / (2.0 * PI * (A_o + mo.thickness_mm / 2.0) / N),
-    );
+    let al_i = py_min(1.0, pitch_share(mi.width_mm, a_i, mi.thickness_mm, N));
+    let al_o = py_min(1.0, pitch_share(mo.width_mm, A_o, mo.thickness_mm, N));
 
     let bri = mi.br_T * br_factor(alpha_br, ci.op_temp_C);
     let bro = mo.br_T * br_factor(alpha_br, ci.op_temp_C);

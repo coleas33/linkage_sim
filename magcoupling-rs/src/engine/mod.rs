@@ -23,6 +23,7 @@ pub mod materials;
 pub mod meta;
 pub mod metal_design;
 pub mod model;
+pub mod sizing;
 pub mod sweeps;
 pub mod temperature;
 pub mod warnings;

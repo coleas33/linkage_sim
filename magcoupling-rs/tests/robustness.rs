@@ -239,6 +239,33 @@ fn a_positive_beta_without_a_rating_has_no_hot_limit() {
 }
 
 #[test]
+fn sizing_never_panics_on_extreme_designs() {
+    // Inverse sizing on designs no slider reaches: it must return an outcome or an error for
+    // every free variable, never panic (gate 4 is a debug build, overflow checks on).
+    use magcoupling::engine::sizing::{FreeVariable, solve};
+    let mut designs = Vec::new();
+    let mut d = DesignInputs::default();
+    d.coupling.npole = i64::MAX;
+    designs.push(d);
+    let mut d = DesignInputs::default();
+    d.metal.face_gap_mm = 1e300;
+    designs.push(d);
+    let mut d = DesignInputs::default();
+    d.coupling.magnets.part_inner = String::new();
+    d.coupling.magnets.manual_inner_thickness_mm = 0.0;
+    d.coupling.backiron = 0;
+    designs.push(d);
+    let mut d = DesignInputs::default();
+    d.metal.variation = 1.0; // the hot low torque is 0
+    designs.push(d);
+    for design in &designs {
+        for variable in FreeVariable::ALL {
+            let _ = solve(design, variable, 1.0);
+        }
+    }
+}
+
+#[test]
 fn compute_all_is_cheap_enough_to_run_every_frame() {
     // Spec: "milliseconds per call". Debug build, generous bound (a smoke check, not a benchmark).
     // A GUI frame recomputes and reads the dashboard numbers: compute_all plus headline.
