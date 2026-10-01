@@ -8,6 +8,7 @@
 //! word (`faceted`), which the typesetter writes with the choice's label in conditions.
 
 /// (path, symbol markup), grouped by input group.
+#[rustfmt::skip]
 pub const SYMBOLS: &[(&str, &str)] = &[
     // coupling
     ("coupling.npole", "N"),
@@ -57,4 +58,17 @@ pub const SYMBOLS: &[(&str, &str)] = &[
     ("calibration.fea_torque2_Nm", "T_{3D,2}"),
     // materials
     ("materials.parts.back_iron", "material_{BI}"),
+    // temperature
+    ("temperature.duty.hot_ambient_C", "ϑ_{amb}"),
+    ("temperature.duty.driving_rise_C", "Δϑ_{drive}"),
+    ("temperature.demag.hcj20_kA_m", "H_{cj,in}"),
+    ("temperature.demag.beta_hcj_per_C", "β_{in}"),
+    ("temperature.demag.knee_fraction", "k_{knee}"),
+    ("temperature.demag.design_margin_C", "Δϑ_m"),
+    ("temperature.demag.h_rev_aligned_kA_m", "H_{al}"),
+    ("temperature.demag.h_rev_pullout_kA_m", "H_{po}"),
+    ("temperature.demag.h_rev_likepole_kA_m", "H_{sk}"),
+    ("temperature.demag.h_rev_single_ring_kA_m", "H_{sr}"),
+    ("temperature.demag.coercivity_source", "source"),
+    ("temperature.adhesive.selected", "adhesive"),
 ];

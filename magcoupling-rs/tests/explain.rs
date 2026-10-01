@@ -76,6 +76,43 @@ fn augmentations() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
         "axial 8 mm",
         vec![("coupling.magnets.axial_length_mm", Value::Num(8.0))],
     ));
+    // E20's cold side from the inputs: hard ferrite's positive beta for both rings, first on
+    // rated magnets (both rings in the grade mode, bonded NdFeB and ferrite, so the rings' Br
+    // coefficients and densities differ and either ring can hold the higher cold limit), then
+    // on manual magnets with no grade and so no rating (no hot limit).
+    v.push((
+        "ferrite inputs",
+        vec![
+            ("temperature.demag.coercivity_source", Value::Int(0)),
+            ("temperature.demag.beta_hcj_per_C", Value::Num(0.0035)),
+            ("coupling.magnets.part_inner", text("")),
+            ("coupling.magnets.grade_inner", text("Bonded_NdFeB_BCN19")),
+            ("coupling.magnets.part_outer", text("")),
+            ("coupling.magnets.grade_outer", text("Y30")),
+        ],
+    ));
+    v.push((
+        "unrated ferrite",
+        vec![
+            ("coupling.magnets.part_inner", text("")),
+            ("coupling.magnets.part_outer", text("")),
+            ("temperature.demag.beta_hcj_per_C", Value::Num(0.0035)),
+        ],
+    ));
+    // A second positive beta from the inputs with the rings swapped (ferrite inside, bonded
+    // NdFeB outside), so every cold-side record sees two betas, and the outer ring a second
+    // Br coefficient and density.
+    v.push((
+        "ferrite inputs, beta 0.002",
+        vec![
+            ("temperature.demag.coercivity_source", Value::Int(0)),
+            ("temperature.demag.beta_hcj_per_C", Value::Num(0.002)),
+            ("coupling.magnets.part_inner", text("")),
+            ("coupling.magnets.grade_inner", text("Y30")),
+            ("coupling.magnets.part_outer", text("")),
+            ("coupling.magnets.grade_outer", text("Bonded_NdFeB_BCN19")),
+        ],
+    ));
     v.push((
         "everything",
         vec![
@@ -531,6 +568,20 @@ fn review_sheet() {
     }
 }
 
+/// The terms below `path` (transitively) that are neither inputs nor explained: where a
+/// drill-down from `path` would stop at a cell-only result. Empty when it reaches inputs.
+fn cell_only_below(r: &Registry, path: &str) -> Vec<String> {
+    r.upstream(path)
+        .into_iter()
+        .filter(|up| {
+            !matches!(
+                r.term_kind(up),
+                Some(TermKind::Input { .. } | TermKind::Explained)
+            )
+        })
+        .collect()
+}
+
 #[test]
 fn every_explained_chain_drills_down_to_inputs() {
     // Every term below every record of an explained chain is an input or has a record:
@@ -543,17 +594,44 @@ fn every_explained_chain_drills_down_to_inputs() {
     assert!(explained.iter().any(|c| c.id == "torque"));
     for chain in explained {
         for path in chain.paths {
-            for up in r.upstream(&path.replace("[]", "[0]")) {
-                assert!(
-                    matches!(
-                        r.term_kind(&up),
-                        Some(TermKind::Input { .. } | TermKind::Explained)
-                    ),
-                    "{}: {path} depends on {up}, which is neither an input nor explained",
-                    chain.id
-                );
-            }
+            let stops = cell_only_below(&r, &path.replace("[]", "[0]"));
+            assert!(
+                stops.is_empty(),
+                "{}: {path} depends on {stops:?}, neither inputs nor explained",
+                chain.id
+            );
         }
+    }
+}
+
+#[test]
+fn the_demagnetization_block_and_the_governing_limit_drill_down_to_inputs() {
+    // Batch 2: both rings' blocks (E20), the block the sheet shows, the cold side and the
+    // governing limit reach inputs; the chains that read them flip once their other terms do.
+    let r = Registry::build();
+    for path in [
+        "temperature.summary.governing_limit_C",
+        "temperature.demag.h_ref_kA_m",
+        "temperature.demag.t_ref_model_C",
+        "temperature.demag.calibration_offset_C",
+        "temperature.demag.onset_aligned_C",
+        "temperature.demag.onset_pullout_C",
+        "temperature.demag.onset_skipping_C",
+        "temperature.demag.onset_single_ring_C",
+        "temperature.demag.magnet_limit_C",
+        "temperature.demag.torque_at_limit_Nm",
+        "temperature.demag.torque_at_service_Nm",
+        "temperature.demag.cold_check",
+        "temperature.demag.cold_onset_skipping_C",
+        "temperature.duty.hot_day_start_C",
+        "temperature.adhesive.cure_C",
+    ] {
+        assert!(r.equation_for(path).is_some(), "{path} has no record");
+        let stops = cell_only_below(&r, path);
+        assert!(
+            stops.is_empty(),
+            "{path} depends on {stops:?}, neither inputs nor explained"
+        );
     }
 }
 
