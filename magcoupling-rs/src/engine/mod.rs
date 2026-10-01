@@ -10,6 +10,7 @@
 //! - [`deviations`]: the registry of approved corrections to the workbook.
 
 pub mod api;
+pub mod assumptions;
 pub mod calibration;
 pub mod clamps;
 pub mod compat;
