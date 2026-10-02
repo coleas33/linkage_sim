@@ -363,8 +363,9 @@ fn end_view(
     let n = c.npole;
     let faceted = c.faceted == 1;
     let draw_blocks = (2..=MAX_DRAWN_POLES).contains(&n);
-    // Without blocks there are no flats to draw: the pocket and the hub become discs.
-    let flats = faceted && draw_blocks;
+    // Without blocks there are no flats to draw: the pocket and the hub become discs. So they
+    // do below 3 poles: a 2-gon has no corners (apothem / cos 90°, about 1e17 times out).
+    let flats = faceted && draw_blocks && n >= 3;
     let a_i = c.inner_back_apothem_mm;
     let pocket = m.outer_back_apothem_mm + md.bond_outer_mm;
     let mut pieces = vec![
@@ -1218,6 +1219,51 @@ mod tests {
             .filter(|p| matches!(p.part, Part::Magnet { .. }))
             .count();
         assert_eq!(magnets, 2 * MAX_DRAWN_POLES as usize);
+    }
+
+    #[test]
+    fn two_poles_draw_their_blocks_in_a_round_pocket_and_hub() {
+        // A 2-gon has no corners (apothem / cos 90°, about 1e17 times the apothem): with two
+        // poles the pocket and the hub are drawn round, and the blocks still on their flats.
+        let inputs = design(|i| i.coupling.npole = 2);
+        let r = compute_all(&inputs);
+        let g = geometry(&inputs, &r);
+        let magnets: Vec<&Piece> = g
+            .end
+            .pieces
+            .iter()
+            .filter(|p| matches!(p.part, Part::Magnet { .. }))
+            .collect();
+        assert_eq!(magnets.len(), 4);
+        assert!(
+            magnets
+                .iter()
+                .all(|p| matches!(&p.outline, Outline::Polygon(q) if q.len() == 4))
+        );
+        let pocket = &g.end.pieces[1];
+        assert_eq!(pocket.part, Part::Cavity);
+        assert!(matches!(pocket.outline, Outline::Disc { .. }), "{pocket:?}");
+        let hub = g
+            .end
+            .pieces
+            .iter()
+            .filter(|p| p.part == Part::Body)
+            .nth(1)
+            .expect("the hub");
+        assert!(matches!(hub.outline, Outline::Disc { .. }), "{hub:?}");
+        // Every piece lies near the cup: none flies off to 1e17 mm.
+        let reach = r.model.cup_od_mm;
+        for piece in &g.end.pieces {
+            let (lo, hi) = piece.outline.bounds().expect("finite");
+            assert!(lo.iter().chain(&hi).all(|x| x.abs() <= reach), "{piece:?}");
+        }
+        // From 3 poles the flats are drawn: the pocket is a triangle.
+        let three = of(&design(|i| i.coupling.npole = 3));
+        assert!(
+            matches!(&three.end.pieces[1].outline, Outline::Polygon(q) if q.len() == 3),
+            "{:?}",
+            three.end.pieces[1]
+        );
     }
 
     #[test]
