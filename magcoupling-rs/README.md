@@ -257,19 +257,24 @@ inputs are drawn, so the readouts show the same frame's edits.
   contents, a brace per `cases`, the `where` lines; a selector compared for equality (= or ≠)
   with a code as its choice's label, an ordering with its numbers (`5 ≤ N_h`), a screw row as its
   size; factors side by side as in `render::plain`), each term in its own colour (`TERM_PALETTE`,
-  in the formula tree's order, a ninth term taking the first again, M43-3); from the next frame
-  every value and input row of a term of that equation is framed in the term's colour, a Σ's term
-  by the harmonics the design sums. A click opens the value in the
+  in the formula tree's order, a ninth term taking the first again, M43-3; the H under a Σ or an
+  `arg max` is a term too, the harmonic set's selector `coupling.max_harmonic`, taken at the Σ
+  before the body's terms as the registry lists them); from the next frame every value and input
+  row of a term of that equation is framed in the term's colour, a Σ's term by the harmonics the
+  design sums. A click opens the value in the
   **Equation panel**, docked at the bottom of the centre region and closed until then (its header
   button toggles it; M43-1, M43-2): the equation large, its label, value, workbook cell and the
   corrections it embodies (`corrections_upstream`; the dashboard and table markers stay M4-1's,
-  M43-14), the term list (colour, symbol, value in the unit the formula reads, label, and what the
-  term is; the colour swatches fade while another equation's value is hovered, its terms being
-  the ones marked on screen), the breadcrumb (a long walk shows its last 8 crumbs after "…") and
-  "used by". Clicking a term, in the equation or the list, drills
+  M43-14), the term list (colour, symbol, value in the unit the formula reads, a selector's code
+  with its choice's label after a colon, `5: 1, 3, 5 (workbook)`, label, and what the term is; the
+  colour swatches fade while another equation's value is hovered, its terms being the ones marked
+  on screen; the list scrolls sideways when the region is narrower than its rows, as the equation
+  does), the breadcrumb (a long walk shows its last 8 crumbs after "…") and "used by". Clicking a
+  term, in the equation (the H under a Σ included) or the list, drills
   into it; an input term instead opens its group (or the Assumptions view), scrolls its row into
-  view once and frames it (M43-12); a result without a record shows its label, value and cell
-  (M43-9). The registry is built once per process (`readouts::registry`, M43-5) and logs
+  view once and frames it until another equation or term is opened or the panel is closed
+  (M43-12); a result without a record shows its label, value and cell (M43-9). The registry is
+  built once per process (`readouts::registry`, M43-5) and logs
   `magcoupling explorer: N equations`. egui's default fonts lack ϑ, the superscript minus and ∝:
   they are drawn as θ, ¯ and ~ (`glyph_safe`, M43-6), the markup and the notes unchanged; a test
   lays out every equation and checks every character against the fonts, and another checks every

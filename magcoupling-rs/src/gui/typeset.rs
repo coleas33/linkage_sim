@@ -12,7 +12,8 @@
 //! What it draws, by markup (the table in `engine::explain::markup`): a stacked fraction for
 //! `frac`, an inline `a/b` for `/`, scripts for symbols and powers (a power of a symbol
 //! stacks the exponent over its subscript), a radical drawn with strokes for `sqrt`, a large Σ
-//! with `n ∈ H` beneath for `sum`, `arg max` for `peak`, delimiters scaled to their contents,
+//! with `n ∈ H` beneath for `sum` (H is a term: the harmonic set's selector, coloured and
+//! clickable), `arg max` for `peak`, delimiters scaled to their contents,
 //! a left brace with one row per arm for `cases`, the `where` bindings on lines of their own.
 //! A selector compared for equality (= or ≠) with a code shows the choice's label
 //! (`backiron = "steel circuit"`, [`Registry::choices`]); an ordering keeps its numbers (σ_n's
@@ -32,7 +33,7 @@ use std::sync::Arc;
 use egui::text::{Fonts, Galley};
 use egui::{Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2, vec2};
 
-use crate::engine::explain::markup::{BinOp, Cond, Expr, Formula, Func, RelOp, Symbol};
+use crate::engine::explain::markup::{BinOp, Cond, Expr, Formula, Func, IndexSet, RelOp, Symbol};
 use crate::engine::explain::{Equation, Registry, TermSource, tables};
 use crate::engine::meta::Value;
 
@@ -72,14 +73,19 @@ impl TermColors {
 
     /// One palette colour per term of `eq` in the formula tree's order ([`Formula::visit`]: the
     /// body, a `cases` arm's condition before its value, then each `where` binding): a path,
-    /// or a family template inside a Σ.
+    /// a family template inside a Σ, or the selector of the set a Σ (or a peak's arg max) runs
+    /// over ([`IndexSet::selector`], the H under it), taken at the Σ before its body's terms,
+    /// as the registry lists the equation's terms.
     pub fn of(eq: &Equation) -> Self {
         let mut colors = BTreeMap::new();
         eq.formula.visit(&mut |e| {
-            if let Expr::Term(r) | Expr::FamilyTerm(r) = e {
-                let next = TERM_PALETTE[colors.len() % TERM_PALETTE.len()];
-                colors.entry(r.path.clone()).or_insert(next);
-            }
+            let path = match e {
+                Expr::Term(r) | Expr::FamilyTerm(r) => r.path.as_str(),
+                Expr::Sum(set, _) | Expr::Peak(set, _) => set.selector(),
+                _ => return,
+            };
+            let next = TERM_PALETTE[colors.len() % TERM_PALETTE.len()];
+            colors.entry(path.to_owned()).or_insert(next);
         });
         Self { colors }
     }
@@ -553,16 +559,19 @@ impl Setter<'_> {
         }
     }
 
-    /// Σ with `n ∈ H` beneath, then the body.
-    fn sum(&self, body: Laid, size: f32) -> Laid {
+    /// Σ with `n ∈ H` beneath, then the body. H is a term: the selector of `set`, in its
+    /// colour and with its path.
+    fn sum(&self, set: IndexSet, body: Laid, size: f32) -> Laid {
         let small = (size * 0.6).max(MIN_SIZE);
         let sigma = self.plain("Σ", size * 1.5);
-        let set = Laid::row(vec![
+        let selector = set.selector();
+        let color = self.colors.get(selector).unwrap_or(self.ink);
+        let beneath = Laid::row(vec![
             self.plain("n", small),
             Self::element(small),
-            self.plain("H", small),
+            self.text("H", small, color, Some(selector)),
         ]);
-        let op = Self::under(sigma, set, size);
+        let op = Self::under(sigma, beneath, size);
         Laid::row(vec![op, Laid::gap(0.15 * size), body])
     }
 
@@ -749,8 +758,8 @@ impl Setter<'_> {
                 Self::frac(self.expr(a, inner), self.expr(b, inner), size)
             }
             Expr::Call(f, args) => self.call(*f, args, size),
-            Expr::Sum(_, body) => self.sum(self.expr(body, size), size),
-            Expr::Peak(_, body) => {
+            Expr::Sum(set, body) => self.sum(*set, self.expr(body, size), size),
+            Expr::Peak(set, body) => {
                 let small = (size * 0.6).max(MIN_SIZE);
                 let argmax = Self::under(
                     self.plain("arg max", size),
@@ -762,7 +771,11 @@ impl Setter<'_> {
                     Laid::gap(0.15 * size),
                     self.plain("sin(nφ)", size),
                 ]);
-                Laid::row(vec![argmax, Laid::gap(0.2 * size), self.sum(body, size)])
+                Laid::row(vec![
+                    argmax,
+                    Laid::gap(0.2 * size),
+                    self.sum(*set, body, size),
+                ])
             }
             Expr::Table { table, key, field } => {
                 let symbol = tables::field(table, field).map_or(field.as_str(), |f| f.symbol);
@@ -1208,6 +1221,36 @@ mod tests {
     }
 
     #[test]
+    fn a_sum_s_harmonic_set_is_a_term_with_its_colour_and_path() {
+        // The H of Σ_{n ∈ H} is the harmonic set's selector, a term of every Σ (the registry
+        // lists it among the equation's terms): coloured and carrying its path like any term,
+        // so it is marked on screen and a click on it finds its row. The arg max of a peak
+        // sums over the same set.
+        let selector = IndexSet::Harmonics.selector();
+        for target in ["model.tau_Pa", "model.pullout_angle_rad"] {
+            let eq = registry().equation_for(target).unwrap();
+            assert!(eq.terms.iter().any(|t| t == selector), "{target}");
+            let colors = TermColors::of(eq);
+            let color = colors
+                .get(selector)
+                .unwrap_or_else(|| panic!("{target}: the set has no colour"));
+            let laid =
+                with_fonts(|f| layout_equation(f, registry(), eq, &colors, 16.0, Color32::WHITE));
+            let h = runs_of(&laid)
+                .into_iter()
+                .find(|(_, text, _)| text == "H")
+                .unwrap_or_else(|| panic!("{target}: no H drawn"));
+            assert_eq!(h, (Some(selector.to_owned()), "H".to_owned(), color));
+        }
+        // In the registry's term order: the selector at its Σ, before the body's terms.
+        let tau = registry().equation_for("model.tau_Pa").unwrap();
+        assert_eq!(tau.terms.first().map(String::as_str), Some(selector));
+        let colors = TermColors::of(tau);
+        assert_eq!(colors.get(selector), Some(TERM_PALETTE[0]));
+        assert_eq!(colors.get("model.tau#_Pa"), Some(TERM_PALETTE[1]));
+    }
+
+    #[test]
     fn a_selector_code_shows_its_choice_and_a_screw_row_its_size() {
         // A_1 compares the circuit in effect with code 1, the steel circuit.
         let eq = registry().equation_for("model.amp1_Pa").unwrap();
@@ -1553,14 +1596,16 @@ mod tests {
                         args.iter().for_each(|a| self.expr(a));
                     }
                 },
-                Expr::Sum(_, body) => {
-                    ["Σ", "n", "H"].iter().for_each(|s| self.push(None, s));
+                Expr::Sum(set, body) => {
+                    ["Σ", "n"].iter().for_each(|s| self.push(None, s));
+                    self.push(Some(set.selector()), "H");
                     self.expr(body);
                 }
-                Expr::Peak(_, body) => {
-                    ["arg max", "0 ≤ φ ≤ π/2", "sin(nφ)", "Σ", "n", "H"]
+                Expr::Peak(set, body) => {
+                    ["arg max", "0 ≤ φ ≤ π/2", "sin(nφ)", "Σ", "n"]
                         .iter()
                         .for_each(|s| self.push(None, s));
+                    self.push(Some(set.selector()), "H");
                     self.expr(body);
                 }
                 Expr::Table { table, key, field } => {

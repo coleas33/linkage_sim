@@ -5,6 +5,28 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-02 — Magcoupling M4-3: final review fix wave (branch magcoupling/m4-3)
+- The whole-branch review found no Critical or Important issue; four Minor findings, fixed with a
+  failing test first where they change behaviour:
+  - The H under a Σ (and under an `arg max`) is a term: the harmonic set's selector
+    `coupling.max_harmonic`, which every Σ record lists among its terms. `TermColors::of` gives it
+    a palette colour at the Σ, before the body's terms (the registry's term order, so the other
+    terms of the eight Σ records move one colour on), and the typesetter draws H in that colour
+    with its path. Its term-list swatch is coloured, its Assumptions row ("Highest odd harmonic
+    summed") is framed while a Σ is in view, and a click on the H shows and frames that row.
+  - The Equation panel's term list scrolls sideways when the centre region is narrower than its
+    rows; the tag column (an assumption, "depends on a modified assumption") was cut off at
+    1280 x 800.
+  - Closing the Equation panel (Close or the header toggle, `Explorer::close`) clears the leaf
+    term's input-row frame, which stayed until the next trail (decision M43-12 now says so).
+  - A selector's code reads with its choice's label after a colon (`5: 1, 3, 5 (workbook)`,
+    `1: steel circuit`) instead of nested parentheses.
+  - The M5 readiness test `the_panel_works_inside_an_egui_window` now opens a value, follows a
+    term and a leaf assumption term inside an `egui::Window`, then checks the window's size, the
+    Equation panel's lists, no egui ID clash, and an unchanged design.
+- The engine, parity, differential data, registry and teaching notes are unchanged. Nothing
+  pushed.
+
 ## 2026-10-01 — Magcoupling M4-3: equation explorer, assumptions, teaching notes, pickers (branch magcoupling/m4-3)
 - Equation explorer (`gui/typeset.rs`, `gui/readouts.rs`, `gui/explorer.rs`): an egui typesetter for
   the A-3 markup (stacked fractions, scripts, strokes for √, ∈ and the ceiling and floor brackets,

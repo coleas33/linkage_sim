@@ -210,6 +210,14 @@ impl Explorer {
         self.start_here = None;
     }
 
+    /// Hides the panel (its Close button, the header's toggle). The input row a leaf term
+    /// framed loses its frame (decision M43-12: the frame goes with the equation shown); the
+    /// trail stays, so the panel shown again opens where it was.
+    pub fn close(&mut self) {
+        self.open = false;
+        self.focus = None;
+    }
+
     /// The note opened on its own, if any.
     pub fn note(&self) -> Option<&'static str> {
         self.note
@@ -365,7 +373,8 @@ fn crumb(path: &str) -> String {
         .map_or_else(|| term_label(path).to_owned(), plain_symbol)
 }
 
-/// A value with its unit; a selector code with its choice's label (`1 (steel circuit)`).
+/// A value with its unit; a selector code with its choice's label after a colon
+/// (`1: steel circuit`, and `5: 1, 3, 5 (workbook)` without nested parentheses).
 fn value_text(path: &str, value: &Value, unit: &str) -> String {
     let text = with_unit(format_value(value), unit);
     match value {
@@ -373,7 +382,7 @@ fn value_text(path: &str, value: &Value, unit: &str) -> String {
             .choices(path)
             .iter()
             .find(|(c, _)| c == code)
-            .map_or(text.clone(), |(_, label)| format!("{text} ({label})")),
+            .map_or(text.clone(), |(_, label)| format!("{text}: {label}")),
         _ => text,
     }
 }
@@ -441,7 +450,7 @@ pub fn explorer_ui(
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.button(CLOSE).clicked() {
-                explorer.open = false;
+                explorer.close();
             }
             if ui
                 .button(START_HERE_BUTTON)
@@ -650,51 +659,57 @@ fn equation_body(
     ui.add_space(6.0);
     ui.strong(TERMS);
     let hidden = unsummed(eq, terms);
-    egui::Grid::new("magcoupling_equation_terms")
-        .striped(true)
+    // The list scrolls sideways when the region is narrower than its rows (the tag, its last
+    // column, would be cut off), as the equation above it does.
+    egui::ScrollArea::horizontal()
+        .id_salt("magcoupling_equation_terms_scroll")
         .show(ui, |ui| {
-            for row in registry().term_rows(eq, terms) {
-                if hidden.contains(&row.path) {
-                    continue;
-                }
-                let color = colors
-                    .get(&row.path)
-                    .or_else(|| {
-                        // A family member takes its template's colour.
-                        colors_of_template(eq, &colors, &row.path)
-                    })
-                    .unwrap_or(ink);
-                let key = if others_marked {
-                    color.gamma_multiply(SWATCH_DIM)
-                } else {
-                    color
-                };
-                swatch(ui, key);
-                let symbol =
-                    ui.fonts(|f| layout_symbol(f, registry(), &row.symbol, TERM_SIZE, color));
-                laid_ui(ui, &symbol, ink, Sense::hover());
-                let value = row.value.clone().unwrap_or(Value::None);
-                ui.label(value_text(&row.path, &value, &row.unit));
-                if ui
-                    .add(egui::Label::new(term_label(&row.path)).sense(Sense::click()))
-                    .on_hover_text(&row.path)
-                    .clicked()
-                {
-                    clicked = Some(row.path.clone());
-                }
-                let style = registry()
-                    .term_style(&row.path, terms.inputs)
-                    .expect("every term is an input or a result (registry build)");
-                let tag = term_tag(style);
-                if style.affected_by_modified_assumption
-                    || matches!(style.kind, TermKind::Input { assumption: true })
-                {
-                    ui.colored_label(ui.visuals().warn_fg_color, tag);
-                } else {
-                    ui.weak(tag);
-                }
-                ui.end_row();
-            }
+            egui::Grid::new("magcoupling_equation_terms")
+                .striped(true)
+                .show(ui, |ui| {
+                    for row in registry().term_rows(eq, terms) {
+                        if hidden.contains(&row.path) {
+                            continue;
+                        }
+                        let color = colors
+                            .get(&row.path)
+                            .or_else(|| {
+                                // A family member takes its template's colour.
+                                colors_of_template(eq, &colors, &row.path)
+                            })
+                            .unwrap_or(ink);
+                        let key = if others_marked {
+                            color.gamma_multiply(SWATCH_DIM)
+                        } else {
+                            color
+                        };
+                        swatch(ui, key);
+                        let symbol = ui
+                            .fonts(|f| layout_symbol(f, registry(), &row.symbol, TERM_SIZE, color));
+                        laid_ui(ui, &symbol, ink, Sense::hover());
+                        let value = row.value.clone().unwrap_or(Value::None);
+                        ui.label(value_text(&row.path, &value, &row.unit));
+                        if ui
+                            .add(egui::Label::new(term_label(&row.path)).sense(Sense::click()))
+                            .on_hover_text(&row.path)
+                            .clicked()
+                        {
+                            clicked = Some(row.path.clone());
+                        }
+                        let style = registry()
+                            .term_style(&row.path, terms.inputs)
+                            .expect("every term is an input or a result (registry build)");
+                        let tag = term_tag(style);
+                        if style.affected_by_modified_assumption
+                            || matches!(style.kind, TermKind::Input { assumption: true })
+                        {
+                            ui.colored_label(ui.visuals().warn_fg_color, tag);
+                        } else {
+                            ui.weak(tag);
+                        }
+                        ui.end_row();
+                    }
+                });
         });
     clicked
 }
@@ -784,6 +799,18 @@ mod tests {
     }
 
     #[test]
+    fn closing_hides_the_panel_and_clears_the_focus_but_keeps_the_trail() {
+        // Decision M43-12: the frame of a leaf term's row goes with the panel.
+        let mut explorer = Explorer::default();
+        explorer.open_path("model.f_end");
+        explorer.focus_input("coupling.c_end");
+        explorer.close();
+        assert!(!explorer.open);
+        assert_eq!(explorer.focus(), None);
+        assert_eq!(explorer.trail(), ["model.f_end"]);
+    }
+
+    #[test]
     fn a_long_walk_keeps_the_last_steps() {
         let mut explorer = Explorer::default();
         explorer.open_path("p0");
@@ -870,27 +897,47 @@ mod tests {
         assert_eq!(explorer.hovered(), None);
     }
 
+    /// The colours of the term list's swatches (its 10-point squares), as one frame of
+    /// `explorer_ui` on the default design draws them.
+    fn swatch_colors(ctx: &egui::Context, explorer: &mut Explorer) -> Vec<Color32> {
+        use crate::gui::test_support::{SCREEN, flat_shapes, sized_frame};
+        let (inputs, results) = design();
+        let output = sized_frame(ctx, SCREEN, Vec::new(), |ui| {
+            explorer_ui(ui, explorer, &inputs, &results);
+        });
+        flat_shapes(&output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Rect(r) if r.rect.size() == Vec2::splat(10.0) => Some(r.fill),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_sum_s_harmonic_set_has_its_swatch_in_the_term_list() {
+        // σ = Σ_{n ∈ H} σ_n: the set's selector N_h is σ's first term (the registry's order), in
+        // the first colour, not the text colour; the harmonics summed, 1, 3 and 5, take their
+        // template's colour.
+        use crate::gui::typeset::TERM_PALETTE;
+        let ctx = egui::Context::default();
+        let mut explorer = Explorer::default();
+        explorer.open_path("model.tau_Pa");
+        let [first, second, ..] = TERM_PALETTE;
+        assert_eq!(
+            swatch_colors(&ctx, &mut explorer),
+            [first, second, second, second]
+        );
+    }
+
     #[test]
     fn the_swatches_fade_while_another_equation_s_value_is_hovered() {
         // The marks on screen follow the hovered value's equation (decision M43-3): while it
         // is not the open one, the term list's swatches fade, so a colour on screen is never
         // read against the open equation's key.
-        use crate::gui::test_support::{SCREEN, flat_shapes, sized_frame};
         use crate::gui::typeset::TERM_PALETTE;
-        let (inputs, results) = design();
         let ctx = egui::Context::default();
-        let swatches = |explorer: &mut Explorer| -> Vec<Color32> {
-            let output = sized_frame(&ctx, SCREEN, Vec::new(), |ui| {
-                explorer_ui(ui, explorer, &inputs, &results);
-            });
-            flat_shapes(&output)
-                .into_iter()
-                .filter_map(|shape| match shape {
-                    egui::Shape::Rect(r) if r.rect.size() == Vec2::splat(10.0) => Some(r.fill),
-                    _ => None,
-                })
-                .collect()
-        };
+        let swatches = |explorer: &mut Explorer| swatch_colors(&ctx, explorer);
         let hover = |explorer: &mut Explorer, path: &str| {
             explorer.end_frame(
                 &ctx,
@@ -1036,9 +1083,20 @@ mod tests {
         assert_eq!(plain_symbol("ϑ_{op}"), "θ_op");
         assert_eq!(plain_symbol("T_{pull}"), "T_pull");
         assert_eq!(plain_symbol("S_{3}^{iron}"), "S_3^iron");
+        // A selector code with its choice's label, after a colon: a label holding its own
+        // parentheses (the workbook's harmonic set) reads without nesting them.
         assert_eq!(
             value_text("coupling.backiron", &Value::Int(1), "-"),
-            "1 (steel circuit)"
+            "1: steel circuit"
+        );
+        assert_eq!(
+            value_text("coupling.max_harmonic", &Value::Int(5), "-"),
+            "5: 1, 3, 5 (workbook)"
+        );
+        // A code outside the choices has no label to add.
+        assert_eq!(
+            value_text("coupling.max_harmonic", &Value::Int(4), "-"),
+            "4"
         );
         let (_, results) = design();
         let cell_only = table_entries()

@@ -700,7 +700,11 @@ impl MagcouplingPanel {
                 .on_hover_text("Show or hide the equation of the value clicked")
                 .clicked()
             {
-                self.explorer.open = !self.explorer.open;
+                if self.explorer.open {
+                    self.explorer.close();
+                } else {
+                    self.explorer.open = true;
+                }
             }
         });
         // Spec Addendum A3: the banner while any assumption differs from its workbook default.
@@ -2476,6 +2480,17 @@ mod tests {
             .collect()
     }
 
+    /// The rects of the frames a leaf term draws around its input row in a frame.
+    fn focus_rects(output: &egui::FullOutput) -> Vec<egui::Rect> {
+        crate::gui::test_support::flat_shapes(output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Rect(r) if r.stroke.width == FOCUS_WIDTH => Some(r.rect),
+                _ => None,
+            })
+            .collect()
+    }
+
     #[test]
     fn hovering_a_dashboard_value_shows_its_equation() {
         use crate::gui::readouts::OPEN_HINT;
@@ -2631,13 +2646,7 @@ mod tests {
         for _ in 0..10 {
             output = harness.frame(Vec::new());
         }
-        let focus: Vec<egui::Rect> = crate::gui::test_support::flat_shapes(&output)
-            .into_iter()
-            .filter_map(|shape| match shape {
-                egui::Shape::Rect(r) if r.stroke.width == FOCUS_WIDTH => Some(r.rect),
-                _ => None,
-            })
-            .collect();
+        let focus = focus_rects(&output);
         // The inputs side paints first: the first "Gearbox ratio" is the row's.
         let label = text_rect(&output, "Gearbox ratio").unwrap();
         assert!(label.left() < INPUTS_WIDTH, "the row on the inputs side");
@@ -2922,13 +2931,7 @@ mod tests {
             output = harness.frame(Vec::new());
         }
         assert_eq!(harness.panel.inputs_view, InputsView::Assumptions);
-        let focus: Vec<egui::Rect> = crate::gui::test_support::flat_shapes(&output)
-            .into_iter()
-            .filter_map(|shape| match shape {
-                egui::Shape::Rect(r) if r.stroke.width == FOCUS_WIDTH => Some(r.rect),
-                _ => None,
-            })
-            .collect();
+        let focus = focus_rects(&output);
         // The assumption's heading and its row's label are both "End-effect coefficient";
         // the row's label sits inside the frame.
         let labels = crate::gui::test_support::text_rects(&output, "End-effect coefficient");
@@ -2938,6 +2941,151 @@ mod tests {
                 .any(|l| l.left() < INPUTS_WIDTH && focus.iter().any(|r| r.contains_rect(*l))),
             "{labels:?} {focus:?}"
         );
+    }
+
+    #[test]
+    fn a_sum_s_harmonic_set_marks_its_row_and_its_h_finds_it() {
+        // σ = Σ_{n ∈ H} σ_n reads the harmonic set's selector: with σ open, the set's row in
+        // the Assumptions view is framed in the selector's colour, as every term's row is; a
+        // click on the H under the Σ shows that row and frames it, as a click on any leaf term
+        // does. A tall screen draws every assumption's row.
+        use crate::engine::explain::markup::IndexSet;
+        let selector = IndexSet::Harmonics.selector();
+        let label = InputCatalogue::get().entry(selector).unwrap().meta.label;
+        let eq = registry().equation_for("model.tau_Pa").unwrap();
+        let color = crate::gui::typeset::TermColors::of(eq)
+            .get(selector)
+            .expect("the set has a colour");
+        let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
+        harness.panel.explorer.open_path("model.tau_Pa");
+        harness.click_text(InputsView::Assumptions.label());
+        let output = harness.frame(Vec::new());
+        let row = text_rects(&output, label)
+            .into_iter()
+            .find(|r| r.left() < INPUTS_WIDTH)
+            .expect("the set's row on the inputs side");
+        let marks = mark_rects(&output, Some(color));
+        assert!(
+            marks.iter().any(|m| m.contains_rect(row)),
+            "{row:?} not inside {marks:?}"
+        );
+        // Back on the design inputs, the H under the Σ in the Equation panel.
+        harness.click_text(InputsView::Design.label());
+        assert_eq!(harness.panel.inputs_view, InputsView::Design);
+        let output = harness.frame(Vec::new());
+        let h = text_rects(&output, "H")
+            .into_iter()
+            .find(|r| r.left() > INPUTS_WIDTH && r.right() < SCREEN.x - DASHBOARD_WIDTH)
+            .expect("the H under the Σ");
+        harness.click(h.center());
+        assert_eq!(
+            harness.panel.explorer.focus().map(|f| f.path.as_str()),
+            Some(selector)
+        );
+        assert_eq!(harness.panel.explorer.trail(), ["model.tau_Pa"]);
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..5 {
+            output = harness.frame(Vec::new());
+        }
+        assert_eq!(harness.panel.inputs_view, InputsView::Assumptions);
+        let row = text_rects(&output, label)
+            .into_iter()
+            .find(|r| r.left() < INPUTS_WIDTH)
+            .expect("the set's row on the inputs side");
+        let focus = focus_rects(&output);
+        assert!(
+            focus.iter().any(|r| r.contains_rect(row)),
+            "{row:?} not inside {focus:?}"
+        );
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    /// The screen rect of the first drawn text equal to `needle` and the rect it is clipped
+    /// to.
+    fn clipped_text(output: &egui::FullOutput, needle: &str) -> Option<(egui::Rect, egui::Rect)> {
+        output
+            .shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) if text.galley.text() == needle => Some((
+                    text.galley.rect.translate(text.pos.to_vec2()),
+                    clipped.clip_rect,
+                )),
+                _ => None,
+            })
+    }
+
+    #[test]
+    fn the_term_list_scrolls_sideways_in_a_narrow_centre_region() {
+        // At 1000 points the centre region is about 380 wide: σ's term list (swatch, symbol,
+        // value, label, tag) is wider, so its last column, the tag, starts cut off or out of
+        // view. The list scrolls sideways (as the equation above it does), so the tag can be
+        // read in full.
+        use crate::gui::explorer::ASSUMPTION_TAG;
+        let mut harness = Harness::on_screen(egui::vec2(1000.0, 800.0));
+        harness.panel.explorer.open_path("model.tau_Pa");
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert!(
+            clipped_text(&output, ASSUMPTION_TAG).is_none_or(|(r, clip)| r.right() > clip.right()),
+            "the tag fits without scrolling: the test would prove nothing"
+        );
+        // The pointer on the start of the set's value, in view at the left of the list.
+        let at = text_rect(&output, "5: 1, 3, 5 (workbook)")
+            .expect("the set's value in the term list")
+            .left_center()
+            + egui::vec2(4.0, 0.0);
+        harness.frame(vec![egui::Event::PointerMoved(at)]);
+        harness.frame(vec![egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(-5000.0, 0.0),
+            modifiers: egui::Modifiers::NONE,
+        }]);
+        // egui spreads a wheel step over several frames.
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..20 {
+            output = harness.frame(Vec::new());
+        }
+        let (tag, clip) = clipped_text(&output, ASSUMPTION_TAG).expect("the tag is drawn");
+        assert!(clip.contains_rect(tag), "{tag:?} cut by {clip:?}");
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn closing_the_equation_panel_clears_the_input_row_s_frame() {
+        // Decision M43-12: a leaf term frames its row while its equation is shown; closing
+        // the panel, by its Close button or the header's toggle, takes the frame away.
+        use crate::gui::explorer::CLOSE;
+        for close in [CLOSE, EQUATION_PANEL] {
+            let mut harness = Harness::new();
+            harness
+                .panel
+                .explorer
+                .open_path("model.gearbox_input_ripple_Nm");
+            harness.frame(Vec::new());
+            harness.click_text("Gearbox ratio");
+            let mut output = harness.frame(Vec::new());
+            for _ in 0..3 {
+                output = harness.frame(Vec::new());
+            }
+            assert_eq!(focus_rects(&output).len(), 1, "{close}: the row is framed");
+            harness.click_text(close);
+            assert!(!harness.panel.explorer.open, "{close}");
+            assert_eq!(harness.panel.explorer.focus(), None, "{close}");
+            // The inputs side paints before the dock: the frame goes on the next frame.
+            let output = harness.frame(Vec::new());
+            assert!(focus_rects(&output).is_empty(), "{close}");
+            // Shown again, the panel keeps its equation but frames no row.
+            harness.click_text(EQUATION_PANEL);
+            assert!(harness.panel.explorer.open);
+            assert_eq!(
+                harness.panel.explorer.trail(),
+                ["model.gearbox_input_ripple_Nm"]
+            );
+            let output = harness.frame(Vec::new());
+            assert!(focus_rects(&output).is_empty(), "{close}: shown again");
+            assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        }
     }
 
     /// Every painted shape that is a diagram's: the frames of the term marks and the panel's
@@ -3246,18 +3394,71 @@ mod tests {
 
     #[test]
     fn the_panel_works_inside_an_egui_window() {
-        // M5 shows the panel in a window of the linkage app.
+        // M5 shows the panel in a window of the linkage app. Past its first frames: a value
+        // opened, a term followed, a leaf assumption term's row shown (the Assumptions view
+        // and its frame), then idle frames. The window keeps its size, the Equation panel
+        // draws its lists, egui reports no ID clash (the text it paints in a debug build, as
+        // the tests are) and the design is unchanged.
+        use crate::gui::explorer::{TERMS, USED_BY};
+        const TITLE: &str = "Magnetic coupling";
         let ctx = egui::Context::default();
         let mut panel = MagcouplingPanel::new();
-        let mut output = None;
-        for _ in 0..2 {
-            // A window sizes itself on its first frame and paints on the next.
-            output = Some(ctx.run(egui::RawInput::default(), |ctx| {
-                egui::Window::new("Magnetic coupling")
+        let frame = |panel: &mut MagcouplingPanel, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                events,
+                ..Default::default()
+            };
+            let output = ctx.run(input, |ctx| {
+                egui::Window::new(TITLE)
                     .default_size([1100.0, 1200.0])
                     .show(ctx, |ui| panel.ui(ui));
-            }));
+            });
+            let clashes: Vec<String> = drawn_texts(&output)
+                .into_iter()
+                .filter(|t| t.contains("use of") && t.contains(" ID "))
+                .collect();
+            assert!(clashes.is_empty(), "{clashes:?}");
+            output
+        };
+        let click = |panel: &mut MagcouplingPanel, output: &egui::FullOutput, text: &str| {
+            let at = text_rect(output, text)
+                .unwrap_or_else(|| panic!("no text {text:?}"))
+                .center();
+            frame(panel, vec![egui::Event::PointerMoved(at)]);
+            frame(panel, vec![primary_button(at, true)]);
+            frame(panel, vec![primary_button(at, false)]);
+            frame(panel, Vec::new())
+        };
+        // A window sizes itself on its first frame and paints on the next.
+        frame(&mut panel, Vec::new());
+        let output = frame(&mut panel, Vec::new());
+        assert_drew_headline(&output, &DesignInputs::default());
+        let window = || ctx.memory(|m| m.area_rect(egui::Id::new(TITLE)));
+        let size = window().expect("the window is shown").size();
+        let output = click(
+            &mut panel,
+            &output,
+            &displayed_pullout(&DesignInputs::default()),
+        );
+        assert_eq!(panel.explorer.trail(), ["model.pullout_Nm"]);
+        let output = click(&mut panel, &output, "End-effect factor");
+        assert_eq!(panel.explorer.trail(), ["model.pullout_Nm", "model.f_end"]);
+        click(&mut panel, &output, "End-effect coefficient");
+        assert_eq!(
+            panel.explorer.focus().map(|f| f.path.as_str()),
+            Some("coupling.c_end")
+        );
+        let mut output = frame(&mut panel, Vec::new());
+        for _ in 0..5 {
+            output = frame(&mut panel, Vec::new());
         }
-        assert_drew_headline(&output.expect("two frames ran"), &DesignInputs::default());
+        assert_eq!(panel.inputs_view, InputsView::Assumptions);
+        assert_eq!(focus_rects(&output).len(), 1, "the row is framed");
+        assert_eq!(window().map(|r| r.size()), Some(size), "the window's size");
+        for heading in [TERMS, USED_BY] {
+            assert_eq!(count(&output, heading), 1, "{heading}");
+        }
+        assert!(assumptions::modified(panel.inputs()).is_empty());
+        assert_eq!(panel.inputs(), &DesignInputs::default());
     }
 }

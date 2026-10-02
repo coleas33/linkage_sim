@@ -433,6 +433,7 @@ lessons_learned:
   - "egui 0.32's CollapsingHeader computes its id inside a child ui (ui.vertical), so ui.make_persistent_id(salt) in the parent names another state: to open a header from code, pass CollapsingHeader::open(Some(true)) for that frame (magcoupling panel: a leaf term opens its input group)."
   - "egui 0.32: a Label in a horizontal_wrapped row wraps by laying its galley out from the row's start with leading space, so its text rect (and a test's click at its centre) starts mid-row; set ui.style_mut().wrap_mode = Some(TextWrapMode::Extend) in rows of links so each moves whole (magcoupling explorer crumbs, used-by, plot readouts)."
   - "egui 0.32: Label::sense(Sense::click()) draws the label in the interactive text colour (widgets.inactive), not the plain text colour; to make a value clickable without changing its look, put a click sensor over its rect with ui.interact (magcoupling Readouts::show_over)."
+  - "egui 0.32: a ScrollArea that scrolls sideways still gives its content the viewport's width (content_max_size is the inner size), so wrapped labels inside keep wrapping and only content that does not wrap (a Grid row, a typeset formula) scrolls. A headless wheel-scroll test must put the pointer on a visible part of the area (a point past its clip rect hovers the next panel) and run several frames, since egui spreads a wheel step over frames (magcoupling explorer term list)."
 
 current_statuses:
   solver: Rust port complete; 716 lib tests pass; trajectory-mode IK Stage 1
