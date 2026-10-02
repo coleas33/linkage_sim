@@ -24,17 +24,17 @@
 //! ([`crate::gui::sizing::SizingRunner`], debounced, never per frame), and the free variable's
 //! row shows that value, locked.
 
-use crate::engine::explain::Design as Terms;
 use crate::engine::meta::{InputSet, ResultSet, Value};
 use crate::engine::sizing::FreeVariable;
 use crate::gui::clamp_drawing::clamp_ui;
 use crate::gui::dashboard::{Level, dashboard_ui, end_effect_banner};
+use crate::gui::explorer::{EQUATION_PANEL, Explorer, FOCUS_WIDTH, PANEL_HEIGHT, explorer_ui};
 use crate::gui::geometry_view::geometry_ui;
 use crate::gui::history::History;
 use crate::gui::input_ui::{RowEdit, input_row, slider};
 use crate::gui::inputs::{InputCatalogue, InputEntry, KEY_DESIGN, optional_seed};
 use crate::gui::plots::{PlotKind, plot_ui};
-use crate::gui::readouts::{ReadoutEvents, Readouts, registry};
+use crate::gui::readouts::{Readouts, registry};
 use crate::gui::results_table::{
     CSV_FILE_NAME, JSON_FILE_NAME, ResultsTable, TableAction, results_csv, results_json,
 };
@@ -46,7 +46,6 @@ use crate::gui::sizing::{
     SOLVED_PREFIX, SOLVING, SizingMode, SizingRunner, SizingState, TARGET_RANGE_INPUT,
     variable_label,
 };
-use crate::gui::typeset::TermColors;
 use crate::{DesignInputs, DesignResults, compute_all};
 
 /// The heading of the panel.
@@ -189,9 +188,9 @@ pub struct MagcouplingPanel {
     results_table: ResultsTable,
     /// Platform work for the host, oldest first.
     requests: Vec<PanelRequest>,
-    /// The path of the readout hovered in the last frame: this frame marks its equation's
-    /// terms wherever their values are shown (spec Addendum A2 "Hover").
-    hovered: Option<String>,
+    /// The Equation panel: the equation open, its trail, the readout hovered in the last frame
+    /// (this frame marks its equation's terms) and the input row a leaf term highlights.
+    explorer: Explorer,
 }
 
 impl Default for MagcouplingPanel {
@@ -223,7 +222,7 @@ impl MagcouplingPanel {
             centre: CentreView::Geometry,
             results_table: ResultsTable::default(),
             requests: Vec::new(),
-            hovered: None,
+            explorer: Explorer::default(),
         }
     }
 
@@ -384,7 +383,7 @@ impl MagcouplingPanel {
 
     /// Draws the panel into `ui` and applies this frame's edits.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        let mut readouts = Readouts::new(self.marks());
+        let mut readouts = Readouts::new(self.explorer.marks(&self.inputs, &self.results));
         ui.push_id("magcoupling_panel", |ui| {
             self.shortcuts(ui);
             egui::TopBottomPanel::top("magcoupling_header").show_inside(ui, |ui| {
@@ -410,36 +409,10 @@ impl MagcouplingPanel {
             egui::CentralPanel::default()
                 .show_inside(ui, |ui| self.centre_ui(ui, &shown, &mut readouts));
         });
-        self.end_frame(ui, readouts.finish());
+        self.explorer.end_frame(ui.ctx(), readouts.finish());
         // One undo step per settled edit.
         let settled = !self.editing(ui);
         self.history.observe(&self.design(), settled);
-    }
-
-    /// The term colours this frame marks: the terms of the equation of the readout hovered in
-    /// the last frame, a family's by the harmonics the design sums; none without one.
-    fn marks(&self) -> TermColors {
-        let Some(eq) = self
-            .hovered
-            .as_deref()
-            .and_then(|path| registry().equation_for(path))
-        else {
-            return TermColors::none();
-        };
-        let terms = Terms {
-            inputs: &self.inputs,
-            results: &self.results,
-        };
-        TermColors::of(eq).with_members(registry(), &terms)
-    }
-
-    /// Takes in what the user did with the readouts this frame: the value hovered marks its
-    /// terms from the next frame, which is asked for at once.
-    fn end_frame(&mut self, ui: &egui::Ui, events: ReadoutEvents) {
-        if events.hovered != self.hovered {
-            self.hovered = events.hovered;
-            ui.ctx().request_repaint();
-        }
     }
 
     /// Whether an edit of the design is in progress: a pointer button down (a drag), a key held
@@ -578,6 +551,15 @@ impl MagcouplingPanel {
     /// banner when f_end <= 0 (over every view, decision M42-1), then the view of `shown`, the
     /// design shown, its values readouts (`readouts`).
     fn centre_ui(&mut self, ui: &mut egui::Ui, shown: &DesignInputs, readouts: &mut Readouts) {
+        // The Equation panel docks at the bottom of the centre region (decision M43-1).
+        if self.explorer.open {
+            egui::TopBottomPanel::bottom("magcoupling_equation_panel")
+                .resizable(true)
+                .default_height(PANEL_HEIGHT)
+                .show_inside(ui, |ui| {
+                    explorer_ui(ui, &mut self.explorer, shown, &self.results);
+                });
+        }
         ui.horizontal_wrapped(|ui| {
             for view in CentreView::ALL {
                 ui.selectable_value(&mut self.centre, view, view.label());
@@ -670,6 +652,14 @@ impl MagcouplingPanel {
                 ));
                 ui.ctx().copy_text(link);
             }
+            ui.separator();
+            if ui
+                .selectable_label(self.explorer.open, EQUATION_PANEL)
+                .on_hover_text("Show or hide the equation of the value clicked")
+                .clicked()
+            {
+                self.explorer.open = !self.explorer.open;
+            }
         });
         if let Some(error) = &self.last_error {
             ui.colored_label(ui.visuals().error_fg_color, error);
@@ -683,6 +673,30 @@ impl MagcouplingPanel {
         let catalogue = InputCatalogue::get();
         // This frame's rows only, whichever groups are open.
         self.design_widgets.clear();
+        // A leaf term clicked in the Equation panel: its group opens so its row can scroll
+        // into view (the Key design group for a Key design input).
+        let focus = self
+            .explorer
+            .focus()
+            .filter(|f| f.scroll)
+            .map(|f| f.path.clone());
+        let open_key_design = focus
+            .as_deref()
+            .is_some_and(|path| KEY_DESIGN.contains(&path));
+        let open_group = focus
+            .as_deref()
+            .filter(|_| !open_key_design)
+            .and_then(|path| {
+                catalogue
+                    .groups
+                    .iter()
+                    .find(|g| {
+                        g.sections
+                            .iter()
+                            .any(|s| s.entries.iter().any(|e| e.path == path))
+                    })
+                    .map(|g| g.name.as_str())
+            });
         egui::ScrollArea::vertical()
             .id_salt("magcoupling_inputs_scroll")
             .auto_shrink([false, false])
@@ -690,6 +704,7 @@ impl MagcouplingPanel {
                 egui::CollapsingHeader::new(KEY_DESIGN_HEADING)
                     .id_salt("key_design")
                     .default_open(true)
+                    .open(open_key_design.then_some(true))
                     .show(ui, |ui| {
                         self.sizing_ui(ui, readouts);
                         self.key_widgets.clear();
@@ -703,6 +718,7 @@ impl MagcouplingPanel {
                     egui::CollapsingHeader::new(group.label)
                         .id_salt(("group", &group.name))
                         .default_open(false)
+                        .open((open_group == Some(group.name.as_str())).then_some(true))
                         .show(ui, |ui| {
                             for section in &group.sections {
                                 if section.prefix != group.name {
@@ -740,6 +756,21 @@ impl MagcouplingPanel {
         let seed = self.seed(entry);
         let row = ui.add_enabled_ui(!locked, |ui| input_row(ui, entry, &current, seed));
         readouts.mark(ui, row.response.rect, &entry.path);
+        if self
+            .explorer
+            .focus()
+            .is_some_and(|focus| focus.path == entry.path)
+        {
+            ui.painter().rect_stroke(
+                row.response.rect.expand(3.0),
+                3.0,
+                egui::Stroke::new(FOCUS_WIDTH, ui.visuals().selection.stroke.color),
+                egui::StrokeKind::Outside,
+            );
+            if self.explorer.take_scroll(&entry.path) {
+                row.response.scroll_to_me(Some(egui::Align::Center));
+            }
+        }
         let output = row.inner;
         if locked {
             ui.weak(SIZED_NOTE);
@@ -1955,6 +1986,14 @@ mod tests {
             texts.extend(drawn_texts(&harness.click_text(view.label())));
             texts.extend(drawn_texts(&harness.frame(Vec::new())));
         }
+        // The Equation panel open on a chain of temperature symbols (ϑ is drawn as θ).
+        harness
+            .panel
+            .explorer
+            .open_path("temperature.summary.governing_limit_C");
+        texts.extend(drawn_texts(&harness.frame(Vec::new())));
+        texts.extend(drawn_texts(&harness.frame(Vec::new())));
+        harness.panel.explorer.open = false;
         harness.click_text(CentreView::Geometry.label());
         let shown = harness.panel.shown_inputs();
         let geometry = crate::gui::geometry::geometry(&shown, harness.panel.results());
@@ -1984,15 +2023,8 @@ mod tests {
             let value = results.get(&entry.path).unwrap_or(Value::None);
             texts.push(crate::gui::results_table::row_tooltip(entry, &value));
         }
-        let font = egui::FontId::proportional(14.0);
         for text in &texts {
-            for c in text.chars().filter(|c| !c.is_whitespace()) {
-                assert!(
-                    harness.ctx.fonts(|f| f.has_glyph(&font, c)),
-                    "no glyph for {c:?} (U+{:04X}) in {text:?}",
-                    c as u32
-                );
-            }
+            crate::gui::test_support::assert_glyphs(&harness.ctx, text, "the panel");
         }
     }
 
@@ -2305,7 +2337,7 @@ mod tests {
         let at = text_rect(&output, &pullout).unwrap().center();
         harness.frame(vec![egui::Event::PointerMoved(at)]);
         let output = harness.frame(Vec::new());
-        assert_eq!(harness.panel.hovered.as_deref(), Some("model.pullout_Nm"));
+        assert_eq!(harness.panel.explorer.hovered(), Some("model.pullout_Nm"));
         let texts = drawn_texts(&output);
         assert!(
             texts
@@ -2333,7 +2365,9 @@ mod tests {
         harness.frame(vec![egui::Event::PointerMoved(at)]);
         let output = harness.frame(Vec::new());
         let eq = registry().equation_for("model.cup_od_mm").unwrap();
-        let wall = TermColors::of(eq).get("metal.cup_wall_corner_mm").unwrap();
+        let wall = crate::gui::typeset::TermColors::of(eq)
+            .get("metal.cup_wall_corner_mm")
+            .unwrap();
         let label = InputCatalogue::get()
             .entry("metal.cup_wall_corner_mm")
             .unwrap()
@@ -2357,8 +2391,253 @@ mod tests {
             SCREEN.y - 5.0,
         ))]);
         let output = harness.frame(Vec::new());
-        assert_eq!(harness.panel.hovered, None);
+        assert_eq!(harness.panel.explorer.hovered(), None);
         assert!(mark_rects(&output, None).is_empty());
+    }
+
+    #[test]
+    fn the_equation_panel_starts_closed_and_its_header_button_toggles_it() {
+        use crate::gui::explorer::{CLOSE, EMPTY_TEXT};
+        let mut harness = Harness::new();
+        assert!(!harness.panel.explorer.open);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, EMPTY_TEXT), 0);
+        harness.click_text(EQUATION_PANEL);
+        assert!(harness.panel.explorer.open);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, EMPTY_TEXT), 1);
+        harness.click_text(CLOSE);
+        assert!(!harness.panel.explorer.open);
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn clicking_a_value_opens_it_and_a_term_drills_in_and_the_breadcrumb_returns() {
+        use crate::gui::explorer::TERMS;
+        let mut harness = Harness::new();
+        harness.click_text(&displayed_pullout(&DesignInputs::default()));
+        assert!(harness.panel.explorer.open);
+        assert_eq!(harness.panel.explorer.trail(), ["model.pullout_Nm"]);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, TERMS), 1);
+        // The term list: T_2D, f_end and f_cal by their labels.
+        for label in ["2D pull-out torque (infinite length)", "End-effect factor"] {
+            assert!(
+                drawn_texts(&output).iter().any(|t| t == label),
+                "no {label:?}"
+            );
+        }
+        harness.click_text("End-effect factor");
+        assert_eq!(
+            harness.panel.explorer.trail(),
+            ["model.pullout_Nm", "model.f_end"]
+        );
+        let output = harness.frame(Vec::new());
+        assert!(
+            drawn_texts(&output)
+                .iter()
+                .any(|t| t == "End-effect coefficient"),
+            "f_end's terms"
+        );
+        // The first crumb goes back.
+        harness.click_text("T_pull");
+        assert_eq!(harness.panel.explorer.trail(), ["model.pullout_Nm"]);
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn the_used_by_list_goes_up_the_chain() {
+        let mut harness = Harness::new();
+        harness.panel.explorer.open_path("model.f_end");
+        // The "used by" row wraps: it settles on its second frame.
+        harness.frame(Vec::new());
+        harness.frame(Vec::new());
+        harness.click_text("T_pull");
+        assert_eq!(
+            harness.panel.explorer.trail(),
+            ["model.f_end", "model.pullout_Nm"]
+        );
+    }
+
+    #[test]
+    fn a_leaf_term_opens_its_group_and_highlights_its_input_row() {
+        // T_ripple,in = T_pull / (i_g η_g): the gearbox ratio is in the Coupling group, closed
+        // by default.
+        let mut harness = Harness::new();
+        harness
+            .panel
+            .explorer
+            .open_path("model.gearbox_input_ripple_Nm");
+        harness.frame(Vec::new());
+        harness.click_text("Gearbox ratio");
+        assert_eq!(
+            harness.panel.explorer.focus().map(|f| f.path.as_str()),
+            Some("coupling.gear_ratio")
+        );
+        assert_eq!(
+            harness.panel.explorer.trail(),
+            ["model.gearbox_input_ripple_Nm"]
+        );
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..10 {
+            output = harness.frame(Vec::new());
+        }
+        let focus: Vec<egui::Rect> = crate::gui::test_support::flat_shapes(&output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Rect(r) if r.stroke.width == FOCUS_WIDTH => Some(r.rect),
+                _ => None,
+            })
+            .collect();
+        // The inputs side paints first: the first "Gearbox ratio" is the row's.
+        let label = text_rect(&output, "Gearbox ratio").unwrap();
+        assert!(label.left() < INPUTS_WIDTH, "the row on the inputs side");
+        assert!(
+            focus.iter().any(|r| r.contains_rect(label)),
+            "{label:?} not inside {focus:?}"
+        );
+        assert!(
+            !harness.panel.explorer.focus().unwrap().scroll,
+            "scrolled once"
+        );
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn the_equation_panel_draws_in_a_tiny_window() {
+        // A window smaller than the panel's starting height: nothing panics, every frame.
+        for size in [
+            egui::vec2(1.0, 1.0),
+            egui::vec2(200.0, 150.0),
+            egui::vec2(640.0, 240.0),
+        ] {
+            let mut harness = Harness::on_screen(size);
+            harness
+                .panel
+                .explorer
+                .open_path("temperature.summary.governing_limit_C");
+            for _ in 0..3 {
+                harness.frame(Vec::new());
+            }
+            assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        }
+    }
+
+    #[test]
+    fn a_long_trail_shows_its_last_crumbs_and_draws_in_a_short_window() {
+        use crate::gui::explorer::{ELIDED, MAX_TRAIL, SHOWN_CRUMBS, plain_symbol};
+        // A walk longer than the trail, down distinct equations.
+        let paths: Vec<&str> = registry()
+            .equations()
+            .iter()
+            .map(|eq| eq.target.as_str())
+            .take(MAX_TRAIL + 5)
+            .collect();
+        let last = plain_symbol(
+            &registry()
+                .equation_for(paths[MAX_TRAIL + 4])
+                .unwrap()
+                .symbol,
+        );
+        // A laptop screen, a short one, and a narrow one: at 640 x 240 the side panels (320 +
+        // 300 points) leave the centre region about 20 points, so the panel draws nothing to
+        // read there and must only not panic or edit.
+        let narrow = egui::vec2(640.0, 240.0);
+        for size in [SCREEN, egui::vec2(1280.0, 240.0), narrow] {
+            let mut harness = Harness::on_screen(size);
+            harness.panel.explorer.open_path(paths[0]);
+            for path in &paths[1..] {
+                harness.panel.explorer.drill(path);
+            }
+            assert_eq!(harness.panel.explorer.trail().len(), MAX_TRAIL);
+            let mut output = harness.frame(Vec::new());
+            for _ in 0..3 {
+                output = harness.frame(Vec::new());
+            }
+            assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+            if size != narrow {
+                // The last crumbs after one ELIDED, each after its ">".
+                assert!(drawn_texts(&output).contains(&last), "{size:?}");
+                assert_eq!(count(&output, ELIDED), 1);
+                assert_eq!(count(&output, ">"), SHOWN_CRUMBS);
+                crate::gui::test_support::assert_glyphs(&harness.ctx, ELIDED, "the crumbs");
+            }
+        }
+    }
+
+    #[test]
+    fn a_harmonic_set_outside_the_choices_lists_only_its_selector() {
+        use crate::gui::explorer::term_label;
+        // A design file's max_harmonic of 4 is no choice: every harmonic sum is NaN (decision
+        // D3) and τ's term list keeps N_h, every harmonic left out.
+        let mut harness = Harness::new();
+        harness.panel.inputs.coupling.max_harmonic = 4;
+        let expected = harness.panel.inputs.clone();
+        harness.panel.explorer.open_path("model.tau_Pa");
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert!(matches!(
+            harness.panel.results().get("model.tau_Pa"),
+            Some(Value::Num(x)) if x.is_nan()
+        ));
+        let texts = drawn_texts(&output);
+        assert!(
+            texts
+                .iter()
+                .any(|t| t == term_label("coupling.max_harmonic"))
+        );
+        for n in [1, 3, 5, 7, 9, 11] {
+            let path = format!("model.tau{n}_Pa");
+            let label = term_label(&path);
+            assert!(!texts.iter().any(|t| t == label), "{label}");
+        }
+        assert_eq!(harness.panel.inputs(), &expected);
+    }
+
+    #[test]
+    fn an_undefined_value_shows_its_equation() {
+        // A positive Hcj coefficient typed for manual magnets (no rating): the magnets reach no
+        // hot limit, so the torque there takes the record's nan arm, drawn "undefined".
+        let mut harness = Harness::new();
+        let inputs = &mut harness.panel.inputs;
+        inputs.coupling.magnets.part_inner.clear();
+        inputs.coupling.magnets.part_outer.clear();
+        inputs.temperature.demag.coercivity_source = 0;
+        inputs.temperature.demag.beta_hcj_per_C = 0.005;
+        let expected = inputs.clone();
+        harness
+            .panel
+            .explorer
+            .open_path("temperature.demag.torque_at_limit_Nm");
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert!(matches!(
+            harness
+                .panel
+                .results()
+                .get("temperature.demag.torque_at_limit_Nm"),
+            Some(Value::Num(x)) if x.is_nan()
+        ));
+        assert_eq!(count(&output, "undefined"), 1);
+        assert_eq!(harness.panel.inputs(), &expected);
+    }
+
+    #[test]
+    fn a_result_without_an_equation_shows_its_value_and_cell() {
+        use crate::engine::explain::TermKind;
+        use crate::gui::explorer::NO_EQUATION;
+        let entry = crate::gui::results_table::table_entries()
+            .iter()
+            .find(|e| registry().term_kind(&e.path) == Some(TermKind::CellOnly))
+            .unwrap();
+        let mut harness = Harness::new();
+        harness.panel.explorer.open_path(&entry.path);
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, NO_EQUATION), 1);
+        if let Some(cell) = &entry.info.cell {
+            assert!(count(&output, cell) >= 1, "{cell}");
+        }
     }
 
     #[test]

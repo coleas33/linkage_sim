@@ -9,6 +9,7 @@
 pub mod clamp_drawing;
 pub mod corrections;
 pub mod dashboard;
+pub mod explorer;
 mod format;
 pub mod geometry;
 pub mod geometry_view;

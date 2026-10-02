@@ -922,6 +922,31 @@ pub fn layout_equation(
     layout(fonts, registry, &eq.symbol, &eq.formula, colors, size, ink)
 }
 
+/// Lays out one display symbol (symbol markup) at text size `size` in `color`: a term of the
+/// Equation panel's term list.
+pub fn layout_symbol(
+    fonts: &Fonts,
+    registry: &Registry,
+    markup: &str,
+    size: f32,
+    color: Color32,
+) -> Laid {
+    let formula = Formula {
+        body: Expr::NoneLit,
+        bindings: Vec::new(),
+        cases_count: 0,
+    };
+    let colors = TermColors::none();
+    let setter = Setter {
+        fonts,
+        registry,
+        formula: &formula,
+        colors: &colors,
+        ink: color,
+    };
+    setter.symbol(markup, size, color, None, None)
+}
+
 /// Paints `laid` with its top-left corner at `origin`; strokes in `ink`.
 pub fn paint(painter: &egui::Painter, origin: Pos2, laid: &Laid, ink: Color32) {
     for item in &laid.inks {
@@ -1697,6 +1722,16 @@ mod tests {
         }
         assert_eq!(checked, registry().equations().len());
         assert!(checked > 300, "{checked}");
+    }
+
+    #[test]
+    fn a_symbol_alone_lays_out_its_base_and_scripts() {
+        let laid = with_fonts(|f| layout_symbol(f, registry(), "S_{3}^{iron}", 15.0, Color32::RED));
+        let texts = laid.texts();
+        let order: Vec<&str> = texts.iter().map(|(t, _)| t.as_str()).collect();
+        assert_eq!(order, ["S", "3", "iron"]);
+        let (s, iron) = (rect_of(&texts, "S"), rect_of(&texts, "iron"));
+        assert!(iron.center().y < s.center().y, "the superscript is raised");
     }
 
     #[test]
