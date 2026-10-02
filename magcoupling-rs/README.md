@@ -149,8 +149,8 @@ Results can be +inf (E13); exporters must handle it.
 | `tests/` | Parity, differential, metadata and registry tests (below) |
 | `tests/data/` | Workbook snapshot copy (`reference_values.json`), exported schemas (`input_schema.json`, `python_schema.json`), the Python static tables (`static_data.json`), differential data (`differential/`) and the golden files of the broad corrections (`deviations/E3.json`, `E4.json`, `E5.json`) |
 
-Not a Cargo workspace member: `linkage-sim-rs` will depend on it by path
-(feature `gui`, M5).
+Not a Cargo workspace member: `linkage-sim-rs` depends on it by path
+(feature `gui`) for its Tools → Magnetic coupling window ([In the linkage app](#in-the-linkage-app-m5)).
 
 ## Features and binaries
 
@@ -352,7 +352,7 @@ pin disagree; bump them together.
 The web page is `linkage-sim-rs/web/magcoupling/index.html` (committed; the JS
 glue and the wasm are gitignored build outputs). Its canvas id is
 `app::CANVAS_ID`, which a test checks. `deploy-web.yml` runs
-`build_magcoupling_web.sh` after the linkage build, so both bundles ship
+`build_web.sh`, which builds the linkage bundle and then runs `build_magcoupling_web.sh`, so both bundles ship
 (`linkage.colesorkness.com/magcoupling/`) on the next push of `main`; pushing needs the user's
 go. The web smoke test is the `gui-smoke` workflow (`.claude/workflows/gui-smoke.js`): it opens
 `/magcoupling/` through a pinned share link and checks the canvas, the geometry view in the first
@@ -361,7 +361,8 @@ screenshot (the default view: no click), the console lines
 `magcoupling explorer: ` (the equation registry built in the browser), then
 clicks "Load design" once (found in a screenshot), uploads a pinned design file through rfd's web
 picker and checks `magcoupling: loaded a design file`, with zero console errors (a test decodes
-the pinned link and the design file).
+the pinned link and the design file). Its linkage step opens the linkage app at `/?tool=magcoupling`
+and checks the calculator window and the `magcoupling explorer: ` line there.
 
 **workbook-parity never ships.** The feature reaches `cargo test` and
 `cargo clippy --all-targets` through the self dev-dependency, and cargo then
@@ -369,13 +370,42 @@ unifies it into every unit of the build, binaries included, so a
 `compile_error!` on `app` plus `workbook-parity` would break
 `cargo test --features app`. The guard is
 `linkage-sim-rs/scripts/magcoupling_shipped.sh` instead. It defines the shipped
-cargo arguments once (`MAGCOUPLING_WEB_ARGS`, `MAGCOUPLING_NATIVE_ARGS`), and
+cargo arguments once (`MAGCOUPLING_WEB_ARGS`, `MAGCOUPLING_NATIVE_ARGS`, and the linkage
+app's `LINKAGE_WEB_ARGS`, `LINKAGE_NATIVE_ARGS`: its builds carry the panel), and
 `magcoupling_assert_shipped` reads cargo's `--message-format=json` record of
 the units it compiled. It fails unless the shipped binary was compiled and no
-magcoupling-rs unit has the feature. `build_magcoupling_web.sh` pipes its
-release build through it, so the shipped path refuses such a bundle. Gate 10
-runs the guard on the native and wasm32 builds, plus a negative control that
-must trip.
+magcoupling-rs unit has the feature. `build_web.sh` and `build_magcoupling_web.sh` pipe their
+release builds through it, so the shipped path refuses such a bundle. Gate 10
+runs the guard on the native and wasm32 builds of both apps, plus a negative control per
+shipped build that must trip.
+
+### In the linkage app (M5)
+
+Plan `docs/superpowers/plans/2026-10-02-magcoupling-m5-embed.md`. `linkage-sim-rs` depends on
+this crate by path with feature `gui` (never `workbook-parity`: gate 10) and shows the panel in
+its Tools → Magnetic coupling window, `linkage-sim-rs/src/gui/calculator_window.rs`, on the
+desktop and on the web:
+
+- The window is closed at start-up; its first opening creates the panel (the equation registry is
+  built then, not at the linkage app's start-up), which keeps its design, undo history and views,
+  open or closed, until the app quits. Nothing in it reads or writes the linkage model.
+- The keys go to the part the user pressed last: the window from its opening or a press on it
+  (or on the band just outside its frame where egui resizes it), the linkage app from a press on
+  its panels, its canvas or its menu bar's buttons (a press on an open menu's items or on a
+  drop-down list moves nothing). While the window has them, the panel's Ctrl+Z, Ctrl+Shift+Z and
+  Ctrl+Y are on and the linkage app sees no key event but egui's own zoom keys (natively
+  Ctrl+Plus, Ctrl+Minus and Ctrl+0 still zoom the whole UI; on the web the browser zooms the
+  page): not its undo, save, delete, arrow nudge, F or Escape. Otherwise the panel's shortcuts
+  are off (`set_keyboard_shortcuts(false)`) and the keys go to the linkage app. A window
+  collapsed to its title bar draws no panel and takes no keys.
+- Known edges (backlog BL-039, BL-040): the keys follow presses, not egui's keyboard focus (after
+  Tab moves the focus into the other part, click there); and opened while the linkage app's
+  "Recover Unsaved Work?" prompt shows, the window covers it (move or collapse the window).
+- The window does the panel's requests: saving with the linkage app's download helper (a file
+  dialog natively, a browser download on the web), "Load design" through rfd (the linkage web
+  build carries rfd for the picker). Share links made there open `/magcoupling/` on the same
+  server.
+- `?tool=magcoupling` opens the window when the linkage web app starts (gui-smoke's linkage step).
 
 ## Tests
 
