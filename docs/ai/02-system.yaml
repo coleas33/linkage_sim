@@ -72,7 +72,7 @@ major_subsystems:
       undo/redo, design files and share links, the sizing mode and the linkage app's theme.
       M4-2 adds the centre region's views, the geometry view to scale (the default), five plots
       (egui_plot) and the clamp drawing and table.
-    key_files: [src/engine/meta.rs, src/engine/compat.rs, src/engine/deviations.rs, src/engine/api.rs, src/gui/panel.rs, src/gui/session.rs, src/gui/sizing.rs, src/gui/dashboard.rs, src/gui/geometry.rs, src/gui/plots.rs, src/gui/clamp_drawing.rs, src/app.rs]
+    key_files: [src/engine/meta.rs, src/engine/compat.rs, src/engine/deviations.rs, src/engine/api.rs, src/gui/panel.rs, src/gui/session.rs, src/gui/sizing.rs, src/gui/dashboard.rs, src/gui/geometry.rs, src/gui/geometry_view.rs, src/gui/plots.rs, src/gui/clamp_drawing.rs, src/app.rs]
     invariants:
       - With Deviations::NONE every celled result, table cell and default input equals the workbook snapshot (1,149 checks; 1e-9 relative, 1e-12 absolute, text exact).
       - Every departure from the workbook is an approved, registered deviation (E1-E20 in deviations.rs; E15-E17 are probed on top of E9, decision 15). compute_all always applies Deviations::ALL; the switch exists only behind the test-only workbook-parity feature.

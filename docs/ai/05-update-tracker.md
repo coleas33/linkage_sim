@@ -5,6 +5,28 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-01 — Magcoupling M4-2: final review fix wave (branch magcoupling/m4-2)
+- The whole-branch review found no Critical or Important issue; five Minor findings, fixed with a
+  failing test first where they change behaviour:
+  - Sweep plots whose rows are all NaN show "Nothing to plot" (they showed an empty frame), and a
+    sweep that leaves some rows out counts them in a weak note (`plots::rows_not_plotted`).
+  - The torque-temperature plot names an empty axis (a minimum temperature at or past the axis end,
+    which a design file can hold) instead of saying the values are not numbers
+    (`plots::EMPTY_TEMPERATURE_AXIS`).
+  - Two poles (a design file only) draw the pocket and the hub round: the 2-gon's corners sat about
+    3e17 mm out and egui filled nothing; flats are drawn from 3 poles.
+  - Cosmetic: the geometry view's dimension tags sit on a plate of the drawing's background
+    (`geometry_view::plated_text`, shared with the clamp drawing's dimension texts); the clamp
+    views' titles sit in a band above the views, so the notes no longer run under them, and a note
+    that would run past the drawing's right edge (the flange note) moves back inside.
+  - Docs: `02-system.yaml` names `geometry_view.rs` among the key files; the M4-2 entry below says
+    how the 02-system conflict hunks were resolved.
+- Deferred, recorded in `04-memory.yaml` ("Open (M4-2 final review)"): "Screws per clamp 1.000"
+  (the shared four-significant-digit format of a workbook number, as in the results table); the
+  clamp drawing's 8-point text floor below about 480 points wide; the wasm frame time and a browser
+  hover of the callout list (not measured or done by the review).
+- The engine, parity, differential data and registry are unchanged. Nothing pushed.
+
 ## 2026-10-01 — Magcoupling M4-2: geometry view, plots and clamp drawing (branch magcoupling/m4-2)
 - `magcoupling-rs` panel: the centre region is one tab row (`CentreView`): the geometry view (the
   default), five plots, the clamp and the results table, under the end-effect banner when
@@ -34,8 +56,10 @@ Reverse chronological (newest at top).
 - Results table: the label column flexes (`column_widths`; the value, cell and marker columns keep
   M4-1's 130, 130 and 60 points), so a ~930 px window shows the label and the value (M42-8). `gui-smoke` judges the geometry view in its first screenshot (no click).
 - `docs/ai/02-system.yaml`: the three unresolved merge-conflict hunks the M4-1 merge (42ab370) left
-  in the magcoupling block and its status line are resolved, keeping both sides (A-3 and M4-1); the
-  M4-1 sentence is reworded so the block parses as YAML.
+  in the magcoupling block and its status line are resolved: A-3's sentence and invariants and
+  M4-1's sentence, key files and invariants are kept; where both sides held the panel invariant,
+  M4-1's version (HEAD's text plus slider rounding) replaces HEAD's; the status line is one line
+  covering A-3, M4-1 and M4-2. The M4-1 sentence is reworded so the block parses as YAML.
 - The engine, parity, differential data and registry are unchanged. Nothing pushed.
 
 ## 2026-10-01 — Magcoupling M4-1: final review fix wave
