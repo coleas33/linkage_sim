@@ -17,11 +17,12 @@ const SMOKE_SCHEMA = {
 }
 
 const MAGCOUPLING_SCHEMA = {
-  type: 'object', required: ['passed', 'canvas_present', 'console_errors', 'share_link_loaded', 'sizing_solved', 'design_file_loaded'],
+  type: 'object', required: ['passed', 'canvas_present', 'console_errors', 'share_link_loaded', 'sizing_solved', 'design_file_loaded', 'geometry_view'],
   properties: {
     passed: { type: 'boolean' },
     canvas_present: { type: 'boolean' },
     console_errors: { type: 'array', items: { type: 'string' } },
+    geometry_view: { type: 'boolean' },
     share_link_loaded: { type: 'boolean' },
     sizing_solved: { type: 'boolean' },
     design_file_loaded: { type: 'boolean' },
@@ -64,22 +65,23 @@ passed=true only if: page loaded, canvas present, zero console messages of type 
 }
 
 // The magnetic coupling calculator: deterministic state through its share link, checked in
-// the console (the page is one canvas). One click on the canvas, on the "Load design" button
-// found in a screenshot, checks the web file picker (rfd's HTML overlay) and the file load.
+// the console (the page is one canvas). The geometry view is the centre region's default view,
+// so the first screenshot shows it with no click. One click on the canvas, on the "Load design"
+// button found in a screenshot, checks the web file picker (rfd's HTML overlay) and the file load.
 let magcoupling = null
 if (ARGS.magcoupling !== false) {
   const page = `${url}/magcoupling/?m=${MAGCOUPLING_SMOKE_PAYLOAD}`
   magcoupling = await agent(
     `Smoke-test the WASM magnetic coupling calculator using Playwright MCP tools (${MAGCOUPLING_TOOLS}).
 Steps: navigate to this exact URL (copy it whole; it carries a share link): ${page}
-Wait 8 seconds (WASM init, then the sizing solve after its 0.25 s debounce). Snapshot the page and confirm a <canvas> element with id "magcoupling_canvas" exists. Collect the console messages at level "info" (it includes errors and warnings). Take a screenshot and judge whether it shows the calculator rendered in a dark theme (inputs on the left, dashboard on the right, results table in the middle) vs a blank page.
+Wait 8 seconds (WASM init, then the sizing solve after its 0.25 s debounce). Snapshot the page and confirm a <canvas> element with id "magcoupling_canvas" exists. Collect the console messages at level "info" (it includes errors and warnings). Take a screenshot and judge whether it shows the calculator rendered in a dark theme (inputs on the left, dashboard on the right, the geometry view in the middle) vs a blank page. geometry_view=true only if the middle region shows the geometry view: a row of tabs starting "Geometry", under it two drawings side by side (an end view of two rings of coloured magnet blocks inside a grey cup around a shaft, and a half side view with dashed space-claim lines), and a numbered list of dimension callouts under them ("1 Face gap ...", "4 Overall length: ...").
 Then the design file picker, the only click on the canvas: write this text, exactly, to the file .playwright-mcp/magcoupling-smoke-design.json under the repository root (gitignored; the Playwright MCP uploads only files under the repository) and note its absolute path: ${MAGCOUPLING_SMOKE_DESIGN_FILE}
 In the screenshot, find the "Load design" button in the header row at the top of the page (between "Save design" and "Copy share link") and click its centre with browser_run_code_unsafe, code: async (page) => { await page.mouse.click(X, Y); } (X and Y in CSS pixels of the screenshot; the canvas fills the page). rfd shows its overlay (#rfd-overlay: a file input #rfd-input shown as a "Choose File" button, and the buttons "Ok" and "Cancel") and opens the browser's file chooser at once (the tool output reports a "File chooser" modal state); if a snapshot shows the overlay but no chooser opened, click the "Choose File" button. Upload the file with browser_file_upload, click the overlay's "Ok" button, wait 2 seconds and collect the console messages again; delete the file.
 design_file_loaded=true only if a console message contains "magcoupling: loaded a design file". If the button cannot be found or the overlay does not appear after two attempts (each with a fresh screenshot), design_file_loaded=false and say why in notes: the canvas click is the fragile part of this step, and the share-link checks do not depend on it. Close the browser.
 share_link_loaded=true only if a console message contains "magcoupling: loaded the design from the share link". sizing_solved=true only if a console message contains "magcoupling sizing: Solved at".
-passed=true only if: page loaded, canvas present, share_link_loaded, sizing_solved, design_file_loaded, and zero console messages of type error (warnings are OK — put them in notes). List every console error string verbatim in console_errors. If navigation fails entirely, passed=false with the failure in notes — the server may not be running (serve linkage-sim-rs/web/ after running scripts/build_magcoupling_web.sh).`,
+passed=true only if: page loaded, canvas present, geometry_view, share_link_loaded, sizing_solved, design_file_loaded, and zero console messages of type error (warnings are OK — put them in notes). List every console error string verbatim in console_errors. If navigation fails entirely, passed=false with the failure in notes — the server may not be running (serve linkage-sim-rs/web/ after running scripts/build_magcoupling_web.sh).`,
     { label: 'gui-smoke-magcoupling', phase: 'Smoke', schema: MAGCOUPLING_SCHEMA, model: 'sonnet' },
-  ) || { passed: false, canvas_present: false, console_errors: [], share_link_loaded: false, sizing_solved: false, design_file_loaded: false, notes: 'smoke agent returned no result (agent error)' }
+  ) || { passed: false, canvas_present: false, console_errors: [], geometry_view: false, share_link_loaded: false, sizing_solved: false, design_file_loaded: false, notes: 'smoke agent returned no result (agent error)' }
 }
 
 // The linkage app's fields at the top level, as before, with the calculator's beside them.

@@ -14,9 +14,7 @@ use serde_json::{Map, Value as Json};
 
 use crate::engine::meta::{ResultSet, Value, result_rows};
 use crate::gui::corrections::{CorrectionIndex, marker_text};
-use crate::gui::dashboard::{
-    ResultInfo, ResultNotes, end_effect_banner, result_info, result_tooltip,
-};
+use crate::gui::dashboard::{ResultInfo, hover_text, result_info};
 use crate::gui::format::{format_value, non_finite_text, with_unit};
 use crate::gui::session::{Design, design_json, json_value};
 use crate::{DesignInputs, DesignResults, compute_all};
@@ -40,6 +38,28 @@ pub const EXPORT_JSON: &str = "Export JSON";
 
 /// The search box's hint.
 pub const SEARCH_HINT: &str = "Search label, path or cell";
+
+/// The value, cell and marker columns' widths [points], M4-1's; the label column takes the rest.
+pub const VALUE_WIDTH: f32 = 130.0;
+pub const CELL_WIDTH: f32 = 130.0;
+pub const MARKER_WIDTH: f32 = 60.0;
+
+/// The narrowest label column [points]: below it the rows scroll sideways.
+pub const LABEL_MIN_WIDTH: f32 = 120.0;
+
+/// The widths of the label, value, cell and marker columns of a table `available` points wide
+/// with `spacing` points between columns (decision M42-8): the label column flexes, at least
+/// [`LABEL_MIN_WIDTH`], so a narrow centre region (a ~930 px window, where the M4-1 table showed
+/// only its labels) still shows the label and the value without scrolling.
+pub fn column_widths(available: f32, spacing: f32) -> [f32; 4] {
+    let fixed = VALUE_WIDTH + CELL_WIDTH + MARKER_WIDTH + 3.0 * spacing;
+    [
+        (available - fixed).max(LABEL_MIN_WIDTH),
+        VALUE_WIDTH,
+        CELL_WIDTH,
+        MARKER_WIDTH,
+    ]
+}
 
 /// One row of the table: what does not change with the inputs.
 #[derive(Clone, Debug)]
@@ -182,14 +202,12 @@ impl ResultsTable {
         &self.query
     }
 
-    /// Draws the table: the end-effect banner when f_end ≤ 0, the search box and the export
-    /// buttons, then the rows on screen. Returns an export asked for.
+    /// Draws the table: the search box and the export buttons, then the rows on screen (the
+    /// end-effect banner is the centre region's, over every view: decision M42-1). Returns an
+    /// export asked for.
     pub fn ui(&mut self, ui: &mut egui::Ui, results: &DesignResults) -> Option<TableAction> {
         let entries = table_entries();
         let mut action = None;
-        if let Some(banner) = end_effect_banner(results) {
-            ui.colored_label(ui.visuals().error_fg_color, banner);
-        }
         ui.horizontal_wrapped(|ui| {
             ui.add(
                 egui::TextEdit::singleline(&mut self.query)
@@ -212,38 +230,38 @@ impl ResultsTable {
         ui.separator();
         let matches = self.matches.as_deref().unwrap_or(&[]);
         let row_height = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
+        let widths = column_widths(ui.available_width(), ui.spacing().item_spacing.x);
         egui::ScrollArea::both()
             .id_salt("magcoupling_results_scroll")
             .auto_shrink([false, false])
             .show_rows(ui, row_height, matches.len(), |ui, range| {
                 for &index in &matches[range] {
-                    row_ui(ui, &entries[index], results, row_height);
+                    row_ui(ui, &entries[index], results, row_height, widths);
                 }
             });
         action
     }
 }
 
-/// A row's hover text: the hover hook's ([`result_tooltip`]) with the exact value.
+/// A row's hover text: the hover hook's ([`hover_text`]) with the exact value.
 pub fn row_tooltip(entry: &TableEntry, value: &Value) -> String {
-    let marks = CorrectionIndex::get().marks(entry.info.cell.as_deref());
-    let mut tooltip = result_tooltip(
-        &entry.path,
-        entry.info,
-        ResultNotes {
-            marks,
-            ..ResultNotes::default()
-        },
-    );
+    let mut tooltip = hover_text(&entry.path).expect("every table row is a result");
     if let Value::Num(x) = value {
         tooltip.push_str(&format!("\nExact value: {}", exact_number(*x)));
     }
     tooltip
 }
 
-/// One table row: label, value with unit, workbook cell, marker (the path is in the hover
-/// text, which is built only while the row is hovered).
-fn row_ui(ui: &mut egui::Ui, entry: &TableEntry, results: &DesignResults, height: f32) {
+/// One table row: label, value with unit, workbook cell, marker, in columns `widths` wide
+/// ([`column_widths`]; the path is in the hover text, which is built only while the row is
+/// hovered).
+fn row_ui(
+    ui: &mut egui::Ui,
+    entry: &TableEntry,
+    results: &DesignResults,
+    height: f32,
+    widths: [f32; 4],
+) {
     let value = results.get(&entry.path).unwrap_or(Value::None);
     let row = ui.horizontal(|ui| {
         // Left-aligned columns of fixed width (add_sized would centre the text).
@@ -254,14 +272,19 @@ fn row_ui(ui: &mut egui::Ui, entry: &TableEntry, results: &DesignResults, height
                 ui.add(egui::Label::new(text).truncate());
             });
         };
-        cell(ui, 260.0, entry.info.meta.label);
+        let [label, number, workbook, marker] = widths;
+        cell(ui, label, entry.info.meta.label);
         cell(
             ui,
-            130.0,
+            number,
             &with_unit(format_value(&value), entry.info.meta.unit),
         );
-        cell(ui, 130.0, entry.info.cell.as_deref().unwrap_or("Rust-only"));
-        cell(ui, 60.0, &entry.marker);
+        cell(
+            ui,
+            workbook,
+            entry.info.cell.as_deref().unwrap_or("Rust-only"),
+        );
+        cell(ui, marker, &entry.marker);
     });
     row.response.on_hover_ui(|ui| {
         ui.label(row_tooltip(entry, &value));
@@ -297,6 +320,17 @@ mod tests {
             .find(|e| e.path == "model.pullout_Nm")
             .unwrap();
         assert_eq!(pullout.marker, "E3 E7 E8");
+    }
+
+    #[test]
+    fn the_label_column_flexes_down_to_its_minimum() {
+        // The 1280 x 800 default window: the label column widens past the M4-1 260 points.
+        assert_eq!(column_widths(644.0, 8.0), [300.0, 130.0, 130.0, 60.0]);
+        // A ~930 px window leaves about 294 points: the label shrinks to its minimum, so the
+        // value column ends at 120 + 8 + 130 = 258 points, on screen.
+        assert_eq!(column_widths(294.0, 8.0), [120.0, 130.0, 130.0, 60.0]);
+        assert_eq!(column_widths(0.0, 8.0)[0], LABEL_MIN_WIDTH);
+        assert_eq!(column_widths(f32::NAN, 8.0)[0], LABEL_MIN_WIDTH);
     }
 
     #[test]

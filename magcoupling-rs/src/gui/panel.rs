@@ -2,8 +2,8 @@
 //!
 //! Layout (spec M4 "Layout"): a header line, the inputs on the left (the Key design group,
 //! then every input by package group, [`crate::gui::inputs`]), the dashboard on the right and
-//! the centre region between them ([`CentreView`]: the results table; plan M4-2 adds the
-//! geometry view and the plots). Every result is recomputed with every approved correction
+//! the centre region between them ([`CentreView`]: the geometry view first, the results table
+//! last; decisions M42-1 and M42-2). Every result is recomputed with every approved correction
 //! on ([`compute_all`]) each frame after the inputs are drawn, so the readouts show this
 //! frame's edits.
 //!
@@ -26,10 +26,13 @@
 
 use crate::engine::meta::{InputSet, ResultSet, Value};
 use crate::engine::sizing::FreeVariable;
-use crate::gui::dashboard::{Level, dashboard_ui};
+use crate::gui::clamp_drawing::clamp_ui;
+use crate::gui::dashboard::{Level, dashboard_ui, end_effect_banner};
+use crate::gui::geometry_view::geometry_ui;
 use crate::gui::history::History;
 use crate::gui::input_ui::{RowEdit, input_row, slider};
 use crate::gui::inputs::{InputCatalogue, InputEntry, KEY_DESIGN, optional_seed};
+use crate::gui::plots::{PlotKind, plot_ui};
 use crate::gui::results_table::{
     CSV_FILE_NAME, JSON_FILE_NAME, ResultsTable, TableAction, results_csv, results_json,
 };
@@ -109,20 +112,39 @@ pub enum PanelRequest {
     OpenDesign,
 }
 
-/// The views of the centre region. Plan M4-2 adds the geometry view and the plot tabs.
+/// The views of the centre region, one tab row (decision M42-1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CentreView {
+    /// The end view and the side view to scale, with the dimension callouts (the default view:
+    /// decision M42-2).
+    Geometry,
+    /// One of the plots (egui_plot).
+    Plot(PlotKind),
+    /// The clamp drawing (drawing.py's end and top views) and the clamp table.
+    Clamp,
     /// Every result: label, value, unit, cell; searchable; CSV and JSON export.
     Results,
 }
 
 impl CentreView {
     /// Every view, in tab order.
-    pub const ALL: [CentreView; 1] = [CentreView::Results];
+    pub const ALL: [CentreView; 8] = [
+        CentreView::Geometry,
+        CentreView::Plot(PlotKind::TorqueTemperature),
+        CentreView::Plot(PlotKind::GapSweep),
+        CentreView::Plot(PlotKind::PoleSweep),
+        CentreView::Plot(PlotKind::SlipHeating),
+        CentreView::Plot(PlotKind::TorqueAngle),
+        CentreView::Clamp,
+        CentreView::Results,
+    ];
 
     /// The tab text.
     pub const fn label(self) -> &'static str {
         match self {
+            CentreView::Geometry => "Geometry",
+            CentreView::Plot(kind) => kind.label(),
+            CentreView::Clamp => "Clamp",
             CentreView::Results => "Results table",
         }
     }
@@ -189,7 +211,7 @@ impl MagcouplingPanel {
             design_widgets: Vec::new(),
             keyboard_shortcuts: true,
             last_error: None,
-            centre: CentreView::Results,
+            centre: CentreView::Geometry,
             results_table: ResultsTable::default(),
             requests: Vec::new(),
         }
@@ -362,8 +384,10 @@ impl MagcouplingPanel {
                 .default_width(INPUTS_WIDTH)
                 .show_inside(ui, |ui| self.inputs_ui(ui));
             self.run_sizing(ui);
-            // After the inputs: the readouts show this frame's edits.
-            self.results = compute_all(&self.shown_inputs());
+            // After the inputs: the readouts show this frame's edits. One copy of the design
+            // shown per frame, for the results and the centre region's views.
+            let shown = self.shown_inputs();
+            self.results = compute_all(&shown);
             egui::SidePanel::right("magcoupling_dashboard")
                 .resizable(true)
                 .default_width(DASHBOARD_WIDTH)
@@ -372,7 +396,7 @@ impl MagcouplingPanel {
                         .id_salt("magcoupling_dashboard_scroll")
                         .show(ui, |ui| dashboard_ui(ui, &self.results));
                 });
-            egui::CentralPanel::default().show_inside(ui, |ui| self.centre_ui(ui));
+            egui::CentralPanel::default().show_inside(ui, |ui| self.centre_ui(ui, &shown));
         });
         // One undo step per settled edit.
         let settled = !self.editing(ui);
@@ -511,15 +535,25 @@ impl MagcouplingPanel {
         }
     }
 
-    /// The centre region: the view tabs, then the view.
-    fn centre_ui(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+    /// The centre region: the view tabs (wrapping when the region is narrow), the end-effect
+    /// banner when f_end <= 0 (over every view, decision M42-1), then the view of `shown`, the
+    /// design shown.
+    fn centre_ui(&mut self, ui: &mut egui::Ui, shown: &DesignInputs) {
+        ui.horizontal_wrapped(|ui| {
             for view in CentreView::ALL {
                 ui.selectable_value(&mut self.centre, view, view.label());
             }
         });
         ui.separator();
+        if let Some(banner) = end_effect_banner(&self.results) {
+            ui.colored_label(ui.visuals().error_fg_color, banner);
+        }
         match self.centre {
+            CentreView::Geometry => {
+                geometry_ui(ui, shown, &self.results);
+            }
+            CentreView::Plot(kind) => plot_ui(ui, kind, shown, &self.results),
+            CentreView::Clamp => clamp_ui(ui, shown, &self.results),
             CentreView::Results => {
                 let action = self.results_table.ui(ui, &self.results);
                 match action {
@@ -535,7 +569,7 @@ impl MagcouplingPanel {
                         // inputs with the free variable at the value shown.
                         contents: results_json(
                             &Design {
-                                inputs: self.shown_inputs(),
+                                inputs: shown.clone(),
                                 sizing: self.sizing,
                             },
                             &self.results,
@@ -713,7 +747,7 @@ mod tests {
     use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
         SCREEN, drawn_texts, key_event, key_tap, primary_button, select_all, short_magnets,
-        sized_frame, sized_frame_at, text_rect,
+        sized_frame, sized_frame_at, text_rect, text_rects,
     };
     use crate::headline;
 
@@ -859,6 +893,121 @@ mod tests {
             label_rect.bottom() <= value_rect.top() && value_rect.bottom() <= note_rect.top(),
             "{value:?} at {value_rect:?} is not in the row between {label_rect:?} and {note_rect:?}"
         );
+    }
+
+    #[test]
+    fn the_geometry_view_is_the_default_and_follows_the_design_shown() {
+        let mut harness = Harness::new();
+        assert_eq!(harness.panel.centre, CentreView::Geometry);
+        let output = harness.frame(Vec::new());
+        let texts = drawn_texts(&output);
+        assert!(texts.iter().any(|t| t == "Face gap 1.400 mm"), "{texts:?}");
+        // An arrow key on the face gap moves the callout in the same frame (a live redraw).
+        harness.focus(FACE_GAP);
+        let output = harness.frame(key_tap(egui::Key::ArrowRight));
+        assert!(
+            drawn_texts(&output)
+                .iter()
+                .any(|t| t == "Face gap 1.410 mm")
+        );
+        // In Torque -> Magnets it draws the sized design: the axial stack follows the solved
+        // length.
+        let output = harness.size();
+        let stack = harness.panel.results().metal.axial_stack_mm;
+        assert_ne!(
+            stack,
+            compute_all(&DesignInputs::default()).metal.axial_stack_mm
+        );
+        let want = format!(
+            "Overall length: axial stack {} of 35.00 mm",
+            crate::gui::geometry::mm(stack)
+        );
+        assert!(drawn_texts(&output).contains(&want), "{want}");
+        // The Results tab shows the table; the Geometry tab brings the view back.
+        harness.click_text(CentreView::Results.label());
+        assert_eq!(harness.panel.centre, CentreView::Results);
+        let total = crate::gui::results_table::table_entries().len();
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
+        assert!(
+            !drawn_texts(&output)
+                .iter()
+                .any(|t| t.starts_with("Face gap"))
+        );
+        harness.click_text(CentreView::Geometry.label());
+        assert_eq!(harness.panel.centre, CentreView::Geometry);
+    }
+
+    #[test]
+    fn each_plot_tab_draws_its_plot_from_this_frame_s_results() {
+        use crate::gui::plots::{
+            HIGH_CASE, POINT_RADIUS, PULL_OUT, PULL_OUT_POINT, PULL_OUT_SMALLEST_APOTHEM,
+        };
+        use crate::gui::test_support::flat_shapes;
+        let mut harness = Harness::new();
+        for kind in PlotKind::ALL {
+            let legend = match kind {
+                PlotKind::SlipHeating => HIGH_CASE,
+                PlotKind::TorqueAngle => PULL_OUT_POINT,
+                PlotKind::PoleSweep => PULL_OUT_SMALLEST_APOTHEM,
+                _ => PULL_OUT,
+            };
+            let output = harness.click_text(kind.label());
+            assert_eq!(harness.panel.centre, CentreView::Plot(kind));
+            let output = [output, harness.frame(Vec::new())];
+            assert!(
+                output
+                    .iter()
+                    .any(|o| drawn_texts(o).iter().any(|t| t == legend)),
+                "{kind:?} draws its legend"
+            );
+        }
+        // The series come from this frame's results: in the edit's frame the design's marker
+        // is painted at the new pull-out, where that frame's plot transform puts it.
+        harness.click_text(PlotKind::TorqueTemperature.label());
+        harness.focus(FACE_GAP);
+        let before = harness.panel.results().model.pullout_Nm;
+        let output = harness.frame(key_tap(egui::Key::ArrowRight));
+        let after = harness.panel.results().model.pullout_Nm;
+        assert_ne!(after, before);
+        let memory = egui_plot::PlotMemory::load(&harness.ctx, PlotKind::TorqueTemperature.id())
+            .expect("the plot ran this frame");
+        let op = harness.panel.inputs().coupling.op_temp_C;
+        let at = |torque: f64| {
+            memory
+                .transform()
+                .position_from_point(&egui_plot::PlotPoint::new(op, torque))
+        };
+        assert!((at(after) - at(before)).length() > 0.5, "the edit moves it");
+        let markers: Vec<egui::Pos2> = flat_shapes(&output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Circle(c) if c.radius == POINT_RADIUS + 1.0 => Some(c.center),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            markers.iter().any(|c| (*c - at(after)).length() < 1e-3),
+            "{markers:?} vs {:?}",
+            at(after)
+        );
+        assert!(markers.iter().all(|c| (*c - at(before)).length() > 0.5));
+    }
+
+    #[test]
+    fn the_clamp_tab_draws_the_recommended_clamp_and_follows_the_design() {
+        let mut harness = Harness::new();
+        harness.click_text(CentreView::Clamp.label());
+        assert_eq!(harness.panel.centre, CentreView::Clamp);
+        let output = harness.frame(Vec::new());
+        let title = "One-piece slotted clamp, \u{d8}10 keyed shaft: ISO 4762 M4 x 14, class 12.9, 5.1 N\u{b7}m, 3 mm key";
+        assert_eq!(count(&output, title), 1);
+        // A boss too small for any screw: drawing.py's message instead of the drawing.
+        harness.panel.inputs.clamps.boss_od_mm = 12.0;
+        harness.panel.inputs.clamps.clamp_length_mm = 3.0;
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, crate::gui::clamp_drawing::NO_SCREW_FITS), 1);
+        assert_eq!(count(&output, title), 0);
     }
 
     #[test]
@@ -1234,7 +1383,8 @@ mod tests {
             .into_iter()
             .filter(|t| t.starts_with(&format!("{END_EFFECT_BANNER} (")))
             .collect();
-        // Over the dashboard and over the results table.
+        // Over the dashboard and over the centre region, whichever view it shows (decision
+        // M42-1).
         let text = "End-effect model out of range (f_end = -1.202): the pull-out and the numbers computed from it are greyed.";
         assert_eq!(banner, [text, text]);
     }
@@ -1257,7 +1407,7 @@ mod tests {
         let cell = |index: usize| entries[index].info.cell.clone().unwrap();
         let (first, last) = (cell(0), cell(entries.len() - 1));
         let mut harness = Harness::new();
-        let output = harness.frame(Vec::new());
+        let output = harness.click_text(CentreView::Results.label());
         let total = entries.len();
         assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
         // The first rows are on screen (they show their cells), the last is far below.
@@ -1273,10 +1423,49 @@ mod tests {
     }
 
     #[test]
+    fn a_narrow_window_shows_each_row_s_label_and_value_without_scrolling() {
+        // The M4-1 review's ~930 px window: the inputs (320) and the dashboard (300) leave the
+        // table about 294 points. The row's value must end left of the dashboard.
+        let mut harness = Harness::on_screen(egui::vec2(930.0, 1024.0));
+        // The wrapped tab row settles on the second frame (egui wraps from the last frame's
+        // widths).
+        harness.frame(Vec::new());
+        harness.click_text(CentreView::Results.label());
+        assert_eq!(harness.panel.centre, CentreView::Results);
+        harness.click_text(crate::gui::results_table::SEARCH_HINT);
+        harness.frame(vec![egui::Event::Text("calculator!c93".to_owned())]);
+        let output = harness.frame(Vec::new());
+        let value = displayed_pullout(&DesignInputs::default());
+        let in_table: Vec<egui::Rect> = text_rects(&output, &value)
+            .into_iter()
+            .filter(|r| r.right() <= 930.0 - 300.0)
+            .collect();
+        assert_eq!(in_table.len(), 1, "the row's value is on screen: {value}");
+        // And the row's label (truncated to its column, but there).
+        let label = crate::gui::results_table::table_entries()
+            .iter()
+            .find(|e| e.info.cell.as_deref() == Some("Calculator!C93"))
+            .expect("the pull-out's row")
+            .info
+            .meta
+            .label;
+        let labels: Vec<egui::Rect> = text_rects(&output, label)
+            .into_iter()
+            .filter(|r| r.left() >= 0.0 && r.right() <= 930.0 - 300.0)
+            .collect();
+        assert_eq!(labels.len(), 1, "the row's label is on screen: {label}");
+        // It fills its column, at least 120 points, and ends left of the value.
+        let min = crate::gui::results_table::LABEL_MIN_WIDTH;
+        assert!(labels[0].width() >= min - 1.0, "{:?}", labels[0]);
+        assert!(labels[0].right() <= in_table[0].left());
+    }
+
+    #[test]
     fn the_export_buttons_queue_the_files_for_the_host() {
         use crate::gui::results_table::{EXPORT_CSV, EXPORT_JSON};
         let mut harness = Harness::new();
         assert!(harness.panel.take_requests().is_empty());
+        harness.click_text(CentreView::Results.label());
         harness.focus(FACE_GAP);
         harness.frame(key_tap(egui::Key::ArrowRight));
         harness.click_text(EXPORT_CSV);
@@ -1521,6 +1710,7 @@ mod tests {
         // The search box is a text field, but it edits no design: a change while it has focus
         // (a design file the host's picker delivers) is an undo step at once.
         let mut harness = Harness::new();
+        harness.click_text(CentreView::Results.label());
         harness.click_text(crate::gui::results_table::SEARCH_HINT);
         harness.frame(vec![egui::Event::Text("pull".to_owned())]);
         assert!(
@@ -1715,6 +1905,19 @@ mod tests {
         let mut harness = Harness::on_screen(egui::vec2(1280.0, 12000.0));
         let mut texts = drawn_texts(&harness.frame(Vec::new()));
         texts.extend(drawn_texts(&harness.size()));
+        // Every view of the centre region, and the geometry callouts' hover texts.
+        for view in CentreView::ALL {
+            texts.extend(drawn_texts(&harness.click_text(view.label())));
+            texts.extend(drawn_texts(&harness.frame(Vec::new())));
+        }
+        harness.click_text(CentreView::Geometry.label());
+        let shown = harness.panel.shown_inputs();
+        let geometry = crate::gui::geometry::geometry(&shown, harness.panel.results());
+        texts.extend(
+            geometry
+                .callouts()
+                .filter_map(|c| crate::gui::dashboard::hover_text(c.path)),
+        );
         for group in &InputCatalogue::get().groups {
             harness.click_text(group.label);
         }
@@ -1878,6 +2081,7 @@ mod tests {
         let mut harness = Harness::new();
         harness.size();
         harness.panel.sizing.target_Nm = 3.0;
+        harness.click_text(CentreView::Results.label());
         harness.click_text(crate::gui::results_table::SEARCH_HINT);
         harness.frame(vec![egui::Event::Text("pull".to_owned())]);
         harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
@@ -1901,6 +2105,7 @@ mod tests {
         use crate::gui::results_table::EXPORT_JSON;
         let mut harness = Harness::new();
         harness.size();
+        harness.click_text(CentreView::Results.label());
         harness.click_text(EXPORT_JSON);
         let requests = harness.panel.take_requests();
         let [PanelRequest::SaveFile { contents, .. }] = &requests[..] else {

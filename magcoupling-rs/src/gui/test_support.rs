@@ -89,34 +89,68 @@ pub(crate) fn primary_button(pos: egui::Pos2, pressed: bool) -> egui::Event {
     }
 }
 
+/// Every shape egui painted in a frame, the shapes nested in a `Shape::Vec`
+/// flattened, in paint order: what the helpers below and the tests' own
+/// filters walk.
+pub(crate) fn flat_shapes(output: &egui::FullOutput) -> Vec<&egui::Shape> {
+    fn walk<'a>(shape: &'a egui::Shape, shapes: &mut Vec<&'a egui::Shape>) {
+        match shape {
+            egui::Shape::Vec(nested) => nested.iter().for_each(|s| walk(s, shapes)),
+            other => shapes.push(other),
+        }
+    }
+    let mut shapes = Vec::new();
+    for clipped in &output.shapes {
+        walk(&clipped.shape, &mut shapes);
+    }
+    shapes
+}
+
 /// Every text egui drew in a frame (widgets and painter text), nested shapes
 /// included, in paint order.
 pub(crate) fn drawn_texts(output: &egui::FullOutput) -> Vec<String> {
-    fn walk(shape: &egui::Shape, texts: &mut Vec<String>) {
-        match shape {
-            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, texts)),
-            egui::Shape::Text(text) => texts.push(text.galley.text().to_owned()),
-            _ => {}
-        }
-    }
-    let mut texts = Vec::new();
-    for clipped in &output.shapes {
-        walk(&clipped.shape, &mut texts);
-    }
-    texts
+    flat_shapes(output)
+        .into_iter()
+        .filter_map(|shape| match shape {
+            egui::Shape::Text(text) => Some(text.galley.text().to_owned()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Screen rects of every drawn text equal to `needle`, in paint order.
+pub(crate) fn text_rects(output: &egui::FullOutput, needle: &str) -> Vec<egui::Rect> {
+    flat_shapes(output)
+        .into_iter()
+        .filter_map(|shape| match shape {
+            egui::Shape::Text(text) if text.galley.text() == needle => {
+                Some(text.galley.rect.translate(text.pos.to_vec2()))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// Screen rect of the first drawn text equal to `needle`, e.g. a button
 /// label: lets a test click a widget whose id it cannot know.
 pub(crate) fn text_rect(output: &egui::FullOutput, needle: &str) -> Option<egui::Rect> {
-    fn walk(shape: &egui::Shape, needle: &str) -> Option<egui::Rect> {
-        match shape {
-            egui::Shape::Vec(shapes) => shapes.iter().find_map(|s| walk(s, needle)),
+    text_rects(output, needle).into_iter().next()
+}
+
+/// The colour of the first drawn text equal to `needle`: its override, else its first section's
+/// colour (a `RichText` colour or a painter text's), else the fallback colour.
+pub(crate) fn text_color(output: &egui::FullOutput, needle: &str) -> Option<egui::Color32> {
+    flat_shapes(output)
+        .into_iter()
+        .find_map(|shape| match shape {
             egui::Shape::Text(text) if text.galley.text() == needle => {
-                Some(text.galley.rect.translate(text.pos.to_vec2()))
+                Some(text.override_text_color.unwrap_or_else(|| {
+                    match text.galley.job.sections.first().map(|s| s.format.color) {
+                        Some(color) if color != egui::Color32::PLACEHOLDER => color,
+                        _ => text.fallback_color,
+                    }
+                }))
             }
             _ => None,
-        }
-    }
-    output.shapes.iter().find_map(|c| walk(&c.shape, needle))
+        })
 }

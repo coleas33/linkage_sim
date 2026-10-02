@@ -221,6 +221,22 @@ pub fn result_tooltip(path: &str, info: &ResultInfo, notes: ResultNotes<'_>) -> 
     lines.join("\n")
 }
 
+/// The hover text of the result at `path` with its corrections' marks: the hook's text for a
+/// readout outside the dashboard (a results-table row, a geometry callout); `None` for a path
+/// that is no result.
+pub fn hover_text(path: &str) -> Option<String> {
+    let info = result_info(path)?;
+    let marks = CorrectionIndex::get().marks(info.cell.as_deref());
+    Some(result_tooltip(
+        path,
+        info,
+        ResultNotes {
+            marks,
+            ..ResultNotes::default()
+        },
+    ))
+}
+
 /// One dashboard row, ready to draw.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DashboardLine {
@@ -609,6 +625,22 @@ mod tests {
             result_info("gap_sweep[0].f_end").unwrap().cell.as_deref(),
             Some("Gap sweep!W6")
         );
+    }
+
+    #[test]
+    fn the_hover_text_carries_the_marks_and_needs_a_result() {
+        let text = hover_text("model.pullout_Nm").unwrap();
+        assert!(
+            text.starts_with("Pull-out torque at operating temperature\n"),
+            "{text}"
+        );
+        assert!(text.contains("Corrected vs workbook:"), "{text}");
+        assert!(
+            hover_text("housing.length_overshoot_mm")
+                .unwrap()
+                .contains("Rust-only result (no workbook cell)")
+        );
+        assert_eq!(hover_text("no.such"), None);
     }
 
     #[test]

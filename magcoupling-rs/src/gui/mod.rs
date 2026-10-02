@@ -6,13 +6,17 @@
 //! window and event loop. The engine stays pure std; nothing here is compiled
 //! without the feature.
 
+pub mod clamp_drawing;
 pub mod corrections;
 pub mod dashboard;
 mod format;
+pub mod geometry;
+pub mod geometry_view;
 pub mod history;
 pub mod input_ui;
 pub mod inputs;
 mod panel;
+pub mod plots;
 pub mod results_table;
 pub mod session;
 pub mod sizing;
