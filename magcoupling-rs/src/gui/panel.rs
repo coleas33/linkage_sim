@@ -24,6 +24,7 @@
 //! ([`crate::gui::sizing::SizingRunner`], debounced, never per frame), and the free variable's
 //! row shows that value, locked.
 
+use crate::engine::assumptions::{self, ASSUMPTIONS};
 use crate::engine::meta::{InputSet, ResultSet, Value};
 use crate::engine::sizing::FreeVariable;
 use crate::gui::clamp_drawing::clamp_ui;
@@ -31,7 +32,7 @@ use crate::gui::dashboard::{Level, dashboard_ui, end_effect_banner};
 use crate::gui::explorer::{EQUATION_PANEL, Explorer, FOCUS_WIDTH, PANEL_HEIGHT, explorer_ui};
 use crate::gui::geometry_view::geometry_ui;
 use crate::gui::history::History;
-use crate::gui::input_ui::{RowEdit, input_row, slider};
+use crate::gui::input_ui::{CHANGED_DOT, RowEdit, input_row, slider};
 use crate::gui::inputs::{InputCatalogue, InputEntry, KEY_DESIGN, optional_seed};
 use crate::gui::plots::{PlotKind, plot_ui};
 use crate::gui::readouts::{Readouts, registry};
@@ -91,6 +92,40 @@ pub const SIZING_LOG_PREFIX: &str = "magcoupling sizing: ";
 
 /// The note under the free variable's row in Torque → Magnets.
 pub const SIZED_NOTE: &str = "Set by Torque -> Magnets";
+
+/// The banner shown while an assumption differs from its workbook default (spec Addendum A3),
+/// followed by the assumptions' names.
+pub const ASSUMPTIONS_MODIFIED: &str = "Assumptions modified";
+
+/// The button beside the banner.
+pub const RESET_ASSUMPTIONS: &str = "Reset to workbook defaults";
+
+/// The start of an assumption's source line.
+pub const SOURCE: &str = "Source";
+
+/// The line at the top of the Assumptions view.
+pub const ASSUMPTIONS_NOTE: &str = "The model's assumptions, apart from the design inputs (each \
+     also stays in its input group). The equation panel tags them and what they flow into.";
+
+/// What the inputs side shows (decision M43-7): the design inputs, or the model assumptions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputsView {
+    Design,
+    Assumptions,
+}
+
+impl InputsView {
+    /// Both views, in tab order.
+    pub const ALL: [InputsView; 2] = [InputsView::Design, InputsView::Assumptions];
+
+    /// The tab text.
+    pub const fn label(self) -> &'static str {
+        match self {
+            InputsView::Design => "Design inputs",
+            InputsView::Assumptions => "Assumptions",
+        }
+    }
+}
 
 /// Starting width of the inputs side [points].
 const INPUTS_WIDTH: f32 = 320.0;
@@ -185,6 +220,11 @@ pub struct MagcouplingPanel {
     last_error: Option<String>,
     /// The view the centre region shows.
     centre: CentreView,
+    /// What the inputs side shows.
+    inputs_view: InputsView,
+    /// The assumptions banner drawn in the last frame: the header sizes from the last frame,
+    /// so a change asks for one more frame.
+    banner: Option<String>,
     results_table: ResultsTable,
     /// Platform work for the host, oldest first.
     requests: Vec<PanelRequest>,
@@ -220,6 +260,8 @@ impl MagcouplingPanel {
             keyboard_shortcuts: true,
             last_error: None,
             centre: CentreView::Geometry,
+            inputs_view: InputsView::Design,
+            banner: None,
             results_table: ResultsTable::default(),
             requests: Vec::new(),
             explorer: Explorer::default(),
@@ -661,6 +703,32 @@ impl MagcouplingPanel {
                 self.explorer.open = !self.explorer.open;
             }
         });
+        // Spec Addendum A3: the banner while any assumption differs from its workbook default.
+        let modified = assumptions::modified(&self.inputs);
+        let banner = (!modified.is_empty()).then(|| {
+            let names: Vec<&str> = modified.iter().map(|a| a.label).collect();
+            format!("{ASSUMPTIONS_MODIFIED}: {}", names.join(", "))
+        });
+        if banner != self.banner {
+            self.banner.clone_from(&banner);
+            ui.ctx().request_repaint();
+        }
+        if let Some(banner) = banner {
+            ui.horizontal_wrapped(|ui| {
+                ui.colored_label(ui.visuals().warn_fg_color, banner);
+                if ui
+                    .button(RESET_ASSUMPTIONS)
+                    .on_hover_text(
+                        "Every assumption back to its workbook default; the design inputs stay as they are",
+                    )
+                    .clicked()
+                {
+                    assumptions::reset_to_workbook_defaults(&mut self.inputs);
+                    self.status = Some("Assumptions reset to the workbook defaults".to_owned());
+                    self.last_error = None;
+                }
+            });
+        }
         if let Some(error) = &self.last_error {
             ui.colored_label(ui.visuals().error_fg_color, error);
         } else if let Some(status) = &self.status {
@@ -668,11 +736,77 @@ impl MagcouplingPanel {
         }
     }
 
-    /// The left side: the Key design group, then every input by package group.
+    /// The left side: the tabs of the design inputs and the assumptions, then the view chosen.
+    /// A leaf term clicked in the Equation panel shows the view that holds its row.
     fn inputs_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
-        let catalogue = InputCatalogue::get();
         // This frame's rows only, whichever groups are open.
         self.design_widgets.clear();
+        if let Some(focus) = self.explorer.focus().filter(|f| f.scroll) {
+            let assumption = ASSUMPTIONS
+                .iter()
+                .any(|a| a.paths.contains(&focus.path.as_str()));
+            self.inputs_view = if assumption {
+                InputsView::Assumptions
+            } else {
+                InputsView::Design
+            };
+        }
+        ui.horizontal(|ui| {
+            for view in InputsView::ALL {
+                ui.selectable_value(&mut self.inputs_view, view, view.label());
+            }
+        });
+        ui.separator();
+        match self.inputs_view {
+            InputsView::Design => self.design_inputs_ui(ui, readouts),
+            InputsView::Assumptions => self.assumptions_ui(ui, readouts),
+        }
+    }
+
+    /// The Assumptions view (spec Addendum A3 "Toggle panel"): each assumption with its
+    /// changed-from-default dot, the rows of its inputs (value, unit, reset: the inputs' own
+    /// rows, so an edit here is an edit like any other), its rationale and its source.
+    fn assumptions_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
+        let catalogue = InputCatalogue::get();
+        egui::ScrollArea::vertical()
+            .id_salt("magcoupling_assumptions_scroll")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.add(egui::Label::new(egui::RichText::new(ASSUMPTIONS_NOTE).weak()).wrap());
+                for state in assumptions::states(&self.inputs) {
+                    let assumption = state.assumption;
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        let dot = if state.modified { CHANGED_DOT } else { " " };
+                        ui.colored_label(ui.visuals().selection.stroke.color, dot)
+                            .on_hover_text("Changed from the workbook default");
+                        ui.strong(assumption.label);
+                    });
+                    for path in assumption.paths {
+                        let entry = catalogue
+                            .entry(path)
+                            .expect("an assumption path is an input (tests/assumptions.rs)");
+                        let widget = self.input_row_ui(ui, entry, readouts);
+                        self.design_widgets.push(widget);
+                    }
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(assumption.rationale).weak()).wrap(),
+                    );
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(format!("{SOURCE}: {}", assumption.source))
+                                .small()
+                                .weak(),
+                        )
+                        .wrap(),
+                    );
+                }
+            });
+    }
+
+    /// The design inputs: the Key design group, then every input by package group.
+    fn design_inputs_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
+        let catalogue = InputCatalogue::get();
         // A leaf term clicked in the Equation panel: its group opens so its row can scroll
         // into view (the Key design group for a Key design input).
         let focus = self
@@ -786,6 +920,8 @@ impl MagcouplingPanel {
                 .set(&entry.path, value)
                 .err()
                 .map(|e| e.to_string());
+            // The header (the assumptions banner) was drawn before this edit.
+            ui.ctx().request_repaint();
         }
         output.widget.id
     }
@@ -2009,8 +2145,15 @@ mod tests {
             harness.frame(Vec::new());
         }
         texts.extend(drawn_texts(&harness.frame(Vec::new())));
+        // The Assumptions view: every rationale and source.
+        harness.click_text(InputsView::Assumptions.label());
+        texts.extend(drawn_texts(&harness.frame(Vec::new())));
+        harness.click_text(InputsView::Design.label());
         harness.panel.inputs = short_magnets();
         texts.extend(drawn_texts(&harness.frame(Vec::new())));
+        // Its c_end of 0.5 is a modified assumption: the banner (the header grows a frame later).
+        texts.extend(drawn_texts(&harness.frame(Vec::new())));
+        assert!(texts.iter().any(|t| t.starts_with(ASSUMPTIONS_MODIFIED)));
         let catalogue = InputCatalogue::get();
         texts.extend(catalogue.all().map(crate::gui::inputs::input_tooltip));
         let results = harness.panel.results().clone();
@@ -2671,6 +2814,123 @@ mod tests {
         ] {
             assert_eq!(count(&output, line), 1, "{line:?}");
         }
+    }
+
+    #[test]
+    fn the_assumptions_banner_appears_on_change_and_clears_on_reset() {
+        let mut harness = Harness::new();
+        let banner = |output: &egui::FullOutput| {
+            drawn_texts(output)
+                .into_iter()
+                .filter(|t| t.starts_with(ASSUMPTIONS_MODIFIED))
+                .collect::<Vec<_>>()
+        };
+        assert!(banner(&harness.frame(Vec::new())).is_empty());
+        // The thermal conductance is an assumption and a Key design row.
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        harness.focus("temperature.thermal.conductance_W_K");
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        // The header sizes from the last frame: the banner line shows from the next one.
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(
+            banner(&output),
+            [format!("{ASSUMPTIONS_MODIFIED}: Thermal conductance")]
+        );
+        harness.click_text(RESET_ASSUMPTIONS);
+        let output = harness.frame(Vec::new());
+        assert!(banner(&output).is_empty());
+        let defaults = DesignInputs::default();
+        assert_eq!(
+            harness.panel.inputs().temperature.thermal.conductance_W_K,
+            defaults.temperature.thermal.conductance_W_K
+        );
+        // The design input stays as it was.
+        assert_eq!(harness.number(FACE_GAP), 1.41);
+        assert!(!assumptions::any_modified(harness.panel.inputs()));
+        // The reset is an edit: undo brings the assumption back.
+        harness.panel.undo();
+        assert!(assumptions::any_modified(harness.panel.inputs()));
+    }
+
+    #[test]
+    fn the_assumptions_view_lists_each_assumption_with_its_rationale_and_source() {
+        // Tall enough for all fourteen without scrolling.
+        let mut harness = Harness::on_screen(egui::vec2(1280.0, 6000.0));
+        harness.click_text(InputsView::Assumptions.label());
+        assert_eq!(harness.panel.inputs_view, InputsView::Assumptions);
+        let output = harness.frame(Vec::new());
+        let texts = drawn_texts(&output);
+        for assumption in ASSUMPTIONS {
+            for want in [
+                assumption.label.to_owned(),
+                assumption.rationale.to_owned(),
+                format!("{SOURCE}: {}", assumption.source),
+            ] {
+                assert!(texts.contains(&want), "missing {want:?}");
+            }
+        }
+        // Idle frames rewrite no assumption (the rows are the inputs' own).
+        for _ in 0..3 {
+            harness.frame(Vec::new());
+        }
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        harness.click_text(InputsView::Design.label());
+        assert_eq!(harness.panel.inputs_view, InputsView::Design);
+    }
+
+    #[test]
+    fn an_assumption_term_is_styled_in_the_equation_panel() {
+        use crate::gui::explorer::{ASSUMPTION_TAG, DEPENDS_ON_MODIFIED};
+        let mut harness = Harness::new();
+        harness.panel.explorer.open_path("model.f_end");
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, ASSUMPTION_TAG), 1, "c_end is an assumption");
+        harness.panel.inputs.coupling.c_end = 0.2;
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(
+            count(&output, &format!("{CHANGED_DOT} changed; {ASSUMPTION_TAG}")),
+            1
+        );
+        assert_eq!(
+            count(
+                &output,
+                &format!("{DEPENDS_ON_MODIFIED}: End-effect coefficient")
+            ),
+            1
+        );
+    }
+
+    #[test]
+    fn a_leaf_assumption_term_shows_its_row_in_the_assumptions_view() {
+        let mut harness = Harness::new();
+        harness.panel.explorer.open_path("model.f_end");
+        harness.frame(Vec::new());
+        harness.click_text("End-effect coefficient");
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..5 {
+            output = harness.frame(Vec::new());
+        }
+        assert_eq!(harness.panel.inputs_view, InputsView::Assumptions);
+        let focus: Vec<egui::Rect> = crate::gui::test_support::flat_shapes(&output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Rect(r) if r.stroke.width == FOCUS_WIDTH => Some(r.rect),
+                _ => None,
+            })
+            .collect();
+        // The assumption's heading and its row's label are both "End-effect coefficient";
+        // the row's label sits inside the frame.
+        let labels = crate::gui::test_support::text_rects(&output, "End-effect coefficient");
+        assert!(
+            labels
+                .iter()
+                .any(|l| l.left() < INPUTS_WIDTH && focus.iter().any(|r| r.contains_rect(*l))),
+            "{labels:?} {focus:?}"
+        );
     }
 
     #[test]

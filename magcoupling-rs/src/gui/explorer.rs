@@ -17,15 +17,25 @@
 //! ([`Explorer::marks`]): the hovered readout's equation wins, else the open one's. While the
 //! marks are another equation's, the term list's swatches fade ([`SWATCH_DIM`]). A long trail
 //! shows its last [`SHOWN_CRUMBS`] crumbs after one [`ELIDED`].
+//!
+//! Assumptions (spec Addendum A3 "Traceability"): an assumption term is tagged as one in the
+//! term list, with the changed-from-default dot when it differs from its workbook default; a
+//! result some modified assumption flows into is tagged too, and the open equation says which
+//! modified assumptions it depends on ([`Registry::term_style`],
+//! [`Registry::modified_assumptions_upstream`]).
+//!
+//! [`Registry::term_style`]: crate::engine::explain::Registry::term_style
+//! [`Registry::modified_assumptions_upstream`]: crate::engine::explain::Registry::modified_assumptions_upstream
 
 use egui::{Color32, Sense, Vec2};
 
 use crate::engine::explain::markup::{Expr, Symbol};
 use crate::engine::explain::notes::covers;
-use crate::engine::explain::{Design, Equation, TermKind};
+use crate::engine::explain::{Design, Equation, TermKind, TermStyle};
 use crate::engine::meta::{ResultSet, Value};
 use crate::gui::dashboard::result_info;
 use crate::gui::format::{format_value, with_unit};
+use crate::gui::input_ui::CHANGED_DOT;
 use crate::gui::inputs::InputCatalogue;
 use crate::gui::readouts::{ReadoutEvents, registry};
 use crate::gui::typeset::{
@@ -55,6 +65,12 @@ pub const NO_EQUATION: &str =
 
 /// The start of the line naming the corrections an equation embodies.
 pub const CORRECTIONS: &str = "Embodies corrections";
+
+/// The start of the line naming the modified assumptions an equation depends on.
+pub const DEPENDS_ON_MODIFIED: &str = "Depends on modified assumptions";
+
+/// The term list's tag of an assumption.
+pub const ASSUMPTION_TAG: &str = "assumption: click to find its row";
 
 /// The text size of the open equation [points].
 pub const PANEL_SIZE: f32 = 22.0;
@@ -405,6 +421,14 @@ fn equation_body(
         plain_symbol(&eq.symbol),
         value_text(&eq.target, &value, eq.unit)
     ));
+    let modified = registry().modified_assumptions_upstream(&eq.target, terms.inputs);
+    if !modified.is_empty() {
+        let names: Vec<&str> = modified.iter().map(|a| a.label).collect();
+        ui.colored_label(
+            ui.visuals().warn_fg_color,
+            format!("{DEPENDS_ON_MODIFIED}: {}", names.join(", ")),
+        );
+    }
     let corrections = registry().corrections_upstream(&eq.target);
     if !corrections.is_empty() {
         let ids: Vec<String> = corrections.iter().map(ToString::to_string).collect();
@@ -445,7 +469,17 @@ fn equation_body(
                 {
                     clicked = Some(row.path.clone());
                 }
-                ui.weak(kind_text(row.kind));
+                let style = registry()
+                    .term_style(&row.path, terms.inputs)
+                    .expect("every term is an input or a result (registry build)");
+                let tag = term_tag(style);
+                if style.affected_by_modified_assumption
+                    || matches!(style.kind, TermKind::Input { assumption: true })
+                {
+                    ui.colored_label(ui.visuals().warn_fg_color, tag);
+                } else {
+                    ui.weak(tag);
+                }
                 ui.end_row();
             }
         });
@@ -466,13 +500,25 @@ fn colors_of_template(eq: &Equation, colors: &TermColors, path: &str) -> Option<
     found
 }
 
-/// What a term is, in the term list.
-fn kind_text(kind: TermKind) -> &'static str {
-    match kind {
-        TermKind::Input { .. } => "input: click to find its row",
+/// What a term is, in the term list: an assumption, an input, a result with or without an
+/// equation; the changed-from-default dot on an input that differs from its default; a result
+/// a modified assumption flows into.
+pub fn term_tag(style: TermStyle) -> String {
+    let kind = match style.kind {
+        TermKind::Input { assumption: true } => ASSUMPTION_TAG,
+        TermKind::Input { assumption: false } => "input: click to find its row",
         TermKind::Explained => "click to open its equation",
         TermKind::CellOnly => "no equation record",
+    };
+    let mut tag = if style.changed_from_default {
+        format!("{CHANGED_DOT} changed; {kind}")
+    } else {
+        kind.to_owned()
+    };
+    if style.affected_by_modified_assumption && !matches!(style.kind, TermKind::Input { .. }) {
+        tag.push_str("; depends on a modified assumption");
     }
+    tag
 }
 
 /// A small filled square in a term's colour.
@@ -668,6 +714,34 @@ mod tests {
         let hidden = unsummed(eq, &terms);
         assert_eq!(hidden, ["model.tau7_Pa", "model.tau9_Pa", "model.tau11_Pa"]);
         assert!(unsummed(registry().equation_for("model.f_end").unwrap(), &terms).is_empty());
+    }
+
+    #[test]
+    fn a_term_s_tag_says_assumption_changed_and_affected() {
+        let mut inputs = DesignInputs::default();
+        let tag = |path: &str, inputs: &DesignInputs| {
+            term_tag(registry().term_style(path, inputs).unwrap())
+        };
+        assert_eq!(tag("coupling.c_end", &inputs), ASSUMPTION_TAG);
+        assert_eq!(
+            tag("coupling.npole", &inputs),
+            "input: click to find its row"
+        );
+        assert_eq!(tag("model.f_end", &inputs), "click to open its equation");
+        inputs.coupling.c_end = 0.2;
+        assert_eq!(
+            tag("coupling.c_end", &inputs),
+            format!("{CHANGED_DOT} changed; {ASSUMPTION_TAG}")
+        );
+        assert_eq!(
+            tag("model.f_end", &inputs),
+            "click to open its equation; depends on a modified assumption"
+        );
+        inputs.coupling.npole = 12;
+        assert_eq!(
+            tag("coupling.npole", &inputs),
+            format!("{CHANGED_DOT} changed; input: click to find its row")
+        );
     }
 
     #[test]
