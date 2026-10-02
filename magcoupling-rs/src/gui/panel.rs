@@ -2626,17 +2626,50 @@ mod tests {
     fn a_result_without_an_equation_shows_its_value_and_cell() {
         use crate::engine::explain::TermKind;
         use crate::gui::explorer::NO_EQUATION;
-        let entry = crate::gui::results_table::table_entries()
-            .iter()
-            .find(|e| registry().term_kind(&e.path) == Some(TermKind::CellOnly))
-            .unwrap();
+        // Most results without an equation record have a workbook cell, a few are Rust-only:
+        // each case must exist, so a change of the data cannot make the test vacuous.
+        for has_cell in [true, false] {
+            let entry = crate::gui::results_table::table_entries()
+                .iter()
+                .find(|e| {
+                    registry().term_kind(&e.path) == Some(TermKind::CellOnly)
+                        && e.info.cell.is_some() == has_cell
+                })
+                .unwrap_or_else(|| panic!("no result without an equation (cell: {has_cell})"));
+            let mut harness = Harness::new();
+            let shut = harness.frame(Vec::new());
+            harness.panel.explorer.open_path(&entry.path);
+            harness.frame(Vec::new());
+            let output = harness.frame(Vec::new());
+            assert_eq!(count(&output, NO_EQUATION), 1);
+            // The panel adds a line to what the views draw: the cell, or "Rust-only result".
+            let cell = entry.info.cell.as_deref().unwrap_or("Rust-only result");
+            assert_eq!(count(&output, cell), count(&shut, cell) + 1, "{cell}");
+            // And the label with the value and its unit.
+            let value = harness.panel.results().get(&entry.path).unwrap();
+            let line = format!(
+                "{} = {}",
+                entry.info.meta.label,
+                with_unit(format_value(&value), entry.info.meta.unit)
+            );
+            assert_eq!(count(&output, &line), 1, "{line:?}");
+        }
+    }
+
+    #[test]
+    fn the_open_equation_shows_its_label_cell_value_and_corrections() {
         let mut harness = Harness::new();
-        harness.panel.explorer.open_path(&entry.path);
+        harness.panel.explorer.open_path("model.pullout_Nm");
         harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, NO_EQUATION), 1);
-        if let Some(cell) = &entry.info.cell {
-            assert!(count(&output, cell) >= 1, "{cell}");
+        // Decision M43-14: the corrections the equation embodies, upstream of the pull-out.
+        let value_line = format!("T_pull = {}", displayed_pullout(&DesignInputs::default()));
+        for line in [
+            "Pull-out torque at operating temperature (Calculator!C93)",
+            value_line.as_str(),
+            "Embodies corrections: E7, E8, E3",
+        ] {
+            assert_eq!(count(&output, line), 1, "{line:?}");
         }
     }
 
