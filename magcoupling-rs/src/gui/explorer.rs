@@ -114,7 +114,7 @@ pub fn reviewed_note(id: &str) -> Option<&'static Note> {
 
 /// The start of the start-here bar.
 pub fn start_here_text(step: usize) -> String {
-    let title = reviewed_note(START_HERE[step].0).map_or("", |n| n.title);
+    let title = reviewed_note(START_HERE[step].0).map_or_else(String::new, |n| glyph_safe(n.title));
     format!(
         "{START_HERE_BUTTON} {} of {}: {title}",
         step + 1,

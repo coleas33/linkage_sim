@@ -3001,6 +3001,30 @@ mod tests {
     }
 
     #[test]
+    fn every_start_here_step_shows_with_glyphs_in_the_default_fonts() {
+        // The bar names each step's note (one title holds ∝, decision M43-6); it sits above
+        // the panel's scroll area, so it is drawn whatever the panel's height.
+        use crate::engine::explain::notes::{START_HERE, note};
+        use crate::gui::explorer::start_here_text;
+        use crate::gui::typeset::glyph_safe;
+        let mut harness = Harness::new();
+        for (step, &(id, _)) in START_HERE.iter().enumerate() {
+            harness.panel.explorer.start(step);
+            harness.frame(Vec::new());
+            let output = harness.frame(Vec::new());
+            for text in drawn_texts(&output) {
+                crate::gui::test_support::assert_glyphs(&harness.ctx, &text, id);
+            }
+            let bar = start_here_text(step);
+            assert_eq!(count(&output, &bar), 1, "{id}: {bar:?}");
+            assert!(
+                bar.ends_with(&glyph_safe(note(id).unwrap().title)),
+                "{id}: {bar:?}"
+            );
+        }
+    }
+
+    #[test]
     fn every_teaching_note_shows_with_glyphs_in_the_default_fonts() {
         use crate::engine::explain::notes::NOTES;
         let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));

@@ -4,7 +4,7 @@
 //!
 //! [`diagram_shapes`] builds the shapes of one [`Diagram`] kind inside a rect (pure, testable);
 //! [`diagram_ui`] allocates [`DIAGRAM_SIZE`] and paints them. Each diagram is a schematic of
-//! the idea its note explains, not a plot of the design's numbers: the square wave of fill 0.8
+//! the idea its note explains, not a plot of the design's numbers: the square wave of fill 0.85
 //! and the sum of its harmonics 1, 3 and 5 (amplitudes 4/(nπ) sin(nπλ/2)); the flux closing
 //! through steel against spreading behind the magnets; torque against electrical angle with
 //! a third harmonic and its peak; the field fringing at a magnet's ends; the intrinsic
@@ -17,13 +17,22 @@ use egui::text::Fonts;
 use egui::{Align2, Color32, FontId, Pos2, Rect, Shape, Stroke, Vec2, pos2, vec2};
 
 use crate::engine::explain::notes::Diagram;
-use crate::gui::typeset::TERM_PALETTE;
 
 /// The size a diagram takes [points].
 pub const DIAGRAM_SIZE: Vec2 = vec2(300.0, 130.0);
 
 /// The text size of a diagram's labels [points].
 const LABEL_SIZE: f32 = 11.0;
+
+/// The fraction of each pole the square wave's blocks fill (λ): a fill where none of the
+/// harmonics 1, 3 and 5 vanishes (0.4 and 0.8 zero the fifth, 2/3 the third), so the curve
+/// labelled "1 + 3 + 5" sums three; the third (−0.32) visibly pulls the fundamental's 1.24
+/// overshoot down at a block's centre.
+const FILL: f32 = 0.85;
+
+/// The torque-angle diagram's third harmonic against its fundamental, A3/A1: above 1/9 the
+/// summed curve dips at 90° and peaks on either side (correction E7).
+const TORQUE_THIRD: f32 = 0.15;
 
 /// The colours a diagram draws with.
 struct Pens {
@@ -32,7 +41,9 @@ struct Pens {
     north: Color32,
     south: Color32,
     steel: Color32,
+    /// The curves' accent.
     first: Color32,
+    /// The marked points' accent.
     second: Color32,
 }
 
@@ -44,8 +55,10 @@ impl Pens {
             north: Color32::from_rgb(220, 110, 90),
             south: Color32::from_rgb(90, 130, 210),
             steel: Color32::from_gray(120),
-            first: TERM_PALETTE[0],
-            second: TERM_PALETTE[1],
+            // A teal and a lime, hues no term colour has (`typeset::TERM_PALETTE`, decision
+            // M43-3): a diagram sits under the open equation, whose terms those colours key.
+            first: Color32::from_rgb(0, 165, 165),
+            second: Color32::from_rgb(120, 180, 20),
         }
     }
 }
@@ -104,24 +117,23 @@ pub fn diagram_shapes(
     }
 }
 
-/// The magnetization of two pole pairs at fill 0.8 (blocks and gaps), the fundamental and the
-/// sum of harmonics 1, 3 and 5.
+/// The magnetization of two pole pairs at fill [`FILL`] (blocks and gaps), the fundamental and
+/// the sum of harmonics 1, 3 and 5.
 fn square_wave(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
-    let fill = 0.8;
     let poles = 4.0;
     // +1 over the north blocks, -1 over the south ones, 0 in the gaps.
     let wave = |t: f32| {
         let x = t * poles;
         let pole = x.floor();
         let within = (x - pole - 0.5).abs() * 2.0;
-        if within <= fill {
+        if within <= FILL {
             if pole as i32 % 2 == 0 { 1.0 } else { -1.0 }
         } else {
             0.0
         }
     };
     let harmonic = |n: f32, t: f32| {
-        let amp = 4.0 / (n * PI) * (n * PI * fill / 2.0).sin();
+        let amp = 4.0 / (n * PI) * (n * PI * FILL / 2.0).sin();
         // Pole centres at x = 0.5, 1.5, ... (in poles): cos(n π (x - 0.5)).
         amp * (n * PI * (t * poles - 0.5)).cos()
     };
@@ -149,7 +161,7 @@ fn square_wave(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
         fonts,
         pos2(r.left(), r.bottom()),
         Align2::LEFT_BOTTOM,
-        "blocks and gaps (fill 0.8)",
+        &format!("blocks and gaps (fill {FILL})"),
         pens.ink,
     ));
     shapes.push(label(
@@ -245,7 +257,7 @@ fn torque_angle(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
         pos2(r.left() + 14.0, r.top()),
         pos2(r.right(), r.bottom() - 14.0),
     );
-    let torque = |t: f32| (t * PI).sin() + 0.15 * (3.0 * t * PI).sin();
+    let torque = |t: f32| (t * PI).sin() + TORQUE_THIRD * (3.0 * t * PI).sin();
     let points = curve(plot, 0.0, 1.2, 181, torque);
     let peak = points
         .iter()
@@ -468,6 +480,7 @@ pub fn diagram_ui(ui: &mut egui::Ui, kind: Diagram) -> egui::Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gui::typeset::TERM_PALETTE;
 
     const KINDS: [Diagram; 6] = [
         Diagram::SquareWaveHarmonics,
@@ -540,17 +553,292 @@ mod tests {
         }
     }
 
+    /// Every colour a shape paints: its strokes, its fills and its text.
+    fn colors(shape: &Shape) -> Vec<Color32> {
+        match shape {
+            Shape::Path(p) => match &p.stroke.color {
+                egui::epaint::ColorMode::Solid(c) => vec![p.fill, *c],
+                egui::epaint::ColorMode::UV(_) => vec![p.fill],
+            },
+            Shape::LineSegment { stroke, .. } => vec![stroke.color],
+            Shape::Circle(c) => vec![c.fill, c.stroke.color],
+            Shape::Rect(r) => vec![r.fill, r.stroke.color],
+            Shape::Text(t) => t
+                .galley
+                .job
+                .sections
+                .iter()
+                .map(|s| s.format.color)
+                .chain([t.fallback_color])
+                .chain(t.override_text_color)
+                .collect(),
+            Shape::Vec(v) => v.iter().flat_map(colors).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The distance between two colours in RGB.
+    fn rgb_distance(a: Color32, b: Color32) -> f32 {
+        let d = |x: u8, y: u8| f32::from(x) - f32::from(y);
+        (d(a.r(), b.r()).powi(2) + d(a.g(), b.g()).powi(2) + d(a.b(), b.b()).powi(2)).sqrt()
+    }
+
     #[test]
-    fn the_harmonics_sum_follows_the_square_wave() {
-        // At a north block's centre the wave is 1 and the sum of 1, 3, 5 is near it; its
-        // fundamental alone is 4/π sin(0.4π) = 1.211.
-        let fill = 0.8f32;
-        let sum: f32 = [1.0f32, 3.0, 5.0]
+    fn the_diagrams_paint_in_no_term_colour() {
+        // Decision M43-3: a term colour on screen is read against the open equation's key, and
+        // a diagram sits under that equation, above its term list.
+        let rect = Rect::from_min_size(pos2(40.0, 30.0), DIAGRAM_SIZE);
+        for kind in KINDS {
+            let (shapes, _) = shapes_of(kind, rect);
+            for color in shapes.iter().flat_map(colors) {
+                assert!(
+                    !TERM_PALETTE.contains(&color),
+                    "{kind:?} paints the term colour {color:?}"
+                );
+            }
+        }
+        // Nor one a reader could take for a term colour: the accents stand well apart.
+        let pens = Pens::of(&egui::Visuals::dark());
+        for accent in [pens.first, pens.second] {
+            for term in TERM_PALETTE {
+                let d = rgb_distance(accent, term);
+                assert!(d >= 80.0, "{accent:?} is {d} from the term colour {term:?}");
+            }
+        }
+    }
+
+    /// The points of the one path stroked in `color`.
+    fn path_in(shapes: &[Shape], color: Color32) -> &[Pos2] {
+        let paths: Vec<&[Pos2]> = shapes
             .iter()
-            .map(|n| 4.0 / (n * PI) * (n * PI * fill / 2.0).sin())
-            .sum();
-        assert!((sum - 1.0).abs() < 0.25, "{sum}");
-        let first = 4.0 / PI * (PI * fill / 2.0).sin();
-        assert!((first - 1.211).abs() < 1e-3, "{first}");
+            .filter_map(|s| match s {
+                Shape::Path(p)
+                    if matches!(p.stroke.color, egui::epaint::ColorMode::Solid(c) if c == color) =>
+                {
+                    Some(&p.points[..])
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(paths.len(), 1, "paths stroked in {color:?}");
+        paths[0]
+    }
+
+    /// The points of the diagram's one path (its curve).
+    fn only_path(shapes: &[Shape]) -> &[Pos2] {
+        let paths: Vec<&[Pos2]> = shapes
+            .iter()
+            .filter_map(|s| match s {
+                Shape::Path(p) => Some(&p.points[..]),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(paths.len(), 1, "one curve");
+        paths[0]
+    }
+
+    /// The centre of the diagram's one marked point.
+    fn only_marker(shapes: &[Shape]) -> Pos2 {
+        let marks: Vec<Pos2> = shapes
+            .iter()
+            .filter_map(|s| match s {
+                Shape::Circle(c) => Some(c.center),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(marks.len(), 1, "one marked point");
+        marks[0]
+    }
+
+    /// The y of every horizontal line segment (an axis, a dashed level's dashes).
+    fn horizontal_lines(shapes: &[Shape]) -> Vec<f32> {
+        shapes
+            .iter()
+            .filter_map(|s| match s {
+                Shape::LineSegment { points: [a, b], .. } if a.y == b.y => Some(a.y),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The colour of the label `text`.
+    fn label_color(shapes: &[Shape], text: &str) -> Color32 {
+        shapes
+            .iter()
+            .find_map(|s| match s {
+                Shape::Text(t) if t.galley.text() == text => Some(t.fallback_color),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no label {text:?}"))
+    }
+
+    /// The y of `curve` at `x`, linear between its samples.
+    fn y_at(curve: &[Pos2], x: f32) -> f32 {
+        let i = curve
+            .windows(2)
+            .position(|w| w[0].x <= x && x <= w[1].x)
+            .unwrap_or_else(|| panic!("{x} is outside the curve"));
+        let (a, b) = (curve[i], curve[i + 1]);
+        a.y + (b.y - a.y) * (x - a.x) / (b.x - a.x)
+    }
+
+    #[test]
+    fn the_square_wave_paints_the_sum_of_its_harmonics_at_its_fill() {
+        // Harmonic n of a square wave of fill λ has the amplitude 4/(nπ) sin(nπλ/2) (the
+        // harmonics note; engine::model::harmonic_amplitude), +1 over a north block's centre.
+        let amp = |n: f32| 4.0 / (n * PI) * (n * PI * FILL / 2.0).sin();
+        let (a1, a3, a5) = (amp(1.0), amp(3.0), amp(5.0));
+        // The curve labelled "1 + 3 + 5" sums three harmonics a reader can see: no fill that
+        // zeroes one (0.4 or 0.8 the fifth, 2/3 the third).
+        assert!(a3.abs() >= 0.2, "the third: {a3}");
+        assert!(a5.abs() >= 0.05, "the fifth: {a5}");
+        let rect = Rect::from_min_size(pos2(40.0, 30.0), DIAGRAM_SIZE);
+        let (shapes, _) = shapes_of(Diagram::SquareWaveHarmonics, rect);
+        // Each curve found by its label's colour, as a reader matches them.
+        let wave_label = format!("blocks and gaps (fill {FILL})");
+        let wave = path_in(&shapes, label_color(&shapes, &wave_label));
+        let fundamental = path_in(&shapes, label_color(&shapes, "n = 1"));
+        let sum = path_in(&shapes, label_color(&shapes, "1 + 3 + 5"));
+        assert_eq!((wave.len(), fundamental.len()), (sum.len(), sum.len()));
+        // The painted wave sets the scale: its gaps are 0, its north blocks +1 (the topmost).
+        let zero = wave[0].y;
+        let plateau = wave.iter().map(|p| p.y).fold(f32::INFINITY, f32::min);
+        let value = |p: Pos2| (zero - p.y) / (zero - plateau);
+        let levels: Vec<f32> = wave.iter().map(|&p| value(p)).collect();
+        for level in &levels {
+            assert!(
+                [-1.0, 0.0, 1.0].iter().any(|l| (level - l).abs() < 1e-4),
+                "{level}"
+            );
+        }
+        // The blocks fill the fraction the label says (60 samples a pole).
+        let filled = levels.iter().filter(|l| l.abs() > 0.5).count() as f32 / levels.len() as f32;
+        assert!((filled - FILL).abs() < 0.03, "{filled}");
+        // Each block's and each gap's centre: the middle of a run of one level.
+        let mut runs: Vec<(f32, usize)> = Vec::new();
+        let mut start = 0;
+        for i in 1..=levels.len() {
+            if i == levels.len() || (levels[i] - levels[start]).abs() > 0.5 {
+                if start > 0 && i < levels.len() {
+                    runs.push((levels[start].round(), (start + i - 1) / 2));
+                }
+                start = i;
+            }
+        }
+        let blocks = runs.iter().filter(|(l, _)| *l != 0.0).count();
+        assert_eq!(blocks, 4, "two pole pairs: {runs:?}");
+        for &(level, i) in &runs {
+            // ±(a1 + a3 + a5) over a north or a south block's centre; 0 between blocks, where
+            // every odd harmonic crosses zero.
+            let (want_sum, want_first) = (level * (a1 + a3 + a5), level * a1);
+            let (got_sum, got_first) = (value(sum[i]), value(fundamental[i]));
+            assert!(
+                (got_sum - want_sum).abs() < 1e-3,
+                "sum at {i}: {got_sum} != {want_sum}"
+            );
+            assert!(
+                (got_first - want_first).abs() < 1e-3,
+                "fundamental at {i}: {got_first} != {want_first}"
+            );
+            if level != 0.0 {
+                // Near the wave's plateau, and visibly off the fundamental alone.
+                assert!((got_sum - level).abs() < 0.25, "{got_sum}");
+                assert!((got_sum - got_first).abs() >= 0.2, "{got_sum} {got_first}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_heating_curve_marks_tau_at_63_percent_of_the_steady_rise() {
+        let rect = Rect::from_min_size(pos2(40.0, 30.0), DIAGRAM_SIZE);
+        let (shapes, _) = shapes_of(Diagram::HeatingCurve, rect);
+        let curve = only_path(&shapes);
+        // The rise starts at the time axis's origin (t = 0, no rise).
+        let (left, right, bottom) = (curve[0].x, curve[curve.len() - 1].x, curve[0].y);
+        let lines = horizontal_lines(&shapes);
+        assert!(lines.contains(&bottom), "the time axis: {lines:?}");
+        // The steady temperature: the dashed level above the axis.
+        let steady = lines
+            .iter()
+            .copied()
+            .find(|y| *y < bottom - 1.0)
+            .expect("the steady temperature");
+        let rise = |y: f32| (bottom - y) / (bottom - steady);
+        let tau = only_marker(&shapes);
+        assert!(
+            ((tau.x - left) / (right - left) - 0.2).abs() < 1e-4,
+            "{tau:?}"
+        );
+        let e = std::f32::consts::E;
+        assert!(
+            (rise(tau.y) - (1.0 - 1.0 / e)).abs() < 1e-4,
+            "{}",
+            rise(tau.y)
+        );
+        // On the curve, which then reaches 95 % at 3τ (the note) and nears the steady level.
+        assert!((y_at(curve, tau.x) - tau.y).abs() < 0.05);
+        let three_tau = left + 3.0 * (tau.x - left);
+        let at_three = rise(y_at(curve, three_tau));
+        assert!((at_three - (1.0 - e.powi(-3))).abs() < 1e-3, "{at_three}");
+        assert!(rise(curve[curve.len() - 1].y) > 0.99);
+    }
+
+    #[test]
+    fn the_demag_knee_sits_at_0_9_hcj_on_the_intrinsic_curve() {
+        let rect = Rect::from_min_size(pos2(40.0, 30.0), DIAGRAM_SIZE);
+        let (shapes, _) = shapes_of(Diagram::DemagKnee, rect);
+        let curve = only_path(&shapes);
+        // H runs from −Hcj at the left to 0 at the right, along the H axis (the one horizontal
+        // line: the load lines slope).
+        let (left, right) = (curve[0].x, curve[curve.len() - 1].x);
+        let [axis] = horizontal_lines(&shapes)[..] else {
+            panic!("one H axis")
+        };
+        let j = |y: f32| axis - y;
+        // Hcj is where J reaches zero.
+        assert!(j(curve[0].y).abs() < 1e-3, "{}", j(curve[0].y));
+        // The knee: H_k = 0.9 Hcj (the demagnetization note), on the curve.
+        let knee = only_marker(&shapes);
+        let h = |x: f32| -(right - x) / (right - left);
+        assert!((h(knee.x) + 0.9).abs() < 1e-4, "{}", h(knee.x));
+        assert!((y_at(curve, knee.x) - knee.y).abs() < 0.05);
+        // Flat near Br from the knee to H = 0; falling steeply past it toward −Hcj.
+        let br = j(curve[curve.len() - 1].y);
+        assert!(j(knee.y) >= 0.9 * br, "{} {br}", j(knee.y));
+        let midway = j(y_at(curve, (left + knee.x) / 2.0));
+        assert!(midway <= 0.8 * j(knee.y), "{midway}");
+    }
+
+    #[test]
+    fn the_torque_peak_leaves_90_degrees_for_a_strong_third_harmonic() {
+        // T = sin φ + k sin 3φ: while k ≤ 1/9 the peak is at 90°; above it 90° is a dip and the
+        // peaks sit at cos²φ = (9k − 1)/(12k), so the calculator searches the summed curve for
+        // its highest point (correction E7, the pull-out angle note).
+        let k = TORQUE_THIRD;
+        assert!(k > 1.0 / 9.0, "{k}");
+        let rect = Rect::from_min_size(pos2(40.0, 30.0), DIAGRAM_SIZE);
+        let (shapes, _) = shapes_of(Diagram::TorqueAngle, rect);
+        let curve = only_path(&shapes);
+        let (left, right) = (curve[0].x, curve[curve.len() - 1].x);
+        let degrees = |x: f32| (x - left) / (right - left) * 180.0;
+        let peak = only_marker(&shapes);
+        // The marker is the curve's highest point (the least y).
+        let top = curve.iter().map(|p| p.y).fold(f32::INFINITY, f32::min);
+        assert!((peak.y - top).abs() < 1e-3, "{peak:?} {top}");
+        let want = ((9.0 * k - 1.0) / (12.0 * k)).sqrt().acos().to_degrees();
+        let got = degrees(peak.x);
+        assert!(
+            (got - want).abs() < 1.0 || (got - (180.0 - want)).abs() < 1.0,
+            "peak at {got}°, want {want}° or {}°",
+            180.0 - want
+        );
+        assert!((got - 90.0).abs() > 15.0, "{got}");
+        // The dip at 90°: less torque (a lower point) than the peak.
+        let middle = left + (right - left) / 2.0;
+        assert!(
+            y_at(curve, middle) > peak.y + 0.5,
+            "{}",
+            y_at(curve, middle)
+        );
     }
 }
