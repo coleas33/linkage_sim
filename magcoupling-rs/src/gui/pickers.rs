@@ -330,7 +330,9 @@ fn grade_picker(ui: &mut egui::Ui, current: &str) -> Option<RowEdit> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gui::inputs::InputCatalogue;
+    use crate::engine::meta::FieldType;
+    use crate::gui::inputs::{InputCatalogue, text_hint};
+    use crate::gui::test_support::{SCREEN, drawn_texts, sized_frame};
 
     #[test]
     fn the_material_pickers_are_the_three_selectors_and_their_library_choices() {
@@ -384,6 +386,106 @@ mod tests {
         let y30 = grade("Y30").unwrap();
         assert!(grade_properties(y30).contains("demagnetization risk is at the cold end"));
         assert!(grade_label(grade("N42SH").unwrap()).starts_with("N42SH: Br 1.300 T"));
+    }
+
+    #[test]
+    fn a_part_reads_with_e19_s_grade_and_rating() {
+        // E19: M5045's stored grade is N50M, the vendor's specification grid says N50.
+        let m5045 = library::lookup("M5045").unwrap();
+        assert_eq!(m5045.grade, "N50M", "the workbook row");
+        let label = part_label(m5045);
+        assert!(label.ends_with(", N50"), "{label}");
+        assert!(part_properties(m5045).starts_with(&label));
+        // E19: the SuperMagnetMan arcs are rated 60 °C where the rows store 80 and 100.
+        for (part, stored) in [("M5044", 80.0), ("M5045", 100.0)] {
+            let spec = library::lookup(part).unwrap();
+            assert_eq!(spec.tmax_C, stored, "{part}: the workbook row");
+            let props = part_properties(spec);
+            assert!(
+                props.contains("maximum operating temperature: 60.00 °C"),
+                "{props}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_part_and_grade_pickers_are_text_inputs_of_the_catalogue() {
+        let catalogue = InputCatalogue::get();
+        for path in PART_PATHS.iter().chain(&GRADE_PATHS) {
+            let entry = catalogue
+                .entry(path)
+                .unwrap_or_else(|| panic!("{path} is no input"));
+            assert_eq!(entry.meta.ty, FieldType::Text, "{path}");
+        }
+        // The same four inputs the row's hint describes: no text input lacks its picker, and
+        // none has a picker it does not need.
+        for entry in catalogue.all() {
+            let picked = PART_PATHS.contains(&entry.path.as_str())
+                || GRADE_PATHS.contains(&entry.path.as_str());
+            assert_eq!(
+                text_hint(&entry.path, "").is_some(),
+                picked,
+                "{}",
+                entry.path
+            );
+        }
+        assert_ne!(PART_PATHS[0], PART_PATHS[1]);
+        assert_ne!(GRADE_PATHS[0], GRADE_PATHS[1]);
+    }
+
+    /// The texts the picker of `path` draws for `text` in an idle frame, which asks for no edit.
+    fn drawn_picker(path: &str, text: &str) -> Vec<String> {
+        let ctx = egui::Context::default();
+        let value = Value::Text(text.to_owned());
+        let mut edit = None;
+        let output = sized_frame(&ctx, SCREEN, Vec::new(), |ui| {
+            edit = picker_ui(ui, path, &value);
+        });
+        assert_eq!(edit, None, "{path} {text:?}: an idle frame");
+        drawn_texts(&output)
+    }
+
+    #[test]
+    fn a_part_or_grade_the_tables_lack_is_shown_as_typed() {
+        // A design file's names: a part that is no library part, a grade that is no grade.
+        for path in PART_PATHS {
+            assert_eq!(
+                drawn_picker(path, "ZZ9"),
+                [PICK_PART, "ZZ9 (not a library part: manual dimensions)"],
+                "{path}"
+            );
+            assert_eq!(drawn_picker(path, ""), [PICK_PART, CUSTOM], "{path}");
+            let spec = library::lookup("B842SH").unwrap();
+            assert_eq!(
+                drawn_picker(path, "B842SH"),
+                [
+                    PICK_PART.to_owned(),
+                    part_label(spec),
+                    part_properties(spec)
+                ],
+                "{path}"
+            );
+        }
+        for path in GRADE_PATHS {
+            assert_eq!(
+                drawn_picker(path, "N99"),
+                [PICK_GRADE, "N99 (not in the grade table)"],
+                "{path}"
+            );
+            assert_eq!(drawn_picker(path, ""), [PICK_GRADE, BLANK_GRADE], "{path}");
+            let y30 = grade("Y30").unwrap();
+            assert_eq!(
+                drawn_picker(path, "Y30"),
+                [
+                    PICK_GRADE.to_owned(),
+                    grade_label(y30),
+                    grade_properties(y30)
+                ],
+                "{path}"
+            );
+        }
+        // Every other input has no picker: nothing is drawn.
+        assert!(drawn_picker("coupling.npole", "").is_empty());
     }
 
     #[test]

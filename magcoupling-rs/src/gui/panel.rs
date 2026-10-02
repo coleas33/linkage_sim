@@ -3069,6 +3069,81 @@ mod tests {
     }
 
     #[test]
+    fn the_outer_ring_s_part_picker_sets_the_outer_part_only() {
+        use crate::engine::library::lookup;
+        use crate::gui::pickers::{CUSTOM, part_label};
+        let mut harness = Harness::new();
+        // Both rings read B842SH: the Key design draws the inner ring's picker, then the
+        // outer ring's.
+        let b842sh = part_label(lookup("B842SH").unwrap());
+        let output = harness.frame(Vec::new());
+        let pickers = text_rects(&output, &b842sh);
+        assert_eq!(pickers.len(), 2, "one picker per ring");
+        assert!(pickers[0].bottom() <= pickers[1].top(), "{pickers:?}");
+        harness.click(pickers[1].center());
+        harness.click_text(CUSTOM);
+        let magnets = &harness.panel.inputs().coupling.magnets;
+        assert_eq!(magnets.part_outer, "");
+        assert_eq!(magnets.part_inner, "B842SH");
+        // Back to a library part, from the outer ring's picker (the inner ring's is not blank,
+        // so the blank choice is drawn once).
+        harness.click_text(CUSTOM);
+        harness.click_text(&part_label(lookup("B861").unwrap()));
+        let magnets = &harness.panel.inputs().coupling.magnets;
+        assert_eq!(magnets.part_outer, "B861");
+        assert_eq!(magnets.part_inner, "B842SH");
+        let mut expected = DesignInputs::default();
+        expected.coupling.magnets.part_outer = "B861".to_owned();
+        assert_eq!(harness.panel.results(), &compute_all(&expected));
+    }
+
+    #[test]
+    fn the_grade_pickers_set_a_grade_by_its_id_or_none_for_either_ring() {
+        use crate::engine::grades::{GRADES, grade};
+        use crate::gui::pickers::{BLANK_GRADE, grade_label};
+        // A grade whose id is not its display name: the input holds the id.
+        let by_id = GRADES
+            .iter()
+            .find(|g| g.id != g.name)
+            .expect("a grade named other than its id");
+        let other = GRADES
+            .iter()
+            .find(|g| g.id != by_id.id && g.id != "Y30")
+            .unwrap();
+        let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
+        // The drop-down scrolls past 200 points; its 17 grades all in view, the one picked
+        // among them (the named grades come last) is drawn.
+        harness
+            .ctx
+            .style_mut(|style| style.spacing.combo_height = 2000.0);
+        // The outer ring starts on a grade of its own, so the blank choice is drawn once.
+        harness.panel.inputs.coupling.magnets.grade_outer = "Y30".to_owned();
+        harness.click_text("Coupling");
+        for _ in 0..10 {
+            harness.frame(Vec::new());
+        }
+        let magnets = |harness: &Harness| harness.panel.inputs().coupling.magnets.clone();
+        // The inner ring's picker: a grade, then back to blank.
+        harness.click_text(BLANK_GRADE);
+        harness.click_text(&grade_label(by_id));
+        assert_eq!(magnets(&harness).grade_inner, by_id.id);
+        assert_eq!(magnets(&harness).grade_outer, "Y30");
+        harness.click_text(&grade_label(by_id));
+        harness.click_text(BLANK_GRADE);
+        assert_eq!(magnets(&harness).grade_inner, "");
+        assert_eq!(magnets(&harness).grade_outer, "Y30");
+        // The outer ring's picker, from its own grade to another.
+        harness.click_text(&grade_label(grade("Y30").unwrap()));
+        harness.click_text(&grade_label(other));
+        assert_eq!(magnets(&harness).grade_outer, other.id);
+        assert_eq!(magnets(&harness).grade_inner, "");
+        let mut expected = DesignInputs::default();
+        expected.coupling.magnets.grade_outer = other.id.to_owned();
+        assert_eq!(harness.panel.inputs(), &expected);
+        assert_eq!(harness.panel.results(), &compute_all(&expected));
+    }
+
+    #[test]
     fn a_material_choice_sums_up_its_properties_and_fires_its_warnings() {
         use crate::gui::dashboard::WARNINGS_HEADING;
         use crate::gui::pickers::{material_of, material_summary};
