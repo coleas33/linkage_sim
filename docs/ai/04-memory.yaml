@@ -7,6 +7,7 @@ active_issues:
   - "Payload weights Track 2: before merge the user runs the hands-on checklist at the end of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md (its section 0 is the gate and gui-smoke)."
 
 open_questions:
+  - "NEXT (user request 2026-10-02): sort the magcoupling GUI inputs and outputs more intelligently. Today inputs follow the workbook package groups (coupling, metal, calibration, materials, temperature, clamps; gui/inputs.rs SECTION_LABELS) with the Key design group on top, and the results table follows engine order with a text search. Candidate approaches to plan: (1) inputs grouped by design workflow / physical subsystem (magnets and rings, gap and clearances, housing and retainers, shaft and clamps, materials, operating conditions, thermal), with Advanced/workbook-only rows collapsed; (2) results grouped by the A-3 chains (torque, temperature, demagnetization, slip heating, clamps, geometry) with the headline first; (3) a failing-checks-first filter and verdict badges in the table; (4) select an input to see the results it drives (registry used_by / downstream) and vice versa; (5) a filter box on the inputs side like the results search. Keep the workbook grouping available as an alternate view (schema and share links unchanged)."
   - |
     Reaction-force validation reference choice: which of options A
     (closed-form FBD), B (internal cross-checks), C (external tool),
