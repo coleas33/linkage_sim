@@ -167,8 +167,8 @@ gui_submodules:
 
   other_top_level_gui:
     - mod.rs (LinkageApp + update loop orchestration; window_title, send_title (BL-037); handle_keyboard_shortcuts; handle_delete_shortcut; draw_place_mass_field)
-    - menu_bar.rs (File/Edit/Help/View/Image/Tools menus + sample gallery)
-    - "calculator_window.rs (Tools -> Magnetic coupling, M5: CalculatorWindow holds the magcoupling panel, created on the first opening and kept; show draws the egui::Window (skipped on a screen without room for its frame), moves the keyboard by the last press (the window's layer and its resize band give it, a Foreground layer leaves it, anything else takes it), removes the key events but egui's zoom keys (UI_ZOOM_KEYS) while it has it and does the panel's requests (export::download, DesignPicker over rfd); TITLE, TOOL_PARAM, TOOL_MAGCOUPLING, magcoupling_share_base)"
+    - menu_bar.rs (File/Edit/Help/View/Image/Tools menus + sample gallery; hands the calculator window the menu bar's bottom)
+    - "calculator_window.rs (Tools -> Magnetic coupling, M5: CalculatorWindow holds the magcoupling panel, created on the first opening and kept; show draws the egui::Window (kept whole below the menu bar, whose bottom draw_menu_bar hands set_menu_bar_bottom, its contents capped at that area less window_chrome; skipped on a screen without room for its frame and title bar), moves the keyboard by the last press (the window's layer and its resize band give it, a popup layer (Foreground, Tooltip, Debug) leaves it, anything else takes it), removes the key events but egui's zoom keys (UI_ZOOM_KEYS) while it has it and does the panel's requests (export::download, DesignPicker over rfd); TITLE, TOOL_PARAM, TOOL_MAGCOUPLING, magcoupling_share_base)"
     - theme.rs (CAD dark visuals, Nathan Mode grayscale)
     - input_panel.rs
     - plot_panel/ (split module)
@@ -178,7 +178,7 @@ gui_submodules:
     - tutorial.rs
     - undo.rs
     - dxf_import.rs
-    - test_support.rs (#[cfg(test)] helpers shared by GUI module tests, e.g. sorted_link_ids, set_actuator_stored_force, input events primary_button, primary_button_with, key_press, key_tap, typed, click_events, the headless screen NATIVE_SCREEN and screen_input, the headless frame central_panel_frame, painted-output inspection drawn_texts, drew_text, text_rect, drawn_line_colors; the robot-lift fixture swept_lift with sample_at and pose_at; the magnetic coupling calculator's design fixture magcoupling_gap_design; extend it instead of re-implementing fixtures per module)
+    - test_support.rs (#[cfg(test)] helpers shared by GUI module tests, e.g. sorted_link_ids, set_actuator_stored_force, input events primary_button, primary_button_with, key_press, key_tap, typed, click_events, drag_events, the headless screen NATIVE_SCREEN and screen_input, the headless frame central_panel_frame, painted-output inspection drawn_texts, drew_text, text_rect, text_clip_rect, drawn_line_colors; the robot-lift fixture swept_lift with sample_at and pose_at; the magnetic coupling calculator's design fixture magcoupling_gap_design; extend it instead of re-implementing fixtures per module)
 
 entry_points:
   native_bin: src/bin/linkage_gui.rs (uses native feature)

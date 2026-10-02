@@ -80,7 +80,7 @@ Production deployments are automated via the GitHub Actions workflow at `.github
 
 1. Check out the repo.
 2. Install the stable Rust toolchain with the `wasm32-unknown-unknown` target.
-3. Restore the Cargo cache (keyed on `Cargo.lock`).
+3. Restore the Cargo cache (keyed on both `Cargo.lock` files, `linkage-sim-rs` and `magcoupling-rs`).
 4. Install `wasm-bindgen-cli@0.2.114`.
 5. Run `scripts/build_web.sh`: both bundles, each piped through the workbook-parity guard.
 6. Install the Vercel CLI.

@@ -67,6 +67,18 @@ pub(crate) fn click_events(at: egui::Pos2) -> [Vec<egui::Event>; 3] {
     [vec![egui::Event::PointerMoved(at)], vec![primary_button(at, true)], vec![primary_button(at, false)]]
 }
 
+/// A drag from `from` to `to` as the input of `steps + 3` frames: the pointer
+/// moved to `from`, the press, the pointer moved to `to` in `steps` equal
+/// steps, the release there.
+pub(crate) fn drag_events(from: egui::Pos2, to: egui::Pos2, steps: usize) -> Vec<Vec<egui::Event>> {
+    let moves = (1..=steps).map(|step| vec![egui::Event::PointerMoved(from.lerp(to, step as f32 / steps as f32))]);
+    [vec![egui::Event::PointerMoved(from)], vec![primary_button(from, true)]]
+        .into_iter()
+        .chain(moves)
+        .chain([vec![primary_button(to, false)]])
+        .collect()
+}
+
 /// Text typed into the focused widget.
 pub(crate) fn typed(text: &str) -> egui::Event {
     egui::Event::Text(text.to_string())
@@ -138,6 +150,19 @@ pub(crate) fn text_rect(output: &egui::FullOutput, needle: &str) -> Option<egui:
         }
     });
     found
+}
+
+/// The clip rect egui painted the first drawn text equal to `needle` with:
+/// what lies outside it is not shown (an area clips to its constrain rect).
+pub(crate) fn text_clip_rect(output: &egui::FullOutput, needle: &str) -> Option<egui::Rect> {
+    fn has_text(shape: &egui::Shape, needle: &str) -> bool {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().any(|s| has_text(s, needle)),
+            egui::Shape::Text(text) => text.galley.text() == needle,
+            _ => false,
+        }
+    }
+    output.shapes.iter().find(|clipped| has_text(&clipped.shape, needle)).map(|clipped| clipped.clip_rect)
 }
 
 /// The stroke colour of every line segment egui drew in a frame.

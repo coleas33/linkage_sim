@@ -190,11 +190,11 @@ The full solver port (Phases 1-4: kinematics, statics, inverse dynamics, forward
 **Run in browser (WASM):**
 ```bash
 cd linkage-sim-rs
-./scripts/build_web.sh          # Build WASM + JS bindings
+./scripts/build_web.sh          # Build both bundles (the app and /magcoupling/) through the workbook-parity guard
 ./scripts/serve_web.sh          # Serve at http://localhost:8080
 ```
-Requires: `rustup target add wasm32-unknown-unknown` and `cargo install wasm-bindgen-cli`.
-Note: file dialogs, PNG/SVG/GIF/DXF export, autosave, and HTML reports are native-only. All analysis, editing, and plotting features work in the browser.
+Requires: `rustup target add wasm32-unknown-unknown` and `cargo install wasm-bindgen-cli@0.2.114` (the version in both `Cargo.lock` files and in CI).
+Note: file dialogs (except the magnetic coupling window's Load design, which opens the browser's file chooser), PNG/SVG/GIF/DXF export, autosave, and HTML reports are native-only. All analysis, editing, and plotting features work in the browser.
 
 **Live deployment:** Pushes to `main` auto-deploy to [linkage.colesorkness.com](https://linkage.colesorkness.com) via GitHub Actions + Vercel. See `.github/workflows/deploy-web.yml` for the CI pipeline.
 

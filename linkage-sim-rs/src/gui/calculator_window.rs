@@ -6,12 +6,17 @@
 //! equation registry is built then, not at the linkage app's start-up) and kept, open or closed,
 //! until the app quits. Nothing here reads or writes the linkage model (decision M5-3).
 //!
+//! Place (decision M5-2): the window, frame included, keeps to the screen below the linkage app's
+//! menu bar, so it never covers the Tools menu that toggles it
+//! ([`CalculatorWindow::set_menu_bar_bottom`]).
+//!
 //! Keyboard (decision M5-5): the window has the keyboard from its opening or a press on it (or on
 //! the band just outside its frame where egui lets the user grab its edge to resize it) until a
 //! press on the linkage app: its panels, its canvas, its menu bar's buttons (File, Edit, View,
-//! Image, Tools: a Background panel) or another window. A press on an open menu's items or a
-//! drop-down list (a Foreground layer: the linkage app's menus and the calculator's drop-downs
-//! alike) leaves the keyboard where it is. While the window has the keyboard, the panel acts on
+//! Image, Tools: a Background panel) or another window. A press on a popup (an open menu's items,
+//! a drop-down list or a tooltip: egui's Foreground and Tooltip layers, and its Debug layer; the
+//! linkage app's menus and the calculator's drop-downs alike) leaves the keyboard where it is.
+//! While the window has the keyboard, the panel acts on
 //! Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y (`MagcouplingPanel::set_keyboard_shortcuts`) and, once the panel
 //! has drawn, [`CalculatorWindow::show`] takes the frame's key events out but egui's own zoom keys
 //! (`UI_ZOOM_KEYS`), so no linkage shortcut or canvas key (undo, save, new, delete, the arrow nudge,
@@ -112,6 +117,9 @@ pub struct CalculatorWindow {
     /// The address the panel's share links point at, applied when the panel is created.
     share_base: Option<String>,
     picker: DesignPicker,
+    /// The bottom of the linkage app's menu bar [points], which the window keeps below
+    /// ([`CalculatorWindow::set_menu_bar_bottom`]).
+    menu_bar_bottom: f32,
 }
 
 impl CalculatorWindow {
@@ -150,6 +158,16 @@ impl CalculatorWindow {
         self.share_base = Some(base);
     }
 
+    /// Keeps the window below `bottom` [points], the bottom of the linkage app's menu bar, so it
+    /// never covers the Tools menu that toggles it. `menu_bar::draw_menu_bar` hands it over every
+    /// frame after the window has shown, so the window keeps below the last frame's menu bar.
+    /// Before the menu bar's first frame it keeps to the whole screen: on a screen too short for
+    /// it, a window opened at start-up shows cut off at the menu bar for one frame (its second;
+    /// egui does not paint a window's first), then whole below it.
+    pub fn set_menu_bar_bottom(&mut self, bottom: f32) {
+        self.menu_bar_bottom = bottom;
+    }
+
     /// Draws the window when it is open and does the panel's requests; while the window has the
     /// keyboard, takes this frame's key events out once the panel has drawn. Call it before
     /// anything else in the frame reads the keyboard (module docs).
@@ -165,17 +183,26 @@ impl CalculatorWindow {
             open_picked_file(panel, picked);
         }
         panel.set_keyboard_shortcuts(self.keyboard);
-        // egui 0.32 keeps a window's contents within its constrain rect but not its frame: on a
-        // screen smaller than the window the frame's margins (14 points) hang off the right and
-        // bottom edges. Constrain the window to the screen less those margins.
+        // Where the window may go: the screen below the linkage app's menu bar and the band where
+        // egui grabs the window's edge, so it never covers the Tools menu that toggles it, nor
+        // takes a press on it for a grab of its edge.
         let screen = ctx.screen_rect();
-        let margins = egui::Frame::window(&ctx.style()).total_margin().sum();
-        let room = screen.size() - margins;
-        // A screen with no room for the frame (on the web a hidden canvas reports 0 x 0; the native
-        // backend never sends an empty screen): skip the window this frame. egui would otherwise
-        // keep the size it squeezed the window to, and show it back on a real screen at its
-        // smallest, at the screen's corner.
-        if room.x <= 0.0 || room.y <= 0.0 {
+        let style = ctx.style();
+        let top = screen
+            .top()
+            .max(self.menu_bar_bottom + style.interaction.resize_grab_radius_side);
+        let area = egui::Rect::from_min_max(egui::pos2(screen.left(), top), screen.max);
+        // egui 0.32 caps a window's contents at its constrain rect less its title bar, not less
+        // its frame's margins (14 points), so on a screen smaller than the window the window is
+        // larger than that rect and sticks out of it, where egui clips it and takes no press (an
+        // area paints and interacts within its constrain rect). Cap the contents at the area
+        // less all the window adds around them, so the whole window fits in the area.
+        let max_contents = area.size() - window_chrome(ctx, &style);
+        // A screen with no room for the window's frame and title bar (on the web a hidden canvas
+        // reports 0 x 0; the native backend never sends an empty screen): skip the window this
+        // frame. egui would otherwise keep the size it squeezed the window to, and show it back on
+        // a real screen at its smallest, at the screen's corner.
+        if max_contents.x <= 0.0 || max_contents.y <= 0.0 {
             return;
         }
         let mut open = true;
@@ -184,7 +211,8 @@ impl CalculatorWindow {
             .open(&mut open)
             .default_pos(DEFAULT_POS)
             .default_size(DEFAULT_SIZE)
-            .constrain_to(egui::Rect::from_min_size(screen.min, room))
+            .constrain_to(area)
+            .max_size(max_contents)
             .show(ctx, |ui| panel.ui(ui));
         // A collapsed window draws no panel (`inner` is `None`), so it takes no keys either.
         let drawn = shown.is_some_and(|response| response.inner.is_some());
@@ -281,6 +309,21 @@ impl CalculatorWindow {
         let panel = self.panel.as_mut().expect("the window was opened");
         panel.load_design_file(&json).expect("a valid design");
     }
+}
+
+/// What the window adds around its contents [points]: its frame's margins, and its title bar
+/// with the line under it, as egui 0.32's `Window::show` lays them out (the title in
+/// `TextStyle::Heading`, at least the interact height, inside the frame's inner margins). The
+/// small-screen test pins it: there the window fills the screen exactly.
+fn window_chrome(ctx: &egui::Context, style: &egui::Style) -> egui::Vec2 {
+    let frame = egui::Frame::window(style);
+    let title = ctx.fonts(|fonts| {
+        egui::RichText::new(TITLE)
+            .heading()
+            .font_height(fonts, style)
+    });
+    let title_bar = title.max(style.spacing.interact_size.y) + frame.inner_margin.sum().y;
+    frame.total_margin().sum() + egui::vec2(0.0, title_bar + frame.stroke.width)
 }
 
 /// Whether `event` is one of egui's own zoom keys (`UI_ZOOM_KEYS`), matched as egui matches them.
@@ -416,8 +459,8 @@ impl DesignPicker {
 mod tests {
     use super::*;
     use crate::gui::test_support::{
-        NATIVE_SCREEN, click_events, drew_text, key_tap, magcoupling_gap_design, primary_button,
-        screen_input, text_rect,
+        NATIVE_SCREEN, click_events, drag_events, drew_text, key_tap, magcoupling_gap_design,
+        primary_button, screen_input, text_clip_rect, text_rect,
     };
     use magcoupling::gui::results_table::{CSV_FILE_NAME, JSON_FILE_NAME};
     use magcoupling::gui::session::{Design, PUBLIC_BASE_URL, design_to_json};
@@ -469,11 +512,13 @@ mod tests {
         ctx.run(screen_input(Vec::new(), size), |ctx| window.show(ctx))
     }
 
-    /// One frame of the window and then an area of `size` at `at` [points], drawn after the window
-    /// as the linkage app draws its welcome screen and its other windows, with `events`.
+    /// One frame of the window and then an area on the layer `order` of `size` at `at` [points],
+    /// drawn after the window as the linkage app draws its welcome screen and its other windows
+    /// (`Order::Middle`), with `events`.
     fn frame_with_area(
         ctx: &egui::Context,
         window: &mut CalculatorWindow,
+        order: egui::Order,
         at: egui::Pos2,
         size: egui::Vec2,
         events: Vec<egui::Event>,
@@ -481,6 +526,7 @@ mod tests {
         let _ = ctx.run(screen_input(events, NATIVE_SCREEN), |ctx| {
             window.show(ctx);
             egui::Area::new(egui::Id::new("test_area"))
+                .order(order)
                 .fixed_pos(at)
                 .show(ctx, |ui| {
                     ui.allocate_space(size);
@@ -516,6 +562,21 @@ mod tests {
             .expect("the window is shown")
     }
 
+    /// Asserts that the window fills `room` (within egui's rounding) and that egui painted all of
+    /// it in `output` (its title's clip rect, its area's, holds the whole window).
+    fn assert_fills(ctx: &egui::Context, output: &egui::FullOutput, room: egui::Rect, when: &str) {
+        let rect = window_rect(ctx);
+        assert!(
+            (rect.min - room.min).length() < 0.5 && (rect.max - room.max).length() < 0.5,
+            "{when}: the window {rect:?} does not fill {room:?}"
+        );
+        let clip = text_clip_rect(output, TITLE).expect("the title");
+        assert!(
+            clip.contains_rect(rect),
+            "{when}: egui clips the window {rect:?} to {clip:?}"
+        );
+    }
+
     #[test]
     fn the_window_is_closed_until_opened_and_then_shows_the_panel() {
         let ctx = egui::Context::default();
@@ -549,6 +610,7 @@ mod tests {
             frame_with_area(
                 &ctx,
                 &mut window,
+                egui::Order::Middle,
                 welcome_at,
                 egui::vec2(320.0, 240.0),
                 Vec::new(),
@@ -558,23 +620,29 @@ mod tests {
     }
 
     #[test]
-    fn a_small_screen_keeps_the_window_on_it() {
-        // A browser window smaller than the window's starting size (1100 x 700 at 80, 100).
+    fn a_small_screen_keeps_the_whole_window_on_it() {
+        // A browser window smaller than the window's starting size (1100 x 700 at 80, 100): the
+        // window, frame included, fills the screen below the band where egui grabs its top edge
+        // (exactly: this pins `window_chrome`), and egui paints all of it.
         let ctx = egui::Context::default();
         let mut window = CalculatorWindow::default();
         window.set_open(true);
         let size = egui::vec2(800.0, 600.0);
-        let mut output = None;
-        for _ in 0..3 {
-            output = Some(window_frame(&ctx, &mut window, size));
+        let band = ctx.style().interaction.resize_grab_radius_side;
+        let room = egui::Rect::from_min_max(egui::pos2(0.0, band), size.to_pos2());
+        let mut output = window_frame(&ctx, &mut window, size);
+        for _ in 0..2 {
+            output = window_frame(&ctx, &mut window, size);
         }
-        let rect = window_rect(&ctx);
-        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
-        assert!(
-            screen.contains_rect(rect),
-            "{rect:?} is not inside {screen:?}"
-        );
-        assert!(drew_text(&output.expect("three frames"), HEADING));
+        assert_fills(&ctx, &output, room, "opened");
+        assert!(drew_text(&output, HEADING));
+        // Dragged by its title bar past the top left corner.
+        let title = text_rect(&output, TITLE).expect("the title").center();
+        for events in drag_events(title, egui::pos2(-50.0, -50.0), 20) {
+            let _ = ctx.run(screen_input(events, size), |ctx| window.show(ctx));
+        }
+        let output = window_frame(&ctx, &mut window, size);
+        assert_fills(&ctx, &output, room, "dragged to the corner");
     }
 
     #[test]
@@ -696,6 +764,28 @@ mod tests {
     }
 
     #[test]
+    fn a_press_on_a_tooltip_or_egui_s_debug_layer_leaves_the_keyboard_where_it_is() {
+        // Popups beyond the menus and drop-downs (the Foreground layer, the previous test): egui's
+        // Tooltip and Debug layers. A Middle layer (another window) is the positive control.
+        for (order, keeps) in [
+            (egui::Order::Tooltip, true),
+            (egui::Order::Debug, true),
+            (egui::Order::Middle, false),
+        ] {
+            let ctx = egui::Context::default();
+            let (mut window, _) = opened(&ctx);
+            let at = beside_the_window();
+            for events in [Vec::new(), Vec::new()]
+                .into_iter()
+                .chain(click_events(at + egui::vec2(20.0, 20.0)))
+            {
+                frame_with_area(&ctx, &mut window, order, at, egui::vec2(40.0, 40.0), events);
+            }
+            assert_eq!(window.has_keyboard(), keeps, "a press on a {order:?} layer");
+        }
+    }
+
+    #[test]
     fn a_press_on_the_band_where_egui_resizes_the_window_gives_it_the_keyboard() {
         // egui lets the user grab the window's edge from up to 5 points outside its frame and a
         // corner from up to 10 points around it (its Interaction style's grab radii).
@@ -741,6 +831,7 @@ mod tests {
             frame_with_area(
                 &ctx,
                 &mut window,
+                egui::Order::Middle,
                 neighbour_at,
                 egui::vec2(40.0, 40.0),
                 events,

@@ -5,6 +5,29 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-02 — Magcoupling M5: the final review's fix wave (branch magcoupling/m5)
+- The calculator window keeps, frame included, to the screen below the menu bar and the band
+  where egui grabs its edge, so it never covers the Tools menu that toggles it:
+  `draw_menu_bar` hands `CalculatorWindow::set_menu_bar_bottom` the bar's bottom every frame (the
+  window, shown first, uses the last frame's). Before, it was kept to the whole screen less its
+  margins at the bottom right: a drag up (or a tap that jumps the pointer onto its X, which egui
+  applies as a drag) put it over File..Tools, and on a screen shorter than the window (a laptop's
+  browser) it sat over the menu bar from its first frame and its bottom 14 points were cut off:
+  egui caps a window's contents at its constrain rect less the title bar but not the frame, so
+  such a window is larger than the rect, and egui clips (and takes no press on) what sticks out.
+  Now the window is constrained to that area with its contents capped at the area less its
+  chrome (`window_chrome`: the frame's margins and the title bar, as egui lays them out), so it
+  is always whole. Tests: `the_calculator_window_keeps_below_the_menu_bar` (menu_bar; 1400 x 900
+  and 1400 x 650, dragged up, painted whole, Tools clickable down to its lower edge),
+  `a_small_screen_keeps_the_whole_window_on_it` (fills an 800 x 600 screen exactly, pinning
+  `window_chrome`, also after a corner drag), and
+  `a_press_on_a_tooltip_or_egui_s_debug_layer_leaves_the_keyboard_where_it_is` (the popup rule's
+  Tooltip and Debug layers, untested before). Seen in the browser at 1400 x 900 and 1400 x 650.
+- Docs: the popup rule names the Tooltip and Debug layers (02-system, 03-structure, the module
+  docs, the magcoupling README); the README's web build lines (both bundles through the guard,
+  `wasm-bindgen-cli@0.2.114`, the browser's file chooser for Load design); WASM_DEPLOYMENT's cache
+  key (both lock files).
+
 ## 2026-10-02 — Magcoupling M5: the calculator in the linkage app (branch magcoupling/m5)
 - `linkage-sim-rs` depends on `magcoupling-rs` by path with feature `gui` (one egui: 0.32.3 in
   both lock files; gate 11 passes). Tools > Magnetic coupling (`gui/calculator_window.rs`)

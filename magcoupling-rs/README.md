@@ -389,15 +389,18 @@ desktop and on the web:
 - The window is closed at start-up; its first opening creates the panel (the equation registry is
   built then, not at the linkage app's start-up), which keeps its design, undo history and views,
   open or closed, until the app quits. Nothing in it reads or writes the linkage model.
-- The keys go to the part the user pressed last: the window from its opening or a press on it
-  (or on the band just outside its frame where egui resizes it), the linkage app from a press on
-  its panels, its canvas or its menu bar's buttons (a press on an open menu's items or on a
-  drop-down list moves nothing). While the window has them, the panel's Ctrl+Z, Ctrl+Shift+Z and
-  Ctrl+Y are on and the linkage app sees no key event but egui's own zoom keys (natively
+- The window, frame included, keeps to the screen below the linkage app's menu bar, so it never
+  covers the Tools menu that toggles it, also when dragged up or on a screen shorter than the
+  window.
+- The keys go to the part the user pressed last: the window from its opening or a press on it (or
+  on the band just outside its frame where egui resizes it), the linkage app from a press on its
+  panels, its canvas or its menu bar's buttons (a press on a popup moves nothing: an open menu's
+  items, a drop-down list, a tooltip). While the window has them, the panel's Ctrl+Z, Ctrl+Shift+Z
+  and Ctrl+Y are on and the linkage app sees no key event but egui's own zoom keys (natively
   Ctrl+Plus, Ctrl+Minus and Ctrl+0 still zoom the whole UI; on the web the browser zooms the
-  page): not its undo, save, delete, arrow nudge, F or Escape. Otherwise the panel's shortcuts
-  are off (`set_keyboard_shortcuts(false)`) and the keys go to the linkage app. A window
-  collapsed to its title bar draws no panel and takes no keys.
+  page): not its undo, save, delete, arrow nudge, F or Escape. Otherwise the panel's shortcuts are
+  off (`set_keyboard_shortcuts(false)`) and the keys go to the linkage app. A window collapsed to
+  its title bar draws no panel and takes no keys.
 - Known edges (backlog BL-039, BL-040): the keys follow presses, not egui's keyboard focus (after
   Tab moves the focus into the other part, click there); and opened while the linkage app's
   "Recover Unsaved Work?" prompt shows, the window covers it (move or collapse the window).
