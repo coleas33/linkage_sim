@@ -25,7 +25,7 @@ use crate::engine::meta::{NumOrText, ResultSet, Value};
 use crate::gui::dashboard::{Level, hover_text};
 use crate::gui::format::{format_value, with_unit};
 use crate::gui::geometry::{Mm, finite};
-use crate::gui::geometry_view::{DIMENSION, Transform, arrowhead, side_by_side};
+use crate::gui::geometry_view::{DIMENSION, Transform, arrowhead, plated_text, side_by_side};
 use crate::gui::results_table::table_entries;
 use crate::{DesignInputs, DesignResults};
 
@@ -585,6 +585,9 @@ fn fill_color(fill: Fill, visuals: &egui::Visuals) -> Color32 {
 /// stroke is wide, so the edges that cutting a mark to it adds lie off the screen.
 const CLIP_MARGIN: f32 = 16.0;
 
+/// The largest size of a view's title [points]; the band above the views holds one row of it.
+const TITLE_POINTS: f32 = 14.0;
+
 /// The part of the drawing plane [mm] the painter shows through `t` (the corners `lo` and `hi`):
 /// its clip rectangle, widened by [`CLIP_MARGIN`]. `t.scale` is positive and finite
 /// ([`side_by_side`] returns no transform otherwise).
@@ -599,8 +602,9 @@ fn visible_mm(clip: egui::Rect, t: Transform) -> (Mm, Mm) {
     )
 }
 
-/// Paints one view with `t`. The texts scale with the drawing (drawing.py's 9-point text is
-/// about 0.9 mm on its figure), between 8 and 12 points, so they do not crowd a small drawing.
+/// Paints one view with `t`, its title from `title_top` down (the band above the views). The
+/// texts scale with the drawing (drawing.py's 9-point text is about 0.9 mm on its figure),
+/// between 8 and 12 points, so they do not crowd a small drawing.
 ///
 /// Areas and centre lines are cut to [`visible_mm`] before they are converted to points and
 /// dashed: a design file or share link can hold any finite slit, and a struct written by hand
@@ -608,7 +612,13 @@ fn visible_mm(clip: egui::Rect, t: Transform) -> (Mm, Mm) {
 /// f32). Dashed as it stands, such an outline never ends (`Shape::dashed_line` walks it with an
 /// f32 position that stops advancing); cut to the part the painter shows, it costs what the
 /// region's size allows, and the part it shows is the same.
-fn paint_view(painter: &egui::Painter, view: &DrawingView, t: Transform, visuals: &egui::Visuals) {
+fn paint_view(
+    painter: &egui::Painter,
+    view: &DrawingView,
+    t: Transform,
+    title_top: f32,
+    visuals: &egui::Visuals,
+) {
     let (lo, hi) = visible_mm(painter.clip_rect(), t);
     let font = egui::FontId::proportional((t.scale * 0.9).clamp(8.0, 12.0));
     let arrow = |from: egui::Pos2, to: egui::Pos2, color: Color32| {
@@ -677,45 +687,63 @@ fn paint_view(painter: &egui::Painter, view: &DrawingView, t: Transform, visuals
                     (from[0] + to[0]) / 2.0 + offset[0],
                     (from[1] + to[1]) / 2.0 + offset[1],
                 ]);
-                let galley = painter.layout_no_wrap(text.clone(), font.clone(), color);
-                let rect = egui::Align2::CENTER_CENTER.anchor_size(at, galley.size());
-                painter.rect_filled(rect.expand(1.0), 0.0, visuals.extreme_bg_color);
-                painter.galley(rect.min, galley, color);
+                plated_text(
+                    painter,
+                    at,
+                    text.clone(),
+                    font.clone(),
+                    color,
+                    visuals.extreme_bg_color,
+                );
             }
             Mark::Note { text, tip, at, pen } if finite(*tip) && finite(*at) => {
                 let color = pen_color(*pen, visuals);
                 let start = t.to_px(*at);
                 arrow(start, t.to_px(*tip), color);
-                painter.text(start, egui::Align2::LEFT_BOTTOM, text, font.clone(), color);
+                // drawing.py's annotations may run past the axes into the figure's margin (the
+                // flange note does); here a note that would pass the drawing's right edge moves
+                // back inside it, its arrow still from `at`.
+                let galley = painter.layout_no_wrap(text.clone(), font.clone(), color);
+                let rect = egui::Align2::LEFT_BOTTOM.anchor_size(start, galley.size());
+                let over = (rect.max.x - painter.clip_rect().max.x).max(0.0);
+                painter.galley(rect.min - egui::vec2(over, 0.0), galley, color);
             }
             _ => {}
         }
     }
-    let title_at = t.to_px([(view.min[0] + view.max[0]) / 2.0, view.max[1]]);
+    // The title in the band above the view (`title_top`), as matplotlib puts an axes title
+    // above its axes: drawn inside the limits it ran under the notes near the top.
+    let title_at = egui::pos2(
+        t.to_px([(view.min[0] + view.max[0]) / 2.0, view.max[1]]).x,
+        title_top,
+    );
     painter.text(
         title_at,
         egui::Align2::CENTER_TOP,
         view.title,
-        egui::FontId::proportional((t.scale * 1.1).clamp(9.0, 14.0)),
+        egui::FontId::proportional((t.scale * 1.1).clamp(9.0, TITLE_POINTS)),
         pen_color(Pen::Ink, visuals),
     );
 }
 
 /// Draws the clamp drawing (its title, then both views side by side at one scale,
-/// [`side_by_side`]) in `size` and returns the scale [points per mm], 0 when there is no room.
+/// [`side_by_side`], under a band for the view titles) in `size` and returns the scale [points
+/// per mm], 0 when there is no room.
 pub fn drawing_ui(ui: &mut egui::Ui, drawing: &ClampDrawing, size: egui::Vec2) -> f32 {
     let visuals = ui.visuals().clone();
     ui.label(egui::RichText::new(&drawing.title).strong());
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 4.0, visuals.extreme_bg_color);
+    let band = ui.fonts(|f| f.row_height(&egui::FontId::proportional(TITLE_POINTS))) + 2.0;
     let views = [&drawing.end, &drawing.top];
     let extents: Vec<(Mm, Mm)> = views.iter().map(|v| (v.min, v.max)).collect();
-    let Some((scale, transforms)) = side_by_side(rect, &extents, 0.0) else {
+    let below_band = rect.with_min_y((rect.min.y + band).min(rect.max.y));
+    let Some((scale, transforms)) = side_by_side(below_band, &extents, 0.0) else {
         return 0.0;
     };
     for (view, t) in views.into_iter().zip(transforms) {
-        paint_view(&painter, view, t, &visuals);
+        paint_view(&painter, view, t, rect.min.y + 1.0, &visuals);
     }
     scale
 }
@@ -845,7 +873,7 @@ fn screw_table_ui(ui: &mut egui::Ui, results: &DesignResults) {
 mod tests {
     use super::*;
     use crate::compute_all;
-    use crate::gui::test_support::{drawn_texts, flat_shapes, sized_frame};
+    use crate::gui::test_support::{drawn_texts, flat_shapes, sized_frame, text_rects};
 
     fn texts(view: &DrawingView) -> Vec<String> {
         view.marks
@@ -1180,6 +1208,62 @@ mod tests {
             scale = Some(drawing_ui(ui, &drawing, egui::Vec2::ZERO));
         });
         assert_eq!(scale, Some(0.0));
+    }
+
+    #[test]
+    fn the_drawing_s_texts_stay_inside_it_and_clear_of_the_view_titles() {
+        // The view titles sit above the views, as matplotlib's axes titles do, so no note runs
+        // under them; a note that would run past the drawing's right edge (drawing.py's flange
+        // note runs into the figure's margin) moves back inside it (at 540 points it would
+        // pass the edge). From about 480 points wide down, the texts' 8-point floor lets the
+        // three-line relief note reach the title band: the limit of a fixed smallest text.
+        let inputs = DesignInputs::default();
+        let r = compute_all(&inputs);
+        let drawing = clamp_drawing(&inputs, &r).unwrap();
+        let ctx = egui::Context::default();
+        let background = ctx.style().visuals.extreme_bg_color;
+        for size in [
+            egui::vec2(540.0, 270.0),
+            egui::vec2(660.0, 330.0),
+            egui::vec2(980.0, 420.0),
+        ] {
+            let output = sized_frame(&ctx, egui::vec2(1000.0, 700.0), Vec::new(), |ui| {
+                drawing_ui(ui, &drawing, size);
+            });
+            let area = flat_shapes(&output)
+                .into_iter()
+                .find_map(|shape| match shape {
+                    egui::Shape::Rect(r) if r.fill == background && r.rect.size() == size => {
+                        Some(r.rect)
+                    }
+                    _ => None,
+                })
+                .expect("the drawing's area");
+            let rects = |text: &str| {
+                let found = text_rects(&output, text);
+                assert_eq!(found.len(), 1, "{size:?}: {text:?} drawn {found:?}");
+                found[0]
+            };
+            let titles = [rects(drawing.end.title), rects(drawing.top.title)];
+            for view in [&drawing.end, &drawing.top] {
+                for text in texts(view) {
+                    let rect = rects(&text);
+                    assert!(
+                        area.expand(0.5).contains_rect(rect),
+                        "{size:?}: {text:?} at {rect:?} outside {area:?}"
+                    );
+                    for title in titles {
+                        assert!(
+                            !rect.intersects(title),
+                            "{size:?}: {text:?} at {rect:?} under the title at {title:?}"
+                        );
+                    }
+                }
+            }
+            for title in titles {
+                assert!(area.contains_rect(title), "{size:?}: {title:?}");
+            }
+        }
     }
 
     /// What one frame of the clamp tab painted: the shapes, the line segments among them (dashes,

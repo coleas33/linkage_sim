@@ -282,14 +282,32 @@ fn paint_dimension(
         }
     }
     let away = if along == Vec2::ZERO { Vec2::X } else { along };
-    painter.text(
+    // Past the outer end the tag lands on a block or the liner: on a plate, it stays readable.
+    plated_text(
+        painter,
         b + away * 9.0,
-        egui::Align2::CENTER_CENTER,
         callout.tag.to_string(),
         egui::FontId::proportional(12.0),
         color,
+        visuals.extreme_bg_color,
     );
     Rect::from_two_pos(a, b).expand(6.0)
+}
+
+/// Paints `text` centred at `at` on a plate of `plate` one point larger than the text, so it
+/// reads over whatever is drawn beneath it.
+pub(crate) fn plated_text(
+    painter: &egui::Painter,
+    at: Pos2,
+    text: String,
+    font: egui::FontId,
+    color: Color32,
+    plate: Color32,
+) {
+    let galley = painter.layout_no_wrap(text, font, color);
+    let rect = egui::Align2::CENTER_CENTER.anchor_size(at, galley.size());
+    painter.rect_filled(rect.expand(1.0), 0.0, plate);
+    painter.galley(rect.min, galley, color);
 }
 
 /// Shows the hover text of the callout's result while `response` is hovered.
@@ -336,7 +354,7 @@ mod tests {
     use crate::compute_all;
     use crate::gui::geometry::{NOT_DRAWN, mm};
     use crate::gui::test_support::{
-        drawn_texts, flat_shapes, sized_frame, sized_frame_at, text_color,
+        drawn_texts, flat_shapes, sized_frame, sized_frame_at, text_color, text_rects,
     };
 
     /// One frame of the geometry view of `inputs` on a `size` screen, with `events`.
@@ -497,6 +515,39 @@ mod tests {
                 .count()
                 >= 2
         );
+    }
+
+    #[test]
+    fn each_dimension_tag_sits_on_a_plate_of_the_drawing_s_background() {
+        // A tag lands past its line's outer end, on a magnet block or the liner: a plate of the
+        // drawing's background under it keeps it readable.
+        let ctx = egui::Context::default();
+        let inputs = DesignInputs::default();
+        let (output, layout) = frame(&ctx, &inputs, egui::vec2(1000.0, 700.0), Vec::new());
+        let background = ctx.style().visuals.extreme_bg_color;
+        let plates: Vec<Rect> = flat_shapes(&output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Rect(r) if r.fill == background => Some(r.rect),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(layout.dimensions.len(), 6);
+        for (tag, _) in &layout.dimensions {
+            let on_drawing: Vec<Rect> = text_rects(&output, &tag.to_string())
+                .into_iter()
+                .filter(|r| layout.rect.contains_rect(*r))
+                .collect();
+            assert_eq!(on_drawing.len(), 1, "tag {tag}: {on_drawing:?}");
+            let text = on_drawing[0];
+            // Its own plate, not the drawing's background as a whole.
+            assert!(
+                plates
+                    .iter()
+                    .any(|p| p.contains_rect(text) && p.width() < text.width() + 8.0),
+                "tag {tag} at {text:?}: no plate in {plates:?}"
+            );
+        }
     }
 
     #[test]
