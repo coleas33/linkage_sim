@@ -34,14 +34,21 @@
 //! [`NOTHING_TO_PLOT`] (the torque-temperature plot [`EMPTY_TEMPERATURE_AXIS`] when its axis is
 //! empty although every value is a number), and a sweep that left rows out counts them in a note
 //! over the plot ([`rows_not_plotted`]).
+//!
+//! Over each plot a line reads out the design's values the plot shows ([`PlotKind::readouts`],
+//! decision M43-11), each a readout: hover it for its equation, click it to open it (spec
+//! Addendum A2 "Hover"). The curves' points have no result path, so the plot itself keeps
+//! egui_plot's coordinate readout.
 
 use egui::Color32;
 use egui_plot::{Corner, HLine, Legend, Line, LineStyle, Plot, PlotPoints, PlotUi, Points, VLine};
 
-use crate::engine::meta::NumOrText;
+use crate::engine::meta::{NumOrText, ResultSet, Value};
 use crate::engine::model::{end_effect_in_range, harmonic_count, ring_pair_factor};
 use crate::engine::sweeps::SweepRow;
-use crate::gui::dashboard::{Level, end_effect_out_of_range};
+use crate::gui::dashboard::{Level, end_effect_out_of_range, hover_text, result_info};
+use crate::gui::format::{format_value, with_unit};
+use crate::gui::readouts::Readouts;
 use crate::{DesignInputs, DesignResults};
 
 /// Samples of the torque-temperature curve.
@@ -90,6 +97,30 @@ impl PlotKind {
             PlotKind::PoleSweep => "Pole sweep",
             PlotKind::SlipHeating => "Slip heating",
             PlotKind::TorqueAngle => "Torque vs rotation",
+        }
+    }
+
+    /// The results read out over the plot (decision M43-11): the design's values it draws.
+    pub const fn readouts(self) -> &'static [&'static str] {
+        match self {
+            PlotKind::TorqueTemperature => &[
+                "model.pullout_Nm",
+                "metal.torque_hot_low_Nm",
+                "metal.torque_cold_high_Nm",
+                "temperature.summary.governing_limit_C",
+            ],
+            PlotKind::GapSweep => &[
+                "model.corner_gap_mm",
+                "model.pullout_Nm",
+                "model.required_floor_Nm",
+            ],
+            PlotKind::PoleSweep => &["model.pullout_Nm", "model.required_floor_Nm"],
+            PlotKind::SlipHeating => &[
+                "temperature.thermal.time_constant_s",
+                "temperature.thermal.time_to_limit_high",
+                "temperature.summary.governing_limit_C",
+            ],
+            PlotKind::TorqueAngle => &["model.pullout_Nm", "model.pullout_angle_rad"],
         }
     }
 
@@ -407,8 +438,16 @@ fn plot(ui: &egui::Ui, kind: PlotKind, x: &str, y: &str) -> Plot<'static> {
         .height(ui.available_height().max(150.0))
 }
 
-/// Draws the plot `kind` of the design shown (`inputs`, and the `results` computed from them).
-pub fn plot_ui(ui: &mut egui::Ui, kind: PlotKind, inputs: &DesignInputs, results: &DesignResults) {
+/// Draws the plot `kind` of the design shown (`inputs`, and the `results` computed from them),
+/// under its readouts (`readouts`).
+pub fn plot_ui(
+    ui: &mut egui::Ui,
+    kind: PlotKind,
+    inputs: &DesignInputs,
+    results: &DesignResults,
+    readouts: &mut Readouts,
+) {
+    readouts_ui(ui, kind, results, readouts);
     match kind {
         PlotKind::TorqueTemperature => torque_temperature_ui(ui, inputs, results),
         PlotKind::GapSweep => sweep_ui(
@@ -432,6 +471,33 @@ pub fn plot_ui(ui: &mut egui::Ui, kind: PlotKind, inputs: &DesignInputs, results
         PlotKind::SlipHeating => slip_heating_ui(ui, results),
         PlotKind::TorqueAngle => torque_angle_ui(ui, inputs, results),
     }
+}
+
+/// The line over a plot: each of [`PlotKind::readouts`] as "label: value", a readout.
+fn readouts_ui(
+    ui: &mut egui::Ui,
+    kind: PlotKind,
+    results: &DesignResults,
+    readouts: &mut Readouts,
+) {
+    ui.horizontal_wrapped(|ui| {
+        // Whole readouts move to the next row (a wrapped text would start mid-row, and its
+        // hover area with it).
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+        for &path in kind.readouts() {
+            let Some(info) = result_info(path) else {
+                continue;
+            };
+            let value = results.get(path).unwrap_or(Value::None);
+            let text = format!(
+                "{}: {}",
+                info.meta.label,
+                with_unit(format_value(&value), info.meta.unit)
+            );
+            let rect = ui.small(text).rect;
+            readouts.show_over(ui, rect, path, || hover_text(path).unwrap_or_default());
+        }
+    });
 }
 
 /// Adds a dashed horizontal reference line `name` at `y`, only when `y` is finite (egui_plot's
@@ -959,7 +1025,7 @@ mod tests {
                 &ctx,
                 egui::vec2(900.0, 600.0),
                 Vec::new(),
-                |ui| plot_ui(ui, kind, inputs, &results),
+                |ui| plot_ui(ui, kind, inputs, &results, &mut Readouts::default()),
             ));
         }
         output.unwrap()
@@ -967,6 +1033,33 @@ mod tests {
 
     fn count(values: &[usize], want: usize) -> usize {
         values.iter().filter(|v| **v == want).count()
+    }
+
+    #[test]
+    fn each_plot_reads_out_the_design_values_it_draws() {
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        for kind in PlotKind::ALL {
+            let texts = drawn_texts(&draw(kind, &inputs));
+            for path in kind.readouts() {
+                let info = result_info(path).unwrap_or_else(|| panic!("{path} is a result"));
+                let value = results.get(path).unwrap();
+                let want = format!(
+                    "{}: {}",
+                    info.meta.label,
+                    with_unit(format_value(&value), info.meta.unit)
+                );
+                assert!(texts.contains(&want), "{kind:?}: missing {want:?}");
+            }
+            // The first readout of each plot has an equation to show.
+            let first = kind.readouts()[0];
+            assert!(
+                crate::gui::readouts::registry()
+                    .equation_for(first)
+                    .is_some(),
+                "{first}"
+            );
+        }
     }
 
     #[test]

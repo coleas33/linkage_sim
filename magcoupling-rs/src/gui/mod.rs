@@ -17,6 +17,7 @@ pub mod input_ui;
 pub mod inputs;
 mod panel;
 pub mod plots;
+pub mod readouts;
 pub mod results_table;
 pub mod session;
 pub mod sizing;

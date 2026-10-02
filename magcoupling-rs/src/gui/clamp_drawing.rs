@@ -26,6 +26,7 @@ use crate::gui::dashboard::{Level, hover_text};
 use crate::gui::format::{format_value, with_unit};
 use crate::gui::geometry::{Mm, finite};
 use crate::gui::geometry_view::{DIMENSION, Transform, arrowhead, plated_text, side_by_side};
+use crate::gui::readouts::Readouts;
 use crate::gui::results_table::table_entries;
 use crate::{DesignInputs, DesignResults};
 
@@ -781,8 +782,14 @@ pub fn screw_rows() -> &'static [(&'static str, &'static str, String)] {
     })
 }
 
-/// The clamp tab: the drawing (or why there is none), then the clamp table.
-pub fn clamp_ui(ui: &mut egui::Ui, inputs: &DesignInputs, results: &DesignResults) {
+/// The clamp tab: the drawing (or why there is none), then the clamp table, each value a
+/// readout (`readouts`).
+pub fn clamp_ui(
+    ui: &mut egui::Ui,
+    inputs: &DesignInputs,
+    results: &DesignResults,
+    readouts: &mut Readouts,
+) {
     egui::ScrollArea::vertical()
         .id_salt("magcoupling_clamp_scroll")
         .auto_shrink([false, false])
@@ -813,15 +820,14 @@ pub fn clamp_ui(ui: &mut egui::Ui, inputs: &DesignInputs, results: &DesignResult
                 let Some(info) = crate::gui::dashboard::result_info(path) else {
                     continue;
                 };
-                let response = ui
+                let rect = ui
                     .horizontal_wrapped(|ui| {
                         ui.label(egui::RichText::new(info.meta.label).weak());
                         ui.label(with_unit(format_value(&value), info.meta.unit));
                     })
-                    .response;
-                response.on_hover_ui(|ui| {
-                    ui.label(hover_text(path).unwrap_or_default());
-                });
+                    .response
+                    .rect;
+                readouts.show_over(ui, rect, path, || hover_text(path).unwrap_or_default());
             }
             ui.add_space(4.0);
             for step in MACHINING_STEPS {
@@ -830,13 +836,13 @@ pub fn clamp_ui(ui: &mut egui::Ui, inputs: &DesignInputs, results: &DesignResult
             egui::CollapsingHeader::new(SCREW_SIZES)
                 .id_salt("magcoupling_screw_sizes")
                 .default_open(false)
-                .show(ui, |ui| screw_table_ui(ui, results));
+                .show(ui, |ui| screw_table_ui(ui, results, readouts));
         });
 }
 
 /// The 'Clamp screw sizes' table: a row per field, a column per size, the recommended size's
-/// column in green.
-fn screw_table_ui(ui: &mut egui::Ui, results: &DesignResults) {
+/// column in green; each value a readout.
+fn screw_table_ui(ui: &mut egui::Ui, results: &DesignResults, readouts: &mut Readouts) {
     let sizes = results.clamps.table.len();
     let pick = usize::try_from(results.clamps.index)
         .ok()
@@ -859,8 +865,9 @@ fn screw_table_ui(ui: &mut egui::Ui, results: &DesignResults) {
                             } else {
                                 rich
                             };
-                            ui.label(rich).on_hover_ui(|ui| {
-                                ui.label(hover_text(&path).unwrap_or_else(|| path.clone()));
+                            let rect = ui.label(rich).rect;
+                            readouts.show_over(ui, rect, &path, || {
+                                hover_text(&path).unwrap_or_else(|| path.clone())
                             });
                         }
                         ui.end_row();
@@ -1180,7 +1187,7 @@ mod tests {
         }
         // The whole tab: the summary and the machining steps; no fit shows the message.
         let output = sized_frame(&ctx, egui::vec2(1000.0, 1400.0), Vec::new(), |ui| {
-            clamp_ui(ui, &inputs, &r)
+            clamp_ui(ui, &inputs, &r, &mut Readouts::default())
         });
         let texts = drawn_texts(&output);
         assert!(texts.iter().any(|t| t == "ISO 4762 M4 x 14, class 12.9"));
@@ -1191,7 +1198,7 @@ mod tests {
         tight.clamps.clamp_length_mm = 3.0;
         tight.clamps.clamp_type = 2;
         let output = sized_frame(&ctx, egui::vec2(1000.0, 1400.0), Vec::new(), |ui| {
-            clamp_ui(ui, &tight, &compute_all(&tight))
+            clamp_ui(ui, &tight, &compute_all(&tight), &mut Readouts::default())
         });
         let texts = drawn_texts(&output);
         assert!(texts.iter().any(|t| t == NO_SCREW_FITS));
@@ -1199,7 +1206,9 @@ mod tests {
         // A narrow, short region still draws the tab (a ~930 px window leaves about 294
         // points).
         for size in [egui::vec2(294.0, 900.0), egui::vec2(120.0, 90.0)] {
-            let output = sized_frame(&ctx, size, Vec::new(), |ui| clamp_ui(ui, &inputs, &r));
+            let output = sized_frame(&ctx, size, Vec::new(), |ui| {
+                clamp_ui(ui, &inputs, &r, &mut Readouts::default())
+            });
             assert!(drawn_texts(&output).iter().any(|t| t == &drawing.title));
         }
         // No room at all: no scale, nothing painted.
@@ -1283,7 +1292,7 @@ mod tests {
         std::thread::spawn(move || {
             let ctx = egui::Context::default();
             let output = sized_frame(&ctx, egui::vec2(1000.0, 1400.0), Vec::new(), |ui| {
-                clamp_ui(ui, &inputs, &results)
+                clamp_ui(ui, &inputs, &results, &mut Readouts::default())
             });
             let shapes = flat_shapes(&output);
             let painted = Painted {

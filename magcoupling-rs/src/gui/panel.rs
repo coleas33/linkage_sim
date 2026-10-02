@@ -24,6 +24,7 @@
 //! ([`crate::gui::sizing::SizingRunner`], debounced, never per frame), and the free variable's
 //! row shows that value, locked.
 
+use crate::engine::explain::Design as Terms;
 use crate::engine::meta::{InputSet, ResultSet, Value};
 use crate::engine::sizing::FreeVariable;
 use crate::gui::clamp_drawing::clamp_ui;
@@ -33,6 +34,7 @@ use crate::gui::history::History;
 use crate::gui::input_ui::{RowEdit, input_row, slider};
 use crate::gui::inputs::{InputCatalogue, InputEntry, KEY_DESIGN, optional_seed};
 use crate::gui::plots::{PlotKind, plot_ui};
+use crate::gui::readouts::{ReadoutEvents, Readouts, registry};
 use crate::gui::results_table::{
     CSV_FILE_NAME, JSON_FILE_NAME, ResultsTable, TableAction, results_csv, results_json,
 };
@@ -44,6 +46,7 @@ use crate::gui::sizing::{
     SOLVED_PREFIX, SOLVING, SizingMode, SizingRunner, SizingState, TARGET_RANGE_INPUT,
     variable_label,
 };
+use crate::gui::typeset::TermColors;
 use crate::{DesignInputs, DesignResults, compute_all};
 
 /// The heading of the panel.
@@ -186,6 +189,9 @@ pub struct MagcouplingPanel {
     results_table: ResultsTable,
     /// Platform work for the host, oldest first.
     requests: Vec<PanelRequest>,
+    /// The path of the readout hovered in the last frame: this frame marks its equation's
+    /// terms wherever their values are shown (spec Addendum A2 "Hover").
+    hovered: Option<String>,
 }
 
 impl Default for MagcouplingPanel {
@@ -197,6 +203,9 @@ impl Default for MagcouplingPanel {
 impl MagcouplingPanel {
     /// A panel at the default design.
     pub fn new() -> Self {
+        // The equation registry, built once per process, at start-up rather than on the first
+        // hover.
+        registry();
         let inputs = DesignInputs::default();
         let results = compute_all(&inputs);
         Self {
@@ -214,6 +223,7 @@ impl MagcouplingPanel {
             centre: CentreView::Geometry,
             results_table: ResultsTable::default(),
             requests: Vec::new(),
+            hovered: None,
         }
     }
 
@@ -374,6 +384,7 @@ impl MagcouplingPanel {
 
     /// Draws the panel into `ui` and applies this frame's edits.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
+        let mut readouts = Readouts::new(self.marks());
         ui.push_id("magcoupling_panel", |ui| {
             self.shortcuts(ui);
             egui::TopBottomPanel::top("magcoupling_header").show_inside(ui, |ui| {
@@ -382,7 +393,7 @@ impl MagcouplingPanel {
             egui::SidePanel::left("magcoupling_inputs")
                 .resizable(true)
                 .default_width(INPUTS_WIDTH)
-                .show_inside(ui, |ui| self.inputs_ui(ui));
+                .show_inside(ui, |ui| self.inputs_ui(ui, &readouts));
             self.run_sizing(ui);
             // After the inputs: the readouts show this frame's edits. One copy of the design
             // shown per frame, for the results and the centre region's views.
@@ -394,13 +405,41 @@ impl MagcouplingPanel {
                 .show_inside(ui, |ui| {
                     egui::ScrollArea::vertical()
                         .id_salt("magcoupling_dashboard_scroll")
-                        .show(ui, |ui| dashboard_ui(ui, &self.results));
+                        .show(ui, |ui| dashboard_ui(ui, &self.results, &mut readouts));
                 });
-            egui::CentralPanel::default().show_inside(ui, |ui| self.centre_ui(ui, &shown));
+            egui::CentralPanel::default()
+                .show_inside(ui, |ui| self.centre_ui(ui, &shown, &mut readouts));
         });
+        self.end_frame(ui, readouts.finish());
         // One undo step per settled edit.
         let settled = !self.editing(ui);
         self.history.observe(&self.design(), settled);
+    }
+
+    /// The term colours this frame marks: the terms of the equation of the readout hovered in
+    /// the last frame, a family's by the harmonics the design sums; none without one.
+    fn marks(&self) -> TermColors {
+        let Some(eq) = self
+            .hovered
+            .as_deref()
+            .and_then(|path| registry().equation_for(path))
+        else {
+            return TermColors::none();
+        };
+        let terms = Terms {
+            inputs: &self.inputs,
+            results: &self.results,
+        };
+        TermColors::of(eq).with_members(registry(), &terms)
+    }
+
+    /// Takes in what the user did with the readouts this frame: the value hovered marks its
+    /// terms from the next frame, which is asked for at once.
+    fn end_frame(&mut self, ui: &egui::Ui, events: ReadoutEvents) {
+        if events.hovered != self.hovered {
+            self.hovered = events.hovered;
+            ui.ctx().request_repaint();
+        }
     }
 
     /// Whether an edit of the design is in progress: a pointer button down (a drag), a key held
@@ -447,7 +486,7 @@ impl MagcouplingPanel {
 
     /// The sizing controls at the top of the Key design group: the mode switch, then in
     /// Torque → Magnets the free variable, the target torque and the outcome.
-    fn sizing_ui(&mut self, ui: &mut egui::Ui) {
+    fn sizing_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
         let mut mode = self.sizing.mode;
         ui.horizontal(|ui| {
             for choice in SizingMode::ALL {
@@ -512,7 +551,7 @@ impl MagcouplingPanel {
             let entry = InputCatalogue::get()
                 .entry(path)
                 .expect("every free variable is an input");
-            let widget = self.input_row_ui(ui, entry);
+            let widget = self.input_row_ui(ui, entry, readouts);
             self.design_widgets.push(widget);
         }
         ui.separator();
@@ -537,8 +576,8 @@ impl MagcouplingPanel {
 
     /// The centre region: the view tabs (wrapping when the region is narrow), the end-effect
     /// banner when f_end <= 0 (over every view, decision M42-1), then the view of `shown`, the
-    /// design shown.
-    fn centre_ui(&mut self, ui: &mut egui::Ui, shown: &DesignInputs) {
+    /// design shown, its values readouts (`readouts`).
+    fn centre_ui(&mut self, ui: &mut egui::Ui, shown: &DesignInputs, readouts: &mut Readouts) {
         ui.horizontal_wrapped(|ui| {
             for view in CentreView::ALL {
                 ui.selectable_value(&mut self.centre, view, view.label());
@@ -550,12 +589,12 @@ impl MagcouplingPanel {
         }
         match self.centre {
             CentreView::Geometry => {
-                geometry_ui(ui, shown, &self.results);
+                geometry_ui(ui, shown, &self.results, readouts);
             }
-            CentreView::Plot(kind) => plot_ui(ui, kind, shown, &self.results),
-            CentreView::Clamp => clamp_ui(ui, shown, &self.results),
+            CentreView::Plot(kind) => plot_ui(ui, kind, shown, &self.results, readouts),
+            CentreView::Clamp => clamp_ui(ui, shown, &self.results, readouts),
             CentreView::Results => {
-                let action = self.results_table.ui(ui, &self.results);
+                let action = self.results_table.ui(ui, &self.results, readouts);
                 match action {
                     Some(TableAction::ExportCsv) => self.requests.push(PanelRequest::SaveFile {
                         file_name: CSV_FILE_NAME.to_owned(),
@@ -640,7 +679,7 @@ impl MagcouplingPanel {
     }
 
     /// The left side: the Key design group, then every input by package group.
-    fn inputs_ui(&mut self, ui: &mut egui::Ui) {
+    fn inputs_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
         let catalogue = InputCatalogue::get();
         // This frame's rows only, whichever groups are open.
         self.design_widgets.clear();
@@ -652,10 +691,10 @@ impl MagcouplingPanel {
                     .id_salt("key_design")
                     .default_open(true)
                     .show(ui, |ui| {
-                        self.sizing_ui(ui);
+                        self.sizing_ui(ui, readouts);
                         self.key_widgets.clear();
                         for entry in &catalogue.key_design {
-                            let widget = self.input_row_ui(ui, entry);
+                            let widget = self.input_row_ui(ui, entry, readouts);
                             self.key_widgets.push((entry.path.as_str(), widget));
                             self.design_widgets.push(widget);
                         }
@@ -671,7 +710,7 @@ impl MagcouplingPanel {
                                     ui.strong(section.label);
                                 }
                                 for entry in &section.entries {
-                                    let widget = self.input_row_ui(ui, entry);
+                                    let widget = self.input_row_ui(ui, entry, readouts);
                                     self.design_widgets.push(widget);
                                 }
                             }
@@ -681,8 +720,14 @@ impl MagcouplingPanel {
     }
 
     /// One input row; applies its edit. Returns the id of its main widget. In Torque →
-    /// Magnets the free variable's row shows the value the panel shows, locked.
-    fn input_row_ui(&mut self, ui: &mut egui::Ui, entry: &'static InputEntry) -> egui::Id {
+    /// Magnets the free variable's row shows the value the panel shows, locked. The row is
+    /// framed in its term's colour while the equation in view reads the input (`readouts`).
+    fn input_row_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        entry: &'static InputEntry,
+        readouts: &Readouts,
+    ) -> egui::Id {
         let locked = self.sizing.mode == SizingMode::TorqueToMagnets
             && entry.path == self.sizing.variable.path();
         // The locked row reads the design shown (one clone, for that row only).
@@ -693,9 +738,9 @@ impl MagcouplingPanel {
         }
         .unwrap_or(Value::None);
         let seed = self.seed(entry);
-        let output = ui
-            .add_enabled_ui(!locked, |ui| input_row(ui, entry, &current, seed))
-            .inner;
+        let row = ui.add_enabled_ui(!locked, |ui| input_row(ui, entry, &current, seed));
+        readouts.mark(ui, row.response.rect, &entry.path);
+        let output = row.inner;
         if locked {
             ui.weak(SIZED_NOTE);
             return output.widget.id;
@@ -1933,7 +1978,7 @@ mod tests {
         texts.extend(
             crate::gui::dashboard::dashboard_lines(&results)
                 .into_iter()
-                .map(|line| line.tooltip),
+                .map(|line| line.tooltip()),
         );
         for entry in crate::gui::results_table::table_entries() {
             let value = results.get(&entry.path).unwrap_or(Value::None);
@@ -2222,6 +2267,98 @@ mod tests {
         harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
         assert_eq!(other.panel.shown_inputs(), harness.panel.shown_inputs());
         assert_eq!(other.panel.results(), harness.panel.results());
+    }
+
+    /// Shows tooltips at once (no delay, the pointer need not rest), as the geometry view's
+    /// hover test does.
+    fn tooltips_at_once(harness: &Harness) {
+        harness.ctx.style_mut(|s| {
+            s.interaction.tooltip_delay = 0.0;
+            s.interaction.show_tooltips_only_when_still = false;
+        });
+    }
+
+    /// The rects of the term marks painted in a frame, in `color` (any colour for `None`).
+    fn mark_rects(output: &egui::FullOutput, color: Option<egui::Color32>) -> Vec<egui::Rect> {
+        use crate::gui::readouts::MARK_WIDTH;
+        crate::gui::test_support::flat_shapes(output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Rect(r)
+                    if r.stroke.width == MARK_WIDTH
+                        && color.is_none_or(|c| r.stroke.color == c) =>
+                {
+                    Some(r.rect)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn hovering_a_dashboard_value_shows_its_equation() {
+        use crate::gui::readouts::OPEN_HINT;
+        let mut harness = Harness::new();
+        tooltips_at_once(&harness);
+        let output = harness.frame(Vec::new());
+        let pullout = displayed_pullout(&DesignInputs::default());
+        let at = text_rect(&output, &pullout).unwrap().center();
+        harness.frame(vec![egui::Event::PointerMoved(at)]);
+        let output = harness.frame(Vec::new());
+        assert_eq!(harness.panel.hovered.as_deref(), Some("model.pullout_Nm"));
+        let texts = drawn_texts(&output);
+        assert!(
+            texts
+                .iter()
+                .any(|t| t.starts_with("Pull-out torque at operating temperature\n")),
+            "the hover text: {texts:?}"
+        );
+        // T_pull = T_2D f_end f_cal, typeset run by run, and the hint.
+        for run in ["T", "pull", " = ", "2D", "end", "cal", OPEN_HINT] {
+            assert!(texts.iter().any(|t| t == run), "no {run:?} in {texts:?}");
+        }
+    }
+
+    #[test]
+    fn hovering_a_value_marks_its_terms_where_their_values_are_shown() {
+        // D_cup = 2 (r_corner + t_wall): hovering the cup OD on the dashboard frames the Key
+        // design row of the wall in its term's colour, from the next frame, and its tooltip
+        // draws t_wall in that colour; moving the pointer away clears every mark.
+        let mut harness = Harness::new();
+        tooltips_at_once(&harness);
+        let output = harness.frame(Vec::new());
+        let cup_od = harness.panel.results().model.cup_od_mm;
+        let shown = with_unit(format_value(&Value::Num(cup_od)), "mm");
+        let at = text_rect(&output, &shown).unwrap().center();
+        harness.frame(vec![egui::Event::PointerMoved(at)]);
+        let output = harness.frame(Vec::new());
+        let eq = registry().equation_for("model.cup_od_mm").unwrap();
+        let wall = TermColors::of(eq).get("metal.cup_wall_corner_mm").unwrap();
+        let label = InputCatalogue::get()
+            .entry("metal.cup_wall_corner_mm")
+            .unwrap()
+            .meta
+            .label;
+        let label_rect = text_rect(&output, label).unwrap();
+        let marks = mark_rects(&output, Some(wall));
+        assert!(
+            marks.iter().any(|r| r.contains_rect(label_rect)),
+            "{label_rect:?} not inside a mark: {marks:?}"
+        );
+        // The tooltip and the marks colour the term alike: t_wall's subscript run.
+        assert_eq!(
+            crate::gui::test_support::text_color(&output, "wall"),
+            Some(wall),
+            "the tooltip's t_wall: {:?}",
+            drawn_texts(&output)
+        );
+        harness.frame(vec![egui::Event::PointerMoved(egui::pos2(
+            5.0,
+            SCREEN.y - 5.0,
+        ))]);
+        let output = harness.frame(Vec::new());
+        assert_eq!(harness.panel.hovered, None);
+        assert!(mark_rects(&output, None).is_empty());
     }
 
     #[test]

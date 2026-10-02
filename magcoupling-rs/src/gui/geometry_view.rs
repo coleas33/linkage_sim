@@ -3,9 +3,10 @@
 //! (decision M42-3), then lists the dimension callouts and the notes under them.
 //!
 //! Each dimension is a line with arrowheads and a tag; the list repeats the tag with the
-//! callout's text. Hovering the line or its text shows the hover text of the result it shows
-//! ([`crate::gui::dashboard::hover_text`], the hook M4-3's equation tooltip joins), built only
-//! while hovered. A violated callout is red, one that is not a number amber (decision M42-4);
+//! callout's text. The line and the text are readouts ([`crate::gui::readouts::Readouts`]):
+//! hovering either shows the hover text of the result it shows
+//! ([`crate::gui::dashboard::hover_text`]) and its equation, built only while hovered, and a
+//! click opens it in the Equation panel. A violated callout is red, one that is not a number amber (decision M42-4);
 //! the space claim is dashed, an exceeded axis red. The view is rebuilt from the design shown on
 //! every frame, so it follows a slider while it is dragged.
 //!
@@ -16,6 +17,7 @@ use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
 use crate::gui::dashboard::{Level, hover_text};
 use crate::gui::geometry::{Callout, Geometry, Mm, Outline, Part, View, finite, geometry};
+use crate::gui::readouts::Readouts;
 use crate::{DesignInputs, DesignResults};
 
 /// The colour of a dimension that is fine: drawing.py's dimension blue, lightened for a dark
@@ -145,12 +147,13 @@ pub(crate) fn arrowhead(painter: &egui::Painter, tip: Pos2, dir: Vec2, stroke: S
     }
 }
 
-/// Draws the geometry of the design shown (`inputs` and the `results` computed from them) and
-/// returns what it drew.
+/// Draws the geometry of the design shown (`inputs` and the `results` computed from them),
+/// each callout a readout (`readouts`), and returns what it drew.
 pub fn geometry_ui(
     ui: &mut egui::Ui,
     inputs: &DesignInputs,
     results: &DesignResults,
+    readouts: &mut Readouts,
 ) -> GeometryLayout {
     let g = geometry(inputs, results);
     let row = ui.text_style_height(&egui::TextStyle::Body) + ui.spacing().item_spacing.y;
@@ -175,7 +178,14 @@ pub fn geometry_ui(
     if let Some((scale, transforms)) = side_by_side(rect.shrink(MARGIN), &extents, VIEW_GAP_MM) {
         layout.scale = scale;
         for (view, transform) in views.into_iter().zip(transforms) {
-            paint_view(ui, &painter, view, transform, &mut layout.dimensions);
+            paint_view(
+                ui,
+                &painter,
+                view,
+                transform,
+                &mut layout.dimensions,
+                readouts,
+            );
             if std::ptr::eq(view, &g.end) {
                 layout.end = Some(transform);
             } else {
@@ -183,18 +193,19 @@ pub fn geometry_ui(
             }
         }
     }
-    list_ui(ui, &g);
+    list_ui(ui, &g, readouts);
     layout
 }
 
-/// Paints one view's pieces, dashed lines and dimensions, and registers each dimension's hover
-/// area.
+/// Paints one view's pieces, dashed lines and dimensions, and registers each dimension as a
+/// readout.
 fn paint_view(
     ui: &egui::Ui,
     painter: &egui::Painter,
     view: &View,
     t: Transform,
     dimensions: &mut Vec<(usize, Rect)>,
+    readouts: &mut Readouts,
 ) {
     let visuals = ui.visuals();
     let centre = t.to_px([0.0, 0.0]);
@@ -257,9 +268,9 @@ fn paint_view(
         let response = ui.interact(
             rect,
             ui.id().with(("geometry_dimension", callout.tag)),
-            Sense::hover(),
+            Sense::click(),
         );
-        hover(response, callout);
+        readouts.show(ui, response, callout.path, || callout_text(callout));
         dimensions.push((callout.tag, rect));
     }
 }
@@ -310,15 +321,13 @@ pub(crate) fn plated_text(
     painter.galley(rect.min, galley, color);
 }
 
-/// Shows the hover text of the callout's result while `response` is hovered.
-fn hover(response: egui::Response, callout: &Callout) {
-    response.on_hover_ui(|ui| {
-        ui.label(hover_text(callout.path).unwrap_or_else(|| callout.path.to_owned()));
-    });
+/// The hover text of the callout's result.
+fn callout_text(callout: &Callout) -> String {
+    hover_text(callout.path).unwrap_or_else(|| callout.path.to_owned())
 }
 
-/// The callouts (tag and text, in their colours, with their hover text) and the notes.
-fn list_ui(ui: &mut egui::Ui, g: &Geometry) {
+/// The callouts (tag and text, in their colours, each a readout) and the notes.
+fn list_ui(ui: &mut egui::Ui, g: &Geometry, readouts: &mut Readouts) {
     egui::ScrollArea::vertical()
         .id_salt("magcoupling_geometry_list")
         .auto_shrink([false, true])
@@ -329,13 +338,14 @@ fn list_ui(ui: &mut egui::Ui, g: &Geometry) {
                     Some(c) => egui::RichText::new(text).color(c),
                     None => egui::RichText::new(text),
                 };
-                let response = ui
+                let rect = ui
                     .horizontal(|ui| {
                         ui.label(rich(callout.tag.to_string()).strong());
-                        ui.add(egui::Label::new(rich(callout.text.clone())).wrap())
+                        ui.add(egui::Label::new(rich(callout.text.clone())).wrap());
                     })
-                    .inner;
-                hover(response, callout);
+                    .response
+                    .rect;
+                readouts.show_over(ui, rect, callout.path, || callout_text(callout));
             }
             for note in &g.notes {
                 let text = egui::RichText::new(&note.text);
@@ -367,7 +377,7 @@ mod tests {
         let results = compute_all(inputs);
         let mut layout = None;
         let output = sized_frame(ctx, size, events, |ui| {
-            layout = Some(geometry_ui(ui, inputs, &results));
+            layout = Some(geometry_ui(ui, inputs, &results, &mut Readouts::default()));
         });
         (output, layout.expect("drawn"))
     }
@@ -577,7 +587,7 @@ mod tests {
         let mut output = None;
         for dt in [0.1, 0.2] {
             output = Some(sized_frame_at(&ctx, size, Some(dt), Vec::new(), |ui| {
-                geometry_ui(ui, &inputs, &results);
+                geometry_ui(ui, &inputs, &results, &mut Readouts::default());
             }));
         }
         assert!(
