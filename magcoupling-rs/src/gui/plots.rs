@@ -29,6 +29,11 @@
 //!
 //! When f_end <= 0 (audit M9) every torque computed from the pull-out (the temperature and the
 //! rotation plots) is drawn grey, as the dashboard greys those rows (decision M42-6).
+//!
+//! Points and reference lines that are not finite are left out; a plot with nothing left shows
+//! [`NOTHING_TO_PLOT`] (the torque-temperature plot [`EMPTY_TEMPERATURE_AXIS`] when its axis is
+//! empty although every value is a number), and a sweep that left rows out counts them in a note
+//! over the plot ([`rows_not_plotted`]).
 
 use egui::Color32;
 use egui_plot::{Corner, HLine, Legend, Line, LineStyle, Plot, PlotPoints, PlotUi, Points, VLine};
@@ -132,6 +137,23 @@ pub const PULL_OUT_POINT: &str = "Pull-out point";
 /// The text shown instead of a plot with nothing finite to draw.
 pub const NOTHING_TO_PLOT: &str = "Nothing to plot: the values are not numbers";
 
+/// The text shown instead of the torque-temperature plot when its axis is empty: a design file
+/// can hold a minimum temperature at or past the axis end (`InputSet::set` checks no range).
+pub const EMPTY_TEMPERATURE_AXIS: &str = "Nothing to plot: the minimum temperature is not below \
+     the axis end (10 °C past the higher of the operating temperature and the governing limit)";
+
+/// The start of the note over a sweep plot that left rows out ([`rows_not_plotted`]).
+pub const NOT_PLOTTED: &str = "Not plotted";
+
+/// The note over a sweep plot that left out `n` rows holding a value that is not a number.
+pub fn rows_not_plotted(n: usize) -> String {
+    if n == 1 {
+        format!("{NOT_PLOTTED}: 1 row holds a value that is not a number")
+    } else {
+        format!("{NOT_PLOTTED}: {n} rows hold a value that is not a number")
+    }
+}
+
 /// `n` evenly spaced values from `lo` to `hi`, both included.
 fn samples(lo: f64, hi: f64, n: usize) -> impl Iterator<Item = f64> {
     (0..n).map(move |i| lo + (hi - lo) * i as f64 / (n - 1) as f64)
@@ -168,6 +190,18 @@ pub struct TorqueTemperature {
     pub operating: [f64; 2],
     /// f_end <= 0: the torques are greyed.
     pub greyed: bool,
+    /// The temperature axis' ends: the minimum temperature and 10 °C past the higher of the
+    /// operating temperature and the governing limit.
+    pub axis_C: [f64; 2],
+}
+
+impl TorqueTemperature {
+    /// Whether the axis is empty although both its ends are numbers (the minimum temperature at
+    /// or past the axis end), as opposed to an end that is not a number.
+    pub fn axis_is_empty(&self) -> bool {
+        let [lo, hi] = self.axis_C;
+        lo.is_finite() && hi.is_finite() && hi <= lo
+    }
 }
 
 /// The torque-temperature series of the design shown.
@@ -198,6 +232,7 @@ pub fn torque_temperature(inputs: &DesignInputs, results: &DesignResults) -> Tor
         limit_C: finite_limit,
         operating: [op, results.model.pullout_Nm],
         greyed: end_effect_out_of_range(results).is_some(),
+        axis_C: [md.min_temp_C, top],
     }
 }
 
@@ -214,6 +249,23 @@ pub struct SweepPoints {
     /// f_end <= 0, whatever the status.
     pub out_of_range: Vec<[f64; 2]>,
     pub line: Vec<[f64; 2]>,
+    /// The rows left out: a swept variable or pull-out that is not finite.
+    pub dropped: usize,
+}
+
+impl SweepPoints {
+    /// Whether no row is drawn (every row left out, or none at all).
+    pub fn is_empty(&self) -> bool {
+        [
+            &self.nominal,
+            &self.below_minimum,
+            &self.no_fit,
+            &self.out_of_range,
+            &self.line,
+        ]
+        .iter()
+        .all(|points| points.is_empty())
+    }
 }
 
 /// The markers of a sweep's rows: (swept variable, pull-out at the operating temperature).
@@ -222,6 +274,7 @@ pub fn sweep_points(rows: &[SweepRow]) -> SweepPoints {
     for row in rows {
         let p = [row.variable, row.pullout_op_Nm];
         if !(p[0].is_finite() && p[1].is_finite()) {
+            points.dropped += 1;
             continue;
         }
         if !end_effect_in_range(row.f_end) {
@@ -407,7 +460,11 @@ fn reference_vline(p: &mut PlotUi<'_>, name: &str, x: f64, color: Color32) {
 fn torque_temperature_ui(ui: &mut egui::Ui, inputs: &DesignInputs, results: &DesignResults) {
     let s = torque_temperature(inputs, results);
     if s.nominal.is_empty() {
-        ui.weak(NOTHING_TO_PLOT);
+        ui.weak(if s.axis_is_empty() {
+            EMPTY_TEMPERATURE_AXIS
+        } else {
+            NOTHING_TO_PLOT
+        });
         return;
     }
     let visuals = ui.visuals().clone();
@@ -454,6 +511,13 @@ fn sweep_ui(
     floor_Nm: f64,
 ) {
     let s = sweep_points(rows);
+    if s.is_empty() {
+        ui.weak(NOTHING_TO_PLOT);
+        return;
+    }
+    if s.dropped > 0 {
+        ui.weak(rows_not_plotted(s.dropped));
+    }
     let visuals = ui.visuals().clone();
     plot(ui, kind, x, "Pull-out at the operating temperature [N·m]").show(ui, |p| {
         p.line(Line::new(line, s.line).color(BLUE).width(1.5));
@@ -970,5 +1034,113 @@ mod tests {
         }
         let texts = drawn_texts(&draw(PlotKind::TorqueAngle, &inputs));
         assert!(texts.iter().any(|t| t == NOTHING_TO_PLOT));
+    }
+
+    /// Two frames of a sweep plot of `rows` (a plot settles its bounds on the first).
+    fn draw_sweep(rows: &[SweepRow], design: [f64; 2]) -> egui::FullOutput {
+        let ctx = egui::Context::default();
+        let mut output = None;
+        for _ in 0..2 {
+            output = Some(sized_frame(
+                &ctx,
+                egui::vec2(900.0, 600.0),
+                Vec::new(),
+                |ui| sweep_ui(ui, PlotKind::GapSweep, "x", PULL_OUT, rows, design, 1.0),
+            ));
+        }
+        output.unwrap()
+    }
+
+    #[test]
+    fn a_sweep_without_a_finite_row_says_there_is_nothing_to_plot() {
+        // A harmonic set outside its choices (a struct written by hand) leaves every row's
+        // pull-out NaN: the sweep tabs say so, as the other plots do, not an empty frame.
+        let mut inputs = DesignInputs::default();
+        inputs.coupling.max_harmonic = 4;
+        let r = compute_all(&inputs);
+        for (kind, rows) in [
+            (PlotKind::GapSweep, &r.gap_sweep),
+            (PlotKind::PoleSweep, &r.pole_sweep),
+        ] {
+            let s = sweep_points(rows);
+            assert!(s.is_empty(), "{kind:?}: {s:?}");
+            assert_eq!(s.dropped, rows.len(), "{kind:?}");
+            let texts = drawn_texts(&draw(kind, &inputs));
+            assert!(
+                texts.iter().any(|t| t == NOTHING_TO_PLOT),
+                "{kind:?}: {texts:?}"
+            );
+        }
+        // The default design's rows are all finite: nothing dropped, no note.
+        let r = compute_all(&DesignInputs::default());
+        let s = sweep_points(&r.gap_sweep);
+        assert!(!s.is_empty() && s.dropped == 0);
+        let texts = drawn_texts(&draw(PlotKind::GapSweep, &DesignInputs::default()));
+        assert!(!texts.iter().any(|t| t == NOTHING_TO_PLOT));
+        assert!(
+            !texts.iter().any(|t| t.starts_with(NOT_PLOTTED)),
+            "{texts:?}"
+        );
+    }
+
+    #[test]
+    fn sweep_rows_that_are_not_numbers_are_counted_in_a_note() {
+        // Some rows not numbers: the others are drawn, and a note counts those left out.
+        let r = compute_all(&DesignInputs::default());
+        let design = [r.model.corner_gap_mm, r.model.pullout_Nm];
+        let mut rows = r.gap_sweep.clone();
+        rows[0].pullout_op_Nm = f64::NAN;
+        let s = sweep_points(&rows);
+        assert_eq!(s.dropped, 1);
+        assert_eq!(s.line.len(), rows.len() - 1);
+        let texts = drawn_texts(&draw_sweep(&rows, design));
+        assert!(texts.iter().any(|t| t == &rows_not_plotted(1)), "{texts:?}");
+        assert!(!texts.iter().any(|t| t == NOTHING_TO_PLOT));
+        rows[1].variable = f64::INFINITY;
+        assert_eq!(sweep_points(&rows).dropped, 2);
+        let texts = drawn_texts(&draw_sweep(&rows, design));
+        assert!(texts.iter().any(|t| t == &rows_not_plotted(2)), "{texts:?}");
+        assert_eq!(
+            rows_not_plotted(1),
+            "Not plotted: 1 row holds a value that is not a number"
+        );
+        assert_eq!(
+            rows_not_plotted(2),
+            "Not plotted: 2 rows hold a value that is not a number"
+        );
+    }
+
+    #[test]
+    fn an_empty_temperature_axis_is_named_as_such() {
+        // A design file can hold a minimum temperature at or past the axis end (InputSet::set
+        // checks no range): every value is finite, so the message names the empty axis.
+        let defaults = DesignInputs::default();
+        let r = compute_all(&defaults);
+        let top = r.temperature.summary.governing_limit_C.max(50.0) + PAST_THE_LIMIT_C;
+        for min_temp in [top, top + 1.0, 500.0] {
+            let mut inputs = DesignInputs::default();
+            inputs.metal.min_temp_C = min_temp;
+            let r = compute_all(&inputs);
+            let s = torque_temperature(&inputs, &r);
+            assert!(s.nominal.is_empty(), "{min_temp}");
+            assert_eq!(s.axis_C, [min_temp, top], "{min_temp}");
+            let texts = drawn_texts(&draw(PlotKind::TorqueTemperature, &inputs));
+            assert!(
+                texts.iter().any(|t| t == EMPTY_TEMPERATURE_AXIS),
+                "{min_temp}: {texts:?}"
+            );
+            assert!(!texts.iter().any(|t| t == NOTHING_TO_PLOT), "{min_temp}");
+        }
+        // Values that are not numbers still say so: the minimum temperature itself, and a
+        // harmonic set outside its choices (the axis is fine, every torque NaN).
+        let mut nan_min = DesignInputs::default();
+        nan_min.metal.min_temp_C = f64::NAN;
+        let mut bad_set = DesignInputs::default();
+        bad_set.coupling.max_harmonic = 4;
+        for inputs in [nan_min, bad_set] {
+            let texts = drawn_texts(&draw(PlotKind::TorqueTemperature, &inputs));
+            assert!(texts.iter().any(|t| t == NOTHING_TO_PLOT), "{texts:?}");
+            assert!(!texts.iter().any(|t| t == EMPTY_TEMPERATURE_AXIS));
+        }
     }
 }
