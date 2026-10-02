@@ -5,6 +5,31 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-01 — Magcoupling M4-3: equation explorer, assumptions, teaching notes, pickers (branch magcoupling/m4-3)
+- Equation explorer (`gui/typeset.rs`, `gui/readouts.rs`, `gui/explorer.rs`): an egui typesetter for
+  the A-3 markup (stacked fractions, scripts, strokes for √, ∈ and the ceiling and floor brackets,
+  a large Σ, `arg max`, scaled delimiters, `cases` braces, `where` lines); every displayed value
+  (dashboard, results table, geometry callouts, clamp tab, a readout line over each plot) shows its
+  equation on hover with each term coloured, and the terms' values and input rows are framed in
+  those colours on screen; a click opens the docked Equation panel (bottom of the centre region:
+  breadcrumb, the equation large, value and corrections, term list, "used by"); clicking a term
+  drills in, an input term opens its group, scrolls to and frames its row. The registry is built
+  once per process. A selector compared for equality with a code shows its choice's label (an
+  ordering keeps its numbers); a test checks every drawn run against the record's plain rendering.
+  A long walk shows its last 8 crumbs; the term list's swatches fade while another equation's
+  value is hovered.
+- Assumptions: the inputs side's Assumptions view (each assumption's rows, rationale and source),
+  the header banner with "Reset to workbook defaults", assumption and affected terms tagged in the
+  Equation panel.
+- Teaching notes: the Explain toggle shows the open equation's reviewed note with its painted
+  diagram (`gui/diagrams.rs`: six kinds); "Start here" walks the suggested order.
+- Pickers and warnings (`gui/pickers.rs`): material choices with their library properties; part
+  and grade pickers from the A6 tables beside the text fields; the material warnings at the top of
+  the dashboard in their severity's colour, each linked to its note.
+- Decisions M43-1 to M43-15 (the plan's table); deferred: per-row end-effect greying (M43-15),
+  symbol renames (M43-13). The engine, parity, differential data and registry are unchanged.
+  Nothing pushed.
+
 ## 2026-10-01 — Magcoupling M4-2: final review fix wave (branch magcoupling/m4-2)
 - The whole-branch review found no Critical or Important issue; five Minor findings, fixed with a
   failing test first where they change behaviour:

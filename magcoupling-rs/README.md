@@ -34,8 +34,12 @@ files and share links, the sizing mode switch and the linkage app's theme (see
 [The panel](#the-panel); decisions M41-1 to M41-15). M4-2 complete: the centre region's views,
 the geometry view to scale (the default: both rings, the housing in effect, the dimension
 callouts, the space claim and the design checks), five plots (egui_plot) and the clamp drawing
-and table, and a results table that fits a narrow window (decisions M42-1 to M42-9). Next: M4-3
-(equation explorer, assumptions panel, teaching notes, material and grade pickers).
+and table, and a results table that fits a narrow window (decisions M42-1 to M42-9). M4-3
+complete: the equation explorer (an egui typesetter for the A-3 markup, every displayed value's
+equation on hover with its terms coloured and marked on screen, the docked Equation panel with
+its breadcrumb, term list, "used by" and leaf-to-slider links), the assumptions view and banner,
+the teaching notes with their diagrams and the start-here order, the material, part and grade
+pickers and the material warnings (decisions M43-1 to M43-15). Next: M3 (live 3D fields).
 
 The 1,149 checks are 330 result cells, 659 table cells (494 sweep cells and 165
 screw-table cells) and 160 default inputs. The corrections are listed under
@@ -139,7 +143,7 @@ Results can be +inf (E13); exporters must handle it.
 | `src/engine/sizing.rs` | Addendum A1 inverse sizing (Torque → Magnets): `FreeVariable` (axial length, the default; magnets per ring, even only; ring radius), `solve` (a coarse scan of `SCAN_CELLS` cells, refined between samples at the first crossing, at each peak and at each validity edge to `VALUE_TOLERANCE_MM`; the smallest value that meets the target, or `NotReachable` with the best valid value it evaluated; the stated limit: a torque hump whose rise and fall both lie inside one cell), `is_valid` (a value counts only if its blocks fit, faceted blocks on their flats and arcs without overlapping, the keyway leaves hub wall and f_end > 0), `SizingOutcome`, `SizingError` |
 | `src/engine/assumptions.rs` | Addendum A3 assumptions panel: `ASSUMPTIONS` (the spec's 14 rows over the 15 inputs flagged `.assumption()`: label, input paths, rationale, source), `states`, `modified`, `any_modified` (the "assumptions modified" banner), `reset_to_workbook_defaults` |
 | `src/engine/explain/` | Addendum A2 equation explorer, engine side (plan A-3): the formula markup (`markup.rs`: grammar, parser, parse tree), its evaluator with a trace of what a result depends on (`eval.rs`), the static tables a formula reads (`tables.rs`: magnets, grades, the part materials, aluminium alloys, adhesives, screw sizes), the authoring form (`record.rs`) and the records, one file per chain (`records/`), the registry (`registry.rs`: `Registry::build`, `equation_for`, `used_by`, the dependency graph, `term_rows`; each result's upstream corrections are precomputed at build, which a unit test checks against a walk of the graph), display symbols (`symbols.rs`), the v1 scope (`scope.rs`, decision 31) and a plain-text rendering (`render.rs`) |
-| `src/gui/` | Feature `gui`: `panel.rs` (`MagcouplingPanel`: the layout, the session buttons and shortcuts, `PanelRequest`, `CentreView`, the sizing controls), `geometry.rs` (the geometry view's drawing in millimetres: `geometry`, `View`, `Callout`, `Note`), `geometry_view.rs` (`geometry_ui`: both views to scale, the callout list, `Transform`, `side_by_side`, `arrowhead`), `plots.rs` (`PlotKind`, the series builders, `plot_ui`), `clamp_drawing.rs` (`clamp_drawing`, the port of drawing.py, `clamp_ui` with the clamp table), `inputs.rs` (`InputCatalogue`, `KEY_DESIGN`, `SECTION_LABELS`, `OPTIONAL_SEEDS`, `step_decimals`, `text_hint`, `input_tooltip`), `input_ui.rs` (`input_row`, `slider`: one input row of any type), `dashboard.rs` (`DASHBOARD`, `verdict_level`, `END_EFFECT_ROWS`, `STORED_3D_ROWS`, `result_info`, `result_tooltip`, the hover hook, and `hover_text`, its text with the correction marks), `corrections.rs` (`CorrectionIndex`: the corrected-vs-workbook markers from the registry and the golden files), `results_table.rs` (`table_entries`, `search`, `results_csv`, `results_json`, `column_widths`), `session.rs` (design files and share links: `Design`, `design_to_json`, `design_from_json`, `encode_share_payload`, `decode_share_payload`, `LoadError`), `history.rs` (`History`: undo and redo), `sizing.rs` (`SizingMode`, `SizingState`, `SizingRunner`: debounced inverse sizing), `format.rs` (`format_value`, `with_unit`: the display text of every value, `+inf` and `NaN` included), `test_support.rs` (headless egui helpers, tests only) |
+| `src/gui/` | Feature `gui`: `panel.rs` (`MagcouplingPanel`: the layout, the session buttons and shortcuts, `PanelRequest`, `CentreView`, `InputsView` (the design inputs or the assumptions), the assumptions banner, the sizing controls), `typeset.rs` (the equation typesetter: `layout`, `layout_equation`, `layout_symbol`, `Laid`, `Ink`, `TermColors`, `TERM_PALETTE`, `glyph_safe`, `equation_ui`, `laid_ui`, `term_at`), `readouts.rs` (the readout hook: `registry`, `Readouts::show`, `show_over`, `mark`, `ReadoutEvents`), `explorer.rs` (the Equation panel: `Explorer`, `explorer_ui`, `note_ui`, `term_tag`, `reviewed_note`), `diagrams.rs` (the notes' six diagrams: `diagram_shapes`, `diagram_ui`), `pickers.rs` (the material, part and grade pickers: `MATERIAL_PICKERS`, `picker_ui`, `choice_hover`, the property texts), `geometry.rs` (the geometry view's drawing in millimetres: `geometry`, `View`, `Callout`, `Note`), `geometry_view.rs` (`geometry_ui`: both views to scale, the callout list, `Transform`, `side_by_side`, `arrowhead`), `plots.rs` (`PlotKind`, the series builders, `plot_ui`), `clamp_drawing.rs` (`clamp_drawing`, the port of drawing.py, `clamp_ui` with the clamp table), `inputs.rs` (`InputCatalogue`, `KEY_DESIGN`, `SECTION_LABELS`, `OPTIONAL_SEEDS`, `step_decimals`, `text_hint`, `input_tooltip`), `input_ui.rs` (`input_row`, `slider`: one input row of any type), `dashboard.rs` (`DASHBOARD`, `verdict_level`, `END_EFFECT_ROWS`, `STORED_3D_ROWS`, `result_info`, `result_tooltip`, the readouts' hover text, `hover_text`, its text with the correction marks, and the material warnings: `warning_lines`, `warning_note`, `severity_level`), `corrections.rs` (`CorrectionIndex`: the corrected-vs-workbook markers from the registry and the golden files), `results_table.rs` (`table_entries`, `search`, `results_csv`, `results_json`, `column_widths`), `session.rs` (design files and share links: `Design`, `design_to_json`, `design_from_json`, `encode_share_payload`, `decode_share_payload`, `LoadError`), `history.rs` (`History`: undo and redo), `sizing.rs` (`SizingMode`, `SizingState`, `SizingRunner`: debounced inverse sizing), `format.rs` (`format_value`, `with_unit`: the display text of every value, `+inf` and `NaN` included), `test_support.rs` (headless egui helpers, tests only) |
 | `src/app.rs` | Feature `app`: `MagcouplingApp` (the panel as a full page; does its requests), `run_native`, `TITLE`, `CANVAS_ID`, `SHARE_LINK_LOADED`, `DESIGN_FILE_LOADED`; `app/theme.rs` (the linkage app's CAD dark visuals, forced dark), `app/files.rs` (saving: a file dialog natively, a download on the web; `DesignPicker`) |
 | `src/bin/` | Feature `app`: `magcoupling_app.rs` (native window), `magcoupling_web.rs` (wasm32 entry, eframe WebRunner; opens a `?m=` share link) |
 | `tests/` | Parity, differential, metadata and registry tests (below) |
@@ -159,8 +163,9 @@ Not a Cargo workspace member: `linkage-sim-rs` will depend on it by path
 
 ### The panel
 
-M4-1 (plan `docs/superpowers/plans/2026-10-01-magcoupling-m4-1-gui-inputs-dashboard-session.md`)
-and M4-2 (plan `docs/superpowers/plans/2026-10-01-magcoupling-m4-2-geometry-plots-clamp.md`).
+M4-1 (plan `docs/superpowers/plans/2026-10-01-magcoupling-m4-1-gui-inputs-dashboard-session.md`),
+M4-2 (plan `docs/superpowers/plans/2026-10-01-magcoupling-m4-2-geometry-plots-clamp.md`) and M4-3
+(plan `docs/superpowers/plans/2026-10-01-magcoupling-m4-3-explorer-assumptions-notes-pickers.md`).
 A header with the session buttons; the inputs on the left; the dashboard on the right; the
 centre region between them (`CentreView`, one tab row: the geometry view, the five plots, the
 clamp and the results table; decisions M42-1 and M42-2), under the end-effect banner when
@@ -181,7 +186,8 @@ inputs are drawn, so the readouts show the same frame's edits.
   ring's length in use moves nothing; the measured drag at the model's drag switches the thermal
   summary to the measured branch); a text input a text field with a note (library part or not,
   grade or not). Each row shows a dot when changed from the default, a
-  reset button, and a tooltip with help, path, workbook cell, slider range and default.
+  reset button, and a tooltip with help, path, workbook cell, slider range and default. A tab
+  row above them switches to the **Assumptions** view (decision M43-7).
 - **Dashboard** (`dashboard.rs`): the 15 headline numbers in Python's order, the space claim
   badge and the end-effect flag (`DASHBOARD`). Green, amber or red badges come from the check
   verdicts (`verdict_level`). A value whose workbook cell the deviation registry ties to an applied
@@ -189,8 +195,9 @@ inputs are drawn, so the readouts show the same frame's edits.
   corrected values and the evidence in its tooltip (`corrections.rs`, M41-10). When f_end <= 0
   (audit M9) the rows computed from the pull-out (`END_EFFECT_ROWS`) are greyed without badges
   under the banner "End-effect model out of range"; the temperature rows that read the stored 3D
-  fields carry "3D values from the workbook" (M3 comes after M4). `result_tooltip` is the one
-  hover hook of every readout, keyed by result path.
+  fields carry "3D values from the workbook" (M3 comes after M4). `result_tooltip` is the hover
+  text of every readout, keyed by result path, built only while the row is hovered
+  (`DashboardLine::tooltip`). Over the rows, the material warnings that fire (below).
 - **Results table** (`results_table.rs`): every result with label, value, unit, workbook cell and
   marker; search by label, path or cell; CSV (`path,label,value,unit,cell`) and JSON (with the
   design that produced the results: in Torque -> Magnets the inputs with the free variable at the
@@ -215,8 +222,8 @@ inputs are drawn, so the readouts show the same frame's edits.
   diameter in the side view), an exceeded axis red. Under the callouts: the autofit wall (the
   wall rule's `materials.cup_wall_suggested_mm`, unless there is no back iron) and the two
   design checks while they hold (the cap thread below the cup body OD; the boss OD differing
-  between Metal design and Shaft clamps: flagged only, no engine change; M42-9). Hovering a dimension
-  or its text shows its result's hover text (`dashboard::hover_text`, the hook M4-3 joins). A
+  between Metal design and Shaft clamps: flagged only, no engine change; M42-9). A dimension and
+  its text are readouts: hovering shows the result's hover text and equation (below). A
   piece holding a number that is not finite is not drawn (a note counts them per view), a claim
   line farther than `CLAIM_REACH` (10) times the pieces' extent is left off with a note (a design
   file can hold any finite number), and blocks are drawn for 2 to 200 poles (below 3 the pocket
@@ -242,6 +249,57 @@ inputs are drawn, so the readouts show the same frame's edits.
   drawing.py's message when no screw size
   fits; then the clamp table: the Shaft clamps summary, the machining steps and the 'Clamp screw
   sizes' table with the recommended size's column in green, each value with its hover text.
+- **Equation explorer** (`typeset.rs`, `readouts.rs`, `explorer.rs`; spec Addendum A2): every
+  displayed value (the dashboard rows, the results-table rows, the geometry callouts, the clamp
+  summary and screw table, and a readout line over each plot, `PlotKind::readouts`, M43-11) goes
+  through `Readouts::show`: hovering it shows its hover text, then its equation typeset (stacked
+  fractions, scripts, √ and ∈ drawn with strokes, a large Σ, `arg max`, delimiters scaled to their
+  contents, a brace per `cases`, the `where` lines; a selector compared for equality (= or ≠)
+  with a code as its choice's label, an ordering with its numbers (`5 ≤ N_h`), a screw row as its
+  size; factors side by side as in `render::plain`), each term in its own colour (`TERM_PALETTE`,
+  in the formula tree's order, a ninth term taking the first again, M43-3); from the next frame
+  every value and input row of a term of that equation is framed in the term's colour, a Σ's term
+  by the harmonics the design sums. A click opens the value in the
+  **Equation panel**, docked at the bottom of the centre region and closed until then (its header
+  button toggles it; M43-1, M43-2): the equation large, its label, value, workbook cell and the
+  corrections it embodies (`corrections_upstream`; the dashboard and table markers stay M4-1's,
+  M43-14), the term list (colour, symbol, value in the unit the formula reads, label, and what the
+  term is; the colour swatches fade while another equation's value is hovered, its terms being
+  the ones marked on screen), the breadcrumb (a long walk shows its last 8 crumbs after "…") and
+  "used by". Clicking a term, in the equation or the list, drills
+  into it; an input term instead opens its group (or the Assumptions view), scrolls its row into
+  view once and frames it (M43-12); a result without a record shows its label, value and cell
+  (M43-9). The registry is built once per process (`readouts::registry`, M43-5) and logs
+  `magcoupling explorer: N equations`. egui's default fonts lack ϑ, the superscript minus and ∝:
+  they are drawn as θ, ¯ and ~ (`glyph_safe`, M43-6), the markup and the notes unchanged; a test
+  lays out every equation and checks every character against the fonts, and another checks every
+  text run against the record's plain rendering (a choice label only where the formula compares
+  for equality).
+- **Assumptions** (panel.rs; spec Addendum A3): the inputs side's Assumptions view lists the 14
+  assumptions (`engine::assumptions::ASSUMPTIONS`), each with its changed-from-default dot, its
+  input rows (the inputs' own rows, so an edit there is an edit like any other; the inputs also
+  stay in their groups), its rationale and its source. While any differs from its workbook
+  default, the header shows "Assumptions modified: ..." beside "Reset to workbook defaults"
+  (`assumptions::reset_to_workbook_defaults`: the design inputs stay; the reset can be undone).
+  In the Equation panel an assumption term is tagged, with the dot when changed, a result a
+  modified assumption flows into is tagged too, and the open equation names the modified
+  assumptions it depends on (`Registry::term_style`, `modified_assumptions_upstream`).
+- **Teaching notes** (`explorer.rs`, `diagrams.rs`; spec Addendum A4): the Explain toggle (off by
+  default) shows under the open equation's value its reviewed note (`notes::note_for`; a note
+  shown by id, a warning's or a start-here step's, goes through `explorer::reviewed_note`), with its
+  watch-out line, its diagram painted with egui (the square wave and its harmonics, the flux paths
+  with and without back iron, torque against angle, the end fringing, the demagnetization knee
+  with load lines, first-order heating) and its sources (M43-10). "Start here" walks
+  `notes::START_HERE`, each step opening its equation with Explain on (Previous, Next, Stop).
+- **Pickers and warnings** (`pickers.rs`, `dashboard.rs`; spec Addendum A5, A6; M43-4, M43-8): a
+  part material's drop-down shows each choice's library row on hover and sums up the material
+  picked under it; under each magnet part's text field a "Pick a part" drop-down lists "Custom
+  dimensions (manual)" and the 15 library parts (with every correction on: E3's remanence, E19's
+  rating and grade), and under each grade's a "Pick a grade" drop-down lists "Blank" and the 17
+  grades, each with its row on hover; the text fields stay for typed names. The material
+  warnings that fire show at the top of the dashboard in their severity's colour, each with a
+  "Why: <note>" link that opens its reviewed note on its own in the Equation panel, with links to
+  the equations it explains.
 - **Session** (`session.rs`, `history.rs`): undo and redo (buttons, Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y)
   of every change to the design, one step per settled edit (a drag, a typed value, a part name
   typed letter by letter), one per arrow nudge and one for a held arrow key's whole auto-repeat
@@ -294,7 +352,8 @@ glue and the wasm are gitignored build outputs). Its canvas id is
 go. The web smoke test is the `gui-smoke` workflow (`.claude/workflows/gui-smoke.js`): it opens
 `/magcoupling/` through a pinned share link and checks the canvas, the geometry view in the first
 screenshot (the default view: no click), the console lines
-`magcoupling: loaded the design from the share link` and `magcoupling sizing: Solved at`, then
+`magcoupling: loaded the design from the share link`, `magcoupling sizing: Solved at` and
+`magcoupling explorer: ` (the equation registry built in the browser), then
 clicks "Load design" once (found in a screenshot), uploads a pinned design file through rfd's web
 picker and checks `magcoupling: loaded a design file`, with zero console errors (a test decodes
 the pinned link and the design file).
@@ -407,7 +466,9 @@ computed but did not expose, the engine exposes it as a Rust-only result (a read
 change; one exception, decision G4: with E20 off the outer ring's demagnetization block is
 computed anew for the per-ring results, and it governs nothing and moves no workbook cell). The registry is built explicitly (`Registry::build()`, a few ms) and owned by the
 caller: no global state. Formatted verdicts are stated in the markup too (`concat`, `fmt`, `fmtnum`), with `ceilto` and `floorto` for Excel's CEILING and FLOOR and the literals `inf` and `nan`, so no record needs a Rust closure. For A3 it gives each term's style (`term_style`: assumption, changed from default, downstream of a modified assumption) and names the modified assumptions upstream of a result; for the panel it gives a selector code's choice labels (`choices`) and the corrections embodied upstream of a result (`corrections_upstream`, the corrected-vs-workbook marker). The A4 teaching notes are static data (`notes.rs`), each listing the equations it explains; the panel shows a note only once a physics reviewer has signed it off (`note_for`); 17 of the 17 are signed off (plan A-3 Task 16; six of them revised after an independent physics review on 2026-10-01 and signed off again). There are 17: the spec's list (harmonics, the back-iron factor, pull-out against angle, end effect, Br(T), demagnetization, slip loss and skin depth, the thermal time constant, clamp preload, and the physics behind each of the six A5 warnings) plus ferrite's cold side and the one-point calibration; `START_HERE` opens them in the spec's order (torque chain, back iron, temperature, demagnetization, slip heating, clamps). Plan:
-`docs/superpowers/plans/2026-09-30-magcoupling-addendum-a3-explainability.md`.
+`docs/superpowers/plans/2026-09-30-magcoupling-addendum-a3-explainability.md`. The GUI side
+(plan M4-3) typesets the records, hovers and opens them, shows the notes and paints their
+diagrams: see [The panel](#the-panel).
 
 | Chain (decision 31) | Records | Status |
 |---|---|---|
