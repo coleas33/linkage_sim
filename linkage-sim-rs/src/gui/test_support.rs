@@ -52,9 +52,33 @@ pub(crate) fn key_press(key: egui::Key) -> egui::Event {
     egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE }
 }
 
+/// A key tapped with `modifiers` held: its press and its release in one frame. egui keeps a
+/// pressed key in `InputState::keys_down` until its release, so a press alone holds it down for
+/// good (and an egui panel waiting for the keys to settle waits forever).
+pub(crate) fn key_tap(key: egui::Key, modifiers: egui::Modifiers) -> Vec<egui::Event> {
+    [true, false]
+        .map(|pressed| egui::Event::Key { key, physical_key: None, pressed, repeat: false, modifiers })
+        .to_vec()
+}
+
+/// A click at `at` as the input of three frames: the pointer moved there,
+/// the press, the release.
+pub(crate) fn click_events(at: egui::Pos2) -> [Vec<egui::Event>; 3] {
+    [vec![egui::Event::PointerMoved(at)], vec![primary_button(at, true)], vec![primary_button(at, false)]]
+}
+
 /// Text typed into the focused widget.
 pub(crate) fn typed(text: &str) -> egui::Event {
     egui::Event::Text(text.to_string())
+}
+
+/// The native app's default window [points]: the screen of the headless
+/// window and menu tests.
+pub(crate) const NATIVE_SCREEN: egui::Vec2 = egui::vec2(1400.0, 900.0);
+
+/// A frame's input: `events` on a screen of `size` [points] at the origin.
+pub(crate) fn screen_input(events: Vec<egui::Event>, size: egui::Vec2) -> egui::RawInput {
+    egui::RawInput { events, screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)), ..Default::default() }
 }
 
 /// One headless frame of `draw` inside a central panel, with `events` as
@@ -156,4 +180,12 @@ pub(crate) fn pose_at(state: &mut AppState, deg: f64) {
     state.solve_at_angle(deg.to_radians());
     assert!(state.solver_status.converged, "the mechanism assembles at {deg} deg");
     assert_eq!(state.current_sweep_index(), Some(sample_at(state, deg)));
+}
+
+/// The magnetic coupling calculator's default design with its face gap at
+/// `gap_mm`: a design file its panel loads, one undo step of the panel.
+pub(crate) fn magcoupling_gap_design(gap_mm: f64) -> magcoupling::gui::session::Design {
+    let mut design = magcoupling::gui::session::Design::default();
+    design.inputs.metal.face_gap_mm = gap_mm;
+    design
 }
