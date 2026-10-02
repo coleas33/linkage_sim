@@ -18,6 +18,16 @@
 //! marks are another equation's, the term list's swatches fade ([`SWATCH_DIM`]). A long trail
 //! shows its last [`SHOWN_CRUMBS`] crumbs after one [`ELIDED`].
 //!
+//! Teaching notes (spec Addendum A4): the Explain toggle, off by default, shows under the open
+//! equation the reviewed note that explains it ([`notes::note_for`]: only notes a physics
+//! reviewer has checked), with its watch-out line and its diagram ([`crate::gui::diagrams`]),
+//! so it follows what the user investigates. "Start here" walks the suggested order
+//! ([`notes::START_HERE`]): each step opens its equation with Explain on. A warning's link
+//! opens its note on its own ([`Explorer::open_note`]; five of the six warning notes explain
+//! no single equation), with links to the equations it does explain. Every note the panel
+//! names or draws by id goes through [`reviewed_note`], so a note sent back to Draft never
+//! shows.
+//!
 //! Assumptions (spec Addendum A3 "Traceability"): an assumption term is tagged as one in the
 //! term list, with the changed-from-default dot when it differs from its workbook default; a
 //! result some modified assumption flows into is tagged too, and the open equation says which
@@ -30,10 +40,11 @@
 use egui::{Color32, Sense, Vec2};
 
 use crate::engine::explain::markup::{Expr, Symbol};
-use crate::engine::explain::notes::covers;
+use crate::engine::explain::notes::{self, Note, Review, START_HERE, covers};
 use crate::engine::explain::{Design, Equation, TermKind, TermStyle};
 use crate::engine::meta::{ResultSet, Value};
 use crate::gui::dashboard::result_info;
+use crate::gui::diagrams::diagram_ui;
 use crate::gui::format::{format_value, with_unit};
 use crate::gui::input_ui::CHANGED_DOT;
 use crate::gui::inputs::InputCatalogue;
@@ -71,6 +82,45 @@ pub const DEPENDS_ON_MODIFIED: &str = "Depends on modified assumptions";
 
 /// The term list's tag of an assumption.
 pub const ASSUMPTION_TAG: &str = "assumption: click to find its row";
+
+/// The toggle of the teaching note under the open equation.
+pub const EXPLAIN: &str = "Explain";
+
+/// The button that starts the suggested reading order.
+pub const START_HERE_BUTTON: &str = "Start here";
+
+/// The start-here steps' buttons.
+pub const PREVIOUS: &str = "Previous";
+pub const NEXT: &str = "Next";
+pub const STOP: &str = "Stop";
+
+/// What Explain shows for an equation without a reviewed note.
+pub const NO_NOTE: &str = "No teaching note for this equation.";
+
+/// The start of a note's watch-out line.
+pub const WATCH_OUT: &str = "Watch out";
+
+/// The start of a note's sources line.
+pub const SOURCES: &str = "Sources";
+
+/// The start of the links under a note opened on its own.
+pub const EXPLAINS: &str = "Explains";
+
+/// The note `id` if a physics reviewer has checked it (spec A4 "Accuracy gate"), as
+/// [`notes::note_for`] gives an equation's: every note the panel or the dashboard shows by id.
+pub fn reviewed_note(id: &str) -> Option<&'static Note> {
+    notes::note(id).filter(|n| matches!(n.review, Review::Reviewed { .. }))
+}
+
+/// The start of the start-here bar.
+pub fn start_here_text(step: usize) -> String {
+    let title = reviewed_note(START_HERE[step].0).map_or("", |n| n.title);
+    format!(
+        "{START_HERE_BUTTON} {} of {}: {title}",
+        step + 1,
+        START_HERE.len()
+    )
+}
 
 /// The text size of the open equation [points].
 pub const PANEL_SIZE: f32 = 22.0;
@@ -118,6 +168,12 @@ pub struct Explorer {
     hovered: Option<String>,
     /// The input row a leaf term highlights.
     focus: Option<Focus>,
+    /// Whether the teaching note of the open equation is shown (off by default: spec A4).
+    pub explain: bool,
+    /// The start-here step shown, if the user is walking the suggested order.
+    start_here: Option<usize>,
+    /// A teaching note opened on its own (a warning's link), by id.
+    note: Option<&'static str>,
 }
 
 impl Explorer {
@@ -141,6 +197,45 @@ impl Explorer {
         self.trail = vec![path.to_owned()];
         self.open = true;
         self.focus = None;
+        self.note = None;
+        self.start_here = None;
+    }
+
+    /// Opens the teaching note `id` on its own (a warning's link).
+    pub fn open_note(&mut self, id: &'static str) {
+        self.note = Some(id);
+        self.trail.clear();
+        self.open = true;
+        self.focus = None;
+        self.start_here = None;
+    }
+
+    /// The note opened on its own, if any.
+    pub fn note(&self) -> Option<&'static str> {
+        self.note
+    }
+
+    /// Opens start-here step `step` (its equation, Explain on); a step past the last one
+    /// changes nothing.
+    pub fn start(&mut self, step: usize) {
+        if let Some(&(_, path)) = START_HERE.get(step) {
+            self.trail = vec![path.to_owned()];
+            self.open = true;
+            self.focus = None;
+            self.note = None;
+            self.explain = true;
+            self.start_here = Some(step);
+        }
+    }
+
+    /// The start-here step shown, if any.
+    pub fn start_here(&self) -> Option<usize> {
+        self.start_here
+    }
+
+    /// Leaves the start-here walk (the equation stays open).
+    pub fn stop(&mut self) {
+        self.start_here = None;
     }
 
     /// Follows a term or a "used by" link to `path`: one more step on the trail.
@@ -314,6 +409,9 @@ pub fn explorer_ui(
         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
         ui.strong(EQUATION_PANEL);
         ui.separator();
+        if let Some(note) = explorer.note.and_then(reviewed_note) {
+            let _ = ui.selectable_label(true, glyph_safe(note.title));
+        }
         let mut back = None;
         let last = explorer.trail.len().saturating_sub(1);
         let first = explorer.trail.len().saturating_sub(SHOWN_CRUMBS);
@@ -341,13 +439,49 @@ pub fn explorer_ui(
             if ui.button(CLOSE).clicked() {
                 explorer.open = false;
             }
+            if ui
+                .button(START_HERE_BUTTON)
+                .on_hover_text("A suggested order: torque, back iron, temperature, demagnetization, slip heating, clamps")
+                .clicked()
+            {
+                explorer.start(0);
+            }
+            ui.checkbox(&mut explorer.explain, EXPLAIN)
+                .on_hover_text("The teaching note of the open equation");
         });
     });
+    if let Some(step) = explorer.start_here {
+        ui.horizontal_wrapped(|ui| {
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+            ui.weak(start_here_text(step));
+            if ui
+                .add_enabled(step > 0, egui::Button::new(PREVIOUS))
+                .clicked()
+            {
+                explorer.start(step - 1);
+            }
+            if ui
+                .add_enabled(step + 1 < START_HERE.len(), egui::Button::new(NEXT))
+                .clicked()
+            {
+                explorer.start(step + 1);
+            }
+            if ui.button(STOP).clicked() {
+                explorer.stop();
+            }
+        });
+    }
     ui.separator();
     egui::ScrollArea::vertical()
         .id_salt("magcoupling_equation_scroll")
         .auto_shrink([false, false])
         .show(ui, |ui| {
+            if let Some(note) = explorer.note.and_then(reviewed_note) {
+                if let Some(path) = note_alone_ui(ui, note) {
+                    explorer.open_path(&path);
+                }
+                return;
+            }
             let Some(path) = explorer.current().map(str::to_owned) else {
                 ui.weak(EMPTY_TEXT);
                 return;
@@ -355,9 +489,12 @@ pub fn explorer_ui(
             // The marks on screen are another equation's while its value is hovered.
             let others_marked = explorer.hovered().is_some_and(|h| h != path);
             let follow = match registry().equation_for(&path) {
-                Some(eq) => equation_body(ui, eq, &terms, others_marked),
+                Some(eq) => equation_body(ui, eq, &terms, others_marked, explorer.explain),
                 None => {
                     no_equation_body(ui, &path, results);
+                    if explorer.explain {
+                        ui.weak(NO_NOTE);
+                    }
                     None
                 }
             };
@@ -387,14 +524,76 @@ pub fn explorer_ui(
         });
 }
 
+/// A teaching note: its title, its sentences, its watch-out line, its diagram and its sources
+/// (every text drawn through `glyph_safe`).
+pub fn note_ui(ui: &mut egui::Ui, note: &Note) {
+    ui.strong(glyph_safe(note.title));
+    for sentence in note.sentences {
+        ui.add(egui::Label::new(glyph_safe(sentence)).wrap());
+    }
+    if let Some(watch_out) = note.watch_out {
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(format!("{WATCH_OUT}: {}", glyph_safe(watch_out)))
+                    .color(ui.visuals().warn_fg_color),
+            )
+            .wrap(),
+        );
+    }
+    if let Some(diagram) = note.diagram {
+        diagram_ui(ui, diagram);
+    }
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(format!(
+                "{SOURCES}: {}",
+                glyph_safe(&note.sources.join("; "))
+            ))
+            .small()
+            .weak(),
+        )
+        .wrap(),
+    );
+}
+
+/// A note opened on its own: links to the equations it explains (a family's template is left
+/// out), then the note. Returns the equation clicked.
+fn note_alone_ui(ui: &mut egui::Ui, note: &Note) -> Option<String> {
+    let paths: Vec<&str> = note
+        .equations
+        .iter()
+        .copied()
+        .filter(|p| !p.contains('#') && registry().equation_for(p).is_some())
+        .collect();
+    let mut clicked = None;
+    if !paths.is_empty() {
+        ui.horizontal_wrapped(|ui| {
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+            ui.strong(EXPLAINS);
+            for path in paths {
+                if ui
+                    .link(crumb(path))
+                    .on_hover_text(term_label(path))
+                    .clicked()
+                {
+                    clicked = Some(path.to_owned());
+                }
+            }
+        });
+    }
+    note_ui(ui, note);
+    clicked
+}
+
 /// The open equation: its label and cell, the equation large (a term clicked is followed), the
-/// value, the corrections it embodies, and the term list, its swatches faded while
-/// `others_marked`. Returns the term clicked.
+/// value, the corrections it embodies, with `explain` its teaching note, then the term list,
+/// its swatches faded while `others_marked`. Returns the term clicked.
 fn equation_body(
     ui: &mut egui::Ui,
     eq: &Equation,
     terms: &Design<'_>,
     others_marked: bool,
+    explain: bool,
 ) -> Option<String> {
     let mut clicked = None;
     ui.weak(format!(
@@ -433,6 +632,16 @@ fn equation_body(
     if !corrections.is_empty() {
         let ids: Vec<String> = corrections.iter().map(ToString::to_string).collect();
         ui.weak(format!("{CORRECTIONS}: {}", ids.join(", ")));
+    }
+    if explain {
+        ui.separator();
+        match notes::note_for(&eq.target) {
+            Some(note) => note_ui(ui, note),
+            None => {
+                ui.weak(NO_NOTE);
+            }
+        }
+        ui.separator();
     }
     ui.add_space(6.0);
     ui.strong(TERMS);
@@ -714,6 +923,77 @@ mod tests {
         let hidden = unsummed(eq, &terms);
         assert_eq!(hidden, ["model.tau7_Pa", "model.tau9_Pa", "model.tau11_Pa"]);
         assert!(unsummed(registry().equation_for("model.f_end").unwrap(), &terms).is_empty());
+    }
+
+    #[test]
+    fn start_here_walks_the_suggested_order_and_a_click_leaves_it() {
+        let mut explorer = Explorer::default();
+        assert!(!explorer.explain, "Explain is off by default");
+        explorer.start(0);
+        assert_eq!(explorer.start_here(), Some(0));
+        assert!(explorer.explain && explorer.open);
+        assert_eq!(explorer.current(), Some(START_HERE[0].1));
+        let last = START_HERE.len() - 1;
+        explorer.start(last);
+        explorer.start(last + 1);
+        assert_eq!(
+            explorer.start_here(),
+            Some(last),
+            "past the last step: nothing"
+        );
+        assert_eq!(explorer.current(), Some(START_HERE[last].1));
+        // Drilling keeps the walk; a readout clicked leaves it.
+        explorer.drill("clamps.preload_N");
+        assert_eq!(explorer.start_here(), Some(last));
+        explorer.open_path("mass.total_g");
+        assert_eq!(explorer.start_here(), None);
+        explorer.start(2);
+        explorer.stop();
+        assert_eq!(explorer.start_here(), None);
+        assert_eq!(explorer.current(), Some(START_HERE[2].1));
+        assert_eq!(
+            start_here_text(0),
+            format!(
+                "{START_HERE_BUTTON} 1 of {}: Harmonic decomposition",
+                START_HERE.len()
+            )
+        );
+    }
+
+    #[test]
+    fn every_start_here_step_opens_an_equation_with_its_reviewed_note() {
+        for &(id, path) in START_HERE {
+            assert!(registry().equation_for(path).is_some(), "{path}");
+            assert_eq!(notes::note_for(path).map(|n| n.id), Some(id), "{path}");
+        }
+    }
+
+    #[test]
+    fn a_note_by_id_shows_only_once_reviewed() {
+        use crate::engine::explain::notes::NOTES;
+        for note in NOTES {
+            let reviewed = matches!(note.review, Review::Reviewed { .. });
+            assert_eq!(
+                reviewed_note(note.id).map(|n| n.id),
+                reviewed.then_some(note.id)
+            );
+        }
+        assert_eq!(reviewed_note("no.such.note").map(|n| n.id), None);
+    }
+
+    #[test]
+    fn a_note_opened_alone_replaces_the_trail_until_a_value_is_opened() {
+        let mut explorer = Explorer::default();
+        explorer.open_path("model.f_end");
+        explorer.open_note("a5.low_saturation");
+        assert_eq!(explorer.note(), Some("a5.low_saturation"));
+        assert_eq!(explorer.current(), None);
+        assert!(explorer.open);
+        explorer.open_path("materials.circuit_backiron");
+        assert_eq!(explorer.note(), None);
+        explorer.open_note("a5.low_saturation");
+        explorer.start(0);
+        assert_eq!(explorer.note(), None);
     }
 
     #[test]

@@ -2659,6 +2659,7 @@ mod tests {
                 .panel
                 .explorer
                 .open_path("temperature.summary.governing_limit_C");
+            harness.panel.explorer.explain = true;
             for _ in 0..3 {
                 harness.frame(Vec::new());
             }
@@ -2931,6 +2932,89 @@ mod tests {
                 .any(|l| l.left() < INPUTS_WIDTH && focus.iter().any(|r| r.contains_rect(*l))),
             "{labels:?} {focus:?}"
         );
+    }
+
+    /// Every painted shape that is a diagram's: the frames of the term marks and the panel's
+    /// own shapes aside, a diagram paints filled circles of radius 3.5 (its marked points).
+    fn diagram_points(output: &egui::FullOutput) -> usize {
+        crate::gui::test_support::flat_shapes(output)
+            .into_iter()
+            .filter(|s| matches!(s, egui::Shape::Circle(c) if c.radius == 3.5))
+            .count()
+    }
+
+    #[test]
+    fn the_explain_toggle_shows_the_open_equation_s_note_and_follows_it() {
+        use crate::engine::explain::notes::note;
+        use crate::gui::explorer::{EXPLAIN, NO_NOTE};
+        let mut harness = Harness::new();
+        harness.panel.explorer.open_path("model.pullout_Nm");
+        harness.frame(Vec::new());
+        let pullout = note("pullout_angle").unwrap();
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, pullout.title), 0, "hidden by default");
+        harness.click_text(EXPLAIN);
+        assert!(harness.panel.explorer.explain);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, pullout.title), 1);
+        assert_eq!(count(&output, pullout.sentences[0]), 1);
+        assert!(diagram_points(&output) >= 1, "its torque-angle diagram");
+        // Drill to f_end (its term row is below the note now): the note follows the equation.
+        harness.panel.explorer.drill("model.f_end");
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        let end = note("end_effect").unwrap();
+        assert_eq!(count(&output, end.title), 1);
+        assert_eq!(count(&output, pullout.title), 0);
+        // An equation no reviewed note explains.
+        harness.panel.explorer.open_path("mass.total_g");
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, NO_NOTE), 1);
+        // Off again: no note.
+        harness.click_text(EXPLAIN);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, NO_NOTE), 0);
+    }
+
+    #[test]
+    fn start_here_opens_the_matching_equations_in_turn() {
+        use crate::engine::explain::notes::{START_HERE, note};
+        use crate::gui::explorer::{NEXT, PREVIOUS, START_HERE_BUTTON, STOP, start_here_text};
+        let mut harness = Harness::new();
+        harness.click_text(EQUATION_PANEL);
+        harness.click_text(START_HERE_BUTTON);
+        assert_eq!(harness.panel.explorer.current(), Some(START_HERE[0].1));
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &start_here_text(0)), 1);
+        assert_eq!(count(&output, note(START_HERE[0].0).unwrap().title), 1);
+        harness.click_text(NEXT);
+        assert_eq!(harness.panel.explorer.current(), Some(START_HERE[1].1));
+        harness.click_text(NEXT);
+        assert_eq!(harness.panel.explorer.current(), Some(START_HERE[2].1));
+        harness.click_text(PREVIOUS);
+        assert_eq!(harness.panel.explorer.start_here(), Some(1));
+        harness.click_text(STOP);
+        assert_eq!(harness.panel.explorer.start_here(), None);
+        assert_eq!(harness.panel.explorer.current(), Some(START_HERE[1].1));
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn every_teaching_note_shows_with_glyphs_in_the_default_fonts() {
+        use crate::engine::explain::notes::NOTES;
+        let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
+        for note in NOTES {
+            harness.panel.explorer.open_note(note.id);
+            harness.frame(Vec::new());
+            let output = harness.frame(Vec::new());
+            let texts = drawn_texts(&output);
+            let title = crate::gui::typeset::glyph_safe(note.title);
+            assert!(texts.contains(&title), "{}", note.id);
+            for text in &texts {
+                crate::gui::test_support::assert_glyphs(&harness.ctx, text, note.id);
+            }
+        }
     }
 
     #[test]
