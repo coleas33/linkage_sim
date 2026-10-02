@@ -178,6 +178,7 @@ The full solver port (Phases 1-4: kinematics, statics, inverse dynamics, forward
 - **Share via URL**: compress mechanism JSON (deflate + base64url), shareable link preserves crank angle
 - **Image trace overlay**: import background PNG/JPEG with adjustable opacity, scale, and offset
 - **Export**: PNG, SVG, GIF (ping-pong loop), DXF, CSV, HTML report with interactive Plotly charts
+- **Magnetic coupling calculator** (Tools > Magnetic coupling): the [`magcoupling-rs`](magcoupling-rs/README.md) calculator in a window beside the mechanism, its design kept apart from the mechanism and kept while the window is closed; the keys go to the window or the mechanism, whichever was clicked last; `?tool=magcoupling` opens it when the web app starts. The same calculator runs on its own at [`/magcoupling/`](https://linkage.colesorkness.com/magcoupling/)
 - **Welcome screen** with quick-start buttons; interactive tutorial (Help > Tutorial: Build a 4-Bar); demo mode auto-cycling all samples
 - **Multi-select** (Shift+click), arrow-key nudge, Scale Mechanism tool, undo/redo with visual history panel
 - **Autosave** (every 30s) with recovery prompt on startup; recent files menu
@@ -189,11 +190,11 @@ The full solver port (Phases 1-4: kinematics, statics, inverse dynamics, forward
 **Run in browser (WASM):**
 ```bash
 cd linkage-sim-rs
-./scripts/build_web.sh          # Build WASM + JS bindings
+./scripts/build_web.sh          # Build both bundles (the app and /magcoupling/) through the workbook-parity guard
 ./scripts/serve_web.sh          # Serve at http://localhost:8080
 ```
-Requires: `rustup target add wasm32-unknown-unknown` and `cargo install wasm-bindgen-cli`.
-Note: file dialogs, PNG/SVG/GIF/DXF export, autosave, and HTML reports are native-only. All analysis, editing, and plotting features work in the browser.
+Requires: `rustup target add wasm32-unknown-unknown` and `cargo install wasm-bindgen-cli@0.2.114` (the version in both `Cargo.lock` files and in CI).
+Note: file dialogs (except the magnetic coupling window's Load design, which opens the browser's file chooser), PNG/SVG/GIF/DXF export, autosave, and HTML reports are native-only. All analysis, editing, and plotting features work in the browser.
 
 **Live deployment:** Pushes to `main` auto-deploy to [linkage.colesorkness.com](https://linkage.colesorkness.com) via GitHub Actions + Vercel. See `.github/workflows/deploy-web.yml` for the CI pipeline.
 
@@ -208,7 +209,8 @@ linkage-sim-rs/
 │   ├── io/                 # serialization (serde JSON round-trip)
 │   ├── gui/                # mod, state/, canvas/, property_panel/, samples/, export/,
 │   │                       #   input_panel, plot_panel, parametric_panel, sweep,
-│   │                       #   force_toolbar, tutorial, undo, error_panel
+│   │                       #   force_toolbar, tutorial, undo, error_panel,
+│   │                       #   calculator_window (Tools > Magnetic coupling)
 │   ├── bin/                # linkage_gui
 │   └── lib.rs
 ├── tests/

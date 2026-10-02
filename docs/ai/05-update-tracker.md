@@ -5,6 +5,62 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-02 — Magcoupling M5: the final review's fix wave (branch magcoupling/m5)
+- The calculator window keeps, frame included, to the screen below the menu bar and the band
+  where egui grabs its edge, so it never covers the Tools menu that toggles it:
+  `draw_menu_bar` hands `CalculatorWindow::set_menu_bar_bottom` the bar's bottom every frame (the
+  window, shown first, uses the last frame's). Before, it was kept to the whole screen less its
+  margins at the bottom right: a drag up (or a tap that jumps the pointer onto its X, which egui
+  applies as a drag) put it over File..Tools, and on a screen shorter than the window (a laptop's
+  browser) it sat over the menu bar from its first frame and its bottom 14 points were cut off:
+  egui caps a window's contents at its constrain rect less the title bar but not the frame, so
+  such a window is larger than the rect, and egui clips (and takes no press on) what sticks out.
+  Now the window is constrained to that area with its contents capped at the area less its
+  chrome (`window_chrome`: the frame's margins and the title bar, as egui lays them out), so it
+  is always whole. Tests: `the_calculator_window_keeps_below_the_menu_bar` (menu_bar; 1400 x 900
+  and 1400 x 650, dragged up, painted whole, Tools clickable down to its lower edge),
+  `a_small_screen_keeps_the_whole_window_on_it` (fills an 800 x 600 screen exactly, pinning
+  `window_chrome`, also after a corner drag), and
+  `a_press_on_a_tooltip_or_egui_s_debug_layer_leaves_the_keyboard_where_it_is` (the popup rule's
+  Tooltip and Debug layers, untested before). Seen in the browser at 1400 x 900 and 1400 x 650.
+- Docs: the popup rule names the Tooltip and Debug layers (02-system, 03-structure, the module
+  docs, the magcoupling README); the README's web build lines (both bundles through the guard,
+  `wasm-bindgen-cli@0.2.114`, the browser's file chooser for Load design); WASM_DEPLOYMENT's cache
+  key (both lock files).
+
+## 2026-10-02 — Magcoupling M5: the calculator in the linkage app (branch magcoupling/m5)
+- `linkage-sim-rs` depends on `magcoupling-rs` by path with feature `gui` (one egui: 0.32.3 in
+  both lock files; gate 11 passes). Tools > Magnetic coupling (`gui/calculator_window.rs`)
+  toggles an `egui::Window` holding one `MagcouplingPanel`, created on the first opening and kept,
+  with its design and undo history, while the window is closed; nothing in it touches the model.
+- Keyboard (decision M5-5): the window has the keys from its opening or a press on it (its
+  resize band included) until a press on the linkage app: its panels, canvas or menu-bar buttons
+  (an open menu's items and drop-down lists move nothing). Only then are the panel's undo keys
+  on, and the window removes the frame's key events but egui's zoom keys, so neither the linkage
+  shortcuts (undo, save, new, delete) nor the canvas keys (arrow nudge, F, Escape, Enter) run on
+  them. `update` shows the window before any key reader; the shortcut block moved to
+  `handle_keyboard_shortcuts` and a source test pins the order. Documented, not handled: Tab
+  focus moving between the parts (BL-040) and the window covering the recovery prompt (BL-039).
+- On a screen without room for its frame (a hidden browser canvas reports 0 x 0) the window skips
+  the frame, so egui does not squeeze its stored size; it comes back in its place at its size.
+- Files: saving through `export::download`, "Load design" through rfd natively and on the web
+  (the linkage wasm build now has rfd). On the web, `?tool=magcoupling` opens the window at start
+  and share links made there open `/magcoupling/` on the same server.
+- BL-037 fixed (decision M5-7): the window title is sent only when it changes, never on wasm32.
+- Gate 10 guards the linkage app's native and wasm32 builds too (`LINKAGE_*_ARGS` in
+  `magcoupling_shipped.sh`), with a negative control per shipped build (the calculator's native
+  app gained one); `build_web.sh` pipes the linkage release build through the guard and
+  `deploy-web.yml` now builds both bundles through it.
+- gui-smoke's linkage step opens `/?tool=magcoupling` and checks the window, the registry's log
+  line and that no Title warning is logged.
+- The linkage wasm bundle grows from about 10.5 MB to about 12.0 MB with the panel (rfd and the
+  panel), accepted (decision M5-10); the calculator's own bundle is unchanged (5.0 MB). The
+  magcoupling crate, its engine and its tests are unchanged. Nothing pushed.
+- Docs: both READMEs, `docs/FEATURES.md` (Magnetic Coupling Calculator) and
+  `docs/guides/WASM_DEPLOYMENT.md` (`build_web.sh` builds both bundles through the guard; the web
+  build carries rfd for the picker). Backlog: BL-038 (one design file picker for both hosts),
+  BL-039 and BL-040 (the documented keyboard and prompt edges).
+
 ## 2026-10-02 — Magcoupling M4-3: final review fix wave (branch magcoupling/m4-3)
 - The whole-branch review found no Critical or Important issue; four Minor findings, fixed with a
   failing test first where they change behaviour:

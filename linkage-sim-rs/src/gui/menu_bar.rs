@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use eframe::egui;
 
+use super::calculator_window::{self, CalculatorWindow};
 use super::state::{AppState, AngleUnit, LengthUnit};
 use super::samples::SampleMechanism;
 use super::{dxf_import, export, tutorial};
@@ -12,8 +13,9 @@ pub(crate) fn draw_menu_bar(
     ctx: &egui::Context,
     state: &mut AppState,
     sample_thumbnails: &HashMap<SampleMechanism, egui::TextureHandle>,
+    calculator: &mut CalculatorWindow,
 ) {
-        egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
+        let menu_bar = egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 let file_resp = ui.menu_button("File", |ui| {
                     if ui.button("New  Ctrl+N")
@@ -835,8 +837,26 @@ pub(crate) fn draw_menu_bar(
                     }
                 });
                 image_resp.response.on_hover_text("Background image import and controls");
+
+                // ── Tools menu ──────────────────────────────────────────
+                let tools_resp = ui.menu_button("Tools", |ui| {
+                    let mut open = calculator.is_open();
+                    if ui
+                        .checkbox(&mut open, calculator_window::TITLE)
+                        .on_hover_text("The magnetic slip coupling calculator in a window of its own. Its design is separate from the mechanism and is kept while the window is closed.")
+                        .changed()
+                    {
+                        calculator.set_open(open);
+                        ui.ctx().request_repaint();
+                        ui.close();
+                    }
+                });
+                tools_resp.response.on_hover_text("Calculators beside the mechanism");
             });
         });
+        // The calculator window keeps below the menu bar, so it never covers the Tools menu
+        // (shown before the menu bar, the window uses this frame's bottom on the next frame).
+        calculator.set_menu_bar_bottom(menu_bar.response.rect.bottom());
 }
 
 
@@ -1000,5 +1020,145 @@ fn format_relative_time(ts: u64) -> String {
         format!("{} hr ago", delta / 3600)
     } else {
         format!("{} days ago", delta / 86_400)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gui::test_support::{click_events, drag_events, drawn_texts, screen_input, text_clip_rect, text_rect, NATIVE_SCREEN};
+
+    /// One frame of the menu bar with `events`.
+    fn frame(
+        ctx: &egui::Context,
+        state: &mut AppState,
+        calculator: &mut CalculatorWindow,
+        events: Vec<egui::Event>,
+    ) -> egui::FullOutput {
+        ctx.run(screen_input(events, NATIVE_SCREEN), |ctx| draw_menu_bar(ctx, state, &HashMap::new(), calculator))
+    }
+
+    /// One frame of the calculator window and then the menu bar with `events` on a screen of
+    /// `screen` [points], in `LinkageApp::update`'s order (the window follows the frame's presses
+    /// and keeps below the menu bar's last frame).
+    fn frame_with_the_window(
+        ctx: &egui::Context,
+        state: &mut AppState,
+        calculator: &mut CalculatorWindow,
+        screen: egui::Vec2,
+        events: Vec<egui::Event>,
+    ) -> egui::FullOutput {
+        ctx.run(screen_input(events, screen), |ctx| {
+            calculator.show(ctx);
+            draw_menu_bar(ctx, state, &HashMap::new(), calculator);
+        })
+    }
+
+    /// Clicks the text `label` drawn in `output` (the pointer moved there, a press, a release:
+    /// one frame each) and returns the frame after.
+    fn click(
+        ctx: &egui::Context,
+        state: &mut AppState,
+        calculator: &mut CalculatorWindow,
+        output: &egui::FullOutput,
+        label: &str,
+    ) -> egui::FullOutput {
+        let at = text_rect(output, label).unwrap_or_else(|| panic!("no {label:?}")).center();
+        for events in click_events(at) {
+            frame(ctx, state, calculator, events);
+        }
+        frame(ctx, state, calculator, Vec::new())
+    }
+
+    #[test]
+    fn tools_magnetic_coupling_opens_and_closes_the_calculator_window() {
+        let ctx = egui::Context::default();
+        let mut state = AppState::default();
+        let mut calculator = CalculatorWindow::default();
+        let output = frame(&ctx, &mut state, &mut calculator, Vec::new());
+
+        let output = click(&ctx, &mut state, &mut calculator, &output, "Tools");
+        let output = click(&ctx, &mut state, &mut calculator, &output, calculator_window::TITLE);
+        assert!(calculator.is_open());
+        assert!(calculator.has_keyboard(), "the opened window has the keyboard");
+        assert!(text_rect(&output, calculator_window::TITLE).is_none(), "the menu closed");
+
+        let output = click(&ctx, &mut state, &mut calculator, &output, "Tools");
+        click(&ctx, &mut state, &mut calculator, &output, calculator_window::TITLE);
+        assert!(!calculator.is_open());
+        assert!(calculator.panel().is_some(), "the calculator is kept while its window is closed");
+    }
+
+    #[test]
+    fn a_press_on_the_menu_bar_gives_the_keyboard_to_the_linkage_app() {
+        // The menu bar's buttons sit on a Background panel of the linkage app; only an open
+        // menu's items are a Foreground popup, which leaves the keyboard where it is.
+        let ctx = egui::Context::default();
+        let mut state = AppState::default();
+        let mut calculator = CalculatorWindow::default();
+        calculator.set_open(true);
+        frame_with_the_window(&ctx, &mut state, &mut calculator, NATIVE_SCREEN, Vec::new());
+        let output = frame_with_the_window(&ctx, &mut state, &mut calculator, NATIVE_SCREEN, Vec::new());
+        assert!(calculator.has_keyboard(), "the opened window has the keyboard");
+
+        let tools = text_rect(&output, "Tools").expect("the Tools button").center();
+        for events in click_events(tools) {
+            frame_with_the_window(&ctx, &mut state, &mut calculator, NATIVE_SCREEN, events);
+        }
+        assert!(!calculator.has_keyboard(), "the press on Tools gave the keyboard to the linkage app");
+        let output = frame_with_the_window(&ctx, &mut state, &mut calculator, NATIVE_SCREEN, Vec::new());
+        let titles = drawn_texts(&output).into_iter().filter(|text| text == calculator_window::TITLE).count();
+        assert_eq!(titles, 2, "the Tools menu opened: its item and the window's title");
+    }
+
+    #[test]
+    fn the_calculator_window_keeps_below_the_menu_bar() {
+        // The Tools menu toggles the window, so the window never covers the menu bar: not when
+        // dragged up by its title bar (or moved up by a tap that jumps the pointer onto its X:
+        // egui moves a window by the press frame's pointer delta), and not on a screen shorter
+        // than the window (a laptop's browser). There egui would make the window taller than the
+        // rect it keeps it in and cut off what sticks out, so the window must also be painted
+        // whole (its clip rect holds it).
+        for screen in [NATIVE_SCREEN, egui::vec2(1400.0, 650.0)] {
+            let ctx = egui::Context::default();
+            let mut state = AppState::default();
+            let mut calculator = CalculatorWindow::default();
+            calculator.set_open(true);
+            for _ in 0..2 {
+                frame_with_the_window(&ctx, &mut state, &mut calculator, screen, Vec::new());
+            }
+            let output = frame_with_the_window(&ctx, &mut state, &mut calculator, screen, Vec::new());
+            let menu_bar = egui::containers::panel::PanelState::load(&ctx, egui::Id::new("menu_bar")).expect("the menu bar").rect;
+            let window = || ctx.memory(|m| m.area_rect(calculator_window::window_id())).expect("the window");
+            let before = window();
+            assert!(before.top() >= menu_bar.bottom(), "{screen:?}: the window {before:?} covers the menu bar {menu_bar:?}");
+            let clip = text_clip_rect(&output, calculator_window::TITLE).expect("the window's title");
+            assert!(clip.contains_rect(before), "{screen:?}: egui clips the window {before:?} to {clip:?}");
+
+            let title = text_rect(&output, calculator_window::TITLE).expect("the window's title").center();
+            for events in drag_events(title, egui::pos2(title.x, -50.0), 20) {
+                frame_with_the_window(&ctx, &mut state, &mut calculator, screen, events);
+            }
+            let output = frame_with_the_window(&ctx, &mut state, &mut calculator, screen, Vec::new());
+            let after = window();
+            assert!(after.top() >= menu_bar.bottom(), "{screen:?}: dragged up, the window {after:?} covers the menu bar {menu_bar:?}");
+            assert!(after.bottom() <= screen.y, "{screen:?}: the window {after:?} hangs off the bottom");
+            let clip = text_clip_rect(&output, calculator_window::TITLE).expect("the window's title");
+            assert!(clip.contains_rect(after), "{screen:?}: dragged up, egui clips the window {after:?} to {clip:?}");
+            if screen == NATIVE_SCREEN {
+                assert!(after.top() < before.top(), "the drag moved the window up from {before:?}");
+            }
+
+            // The Tools button stays clickable, down to its lower edge (not a grab of the window's
+            // edge, which egui allows from just outside the window).
+            let tools = text_rect(&output, "Tools").expect("the Tools button");
+            for events in click_events(egui::pos2(tools.center().x, tools.bottom())) {
+                frame_with_the_window(&ctx, &mut state, &mut calculator, screen, events);
+            }
+            assert!(!calculator.has_keyboard(), "{screen:?}: the press on Tools gave the keyboard to the linkage app");
+            let output = frame_with_the_window(&ctx, &mut state, &mut calculator, screen, Vec::new());
+            let titles = drawn_texts(&output).into_iter().filter(|text| text == calculator_window::TITLE).count();
+            assert_eq!(titles, 2, "{screen:?}: the Tools menu opened: its item and the window's title");
+        }
     }
 }

@@ -235,6 +235,10 @@ All force elements are editable in the GUI property panel and rendered on the ca
 - **Ctrl+drag to move** image on canvas
 - **Auto-geometry for force zones** -- body geometry created automatically when force zones are added
 
+### Magnetic Coupling Calculator
+
+- **Tools > Magnetic coupling** -- the magnetic slip coupling calculator (`magcoupling-rs`) in a window beside the mechanism, on the desktop and on the web (`?tool=magcoupling` opens it when the web app starts). Its design is separate from the mechanism and kept while the window is closed; it saves and loads its own design files. The keys go to the window or the mechanism, whichever was clicked last. The calculator also runs on its own at `/magcoupling/`
+
 ### Additional Fixes & Polish
 
 - **Active tool highlight** -- blue filled background with white text on selected tool button

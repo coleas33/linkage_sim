@@ -9,6 +9,11 @@
 # Output: web/linkage-web.js + web/linkage-web_bg.wasm, and
 #         web/magcoupling/magcoupling-web.js + magcoupling-web_bg.wasm
 #
+# Both builds fail if cargo built the bundle with the test-only workbook-parity
+# feature of magcoupling-rs (magcoupling_assert_shipped in magcoupling_shipped.sh):
+# the linkage bundle carries the calculator's panel (Tools -> Magnetic coupling).
+# deploy-web.yml runs this script.
+#
 # After building, serve with: scripts/serve_web.sh
 
 set -euo pipefail
@@ -16,14 +21,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# shellcheck source=magcoupling_shipped.sh
+source "$SCRIPT_DIR/magcoupling_shipped.sh"
+
 cd "$PROJECT_DIR"
 
 echo "Building WASM binary (release)..."
-cargo build --release \
-    --target wasm32-unknown-unknown \
-    --bin linkage-web \
-    --no-default-features \
-    --features raster
+cargo build --release "${LINKAGE_WEB_ARGS[@]}" \
+    --message-format=json-render-diagnostics \
+    | magcoupling_assert_shipped linkage-web
 
 echo "Generating JS bindings..."
 wasm-bindgen \

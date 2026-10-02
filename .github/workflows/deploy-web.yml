@@ -36,26 +36,14 @@ jobs:
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli@0.2.114 --force
 
-      - name: Build WASM
+      # Both bundles: the linkage app (web/, with the calculator's panel in
+      # Tools -> Magnetic coupling) and the magnetic coupling calculator at
+      # /magcoupling/ (web/magcoupling/). The scripts hold the build arguments
+      # (scripts/magcoupling_shipped.sh) and fail the job if cargo built either
+      # bundle with the test-only workbook-parity feature.
+      - name: Build WASM (both bundles)
         working-directory: linkage-sim-rs
-        run: |
-          cargo build --release \
-            --target wasm32-unknown-unknown \
-            --bin linkage-web \
-            --no-default-features \
-            --features raster
-          wasm-bindgen \
-            target/wasm32-unknown-unknown/release/linkage-web.wasm \
-            --out-dir web \
-            --target web \
-            --no-typescript
-
-      # The second bundle, the magnetic coupling calculator at /magcoupling/
-      # (web/magcoupling/). The script holds the build arguments and fails the
-      # job if cargo built it with the test-only workbook-parity feature.
-      - name: Build magcoupling WASM
-        working-directory: linkage-sim-rs
-        run: bash scripts/build_magcoupling_web.sh
+        run: bash scripts/build_web.sh
 
       - name: Install Vercel CLI
         run: npm install -g vercel

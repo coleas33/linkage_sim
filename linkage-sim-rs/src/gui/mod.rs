@@ -1,6 +1,7 @@
 //! GUI module — egui-based visualization shell for the linkage simulator.
 
 mod state;
+mod calculator_window;
 mod canvas;
 pub mod dxf_import;
 mod eq_rendering;
@@ -26,6 +27,7 @@ use std::collections::HashMap;
 use eframe::egui;
 pub use state::{ActuatorLabelForce, AppState};
 pub use state::file_io::{decode_mechanism_from_url, encode_mechanism_for_url};
+pub use calculator_window::{TOOL_MAGCOUPLING, TOOL_PARAM, magcoupling_share_base};
 pub use sweep::{SweepData, SweepMode};
 use samples::SampleMechanism;
 use crate::core::state::GROUND_ID;
@@ -43,6 +45,10 @@ pub struct LinkageApp {
     demo_timer: f64,
     /// Index into SampleMechanism::all() for the current demo sample.
     demo_sample_index: usize,
+    /// Tools → Magnetic coupling: the calculator window, its state independent of the model.
+    calculator: calculator_window::CalculatorWindow,
+    /// The window title last sent to the native window (BL-037: sent only when it changes).
+    sent_title: Option<String>,
 }
 
 impl LinkageApp {
@@ -57,7 +63,20 @@ impl LinkageApp {
             demo_mode: false,
             demo_timer: 0.0,
             demo_sample_index: 0,
+            calculator: calculator_window::CalculatorWindow::default(),
+            sent_title: None,
         }
+    }
+
+    /// Opens Tools → Magnetic coupling (the web entry's `?tool=magcoupling`).
+    pub fn open_magcoupling(&mut self) {
+        self.calculator.set_open(true);
+    }
+
+    /// Sets the address the calculator's share links point at (the web entry: the calculator's
+    /// own page on the same server, [`magcoupling_share_base`]).
+    pub fn set_magcoupling_share_base(&mut self, base: impl Into<String>) {
+        self.calculator.set_share_base(base);
     }
 
     /// Load a mechanism from a shared URL's JSON string.
@@ -82,19 +101,7 @@ impl eframe::App for LinkageApp {
         }
 
         // ── Update window title to show filename and dirty state ──────
-        let title = if let Some(ref path) = self.state.last_save_path {
-            let name = path.file_name().unwrap_or_default().to_string_lossy();
-            if self.state.dirty {
-                format!("Linkage Simulator \u{2014} {}*", name)
-            } else {
-                format!("Linkage Simulator \u{2014} {}", name)
-            }
-        } else if self.state.dirty {
-            "Linkage Simulator \u{2014} unsaved*".to_string()
-        } else {
-            "Linkage Simulator".to_string()
-        };
-        ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+        send_title(ctx, &mut self.sent_title, window_title(&self.state));
 
         // ── Tick status-message timer ─────────────────────────────────
         if self.state.status_message_time > 0.0 {
@@ -234,59 +241,13 @@ impl eframe::App for LinkageApp {
             }
         }
 
+        // ── Tools → Magnetic coupling ─────────────────────────────────
+        // Before anything else reads the keyboard: while the calculator window has the
+        // keyboard, it takes the frame's key events (calculator_window module docs).
+        self.calculator.show(ctx);
+
         // ── Keyboard shortcuts ────────────────────────────────────────
-        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Z) && !i.modifiers.shift) {
-            self.state.undo();
-        }
-        if ctx.input(|i| {
-            i.modifiers.command
-                && (i.key_pressed(egui::Key::Y)
-                    || (i.key_pressed(egui::Key::Z) && i.modifiers.shift))
-        }) {
-            self.state.redo();
-        }
-        // Ctrl+S — quick save to last path, or Save As if no path yet.
-        #[cfg(feature = "native")]
-        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S) && !i.modifiers.shift) {
-            if let Some(path) = self.state.last_save_path.clone() {
-                if let Err(e) = self.state.save_to_file(&path) {
-                    log::error!("Quick save failed: {}", e);
-                }
-            } else if let Some(path) = rfd::FileDialog::new()
-                .add_filter("JSON", &["json"])
-                .set_file_name("mechanism.json")
-                .save_file()
-            {
-                if let Err(e) = self.state.save_to_file(&path) {
-                    log::error!("Save failed: {}", e);
-                }
-            }
-        }
-        // Ctrl+Shift+S — Save As (always shows file dialog).
-        #[cfg(feature = "native")]
-        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S) && i.modifiers.shift) {
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("JSON", &["json"])
-                .set_file_name("mechanism.json")
-                .save_file()
-            {
-                if let Err(e) = self.state.save_to_file(&path) {
-                    log::error!("Save As failed: {}", e);
-                }
-            }
-        }
-
-        // Ctrl+N — New empty mechanism.
-        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::N)) {
-            self.state.new_empty_mechanism();
-        }
-
-        // Ctrl+V — hint that image paste is not yet supported.
-        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::V)) {
-            self.state.status_message =
-                Some("Image paste not supported yet \u{2014} drag & drop an image onto the canvas instead.".to_string());
-            self.state.status_message_time = 4.0;
-        }
+        handle_keyboard_shortcuts(ctx, &mut self.state);
 
         // ── Debounced sweep recomputation ──────────────────────────────
         if self.state.sweep_dirty {
@@ -365,7 +326,7 @@ impl eframe::App for LinkageApp {
         }
 
         // --- Menu bar ---
-        menu_bar::draw_menu_bar(ctx, &mut self.state, &self.sample_thumbnails);
+        menu_bar::draw_menu_bar(ctx, &mut self.state, &self.sample_thumbnails, &mut self.calculator);
 
 
         // ── Delete / Backspace shortcut ───────────────────────────────────
@@ -1236,6 +1197,7 @@ impl eframe::App for LinkageApp {
                                 ("Right-click joint", "Set Driver / Create Joint"),
                                 ("Right-click body edge", "Add Pivot Here"),
                                 ("Right-click canvas", "Add Ground Pivot / Body"),
+                                ("Magnetic coupling window", "From its opening or a click in it, keys go to the calculator (Ctrl+Z / Ctrl+Y undo there; Ctrl+Plus / Ctrl+Minus still zoom) until you click the mechanism, its panels or the menu bar"),
                             ];
                             for (key, action) in shortcuts {
                                 ui.strong(key);
@@ -1267,6 +1229,95 @@ impl eframe::App for LinkageApp {
         // there is. No debounce — pref toggles are user-initiated and
         // infrequent enough that per-event saves are fine.
         self.state.tick_save_user_prefs();
+    }
+}
+
+// ── Window title ────────────────────────────────────────────────────────────
+
+/// The native window's title: the file name and whether there are unsaved changes.
+fn window_title(state: &AppState) -> String {
+    if let Some(ref path) = state.last_save_path {
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        if state.dirty {
+            format!("Linkage Simulator \u{2014} {}*", name)
+        } else {
+            format!("Linkage Simulator \u{2014} {}", name)
+        }
+    } else if state.dirty {
+        "Linkage Simulator \u{2014} unsaved*".to_string()
+    } else {
+        "Linkage Simulator".to_string()
+    }
+}
+
+/// Sends `title` to the native window when it differs from the last title sent (`sent`), so an
+/// idle frame sends nothing (BL-037). The web backend does not implement the command and logs a
+/// warning for each one, so the web build never sends it (the page has its own `<title>`).
+fn send_title(ctx: &egui::Context, sent: &mut Option<String>, title: String) {
+    if cfg!(target_arch = "wasm32") || sent.as_deref() == Some(title.as_str()) {
+        return;
+    }
+    ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+    *sent = Some(title);
+}
+
+// ── Keyboard shortcuts ──────────────────────────────────────────────────────
+
+/// Ctrl+Z undo, Ctrl+Y or Ctrl+Shift+Z redo, Ctrl+S save, Ctrl+Shift+S save as (native),
+/// Ctrl+N new mechanism, Ctrl+V the paste hint. Runs after the calculator window, which takes
+/// the key events while it has the keyboard.
+fn handle_keyboard_shortcuts(ctx: &egui::Context, state: &mut AppState) {
+    if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Z) && !i.modifiers.shift) {
+        state.undo();
+    }
+    if ctx.input(|i| {
+        i.modifiers.command
+            && (i.key_pressed(egui::Key::Y)
+                || (i.key_pressed(egui::Key::Z) && i.modifiers.shift))
+    }) {
+        state.redo();
+    }
+    // Ctrl+S — quick save to last path, or Save As if no path yet.
+    #[cfg(feature = "native")]
+    if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S) && !i.modifiers.shift) {
+        if let Some(path) = state.last_save_path.clone() {
+            if let Err(e) = state.save_to_file(&path) {
+                log::error!("Quick save failed: {}", e);
+            }
+        } else if let Some(path) = rfd::FileDialog::new()
+            .add_filter("JSON", &["json"])
+            .set_file_name("mechanism.json")
+            .save_file()
+        {
+            if let Err(e) = state.save_to_file(&path) {
+                log::error!("Save failed: {}", e);
+            }
+        }
+    }
+    // Ctrl+Shift+S — Save As (always shows file dialog).
+    #[cfg(feature = "native")]
+    if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S) && i.modifiers.shift) {
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter("JSON", &["json"])
+            .set_file_name("mechanism.json")
+            .save_file()
+        {
+            if let Err(e) = state.save_to_file(&path) {
+                log::error!("Save As failed: {}", e);
+            }
+        }
+    }
+
+    // Ctrl+N — New empty mechanism.
+    if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::N)) {
+        state.new_empty_mechanism();
+    }
+
+    // Ctrl+V — hint that image paste is not yet supported.
+    if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::V)) {
+        state.status_message =
+            Some("Image paste not supported yet \u{2014} drag & drop an image onto the canvas instead.".to_string());
+        state.status_message_time = 4.0;
     }
 }
 
@@ -1428,7 +1479,9 @@ fn load_background_image(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gui::test_support::{central_panel_frame, drawn_texts, drew_text, key_press, typed};
+    use super::calculator_window::CalculatorWindow;
+    use crate::gui::test_support::{central_panel_frame, click_events, drawn_texts, drew_text, key_press, key_tap, magcoupling_gap_design, screen_input, typed, NATIVE_SCREEN};
+    use magcoupling::gui::session::Design;
 
     /// Four-bar with weights W1 and W2 on the coupler.
     fn fourbar_with_weights() -> AppState {
@@ -1589,5 +1642,150 @@ mod tests {
         assert!(state.find_point_mass("coupler", "W1").is_some(), "the weight survives");
         assert_eq!(state.selected, Some(weight("W1")));
         assert_eq!(state.undo_history.undo_count(), depth);
+    }
+
+    // ── Tools → Magnetic coupling beside the model (M5) ─────────────────────
+
+    /// One frame of the linkage app's keyboard readers with `events`, `modifiers` held, in
+    /// `update`'s order (the order test below pins it): the calculator window, the shortcuts,
+    /// the delete shortcut, then the canvas (its arrow nudge, F, Escape and Enter keys).
+    fn keys_frame(
+        ctx: &egui::Context,
+        calculator: &mut CalculatorWindow,
+        state: &mut AppState,
+        modifiers: egui::Modifiers,
+        events: Vec<egui::Event>,
+    ) -> egui::FullOutput {
+        let input = egui::RawInput { modifiers, ..screen_input(events, NATIVE_SCREEN) };
+        ctx.run(input, |ctx| {
+            calculator.show(ctx);
+            handle_keyboard_shortcuts(ctx, state);
+            handle_delete_shortcut(ctx, state);
+            egui::CentralPanel::default().show(ctx, |ui| canvas::draw_canvas(ui, state));
+        })
+    }
+
+    /// The four-bar with weights W1 and W2 (two undo steps) on the fitted canvas, beside the
+    /// calculator window, open (so it has the keyboard) with its design at a 2 mm face gap, one
+    /// undo step of the calculator.
+    fn fourbar_beside_the_calculator() -> (egui::Context, CalculatorWindow, AppState) {
+        let ctx = egui::Context::default();
+        let mut state = fourbar_with_weights();
+        let mut calculator = CalculatorWindow::default();
+        calculator.set_open(true);
+        for _ in 0..2 {
+            keys_frame(&ctx, &mut calculator, &mut state, egui::Modifiers::NONE, Vec::new());
+        }
+        calculator.load_design(&magcoupling_gap_design(2.0));
+        keys_frame(&ctx, &mut calculator, &mut state, egui::Modifiers::NONE, Vec::new());
+        (ctx, calculator, state)
+    }
+
+    /// A click on the canvas beside the calculator window (clear of the fitted four-bar), which
+    /// gives the keyboard back to the linkage app.
+    fn click_the_canvas(ctx: &egui::Context, calculator: &mut CalculatorWindow, state: &mut AppState) {
+        for events in click_events(calculator_window::beside_the_window()) {
+            keys_frame(ctx, calculator, state, egui::Modifiers::NONE, events);
+        }
+        assert!(!calculator.has_keyboard(), "the click took the keyboard back");
+    }
+
+    #[test]
+    fn ctrl_z_undoes_only_the_part_that_has_the_keyboard() {
+        let (ctx, mut calculator, mut state) = fourbar_beside_the_calculator();
+        let depth = state.undo_history.undo_count();
+        let ctrl = egui::Modifiers::COMMAND;
+
+        // The calculator has the keyboard: Ctrl+Z and Ctrl+Y undo and redo its design only.
+        keys_frame(&ctx, &mut calculator, &mut state, ctrl, key_tap(egui::Key::Z, ctrl));
+        assert_eq!(calculator.design(), Design::default(), "the calculator undid");
+        assert_eq!(state.undo_history.undo_count(), depth, "the model was not undone");
+        assert!(state.find_point_mass("coupler", "W2").is_some());
+        keys_frame(&ctx, &mut calculator, &mut state, ctrl, key_tap(egui::Key::Y, ctrl));
+        assert_eq!(calculator.design(), magcoupling_gap_design(2.0), "the calculator redid");
+        assert_eq!(state.undo_history.undo_count(), depth);
+
+        // A click on the canvas gives the keyboard back: Ctrl+Z undoes the model only.
+        click_the_canvas(&ctx, &mut calculator, &mut state);
+        keys_frame(&ctx, &mut calculator, &mut state, ctrl, key_tap(egui::Key::Z, ctrl));
+        assert!(state.find_point_mass("coupler", "W2").is_none(), "the model's last edit was undone");
+        assert_eq!(state.undo_history.undo_count(), depth - 1);
+        assert_eq!(calculator.design(), magcoupling_gap_design(2.0), "the calculator was not undone");
+    }
+
+    #[test]
+    fn arrow_keys_and_delete_leave_the_model_alone_while_the_calculator_has_the_keyboard() {
+        let (ctx, mut calculator, mut state) = fourbar_beside_the_calculator();
+        let none = egui::Modifiers::NONE;
+        let coupler = SelectedEntity::Body("coupler".to_string());
+        state.selected = Some(coupler.clone());
+        let depth = state.undo_history.undo_count();
+
+        for key in [egui::Key::ArrowRight, egui::Key::Delete, egui::Key::Escape] {
+            keys_frame(&ctx, &mut calculator, &mut state, none, key_tap(key, none));
+        }
+        assert_eq!(state.undo_history.undo_count(), depth, "nothing was nudged or deleted");
+        assert_eq!(state.selected, Some(coupler.clone()));
+
+        // With the keyboard back, the same arrow key nudges the selected link: one undo step.
+        click_the_canvas(&ctx, &mut calculator, &mut state);
+        state.selected = Some(coupler);
+        keys_frame(&ctx, &mut calculator, &mut state, none, key_tap(egui::Key::ArrowRight, none));
+        assert_eq!(state.undo_history.undo_count(), depth + 1, "the arrow key nudged the link");
+    }
+
+    #[test]
+    fn update_shows_the_calculator_window_before_anything_reads_the_keyboard() {
+        // CalculatorWindow::show takes the frame's key events while the window has the
+        // keyboard, so it must come before every reader of the keys in `update`.
+        let source = include_str!("mod.rs").replace("\r\n", "\n");
+        let start = source.find("fn update(&mut self, ctx: &egui::Context").expect("update");
+        let end = start + source[start..].find("\n    }\n}\n").expect("the end of update");
+        let update = &source[start..end];
+        let show = update.find("self.calculator.show(ctx);").expect("update shows the window");
+        for reader in [
+            "handle_keyboard_shortcuts(ctx",
+            "menu_bar::draw_menu_bar(",
+            "handle_delete_shortcut(ctx",
+            "canvas::draw_canvas(",
+            "key_pressed(",
+        ] {
+            let at = update.find(reader).unwrap_or_else(|| panic!("update calls {reader}"));
+            assert!(show < at, "{reader} comes before the calculator window");
+        }
+    }
+
+    /// The window titles egui was asked to send in a frame.
+    fn title_commands(output: &egui::FullOutput) -> Vec<String> {
+        output.viewport_output.get(&egui::ViewportId::ROOT).map_or_else(Vec::new, |viewport| {
+            viewport
+                .commands
+                .iter()
+                .filter_map(|command| match command {
+                    egui::ViewportCommand::Title(title) => Some(title.clone()),
+                    _ => None,
+                })
+                .collect()
+        })
+    }
+
+    #[test]
+    fn the_window_title_is_sent_only_when_it_changes() {
+        let ctx = egui::Context::default();
+        let mut state = AppState::default();
+        let mut sent = None;
+        let frame = |state: &AppState, sent: &mut Option<String>| {
+            let output = ctx.run(egui::RawInput::default(), |ctx| send_title(ctx, sent, window_title(state)));
+            title_commands(&output)
+        };
+        assert_eq!(frame(&state, &mut sent), ["Linkage Simulator"]);
+        for _ in 0..3 {
+            assert!(frame(&state, &mut sent).is_empty(), "an idle frame sends no title");
+        }
+        state.dirty = true;
+        assert_eq!(frame(&state, &mut sent), ["Linkage Simulator \u{2014} unsaved*"]);
+        assert!(frame(&state, &mut sent).is_empty());
+        state.last_save_path = Some(std::path::PathBuf::from("lift.json"));
+        assert_eq!(frame(&state, &mut sent), ["Linkage Simulator \u{2014} lift.json*"]);
     }
 }
