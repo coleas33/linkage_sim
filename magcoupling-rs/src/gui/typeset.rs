@@ -1296,6 +1296,378 @@ mod tests {
         }
     }
 
+    /// A text run of a drawn equation: the term path it carries, if any, and its text
+    /// (trimmed).
+    type Run = (Option<String>, String);
+
+    /// Every text run of `laid` in drawing order: its term path, its trimmed text and its
+    /// colour.
+    fn runs_of(laid: &Laid) -> Vec<(Option<String>, String, Color32)> {
+        laid.inks
+            .iter()
+            .filter_map(|ink| match ink {
+                Ink::Text { galley, term, .. } => Some((
+                    term.clone(),
+                    galley.text().trim().to_owned(),
+                    galley
+                        .job
+                        .sections
+                        .first()
+                        .map_or(Color32::PLACEHOLDER, |s| s.format.color),
+                )),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn counted(runs: impl IntoIterator<Item = Run>) -> BTreeMap<Run, usize> {
+        let mut counts = BTreeMap::new();
+        for run in runs {
+            *counts.entry(run).or_insert(0) += 1;
+        }
+        counts
+    }
+
+    /// What a formula's tree says must be drawn, as the text runs it takes, read off the
+    /// markup's table in `engine::explain::markup` and not off the typesetter: a number's
+    /// text, a term's symbol (base, subscript and superscript, each carrying the term's
+    /// path), a symbol of a `where` binding or a table field, the operators, the words. A
+    /// number the typesetter replaces is wanted as its replacement: a choice label of an
+    /// equality, a screw size's name, `fmt`'s decimals, the factor 1 not drawn. Structure
+    /// without a text run (the stacked fraction's bar, a radical, a bracket's strokes) is
+    /// pinned by the tests of its geometry.
+    struct Wanted<'a> {
+        formula: &'a Formula,
+        runs: Vec<Run>,
+    }
+
+    impl<'a> Wanted<'a> {
+        fn of(eq: &'a Equation) -> Self {
+            let mut wanted = Wanted {
+                formula: &eq.formula,
+                runs: Vec::new(),
+            };
+            wanted.symbol(&eq.symbol, None);
+            wanted.push(None, "=");
+            wanted.expr(&eq.formula.body);
+            for (i, b) in eq.formula.bindings.iter().enumerate() {
+                wanted.push(None, if i == 0 { "where" } else { "and" });
+                wanted.symbol(&b.symbol, None);
+                wanted.push(None, "=");
+                wanted.expr(&b.expr);
+            }
+            wanted
+        }
+
+        fn push(&mut self, term: Option<&str>, text: &str) {
+            self.runs
+                .push((term.map(str::to_owned), glyph_safe(text).trim().to_owned()));
+        }
+
+        /// A symbol: its base, subscript and superscript, one run each.
+        fn symbol(&mut self, markup: &str, term: Option<&str>) {
+            let parts = match Symbol::parse(markup) {
+                Ok(s) => vec![Some(s.base), s.sub, s.sup],
+                Err(_) => vec![Some(markup.to_owned())],
+            };
+            for part in parts.into_iter().flatten() {
+                self.push(term, &part);
+            }
+        }
+
+        fn term(&mut self, path: &str, family: bool) {
+            let symbol = if family {
+                registry().family_symbol(path)
+            } else {
+                registry().symbol(path).map(str::to_owned)
+            };
+            match symbol {
+                Some(s) => self.symbol(&s, Some(path)),
+                None => self.push(Some(path), &format!("[{path}]")),
+            }
+        }
+
+        /// `e`, or the quoted label of the choice when `e` is a code compared with the
+        /// selector `other`.
+        fn choice_or_expr(&mut self, e: &Expr, other: &Expr) {
+            if let (Expr::Num { value, .. }, Expr::Term(r)) = (e, other)
+                && let Some((_, label)) = registry()
+                    .choices(&r.path)
+                    .iter()
+                    .find(|(code, _)| *code as f64 == *value)
+            {
+                self.push(None, &format!("\"{label}\""));
+            } else {
+                self.expr(e);
+            }
+        }
+
+        fn cond(&mut self, c: &Cond) {
+            match c {
+                Cond::And(a, b) | Cond::Or(a, b) => {
+                    self.cond(a);
+                    self.push(
+                        None,
+                        if matches!(c, Cond::And(..)) {
+                            "and"
+                        } else {
+                            "or"
+                        },
+                    );
+                    self.cond(b);
+                }
+                Cond::Rel(op, a, b) => {
+                    let labelled = matches!(op, RelOp::Eq | RelOp::Ne);
+                    if labelled {
+                        self.choice_or_expr(a, b);
+                    } else {
+                        self.expr(a);
+                    }
+                    self.push(
+                        None,
+                        match op {
+                            RelOp::Lt => "<",
+                            RelOp::Le => "≤",
+                            RelOp::Gt => ">",
+                            RelOp::Ge => "≥",
+                            RelOp::Eq => "=",
+                            RelOp::Ne => "≠",
+                        },
+                    );
+                    if labelled {
+                        self.choice_or_expr(b, a);
+                    } else {
+                        self.expr(b);
+                    }
+                }
+            }
+        }
+
+        fn expr(&mut self, e: &Expr) {
+            match e {
+                Expr::Num { text, .. } => self.push(None, text),
+                Expr::Text(t) => self.push(None, &format!("\"{t}\"")),
+                Expr::NoneLit => self.push(None, "none"),
+                Expr::Pi => self.push(None, "π"),
+                Expr::Index => self.push(None, "n"),
+                Expr::Term(r) => self.term(&r.path, false),
+                Expr::FamilyTerm(r) => self.term(&r.path, true),
+                Expr::Local(k) => {
+                    let formula = self.formula;
+                    self.symbol(&formula.bindings[*k].symbol, None);
+                }
+                Expr::Neg(a) => {
+                    self.push(None, "−");
+                    self.expr(a);
+                }
+                Expr::Paren(a) => self.expr(a),
+                Expr::Frac(a, b) => {
+                    self.expr(a);
+                    self.expr(b);
+                }
+                Expr::Bin(op, a, b) => match op {
+                    BinOp::Mul => {
+                        let numbers =
+                            matches!(**a, Expr::Num { .. }) && matches!(**b, Expr::Num { .. });
+                        let unit = matches!(**a, Expr::Num { value, .. } if value == 1.0);
+                        if unit && !numbers {
+                            self.expr(b);
+                        } else {
+                            self.expr(a);
+                            if numbers {
+                                self.push(None, "×");
+                            }
+                            self.expr(b);
+                        }
+                    }
+                    BinOp::Add | BinOp::Sub | BinOp::Dot | BinOp::Div => {
+                        self.expr(a);
+                        self.push(
+                            None,
+                            match op {
+                                BinOp::Add => "+",
+                                BinOp::Sub => "−",
+                                BinOp::Dot => "·",
+                                _ => "/",
+                            },
+                        );
+                        self.expr(b);
+                    }
+                    BinOp::Pow => {
+                        self.expr(a);
+                        self.expr(b);
+                    }
+                },
+                Expr::Call(f, args) => match f {
+                    Func::Exp => {
+                        self.push(None, "e");
+                        self.expr(&args[0]);
+                    }
+                    Func::Abs => {
+                        self.push(None, "|");
+                        self.push(None, "|");
+                        self.expr(&args[0]);
+                    }
+                    Func::Fmt => {
+                        self.expr(&args[0]);
+                        let decimals = match &args[1] {
+                            Expr::Num { text, .. } => text.as_str(),
+                            _ => "d",
+                        };
+                        self.push(None, &format!("(to {decimals} decimals)"));
+                    }
+                    Func::Sqrt
+                    | Func::Ceil
+                    | Func::Floor
+                    | Func::CeilTo
+                    | Func::FloorTo
+                    | Func::FmtNum
+                    | Func::Concat => args.iter().for_each(|a| self.expr(a)),
+                    _ => {
+                        self.push(None, f.name());
+                        args.iter().for_each(|a| self.expr(a));
+                    }
+                },
+                Expr::Sum(_, body) => {
+                    ["Σ", "n", "H"].iter().for_each(|s| self.push(None, s));
+                    self.expr(body);
+                }
+                Expr::Peak(_, body) => {
+                    ["arg max", "0 ≤ φ ≤ π/2", "sin(nφ)", "Σ", "n", "H"]
+                        .iter()
+                        .for_each(|s| self.push(None, s));
+                    self.expr(body);
+                }
+                Expr::Table { table, key, field } => {
+                    let symbol = tables::field(table, field).map_or(field.as_str(), |f| f.symbol);
+                    self.symbol(symbol, None);
+                    match (table.as_str(), &**key) {
+                        ("screw_sizes", Expr::Num { value, .. }) => {
+                            match tables::lookup("screw_sizes", &Value::Num(*value), "name") {
+                                Ok(Some(Value::Text(name))) => self.push(None, &name),
+                                _ => self.expr(key),
+                            }
+                        }
+                        _ => self.expr(key),
+                    }
+                }
+                Expr::Cases {
+                    arms, otherwise, ..
+                } => {
+                    for (cond, value) in arms {
+                        self.expr(value);
+                        self.push(None, "if");
+                        self.cond(cond);
+                    }
+                    self.push(None, "otherwise");
+                    self.expr(otherwise);
+                }
+            }
+        }
+    }
+
+    /// The operator runs the typesetter draws as text, each for one markup node only (a
+    /// stroke or a delimiter is not among them).
+    const OPERATORS: [&str; 12] = ["+", "−", "×", "·", "/", "=", "≠", "<", "≤", ">", "≥", "|"];
+
+    /// Whether a run with no term is a number literal or an operator: the runs whose count is
+    /// exact.
+    fn counted_exactly(text: &str) -> bool {
+        OPERATORS.contains(&text)
+            || (text.starts_with(|c: char| c.is_ascii_digit()) && text.parse::<f64>().is_ok())
+    }
+
+    #[test]
+    fn every_equation_draws_everything_its_record_says() {
+        // The reverse of `every_equation_draws_only_what_its_record_says`: that one fails a run
+        // with no source, this one a source with no run (a dropped exponent, minus sign,
+        // `where` line, rounding step or bar). Every run the tree wants (`Wanted`) is drawn at
+        // least as many times as the tree has it, by the term path it carries: counted, not
+        // looked up, since "2" is drawn somewhere in most equations. Numbers and operators are
+        // counted both ways: one more than the tree has (a unit factor 1 drawn, a sign for a
+        // product) is as wrong as one fewer.
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let mut wanted_runs = 0;
+        for eq in registry().equations() {
+            let wanted = Wanted::of(eq);
+            wanted_runs += wanted.runs.len();
+            let wanted = counted(wanted.runs);
+            let laid = ctx.fonts(|f| {
+                layout_equation(f, registry(), eq, &TermColors::none(), 14.0, Color32::WHITE)
+            });
+            let drawn = counted(
+                runs_of(&laid)
+                    .into_iter()
+                    .map(|(term, text, _)| (term, text)),
+            );
+            for (run, count) in &wanted {
+                let have = drawn.get(run).copied().unwrap_or(0);
+                assert!(
+                    have >= *count,
+                    "{}: {count} x {run:?} wanted, {have} drawn, of {drawn:?}",
+                    eq.target
+                );
+            }
+            for ((term, text), have) in &drawn {
+                if term.is_none() && counted_exactly(text) {
+                    let count = wanted.get(&(None, text.clone())).copied().unwrap_or(0);
+                    assert_eq!(
+                        *have, count,
+                        "{}: {text:?} drawn {have} times, wanted {count}",
+                        eq.target
+                    );
+                }
+            }
+        }
+        assert!(wanted_runs > 4000, "{wanted_runs}");
+    }
+
+    #[test]
+    fn every_run_carries_its_terms_path_and_colour_and_the_target_is_plain() {
+        // M43-3: a term is drawn, all of its runs (base, subscript, superscript), in its
+        // colour and with its path, so a click on any of them finds it; the target symbol is in
+        // the text colour with no path; nothing but a term takes a palette colour.
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let ink = Color32::WHITE;
+        let mut term_runs = 0;
+        for eq in registry().equations() {
+            let colors = TermColors::of(eq);
+            let laid = ctx.fonts(|f| layout_equation(f, registry(), eq, &colors, 14.0, ink));
+            let runs = runs_of(&laid);
+            let mut target = Wanted {
+                formula: &eq.formula,
+                runs: Vec::new(),
+            };
+            target.symbol(&eq.symbol, None);
+            assert!(runs.len() >= target.runs.len(), "{}", eq.target);
+            for ((term, text, color), (_, want)) in runs.iter().zip(&target.runs) {
+                assert_eq!(text, want, "{}: the target symbol comes first", eq.target);
+                assert_eq!((term, color), (&None, &ink), "{}: {text:?}", eq.target);
+            }
+            for (term, text, color) in &runs {
+                match term {
+                    Some(path) => {
+                        term_runs += 1;
+                        assert_eq!(
+                            Some(*color),
+                            colors.get(path),
+                            "{}: {text:?} of {path}",
+                            eq.target
+                        );
+                    }
+                    None => assert!(
+                        !TERM_PALETTE.contains(color),
+                        "{}: {text:?} has no term but the colour {color:?}",
+                        eq.target
+                    ),
+                }
+            }
+        }
+        assert!(term_runs > 1000, "{term_runs}");
+    }
+
     #[test]
     fn every_equation_typesets_with_glyphs_in_the_default_fonts() {
         // Every Expr variant the records use, at a tooltip's size and the panel's: nothing
@@ -1375,5 +1747,187 @@ mod tests {
         run(vec![crate::gui::test_support::primary_button(at, true)]);
         let (_, _, clicked) = run(vec![crate::gui::test_support::primary_button(at, false)]);
         assert_eq!(clicked.as_deref(), Some("model.f_end"));
+    }
+
+    /// `symbol = src` at 20 points in white, no term colours.
+    fn laid_formula(symbol: &str, src: &str) -> Laid {
+        let formula = parse(src, None).unwrap();
+        with_fonts(|f| {
+            layout(
+                f,
+                registry(),
+                symbol,
+                &formula,
+                &TermColors::none(),
+                20.0,
+                Color32::WHITE,
+            )
+        })
+    }
+
+    fn run_order(laid: &Laid) -> Vec<String> {
+        laid.texts().into_iter().map(|(t, _)| t).collect()
+    }
+
+    #[test]
+    fn a_power_raises_its_exponent_over_the_subscript() {
+        // c_end^2: the exponent is the superscript over the subscript, both after the base.
+        let laid = laid_formula("x", "{coupling.c_end}^2");
+        assert_eq!(run_order(&laid), ["x", " = ", "c", "end", "2"]);
+        let texts = laid.texts();
+        let (c, end, two) = (
+            rect_of(&texts, "c"),
+            rect_of(&texts, "end"),
+            rect_of(&texts, "2"),
+        );
+        assert!(two.center().y < c.center().y, "raised above the base");
+        assert!(
+            c.center().y < end.center().y,
+            "the subscript stays below it"
+        );
+        assert!(
+            (two.left() - end.left()).abs() < 0.5,
+            "stacked over the subscript"
+        );
+        assert!(two.left() >= c.right() - 0.5, "after the base");
+        assert!(two.height() < c.height(), "and smaller");
+    }
+
+    #[test]
+    fn a_unary_minus_is_drawn_before_its_operand_and_apart_from_a_subtraction() {
+        // e^(-τ_p): the sign leads the exponent, in the script size.
+        let laid = laid_formula("x", "exp(-{model.pole_pitch_mm})");
+        assert_eq!(run_order(&laid), ["x", " = ", "e", "−", "τ", "p"]);
+        let texts = laid.texts();
+        let (e, minus, tau) = (
+            rect_of(&texts, "e"),
+            rect_of(&texts, "−"),
+            rect_of(&texts, "τ"),
+        );
+        assert!(minus.right() <= tau.left() + 0.5, "before its operand");
+        assert!(minus.center().y < e.center().y, "in the exponent");
+        assert!(minus.height() < e.height(), "at the script size");
+        // A subtraction sets its sign between the operands, in spaces.
+        let laid = laid_formula("x", "{coupling.c_end} - {model.pole_pitch_mm}");
+        assert_eq!(
+            run_order(&laid),
+            ["x", " = ", "c", "end", " − ", "τ", "p"],
+            "a subtraction"
+        );
+    }
+
+    #[test]
+    fn where_lines_follow_the_formula_one_binding_each() {
+        let laid = laid_formula(
+            "x",
+            "{coupling.c_end} + [S_a] where [S_a] = 2 * {model.pole_pitch_mm}",
+        );
+        assert_eq!(
+            run_order(&laid),
+            [
+                "x", " = ", "c", "end", " + ", "S", "a", "where ", "S", "a", " = ", "2", "τ", "p"
+            ]
+        );
+        let texts = laid.texts();
+        let (x, lead) = (rect_of(&texts, "x"), rect_of(&texts, "where "));
+        assert!(lead.top() > x.bottom(), "the line is under the formula");
+        assert!(lead.left() >= 20.0 - 0.01, "and indented by one em");
+        // Two bindings: the second line leads with "and".
+        let laid = laid_formula("x", "[A] + [B] where [A] = {coupling.c_end}, [B] = [A] * 2");
+        assert_eq!(
+            run_order(&laid),
+            [
+                "x", " = ", "A", " + ", "B", "where ", "A", " = ", "c", "end", "and ", "B", " = ",
+                "A", "2"
+            ]
+        );
+        let texts = laid.texts();
+        assert!(rect_of(&texts, "and ").top() > rect_of(&texts, "where ").bottom());
+    }
+
+    #[test]
+    fn factors_sit_side_by_side_and_only_two_numbers_take_a_times_sign() {
+        // a * b: juxtaposition, × only between two numbers; a · b: a dot; a / b: inline; a
+        // factor 1 is not drawn (a family member's index, k_1 = N/(2 R_g)), unless it is
+        // the first of two numbers.
+        let order = |src: &str| run_order(&laid_formula("x", src));
+        assert_eq!(order("2 * 3"), ["x", " = ", "2", " × ", "3"]);
+        assert_eq!(order("1 * 2"), ["x", " = ", "1", " × ", "2"]);
+        assert_eq!(order("2 * {coupling.c_end}"), ["x", " = ", "2", "c", "end"]);
+        assert_eq!(order("{coupling.c_end} * 2"), ["x", " = ", "c", "end", "2"]);
+        assert_eq!(order("1 * {coupling.c_end}"), ["x", " = ", "c", "end"]);
+        assert_eq!(order("2 · 3"), ["x", " = ", "2", " · ", "3"]);
+        assert_eq!(order("2 / 3"), ["x", " = ", "2", "/", "3"]);
+    }
+
+    /// The 3-point strokes of the brackets of `laid` (a ceiling or floor's two sides, each
+    /// serif tip, corner, end), in drawing order.
+    fn bracket_strokes(laid: &Laid) -> Vec<Vec<Vec2>> {
+        laid.inks
+            .iter()
+            .filter_map(|i| match i {
+                Ink::Path { points, .. } if points.len() == 3 => Some(points.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_ceiling_has_its_serifs_on_top_and_a_floor_beneath() {
+        let laid = laid_formula("x", "ceil(2.5) + floor(2.5)");
+        let strokes = bracket_strokes(&laid);
+        assert_eq!(strokes.len(), 4, "two sides each");
+        let texts = laid.texts();
+        let nums: Vec<Rect> = texts
+            .iter()
+            .filter(|(t, _)| t == "2.5")
+            .map(|(_, r)| *r)
+            .collect();
+        assert_eq!(nums.len(), 2);
+        let near = |a: f32, b: f32| (a - b).abs() < 0.5;
+        // Each side: corner at the serif's end, the stroke running the height of the number.
+        for side in &strokes[0..2] {
+            assert!(near(side[1].y, nums[0].top()), "ceil: serif at the top");
+            assert!(near(side[2].y, nums[0].bottom()), "and the stroke down");
+        }
+        for side in &strokes[2..4] {
+            assert!(
+                near(side[1].y, nums[1].bottom()),
+                "floor: serif at the bottom"
+            );
+            assert!(near(side[2].y, nums[1].top()), "and the stroke up");
+        }
+        // The pair hugs its number, the serifs pointing in.
+        for (pair, num) in [(&strokes[0..2], nums[0]), (&strokes[2..4], nums[1])] {
+            let (left, right) = (&pair[0], &pair[1]);
+            assert!(left[1].x < num.left() && num.right() < right[1].x);
+            assert!(left[0].x > left[1].x && right[0].x < right[1].x);
+        }
+    }
+
+    #[test]
+    fn a_rounding_step_is_drawn_beneath_the_brackets_it_rounds_to() {
+        for (call, ceil) in [("ceilto", true), ("floorto", false)] {
+            let laid = laid_formula("x", &format!("{call}({{model.pole_pitch_mm}}, 0.5)"));
+            assert_eq!(
+                run_order(&laid),
+                ["x", " = ", "τ", "p", "0.5"],
+                "{call}: the step is drawn"
+            );
+            let texts = laid.texts();
+            let (tau, step) = (rect_of(&texts, "τ"), rect_of(&texts, "0.5"));
+            assert!(step.center().y > tau.center().y, "{call}: beneath");
+            assert!(step.left() > rect_of(&texts, "p").right(), "{call}: after");
+            assert!(step.height() < tau.height(), "{call}: smaller");
+            let strokes = bracket_strokes(&laid);
+            assert_eq!(strokes.len(), 2, "{call}");
+            for side in &strokes {
+                assert_eq!(
+                    side[1].y < side[2].y,
+                    ceil,
+                    "{call}: serif on top only for ceil"
+                );
+            }
+        }
     }
 }
