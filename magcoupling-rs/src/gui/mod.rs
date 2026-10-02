@@ -9,6 +9,8 @@
 pub mod clamp_drawing;
 pub mod corrections;
 pub mod dashboard;
+pub mod diagrams;
+pub mod explorer;
 mod format;
 pub mod geometry;
 pub mod geometry_view;
@@ -16,12 +18,15 @@ pub mod history;
 pub mod input_ui;
 pub mod inputs;
 mod panel;
+pub mod pickers;
 pub mod plots;
+pub mod readouts;
 pub mod results_table;
 pub mod session;
 pub mod sizing;
 #[cfg(test)]
 pub(crate) mod test_support;
+pub mod typeset;
 
 pub use format::{SIGNIFICANT_DIGITS, format_value, with_unit};
 pub use inputs::KEY_DESIGN;

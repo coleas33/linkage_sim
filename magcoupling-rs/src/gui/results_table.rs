@@ -16,6 +16,7 @@ use crate::engine::meta::{ResultSet, Value, result_rows};
 use crate::gui::corrections::{CorrectionIndex, marker_text};
 use crate::gui::dashboard::{ResultInfo, hover_text, result_info};
 use crate::gui::format::{format_value, non_finite_text, with_unit};
+use crate::gui::readouts::Readouts;
 use crate::gui::session::{Design, design_json, json_value};
 use crate::{DesignInputs, DesignResults, compute_all};
 
@@ -203,9 +204,14 @@ impl ResultsTable {
     }
 
     /// Draws the table: the search box and the export buttons, then the rows on screen (the
-    /// end-effect banner is the centre region's, over every view: decision M42-1). Returns an
-    /// export asked for.
-    pub fn ui(&mut self, ui: &mut egui::Ui, results: &DesignResults) -> Option<TableAction> {
+    /// end-effect banner is the centre region's, over every view: decision M42-1), each row a
+    /// readout (`readouts`). Returns an export asked for.
+    pub fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        results: &DesignResults,
+        readouts: &mut Readouts,
+    ) -> Option<TableAction> {
         let entries = table_entries();
         let mut action = None;
         ui.horizontal_wrapped(|ui| {
@@ -236,7 +242,7 @@ impl ResultsTable {
             .auto_shrink([false, false])
             .show_rows(ui, row_height, matches.len(), |ui, range| {
                 for &index in &matches[range] {
-                    row_ui(ui, &entries[index], results, row_height, widths);
+                    row_ui(ui, &entries[index], results, row_height, widths, readouts);
                 }
             });
         action
@@ -254,13 +260,14 @@ pub fn row_tooltip(entry: &TableEntry, value: &Value) -> String {
 
 /// One table row: label, value with unit, workbook cell, marker, in columns `widths` wide
 /// ([`column_widths`]; the path is in the hover text, which is built only while the row is
-/// hovered).
+/// hovered). The whole row is a readout: hover it for its equation, click it to open it.
 fn row_ui(
     ui: &mut egui::Ui,
     entry: &TableEntry,
     results: &DesignResults,
     height: f32,
     widths: [f32; 4],
+    readouts: &mut Readouts,
 ) {
     let value = results.get(&entry.path).unwrap_or(Value::None);
     let row = ui.horizontal(|ui| {
@@ -286,8 +293,8 @@ fn row_ui(
         );
         cell(ui, marker, &entry.marker);
     });
-    row.response.on_hover_ui(|ui| {
-        ui.label(row_tooltip(entry, &value));
+    readouts.show_over(ui, row.response.rect, &entry.path, || {
+        row_tooltip(entry, &value)
     });
 }
 

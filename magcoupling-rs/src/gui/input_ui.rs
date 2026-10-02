@@ -5,11 +5,14 @@
 //!
 //! [`input_row`] draws a row from its [`InputEntry`] and the current value and returns the
 //! edit asked for; the panel applies it with `InputSet::set`, so every edit is checked the
-//! same way.
+//! same way. The material, magnet-part and grade rows add their pickers
+//! ([`crate::gui::pickers`]): a material choice's properties on hover, a part or grade picked
+//! from the library tables.
 
 use crate::engine::meta::{FieldType, InputMeta, SliderRange, Value};
 use crate::gui::format::{format_value, with_unit};
 use crate::gui::inputs::{InputEntry, input_tooltip, outside_range, step_decimals, text_hint};
+use crate::gui::pickers::{choice_hover, picker_ui};
 
 /// The changed-from-default dot.
 pub const CHANGED_DOT: &str = "\u{2022}";
@@ -119,6 +122,9 @@ pub fn input_row(
             }
         });
         let widget = widget(ui, entry, current, seed, &mut edit).on_hover_text(&tooltip);
+        if let Some(picked) = picker_ui(ui, &entry.path, current) {
+            edit = Some(picked);
+        }
         // Text inputs only (`text_hint` knows no other path).
         if let Some(hint) = text_hint(&entry.path, current_text(current)) {
             ui.weak(hint);
@@ -128,7 +134,9 @@ pub fn input_row(
     .inner
 }
 
-fn current_text(value: &Value) -> &str {
+/// The text of a text input (empty for any other value): the row's hint and the part and
+/// grade pickers read it.
+pub(crate) fn current_text(value: &Value) -> &str {
     match value {
         Value::Text(text) => text,
         _ => "",
@@ -156,7 +164,10 @@ fn widget(
                 .selected_text(text)
                 .show_ui(ui, |ui| {
                     for &(choice, label) in meta.choices {
-                        ui.selectable_value(&mut selected, choice, label);
+                        let option = ui.selectable_value(&mut selected, choice, label);
+                        if let Some(properties) = choice_hover(&entry.path, choice) {
+                            option.on_hover_text(properties);
+                        }
                     }
                 })
                 .response;

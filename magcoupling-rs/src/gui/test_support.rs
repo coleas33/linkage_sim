@@ -137,6 +137,20 @@ pub(crate) fn text_rect(output: &egui::FullOutput, needle: &str) -> Option<egui:
     text_rects(output, needle).into_iter().next()
 }
 
+/// Asserts that every character of `text` but whitespace has a glyph in egui's default fonts
+/// at proportional 14 (the UI's criterion): egui draws an empty box for one it lacks. `what`
+/// names the text's source in the failure. The fonts load on `ctx`'s first frame.
+pub(crate) fn assert_glyphs(ctx: &egui::Context, text: &str, what: &str) {
+    let font = egui::FontId::proportional(14.0);
+    for c in text.chars().filter(|c| !c.is_whitespace()) {
+        assert!(
+            ctx.fonts(|f| f.has_glyph(&font, c)),
+            "{what}: no glyph for {c:?} (U+{:04X}) in {text:?}",
+            c as u32
+        );
+    }
+}
+
 /// The colour of the first drawn text equal to `needle`: its override, else its first section's
 /// colour (a `RichText` colour or a painter text's), else the fallback colour.
 pub(crate) fn text_color(output: &egui::FullOutput, needle: &str) -> Option<egui::Color32> {
