@@ -3,15 +3,17 @@
 # Usage: scripts/gate.sh [--full]   (--full also runs the release WASM builds of both bundles)
 # Exit 0 + "GATE PASS" = all gates green. Any failure exits non-zero.
 #
-# Gates 1-3: linkage-sim-rs. Gates 4-6: magcoupling-rs, a separate crate (not
-# a workspace member), the engine alone (no features); its clippy runs with
-# warnings as errors, as in every magcoupling-rs gate. Gates 7-11:
-# magcoupling-rs with its gui and app features (the panel and the standalone
-# app): their tests, clippy on native and wasm32, the guard that no shipped
-# build has the test-only workbook-parity feature (with a negative control
-# that proves the guard trips), and the check that both crates lock the same
-# egui, egui_plot, eframe and wasm-bindgen (the CLI version deploy-web.yml
-# installs).
+# Gates 1-3: linkage-sim-rs (which depends on magcoupling-rs with its feature
+# gui: the calculator window, Tools -> Magnetic coupling). Gates 4-6:
+# magcoupling-rs, a separate crate (not a workspace member), the engine alone
+# (no features); its clippy runs with warnings as errors, as in every
+# magcoupling-rs gate. Gates 7-11: magcoupling-rs with its gui and app
+# features (the panel and the standalone app): their tests, clippy on native
+# and wasm32, the guard that no shipped build (the calculator's own and the
+# linkage app's, native and wasm32) has the test-only workbook-parity feature
+# (with negative controls that prove the guard trips), and the check that both
+# crates lock the same egui, egui_plot, eframe and wasm-bindgen (the CLI
+# version deploy-web.yml installs).
 # Gate 12: the vendored Python oracle, reference/magcoupling-py: its parity
 # suite, and a check that the committed differential test data is current.
 # Gate 12 needs a Python with the oracle's dependencies; see oracle_python
@@ -24,6 +26,21 @@ ORACLE="$REPO_ROOT/reference/magcoupling-py"
 # MAGCOUPLING_WEB_ARGS, MAGCOUPLING_NATIVE_ARGS, magcoupling_assert_shipped.
 # shellcheck source=magcoupling_shipped.sh
 source scripts/magcoupling_shipped.sh
+
+# Fails the gate unless the workbook-parity guard trips on the shipped build of
+# binary $1 with feature $2 forced on; the remaining arguments are the build's
+# cargo check arguments. Cargo's output is captured first, so a build that
+# fails to compile fails the gate here instead of passing as a trip.
+assert_guard_trips() {
+  local bin="$1" feature="$2" forced
+  shift 2
+  forced="$(cargo check "$@" --features "$feature" --message-format=json-render-diagnostics)"
+  if magcoupling_assert_shipped "$bin" <<<"$forced" 2>/dev/null; then
+    echo "FAIL gate 10/12: the guard did not trip on $bin with workbook-parity forced on"
+    exit 1
+  fi
+  echo "negative control: the guard trips on $bin when workbook-parity is forced on"
+}
 
 # The versions of package $2 in the Cargo.lock $1, one per line.
 lock_versions() {
@@ -61,7 +78,7 @@ echo "== gate 2/12: cargo clippy --all-targets (linkage-sim-rs) =="
 cargo clippy --all-targets
 
 echo "== gate 3/12: WASM check (linkage-sim-rs) =="
-cargo check --target wasm32-unknown-unknown --bin linkage-web --no-default-features --features raster
+cargo check "${LINKAGE_WEB_ARGS[@]}"
 
 echo "== gate 4/12: cargo test (magcoupling-rs) =="
 cargo test --manifest-path "$MAGCOUPLING"
@@ -82,22 +99,22 @@ echo "== gate 9/12: WASM clippy, warnings as errors (magcoupling-rs gui panel; a
 cargo clippy --manifest-path "$MAGCOUPLING" --target wasm32-unknown-unknown --features gui --lib -- -D warnings
 cargo clippy --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_WEB_ARGS[@]}" -- -D warnings
 
-echo "== gate 10/12: workbook-parity guard (shipped native and wasm32 builds; negative control) =="
+echo "== gate 10/12: workbook-parity guard (shipped native and wasm32 builds of both apps; negative controls) =="
 cargo check --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_NATIVE_ARGS[@]}" --message-format=json-render-diagnostics \
   | magcoupling_assert_shipped magcoupling-app
 cargo check --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_WEB_ARGS[@]}" --message-format=json-render-diagnostics \
   | magcoupling_assert_shipped magcoupling-web
-# Negative control: the same shipped build with the feature forced on must trip
-# the guard, or the guard has stopped seeing what cargo builds. Cargo's output is
-# captured first, so a build that fails to compile fails the gate here instead
-# of passing as a trip.
-FORCED_BUILD="$(cargo check --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_WEB_ARGS[@]}" --features workbook-parity \
-  --message-format=json-render-diagnostics)"
-if magcoupling_assert_shipped magcoupling-web <<<"$FORCED_BUILD" 2>/dev/null; then
-  echo "FAIL gate 10/12: the guard did not trip on a shipped build with workbook-parity forced on"
-  exit 1
-fi
-echo "negative control: the guard trips when workbook-parity is forced on"
+# The linkage app's builds carry the calculator's panel (magcoupling-rs, feature gui).
+cargo check "${LINKAGE_NATIVE_ARGS[@]}" --message-format=json-render-diagnostics \
+  | magcoupling_assert_shipped linkage-gui
+cargo check "${LINKAGE_WEB_ARGS[@]}" --message-format=json-render-diagnostics \
+  | magcoupling_assert_shipped linkage-web
+# Negative controls, one per shipped build: the same build with the feature forced
+# on must trip the guard, or the guard has stopped seeing what cargo builds.
+assert_guard_trips magcoupling-app workbook-parity --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_NATIVE_ARGS[@]}"
+assert_guard_trips magcoupling-web workbook-parity --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_WEB_ARGS[@]}"
+assert_guard_trips linkage-gui magcoupling-rs/workbook-parity "${LINKAGE_NATIVE_ARGS[@]}"
+assert_guard_trips linkage-web magcoupling-rs/workbook-parity "${LINKAGE_WEB_ARGS[@]}"
 
 echo "== gate 11/12: lock parity (egui, egui_plot, eframe, wasm-bindgen; wasm-bindgen-cli pin in deploy-web.yml) =="
 LINKAGE_LOCK="Cargo.lock"

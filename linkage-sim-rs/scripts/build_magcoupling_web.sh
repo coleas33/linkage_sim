@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Build the magnetic coupling calculator (magcoupling-rs, feature app) for
 # WebAssembly: the second web bundle, served at /magcoupling/ next to the
-# linkage app. Called by build_web.sh and by .github/workflows/deploy-web.yml.
+# linkage app. Called by build_web.sh, which .github/workflows/deploy-web.yml
+# runs to build both bundles.
 #
 # Prerequisites: as build_web.sh (rustup target add wasm32-unknown-unknown;
 # wasm-bindgen-cli at the wasm-bindgen version in magcoupling-rs/Cargo.lock,

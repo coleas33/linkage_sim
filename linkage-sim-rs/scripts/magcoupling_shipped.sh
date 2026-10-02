@@ -1,7 +1,9 @@
-# Sourced, never run: the cargo arguments of the shipped magcoupling-rs builds,
-# defined once, and the guard that no shipped build has the test-only
-# workbook-parity feature. Used by build_magcoupling_web.sh (the web bundle
-# that deploy-web.yml ships) and gate.sh.
+# Sourced, never run: the cargo arguments of the shipped builds that contain
+# magcoupling-rs (the calculator's own app, and the linkage app with its panel
+# in Tools -> Magnetic coupling), defined once, and the guard that no shipped
+# build has the test-only workbook-parity feature. Used by build_web.sh and
+# build_magcoupling_web.sh (the two web bundles; deploy-web.yml runs
+# build_web.sh) and gate.sh.
 #
 # Why a guard on cargo's output and not a compile_error!: workbook-parity
 # reaches cargo test and cargo clippy --all-targets through the self
@@ -17,6 +19,11 @@
 MAGCOUPLING_WEB_ARGS=(--features app --bin magcoupling-web --target wasm32-unknown-unknown)
 # The native desktop app.
 MAGCOUPLING_NATIVE_ARGS=(--features app --bin magcoupling-app)
+# The linkage app's builds (cargo run from linkage-sim-rs/), which depend on
+# magcoupling-rs with its feature gui: the web bundle (linkage-sim-rs/web/,
+# served at /) and the native desktop app.
+LINKAGE_WEB_ARGS=(--bin linkage-web --target wasm32-unknown-unknown --no-default-features --features raster)
+LINKAGE_NATIVE_ARGS=(--bin linkage-gui)
 
 # Reads cargo's --message-format=json (or json-render-diagnostics) output on
 # stdin. Succeeds only if the binary $1 was among the compiled units, at least

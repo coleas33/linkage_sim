@@ -36,6 +36,11 @@ open = { version = "5", optional = true }
 dirs = { version = "5", optional = true }
 dxf = "0.6"
 uuid = { version = "1", features = ["js"] }
+# The magnetic coupling calculator's panel, shown in Tools -> Magnetic coupling
+# (gui::calculator_window): feature gui only (egui, egui_plot; no eframe, no
+# I/O). Never its test-only workbook-parity feature: gate 10 checks every
+# shipped build (scripts/magcoupling_shipped.sh).
+magcoupling-rs = { path = "../magcoupling-rs", features = ["gui"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
@@ -55,6 +60,9 @@ web-sys = { version = "0.3", features = [
     "BlobPropertyBag",
 ] }
 js-sys = "0.3"
+# The calculator window's "Load design" file picker on the web
+# (gui::calculator_window::DesignPicker); natively rfd comes with feature native.
+rfd = "0.15"
 
 [dev-dependencies]
 approx = "0.5"
