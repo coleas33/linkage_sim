@@ -18,6 +18,7 @@ pub mod history;
 pub mod input_ui;
 pub mod inputs;
 mod panel;
+pub mod pickers;
 pub mod plots;
 pub mod readouts;
 pub mod results_table;

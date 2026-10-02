@@ -14,6 +14,11 @@
 //!   rows that read the workbook's stored 3D fields ([`STORED_3D_ROWS`]) carry the label
 //!   "3D values from the workbook" instead of a "3D updating" badge.
 //!
+//! Over the rows, the material warnings that fire (spec Addendum A5: "plain language,
+//! colour-coded, linked to their teaching note"): each rule's text in its severity's colour (a
+//! warning red, a caution amber) with a link that opens its reviewed note in the Equation panel
+//! ([`warning_lines`], decision M43-8).
+//!
 //! [`result_tooltip`] is the hover text of every displayed result, keyed by result path: the
 //! text every readout hands to [`crate::gui::readouts::Readouts::show`], which adds the
 //! value's equation (plan M4-3). The dashboard builds a row's text only while it is hovered
@@ -22,11 +27,15 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
+use crate::engine::explain::notes;
 use crate::engine::meta::{ResultMeta, ResultSet, Value, result_rows};
 use crate::engine::model::END_EFFECT_OUT_OF_RANGE;
+use crate::engine::warnings::{Severity, WARNING_RULES, WarningRule};
 use crate::gui::corrections::{CorrectionIndex, Mark, marker_text, marker_tooltip};
+use crate::gui::explorer::reviewed_note;
 use crate::gui::format::{format_value, with_unit};
 use crate::gui::readouts::Readouts;
+use crate::gui::typeset::glyph_safe;
 use crate::{DesignInputs, DesignResults, compute_all};
 
 /// A badge colour, from a check verdict.
@@ -59,6 +68,38 @@ impl Level {
             Level::Bad => visuals.error_fg_color,
         }
     }
+}
+
+/// The heading of the material warnings.
+pub const WARNINGS_HEADING: &str = "Material warnings";
+
+/// The start of a warning's link to its teaching note.
+pub const WHY: &str = "Why";
+
+/// A warning's badge colour: a warning (the coupling does not work as designed) red, a caution
+/// amber.
+pub const fn severity_level(severity: Severity) -> Level {
+    match severity {
+        Severity::Warning => Level::Bad,
+        Severity::Caution => Level::Caution,
+    }
+}
+
+/// The material warnings that fire for `results`, in the rules' order: each rule and its text.
+pub fn warning_lines(results: &DesignResults) -> Vec<(&'static WarningRule, String)> {
+    WARNING_RULES
+        .iter()
+        .filter_map(|rule| match results.get(&format!("warnings.{}", rule.id)) {
+            Some(Value::Text(text)) if !text.is_empty() => Some((rule, text)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The reviewed teaching note of a warning rule, if its note has passed the accuracy gate
+/// ([`reviewed_note`]).
+pub fn warning_note(rule: &WarningRule) -> Option<&'static notes::Note> {
+    reviewed_note(rule.note_id)
 }
 
 /// The temperature summary's verdict, the badge of the three temperature rows.
@@ -329,6 +370,7 @@ pub fn dashboard_ui(ui: &mut egui::Ui, results: &DesignResults, readouts: &mut R
         ui.colored_label(ui.visuals().error_fg_color, banner);
         ui.separator();
     }
+    warnings_ui(ui, results, readouts);
     let last_3d = lines.iter().rposition(|line| line.stored_3d);
     for (index, line) in lines.iter().enumerate() {
         let weak = ui.visuals().weak_text_color();
@@ -354,6 +396,37 @@ pub fn dashboard_ui(ui: &mut egui::Ui, results: &DesignResults, readouts: &mut R
         }
         ui.add_space(4.0);
     }
+}
+
+/// The material warnings that fire: a badge and the text in the severity's colour, then a link
+/// to the teaching note (it asks the panel to open the note).
+fn warnings_ui(ui: &mut egui::Ui, results: &DesignResults, readouts: &mut Readouts) {
+    let lines = warning_lines(results);
+    if lines.is_empty() {
+        return;
+    }
+    ui.strong(WARNINGS_HEADING);
+    for (rule, text) in lines {
+        let level = severity_level(rule.severity);
+        ui.horizontal(|ui| {
+            badge(ui, Some(level));
+            ui.add(
+                egui::Label::new(egui::RichText::new(text).color(level.color(ui.visuals()))).wrap(),
+            );
+        });
+        if let Some(note) = warning_note(rule) {
+            ui.horizontal(|ui| {
+                ui.add_space(16.0);
+                if ui
+                    .link(format!("{WHY}: {}", glyph_safe(note.title)))
+                    .clicked()
+                {
+                    readouts.open_note(rule.note_id);
+                }
+            });
+        }
+    }
+    ui.separator();
 }
 
 /// A badge: a filled circle in the level's colour, or an empty cell.
@@ -653,6 +726,29 @@ mod tests {
                 .contains("Rust-only result (no workbook cell)")
         );
         assert_eq!(hover_text("no.such"), None);
+    }
+
+    #[test]
+    fn the_warnings_that_fire_are_listed_with_their_reviewed_notes() {
+        assert!(warning_lines(&compute_all(&DesignInputs::default())).is_empty());
+        // 304 stainless back iron: an open circuit, and its expansion against the magnets'.
+        let results = compute_all(&design(|i| i.materials.parts.back_iron = 7));
+        let ids: Vec<&str> = warning_lines(&results)
+            .iter()
+            .map(|(rule, _)| rule.id)
+            .collect();
+        assert_eq!(
+            ids,
+            ["non_ferromagnetic_back_iron", "cte_mismatch_with_magnets"]
+        );
+        let (rule, text) = &warning_lines(&results)[0];
+        assert_eq!(text, rule.text);
+        assert_eq!(severity_level(rule.severity), Level::Bad);
+        assert_eq!(severity_level(Severity::Caution), Level::Caution);
+        // Every rule's note has passed the accuracy gate, so every warning links to it.
+        for rule in &WARNING_RULES {
+            assert_eq!(warning_note(rule).map(|n| n.id), Some(rule.note_id));
+        }
     }
 
     #[test]

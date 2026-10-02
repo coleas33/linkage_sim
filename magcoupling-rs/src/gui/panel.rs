@@ -2156,6 +2156,12 @@ mod tests {
         assert!(texts.iter().any(|t| t.starts_with(ASSUMPTIONS_MODIFIED)));
         let catalogue = InputCatalogue::get();
         texts.extend(catalogue.all().map(crate::gui::inputs::input_tooltip));
+        // The material warnings the dashboard can show.
+        texts.extend(
+            crate::engine::warnings::WARNING_RULES
+                .iter()
+                .map(|rule| rule.text.to_owned()),
+        );
         let results = harness.panel.results().clone();
         texts.extend(
             crate::gui::dashboard::dashboard_lines(&results)
@@ -3039,6 +3045,128 @@ mod tests {
                 crate::gui::test_support::assert_glyphs(&harness.ctx, text, note.id);
             }
         }
+    }
+
+    #[test]
+    fn the_part_picker_sets_a_library_part_or_custom_dimensions() {
+        use crate::gui::pickers::{CUSTOM, part_label};
+        let mut harness = Harness::new();
+        let b842sh = part_label(crate::engine::library::lookup("B842SH").unwrap());
+        // The inner part's picker (the Key design row, drawn first).
+        harness.click_text(&b842sh);
+        harness.click_text(CUSTOM);
+        assert_eq!(harness.panel.inputs().coupling.magnets.part_inner, "");
+        let output = harness.frame(Vec::new());
+        assert!(count(&output, CUSTOM) >= 1);
+        // Back to a library part, from the same picker.
+        harness.click_text(CUSTOM);
+        let b842 = part_label(crate::engine::library::lookup("B842").unwrap());
+        harness.click_text(&b842);
+        assert_eq!(harness.panel.inputs().coupling.magnets.part_inner, "B842");
+        let mut expected = DesignInputs::default();
+        expected.coupling.magnets.part_inner = "B842".to_owned();
+        assert_eq!(harness.panel.results(), &compute_all(&expected));
+    }
+
+    #[test]
+    fn a_material_choice_sums_up_its_properties_and_fires_its_warnings() {
+        use crate::gui::dashboard::WARNINGS_HEADING;
+        use crate::gui::pickers::{material_of, material_summary};
+        let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
+        harness.click_text("Materials");
+        for _ in 0..10 {
+            harness.frame(Vec::new());
+        }
+        let steel = material_of("materials.parts.back_iron", 1).unwrap();
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &material_summary(steel)), 1);
+        assert_eq!(count(&output, WARNINGS_HEADING), 0);
+        harness.click_text("4140 annealed");
+        harness.click_text("304 stainless (non-magnetic)");
+        assert_eq!(harness.panel.inputs().materials.parts.back_iron, 7);
+        let output = harness.frame(Vec::new());
+        let stainless = material_of("materials.parts.back_iron", 7).unwrap();
+        assert_eq!(count(&output, &material_summary(stainless)), 1);
+        assert_eq!(count(&output, WARNINGS_HEADING), 1);
+    }
+
+    #[test]
+    fn a_material_code_outside_the_choices_is_shown_and_kept() {
+        // A design file's back iron code 99 is no choice: the drop-down says so, the row sums
+        // up no material, and idle frames write nothing back.
+        use crate::gui::pickers::{MATERIAL_PICKERS, material_of, material_summary};
+        let summaries: Vec<String> = MATERIAL_PICKERS
+            .iter()
+            .flat_map(|(path, choices)| {
+                choices
+                    .iter()
+                    .filter_map(|&(code, _)| material_of(path, code))
+            })
+            .map(material_summary)
+            .collect();
+        let drawn_summaries = |output: &egui::FullOutput| {
+            drawn_texts(output)
+                .iter()
+                .filter(|t| summaries.contains(t))
+                .count()
+        };
+        let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
+        harness.click_text("Materials");
+        for _ in 0..10 {
+            harness.frame(Vec::new());
+        }
+        let output = harness.frame(Vec::new());
+        assert_eq!(drawn_summaries(&output), MATERIAL_PICKERS.len());
+        harness.panel.inputs.materials.parts.back_iron = 99;
+        let mut expected = DesignInputs::default();
+        expected.materials.parts.back_iron = 99;
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..2 {
+            output = harness.frame(Vec::new());
+        }
+        assert_eq!(count(&output, "99 (not a choice)"), 1);
+        assert_eq!(drawn_summaries(&output), MATERIAL_PICKERS.len() - 1);
+        assert_eq!(harness.panel.inputs(), &expected);
+    }
+
+    #[test]
+    fn a_warning_shows_in_its_colour_and_links_to_its_note() {
+        use crate::engine::warnings::WARNING_RULES;
+        use crate::gui::dashboard::WHY;
+        let mut harness = Harness::new();
+        harness.panel.inputs.materials.parts.back_iron = 7;
+        let output = harness.frame(Vec::new());
+        let rule = &WARNING_RULES[0];
+        assert_eq!(
+            crate::gui::test_support::text_color(&output, rule.text),
+            Some(Level::Bad.color(&harness.ctx.style().visuals))
+        );
+        let caution = &WARNING_RULES[5];
+        assert_eq!(
+            crate::gui::test_support::text_color(&output, caution.text),
+            Some(Level::Caution.color(&harness.ctx.style().visuals))
+        );
+        let note = crate::engine::explain::notes::note(rule.note_id).unwrap();
+        harness.click_text(&format!(
+            "{WHY}: {}",
+            crate::gui::typeset::glyph_safe(note.title)
+        ));
+        assert!(harness.panel.explorer.open);
+        assert_eq!(harness.panel.explorer.note(), Some(rule.note_id));
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, note.sentences[0]), 1);
+        assert!(
+            diagram_points(&output) == 0,
+            "the flux-path diagram marks no point"
+        );
+        // Its one equation is a link: the circuit in effect, opened like a value.
+        harness.click_text("circuit");
+        assert_eq!(harness.panel.explorer.note(), None);
+        assert_eq!(
+            harness.panel.explorer.trail(),
+            ["materials.circuit_backiron"]
+        );
     }
 
     #[test]

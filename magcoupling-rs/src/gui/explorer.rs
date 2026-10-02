@@ -322,6 +322,10 @@ impl Explorer {
             self.open_path(&path);
             ctx.request_repaint();
         }
+        if let Some(id) = events.note {
+            self.open_note(id);
+            ctx.request_repaint();
+        }
     }
 }
 
