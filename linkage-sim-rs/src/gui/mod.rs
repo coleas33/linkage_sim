@@ -27,6 +27,7 @@ use std::collections::HashMap;
 use eframe::egui;
 pub use state::{ActuatorLabelForce, AppState};
 pub use state::file_io::{decode_mechanism_from_url, encode_mechanism_for_url};
+pub use calculator_window::{TOOL_MAGCOUPLING, TOOL_PARAM, magcoupling_share_base};
 pub use sweep::{SweepData, SweepMode};
 use samples::SampleMechanism;
 use crate::core::state::GROUND_ID;
@@ -46,6 +47,8 @@ pub struct LinkageApp {
     demo_sample_index: usize,
     /// Tools → Magnetic coupling: the calculator window, its state independent of the model.
     calculator: calculator_window::CalculatorWindow,
+    /// The window title last sent to the native window (BL-037: sent only when it changes).
+    sent_title: Option<String>,
 }
 
 impl LinkageApp {
@@ -61,7 +64,19 @@ impl LinkageApp {
             demo_timer: 0.0,
             demo_sample_index: 0,
             calculator: calculator_window::CalculatorWindow::default(),
+            sent_title: None,
         }
+    }
+
+    /// Opens Tools → Magnetic coupling (the web entry's `?tool=magcoupling`).
+    pub fn open_magcoupling(&mut self) {
+        self.calculator.set_open(true);
+    }
+
+    /// Sets the address the calculator's share links point at (the web entry: the calculator's
+    /// own page on the same server, [`magcoupling_share_base`]).
+    pub fn set_magcoupling_share_base(&mut self, base: impl Into<String>) {
+        self.calculator.set_share_base(base);
     }
 
     /// Load a mechanism from a shared URL's JSON string.
@@ -86,19 +101,7 @@ impl eframe::App for LinkageApp {
         }
 
         // ── Update window title to show filename and dirty state ──────
-        let title = if let Some(ref path) = self.state.last_save_path {
-            let name = path.file_name().unwrap_or_default().to_string_lossy();
-            if self.state.dirty {
-                format!("Linkage Simulator \u{2014} {}*", name)
-            } else {
-                format!("Linkage Simulator \u{2014} {}", name)
-            }
-        } else if self.state.dirty {
-            "Linkage Simulator \u{2014} unsaved*".to_string()
-        } else {
-            "Linkage Simulator".to_string()
-        };
-        ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+        send_title(ctx, &mut self.sent_title, window_title(&self.state));
 
         // ── Tick status-message timer ─────────────────────────────────
         if self.state.status_message_time > 0.0 {
@@ -1229,6 +1232,35 @@ impl eframe::App for LinkageApp {
     }
 }
 
+// ── Window title ────────────────────────────────────────────────────────────
+
+/// The native window's title: the file name and whether there are unsaved changes.
+fn window_title(state: &AppState) -> String {
+    if let Some(ref path) = state.last_save_path {
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        if state.dirty {
+            format!("Linkage Simulator \u{2014} {}*", name)
+        } else {
+            format!("Linkage Simulator \u{2014} {}", name)
+        }
+    } else if state.dirty {
+        "Linkage Simulator \u{2014} unsaved*".to_string()
+    } else {
+        "Linkage Simulator".to_string()
+    }
+}
+
+/// Sends `title` to the native window when it differs from the last title sent (`sent`), so an
+/// idle frame sends nothing (BL-037). The web backend does not implement the command and logs a
+/// warning for each one, so the web build never sends it (the page has its own `<title>`).
+fn send_title(ctx: &egui::Context, sent: &mut Option<String>, title: String) {
+    if cfg!(target_arch = "wasm32") || sent.as_deref() == Some(title.as_str()) {
+        return;
+    }
+    ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+    *sent = Some(title);
+}
+
 // ── Keyboard shortcuts ──────────────────────────────────────────────────────
 
 /// Ctrl+Z undo, Ctrl+Y or Ctrl+Shift+Z redo, Ctrl+S save, Ctrl+Shift+S save as (native),
@@ -1721,5 +1753,39 @@ mod tests {
             let at = update.find(reader).unwrap_or_else(|| panic!("update calls {reader}"));
             assert!(show < at, "{reader} comes before the calculator window");
         }
+    }
+
+    /// The window titles egui was asked to send in a frame.
+    fn title_commands(output: &egui::FullOutput) -> Vec<String> {
+        output.viewport_output.get(&egui::ViewportId::ROOT).map_or_else(Vec::new, |viewport| {
+            viewport
+                .commands
+                .iter()
+                .filter_map(|command| match command {
+                    egui::ViewportCommand::Title(title) => Some(title.clone()),
+                    _ => None,
+                })
+                .collect()
+        })
+    }
+
+    #[test]
+    fn the_window_title_is_sent_only_when_it_changes() {
+        let ctx = egui::Context::default();
+        let mut state = AppState::default();
+        let mut sent = None;
+        let frame = |state: &AppState, sent: &mut Option<String>| {
+            let output = ctx.run(egui::RawInput::default(), |ctx| send_title(ctx, sent, window_title(state)));
+            title_commands(&output)
+        };
+        assert_eq!(frame(&state, &mut sent), ["Linkage Simulator"]);
+        for _ in 0..3 {
+            assert!(frame(&state, &mut sent).is_empty(), "an idle frame sends no title");
+        }
+        state.dirty = true;
+        assert_eq!(frame(&state, &mut sent), ["Linkage Simulator \u{2014} unsaved*"]);
+        assert!(frame(&state, &mut sent).is_empty());
+        state.last_save_path = Some(std::path::PathBuf::from("lift.json"));
+        assert_eq!(frame(&state, &mut sent), ["Linkage Simulator \u{2014} lift.json*"]);
     }
 }

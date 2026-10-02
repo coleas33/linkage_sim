@@ -42,6 +42,16 @@ use super::export::download::{self, DownloadOutcome, FileFilter};
 /// The window's title and the Tools menu item.
 pub const TITLE: &str = "Magnetic coupling";
 
+/// The URL query parameter that opens a tool when the web app starts (decision M5-4):
+/// `?tool=magcoupling`. gui-smoke's linkage step opens the window with it.
+pub const TOOL_PARAM: &str = "tool";
+
+/// [`TOOL_PARAM`]'s value that opens this window.
+pub const TOOL_MAGCOUPLING: &str = "magcoupling";
+
+/// The path of the calculator's own page next to the linkage app (`web/magcoupling/`).
+pub const MAGCOUPLING_PAGE_PATH: &str = "/magcoupling/";
+
 /// Where the window first opens [points], below the menu bar and the two toolbars, and its
 /// starting size (decision M5-2). egui keeps the window inside the screen.
 const DEFAULT_POS: [f32; 2] = [80.0, 100.0];
@@ -56,6 +66,12 @@ const UI_ZOOM_KEYS: [egui::KeyboardShortcut; 4] = [
     egui::gui_zoom::kb_shortcuts::ZOOM_OUT,
     egui::gui_zoom::kb_shortcuts::ZOOM_RESET,
 ];
+
+/// The address the calculator's share links point at on the web app served from `origin`: the
+/// calculator's own page on the same server.
+pub fn magcoupling_share_base(origin: &str) -> String {
+    format!("{origin}{MAGCOUPLING_PAGE_PATH}")
+}
 
 /// The window's id (its area's and its layer's).
 pub(crate) fn window_id() -> egui::Id {
@@ -93,6 +109,8 @@ pub struct CalculatorWindow {
     /// Set by opening, until the window has been brought in front of the app's other windows and
     /// areas (the linkage app's welcome screen included).
     raise: bool,
+    /// The address the panel's share links point at, applied when the panel is created.
+    share_base: Option<String>,
     picker: DesignPicker,
 }
 
@@ -109,13 +127,27 @@ impl CalculatorWindow {
         self.keyboard = open;
         self.raise = open;
         if open && self.panel.is_none() {
-            self.panel = Some(MagcouplingPanel::new());
+            let mut panel = MagcouplingPanel::new();
+            if let Some(base) = &self.share_base {
+                panel.set_share_base(base.clone());
+            }
+            self.panel = Some(panel);
         }
     }
 
     /// Whether the window has the keyboard (module docs).
     pub fn has_keyboard(&self) -> bool {
         self.open && self.keyboard
+    }
+
+    /// Sets the address the panel's share links point at (the web app: the calculator's own page
+    /// on the same server, [`magcoupling_share_base`]).
+    pub fn set_share_base(&mut self, base: impl Into<String>) {
+        let base = base.into();
+        if let Some(panel) = &mut self.panel {
+            panel.set_share_base(base.clone());
+        }
+        self.share_base = Some(base);
     }
 
     /// Draws the window when it is open and does the panel's requests; while the window has the
@@ -388,7 +420,7 @@ mod tests {
         screen_input, text_rect,
     };
     use magcoupling::gui::results_table::{CSV_FILE_NAME, JSON_FILE_NAME};
-    use magcoupling::gui::session::{Design, design_to_json};
+    use magcoupling::gui::session::{Design, PUBLIC_BASE_URL, design_to_json};
 
     /// The panel's heading (magcoupling-rs `gui::panel::HEADING`), a label: a click on it does
     /// nothing but give the window the keyboard.
@@ -844,6 +876,47 @@ mod tests {
             key_tap(egui::Key::Z, egui::Modifiers::COMMAND),
         );
         assert_eq!(keys, [egui::Key::Z]);
+    }
+
+    #[test]
+    fn share_links_point_at_the_base_set_before_or_after_the_first_opening() {
+        let mut window = CalculatorWindow::default();
+        window.set_share_base("http://localhost:8080/magcoupling/");
+        window.set_open(true);
+        let link = window.panel().expect("opened").share_link();
+        assert!(
+            link.starts_with("http://localhost:8080/magcoupling/?m="),
+            "{link}"
+        );
+        window.set_share_base("http://127.0.0.1:9000/magcoupling/");
+        let link = window.panel().expect("opened").share_link();
+        assert!(
+            link.starts_with("http://127.0.0.1:9000/magcoupling/?m="),
+            "{link}"
+        );
+    }
+
+    #[test]
+    fn gui_smoke_opens_the_window_with_the_tool_parameter() {
+        // .claude/workflows/gui-smoke.js's linkage step opens the linkage app with this query and
+        // looks for the equation registry's log line, which the panel logs when it is created.
+        let script = include_str!("../../../.claude/workflows/gui-smoke.js").replace("\r\n", "\n");
+        let query = format!("const LINKAGE_TOOL_QUERY = '?{TOOL_PARAM}={TOOL_MAGCOUPLING}'");
+        assert!(script.contains(&query), "gui-smoke.js has no {query}");
+        // The linkage step's own check (the /magcoupling/ step names the prefix too).
+        let check = format!(
+            "magcoupling_window=true only if a console message contains \"{}\"",
+            magcoupling::gui::readouts::REGISTRY_LOG_PREFIX
+        );
+        assert!(script.contains(&check), "gui-smoke.js has no {check}");
+    }
+
+    #[test]
+    fn the_production_origin_gives_the_calculator_s_public_address() {
+        assert_eq!(
+            magcoupling_share_base("https://linkage.colesorkness.com"),
+            PUBLIC_BASE_URL
+        );
     }
 
     #[test]

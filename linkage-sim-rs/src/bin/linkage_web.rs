@@ -34,6 +34,14 @@ pub async fn start() {
     // ── Check for ?m= URL parameter (shared mechanism) ───────────────
     let shared_mechanism_json = extract_url_mechanism_param();
 
+    // ── ?tool=magcoupling opens Tools → Magnetic coupling at start ────
+    let open_magcoupling =
+        url_param(linkage_sim_rs::gui::TOOL_PARAM).as_deref() == Some(linkage_sim_rs::gui::TOOL_MAGCOUPLING);
+    // Share links made in that window open the calculator's own page on this server.
+    let magcoupling_share_base = web_sys::window()
+        .and_then(|window| window.location().origin().ok())
+        .map(|origin| linkage_sim_rs::gui::magcoupling_share_base(&origin));
+
     let canvas = web_sys::window()
         .expect("no window")
         .document()
@@ -54,6 +62,12 @@ pub async fn start() {
                 if let Some(json_str) = shared_mechanism_json {
                     app.load_shared_mechanism(&json_str);
                 }
+                if let Some(base) = magcoupling_share_base {
+                    app.set_magcoupling_share_base(base);
+                }
+                if open_magcoupling {
+                    app.open_magcoupling();
+                }
                 Ok(Box::new(app))
             }),
         )
@@ -69,20 +83,7 @@ pub async fn start() {
 fn extract_url_mechanism_param() -> Option<String> {
     use linkage_sim_rs::gui::decode_mechanism_from_url;
 
-    let window = web_sys::window()?;
-    let location = window.location();
-    let search = location.search().ok()?;
-    if search.is_empty() {
-        return None;
-    }
-
-    // Parse URL search params. web_sys::UrlSearchParams expects the raw
-    // search string including the leading '?'.
-    let params = web_sys::UrlSearchParams::new_with_str(&search).ok()?;
-    let encoded = params.get("m")?;
-    if encoded.is_empty() {
-        return None;
-    }
+    let encoded = url_param("m")?;
 
     match decode_mechanism_from_url(&encoded) {
         Ok(json) => {
@@ -94,4 +95,16 @@ fn extract_url_mechanism_param() -> Option<String> {
             None
         }
     }
+}
+
+/// The value of the URL query parameter `name`, if the page's address has it and it is not empty.
+#[cfg(target_arch = "wasm32")]
+fn url_param(name: &str) -> Option<String> {
+    let search = web_sys::window()?.location().search().ok()?;
+    if search.is_empty() {
+        return None;
+    }
+    // web_sys::UrlSearchParams takes the raw search string, leading '?' included.
+    let params = web_sys::UrlSearchParams::new_with_str(&search).ok()?;
+    params.get(name).filter(|value| !value.is_empty())
 }
