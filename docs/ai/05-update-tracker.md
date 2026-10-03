@@ -5,6 +5,18 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-03 — Magcoupling spreadsheet export: the final review's fix wave (branch magcoupling/xlsx)
+- The check-level fills are a fixed palette: the badge colours of egui's dark visuals (green
+  5AC878, amber FF8F00, red FF0000), which the standalone page forces. The linkage app's
+  calculator window may draw in light visuals (green 148C3C, amber FF6400), and the fills do not
+  follow it. The README, `gui/xlsx.rs`, decision X-11 and 03-structure now say so; the writer
+  is unchanged (the values and the level words were right).
+- The spreadsheet tests' `snapshot` fixture, written twice (`gui::spreadsheet`, `gui::xlsx`), is
+  one helper in `gui::test_support`.
+- Still open for the user before merge: the plan's Decisions header says X-2 to X-12 are not yet
+  confirmed and 04-memory asks the user to confirm them (left as committed); opening a downloaded
+  file in Excel or LibreOffice (neither is installed on the build machine).
+
 ## 2026-10-03 — Magcoupling GUI: spreadsheet download of the current layout (branch magcoupling/xlsx)
 - "Export spreadsheet" (header) and "Export XLSX" (beside the results table's CSV and JSON exports) save `magcoupling-results.xlsx`: the design shown laid out as the page, values only (decision X-1: no formulas, no round trip). Sheets Summary (export time, version, the share link as text, the sizing state, the banners, the dashboard with badges, the material warnings, the corrections applied), Inputs (the order the inputs side shows; group, section and Advanced headings; changed, assumption, Advanced and Key design flags; every input once), Results (by physics chain with heading levels, check levels as the page's fills, the equation as plain text where a record exists; every result once) and Assumptions. `gui::spreadsheet` lays the sheets out (tested directly), `gui::xlsx` writes them with rust_xlsxwriter 0.99.1 (pinned; gate 11 checks both lock files), read back in tests with calamine and zip (dev-dependencies). The sheets' order and headings come from the page's own code (`InputGroup::plain_sections`/`advanced_sections`, `InputSection::heading_in`, `results_table::table_lines`, `entry_level`), which the inputs side and the results table call too; the table sheets freeze and filter their header row, group headings are grey, and a text past Excel's 32,767 UTF-16 units is cut at a whole character. Share links (both apps) are now compressed by flate2's zlib-rs backend (rust_xlsxwriter's zip); tests pin a link each app wrote before and check it still decodes. `PanelRequest::SaveFile.contents` is now `Vec<u8>`; both hosts write the bytes (app::files::write_file; linkage export::download::write_file through download_bytes, with an Excel workbook save filter). The plan records the decisions table and the measured web bundle growth.
 

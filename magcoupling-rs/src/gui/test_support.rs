@@ -212,6 +212,23 @@ pub(crate) fn read_xlsx(bytes: &[u8]) -> Vec<(String, Vec<Vec<calamine::Data>>)>
         .collect()
 }
 
+/// The spreadsheet tests' snapshot of `inputs` and `results`: Magnets -> Torque, the workflow
+/// order, a stand-in share link and export time.
+pub(crate) fn snapshot<'a>(
+    inputs: &'a crate::DesignInputs,
+    results: &'a crate::DesignResults,
+) -> crate::gui::spreadsheet::Snapshot<'a> {
+    crate::gui::spreadsheet::Snapshot {
+        inputs,
+        results,
+        sizing: crate::gui::sizing::SizingState::default(),
+        sizing_status: None,
+        input_order: crate::gui::inputs::InputOrder::Workflow,
+        share_link: "https://example.test/magcoupling/?m=abc".to_owned(),
+        exported_unix_s: 1_790_000_000,
+    }
+}
+
 /// The text of the part `name` of an .xlsx file (a zip archive), e.g. `xl/styles.xml`.
 pub(crate) fn xlsx_part(bytes: &[u8], name: &str) -> String {
     use std::io::Read;

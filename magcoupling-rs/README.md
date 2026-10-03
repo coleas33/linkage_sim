@@ -276,7 +276,9 @@ scroll-area floor lowered to none).
   Results and Assumptions sheets freeze their header row and carry Excel's filter buttons on it
   (the Summary, read top to bottom, does neither); the columns are sized, the headings bold (a
   group heading on a light grey, E7E6E6, apart from the section headings inside it) and each check
-  level filled with the page's badge colour (green 5AC878, amber FF8F00, red FF0000). rust_xlsxwriter 0.99.1 writes
+  level filled with the standalone page's badge colour, a fixed dark-theme palette (green 5AC878,
+  amber FF8F00, red FF0000; the linkage app's calculator window may draw in light visuals, whose
+  green and amber badges are darker, and the fills do not follow them). rust_xlsxwriter 0.99.1 writes
   it; on wasm32 its `wasm` feature is on, without which the workbook's creation time calls
   `SystemTime::now()` and panics in the browser. The host gets the file as bytes
   (`PanelRequest::SaveFile.contents` is a `Vec<u8>`).

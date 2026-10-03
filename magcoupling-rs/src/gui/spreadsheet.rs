@@ -569,20 +569,7 @@ mod tests {
     use crate::engine::assumptions::ASSUMPTIONS;
     use crate::engine::sizing::FreeVariable;
     use crate::gui::dashboard::{CHECKS, DASHBOARD, check_level};
-    use crate::gui::test_support::short_magnets;
-
-    /// The snapshot of `inputs` and `results` in Magnets -> Torque, the workflow order.
-    fn snapshot<'a>(inputs: &'a DesignInputs, results: &'a DesignResults) -> Snapshot<'a> {
-        Snapshot {
-            inputs,
-            results,
-            sizing: SizingState::default(),
-            sizing_status: None,
-            input_order: InputOrder::Workflow,
-            share_link: "https://example.test/magcoupling/?m=abc".to_owned(),
-            exported_unix_s: 1_790_000_000,
-        }
-    }
+    use crate::gui::test_support::{short_magnets, snapshot};
 
     fn sheet<'s>(book: &'s [Sheet], name: &str) -> &'s Sheet {
         book.iter()

@@ -3,8 +3,8 @@
 //! Excel's 32,767 characters, as Excel counts them, ending with how long it was), a time as a
 //! date, each sheet's header rows frozen, its header's filter buttons and its columns' widths as
 //! the sheet asks, the headings bold (a group heading on a light grey), and a check's level
-//! filled with the badge's colour on the page (decision X-11). Values only: no cell holds a
-//! formula (decision X-1).
+//! filled with the standalone page's badge colour, a fixed dark-theme palette (decision X-11;
+//! [`fill`]). Values only: no cell holds a formula (decision X-1).
 
 use rust_xlsxwriter::{
     Color, DocProperties, ExcelDateTime, Format, FormatBorder, Workbook, Worksheet, XlsxError,
@@ -96,8 +96,8 @@ fn write_cell(worksheet: &mut Worksheet, row: u32, col: u16, cell: &Cell) -> Res
 }
 
 /// The format of a cell style: the title, headers and headings bold (the column headers
-/// underlined, a group heading on [`GROUP_FILL`]), a check's level bold on the badge's colour
-/// ([`fill`]).
+/// underlined, a group heading on [`GROUP_FILL`]), a check's level bold on the dark theme's
+/// badge colour ([`fill`]).
 fn format_of(style: CellStyle) -> Format {
     match style {
         CellStyle::Plain => Format::new(),
@@ -114,8 +114,10 @@ fn format_of(style: CellStyle) -> Format {
     }
 }
 
-/// The badge colour of `level` on the page, which shows egui's dark visuals (decision X-11):
-/// green, the warning amber, the error red. Black text reads on each.
+/// The badge colour of `level` in egui's dark visuals, which the standalone page forces
+/// (decision X-11): green, the warning amber, the error red. Black text reads on each. A fixed
+/// palette: the linkage app's calculator window may draw in light visuals, whose badges differ
+/// (green 148C3C, amber FF6400), and the fills do not follow them.
 pub fn fill(level: Level) -> Color {
     let color = level.color(&egui::Visuals::dark());
     Color::RGB((u32::from(color.r()) << 16) | (u32::from(color.g()) << 8) | u32::from(color.b()))
@@ -161,10 +163,8 @@ mod tests {
     use calamine::Data;
 
     use super::*;
-    use crate::gui::inputs::InputOrder;
-    use crate::gui::sizing::SizingState;
     use crate::gui::spreadsheet::{INPUT_COLUMNS, INPUTS_SHEET};
-    use crate::gui::test_support::{read_xlsx, xlsx_part};
+    use crate::gui::test_support::{read_xlsx, snapshot, xlsx_part};
     use crate::{DesignInputs, compute_all};
 
     /// The Excel serial date of a Unix time (days since 1899-12-30).
@@ -184,19 +184,6 @@ mod tests {
                 assert!((time.as_f64() - serial(*unix_s)).abs() < 1e-6, "{at}");
             }
             (want, got) => panic!("{at}: {want:?} read back as {got:?}"),
-        }
-    }
-
-    /// The snapshot of `inputs` and `results` in the workflow order.
-    fn snapshot<'a>(inputs: &'a DesignInputs, results: &'a crate::DesignResults) -> Snapshot<'a> {
-        Snapshot {
-            inputs,
-            results,
-            sizing: SizingState::default(),
-            sizing_status: None,
-            input_order: InputOrder::Workflow,
-            share_link: "https://example.test/magcoupling/?m=abc".to_owned(),
-            exported_unix_s: 1_790_000_000,
         }
     }
 
