@@ -490,6 +490,10 @@ impl MagcouplingPanel {
                 self.trace = Some(trace);
             }
         }
+        // After every change of the trace this frame (Clear trace, a label click, a result
+        // click), whichever view the centre region shows: the results table's trace filter goes
+        // off with an input's trace even while the table is not drawn.
+        self.results_table.sync_trace_filter(self.trace.as_ref());
         self.explorer.end_frame(ui.ctx(), events);
         // One undo step per settled edit.
         let settled = !self.editing(ui);
@@ -2320,6 +2324,98 @@ mod tests {
         let output = harness.frame(Vec::new());
         assert!(harness.panel.trace.is_some());
         assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
+    }
+
+    #[test]
+    fn a_trace_filter_left_ticked_off_the_table_does_not_filter_a_later_trace() {
+        use crate::gui::results_table::{TRACED_ONLY, table_entries};
+        use crate::gui::trace::CLEAR_TRACE;
+        // "Traced only" goes off with the trace even when the table is not on screen: Clear
+        // trace and a click on another input's label, both with the Geometry view showing, must
+        // not leave the box ticked for the new trace (it would filter the table unasked).
+        let entries = table_entries();
+        let total = entries.len();
+        let mut harness = Harness::new();
+        harness.click_text(CentreView::Results.label());
+        harness.click_text(InputCatalogue::get().entry(FACE_GAP).unwrap().meta.label);
+        harness.click_text(TRACED_ONLY);
+        let gap = harness.panel.trace.clone().expect("a trace");
+        let gap_rows = entries.iter().filter(|e| gap.marks(&e.path)).count();
+        let output = harness.frame(Vec::new());
+        assert!(gap_rows > 0 && gap_rows < total);
+        assert_eq!(count(&output, &format!("{gap_rows} of {total} results")), 1);
+        // Off the table: end the trace and trace another input.
+        harness.click_text(CentreView::Geometry.label());
+        harness.click_text(CLEAR_TRACE);
+        assert_eq!(harness.panel.trace, None);
+        harness.click_text(InputCatalogue::get().entry(POLES).unwrap().meta.label);
+        let poles = harness.panel.trace.clone().expect("a trace");
+        assert_eq!(poles.source, POLES);
+        let pole_rows = entries.iter().filter(|e| poles.marks(&e.path)).count();
+        assert!(pole_rows > 0 && pole_rows < total);
+        // Back on the table: every row, the box unticked.
+        harness.click_text(CentreView::Results.label());
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
+        assert_eq!(
+            count(&output, &format!("{pole_rows} of {total} results")),
+            0
+        );
+        // Ticking it again filters by the new trace, as the checkbox always did.
+        harness.click_text(TRACED_ONLY);
+        let output = harness.frame(Vec::new());
+        assert_eq!(
+            count(&output, &format!("{pole_rows} of {total} results")),
+            1
+        );
+    }
+
+    #[test]
+    fn a_result_traced_off_the_table_also_turns_the_trace_filter_off() {
+        use crate::gui::results_table::{TRACED_ONLY, table_entries};
+        use crate::gui::trace::TraceKind;
+        // A result clicked on the dashboard replaces an input's trace with its own (which marks
+        // inputs, and cannot filter the table): the box goes off with it, so an input traced
+        // next, with no Clear trace between, does not find it ticked.
+        let entries = table_entries();
+        let total = entries.len();
+        let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
+        harness.click_text(CentreView::Results.label());
+        harness.click_text(InputCatalogue::get().entry(FACE_GAP).unwrap().meta.label);
+        harness.click_text(TRACED_ONLY);
+        let gap = harness.panel.trace.clone().expect("a trace");
+        harness.click_text(CentreView::Geometry.label());
+        let outside = crate::gui::dashboard::dashboard_lines(harness.panel.results())
+            .into_iter()
+            .find(|line| registry().equation_for(line.path).is_some() && !gap.marks(line.path))
+            .expect("a dashboard result the face gap does not drive");
+        let output = harness.frame(Vec::new());
+        // The rightmost: the dashboard's.
+        let value = text_rects(&output, &outside.value)
+            .into_iter()
+            .max_by(|a, b| a.left().total_cmp(&b.left()))
+            .unwrap();
+        harness.click(value.center());
+        let replaced = harness.panel.trace.clone().expect("a trace");
+        assert_eq!(
+            (replaced.kind, replaced.source.as_str()),
+            (TraceKind::Result, outside.path)
+        );
+        harness.click_text(InputCatalogue::get().entry(POLES).unwrap().meta.label);
+        let poles = harness.panel.trace.clone().expect("a trace");
+        assert_eq!(
+            (poles.kind, poles.source.as_str()),
+            (TraceKind::Input, POLES)
+        );
+        harness.click_text(CentreView::Results.label());
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
+        let pole_rows = entries.iter().filter(|e| poles.marks(&e.path)).count();
+        assert!(pole_rows > 0 && pole_rows < total);
+        assert_eq!(
+            count(&output, &format!("{pole_rows} of {total} results")),
+            0
+        );
     }
 
     #[test]

@@ -341,6 +341,11 @@ pub struct ResultsTable {
     toggled: BTreeSet<usize>,
 }
 
+/// Whether `trace` is an input's: the only trace whose marked results the table can filter to.
+fn is_input_trace(trace: Option<&Trace>) -> bool {
+    trace.is_some_and(|t| t.kind == TraceKind::Input)
+}
+
 /// What the user asked of the table this frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TableAction {
@@ -379,6 +384,17 @@ impl ResultsTable {
         chosen || searching
     }
 
+    /// Turns the trace filter off unless an input is traced: it keeps the results an input's
+    /// trace marks, goes off with the trace, and a result's trace (which marks inputs) cannot
+    /// turn it on. [`ResultsTable::ui`] calls it, and the panel calls it after every frame's
+    /// trace changes whichever view the centre region shows, so a trace ended or replaced while
+    /// the table is off screen cannot leave the box ticked for a later trace (decision O-8).
+    pub(crate) fn sync_trace_filter(&mut self, trace: Option<&Trace>) {
+        if !is_input_trace(trace) {
+            self.traced_only = false;
+        }
+    }
+
     /// Draws the table: the search box, the order toggle, the failing and trace filters, the
     /// count and the export buttons, then the lines on screen (the end-effect banner is the
     /// centre region's, over every view: decision M42-1), each row a readout (`readouts`, which
@@ -392,12 +408,8 @@ impl ResultsTable {
         trace: Option<&Trace>,
         readouts: &mut Readouts,
     ) -> Option<TableAction> {
-        // The trace filter keeps the results an input's trace marks: it goes off with the trace,
-        // and a result's trace (which marks inputs) cannot turn it on.
-        let input_traced = trace.is_some_and(|t| t.kind == TraceKind::Input);
-        if !input_traced {
-            self.traced_only = false;
-        }
+        self.sync_trace_filter(trace);
+        let input_traced = is_input_trace(trace);
         let entries = table_entries();
         let mut action = None;
         // The failing checks' rows, the red first, when the filter is on (after its checkbox).
