@@ -230,7 +230,7 @@ impl CalculatorWindow {
                     mime,
                     contents,
                 } => {
-                    let outcome = download::download_text(
+                    let outcome = download::download_bytes(
                         &file_name,
                         mime,
                         &contents,
@@ -358,7 +358,7 @@ fn on_resize_band(ctx: &egui::Context, pos: egui::Pos2) -> bool {
 }
 
 /// The native save dialog's filter for a file the panel saves: its design file and results
-/// exports are JSON or CSV.
+/// exports are JSON or CSV, its spreadsheet an .xlsx workbook.
 fn save_filter(file_name: &str) -> FileFilter {
     match file_name.rsplit_once('.').map(|(_, extension)| extension) {
         Some("json") => FileFilter {
@@ -368,6 +368,10 @@ fn save_filter(file_name: &str) -> FileFilter {
         Some("csv") => FileFilter {
             label: "CSV",
             extensions: &["csv"],
+        },
+        Some("xlsx") => FileFilter {
+            label: "Excel workbook",
+            extensions: &["xlsx"],
         },
         _ => FileFilter {
             label: "All files",
@@ -464,6 +468,7 @@ mod tests {
     };
     use magcoupling::gui::results_table::{CSV_FILE_NAME, JSON_FILE_NAME};
     use magcoupling::gui::session::{Design, PUBLIC_BASE_URL, design_to_json};
+    use magcoupling::gui::xlsx::XLSX_FILE_NAME;
 
     /// The panel's heading (magcoupling-rs `gui::panel::HEADING`), a label: a click on it does
     /// nothing but give the window the keyboard.
@@ -1016,6 +1021,7 @@ mod tests {
             (JSON_FILE_NAME, "JSON", "json"),
             ("magcoupling-design.json", "JSON", "json"),
             (CSV_FILE_NAME, "CSV", "csv"),
+            (XLSX_FILE_NAME, "Excel workbook", "xlsx"),
             ("notes.txt", "All files", "*"),
             ("no_extension", "All files", "*"),
         ] {

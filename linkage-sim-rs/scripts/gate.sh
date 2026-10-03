@@ -12,8 +12,8 @@
 # and wasm32, the guard that no shipped build (the calculator's own and the
 # linkage app's, native and wasm32) has the test-only workbook-parity feature
 # (with negative controls that prove the guard trips), and the check that both
-# crates lock the same egui, egui_plot, eframe and wasm-bindgen (the CLI
-# version deploy-web.yml installs).
+# crates lock the same egui, egui_plot, eframe, rust_xlsxwriter and wasm-bindgen
+# (the CLI version deploy-web.yml installs).
 # Gate 12: the vendored Python oracle, reference/magcoupling-py: its parity
 # suite, and a check that the committed differential test data is current.
 # Gate 12 needs a Python with the oracle's dependencies; see oracle_python
@@ -116,10 +116,10 @@ assert_guard_trips magcoupling-web workbook-parity --manifest-path "$MAGCOUPLING
 assert_guard_trips linkage-gui magcoupling-rs/workbook-parity "${LINKAGE_NATIVE_ARGS[@]}"
 assert_guard_trips linkage-web magcoupling-rs/workbook-parity "${LINKAGE_WEB_ARGS[@]}"
 
-echo "== gate 11/12: lock parity (egui, egui_plot, eframe, wasm-bindgen; wasm-bindgen-cli pin in deploy-web.yml) =="
+echo "== gate 11/12: lock parity (egui, egui_plot, eframe, rust_xlsxwriter, wasm-bindgen; wasm-bindgen-cli pin in deploy-web.yml) =="
 LINKAGE_LOCK="Cargo.lock"
 MAGCOUPLING_LOCK="$REPO_ROOT/magcoupling-rs/Cargo.lock"
-for pkg in egui egui_plot eframe wasm-bindgen; do
+for pkg in egui egui_plot eframe rust_xlsxwriter wasm-bindgen; do
   linkage_version="$(lock_versions "$LINKAGE_LOCK" "$pkg")"
   magcoupling_version="$(lock_versions "$MAGCOUPLING_LOCK" "$pkg")"
   if [[ -z "$linkage_version" || "$linkage_version" != "$magcoupling_version" ]]; then

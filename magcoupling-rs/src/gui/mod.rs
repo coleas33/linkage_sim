@@ -25,10 +25,12 @@ pub mod result_groups;
 pub mod results_table;
 pub mod session;
 pub mod sizing;
+pub mod spreadsheet;
 #[cfg(test)]
 pub(crate) mod test_support;
 pub mod trace;
 pub mod typeset;
+pub mod xlsx;
 
 pub use format::{SIGNIFICANT_DIGITS, format_value, with_unit};
 pub use inputs::KEY_DESIGN;

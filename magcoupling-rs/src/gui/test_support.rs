@@ -187,3 +187,58 @@ pub(crate) fn text_color(output: &egui::FullOutput, needle: &str) -> Option<egui
             _ => None,
         })
 }
+
+/// Every sheet of an .xlsx file as calamine reads it: its name and its rows from A1 (calamine's
+/// range starts at the first cell used; every sheet of the export uses A1), each row as wide as
+/// the sheet's widest, `Data::Empty` where nothing was written.
+pub(crate) fn read_xlsx(bytes: &[u8]) -> Vec<(String, Vec<Vec<calamine::Data>>)> {
+    use calamine::Reader;
+    let mut workbook: calamine::Xlsx<_> =
+        calamine::open_workbook_from_rs(std::io::Cursor::new(bytes.to_vec()))
+            .expect("an .xlsx file calamine reads");
+    workbook
+        .sheet_names()
+        .into_iter()
+        .map(|name| {
+            let range = workbook.worksheet_range(&name).expect("the sheet reads");
+            assert_eq!(
+                range.start().unwrap_or((0, 0)),
+                (0, 0),
+                "{name} starts at A1"
+            );
+            let rows = range.rows().map(<[calamine::Data]>::to_vec).collect();
+            (name, rows)
+        })
+        .collect()
+}
+
+/// The spreadsheet tests' snapshot of `inputs` and `results`: Magnets -> Torque, the workflow
+/// order, a stand-in share link and export time.
+pub(crate) fn snapshot<'a>(
+    inputs: &'a crate::DesignInputs,
+    results: &'a crate::DesignResults,
+) -> crate::gui::spreadsheet::Snapshot<'a> {
+    crate::gui::spreadsheet::Snapshot {
+        inputs,
+        results,
+        sizing: crate::gui::sizing::SizingState::default(),
+        sizing_status: None,
+        input_order: crate::gui::inputs::InputOrder::Workflow,
+        share_link: "https://example.test/magcoupling/?m=abc".to_owned(),
+        exported_unix_s: 1_790_000_000,
+    }
+}
+
+/// The text of the part `name` of an .xlsx file (a zip archive), e.g. `xl/styles.xml`.
+pub(crate) fn xlsx_part(bytes: &[u8], name: &str) -> String {
+    use std::io::Read;
+    let mut archive =
+        zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("an .xlsx file is a zip");
+    let mut part = archive
+        .by_name(name)
+        .unwrap_or_else(|_| panic!("no part {name}"));
+    let mut text = String::new();
+    part.read_to_string(&mut text)
+        .expect("an XML part is UTF-8");
+    text
+}

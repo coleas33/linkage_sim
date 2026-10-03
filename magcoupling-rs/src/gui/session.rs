@@ -457,6 +457,54 @@ mod tests {
         }
     }
 
+    /// The share link of the default design as commit 49fbd3f wrote it, before the spreadsheet
+    /// export's zip switched flate2 to its zlib-rs backend (decision X-9): a link written since
+    /// may differ in its bytes, and every link written before must still load.
+    const DEFAULT_PAYLOAD_49FBD3F: &str = concat!(
+        "lVhLr5w2FP4vrHMRMMO8dm0WrVq1qpRIXVoeMOBcwMSGO3ca5b_3HNsMNo9pmkWuxuc79nk_-BYUQja0",
+        "Dy5BQ8tMDF3N2_IlZ4qXbfAh4G039Cq4fAsyWvOrpD0XbUjrrqLkKknHJPkYXF6iMIri5IMP6kRfsYY0",
+        "TXA5h6fUpwLz5-AShzv_OCOszYNLFMYzfEHgFxGSl7ylNSLOcwSjpBfy68Bi8ie8mYTRYQuRaEQcHn1A",
+        "STuSs4K3HH8CwCeDhVrWk5q1ZV9pveJkfoXF9BXPXlumlIbtwngdduO5vekQ7mb6NIyqQbLcimwlPs1A",
+        "Q4SnSXo47I7sZaaw6mgG7jSihnuf2DMFcrKmQw8m4MEZWfRgcCOnQgCQa9p0Crxfi7sxjj145xoqwTf2",
+        "rQl9FWAEkevzJHUI-o9nzGhB7e8dc18CMC1Zw9qevJNc-_hBK2gGliKiZaTjLGMYI6c5tb-JkeoKWUie",
+        "GZfbyDPHpeQdaaxSOwdfgVWZPj05p18EB8Guou5JxmVWG0RyWEA2njNElUl2A4vvHuev7E4y0faggjVv",
+        "6tGmKNo7T9W8pNpSc4-0A0igzYHvJ4_zTrJa0Bykow_pjtNLQOWsWNymaMH6--NC1yNaEwI_lHKdqGpu",
+        "hHL9o3q0tSp87W4Qa0QMrg62RIVXmr1yOWbp41RI5gbTeO7XlfE0l_yNkZkGpib5ECcFI53xIxmYWM9y",
+        "X4iSUUlYUfCMsza7P4qVR9dpFlxST0ykXMU70WVXQyB7zasHB8bbFgovWoC4VTaeqQexcaN3qGjdmGGe",
+        "7Da3bfo6idgOdb2CKyXNGdFvQ7sINhHgr01EQ9sBHrMKOD3gKXBZcZ_CV4vvU45FHd5Aa9V-RG4D_GG5",
+        "Dfz_yG04_lPujsr-4bKfT_vk06_BFmz02xrsnVRUNqLlGYSsS1n2n5HUdqLGMuvGt-geHSfVCQqjB5MQ",
+        "flCVQHdWh74NAIMRPaFQUKVznzySf07NoItXYlDw4Cpd1YxBToNAqK4HMLUXKqEQBYkjciZ__EWhyO9m",
+        "wvq4ZMSdj-u4O2d1Tn7ak2NkgPu59qpnoPxV0d6EVrokQgfIByjMbxyK1SfS6Fvw39pNWc_G4QxnM5zO",
+        "dktUzlqFt5Uka3bB5aintDmoEflQD4r8goInUbr2XDMQCWEG2mLHwfksWZdLdSzjUBhJxUDV38hr-Tvo",
+        "cdS9tWHAGdKcdjrJhI0BU8l9YlFTbMA5pyZVtiGmK6ZzKkRzfqPQK0rbsnxyx2vRP66PT1uIpvHZazKZ",
+        "tEGTovGT40i_ggttxbHRnXokk9RLEljCLSWOtbzpypEEc8COZWOjnQgWv0_8476SDNr_qPU-9q-zZGcE",
+        "m2mfDZ3ba9LJ6kjRrTwTclQ-nh6HkbtmeuRY6I79leBY_hhh7Tkkf489vashwizbg8v17mESsBquW3as",
+        "ecEIVIXWzLrRlFiWrPsVy_NxnAZikvpkc5yMh3bE74TijmoO-R1NDT8s694RB4k1zNMmxCdHJpGPEW9M",
+        "ol0nxC51EOMGkUtqxgjT2S0V5tqxGL_snYulHl9G01aiXmSRj3jMZiPx68DxVXzALGIOo-I5tq8elevn",
+        "NpHwvzYlLC52k3BfHdpxFHRDRFW0wFxVIE02BWY0BYst-Jvus_SV1D3NILgsLwUwNHMcT6cwz-qIImpJ",
+        "kF1j4myymy6Qa0IcT4-nYNSDbX1M6mg3nr9RKLLuRmGOb-xqkxSO0NcQLT1EBFSxCjzxxkLFMPPsALuG",
+        "IJgZYU55fSfqhub7ONbbbXgBspQwL0OIDJK2ZhdLnnFUUExhBTDJacMgtzm9zaWYfONQIO4Qj2rsFC48",
+        "Z5CF4RXuI1X2xftcka4hM8FkZjqsEoPM2MIuBme-j4wr78ftp1GZNwJrNdSCnLz-RHSK7p-Ba_7KcHSy",
+        "6NNh9wzdQUZjVhjw8Rw_A-NIBBdLdKNhSA_nDYbsSxJZUJyek3UUTGrM2xfPM9TQ3_UKhS9KrtiGrRBW",
+        "0AEWZ7MG2r6ywGCY0ObKMatwhkxXUbqYwwQox1q-irpVmG9S4GcBLx1dZMMVjDBZNQWeqrD4eUMRpFx0",
+        "3OBr8wKS0BnHXk7s5TnYuzs-bMskWSYaKHg5hBbOD9iGpjLksuiaU8OsEIIs0Iw_64SM989RhQTvamh0",
+        "Oh6egLGxmivndpijnCuPp12yDTYtVSP38XkbZ7usBj7D2SJtLzxsAXHQgY8wDDbZmnxOmj1u6AlsNnG0",
+        "xQL2dz6nbOpf8RLGDghxDqsQLh6LtJ6wUFwaSnbxwcz58S5di-I53kSP5jgcnzNgY3DVTMY1Yb8dEx6P",
+        "8aNmPIQnu_q5fLZTwYcXUAO3vYU0E4LWA8wKfMAPxc9wWkEYRPbbGLMjYcshf5PfUavd9w-B4v_oZfBb",
+        "oOXW3fKKy2ngfvuAjRdSj5lP4bgWw2cf--UHSHZicb4EQVeFu2ECU-Zj8fd_AQ",
+    );
+
+    #[test]
+    fn a_share_link_written_before_the_zlib_rs_backend_still_loads() {
+        // A link names every input: if a default changes later, this link keeps the old value,
+        // so compare that input with its old value here; never rewrite the link.
+        assert_eq!(DEFAULT_PAYLOAD_49FBD3F.len(), 2_462);
+        assert_eq!(
+            decode_share_payload(DEFAULT_PAYLOAD_49FBD3F),
+            Ok(Design::default())
+        );
+    }
+
     #[test]
     fn a_share_link_of_the_default_design_stays_short() {
         // Decision M41-5 quotes this length (2,462 characters at the time of writing): the

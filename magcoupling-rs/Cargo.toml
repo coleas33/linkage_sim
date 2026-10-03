@@ -16,7 +16,8 @@ default = []
 # windowing, no eframe, no file dialogs. serde_json, base64 and flate2 write
 # and read design files, share links and the results export; log reports the
 # sizing outcome (the host chooses the logger: the browser console on the web);
-# egui_plot draws the plot tabs.
+# egui_plot draws the plot tabs; rust_xlsxwriter writes the spreadsheet export,
+# and js-sys gives it the time on the web (wasm32 only).
 gui = [
     "dep:egui",
     "dep:egui_plot",
@@ -24,6 +25,8 @@ gui = [
     "dep:serde_json",
     "dep:base64",
     "dep:flate2",
+    "dep:rust_xlsxwriter",
+    "dep:js-sys",
 ]
 # The standalone app: `app::MagcouplingApp` and the binaries `magcoupling-app`
 # (native) and `magcoupling-web` (wasm32, eframe WebRunner + wasm-bindgen).
@@ -70,6 +73,12 @@ flate2 = { version = "1", optional = true }
 # File dialogs of the standalone app (feature app), the version linkage-sim-rs
 # uses: native save and open, and the web file picker.
 rfd = { version = "0.15", optional = true }
+# The spreadsheet export (feature gui, decision X-9): pinned exactly, and gate 11
+# checks that both lock files agree (linkage-sim-rs carries the panel). Its zip
+# brings flate2's zlib-rs backend and zopfli. On wasm32 the target table below
+# adds its `wasm` feature: without it the workbook's creation time calls
+# SystemTime::now(), which panics in the browser.
+rust_xlsxwriter = { version = "=0.99.1", optional = true, default-features = false }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = { version = "0.11", optional = true }
@@ -96,11 +105,19 @@ web-sys = { version = "0.3", optional = true, features = [
     "Window",
 ] }
 js-sys = { version = "0.3", optional = true }
+# The spreadsheet export's clock in the browser (js_sys::Date): see [dependencies].
+rust_xlsxwriter = { version = "=0.99.1", optional = true, default-features = false, features = [
+    "wasm",
+] }
 
 [dev-dependencies]
 magcoupling-rs = { path = ".", features = ["workbook-parity"] }
 # float_roundtrip: parse JSON floats exactly (the default parser can be 1 ULP off).
 serde_json = { version = "1", features = ["float_roundtrip"] }
+# Read the spreadsheet export back in tests: calamine its cells, zip its XML parts
+# (styles, frozen panes, widths). The zip rust_xlsxwriter and calamine use.
+calamine = "0.36"
+zip = { version = "8", default-features = false, features = ["deflate"] }
 
 # The standalone app (feature app). magcoupling-app is native only;
 # magcoupling-web is the wasm32 entry (on a desktop it opens the same window).

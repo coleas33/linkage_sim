@@ -51,7 +51,9 @@ use crate::gui::sizing::{
     SOLVED_PREFIX, SOLVING, SizingMode, SizingRunner, SizingState, TARGET_RANGE_INPUT,
     variable_label,
 };
+use crate::gui::spreadsheet::Snapshot;
 use crate::gui::trace::{CLEAR_TRACE, Trace, TraceKind};
+use crate::gui::xlsx::{XLSX_FILE_NAME, XLSX_MIME, now_unix_s, spreadsheet_bytes};
 use crate::{DesignInputs, DesignResults, compute_all};
 
 /// The heading of the panel.
@@ -66,6 +68,10 @@ pub const REDO: &str = "Redo";
 pub const SAVE_DESIGN: &str = "Save design";
 pub const LOAD_DESIGN: &str = "Load design";
 pub const COPY_SHARE_LINK: &str = "Copy share link";
+
+/// The header's spreadsheet button (decision X-8; the results table has its own, beside the CSV
+/// and JSON exports).
+pub const EXPORT_SPREADSHEET: &str = "Export spreadsheet";
 
 /// The file name a saved design suggests.
 pub const DESIGN_FILE_NAME: &str = "magcoupling-design.json";
@@ -151,7 +157,9 @@ pub enum PanelRequest {
         file_name: String,
         /// The media type (the web download's Blob type).
         mime: &'static str,
-        contents: String,
+        /// The file's bytes: UTF-8 text for a design file and the CSV and JSON exports, as
+        /// they are for a binary format.
+        contents: Vec<u8>,
     },
     /// Let the user pick a design file, then hand its text to
     /// [`MagcouplingPanel::load_design_file`].
@@ -690,7 +698,7 @@ impl MagcouplingPanel {
                     Some(TableAction::ExportCsv) => self.requests.push(PanelRequest::SaveFile {
                         file_name: CSV_FILE_NAME.to_owned(),
                         mime: "text/csv",
-                        contents: results_csv(&self.results),
+                        contents: results_csv(&self.results).into_bytes(),
                     }),
                     Some(TableAction::ExportJson) => self.requests.push(PanelRequest::SaveFile {
                         file_name: JSON_FILE_NAME.to_owned(),
@@ -703,11 +711,38 @@ impl MagcouplingPanel {
                                 sizing: self.sizing,
                             },
                             &self.results,
-                        ),
+                        )
+                        .into_bytes(),
                     }),
+                    Some(TableAction::ExportXlsx) => self.export_spreadsheet(),
                     None => {}
                 }
             }
+        }
+    }
+
+    /// Queues the spreadsheet of the design shown (decision X-8: both spreadsheet buttons) for
+    /// the host to save, stamped with the time now; when it cannot be written, the header says
+    /// why instead.
+    fn export_spreadsheet(&mut self) {
+        let shown = self.shown_inputs();
+        let snapshot = Snapshot {
+            inputs: &shown,
+            results: &self.results,
+            sizing: self.sizing,
+            sizing_status: (self.sizing.mode == SizingMode::TorqueToMagnets)
+                .then(|| self.runner.status(&self.inputs, &self.sizing)),
+            input_order: self.input_order,
+            share_link: self.share_link(),
+            exported_unix_s: now_unix_s(),
+        };
+        match spreadsheet_bytes(&snapshot) {
+            Ok(contents) => self.requests.push(PanelRequest::SaveFile {
+                file_name: XLSX_FILE_NAME.to_owned(),
+                mime: XLSX_MIME,
+                contents,
+            }),
+            Err(error) => self.report(Err(format!("Could not write the spreadsheet: {error}"))),
         }
     }
 
@@ -743,7 +778,7 @@ impl MagcouplingPanel {
                 self.requests.push(PanelRequest::SaveFile {
                     file_name: DESIGN_FILE_NAME.to_owned(),
                     mime: "application/json",
-                    contents: design_to_json(&design),
+                    contents: design_to_json(&design).into_bytes(),
                 });
             }
             if ui.button(LOAD_DESIGN).clicked() {
@@ -761,6 +796,15 @@ impl MagcouplingPanel {
                 ));
                 ui.ctx().copy_text(link);
             }
+            if ui
+                .button(EXPORT_SPREADSHEET)
+                .on_hover_text(
+                    "This design and its results as an .xlsx workbook laid out as this page (values, no formulas)",
+                )
+                .clicked()
+            {
+                self.export_spreadsheet();
+            }
             ui.separator();
             if ui
                 .selectable_label(self.explorer.open, EQUATION_PANEL)
@@ -775,11 +819,7 @@ impl MagcouplingPanel {
             }
         });
         // Spec Addendum A3: the banner while any assumption differs from its workbook default.
-        let modified = assumptions::modified(&self.inputs);
-        let banner = (!modified.is_empty()).then(|| {
-            let names: Vec<&str> = modified.iter().map(|a| a.label).collect();
-            format!("{ASSUMPTIONS_MODIFIED}: {}", names.join(", "))
-        });
+        let banner = assumptions_banner(&self.inputs);
         if banner != self.banner {
             self.banner.clone_from(&banner);
             ui.ctx().request_repaint();
@@ -985,17 +1025,16 @@ impl MagcouplingPanel {
                         .default_open(false)
                         .open(open_group.then_some(true))
                         .show(ui, |ui| {
-                            for section in group.sections.iter().filter(|s| !s.advanced) {
+                            for section in group.plain_sections() {
                                 self.section_ui(ui, group, section, readouts);
                             }
-                            if group.sections.iter().any(|s| s.advanced) {
+                            if group.has_advanced() {
                                 egui::CollapsingHeader::new(ADVANCED_HEADING)
                                     .id_salt(("advanced", &group.name))
                                     .default_open(false)
                                     .open(open_advanced.then_some(true))
                                     .show(ui, |ui| {
-                                        for section in group.sections.iter().filter(|s| s.advanced)
-                                        {
+                                        for section in group.advanced_sections() {
                                             self.section_ui(ui, group, section, readouts);
                                         }
                                     });
@@ -1005,7 +1044,8 @@ impl MagcouplingPanel {
             });
     }
 
-    /// One section of a group: its heading (none for the group's own section), then its rows.
+    /// One section of a group: its heading ([`InputSection::heading_in`]: none for the group's
+    /// own section), then its rows.
     fn section_ui(
         &mut self,
         ui: &mut egui::Ui,
@@ -1013,9 +1053,9 @@ impl MagcouplingPanel {
         section: &'static InputSection,
         readouts: &Readouts,
     ) {
-        if section.id != group.name {
+        if let Some(heading) = section.heading_in(group) {
             ui.add_space(4.0);
-            ui.strong(section.label);
+            ui.strong(heading);
         }
         for entry in &section.entries {
             let widget = self.input_row_ui(ui, entry, readouts);
@@ -1125,6 +1165,17 @@ impl MagcouplingPanel {
             _ => None,
         }
     }
+}
+
+/// The assumptions banner (spec Addendum A3) of `inputs`: [`ASSUMPTIONS_MODIFIED`] and the names
+/// of the assumptions that differ from their workbook default; `None` while none does. The header
+/// shows it, and the spreadsheet's Summary.
+pub(crate) fn assumptions_banner(inputs: &DesignInputs) -> Option<String> {
+    let modified = assumptions::modified(inputs);
+    (!modified.is_empty()).then(|| {
+        let names: Vec<&str> = modified.iter().map(|a| a.label).collect();
+        format!("{ASSUMPTIONS_MODIFIED}: {}", names.join(", "))
+    })
 }
 
 /// Draws `add` in a child of `ui` (salted `id_salt`) confined to the space left in `ui`: the
@@ -2796,16 +2847,132 @@ mod tests {
                 PanelRequest::SaveFile {
                     file_name: "magcoupling-results.csv".to_owned(),
                     mime: "text/csv",
-                    contents: results_csv(&results),
+                    contents: results_csv(&results).into_bytes(),
                 },
                 PanelRequest::SaveFile {
                     file_name: "magcoupling-results.json".to_owned(),
                     mime: "application/json",
-                    contents: results_json(&harness.panel.design(), &results),
+                    contents: results_json(&harness.panel.design(), &results).into_bytes(),
                 },
             ]
         );
         assert!(harness.panel.take_requests().is_empty(), "drained");
+    }
+
+    /// The spreadsheets the panel queued since the last call, each read back sheet by sheet;
+    /// every request must be a spreadsheet's.
+    fn queued_spreadsheets(harness: &mut Harness) -> Vec<Vec<(String, Vec<Vec<calamine::Data>>)>> {
+        use crate::gui::test_support::read_xlsx;
+        use crate::gui::xlsx::{XLSX_FILE_NAME, XLSX_MIME};
+        harness
+            .panel
+            .take_requests()
+            .into_iter()
+            .map(|request| match request {
+                PanelRequest::SaveFile {
+                    file_name,
+                    mime,
+                    contents,
+                } => {
+                    assert_eq!(file_name, XLSX_FILE_NAME);
+                    assert_eq!(mime, XLSX_MIME);
+                    read_xlsx(&contents)
+                }
+                PanelRequest::OpenDesign => panic!("not a spreadsheet"),
+            })
+            .collect()
+    }
+
+    /// The row of a read-back sheet whose column `column` holds the text `wanted`.
+    fn read_row<'r>(
+        rows: &'r [Vec<calamine::Data>],
+        column: usize,
+        wanted: &str,
+    ) -> &'r Vec<calamine::Data> {
+        rows.iter()
+            .find(|row| row.get(column) == Some(&calamine::Data::String(wanted.to_owned())))
+            .unwrap_or_else(|| panic!("no row {wanted}"))
+    }
+
+    #[test]
+    fn both_spreadsheet_buttons_queue_the_workbook_of_the_design_shown() {
+        use crate::gui::results_table::EXPORT_XLSX;
+        use crate::gui::spreadsheet::{
+            ASSUMPTIONS_SHEET, INPUT_COLUMNS, INPUTS_SHEET, RESULTS_SHEET, SHARE_LINK,
+            SUMMARY_SHEET,
+        };
+        let mut harness = Harness::new();
+        assert!(harness.panel.take_requests().is_empty());
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        // The header's button, then the results table's.
+        harness.click_text(EXPORT_SPREADSHEET);
+        harness.click_text(CentreView::Results.label());
+        harness.click_text(EXPORT_XLSX);
+        let books = queued_spreadsheets(&mut harness);
+        assert_eq!(books.len(), 2);
+        let path = INPUT_COLUMNS.iter().position(|c| *c == "Path").unwrap();
+        for book in &books {
+            let names: Vec<&str> = book.iter().map(|(name, _)| name.as_str()).collect();
+            assert_eq!(
+                names,
+                [
+                    SUMMARY_SHEET,
+                    INPUTS_SHEET,
+                    RESULTS_SHEET,
+                    ASSUMPTIONS_SHEET
+                ]
+            );
+            // The face gap as edited, a number; the link that reopens this design.
+            let gap = read_row(&book[1].1, path, FACE_GAP);
+            assert_eq!(gap[1], calamine::Data::Float(1.41));
+            let link = read_row(&book[0].1, 0, SHARE_LINK);
+            assert_eq!(link[1], calamine::Data::String(harness.panel.share_link()));
+        }
+        assert!(harness.panel.take_requests().is_empty(), "drained");
+    }
+
+    #[test]
+    fn the_spreadsheet_follows_the_input_order_shown_and_torque_to_magnets() {
+        use crate::gui::spreadsheet::{INPUT_COLUMNS, SIZING_MODE, SIZING_OUTCOME};
+        let column = |name: &str| INPUT_COLUMNS.iter().position(|c| *c == name).unwrap();
+        let mut harness = Harness::new();
+        // The workbook order: the Inputs sheet's first heading is the first package group's.
+        harness.click_text(InputOrder::Workbook.label());
+        harness.click_text(EXPORT_SPREADSHEET);
+        let books = queued_spreadsheets(&mut harness);
+        let first_group = InputCatalogue::get().groups[0].label;
+        assert_eq!(
+            books[0][1].1[1][0],
+            calamine::Data::String(first_group.to_owned())
+        );
+        // Torque -> Magnets: the solved length, noted, and the sizing on the Summary.
+        harness.size();
+        harness.click_text(EXPORT_SPREADSHEET);
+        let books = queued_spreadsheets(&mut harness);
+        let (summary, inputs) = (&books[0][0].1, &books[0][1].1);
+        assert_eq!(
+            read_row(summary, 0, SIZING_MODE)[1],
+            calamine::Data::String(SizingMode::TorqueToMagnets.label().to_owned())
+        );
+        let outcome = read_row(summary, 0, SIZING_OUTCOME);
+        assert!(
+            matches!(&outcome[1], calamine::Data::String(text) if text.starts_with(SOLVED_PREFIX)),
+            "{:?}",
+            outcome[1]
+        );
+        let length = read_row(inputs, column("Path"), AXIAL_LENGTH);
+        let shown = harness
+            .panel
+            .shown_inputs()
+            .coupling
+            .magnets
+            .axial_length_mm;
+        assert_eq!(length[1], calamine::Data::Float(shown.expect("sized")));
+        assert_eq!(
+            length[column("Note")],
+            calamine::Data::String(SIZED_NOTE.to_owned())
+        );
     }
 
     #[test]
@@ -3084,7 +3251,7 @@ mod tests {
                 PanelRequest::SaveFile {
                     file_name: DESIGN_FILE_NAME.to_owned(),
                     mime: "application/json",
-                    contents: design_to_json(&gap_design(1.41)),
+                    contents: design_to_json(&gap_design(1.41)).into_bytes(),
                 },
                 PanelRequest::OpenDesign,
             ]
@@ -3467,7 +3634,8 @@ mod tests {
         let [PanelRequest::SaveFile { contents, .. }] = &requests[..] else {
             panic!("one export: {requests:?}")
         };
-        let json: serde_json::Value = serde_json::from_str(contents).unwrap();
+        let text = std::str::from_utf8(contents).expect("the JSON export is UTF-8");
+        let json: serde_json::Value = serde_json::from_str(text).unwrap();
         let design = design_from_json(&json["design"].to_string()).unwrap();
         assert_eq!(design.inputs, harness.panel.shown_inputs());
         assert_eq!(&compute_all(&design.inputs), harness.panel.results());

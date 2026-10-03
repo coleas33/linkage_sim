@@ -626,6 +626,34 @@ pub struct InputGroup {
     pub sections: Vec<InputSection>,
 }
 
+impl InputSection {
+    /// The heading this section is drawn under in `group`: its label, or `None` for the group's
+    /// own section, drawn without one. The inputs side, the filter's runs and the spreadsheet
+    /// all head a section so.
+    pub fn heading_in(&self, group: &InputGroup) -> Option<&'static str> {
+        (self.id != group.name).then_some(self.label)
+    }
+}
+
+impl InputGroup {
+    /// The sections drawn under the group's heading, in order: the inputs side and the
+    /// spreadsheet draw these first.
+    pub fn plain_sections(&self) -> impl Iterator<Item = &InputSection> {
+        self.sections.iter().filter(|section| !section.advanced)
+    }
+
+    /// The sections drawn under the group's [`ADVANCED_HEADING`] (workflow order only), in
+    /// order, after the plain ones.
+    pub fn advanced_sections(&self) -> impl Iterator<Item = &InputSection> {
+        self.sections.iter().filter(|section| section.advanced)
+    }
+
+    /// Whether the group has an [`ADVANCED_HEADING`]: a section under it.
+    pub fn has_advanced(&self) -> bool {
+        self.advanced_sections().next().is_some()
+    }
+}
+
 /// Every input, arranged for the left side of the panel.
 #[derive(Clone, Debug, PartialEq)]
 pub struct InputCatalogue {
@@ -782,12 +810,12 @@ pub struct SectionMatches<'a> {
 }
 
 impl SectionMatches<'_> {
-    /// The run's heading: the group's label, then the section's unless it is the group's own.
+    /// The run's heading: the group's label, then the section's unless it is the group's own
+    /// ([`InputSection::heading_in`]).
     pub fn heading(&self) -> String {
-        if self.section.id == self.group.name {
-            self.group.label.to_owned()
-        } else {
-            format!("{} / {}", self.group.label, self.section.label)
+        match self.section.heading_in(self.group) {
+            Some(section) => format!("{} / {section}", self.group.label),
+            None => self.group.label.to_owned(),
         }
     }
 }
@@ -1375,6 +1403,60 @@ mod tests {
         );
         let npole = input_tooltip(catalogue.entry("coupling.npole").unwrap());
         assert!(npole.contains("Slider 4 to 40, step 2"), "{npole}");
+    }
+
+    #[test]
+    fn a_group_lists_its_sections_and_their_headings_as_the_page_draws_them() {
+        let catalogue = InputCatalogue::new();
+        let group = |order: InputOrder, name: &str| -> &InputGroup {
+            catalogue
+                .groups_in(order)
+                .iter()
+                .find(|group| group.name == name)
+                .unwrap_or_else(|| panic!("no group {name}"))
+        };
+        let ids = |sections: Vec<&InputSection>| -> Vec<String> {
+            sections.iter().map(|section| section.id.clone()).collect()
+        };
+        // The workflow's gap group: its own section and the allowances in view, the bedding
+        // clearances under its Advanced heading; its own section has no heading.
+        let gap = group(InputOrder::Workflow, "gap");
+        assert_eq!(
+            ids(gap.plain_sections().collect()),
+            ["gap", "gap.allowances"]
+        );
+        assert_eq!(ids(gap.advanced_sections().collect()), ["gap.bedding"]);
+        assert!(gap.has_advanced());
+        let headings: Vec<Option<&str>> = gap.sections.iter().map(|s| s.heading_in(gap)).collect();
+        assert_eq!(
+            headings,
+            [
+                None,
+                Some("Running-clearance allowances"),
+                Some("Bedding clearances")
+            ]
+        );
+        // A workflow group without an advanced section, and a package group: the group's own
+        // fields have no heading, a nested group its label.
+        let magnets = group(InputOrder::Workflow, "magnets");
+        assert!(!magnets.has_advanced());
+        assert_eq!(magnets.advanced_sections().count(), 0);
+        let coupling = group(InputOrder::Workbook, "coupling");
+        assert_eq!(coupling.sections[0].heading_in(coupling), None);
+        assert_eq!(coupling.sections[1].heading_in(coupling), Some("Magnets"));
+        // In either order every section once, the plain ones first: the order drawn.
+        for order in InputOrder::ALL {
+            for group in catalogue.groups_in(order) {
+                let drawn: Vec<&InputSection> = group
+                    .plain_sections()
+                    .chain(group.advanced_sections())
+                    .collect();
+                let all: Vec<&InputSection> = group.sections.iter().collect();
+                assert_eq!(drawn, all, "{}", group.name);
+            }
+        }
+        // The workbook order has no Advanced heading.
+        assert!(!catalogue.groups.iter().any(InputGroup::has_advanced));
     }
 
     #[test]
