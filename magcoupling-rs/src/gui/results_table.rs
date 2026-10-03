@@ -497,9 +497,11 @@ impl ResultsTable {
         let widths = column_widths(ui.available_width(), spacing);
         let row_width = widths.iter().sum::<f32>() + 3.0 * spacing;
         let mut clicked = None;
+        // In the height left, however short (egui's 64-point floor lowered to none).
         egui::ScrollArea::both()
             .id_salt("magcoupling_results_scroll")
             .auto_shrink([false, false])
+            .min_scrolled_height(0.0)
             .show_rows(ui, row_height, lines.len(), |ui, range| {
                 for line in &lines[range] {
                     match *line {
@@ -1084,5 +1086,29 @@ mod tests {
         // Nothing fails only when no search narrows the failing checks.
         assert_eq!(empty_text(false, true, false), NOTHING_FAILS);
         assert_eq!(empty_text(false, false, false), NO_RESULT);
+    }
+
+    #[test]
+    fn the_table_stays_in_a_short_region() {
+        // The space left above the Equation panel: under its search and filter rows the table
+        // scrolls in exactly what is left (no 64-point scroll area floor).
+        let ctx = egui::Context::default();
+        let results = compute_all(&DesignInputs::default());
+        let size = egui::vec2(1000.0, 700.0);
+        let mut table = ResultsTable::default();
+        for height in [400.0, 120.0, 80.0] {
+            let region =
+                egui::Rect::from_min_size(egui::pos2(20.0, 30.0), egui::vec2(700.0, height));
+            for _ in 0..2 {
+                let (_, used) = crate::gui::test_support::region_frame(&ctx, size, region, |ui| {
+                    table.ui(ui, &results, None, &mut Readouts::default());
+                });
+                assert!(
+                    used.bottom() <= region.bottom() + 0.01,
+                    "{height}: the table runs {} points past the region",
+                    used.bottom() - region.bottom()
+                );
+            }
+        }
     }
 }

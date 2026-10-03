@@ -790,9 +790,11 @@ pub fn clamp_ui(
     results: &DesignResults,
     readouts: &mut Readouts,
 ) {
+    // In the height left, however short (egui's 64-point floor lowered to none).
     egui::ScrollArea::vertical()
         .id_salt("magcoupling_clamp_scroll")
         .auto_shrink([false, false])
+        .min_scrolled_height(0.0)
         .show(ui, |ui| {
             match clamp_drawing(inputs, results) {
                 Ok(drawing) => {
@@ -1409,6 +1411,30 @@ mod tests {
                 set(&mut odd, row, x);
                 let painted = paint_clamp_tab(inputs.clone(), odd);
                 assert_painted_like_the_default(&painted, &default, &format!("{name} {x:e}"));
+            }
+        }
+    }
+
+    #[test]
+    fn the_clamp_view_stays_in_a_short_region() {
+        // The space left above the Equation panel: the clamp view scrolls in exactly that
+        // space (no 64-point scroll area floor), down to a region a few points tall or none.
+        let ctx = egui::Context::default();
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let size = egui::vec2(1000.0, 700.0);
+        for height in [300.0, 60.0, 20.0, 5.0, 0.0] {
+            let region =
+                egui::Rect::from_min_size(egui::pos2(20.0, 30.0), egui::vec2(700.0, height));
+            for _ in 0..2 {
+                let (_, used) = crate::gui::test_support::region_frame(&ctx, size, region, |ui| {
+                    clamp_ui(ui, &inputs, &results, &mut Readouts::default())
+                });
+                assert!(
+                    used.bottom() <= region.bottom() + 0.01,
+                    "{height}: the view runs {} points past the region",
+                    used.bottom() - region.bottom()
+                );
             }
         }
     }

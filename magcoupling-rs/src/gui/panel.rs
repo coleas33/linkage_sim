@@ -29,7 +29,7 @@ use crate::engine::meta::{InputSet, ResultSet, Value};
 use crate::engine::sizing::FreeVariable;
 use crate::gui::clamp_drawing::clamp_ui;
 use crate::gui::dashboard::{Level, dashboard_ui, end_effect_banner};
-use crate::gui::explorer::{EQUATION_PANEL, Explorer, FOCUS_WIDTH, PANEL_HEIGHT, explorer_ui};
+use crate::gui::explorer::{EQUATION_PANEL, Explorer, FOCUS_WIDTH, explorer_ui, panel_heights};
 use crate::gui::format::search_needle;
 use crate::gui::geometry_view::geometry_ui;
 use crate::gui::history::History;
@@ -137,6 +137,10 @@ const INPUTS_WIDTH: f32 = 320.0;
 
 /// Starting width of the dashboard side [points].
 const DASHBOARD_WIDTH: f32 = 300.0;
+
+/// The id of the Equation panel docked at the bottom of the centre region: egui keeps the
+/// panel's rect under it, and its resize handle's id derives from it.
+const EQUATION_PANEL_ID: &str = "magcoupling_equation_panel";
 
 /// What the panel asks of its host: the platform work an egui panel cannot do itself.
 #[derive(Clone, Debug, PartialEq)]
@@ -632,28 +636,46 @@ impl MagcouplingPanel {
         }
     }
 
-    /// The centre region: the view tabs (wrapping when the region is narrow), the end-effect
-    /// banner when f_end <= 0 (over every view, decision M42-1), then the view of `shown`, the
-    /// design shown, its values readouts (`readouts`).
+    /// The centre region: the Equation panel docked at its foot when open, then the view tabs
+    /// (wrapping when the region is narrow), the end-effect banner when f_end <= 0 (over every
+    /// view, decision M42-1) and the view of `shown`, the design shown, its values readouts
+    /// (`readouts`), each in its own area above the panel.
     fn centre_ui(&mut self, ui: &mut egui::Ui, shown: &DesignInputs, readouts: &mut Readouts) {
-        // The Equation panel docks at the bottom of the centre region (decision M43-1).
+        // The Equation panel docks at the bottom of the centre region (decision M43-1). It
+        // starts at about 45 % of the region, and its drag stops short of the view's strip.
         if self.explorer.open {
-            egui::TopBottomPanel::bottom("magcoupling_equation_panel")
+            let (range, start) = panel_heights(ui.available_rect_before_wrap().height());
+            egui::TopBottomPanel::bottom(EQUATION_PANEL_ID)
                 .resizable(true)
-                .default_height(PANEL_HEIGHT)
+                .default_height(start)
+                .height_range(range)
                 .show_inside(ui, |ui| {
                     explorer_ui(ui, &mut self.explorer, shown, &self.results);
                 });
         }
-        ui.horizontal_wrapped(|ui| {
-            for view in CentreView::ALL {
-                ui.selectable_value(&mut self.centre, view, view.label());
+        // egui's panel only shrinks the region's cursor: a widget laid out after it may still
+        // run past its top edge, and it paints over the panel with a clip rect covering it. So
+        // the tab row and the banner live in the space above the panel, and the view in the
+        // space left under them, each confined to it.
+        confined(ui, "magcoupling_above_equation_panel", |ui| {
+            ui.horizontal_wrapped(|ui| {
+                for view in CentreView::ALL {
+                    ui.selectable_value(&mut self.centre, view, view.label());
+                }
+            });
+            ui.separator();
+            if let Some(banner) = end_effect_banner(&self.results) {
+                ui.colored_label(ui.visuals().error_fg_color, banner);
             }
+            confined(ui, "magcoupling_centre_view", |ui| {
+                self.view_ui(ui, shown, readouts);
+            });
         });
-        ui.separator();
-        if let Some(banner) = end_effect_banner(&self.results) {
-            ui.colored_label(ui.visuals().error_fg_color, banner);
-        }
+    }
+
+    /// The view of the centre region the tabs select, of `shown`, the design shown, its values
+    /// readouts (`readouts`). Each view fits itself to `ui`'s available height.
+    fn view_ui(&mut self, ui: &mut egui::Ui, shown: &DesignInputs, readouts: &mut Readouts) {
         match self.centre {
             CentreView::Geometry => {
                 geometry_ui(ui, shown, &self.results, readouts);
@@ -1103,6 +1125,24 @@ impl MagcouplingPanel {
             _ => None,
         }
     }
+}
+
+/// Draws `add` in a child of `ui` (salted `id_salt`) confined to the space left in `ui`: the
+/// child's max rect and clip rect are that space, so nothing drawn in it paints or takes a
+/// click outside it. `ui` then moves past the whole space, never past what the child used, so
+/// an overflow the clip hides cannot grow a host `egui::Window`.
+fn confined<R>(ui: &mut egui::Ui, id_salt: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let region = ui.available_rect_before_wrap();
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt(id_salt)
+            .max_rect(region)
+            .layout(*ui.layout()),
+    );
+    child.set_clip_rect(region.intersect(ui.clip_rect()));
+    let inner = add(&mut child);
+    ui.advance_cursor_after_rect(region);
+    inner
 }
 
 /// The widget with keyboard focus if it is a text field: a text input, or a slider's value box
@@ -3749,11 +3789,15 @@ mod tests {
 
     #[test]
     fn the_equation_panel_draws_in_a_tiny_window() {
-        // A window smaller than the panel's starting height: nothing panics, every frame.
+        // A window smaller than the panel's starting height, beside every view of the centre
+        // region (the view gets a strip a few points tall, or none): nothing panics, every
+        // frame.
         for size in [
             egui::vec2(1.0, 1.0),
             egui::vec2(200.0, 150.0),
             egui::vec2(640.0, 240.0),
+            egui::vec2(1280.0, 240.0),
+            egui::vec2(1280.0, 300.0),
         ] {
             let mut harness = Harness::on_screen(size);
             harness
@@ -3761,11 +3805,300 @@ mod tests {
                 .explorer
                 .open_path("temperature.summary.governing_limit_C");
             harness.panel.explorer.explain = true;
-            for _ in 0..3 {
-                harness.frame(Vec::new());
+            for view in CentreView::ALL {
+                harness.panel.centre = view;
+                for _ in 0..3 {
+                    harness.frame(Vec::new());
+                }
             }
             assert_eq!(harness.panel.inputs(), &DesignInputs::default());
         }
+    }
+
+    /// The Equation panel's rect as egui stored it in the last frame. Its top edge is the
+    /// panel's; its bottom can run past the centre region's when the panel's contents are
+    /// taller than the panel (egui clips them).
+    fn equation_panel_rect(ctx: &egui::Context) -> egui::Rect {
+        egui::containers::panel::PanelState::load(ctx, egui::Id::new(EQUATION_PANEL_ID))
+            .expect("the Equation panel is open")
+            .rect
+    }
+
+    /// The header's rect in the last frame: the centre region starts under it.
+    fn header_rect(ctx: &egui::Context) -> egui::Rect {
+        egui::containers::panel::PanelState::load(ctx, egui::Id::new("magcoupling_header"))
+            .expect("the header is drawn")
+            .rect
+    }
+
+    /// Where what the centre region painted after the Equation panel in the frame `output`
+    /// (the tab row, the end-effect banner, the view) shows: each shape's bounding rect within
+    /// its clip rect, in paint order, the empty ones left out. Paint order splits the frame:
+    /// egui paints the panel's separator line with the centre region's painter after the
+    /// panel's contents, so the centre's own shapes are those after that line.
+    fn painted_after_the_equation_panel(
+        ctx: &egui::Context,
+        output: &egui::FullOutput,
+    ) -> Vec<egui::Rect> {
+        let panel = equation_panel_rect(ctx);
+        let top = panel.top();
+        // Every shape with its clip rect, nested shapes flattened, in paint order.
+        fn walk(shape: &egui::Shape, clip: egui::Rect, out: &mut Vec<(egui::Shape, egui::Rect)>) {
+            match shape {
+                egui::Shape::Vec(nested) => nested.iter().for_each(|s| walk(s, clip, out)),
+                other => out.push((other.clone(), clip)),
+            }
+        }
+        let mut shapes = Vec::new();
+        for clipped in &output.shapes {
+            walk(&clipped.shape, clipped.clip_rect, &mut shapes);
+        }
+        let separator = shapes
+            .iter()
+            .position(|(shape, _)| match shape {
+                egui::Shape::LineSegment { points: [a, b], .. } => {
+                    a.y == b.y
+                        && (top..=top + 1.0).contains(&a.y)
+                        && a.x.min(b.x) <= panel.left() + 0.5
+                        && a.x.max(b.x) >= panel.right() - 0.5
+                }
+                _ => false,
+            })
+            .unwrap_or_else(|| panic!("no separator line at the panel's top {top}"));
+        shapes[separator + 1..]
+            .iter()
+            .map(|(shape, clip)| shape.visual_bounding_rect().intersect(*clip))
+            .filter(egui::Rect::is_positive)
+            .collect()
+    }
+
+    /// What the centre region drew after the Equation panel in the frame `output` that paints
+    /// into the panel or takes a click inside it, described; `None` when nothing does. Every
+    /// shape after the panel ([`painted_after_the_equation_panel`]), where it shows, and every
+    /// widget registered after the panel's resize handle (which egui registers after the
+    /// panel's contents) that senses a click or a drag, where it takes them (its interact
+    /// rect), must stay out of the panel's rect. Anything else drawn later (a host window's
+    /// resize corner) lies beside it, and a frame's hover-only widget, which egui registers
+    /// over its contents, takes no click.
+    fn equation_panel_overlap(ctx: &egui::Context, output: &egui::FullOutput) -> Option<String> {
+        let panel = equation_panel_rect(ctx);
+        let top = panel.top();
+        // How far `rect` reaches into the panel [points], when it does.
+        let depth = |rect: egui::Rect| {
+            let inside = rect.intersect(panel);
+            (inside.width() > 0.0 && inside.height() > 0.01).then(|| inside.bottom() - top)
+        };
+        let painted: Vec<(f32, egui::Rect)> = painted_after_the_equation_panel(ctx, output)
+            .into_iter()
+            .filter_map(|seen| depth(seen).map(|d| (d, seen)))
+            .collect();
+        let resize = egui::Id::new(EQUATION_PANEL_ID).with("__resize");
+        let widgets: Vec<egui::WidgetRect> = ctx.viewport(|v| {
+            v.prev_pass
+                .widgets
+                .layers()
+                .find(|(_, widgets)| widgets.iter().any(|w| w.id == resize))
+                .map(|(_, widgets)| widgets.to_vec())
+                .expect("the panel's resize handle is registered")
+        });
+        let handle = widgets.iter().position(|w| w.id == resize).unwrap();
+        let clickable: Vec<(f32, egui::Rect)> = widgets[handle + 1..]
+            .iter()
+            .filter(|w| w.sense.interactive())
+            .filter_map(|w| depth(w.interact_rect).map(|d| (d, w.interact_rect)))
+            .collect();
+        if painted.is_empty() && clickable.is_empty() {
+            return None;
+        }
+        let deepest = |hits: &[(f32, egui::Rect)]| hits.iter().map(|(d, _)| *d).fold(0.0, f32::max);
+        Some(format!(
+            "{} shapes paint up to {:.1} points and {} widgets take clicks up to {:.1} points              into the Equation panel (top {top}): {painted:?} {clickable:?}",
+            painted.len(),
+            deepest(&painted),
+            clickable.len(),
+            deepest(&clickable),
+        ))
+    }
+
+    /// How far above the Equation panel's top edge the lowest thing the centre region painted
+    /// after the panel in the frame `output` ends [points]: under a row for a view that fills
+    /// the space left (none of it lost to a region cut too short).
+    fn gap_above_the_equation_panel(ctx: &egui::Context, output: &egui::FullOutput) -> f32 {
+        let panel = equation_panel_rect(ctx);
+        let lowest = painted_after_the_equation_panel(ctx, output)
+            .into_iter()
+            .filter(|seen| seen.x_range().intersects(panel.x_range()))
+            .map(|seen| seen.bottom())
+            .fold(f32::NEG_INFINITY, f32::max);
+        panel.top() - lowest
+    }
+
+    /// Drags the Equation panel's top edge to `y` with frames of `frame` on `ctx`: a press 2
+    /// points inside the panel's top (its resize handle, registered after the panel's
+    /// contents, takes it there), a move, the release, then the pointer leaves (no tooltip
+    /// over the frames that follow) and two idle frames let the panel settle.
+    fn drag_equation_panel(
+        ctx: &egui::Context,
+        frame: &mut dyn FnMut(Vec<egui::Event>) -> egui::FullOutput,
+        y: f32,
+    ) {
+        let panel = equation_panel_rect(ctx);
+        let grab = egui::pos2(panel.center().x, panel.top() + 2.0);
+        let to = egui::pos2(grab.x, y);
+        frame(vec![egui::Event::PointerMoved(grab)]);
+        frame(vec![primary_button(grab, true)]);
+        frame(vec![egui::Event::PointerMoved(to)]);
+        frame(vec![egui::Event::PointerMoved(to)]);
+        frame(vec![primary_button(to, false)]);
+        frame(vec![egui::Event::PointerGone]);
+        frame(Vec::new());
+        frame(Vec::new());
+    }
+
+    #[test]
+    fn no_centre_view_paints_or_takes_clicks_in_the_equation_panel() {
+        // A short page (1280 x 620, about a laptop browser's) and the laptop screen, with the
+        // panel at its starting height and dragged as far up as it goes, and a page shorter
+        // than the panel's floor plus the view's strip: every view stays above the panel's top
+        // edge. Before the fix the callout list ran about 35 points into the panel on the short
+        // page, and with the panel dragged tall the geometry, plot, results and clamp views
+        // overflowed by up to 130.
+        let short = egui::vec2(1280.0, 620.0);
+        let mut failures = Vec::new();
+        for (size, dragged) in [
+            (short, false),
+            (short, true),
+            (SCREEN, false),
+            (SCREEN, true),
+            (egui::vec2(1280.0, 300.0), true),
+        ] {
+            let mut harness = Harness::on_screen(size);
+            harness.panel.explorer.open_path("model.pullout_Nm");
+            harness.frame(Vec::new());
+            if dragged {
+                let ctx = harness.ctx.clone();
+                drag_equation_panel(&ctx, &mut |events| harness.frame(events), 0.0);
+            }
+            for view in CentreView::ALL {
+                harness.panel.centre = view;
+                let mut output = harness.frame(Vec::new());
+                for _ in 0..2 {
+                    output = harness.frame(Vec::new());
+                }
+                let case = format!("{size:?}, dragged up {dragged}, {}", view.label());
+                if let Some(overlap) = equation_panel_overlap(&harness.ctx, &output) {
+                    failures.push(format!("{case}: {overlap}"));
+                }
+                // The scrolling views fill the space left, down to the panel: their last text
+                // shown ends less than a row (with its spacing) above it, or is cut by its
+                // edge.
+                if matches!(view, CentreView::Clamp | CentreView::Results) {
+                    let gap = gap_above_the_equation_panel(&harness.ctx, &output);
+                    if gap > 20.0 {
+                        failures.push(format!("{case}: ends {gap} points above the panel"));
+                    }
+                }
+            }
+            assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        }
+        assert!(
+            failures.is_empty(),
+            "{}",
+            failures.join(
+                "
+"
+            )
+        );
+    }
+
+    #[test]
+    fn inside_an_egui_window_no_centre_view_reaches_into_the_equation_panel() {
+        // The linkage app's Tools window (M5) at its starting contents size, 1100 x 700: the
+        // panel at its starting height, then dragged as far up as it goes. Every view stays
+        // above the panel and the window keeps its size.
+        const TITLE: &str = "Magnetic coupling";
+        let ctx = egui::Context::default();
+        let mut panel = MagcouplingPanel::new();
+        let frame = |panel: &mut MagcouplingPanel, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                events,
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN)),
+                ..Default::default()
+            };
+            ctx.run(input, |ctx| {
+                egui::Window::new(TITLE)
+                    .default_size([1100.0, 700.0])
+                    .show(ctx, |ui| panel.ui(ui));
+            })
+        };
+        // A window sizes itself on its first frame and paints on the next.
+        frame(&mut panel, Vec::new());
+        frame(&mut panel, Vec::new());
+        panel.explorer.open_path("model.pullout_Nm");
+        frame(&mut panel, Vec::new());
+        frame(&mut panel, Vec::new());
+        let window = || ctx.memory(|m| m.area_rect(egui::Id::new(TITLE)));
+        let size = window().expect("the window is shown").size();
+        let mut failures = Vec::new();
+        for dragged in [false, true] {
+            if dragged {
+                drag_equation_panel(&ctx, &mut |events| frame(&mut panel, events), 0.0);
+            }
+            for view in CentreView::ALL {
+                panel.centre = view;
+                let mut output = frame(&mut panel, Vec::new());
+                for _ in 0..2 {
+                    output = frame(&mut panel, Vec::new());
+                }
+                if let Some(overlap) = equation_panel_overlap(&ctx, &output) {
+                    failures.push(format!("dragged up {dragged}, {}: {overlap}", view.label()));
+                }
+                assert_eq!(window().unwrap().size(), size, "{}", view.label());
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{}",
+            failures.join(
+                "
+"
+            )
+        );
+    }
+
+    #[test]
+    fn the_equation_panel_starts_at_about_45_percent_and_its_drag_stops_short_of_the_view() {
+        use crate::gui::explorer::VIEW_STRIP;
+        // On the short page the panel opens at about 45 % of the centre region (measured from
+        // the header's foot, so with the central panel's margin), not at a fixed 320 points.
+        let size = egui::vec2(1280.0, 620.0);
+        let mut harness = Harness::on_screen(size);
+        harness.panel.explorer.open_path("model.pullout_Nm");
+        harness.frame(Vec::new());
+        harness.frame(Vec::new());
+        let header = header_rect(&harness.ctx);
+        let opened = equation_panel_rect(&harness.ctx);
+        let share = opened.height() / (opened.bottom() - header.bottom());
+        assert!(
+            (0.40..=0.50).contains(&share),
+            "the panel opens {} points tall, {share:.3} of the centre region",
+            opened.height()
+        );
+        // Dragged to the top of the screen, it stops with the view's strip above it.
+        let ctx = harness.ctx.clone();
+        drag_equation_panel(&ctx, &mut |events| harness.frame(events), 0.0);
+        let dragged = equation_panel_rect(&harness.ctx);
+        assert!(dragged.height() > opened.height(), "{dragged:?}");
+        let strip = dragged.top() - header.bottom();
+        assert!(
+            (VIEW_STRIP..=VIEW_STRIP + 20.0).contains(&strip),
+            "the centre keeps {strip} points above the panel"
+        );
+        // It stays resizable: dragged back down, its top edge follows the pointer.
+        let y = size.y - 200.0;
+        drag_equation_panel(&ctx, &mut |events| harness.frame(events), y);
+        let lowered = equation_panel_rect(&harness.ctx);
+        assert!((lowered.top() - y).abs() <= 1.0, "{lowered:?}");
     }
 
     #[test]

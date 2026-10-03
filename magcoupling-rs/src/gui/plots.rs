@@ -428,14 +428,15 @@ const AMBER: Color32 = Color32::from_rgb(230, 170, 70);
 const VIOLET: Color32 = Color32::from_rgb(180, 140, 230);
 
 /// A plot with its id ([`PlotKind::id`]), the panel's legend and axis labels, filling the
-/// space left.
+/// height left and no more (`height` is egui_plot's smallest height too; it keeps at least 1
+/// point).
 fn plot(ui: &egui::Ui, kind: PlotKind, x: &str, y: &str) -> Plot<'static> {
     Plot::new(kind.id())
         .id(kind.id())
         .legend(Legend::default().position(Corner::RightTop))
         .x_axis_label(x.to_owned())
         .y_axis_label(y.to_owned())
-        .height(ui.available_height().max(150.0))
+        .height(ui.available_height().max(0.0))
 }
 
 /// Draws the plot `kind` of the design shown (`inputs`, and the `results` computed from them),
@@ -1234,6 +1235,38 @@ mod tests {
             let texts = drawn_texts(&draw(PlotKind::TorqueTemperature, &inputs));
             assert!(texts.iter().any(|t| t == NOTHING_TO_PLOT), "{texts:?}");
             assert!(!texts.iter().any(|t| t == EMPTY_TEMPERATURE_AXIS));
+        }
+    }
+
+    #[test]
+    fn each_plot_stays_in_a_short_region() {
+        // The space left above the Equation panel: each plot's height is capped by what its
+        // readouts line leaves, so the plot ends at the region's foot (no 150-point floor). A
+        // region a few points tall or none draws without panicking.
+        let ctx = egui::Context::default();
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let size = egui::vec2(1000.0, 700.0);
+        for kind in PlotKind::ALL {
+            for height in [300.0, 120.0, 80.0, 5.0, 0.0] {
+                let region =
+                    egui::Rect::from_min_size(egui::pos2(20.0, 30.0), egui::vec2(700.0, height));
+                for _ in 0..2 {
+                    let (_, used) =
+                        crate::gui::test_support::region_frame(&ctx, size, region, |ui| {
+                            plot_ui(ui, kind, &inputs, &results, &mut Readouts::default());
+                        });
+                    // The readouts line is text and does not shrink: only a region that holds
+                    // it holds the plot too.
+                    if height >= 80.0 {
+                        assert!(
+                            used.bottom() <= region.bottom() + 0.01,
+                            "{kind:?} at {height}: the plot runs {} points past the region",
+                            used.bottom() - region.bottom()
+                        );
+                    }
+                }
+            }
         }
     }
 }

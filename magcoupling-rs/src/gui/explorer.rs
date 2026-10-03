@@ -128,8 +128,32 @@ pub const PANEL_SIZE: f32 = 22.0;
 /// The text size of a term's symbol in the term list [points].
 pub const TERM_SIZE: f32 = 15.0;
 
-/// The panel's starting height [points].
-pub const PANEL_HEIGHT: f32 = 320.0;
+/// The Equation panel's starting height as a share of the centre region's height.
+pub const PANEL_SHARE: f32 = 0.45;
+
+/// The Equation panel's smallest height [points], starting or dragged: its header row wrapped
+/// to two rows and a few lines of the equation. In a centre region shorter than this plus
+/// [`VIEW_STRIP`] the panel keeps this height (the whole region, when that is shorter) and the
+/// tab row and the view get the rest.
+pub const MIN_PANEL_HEIGHT: f32 = 120.0;
+
+/// The strip the centre region keeps above the Equation panel for its tab row and a small view
+/// [points]: dragging the panel's top edge up stops there.
+pub const VIEW_STRIP: f32 = 160.0;
+
+/// The Equation panel's drag range and starting height [points] in a centre region `centre`
+/// points tall: it starts at [`PANEL_SHARE`] of the region and never below
+/// [`MIN_PANEL_HEIGHT`], and its top edge stops [`VIEW_STRIP`] below the region's top, except
+/// in a region too short for both, where the panel keeps [`MIN_PANEL_HEIGHT`] (the whole
+/// region, when that is shorter). The starting height lies in the range.
+pub fn panel_heights(centre: f32) -> (egui::Rangef, f32) {
+    // f32::max passes over NaN: a region that is not a number is no region.
+    let centre = centre.max(0.0);
+    let min = MIN_PANEL_HEIGHT.min(centre);
+    let max = (centre - VIEW_STRIP).max(min);
+    let start = (centre * PANEL_SHARE).max(min).min(max);
+    (egui::Rangef::new(min, max), start)
+}
 
 /// The longest breadcrumb trail; a longer walk drops its oldest steps.
 pub const MAX_TRAIL: usize = 32;
@@ -779,6 +803,53 @@ mod tests {
         let inputs = DesignInputs::default();
         let results = compute_all(&inputs);
         (inputs, results)
+    }
+
+    #[test]
+    fn the_panel_starts_at_45_percent_and_its_drag_leaves_the_view_its_strip() {
+        let heights = |centre: f32| {
+            let (range, start) = panel_heights(centre);
+            (range.min, range.max, start)
+        };
+        // A roomy region: 45 % to start, the drag stopping VIEW_STRIP below the region's top.
+        assert_eq!(
+            heights(600.0),
+            (MIN_PANEL_HEIGHT, 600.0 - VIEW_STRIP, 270.0)
+        );
+        assert_eq!(
+            heights(1000.0),
+            (MIN_PANEL_HEIGHT, 1000.0 - VIEW_STRIP, 450.0)
+        );
+        assert_eq!(heights(300.0), (MIN_PANEL_HEIGHT, 140.0, 135.0));
+        // Too short for the floor and the strip: the panel keeps its floor, the view the rest.
+        for centre in [
+            MIN_PANEL_HEIGHT + VIEW_STRIP,
+            250.0,
+            200.0,
+            MIN_PANEL_HEIGHT,
+        ] {
+            let floor = MIN_PANEL_HEIGHT;
+            assert_eq!(heights(centre), (floor, floor, floor), "{centre}");
+        }
+        // Shorter than the floor: the whole region. No region, or not a number: none.
+        assert_eq!(heights(80.0), (80.0, 80.0, 80.0));
+        for centre in [0.0, -5.0, f32::NAN] {
+            assert_eq!(heights(centre), (0.0, 0.0, 0.0), "{centre}");
+        }
+        // Everywhere: a range (min <= max) holding the start; the strip kept whenever the
+        // region holds it and the floor.
+        for step in 0..=300 {
+            let centre = step as f32 * 5.0;
+            let (min, max, start) = heights(centre);
+            assert!(
+                min <= start && start <= max,
+                "{centre}: {min} {start} {max}"
+            );
+            assert!(max <= centre, "{centre}");
+            if centre >= MIN_PANEL_HEIGHT + VIEW_STRIP {
+                assert_eq!(centre - max, VIEW_STRIP, "{centre}");
+            }
+        }
     }
 
     #[test]
