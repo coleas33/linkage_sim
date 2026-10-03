@@ -5,6 +5,37 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-02 — Magcoupling GUI: smarter ordering of the inputs and the results (branch magcoupling/ordering)
+- Inputs (decision O-1, O-2): the workflow order is the default, `inputs::WORKFLOW`:
+  Requirements and operating conditions, Magnets and rings, Gap and clearances, Housing and
+  retainers, Shaft, key and clamps, Materials, Thermal and demagnetization, Calibration and model,
+  every input in exactly one section (a coverage test lists any input added without one); the
+  adhesive and its bondlines share a section, the optional adapter and its joint too, and the
+  fields stored from a 3D run sit in view beside the 3D reference torques; the clamp and screw
+  factors, the screw classes, the optional adapter and the model constants (27 rows, O-4) sit
+  under each group's closed Advanced heading. "Workbook groups"
+  brings back the package groups; the order is panel state only (design files and share links are
+  byte-for-byte unchanged: a test compares the design and the link across the toggle). A filter
+  box (O-5) matches label, path or cell as the results search (`format::search_haystack`, shared)
+  and shows the matching rows alone; a leaf term focusing a row clears it.
+- Results (O-6, O-7): the table groups the results: the headline (the dashboard's 17 rows, open),
+  eight chains (the six A-3 chains, each with the results of its nested groups the scope leaves
+  out, `CHAIN_PREFIXES`, then adhesive and mass), then "Other results" by package
+  (`result_groups.rs`), each result in exactly one group (the first that lists it); each heading
+  shows the worst level of its checks, and a heading click while searching is ignored; "Engine
+  order" brings back the flat table, and both exports keep the engine order. `dashboard::CHECKS`
+  lists the 30 design checks (the dashboard's 7 and 23 more, with levels in `verdict_level`);
+  their rows carry the dashboard's badge, and "Failing checks only" lists the red then the amber
+  ones.
+- Tracing (O-8, `trace.rs`): a click on an input's label frames every explained result it drives
+  (the registry's `downstream`: 392 of the 1086 results have an equation record; an input that
+  reaches none says so), a click on a result frames the inputs it reads (`upstream_inputs`) unless
+  an input's trace marks it or it has no record (the trace then stays), in the selection colour
+  through `Readouts::mark` (`TermColors::with_marked`), with a banner, a Clear trace button,
+  per-group traced counts and a "Traced only" table filter for an input's trace.
+- The linkage app's calculator window is unchanged (its tests pass). Docs: the magcoupling README,
+  03-structure, 04-memory, the spec's M4 layout amendment.
+
 ## 2026-10-02 — Magcoupling M5: the final review's fix wave (branch magcoupling/m5)
 - The calculator window keeps, frame included, to the screen below the menu bar and the band
   where egui grabs its edge, so it never covers the Tools menu that toggles it:
