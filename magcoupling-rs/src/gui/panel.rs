@@ -30,10 +30,14 @@ use crate::engine::sizing::FreeVariable;
 use crate::gui::clamp_drawing::clamp_ui;
 use crate::gui::dashboard::{Level, dashboard_ui, end_effect_banner};
 use crate::gui::explorer::{EQUATION_PANEL, Explorer, FOCUS_WIDTH, PANEL_HEIGHT, explorer_ui};
+use crate::gui::format::search_needle;
 use crate::gui::geometry_view::geometry_ui;
 use crate::gui::history::History;
 use crate::gui::input_ui::{CHANGED_DOT, RowEdit, input_row, slider};
-use crate::gui::inputs::{InputCatalogue, InputEntry, KEY_DESIGN, optional_seed};
+use crate::gui::inputs::{
+    ADVANCED_HEADING, FILTER_HINT, InputCatalogue, InputEntry, InputGroup, InputOrder,
+    InputSection, KEY_DESIGN, filter_inputs, optional_seed,
+};
 use crate::gui::plots::{PlotKind, plot_ui};
 use crate::gui::readouts::{Readouts, registry};
 use crate::gui::results_table::{
@@ -222,6 +226,12 @@ pub struct MagcouplingPanel {
     centre: CentreView,
     /// What the inputs side shows.
     inputs_view: InputsView,
+    /// How the design inputs are ordered (decision O-1): a view of this session only, never in
+    /// a design file or a share link.
+    input_order: InputOrder,
+    /// The inputs filter's text: while it holds more than blanks, the design inputs view shows
+    /// the matching inputs alone.
+    input_filter: String,
     /// The assumptions banner drawn in the last frame: the header sizes from the last frame,
     /// so a change asks for one more frame.
     banner: Option<String>,
@@ -261,6 +271,8 @@ impl MagcouplingPanel {
             last_error: None,
             centre: CentreView::Geometry,
             inputs_view: InputsView::Design,
+            input_order: InputOrder::default(),
+            input_filter: String::new(),
             banner: None,
             results_table: ResultsTable::default(),
             requests: Vec::new(),
@@ -808,33 +820,53 @@ impl MagcouplingPanel {
             });
     }
 
-    /// The design inputs: the Key design group, then every input by package group.
+    /// The design inputs: the order toggle and the filter box, then the Key design group and
+    /// every input by group in the order chosen (decision O-1), each workflow group's advanced
+    /// sections under its closed Advanced heading; while the filter holds more than blanks, the
+    /// matching inputs alone.
     fn design_inputs_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
         let catalogue = InputCatalogue::get();
-        // A leaf term clicked in the Equation panel: its group opens so its row can scroll
-        // into view (the Key design group for a Key design input).
+        // A leaf term clicked in the Equation panel: its group (and its Advanced heading) opens
+        // so its row can scroll into view (the Key design group for a Key design input), and
+        // the filter is cleared so the row is drawn.
         let focus = self
             .explorer
             .focus()
             .filter(|f| f.scroll)
             .map(|f| f.path.clone());
+        if focus.is_some() {
+            self.input_filter.clear();
+        }
+        ui.horizontal(|ui| {
+            for order in InputOrder::ALL {
+                ui.selectable_value(&mut self.input_order, order, order.label());
+            }
+        });
+        ui.add(
+            egui::TextEdit::singleline(&mut self.input_filter)
+                .hint_text(FILTER_HINT)
+                .desired_width(f32::INFINITY),
+        );
+        let groups = catalogue.groups_in(self.input_order);
+        if !search_needle(&self.input_filter).is_empty() {
+            self.filtered_inputs_ui(ui, groups, readouts);
+            return;
+        }
         let open_key_design = focus
             .as_deref()
             .is_some_and(|path| KEY_DESIGN.contains(&path));
-        let open_group = focus
+        // The group and the section of the focused row (outside the Key design group).
+        let focused = focus
             .as_deref()
             .filter(|_| !open_key_design)
-            .and_then(|path| {
-                catalogue
-                    .groups
-                    .iter()
-                    .find(|g| {
-                        g.sections
-                            .iter()
-                            .any(|s| s.entries.iter().any(|e| e.path == path))
-                    })
-                    .map(|g| g.name.as_str())
-            });
+            .and_then(|path| catalogue.section_of(self.input_order, path))
+            .map(|(group, section)| (group.name.as_str(), section.advanced));
+        // The workbook order keeps its groups' ids (and so their open state) from before the
+        // workflow order existed.
+        let salt = match self.input_order {
+            InputOrder::Workflow => "workflow",
+            InputOrder::Workbook => "group",
+        };
         egui::ScrollArea::vertical()
             .id_salt("magcoupling_inputs_scroll")
             .auto_shrink([false, false])
@@ -852,23 +884,77 @@ impl MagcouplingPanel {
                             self.design_widgets.push(widget);
                         }
                     });
-                for group in &catalogue.groups {
+                for group in groups {
+                    let (open_group, open_advanced) = match focused {
+                        Some((name, advanced)) if name == group.name => (true, advanced),
+                        _ => (false, false),
+                    };
                     egui::CollapsingHeader::new(group.label)
-                        .id_salt(("group", &group.name))
+                        .id_salt((salt, &group.name))
                         .default_open(false)
-                        .open((open_group == Some(group.name.as_str())).then_some(true))
+                        .open(open_group.then_some(true))
                         .show(ui, |ui| {
-                            for section in &group.sections {
-                                if section.id != group.name {
-                                    ui.add_space(4.0);
-                                    ui.strong(section.label);
-                                }
-                                for entry in &section.entries {
-                                    let widget = self.input_row_ui(ui, entry, readouts);
-                                    self.design_widgets.push(widget);
-                                }
+                            for section in group.sections.iter().filter(|s| !s.advanced) {
+                                self.section_ui(ui, group, section, readouts);
+                            }
+                            if group.sections.iter().any(|s| s.advanced) {
+                                egui::CollapsingHeader::new(ADVANCED_HEADING)
+                                    .id_salt(("advanced", &group.name))
+                                    .default_open(false)
+                                    .open(open_advanced.then_some(true))
+                                    .show(ui, |ui| {
+                                        for section in group.sections.iter().filter(|s| s.advanced)
+                                        {
+                                            self.section_ui(ui, group, section, readouts);
+                                        }
+                                    });
                             }
                         });
+                }
+            });
+    }
+
+    /// One section of a group: its heading (none for the group's own section), then its rows.
+    fn section_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        group: &InputGroup,
+        section: &'static InputSection,
+        readouts: &Readouts,
+    ) {
+        if section.id != group.name {
+            ui.add_space(4.0);
+            ui.strong(section.label);
+        }
+        for entry in &section.entries {
+            let widget = self.input_row_ui(ui, entry, readouts);
+            self.design_widgets.push(widget);
+        }
+    }
+
+    /// The inputs the filter matches, by section in the order chosen, each run under its
+    /// group and section, with their count.
+    fn filtered_inputs_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        groups: &'static [InputGroup],
+        readouts: &Readouts,
+    ) {
+        let matches = filter_inputs(groups, &self.input_filter);
+        let shown: usize = matches.iter().map(|m| m.entries.len()).sum();
+        let total = InputCatalogue::get().all().count();
+        ui.weak(format!("{shown} of {total} inputs"));
+        egui::ScrollArea::vertical()
+            .id_salt("magcoupling_inputs_filter_scroll")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for run in &matches {
+                    ui.add_space(4.0);
+                    ui.strong(run.heading());
+                    for &entry in &run.entries {
+                        let widget = self.input_row_ui(ui, entry, readouts);
+                        self.design_widgets.push(widget);
+                    }
                 }
             });
     }
@@ -1262,12 +1348,15 @@ mod tests {
         // Decision M41-2 (`SliderClamping::Edits`): a slider writes only on an edit, so idle
         // frames keep every value as it is, values off their step grid included: a face gap
         // and a measured drag from a file, and the vacuum permeability's two defaults (every
-        // group open, on a screen tall enough to draw every row).
-        let mut harness = Harness::on_screen(egui::vec2(1280.0, 12000.0));
+        // group open, on a screen tall enough to draw every row), in the workbook order and in
+        // the workflow order's filtered view (every row, the advanced ones included).
+        let mut harness = Harness::on_screen(egui::vec2(1280.0, 20000.0));
         let mut design = Design::default();
         design.inputs.metal.face_gap_mm = 1.4123;
         design.inputs.metal.measured_drag_Nm = Some(0.012345);
         harness.panel.open_design(design.clone());
+        // The workbook order: every row is in a group, none under an Advanced heading.
+        harness.panel.input_order = InputOrder::Workbook;
         // Bottom up: opening a group moves only the groups below it, so no click lands on a
         // row that an opening group above has just moved there.
         for group in InputCatalogue::get().groups.iter().rev() {
@@ -1290,6 +1379,20 @@ mod tests {
             "no row reported an edit"
         );
         assert!(!harness.panel.history.can_undo(&design));
+        // The workflow order, filtered by "." (in every path): all 172 rows, both vacuum
+        // permeabilities (under Calibration and model's Advanced heading when unfiltered).
+        harness.panel.input_order = InputOrder::Workflow;
+        harness.panel.input_filter = ".".to_owned();
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..15 {
+            output = harness.frame(Vec::new());
+        }
+        let total = InputCatalogue::get().all().count();
+        assert_eq!(count(&output, &format!("{total} of {total} inputs")), 1);
+        assert_eq!(count(&output, "Vacuum permeability"), 2);
+        assert_eq!(harness.panel.design(), design);
+        assert_eq!(harness.panel.last_error, None);
+        assert_eq!(harness.panel.history.undo_len(), 0);
     }
 
     #[test]
@@ -1553,26 +1656,185 @@ mod tests {
     #[test]
     fn every_group_opens_and_draws_a_row_for_each_of_its_inputs() {
         let catalogue = InputCatalogue::get();
-        for group in &catalogue.groups {
-            // Tall enough for the longest group (temperature) to fit without scrolling.
-            let mut harness = Harness::on_screen(egui::vec2(1280.0, 6000.0));
-            harness.click_text(group.label);
-            // The header opens over a few frames (its animation).
-            let mut output = harness.frame(Vec::new());
-            for _ in 0..10 {
-                output = harness.frame(Vec::new());
+        for order in InputOrder::ALL {
+            for group in catalogue.groups_in(order) {
+                // Tall enough for the longest group (temperature) to fit without scrolling.
+                let mut harness = Harness::on_screen(egui::vec2(1280.0, 6000.0));
+                harness.panel.input_order = order;
+                harness.click_text(group.label);
+                // The header opens over a few frames (its animation).
+                let mut output = harness.frame(Vec::new());
+                for _ in 0..10 {
+                    output = harness.frame(Vec::new());
+                }
+                if group.sections.iter().any(|s| s.advanced) {
+                    // The advanced sections stay closed until their heading is clicked.
+                    let texts = drawn_texts(&output);
+                    for section in group.sections.iter().filter(|s| s.advanced) {
+                        assert!(
+                            !texts.iter().any(|t| t == section.label),
+                            "{}: {:?} open by default",
+                            group.name,
+                            section.label
+                        );
+                    }
+                    harness.click_text(ADVANCED_HEADING);
+                    for _ in 0..10 {
+                        output = harness.frame(Vec::new());
+                    }
+                }
+                let texts = drawn_texts(&output);
+                for section in &group.sections {
+                    if section.id != group.name {
+                        assert!(
+                            texts.iter().any(|t| t == section.label),
+                            "{}: no heading {:?}",
+                            group.name,
+                            section.label
+                        );
+                    }
+                    for entry in &section.entries {
+                        assert!(
+                            texts.iter().any(|t| t == entry.meta.label),
+                            "{}: missing {:?}",
+                            group.name,
+                            entry.meta.label
+                        );
+                    }
+                }
+                assert_eq!(harness.panel.inputs(), &DesignInputs::default());
             }
-            let texts = drawn_texts(&output);
-            for entry in group.sections.iter().flat_map(|s| s.entries.iter()) {
-                assert!(
-                    texts.iter().any(|t| t == entry.meta.label),
-                    "{}: missing {:?}",
-                    group.name,
-                    entry.meta.label
-                );
-            }
-            assert_eq!(harness.panel.inputs(), &DesignInputs::default());
         }
+    }
+
+    #[test]
+    fn the_order_toggle_switches_the_view_and_changes_no_input() {
+        // Decision O-1: the workflow order by default, the workbook's package groups one click
+        // away; a view of this session only, so the design, its share link and the undo history
+        // stay as they are.
+        let mut harness = Harness::new();
+        let link = harness.panel.share_link();
+        let workflow: Vec<&str> = InputCatalogue::get()
+            .workflow
+            .iter()
+            .map(|g| g.label)
+            .collect();
+        let workbook = [
+            "Coupling",
+            "Metal design",
+            "Temperature design",
+            "Shaft clamps",
+        ];
+        let drawn = |output: &egui::FullOutput, labels: &[&str]| {
+            labels.iter().all(|label| count(output, label) == 1)
+        };
+        let none = |output: &egui::FullOutput, labels: &[&str]| {
+            labels.iter().all(|label| count(output, label) == 0)
+        };
+        assert_eq!(harness.panel.input_order, InputOrder::Workflow);
+        let output = harness.frame(Vec::new());
+        assert!(drawn(&output, &workflow) && none(&output, &workbook));
+        harness.click_text(InputOrder::Workbook.label());
+        assert_eq!(harness.panel.input_order, InputOrder::Workbook);
+        let output = harness.frame(Vec::new());
+        assert!(drawn(&output, &workbook) && none(&output, &workflow[..4]));
+        assert_eq!(harness.panel.design(), Design::default());
+        assert_eq!(harness.panel.share_link(), link);
+        assert!(!harness.panel.history.can_undo(&Design::default()));
+        harness.click_text(InputOrder::Workflow.label());
+        let output = harness.frame(Vec::new());
+        assert!(drawn(&output, &workflow) && none(&output, &workbook));
+        assert_eq!(harness.panel.design(), Design::default());
+        assert_eq!(harness.panel.share_link(), link);
+        assert_eq!(harness.panel.history.undo_len(), 0);
+    }
+
+    #[test]
+    fn the_filter_box_shows_the_matching_inputs_alone_and_edits_no_design() {
+        let mut harness = Harness::new();
+        let total = InputCatalogue::get().all().count();
+        harness.click_text(FILTER_HINT);
+        harness.frame(vec![egui::Event::Text("gearbox".to_owned())]);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &format!("3 of {total} inputs")), 1);
+        assert_eq!(
+            count(
+                &output,
+                "Requirements and operating conditions / Drive and gearbox"
+            ),
+            1
+        );
+        for label in [
+            "Gearbox ratio",
+            "Gearbox efficiency",
+            "Gearbox input torque rating",
+        ] {
+            assert_eq!(count(&output, label), 1, "{label}");
+        }
+        // The Key design group and the other groups give way to the matches.
+        assert_eq!(count(&output, KEY_DESIGN_HEADING), 0);
+        assert_eq!(count(&output, "Magnets and rings"), 0);
+        // A matched row is a row like any other: an arrow key nudges its value.
+        let ratio = InputCatalogue::get().entry("coupling.gear_ratio").unwrap();
+        let before = harness.number("coupling.gear_ratio");
+        let slider = harness.panel.design_widgets[0];
+        harness.ctx.memory_mut(|m| m.request_focus(slider));
+        harness.frame(Vec::new());
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        let step = ratio.meta.range.unwrap().step;
+        assert!((harness.number("coupling.gear_ratio") - (before + step)).abs() < 1e-9);
+        // Typing in the filter is no edit of the design: the nudge is the one undo step.
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.history.undo_len(), 1);
+        // The workbook order heads the run by its package group.
+        harness.click_text(InputOrder::Workbook.label());
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Coupling"), 1);
+        assert_eq!(count(&output, &format!("3 of {total} inputs")), 1);
+        // No match says so; a blank filter brings the groups back.
+        harness.panel.input_filter = "no such input".to_owned();
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &format!("0 of {total} inputs")), 1);
+        harness.panel.input_filter = "   ".to_owned();
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, KEY_DESIGN_HEADING), 1);
+    }
+
+    #[test]
+    fn a_focused_advanced_input_opens_its_group_and_heading_and_clears_the_filter() {
+        // The vacuum permeability is no assumption and sits under Calibration and model's
+        // Advanced heading: a leaf term naming it opens both, past a filter it does not match.
+        let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
+        harness.panel.input_filter = "gearbox".to_owned();
+        harness.frame(Vec::new());
+        harness.panel.explorer.focus_input("coupling.mu0");
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..10 {
+            output = harness.frame(Vec::new());
+        }
+        assert_eq!(harness.panel.input_filter, "");
+        assert_eq!(harness.panel.inputs_view, InputsView::Design);
+        let label = InputCatalogue::get()
+            .entry("coupling.mu0")
+            .unwrap()
+            .meta
+            .label;
+        let rows: Vec<egui::Rect> = text_rects(&output, label)
+            .into_iter()
+            .filter(|r| r.left() < INPUTS_WIDTH)
+            .collect();
+        assert_eq!(
+            rows.len(),
+            2,
+            "both mu0 rows, under the open Advanced heading"
+        );
+        let focus = focus_rects(&output);
+        assert!(
+            rows.iter()
+                .any(|r| focus.iter().any(|f| f.contains_rect(*r))),
+            "{rows:?} {focus:?}"
+        );
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
     }
 
     #[test]
@@ -2142,13 +2404,27 @@ mod tests {
                 .callouts()
                 .filter_map(|c| crate::gui::dashboard::hover_text(c.path)),
         );
-        for group in &InputCatalogue::get().groups {
-            harness.click_text(group.label);
+        // Every group open, in both orders; every workflow heading; the filtered view's runs.
+        for order in [InputOrder::Workflow, InputOrder::Workbook] {
+            harness.click_text(order.label());
+            // Bottom up: opening a group moves only the groups below it.
+            for group in InputCatalogue::get().groups_in(order).iter().rev() {
+                harness.click_text(group.label);
+            }
+            for _ in 0..10 {
+                harness.frame(Vec::new());
+            }
+            texts.extend(drawn_texts(&harness.frame(Vec::new())));
         }
-        for _ in 0..10 {
-            harness.frame(Vec::new());
+        for group in &crate::gui::inputs::WORKFLOW {
+            texts.push(group.label.to_owned());
+            texts.extend(group.sections.iter().map(|s| s.label.to_owned()));
         }
+        texts.push(ADVANCED_HEADING.to_owned());
+        texts.push(FILTER_HINT.to_owned());
+        harness.panel.input_filter = "a".to_owned();
         texts.extend(drawn_texts(&harness.frame(Vec::new())));
+        harness.panel.input_filter.clear();
         // The Assumptions view: every rationale and source.
         harness.click_text(InputsView::Assumptions.label());
         texts.extend(drawn_texts(&harness.frame(Vec::new())));
@@ -3266,7 +3542,8 @@ mod tests {
             .style_mut(|style| style.spacing.combo_height = 2000.0);
         // The outer ring starts on a grade of its own, so the blank choice is drawn once.
         harness.panel.inputs.coupling.magnets.grade_outer = "Y30".to_owned();
-        harness.click_text("Coupling");
+        // Both grade rows are in the Magnets and rings group.
+        harness.click_text("Magnets and rings");
         for _ in 0..10 {
             harness.frame(Vec::new());
         }

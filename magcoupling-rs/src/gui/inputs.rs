@@ -17,6 +17,7 @@ use crate::DesignInputs;
 use crate::engine::grades;
 use crate::engine::library;
 use crate::engine::meta::{FieldType, InputMeta, SliderRange, Value, input_rows};
+use crate::gui::format::{search_haystack, search_needle};
 
 /// The Key design group, in order (spec M4 "Layout": face gap, pole count, magnet part, axial
 /// length, operating temperature, back iron, cup wall, conductance, measured drag). The axial
@@ -597,6 +598,9 @@ pub struct InputEntry {
     pub path: String,
     pub meta: &'static InputMeta,
     pub default: Value,
+    /// Label, path and cell, lowercase: what the inputs filter matches ([`search_haystack`],
+    /// built once, as the results table's).
+    haystack: String,
 }
 
 /// A run of inputs under one heading: in the workbook order a group's own fields or one of its
@@ -650,6 +654,7 @@ impl InputCatalogue {
             path: row.path.clone(),
             meta: row.meta,
             default: row.value.clone(),
+            haystack: search_haystack(row.meta.label, &row.path, row.meta.cell),
         };
         let key_design = KEY_DESIGN
             .iter()
@@ -763,6 +768,53 @@ impl Default for InputCatalogue {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The filter box's hint: it matches as the results search does (decision O-5).
+pub const FILTER_HINT: &str = "Filter inputs by label, path or cell";
+
+/// The inputs of one section that a filter matches.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SectionMatches<'a> {
+    pub group: &'a InputGroup,
+    pub section: &'a InputSection,
+    pub entries: Vec<&'a InputEntry>,
+}
+
+impl SectionMatches<'_> {
+    /// The run's heading: the group's label, then the section's unless it is the group's own.
+    pub fn heading(&self) -> String {
+        if self.section.id == self.group.name {
+            self.group.label.to_owned()
+        } else {
+            format!("{} / {}", self.group.label, self.section.label)
+        }
+    }
+}
+
+/// The inputs of `groups` whose label, path or workbook cell contains `query`, ignoring case
+/// and the surrounding blanks (as the results search), by section in the order of `groups`;
+/// a section without a match is left out. Every input of `groups` for a blank query.
+pub fn filter_inputs<'a>(groups: &'a [InputGroup], query: &str) -> Vec<SectionMatches<'a>> {
+    let needle = search_needle(query);
+    let mut matches = Vec::new();
+    for group in groups {
+        for section in &group.sections {
+            let entries: Vec<&InputEntry> = section
+                .entries
+                .iter()
+                .filter(|e| needle.is_empty() || e.haystack.contains(&needle))
+                .collect();
+            if !entries.is_empty() {
+                matches.push(SectionMatches {
+                    group,
+                    section,
+                    entries,
+                });
+            }
+        }
+    }
+    matches
 }
 
 /// Decimal places of a slider step: the fewest that write the step exactly (0.01 → 2,
@@ -1323,5 +1375,55 @@ mod tests {
         );
         let npole = input_tooltip(catalogue.entry("coupling.npole").unwrap());
         assert!(npole.contains("Slider 4 to 40, step 2"), "{npole}");
+    }
+
+    #[test]
+    fn the_filter_matches_label_path_and_cell_by_section_in_the_order_shown() {
+        let catalogue = InputCatalogue::new();
+        let paths = |order: InputOrder, query: &str| -> Vec<String> {
+            filter_inputs(catalogue.groups_in(order), query)
+                .iter()
+                .flat_map(|m| m.entries.iter().map(|e| e.path.clone()))
+                .collect()
+        };
+        let gearbox = [
+            "coupling.gear_ratio",
+            "coupling.gear_efficiency",
+            "coupling.gearbox_input_rating_Nm",
+        ];
+        // By label (and path), ignoring case and the surrounding blanks, in either order.
+        assert_eq!(paths(InputOrder::Workflow, "  GEARBOX "), gearbox);
+        assert_eq!(paths(InputOrder::Workbook, "gearbox"), gearbox);
+        // By workbook cell, and by path.
+        assert_eq!(
+            paths(InputOrder::Workflow, "calculator!c45"),
+            ["coupling.gear_ratio"]
+        );
+        assert_eq!(
+            paths(InputOrder::Workflow, "clamps.key"),
+            ["clamps.key_width_mm", "clamps.key_contact_mm"]
+        );
+        // A Rust-only input (no cell) by its path.
+        assert_eq!(
+            paths(InputOrder::Workflow, "max_harmonic"),
+            ["coupling.max_harmonic"]
+        );
+        // Each run is headed by its group, and its section unless it is the group's own.
+        let workflow = filter_inputs(catalogue.groups_in(InputOrder::Workflow), "gearbox");
+        assert_eq!(workflow.len(), 1);
+        assert_eq!(
+            workflow[0].heading(),
+            "Requirements and operating conditions / Drive and gearbox"
+        );
+        let workbook = filter_inputs(catalogue.groups_in(InputOrder::Workbook), "gearbox");
+        assert_eq!(workbook[0].heading(), "Coupling");
+        // A blank filter matches every input; a filter nothing contains, none.
+        for order in InputOrder::ALL {
+            assert_eq!(paths(order, "").len(), catalogue.all().count());
+            assert_eq!(paths(order, "   ").len(), catalogue.all().count());
+        }
+        assert!(
+            filter_inputs(catalogue.groups_in(InputOrder::Workflow), "no such input").is_empty()
+        );
     }
 }

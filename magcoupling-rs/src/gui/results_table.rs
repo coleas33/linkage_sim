@@ -15,7 +15,9 @@ use serde_json::{Map, Value as Json};
 use crate::engine::meta::{ResultSet, Value, result_rows};
 use crate::gui::corrections::{CorrectionIndex, marker_text};
 use crate::gui::dashboard::{ResultInfo, hover_text, result_info};
-use crate::gui::format::{format_value, non_finite_text, with_unit};
+use crate::gui::format::{
+    format_value, non_finite_text, search_haystack, search_needle, with_unit,
+};
 use crate::gui::readouts::Readouts;
 use crate::gui::session::{Design, design_json, json_value};
 use crate::{DesignInputs, DesignResults, compute_all};
@@ -81,13 +83,7 @@ pub fn table_entries() -> &'static [TableEntry] {
             .into_iter()
             .map(|row| {
                 let info = result_info(&row.path).expect("every result has its info");
-                let haystack = format!(
-                    "{}\n{}\n{}",
-                    info.meta.label,
-                    row.path,
-                    info.cell.as_deref().unwrap_or("")
-                )
-                .to_lowercase();
+                let haystack = search_haystack(info.meta.label, &row.path, info.cell.as_deref());
                 TableEntry {
                     marker: marker_text(CorrectionIndex::get().marks(info.cell.as_deref())),
                     path: row.path,
@@ -102,7 +98,7 @@ pub fn table_entries() -> &'static [TableEntry] {
 /// The indices of the rows whose label, path or cell contains `query`, ignoring case and the
 /// surrounding blanks; every row for a blank query.
 pub fn search(entries: &[TableEntry], query: &str) -> Vec<usize> {
-    let needle = query.trim().to_lowercase();
+    let needle = search_needle(query);
     (0..entries.len())
         .filter(|&i| needle.is_empty() || entries[i].haystack.contains(&needle))
         .collect()
