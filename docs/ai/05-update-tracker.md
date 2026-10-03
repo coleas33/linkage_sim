@@ -5,6 +5,9 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-03 — Magcoupling GUI: views stay in their own area (branch magcoupling/overlap-fix)
+- The centre views no longer paint into or take clicks in the Equation panel (the callout list ran ~35 points into it on a 1280 x 620 page; dragged tall, geometry, plots, results and clamp up to ~200): the tab row and banner, then the view, are each laid out in a child ui confined (max rect and clip rect) to the space above the panel (`panel::confined`), every view fits the height left (the geometry drawing shrinks below 160 points to leave the callout list three rows, `drawing_height`; plots lose their 150-point floor; the list, clamp and table scroll areas their 64-point one), and the panel opens at 45 % of the centre region (at least `MIN_PANEL_HEIGHT` 120) with its drag stopping `VIEW_STRIP` 160 points below the region's top (`explorer::panel_heights`, replacing `PANEL_HEIGHT` 320). Tests: `no_centre_view_paints_or_takes_clicks_in_the_equation_panel`, `inside_an_egui_window_no_centre_view_reaches_into_the_equation_panel`, `the_equation_panel_starts_at_about_45_percent_and_its_drag_stops_short_of_the_view`, the per-view `*_stays_in_a_short_region` tests, `the_panel_starts_at_45_percent_and_its_drag_leaves_the_view_its_strip`.
+
 ## 2026-10-02 — Magcoupling GUI ordering: the final review's fix wave (branch magcoupling/ordering)
 - Out of the end-effect range (f_end <= 0, audit M9) the results table showed badges the
   dashboard hides: its check rows, its headings' worst level and "Failing checks only" read

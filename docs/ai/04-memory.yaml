@@ -7,6 +7,7 @@ active_issues:
   - "Payload weights Track 2: before merge the user runs the hands-on checklist at the end of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md (its section 0 is the gate and gui-smoke)."
 
 open_questions:
+  - "NEXT (user request 2026-10-03): a download button for the spreadsheet equivalent of the current website layout (an .xlsx that mirrors the displayed input groups and result groups, ideally with the formulas)"
   - "Magcoupling GUI ordering (plan docs/superpowers/plans/2026-10-02-magcoupling-gui-ordering.md, branch magcoupling/ordering): built with the recommended option of each decision O-1 to O-8 (workflow input groups with the requirements and operating conditions first and Advanced only for the rarely changed rows, the workflow order as default with the workbook groups one toggle away, results by physics chain (the scope's chains widened by CHAIN_PREFIXES, plus adhesive and mass) with only the headline open and each heading showing its worst check, levels for the 23 checks off the dashboard, the failing filter flat with the red first, click to trace in the selection colour, kept while reading the results an input drives). Tracing reaches only the 392 explained results of 1086. Before merge the user confirms the plan's Decisions table and looks at the two views in the browser."
   - |
     Reaction-force validation reference choice: which of options A

@@ -27,8 +27,13 @@ pub const DIMENSION: Color32 = Color32::from_rgb(90, 170, 230);
 /// The gap between the end view and the side view [mm at the drawing's scale].
 const VIEW_GAP_MM: f64 = 3.0;
 
-/// The smallest height of the drawing [points]; the list under it scrolls when space is short.
+/// The smallest height of the drawing [points] while the list under it keeps
+/// [`MIN_LIST_ROWS`]; the list scrolls when space is short. Shorter still, the drawing shrinks
+/// below it (it is drawn to scale, so it only scales down).
 const MIN_DRAWING_HEIGHT: f32 = 160.0;
+
+/// The rows of the callout list the drawing leaves room for when space is short.
+const MIN_LIST_ROWS: f32 = 3.0;
 
 /// The margin inside the drawing's area [points].
 const MARGIN: f32 = 8.0;
@@ -159,8 +164,18 @@ pub fn geometry_ui(
     let row = ui.text_style_height(&egui::TextStyle::Body) + ui.spacing().item_spacing.y;
     let rows = g.end.callouts.len() + g.side.callouts.len() + g.notes.len();
     let list = rows as f32 * row * 1.5;
-    let height = (ui.available_height() - list).max(MIN_DRAWING_HEIGHT);
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover());
+    let height = drawing_height(ui.available_height(), list, row);
+    let rect = if height > 0.0 {
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover())
+            .0
+    } else {
+        // No room for the drawing: the list gets the whole height (an empty allocation would
+        // still take an item spacing).
+        Rect::from_min_size(
+            ui.available_rect_before_wrap().min,
+            Vec2::new(ui.available_width(), 0.0),
+        )
+    };
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 4.0, ui.visuals().extreme_bg_color);
     let views: Vec<&View> = [&g.end, &g.side]
@@ -195,6 +210,18 @@ pub fn geometry_ui(
     }
     list_ui(ui, &g, readouts);
     layout
+}
+
+/// The drawing's height [points] in `available` points over a callout list wanting `list`
+/// points in rows `row` points apart: what the list leaves, at least [`MIN_DRAWING_HEIGHT`]
+/// while the list keeps [`MIN_LIST_ROWS`] (all of it, if shorter), then less, down to none.
+/// The list scrolls in what is left.
+fn drawing_height(available: f32, list: f32, row: f32) -> f32 {
+    let kept = list.min(MIN_LIST_ROWS * row);
+    (available - list)
+        .max(MIN_DRAWING_HEIGHT)
+        .min(available - kept)
+        .max(0.0)
 }
 
 /// Paints one view's pieces, dashed lines and dimensions, and registers each dimension as a
@@ -326,11 +353,13 @@ fn callout_text(callout: &Callout) -> String {
     hover_text(callout.path).unwrap_or_else(|| callout.path.to_owned())
 }
 
-/// The callouts (tag and text, in their colours, each a readout) and the notes.
+/// The callouts (tag and text, in their colours, each a readout) and the notes, scrolling in
+/// the height left (egui's 64-point floor for a scroll area lowered to none).
 fn list_ui(ui: &mut egui::Ui, g: &Geometry, readouts: &mut Readouts) {
     egui::ScrollArea::vertical()
         .id_salt("magcoupling_geometry_list")
         .auto_shrink([false, true])
+        .min_scrolled_height(0.0)
         .show(ui, |ui| {
             for callout in g.callouts() {
                 let color = callout.level.map(|l| l.color(ui.visuals()));
@@ -648,6 +677,64 @@ mod tests {
         assert_eq!(scale, 25.0, "1 + 2 + 1 mm across 100 points");
         assert_eq!(transforms[0].to_px([0.0, 0.0]), Pos2::new(0.0, 62.5));
         assert_eq!(transforms[1].to_px([0.0, 0.0]), Pos2::new(75.0, 62.5));
+    }
+
+    #[test]
+    fn the_drawing_keeps_its_floor_only_while_the_list_keeps_a_few_rows() {
+        // A list of 300 points in 20-point rows: room for both, then the floor with the list
+        // scrolling, then the drawing shrinking below the floor over three rows, then none.
+        assert_eq!(drawing_height(1000.0, 300.0, 20.0), 700.0);
+        assert_eq!(drawing_height(460.0, 300.0, 20.0), MIN_DRAWING_HEIGHT);
+        assert_eq!(drawing_height(220.0, 300.0, 20.0), MIN_DRAWING_HEIGHT);
+        assert_eq!(drawing_height(200.0, 300.0, 20.0), 140.0);
+        assert_eq!(drawing_height(60.0, 300.0, 20.0), 0.0);
+        assert_eq!(drawing_height(0.0, 300.0, 20.0), 0.0);
+        // A list shorter than three rows keeps all of it.
+        assert_eq!(drawing_height(100.0, 30.0, 20.0), 70.0);
+    }
+
+    #[test]
+    fn the_view_stays_in_a_short_region_the_drawing_shrinking_and_the_list_scrolling() {
+        // The space left above the Equation panel, from roomy to none: the drawing and the
+        // callout list end at the region's foot. The drawing keeps MIN_DRAWING_HEIGHT while
+        // the list keeps a few rows under it, then shrinks (to scale) below it; the list
+        // scrolls in what is left.
+        let ctx = egui::Context::default();
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let size = egui::vec2(1000.0, 700.0);
+        for height in [400.0, 300.0, 200.0, 120.0, 60.0, 10.0, 0.0] {
+            let region = Rect::from_min_size(Pos2::new(20.0, 30.0), Vec2::new(700.0, height));
+            let mut layout = None;
+            for _ in 0..2 {
+                let (_, used) = crate::gui::test_support::region_frame(&ctx, size, region, |ui| {
+                    layout = Some(geometry_ui(ui, &inputs, &results, &mut Readouts::default()));
+                });
+                assert!(
+                    used.bottom() <= region.bottom() + 0.01,
+                    "{height}: the view runs {} points past the region",
+                    used.bottom() - region.bottom()
+                );
+            }
+            let layout = layout.unwrap();
+            assert!(layout.rect.bottom() <= region.bottom() + 0.01, "{height}");
+            if height >= 300.0 {
+                assert!(
+                    layout.rect.height() >= MIN_DRAWING_HEIGHT,
+                    "{height}: {layout:?}"
+                );
+            } else if height >= 120.0 {
+                // Shorter than the floor, still drawn to one scale.
+                assert!(
+                    layout.rect.height() < MIN_DRAWING_HEIGHT,
+                    "{height}: {layout:?}"
+                );
+                assert!(
+                    layout.scale > 0.0 && layout.end.is_some(),
+                    "{height}: {layout:?}"
+                );
+            }
+        }
     }
 
     #[test]

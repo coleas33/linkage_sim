@@ -49,6 +49,25 @@ pub(crate) fn sized_frame_at(
     })
 }
 
+/// One headless frame of `draw` in a child ui whose max rect is `region`, on a screen of
+/// `size`, as the centre region lays a view out above the Equation panel but without its clip:
+/// what the view lays out past the region's foot shows in the rect the child used. Returns what
+/// egui painted and that rect.
+pub(crate) fn region_frame(
+    ctx: &egui::Context,
+    size: egui::Vec2,
+    region: egui::Rect,
+    mut draw: impl FnMut(&mut egui::Ui),
+) -> (egui::FullOutput, egui::Rect) {
+    let mut used = egui::Rect::NOTHING;
+    let output = sized_frame(ctx, size, Vec::new(), |ui| {
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(region));
+        draw(&mut child);
+        used = child.min_rect();
+    });
+    (output, used)
+}
+
 /// A key event with no modifiers: a press, or (`pressed` false) its release.
 pub(crate) fn key_event(key: egui::Key, pressed: bool) -> egui::Event {
     egui::Event::Key {
