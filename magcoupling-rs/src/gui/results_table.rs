@@ -1,24 +1,31 @@
 //! The results table (spec M4 "Layout": "every computed value with label, unit, cell;
 //! searchable; CSV and JSON export").
 //!
-//! Every result, scalars and table rows, in the Python schema order ([`result_rows`]). The
-//! layout of the results does not depend on the inputs, so the rows (path, metadata, cell,
-//! marker, search text) are built once; a frame reads only the values of the rows on screen.
-//! The exports write every result at full precision: CSV for spreadsheets, JSON with the
-//! design that produced it. JSON has no infinity or NaN, so both write a non-finite number as
-//! `+inf`, `-inf` or `NaN` (decision M41-15).
+//! Every result, scalars and table rows. The layout of the results does not depend on the
+//! inputs, so the rows (path, metadata, cell, marker, search text) are built once in the Python
+//! schema order ([`result_rows`]); a frame reads only the values of the rows on screen. The
+//! table shows them by group (decision O-6, [`crate::gui::result_groups`]: the headline open,
+//! every other group a heading that opens it) or in the engine's order ([`ResultOrder`]); a
+//! check's row carries the dashboard's badge, and the failing filter lists the failing checks
+//! alone, the red first (decision O-7). The exports write every result in schema order at full
+//! precision: CSV for spreadsheets, JSON with the design that produced it. JSON has no infinity
+//! or NaN, so both write a non-finite number as `+inf`, `-inf` or `NaN` (decision M41-15).
 
+use std::collections::{BTreeSet, HashMap};
 use std::sync::OnceLock;
 
 use serde_json::{Map, Value as Json};
 
 use crate::engine::meta::{ResultSet, Value, result_rows};
 use crate::gui::corrections::{CorrectionIndex, marker_text};
-use crate::gui::dashboard::{ResultInfo, hover_text, result_info};
+use crate::gui::dashboard::{
+    CHECKS, Level, ResultInfo, badge, check_level, failing_checks, hover_text, result_info,
+};
 use crate::gui::format::{
     format_value, non_finite_text, search_haystack, search_needle, with_unit,
 };
 use crate::gui::readouts::Readouts;
+use crate::gui::result_groups::{OTHER_RESULTS, result_groups};
 use crate::gui::session::{Design, design_json, json_value};
 use crate::{DesignInputs, DesignResults, compute_all};
 
@@ -41,6 +48,22 @@ pub const EXPORT_JSON: &str = "Export JSON";
 
 /// The search box's hint.
 pub const SEARCH_HINT: &str = "Search label, path or cell";
+
+/// The failing filter's checkbox (decision O-7).
+pub const FAILING_ONLY: &str = "Failing checks only";
+
+/// What the table says when the failing filter finds no check to show.
+pub const NOTHING_FAILS: &str = "No check fails or asks for a look.";
+
+/// What the table says when the search matches no result.
+pub const NO_RESULT: &str = "No result matches the search.";
+
+/// A group heading's hover text while the search holds more than blanks: every group is open
+/// then, and a click on a heading does nothing.
+pub const CLEAR_TO_CLOSE: &str = "Clear the search to close a group";
+
+/// How far a package group's heading sits in under the "Other results" heading [points].
+pub const OTHER_INDENT: f32 = 12.0;
 
 /// The value, cell and marker columns' widths [points], M4-1's; the label column takes the rest.
 pub const VALUE_WIDTH: f32 = 130.0;
@@ -71,6 +94,8 @@ pub struct TableEntry {
     pub info: &'static ResultInfo,
     /// The corrections' marker text, empty for none.
     pub marker: String,
+    /// One of the design's checks ([`CHECKS`]): its row carries a badge.
+    pub check: bool,
     /// Label, path and cell, lowercase: what the search matches.
     haystack: String,
 }
@@ -86,6 +111,7 @@ pub fn table_entries() -> &'static [TableEntry] {
                 let haystack = search_haystack(info.meta.label, &row.path, info.cell.as_deref());
                 TableEntry {
                     marker: marker_text(CorrectionIndex::get().marks(info.cell.as_deref())),
+                    check: CHECKS.contains(&row.path.as_str()),
                     path: row.path,
                     info,
                     haystack,
@@ -93,6 +119,117 @@ pub fn table_entries() -> &'static [TableEntry] {
             })
             .collect()
     })
+}
+
+/// The index of the row of the result at `path` in [`table_entries`].
+pub fn entry_index(path: &str) -> Option<usize> {
+    static INDEX: OnceLock<HashMap<&'static str, usize>> = OnceLock::new();
+    INDEX
+        .get_or_init(|| {
+            table_entries()
+                .iter()
+                .enumerate()
+                .map(|(index, entry)| (entry.path.as_str(), index))
+                .collect()
+        })
+        .get(path)
+        .copied()
+}
+
+/// How the table orders its rows (decision O-6).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ResultOrder {
+    /// By group: the headline, the physics chains, then the other results by package.
+    #[default]
+    Grouped,
+    /// The engine's (Python's schema) order, as the exports write it.
+    Engine,
+}
+
+impl ResultOrder {
+    /// Both orders, in toggle order.
+    pub const ALL: [ResultOrder; 2] = [ResultOrder::Grouped, ResultOrder::Engine];
+
+    /// The toggle's text.
+    pub const fn label(self) -> &'static str {
+        match self {
+            ResultOrder::Grouped => "By physics chain",
+            ResultOrder::Engine => "Engine order",
+        }
+    }
+}
+
+/// One line the table draws, all of one height.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Line {
+    /// The heading over the package groups.
+    OtherResults,
+    /// A group's heading: the group (an index into [`result_groups`]), the rows of it the
+    /// filters let through, and whether it is open (its rows follow).
+    Group {
+        group: usize,
+        shown: usize,
+        open: bool,
+    },
+    /// A result's row (an index into [`table_entries`]).
+    Row(usize),
+}
+
+/// The lines of the table: the rows of `matches` (the search's, ascending). With `failing`
+/// (the failing filter on: the failing checks' rows, the red first) those of them the search
+/// matches, flat; else in `order`: flat in the engine's, or by group, each group with a match
+/// under its heading (the package groups under "Other results"), its rows when `open` says so.
+pub fn table_lines(
+    matches: &[usize],
+    order: ResultOrder,
+    failing: Option<&[usize]>,
+    open: &dyn Fn(usize) -> bool,
+) -> Vec<Line> {
+    let mut admitted = vec![false; table_entries().len()];
+    for &index in matches {
+        admitted[index] = true;
+    }
+    if let Some(failing) = failing {
+        return failing
+            .iter()
+            .copied()
+            .filter(|&index| admitted[index])
+            .map(Line::Row)
+            .collect();
+    }
+    match order {
+        ResultOrder::Engine => matches.iter().copied().map(Line::Row).collect(),
+        ResultOrder::Grouped => {
+            let mut lines = Vec::new();
+            // The "Other results" heading, before the first package group with a match.
+            let mut other_started = false;
+            for (group, entry) in result_groups().iter().enumerate() {
+                let rows: Vec<usize> = entry
+                    .rows
+                    .iter()
+                    .copied()
+                    .filter(|&index| admitted[index])
+                    .collect();
+                if rows.is_empty() {
+                    continue;
+                }
+                if entry.other && !other_started {
+                    lines.push(Line::OtherResults);
+                    other_started = true;
+                }
+                let open = open(group);
+                lines.push(Line::Group {
+                    group,
+                    shown: rows.len(),
+                    open,
+                });
+                if open {
+                    lines.extend(rows.into_iter().map(Line::Row));
+                }
+            }
+            lines
+        }
+    }
 }
 
 /// The indices of the rows whose label, path or cell contains `query`, ignoring case and the
@@ -177,13 +314,20 @@ pub fn results_json(design: &Design, results: &DesignResults) -> String {
     text
 }
 
-/// The table's state: the search text and the rows it matches.
+/// The table's state: the search text and the rows it matches, the order, the failing filter
+/// and the groups opened or closed.
 #[derive(Clone, Debug, Default)]
 pub struct ResultsTable {
     query: String,
     /// The rows matching `matched_query`; `None` until the first frame.
     matches: Option<Vec<usize>>,
     matched_query: String,
+    order: ResultOrder,
+    /// The failing checks alone (decision O-7).
+    failing_only: bool,
+    /// The groups (indices into [`result_groups`]) the user opened or closed: each starts as
+    /// [`ResultsTable::opens_by_default`] says.
+    toggled: BTreeSet<usize>,
 }
 
 /// What the user asked of the table this frame.
@@ -199,9 +343,36 @@ impl ResultsTable {
         &self.query
     }
 
-    /// Draws the table: the search box and the export buttons, then the rows on screen (the
-    /// end-effect banner is the centre region's, over every view: decision M42-1), each row a
-    /// readout (`readouts`). Returns an export asked for.
+    /// Whether a group starts open: the headline does, every other group starts closed.
+    pub fn opens_by_default(group: usize) -> bool {
+        group == 0
+    }
+
+    /// Whether a group is open: as it starts, unless the user toggled it, and every group while
+    /// the search holds more than blanks (its matches are what the user is after).
+    pub fn is_open(&self, group: usize) -> bool {
+        self.is_open_while(group, self.searching())
+    }
+
+    /// Whether the search holds more than blanks.
+    fn searching(&self) -> bool {
+        !search_needle(&self.query).is_empty()
+    }
+
+    /// [`ResultsTable::is_open`] given [`ResultsTable::searching`], which a frame works out
+    /// once for every group.
+    fn is_open_while(&self, group: usize, searching: bool) -> bool {
+        let default = Self::opens_by_default(group);
+        let toggled = self.toggled.contains(&group);
+        let chosen = if toggled { !default } else { default };
+        chosen || searching
+    }
+
+    /// Draws the table: the search box, the order toggle, the failing filter, the count and the
+    /// export buttons, then the lines on screen (the end-effect banner is the centre region's,
+    /// over every view: decision M42-1), each row a readout (`readouts`), each group heading a
+    /// button that opens or closes it (not while the search holds more than blanks: every group
+    /// is open then), with the worst level of its checks. Returns an export asked for.
     pub fn ui(
         &mut self,
         ui: &mut egui::Ui,
@@ -210,17 +381,39 @@ impl ResultsTable {
     ) -> Option<TableAction> {
         let entries = table_entries();
         let mut action = None;
+        // The failing checks' rows, the red first, when the filter is on (after its checkbox).
+        let mut failing: Option<Vec<usize>> = None;
         ui.horizontal_wrapped(|ui| {
             ui.add(
                 egui::TextEdit::singleline(&mut self.query)
                     .hint_text(SEARCH_HINT)
                     .desired_width(260.0),
             );
+            for order in ResultOrder::ALL {
+                ui.selectable_value(&mut self.order, order, order.label());
+            }
+            ui.checkbox(&mut self.failing_only, FAILING_ONLY)
+                .on_hover_text(
+                    "The checks that fail (red) or ask for a look (amber), the red first",
+                );
             if self.matches.is_none() || self.query != self.matched_query {
                 self.matches = Some(search(entries, &self.query));
                 self.matched_query = self.query.clone();
             }
-            let shown = self.matches.as_ref().map_or(0, Vec::len);
+            let matches = self.matches.as_deref().unwrap_or(&[]);
+            failing = self.failing_only.then(|| {
+                failing_checks(results)
+                    .iter()
+                    .filter_map(|(path, _)| entry_index(path))
+                    .collect()
+            });
+            let shown = match &failing {
+                Some(rows) => rows
+                    .iter()
+                    .filter(|index| matches.binary_search(index).is_ok())
+                    .count(),
+                None => matches.len(),
+            };
             ui.weak(format!("{shown} of {} results", entries.len()));
             if ui.button(EXPORT_CSV).clicked() {
                 action = Some(TableAction::ExportCsv);
@@ -231,18 +424,145 @@ impl ResultsTable {
         });
         ui.separator();
         let matches = self.matches.as_deref().unwrap_or(&[]);
+        let searching = self.searching();
+        let lines = table_lines(matches, self.order, failing.as_deref(), &|group| {
+            self.is_open_while(group, searching)
+        });
+        if lines.is_empty() {
+            // Nothing fails only if no search narrows the failing checks.
+            ui.weak(match (self.failing_only, searching) {
+                (true, false) => NOTHING_FAILS,
+                _ => NO_RESULT,
+            });
+        }
         let row_height = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
-        let widths = column_widths(ui.available_width(), ui.spacing().item_spacing.x);
+        let spacing = ui.spacing().item_spacing.x;
+        let widths = column_widths(ui.available_width(), spacing);
+        let row_width = widths.iter().sum::<f32>() + 3.0 * spacing;
+        let mut clicked = None;
         egui::ScrollArea::both()
             .id_salt("magcoupling_results_scroll")
             .auto_shrink([false, false])
-            .show_rows(ui, row_height, matches.len(), |ui, range| {
-                for &index in &matches[range] {
-                    row_ui(ui, &entries[index], results, row_height, widths, readouts);
+            .show_rows(ui, row_height, lines.len(), |ui, range| {
+                for line in &lines[range] {
+                    match *line {
+                        Line::OtherResults => {
+                            let (rect, _) = ui.allocate_exact_size(
+                                egui::vec2(row_width, row_height),
+                                egui::Sense::hover(),
+                            );
+                            ui.painter().text(
+                                rect.left_center(),
+                                egui::Align2::LEFT_CENTER,
+                                OTHER_RESULTS,
+                                egui::TextStyle::Body.resolve(ui.style()),
+                                ui.visuals().strong_text_color(),
+                            );
+                        }
+                        Line::Group { group, shown, open } => {
+                            let heading = &result_groups()[group];
+                            let text = format!("{} ({shown})", heading.label);
+                            // The worst level of the group's checks: a closed group shows that
+                            // one of them fails.
+                            let level = heading
+                                .rows
+                                .iter()
+                                .map(|&index| &entries[index])
+                                .filter(|entry| entry.check)
+                                .filter_map(|entry| check_level(results, &entry.path))
+                                .max();
+                            let line = HeadingLine {
+                                text: &text,
+                                open,
+                                level,
+                                indent: if heading.other { OTHER_INDENT } else { 0.0 },
+                                searching,
+                            };
+                            if group_heading_ui(ui, &line, egui::vec2(row_width, row_height)) {
+                                clicked = Some(group);
+                            }
+                        }
+                        Line::Row(index) => {
+                            let entry = &entries[index];
+                            let level = entry
+                                .check
+                                .then(|| check_level(results, &entry.path))
+                                .flatten();
+                            row_ui(ui, entry, results, level, row_height, widths, readouts);
+                        }
+                    }
                 }
             });
+        // A click while searching would change nothing on screen: it is ignored, so a group is
+        // as the user left it once the search is cleared.
+        if let Some(group) = clicked
+            && !searching
+            && !self.toggled.remove(&group)
+        {
+            self.toggled.insert(group);
+        }
         action
     }
+}
+
+/// What a group's heading line shows.
+struct HeadingLine<'a> {
+    /// The group's label and its count.
+    text: &'a str,
+    open: bool,
+    /// The worst level of the group's checks, a badge after the text; `None` for no check.
+    level: Option<Level>,
+    /// Points in from the left (a package group's, under "Other results").
+    indent: f32,
+    /// The search holds more than blanks: every group is open, and a click does nothing.
+    searching: bool,
+}
+
+/// A group's heading, `size` points: the open or closed triangle of egui's collapsing header,
+/// then the text and the badge of `line`. Returns whether it was clicked.
+fn group_heading_ui(ui: &mut egui::Ui, line: &HeadingLine, size: egui::Vec2) -> bool {
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    // The triangle where egui's collapsing header puts it: its inner icon square, centred in
+    // the indent.
+    let indent_width = ui.spacing().indent;
+    let (mut icon, _) = ui.spacing().icon_rectangles(rect);
+    icon.set_center(egui::pos2(
+        rect.left() + line.indent + indent_width / 2.0,
+        rect.center().y,
+    ));
+    let openness = if line.open { 1.0 } else { 0.0 };
+    egui::collapsing_header::paint_default_icon(
+        ui,
+        openness,
+        &response.clone().with_new_rect(icon),
+    );
+    let text = ui.painter().text(
+        egui::pos2(rect.left() + line.indent + indent_width, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        line.text,
+        egui::TextStyle::Body.resolve(ui.style()),
+        ui.visuals().strong_text_color(),
+    );
+    if line.level.is_some() {
+        let at = egui::pos2(
+            text.right() + ui.spacing().item_spacing.x,
+            rect.center().y - 6.0,
+        );
+        // In a child Ui: the badge takes no room from the table's lines, all of one height.
+        let mut badge_ui = ui.new_child(
+            egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(at, egui::vec2(12.0, 12.0))),
+        );
+        badge(&mut badge_ui, line.level);
+    }
+    response
+        .on_hover_text(if line.searching {
+            CLEAR_TO_CLOSE
+        } else if line.open {
+            "Close the group"
+        } else {
+            "Open the group"
+        })
+        .clicked()
 }
 
 /// A row's hover text: the hover hook's ([`hover_text`]) with the exact value.
@@ -254,13 +574,15 @@ pub fn row_tooltip(entry: &TableEntry, value: &Value) -> String {
     tooltip
 }
 
-/// One table row: label, value with unit, workbook cell, marker, in columns `widths` wide
-/// ([`column_widths`]; the path is in the hover text, which is built only while the row is
-/// hovered). The whole row is a readout: hover it for its equation, click it to open it.
+/// One table row: label, value with unit (after the badge of a check's `level`), workbook
+/// cell, marker, in columns `widths` wide ([`column_widths`]; the path is in the hover text,
+/// which is built only while the row is hovered). The whole row is a readout: hover it for its
+/// equation, click it to open it.
 fn row_ui(
     ui: &mut egui::Ui,
     entry: &TableEntry,
     results: &DesignResults,
+    level: Option<Level>,
     height: f32,
     widths: [f32; 4],
     readouts: &mut Readouts,
@@ -268,26 +590,31 @@ fn row_ui(
     let value = results.get(&entry.path).unwrap_or(Value::None);
     let row = ui.horizontal(|ui| {
         // Left-aligned columns of fixed width (add_sized would centre the text).
-        let cell = |ui: &mut egui::Ui, width: f32, text: &str| {
+        let cell = |ui: &mut egui::Ui, width: f32, text: &str, level: Option<Level>| {
             let layout = egui::Layout::left_to_right(egui::Align::Center);
             ui.allocate_ui_with_layout(egui::vec2(width, height), layout, |ui| {
                 ui.set_min_width(width);
+                if level.is_some() {
+                    badge(ui, level);
+                }
                 ui.add(egui::Label::new(text).truncate());
             });
         };
         let [label, number, workbook, marker] = widths;
-        cell(ui, label, entry.info.meta.label);
+        cell(ui, label, entry.info.meta.label, None);
         cell(
             ui,
             number,
             &with_unit(format_value(&value), entry.info.meta.unit),
+            level,
         );
         cell(
             ui,
             workbook,
             entry.info.cell.as_deref().unwrap_or("Rust-only"),
+            None,
         );
-        cell(ui, marker, &entry.marker);
+        cell(ui, marker, &entry.marker, None);
     });
     readouts.show_over(ui, row.response.rect, &entry.path, || {
         row_tooltip(entry, &value)
@@ -504,5 +831,145 @@ mod tests {
             .find(|r| r["path"] == "housing.space_claim_check")
             .unwrap();
         assert_eq!(claim["cell"], Json::Null);
+    }
+
+    /// The row indices of `lines`, headings left out.
+    fn rows_of(lines: &[Line]) -> Vec<usize> {
+        lines
+            .iter()
+            .filter_map(|line| match line {
+                Line::Row(index) => Some(*index),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_lines_group_the_rows_with_only_the_headline_open_at_first() {
+        let entries = table_entries();
+        let groups = result_groups();
+        let all: Vec<usize> = (0..entries.len()).collect();
+        let lines = table_lines(
+            &all,
+            ResultOrder::Grouped,
+            None,
+            &ResultsTable::opens_by_default,
+        );
+        // The headline's heading and its rows, then every other group's closed heading, the
+        // package groups under "Other results".
+        let headline = groups[0].rows.len();
+        assert_eq!(
+            lines[0],
+            Line::Group {
+                group: 0,
+                shown: headline,
+                open: true
+            }
+        );
+        assert_eq!(rows_of(&lines[1..=headline]), groups[0].rows);
+        let mut want = Vec::new();
+        for (group, entry) in groups.iter().enumerate().skip(1) {
+            if entry.other && !want.contains(&Line::OtherResults) {
+                want.push(Line::OtherResults);
+            }
+            want.push(Line::Group {
+                group,
+                shown: entry.rows.len(),
+                open: false,
+            });
+        }
+        assert_eq!(lines[headline + 1..], want[..]);
+        // Every group open: every row once.
+        let lines = table_lines(&all, ResultOrder::Grouped, None, &|_| true);
+        let mut rows = rows_of(&lines);
+        assert_eq!(rows.len(), entries.len());
+        rows.sort_unstable();
+        assert_eq!(rows, all);
+    }
+
+    #[test]
+    fn a_search_shows_only_the_groups_it_matches() {
+        let entries = table_entries();
+        let groups = result_groups();
+        let pullout = entry_index("model.pullout_Nm").unwrap();
+        assert_eq!(entries[pullout].path, "model.pullout_Nm");
+        let matches = search(entries, "calculator!c93");
+        let lines = table_lines(&matches, ResultOrder::Grouped, None, &|_| true);
+        assert_eq!(
+            lines,
+            [
+                Line::Group {
+                    group: 0,
+                    shown: 1,
+                    open: true
+                },
+                Line::Row(pullout)
+            ]
+        );
+        // A sweep row's columns: the Other results heading, the gap sweep's heading, the rows.
+        let matches = search(entries, "gap_sweep[3].");
+        let lines = table_lines(&matches, ResultOrder::Grouped, None, &|_| true);
+        let gap_sweep = groups.iter().position(|g| g.id == "gap_sweep").unwrap();
+        assert_eq!(lines[0], Line::OtherResults);
+        assert_eq!(
+            lines[1],
+            Line::Group {
+                group: gap_sweep,
+                shown: matches.len(),
+                open: true
+            }
+        );
+        assert_eq!(rows_of(&lines), matches);
+        assert!(table_lines(&[], ResultOrder::Grouped, None, &|_| true).is_empty());
+        // The search opens every group it matches, whatever the user toggled.
+        let mut table = ResultsTable::default();
+        assert!(table.is_open(0) && !table.is_open(1));
+        table.toggled.insert(0);
+        assert!(!table.is_open(0));
+        table.query = " f_end ".to_owned();
+        assert!(table.is_open(0) && table.is_open(1));
+        assert!(!ResultsTable::opens_by_default(1));
+    }
+
+    #[test]
+    fn the_engine_order_and_the_failing_filter_are_flat() {
+        let entries = table_entries();
+        let all: Vec<usize> = (0..entries.len()).collect();
+        let lines = table_lines(&all, ResultOrder::Engine, None, &|_| false);
+        assert_eq!(rows_of(&lines), all);
+        assert_eq!(lines.len(), all.len(), "no headings");
+        // The failing filter: exactly the failing checks, the red first, in either order.
+        let mut inputs = DesignInputs::default();
+        inputs.coupling.magnets.part_inner.clear();
+        inputs.coupling.magnets.part_outer.clear();
+        let results = compute_all(&inputs);
+        let failing: Vec<usize> = failing_checks(&results)
+            .iter()
+            .map(|(path, _)| entry_index(path).unwrap())
+            .collect();
+        assert_eq!(failing.len(), 6);
+        for order in ResultOrder::ALL {
+            let lines = table_lines(&all, order, Some(&failing), &|_| true);
+            assert_eq!(
+                lines,
+                failing.iter().map(|&i| Line::Row(i)).collect::<Vec<_>>()
+            );
+        }
+        // And only those the search matches: the two amber rating checks.
+        let matches = search(entries, "temperature check");
+        let lines = table_lines(&matches, ResultOrder::Grouped, Some(&failing), &|_| true);
+        assert_eq!(
+            lines,
+            [
+                Line::Row(entry_index("model.inner_temp_check").unwrap()),
+                Line::Row(entry_index("model.outer_temp_check").unwrap())
+            ]
+        );
+        // Each check's row knows it is one.
+        for check in CHECKS {
+            assert!(entries[entry_index(check).unwrap()].check, "{check}");
+        }
+        assert!(!entries[entry_index("model.pullout_Nm").unwrap()].check);
+        assert_eq!(entry_index("no.such.result"), None);
     }
 }

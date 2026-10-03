@@ -1888,8 +1888,10 @@ mod tests {
         let output = harness.click_text(CentreView::Results.label());
         let total = entries.len();
         assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
-        // The first rows are on screen (they show their cells), the last is far below.
-        assert_eq!(count(&output, &first), 1, "{first}");
+        // The headline's rows are on screen (the pull-out shows its cell); the first and the
+        // last rows of the schema are in closed groups.
+        assert_eq!(count(&output, "Calculator!C93"), 1);
+        assert_eq!(count(&output, &first), 0, "{first}");
         assert_eq!(count(&output, &last), 0, "{last}");
         harness.click_text(crate::gui::results_table::SEARCH_HINT);
         harness.frame(vec![egui::Event::Text(last.to_lowercase())]);
@@ -1898,6 +1900,185 @@ mod tests {
         assert_eq!(count(&output, &last), 1);
         assert_eq!(count(&output, &first), 0);
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn a_group_heading_opens_its_rows_and_the_engine_order_lists_them_without_headings() {
+        use crate::gui::result_groups::{OTHER_RESULTS, result_groups};
+        use crate::gui::results_table::ResultOrder;
+        let groups = result_groups();
+        let heading = |g: usize| format!("{} ({})", groups[g].label, groups[g].rows.len());
+        // Tall enough to draw the headline and the whole torque chain.
+        let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
+        harness.click_text(CentreView::Results.label());
+        let output = harness.frame(Vec::new());
+        for g in 0..groups.len() {
+            assert_eq!(count(&output, &heading(g)), 1, "{}", heading(g));
+        }
+        assert_eq!(count(&output, OTHER_RESULTS), 1);
+        // A heading shows the worst level of its group's checks after its text: the defaults
+        // fail the hot minimum on the headline and the cup ring check in the closed coupling
+        // model group, so both draw a red badge; the mass has no check and draws none.
+        let visuals = harness.ctx.style().visuals.clone();
+        let badges_after = |output: &egui::FullOutput, text: &str, level: Level| {
+            let text = text_rect(output, text).unwrap();
+            crate::gui::test_support::flat_shapes(output)
+                .into_iter()
+                .filter(|shape| {
+                    matches!(shape, egui::Shape::Circle(c)
+                        if c.fill == level.color(&visuals)
+                            && c.center.x > text.right()
+                            && c.center.x < text.right() + 30.0
+                            && (c.center.y - text.center().y).abs() < text.height())
+                })
+                .count()
+        };
+        let model = groups
+            .iter()
+            .position(|g| g.other && g.id == "model")
+            .unwrap();
+        let mass = groups
+            .iter()
+            .position(|g| !g.other && g.id == "mass")
+            .unwrap();
+        assert_eq!(badges_after(&output, &heading(0), Level::Bad), 1);
+        assert_eq!(badges_after(&output, &heading(model), Level::Bad), 1);
+        for level in [Level::Good, Level::Caution, Level::Bad] {
+            assert_eq!(badges_after(&output, &heading(mass), level), 0);
+        }
+        // The torque chain starts closed: its end-effect factor (Calculator!C92) is not drawn
+        // until its heading is clicked, and is gone again after a second click.
+        assert_eq!(groups[1].id, "torque");
+        assert_eq!(count(&output, "Calculator!C92"), 0);
+        harness.click_text(&heading(1));
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Calculator!C92"), 1);
+        harness.click_text(&heading(1));
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Calculator!C92"), 0);
+        // The engine order: the schema's first row first, no headings.
+        harness.click_text(ResultOrder::Engine.label());
+        let output = harness.frame(Vec::new());
+        let first = crate::gui::results_table::table_entries()[0]
+            .info
+            .cell
+            .clone()
+            .unwrap();
+        assert_eq!(count(&output, &first), 1);
+        assert_eq!(count(&output, &heading(0)), 0);
+        assert_eq!(count(&output, OTHER_RESULTS), 0);
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn a_heading_click_while_searching_leaves_the_group_as_it_was() {
+        use crate::gui::result_groups::result_groups;
+        use crate::gui::results_table::{CLEAR_TO_CLOSE, SEARCH_HINT, search, table_entries};
+        use crate::gui::test_support::select_all;
+        // A search opens every group it matches, so a click on a heading would change nothing
+        // on screen: it is ignored, and once the search is cleared the torque chain is closed,
+        // as it started (the click did not toggle it behind the search).
+        let entries = table_entries();
+        let torque = &result_groups()[1];
+        assert_eq!(torque.id, "torque");
+        let matches = search(entries, "f_end");
+        let shown = torque.rows.iter().filter(|i| matches.contains(i)).count();
+        let heading = format!("{} ({shown})", torque.label);
+        let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
+        tooltips_at_once(&harness);
+        harness.click_text(CentreView::Results.label());
+        harness.click_text(SEARCH_HINT);
+        harness.frame(vec![egui::Event::Text("f_end".to_owned())]);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Calculator!C92"), 1, "the search opens it");
+        let output = harness.click_text(&heading);
+        let at = text_rect(&output, &heading).unwrap().center();
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Calculator!C92"), 1, "still open");
+        // Its hover text says why (egui shows no tooltip until the pointer moves after a click).
+        harness.frame_after(
+            0.5,
+            vec![egui::Event::PointerMoved(at + egui::vec2(2.0, 0.0))],
+        );
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, CLEAR_TO_CLOSE), 1);
+        // Clear the search: the torque chain is closed again.
+        harness.click_text("f_end");
+        harness.frame(select_all());
+        harness.frame(key_tap(egui::Key::Backspace));
+        let output = harness.frame(Vec::new());
+        let total = entries.len();
+        assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
+        assert_eq!(count(&output, &format!("{} (49)", torque.label)), 1);
+        assert_eq!(count(&output, "Calculator!C92"), 0);
+    }
+
+    #[test]
+    fn the_failing_filter_shows_exactly_the_failing_checks_with_their_badges() {
+        use crate::gui::dashboard::{CHECKS, failing_checks};
+        use crate::gui::results_table::{
+            FAILING_ONLY, NO_RESULT, NOTHING_FAILS, SEARCH_HINT, table_entries,
+        };
+        // Manual magnets: the defaults' four red checks and two amber rating checks.
+        let mut harness = Harness::new();
+        harness.panel.inputs.coupling.magnets.part_inner.clear();
+        harness.panel.inputs.coupling.magnets.part_outer.clear();
+        harness.click_text(CentreView::Results.label());
+        harness.click_text(FAILING_ONLY);
+        let output = harness.frame(Vec::new());
+        let failing = failing_checks(harness.panel.results());
+        assert_eq!(failing.len(), 6);
+        let total = table_entries().len();
+        assert_eq!(count(&output, &format!("6 of {total} results")), 1);
+        // In the table, between the inputs and the dashboard: each failing check's label, and
+        // no passing check's (two checks may share a label: "Verdict").
+        let centre =
+            |r: &egui::Rect| r.left() > INPUTS_WIDTH && r.right() < SCREEN.x - DASHBOARD_WIDTH;
+        let label = |path: &str| result_info(path).unwrap().meta.label;
+        for check in CHECKS {
+            let drawn = text_rects(&output, label(check))
+                .iter()
+                .filter(|r| centre(r))
+                .count();
+            let want = failing
+                .iter()
+                .filter(|(path, _)| label(path) == label(check))
+                .count();
+            assert_eq!(drawn, want, "{check}");
+        }
+        // Four red badges and two amber in the table, in the dashboard's colours: every badge
+        // drawn but the dashboard's own.
+        let visuals = harness.ctx.style().visuals.clone();
+        let lines = crate::gui::dashboard::dashboard_lines(harness.panel.results());
+        let table_badges = |level: Level| {
+            let drawn = crate::gui::test_support::flat_shapes(&output)
+                .into_iter()
+                .filter(|shape| matches!(shape, egui::Shape::Circle(c) if c.fill == level.color(&visuals)))
+                .count();
+            drawn
+                - lines
+                    .iter()
+                    .filter(|line| line.level == Some(level))
+                    .count()
+        };
+        assert_eq!(
+            (table_badges(Level::Bad), table_badges(Level::Caution)),
+            (4, 2)
+        );
+        // Off again: the groups come back.
+        harness.click_text(FAILING_ONLY);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
+        assert_eq!(count(&output, crate::gui::result_groups::OTHER_RESULTS), 1);
+        // On, with a search no failing check matches: the table says the search matches
+        // nothing, not that no check fails.
+        harness.click_text(FAILING_ONLY);
+        harness.click_text(SEARCH_HINT);
+        harness.frame(vec![egui::Event::Text("gearbox".to_owned())]);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &format!("0 of {total} results")), 1);
+        assert_eq!(count(&output, NO_RESULT), 1);
+        assert_eq!(count(&output, NOTHING_FAILS), 0);
     }
 
     #[test]
@@ -2422,6 +2603,9 @@ mod tests {
         }
         texts.push(ADVANCED_HEADING.to_owned());
         texts.push(FILTER_HINT.to_owned());
+        texts.push(crate::gui::results_table::NOTHING_FAILS.to_owned());
+        texts.push(crate::gui::results_table::NO_RESULT.to_owned());
+        texts.push(crate::gui::results_table::CLEAR_TO_CLOSE.to_owned());
         harness.panel.input_filter = "a".to_owned();
         texts.extend(drawn_texts(&harness.frame(Vec::new())));
         harness.panel.input_filter.clear();
