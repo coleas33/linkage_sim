@@ -26,6 +26,10 @@ pub const OUTSIDE_RANGE_NOTE: &str = "outside the slider range";
 /// The text of a blank optional input.
 pub const BLANK_TEXT: &str = "blank";
 
+/// The line the label's hover text ends with: a click on the label traces the input
+/// (decision O-8).
+pub const TRACE_HINT: &str = "Click the label to trace the explained results it drives";
+
 /// What the user asked of an input row this frame.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RowEdit {
@@ -41,6 +45,8 @@ pub struct RowOutput {
     pub edit: Option<RowEdit>,
     /// The row's main widget (the slider, drop-down, checkbox or text field).
     pub widget: egui::Response,
+    /// The label was clicked: trace the input (decision O-8).
+    pub label_clicked: bool,
 }
 
 /// A slider over `value` set up from the input's metadata: its range (logarithmic when
@@ -97,12 +103,16 @@ pub fn input_row(
     let tooltip = input_tooltip(entry);
     let changed = *current != entry.default;
     let mut edit = None;
+    let mut label_clicked = false;
     ui.push_id(&entry.path, |ui| {
         ui.horizontal(|ui| {
             let dot = if changed { CHANGED_DOT } else { " " };
             ui.colored_label(ui.visuals().selection.stroke.color, dot)
                 .on_hover_text("Changed from the default");
-            ui.label(meta.label).on_hover_text(&tooltip);
+            label_clicked = ui
+                .add(egui::Label::new(meta.label).sense(egui::Sense::click()))
+                .on_hover_text(format!("{tooltip}\n{TRACE_HINT}"))
+                .clicked();
             if outside_range(meta.range, current) {
                 ui.colored_label(ui.visuals().warn_fg_color, OUTSIDE_RANGE_NOTE)
                     .on_hover_text(
@@ -129,7 +139,11 @@ pub fn input_row(
         if let Some(hint) = text_hint(&entry.path, current_text(current)) {
             ui.weak(hint);
         }
-        RowOutput { edit, widget }
+        RowOutput {
+            edit,
+            widget,
+            label_clicked,
+        }
     })
     .inner
 }

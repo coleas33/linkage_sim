@@ -27,6 +27,7 @@ use crate::gui::format::{
 use crate::gui::readouts::Readouts;
 use crate::gui::result_groups::{OTHER_RESULTS, result_groups};
 use crate::gui::session::{Design, design_json, json_value};
+use crate::gui::trace::{Trace, TraceKind};
 use crate::{DesignInputs, DesignResults, compute_all};
 
 /// The `format` of a results export.
@@ -51,6 +52,14 @@ pub const SEARCH_HINT: &str = "Search label, path or cell";
 
 /// The failing filter's checkbox (decision O-7).
 pub const FAILING_ONLY: &str = "Failing checks only";
+
+/// The trace filter's checkbox (decision O-8): the rows an input's trace marks alone.
+pub const TRACED_ONLY: &str = "Traced only";
+
+/// What the table says when the trace filter leaves no row: the trace reaches only results with
+/// an equation record, and an input may reach none of them.
+pub const NOTHING_TRACED: &str =
+    "The trace marks no result shown here (only results with an equation record are traced).";
 
 /// What the table says when the failing filter finds no check to show.
 pub const NOTHING_FAILS: &str = "No check fails or asks for a look.";
@@ -325,6 +334,8 @@ pub struct ResultsTable {
     order: ResultOrder,
     /// The failing checks alone (decision O-7).
     failing_only: bool,
+    /// The rows the trace marks alone, while an input is traced (decision O-8).
+    traced_only: bool,
     /// The groups (indices into [`result_groups`]) the user opened or closed: each starts as
     /// [`ResultsTable::opens_by_default`] says.
     toggled: BTreeSet<usize>,
@@ -368,21 +379,31 @@ impl ResultsTable {
         chosen || searching
     }
 
-    /// Draws the table: the search box, the order toggle, the failing filter, the count and the
-    /// export buttons, then the lines on screen (the end-effect banner is the centre region's,
-    /// over every view: decision M42-1), each row a readout (`readouts`), each group heading a
-    /// button that opens or closes it (not while the search holds more than blanks: every group
-    /// is open then), with the worst level of its checks. Returns an export asked for.
+    /// Draws the table: the search box, the order toggle, the failing and trace filters, the
+    /// count and the export buttons, then the lines on screen (the end-effect banner is the
+    /// centre region's, over every view: decision M42-1), each row a readout (`readouts`, which
+    /// frame the rows `trace` marks), each group heading a button that opens or closes it (not
+    /// while the search holds more than blanks: every group is open then), with the worst level
+    /// of its checks and the rows the trace marks in it. Returns an export asked for.
     pub fn ui(
         &mut self,
         ui: &mut egui::Ui,
         results: &DesignResults,
+        trace: Option<&Trace>,
         readouts: &mut Readouts,
     ) -> Option<TableAction> {
+        // The trace filter keeps the results an input's trace marks: it goes off with the trace,
+        // and a result's trace (which marks inputs) cannot turn it on.
+        let input_traced = trace.is_some_and(|t| t.kind == TraceKind::Input);
+        if !input_traced {
+            self.traced_only = false;
+        }
         let entries = table_entries();
         let mut action = None;
         // The failing checks' rows, the red first, when the filter is on (after its checkbox).
         let mut failing: Option<Vec<usize>> = None;
+        // The search's rows the trace marks, when the trace filter is on (after its checkbox).
+        let mut traced: Option<Vec<usize>> = None;
         ui.horizontal_wrapped(|ui| {
             ui.add(
                 egui::TextEdit::singleline(&mut self.query)
@@ -396,11 +417,17 @@ impl ResultsTable {
                 .on_hover_text(
                     "The checks that fail (red) or ask for a look (amber), the red first",
                 );
+            ui.add_enabled(
+                input_traced,
+                egui::Checkbox::new(&mut self.traced_only, TRACED_ONLY),
+            )
+            .on_hover_text("The results an input's trace marks: click the input's label");
             if self.matches.is_none() || self.query != self.matched_query {
                 self.matches = Some(search(entries, &self.query));
                 self.matched_query = self.query.clone();
             }
-            let matches = self.matches.as_deref().unwrap_or(&[]);
+            traced = self.traced(trace);
+            let matches = self.shown(&traced);
             failing = self.failing_only.then(|| {
                 failing_checks(results)
                     .iter()
@@ -423,15 +450,17 @@ impl ResultsTable {
             }
         });
         ui.separator();
-        let matches = self.matches.as_deref().unwrap_or(&[]);
+        let matches = self.shown(&traced);
         let searching = self.searching();
         let lines = table_lines(matches, self.order, failing.as_deref(), &|group| {
             self.is_open_while(group, searching)
         });
         if lines.is_empty() {
-            // Nothing fails only if no search narrows the failing checks.
-            ui.weak(match (self.failing_only, searching) {
-                (true, false) => NOTHING_FAILS,
+            // The trace filter first (an input's trace may reach no result); nothing fails only
+            // if no search narrows the failing checks.
+            ui.weak(match (self.traced_only, self.failing_only, searching) {
+                (true, _, _) => NOTHING_TRACED,
+                (false, true, false) => NOTHING_FAILS,
                 _ => NO_RESULT,
             });
         }
@@ -461,7 +490,21 @@ impl ResultsTable {
                         }
                         Line::Group { group, shown, open } => {
                             let heading = &result_groups()[group];
-                            let text = format!("{} ({shown})", heading.label);
+                            // A trace counts the rows it frames in each group, as on the
+                            // inputs side.
+                            let traced = trace.map_or(0, |trace| {
+                                trace.count_in(
+                                    heading
+                                        .rows
+                                        .iter()
+                                        .map(|&index| entries[index].path.as_str()),
+                                )
+                            });
+                            let text = if traced > 0 {
+                                format!("{} ({shown}, {traced} traced)", heading.label)
+                            } else {
+                                format!("{} ({shown})", heading.label)
+                            };
                             // The worst level of the group's checks: a closed group shows that
                             // one of them fails.
                             let level = heading
@@ -502,6 +545,30 @@ impl ResultsTable {
             self.toggled.insert(group);
         }
         action
+    }
+
+    /// The rows the search and the trace filter let through: `traced` while the filter is on,
+    /// else every row the search matches (the failing filter cuts them further).
+    fn shown<'a>(&'a self, traced: &'a Option<Vec<usize>>) -> &'a [usize] {
+        match traced {
+            Some(rows) => rows,
+            None => self.matches.as_deref().unwrap_or(&[]),
+        }
+    }
+
+    /// The search's rows the trace marks, while the trace filter is on (an input is traced);
+    /// `None` while it is off: every row the search matches is shown.
+    fn traced(&self, trace: Option<&Trace>) -> Option<Vec<usize>> {
+        let trace = trace.filter(|_| self.traced_only)?;
+        let entries = table_entries();
+        let matches = self.matches.as_deref().unwrap_or(&[]);
+        Some(
+            matches
+                .iter()
+                .copied()
+                .filter(|&index| trace.marks(&entries[index].path))
+                .collect(),
+        )
     }
 }
 

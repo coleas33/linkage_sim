@@ -27,6 +27,7 @@ pub mod session;
 pub mod sizing;
 #[cfg(test)]
 pub(crate) mod test_support;
+pub mod trace;
 pub mod typeset;
 
 pub use format::{SIGNIFICANT_DIGITS, format_value, with_unit};

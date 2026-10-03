@@ -51,6 +51,7 @@ use crate::gui::sizing::{
     SOLVED_PREFIX, SOLVING, SizingMode, SizingRunner, SizingState, TARGET_RANGE_INPUT,
     variable_label,
 };
+use crate::gui::trace::{CLEAR_TRACE, Trace, TraceKind};
 use crate::{DesignInputs, DesignResults, compute_all};
 
 /// The heading of the panel.
@@ -241,6 +242,9 @@ pub struct MagcouplingPanel {
     /// The Equation panel: the equation open, its trail, the readout hovered in the last frame
     /// (this frame marks its equation's terms) and the input row a leaf term highlights.
     explorer: Explorer,
+    /// The input or result traced (decision O-8): a click on an input's label or on a result
+    /// sets it; every path it reaches is framed in the selection colour.
+    trace: Option<Trace>,
 }
 
 impl Default for MagcouplingPanel {
@@ -277,6 +281,7 @@ impl MagcouplingPanel {
             results_table: ResultsTable::default(),
             requests: Vec::new(),
             explorer: Explorer::default(),
+            trace: None,
         }
     }
 
@@ -437,7 +442,15 @@ impl MagcouplingPanel {
 
     /// Draws the panel into `ui` and applies this frame's edits.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        let mut readouts = Readouts::new(self.explorer.marks(&self.inputs, &self.results));
+        let mut marks = self.explorer.marks(&self.inputs, &self.results);
+        if let Some(trace) = &self.trace {
+            let reached = trace.paths.iter().map(String::as_str);
+            marks = marks.with_marked(
+                reached.chain([trace.source.as_str()]),
+                ui.visuals().selection.stroke.color,
+            );
+        }
+        let mut readouts = Readouts::new(marks);
         ui.push_id("magcoupling_panel", |ui| {
             self.shortcuts(ui);
             egui::TopBottomPanel::top("magcoupling_header").show_inside(ui, |ui| {
@@ -463,7 +476,21 @@ impl MagcouplingPanel {
             egui::CentralPanel::default()
                 .show_inside(ui, |ui| self.centre_ui(ui, &shown, &mut readouts));
         });
-        self.explorer.end_frame(ui.ctx(), readouts.finish());
+        let events = readouts.finish();
+        // A result clicked opens in the Equation panel and traces its inputs, unless an input's
+        // trace marks it: reading the equations of the results an input drives keeps that trace
+        // (and the table's "Traced only" rows). A result without an equation record keeps the
+        // trace too: nothing is known of its inputs.
+        if let Some(path) = &events.clicked {
+            let inside = self
+                .trace
+                .as_ref()
+                .is_some_and(|t| t.kind == TraceKind::Input && t.paths.contains(path));
+            if !inside && let Some(trace) = Trace::of(path) {
+                self.trace = Some(trace);
+            }
+        }
+        self.explorer.end_frame(ui.ctx(), events);
         // One undo step per settled edit.
         let settled = !self.editing(ui);
         self.history.observe(&self.design(), settled);
@@ -630,7 +657,9 @@ impl MagcouplingPanel {
             CentreView::Plot(kind) => plot_ui(ui, kind, shown, &self.results, readouts),
             CentreView::Clamp => clamp_ui(ui, shown, &self.results, readouts),
             CentreView::Results => {
-                let action = self.results_table.ui(ui, &self.results, readouts);
+                let action =
+                    self.results_table
+                        .ui(ui, &self.results, self.trace.as_ref(), readouts);
                 match action {
                     Some(TableAction::ExportCsv) => self.requests.push(PanelRequest::SaveFile {
                         file_name: CSV_FILE_NAME.to_owned(),
@@ -772,6 +801,14 @@ impl MagcouplingPanel {
                 ui.selectable_value(&mut self.inputs_view, view, view.label());
             }
         });
+        if let Some(banner) = self.trace.as_ref().map(Trace::banner) {
+            ui.horizontal_wrapped(|ui| {
+                ui.colored_label(ui.visuals().selection.stroke.color, banner);
+                if ui.small_button(CLEAR_TRACE).clicked() {
+                    self.trace = None;
+                }
+            });
+        }
         ui.separator();
         match self.inputs_view {
             InputsView::Design => self.design_inputs_ui(ui, readouts),
@@ -889,7 +926,22 @@ impl MagcouplingPanel {
                         Some((name, advanced)) if name == group.name => (true, advanced),
                         _ => (false, false),
                     };
-                    egui::CollapsingHeader::new(group.label)
+                    // A trace counts the rows it frames in each group, closed or open.
+                    let traced = self.trace.as_ref().map_or(0, |trace| {
+                        trace.count_in(
+                            group
+                                .sections
+                                .iter()
+                                .flat_map(|s| s.entries.iter())
+                                .map(|e| e.path.as_str()),
+                        )
+                    });
+                    let title = if traced > 0 {
+                        format!("{} ({traced} traced)", group.label)
+                    } else {
+                        group.label.to_owned()
+                    };
+                    egui::CollapsingHeader::new(title)
                         .id_salt((salt, &group.name))
                         .default_open(false)
                         .open(open_group.then_some(true))
@@ -996,6 +1048,12 @@ impl MagcouplingPanel {
             }
         }
         let output = row.inner;
+        if output.label_clicked {
+            // A second click on the source's label ends the trace.
+            let same = self.trace.as_ref().is_some_and(|t| t.source == entry.path);
+            self.trace = if same { None } else { Trace::of(&entry.path) };
+            ui.ctx().request_repaint();
+        }
         if locked {
             ui.weak(SIZED_NOTE);
             return output.widget.id;
@@ -2081,6 +2139,261 @@ mod tests {
         assert_eq!(count(&output, NOTHING_FAILS), 0);
     }
 
+    /// The mark rects of the trace (the selection colour) painted in a frame.
+    fn trace_marks(harness: &Harness, output: &egui::FullOutput) -> Vec<egui::Rect> {
+        mark_rects(
+            output,
+            Some(harness.ctx.style().visuals.selection.stroke.color),
+        )
+    }
+
+    #[test]
+    fn clicking_an_input_s_label_frames_the_results_it_drives_until_a_second_click() {
+        use crate::gui::dashboard::DASHBOARD;
+        use crate::gui::trace::TraceKind;
+        let mut harness = Harness::new();
+        let gap = InputCatalogue::get().entry(FACE_GAP).unwrap().meta.label;
+        harness.click_text(gap);
+        let trace = harness.panel.trace.clone().expect("a trace");
+        assert_eq!(
+            (trace.kind, trace.source.as_str()),
+            (TraceKind::Input, FACE_GAP)
+        );
+        assert_eq!(trace.paths, registry().downstream(FACE_GAP));
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &trace.banner()), 1);
+        let marks = trace_marks(&harness, &output);
+        // On the dashboard (right of its first label's badge): one frame per row the gap
+        // drives, none on the others.
+        let pullout_label = result_info("model.pullout_Nm").unwrap().meta.label;
+        let dashboard_left = text_rect(&output, pullout_label).unwrap().left() - 30.0;
+        let on_dashboard = marks
+            .iter()
+            .filter(|m| m.center().x > dashboard_left)
+            .count();
+        let driven = DASHBOARD
+            .iter()
+            .filter(|(path, _)| trace.marks(path))
+            .count();
+        assert!(driven > 0);
+        assert_eq!(on_dashboard, driven);
+        // On the inputs side: the gap's own Key design row alone.
+        let row = text_rects(&output, gap)
+            .into_iter()
+            .find(|r| r.left() < INPUTS_WIDTH)
+            .unwrap();
+        let on_inputs: Vec<&egui::Rect> = marks
+            .iter()
+            .filter(|m| m.center().x < INPUTS_WIDTH)
+            .collect();
+        assert_eq!(on_inputs.len(), 1);
+        assert!(on_inputs[0].contains_rect(row));
+        // A second click on the label ends the trace and its frames.
+        harness.click_text(gap);
+        assert_eq!(harness.panel.trace, None);
+        let output = harness.frame(Vec::new());
+        assert!(trace_marks(&harness, &output).is_empty());
+        assert_eq!(harness.panel.design(), Design::default());
+        assert_eq!(harness.panel.history.undo_len(), 0);
+    }
+
+    #[test]
+    fn clicking_a_result_frames_the_inputs_it_reads_and_counts_them_by_group() {
+        use crate::gui::trace::{CLEAR_TRACE, TraceKind};
+        let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
+        harness.click_text(&displayed_pullout(&DesignInputs::default()));
+        let trace = harness.panel.trace.clone().expect("a trace");
+        assert_eq!(
+            (trace.kind, trace.source.as_str()),
+            (TraceKind::Result, "model.pullout_Nm")
+        );
+        assert_eq!(
+            &trace.paths,
+            registry().upstream_inputs("model.pullout_Nm").unwrap()
+        );
+        assert!(harness.panel.explorer.open, "the click still opens it");
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &trace.banner()), 1);
+        // Each Key design row is framed exactly when the pull-out reads its input.
+        let marks = trace_marks(&harness, &output);
+        for entry in &InputCatalogue::get().key_design {
+            let row = text_rects(&output, entry.meta.label)
+                .into_iter()
+                .find(|r| r.left() < INPUTS_WIDTH)
+                .unwrap();
+            let framed = marks.iter().any(|m| m.contains_rect(row));
+            assert_eq!(framed, trace.marks(&entry.path), "{}", entry.path);
+        }
+        // Each closed group says how many of its rows the trace frames.
+        for group in &InputCatalogue::get().workflow {
+            let traced = group
+                .sections
+                .iter()
+                .flat_map(|s| s.entries.iter())
+                .filter(|e| trace.marks(&e.path))
+                .count();
+            let title = if traced > 0 {
+                format!("{} ({traced} traced)", group.label)
+            } else {
+                group.label.to_owned()
+            };
+            assert_eq!(count(&output, &title), 1, "{title}");
+        }
+        // Clear ends it.
+        harness.click_text(CLEAR_TRACE);
+        assert_eq!(harness.panel.trace, None);
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn the_traced_filter_shows_the_results_the_trace_marks() {
+        use crate::gui::result_groups::result_groups;
+        use crate::gui::results_table::{TRACED_ONLY, table_entries};
+        let entries = table_entries();
+        let total = entries.len();
+        let mut harness = Harness::new();
+        harness.click_text(CentreView::Results.label());
+        // Without a trace the filter cannot be ticked.
+        harness.click_text(TRACED_ONLY);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
+        // Trace the face gap and show only the results it drives.
+        harness.click_text(InputCatalogue::get().entry(FACE_GAP).unwrap().meta.label);
+        harness.click_text(TRACED_ONLY);
+        let output = harness.frame(Vec::new());
+        let trace = harness.panel.trace.clone().unwrap();
+        let traced = entries.iter().filter(|e| trace.marks(&e.path)).count();
+        assert!(traced > 0 && traced < total);
+        assert_eq!(count(&output, &format!("{traced} of {total} results")), 1);
+        // Each heading counts the rows the trace marks in it.
+        let headline = result_groups()[0]
+            .rows
+            .iter()
+            .filter(|&&i| trace.marks(&entries[i].path))
+            .count();
+        assert_eq!(
+            count(
+                &output,
+                &format!("Headline ({headline}, {headline} traced)")
+            ),
+            1
+        );
+        // Without the trace the filter lets every row through again.
+        harness.panel.trace = None;
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
+    }
+
+    #[test]
+    fn an_input_whose_results_have_no_equation_record_traces_none_and_says_so() {
+        use crate::gui::results_table::{NO_RESULT, NOTHING_TRACED, TRACED_ONLY, table_entries};
+        // The drive torque sets the required floor and the verdict, which have no equation
+        // record: the trace reaches no result, the banner says why, and "Traced only" says the
+        // trace marks nothing rather than that the search matches nothing.
+        let total = table_entries().len();
+        let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
+        harness.click_text(InputCatalogue::get().workflow[0].label);
+        for _ in 0..10 {
+            harness.frame(Vec::new());
+        }
+        let drive = "coupling.drive_torque_Nm";
+        harness.click_text(InputCatalogue::get().entry(drive).unwrap().meta.label);
+        let trace = harness.panel.trace.clone().expect("a trace");
+        assert_eq!(trace.source, drive);
+        assert!(trace.paths.is_empty());
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &trace.banner()), 1);
+        assert!(trace.banner().contains("no explained result reads it"));
+        harness.click_text(CentreView::Results.label());
+        harness.click_text(TRACED_ONLY);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &format!("0 of {total} results")), 1);
+        assert_eq!(count(&output, NOTHING_TRACED), 1);
+        assert_eq!(count(&output, NO_RESULT), 0);
+        // Clear trace turns the filter off with it: every row again, and a later trace does not
+        // filter the table until the filter is ticked again.
+        harness.click_text(crate::gui::trace::CLEAR_TRACE);
+        let output = harness.frame(Vec::new());
+        assert_eq!(harness.panel.trace, None);
+        assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
+        harness.click_text(InputCatalogue::get().entry(FACE_GAP).unwrap().meta.label);
+        let output = harness.frame(Vec::new());
+        assert!(harness.panel.trace.is_some());
+        assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
+    }
+
+    #[test]
+    fn reading_a_traced_result_keeps_the_input_s_trace_and_its_traced_rows() {
+        use crate::gui::results_table::{ResultOrder, TRACED_ONLY, table_entries};
+        use crate::gui::trace::TraceKind;
+        // An input traced and "Traced only" ticked: a click on a traced row (the table's main
+        // gesture, to read its equation) opens its equation and keeps the input's trace, so the
+        // table keeps its rows; a click on a result without an equation record keeps it too.
+        let entries = table_entries();
+        let total = entries.len();
+        let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
+        harness.click_text(CentreView::Results.label());
+        harness.click_text(InputCatalogue::get().entry(FACE_GAP).unwrap().meta.label);
+        harness.click_text(TRACED_ONLY);
+        let trace = harness.panel.trace.clone().unwrap();
+        let traced = entries.iter().filter(|e| trace.marks(&e.path)).count();
+        let shown = format!("{traced} of {total} results");
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &shown), 1);
+        // The pull-out's row in the table (between the inputs and the dashboard).
+        let centre =
+            |r: &egui::Rect| r.left() > INPUTS_WIDTH && r.right() < 1280.0 - DASHBOARD_WIDTH;
+        let pullout = result_info("model.pullout_Nm").unwrap().meta.label;
+        let row = text_rects(&output, pullout)
+            .into_iter()
+            .find(centre)
+            .expect("the pull-out's row");
+        assert!(trace.marks("model.pullout_Nm"));
+        harness.click(row.center());
+        let output = harness.frame(Vec::new());
+        assert!(harness.panel.explorer.open, "the click opens its equation");
+        assert_eq!(
+            harness.panel.trace.as_ref(),
+            Some(&trace),
+            "the input's trace stays"
+        );
+        assert_eq!(count(&output, &shown), 1, "the table keeps its rows");
+        // Every row again, in the engine's order: a result without an equation record keeps
+        // the trace (its inputs are unknown).
+        harness.click_text(TRACED_ONLY);
+        harness.click_text(ResultOrder::Engine.label());
+        let output = harness.frame(Vec::new());
+        let recordless = entries
+            .iter()
+            .find(|e| registry().equation_for(&e.path).is_none())
+            .unwrap();
+        let row = text_rects(&output, recordless.info.meta.label)
+            .into_iter()
+            .find(centre)
+            .unwrap_or_else(|| panic!("{} on screen", recordless.path));
+        harness.click(row.center());
+        assert_eq!(harness.panel.trace.as_ref(), Some(&trace));
+        // A result outside the trace, with a record (on the dashboard): its trace replaces the
+        // input's.
+        let outside = crate::gui::dashboard::dashboard_lines(harness.panel.results())
+            .into_iter()
+            .find(|line| registry().equation_for(line.path).is_some() && !trace.marks(line.path))
+            .expect("a dashboard result the face gap does not drive");
+        let output = harness.frame(Vec::new());
+        // The rightmost: the dashboard's.
+        let value = text_rects(&output, &outside.value)
+            .into_iter()
+            .max_by(|a, b| a.left().total_cmp(&b.left()))
+            .unwrap();
+        harness.click(value.center());
+        let replaced = harness.panel.trace.clone().unwrap();
+        assert_eq!(
+            (replaced.kind, replaced.source.as_str()),
+            (TraceKind::Result, outside.path)
+        );
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
     #[test]
     fn a_narrow_window_shows_each_row_s_label_and_value_without_scrolling() {
         // The M4-1 review's ~930 px window: the inputs (320) and the dashboard (300) leave the
@@ -2605,6 +2918,13 @@ mod tests {
         texts.push(FILTER_HINT.to_owned());
         texts.push(crate::gui::results_table::NOTHING_FAILS.to_owned());
         texts.push(crate::gui::results_table::NO_RESULT.to_owned());
+        texts.push(crate::gui::results_table::TRACED_ONLY.to_owned());
+        texts.push(crate::gui::input_ui::TRACE_HINT.to_owned());
+        texts.push(crate::gui::trace::CLEAR_TRACE.to_owned());
+        texts.push(crate::gui::results_table::NOTHING_TRACED.to_owned());
+        for path in [FACE_GAP, "model.pullout_Nm", "coupling.drive_torque_Nm"] {
+            texts.push(crate::gui::trace::Trace::of(path).unwrap().banner());
+        }
         texts.push(crate::gui::results_table::CLEAR_TO_CLOSE.to_owned());
         harness.panel.input_filter = "a".to_owned();
         texts.extend(drawn_texts(&harness.frame(Vec::new())));
