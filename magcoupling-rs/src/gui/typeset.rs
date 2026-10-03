@@ -107,6 +107,19 @@ impl TermColors {
         self
     }
 
+    /// Adds each of `paths` that has no colour yet, in `color`: the marks of a trace (decision
+    /// O-8), under the equation's own term colours.
+    pub fn with_marked<'a>(
+        mut self,
+        paths: impl IntoIterator<Item = &'a str>,
+        color: Color32,
+    ) -> Self {
+        for path in paths {
+            self.colors.entry(path.to_owned()).or_insert(color);
+        }
+        self
+    }
+
     /// The colour of a path or template, if the equation shows it.
     pub fn get(&self, path: &str) -> Option<Color32> {
         self.colors.get(path).copied()
@@ -1131,6 +1144,24 @@ mod tests {
             _ => None,
         });
         assert_eq!(f_end_color, Some(TERM_PALETTE[1]));
+    }
+
+    #[test]
+    fn marked_paths_take_the_colour_given_under_the_equation_s_own() {
+        let eq = registry().equation_for("model.pullout_Nm").unwrap();
+        let trace = Color32::from_rgb(1, 2, 3);
+        let colors = TermColors::of(eq).with_marked(["model.f_end", "metal.face_gap_mm"], trace);
+        // A term of the equation keeps its colour; a path it does not show takes the trace's.
+        assert_eq!(colors.get("model.f_end"), Some(TERM_PALETTE[1]));
+        assert_eq!(colors.get("metal.face_gap_mm"), Some(trace));
+        let marked = TermColors::none().with_marked(["coupling.npole"], trace);
+        assert_eq!(marked.get("coupling.npole"), Some(trace));
+        assert!(!marked.is_empty());
+        assert!(
+            TermColors::none()
+                .with_marked(std::iter::empty(), trace)
+                .is_empty()
+        );
     }
 
     #[test]

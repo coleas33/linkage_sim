@@ -30,6 +30,18 @@ pub fn with_unit(text: String, unit: &str) -> String {
     }
 }
 
+/// What a search box matches an input or a result by: its label, path and workbook cell, one
+/// per line, lowercase. The results search and the inputs filter share it, so both match alike.
+pub(crate) fn search_haystack(label: &str, path: &str, cell: Option<&str>) -> String {
+    format!("{label}\n{path}\n{}", cell.unwrap_or("")).to_lowercase()
+}
+
+/// A search box's text as it is matched against a [`search_haystack`]: lowercase, without the
+/// surrounding blanks. An empty needle matches everything.
+pub(crate) fn search_needle(query: &str) -> String {
+    query.trim().to_lowercase()
+}
+
 /// The text of a number that is not finite: `+inf`, `-inf` or `NaN`; `None` for a finite
 /// number. The display and both results exports share it, so a non-finite value reads the
 /// same everywhere (JSON has no infinity or NaN: the exports write this text, decision M41-15).
@@ -74,6 +86,25 @@ mod tests {
 
     fn num(x: f64) -> String {
         format_value(&Value::Num(x))
+    }
+
+    #[test]
+    fn a_search_reads_label_path_and_cell_in_lowercase_and_a_needle_drops_the_blanks() {
+        assert_eq!(
+            search_haystack(
+                "Gearbox ratio",
+                "coupling.gear_ratio",
+                Some("Calculator!C45")
+            ),
+            "gearbox ratio\ncoupling.gear_ratio\ncalculator!c45"
+        );
+        // A Rust-only input or result has no cell.
+        assert_eq!(
+            search_haystack("Highest odd harmonic summed", "coupling.max_harmonic", None),
+            "highest odd harmonic summed\ncoupling.max_harmonic\n"
+        );
+        assert_eq!(search_needle("  GEARBOX Ratio "), "gearbox ratio");
+        assert_eq!(search_needle("   "), "");
     }
 
     #[test]

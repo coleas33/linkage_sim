@@ -38,8 +38,9 @@ use crate::gui::readouts::Readouts;
 use crate::gui::typeset::glyph_safe;
 use crate::{DesignInputs, DesignResults, compute_all};
 
-/// A badge colour, from a check verdict.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A badge colour, from a check verdict. Ordered by severity (green, amber, red): the worst of
+/// several levels is their maximum.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Level {
     /// Green: the check passes.
     Good,
@@ -142,7 +143,8 @@ pub const DASHBOARD: [(&str, Option<&str>); 17] = [
 /// The dashboard rows computed from the pull-out, greyed when f_end ≤ 0 (audit M9): the
 /// headline rows that move with the end-effect coefficient (a test probes it at back iron 1
 /// and 0). Per-row greying of the results table waits for plan A-3's dependency graph; the
-/// table shows the banner instead (decision M41-11).
+/// table shows the banner instead (decision M41-11), and its two checks among these rows (the
+/// hot minimum, the recommended screw) give no badge there either ([`greyed_by_end_effect`]).
 pub const END_EFFECT_ROWS: [&str; 7] = [
     "model.pullout_Nm",
     "model.pullout_20C_Nm",
@@ -171,12 +173,108 @@ pub const STORED_3D_NOTE: &str = "The demagnetization reverse fields and the sli
 /// The start of the banner shown when f_end ≤ 0.
 pub const END_EFFECT_BANNER: &str = END_EFFECT_OUT_OF_RANGE;
 
+/// Every design-level check of the results, in schema order (decision O-3): the dashboard's
+/// verdicts, the coupling model's, the temperature design's and the clamp's checks and
+/// screens, the material warnings and the space claim. Each gives a badge level
+/// ([`verdict_level`]): the results table shows it, and its failing filter lists the checks
+/// that fail ([`failing_checks`]). The clamp table's per-size checks and the sweeps' status
+/// texts rate candidates, not the design, so they are left out.
+pub const CHECKS: [&str; 30] = [
+    "calibration.end_effect_check",
+    "model.inner_flat_check",
+    "model.outer_flat_check",
+    "model.end_effect_check",
+    "model.verdict",
+    "model.cup_ring_check",
+    "model.hub_check",
+    "model.inner_temp_check",
+    "model.outer_temp_check",
+    "metal.hot_min_check",
+    "metal.clearance_check",
+    "materials.cup_wall_check",
+    "temperature.summary.torque_hot_day_note",
+    TEMPERATURE_VERDICT,
+    "temperature.demag.cold_check",
+    "temperature.adhesive.fatigue_screen",
+    "temperature.mismatch.reading",
+    "temperature.magnet_life.torque_hot_day_check",
+    "temperature.adhesive_life.hot_fatigue_screen",
+    "temperature.adhesive_life.daily_screen",
+    "clamps.recommended",
+    "clamps.head_check",
+    "clamps.vent_port",
+    "warnings.non_ferromagnetic_back_iron",
+    "warnings.ferromagnetic_sleeve_or_liner",
+    "warnings.high_conductivity_sleeve_or_liner",
+    "warnings.low_saturation",
+    "warnings.uncoated_low_alloy_steel",
+    "warnings.cte_mismatch_with_magnets",
+    "housing.space_claim_check",
+];
+
 /// The badge level of a check's verdict text; `None` (no badge) for a path that is no check, a
 /// verdict that says the check does not apply (the cup wall's "No back iron"), or a text the
-/// check does not produce.
+/// check does not produce. A warning (`warnings.<rule>`) that fires has its severity's level.
 pub fn verdict_level(path: &str, text: &str) -> Option<Level> {
     use Level::{Bad, Caution, Good};
+    const FLATS: [&str; 2] = ["model.inner_flat_check", "model.outer_flat_check"];
+    const HOT_DAY: [&str; 2] = [
+        "temperature.summary.torque_hot_day_note",
+        "temperature.magnet_life.torque_hot_day_check",
+    ];
     match (path, text) {
+        ("calibration.end_effect_check", "OK") => Some(Good),
+        ("calibration.end_effect_check", END_EFFECT_OUT_OF_RANGE) => Some(Bad),
+        (p, t) if FLATS.contains(&p) && t.starts_with("OK, ") => Some(Good),
+        (p, t) if FLATS.contains(&p) && t.starts_with("TOO NARROW: ") => Some(Bad),
+        // Arcs have no flats: the check does not apply.
+        (p, "n/a (arcs)") if FLATS.contains(&p) => None,
+        // The nominal pull-out covers the floor; the workbook asks for a hot test to confirm
+        // it, as the temperature verdict asks for its tests (both green).
+        ("model.verdict", "Nominal only: hot test") => Some(Good),
+        ("model.verdict", "Below hot minimum") => Some(Bad),
+        ("model.cup_ring_check" | "model.hub_check", "Thickness OK") => Some(Good),
+        ("model.cup_ring_check" | "model.hub_check", "Too thin") => Some(Bad),
+        // E9: without back iron no magnetic rule sizes the steel.
+        ("model.cup_ring_check" | "model.hub_check", "No back iron") => None,
+        ("model.inner_temp_check" | "model.outer_temp_check", "OK") => Some(Good),
+        ("model.inner_temp_check" | "model.outer_temp_check", "OVER the magnet rating") => {
+            Some(Bad)
+        }
+        // A manual magnet without a grade has no rating to check against: a look, as an
+        // unknown space claim.
+        ("model.inner_temp_check" | "model.outer_temp_check", "unknown") => Some(Caution),
+        (p, "Meets it nominally (no variation allowance)") if HOT_DAY.contains(&p) => Some(Good),
+        (p, "Below it") if HOT_DAY.contains(&p) => Some(Bad),
+        ("temperature.demag.cold_check", "OK") => Some(Good),
+        ("temperature.demag.cold_check", "Below the cold demagnetization limit") => Some(Bad),
+        // NdFeB's coercivity rises as it cools: the cold check does not apply.
+        ("temperature.demag.cold_check", t) if t.starts_with("n/a") => None,
+        ("temperature.adhesive.fatigue_screen", t) if t.starts_with("OK: ") => Some(Good),
+        ("temperature.adhesive.fatigue_screen", "CHECK") => Some(Caution),
+        ("temperature.mismatch.reading", "Below the lap-shear strength") => Some(Good),
+        ("temperature.mismatch.reading", "Above the lap-shear strength at the block ends") => {
+            Some(Bad)
+        }
+        ("temperature.adhesive_life.hot_fatigue_screen", "OK") => Some(Good),
+        ("temperature.adhesive_life.hot_fatigue_screen", "CHECK: get hot fatigue data") => {
+            Some(Caution)
+        }
+        ("temperature.adhesive_life.daily_screen", "Below the fatigue endurance") => Some(Good),
+        (
+            "temperature.adhesive_life.daily_screen",
+            "Above the fatigue endurance: qualify by thermal cycling",
+        ) => Some(Caution),
+        // The clamp's head and key checks read empty when no screw fits (the recommended
+        // screw's "None:" is the red one).
+        ("clamps.head_check", "OK") => Some(Good),
+        ("clamps.head_check", "Use a hardened washer") => Some(Caution),
+        ("clamps.vent_port", t) if t.starts_with("Yes: ") => Some(Good),
+        ("clamps.vent_port", t) if t.starts_with("No: ") => Some(Caution),
+        (p, t) if !t.is_empty() && p.starts_with("warnings.") => WARNING_RULES
+            .iter()
+            .find(|rule| p.strip_prefix("warnings.") == Some(rule.id))
+            .map(|rule| severity_level(rule.severity)),
         ("metal.hot_min_check", "Estimate covers hot min") => Some(Good),
         ("metal.hot_min_check", "Below hot minimum") => Some(Bad),
         ("metal.clearance_check", "Meets assumed target") => Some(Good),
@@ -196,6 +294,34 @@ pub fn verdict_level(path: &str, text: &str) -> Option<Level> {
         ("model.end_effect_check", END_EFFECT_OUT_OF_RANGE) => Some(Bad),
         _ => None,
     }
+}
+
+/// The badge level of the check at `path` for `results`: [`verdict_level`] of its text; `None`
+/// for a path that is no check or holds no text, a verdict that gives no badge, or a check
+/// computed from an invalid pull-out ([`greyed_by_end_effect`]: the dashboard greys its row).
+pub fn check_level(results: &DesignResults, path: &str) -> Option<Level> {
+    if greyed_by_end_effect(results, path) {
+        return None;
+    }
+    match results.get(path)? {
+        Value::Text(text) => verdict_level(path, &text),
+        _ => None,
+    }
+}
+
+/// The checks of `results` that fail (red) or ask for a look (amber), the red first, each in
+/// [`CHECKS`] order: what the results table's failing filter shows.
+pub fn failing_checks(results: &DesignResults) -> Vec<(&'static str, Level)> {
+    let mut failing: Vec<(&'static str, Level)> = CHECKS
+        .iter()
+        .filter_map(|&path| match check_level(results, path) {
+            Some(level @ (Level::Bad | Level::Caution)) => Some((path, level)),
+            _ => None,
+        })
+        .collect();
+    // A stable sort, the most severe first: the red, then the amber, each in CHECKS order.
+    failing.sort_by_key(|&(_, level)| std::cmp::Reverse(level));
+    failing
 }
 
 /// A result's metadata and workbook cell.
@@ -318,6 +444,14 @@ pub fn end_effect_out_of_range(results: &DesignResults) -> Option<f64> {
     (results.model.end_effect_check == END_EFFECT_OUT_OF_RANGE).then_some(results.model.f_end)
 }
 
+/// Whether the result at `path` is computed from an invalid pull-out: f_end <= 0 and `path` is
+/// one of [`END_EFFECT_ROWS`] (audit M9). The dashboard greys such a row, and a check among them
+/// gives no badge anywhere: the dashboard, the results table, its headings and its failing
+/// filter all read [`check_level`].
+pub fn greyed_by_end_effect(results: &DesignResults, path: &str) -> bool {
+    END_EFFECT_ROWS.contains(&path) && end_effect_out_of_range(results).is_some()
+}
+
 /// The banner shown over the dashboard and the results table when f_end ≤ 0.
 pub fn end_effect_banner(results: &DesignResults) -> Option<String> {
     end_effect_out_of_range(results).map(|f_end| {
@@ -330,19 +464,17 @@ pub fn end_effect_banner(results: &DesignResults) -> Option<String> {
 
 /// The dashboard rows of `results`.
 pub fn dashboard_lines(results: &DesignResults) -> Vec<DashboardLine> {
-    let out_of_range = end_effect_out_of_range(results).is_some();
     DASHBOARD
         .iter()
         .map(|&(path, badge)| {
             let info = result_info(path).unwrap_or_else(|| panic!("DASHBOARD: no result {path}"));
             let value = results.get(path).unwrap_or(Value::None);
-            let greyed = out_of_range && END_EFFECT_ROWS.contains(&path);
+            let greyed = greyed_by_end_effect(results, path);
             let stored_3d = STORED_3D_ROWS.contains(&path);
-            let level = match (
-                greyed,
-                badge.and_then(|check| results.get(check).map(|v| (check, v))),
-            ) {
-                (false, Some((check, Value::Text(text)))) => verdict_level(check, &text),
+            // A greyed row has no badge; any other takes its check's level, the level the
+            // results table shows on the check's own row.
+            let level = match (greyed, badge) {
+                (false, Some(check)) => check_level(results, check),
                 _ => None,
             };
             let marks = CorrectionIndex::get().marks(info.cell.as_deref());
@@ -429,8 +561,9 @@ fn warnings_ui(ui: &mut egui::Ui, results: &DesignResults, readouts: &mut Readou
     ui.separator();
 }
 
-/// A badge: a filled circle in the level's colour, or an empty cell.
-fn badge(ui: &mut egui::Ui, level: Option<Level>) {
+/// A badge: a filled circle in the level's colour, or an empty cell (the results table's check
+/// rows draw it too).
+pub(crate) fn badge(ui: &mut egui::Ui, level: Option<Level>) {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
     if let Some(level) = level {
         ui.painter()
@@ -536,6 +669,328 @@ mod tests {
         assert_eq!(verdict_level("materials.cup_wall_check", &text), None);
         assert_eq!(verdict_level("metal.hot_min_check", "OK"), None);
         assert_eq!(verdict_level("model.pullout_Nm", "OK"), None);
+    }
+
+    /// Manual magnets of the ferrite grade Y30 (positive beta: the cold side is checked).
+    fn ferrite(inputs: &mut DesignInputs) {
+        inputs.coupling.magnets.part_inner.clear();
+        inputs.coupling.magnets.part_outer.clear();
+        inputs.coupling.magnets.grade_inner = "Y30".to_owned();
+        inputs.coupling.magnets.grade_outer = "Y30".to_owned();
+    }
+
+    #[test]
+    fn every_verdict_of_every_other_check_is_classified() {
+        // Decision O-3: the checks off the dashboard, each from a design that reaches the
+        // branch (the dashboard's own are in the test above); the two texts no design reaches
+        // are checked as written below.
+        use Level::{Bad, Caution, Good};
+        let default = DesignInputs::default;
+        let cases: Vec<(&str, DesignInputs, Level)> = vec![
+            ("calibration.end_effect_check", default(), Good),
+            (
+                "calibration.end_effect_check",
+                design(|i| {
+                    i.calibration.c_end = 0.5;
+                    i.calibration.magnet_length_mm = 2.0;
+                }),
+                Bad,
+            ),
+            ("model.inner_flat_check", default(), Good),
+            (
+                "model.inner_flat_check",
+                design(|i| i.coupling.npole = 40),
+                Bad,
+            ),
+            ("model.outer_flat_check", default(), Good),
+            (
+                "model.outer_flat_check",
+                design(|i| i.coupling.npole = 40),
+                Bad,
+            ),
+            ("model.verdict", default(), Good),
+            (
+                "model.verdict",
+                design(|i| i.metal.required_min_Nm = 10.0),
+                Bad,
+            ),
+            ("model.cup_ring_check", default(), Bad),
+            (
+                "model.cup_ring_check",
+                design(|i| i.metal.cup_wall_corner_mm = 6.0),
+                Good,
+            ),
+            ("model.hub_check", default(), Good),
+            (
+                "model.hub_check",
+                design(|i| i.coupling.bore_mm = 17.0),
+                Bad,
+            ),
+            ("model.inner_temp_check", default(), Good),
+            (
+                "model.inner_temp_check",
+                design(|i| i.coupling.op_temp_C = 200.0),
+                Bad,
+            ),
+            ("model.outer_temp_check", default(), Good),
+            (
+                "model.outer_temp_check",
+                design(|i| i.coupling.op_temp_C = 200.0),
+                Bad,
+            ),
+            ("temperature.summary.torque_hot_day_note", default(), Good),
+            (
+                "temperature.summary.torque_hot_day_note",
+                design(|i| i.metal.required_min_Nm = 10.0),
+                Bad,
+            ),
+            (
+                "temperature.magnet_life.torque_hot_day_check",
+                default(),
+                Good,
+            ),
+            (
+                "temperature.magnet_life.torque_hot_day_check",
+                design(|i| i.metal.required_min_Nm = 10.0),
+                Bad,
+            ),
+            ("temperature.demag.cold_check", design(ferrite), Bad),
+            (
+                "temperature.demag.cold_check",
+                design(|i| {
+                    ferrite(i);
+                    i.metal.min_temp_C = 20.0;
+                    i.temperature.demag.h_rev_aligned_kA_m = 10.0;
+                    i.temperature.demag.h_rev_pullout_kA_m = 10.0;
+                    i.temperature.demag.h_rev_likepole_kA_m = 10.0;
+                    i.temperature.demag.h_rev_single_ring_kA_m = 10.0;
+                }),
+                Good,
+            ),
+            ("temperature.adhesive.fatigue_screen", default(), Good),
+            (
+                "temperature.adhesive.fatigue_screen",
+                design(|i| i.temperature.adhesive_life.fatigue_endurance = 0.05),
+                Caution,
+            ),
+            ("temperature.mismatch.reading", default(), Good),
+            (
+                "temperature.mismatch.reading",
+                design(|i| i.materials.steel.cte_per_C = 3e-5),
+                Bad,
+            ),
+            (
+                "temperature.adhesive_life.hot_fatigue_screen",
+                default(),
+                Good,
+            ),
+            (
+                "temperature.adhesive_life.hot_fatigue_screen",
+                design(|i| i.temperature.adhesive_life.hot_strength_retained = 0.05),
+                Caution,
+            ),
+            ("temperature.adhesive_life.daily_screen", default(), Good),
+            (
+                "temperature.adhesive_life.daily_screen",
+                design(|i| i.temperature.adhesive_life.daily_swing_C = 300.0),
+                Caution,
+            ),
+            ("clamps.head_check", default(), Good),
+            ("clamps.head_check", design(|i| i.clamps.alloy = 2), Caution),
+            ("clamps.vent_port", default(), Good),
+            (
+                "warnings.non_ferromagnetic_back_iron",
+                design(|i| i.materials.parts.back_iron = 7),
+                Bad,
+            ),
+            (
+                "warnings.cte_mismatch_with_magnets",
+                design(|i| i.materials.parts.back_iron = 7),
+                Caution,
+            ),
+            (
+                "warnings.low_saturation",
+                design(|i| i.materials.parts.back_iron = 3),
+                Caution,
+            ),
+            (
+                "warnings.high_conductivity_sleeve_or_liner",
+                design(|i| i.temperature.slip_loss.sigma_316_S_m = 5e6),
+                Caution,
+            ),
+            (
+                "warnings.uncoated_low_alloy_steel",
+                design(|i| i.materials.nickel.thickness_mm = 0.0),
+                Caution,
+            ),
+        ];
+        for (check, inputs, want) in cases {
+            let results = compute_all(&inputs);
+            let Some(Value::Text(text)) = results.get(check) else {
+                panic!("{check} is text")
+            };
+            assert_eq!(verdict_level(check, &text), Some(want), "{check}: {text:?}");
+            assert_eq!(check_level(&results, check), Some(want), "{check}");
+        }
+        // The key of an M6 or larger screw misses the vent port: no design of the clamp
+        // model's bore reaches it, so its text (clamps.rs) is checked as written.
+        assert_eq!(
+            verdict_level("clamps.vent_port", "No: key too large"),
+            Some(Caution)
+        );
+        // No sleeve or liner of the material library is ferromagnetic, so no design fires that
+        // warning: its text (warnings.rs) is checked as written, red as a warning.
+        let ferromagnetic = WARNING_RULES
+            .iter()
+            .find(|rule| rule.id == "ferromagnetic_sleeve_or_liner")
+            .unwrap();
+        assert_eq!(
+            verdict_level("warnings.ferromagnetic_sleeve_or_liner", ferromagnetic.text),
+            Some(Bad)
+        );
+        // A check that does not apply gives no badge: arcs have no flats, no back iron needs
+        // no wall, NdFeB's coercivity rises as it cools, no screw fits (no head, no key), and
+        // a warning that does not fire is empty.
+        let none = |inputs: DesignInputs, checks: &[&str]| {
+            let results = compute_all(&inputs);
+            for check in checks {
+                let Some(Value::Text(text)) = results.get(check) else {
+                    panic!("{check} is text")
+                };
+                assert_eq!(verdict_level(check, &text), None, "{check}: {text:?}");
+                assert_eq!(check_level(&results, check), None, "{check}");
+            }
+        };
+        none(
+            design(|i| i.coupling.faceted = 0),
+            &["model.inner_flat_check", "model.outer_flat_check"],
+        );
+        none(
+            design(|i| i.coupling.backiron = 0),
+            &["model.cup_ring_check", "model.hub_check"],
+        );
+        none(default(), &["temperature.demag.cold_check"]);
+        none(
+            design(|i| {
+                i.clamps.boss_od_mm = 12.0;
+                i.clamps.clamp_length_mm = 3.0;
+            }),
+            &["clamps.head_check", "clamps.vent_port"],
+        );
+        let warnings: Vec<&str> = CHECKS
+            .iter()
+            .copied()
+            .filter(|c| c.starts_with("warnings."))
+            .collect();
+        none(default(), &warnings);
+        // A manual magnet without a grade has no rating to check against: amber.
+        let manual = compute_all(&design(|i| {
+            i.coupling.magnets.part_inner.clear();
+            i.coupling.magnets.part_outer.clear();
+        }));
+        assert_eq!(manual.model.inner_temp_check, "unknown");
+        assert_eq!(
+            check_level(&manual, "model.inner_temp_check"),
+            Some(Caution)
+        );
+        // No arm reads a text of another check, or of a path that is no check.
+        assert_eq!(verdict_level("model.hub_check", "OK"), None);
+        assert_eq!(verdict_level("warnings.no_such_rule", "text"), None);
+        assert_eq!(check_level(&manual, "model.pullout_Nm"), None);
+    }
+
+    #[test]
+    fn every_check_is_a_text_result_and_every_result_named_as_a_check_is_listed() {
+        let results = compute_all(&DesignInputs::default());
+        let rows = result_rows(&results);
+        // In schema order, each a text.
+        let mut last = 0;
+        for check in CHECKS {
+            let index = rows
+                .iter()
+                .position(|r| r.path == check)
+                .unwrap_or_else(|| panic!("CHECKS: no result {check}"));
+            assert!(index >= last, "{check} out of schema order");
+            last = index;
+            assert!(matches!(rows[index].value, Value::Text(_)), "{check}");
+        }
+        // A new check (a text named *_check, *_screen, *verdict or *reading, or a warning)
+        // fails here until it is listed and classified. The clamp table's and the sweeps' rows
+        // rate candidates, not the design.
+        for row in &rows {
+            let name = row.path.rsplit('.').next().unwrap();
+            let named = name.ends_with("_check")
+                || name.ends_with("_screen")
+                || name.ends_with("verdict")
+                || name.ends_with("reading")
+                || row.path.starts_with("warnings.");
+            let per_row = row.path.contains('[');
+            if named && !per_row && matches!(row.value, Value::Text(_)) {
+                assert!(
+                    CHECKS.contains(&row.path.as_str()),
+                    "{} is not in CHECKS",
+                    row.path
+                );
+            }
+        }
+        // Every warning rule is a check.
+        for rule in WARNING_RULES {
+            assert!(
+                CHECKS.contains(&format!("warnings.{}", rule.id).as_str()),
+                "{}",
+                rule.id
+            );
+        }
+    }
+
+    #[test]
+    fn the_failing_checks_are_the_red_then_the_amber() {
+        use Level::{Bad, Caution, Good};
+        // The levels order by severity: the worst of several is their maximum.
+        assert!(Good < Caution && Caution < Bad);
+        assert_eq!([Caution, Bad, Good].into_iter().max(), Some(Bad));
+        // The defaults fail four checks, all red.
+        let defaults = compute_all(&DesignInputs::default());
+        assert_eq!(
+            failing_checks(&defaults),
+            [
+                ("model.cup_ring_check", Bad),
+                ("metal.hot_min_check", Bad),
+                ("metal.clearance_check", Bad),
+                ("materials.cup_wall_check", Bad),
+            ]
+        );
+        // Manual magnets add two amber rating checks, after the red.
+        let manual = compute_all(&design(|i| {
+            i.coupling.magnets.part_inner.clear();
+            i.coupling.magnets.part_outer.clear();
+        }));
+        assert_eq!(
+            failing_checks(&manual),
+            [
+                ("model.cup_ring_check", Bad),
+                ("metal.hot_min_check", Bad),
+                ("metal.clearance_check", Bad),
+                ("materials.cup_wall_check", Bad),
+                ("model.inner_temp_check", Caution),
+                ("model.outer_temp_check", Caution),
+            ]
+        );
+        // Exactly the checks whose level is red or amber, each once.
+        for inputs in [DesignInputs::default(), short_magnets(), design(ferrite)] {
+            let results = compute_all(&inputs);
+            let failing: Vec<&str> = failing_checks(&results).iter().map(|(p, _)| *p).collect();
+            let want: Vec<&str> = CHECKS
+                .iter()
+                .copied()
+                .filter(|c| matches!(check_level(&results, c), Some(Bad | Caution)))
+                .collect();
+            let mut sorted = failing.clone();
+            sorted.sort_unstable();
+            let mut want_sorted = want.clone();
+            want_sorted.sort_unstable();
+            assert_eq!(sorted, want_sorted);
+        }
     }
 
     /// The headline paths whose value moves when `inputs` take any of `values`, from the
@@ -664,6 +1119,67 @@ mod tests {
             end_effect_out_of_range(&compute_all(&DesignInputs::default())),
             None
         );
+    }
+
+    #[test]
+    fn out_of_range_end_effect_drops_the_pull_out_checks_from_the_table_and_the_failing_filter() {
+        // The twin of the test above for the results table's badges and its failing filter
+        // (both read `check_level`): a verdict computed from an invalid pull-out is no verdict,
+        // so the two checks among the greyed rows give no badge and are not listed as failing.
+        use Level::{Bad, Caution};
+        let results = compute_all(&short_magnets());
+        assert!(end_effect_out_of_range(&results).is_some());
+        let greyed: Vec<&str> = END_EFFECT_ROWS
+            .into_iter()
+            .filter(|path| CHECKS.contains(path))
+            .collect();
+        assert_eq!(greyed, ["metal.hot_min_check", "clamps.recommended"]);
+        for path in &greyed {
+            assert!(greyed_by_end_effect(&results, path), "{path}");
+            // The verdict has a level of its own (red and green here): the rule drops it.
+            let Some(Value::Text(text)) = results.get(path) else {
+                panic!("{path} is text")
+            };
+            assert!(verdict_level(path, &text).is_some(), "{path}: {text:?}");
+            assert_eq!(check_level(&results, path), None, "{path}");
+        }
+        assert_eq!(
+            failing_checks(&results),
+            [
+                ("model.end_effect_check", Bad),
+                ("model.verdict", Bad),
+                ("model.cup_ring_check", Bad),
+                ("metal.clearance_check", Bad),
+                ("materials.cup_wall_check", Bad),
+                ("temperature.summary.torque_hot_day_note", Bad),
+                ("temperature.magnet_life.torque_hot_day_check", Bad),
+                ("model.inner_temp_check", Caution),
+                ("model.outer_temp_check", Caution),
+                ("temperature.adhesive.fatigue_screen", Caution),
+                ("temperature.adhesive_life.hot_fatigue_screen", Caution),
+            ]
+        );
+        // On every dashboard row with a check, the check's level is the row's badge, in range
+        // and out of it: what the table shows on a check's row is what the dashboard shows.
+        for inputs in [DesignInputs::default(), short_magnets()] {
+            let results = compute_all(&inputs);
+            for (line, &(path, check)) in dashboard_lines(&results).iter().zip(&DASHBOARD) {
+                assert_eq!(line.path, path);
+                if let Some(check) = check {
+                    assert_eq!(check_level(&results, check), line.level, "{path}");
+                }
+            }
+        }
+        // In range nothing is dropped: the defaults' hot minimum is red, the screw green.
+        let defaults = compute_all(&DesignInputs::default());
+        assert!(!greyed_by_end_effect(&defaults, "metal.hot_min_check"));
+        assert_eq!(check_level(&defaults, "metal.hot_min_check"), Some(Bad));
+        assert_eq!(
+            check_level(&defaults, "clamps.recommended"),
+            Some(Level::Good)
+        );
+        // A row outside END_EFFECT_ROWS is never dropped, out of range or not.
+        assert!(!greyed_by_end_effect(&results, "metal.clearance_check"));
     }
 
     #[test]

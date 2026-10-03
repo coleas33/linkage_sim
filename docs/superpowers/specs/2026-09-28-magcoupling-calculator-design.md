@@ -213,7 +213,14 @@ so coverage is explicit. **Only corrections the user approves enter M2.**
   (`coupling`, `metal`, `calibration`, `materials`, `temperature`, `clamps`).
   A **Key design** group on top: face gap, pole count, magnet part, axial length,
   operating temperature, back iron, cup wall, conductance, measured drag (about a
-  dozen).
+  dozen). *Amended 2026-10-02 (plan
+  `docs/superpowers/plans/2026-10-02-magcoupling-gui-ordering.md`, decisions O-1 to
+  O-8):* the inputs are ordered by design workflow by default, the requirements and
+  operating conditions first, with the package groups one toggle away, a filter box
+  and each group's rarely changed rows under Advanced; the results table groups the
+  results by physics chain, badges the checks (each group heading with its worst
+  check) and filters the failing ones; a click traces an input to the explained
+  results it drives and a result to the inputs it reads.
 - **Center — geometry view**, to scale: end view of both rings with blocks on
   polygon faces, cup, sleeve, liner, shaft and key; side view of the axial stack
   against the 20 mm bay and 35 mm overall length. Redraws live during drags.

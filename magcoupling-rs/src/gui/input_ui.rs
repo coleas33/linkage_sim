@@ -26,6 +26,10 @@ pub const OUTSIDE_RANGE_NOTE: &str = "outside the slider range";
 /// The text of a blank optional input.
 pub const BLANK_TEXT: &str = "blank";
 
+/// The line the label's hover text ends with: a click on the label traces the input
+/// (decision O-8).
+pub const TRACE_HINT: &str = "Click the label to trace the explained results it drives";
+
 /// What the user asked of an input row this frame.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RowEdit {
@@ -41,6 +45,8 @@ pub struct RowOutput {
     pub edit: Option<RowEdit>,
     /// The row's main widget (the slider, drop-down, checkbox or text field).
     pub widget: egui::Response,
+    /// The label was clicked: trace the input (decision O-8).
+    pub label_clicked: bool,
 }
 
 /// A slider over `value` set up from the input's metadata: its range (logarithmic when
@@ -86,50 +92,67 @@ fn typed(meta: &InputMeta, x: f64) -> Value {
 
 /// Draws one input row: a header line (the changed dot, the label, an out-of-range note, the
 /// reset button) and the widget under it. `seed` is where an optional input starts when the
-/// user enters a value (`inputs::OPTIONAL_SEEDS`).
+/// user enters a value (`inputs::OPTIONAL_SEEDS`). A `locked` row (Torque -> Magnets' free
+/// variable) disables everything but its dot and label: the label still traces the input.
 pub fn input_row(
     ui: &mut egui::Ui,
     entry: &InputEntry,
     current: &Value,
     seed: Option<f64>,
+    locked: bool,
 ) -> RowOutput {
     let meta = entry.meta;
     let tooltip = input_tooltip(entry);
     let changed = *current != entry.default;
     let mut edit = None;
+    let mut label_clicked = false;
     ui.push_id(&entry.path, |ui| {
         ui.horizontal(|ui| {
             let dot = if changed { CHANGED_DOT } else { " " };
             ui.colored_label(ui.visuals().selection.stroke.color, dot)
                 .on_hover_text("Changed from the default");
-            ui.label(meta.label).on_hover_text(&tooltip);
-            if outside_range(meta.range, current) {
-                ui.colored_label(ui.visuals().warn_fg_color, OUTSIDE_RANGE_NOTE)
-                    .on_hover_text(
-                        "Kept until edited. The differential tests cover the slider range only.",
-                    );
-            }
-            if changed
-                && ui
-                    .small_button(RESET_LABEL)
-                    .on_hover_text(format!(
-                        "Back to the default: {}",
-                        format_value(&entry.default)
-                    ))
-                    .clicked()
-            {
-                edit = Some(RowEdit::Reset);
-            }
+            label_clicked = ui
+                .add(egui::Label::new(meta.label).sense(egui::Sense::click()))
+                .on_hover_text(format!("{tooltip}\n{TRACE_HINT}"))
+                .clicked();
+            ui.add_enabled_ui(!locked, |ui| {
+                if outside_range(meta.range, current) {
+                    ui.colored_label(ui.visuals().warn_fg_color, OUTSIDE_RANGE_NOTE)
+                        .on_hover_text(
+                            "Kept until edited. The differential tests cover the slider range only.",
+                        );
+                }
+                if changed
+                    && ui
+                        .small_button(RESET_LABEL)
+                        .on_hover_text(format!(
+                            "Back to the default: {}",
+                            format_value(&entry.default)
+                        ))
+                        .clicked()
+                {
+                    edit = Some(RowEdit::Reset);
+                }
+            });
         });
-        let widget = widget(ui, entry, current, seed, &mut edit).on_hover_text(&tooltip);
-        if let Some(picked) = picker_ui(ui, &entry.path, current) {
-            edit = Some(picked);
+        let widget = ui
+            .add_enabled_ui(!locked, |ui| {
+                let widget = widget(ui, entry, current, seed, &mut edit).on_hover_text(&tooltip);
+                if let Some(picked) = picker_ui(ui, &entry.path, current) {
+                    edit = Some(picked);
+                }
+                // Text inputs only (`text_hint` knows no other path).
+                if let Some(hint) = text_hint(&entry.path, current_text(current)) {
+                    ui.weak(hint);
+                }
+                widget
+            })
+            .inner;
+        RowOutput {
+            edit,
+            widget,
+            label_clicked,
         }
-        // Text inputs only (`text_hint` knows no other path).
-        if let Some(hint) = text_hint(&entry.path, current_text(current)) {
-            ui.weak(hint);
-        }
-        RowOutput { edit, widget }
     })
     .inner
 }
