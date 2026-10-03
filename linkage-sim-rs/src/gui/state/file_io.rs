@@ -718,6 +718,19 @@ mod tests {
         );
     }
 
+    /// A link written at commit 49fbd3f, before the magcoupling panel's spreadsheet export
+    /// (rust_xlsxwriter's zip) switched flate2 to its zlib-rs backend: links written since may
+    /// differ in their bytes, and every link written before must still decode.
+    #[test]
+    fn share_url_written_before_the_zlib_rs_backend_still_decodes() {
+        let json = r#"{"schema_version":"1.0.0","bodies":{"ground":{"attachment_points":{"A":[0.0,0.0],"B":[0.1,0.0]},"mass":0.0,"cg_local":[0.0,0.0],"izz_cg":0.0}},"joints":{},"drivers":{},"load_cases":[],"forces":[],"mounting_angle":0.0,"linear_drivers":[]}"#;
+        let written = "VU7LCsMgEPyXPUtIrrm1vxGCbNUai7pFbQ8J-feutinksDDDPHY2yGoxAeXbpOwowghD13c9CLiRdibDuIFN9Iq6IiwF1RJMLPJJLpYmX2CcOCL4ZgHXxobGdgEBM5uqDMpKTwr9ye7WVSrbHDvbH0crY51cXfUlnlBLhbkumjh3p6QOHHhecdFKjNab3zfvosEk_yXTvH8A";
+        assert_eq!(
+            decode_mechanism_from_url(written).expect("decode failed"),
+            json
+        );
+    }
+
     #[test]
     fn decode_invalid_base64_returns_error() {
         let result = decode_mechanism_from_url("!!!not_valid_base64!!!");

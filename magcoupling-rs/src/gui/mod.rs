@@ -30,6 +30,7 @@ pub mod spreadsheet;
 pub(crate) mod test_support;
 pub mod trace;
 pub mod typeset;
+pub mod xlsx;
 
 pub use format::{SIGNIFICANT_DIGITS, format_value, with_unit};
 pub use inputs::KEY_DESIGN;

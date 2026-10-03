@@ -161,7 +161,7 @@ Not a Cargo workspace member: `linkage-sim-rs` depends on it by path
 | Feature | Adds | Dependencies (all optional) |
 |---|---|---|
 | none (default) | The engine | none: pure std, builds for wasm32 as it is |
-| `gui` | `gui::MagcouplingPanel`: the design inputs and results, and `fn ui(&mut self, ui: &mut egui::Ui)`. Any egui app can host it: the standalone app as a full page, the linkage app in an `egui::Window` (M5) | egui 0.32, egui_plot 0.33, serde_json, base64, flate2, log |
+| `gui` | `gui::MagcouplingPanel`: the design inputs and results, and `fn ui(&mut self, ui: &mut egui::Ui)`. Any egui app can host it: the standalone app as a full page, the linkage app in an `egui::Window` (M5) | egui 0.32, egui_plot 0.33, serde_json, base64, flate2, log, rust_xlsxwriter 0.99.1 (the spreadsheet export; its `wasm` feature and js-sys on wasm32) |
 | `app` | `app::MagcouplingApp` and the binaries below | `gui`, eframe 0.32, log, rfd 0.15; env_logger (native); wasm-bindgen, wasm-bindgen-futures, web-sys, js-sys (wasm32) |
 | `workbook-parity` | **Test-only**: the switch that turns corrections off (see [Differences from the workbook](#differences-from-the-workbook)) | none |
 
