@@ -859,7 +859,7 @@ impl MagcouplingPanel {
                         .open((open_group == Some(group.name.as_str())).then_some(true))
                         .show(ui, |ui| {
                             for section in &group.sections {
-                                if section.prefix != group.name {
+                                if section.id != group.name {
                                     ui.add_space(4.0);
                                     ui.strong(section.label);
                                 }
