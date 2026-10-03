@@ -46,6 +46,8 @@ pub const CSV_HEADER: &str = "path,label,value,unit,cell";
 /// The button labels.
 pub const EXPORT_CSV: &str = "Export CSV";
 pub const EXPORT_JSON: &str = "Export JSON";
+/// The spreadsheet (decision X-8): the page's layout as an .xlsx workbook (`gui::xlsx`).
+pub const EXPORT_XLSX: &str = "Export XLSX";
 
 /// The search box's hint.
 pub const SEARCH_HINT: &str = "Search label, path or cell";
@@ -387,6 +389,7 @@ fn is_input_trace(trace: Option<&Trace>) -> bool {
 pub enum TableAction {
     ExportCsv,
     ExportJson,
+    ExportXlsx,
 }
 
 impl ResultsTable {
@@ -495,6 +498,13 @@ impl ResultsTable {
             }
             if ui.button(EXPORT_JSON).clicked() {
                 action = Some(TableAction::ExportJson);
+            }
+            if ui
+                .button(EXPORT_XLSX)
+                .on_hover_text("The page's layout as an .xlsx workbook (values, no formulas)")
+                .clicked()
+            {
+                action = Some(TableAction::ExportXlsx);
             }
         });
         ui.separator();
