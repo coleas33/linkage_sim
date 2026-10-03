@@ -13,7 +13,7 @@ use std::collections::BTreeSet;
 use crate::gui::explorer::term_label;
 use crate::gui::readouts::registry;
 
-/// The start of the trace's banner over the inputs side.
+/// The start of the trace's banner, at the foot of the inputs side.
 pub const TRACING: &str = "Tracing";
 
 /// The banner's button that ends the trace.
@@ -66,7 +66,7 @@ impl Trace {
         paths.into_iter().filter(|path| self.marks(path)).count()
     }
 
-    /// The banner over the inputs side: what is traced and how far it reaches.
+    /// The banner at the foot of the inputs side: what is traced and how far it reaches.
     pub fn banner(&self) -> String {
         let label = term_label(&self.source);
         let count = self.paths.len();

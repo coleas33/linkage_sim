@@ -785,8 +785,9 @@ impl MagcouplingPanel {
         }
     }
 
-    /// The left side: the tabs of the design inputs and the assumptions, then the view chosen.
-    /// A leaf term clicked in the Equation panel shows the view that holds its row.
+    /// The left side: the tabs of the design inputs and the assumptions, then the view chosen,
+    /// with the trace's banner at its foot. A leaf term clicked in the Equation panel shows the
+    /// view that holds its row.
     fn inputs_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
         // This frame's rows only, whichever groups are open.
         self.design_widgets.clear();
@@ -805,19 +806,31 @@ impl MagcouplingPanel {
                 ui.selectable_value(&mut self.inputs_view, view, view.label());
             }
         });
-        if let Some(banner) = self.trace.as_ref().map(Trace::banner) {
-            ui.horizontal_wrapped(|ui| {
-                ui.colored_label(ui.visuals().selection.stroke.color, banner);
+        // The trace's banner at the foot of the side, laid out bottom up first so the view takes
+        // the room above it in the same frame: a trace moves no row above it, so a second click
+        // on the label lands on the label again (decision O-8).
+        let banner = self.trace.as_ref().map(Trace::banner);
+        ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+            if let Some(banner) = banner {
                 if ui.small_button(CLEAR_TRACE).clicked() {
                     self.trace = None;
                 }
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(banner).color(ui.visuals().selection.stroke.color),
+                    )
+                    .wrap(),
+                );
+                ui.separator();
+            }
+            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                ui.separator();
+                match self.inputs_view {
+                    InputsView::Design => self.design_inputs_ui(ui, readouts),
+                    InputsView::Assumptions => self.assumptions_ui(ui, readouts),
+                }
             });
-        }
-        ui.separator();
-        match self.inputs_view {
-            InputsView::Design => self.design_inputs_ui(ui, readouts),
-            InputsView::Assumptions => self.assumptions_ui(ui, readouts),
-        }
+        });
     }
 
     /// The Assumptions view (spec Addendum A3 "Toggle panel"): each assumption with its
@@ -1016,8 +1029,9 @@ impl MagcouplingPanel {
     }
 
     /// One input row; applies its edit. Returns the id of its main widget. In Torque →
-    /// Magnets the free variable's row shows the value the panel shows, locked. The row is
-    /// framed in its term's colour while the equation in view reads the input (`readouts`).
+    /// Magnets the free variable's row shows the value the panel shows, locked (its label still
+    /// traces the input). The row is framed in its term's colour while the equation in view
+    /// reads the input (`readouts`).
     fn input_row_ui(
         &mut self,
         ui: &mut egui::Ui,
@@ -1034,7 +1048,7 @@ impl MagcouplingPanel {
         }
         .unwrap_or(Value::None);
         let seed = self.seed(entry);
-        let row = ui.add_enabled_ui(!locked, |ui| input_row(ui, entry, &current, seed));
+        let row = ui.scope(|ui| input_row(ui, entry, &current, seed, locked));
         readouts.mark(ui, row.response.rect, &entry.path);
         if self
             .explorer
@@ -2143,6 +2157,91 @@ mod tests {
         assert_eq!(count(&output, NOTHING_FAILS), 0);
     }
 
+    #[test]
+    fn out_of_range_end_effect_drops_the_pull_out_checks_badges_in_the_table_too() {
+        use crate::gui::dashboard::{CHECKS, dashboard_lines, failing_checks};
+        use crate::gui::results_table::{FAILING_ONLY, table_entries};
+        use crate::gui::test_support::flat_shapes;
+        // Short magnets (f_end < 0): the dashboard greys the rows computed from the pull-out,
+        // without badges. In the table's headline (open) each check row carries exactly the
+        // dashboard's badge, so the hot minimum (red by its text) and the screw sized from the
+        // invalid pull-out (green by its text) carry none, and the failing filter leaves the hot
+        // minimum out.
+        let mut harness = Harness::new();
+        harness.panel.inputs = short_magnets();
+        harness.click_text(CentreView::Results.label());
+        let output = harness.frame(Vec::new());
+        let visuals = harness.ctx.style().visuals.clone();
+        // Between the inputs and the dashboard's badges (left of its first label).
+        let pullout = result_info("model.pullout_Nm").unwrap().meta.label;
+        let dashboard_left = text_rects(&output, pullout)
+            .into_iter()
+            .map(|r| r.left())
+            .fold(f32::MIN, f32::max)
+            - 30.0;
+        let centre = |x: f32| x > INPUTS_WIDTH && x < dashboard_left;
+        let badges_on = |output: &egui::FullOutput, row: egui::Rect| -> Vec<Level> {
+            let shapes = flat_shapes(output);
+            [Level::Good, Level::Caution, Level::Bad]
+                .into_iter()
+                .filter(|level| {
+                    shapes.iter().any(|shape| {
+                        matches!(shape, egui::Shape::Circle(c)
+                            if c.fill == level.color(&visuals)
+                                && centre(c.center.x)
+                                && (c.center.y - row.center().y).abs() < row.height())
+                    })
+                })
+                .collect()
+        };
+        let lines = dashboard_lines(harness.panel.results());
+        let checks: Vec<_> = lines
+            .iter()
+            .filter(|line| CHECKS.contains(&line.path))
+            .collect();
+        assert_eq!(checks.len(), 7);
+        for line in checks {
+            let row = text_rects(&output, line.label)
+                .into_iter()
+                .find(|r| centre(r.center().x))
+                .unwrap_or_else(|| panic!("{} in the table", line.path));
+            let want: Vec<Level> = line.level.into_iter().collect();
+            assert_eq!(badges_on(&output, row), want, "{}", line.path);
+        }
+        // The failing filter: the hot minimum is not listed; the end-effect check is, first.
+        harness.click_text(FAILING_ONLY);
+        let output = harness.frame(Vec::new());
+        let failing = failing_checks(harness.panel.results());
+        assert!(
+            failing
+                .iter()
+                .all(|(path, _)| *path != "metal.hot_min_check")
+        );
+        assert_eq!(failing[0], ("model.end_effect_check", Level::Bad));
+        let total = table_entries().len();
+        let shown = format!("{} of {total} results", failing.len());
+        assert_eq!(count(&output, &shown), 1);
+        let drawn = |path: &str| {
+            text_rects(&output, result_info(path).unwrap().meta.label)
+                .into_iter()
+                .filter(|r| centre(r.center().x))
+                .count()
+        };
+        assert_eq!(drawn("metal.hot_min_check"), 0);
+        assert_eq!(drawn("model.end_effect_check"), 1);
+        // Seven red badges and four amber in the table.
+        let in_table = |level: Level| {
+            flat_shapes(&output)
+                .into_iter()
+                .filter(|shape| {
+                    matches!(shape, egui::Shape::Circle(c)
+                        if c.fill == level.color(&visuals) && centre(c.center.x))
+                })
+                .count()
+        };
+        assert_eq!((in_table(Level::Bad), in_table(Level::Caution)), (7, 4));
+    }
+
     /// The mark rects of the trace (the selection colour) painted in a frame.
     fn trace_marks(harness: &Harness, output: &egui::FullOutput) -> Vec<egui::Rect> {
         mark_rects(
@@ -2488,6 +2587,117 @@ mod tests {
             (TraceKind::Result, outside.path)
         );
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn a_search_that_hides_the_traced_rows_says_so_and_the_headings_count_what_it_shows() {
+        use crate::gui::result_groups::result_groups;
+        use crate::gui::results_table::{
+            NO_RESULT, NOTHING_TRACED, SEARCH_HINT, TRACED_ONLY, search, table_entries,
+        };
+        let entries = table_entries();
+        let total = entries.len();
+        let mut harness = Harness::new();
+        harness.click_text(CentreView::Results.label());
+        harness.click_text(InputCatalogue::get().entry(FACE_GAP).unwrap().meta.label);
+        let trace = harness.panel.trace.clone().expect("a trace");
+        // A search for one row the trace marks: the headline's heading counts the traced rows
+        // it shows, not every row of the group the trace marks.
+        harness.click_text(SEARCH_HINT);
+        harness.frame(vec![egui::Event::Text("calculator!c93".to_owned())]);
+        let output = harness.frame(Vec::new());
+        let headline = result_groups()[0]
+            .rows
+            .iter()
+            .filter(|&&i| trace.marks(&entries[i].path))
+            .count();
+        assert!(headline > 1);
+        assert_eq!(count(&output, "Headline (1, 1 traced)"), 1);
+        assert_eq!(
+            count(&output, &format!("Headline (1, {headline} traced)")),
+            0
+        );
+        // "Traced only" with a search that matches results the trace does not mark: the search
+        // hides the traced rows, so the table says the search matches nothing, not that the
+        // trace marks nothing (its 146 rows are there without the search).
+        harness.click_text(TRACED_ONLY);
+        harness.click_text("calculator!c93");
+        harness.frame(select_all());
+        harness.frame(key_tap(egui::Key::Backspace));
+        harness.frame(vec![egui::Event::Text("bondline".to_owned())]);
+        let output = harness.frame(Vec::new());
+        let bondline = search(entries, "bondline");
+        assert!(!bondline.is_empty());
+        assert!(bondline.iter().all(|&i| !trace.marks(&entries[i].path)));
+        assert_eq!(count(&output, &format!("0 of {total} results")), 1);
+        assert_eq!(count(&output, NO_RESULT), 1);
+        assert_eq!(count(&output, NOTHING_TRACED), 0);
+    }
+
+    #[test]
+    fn a_trace_moves_no_input_row_so_a_second_click_on_the_label_ends_it() {
+        use crate::gui::trace::CLEAR_TRACE;
+        // The banner sits at the foot of the inputs side: a trace moves no row above it, so the
+        // second click of "a second click on the label ends the trace" lands on the label again,
+        // not on whatever a banner on top would have pushed under the pointer.
+        let mut harness = Harness::new();
+        let gap = InputCatalogue::get().entry(FACE_GAP).unwrap().meta.label;
+        let on_inputs_side = |output: &egui::FullOutput, text: &str| {
+            text_rects(output, text)
+                .into_iter()
+                .find(|r| r.left() < INPUTS_WIDTH)
+                .unwrap_or_else(|| panic!("no {text:?} on the inputs side"))
+        };
+        let toggle = InputOrder::Workbook.label();
+        let output = harness.frame(Vec::new());
+        let (label, toggle_at) = (
+            on_inputs_side(&output, gap),
+            on_inputs_side(&output, toggle),
+        );
+        harness.click(label.center());
+        let trace = harness.panel.trace.clone().expect("a trace");
+        // The strip sizes from the last frame: let it settle.
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &trace.banner()), 1);
+        assert_eq!(on_inputs_side(&output, gap), label);
+        assert_eq!(on_inputs_side(&output, toggle), toggle_at);
+        assert!(on_inputs_side(&output, CLEAR_TRACE).top() > label.bottom());
+        // The second click, at the same point.
+        harness.click(label.center());
+        assert_eq!(harness.panel.trace, None);
+        let output = harness.frame(Vec::new());
+        assert_eq!(on_inputs_side(&output, gap), label);
+        assert_eq!(harness.panel.design(), Design::default());
+        assert_eq!(harness.panel.history.undo_len(), 0);
+    }
+
+    #[test]
+    fn the_locked_free_variable_s_label_still_traces_it() {
+        use crate::gui::trace::TraceKind;
+        // In Torque -> Magnets the free variable's row is locked (its value widgets disabled);
+        // its label still traces the input, as every row's does.
+        let mut harness = Harness::new();
+        harness.size();
+        assert!(!harness.widget(AXIAL_LENGTH).enabled(), "locked");
+        let (design, undo) = (harness.panel.design(), harness.panel.history.undo_len());
+        let label = InputCatalogue::get()
+            .entry(AXIAL_LENGTH)
+            .unwrap()
+            .meta
+            .label;
+        harness.click_text(label);
+        let trace = harness.panel.trace.clone().expect("a trace");
+        assert_eq!(
+            (trace.kind, trace.source.as_str()),
+            (TraceKind::Input, AXIAL_LENGTH)
+        );
+        // A second click ends it; neither click edits the design or makes an undo step.
+        harness.click_text(label);
+        assert_eq!(harness.panel.trace, None);
+        assert_eq!(harness.panel.design(), design);
+        assert_eq!(harness.panel.history.undo_len(), undo);
+        assert!(!harness.widget(AXIAL_LENGTH).enabled(), "still locked");
     }
 
     #[test]

@@ -5,6 +5,30 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-02 — Magcoupling GUI ordering: the final review's fix wave (branch magcoupling/ordering)
+- Out of the end-effect range (f_end <= 0, audit M9) the results table showed badges the
+  dashboard hides: its check rows, its headings' worst level and "Failing checks only" read
+  `check_level`, which had no greying rule, so the short-magnet design showed the hot minimum red
+  and listed it as failing, and the recommended screw (sized from the invalid pull-out) green.
+  One rule now, `dashboard::greyed_by_end_effect` (out of range and in `END_EFFECT_ROWS`), read
+  by `check_level` and so by the dashboard (`dashboard_lines` takes its badge from `check_level`),
+  the table's badges and headings and `failing_checks`. Wider greying (`model.verdict`, the
+  hot-day checks) stays M41-11's deferred work. Tests: the dashboard's
+  `out_of_range_end_effect_drops_the_pull_out_checks_from_the_table_and_the_failing_filter`,
+  the panel's `out_of_range_end_effect_drops_the_pull_out_checks_badges_in_the_table_too`.
+- The trace's banner and Clear trace sit at the foot of the inputs side, laid out bottom up in
+  the same frame, so starting or ending a trace moves no row above them: "a second click on the
+  label ends the trace" lands on the label again (on top, the banner pushed every row down by its
+  height). Test: `a_trace_moves_no_input_row_so_a_second_click_on_the_label_ends_it`.
+- "Traced only": the table says the trace marks nothing (`NOTHING_TRACED`) only when the trace
+  marks none of the rows the failing filter lets through (`results_table::empty_text`); a search
+  that hides the traced rows says no result matches. A group heading counts the traced rows among
+  those it shows, so a search no longer draws "Torque (3, 28 traced)". The locked free variable's
+  label (Torque -> Magnets) traces it: `input_row` takes `locked` and disables only the reset,
+  the note and the value widgets. Tests:
+  `a_search_that_hides_the_traced_rows_says_so_and_the_headings_count_what_it_shows`,
+  `the_locked_free_variable_s_label_still_traces_it`, `the_empty_table_names_the_filter_that_empties_it`.
+
 ## 2026-10-02 — Magcoupling GUI: smarter ordering of the inputs and the results (branch magcoupling/ordering)
 - Inputs (decision O-1, O-2): the workflow order is the default, `inputs::WORKFLOW`:
   Requirements and operating conditions, Magnets and rings, Gap and clearances, Housing and
@@ -25,14 +49,15 @@ Reverse chronological (newest at top).
   shows the worst level of its checks, and a heading click while searching is ignored; "Engine
   order" brings back the flat table, and both exports keep the engine order. `dashboard::CHECKS`
   lists the 30 design checks (the dashboard's 7 and 23 more, with levels in `verdict_level`);
-  their rows carry the dashboard's badge, and "Failing checks only" lists the red then the amber
-  ones.
+  their rows carry the dashboard's badge (none on the two greyed by f_end <= 0, as on the
+  dashboard), and "Failing checks only" lists the red then the amber ones.
 - Tracing (O-8, `trace.rs`): a click on an input's label frames every explained result it drives
   (the registry's `downstream`: 392 of the 1086 results have an equation record; an input that
   reaches none says so), a click on a result frames the inputs it reads (`upstream_inputs`) unless
   an input's trace marks it or it has no record (the trace then stays), in the selection colour
-  through `Readouts::mark` (`TermColors::with_marked`), with a banner, a Clear trace button,
-  per-group traced counts and a "Traced only" table filter for an input's trace.
+  through `Readouts::mark` (`TermColors::with_marked`), with a banner and a Clear trace button at
+  the foot of the inputs side, per-group traced counts and a "Traced only" table filter for an
+  input's trace.
 - The linkage app's calculator window is unchanged (its tests pass). Docs: the magcoupling README,
   03-structure, 04-memory, the spec's M4 layout amendment.
 

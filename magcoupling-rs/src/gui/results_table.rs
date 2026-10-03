@@ -56,8 +56,9 @@ pub const FAILING_ONLY: &str = "Failing checks only";
 /// The trace filter's checkbox (decision O-8): the rows an input's trace marks alone.
 pub const TRACED_ONLY: &str = "Traced only";
 
-/// What the table says when the trace filter leaves no row: the trace reaches only results with
-/// an equation record, and an input may reach none of them.
+/// What the table says when the trace itself marks none of the rows the failing filter lets
+/// through ([`empty_text`]): the trace reaches only results with an equation record, and an input
+/// may reach none of them.
 pub const NOTHING_TRACED: &str =
     "The trace marks no result shown here (only results with an equation record are traced).";
 
@@ -241,6 +242,18 @@ pub fn table_lines(
     }
 }
 
+/// What the table says when its filters leave no line: [`NOTHING_TRACED`] when the trace filter
+/// is on and the trace itself marks none of the rows the failing filter lets through (every row
+/// while it is off), whatever the search; [`NOTHING_FAILS`] when the failing filter alone leaves
+/// nothing (no search narrows it); else [`NO_RESULT`], the search's doing.
+pub fn empty_text(trace_marks_none: bool, failing_only: bool, searching: bool) -> &'static str {
+    match (trace_marks_none, failing_only, searching) {
+        (true, _, _) => NOTHING_TRACED,
+        (false, true, false) => NOTHING_FAILS,
+        _ => NO_RESULT,
+    }
+}
+
 /// The indices of the rows whose label, path or cell contains `query`, ignoring case and the
 /// surrounding blanks; every row for a blank query.
 pub fn search(entries: &[TableEntry], query: &str) -> Vec<usize> {
@@ -400,7 +413,7 @@ impl ResultsTable {
     /// centre region's, over every view: decision M42-1), each row a readout (`readouts`, which
     /// frame the rows `trace` marks), each group heading a button that opens or closes it (not
     /// while the search holds more than blanks: every group is open then), with the worst level
-    /// of its checks and the rows the trace marks in it. Returns an export asked for.
+    /// of its checks and the rows the trace marks among those shown. Returns an export asked for.
     pub fn ui(
         &mut self,
         ui: &mut egui::Ui,
@@ -468,13 +481,16 @@ impl ResultsTable {
             self.is_open_while(group, searching)
         });
         if lines.is_empty() {
-            // The trace filter first (an input's trace may reach no result); nothing fails only
-            // if no search narrows the failing checks.
-            ui.weak(match (self.traced_only, self.failing_only, searching) {
-                (true, _, _) => NOTHING_TRACED,
-                (false, true, false) => NOTHING_FAILS,
-                _ => NO_RESULT,
-            });
+            // The trace's text only when the trace itself marks none of the rows the failing
+            // filter lets through (an input's trace may reach no result); a search that hides
+            // the traced rows is the search's doing.
+            let marked = |index: usize| trace.is_some_and(|t| t.marks(&entries[index].path));
+            let trace_marks_none = self.traced_only
+                && match &failing {
+                    Some(rows) => !rows.iter().any(|&index| marked(index)),
+                    None => !(0..entries.len()).any(marked),
+                };
+            ui.weak(empty_text(trace_marks_none, self.failing_only, searching));
         }
         let row_height = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
         let spacing = ui.spacing().item_spacing.x;
@@ -502,13 +518,15 @@ impl ResultsTable {
                         }
                         Line::Group { group, shown, open } => {
                             let heading = &result_groups()[group];
-                            // A trace counts the rows it frames in each group, as on the
-                            // inputs side.
+                            // A trace counts the rows it frames among the group's rows the
+                            // filters let through (`matches`, ascending), as `shown` counts
+                            // them, so a search never shows more traced rows than rows.
                             let traced = trace.map_or(0, |trace| {
                                 trace.count_in(
                                     heading
                                         .rows
                                         .iter()
+                                        .filter(|index| matches.binary_search(index).is_ok())
                                         .map(|&index| entries[index].path.as_str()),
                                 )
                             });
@@ -1050,5 +1068,21 @@ mod tests {
         }
         assert!(!entries[entry_index("model.pullout_Nm").unwrap()].check);
         assert_eq!(entry_index("no.such.result"), None);
+    }
+
+    #[test]
+    fn the_empty_table_names_the_filter_that_empties_it() {
+        // The trace's text only when the trace itself marks none of the rows the failing filter
+        // lets through, whatever the search; a search that hides the traced rows is the search's.
+        for failing_only in [false, true] {
+            for searching in [false, true] {
+                assert_eq!(empty_text(true, failing_only, searching), NOTHING_TRACED);
+            }
+        }
+        assert_eq!(empty_text(false, false, true), NO_RESULT);
+        assert_eq!(empty_text(false, true, true), NO_RESULT);
+        // Nothing fails only when no search narrows the failing checks.
+        assert_eq!(empty_text(false, true, false), NOTHING_FAILS);
+        assert_eq!(empty_text(false, false, false), NO_RESULT);
     }
 }

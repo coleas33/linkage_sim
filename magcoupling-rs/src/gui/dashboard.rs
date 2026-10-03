@@ -143,7 +143,8 @@ pub const DASHBOARD: [(&str, Option<&str>); 17] = [
 /// The dashboard rows computed from the pull-out, greyed when f_end ≤ 0 (audit M9): the
 /// headline rows that move with the end-effect coefficient (a test probes it at back iron 1
 /// and 0). Per-row greying of the results table waits for plan A-3's dependency graph; the
-/// table shows the banner instead (decision M41-11).
+/// table shows the banner instead (decision M41-11), and its two checks among these rows (the
+/// hot minimum, the recommended screw) give no badge there either ([`greyed_by_end_effect`]).
 pub const END_EFFECT_ROWS: [&str; 7] = [
     "model.pullout_Nm",
     "model.pullout_20C_Nm",
@@ -296,8 +297,12 @@ pub fn verdict_level(path: &str, text: &str) -> Option<Level> {
 }
 
 /// The badge level of the check at `path` for `results`: [`verdict_level`] of its text; `None`
-/// for a path that is no check or holds no text, or a verdict that gives no badge.
+/// for a path that is no check or holds no text, a verdict that gives no badge, or a check
+/// computed from an invalid pull-out ([`greyed_by_end_effect`]: the dashboard greys its row).
 pub fn check_level(results: &DesignResults, path: &str) -> Option<Level> {
+    if greyed_by_end_effect(results, path) {
+        return None;
+    }
     match results.get(path)? {
         Value::Text(text) => verdict_level(path, &text),
         _ => None,
@@ -439,6 +444,14 @@ pub fn end_effect_out_of_range(results: &DesignResults) -> Option<f64> {
     (results.model.end_effect_check == END_EFFECT_OUT_OF_RANGE).then_some(results.model.f_end)
 }
 
+/// Whether the result at `path` is computed from an invalid pull-out: f_end <= 0 and `path` is
+/// one of [`END_EFFECT_ROWS`] (audit M9). The dashboard greys such a row, and a check among them
+/// gives no badge anywhere: the dashboard, the results table, its headings and its failing
+/// filter all read [`check_level`].
+pub fn greyed_by_end_effect(results: &DesignResults, path: &str) -> bool {
+    END_EFFECT_ROWS.contains(&path) && end_effect_out_of_range(results).is_some()
+}
+
 /// The banner shown over the dashboard and the results table when f_end ≤ 0.
 pub fn end_effect_banner(results: &DesignResults) -> Option<String> {
     end_effect_out_of_range(results).map(|f_end| {
@@ -451,19 +464,17 @@ pub fn end_effect_banner(results: &DesignResults) -> Option<String> {
 
 /// The dashboard rows of `results`.
 pub fn dashboard_lines(results: &DesignResults) -> Vec<DashboardLine> {
-    let out_of_range = end_effect_out_of_range(results).is_some();
     DASHBOARD
         .iter()
         .map(|&(path, badge)| {
             let info = result_info(path).unwrap_or_else(|| panic!("DASHBOARD: no result {path}"));
             let value = results.get(path).unwrap_or(Value::None);
-            let greyed = out_of_range && END_EFFECT_ROWS.contains(&path);
+            let greyed = greyed_by_end_effect(results, path);
             let stored_3d = STORED_3D_ROWS.contains(&path);
-            let level = match (
-                greyed,
-                badge.and_then(|check| results.get(check).map(|v| (check, v))),
-            ) {
-                (false, Some((check, Value::Text(text)))) => verdict_level(check, &text),
+            // A greyed row has no badge; any other takes its check's level, the level the
+            // results table shows on the check's own row.
+            let level = match (greyed, badge) {
+                (false, Some(check)) => check_level(results, check),
                 _ => None,
             };
             let marks = CorrectionIndex::get().marks(info.cell.as_deref());
@@ -1108,6 +1119,67 @@ mod tests {
             end_effect_out_of_range(&compute_all(&DesignInputs::default())),
             None
         );
+    }
+
+    #[test]
+    fn out_of_range_end_effect_drops_the_pull_out_checks_from_the_table_and_the_failing_filter() {
+        // The twin of the test above for the results table's badges and its failing filter
+        // (both read `check_level`): a verdict computed from an invalid pull-out is no verdict,
+        // so the two checks among the greyed rows give no badge and are not listed as failing.
+        use Level::{Bad, Caution};
+        let results = compute_all(&short_magnets());
+        assert!(end_effect_out_of_range(&results).is_some());
+        let greyed: Vec<&str> = END_EFFECT_ROWS
+            .into_iter()
+            .filter(|path| CHECKS.contains(path))
+            .collect();
+        assert_eq!(greyed, ["metal.hot_min_check", "clamps.recommended"]);
+        for path in &greyed {
+            assert!(greyed_by_end_effect(&results, path), "{path}");
+            // The verdict has a level of its own (red and green here): the rule drops it.
+            let Some(Value::Text(text)) = results.get(path) else {
+                panic!("{path} is text")
+            };
+            assert!(verdict_level(path, &text).is_some(), "{path}: {text:?}");
+            assert_eq!(check_level(&results, path), None, "{path}");
+        }
+        assert_eq!(
+            failing_checks(&results),
+            [
+                ("model.end_effect_check", Bad),
+                ("model.verdict", Bad),
+                ("model.cup_ring_check", Bad),
+                ("metal.clearance_check", Bad),
+                ("materials.cup_wall_check", Bad),
+                ("temperature.summary.torque_hot_day_note", Bad),
+                ("temperature.magnet_life.torque_hot_day_check", Bad),
+                ("model.inner_temp_check", Caution),
+                ("model.outer_temp_check", Caution),
+                ("temperature.adhesive.fatigue_screen", Caution),
+                ("temperature.adhesive_life.hot_fatigue_screen", Caution),
+            ]
+        );
+        // On every dashboard row with a check, the check's level is the row's badge, in range
+        // and out of it: what the table shows on a check's row is what the dashboard shows.
+        for inputs in [DesignInputs::default(), short_magnets()] {
+            let results = compute_all(&inputs);
+            for (line, &(path, check)) in dashboard_lines(&results).iter().zip(&DASHBOARD) {
+                assert_eq!(line.path, path);
+                if let Some(check) = check {
+                    assert_eq!(check_level(&results, check), line.level, "{path}");
+                }
+            }
+        }
+        // In range nothing is dropped: the defaults' hot minimum is red, the screw green.
+        let defaults = compute_all(&DesignInputs::default());
+        assert!(!greyed_by_end_effect(&defaults, "metal.hot_min_check"));
+        assert_eq!(check_level(&defaults, "metal.hot_min_check"), Some(Bad));
+        assert_eq!(
+            check_level(&defaults, "clamps.recommended"),
+            Some(Level::Good)
+        );
+        // A row outside END_EFFECT_ROWS is never dropped, out of range or not.
+        assert!(!greyed_by_end_effect(&results, "metal.clearance_check"));
     }
 
     #[test]
