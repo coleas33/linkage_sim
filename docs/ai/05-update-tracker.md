@@ -8,7 +8,7 @@ Reverse chronological (newest at top).
 ## 2026-10-03 — Magcoupling spreadsheet export: the final review's fix wave (branch magcoupling/xlsx)
 - The check-level fills are a fixed palette: the badge colours of egui's dark visuals (green
   5AC878, amber FF8F00, red FF0000), which the standalone page forces. The linkage app's
-  calculator window may draw in light visuals (green 148C3C, amber FF6400), and the fills do not
+  calculator window may draw in light visuals (green 14823C, amber FF6400), and the fills do not
   follow it. The README, `gui/xlsx.rs`, decision X-11 and 03-structure now say so; the writer
   is unchanged (the values and the level words were right).
 - The spreadsheet tests' `snapshot` fixture, written twice (`gui::spreadsheet`, `gui::xlsx`), is

@@ -117,7 +117,7 @@ fn format_of(style: CellStyle) -> Format {
 /// The badge colour of `level` in egui's dark visuals, which the standalone page forces
 /// (decision X-11): green, the warning amber, the error red. Black text reads on each. A fixed
 /// palette: the linkage app's calculator window may draw in light visuals, whose badges differ
-/// (green 148C3C, amber FF6400), and the fills do not follow them.
+/// (green 14823C, amber FF6400), and the fills do not follow them.
 pub fn fill(level: Level) -> Color {
     let color = level.color(&egui::Visuals::dark());
     Color::RGB((u32::from(color.r()) << 16) | (u32::from(color.g()) << 8) | u32::from(color.b()))

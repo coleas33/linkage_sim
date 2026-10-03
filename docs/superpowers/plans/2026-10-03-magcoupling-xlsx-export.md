@@ -18,7 +18,7 @@
 
 **Confirmed (user, 2026-10-03):** X-1 (values only: no formulas, no round trip from Excel back to the site).
 
-**Not yet confirmed.** These choices arose while turning the request into code. The plan implements the recommended option of each (the code and docs cite the ids). Task 0 Step 7 asks the user and records the answers; if the user picks another option, the task that implements it stops and escalates instead of improvising.
+**Confirmed (user, 2026-10-03): the recommended option on all of X-2 to X-12 (X-9: rust_xlsxwriter).** These choices arose while turning the request into code. The plan implements the recommended option of each (the code and docs cite the ids). Task 0 Step 7 asks the user and records the answers; if the user picks another option, the task that implements it stops and escalates instead of improvising.
 
 | Id | Question | Recommended (implemented here) | Alternatives | Tasks |
 |---|---|---|---|---|
