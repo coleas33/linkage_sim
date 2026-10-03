@@ -21,6 +21,7 @@ mod panel;
 pub mod pickers;
 pub mod plots;
 pub mod readouts;
+pub mod result_groups;
 pub mod results_table;
 pub mod session;
 pub mod sizing;
