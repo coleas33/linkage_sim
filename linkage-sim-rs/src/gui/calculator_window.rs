@@ -230,7 +230,7 @@ impl CalculatorWindow {
                     mime,
                     contents,
                 } => {
-                    let outcome = download::download_text(
+                    let outcome = download::download_bytes(
                         &file_name,
                         mime,
                         &contents,

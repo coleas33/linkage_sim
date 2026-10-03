@@ -73,7 +73,13 @@ fn download_bytes_impl(
     else {
         return DownloadOutcome::Cancelled;
     };
-    match std::fs::write(&path, contents) {
+    write_file(&path, contents)
+}
+
+/// Writes `contents` to `path` byte for byte (the native save after its dialog).
+#[cfg(feature = "native")]
+fn write_file(path: &std::path::Path, contents: &[u8]) -> DownloadOutcome {
+    match std::fs::write(path, contents) {
         Ok(()) => DownloadOutcome::Saved(format!("Saved: {}", path.display())),
         Err(e) => DownloadOutcome::Failed(format!("Write failed: {}", e)),
     }
@@ -165,4 +171,32 @@ fn download_bytes_impl(
     let _ = web_sys::Url::revoke_object_url(&url);
 
     DownloadOutcome::Saved(format!("Downloaded: {}", default_filename))
+}
+
+#[cfg(all(test, feature = "native"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_saved_file_holds_the_bytes_as_they_are() {
+        // A zip archive's first bytes (the calculator's spreadsheet export), then bytes that are
+        // no UTF-8 text and line breaks: the file holds them unchanged.
+        let contents = [0x50, 0x4B, 0x03, 0x04, 0xFF, 0x00, 0xFE, b'\n', b'\r'];
+        let path =
+            std::env::temp_dir().join(format!("linkage-download-test-{}.bin", std::process::id()));
+        let DownloadOutcome::Saved(message) = write_file(&path, &contents) else {
+            panic!("not saved");
+        };
+        assert_eq!(message, format!("Saved: {}", path.display()));
+        assert_eq!(std::fs::read(&path).unwrap(), contents);
+        std::fs::remove_file(&path).unwrap();
+        // A folder that does not exist: the reason, not a panic.
+        let missing = std::env::temp_dir()
+            .join("linkage-no-such-folder")
+            .join("a.xlsx");
+        let DownloadOutcome::Failed(error) = write_file(&missing, &contents) else {
+            panic!("a missing folder cannot be written");
+        };
+        assert!(error.starts_with("Write failed: "), "{error}");
+    }
 }

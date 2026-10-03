@@ -151,7 +151,9 @@ pub enum PanelRequest {
         file_name: String,
         /// The media type (the web download's Blob type).
         mime: &'static str,
-        contents: String,
+        /// The file's bytes: UTF-8 text for a design file and the CSV and JSON exports, as
+        /// they are for a binary format.
+        contents: Vec<u8>,
     },
     /// Let the user pick a design file, then hand its text to
     /// [`MagcouplingPanel::load_design_file`].
@@ -690,7 +692,7 @@ impl MagcouplingPanel {
                     Some(TableAction::ExportCsv) => self.requests.push(PanelRequest::SaveFile {
                         file_name: CSV_FILE_NAME.to_owned(),
                         mime: "text/csv",
-                        contents: results_csv(&self.results),
+                        contents: results_csv(&self.results).into_bytes(),
                     }),
                     Some(TableAction::ExportJson) => self.requests.push(PanelRequest::SaveFile {
                         file_name: JSON_FILE_NAME.to_owned(),
@@ -703,7 +705,8 @@ impl MagcouplingPanel {
                                 sizing: self.sizing,
                             },
                             &self.results,
-                        ),
+                        )
+                        .into_bytes(),
                     }),
                     None => {}
                 }
@@ -743,7 +746,7 @@ impl MagcouplingPanel {
                 self.requests.push(PanelRequest::SaveFile {
                     file_name: DESIGN_FILE_NAME.to_owned(),
                     mime: "application/json",
-                    contents: design_to_json(&design),
+                    contents: design_to_json(&design).into_bytes(),
                 });
             }
             if ui.button(LOAD_DESIGN).clicked() {
@@ -2796,12 +2799,12 @@ mod tests {
                 PanelRequest::SaveFile {
                     file_name: "magcoupling-results.csv".to_owned(),
                     mime: "text/csv",
-                    contents: results_csv(&results),
+                    contents: results_csv(&results).into_bytes(),
                 },
                 PanelRequest::SaveFile {
                     file_name: "magcoupling-results.json".to_owned(),
                     mime: "application/json",
-                    contents: results_json(&harness.panel.design(), &results),
+                    contents: results_json(&harness.panel.design(), &results).into_bytes(),
                 },
             ]
         );
@@ -3084,7 +3087,7 @@ mod tests {
                 PanelRequest::SaveFile {
                     file_name: DESIGN_FILE_NAME.to_owned(),
                     mime: "application/json",
-                    contents: design_to_json(&gap_design(1.41)),
+                    contents: design_to_json(&gap_design(1.41)).into_bytes(),
                 },
                 PanelRequest::OpenDesign,
             ]
@@ -3467,7 +3470,8 @@ mod tests {
         let [PanelRequest::SaveFile { contents, .. }] = &requests[..] else {
             panic!("one export: {requests:?}")
         };
-        let json: serde_json::Value = serde_json::from_str(contents).unwrap();
+        let text = std::str::from_utf8(contents).expect("the JSON export is UTF-8");
+        let json: serde_json::Value = serde_json::from_str(text).unwrap();
         let design = design_from_json(&json["design"].to_string()).unwrap();
         assert_eq!(design.inputs, harness.panel.shown_inputs());
         assert_eq!(&compute_all(&design.inputs), harness.panel.results());
