@@ -25,6 +25,7 @@ pub mod result_groups;
 pub mod results_table;
 pub mod session;
 pub mod sizing;
+pub mod spreadsheet;
 #[cfg(test)]
 pub(crate) mod test_support;
 pub mod trace;

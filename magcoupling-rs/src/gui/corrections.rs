@@ -153,8 +153,9 @@ impl CorrectionIndex {
     }
 }
 
-/// Whether a correction marks values: applied and changing what the engine computes.
-fn marks_values(deviation: &Deviation) -> bool {
+/// Whether a correction marks values: applied and changing what the engine computes (the
+/// spreadsheet's Summary lists these as the corrections applied).
+pub(crate) fn marks_values(deviation: &Deviation) -> bool {
     deviation.status == DeviationStatus::Applied && deviation.class == DeviationClass::Engine
 }
 

@@ -778,11 +778,7 @@ impl MagcouplingPanel {
             }
         });
         // Spec Addendum A3: the banner while any assumption differs from its workbook default.
-        let modified = assumptions::modified(&self.inputs);
-        let banner = (!modified.is_empty()).then(|| {
-            let names: Vec<&str> = modified.iter().map(|a| a.label).collect();
-            format!("{ASSUMPTIONS_MODIFIED}: {}", names.join(", "))
-        });
+        let banner = assumptions_banner(&self.inputs);
         if banner != self.banner {
             self.banner.clone_from(&banner);
             ui.ctx().request_repaint();
@@ -988,17 +984,16 @@ impl MagcouplingPanel {
                         .default_open(false)
                         .open(open_group.then_some(true))
                         .show(ui, |ui| {
-                            for section in group.sections.iter().filter(|s| !s.advanced) {
+                            for section in group.plain_sections() {
                                 self.section_ui(ui, group, section, readouts);
                             }
-                            if group.sections.iter().any(|s| s.advanced) {
+                            if group.has_advanced() {
                                 egui::CollapsingHeader::new(ADVANCED_HEADING)
                                     .id_salt(("advanced", &group.name))
                                     .default_open(false)
                                     .open(open_advanced.then_some(true))
                                     .show(ui, |ui| {
-                                        for section in group.sections.iter().filter(|s| s.advanced)
-                                        {
+                                        for section in group.advanced_sections() {
                                             self.section_ui(ui, group, section, readouts);
                                         }
                                     });
@@ -1008,7 +1003,8 @@ impl MagcouplingPanel {
             });
     }
 
-    /// One section of a group: its heading (none for the group's own section), then its rows.
+    /// One section of a group: its heading ([`InputSection::heading_in`]: none for the group's
+    /// own section), then its rows.
     fn section_ui(
         &mut self,
         ui: &mut egui::Ui,
@@ -1016,9 +1012,9 @@ impl MagcouplingPanel {
         section: &'static InputSection,
         readouts: &Readouts,
     ) {
-        if section.id != group.name {
+        if let Some(heading) = section.heading_in(group) {
             ui.add_space(4.0);
-            ui.strong(section.label);
+            ui.strong(heading);
         }
         for entry in &section.entries {
             let widget = self.input_row_ui(ui, entry, readouts);
@@ -1128,6 +1124,17 @@ impl MagcouplingPanel {
             _ => None,
         }
     }
+}
+
+/// The assumptions banner (spec Addendum A3) of `inputs`: [`ASSUMPTIONS_MODIFIED`] and the names
+/// of the assumptions that differ from their workbook default; `None` while none does. The header
+/// shows it, and the spreadsheet's Summary.
+pub(crate) fn assumptions_banner(inputs: &DesignInputs) -> Option<String> {
+    let modified = assumptions::modified(inputs);
+    (!modified.is_empty()).then(|| {
+        let names: Vec<&str> = modified.iter().map(|a| a.label).collect();
+        format!("{ASSUMPTIONS_MODIFIED}: {}", names.join(", "))
+    })
 }
 
 /// Draws `add` in a child of `ui` (salted `id_salt`) confined to the space left in `ui`: the

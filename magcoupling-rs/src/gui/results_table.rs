@@ -50,6 +50,9 @@ pub const EXPORT_JSON: &str = "Export JSON";
 /// The search box's hint.
 pub const SEARCH_HINT: &str = "Search label, path or cell";
 
+/// The workbook cell column of a Rust-only result (no workbook cell).
+pub const RUST_ONLY: &str = "Rust-only";
+
 /// The failing filter's checkbox (decision O-7).
 pub const FAILING_ONLY: &str = "Failing checks only";
 
@@ -240,6 +243,26 @@ pub fn table_lines(
             lines
         }
     }
+}
+
+/// The level of the badge `entry`'s row carries for `results`, in the table and the
+/// spreadsheet: its check's level ([`check_level`]); `None` for a row that is no check and for
+/// a check without a level (one the end effect greys).
+pub fn entry_level(results: &DesignResults, entry: &TableEntry) -> Option<Level> {
+    entry
+        .check
+        .then(|| check_level(results, &entry.path))
+        .flatten()
+}
+
+/// The worst level of the checks among `rows` (indices into [`table_entries`]) for `results`: a
+/// group heading's badge in the table and the spreadsheet; `None` when none of them is a check
+/// with a level.
+pub fn worst_level(results: &DesignResults, rows: &[usize]) -> Option<Level> {
+    let entries = table_entries();
+    rows.iter()
+        .filter_map(|&index| entry_level(results, &entries[index]))
+        .max()
 }
 
 /// What the table says when its filters leave no line: [`NOTHING_TRACED`] when the trace filter
@@ -539,13 +562,7 @@ impl ResultsTable {
                             };
                             // The worst level of the group's checks: a closed group shows that
                             // one of them fails.
-                            let level = heading
-                                .rows
-                                .iter()
-                                .map(|&index| &entries[index])
-                                .filter(|entry| entry.check)
-                                .filter_map(|entry| check_level(results, &entry.path))
-                                .max();
+                            let level = worst_level(results, &heading.rows);
                             let line = HeadingLine {
                                 text: &text,
                                 open,
@@ -559,10 +576,7 @@ impl ResultsTable {
                         }
                         Line::Row(index) => {
                             let entry = &entries[index];
-                            let level = entry
-                                .check
-                                .then(|| check_level(results, &entry.path))
-                                .flatten();
+                            let level = entry_level(results, entry);
                             row_ui(ui, entry, results, level, row_height, widths, readouts);
                         }
                     }
@@ -710,7 +724,7 @@ fn row_ui(
         cell(
             ui,
             workbook,
-            entry.info.cell.as_deref().unwrap_or("Rust-only"),
+            entry.info.cell.as_deref().unwrap_or(RUST_ONLY),
             None,
         );
         cell(ui, marker, &entry.marker, None);
@@ -1070,6 +1084,53 @@ mod tests {
         }
         assert!(!entries[entry_index("model.pullout_Nm").unwrap()].check);
         assert_eq!(entry_index("no.such.result"), None);
+    }
+
+    #[test]
+    fn a_row_carries_its_check_s_level_and_a_heading_the_worst_of_its_rows() {
+        use crate::gui::test_support::short_magnets;
+        let entries = table_entries();
+        let row = |path: &str| &entries[entry_index(path).unwrap()];
+        // The default design: the hot minimum fails (red); a result that is no check has none.
+        let results = compute_all(&DesignInputs::default());
+        assert_eq!(
+            entry_level(&results, row("metal.hot_min_check")),
+            Some(Level::Bad)
+        );
+        assert_eq!(entry_level(&results, row("model.pullout_Nm")), None);
+        // Short magnets: the end effect greys the hot minimum, so its row has no level.
+        let short = compute_all(&short_magnets());
+        assert_eq!(entry_level(&short, row("metal.hot_min_check")), None);
+        // Every row: its check's level, none for a row that is no check.
+        for results in [&results, &short] {
+            for entry in entries {
+                let want = CHECKS
+                    .contains(&entry.path.as_str())
+                    .then(|| check_level(results, &entry.path))
+                    .flatten();
+                assert_eq!(entry_level(results, entry), want, "{}", entry.path);
+            }
+            // A heading's level: the worst of its rows' levels.
+            for group in result_groups() {
+                let levels = group
+                    .rows
+                    .iter()
+                    .filter_map(|&i| entry_level(results, &entries[i]));
+                assert_eq!(
+                    worst_level(results, &group.rows),
+                    levels.max(),
+                    "{}",
+                    group.label
+                );
+            }
+        }
+        let pair = [
+            entry_index("model.pullout_Nm").unwrap(),
+            entry_index("metal.hot_min_check").unwrap(),
+        ];
+        assert_eq!(worst_level(&results, &pair), Some(Level::Bad));
+        assert_eq!(worst_level(&results, &pair[..1]), None);
+        assert_eq!(worst_level(&results, &[]), None);
     }
 
     #[test]
