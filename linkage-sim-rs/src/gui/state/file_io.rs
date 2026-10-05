@@ -525,9 +525,12 @@ impl AppState {
         self.auto_grid_spacing();
         self.compute_forces(0.0);
         self.update_grashof();
+        // The sweep reads the offset: a shared link's crank limits are display
+        // degrees, so they convert to body-frame angles with this mechanism's
+        // offset, not the previous one's.
+        self.recompute_driver_display_offset();
         self.compute_sweep();
         self.compute_validation();
-        self.recompute_driver_display_offset();
         self.dirty = false;
         self.autosave_timer = 0.0;
 
@@ -824,6 +827,43 @@ mod tests {
         );
         assert!((dst.sweep_angle_min_deg - 10.0).abs() < 1e-9);
         assert!((dst.sweep_angle_max_deg - 350.0).abs() < 1e-9);
+    }
+
+    /// A shared link stores the crank limits in display degrees; the loader must
+    /// sweep the same driver angles the sender saw. With the crank drawn at 30°
+    /// in its local frame, display 45..135° is body-frame 15..105°.
+    #[test]
+    fn share_url_sweeps_the_senders_crank_range_for_a_rotated_crank() {
+        use crate::gui::samples::SampleMechanism;
+        use crate::gui::state::AppState;
+
+        let mut src = AppState::default();
+        src.load_sample(SampleMechanism::FourBar);
+        let (bx, by) = (2.0 * 30f64.to_radians().cos(), 2.0 * 30f64.to_radians().sin());
+        src.blueprint
+            .as_mut()
+            .and_then(|bp| bp.bodies.get_mut("crank"))
+            .expect("FourBar has a crank")
+            .attachment_points
+            .insert("B".to_string(), [bx, by]);
+        src.rebuild();
+        src.sweep_range_enabled = true;
+        src.sweep_angle_min_deg = 45.0;
+        src.sweep_angle_max_deg = 135.0;
+        src.compute_sweep();
+        let sent = src.sweep_data.as_ref().expect("sender sweep").angles_deg.clone();
+        assert!((sent[0] - 15.0).abs() < 1e-9, "sender sweep starts at body {}", sent[0]);
+        assert!((sent[sent.len() - 1] - 105.0).abs() < 1e-9, "sender sweep ends at body {}", sent[sent.len() - 1]);
+
+        let url = src.generate_share_url().expect("generate_share_url failed");
+        let encoded = url.split("?m=").nth(1).expect("share URL missing ?m=");
+        let decoded_json = decode_mechanism_from_url(encoded).expect("decode failed");
+        let mut dst = AppState::default();
+        dst.load_from_json_str(&decoded_json).expect("load failed");
+
+        assert!((dst.driver_display_offset - 30f64.to_radians()).abs() < 1e-6);
+        let received = &dst.sweep_data.as_ref().expect("loaded sweep").angles_deg;
+        assert_eq!(received, &sent, "the loaded link sweeps different driver angles than the sender");
     }
 
     #[test]
