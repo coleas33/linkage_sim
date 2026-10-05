@@ -5,6 +5,12 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-05 — Share links sweep the sender's crank range (BL-041, branch fix/share-link-sweep-offset)
+- `AppState::load_from_json_str` recomputes the driver display offset before the sweep. A link
+  from a mechanism whose driven link is drawn at an angle (the user's press: 44.3 deg) swept a
+  range shifted by that angle until an edit recomputed it.
+- New test `share_url_sweeps_the_senders_crank_range_for_a_rotated_crank` pins it.
+
 ## 2026-10-03 — Magcoupling spreadsheet export: the final review's fix wave (branch magcoupling/xlsx)
 - The check-level fills are a fixed palette: the badge colours of egui's dark visuals (green
   5AC878, amber FF8F00, red FF0000), which the standalone page forces. The linkage app's

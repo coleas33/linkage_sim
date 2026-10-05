@@ -404,3 +404,13 @@
   priority: 3
   status: open
   notes: "Sketch: each frame compare ctx.memory(|m| m.focused()) with the last frame's, also while the window is closed; on a change to Some(id), apply the press rule to ctx.read_response(id)'s layer_id. Documented in M5 (decision M5-5, the calculator_window module docs, 02-system limitations)."
+
+- id: BL-041
+  title: "A shared link (?m=) plots the wrong crank range when the driven link is drawn at an angle"
+  dimension: gui
+  risk: mechanical
+  evidence: "User report 2026-10-05 (press 4-bar link): the share link stores the crank limits in display degrees (22-80), and the sweep converts them to body-frame angles with driver_display_offset. AppState::load_from_json_str called compute_sweep before recompute_driver_display_offset, so a fresh load converted them with the previous offset (0 on a fresh page): the press link swept display 66-124 deg, blank past the 85.5 deg dead point, until an edit recomputed the sweep."
+  acceptance: "a link written from a mechanism whose crank is drawn at 30 deg, with a 45..135 range, loads into a fresh AppState and sweeps exactly the sender's driver angles (file_io::tests::share_url_sweeps_the_senders_crank_range_for_a_rotated_crank)"
+  priority: 2
+  status: fixed
+  notes: "Fixed 2026-10-05 on fix/share-link-sweep-offset: load_from_json_str recomputes the offset before compute_sweep. load_sample has the same order but turns the range off before its sweep, so its sweep never reads the offset; left as is."

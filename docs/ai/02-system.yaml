@@ -379,6 +379,7 @@ risks:
     any new conversion flow must do the same (push_undo + mutate + rebuild).
 
 lessons_learned:
+  - "Linkage AppState: compute_sweep reads driver_display_offset whenever the crank range is on (the stored limits are display degrees). Every path that changes the mechanism and then sweeps must call recompute_driver_display_offset first (BL-041: share links swept a shifted range)."
   - rfd file dialogs are native-only. WASM file import uses drag-and-drop
     via egui raw.dropped_files — handle both paths for any new import flow.
   - DragValue::changed() fires on every keystroke. Use drag_stopped() ||
