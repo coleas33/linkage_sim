@@ -268,7 +268,7 @@ All force elements are editable in the GUI property panel and rendered on the ca
 
 - Body geometry can be a circle (a wheel): "Add circle" / "Add rectangle" in the link's Geometry section, a Rectangle / Circle switch and a Diameter slider; circles draw as circles
 - Force zones apply at the overlap centre, a locked point, or the shape's contact point (a wheel's bottom for an upward force, found at every pose); the F marker reads "F (contact)"
-- Older builds still open schema 1.2.0 files (circles show as their bounding squares)
+- Older builds still open schema 1.2.0 files (circles show as their bounding squares; a contact-point zone acts at its locked point or overlap centre)
 
 ## Planned / Future
 

@@ -392,7 +392,7 @@ F = force            if area(overlap) >= 1e-15, else 0
 ```
 
 **Application point** (`force_zone_application`, shared by the force evaluation, the overlap ratio, the independent equilibrium check and the canvas):
-- **Contact point** (`at_contact_point`): the shape's extreme point against the force, found at every pose: for an upward force the lowest point (a wheel's bottom, straight below its hub however the wheel turns); a level rectangle edge gives the edge's midpoint. Wins over a locked point.
+- **Contact point** (`at_contact_point`): the shape's extreme point against the force, found at every pose: for an upward force the lowest point (a wheel's bottom, straight below its hub however the wheel turns); a level rectangle edge gives the edge's midpoint. Wins over a locked point. A zero force falls back to the lowest point. The contact point need not lie inside the zone; the force applies only while the geometry overlaps it.
 - **Locked point** (`body_local_app_point`): a fixed point on the body.
 - **Overlap centre** (neither): the centroid of the clipped overlap polygon.
 

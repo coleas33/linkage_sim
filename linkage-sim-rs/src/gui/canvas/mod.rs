@@ -956,15 +956,22 @@ mod tests {
             let a = state.view.world_to_screen(0.0, 0.0);
             let b = state.view.world_to_screen(0.01, 0.0);
             let radius_px = ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2)).sqrt();
+            let pose = state.mechanism.as_ref().unwrap().state().get_pose("coupler", &state.q);
+            let centre_world = geo.centre_world(pose.0, pose.1, pose.2);
+            let centre = state.view.world_to_screen(centre_world.x, centre_world.y);
             let mut found = false;
             visit_shapes(&output, |shape| {
                 if let egui::Shape::Circle(c) = shape {
-                    if c.stroke.color == egui::Color32::from_rgb(255, 165, 0) && (c.radius - radius_px).abs() < 0.5 {
+                    if c.stroke.color == egui::Color32::from_rgb(255, 165, 0)
+                        && (c.radius - radius_px).abs() < 0.5
+                        && (c.center.x - centre[0]).abs() < 0.5
+                        && (c.center.y - centre[1]).abs() < 0.5
+                    {
                         found = true;
                     }
                 }
             });
-            assert!(found, "a circle of radius {radius_px} px in the geometry colour");
+            assert!(found, "a circle of radius {radius_px} px centred at {centre:?} in the geometry colour");
         }
 
         #[test]

@@ -1,7 +1,7 @@
 # Linkage Simulation — Rust Codebase System Guide
 
 **Date**: 2026-04-10
-**Schema Version**: 1.1.0
+**Schema Version**: 1.2.0
 **Total**: 107 Rust source files, 45,941 lines
 
 This document maps the system for AI-assisted development. Every module, file, and data flow is documented so an agent can navigate, modify, and refactor with confidence.

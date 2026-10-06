@@ -808,7 +808,7 @@ fn draw_force_element_details(
                 .collect();
 
             ui.horizontal(|ui| {
-                ui.label("Target body:").on_hover_text("Body whose geometry elements will receive the zone force when their centroid is inside the zone bounds.");
+                ui.label("Target body:").on_hover_text("Body whose geometry elements will receive the zone force while the body's geometry overlaps the zone.");
                 let current_label = if fz.body_id.is_empty() { "(none)" } else { &fz.body_id };
                 egui::ComboBox::from_id_salt(format!("fz_body_{}", index))
                     .selected_text(current_label)
@@ -871,7 +871,7 @@ fn draw_force_element_details(
             let mut zone_changed = false;
             ui.horizontal(|ui| {
                 ui.label("Min X:");
-                if ui.add(egui::DragValue::new(&mut min_x_mm).speed(1.0).suffix(" mm")).on_hover_text("Minimum X coordinate of the force zone in mm. The zone applies forces to geometry elements whose centroid falls within this bounding box.").changed() {
+                if ui.add(egui::DragValue::new(&mut min_x_mm).speed(1.0).suffix(" mm")).on_hover_text("Minimum X coordinate of the force zone in mm. The zone applies its force while the body's geometry overlaps this bounding box.").changed() {
                     zone_changed = true;
                 }
                 ui.label("Min Y:");

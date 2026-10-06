@@ -349,8 +349,9 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                             let mut ox_mm = geo.offset.x * 1e3;
                                             let oxr = ui.add(
                                                 egui::Slider::new(&mut ox_mm, -250.0..=250.0)
-                                                    .text("Offset X (mm)"),
-                                            ).on_hover_text("Horizontal offset of geometry rectangle from body origin in mm");
+                                                    .text("Offset X (mm)")
+                                                    .clamping(egui::SliderClamping::Never),
+                                            ).on_hover_text("Horizontal offset of the geometry's centre from the body origin in mm");
                                             if oxr.drag_stopped() || (oxr.changed() && !oxr.dragged()) {
                                                 pending = Some(PendingPropertyEdit::UpdateGeometryOffsetX {
                                                     body_id: body_id.clone(),
@@ -362,8 +363,9 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                             let mut oy_mm = geo.offset.y * 1e3;
                                             let oyr = ui.add(
                                                 egui::Slider::new(&mut oy_mm, -250.0..=250.0)
-                                                    .text("Offset Y (mm)"),
-                                            ).on_hover_text("Vertical offset of geometry rectangle from body origin in mm");
+                                                    .text("Offset Y (mm)")
+                                                    .clamping(egui::SliderClamping::Never),
+                                            ).on_hover_text("Vertical offset of the geometry's centre from the body origin in mm");
                                             if oyr.drag_stopped() || (oyr.changed() && !oyr.dragged()) {
                                                 pending = Some(PendingPropertyEdit::UpdateGeometryOffsetY {
                                                     body_id: body_id.clone(),

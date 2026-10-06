@@ -330,7 +330,7 @@ pub struct ForceZoneElement {
     pub zone_min: [f64; 2],
     /// World-space top-right corner of the zone (meters).
     pub zone_max: [f64; 2],
-    /// Constant force vector applied at full overlap (Newtons).
+    /// Force vector applied while the geometry overlaps the zone (binary; Newtons).
     pub force: [f64; 2],
     /// Optional display label.
     #[serde(default, skip_serializing_if = "Option::is_none")]

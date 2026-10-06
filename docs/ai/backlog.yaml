@@ -444,3 +444,13 @@
   priority: 4
   status: open
   notes: "Decision R-2 option (b) if the user wants dragging."
+
+- id: BL-045
+  title: "Force-element edits skip undo and the changed flag"
+  dimension: gui
+  risk: mechanical
+  evidence: "update_force_element (blueprint_ops.rs) does not push an undo step, so a force zone's mode switch (Overlap centre / Locked point / Contact point), a dragged F marker and the other force-editor edits cannot be undone and do not set dirty (the web autosave skips them); noted in the round-geometry final review 2026-10-06"
+  acceptance: "each force-element edit is one undo step and sets dirty; a test switches a zone's mode, undoes it, and checks dirty"
+  priority: 3
+  status: open
+  notes: "Pre-existing for the old lock checkbox; the round-geometry branch adds the three-way choice."

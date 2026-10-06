@@ -9,6 +9,7 @@ Reverse chronological (newest at top).
 - `BodyGeometry.shape`: rectangle (default, left out of files) or circle (diameter in width); schema 1.2.0.
 - Force zones gain a third application mode, the shape's contact point (`at_contact_point`): its extreme point against the force, found at every pose, so a wheel's load acts at its bottom. One helper, `force_zone_application`, now decides overlap and point for the evaluation, the overlap ratio, the independent check and the canvas.
 - Property panel: Add rectangle / Add circle, a shape switch, Diameter; the stub Draw Geometry / Redraw buttons removed (BL-044). Force editor: Overlap centre / Locked point / Contact point; dropping the F marker locks it.
+- Final-review fixes: geometry edits are one undo step each and mark the file changed; sizes must be > 0 and finite; Offset sliders unclamped.
 
 ## 2026-10-05 — Weights draw over force zones (BL-042, branch fix/weights-over-force-zones)
 - Canvas weights are drawn in `render_overlays` after the force elements. A force zone's

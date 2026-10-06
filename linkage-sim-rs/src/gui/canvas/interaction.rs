@@ -288,10 +288,8 @@ pub fn handle_interaction(
                     ];
                     // Dropping the marker locks the point there, whatever the
                     // zone's mode was (decision R-4).
-                    let mut updated = fz.with_app_mode(
-                        crate::forces::elements::ZoneAppMode::Locked,
-                        local,
-                    );
+                    let mut updated = fz.clone();
+                    updated.at_contact_point = false;
                     updated.body_local_app_point = Some(local);
                     state.update_force_element(
                         idx,

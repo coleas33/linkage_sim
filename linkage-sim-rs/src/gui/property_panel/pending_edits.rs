@@ -11,7 +11,7 @@ use crate::gui::state::{AppState, SelectedEntity};
 
 /// Pending edit collected during UI rendering, applied after all reads
 /// are done to avoid borrow conflicts.
-#[allow(dead_code)] // RenameMountPoint is wired but no UI triggers it yet
+#[allow(dead_code)] // RenameMountPoint is wired but no UI triggers it yet; nor is EnterDrawGeometryMode (no UI produces it since the Draw Geometry button was replaced; BL-044)
 pub(super) enum PendingPropertyEdit {
     Mass { body_id: String, value: f64 },
     Izz { body_id: String, value: f64 },
@@ -26,7 +26,8 @@ pub(super) enum PendingPropertyEdit {
     UpdateMountPointPosition { body_id: String, name: String, position: [f64; 2] },
     /// Give a link without geometry a `shape` sized from the link (decision R-2).
     AddGeometry { body_id: String, shape: GeometryShape },
-    /// Switch a link's geometry to `shape`, keeping its width.
+    /// Switch a link's geometry to `shape`, keeping its width; the height becomes
+    /// equal to it (a square, or a circle of that diameter).
     SetGeometryShape { body_id: String, shape: GeometryShape },
     /// Set a circle's diameter (width and height).
     UpdateGeometryDiameter { body_id: String, diameter: f64 },
@@ -91,8 +92,11 @@ pub(super) fn draw_force_elements_inner(
 }
 
 /// Apply `edit` to `body_id`'s geometry in the blueprint and in the built
-/// mechanism (the two copies the GUI keeps), then mark the sweep dirty.
+/// mechanism (the two copies the GUI keeps), then mark the sweep dirty. Each
+/// geometry edit is one undo step and marks the file changed (`push_undo`
+/// sets `dirty`, which the web autosave needs).
 fn edit_geometry(state: &mut AppState, body_id: &str, edit: impl Fn(&mut Option<BodyGeometry>)) {
+    state.push_undo();
     if let Some(body) = state.blueprint.as_mut().and_then(|bp| bp.bodies.get_mut(body_id)) {
         edit(&mut body.geometry);
     }
@@ -104,7 +108,7 @@ fn edit_geometry(state: &mut AppState, body_id: &str, edit: impl Fn(&mut Option<
 
 /// A new `shape` for `body` (decision R-2): centred on its attachment points'
 /// centroid (body-local) and sized from their span L, the largest distance
-/// between two of them (0.1 m with fewer than two): a rectangle L x L/4, a
+/// between two of them (0.1 m when not positive and finite, e.g. fewer than two points): a rectangle L x L/4, a
 /// circle of diameter L/2.
 fn default_geometry(body: &crate::io::BodyJson, shape: GeometryShape) -> BodyGeometry {
     let points: Vec<Vector2<f64>> =
@@ -118,7 +122,7 @@ fn default_geometry(body: &crate::io::BodyJson, shape: GeometryShape) -> BodyGeo
         .iter()
         .flat_map(|a| points.iter().map(move |b| (a - b).norm()))
         .fold(0.0, f64::max);
-    let span = if span > 0.0 { span } else { 0.1 };
+    let span = if span > 0.0 && span.is_finite() { span } else { 0.1 };
     match shape {
         GeometryShape::Rectangle => BodyGeometry::new(span, span / 4.0, centre),
         GeometryShape::Circle => BodyGeometry::circle(span / 2.0, centre),
@@ -188,26 +192,32 @@ pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropert
                 });
             }
             PendingPropertyEdit::UpdateGeometryDiameter { body_id, diameter } => {
-                edit_geometry(state, &body_id, |geo| {
-                    if let Some(g) = geo {
-                        g.width = diameter;
-                        g.height = diameter;
-                    }
-                });
+                if diameter > 0.0 && diameter.is_finite() {
+                    edit_geometry(state, &body_id, |geo| {
+                        if let Some(g) = geo {
+                            g.width = diameter;
+                            g.height = diameter;
+                        }
+                    });
+                }
             }
             PendingPropertyEdit::UpdateGeometryWidth { body_id, width } => {
-                edit_geometry(state, &body_id, |geo| {
-                    if let Some(g) = geo {
-                        g.width = width;
-                    }
-                });
+                if width > 0.0 && width.is_finite() {
+                    edit_geometry(state, &body_id, |geo| {
+                        if let Some(g) = geo {
+                            g.width = width;
+                        }
+                    });
+                }
             }
             PendingPropertyEdit::UpdateGeometryHeight { body_id, height } => {
-                edit_geometry(state, &body_id, |geo| {
-                    if let Some(g) = geo {
-                        g.height = height;
-                    }
-                });
+                if height > 0.0 && height.is_finite() {
+                    edit_geometry(state, &body_id, |geo| {
+                        if let Some(g) = geo {
+                            g.height = height;
+                        }
+                    });
+                }
             }
             PendingPropertyEdit::UpdateGeometryOffsetX { body_id, offset_x } => {
                 edit_geometry(state, &body_id, |geo| {
@@ -569,5 +579,82 @@ mod tests {
         apply_pending(&mut state, Some(PendingPropertyEdit::RemoveGeometry { body_id: "coupler".into() }));
         assert!(state.blueprint.as_ref().unwrap().bodies["coupler"].geometry.is_none());
         assert!(state.mechanism.as_ref().unwrap().bodies()["coupler"].geometry.is_none());
+    }
+
+    #[test]
+    fn geometry_edits_are_one_undo_step_each_and_mark_the_file_changed() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.dirty = false;
+        let depth = state.undo_history.undo_count();
+        add_geometry(&mut state, GeometryShape::Rectangle);
+        assert_eq!(state.undo_history.undo_count(), depth + 1);
+        assert!(state.dirty, "a geometry edit marks the file changed");
+        apply_pending(
+            &mut state,
+            Some(PendingPropertyEdit::SetGeometryShape { body_id: "coupler".into(), shape: GeometryShape::Circle }),
+        );
+        assert_eq!(state.undo_history.undo_count(), depth + 2);
+        apply_pending(&mut state, Some(PendingPropertyEdit::Undo));
+        let (span, _) = coupler_span(&state);
+        for geo in geometry_copies(&state, "coupler") {
+            assert_eq!(geo.shape, GeometryShape::Rectangle);
+            assert!((geo.width - span).abs() < 1e-12 && (geo.height - span / 4.0).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn non_positive_or_non_finite_sizes_are_ignored() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        add_geometry(&mut state, GeometryShape::Circle);
+        let before = geometry_copies(&state, "coupler");
+        let bad = [0.0, -0.01, f64::NAN, f64::INFINITY];
+        for value in bad {
+            apply_pending(
+                &mut state,
+                Some(PendingPropertyEdit::UpdateGeometryDiameter { body_id: "coupler".into(), diameter: value }),
+            );
+            for (geo, old) in geometry_copies(&state, "coupler").iter().zip(&before) {
+                assert_eq!((geo.width, geo.height), (old.width, old.height), "diameter {value}");
+            }
+        }
+        apply_pending(
+            &mut state,
+            Some(PendingPropertyEdit::SetGeometryShape { body_id: "coupler".into(), shape: GeometryShape::Rectangle }),
+        );
+        let before = geometry_copies(&state, "coupler");
+        for value in bad {
+            apply_pending(
+                &mut state,
+                Some(PendingPropertyEdit::UpdateGeometryWidth { body_id: "coupler".into(), width: value }),
+            );
+            apply_pending(
+                &mut state,
+                Some(PendingPropertyEdit::UpdateGeometryHeight { body_id: "coupler".into(), height: value }),
+            );
+            for (geo, old) in geometry_copies(&state, "coupler").iter().zip(&before) {
+                assert_eq!((geo.width, geo.height), (old.width, old.height), "size {value}");
+            }
+        }
+    }
+
+    #[test]
+    fn default_geometry_sizes_a_link_with_fewer_than_two_points() {
+        let one = serde_json::from_str::<crate::io::BodyJson>(
+            r#"{"attachment_points":{"A":[0.3,0.1]},"mass":1.0,"cg_local":[0.0,0.0],"izz_cg":0.0}"#,
+        )
+        .unwrap();
+        let none = serde_json::from_str::<crate::io::BodyJson>(
+            r#"{"attachment_points":{},"mass":1.0,"cg_local":[0.0,0.0],"izz_cg":0.0}"#,
+        )
+        .unwrap();
+        for (body, centre) in [(&one, [0.3, 0.1]), (&none, [0.0, 0.0])] {
+            let circle = default_geometry(body, GeometryShape::Circle);
+            assert!((circle.width - 0.05).abs() < 1e-12 && (circle.height - 0.05).abs() < 1e-12);
+            assert!((circle.offset.x - centre[0]).abs() < 1e-12 && (circle.offset.y - centre[1]).abs() < 1e-12);
+            let rect = default_geometry(body, GeometryShape::Rectangle);
+            assert!((rect.width - 0.1).abs() < 1e-12 && (rect.height - 0.025).abs() < 1e-12);
+        }
     }
 }
