@@ -736,10 +736,13 @@ mod tests {
     mod weight_readout {
         use eframe::egui::{self, Pos2};
 
+        use crate::forces::elements::ForceElement;
+        use crate::gui::samples::SampleMechanism;
         use crate::gui::state::{AppState, SelectedEntity};
-        use crate::gui::test_support::{drawn_line_colors, drawn_texts, pose_at, swept_lift};
+        use crate::gui::test_support::{drawn_line_colors, drawn_texts, pose_at, swept_lift, visit_shapes};
         use super::super::colors::{
-            WEIGHT_COLOR, WEIGHT_HELPING_COLOR, WEIGHT_HURTING_COLOR, WEIGHT_NEUTRAL_COLOR,
+            FORCE_ZONE_OVERLAP_FILL, WEIGHT_COLOR, WEIGHT_HELPING_COLOR, WEIGHT_HURTING_COLOR,
+            WEIGHT_NEUTRAL_COLOR, WEIGHT_RADIUS,
         };
         use super::super::hit_testing::tests::weight_screen;
         use super::weight_clicks::{frame, setup};
@@ -858,6 +861,42 @@ mod tests {
                     "{deg} deg: a label ending in {word:?} in {texts:?}"
                 );
             }
+        }
+
+        /// A weight on a link inside a force zone draws after the zone's
+        /// overlap highlight: the highlight is an additive fill, so a weight
+        /// painted under it comes out the same yellow (BL-042: the user's
+        /// 150 lb weight on the press tool could not be seen).
+        #[test]
+        fn a_weight_inside_a_force_zone_draws_over_the_zone_highlight() {
+            let mut state = AppState::default();
+            state.load_sample(SampleMechanism::ParallelogramPress);
+            // A zone over the whole canvas: the coupler's geometry overlaps it at any pose.
+            for force in &mut state.blueprint.as_mut().expect("blueprint").forces {
+                if let ForceElement::ForceZone(zone) = force {
+                    zone.zone_min = [-10.0, -10.0];
+                    zone.zone_max = [10.0, 10.0];
+                }
+            }
+            state.rebuild();
+            assert_eq!(state.add_point_mass("coupler", 2.0, [0.02, 0.0]).as_deref(), Some("W1"));
+            let ctx = egui::Context::default();
+            frame(&ctx, &mut state, Vec::new());
+            let output = frame(&ctx, &mut state, Vec::new());
+
+            let marker_fill = state.nc(WEIGHT_COLOR);
+            let (mut highlight, mut marker, mut k) = (None, None, 0);
+            visit_shapes(&output, |shape| {
+                match shape {
+                    egui::Shape::Path(path) if path.fill == FORCE_ZONE_OVERLAP_FILL => highlight = Some(k),
+                    egui::Shape::Circle(c) if c.radius == WEIGHT_RADIUS && c.fill == marker_fill => marker = Some(k),
+                    _ => {}
+                }
+                k += 1;
+            });
+            let highlight = highlight.expect("the coupler's overlap highlight is drawn");
+            let marker = marker.expect("the weight marker is drawn");
+            assert!(marker > highlight, "the weight (shape {marker}) is painted under the highlight (shape {highlight})");
         }
     }
 }

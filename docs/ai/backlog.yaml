@@ -414,3 +414,13 @@
   priority: 2
   status: fixed
   notes: "Fixed 2026-10-05 on fix/share-link-sweep-offset: load_from_json_str recomputes the offset before compute_sweep. load_sample has the same order but turns the range off before its sweep, so its sweep never reads the offset; left as is."
+
+- id: BL-042
+  title: "A weight on a link inside a force zone is invisible: the zone's overlap highlight paints over it"
+  dimension: gui
+  risk: mechanical
+  evidence: "User report 2026-10-05 (press 4-bar with a 150 lb weight on the press tool): the weight was in the model (71.04 kg total) but not on the canvas. render_mechanism drew the weights; render_overlays then drew the force elements, whose overlap highlight (FORCE_ZONE_OVERLAP_FILL, premultiplied 255,200,0,50, additive) covers the tool block and turns the gold marker and its arrow the same yellow."
+  acceptance: "a headless frame of the ParallelogramPress with a zone over the whole canvas and a weight on the coupler paints the weight marker after the overlap highlight (canvas::tests::weight_readout::a_weight_inside_a_force_zone_draws_over_the_zone_highlight)"
+  priority: 2
+  status: fixed
+  notes: "Fixed 2026-10-05 on fix/weights-over-force-zones: draw_weights moved from render_mechanism to render_overlays, after draw_force_elements. The highlight stays additive (changing it would restyle every zone)."
