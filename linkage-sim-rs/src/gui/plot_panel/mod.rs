@@ -44,6 +44,7 @@ mod dynamics;
 mod mechanics;
 mod trajectory;
 mod weights;
+pub(crate) use weights::source_line_name;
 
 /// Draw the plot panel with tabbed plots.
 ///

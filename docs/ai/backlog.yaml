@@ -464,3 +464,23 @@
   priority: 4
   status: open
   notes: "Seen in the live check of Part A of the round-geometry plan; the animated HTML export draws its labels with a white halo instead."
+
+- id: BL-047
+  title: "The animated HTML export leaves out prismatic and cam joints"
+  dimension: gui
+  risk: mechanical
+  evidence: "gui/export/animation.rs joint_point keeps revolute and fixed joints only (2026-10-06 final review of Part B): a slider-crank's slide joint has no marker on the page, and its reaction is not in the readouts, while the canvas draws a square marker and an arrow (rendering/mod.rs) and the Joint Reactions plot lists it"
+  acceptance: "the page marks prismatic and cam joints as the canvas does (a test exports the slider-crank and finds the slide joint's marker); their reactions are shown, or the page says they are left out"
+  priority: 4
+  status: open
+  notes: "A prismatic joint's multiplier is not an [Fx, Fy] force, so its reaction needs its own drawing (the canvas's treatment is pre-existing)."
+
+- id: BL-048
+  title: "The File menu's text exports repeat the generate / download / error block"
+  dimension: quality
+  risk: mechanical
+  evidence: "menu_bar.rs: the schematic, DXF, HTML report and animation items each repeat match generate { Ok -> download_text + apply_download_outcome, Err -> error_log + show_error_panel } (2026-10-06 final review of Part B)"
+  acceptance: "one helper (generate result, file name, MIME type, filter, failure prefix) used by every text export item; behaviour unchanged (same file names, messages and error panel)"
+  priority: 5
+  status: open
+  notes: "Left alone in Part B to keep the existing items untouched."

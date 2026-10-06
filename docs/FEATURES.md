@@ -273,8 +273,8 @@ All force elements are editable in the GUI property panel and rendered on the ca
 ### Animated HTML export
 
 - File -> Export Animation (HTML)... saves `mechanism_animation.html`: one self-contained page (no network) that plays the mechanism through every solved sample of its angle or stroke sweep
-- Links, round and rectangular shapes, joints and ground pivots; the actuator with its push or pull; each force zone's point and force; weights; joint reactions; the driver-angle arc
-- Readouts per sample in the app's units with lbf beside every force (actuator force or driver torque, actuator length, mechanical advantage, weight shares, reactions); a chart of the actuator force (or driver torque) with a moving marker
+- Links, round and rectangular shapes, joints and ground pivots; the actuator with its push or pull; each force zone's point and force; weights; joint reactions; the driver-angle arc; drawn as the canvas shows it (turned by the mounting angle, gravity down)
+- Readouts per sample in the app's units, written as the canvas writes them, with lbf beside every force (actuator force or driver torque, actuator length, mechanical advantage, weight shares by the Weight Breakdown's names, reactions); a chart of the actuator force (or driver torque) with a moving marker
 - Play, bounce or loop, three speeds, a scrub slider, and switches for forces, weights and the arc; works on the desktop and in the browser
 
 ## Planned / Future

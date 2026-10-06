@@ -9,6 +9,7 @@ Reverse chronological (newest at top).
 - File -> Export Animation (HTML)... saves one self-contained page that plays the mechanism through its sweep: links, shapes, the actuator, force-zone points, weights, joint reactions, readouts with lbf, an actuator force (or driver torque) chart, play/scrub controls. Desktop and browser (`export::download::download_text`).
 - `gui/export/animation.rs` rebuilds each sample's pose from `SweepData::body_angles` and `coupler_traces` (a mount-point actuator's hidden bodies included) instead of solving again; reactions per frame at `sweep_time`, now shared with the sweep.
 - `animation_template.html`: the page, one data slot; every `<` in the embedded JSON written `\u003c`.
+- Final-review fixes: the page is drawn in the canvas's frame (turned by the mounting angle); a coupler point named like a body's first pin no longer misplaces the body (`sweep::trace_key`, shared); labels and readouts use the canvas's `format_magnitude` and zero band with lbf, share rows the Weight Breakdown's names; the item is disabled while the sweep is being recomputed; the player draws only on a new sample and no longer spreads every value into one call.
 
 ## 2026-10-06 — Round shapes and the contact point (Part A, branch linkage/round-geometry)
 - `BodyGeometry.shape`: rectangle (default, left out of files) or circle (diameter in width); schema 1.2.0.

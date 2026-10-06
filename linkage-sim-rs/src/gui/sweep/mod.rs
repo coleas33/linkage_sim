@@ -266,6 +266,13 @@ impl SweepData {
     }
 }
 
+/// The `coupler_traces` key of point `point_name` on body `body_id`. A coupler
+/// point and an attachment point of the same name share it; the coupler point
+/// is traced (it is filed first).
+pub(crate) fn trace_key(body_id: &str, point_name: &str) -> String {
+    format!("{body_id}.{point_name}")
+}
+
 /// The driver time of sweep sample `x_value` (degrees in angle mode, metres
 /// in stroke mode): the inverse of the driver's `f(t) = theta_0 + omega * t`.
 /// In linear mode `omega` is the velocity and `theta_0` the start length; a
@@ -465,14 +472,14 @@ pub(crate) fn compute_sweep_data_with_weights(
             continue;
         }
         for (point_name, local) in &body.coupler_points {
-            let key = format!("{}.{}", body_id, point_name);
+            let key = trace_key(body_id, point_name);
             coupler_keys.push((key.clone(), body_id.clone(), *local));
             data.coupler_traces.insert(key, Vec::with_capacity(capacity));
         }
         // Also trace attachment points on non-ground bodies (useful
         // for visualization even if no explicit coupler points exist).
         for (point_name, local) in &body.attachment_points {
-            let key = format!("{}.{}", body_id, point_name);
+            let key = trace_key(body_id, point_name);
             if !data.coupler_traces.contains_key(&key) {
                 coupler_keys.push((key.clone(), body_id.clone(), *local));
                 data.coupler_traces.insert(key, Vec::with_capacity(capacity));
@@ -1068,13 +1075,13 @@ pub fn compute_trajectory(
             continue;
         }
         for (point_name, local) in &body.coupler_points {
-            let key = format!("{}.{}", body_id, point_name);
+            let key = trace_key(body_id, point_name);
             coupler_keys.push((key.clone(), body_id.clone(), *local));
             data.coupler_traces
                 .insert(key, Vec::with_capacity(n_samples));
         }
         for (point_name, local) in &body.attachment_points {
-            let key = format!("{}.{}", body_id, point_name);
+            let key = trace_key(body_id, point_name);
             if !data.coupler_traces.contains_key(&key) {
                 coupler_keys.push((key.clone(), body_id.clone(), *local));
                 data.coupler_traces
