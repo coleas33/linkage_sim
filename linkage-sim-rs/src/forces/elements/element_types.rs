@@ -298,15 +298,30 @@ pub struct LinearActuatorElement {
     pub end_stop_restitution: f64,
 }
 
-/// A spatial force zone: applies a constant distributed force to a body
-/// proportional to the overlap area between the body's geometry and the zone.
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+/// How a force zone picks its application point (`ForceZoneElement::app_mode`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ZoneAppMode {
+    /// The centroid of the geometry's overlap with the zone, found at every pose.
+    Centroid,
+    /// A fixed body-local point (`body_local_app_point`).
+    Locked,
+    /// The shape's contact point: its extreme point against the force, found
+    /// at every pose (decision R-3).
+    Contact,
+}
+
+/// A spatial force zone: applies its full constant force to a body whenever
+/// the body's geometry overlaps the zone (binary: any overlap, full force).
 ///
 /// The zone is an axis-aligned rectangle in world space. The body must have
-/// `BodyGeometry` set. When `body_local_app_point` is `None`, the force is
-/// applied at the centroid of the zone-geometry overlap polygon, projected
-/// into the body's local frame each frame. When `Some`, the force is
-/// applied at that fixed body-local point, letting the user pin the
-/// application location to a specific contact point.
+/// `BodyGeometry` set. Where the force acts is `app_mode`: the overlap
+/// centroid (no locked point), a locked body-local point
+/// (`body_local_app_point`), or the shape's contact point
+/// (`at_contact_point`), which wins over a locked point.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForceZoneElement {
     /// ID of the body whose geometry is tested for overlap.
@@ -325,4 +340,42 @@ pub struct ForceZoneElement {
     /// overlap centroid. See struct-level docs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body_local_app_point: Option<[f64; 2]>,
+    /// When true, the force acts at the shape's contact point (the bottom of a
+    /// wheel for an upward force), found again at every pose, so it slides
+    /// round a circle as the body turns. Wins over `body_local_app_point`,
+    /// which is kept so switching back restores it. Left out of files when
+    /// false; absent from files before schema 1.2.0.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub at_contact_point: bool,
+}
+
+impl ForceZoneElement {
+    /// Where the force acts: the contact point wins, then a locked point, else
+    /// the overlap centroid.
+    pub fn app_mode(&self) -> ZoneAppMode {
+        if self.at_contact_point {
+            ZoneAppMode::Contact
+        } else if self.body_local_app_point.is_some() {
+            ZoneAppMode::Locked
+        } else {
+            ZoneAppMode::Centroid
+        }
+    }
+
+    /// This zone switched to `mode` (decision R-4): Centroid clears the locked
+    /// point and the contact flag; Locked keeps an earlier locked point, else
+    /// locks at `seed` (body-local); Contact sets the flag and keeps the locked
+    /// point, so switching back restores it.
+    pub fn with_app_mode(&self, mode: ZoneAppMode, seed: [f64; 2]) -> Self {
+        let mut zone = self.clone();
+        zone.at_contact_point = mode == ZoneAppMode::Contact;
+        match mode {
+            ZoneAppMode::Centroid => zone.body_local_app_point = None,
+            ZoneAppMode::Locked => {
+                zone.body_local_app_point = self.body_local_app_point.or(Some(seed));
+            }
+            ZoneAppMode::Contact => {}
+        }
+        zone
+    }
 }

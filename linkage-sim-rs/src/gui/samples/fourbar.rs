@@ -354,6 +354,7 @@ pub(super) fn build_parallelogram_press(
         force: [0.0, -500.0],
         label: Some("Force Zone".to_string()),
         body_local_app_point: None,
+        at_contact_point: false,
     }));
 
     let joint_id = driver_joint_id.unwrap_or("J1");

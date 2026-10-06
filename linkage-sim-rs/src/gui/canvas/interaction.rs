@@ -1117,6 +1117,7 @@ fn handle_create_force_zone(
                         force: [0.0, -100.0],
                         label: None,
                         body_local_app_point: None,
+                        at_contact_point: false,
                     });
 
                     state.add_force_element(fz);

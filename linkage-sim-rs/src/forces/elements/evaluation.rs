@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use nalgebra::{DVector, Vector2};
 
-use crate::core::body::Body;
+use crate::core::body::{Body, BodyGeometry};
 use crate::core::state::{State, GROUND_ID};
 use crate::forces::helpers::{body_torque_to_q, point_force_to_q};
 
@@ -444,68 +444,91 @@ pub fn evaluate_linear_actuator(
 
 // ── Force zone evaluation ────────────────────────────────────────────────────
 
+/// Where a force zone's force acts on its body at one pose.
+#[derive(Debug, Clone)]
+pub struct ZoneApplication {
+    /// The body's geometry clipped to the zone (world frame); empty without overlap.
+    pub overlap: Vec<Vector2<f64>>,
+    /// True when the geometry overlaps the zone: the full force applies.
+    pub active: bool,
+    /// The application point (world frame) by `mode`: the contact point and a
+    /// locked point always exist (the canvas marks them before the body
+    /// reaches the zone); the overlap centroid only with overlap.
+    pub point: Option<Vector2<f64>>,
+    pub mode: ZoneAppMode,
+}
+
+/// The overlap gate and the application point of `fz` on a body whose
+/// geometry is `geo`, at pose `(x, y, theta)`. The force evaluation, the
+/// overlap ratio, the independent equilibrium check and the canvas all call
+/// this, so they cannot disagree.
+pub fn force_zone_application(
+    fz: &ForceZoneElement,
+    geo: &BodyGeometry,
+    pose: (f64, f64, f64),
+) -> ZoneApplication {
+    use crate::geometry::{clip_polygon_to_aabb, polygon_area, polygon_centroid};
+
+    let (bx, by, btheta) = pose;
+    let outline = geo.outline_world(bx, by, btheta);
+    let zone_min = Vector2::new(fz.zone_min[0], fz.zone_min[1]);
+    let zone_max = Vector2::new(fz.zone_max[0], fz.zone_max[1]);
+    let overlap = clip_polygon_to_aabb(&outline, &zone_min, &zone_max);
+    // Binary overlap: any contact -> full force.
+    let active = polygon_area(&overlap) >= 1e-15;
+    let mode = fz.app_mode();
+    let point = match mode {
+        ZoneAppMode::Contact => {
+            // A surface pushing along the force meets the shape's extreme point
+            // against it: the lowest point for an upward push. A zero force
+            // falls back to the lowest point.
+            let against = Vector2::new(-fz.force[0], -fz.force[1]);
+            let direction = if against.norm() > 0.0 { against } else { Vector2::new(0.0, -1.0) };
+            Some(geo.extreme_point_world(bx, by, btheta, direction))
+        }
+        ZoneAppMode::Locked => {
+            let lp = fz.body_local_app_point.unwrap_or([0.0, 0.0]);
+            let (sin_t, cos_t) = btheta.sin_cos();
+            Some(Vector2::new(bx + cos_t * lp[0] - sin_t * lp[1], by + sin_t * lp[0] + cos_t * lp[1]))
+        }
+        ZoneAppMode::Centroid => active.then(|| polygon_centroid(&overlap)),
+    };
+    ZoneApplication { overlap, active, point, mode }
+}
+
+/// The body's pose in `q` and its geometry, or `None` when the body is
+/// unknown or has no geometry.
+fn zone_body<'a>(
+    fz: &ForceZoneElement,
+    state: &State,
+    bodies: &'a HashMap<String, Body>,
+    q: &DVector<f64>,
+) -> Option<(&'a BodyGeometry, (f64, f64, f64))> {
+    let geo = bodies.get(&fz.body_id)?.geometry.as_ref()?;
+    let bi = state.get_index(&fz.body_id).ok()?;
+    Some((geo, (q[bi.x_idx()], q[bi.y_idx()], q[bi.theta_idx()])))
+}
+
 pub fn evaluate_force_zone(
     fz: &ForceZoneElement,
     state: &State,
     bodies: &HashMap<String, Body>,
     q: &DVector<f64>,
 ) -> DVector<f64> {
-    use crate::geometry::{body_rect_to_world, clip_polygon_to_aabb, polygon_area, polygon_centroid};
-
     let n = state.n_coords();
-    let body = match bodies.get(&fz.body_id) {
-        Some(b) => b,
-        None => return DVector::zeros(n),
-    };
-    let geo = match &body.geometry {
-        Some(g) => g,
-        None => return DVector::zeros(n),
-    };
-
-    // Get body position from state vector via BodyIndex
-    let bi = match state.get_index(&fz.body_id) {
-        Ok(idx) => idx,
-        Err(_) => return DVector::zeros(n),
-    };
-    let bx = q[bi.x_idx()];
-    let by = q[bi.y_idx()];
-    let btheta = q[bi.theta_idx()];
-
-    // Transform body rectangle to world frame
-    let corners = body_rect_to_world(bx, by, btheta, geo.width, geo.height, &geo.offset);
-
-    // Clip against zone AABB
-    let zone_min = Vector2::new(fz.zone_min[0], fz.zone_min[1]);
-    let zone_max = Vector2::new(fz.zone_max[0], fz.zone_max[1]);
-    let clipped = clip_polygon_to_aabb(&corners, &zone_min, &zone_max);
-
-    let overlap_area = polygon_area(&clipped);
-
-    if overlap_area < 1e-15 {
+    let Some((geo, pose)) = zone_body(fz, state, bodies, q) else {
         return DVector::zeros(n);
-    }
-
-    // Binary overlap: any contact → full force.
-    let force_global = Vector2::new(fz.force[0], fz.force[1]);
-
-    // Application point: either the user-pinned body-local override, or
-    // the centroid of the overlap polygon projected into body-local
-    // coords. The override is useful when the actual contact point isn't
-    // the overlap centroid (e.g., a specific contact pad location).
-    let local_point = if let Some(lp) = fz.body_local_app_point {
-        Vector2::new(lp[0], lp[1])
-    } else {
-        let centroid_world = polygon_centroid(&clipped);
-        let cos_t = btheta.cos();
-        let sin_t = btheta.sin();
-        let dx = centroid_world.x - bx;
-        let dy = centroid_world.y - by;
-        Vector2::new(
-            cos_t * dx + sin_t * dy,
-            -sin_t * dx + cos_t * dy,
-        )
     };
-
+    let app = force_zone_application(fz, geo, pose);
+    let (true, Some(world)) = (app.active, app.point) else {
+        return DVector::zeros(n);
+    };
+    // The application point in the body's local frame, as point_force_to_q takes it.
+    let (bx, by, btheta) = pose;
+    let (sin_t, cos_t) = btheta.sin_cos();
+    let (dx, dy) = (world.x - bx, world.y - by);
+    let local_point = Vector2::new(cos_t * dx + sin_t * dy, -sin_t * dx + cos_t * dy);
+    let force_global = Vector2::new(fz.force[0], fz.force[1]);
     point_force_to_q(state, &fz.body_id, &local_point, &force_global, q)
 }
 
@@ -519,35 +542,8 @@ pub fn force_zone_overlap_ratio(
     bodies: &HashMap<String, Body>,
     q: &DVector<f64>,
 ) -> f64 {
-    use crate::geometry::{body_rect_to_world, clip_polygon_to_aabb, polygon_area};
-
-    let body = match bodies.get(&fz.body_id) {
-        Some(b) => b,
-        None => return 0.0,
-    };
-    let geo = match &body.geometry {
-        Some(g) => g,
-        None => return 0.0,
-    };
-
-    let bi = match state.get_index(&fz.body_id) {
-        Ok(idx) => idx,
-        Err(_) => return 0.0,
-    };
-    let bx = q[bi.x_idx()];
-    let by = q[bi.y_idx()];
-    let btheta = q[bi.theta_idx()];
-
-    let corners = body_rect_to_world(bx, by, btheta, geo.width, geo.height, &geo.offset);
-    let zone_min = Vector2::new(fz.zone_min[0], fz.zone_min[1]);
-    let zone_max = Vector2::new(fz.zone_max[0], fz.zone_max[1]);
-    let clipped = clip_polygon_to_aabb(&corners, &zone_min, &zone_max);
-
-    let overlap_area = polygon_area(&clipped);
-
-    if overlap_area < 1e-15 {
-        0.0
-    } else {
-        1.0
+    match zone_body(fz, state, bodies, q) {
+        Some((geo, pose)) if force_zone_application(fz, geo, pose).active => 1.0,
+        _ => 0.0,
     }
 }
