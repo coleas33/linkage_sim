@@ -142,11 +142,13 @@ pub fn animation_export_available(state: &AppState) -> bool {
 }
 
 /// The self-contained animated page of the current mechanism (decision H-6:
-/// no network; the JSON's `</` is escaped so no name can end the script).
+/// no network). Every `<` in the JSON is written `\u003c`, the same string to
+/// JSON and to JS, so no name can end the script (`</script>`) or switch the
+/// HTML parser into a script comment (`<!--` then `<script`).
 pub fn generate_animation_html(state: &AppState) -> Result<String, String> {
     let data = animation_data(state)?;
     let json = serde_json::to_string(&data).map_err(|e| e.to_string())?;
-    Ok(TEMPLATE.replacen(DATA_SLOT, &json.replace("</", "<\\/"), 1))
+    Ok(TEMPLATE.replacen(DATA_SLOT, &json.replace('<', "\\u003c"), 1))
 }
 
 /// The page's data: one frame per solved sample of the current sweep.
@@ -731,8 +733,9 @@ mod tests {
         assert!(data.frames.iter().all(|f| (f.x - gone).abs() > 1e-9), "sample 3 is left out");
     }
 
-    #[test]
-    fn a_wheel_s_contact_point_is_its_top_against_a_downward_force() {
+    /// The Parallelogram Press with a 40 mm wheel for its coupler's rectangle
+    /// (same centre), the zone grown over the whole sweep and in contact mode.
+    fn press_with_wheel() -> AppState {
         let mut state = AppState::default();
         state.load_sample(SampleMechanism::ParallelogramPress);
         let bp = state.blueprint.as_mut().unwrap();
@@ -748,6 +751,12 @@ mod tests {
         }
         state.rebuild();
         state.compute_sweep();
+        state
+    }
+
+    #[test]
+    fn a_wheel_s_contact_point_is_its_top_against_a_downward_force() {
+        let state = press_with_wheel();
         let data = animation_data(&state).unwrap();
         assert!(!data.frames.is_empty());
         for frame in &data.frames {
@@ -832,6 +841,12 @@ mod tests {
         assert_eq!(TEMPLATE.matches(DATA_SLOT).count(), 1);
     }
 
+    /// The byte range of the JSON the page embeds after `const DATA = `.
+    fn data_span(html: &str) -> (usize, usize) {
+        let start = html.find("const DATA = ").unwrap() + "const DATA = ".len();
+        (start, start + html[start..].find(";\n").unwrap())
+    }
+
     #[test]
     fn the_page_is_self_contained_and_embeds_the_data() {
         let state = swept_lift();
@@ -843,20 +858,69 @@ mod tests {
             "the only http:// is the SVG namespace"
         );
         assert!(!html.contains(DATA_SLOT));
-        let start = html.find("const DATA = ").unwrap() + "const DATA = ".len();
-        let end = start + html[start..].find(";\n").unwrap();
+        let (start, end) = data_span(&html);
         let v: serde_json::Value = serde_json::from_str(&html[start..end]).unwrap();
         assert_eq!(v["frames"].as_array().unwrap().len(), animation_data(&state).unwrap().frames.len());
     }
 
     #[test]
-    fn a_name_cannot_close_the_script_early() {
+    fn a_name_cannot_end_the_script_or_open_a_comment_in_it() {
         let mut state = swept_lift();
         let bp = state.blueprint.as_mut().unwrap();
         let weight = bp.bodies.values_mut().flat_map(|b| b.point_masses.iter_mut()).find(|w| w.id == "W1").unwrap();
-        weight.label = Some("</script><b>".to_string());
+        weight.label = Some("</script><!--<script><b>".to_string());
         let html = generate_animation_html(&state).unwrap();
-        assert_eq!(html.matches("</script>").count(), TEMPLATE.matches("</script>").count());
-        assert!(html.contains("<\\/script><b>"));
+        // The embedded data holds no `<` at all, so the page has only the template's tags.
+        let (start, end) = data_span(&html);
+        assert!(!html[start..end].contains('<'), "a raw < in the data");
+        // The name still reads back whole.
+        let v: serde_json::Value = serde_json::from_str(&html[start..end]).unwrap();
+        let names: Vec<&str> =
+            v["frames"][0]["weights"].as_array().unwrap().iter().map(|w| w["name"].as_str().unwrap()).collect();
+        assert!(names.iter().any(|n| n.starts_with("</script><!--<script><b>")), "{names:?}");
+    }
+
+    /// The sorted keys of a JSON object.
+    fn keys(v: &serde_json::Value) -> Vec<&str> {
+        let mut keys: Vec<&str> = v.as_object().expect("an object").keys().map(|k| k.as_str()).collect();
+        keys.sort();
+        keys
+    }
+
+    #[test]
+    fn the_data_has_every_field_the_player_reads() {
+        // animation_template.html reads exactly these names; renaming one in
+        // Rust would break the page without failing any other test.
+        let lift = serde_json::to_value(animation_data(&swept_lift()).unwrap()).unwrap();
+        assert_eq!(
+            keys(&lift),
+            ["chart_label", "driver_pivot", "frames", "gravity", "ground", "n_per_lbf", "title", "x_label", "x_unit", "zones"]
+        );
+        let frame = &lift["frames"][0];
+        assert_eq!(
+            keys(frame),
+            [
+                "actuators", "chart", "driver_angle", "joints", "links", "reactions", "readouts", "shapes", "weights", "x",
+                "zone_points"
+            ]
+        );
+        assert_eq!(keys(&frame["links"][0]), ["closed", "name", "points"]);
+        assert_eq!(keys(&frame["actuators"][0]), ["a", "b", "force"]);
+        assert_eq!(keys(&frame["weights"][0]), ["link_self_weight", "name", "newtons", "point"]);
+        assert_eq!(keys(&frame["reactions"][0]), ["force", "id", "name", "point"]);
+
+        let wheel = serde_json::to_value(animation_data(&press_with_wheel()).unwrap()).unwrap();
+        assert_eq!(keys(&wheel["zones"][0]), ["max", "min"]);
+        let frame = &wheel["frames"][0];
+        assert_eq!(keys(&frame["zone_points"][0]), ["active", "force", "point"]);
+        assert_eq!(frame["shapes"][0]["kind"], "circle");
+        assert_eq!(keys(&frame["shapes"][0]), ["centre", "kind", "r"]);
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::ParallelogramPress);
+        state.compute_sweep();
+        let press = serde_json::to_value(animation_data(&state).unwrap()).unwrap();
+        assert_eq!(press["frames"][0]["shapes"][0]["kind"], "polygon");
+        assert_eq!(keys(&press["frames"][0]["shapes"][0]), ["kind", "points"]);
     }
 }
