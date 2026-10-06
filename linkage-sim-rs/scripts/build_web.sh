@@ -6,8 +6,10 @@
 #   rustup target add wasm32-unknown-unknown
 #   cargo install wasm-bindgen-cli@0.2.114   (the version in both Cargo.lock files)
 #
-# Output: web/linkage-web.js + web/linkage-web_bg.wasm, and
-#         web/magcoupling/magcoupling-web.js + magcoupling-web_bg.wasm
+# Output: web/linkage/linkage-web.js + linkage-web_bg.wasm, and
+#         web/magcoupler/magcoupling-web.js + magcoupling-web_bg.wasm
+#         (served at /linkage/ and /magcoupler/; the hub page web/index.html
+#         at / is committed)
 #
 # Both builds fail if cargo built the bundle with the test-only workbook-parity
 # feature of magcoupling-rs (magcoupling_assert_shipped in magcoupling_shipped.sh):
@@ -34,15 +36,15 @@ cargo build --release "${LINKAGE_WEB_ARGS[@]}" \
 echo "Generating JS bindings..."
 wasm-bindgen \
     target/wasm32-unknown-unknown/release/linkage-web.wasm \
-    --out-dir web \
+    --out-dir web/linkage \
     --target web \
     --no-typescript
 
-WASM_SIZE=$(du -h web/linkage-web_bg.wasm | cut -f1)
+WASM_SIZE=$(du -h web/linkage/linkage-web_bg.wasm | cut -f1)
 echo ""
 echo "Build complete!"
-echo "  web/linkage-web.js       (JS glue)"
-echo "  web/linkage-web_bg.wasm  ($WASM_SIZE)"
+echo "  web/linkage/linkage-web.js       (JS glue)"
+echo "  web/linkage/linkage-web_bg.wasm  ($WASM_SIZE)"
 echo ""
 
 bash "$SCRIPT_DIR/build_magcoupling_web.sh"
@@ -50,4 +52,4 @@ bash "$SCRIPT_DIR/build_magcoupling_web.sh"
 echo ""
 echo "To serve locally:"
 echo "  $SCRIPT_DIR/serve_web.sh"
-echo "  Then open http://localhost:8080 (linkage) and http://localhost:8080/magcoupling/"
+echo "  Then open http://localhost:8080/ (hub), /linkage/ and /magcoupler/"

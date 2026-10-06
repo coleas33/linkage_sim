@@ -54,8 +54,8 @@ pub const TOOL_PARAM: &str = "tool";
 /// [`TOOL_PARAM`]'s value that opens this window.
 pub const TOOL_MAGCOUPLING: &str = "magcoupling";
 
-/// The path of the calculator's own page next to the linkage app (`web/magcoupling/`).
-pub const MAGCOUPLING_PAGE_PATH: &str = "/magcoupling/";
+/// The path of the calculator's own page next to the linkage app (`web/magcoupler/`).
+pub const MAGCOUPLING_PAGE_PATH: &str = "/magcoupler/";
 
 /// Where the window first opens [points], below the menu bar and the two toolbars, and its
 /// starting size (decision M5-2). egui keeps the window inside the screen.
@@ -977,17 +977,17 @@ mod tests {
     #[test]
     fn share_links_point_at_the_base_set_before_or_after_the_first_opening() {
         let mut window = CalculatorWindow::default();
-        window.set_share_base("http://localhost:8080/magcoupling/");
+        window.set_share_base("http://localhost:8080/magcoupler/");
         window.set_open(true);
         let link = window.panel().expect("opened").share_link();
         assert!(
-            link.starts_with("http://localhost:8080/magcoupling/?m="),
+            link.starts_with("http://localhost:8080/magcoupler/?m="),
             "{link}"
         );
-        window.set_share_base("http://127.0.0.1:9000/magcoupling/");
+        window.set_share_base("http://127.0.0.1:9000/magcoupler/");
         let link = window.panel().expect("opened").share_link();
         assert!(
-            link.starts_with("http://127.0.0.1:9000/magcoupling/?m="),
+            link.starts_with("http://127.0.0.1:9000/magcoupler/?m="),
             "{link}"
         );
     }
@@ -999,7 +999,7 @@ mod tests {
         let script = include_str!("../../../.claude/workflows/gui-smoke.js").replace("\r\n", "\n");
         let query = format!("const LINKAGE_TOOL_QUERY = '?{TOOL_PARAM}={TOOL_MAGCOUPLING}'");
         assert!(script.contains(&query), "gui-smoke.js has no {query}");
-        // The linkage step's own check (the /magcoupling/ step names the prefix too).
+        // The linkage step's own check (the /magcoupler/ step names the prefix too).
         let check = format!(
             "magcoupling_window=true only if a console message contains \"{}\"",
             magcoupling::gui::readouts::REGISTRY_LOG_PREFIX
@@ -1010,7 +1010,7 @@ mod tests {
     #[test]
     fn the_production_origin_gives_the_calculator_s_public_address() {
         assert_eq!(
-            magcoupling_share_base("https://linkage.colesorkness.com"),
+            magcoupling_share_base("https://colesorkness.com"),
             PUBLIC_BASE_URL
         );
     }

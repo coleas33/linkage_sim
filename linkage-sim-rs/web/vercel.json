@@ -1,5 +1,34 @@
 {
   "outputDirectory": ".",
+  "trailingSlash": true,
+  "redirects": [
+    {
+      "source": "/magcoupling/:path*",
+      "has": [{ "type": "host", "value": "linkage.colesorkness.com" }],
+      "destination": "https://colesorkness.com/magcoupler/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/",
+      "has": [
+        { "type": "host", "value": "linkage.colesorkness.com" },
+        { "type": "query", "key": "tool", "value": "magcoupling" }
+      ],
+      "destination": "https://colesorkness.com/magcoupler/",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "linkage.colesorkness.com" }],
+      "destination": "https://colesorkness.com/linkage/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/magcoupling/:path*",
+      "destination": "/magcoupler/:path*",
+      "permanent": true
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)\\.wasm",
@@ -9,13 +38,13 @@
       ]
     },
     {
-      "source": "/linkage-web.js",
+      "source": "/linkage/linkage-web.js",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]
     },
     {
-      "source": "/magcoupling/magcoupling-web.js",
+      "source": "/magcoupler/magcoupling-web.js",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]

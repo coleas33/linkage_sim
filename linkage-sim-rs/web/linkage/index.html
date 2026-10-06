@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <title>Linkage Simulator</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #1e1e23;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <!-- Built by scripts/build_web.sh. The canvas ID must match the string
+         passed to eframe::WebRunner::start(). Absolute paths: /linkage (no
+         trailing slash) must not resolve the glue against the site root. -->
+    <canvas id="linkage_canvas"></canvas>
+    <script type="module">
+        import init from '/linkage/linkage-web.js';
+        init();
+    </script>
+</body>
+</html>

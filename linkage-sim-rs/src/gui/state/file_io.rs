@@ -10,6 +10,12 @@ use super::blueprint_ops::detect_driver_joint_id;
 
 // ── Share via URL helpers (compress + base64 encode) ─────────────────────────
 
+/// The start of every share link: the linkage app's page on colesorkness.com,
+/// then the `?m=` parameter the page reads (`linkage_web.rs`). Links made
+/// before the move point at linkage.colesorkness.com, which redirects here
+/// with the query kept (`web/vercel.json`).
+pub const SHARE_URL_BASE: &str = "https://colesorkness.com/linkage/?m=";
+
 /// Compress a JSON string with deflate and then base64url-encode it.
 /// This produces a URL-safe string suitable for `?m=` parameter.
 pub fn encode_mechanism_for_url(json_str: &str) -> String {
@@ -67,7 +73,7 @@ impl AppState {
             json_str = serde_json::to_string(&val).unwrap_or(json_str);
         }
         let encoded = encode_mechanism_for_url(&json_str);
-        Ok(format!("https://linkage.colesorkness.com/?m={}", encoded))
+        Ok(format!("{SHARE_URL_BASE}{encoded}"))
     }
 
     /// Serialize the current mechanism to a JSON file at the given path.
@@ -746,6 +752,19 @@ mod tests {
         let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"not compressed data");
         let result = decode_mechanism_from_url(&encoded);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn a_share_link_opens_the_linkage_page_on_colesorkness_com() {
+        use crate::gui::samples::SampleMechanism;
+        use crate::gui::state::AppState;
+
+        assert_eq!(SHARE_URL_BASE, "https://colesorkness.com/linkage/?m=");
+        let mut src = AppState::default();
+        src.load_sample(SampleMechanism::FourBar);
+        let url = src.generate_share_url().expect("generate_share_url failed");
+        let payload = url.strip_prefix(SHARE_URL_BASE).expect("the link is the base, then the payload");
+        assert!(decode_mechanism_from_url(payload).is_ok(), "the payload decodes");
     }
 
     #[test]
