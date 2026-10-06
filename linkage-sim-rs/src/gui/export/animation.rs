@@ -157,7 +157,7 @@ pub fn animation_export_available(state: &AppState) -> bool {
 }
 
 /// The self-contained animated page of the current mechanism (decision H-6:
-/// no network). Every `<` in the JSON is written `<`, the same string to
+/// no network). Every `<` in the JSON is written `\u003c`, the same string to
 /// JSON and to JS, so no name can end the script (`</script>`) or switch the
 /// HTML parser into a script comment (`<!--` then `<script`).
 pub fn generate_animation_html(state: &AppState) -> Result<String, String> {
@@ -523,7 +523,7 @@ fn readouts(ctx: &FrameContext, i: usize, x: f64, reactions: &[Reaction]) -> Vec
             // A share of a force (an actuator's, or a linear driver's in a
             // stroke sweep) is newtons; of a crank's torque, newton metres.
             let value = if matches!(bd.basis, ShareBasis::ActuatorForce) || ctx.is_stroke {
-                format!("{}{}", sign(share), force_text(share))
+                force_text_with_sign(share, sign(share))
             } else {
                 format!("{}{}", sign(share), format_magnitude(share.abs(), "N m"))
             };
@@ -580,7 +580,12 @@ fn lbf_text(newtons: f64) -> String {
 /// A force's size as the canvas writes it (`format_magnitude`: "21.5 kN",
 /// "875 N", "0.35 N") with its lbf beside it.
 fn force_text(newtons: f64) -> String {
-    format!("{} / {}", format_magnitude(newtons.abs(), "N"), lbf_text(newtons))
+    force_text_with_sign(newtons, "")
+}
+
+/// `force_text` with `sign` before both numbers: "-58 N / -13 lbf".
+fn force_text_with_sign(newtons: f64, sign: &str) -> String {
+    format!("{sign}{} / {sign}{}", format_magnitude(newtons.abs(), "N"), lbf_text(newtons))
 }
 
 /// A torque in the canvas's number style, with a minus sign when negative.
@@ -770,6 +775,67 @@ mod tests {
         assert_near(data.driver_pivot.unwrap(), pivot, "the driver's pivot");
         assert_frames_follow_the_traces(&state);
         assert_reactions_match_the_sweep(&state);
+    }
+
+    /// Every point (mm) and every vector (gravity's unit vector, forces in N)
+    /// of `data`, in a fixed order.
+    fn geometry(data: &AnimationData) -> (Vec<[f64; 2]>, Vec<[f64; 2]>) {
+        let mut points: Vec<[f64; 2]> = data.ground.clone();
+        points.extend(data.driver_pivot);
+        for zone in &data.zones {
+            points.extend(zone.points.iter().copied());
+        }
+        let mut vectors = vec![data.gravity];
+        for f in &data.frames {
+            for link in &f.links {
+                points.extend(link.points.iter().copied());
+            }
+            for shape in &f.shapes {
+                match shape {
+                    Shape::Circle { centre, .. } => points.push(*centre),
+                    Shape::Polygon { points: corners } => points.extend(corners.iter().copied()),
+                }
+            }
+            points.extend(f.joints.iter().copied());
+            for a in &f.actuators {
+                points.extend([a.a, a.b]);
+            }
+            for z in &f.zone_points {
+                points.push(z.point);
+                vectors.push(z.force);
+            }
+            points.extend(f.weights.iter().map(|w| w.point));
+            for r in &f.reactions {
+                points.push(r.point);
+                vectors.push(r.force);
+            }
+        }
+        (points, vectors)
+    }
+
+    #[test]
+    fn the_mounting_angle_turns_every_point_and_vector() {
+        // One sweep exported at no mounting angle and at 0.7 rad (the angle
+        // alone changed, nothing rebuilt): every point and every vector is the
+        // turned copy. The lift has the actuator and the payloads; the press
+        // the wheel, the zone and its point.
+        let mount = Mount::new(0.7);
+        for mut state in [swept_lift(), press_with_wheel()] {
+            state.mounting_angle = 0.0;
+            let (points, vectors) = geometry(&animation_data(&state).unwrap());
+            state.mounting_angle = 0.7;
+            let (turned_points, turned_vectors) = geometry(&animation_data(&state).unwrap());
+            assert!(points.len() > 1000 && vectors.len() > 100, "{} points, {} vectors", points.len(), vectors.len());
+            assert_eq!((points.len(), vectors.len()), (turned_points.len(), turned_vectors.len()));
+            for (p, t) in points.iter().zip(&turned_points) {
+                assert_near(*t, mount.turn(*p), "a point");
+            }
+            for (v, t) in vectors.iter().zip(&turned_vectors) {
+                let want = mount.turn(*v);
+                let scale = want[0].hypot(want[1]).max(1.0);
+                assert!((t[0] - want[0]).abs() <= 1e-9 * scale && (t[1] - want[1]).abs() <= 1e-9 * scale, "{t:?} vs {want:?}");
+            }
+        }
     }
 
     #[test]
@@ -1063,6 +1129,7 @@ mod tests {
         assert_eq!(push_pull(-5.0), Some("pull"));
         assert_eq!(push_pull(0.001), None, "a force that shows as zero is neither");
         assert_eq!((sign(2.0), sign(-2.0), sign(0.0)), ("+", "-", ""));
+        assert_eq!(force_text_with_sign(-58.0, sign(-58.0)), "-58 N / -13 lbf", "a share's sign on both numbers");
         assert_eq!(length_text(0.5276, LengthUnit::Millimeters), "527.6 mm");
         assert_eq!(length_text(0.5276, LengthUnit::Meters), "0.5276 m");
         assert_eq!((count(1, "sample"), count(38, "sample")), ("1 sample".to_string(), "38 samples".to_string()));

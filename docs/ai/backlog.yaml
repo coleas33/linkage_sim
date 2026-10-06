@@ -484,3 +484,13 @@
   priority: 5
   status: open
   notes: "Left alone in Part B to keep the existing items untouched."
+
+- id: BL-049
+  title: "Under a mounting angle the canvas draws force arrows and the zone box unturned"
+  dimension: gui
+  risk: mechanical
+  evidence: "The canvas turns positions by the mounting angle (ViewTransform::world_to_screen) but draws force directions straight from the world vector (primitives.rs draw_force_arrow: dx = fx / mag, dy = -fy / mag; force_render.rs zone arrows: dir_x = fx / fmag) and the zone box as the screen rectangle of two turned corners (force_render.rs), so with a mounting angle the reaction and zone-force arrows and the zone box are drawn turned back by the angle. Found in the 2026-10-06 re-review of Part B's final fixes; the animated HTML export turns every point and vector and draws zones as four corners."
+  acceptance: "with a mounting angle the canvas turns force directions by it and draws a zone as its four turned corners; a headless test at 30 deg checks a reaction arrow's and a zone arrow's screen direction and the zone outline"
+  priority: 3
+  status: open
+  notes: "Pre-existing; the page (gui/export/animation.rs) is the reference for the turned drawing."
