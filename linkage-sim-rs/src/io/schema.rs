@@ -14,8 +14,11 @@ fn is_zero(v: &f64) -> bool {
     *v == 0.0
 }
 
-/// Current schema version for the JSON format.
-pub const SCHEMA_VERSION: &str = "1.1.0";
+/// Current schema version for the JSON format. 1.2.0 added circle geometry
+/// (`BodyGeometry.shape`) and a force zone's contact point
+/// (`ForceZoneElement.at_contact_point`); both are left out of a file that does
+/// not use them, and the loader checks only the major number.
+pub const SCHEMA_VERSION: &str = "1.2.0";
 
 /// Extract the major version number from a semver string (e.g., "1.2.3" -> 1).
 /// Returns `None` if the string doesn't start with a valid integer.

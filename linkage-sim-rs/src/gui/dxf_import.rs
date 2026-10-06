@@ -1120,6 +1120,7 @@ fn convert_selected_to_rigid_geometry(
                 width,
                 height,
                 offset: offset_local,
+                shape: crate::core::body::GeometryShape::Rectangle,
             });
         }
     }

@@ -135,6 +135,7 @@ pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropert
                             width,
                             height,
                             offset: Vector2::zeros(),
+                            shape: crate::core::body::GeometryShape::Rectangle,
                         });
                     }
                 }
@@ -144,6 +145,7 @@ pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropert
                             width,
                             height,
                             offset: Vector2::zeros(),
+                            shape: crate::core::body::GeometryShape::Rectangle,
                         });
                     }
                 }

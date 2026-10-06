@@ -14,31 +14,145 @@ use thiserror::Error;
 
 use crate::core::state::GROUND_ID;
 
-/// Visual rectangular geometry attached to a body.
+/// The shape of a body's visual geometry (decision R-1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GeometryShape {
+    /// A `width` x `height` rectangle; every file written before schema 1.2.0.
+    #[default]
+    Rectangle,
+    /// A circle of diameter `width`. `height` is kept equal to it, so a build
+    /// before schema 1.2.0, which ignores the shape, draws its bounding square.
+    Circle,
+}
+
+impl GeometryShape {
+    /// Rectangles are written without a `shape` key, so files without circles
+    /// keep the keys they had before schema 1.2.0.
+    fn is_rectangle(&self) -> bool {
+        *self == GeometryShape::Rectangle
+    }
+}
+
+/// Number of sides of the polygon that stands in for a circle in the force-zone
+/// overlap test and its centroid; the canvas draws a true circle (decision R-6).
+pub const CIRCLE_SEGMENTS: usize = 64;
+
+/// Visual geometry attached to a body: a rectangle or a circle.
 /// Used for force zone overlap computation and canvas rendering.
 /// Dimensions are in body-local frame, centered on `offset` from body origin.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BodyGeometry {
-    pub width: f64,            // meters, extent along body's local x-axis
-    pub height: f64,           // meters, extent along body's local y-axis
+    pub width: f64,            // meters, extent along body's local x-axis (a circle's diameter)
+    pub height: f64,           // meters, extent along body's local y-axis (a circle: equal to width)
     pub offset: Vector2<f64>,  // local-frame offset from body origin
+    /// Rectangle (the default, left out of files) or circle.
+    #[serde(default, skip_serializing_if = "GeometryShape::is_rectangle")]
+    pub shape: GeometryShape,
 }
 
 impl BodyGeometry {
-    /// Create a new body geometry. Width and height must be > 0.
+    /// Create a rectangle. Width and height must be > 0.
     pub fn new(width: f64, height: f64, offset: Vector2<f64>) -> Result<Self, BodyError> {
         if width <= 0.0 || height <= 0.0 {
             return Err(BodyError::InvalidGeometry {
                 reason: format!("width ({}) and height ({}) must both be > 0", width, height),
             });
         }
-        Ok(Self { width, height, offset })
+        Ok(Self { width, height, offset, shape: GeometryShape::Rectangle })
     }
 
-    /// Total area of the rectangle (m^2).
-    pub fn area(&self) -> f64 {
-        self.width * self.height
+    /// Create a circle of `diameter` centred on `offset`. The diameter must be
+    /// a finite number > 0.
+    pub fn circle(diameter: f64, offset: Vector2<f64>) -> Result<Self, BodyError> {
+        if !(diameter > 0.0 && diameter.is_finite()) {
+            return Err(BodyError::InvalidGeometry {
+                reason: format!("diameter ({}) must be a finite number > 0", diameter),
+            });
+        }
+        Ok(Self { width: diameter, height: diameter, offset, shape: GeometryShape::Circle })
     }
+
+    /// Area (m^2): width x height for a rectangle, pi d^2 / 4 for a circle.
+    pub fn area(&self) -> f64 {
+        match self.shape {
+            GeometryShape::Rectangle => self.width * self.height,
+            GeometryShape::Circle => std::f64::consts::PI * self.width * self.width / 4.0,
+        }
+    }
+
+    /// The shape's centre in the world frame, for a body at (`body_x`, `body_y`)
+    /// turned by `body_theta`.
+    pub fn centre_world(&self, body_x: f64, body_y: f64, body_theta: f64) -> Vector2<f64> {
+        local_to_world(body_x, body_y, body_theta, self.offset)
+    }
+
+    /// The outline in the world frame, counter-clockwise: the rectangle's four
+    /// corners (bottom-left first), or a `CIRCLE_SEGMENTS`-gon inscribed in the
+    /// circle.
+    pub fn outline_world(&self, body_x: f64, body_y: f64, body_theta: f64) -> Vec<Vector2<f64>> {
+        match self.shape {
+            GeometryShape::Rectangle => crate::geometry::body_rect_to_world(
+                body_x,
+                body_y,
+                body_theta,
+                self.width,
+                self.height,
+                &self.offset,
+            )
+            .to_vec(),
+            GeometryShape::Circle => {
+                let r = self.width / 2.0;
+                (0..CIRCLE_SEGMENTS)
+                    .map(|k| {
+                        let a = std::f64::consts::TAU * k as f64 / CIRCLE_SEGMENTS as f64;
+                        let local = self.offset + Vector2::new(r * a.cos(), r * a.sin());
+                        local_to_world(body_x, body_y, body_theta, local)
+                    })
+                    .collect()
+            }
+        }
+    }
+
+    /// The point of the shape farthest along `direction` (world frame) for a
+    /// body at (`body_x`, `body_y`) turned by `body_theta`: where a surface
+    /// approaching from that side first touches it (decision R-3). For a
+    /// circle, the centre plus the radius along the direction, wherever the
+    /// body has turned; for a rectangle, its farthest corner, or the midpoint
+    /// of the edge when two corners tie (an edge square to the direction). A
+    /// zero or non-finite direction gives the centre.
+    pub fn extreme_point_world(
+        &self,
+        body_x: f64,
+        body_y: f64,
+        body_theta: f64,
+        direction: Vector2<f64>,
+    ) -> Vector2<f64> {
+        let centre = self.centre_world(body_x, body_y, body_theta);
+        let norm = direction.norm();
+        if !(norm > 0.0 && norm.is_finite()) {
+            return centre;
+        }
+        let d = direction / norm;
+        match self.shape {
+            GeometryShape::Circle => centre + d * (self.width / 2.0),
+            GeometryShape::Rectangle => {
+                let corners = self.outline_world(body_x, body_y, body_theta);
+                let best = corners.iter().map(|c| c.dot(&d)).fold(f64::NEG_INFINITY, f64::max);
+                let tol = 1e-9 * self.width.max(self.height);
+                let tied: Vec<&Vector2<f64>> =
+                    corners.iter().filter(|c| best - c.dot(&d) <= tol).collect();
+                tied.iter().fold(Vector2::zeros(), |sum, c| sum + **c) / tied.len() as f64
+            }
+        }
+    }
+}
+
+/// A body-local point in the world frame, for a body at (`x`, `y`) turned by
+/// `theta`.
+fn local_to_world(x: f64, y: f64, theta: f64, p: Vector2<f64>) -> Vector2<f64> {
+    let (sin_t, cos_t) = theta.sin_cos();
+    Vector2::new(x + cos_t * p.x - sin_t * p.y, y + sin_t * p.x + cos_t * p.y)
 }
 
 /// A rigid body in the mechanism.

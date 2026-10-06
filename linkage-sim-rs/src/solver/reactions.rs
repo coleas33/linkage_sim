@@ -1578,11 +1578,7 @@ mod tests {
         let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
         let mut coupler = make_bar("coupler", "B", "C", 3.0, 3.0, 0.05);
         // Geometry spanning the coupler bar so the zone can overlap it.
-        coupler.geometry = Some(BodyGeometry {
-            width: 3.0,
-            height: 0.4,
-            offset: Vector2::new(1.5, 0.0),
-        });
+        coupler.geometry = Some(BodyGeometry::new(3.0, 0.4, Vector2::new(1.5, 0.0)).unwrap());
         let rocker = make_bar("rocker", "D", "C", 2.0, 2.0, 0.02);
 
         let mut mech = Mechanism::new();
@@ -1930,11 +1926,7 @@ mod tests {
         let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
         let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
         let mut coupler = make_bar("coupler", "B", "C", 3.0, 3.0, 0.05);
-        coupler.geometry = Some(BodyGeometry {
-            width: 3.0,
-            height: 0.4,
-            offset: Vector2::new(1.5, 0.0),
-        });
+        coupler.geometry = Some(BodyGeometry::new(3.0, 0.4, Vector2::new(1.5, 0.0)).unwrap());
         let rocker = make_bar("rocker", "D", "C", 2.0, 2.0, 0.02);
         let mut mech = Mechanism::new();
         mech.add_body(ground).unwrap();
