@@ -362,9 +362,6 @@ pub fn render_mechanism(
         }
     }
 
-    // ── Weights (point masses): markers, gravity arrows, readout ────
-    weights::draw_weights(painter, state);
-
     // ── Draw ground markers and collect ground hit targets ──────────
     if let Some(ground) = bodies.get(GROUND_ID) {
         let mut ground_point_names: Vec<&String> =
@@ -606,6 +603,11 @@ pub fn render_overlays(
     if state.show_forces {
         draw_force_elements(painter, state, &state.view);
     }
+
+    // ── Weights (point masses): markers, gravity arrows, readout ────
+    // After the force elements: a force zone's overlap highlight is an
+    // additive fill that would turn a weight under it the same yellow.
+    weights::draw_weights(painter, state);
 
     // ── Equation overlay (View ▸ Show equations) ─────────────────────
     if state.show_equation_overlay {

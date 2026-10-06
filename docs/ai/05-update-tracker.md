@@ -5,6 +5,11 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-05 — Weights draw over force zones (BL-042, branch fix/weights-over-force-zones)
+- Canvas weights are drawn in `render_overlays` after the force elements. A force zone's
+  overlap highlight is an additive yellow, and it covered a weight on the user's press tool.
+- New test `a_weight_inside_a_force_zone_draws_over_the_zone_highlight` checks the paint order.
+
 ## 2026-10-05 — Share links sweep the sender's crank range (BL-041, branch fix/share-link-sweep-offset)
 - `AppState::load_from_json_str` recomputes the driver display offset before the sweep. A link
   from a mechanism whose driven link is drawn at an angle (the user's press: 44.3 deg) swept a

@@ -250,8 +250,9 @@ invariants_to_protect:
     the required power, so the words match the Actuator Force and Actuator
     Power plots whatever the stored force (tested at every sample with
     stored force 0, the sample's 50 N, and one above every required force).
-    Weights (canvas/rendering/weights.rs draw_weights) draw a gold marker
-    plus an arrow in the gravity direction (gravity_screen_dir maps g
+    Weights (canvas/rendering/weights.rs draw_weights, called from
+    render_overlays after the force elements so a force zone's highlight
+    never covers them) draw a gold marker plus an arrow in the gravity direction (gravity_screen_dir maps g
     through the view, so it points straight down on screen under any
     mounting angle; no arrow when gravity is off), 12-40 px scaled by mass
     relative to the heaviest weight, coloured by
@@ -379,6 +380,7 @@ risks:
     any new conversion flow must do the same (push_undo + mutate + rebuild).
 
 lessons_learned:
+  - "Linkage canvas: FORCE_ZONE_OVERLAP_FILL is a premultiplied colour with RGB above its alpha, so it adds light: anything painted under it (a gold weight, a green arrow) comes out the same yellow. Draw markers that must stay visible after draw_force_elements (BL-042)."
   - "Linkage AppState: compute_sweep reads driver_display_offset whenever the crank range is on (the stored limits are display degrees). Every path that changes the mechanism and then sweeps must call recompute_driver_display_offset first (BL-041: share links swept a shifted range)."
   - rfd file dialogs are native-only. WASM file import uses drag-and-drop
     via egui raw.dropped_files — handle both paths for any new import flow.

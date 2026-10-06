@@ -108,7 +108,7 @@ pub(crate) fn central_panel_frame(
 
 /// Call `visit` on every shape egui painted in a frame, nested shapes
 /// included, in paint order.
-fn visit_shapes(output: &egui::FullOutput, mut visit: impl FnMut(&egui::Shape)) {
+pub(crate) fn visit_shapes(output: &egui::FullOutput, mut visit: impl FnMut(&egui::Shape)) {
     fn walk(shape: &egui::Shape, visit: &mut impl FnMut(&egui::Shape)) {
         match shape {
             egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, visit)),
