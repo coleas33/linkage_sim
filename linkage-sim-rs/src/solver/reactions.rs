@@ -1618,9 +1618,11 @@ mod tests {
         assert!(resid < 1e-9, "force-zone equilibrium residual {resid}");
     }
 
-    /// Pin the force-zone CONTACT branch (schema 1.2.0, decision R-3): a wheel
-    /// (circle) on the coupler, the force at its extreme point against a
-    /// tilted force, so the check's contact point must agree with production's.
+    /// Pin the force-zone CONTACT branch through the independent check (schema
+    /// 1.2.0): a wheel on the coupler, the force at its contact point. The check
+    /// and production share the point (force_zone_application), so this pins
+    /// evaluate_force_zone's world-to-local conversion at a turned body with the
+    /// point away from the body origin.
     #[test]
     fn validation_verified_force_zone_contact_branch() {
         use crate::core::body::BodyGeometry;
@@ -1657,8 +1659,9 @@ mod tests {
             end_stop_damping: 0.0,
             end_stop_restitution: 0.0,
         }));
-        // A zone over the whole wheel; the force tilted so the contact point
-        // sits off the wheel's vertical line and its moment is real.
+        // A zone over the whole wheel; a tilted force at a point away from the
+        // body origin, so a wrong world-to-local conversion would show in the
+        // residual.
         mech.add_force(ForceElement::ForceZone(ForceZoneElement {
             body_id: "coupler".to_string(),
             zone_min: [-10.0, -10.0],

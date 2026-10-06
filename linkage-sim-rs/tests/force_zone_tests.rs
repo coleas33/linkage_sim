@@ -408,3 +408,46 @@ fn at_contact_point_is_left_out_when_false_and_defaults_to_false() {
     let json = serde_json::to_value(ForceElement::ForceZone(fz)).unwrap();
     assert_eq!(json["at_contact_point"], true);
 }
+
+/// A rectangle is where the contact point changes the load: tilted, its lowest
+/// corner is off the line of action through its centre, so the generalized
+/// force differs from the overlap centroid's.
+#[test]
+fn a_tilted_rectangle_s_contact_point_is_its_lowest_corner() {
+    use linkage_sim_rs::forces::helpers::point_force_to_q;
+    let (mech, mut q) = build_test_mechanism();
+    let theta = 0.3;
+    let theta_idx = mech.state().get_index("bar").unwrap().theta_idx();
+    q[theta_idx] = theta;
+    // build_test_mechanism's 0.06 x 0.015 rectangle centred at (0.05, 0); the body origin at (0, 0).
+    let geo = mech.bodies()["bar"].geometry.clone().unwrap();
+    let mut fz = ForceZoneElement {
+        body_id: "bar".to_string(),
+        zone_min: [-1.0, -1.0],
+        zone_max: [1.0, 1.0],
+        force: [0.0, 500.0],
+        label: None,
+        body_local_app_point: None,
+        at_contact_point: true,
+    };
+    let q_dot = DVector::zeros(q.len());
+    let got = ForceElement::ForceZone(fz.clone()).evaluate(mech.state(), mech.bodies(), &q, &q_dot, 0.0);
+    // The lowest corner, from the geometry's own outline (independent of the zone helper).
+    let corners = geo.outline_world(0.0, 0.0, theta);
+    let lowest = corners.iter().min_by(|a, b| a.y.total_cmp(&b.y)).unwrap();
+    let (s, c) = theta.sin_cos();
+    let local = Vector2::new(c * lowest.x + s * lowest.y, -s * lowest.x + c * lowest.y);
+    let want = point_force_to_q(mech.state(), "bar", &local, &Vector2::new(0.0, 500.0), &q);
+    for (g, w) in got.iter().zip(want.iter()) {
+        assert_relative_eq!(*g, *w, epsilon = 1e-12);
+    }
+    // The overlap centre (here the rectangle's centre) loads the body differently.
+    fz.at_contact_point = false;
+    let centroid = ForceElement::ForceZone(fz).evaluate(mech.state(), mech.bodies(), &q, &q_dot, 0.0);
+    assert!(
+        (got[theta_idx] - centroid[theta_idx]).abs() > 0.1,
+        "contact {} vs centroid {}",
+        got[theta_idx],
+        centroid[theta_idx]
+    );
+}

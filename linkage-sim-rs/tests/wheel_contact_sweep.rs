@@ -4,7 +4,7 @@
 //! not carry).
 
 use linkage_sim_rs::core::body::BodyGeometry;
-use linkage_sim_rs::forces::elements::ForceElement;
+use linkage_sim_rs::forces::elements::{force_zone_application, ForceElement, ZoneAppMode};
 use linkage_sim_rs::gui::samples::SampleMechanism;
 use linkage_sim_rs::gui::AppState;
 
@@ -44,6 +44,23 @@ fn a_wheel_s_contact_point_loads_the_linkage_like_its_hub() {
     }
     let hub_torques = sweep_driver_torques(&mut state, false);
     let contact_torques = sweep_driver_torques(&mut state, true);
+    // The rebuilt zone really is in contact mode, its point the top of the
+    // wheel (against the press's downward force), 20 mm from the hub.
+    let mech = state.mechanism.as_ref().expect("mechanism");
+    let zone = mech
+        .forces()
+        .iter()
+        .find_map(|f| if let ForceElement::ForceZone(z) = f { Some(z.clone()) } else { None })
+        .expect("the zone");
+    assert_eq!(zone.app_mode(), ZoneAppMode::Contact);
+    let geo = mech.bodies()["coupler"].geometry.clone().expect("the wheel");
+    let pose = mech.state().get_pose("coupler", &state.q);
+    let hub = geo.centre_world(pose.0, pose.1, pose.2);
+    let point = force_zone_application(&zone, &geo, pose).point.expect("a contact point");
+    assert!(
+        (point.x - hub.x).abs() < 1e-12 && (point.y - (hub.y + 0.02)).abs() < 1e-12,
+        "{point:?} vs hub {hub:?}"
+    );
     assert_eq!(hub_torques.len(), contact_torques.len());
     let mut compared = 0;
     for (h, c) in hub_torques.iter().zip(&contact_torques) {
