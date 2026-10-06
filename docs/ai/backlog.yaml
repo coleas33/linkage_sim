@@ -424,3 +424,23 @@
   priority: 2
   status: fixed
   notes: "Fixed 2026-10-05 on fix/weights-over-force-zones: draw_weights moved from render_mechanism to render_overlays, after draw_force_elements. The highlight stays additive (changing it would restyle every zone)."
+
+- id: BL-043
+  title: "Scale mechanism scales a force zone's box but not its locked application point"
+  dimension: physics
+  risk: mechanical
+  evidence: "blueprint_ops.rs scale_mechanism (2026-10-06 map of the force-zone code): it multiplies zone_min/zone_max and the body geometry by the factor but leaves ForceZoneElement.body_local_app_point unscaled, so after a scale the locked force acts at the old distance from the body origin."
+  acceptance: "scaling a mechanism by k scales body_local_app_point by k; a test scales a zone with a locked point and checks the point and the statics (driver torque scales by k for a force-only load)"
+  priority: 3
+  status: open
+  notes: "Found while planning the round-geometry work (plan 2026-10-06, Part A); not changed there."
+
+- id: BL-044
+  title: "The canvas Draw Geometry tool is a stub"
+  dimension: gui
+  risk: mechanical
+  evidence: "interaction.rs handle_draw_body_geometry is '#[allow(dead_code)] // Stubbed: full implementation pending'; EditorTool::DrawBodyGeometry does nothing. Until 2026-10-06 the property panel's Draw Geometry and Redraw buttons entered this mode, so they did nothing; Part A of the round-geometry plan replaced them with Add rectangle / Add circle (decision R-2). The stub, DrawBodyGeometryState and PendingPropertyEdit::EnterDrawGeometryMode remain."
+  acceptance: "either the tool draws a rectangle or a circle by dragging (with a headless test), or the stub, its state and the edit variant are removed"
+  priority: 4
+  status: open
+  notes: "Decision R-2 option (b) if the user wants dragging."

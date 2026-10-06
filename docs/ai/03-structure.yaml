@@ -106,7 +106,7 @@ modules:
 
   geometry:
     path: src/geometry/
-    responsibility: low-level 2D geometry helpers (polygon clipping, body_rect_to_world, centroid)
+    responsibility: low-level 2D geometry helpers (polygon clipping, body_rect_to_world, centroid); a body's shape (rectangle or circle, core::body::GeometryShape) and its world outline and contact point are BodyGeometry methods (outline_world, centre_world, extreme_point_world)
 
   gui:
     path: src/gui/
