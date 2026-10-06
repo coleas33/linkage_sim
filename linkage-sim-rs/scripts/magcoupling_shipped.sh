@@ -1,7 +1,7 @@
-# Sourced, never run: the cargo arguments of the shipped builds that contain
-# magcoupling-rs (the calculator's own app, and the linkage app with its panel
-# in Tools -> Magnetic coupling), defined once, and the guard that no shipped
-# build has the test-only workbook-parity feature. Used by build_web.sh and
+# Sourced, never run: the cargo arguments of the calculator's shipped builds
+# (magcoupling-rs: its web bundle and its native app) and of the linkage app's
+# web bundle, defined once, and the guard that no shipped calculator build has
+# the test-only workbook-parity feature. Used by build_web.sh and
 # build_magcoupling_web.sh (the two web bundles; deploy-web.yml runs
 # build_web.sh) and gate.sh.
 #
@@ -15,15 +15,14 @@
 # "compiler-artifact" line), so it sees exactly the feature set cargo built
 # the shipped binary with.
 
-# The web bundle (linkage-sim-rs/web/magcoupling/, served at /magcoupling/).
+# The web bundle (linkage-sim-rs/web/magcoupler/, served at /magcoupler/).
 MAGCOUPLING_WEB_ARGS=(--features app --bin magcoupling-web --target wasm32-unknown-unknown)
 # The native desktop app.
 MAGCOUPLING_NATIVE_ARGS=(--features app --bin magcoupling-app)
-# The linkage app's builds (cargo run from linkage-sim-rs/), which depend on
-# magcoupling-rs with its feature gui: the web bundle (linkage-sim-rs/web/,
-# served at /) and the native desktop app.
+# The linkage app's web bundle (cargo run from linkage-sim-rs/; served at
+# /linkage/ from linkage-sim-rs/web/linkage/). It has no magcoupling-rs in it,
+# so the guard does not check it.
 LINKAGE_WEB_ARGS=(--bin linkage-web --target wasm32-unknown-unknown --no-default-features --features raster)
-LINKAGE_NATIVE_ARGS=(--bin linkage-gui)
 
 # Reads cargo's --message-format=json (or json-render-diagnostics) output on
 # stdin. Succeeds only if the binary $1 was among the compiled units, at least

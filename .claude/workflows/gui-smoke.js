@@ -1,17 +1,17 @@
 export const meta = {
   name: 'gui-smoke',
-  description: 'Smoke-test the locally served WASM builds (the linkage app at /linkage/ with its calculator window, and /magcoupler/): loads, canvas present, console clean',
+  description: 'Smoke-test the locally served web build (the hub page at /, the linkage app at /linkage/, the calculator at /magcoupler/): loads, canvas present, console clean',
   whenToUse: 'Before merging a batch that touched src/gui/ or magcoupling-rs/src/gui/, and during Phase 1 audit',
   phases: [{ title: 'Smoke' }],
 }
 
 const SMOKE_SCHEMA = {
-  type: 'object', required: ['passed', 'canvas_present', 'console_errors', 'magcoupling_window', 'title_warning'],
+  type: 'object', required: ['passed', 'canvas_present', 'console_errors', 'hub_page', 'title_warning'],
   properties: {
     passed: { type: 'boolean' },
     canvas_present: { type: 'boolean' },
     console_errors: { type: 'array', items: { type: 'string' } },
-    magcoupling_window: { type: 'boolean' },
+    hub_page: { type: 'boolean' },
     title_warning: { type: 'boolean' },
     screenshot_note: { type: 'string' },
     notes: { type: 'string' },
@@ -52,11 +52,6 @@ const PLAYWRIGHT_TOOLS = 'load them via ToolSearch, e.g. "select:mcp__plugin_pla
 // The calculator's step also clicks the canvas once and uploads a file.
 const MAGCOUPLING_TOOLS = 'load them via ToolSearch, e.g. "select:mcp__plugin_playwright_playwright__browser_navigate,mcp__plugin_playwright_playwright__browser_snapshot,mcp__plugin_playwright_playwright__browser_console_messages,mcp__plugin_playwright_playwright__browser_take_screenshot,mcp__plugin_playwright_playwright__browser_wait_for,mcp__plugin_playwright_playwright__browser_run_code_unsafe,mcp__plugin_playwright_playwright__browser_click,mcp__plugin_playwright_playwright__browser_file_upload,mcp__plugin_playwright_playwright__browser_close"'
 
-// The query that opens the linkage app with Tools -> Magnetic coupling open (decision M5-4).
-// linkage-sim-rs/src/gui/calculator_window.rs (gui_smoke_opens_the_window_with_the_tool_parameter)
-// checks it against TOOL_PARAM and TOOL_MAGCOUPLING, so it cannot go stale unnoticed.
-const LINKAGE_TOOL_QUERY = '?tool=magcoupling'
-
 const ARGS = typeof args === 'string' ? JSON.parse(args || '{}') : (args || {})
 if (ARGS.selftest) { return { ok: true } }
 
@@ -65,13 +60,13 @@ const url = ARGS.url || 'http://localhost:8080'
 let linkage = null
 if (ARGS.linkage !== false) {
   linkage = await agent(
-    `Smoke-test the WASM linkage app at ${url} using Playwright MCP tools (${PLAYWRIGHT_TOOLS}).
-Steps: navigate to ${url}/linkage/; wait 5 seconds for WASM init; snapshot the page and confirm a <canvas> element exists; collect the console messages at level "info" (it includes errors and warnings); take a screenshot and judge whether it shows a rendered app (menu bar / toolbar / panels visible, any theme) vs a blank page.
-Then the calculator window: navigate to ${url}/linkage/${LINKAGE_TOOL_QUERY} (the linkage app with Tools -> Magnetic coupling open at start); wait 5 seconds; collect the console messages at level "info" again; take a screenshot. magcoupling_window=true only if a console message contains "magcoupling explorer: " (logged when the window's calculator is created) and the screenshot shows a window titled "Magnetic coupling" over the linkage app, holding the calculator (inputs on the left, dashboard on the right, the geometry view in the middle). Close the browser.
-title_warning=true if any console message on either page contains "Unhandled egui viewport command: Title" (backlog BL-037: there must be none).
-passed=true only if: both pages loaded, canvas present, magcoupling_window, title_warning=false, and zero console messages of type error on either page (other warnings are OK — put them in notes). List every console error string verbatim in console_errors. If navigation fails entirely, passed=false with the failure in notes — the server may not be running (caller must have run scripts/serve_web.sh).`,
+    `Smoke-test the web build at ${url} using Playwright MCP tools (${PLAYWRIGHT_TOOLS}).
+Steps: navigate to ${url}/ (the hub page); snapshot it. hub_page=true only if it shows two links, "Linkage Simulator" to /linkage/ and "Magnetic Coupling Calculator" to /magcoupler/.
+Then navigate to ${url}/linkage/ (the linkage app); wait 5 seconds for WASM init; snapshot the page and confirm a <canvas> element exists; collect the console messages at level "info" (it includes errors and warnings); take a screenshot and judge whether it shows a rendered app (menu bar / toolbar / panels visible, any theme) vs a blank page. Close the browser.
+title_warning=true if any console message contains "Unhandled egui viewport command: Title" (backlog BL-037: there must be none).
+passed=true only if: both pages loaded, hub_page, canvas present, title_warning=false, and zero console messages of type error on either page (other warnings are OK — put them in notes). List every console error string verbatim in console_errors. If navigation fails entirely, passed=false with the failure in notes — the server may not be running (caller must have run scripts/serve_web.sh).`,
     { label: 'gui-smoke', phase: 'Smoke', schema: SMOKE_SCHEMA, model: 'sonnet' },
-  ) || { passed: false, canvas_present: false, console_errors: [], magcoupling_window: false, title_warning: false, notes: 'smoke agent returned no result (agent error)' }
+  ) || { passed: false, canvas_present: false, console_errors: [], hub_page: false, title_warning: false, notes: 'smoke agent returned no result (agent error)' }
 }
 
 // The magnetic coupling calculator: deterministic state through its share link, checked in

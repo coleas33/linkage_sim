@@ -11,10 +11,9 @@
 #         (served at /linkage/ and /magcoupler/; the hub page web/index.html
 #         at / is committed)
 #
-# Both builds fail if cargo built the bundle with the test-only workbook-parity
-# feature of magcoupling-rs (magcoupling_assert_shipped in magcoupling_shipped.sh):
-# the linkage bundle carries the calculator's panel (Tools -> Magnetic coupling).
-# deploy-web.yml runs this script.
+# The calculator's build fails if cargo built it with the test-only
+# workbook-parity feature (magcoupling_assert_shipped in magcoupling_shipped.sh);
+# the linkage bundle has no magcoupling-rs in it. deploy-web.yml runs this script.
 #
 # After building, serve with: scripts/serve_web.sh
 
@@ -29,9 +28,7 @@ source "$SCRIPT_DIR/magcoupling_shipped.sh"
 cd "$PROJECT_DIR"
 
 echo "Building WASM binary (release)..."
-cargo build --release "${LINKAGE_WEB_ARGS[@]}" \
-    --message-format=json-render-diagnostics \
-    | magcoupling_assert_shipped linkage-web
+cargo build --release "${LINKAGE_WEB_ARGS[@]}"
 
 echo "Generating JS bindings..."
 wasm-bindgen \
