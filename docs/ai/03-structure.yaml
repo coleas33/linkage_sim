@@ -153,9 +153,10 @@ gui_submodules:
 
   export:
     path: src/gui/export/
-    files: [mod, svg, dxf, csv, raster, report, schematic, firmware]
+    files: [mod, svg, dxf, csv, raster, report, schematic, firmware, animation, animation_template.html]
     notes:
       schematic: Auto-generated labeled mechanism schematic (SVG) — File → "Export labeled schematic (SVG)..."; matches docs/superpowers/specs/2026-04-29-linkage-equations-reference.md figures 2 & 3.
+      animation: File → "Export Animation (HTML)..." — AnimationData (one Frame per solved sweep sample, mm and N) embedded as JSON in animation_template.html (an SVG player, no network); generate_animation_html, animation_export_available.
 
   sweep:
     path: src/gui/sweep/

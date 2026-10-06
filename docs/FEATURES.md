@@ -270,6 +270,13 @@ All force elements are editable in the GUI property panel and rendered on the ca
 - Force zones apply at the overlap centre, a locked point, or the shape's contact point (a wheel's bottom for an upward force, found at every pose); the F marker reads "F (contact)"
 - Older builds still open schema 1.2.0 files (circles show as their bounding squares; a contact-point zone acts at its locked point or overlap centre)
 
+### Animated HTML export
+
+- File -> Export Animation (HTML)... saves `mechanism_animation.html`: one self-contained page (no network) that plays the mechanism through every solved sample of its angle or stroke sweep
+- Links, round and rectangular shapes, joints and ground pivots; the actuator with its push or pull; each force zone's point and force; weights; joint reactions; the driver-angle arc
+- Readouts per sample in the app's units with lbf beside every force (actuator force or driver torque, actuator length, mechanical advantage, weight shares, reactions); a chart of the actuator force (or driver torque) with a moving marker
+- Play, bounce or loop, three speeds, a scrub slider, and switches for forces, weights and the arc; works on the desktop and in the browser
+
 ## Planned / Future
 
 ### Actuator Sizing & Power

@@ -454,3 +454,13 @@
   priority: 3
   status: open
   notes: "Pre-existing for the old lock checkbox; the round-geometry branch adds the three-way choice."
+
+- id: BL-046
+  title: "The canvas's orange zone-force label is hard to read on the yellow overlap highlight"
+  dimension: gui
+  risk: mechanical
+  evidence: "force_render.rs draws \"F (locked)\" and \"F (contact)\" in Color32::from_rgb(255, 165, 80) over FORCE_ZONE_OVERLAP_FILL (255, 200, 0, alpha 50; colors.rs); on the live press (2026-10-06) the label at the wheel's bottom barely shows while the wheel is in the zone"
+  acceptance: "the zone-force label reads clearly over the overlap highlight (a darker label colour or a backing plate); a headless test checks the label's colour against the highlight, or the label draws on a plate"
+  priority: 4
+  status: open
+  notes: "Seen in the live check of Part A of the round-geometry plan; the animated HTML export draws its labels with a white halo instead."

@@ -537,6 +537,37 @@ pub(crate) fn draw_menu_bar(
                         }
                         ui.close();
                     }
+                    if ui
+                        .add_enabled(
+                            export::animation_export_available(state),
+                            egui::Button::new("Export Animation (HTML)..."),
+                        )
+                        .on_hover_text(
+                            "Export a self-contained HTML page that animates the mechanism through its \
+                             sweep, with its forces, weights, joint reactions and actuator force chart",
+                        )
+                        .clicked()
+                    {
+                        match export::generate_animation_html(state) {
+                            Ok(html) => {
+                                let outcome = export::download::download_text(
+                                    "mechanism_animation.html",
+                                    "text/html",
+                                    &html,
+                                    export::download::FileFilter {
+                                        label: "HTML",
+                                        extensions: &["html"],
+                                    },
+                                );
+                                apply_download_outcome(state, outcome);
+                            }
+                            Err(e) => {
+                                state.error_log.push(format!("Animation export failed: {}", e));
+                                state.show_error_panel = true;
+                            }
+                        }
+                        ui.close();
+                    }
                     // ── Raster exports (gated by `raster` feature; native always
                     //    has it, web opts in at build time to keep the bundle small)
                     #[cfg(feature = "raster")]
