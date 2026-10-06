@@ -454,3 +454,43 @@
   priority: 3
   status: open
   notes: "Pre-existing for the old lock checkbox; the round-geometry branch adds the three-way choice."
+
+- id: BL-046
+  title: "The canvas's orange zone-force label is hard to read on the yellow overlap highlight"
+  dimension: gui
+  risk: mechanical
+  evidence: "force_render.rs draws \"F (locked)\" and \"F (contact)\" in Color32::from_rgb(255, 165, 80) over FORCE_ZONE_OVERLAP_FILL (255, 200, 0, alpha 50; colors.rs); on the live press (2026-10-06) the label at the wheel's bottom barely shows while the wheel is in the zone"
+  acceptance: "the zone-force label reads clearly over the overlap highlight (a darker label colour or a backing plate); a headless test checks the label's colour against the highlight, or the label draws on a plate"
+  priority: 4
+  status: open
+  notes: "Seen in the live check of Part A of the round-geometry plan; the animated HTML export draws its labels with a white halo instead."
+
+- id: BL-047
+  title: "The animated HTML export leaves out prismatic and cam joints"
+  dimension: gui
+  risk: mechanical
+  evidence: "gui/export/animation.rs joint_point keeps revolute and fixed joints only (2026-10-06 final review of Part B): a slider-crank's slide joint has no marker on the page, and its reaction is not in the readouts, while the canvas draws a square marker and an arrow (rendering/mod.rs) and the Joint Reactions plot lists it"
+  acceptance: "the page marks prismatic and cam joints as the canvas does (a test exports the slider-crank and finds the slide joint's marker); their reactions are shown, or the page says they are left out"
+  priority: 4
+  status: open
+  notes: "A prismatic joint's multiplier is not an [Fx, Fy] force, so its reaction needs its own drawing (the canvas's treatment is pre-existing)."
+
+- id: BL-048
+  title: "The File menu's text exports repeat the generate / download / error block"
+  dimension: quality
+  risk: mechanical
+  evidence: "menu_bar.rs: the schematic, DXF, HTML report and animation items each repeat match generate { Ok -> download_text + apply_download_outcome, Err -> error_log + show_error_panel } (2026-10-06 final review of Part B)"
+  acceptance: "one helper (generate result, file name, MIME type, filter, failure prefix) used by every text export item; behaviour unchanged (same file names, messages and error panel)"
+  priority: 5
+  status: open
+  notes: "Left alone in Part B to keep the existing items untouched."
+
+- id: BL-049
+  title: "Under a mounting angle the canvas draws force arrows and the zone box unturned"
+  dimension: gui
+  risk: mechanical
+  evidence: "The canvas turns positions by the mounting angle (ViewTransform::world_to_screen) but draws force directions straight from the world vector (primitives.rs draw_force_arrow: dx = fx / mag, dy = -fy / mag; force_render.rs zone arrows: dir_x = fx / fmag) and the zone box as the screen rectangle of two turned corners (force_render.rs), so with a mounting angle the reaction and zone-force arrows and the zone box are drawn turned back by the angle. Found in the 2026-10-06 re-review of Part B's final fixes; the animated HTML export turns every point and vector and draws zones as four corners."
+  acceptance: "with a mounting angle the canvas turns force directions by it and draws a zone as its four turned corners; a headless test at 30 deg checks a reaction arrow's and a zone arrow's screen direction and the zone outline"
+  priority: 3
+  status: open
+  notes: "Pre-existing; the page (gui/export/animation.rs) is the reference for the turned drawing."

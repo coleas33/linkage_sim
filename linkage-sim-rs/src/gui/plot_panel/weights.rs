@@ -162,7 +162,7 @@ pub(super) fn draw_braking_bands(
 /// `"coupler (link)"` or `"Arm (link b2)"` for a link self-weight (body
 /// label, plus the body id when the label differs), `"W1"` or
 /// `"Robot (W1)"` for a point mass.
-pub(super) fn source_line_name(source: &WeightSource) -> String {
+pub(crate) fn source_line_name(source: &WeightSource) -> String {
     if source.is_link_self_weight {
         if source.name == source.body_id {
             format!("{} (link)", source.name)

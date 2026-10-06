@@ -177,7 +177,7 @@ The full solver port (Phases 1-4: kinematics, statics, inverse dynamics, forward
 - **Load path visualization**: color-coded links by joint reaction force magnitude
 - **Share via URL**: compress mechanism JSON (deflate + base64url), shareable link preserves crank angle
 - **Image trace overlay**: import background PNG/JPEG with adjustable opacity, scale, and offset
-- **Export**: PNG, SVG, GIF (ping-pong loop), DXF, CSV, HTML report with interactive Plotly charts
+- **Export**: PNG, SVG, GIF (ping-pong loop), DXF, CSV, HTML report with interactive Plotly charts, animated HTML page of the sweep (one self-contained file: the mechanism with its forces, weights and joint reactions, the actuator force chart, play and scrub controls; desktop and browser)
 - **Magnetic coupling calculator** (Tools > Magnetic coupling): the [`magcoupling-rs`](magcoupling-rs/README.md) calculator in a window beside the mechanism, its design kept apart from the mechanism and kept while the window is closed; the keys go to the window or the mechanism, whichever was clicked last; `?tool=magcoupling` opens it when the web app starts. The same calculator runs on its own at [`/magcoupling/`](https://linkage.colesorkness.com/magcoupling/)
 - **Welcome screen** with quick-start buttons; interactive tutorial (Help > Tutorial: Build a 4-Bar); demo mode auto-cycling all samples
 - **Multi-select** (Shift+click), arrow-key nudge, Scale Mechanism tool, undo/redo with visual history panel

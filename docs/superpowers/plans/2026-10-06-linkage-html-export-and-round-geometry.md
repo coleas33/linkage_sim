@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Part A gives a link's visual geometry a circle shape and a force zone a third application mode, the shape's contact point, so a wheel's load acts (and is drawn) at the wheel's bottom at every pose. Part B adds File -> "Export animation (HTML)...", a self-contained animated page of the current mechanism like the user's press animation.
+**Goal:** Part A gives a link's visual geometry a circle shape and a force zone a third application mode, the shape's contact point, so a wheel's load acts (and is drawn) at the wheel's bottom at every pose. Part B adds File -> "Export Animation (HTML)...", a self-contained animated page of the current mechanism like the user's press animation.
 
-**Architecture:** Part A: `BodyGeometry` gains a `shape` (rectangle, the default and left out of files, or circle, its diameter in `width` with `height` equal) and three methods (`centre_world`, `outline_world`, `extreme_point_world`); every place that today builds the rectangle's world corners for a force zone (the force evaluation, the overlap ratio, the independent equilibrium check, the canvas marker) calls one new helper, `force_zone_application`, which returns the overlap and the application point by the zone's mode (overlap centroid, locked body point, or contact point = the shape's extreme point against the zone's force). The property panel switches shapes and adds them; the force editor picks the mode. Part B (design here, code written after Part A merges): the export precomputes every sweep sample in Rust (poses, outlines, force visuals, reactions, readouts) and embeds them as JSON in an HTML template with a small JS player.
+**Architecture:** Part A: `BodyGeometry` gains a `shape` (rectangle, the default and left out of files, or circle, its diameter in `width` with `height` equal) and three methods (`centre_world`, `outline_world`, `extreme_point_world`); every place that today builds the rectangle's world corners for a force zone (the force evaluation, the overlap ratio, the independent equilibrium check, the canvas marker) calls one new helper, `force_zone_application`, which returns the overlap and the application point by the zone's mode (overlap centroid, locked body point, or contact point = the shape's extreme point against the zone's force). The property panel switches shapes and adds them; the force editor picks the mode. Part B (Tasks 5 and 6, written against `main` after Part A merged): the export rebuilds every solved sweep sample's pose from the sweep's own records (no second solve), computes outlines, force visuals, reactions and readouts in Rust, and embeds them as JSON in an HTML template with a small JS player.
 
 **Tech Stack:** Rust 2024, egui 0.32 (headless tests), nalgebra, serde/serde_json; no new dependency. Playwright for the browser checks.
 
@@ -12,7 +12,7 @@
 
 **Execution worktree:** `C:/Users/Cole/source/repos/lsim-shapes`, branch `linkage/round-geometry`, created by Task 0 from `main` at `f9df219` with LF line endings and a worktree-scoped `core.autocrlf=false`. Every command uses absolute paths into it. Nothing is pushed without the user's go.
 
-**Process (the user's lean process, memory `project_magcoupling_lean_pacing`):** Part A is Tasks 0 to 4. Tasks 1 to 3 give the exact code, so implementers transcribe on `sonnet` with a `sonnet` review per task; Task 4 (docs and the browser check) also on `sonnet`; the whole-branch review after Task 4 on the session model. No pre-flight scan: every old block quotes `main` at `f9df219` (or the file as earlier tasks leave it). Part B's tasks get their exact code in this file after Part A merges (decision H-8), then run the same way.
+**Process (the user's lean process, memory `project_magcoupling_lean_pacing`):** Part A is Tasks 0 to 4. Tasks 1 to 3 give the exact code, so implementers transcribe on `sonnet` with a `sonnet` review per task; Task 4 (docs and the browser check) also on `sonnet`; the whole-branch review after Task 4 on the session model. No pre-flight scan: every old block quotes `main` at `f9df219` (or the file as earlier tasks leave it). Part B (Tasks 5 and 6) got its exact code in this file after Part A merged (decision H-8) and runs the same way, from its own worktree (see Part B).
 
 ## Decisions to confirm
 
@@ -77,7 +77,7 @@ Part A (Tasks 1 to 3):
 - Literal sites of `BodyGeometry` (Task 1) and `ForceZoneElement` (Task 2): `pending_edits.rs`, `dxf_import.rs`, `reactions.rs` tests, `samples/fourbar.rs`, `interaction.rs`, `tests/force_zone_tests.rs`.
 - Tests: `tests/geometry_tests.rs` (Task 1), `tests/force_zone_tests.rs` and the new `tests/wheel_contact_sweep.rs` (Task 2), `pending_edits.rs` and `gui/canvas/mod.rs` test modules (Task 3).
 
-Part B: see "Part B: animated HTML export" at the end.
+Part B (Tasks 5 and 6): `linkage-sim-rs/src/gui/sweep/mod.rs` (`sweep_time`), `linkage-sim-rs/src/gui/export/animation.rs` and `animation_template.html` (new), `export/mod.rs`, `menu_bar.rs`; see "Part B: animated HTML export" at the end.
 
 ## Tasks
 
@@ -2635,26 +2635,1508 @@ After Task 4: the whole-branch review (session model), one fix wave if needed, m
 
 ---
 
-## Part B: animated HTML export (design; code written after Part A merges, decision H-8)
+## Part B: animated HTML export (Tasks 5 and 6; code written against `main` at `5690cb1`, decision H-8)
 
-**What it makes:** File -> "Export animation (HTML)..." saves `mechanism_animation.html`: one self-contained page (decision H-6) that plays the current mechanism through its sweep, like the user's press animation, for any mechanism.
+**What it makes:** File -> "Export Animation (HTML)..." (Title Case like its neighbours; decision H-1) saves `mechanism_animation.html`: one self-contained page (decision H-6) that plays the current mechanism through its sweep, like the user's press animation, for any mechanism with an angle or stroke sweep.
 
-**Data, precomputed in Rust (no solver in JS):** a new module `linkage-sim-rs/src/gui/export/animation.rs` builds an `AnimationData` (serde `Serialize`) from the `AppState`:
-- the sweep's samples (decision H-3): the same driver values `compute_sweep` uses (display angle via `driver_display_offset`, BL-041; stroke in mm for a linear drive), positions re-solved with the sweep's own `solve_sweep_positions` (made `pub(crate)`) so the branch matches the plots; unsolved samples left out (decision H-5);
-- per sample: every moving body's attachment and mount points in the world frame, its geometry outline (rectangle corners or a circle's centre and radius), the ground pivots; force visuals (actuator endpoints and its force, each zone's application point from `force_zone_application` and its force, each weight's position and gravity force, joint reaction vectors from `solve_reactions_with_actuator`); readouts from `SweepData` at the same index (actuator force statics and inverse dynamics, or the driver torque without an actuator (decision H-2), actuator length, mechanical advantage, the weight breakdown's shares, reaction magnitudes);
-- units (decision H-4): the app's units (N, N m, mm or m) with lbf beside every force.
+**Design ruling (plan writer, 2026-10-06): poses are rebuilt, never solved again.** The sweep already records every moving body's angle (`SweepData::body_angles`) and the world trace of every attachment point (`coupler_traces`). Each body's origin is its first attachment point's trace (points sorted by name) minus that point rotated by the body's angle, so the generalized coordinates of every sample come back exactly, with no change to `SweepData` and no second solve that could land on another branch. The hidden cylinder and rod bodies of a mount-point actuator (`forces/compound.rs`) are bodies of the built mechanism, so they are rebuilt the same way (the reactions need them); the drawing shows only the blueprint's bodies and draws the actuator pin to pin. Reactions are solved per frame with `solve_reactions_with_actuator` at the sample's driver time (`sweep_time`, extracted from the sweep so both use one formula) and equal the sweep's `joint_reaction_magnitudes` to 1e-6.
 
-**Page:** `linkage-sim-rs/src/gui/export/animation_template.html` (included with `include_str!`), its data placeholder replaced by the JSON; a small JS player adapted from the press animation: SVG view fitted to every sample, links, joints, ground markers, geometry (circles as circles), force arrows, weights, the driver-angle arc; the readout panel; a mini chart of the actuator force (or driver torque) with a moving marker; play/pause, bounce, speed, a scrub slider over the solved samples; checkboxes for forces, weights and the arc. No `http` reference anywhere in the page.
+**Other rulings made while dry-running (each pinned by a test or the browser check):**
+- The chart (H-2): the actuator element's required force; in a stroke sweep without one, the linear driver's own force (the sweep keeps it in `driver_torques`; the plots call it "Actuator Force"), labelled as a force with lbf; otherwise the driver torque. A linear driver draws as an actuator.
+- The axis wording follows the plots: "Driver angle (deg)" (display frame, BL-041) or "Actuator stroke (mm)".
+- Ground hatch marks sit at the joints' ground pivots only, so the view fits the linkage and a long actuator runs off to its anchor, as the hand-built press page did ("the actuator runs off-screen to its anchor C").
+- The drawing is 720 units wide whatever the mechanism's size (labels keep one size), fitted by width or a 640-unit height and centred; arrows and labels carry a white halo so they read over links and zones.
+- Forces read "21.51 kN / 4835 lbf" from 1 kN up and "12.0 N / 2.7 lbf" below (H-4), reactions included; torques to 0.01 N m; a weight share is lbf when it is a share of a force (an actuator's, or a linear driver's), N m for a crank's torque. A link's own weight is labelled by its size alone (its name is drawn beside it); payloads by name and size. Reactions are listed by joint id (the solver's order follows a hash map).
+- With Bounce off the player loops to the start (the first draft stuck on the last frame).
 
-**Tasks (code to be written here against main after Part A merges):**
-- B1: `animation.rs` data builder, test-first: sample count = solved samples; positions equal `coupler_traces`; actuator force equals `SweepData::actuator_forces` at each sample; the press-like wheel's contact point at its bottom; NaN-free JSON.
-- B2: the template and `animation_html(&AppState) -> Result<String, String>`, test-first: the placeholder is replaced, the embedded JSON parses back, no `http`, the page names every body.
-- B3: the File-menu item (native save dialog and web download through `export::download::download_text`, decision H-7), docs (README feature list, FEATURES.md, docs/ai), and a Playwright check of an exported file: loads with no console error, scrubbing changes the readout.
+**Execution worktree:** `C:/Users/Cole/source/repos/lsim-anim`, branch `linkage/animation-export`, created by the controller from `main` at `5690cb1` with LF line endings and a worktree-scoped `core.autocrlf=false`; the controller writes this updated plan into it (uncommitted until Task 6), so the main checkout is never modified. Every command uses absolute paths into the worktree. Nothing is pushed without the user's go.
+
+**Process:** Tasks 5 and 6 give the exact code, so implementers transcribe on `sonnet` with a `sonnet` review per task; the whole-branch review after Task 6 runs on the session model; then the controller's browser check, a merge into local `main`, and the user's go before any push.
+
+**Part B global constraints** (the Part A constraints apply, with these changes): base `main` at `5690cb1` ("merge: round shapes and the contact point ..."); worktree `C:/Users/Cole/source/repos/lsim-anim`; the gate command uses `C:/Users/Cole/source/repos/lsim-anim/linkage-sim-rs/scripts/gate.sh`; commits `feat(linkage): ...` (Task 6: `feat(linkage): ...` for the menu item with its docs in the same commit); the user's press model and anything generated from it are never committed (the repo is public). The gate's linkage count at `5690cb1` is 1,079; Task 5 adds 19 tests (1,098) and Task 6 none.
+
+**Part B review focus** (pinned by Task 5's tests):
+1. **A body whose first pin is not its origin** (DXF imports, plates): its pose must come from the trace, not assume the pin sits at the origin. Every built-in sample but Strandbeest puts each body's first pin at its origin, which hides a wrong origin; `a_body_whose_first_pin_is_off_its_origin_is_placed_by_its_trace`.
+2. **A mount-point actuator** (hidden cylinder and rod bodies): every sample must still rebuild (the first draft found none and exported nothing) and the actuator draws pin to pin; `frames_are_the_sweeps_solved_samples_at_their_traced_positions`, `the_actuator_draws_pin_to_pin_and_its_hidden_bodies_are_not_links`.
+3. **A stroke (linear driver) sweep:** millimetres of stroke, no driver arc, the linear driver as the actuator with its force in lbf; `a_stroke_sweep_runs_in_millimetres_with_the_linear_driver_as_the_actuator`.
+4. **A name containing `</script>`, or `<!--` then `<script`:** it must not end the page's script or turn its end into script text; every `<` in the data is written `\u003c`; `a_name_cannot_end_the_script_or_open_a_comment_in_it`. A renamed data field must not break the page silently; `the_data_has_every_field_the_player_reads`.
+5. **Samples without a solution and a trajectory sweep:** the first are left out (H-5), the second refused with a message and the menu item disabled; `samples_without_a_solution_are_left_out`, `a_trajectory_sweep_cannot_be_animated`.
+
+---
+
+### Task 5: The animation export module
+
+**Files:**
+- Modify: `linkage-sim-rs/src/gui/sweep/mod.rs` (extract `sweep_time`)
+- Modify: `linkage-sim-rs/src/gui/export/mod.rs` (register the module)
+- Create: `linkage-sim-rs/src/gui/export/animation_template.html`
+- Create: `linkage-sim-rs/src/gui/export/animation.rs` (the data builder, `generate_animation_html`, `animation_export_available`, 19 tests)
+
+**Interfaces:**
+- Consumes: `SweepData` (`angles_deg`, `body_angles`, `coupler_traces`, `actuator_forces`, `actuator_lengths`, `driver_torques`, `mechanical_advantage`, `weight_breakdown`, `sweep_mode`); `AppState::{mechanism, blueprint, sweep_data, driver_display_offset, driver_joint_id, display_units, driver_omega(), driver_theta_0()}`; `force_zone_application` and `BodyGeometry::{centre_world, outline_world}` (Part A); `weight_sources`, `gravity_vector`; `solve_reactions_with_actuator`; `test_support::swept_lift`.
+- Produces: `pub(crate) fn sweep_time(x_value: f64, is_stroke: bool, omega: f64, theta_0: f64) -> f64` in `gui::sweep`; `pub fn generate_animation_html(state: &AppState) -> Result<String, String>` and `pub fn animation_export_available(state: &AppState) -> bool`, re-exported from `gui::export` (Task 6's menu item calls both).
+
+- [ ] **Step 1: Check the worktree and run the baseline gate**
+
+The controller created the worktree (`git -C C:/Users/Cole/source/repos/linkage_simulation -c core.autocrlf=false worktree add -b linkage/animation-export C:/Users/Cole/source/repos/lsim-anim 5690cb1`, then `git -C C:/Users/Cole/source/repos/lsim-anim config --worktree core.autocrlf false`) and wrote this plan into it.
+
+```bash
+git -C C:/Users/Cole/source/repos/lsim-anim log --oneline -1
+git -C C:/Users/Cole/source/repos/lsim-anim status --short
+```
+
+Expected: `5690cb1 merge: round shapes and the contact point ...`, and only ` M docs/superpowers/plans/2026-10-06-linkage-html-export-and-round-geometry.md`. Read `C:/Users/Cole/source/repos/lsim-anim/docs/ai/02-system.yaml` (the export entries) and `03-structure.yaml` (the `export` module). Run the gate (Part B constraints). Expected: `GATE PASS`, linkage count 1,079. Then `git -C C:/Users/Cole/source/repos/lsim-anim checkout -- docs/chebyshev_lambda`.
+
+- [ ] **Step 2: Extract the driver time of a sweep sample**
+
+In `linkage-sim-rs/src/gui/sweep/mod.rs`, replace:
+
+```rust
+    let ts: Vec<f64> = x_values
+        .iter()
+        .map(|&x_value| {
+            if is_stroke {
+                // f(t) = length_0 + velocity * t  =>  t = (x - length_0) / velocity
+                // (omega = velocity, theta_0 = length_0 in linear mode).
+                if omega.abs() > f64::EPSILON {
+                    (x_value - theta_0) / omega
+                } else {
+                    0.0
+                }
+            } else {
+                (x_value.to_radians() - theta_0) / omega
+            }
+        })
+        .collect();
+```
+
+with:
+
+```rust
+    let ts: Vec<f64> = x_values.iter().map(|&x_value| sweep_time(x_value, is_stroke, omega, theta_0)).collect();
+```
+
+In the same file, replace:
+
+```rust
+pub(crate) fn compute_sweep_data(
+```
+
+with:
+
+```rust
+/// The driver time of sweep sample `x_value` (degrees in angle mode, metres
+/// in stroke mode): the inverse of the driver's `f(t) = theta_0 + omega * t`.
+/// In linear mode `omega` is the velocity and `theta_0` the start length; a
+/// stopped linear driver gives 0.
+pub(crate) fn sweep_time(x_value: f64, is_stroke: bool, omega: f64, theta_0: f64) -> f64 {
+    if is_stroke {
+        if omega.abs() > f64::EPSILON {
+            (x_value - theta_0) / omega
+        } else {
+            0.0
+        }
+    } else {
+        (x_value.to_radians() - theta_0) / omega
+    }
+}
+
+pub(crate) fn compute_sweep_data(
+```
+
+Run: `cd C:/Users/Cole/source/repos/lsim-anim/linkage-sim-rs && cargo test --lib sweep`. Expected: every test passes (a pure extraction; the sweep's own tests cover it).
+
+- [ ] **Step 3: Create the page template**
+
+Create `linkage-sim-rs/src/gui/export/animation_template.html`:
+
+````html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Linkage animation</title>
+<style>
+  :root{--slate:#22303C;--steel:#3D5A73;--ink:#1F2A36;--mute:#6B7B8A;--line:#DCE3EA;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Inter','Segoe UI',Arial,sans-serif;color:var(--ink);background:#EEF2F6;padding:18px;}
+  .wrap{max-width:1180px;margin:0 auto;}
+  header{margin-bottom:12px;}
+  h1{font-size:20px;margin:0 0 2px;color:var(--slate);}
+  .sub{font-size:12.5px;color:var(--mute);font-style:italic;margin:0;}
+  .grid{display:flex;gap:14px;align-items:stretch;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 1px 4px rgba(31,42,54,.06);}
+  .stage{flex:1.7;min-width:0;padding:6px 8px 2px;display:flex;flex-direction:column;}
+  .panel{flex:1;min-width:240px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;}
+  .ptitle{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--steel);text-transform:uppercase;margin:0 0 2px;}
+  .big{font-size:30px;font-weight:700;line-height:1;}
+  .row{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0;border-bottom:1px solid #EEF2F5;}
+  .row:last-child{border-bottom:none;}
+  .row .k{color:var(--mute);} .row .v{font-weight:700;font-variant-numeric:tabular-nums;text-align:right;}
+  .controls{margin-top:14px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 16px;}
+  button{font-family:inherit;font-size:13px;font-weight:600;border:none;border-radius:7px;padding:8px 16px;cursor:pointer;background:var(--slate);color:#fff;}
+  button.sec{background:#fff;color:var(--ink);border:1px solid var(--line);}
+  .ctl{display:flex;align-items:center;gap:7px;font-size:12.5px;}
+  input[type=range]{width:230px;accent-color:#C9821A;}
+  select{font-family:inherit;font-size:12.5px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;}
+  label.chk{display:flex;align-items:center;gap:5px;font-size:12.5px;cursor:pointer;}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--mute);margin-top:4px;}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:3px;vertical-align:-1px;}
+  .foot{font-size:11px;color:var(--mute);margin-top:10px;text-align:center;}
+  @media(max-width:820px){.grid{flex-direction:column;}.stage,.panel{flex:none;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="title">Linkage animation</h1>
+    <p class="sub" id="sub"></p>
+  </header>
+  <div class="grid">
+    <div class="card stage">
+      <div id="svgbox"></div>
+      <div class="legend">
+        <span><i style="background:#3D5A73"></i>links</span>
+        <span><i style="background:#C2410C"></i>shapes</span>
+        <span><i style="background:#0E7C66"></i>actuator</span>
+        <span><i style="background:#C0392B"></i>zone force</span>
+        <span><i style="background:#6D28D9"></i>weights</span>
+        <span><i style="background:#1F6FB2"></i>joint reactions</span>
+        <span><i style="background:#C9821A"></i>driver angle</span>
+      </div>
+    </div>
+    <div class="card panel">
+      <div><p class="ptitle" id="xtitle"></p><div class="big" id="xval"></div></div>
+      <div><p class="ptitle">Readouts</p><div id="rows"></div></div>
+      <div><p class="ptitle" id="charttitle"></p><div id="chartbox"></div></div>
+    </div>
+  </div>
+  <div class="controls">
+    <button id="play">Pause</button>
+    <button class="sec" id="bounce">Bounce: on</button>
+    <div class="ctl"><span id="slabel">Sample</span><input type="range" id="slider" min="0" step="1" value="0"></div>
+    <div class="ctl">Speed <select id="speed"><option value="20">slow</option><option value="8" selected>normal</option><option value="3">fast</option></select></div>
+    <label class="chk"><input type="checkbox" id="cForces" checked> forces</label>
+    <label class="chk"><input type="checkbox" id="cWeights" checked> weights</label>
+    <label class="chk"><input type="checkbox" id="cArc" checked> driver angle</label>
+  </div>
+  <p class="foot">Exported from the linkage simulator. Statics at each solved sample of the sweep; forces in N with lbf beside them; arrow lengths scale with each kind of force.</p>
+</div>
+<script>
+const DATA = /*__ANIMATION_DATA__*/null;
+const PAL={ink:"#1F2A36",steel:"#3D5A73",shape:"#C2410C",ground:"#5B6B7A",act:"#0E7C66",force:"#C0392B",violet:"#6D28D9",blue:"#1F6FB2",amber:"#C9821A",mute:"#6B7B8A",grid:"#E7ECF1"};
+const F=DATA.frames, N=F.length;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const e1=v=>Math.round(v*10)/10;
+const hyp=v=>Math.hypot(v[0],v[1]);
+const lbf=n=>Math.round(Math.abs(n)/DATA.n_per_lbf).toLocaleString()+" lbf";
+
+// The view fits every frame's links, shapes, joints, weights and the joints'
+// ground pivots; zones and actuator anchors outside it are clipped.
+const VIEW=(()=>{let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
+  const add=p=>{x0=Math.min(x0,p[0]);x1=Math.max(x1,p[0]);y0=Math.min(y0,p[1]);y1=Math.max(y1,p[1]);};
+  DATA.ground.forEach(add);
+  F.forEach(f=>{f.links.forEach(l=>l.points.forEach(add));f.joints.forEach(add);f.weights.forEach(w=>add(w.point));
+    f.shapes.forEach(s=>{if(s.kind==="circle"){add([s.centre[0]-s.r,s.centre[1]-s.r]);add([s.centre[0]+s.r,s.centre[1]+s.r]);}else s.points.forEach(add);});});
+  if(!isFinite(x0)){x0=-100;x1=100;y0=-100;y1=100;}
+  const m=0.18*Math.max(x1-x0,y1-y0,1);
+  return {x0:x0-m,x1:x1+m,y0:y0-m,y1:y1+m};})();
+// A fixed 720-unit-wide drawing, so labels keep one size whatever the
+// mechanism's size; the view fits its width or a 640-unit height, centred.
+const PAD=20,WID=720,VW=VIEW.x1-VIEW.x0,VH=VIEW.y1-VIEW.y0,S=Math.min((WID-2*PAD)/VW,640/VH);
+const HEI=Math.round(VH*S+2*PAD),OX=PAD+(WID-2*PAD-VW*S)/2;
+const tx=x=>OX+(x-VIEW.x0)*S, ty=y=>HEI-PAD-(y-VIEW.y0)*S;
+const P=p=>`${e1(tx(p[0]))},${e1(ty(p[1]))}`;
+
+// Arrow lengths: 15 to 86 px, scaled by the largest force of each kind.
+const maxOf=get=>Math.max(1e-9,...F.flatMap(get));
+const FMAX={react:maxOf(f=>f.reactions.map(r=>hyp(r.force))),act:maxOf(f=>f.actuators.map(a=>Math.abs(a.force||0))),
+  zone:maxOf(f=>f.zone_points.map(z=>hyp(z.force))),weight:maxOf(f=>f.weights.map(w=>w.newtons))};
+const alen=(v,max)=>15+71*Math.min(1,Math.abs(v)/max);
+
+function niceStep(v){const p=Math.pow(10,Math.floor(Math.log10(v)));for(const m of [1,2,5,10])if(m*p>=v)return m*p;return 10*p;}
+function arrow(p,d,len,c,lab,w){const n=hyp(d);if(!(n>0))return "";
+  const ux=d[0]/n,uy=-d[1]/n,x1=tx(p[0]),y1=ty(p[1]),x2=x1+ux*len,y2=y1+uy*len,ag=Math.atan2(y2-y1,x2-x1),ah=w?6:9;
+  const a1=`${e1(x2-ah*Math.cos(ag-0.45))},${e1(y2-ah*Math.sin(ag-0.45))}`,a2=`${e1(x2-ah*Math.cos(ag+0.45))},${e1(y2-ah*Math.sin(ag+0.45))}`;
+  // A white halo under each arrow and label keeps it readable over links and zones.
+  let s=`<line x1="${e1(x1)}" y1="${e1(y1)}" x2="${e1(x2)}" y2="${e1(y2)}" stroke="#fff" stroke-width="${(w||2.6)+3}" stroke-opacity="0.9"/>`
+    +`<line x1="${e1(x1)}" y1="${e1(y1)}" x2="${e1(x2)}" y2="${e1(y2)}" stroke="${c}" stroke-width="${w||2.6}"/><polygon points="${e1(x2)},${e1(y2)} ${a1} ${a2}" fill="${c}"/>`;
+  if(lab){const lx=x2+(ux<0?-6:6),ly=y2+(uy>0?14:-6);
+    s+=`<text x="${e1(lx)}" y="${e1(ly)}" font-size="11.5" font-weight="700" fill="${c}" stroke="#fff" stroke-width="3" paint-order="stroke" text-anchor="${ux<0?"end":"start"}">${esc(lab)}</text>`;}
+  return s;}
+
+function draw(f,o){
+  let s=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${WID} ${HEI}" width="100%" style="display:block">`;
+  s+=`<rect width="${WID}" height="${HEI}" fill="#FBFCFD"/>`;
+  // The grid spans the whole drawing (the view is centred in it).
+  const step=niceStep(WID/S/12),gx0=VIEW.x0-OX/S,gx1=VIEW.x0+(WID-OX)/S,gy0=VIEW.y0-PAD/S,gy1=VIEW.y1+PAD/S;
+  for(let gx=Math.ceil(gx0/step)*step;gx<=gx1;gx+=step)s+=`<line x1="${e1(tx(gx))}" y1="0" x2="${e1(tx(gx))}" y2="${HEI}" stroke="${PAL.grid}"/>`;
+  for(let gy=Math.ceil(gy0/step)*step;gy<=gy1;gy+=step)s+=`<line x1="0" y1="${e1(ty(gy))}" x2="${WID}" y2="${e1(ty(gy))}" stroke="${PAL.grid}"/>`;
+  DATA.zones.forEach(z=>{s+=`<rect x="${e1(tx(z.min[0]))}" y="${e1(ty(z.max[1]))}" width="${e1((z.max[0]-z.min[0])*S)}" height="${e1((z.max[1]-z.min[1])*S)}" fill="${PAL.force}" fill-opacity="0.06" stroke="${PAL.force}" stroke-width="1.2" stroke-dasharray="5 4"/>`;});
+  f.shapes.forEach(sh=>{s+=sh.kind==="circle"
+    ?`<circle cx="${e1(tx(sh.centre[0]))}" cy="${e1(ty(sh.centre[1]))}" r="${e1(sh.r*S)}" fill="${PAL.shape}" fill-opacity="0.08" stroke="${PAL.shape}" stroke-width="1.8"/>`
+    :`<polygon points="${sh.points.map(P).join(" ")}" fill="${PAL.shape}" fill-opacity="0.08" stroke="${PAL.shape}" stroke-width="1.8"/>`;});
+  f.actuators.forEach(a=>{s+=`<line x1="${e1(tx(a.a[0]))}" y1="${e1(ty(a.a[1]))}" x2="${e1(tx(a.b[0]))}" y2="${e1(ty(a.b[1]))}" stroke="${PAL.act}" stroke-width="5" stroke-linecap="round" opacity="0.85"/>`;
+    [a.a,a.b].forEach(p=>{s+=`<circle cx="${e1(tx(p[0]))}" cy="${e1(ty(p[1]))}" r="3.5" fill="#fff" stroke="${PAL.act}" stroke-width="2"/>`;});});
+  f.links.forEach(l=>{const pts=l.points.map(P).join(" ");
+    s+=l.closed?`<polygon points="${pts}" fill="${PAL.steel}" fill-opacity="0.12" stroke="${PAL.steel}" stroke-width="4" stroke-linejoin="round"/>`
+      :`<polyline points="${pts}" fill="none" stroke="${PAL.steel}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>`;
+    if(l.points.length){const n=l.points.length,c=l.points.reduce((a,p)=>[a[0]+p[0]/n,a[1]+p[1]/n],[0,0]);
+      s+=`<text x="${e1(tx(c[0]))}" y="${e1(ty(c[1])-9)}" font-size="11" fill="${PAL.steel}" stroke="#fff" stroke-width="3" paint-order="stroke" text-anchor="middle">${esc(l.name)}</text>`;}});
+  if(o.arc&&DATA.driver_pivot&&f.driver_angle!=null){const R=34,x0=tx(DATA.driver_pivot[0]),y0=ty(DATA.driver_pivot[1]);
+    const d=((f.driver_angle%360)+360)%360,a=d*Math.PI/180;
+    s+=`<path d="M ${e1(x0+R)} ${e1(y0)} A ${R} ${R} 0 ${d>180?1:0} 0 ${e1(x0+R*Math.cos(a))} ${e1(y0-R*Math.sin(a))}" fill="none" stroke="${PAL.amber}" stroke-width="2.2"/>`;
+    s+=`<line x1="${e1(x0)}" y1="${e1(y0)}" x2="${e1(x0+R+10)}" y2="${e1(y0)}" stroke="${PAL.amber}" stroke-dasharray="2 3"/>`;}
+  DATA.ground.forEach(p=>{const x=tx(p[0]),y=ty(p[1]);
+    s+=`<line x1="${e1(x-13)}" y1="${e1(y+8)}" x2="${e1(x+13)}" y2="${e1(y+8)}" stroke="${PAL.ground}" stroke-width="2"/>`;
+    for(let i=-10;i<=10;i+=5)s+=`<line x1="${e1(x+i)}" y1="${e1(y+8)}" x2="${e1(x+i-4)}" y2="${e1(y+14)}" stroke="${PAL.ground}" stroke-width="1.4"/>`;});
+  f.joints.forEach(p=>{s+=`<circle cx="${e1(tx(p[0]))}" cy="${e1(ty(p[1]))}" r="5.5" fill="#fff" stroke="${PAL.ink}" stroke-width="2"/>`;});
+  // A link's own weight is labelled by its size alone: the link's name is beside it.
+  if(o.weights)f.weights.forEach(w=>{s+=arrow(w.point,DATA.gravity,alen(w.newtons,FMAX.weight),PAL.violet,w.link_self_weight?lbf(w.newtons):`${w.name} ${lbf(w.newtons)}`,1.8)
+    +`<circle cx="${e1(tx(w.point[0]))}" cy="${e1(ty(w.point[1]))}" r="4" fill="${PAL.violet}"/>`;});
+  if(o.forces){
+    f.zone_points.forEach(z=>{s+=`<circle cx="${e1(tx(z.point[0]))}" cy="${e1(ty(z.point[1]))}" r="5" fill="#fff" stroke="${PAL.force}" stroke-width="2.2"/>`;
+      if(z.active)s+=arrow(z.point,z.force,alen(hyp(z.force),FMAX.zone),PAL.force,`F ${lbf(hyp(z.force))}`);});
+    f.actuators.forEach(a=>{if(a.force==null)return;const sg=a.force<0?-1:1;
+      s+=arrow(a.b,[sg*(a.b[0]-a.a[0]),sg*(a.b[1]-a.a[1])],alen(a.force,FMAX.act),PAL.act,`${lbf(a.force)} ${a.force<0?"pull":"push"}`);});
+    f.reactions.forEach(r=>{s+=arrow(r.point,r.force,alen(hyp(r.force),FMAX.react),PAL.blue,r.name);});}
+  return s+`</svg>`;}
+
+// The chart: the actuator force (or driver torque) across the sweep, broken
+// where samples are missing (no solution).
+const CW=320,CH=150,CP=44;
+const XS=F.map(f=>f.x),XMIN=Math.min(...XS),XMAX=Math.max(...XS);
+const CV=F.map(f=>f.chart).filter(v=>v!=null),CMIN=Math.min(0,...CV),CMAX=Math.max(0,...CV);
+const STEP=(()=>{let m=Infinity;for(let i=1;i<N;i++){const d=Math.abs(XS[i]-XS[i-1]);if(d>0)m=Math.min(m,d);}return m;})();
+const cx=x=>CP+(XMAX>XMIN?(x-XMIN)/(XMAX-XMIN):0.5)*(CW-CP-8);
+const cy=v=>CH-22-((v-CMIN)/((CMAX-CMIN)||1))*(CH-32);
+const short=v=>Math.abs(v)>=1000?(v/1000).toFixed(1)+"k":v.toFixed(Math.abs(v)<10?2:0);
+function chart(k){
+  let s=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${CW} ${CH}" width="100%" style="display:block"><rect width="${CW}" height="${CH}" fill="#fff"/>`;
+  s+=`<line x1="${CP}" y1="${e1(cy(0))}" x2="${CW-8}" y2="${e1(cy(0))}" stroke="#DCE3EA"/>`;
+  [CMIN,CMAX].forEach(v=>{s+=`<text x="${CP-4}" y="${e1(cy(v)+3)}" font-size="9" fill="${PAL.mute}" text-anchor="end">${short(v)}</text>`;});
+  [[XMIN,"start"],[XMAX,"end"]].forEach(([x,a])=>{s+=`<text x="${e1(cx(x))}" y="${CH-6}" font-size="9" fill="${PAL.mute}" text-anchor="${a}">${x.toFixed(1)}</text>`;});
+  let seg=[];const segs=[];
+  F.forEach((f,i)=>{const gap=i>0&&Math.abs(XS[i]-XS[i-1])>1.5*STEP;
+    if(f.chart==null||gap){if(seg.length)segs.push(seg);seg=[];}
+    if(f.chart!=null)seg.push(`${e1(cx(f.x))},${e1(cy(f.chart))}`);});
+  if(seg.length)segs.push(seg);
+  segs.forEach(g=>{s+=`<polyline points="${g.join(" ")}" fill="none" stroke="${PAL.steel}" stroke-width="2"/>`;});
+  const f=F[k],x=cx(f.x);
+  s+=`<line x1="${e1(x)}" y1="8" x2="${e1(x)}" y2="${CH-22}" stroke="${PAL.mute}" stroke-dasharray="2 3"/>`;
+  if(f.chart!=null)s+=`<circle cx="${e1(x)}" cy="${e1(cy(f.chart))}" r="4.5" fill="${PAL.force}" stroke="#fff" stroke-width="1.5"/>`;
+  return s+`</svg>`;}
+
+const $=id=>document.getElementById(id);
+const svgbox=$("svgbox"),chartbox=$("chartbox"),rows=$("rows"),slider=$("slider"),speed=$("speed");
+const cF=$("cForces"),cW=$("cWeights"),cA=$("cArc"),playBtn=$("play"),bounceBtn=$("bounce");
+document.title=DATA.title;$("title").textContent=DATA.title;
+$("sub").textContent=`${N} samples, ${DATA.x_label} ${XMIN.toFixed(1)} to ${XMAX.toFixed(1)}`;
+$("xtitle").textContent=DATA.x_label;$("charttitle").textContent=DATA.chart_label;$("slabel").textContent=DATA.x_label;
+slider.max=Math.max(0,N-1);
+let pos=0,dir=1,playing=N>1,bounce=true,last=null;
+playBtn.textContent=playing?"Pause":"Play";
+function render(){const k=Math.round(pos),f=F[k];
+  svgbox.innerHTML=draw(f,{forces:cF.checked,weights:cW.checked,arc:cA.checked});
+  chartbox.innerHTML=chart(k);
+  $("xval").textContent=`${f.x.toFixed(1)} ${DATA.x_unit}`;
+  rows.innerHTML=f.readouts.map(r=>`<div class="row"><span class="k">${esc(r[0])}</span><span class="v">${esc(r[1])}</span></div>`).join("");
+  slider.value=k;}
+function tick(ts){
+  if(playing){
+    if(last!==null){if(!bounce)dir=1;
+      pos+=dir*(N-1)*((ts-last)/1000)/parseFloat(speed.value);
+      if(bounce){if(pos>=N-1){pos=N-1;dir=-1;}else if(pos<=0){pos=0;dir=1;}}
+      else if(pos>N-1)pos=0;}
+    last=ts;render();
+  } else last=null;
+  requestAnimationFrame(tick);}
+playBtn.onclick=()=>{playing=!playing&&N>1;playBtn.textContent=playing?"Pause":"Play";};
+bounceBtn.onclick=()=>{bounce=!bounce;bounceBtn.textContent="Bounce: "+(bounce?"on":"off");};
+slider.oninput=()=>{playing=false;playBtn.textContent="Play";pos=parseInt(slider.value,10);render();};
+[cF,cW,cA].forEach(c=>c.onchange=render);
+render();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
+````
+
+- [ ] **Step 4: Create the module with its tests**
+
+Create `linkage-sim-rs/src/gui/export/animation.rs`:
+
+````rust
+//! Animated HTML export (plan 2026-10-06 Part B, decisions H-1 to H-8): the
+//! current mechanism through every solved sample of its sweep, drawn by a
+//! small JS player in one self-contained page (`animation_template.html`).
+//!
+//! Poses are never solved again: each moving body's pose (the hidden cylinder
+//! and rod of a mount-point actuator too) is rebuilt from its angle and the
+//! world trace of its first attachment point, both of which the sweep records
+//! (`SweepData::body_angles`, `coupler_traces`), so the page shows exactly the
+//! samples the plots show. Samples with no solution are
+//! left out (decision H-5). Forces come from the helpers the canvas and the
+//! sweep use; lengths are millimetres, forces newtons (lbf in the labels,
+//! decision H-4).
+
+use nalgebra::{DVector, Vector2};
+use serde::Serialize;
+
+use crate::analysis::gravity_breakdown::{gravity_vector, weight_sources};
+use crate::core::body::GeometryShape;
+use crate::core::mechanism::Mechanism;
+use crate::core::state::GROUND_ID;
+use crate::forces::elements::{force_zone_application, ForceElement};
+use crate::gui::state::{AppState, LengthUnit};
+use crate::gui::sweep::{sweep_time, ShareBasis, SweepData};
+use crate::io::{JointJson, MechanismJson};
+use crate::solver::reactions::solve_reactions_with_actuator;
+
+/// Newtons per pound-force (decision H-4: lbf beside every force).
+const N_PER_LBF: f64 = 4.4482216152605;
+
+/// The page, with `DATA_SLOT` where the JSON goes.
+const TEMPLATE: &str = include_str!("animation_template.html");
+/// The template's placeholder for the data (valid JS before the swap).
+const DATA_SLOT: &str = "/*__ANIMATION_DATA__*/null";
+
+/// Everything the page draws: millimetres in the world frame, newtons.
+#[derive(Debug, Serialize)]
+pub(crate) struct AnimationData {
+    pub title: String,
+    /// The driver axis, as the app's plots name it: "Driver angle (deg)" or "Actuator stroke (mm)".
+    pub x_label: String,
+    /// "deg" or "mm".
+    pub x_unit: String,
+    /// "Actuator force (N)" (an actuator's, or a linear driver's own), else
+    /// "Driver torque (N m)" (decision H-2).
+    pub chart_label: String,
+    pub n_per_lbf: f64,
+    /// The unit vector of gravity; weights hang along it.
+    pub gravity: [f64; 2],
+    /// The ground pivots of the joints (the hatch marks). An actuator's
+    /// anchor is not one, so the view fits the linkage and the actuator runs
+    /// off to its anchor, as the hand-built press page did.
+    pub ground: Vec<[f64; 2]>,
+    /// The driver's fixed pivot, for the driver-angle arc (angle sweeps only).
+    pub driver_pivot: Option<[f64; 2]>,
+    pub zones: Vec<ZoneBox>,
+    /// One frame per solved sweep sample.
+    pub frames: Vec<Frame>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct ZoneBox {
+    pub min: [f64; 2],
+    pub max: [f64; 2],
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct Frame {
+    /// The driver value as the app shows it: degrees (display frame, BL-041)
+    /// or millimetres of stroke.
+    pub x: f64,
+    /// The chart's value here; `None` where the sweep has none.
+    pub chart: Option<f64>,
+    /// The driver link's angle for the arc (angle sweeps only), degrees.
+    pub driver_angle: Option<f64>,
+    pub links: Vec<Link>,
+    pub shapes: Vec<Shape>,
+    pub joints: Vec<[f64; 2]>,
+    pub actuators: Vec<Actuator>,
+    pub zone_points: Vec<ZonePoint>,
+    pub weights: Vec<Weight>,
+    pub reactions: Vec<Reaction>,
+    /// The readout panel's rows: (label, value) in the app's units, lbf beside forces.
+    pub readouts: Vec<[String; 2]>,
+}
+
+/// A moving body: its attachment points in name order.
+#[derive(Debug, Serialize)]
+pub(crate) struct Link {
+    pub name: String,
+    pub points: Vec<[f64; 2]>,
+    /// Three or more points draw as a plate.
+    pub closed: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum Shape {
+    Polygon { points: Vec<[f64; 2]> },
+    Circle { centre: [f64; 2], r: f64 },
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct Actuator {
+    pub a: [f64; 2],
+    pub b: [f64; 2],
+    /// The sweep's force (N, positive = push): the first actuator element's
+    /// required force, or in a stroke sweep the first linear driver's.
+    pub force: Option<f64>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct ZonePoint {
+    pub point: [f64; 2],
+    pub force: [f64; 2],
+    /// The geometry overlaps the zone, so the force applies.
+    pub active: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct Weight {
+    pub name: String,
+    pub point: [f64; 2],
+    pub newtons: f64,
+    /// A link's own weight (at its centre of gravity), not a payload.
+    pub link_self_weight: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct Reaction {
+    /// The joint's id; `name` is its label when it has one.
+    pub id: String,
+    pub name: String,
+    pub point: [f64; 2],
+    /// The reaction force in the world frame (N), as the canvas draws it.
+    pub force: [f64; 2],
+}
+
+/// Whether the animation export can run: a mechanism and an angle or stroke
+/// sweep. The File menu enables its item by this.
+pub fn animation_export_available(state: &AppState) -> bool {
+    state.mechanism.is_some() && state.sweep_data.as_ref().is_some_and(|s| !s.sweep_mode.is_trajectory())
+}
+
+/// The self-contained animated page of the current mechanism (decision H-6:
+/// no network). Every `<` in the JSON is written `\u003c`, the same string to
+/// JSON and to JS, so no name can end the script (`</script>`) or switch the
+/// HTML parser into a script comment (`<!--` then `<script`).
+pub fn generate_animation_html(state: &AppState) -> Result<String, String> {
+    let data = animation_data(state)?;
+    let json = serde_json::to_string(&data).map_err(|e| e.to_string())?;
+    Ok(TEMPLATE.replacen(DATA_SLOT, &json.replace('<', "\\u003c"), 1))
+}
+
+/// The page's data: one frame per solved sample of the current sweep.
+pub(crate) fn animation_data(state: &AppState) -> Result<AnimationData, String> {
+    let (Some(mech), Some(bp)) = (state.mechanism.as_ref(), state.blueprint.as_ref()) else {
+        return Err("No mechanism loaded".to_string());
+    };
+    let Some(sweep) = state.sweep_data.as_ref() else {
+        return Err("No sweep computed".to_string());
+    };
+    if sweep.sweep_mode.is_trajectory() {
+        return Err("The animation export needs an angle or stroke sweep".to_string());
+    }
+    let is_stroke = sweep.sweep_mode.is_stroke();
+    // The chart (decision H-2): an actuator element's required force; in a
+    // stroke sweep without one, the linear driver's own force (the sweep keeps
+    // it in `driver_torques`, which the plots then call the actuator force);
+    // else the driver torque.
+    let (chart, chart_is_force) = match (&sweep.actuator_forces, is_stroke) {
+        (Some(_), _) => (&sweep.actuator_forces, true),
+        (None, true) => (&sweep.driver_torques, true),
+        (None, false) => (&sweep.driver_torques, false),
+    };
+    let g = gravity_vector(mech);
+    let g_norm = (g[0] * g[0] + g[1] * g[1]).sqrt();
+    let gravity = if g_norm > 0.0 { [g[0] / g_norm, g[1] / g_norm] } else { [0.0, -1.0] };
+    let driver_pivot =
+        if is_stroke { None } else { state.driver_joint_id.as_ref().and_then(|id| ground_pivot(bp, id)).map(mm) };
+    let ctx = FrameContext { state, mech, bp, sweep, is_stroke, chart, chart_is_force, g_norm, driver_pivot };
+
+    let frames: Vec<Frame> = (0..sweep.angles_deg.len())
+        .filter_map(|i| sample_q(mech, sweep, i).map(|q| frame(&ctx, i, &q)))
+        .collect();
+    if frames.is_empty() {
+        return Err("The sweep has no solved sample to animate".to_string());
+    }
+
+    let mut joint_ids: Vec<&String> = bp.joints.keys().collect();
+    joint_ids.sort();
+    let mut ground: Vec<[f64; 2]> = Vec::new();
+    for p in joint_ids.iter().filter_map(|id| ground_pivot(bp, id)).map(mm) {
+        if !ground.contains(&p) {
+            ground.push(p);
+        }
+    }
+    let zones = mech
+        .forces()
+        .iter()
+        .filter_map(|f| match f {
+            ForceElement::ForceZone(z) => Some(ZoneBox {
+                min: mm(xy(z.zone_min)),
+                max: mm(xy(z.zone_max)),
+            }),
+            _ => None,
+        })
+        .collect();
+    let (x_label, x_unit) =
+        if is_stroke { ("Actuator stroke (mm)", "mm") } else { ("Driver angle (deg)", "deg") };
+    let chart_label = if chart_is_force { "Actuator force (N)" } else { "Driver torque (N m)" };
+    Ok(AnimationData {
+        title: format!("Linkage animation: {} links, {} samples", frames[0].links.len(), frames.len()),
+        x_label: x_label.to_string(),
+        x_unit: x_unit.to_string(),
+        chart_label: chart_label.to_string(),
+        n_per_lbf: N_PER_LBF,
+        gravity,
+        ground,
+        driver_pivot,
+        zones,
+        frames,
+    })
+}
+
+/// What every frame reads.
+struct FrameContext<'a> {
+    state: &'a AppState,
+    mech: &'a Mechanism,
+    bp: &'a MechanismJson,
+    sweep: &'a SweepData,
+    is_stroke: bool,
+    /// The chart's series, and whether it is a force (N) or a torque (N m).
+    chart: &'a Option<Vec<f64>>,
+    chart_is_force: bool,
+    g_norm: f64,
+    driver_pivot: Option<[f64; 2]>,
+}
+
+/// The generalized coordinates of sweep sample `i`, rebuilt from the sweep's
+/// own records: each moving body's angle and the world trace of its first
+/// attachment point (by name) give its origin. Every body of the built
+/// mechanism counts, the blueprint's and the hidden actuator bodies alike.
+/// `None` for a sample with no solution (its traces are NaN).
+fn sample_q(mech: &Mechanism, sweep: &SweepData, i: usize) -> Option<DVector<f64>> {
+    let state = mech.state();
+    let mut q = state.make_q();
+    for body_id in mech.body_order() {
+        let theta = sweep.body_angles.get(body_id)?.get(i)?.to_radians();
+        let (name, local) = mech.bodies().get(body_id)?.attachment_points.iter().min_by(|a, b| a.0.cmp(b.0))?;
+        let traced = sweep.coupler_traces.get(&format!("{body_id}.{name}"))?.get(i)?;
+        if !(theta.is_finite() && traced[0].is_finite() && traced[1].is_finite()) {
+            return None;
+        }
+        let (sin_t, cos_t) = theta.sin_cos();
+        let idx = state.get_index(body_id).ok()?;
+        q[idx.x_idx()] = traced[0] - (cos_t * local.x - sin_t * local.y);
+        q[idx.y_idx()] = traced[1] - (sin_t * local.x + cos_t * local.y);
+        q[idx.theta_idx()] = theta;
+    }
+    Some(q)
+}
+
+/// One frame of sample `i` at its rebuilt coordinates `q`.
+fn frame(ctx: &FrameContext, i: usize, q: &DVector<f64>) -> Frame {
+    let FrameContext { state, mech, bp, sweep, .. } = *ctx;
+    let raw_x = sweep.angles_deg[i];
+    let x = if ctx.is_stroke { raw_x * 1e3 } else { raw_x + state.driver_display_offset.to_degrees() };
+    let world = |body: &str, local: [f64; 2]| mech.state().body_point_global(body, &xy(local), q);
+
+    // The blueprint's bodies only: an actuator's hidden bodies draw as the actuator.
+    let links: Vec<Link> = mech
+        .body_order()
+        .iter()
+        .filter_map(|body_id| {
+            let body = bp.bodies.get(body_id)?;
+            let mut names: Vec<&String> = body.attachment_points.keys().collect();
+            names.sort();
+            let points: Vec<[f64; 2]> =
+                names.iter().map(|n| mm(world(body_id, body.attachment_points[*n]))).collect();
+            Some(Link {
+                name: body.label.clone().unwrap_or_else(|| body_id.clone()),
+                closed: points.len() >= 3,
+                points,
+            })
+        })
+        .collect();
+
+    let shapes: Vec<Shape> = mech
+        .body_order()
+        .iter()
+        .filter_map(|body_id| {
+            let geo = mech.bodies().get(body_id)?.geometry.as_ref()?;
+            let (bx, by, th) = mech.state().get_pose(body_id, q);
+            Some(match geo.shape {
+                GeometryShape::Circle => Shape::Circle {
+                    centre: mm(geo.centre_world(bx, by, th)),
+                    r: geo.width / 2.0 * 1e3,
+                },
+                GeometryShape::Rectangle => Shape::Polygon {
+                    points: geo.outline_world(bx, by, th).into_iter().map(mm).collect(),
+                },
+            })
+        })
+        .collect();
+
+    let mut joint_ids: Vec<&String> = bp.joints.keys().collect();
+    joint_ids.sort();
+    let joint_point = |id: &str| match bp.joints.get(id)? {
+        JointJson::Revolute { body_i, point_i, .. } | JointJson::Fixed { body_i, point_i, .. } => {
+            let local = *bp.bodies.get(body_i)?.attachment_points.get(point_i)?;
+            Some(world(body_i, local))
+        }
+        _ => None,
+    };
+    let joints: Vec<[f64; 2]> = joint_ids.iter().filter_map(|id| joint_point(id)).map(mm).collect();
+
+    let mut actuators: Vec<Actuator> = Vec::new();
+    for la in mech.forces().iter().filter_map(|f| match f {
+        ForceElement::LinearActuator(la) => Some(la),
+        _ => None,
+    }) {
+        let force = if actuators.is_empty() { at(&sweep.actuator_forces, i) } else { None };
+        actuators.push(Actuator { a: mm(world(&la.body_a, la.point_a)), b: mm(world(&la.body_b, la.point_b)), force });
+    }
+    // A linear driver is the actuator the user sees; in a stroke sweep the
+    // first one's force is the sweep's driver force.
+    for (k, ld) in bp.linear_drivers.iter().enumerate() {
+        let force = if k == 0 && ctx.is_stroke { at(&sweep.driver_torques, i) } else { None };
+        actuators.push(Actuator { a: mm(world(&ld.body_a, ld.point_a)), b: mm(world(&ld.body_b, ld.point_b)), force });
+    }
+
+    let zone_points: Vec<ZonePoint> = mech
+        .forces()
+        .iter()
+        .filter_map(|f| match f {
+            ForceElement::ForceZone(fz) => {
+                let geo = mech.bodies().get(&fz.body_id)?.geometry.as_ref()?;
+                let app = force_zone_application(fz, geo, mech.state().get_pose(&fz.body_id, q));
+                Some(ZonePoint { point: mm(app.point?), force: fz.force, active: app.active })
+            }
+            _ => None,
+        })
+        .collect();
+
+    let weights: Vec<Weight> = weight_sources(bp)
+        .into_iter()
+        .map(|w| Weight {
+            point: mm(world(&w.body_id, w.local_pos)),
+            newtons: w.mass * ctx.g_norm,
+            link_self_weight: w.is_link_self_weight,
+            name: w.name,
+        })
+        .collect();
+
+    let t = sweep_time(raw_x, ctx.is_stroke, state.driver_omega(), state.driver_theta_0());
+    let mut reactions: Vec<Reaction> = match solve_reactions_with_actuator(mech, q, t, state.driver_omega()) {
+        Ok(r) => r
+            .reactions
+            .iter()
+            .filter_map(|jr| {
+                let point = joint_point(&jr.joint_id)?;
+                let label = match bp.joints.get(&jr.joint_id)? {
+                    JointJson::Revolute { label, .. } | JointJson::Fixed { label, .. } => label.clone(),
+                    _ => None,
+                };
+                Some(Reaction {
+                    id: jr.joint_id.clone(),
+                    name: label.unwrap_or_else(|| jr.joint_id.clone()),
+                    point: mm(point),
+                    force: jr.force_global,
+                })
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    // By id: the same order in every export (the solver's follows a hash map).
+    reactions.sort_by(|a, b| a.id.cmp(&b.id));
+
+    let chart = at(ctx.chart, i);
+    let readouts = readouts(ctx, i, x, &reactions);
+    Frame {
+        x,
+        chart,
+        driver_angle: ctx.driver_pivot.map(|_| x),
+        links,
+        shapes,
+        joints,
+        actuators,
+        zone_points,
+        weights,
+        reactions,
+        readouts,
+    }
+}
+
+/// The readout rows of sample `i`.
+fn readouts(ctx: &FrameContext, i: usize, x: f64, reactions: &[Reaction]) -> Vec<[String; 2]> {
+    let sweep = ctx.sweep;
+    let mut rows = Vec::new();
+    rows.push(if ctx.is_stroke {
+        ["Actuator stroke".to_string(), format!("{x:.1} mm")]
+    } else {
+        ["Driver angle".to_string(), format!("{x:.1} deg")]
+    });
+    if let Some(v) = at(ctx.chart, i) {
+        rows.push(if ctx.chart_is_force {
+            let way = if v < 0.0 { "pull" } else { "push" };
+            ["Actuator force".to_string(), format!("{} ({way})", force_text(v))]
+        } else {
+            ["Driver torque".to_string(), format!("{v:.2} N m")]
+        });
+    }
+    if let Some(len) = at(&sweep.actuator_lengths, i) {
+        rows.push(["Actuator length".to_string(), length_text(len, ctx.state.display_units.length)]);
+    }
+    if let Some(ma) = sweep.mechanical_advantage.get(i).copied().filter(|v| v.is_finite()) {
+        rows.push(["Mech. advantage".to_string(), format!("{ma:.3}")]);
+    }
+    if let Some(bd) = sweep.weight_breakdown.as_ref() {
+        for (k, source) in bd.sources.iter().enumerate() {
+            let Some(share) = bd.force_share.get(k).and_then(|s| s.get(i)).copied().filter(|v| v.is_finite())
+            else {
+                continue;
+            };
+            // A share of a force (an actuator's, or a linear driver's in a
+            // stroke sweep) is newtons; of a crank's torque, newton metres.
+            let value = if matches!(bd.basis, ShareBasis::ActuatorForce) || ctx.is_stroke {
+                format!("{:+.0} lbf", share / N_PER_LBF)
+            } else {
+                format!("{share:+.2} N m")
+            };
+            rows.push([format!("{} share", source.name), value]);
+        }
+    }
+    for r in reactions {
+        let magnitude = (r.force[0] * r.force[0] + r.force[1] * r.force[1]).sqrt();
+        rows.push([format!("Reaction {}", r.name), force_text(magnitude)]);
+    }
+    rows
+}
+
+/// The ground side of joint `id` (metres; ground's frame is the world's),
+/// when it is a revolute or fixed joint on ground: the driver's pivot, and
+/// the hatch marks.
+fn ground_pivot(bp: &MechanismJson, id: &str) -> Option<Vector2<f64>> {
+    let (JointJson::Revolute { body_i, body_j, point_i, point_j, .. }
+    | JointJson::Fixed { body_i, body_j, point_i, point_j, .. }) = bp.joints.get(id)?
+    else {
+        return None;
+    };
+    let point = if body_i == GROUND_ID {
+        point_i
+    } else if body_j == GROUND_ID {
+        point_j
+    } else {
+        return None;
+    };
+    Some(xy(*bp.bodies.get(GROUND_ID)?.attachment_points.get(point)?))
+}
+
+/// A world point (metres) in millimetres, to the micrometre.
+fn mm(p: Vector2<f64>) -> [f64; 2] {
+    [(p.x * 1e6).round() / 1e3, (p.y * 1e6).round() / 1e3]
+}
+
+fn xy(p: [f64; 2]) -> Vector2<f64> {
+    Vector2::new(p[0], p[1])
+}
+
+/// Sample `i` of an optional sweep series, if finite.
+fn at(series: &Option<Vec<f64>>, i: usize) -> Option<f64> {
+    series.as_ref()?.get(i).copied().filter(|v| v.is_finite())
+}
+
+/// A force's size with its lbf beside it (decision H-4): kN from 1 kN up,
+/// newtons below, so a small mechanism's forces do not read as zero.
+fn force_text(newtons: f64) -> String {
+    let (n, lbf) = (newtons.abs(), newtons.abs() / N_PER_LBF);
+    if n >= 1e3 {
+        format!("{:.2} kN / {lbf:.0} lbf", n / 1e3)
+    } else {
+        format!("{n:.1} N / {lbf:.1} lbf")
+    }
+}
+
+fn length_text(metres: f64, unit: LengthUnit) -> String {
+    match unit {
+        LengthUnit::Millimeters => format!("{:.1} mm", metres * 1e3),
+        LengthUnit::Meters => format!("{metres:.4} m"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::body::BodyGeometry;
+    use crate::gui::samples::SampleMechanism;
+    use crate::gui::test_support::swept_lift;
+
+    /// The sweep samples with a solution (every body angle finite).
+    fn solved(sweep: &SweepData) -> Vec<usize> {
+        (0..sweep.angles_deg.len())
+            .filter(|&i| sweep.body_angles.values().all(|a| a[i].is_finite()))
+            .collect()
+    }
+
+    /// Every frame is a solved sample of `state`'s sweep, with each link's
+    /// points (name order) where the sweep traced them.
+    fn assert_frames_follow_the_traces(state: &AppState) {
+        let data = animation_data(state).unwrap();
+        let (sweep, bp, mech) =
+            (state.sweep_data.as_ref().unwrap(), state.blueprint.as_ref().unwrap(), state.mechanism.as_ref().unwrap());
+        let samples = solved(sweep);
+        assert!(samples.len() > 300, "only {} samples solved", samples.len());
+        assert_eq!(data.frames.len(), samples.len());
+        let drawn: Vec<&String> = mech.body_order().iter().filter(|id| bp.bodies.contains_key(*id)).collect();
+        for (frame, &i) in data.frames.iter().zip(&samples) {
+            assert_eq!(frame.links.len(), drawn.len());
+            for (link, &body_id) in frame.links.iter().zip(&drawn) {
+                let mut names: Vec<&String> = bp.bodies[body_id].attachment_points.keys().collect();
+                names.sort();
+                for (p, name) in link.points.iter().zip(names) {
+                    let traced = sweep.coupler_traces[&format!("{body_id}.{name}")][i];
+                    assert!(
+                        (p[0] - traced[0] * 1e3).abs() < 2e-3 && (p[1] - traced[1] * 1e3).abs() < 2e-3,
+                        "sample {i} {body_id}.{name}: {p:?} vs {traced:?} m"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn frames_are_the_sweeps_solved_samples_at_their_traced_positions() {
+        assert_frames_follow_the_traces(&swept_lift());
+    }
+
+    #[test]
+    fn a_body_whose_first_pin_is_off_its_origin_is_placed_by_its_trace() {
+        // Every other sample puts each body's first pin (by name) at the body's
+        // origin, which would hide a wrong origin in the pose rebuild.
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::Strandbeest);
+        state.compute_sweep();
+        let mech = state.mechanism.as_ref().unwrap();
+        assert!(
+            mech.body_order().iter().any(|id| {
+                let (_, p) = mech.bodies()[id].attachment_points.iter().min_by(|a, b| a.0.cmp(b.0)).unwrap();
+                p.norm() > 1e-3
+            }),
+            "the fixture has a body whose first pin is off its origin"
+        );
+        assert_frames_follow_the_traces(&state);
+    }
+
+    #[test]
+    fn the_actuator_draws_pin_to_pin_and_its_hidden_bodies_are_not_links() {
+        // The lift's actuator mounts on a mount point, so the built mechanism
+        // carries its cylinder and rod as bodies the blueprint does not have.
+        let state = swept_lift();
+        let data = animation_data(&state).unwrap();
+        let sweep = state.sweep_data.as_ref().unwrap();
+        let bp = state.blueprint.as_ref().unwrap();
+        let mech = state.mechanism.as_ref().unwrap();
+        assert!(mech.body_order().iter().any(|id| !bp.bodies.contains_key(id)), "the fixture has hidden bodies");
+        let ForceElement::LinearActuator(la) =
+            mech.forces().iter().find(|f| matches!(f, ForceElement::LinearActuator(_))).unwrap()
+        else {
+            unreachable!()
+        };
+        // The traced attachment point at each end of the actuator.
+        let pin_trace = |body: &str, local: [f64; 2]| {
+            let (name, _) = mech.bodies()[body]
+                .attachment_points
+                .iter()
+                .find(|(_, p)| (p.x - local[0]).abs() < 1e-12 && (p.y - local[1]).abs() < 1e-12)
+                .unwrap_or_else(|| panic!("{body} has a pin at {local:?}"));
+            &sweep.coupler_traces[&format!("{body}.{name}")]
+        };
+        let ends = [(pin_trace(&la.body_a, la.point_a), "a"), (pin_trace(&la.body_b, la.point_b), "b")];
+        for (frame, &i) in data.frames.iter().zip(&solved(sweep)) {
+            let mut names: Vec<&str> = frame.links.iter().map(|l| l.name.as_str()).collect();
+            names.sort();
+            let mut want: Vec<String> = mech
+                .body_order()
+                .iter()
+                .filter_map(|id| bp.bodies.get(id).map(|b| b.label.clone().unwrap_or_else(|| id.clone())))
+                .collect();
+            want.sort();
+            assert_eq!(names, want);
+            for (trace, end) in ends {
+                let (got, traced) = (if end == "a" { frame.actuators[0].a } else { frame.actuators[0].b }, trace[i]);
+                assert!(
+                    (got[0] - traced[0] * 1e3).abs() < 2e-3 && (got[1] - traced[1] * 1e3).abs() < 2e-3,
+                    "sample {i} end {end}: {got:?} vs {traced:?} m"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ground_marks_are_the_joints_pivots_not_the_actuators_anchor() {
+        let state = swept_lift();
+        let data = animation_data(&state).unwrap();
+        let bp = state.blueprint.as_ref().unwrap();
+        let mut want: Vec<[f64; 2]> = Vec::new();
+        for joint in bp.joints.values() {
+            let (JointJson::Revolute { body_i, body_j, point_i, point_j, .. }
+            | JointJson::Fixed { body_i, body_j, point_i, point_j, .. }) = joint
+            else {
+                continue;
+            };
+            for (body, point) in [(body_i, point_i), (body_j, point_j)] {
+                if body == GROUND_ID {
+                    let p = bp.bodies[GROUND_ID].attachment_points[point];
+                    want.push([p[0] * 1e3, p[1] * 1e3]);
+                }
+            }
+        }
+        assert!(!want.is_empty());
+        assert_eq!(data.ground.len(), want.len(), "{:?} vs {want:?}", data.ground);
+        for p in &want {
+            assert!(data.ground.iter().any(|g| (g[0] - p[0]).abs() < 1e-6 && (g[1] - p[1]).abs() < 1e-6), "{p:?}");
+        }
+        // The actuator's ground anchor (its cylinder's base) is not a mark.
+        let anchor = data.frames[0].actuators[0].a;
+        assert!(data.ground.iter().all(|g| (g[0] - anchor[0]).abs() > 1.0 || (g[1] - anchor[1]).abs() > 1.0));
+        // The driver arc sits on the driven joint's ground pivot.
+        let pivot = data.driver_pivot.expect("an angle sweep");
+        assert!(data.ground.contains(&pivot));
+    }
+
+    #[test]
+    fn reactions_match_the_sweeps_joint_reaction_magnitudes() {
+        let state = swept_lift();
+        let data = animation_data(&state).unwrap();
+        let sweep = state.sweep_data.as_ref().unwrap();
+        let mut checked = 0;
+        for (frame, &i) in data.frames.iter().zip(&solved(sweep)) {
+            for r in &frame.reactions {
+                let Some(series) = sweep.joint_reaction_magnitudes.get(&r.id) else { continue };
+                let (got, want) = ((r.force[0] * r.force[0] + r.force[1] * r.force[1]).sqrt(), series[i]);
+                assert!((got - want).abs() <= 1e-6 * want.max(1.0), "{} at sample {i}: {got} vs {want}", r.id);
+                checked += 1;
+            }
+        }
+        assert!(checked > 100, "only {checked} reactions compared");
+    }
+
+    #[test]
+    fn the_chart_is_the_actuator_force_with_lbf_in_the_readouts() {
+        let state = swept_lift();
+        let data = animation_data(&state).unwrap();
+        let sweep = state.sweep_data.as_ref().unwrap();
+        assert_eq!(data.chart_label, "Actuator force (N)");
+        for (frame, &i) in data.frames.iter().zip(&solved(sweep)) {
+            assert_eq!(frame.chart, at(&sweep.actuator_forces, i));
+            assert_eq!(frame.actuators[0].force, frame.chart);
+            let row = frame.readouts.iter().find(|r| r[0] == "Actuator force");
+            assert!(row.map_or(frame.chart.is_none(), |r| r[1].contains("lbf")), "{:?}", frame.readouts);
+        }
+    }
+
+    #[test]
+    fn without_an_actuator_the_chart_is_the_driver_torque() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.compute_sweep();
+        let data = animation_data(&state).unwrap();
+        let sweep = state.sweep_data.as_ref().unwrap();
+        assert_eq!(data.chart_label, "Driver torque (N m)");
+        assert!(data.driver_pivot.is_some(), "an angle sweep has the driver arc");
+        for (frame, &i) in data.frames.iter().zip(&solved(sweep)) {
+            assert_eq!(frame.chart, at(&sweep.driver_torques, i));
+            assert!(frame.actuators.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_stroke_sweep_runs_in_millimetres_with_the_linear_driver_as_the_actuator() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::ParallelogramActuator);
+        let act = state
+            .mechanism
+            .as_ref()
+            .unwrap()
+            .forces()
+            .iter()
+            .position(|f| matches!(f, ForceElement::LinearActuator(_)))
+            .unwrap();
+        state.convert_actuator_to_linear_driver(act);
+        assert_eq!(state.add_point_mass("rocker", 50.0, [0.0, 0.0]).as_deref(), Some("W1"));
+        state.compute_sweep();
+        let sweep = state.sweep_data.as_ref().unwrap();
+        assert!(sweep.sweep_mode.is_stroke() && sweep.actuator_forces.is_none());
+        let data = animation_data(&state).unwrap();
+        assert_eq!(
+            (data.x_label.as_str(), data.x_unit.as_str(), data.chart_label.as_str()),
+            ("Actuator stroke (mm)", "mm", "Actuator force (N)")
+        );
+        assert!(data.driver_pivot.is_none(), "no driver arc without a crank");
+        let samples = solved(sweep);
+        assert!(samples.len() > 10, "only {} samples solved", samples.len());
+        assert_eq!(data.frames.len(), samples.len());
+        for (frame, &i) in data.frames.iter().zip(&samples) {
+            assert!((frame.x - sweep.angles_deg[i] * 1e3).abs() < 1e-9, "x is the stroke in mm");
+            assert!(frame.driver_angle.is_none());
+            assert_eq!(frame.chart, at(&sweep.driver_torques, i));
+            // The linear driver draws pin to pin, as long as the stroke says.
+            let [act] = frame.actuators.as_slice() else { panic!("{} actuators", frame.actuators.len()) };
+            assert_eq!(act.force, frame.chart);
+            let length = ((act.b[0] - act.a[0]).powi(2) + (act.b[1] - act.a[1]).powi(2)).sqrt();
+            assert!((length - frame.x).abs() < 1e-2, "sample {i}: {length} mm long at stroke {} mm", frame.x);
+            if frame.chart.is_some() {
+                assert!(frame.readouts.iter().any(|r| r[0] == "Actuator force" && r[1].contains("lbf")));
+            }
+            let shares: Vec<&[String; 2]> = frame.readouts.iter().filter(|r| r[0].ends_with(" share")).collect();
+            assert!(!shares.is_empty() && shares.iter().all(|r| r[1].ends_with("lbf")), "{:?}", frame.readouts);
+        }
+    }
+
+    #[test]
+    fn samples_without_a_solution_are_left_out() {
+        let mut state = swept_lift();
+        let sweep = state.sweep_data.as_mut().unwrap();
+        for angles in sweep.body_angles.values_mut() {
+            angles[3] = f64::NAN;
+        }
+        let gone = sweep.angles_deg[3] + state.driver_display_offset.to_degrees();
+        let solved_count = solved(state.sweep_data.as_ref().unwrap()).len();
+        let data = animation_data(&state).unwrap();
+        assert_eq!(data.frames.len(), solved_count);
+        assert!(data.frames.iter().all(|f| (f.x - gone).abs() > 1e-9), "sample 3 is left out");
+    }
+
+    /// The Parallelogram Press with a 40 mm wheel for its coupler's rectangle
+    /// (same centre), the zone grown over the whole sweep and in contact mode.
+    fn press_with_wheel() -> AppState {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::ParallelogramPress);
+        let bp = state.blueprint.as_mut().unwrap();
+        let coupler = bp.bodies.get_mut("coupler").unwrap();
+        let hub = coupler.geometry.as_ref().unwrap().offset;
+        coupler.geometry = Some(BodyGeometry::circle(0.04, hub).unwrap());
+        for force in &mut bp.forces {
+            if let ForceElement::ForceZone(zone) = force {
+                zone.zone_min = [-10.0, -10.0];
+                zone.zone_max = [10.0, 10.0];
+                zone.at_contact_point = true;
+            }
+        }
+        state.rebuild();
+        state.compute_sweep();
+        state
+    }
+
+    #[test]
+    fn a_wheel_s_contact_point_is_its_top_against_a_downward_force() {
+        let state = press_with_wheel();
+        let data = animation_data(&state).unwrap();
+        assert!(!data.frames.is_empty());
+        for frame in &data.frames {
+            let Some(Shape::Circle { centre, r }) = frame.shapes.first() else { panic!("the wheel") };
+            assert!((r - 20.0).abs() < 1e-9);
+            let zone = &frame.zone_points[0];
+            assert!(zone.active);
+            assert!((zone.point[0] - centre[0]).abs() < 2e-3 && (zone.point[1] - (centre[1] + 20.0)).abs() < 2e-3);
+        }
+    }
+
+    #[test]
+    fn weights_carry_their_names_and_weight() {
+        let state = swept_lift();
+        let data = animation_data(&state).unwrap();
+        let g = gravity_vector(state.mechanism.as_ref().unwrap());
+        let g = (g[0] * g[0] + g[1] * g[1]).sqrt();
+        let frame = &data.frames[0];
+        for (name, kg) in [("W1", 50.0), ("W2", 20.0)] {
+            let w = frame.weights.iter().find(|w| w.name == name).unwrap_or_else(|| panic!("{name}"));
+            assert!((w.newtons - kg * g).abs() < 1e-9, "{name}: {}", w.newtons);
+            assert!(!w.link_self_weight, "{name} is a payload");
+        }
+        let bp = state.blueprint.as_ref().unwrap();
+        let links: Vec<&Weight> = frame.weights.iter().filter(|w| w.link_self_weight).collect();
+        let massive = bp.bodies.iter().filter(|(id, b)| id.as_str() != GROUND_ID && b.mass > 0.0).count();
+        assert!(massive > 0 && links.len() == massive, "one self-weight per link with mass");
+        assert!(frame.readouts.iter().any(|r| r[0] == "W1 share" && r[1].ends_with("lbf")), "{:?}", frame.readouts);
+    }
+
+    #[test]
+    fn forces_read_in_kn_or_n_with_lbf_beside_them() {
+        assert_eq!(force_text(21_506.0), "21.51 kN / 4835 lbf");
+        assert_eq!(force_text(-21_506.0), "21.51 kN / 4835 lbf", "the size; push or pull is said apart");
+        assert_eq!(force_text(1_000.0), "1.00 kN / 225 lbf");
+        assert_eq!(force_text(12.0), "12.0 N / 2.7 lbf");
+    }
+
+    #[test]
+    fn reactions_read_with_lbf_beside_them() {
+        let state = swept_lift();
+        let frame = &animation_data(&state).unwrap().frames[0];
+        let rows: Vec<&[String; 2]> = frame.readouts.iter().filter(|r| r[0].starts_with("Reaction ")).collect();
+        assert_eq!(rows.len(), frame.reactions.len());
+        for (row, r) in rows.iter().zip(&frame.reactions) {
+            assert_eq!(row[0], format!("Reaction {}", r.name));
+            assert_eq!(row[1], force_text((r.force[0] * r.force[0] + r.force[1] * r.force[1]).sqrt()));
+        }
+    }
+
+    #[test]
+    fn no_sweep_means_no_animation() {
+        assert!(animation_data(&AppState::default()).is_err());
+        assert!(!animation_export_available(&AppState::default()));
+        let mut state = swept_lift();
+        assert!(animation_export_available(&state));
+        state.sweep_data = None;
+        assert!(!animation_export_available(&state));
+        assert_eq!(animation_data(&state).unwrap_err(), "No sweep computed");
+    }
+
+    #[test]
+    fn a_trajectory_sweep_cannot_be_animated() {
+        use crate::gui::state::{MotionProfile, Trajectory, TrajectoryProfile};
+        use crate::gui::sweep::SweepMode;
+        use crate::solver::inverse_kinematics::{ControlTarget, Severity};
+        let mut state = swept_lift();
+        let profile =
+            TrajectoryProfile { shape: MotionProfile::ConstantSpeed, start_value: 0.0, end_value: 1.0, duration: 2.0 };
+        state.sweep_data.as_mut().unwrap().sweep_mode = SweepMode::Trajectory {
+            target: ControlTarget::Angle { body_id: "crank".to_string() },
+            trajectory: Trajectory::Profile(profile),
+            severity: Severity::Analysis,
+            n_samples: 10,
+        };
+        assert!(!animation_export_available(&state));
+        assert_eq!(animation_data(&state).unwrap_err(), "The animation export needs an angle or stroke sweep");
+    }
+
+    #[test]
+    fn the_template_has_one_data_slot() {
+        assert_eq!(TEMPLATE.matches(DATA_SLOT).count(), 1);
+    }
+
+    /// The byte range of the JSON the page embeds after `const DATA = `.
+    fn data_span(html: &str) -> (usize, usize) {
+        let start = html.find("const DATA = ").unwrap() + "const DATA = ".len();
+        (start, start + html[start..].find(";\n").unwrap())
+    }
+
+    #[test]
+    fn the_page_is_self_contained_and_embeds_the_data() {
+        let state = swept_lift();
+        let html = generate_animation_html(&state).unwrap();
+        assert!(!html.contains("https://") && !html.contains("<script src") && !html.contains("<link"));
+        assert_eq!(
+            html.matches("http://").count(),
+            html.matches("http://www.w3.org/2000/svg").count(),
+            "the only http:// is the SVG namespace"
+        );
+        assert!(!html.contains(DATA_SLOT));
+        let (start, end) = data_span(&html);
+        let v: serde_json::Value = serde_json::from_str(&html[start..end]).unwrap();
+        assert_eq!(v["frames"].as_array().unwrap().len(), animation_data(&state).unwrap().frames.len());
+    }
+
+    #[test]
+    fn a_name_cannot_end_the_script_or_open_a_comment_in_it() {
+        let mut state = swept_lift();
+        let bp = state.blueprint.as_mut().unwrap();
+        let weight = bp.bodies.values_mut().flat_map(|b| b.point_masses.iter_mut()).find(|w| w.id == "W1").unwrap();
+        weight.label = Some("</script><!--<script><b>".to_string());
+        let html = generate_animation_html(&state).unwrap();
+        // The embedded data holds no `<` at all, so the page has only the template's tags.
+        let (start, end) = data_span(&html);
+        assert!(!html[start..end].contains('<'), "a raw < in the data");
+        // The name still reads back whole.
+        let v: serde_json::Value = serde_json::from_str(&html[start..end]).unwrap();
+        let names: Vec<&str> =
+            v["frames"][0]["weights"].as_array().unwrap().iter().map(|w| w["name"].as_str().unwrap()).collect();
+        assert!(names.iter().any(|n| n.starts_with("</script><!--<script><b>")), "{names:?}");
+    }
+
+    /// The sorted keys of a JSON object.
+    fn keys(v: &serde_json::Value) -> Vec<&str> {
+        let mut keys: Vec<&str> = v.as_object().expect("an object").keys().map(|k| k.as_str()).collect();
+        keys.sort();
+        keys
+    }
+
+    #[test]
+    fn the_data_has_every_field_the_player_reads() {
+        // animation_template.html reads exactly these names; renaming one in
+        // Rust would break the page without failing any other test.
+        let lift = serde_json::to_value(animation_data(&swept_lift()).unwrap()).unwrap();
+        assert_eq!(
+            keys(&lift),
+            ["chart_label", "driver_pivot", "frames", "gravity", "ground", "n_per_lbf", "title", "x_label", "x_unit", "zones"]
+        );
+        let frame = &lift["frames"][0];
+        assert_eq!(
+            keys(frame),
+            [
+                "actuators", "chart", "driver_angle", "joints", "links", "reactions", "readouts", "shapes", "weights", "x",
+                "zone_points"
+            ]
+        );
+        assert_eq!(keys(&frame["links"][0]), ["closed", "name", "points"]);
+        assert_eq!(keys(&frame["actuators"][0]), ["a", "b", "force"]);
+        assert_eq!(keys(&frame["weights"][0]), ["link_self_weight", "name", "newtons", "point"]);
+        assert_eq!(keys(&frame["reactions"][0]), ["force", "id", "name", "point"]);
+
+        let wheel = serde_json::to_value(animation_data(&press_with_wheel()).unwrap()).unwrap();
+        assert_eq!(keys(&wheel["zones"][0]), ["max", "min"]);
+        let frame = &wheel["frames"][0];
+        assert_eq!(keys(&frame["zone_points"][0]), ["active", "force", "point"]);
+        assert_eq!(frame["shapes"][0]["kind"], "circle");
+        assert_eq!(keys(&frame["shapes"][0]), ["centre", "kind", "r"]);
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::ParallelogramPress);
+        state.compute_sweep();
+        let press = serde_json::to_value(animation_data(&state).unwrap()).unwrap();
+        assert_eq!(press["frames"][0]["shapes"][0]["kind"], "polygon");
+        assert_eq!(keys(&press["frames"][0]["shapes"][0]), ["kind", "points"]);
+    }
+}
+````
+
+In `linkage-sim-rs/src/gui/export/mod.rs`, replace:
+
+```rust
+mod csv;
+```
+
+with:
+
+```rust
+mod animation;
+mod csv;
+```
+
+In the same file, replace:
+
+```rust
+pub use csv::{generate_coupler_csv_string, generate_sweep_csv_string};
+```
+
+with:
+
+```rust
+pub use animation::{animation_export_available, generate_animation_html};
+pub use csv::{generate_coupler_csv_string, generate_sweep_csv_string};
+```
+
+- [ ] **Step 5: Run the tests**
+
+Run: `cd C:/Users/Cole/source/repos/lsim-anim/linkage-sim-rs && cargo test --lib export::animation`. Expected: `19 passed; 0 failed`. A warning that `animation_export_available` and `generate_animation_html` are unused is expected until Task 6.
+
+- [ ] **Step 6: Watch two tests fail on purpose (the red check; nothing kept)**
+
+The module and its tests arrive together, so prove the tests can catch the two mistakes most likely to slip through:
+1. In `sample_q`, change `q[idx.x_idx()] = traced[0] - (cos_t` to `q[idx.x_idx()] = traced[0] + (cos_t`. Run the Step 5 command. Expected: `a_body_whose_first_pin_is_off_its_origin_is_placed_by_its_trace` FAILED (every other sample puts the first pin at the origin, so only that test sees it). Undo the change.
+2. In `generate_animation_html`, change `json.replace('<', "\\u003c")` to `json.replace('\0', "\\u003c")` (escapes nothing). Run it again. Expected: `a_name_cannot_end_the_script_or_open_a_comment_in_it` FAILED. Undo the change.
+
+Run Step 5 once more: `19 passed`. `git status --short` shows only this task's four files and the plan.
+
+- [ ] **Step 7: Gate and commit**
+
+Run the gate. Expected: `GATE PASS`, linkage count 1,098. Restore `docs/chebyshev_lambda`.
+
+```bash
+cd C:/Users/Cole/source/repos/lsim-anim
+git add linkage-sim-rs/src/gui/sweep/mod.rs linkage-sim-rs/src/gui/export/mod.rs linkage-sim-rs/src/gui/export/animation.rs linkage-sim-rs/src/gui/export/animation_template.html
+git commit -m "feat(linkage): animated HTML export of the sweep (decisions H-1 to H-8)" -m "Co-Authored-By: <model> <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FSw7N8oV7SUVKTDVrGKLdg"
+```
+
+---
+
+### Task 6: The File-menu item, docs and the plan
+
+**Files:**
+- Modify: `linkage-sim-rs/src/gui/menu_bar.rs` (the item, after "Generate Report (HTML)...")
+- Modify: `README.md:180`, `docs/FEATURES.md` (before `## Planned / Future`), `docs/ai/02-system.yaml`, `docs/ai/03-structure.yaml`, `docs/ai/04-memory.yaml`, `docs/ai/05-update-tracker.md`, `docs/ai/backlog.yaml`
+- Commit: `docs/superpowers/plans/2026-10-06-linkage-html-export-and-round-geometry.md` (the controller's updated copy, already in the worktree)
+
+**Interfaces:**
+- Consumes: `export::animation_export_available(&AppState) -> bool`, `export::generate_animation_html(&AppState) -> Result<String, String>` (Task 5); `export::download::download_text`, `apply_download_outcome` (menu_bar.rs).
+
+- [ ] **Step 1: The menu item**
+
+In `linkage-sim-rs/src/gui/menu_bar.rs`, replace:
+
+```rust
+                    // ── Raster exports (gated by `raster` feature; native always
+```
+
+with:
+
+```rust
+                    if ui
+                        .add_enabled(
+                            export::animation_export_available(state),
+                            egui::Button::new("Export Animation (HTML)..."),
+                        )
+                        .on_hover_text(
+                            "Export a self-contained HTML page that animates the mechanism through its \
+                             sweep, with its forces, weights, joint reactions and actuator force chart",
+                        )
+                        .clicked()
+                    {
+                        match export::generate_animation_html(state) {
+                            Ok(html) => {
+                                let outcome = export::download::download_text(
+                                    "mechanism_animation.html",
+                                    "text/html",
+                                    &html,
+                                    export::download::FileFilter {
+                                        label: "HTML",
+                                        extensions: &["html"],
+                                    },
+                                );
+                                apply_download_outcome(state, outcome);
+                            }
+                            Err(e) => {
+                                state.error_log.push(format!("Animation export failed: {}", e));
+                                state.show_error_panel = true;
+                            }
+                        }
+                        ui.close();
+                    }
+                    // ── Raster exports (gated by `raster` feature; native always
+```
+
+Run: `cd C:/Users/Cole/source/repos/lsim-anim/linkage-sim-rs && cargo build && cargo check --target wasm32-unknown-unknown --no-default-features --lib`. Expected: both finish; no warning names `animation.rs` or the new menu lines (the unused-import warnings of Task 5 are gone).
+
+- [ ] **Step 2: README and features**
+
+In `README.md`, replace:
+
+```markdown
+- **Export**: PNG, SVG, GIF (ping-pong loop), DXF, CSV, HTML report with interactive Plotly charts
+```
+
+with:
+
+```markdown
+- **Export**: PNG, SVG, GIF (ping-pong loop), DXF, CSV, HTML report with interactive Plotly charts, animated HTML page of the sweep (one self-contained file: the mechanism with its forces, weights and joint reactions, the actuator force chart, play and scrub controls; desktop and browser)
+```
+
+In `docs/FEATURES.md`, replace:
+
+```markdown
+## Planned / Future
+```
+
+with:
+
+```markdown
+### Animated HTML export
+
+- File -> Export Animation (HTML)... saves `mechanism_animation.html`: one self-contained page (no network) that plays the mechanism through every solved sample of its angle or stroke sweep
+- Links, round and rectangular shapes, joints and ground pivots; the actuator with its push or pull; each force zone's point and force; weights; joint reactions; the driver-angle arc
+- Readouts per sample in the app's units with lbf beside every force (actuator force or driver torque, actuator length, mechanical advantage, weight shares, reactions); a chart of the actuator force (or driver torque) with a moving marker
+- Play, bounce or loop, three speeds, a scrub slider, and switches for forces, weights and the arc; works on the desktop and in the browser
+
+## Planned / Future
+```
+
+- [ ] **Step 3: docs/ai and the backlog**
+
+Run `grep -n "Linkage force zones: force_zone_application" docs/ai/02-system.yaml` and add, directly above that line (same indentation, two spaces then `- "`), the entry:
+
+```yaml
+  - "Linkage animated HTML export (gui/export/animation.rs, File -> Export Animation (HTML)...): the page's data is built from the current sweep, never by solving again: each body's pose comes back from SweepData::body_angles and the coupler_traces of its first attachment point (by name), for every body of the built mechanism, a mount-point actuator's hidden cylinder and rod included (the reactions need them); links are the blueprint's bodies only. Reactions are solved per frame at sweep_time (gui::sweep, the sweep's own formula) and equal joint_reaction_magnitudes. animation_template.html holds one data slot, /*__ANIMATION_DATA__*/null; every < in the JSON is written \\u003c so no name can end the script or open a script comment. animation_export_available enables the menu item (a mechanism and an angle or stroke sweep)."
+```
+
+In `docs/ai/03-structure.yaml`, replace:
+
+```yaml
+    files: [mod, svg, dxf, csv, raster, report, schematic, firmware]
+```
+
+with:
+
+```yaml
+    files: [mod, svg, dxf, csv, raster, report, schematic, firmware, animation, animation_template.html]
+```
+
+In the same file, replace:
+
+```yaml
+      schematic: Auto-generated labeled mechanism schematic (SVG) — File → "Export labeled schematic (SVG)..."; matches docs/superpowers/specs/2026-04-29-linkage-equations-reference.md figures 2 & 3.
+```
+
+with:
+
+```yaml
+      schematic: Auto-generated labeled mechanism schematic (SVG) — File → "Export labeled schematic (SVG)..."; matches docs/superpowers/specs/2026-04-29-linkage-equations-reference.md figures 2 & 3.
+      animation: File → "Export Animation (HTML)..." — AnimationData (one Frame per solved sweep sample, mm and N) embedded as JSON in animation_template.html (an SVG player, no network); generate_animation_html, animation_export_available.
+```
+
+In `docs/ai/04-memory.yaml`, append to the end of the file (run `tail -3 docs/ai/04-memory.yaml` first and match its indentation):
+
+```yaml
+  - "DONE 2026-10-06 (Part B of docs/superpowers/plans/2026-10-06-linkage-html-export-and-round-geometry.md, decisions H-1 to H-8): File -> Export Animation (HTML)..., a self-contained animated page of the sweep (gui/export/animation.rs). Poses are rebuilt from the sweep's traces, never solved again."
+```
+
+In `docs/ai/05-update-tracker.md`, replace:
+
+```markdown
+---
+
+## 2026-10-06 — Round shapes and the contact point (Part A, branch linkage/round-geometry)
+```
+
+with:
+
+```markdown
+---
+
+## 2026-10-06 — Animated HTML export (Part B, branch linkage/animation-export)
+- File -> Export Animation (HTML)... saves one self-contained page that plays the mechanism through its sweep: links, shapes, the actuator, force-zone points, weights, joint reactions, readouts with lbf, an actuator force (or driver torque) chart, play/scrub controls. Desktop and browser (`export::download::download_text`).
+- `gui/export/animation.rs` rebuilds each sample's pose from `SweepData::body_angles` and `coupler_traces` (a mount-point actuator's hidden bodies included) instead of solving again; reactions per frame at `sweep_time`, now shared with the sweep.
+- `animation_template.html`: the page, one data slot; every `<` in the embedded JSON written `\u003c`.
+
+## 2026-10-06 — Round shapes and the contact point (Part A, branch linkage/round-geometry)
+```
+
+In `docs/ai/backlog.yaml`, append to the end of the file:
+
+```yaml
+
+- id: BL-046
+  title: "The canvas's orange zone-force label is hard to read on the yellow overlap highlight"
+  dimension: gui
+  risk: mechanical
+  evidence: "force_render.rs draws \"F (locked)\" and \"F (contact)\" in Color32::from_rgb(255, 165, 80) over FORCE_ZONE_OVERLAP_FILL (255, 200, 0, alpha 50; colors.rs); on the live press (2026-10-06) the label at the wheel's bottom barely shows while the wheel is in the zone"
+  acceptance: "the zone-force label reads clearly over the overlap highlight (a darker label colour or a backing plate); a headless test checks the label's colour against the highlight, or the label draws on a plate"
+  priority: 4
+  status: open
+  notes: "Seen in the live check of Part A of the round-geometry plan; the animated HTML export draws its labels with a white halo instead."
+```
+
+- [ ] **Step 4: The plan**
+
+The controller's updated plan is already in the worktree (Task 5 Step 1); it is committed in Step 5. Do not edit it.
+
+- [ ] **Step 5: Gate and commit**
+
+Run the gate. Expected: `GATE PASS`, linkage count 1,098. Restore `docs/chebyshev_lambda`.
+
+```bash
+cd C:/Users/Cole/source/repos/lsim-anim
+git add linkage-sim-rs/src/gui/menu_bar.rs README.md docs/FEATURES.md docs/ai/02-system.yaml docs/ai/03-structure.yaml docs/ai/04-memory.yaml docs/ai/05-update-tracker.md docs/ai/backlog.yaml docs/superpowers/plans/2026-10-06-linkage-html-export-and-round-geometry.md
+git commit -m "feat(linkage): File -> Export Animation (HTML); docs; BL-046" -m "Co-Authored-By: <model> <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FSw7N8oV7SUVKTDVrGKLdg"
+```
+
+After Task 6 (controller): the whole-branch review (session model) and one fix wave if needed; then the browser check: a throwaway test in a scratch copy (never committed) loads the user's press (`press_w6.json` in the session scratchpad) through `AppState::load_from_json_str`, writes `generate_animation_html` to the scratchpad, and a local `python -m http.server` serves it to Playwright: no console error but the server's favicon, 38 frames over 28 to 65 deg, the 21,506 N peak at 28 deg, scrubbing changes the readouts, Bounce off loops. Then the web bundle (`bash linkage-sim-rs/scripts/build_web.sh`, `serve_web.sh 8765`): the File menu shows the item, enabled with the press loaded, and the download arrives. Merge into local `main` and ask the user before pushing.
 
 ## Self-review record
 
-- Spec coverage: circle shape (Task 1), contact point (Task 2), editor and canvas (Task 3), docs and checks (Task 4); export (Part B, staged by decision H-8).
-- Placeholders: Part B carries no code by design (H-8); Part A's steps give exact code and commands.
+- Spec coverage: circle shape (Task 1), contact point (Task 2), editor and canvas (Task 3), docs and checks (Task 4); the animated export (Task 5: data and page; Task 6: the menu item and docs), staged after Part A by decision H-8.
+- Placeholders: none; Parts A and B give exact code and commands.
 - Type consistency: `GeometryShape`, `CIRCLE_SEGMENTS`, `BodyGeometry::{circle, centre_world, outline_world, extreme_point_world}`, `ZoneAppMode`, `ForceZoneElement::{app_mode, with_app_mode}`, `force_zone_application`, `ZoneApplication { overlap, active, point, mode }`, `PendingPropertyEdit::{AddGeometry { body_id, shape }, SetGeometryShape, UpdateGeometryDiameter}` are named the same in every task.
 - Review Focus: each of the five lines names its test and owning task.
 - Dry run (2026-10-06, by the plan's writer): every Part A replacement block (37) applied in order to `f9df219` copies; with the scripted steps (the 9 test literals, the property panel's import) and the created test file, `cargo test --all` passed 1,058 tests, 0 failed. The two "append to the end of the file" steps (Task 1's 10 geometry tests, Task 2's 7 force-zone tests) were not part of that replay, so those tests were first compiled and run by the Task 1 and Task 2 implementers. Two of the plan's tests were corrected on the way: the marker drag takes an 8 px first step (egui reports the pointer's position when the drag starts, which must still be inside the 12 px hit radius), and the sweep comparison switches one state's zone between the two modes instead of comparing two separately loaded states (each body map iterates in its own order, so their solutions can differ by whole turns and in the last digits). The user's press with the wheel as a circle and the contact mode gives 21,506.0 N at crank 28 deg and 5,776.0 N at 65 deg, equal to the hub-locked model (worst relative difference 3.9e-14); not committed (decision R-7).
+- Part B dry run (2026-10-06, by the plan's writer, in a scratch worktree from `5690cb1`): Task 5 and Task 6's code as written here compiled (native and wasm32) with no warning in the new code and no clippy finding in it; `cargo test --all` passed 1,097 tests, 0 failed (1,079 + 18). Three mutations were run against the tests: a wrong origin in the pose rebuild, the script escape removed, every reaction given the first joint's force; each made a test fail (the first only after the Strandbeest fixture was added: every other sample puts each body's first pin at its origin). Part A committed this plan with CRLF line endings (copied from the main checkout); Task 6 commits it with LF like every other plan, so its diff shows every line. The user's press (`press_w6.json`, not committed) exported 38 frames over 28 to 65 deg with the 21,506 N peak at 28 deg; Playwright showed the page with no console error but the server's favicon, and the 4-bar sample's page likewise; Bounce off loops. The first draft's faults found on the way and fixed here: no sample rebuilt for a mount-point actuator (its hidden bodies are not in the blueprint), the view fitted the actuator's far anchor, labels grew on small mechanisms, small forces read "0.00 kN", and Bounce off stuck on the last frame.
+- Type consistency (Part B): `sweep_time`, `generate_animation_html`, `animation_export_available`, `animation_data`, `AnimationData`, `Frame`, `Link`, `Shape`, `Actuator`, `ZonePoint`, `Weight { link_self_weight }`, `Reaction`, `ZoneBox`; the template reads exactly the serialized field names (`frames[].links/shapes/joints/actuators/zone_points/weights/reactions/readouts`, `x`, `chart`, `driver_angle`; `title`, `x_label`, `x_unit`, `chart_label`, `n_per_lbf`, `gravity`, `ground`, `driver_pivot`, `zones`).
+- Task 5 review (sonnet, approved) and the controller's rulings on its Minor findings: fixed in one round, every `<` in the embedded JSON written `\u003c` (a `<!--` then `<script` in a name could otherwise turn the page's own `</script>` into script text) and a test pinning the field names the page reads (`the_data_has_every_field_the_player_reads`; `press_with_wheel` and `data_span` shared by the tests); parked: a body with no attachment points (no joint can hold it, so no sweep solves it) and the per-frame joint sort (negligible). Task 5 then has 19 tests; linkage count 1,098. The commit commands give both trailer lines in one `-m` (Task 5's first commit has a blank line between them; left as is).
+- Final whole-branch review (session model): ready "with fixes". It confirmed the physics (poses rebuilt to 3e-14 m and reactions equal to the sweep's on all 30 built-in samples; the stroke-mode sign; the share units) and found two Important issues, both fixed in one wave written and dry-run by the controller: the page ignored the mounting angle the canvas applies (it now draws every point and vector turned by it, with `driver_zero` for the arc and zones as four corners), and a coupler point named like a body's first pin misplaced the body (the export now takes the coupler point's position when it owns the trace key; `sweep::trace_key` is shared by the sweep and the export). Minor findings fixed in the same wave: labels and readouts written in Rust with the canvas's `format_magnitude` and `SHOWN_AS_ZERO_N` (no "1000.0 N", no "push" at 0 N, N beside lbf on shares, lbf to one decimal below 10 lbf), share rows by `plot_panel::source_line_name`, the item disabled while `sweep_dirty`, `weight_sources` and the joint sort hoisted out of the frame loop, reactions ordered J2 before J10, "1 sample", "-0.000" read as 0, the player drawing only on a new sample and without spreading every value into one call, and tests for the mounting angle, the display offset, angle-mode torque shares, the coupler-point clash, stroke-mode reactions, metres, duplicate payload labels, and both halves of the page's field contract. Backlogged: BL-047 (prismatic and cam joints not drawn), BL-048 (the menu's repeated export block). Task 5's module then has 26 tests; linkage count 1,105. Applying the wave, the implementer found the new stroke-sweep reaction comparison flaky (4 runs in 5): at sample 100 the stroke sweep sits next to a dead point (reactions near 1e13 N), where the sweep's solve and the export's solve of one pose differ in the fifth digit with the hash maps' run-to-run order; the comparison now skips reactions above 1 MN (these fixtures carry under a kilonewton) and passed 8 runs in 8. The scoped re-review (session model) found every finding addressed; its Minor residuals: a doc comment where the `\u003c` escape had been decoded to a bare `<` (fixed), the mounting test checking only some fields (now a test exports one sweep at 0 and 0.7 rad and requires every point and vector to be the turned copy), a negative share's sign on the newtons only (now on both numbers); parked: the template check matches a field name on any object. It also found the canvas itself draws force arrows and the zone box unturned under a mounting angle (pre-existing; BL-049). Task 5's module then has 27 tests; linkage count 1,106.

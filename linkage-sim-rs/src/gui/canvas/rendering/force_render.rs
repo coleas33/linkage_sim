@@ -19,7 +19,7 @@ use super::primitives::*;
 /// A magnitude (`value` >= 0) in `unit` for a canvas label: one decimal in
 /// k<unit> from 999.5 ("1.2 kN"), whole units from 9.995 ("875 N"), two
 /// decimals below ("0.35 N").
-pub(super) fn format_magnitude(value: f64, unit: &str) -> String {
+pub(crate) fn format_magnitude(value: f64, unit: &str) -> String {
     if value >= 999.5 {
         format!("{:.1} k{unit}", value / 1000.0)
     } else if value >= 9.995 {
@@ -31,7 +31,7 @@ pub(super) fn format_magnitude(value: f64, unit: &str) -> String {
 
 /// A force (N) whose size is below this shows as "0.00 N" and gets no
 /// push/pull word.
-const SHOWN_AS_ZERO_N: f64 = 0.005;
+pub(crate) const SHOWN_AS_ZERO_N: f64 = 0.005;
 
 /// Canvas actuator label: force magnitude, push or pull, motoring or
 /// braking, e.g. "1.2 kN push, braking".

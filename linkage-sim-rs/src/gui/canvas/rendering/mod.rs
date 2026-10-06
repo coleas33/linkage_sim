@@ -21,6 +21,7 @@ mod weights;
 // Re-export from submodules so external callers do not need to know the layout.
 pub use primitives::{draw_dashed_line, draw_ground_marker, draw_diamond_marker, fill_force_template};
 pub use force_render::{force_zone_app_point_world, heat_color};
+pub(crate) use force_render::{format_magnitude, SHOWN_AS_ZERO_N};
 
 use primitives::{
     draw_alignment_guides, draw_force_arrow, draw_force_arrow_components, draw_rotary_badge,
