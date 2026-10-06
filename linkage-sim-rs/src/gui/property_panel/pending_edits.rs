@@ -4,7 +4,7 @@
 //! are done to avoid borrow conflicts.
 
 use nalgebra::Vector2;
-use crate::core::body::BodyGeometry;
+use crate::core::body::{BodyGeometry, GeometryShape};
 use crate::forces::elements::ForceElement;
 use super::force_editor::draw_force_elements_panel;
 use crate::gui::state::{AppState, SelectedEntity};
@@ -24,7 +24,12 @@ pub(super) enum PendingPropertyEdit {
     DeleteMountPoint { body_id: String, name: String },
     RenameMountPoint { body_id: String, old_name: String, new_name: String },
     UpdateMountPointPosition { body_id: String, name: String, position: [f64; 2] },
-    AddGeometry { body_id: String, width: f64, height: f64 },
+    /// Give a link without geometry a `shape` sized from the link (decision R-2).
+    AddGeometry { body_id: String, shape: GeometryShape },
+    /// Switch a link's geometry to `shape`, keeping its width.
+    SetGeometryShape { body_id: String, shape: GeometryShape },
+    /// Set a circle's diameter (width and height).
+    UpdateGeometryDiameter { body_id: String, diameter: f64 },
     UpdateGeometryWidth { body_id: String, width: f64 },
     UpdateGeometryHeight { body_id: String, height: f64 },
     UpdateGeometryOffsetX { body_id: String, offset_x: f64 },
@@ -85,6 +90,42 @@ pub(super) fn draw_force_elements_inner(
         });
 }
 
+/// Apply `edit` to `body_id`'s geometry in the blueprint and in the built
+/// mechanism (the two copies the GUI keeps), then mark the sweep dirty.
+fn edit_geometry(state: &mut AppState, body_id: &str, edit: impl Fn(&mut Option<BodyGeometry>)) {
+    if let Some(body) = state.blueprint.as_mut().and_then(|bp| bp.bodies.get_mut(body_id)) {
+        edit(&mut body.geometry);
+    }
+    if let Some(body) = state.mechanism.as_mut().and_then(|mech| mech.body_mut(body_id)) {
+        edit(&mut body.geometry);
+    }
+    state.mark_sweep_dirty();
+}
+
+/// A new `shape` for `body` (decision R-2): centred on its attachment points'
+/// centroid (body-local) and sized from their span L, the largest distance
+/// between two of them (0.1 m with fewer than two): a rectangle L x L/4, a
+/// circle of diameter L/2.
+fn default_geometry(body: &crate::io::BodyJson, shape: GeometryShape) -> BodyGeometry {
+    let points: Vec<Vector2<f64>> =
+        body.attachment_points.values().map(|p| Vector2::new(p[0], p[1])).collect();
+    let centre = if points.is_empty() {
+        Vector2::zeros()
+    } else {
+        points.iter().sum::<Vector2<f64>>() / points.len() as f64
+    };
+    let span = points
+        .iter()
+        .flat_map(|a| points.iter().map(move |b| (a - b).norm()))
+        .fold(0.0, f64::max);
+    let span = if span > 0.0 { span } else { 0.1 };
+    match shape {
+        GeometryShape::Rectangle => BodyGeometry::new(span, span / 4.0, centre),
+        GeometryShape::Circle => BodyGeometry::circle(span / 2.0, centre),
+    }
+    .expect("a positive span gives a valid shape")
+}
+
 /// Apply a pending property edit.
 pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropertyEdit>) {
     if let Some(edit) = pending {
@@ -128,109 +169,62 @@ pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropert
             PendingPropertyEdit::UpdateMountPointPosition { body_id, name, position } => {
                 state.update_mount_point_position(&body_id, &name, position);
             }
-            PendingPropertyEdit::AddGeometry { body_id, width, height } => {
-                if let Some(bp) = &mut state.blueprint {
-                    if let Some(body) = bp.bodies.get_mut(&body_id) {
-                        body.geometry = Some(BodyGeometry {
-                            width,
-                            height,
-                            offset: Vector2::zeros(),
-                            shape: crate::core::body::GeometryShape::Rectangle,
-                        });
-                    }
+            PendingPropertyEdit::AddGeometry { body_id, shape } => {
+                let new = state
+                    .blueprint
+                    .as_ref()
+                    .and_then(|bp| bp.bodies.get(&body_id))
+                    .map(|body| default_geometry(body, shape));
+                if let Some(new) = new {
+                    edit_geometry(state, &body_id, |geo| *geo = Some(new.clone()));
                 }
-                if let Some(mech) = &mut state.mechanism {
-                    if let Some(body) = mech.body_mut(&body_id) {
-                        body.geometry = Some(BodyGeometry {
-                            width,
-                            height,
-                            offset: Vector2::zeros(),
-                            shape: crate::core::body::GeometryShape::Rectangle,
-                        });
+            }
+            PendingPropertyEdit::SetGeometryShape { body_id, shape } => {
+                edit_geometry(state, &body_id, |geo| {
+                    if let Some(g) = geo {
+                        g.shape = shape;
+                        g.height = g.width;
                     }
-                }
-                state.mark_sweep_dirty();
+                });
+            }
+            PendingPropertyEdit::UpdateGeometryDiameter { body_id, diameter } => {
+                edit_geometry(state, &body_id, |geo| {
+                    if let Some(g) = geo {
+                        g.width = diameter;
+                        g.height = diameter;
+                    }
+                });
             }
             PendingPropertyEdit::UpdateGeometryWidth { body_id, width } => {
-                if let Some(bp) = &mut state.blueprint {
-                    if let Some(body) = bp.bodies.get_mut(&body_id) {
-                        if let Some(ref mut geo) = body.geometry {
-                            geo.width = width;
-                        }
+                edit_geometry(state, &body_id, |geo| {
+                    if let Some(g) = geo {
+                        g.width = width;
                     }
-                }
-                if let Some(mech) = &mut state.mechanism {
-                    if let Some(body) = mech.body_mut(&body_id) {
-                        if let Some(ref mut geo) = body.geometry {
-                            geo.width = width;
-                        }
-                    }
-                }
-                state.mark_sweep_dirty();
+                });
             }
             PendingPropertyEdit::UpdateGeometryHeight { body_id, height } => {
-                if let Some(bp) = &mut state.blueprint {
-                    if let Some(body) = bp.bodies.get_mut(&body_id) {
-                        if let Some(ref mut geo) = body.geometry {
-                            geo.height = height;
-                        }
+                edit_geometry(state, &body_id, |geo| {
+                    if let Some(g) = geo {
+                        g.height = height;
                     }
-                }
-                if let Some(mech) = &mut state.mechanism {
-                    if let Some(body) = mech.body_mut(&body_id) {
-                        if let Some(ref mut geo) = body.geometry {
-                            geo.height = height;
-                        }
-                    }
-                }
-                state.mark_sweep_dirty();
+                });
             }
             PendingPropertyEdit::UpdateGeometryOffsetX { body_id, offset_x } => {
-                if let Some(bp) = &mut state.blueprint {
-                    if let Some(body) = bp.bodies.get_mut(&body_id) {
-                        if let Some(ref mut geo) = body.geometry {
-                            geo.offset.x = offset_x;
-                        }
+                edit_geometry(state, &body_id, |geo| {
+                    if let Some(g) = geo {
+                        g.offset.x = offset_x;
                     }
-                }
-                if let Some(mech) = &mut state.mechanism {
-                    if let Some(body) = mech.body_mut(&body_id) {
-                        if let Some(ref mut geo) = body.geometry {
-                            geo.offset.x = offset_x;
-                        }
-                    }
-                }
-                state.mark_sweep_dirty();
+                });
             }
             PendingPropertyEdit::UpdateGeometryOffsetY { body_id, offset_y } => {
-                if let Some(bp) = &mut state.blueprint {
-                    if let Some(body) = bp.bodies.get_mut(&body_id) {
-                        if let Some(ref mut geo) = body.geometry {
-                            geo.offset.y = offset_y;
-                        }
+                edit_geometry(state, &body_id, |geo| {
+                    if let Some(g) = geo {
+                        g.offset.y = offset_y;
                     }
-                }
-                if let Some(mech) = &mut state.mechanism {
-                    if let Some(body) = mech.body_mut(&body_id) {
-                        if let Some(ref mut geo) = body.geometry {
-                            geo.offset.y = offset_y;
-                        }
-                    }
-                }
-                state.mark_sweep_dirty();
+                });
             }
             PendingPropertyEdit::RemoveGeometry { body_id } => {
-                if let Some(bp) = &mut state.blueprint {
-                    if let Some(body) = bp.bodies.get_mut(&body_id) {
-                        body.geometry = None;
-                    }
-                }
-                if let Some(mech) = &mut state.mechanism {
-                    if let Some(body) = mech.body_mut(&body_id) {
-                        body.geometry = None;
-                    }
-                }
-                state.mark_sweep_dirty();
+                edit_geometry(state, &body_id, |geo| *geo = None);
             }
             PendingPropertyEdit::UpdateLabel { body_id, label } => {
                 if let Some(bp) = &mut state.blueprint {
@@ -488,5 +482,92 @@ mod tests {
         );
         assert_eq!(state.find_point_mass(&other, &w).unwrap().mass, 2.0, "the moved weight is untouched");
         assert_eq!(state.undo_history.undo_count(), depth + 1, "only the move recorded an entry");
+    }
+
+    // ── Geometry shapes (decision R-2) ──────────────────────────────────
+
+    /// `body`'s geometry in the blueprint and in the built mechanism.
+    fn geometry_copies(state: &AppState, body: &str) -> [BodyGeometry; 2] {
+        let bp = state.blueprint.as_ref().unwrap().bodies[body].geometry.clone();
+        let mech = state.mechanism.as_ref().unwrap().bodies()[body].geometry.clone();
+        [bp.expect("blueprint geometry"), mech.expect("mechanism geometry")]
+    }
+
+    /// The Four-Bar sample's coupler: its length and its midpoint (body-local).
+    fn coupler_span(state: &AppState) -> (f64, [f64; 2]) {
+        let points: Vec<[f64; 2]> =
+            state.blueprint.as_ref().unwrap().bodies["coupler"].attachment_points.values().cloned().collect();
+        assert_eq!(points.len(), 2, "the sample coupler is a two-point bar");
+        let (a, b) = (points[0], points[1]);
+        let span = ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt();
+        (span, [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0])
+    }
+
+    fn add_geometry(state: &mut AppState, shape: GeometryShape) {
+        apply_pending(state, Some(PendingPropertyEdit::AddGeometry { body_id: "coupler".into(), shape }));
+    }
+
+    #[test]
+    fn add_circle_centres_a_wheel_half_the_link_long_in_both_copies() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        add_geometry(&mut state, GeometryShape::Circle);
+        let (span, mid) = coupler_span(&state);
+        for geo in geometry_copies(&state, "coupler") {
+            assert_eq!(geo.shape, GeometryShape::Circle);
+            assert!((geo.width - span / 2.0).abs() < 1e-12 && (geo.height - span / 2.0).abs() < 1e-12);
+            assert!((geo.offset.x - mid[0]).abs() < 1e-12 && (geo.offset.y - mid[1]).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn add_rectangle_spans_the_link_a_quarter_as_deep() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        add_geometry(&mut state, GeometryShape::Rectangle);
+        let (span, mid) = coupler_span(&state);
+        for geo in geometry_copies(&state, "coupler") {
+            assert_eq!(geo.shape, GeometryShape::Rectangle);
+            assert!((geo.width - span).abs() < 1e-12 && (geo.height - span / 4.0).abs() < 1e-12);
+            assert!((geo.offset.x - mid[0]).abs() < 1e-12 && (geo.offset.y - mid[1]).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn switching_shape_keeps_the_width_and_squares_the_height() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        add_geometry(&mut state, GeometryShape::Rectangle);
+        let (span, _) = coupler_span(&state);
+        let set = |state: &mut AppState, shape| {
+            apply_pending(state, Some(PendingPropertyEdit::SetGeometryShape { body_id: "coupler".into(), shape }));
+        };
+        set(&mut state, GeometryShape::Circle);
+        for geo in geometry_copies(&state, "coupler") {
+            assert_eq!(geo.shape, GeometryShape::Circle);
+            assert!((geo.width - span).abs() < 1e-12 && (geo.height - span).abs() < 1e-12);
+        }
+        set(&mut state, GeometryShape::Rectangle);
+        for geo in geometry_copies(&state, "coupler") {
+            assert_eq!(geo.shape, GeometryShape::Rectangle);
+            assert!((geo.width - span).abs() < 1e-12 && (geo.height - span).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn a_diameter_edit_sets_width_and_height_in_both_copies() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        add_geometry(&mut state, GeometryShape::Circle);
+        apply_pending(
+            &mut state,
+            Some(PendingPropertyEdit::UpdateGeometryDiameter { body_id: "coupler".into(), diameter: 0.05 }),
+        );
+        for geo in geometry_copies(&state, "coupler") {
+            assert_eq!((geo.width, geo.height), (0.05, 0.05));
+        }
+        apply_pending(&mut state, Some(PendingPropertyEdit::RemoveGeometry { body_id: "coupler".into() }));
+        assert!(state.blueprint.as_ref().unwrap().bodies["coupler"].geometry.is_none());
+        assert!(state.mechanism.as_ref().unwrap().bodies()["coupler"].geometry.is_none());
     }
 }

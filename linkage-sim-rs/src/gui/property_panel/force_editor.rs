@@ -900,32 +900,34 @@ fn draw_force_element_details(
                 });
             }
 
-            // Application-point override: auto-centroid vs user-pinned.
+            // Application point: overlap centre, a locked body point, or the
+            // shape's contact point (decision R-4).
             ui.separator();
             ui.label("Application point:");
-            let mut locked = fz.body_local_app_point.is_some();
-            if ui
-                .checkbox(&mut locked, "Lock to body-local point")
-                .on_hover_text(
-                    "Unchecked: force applies at the overlap centroid (auto). Checked: force applies at a fixed point on the body — pin it to the real contact location.",
-                )
-                .changed()
-            {
-                let mut updated = fz.clone();
-                updated.body_local_app_point = if locked {
-                    // Seed the override with the current centroid so the
-                    // force doesn't jump when locking.
-                    fz.body_local_app_point.or(Some([0.0, 0.0]))
-                } else {
-                    None
-                };
+            let mode = fz.app_mode();
+            let mut picked = mode;
+            ui.horizontal(|ui| {
+                ui.radio_value(&mut picked, ZoneAppMode::Centroid, "Overlap centre")
+                    .on_hover_text("The force acts at the centroid of the shape's overlap with the zone, found again at every pose.");
+                ui.radio_value(&mut picked, ZoneAppMode::Locked, "Locked point")
+                    .on_hover_text("The force acts at a fixed point on the body: set it below, or drag the F marker on the canvas.");
+                ui.radio_value(&mut picked, ZoneAppMode::Contact, "Contact point")
+                    .on_hover_text("The force acts where a surface pushing in the force's direction meets the shape: its lowest point for an upward force. On a wheel it stays straight below the hub as the wheel turns.");
+            });
+            if picked != mode {
+                // A first lock seeds the shape's centre, not the body origin.
+                let seed = blueprint
+                    .bodies
+                    .get(&fz.body_id)
+                    .and_then(|b| b.geometry.as_ref())
+                    .map_or([0.0, 0.0], |g| [g.offset.x, g.offset.y]);
                 *pending = Some(PendingPropertyEdit::UpdateForce {
                     index,
-                    force: ForceElement::ForceZone(updated),
+                    force: ForceElement::ForceZone(fz.with_app_mode(picked, seed)),
                 });
             }
 
-            if let Some(lp) = fz.body_local_app_point {
+            if let (ZoneAppMode::Locked, Some(lp)) = (mode, fz.body_local_app_point) {
                 let mut lx_mm = lp[0] * 1e3;
                 let mut ly_mm = lp[1] * 1e3;
                 let mut ap_changed = false;
@@ -939,17 +941,6 @@ fn draw_force_element_details(
                         ap_changed = true;
                     }
                 });
-                if ui.button("Reset to auto (overlap centroid)")
-                    .on_hover_text("Clear the locked application point and revert to the auto-computed overlap centroid each frame.")
-                    .clicked()
-                {
-                    let mut updated = fz.clone();
-                    updated.body_local_app_point = None;
-                    *pending = Some(PendingPropertyEdit::UpdateForce {
-                        index,
-                        force: ForceElement::ForceZone(updated),
-                    });
-                }
                 if ap_changed {
                     let mut updated = fz.clone();
                     updated.body_local_app_point = Some([lx_mm * 1e-3, ly_mm * 1e-3]);

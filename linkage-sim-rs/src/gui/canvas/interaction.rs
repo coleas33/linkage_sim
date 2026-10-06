@@ -286,7 +286,12 @@ pub fn handle_interaction(
                         cos_t * dx + sin_t * dy,
                         -sin_t * dx + cos_t * dy,
                     ];
-                    let mut updated = fz.clone();
+                    // Dropping the marker locks the point there, whatever the
+                    // zone's mode was (decision R-4).
+                    let mut updated = fz.with_app_mode(
+                        crate::forces::elements::ZoneAppMode::Locked,
+                        local,
+                    );
                     updated.body_local_app_point = Some(local);
                     state.update_force_element(
                         idx,

@@ -173,27 +173,35 @@ pub fn render_mechanism(
             .collect();
         let screen_points: Vec<Pos2> = point_positions.iter().map(|(sp, _)| *sp).collect();
 
-        // Draw body geometry rectangle (behind the link bar).
+        // Draw body geometry (behind the link bar): a rectangle, or a circle.
         if let Some(ref geo) = body.geometry {
             let pos = mech_state.get_position(body_id, q);
             let theta = mech_state.get_angle(body_id, q);
-            let corners = crate::geometry::body_rect_to_world(
-                pos.x, pos.y, theta, geo.width, geo.height, &geo.offset,
-            );
-            let screen_corners: Vec<Pos2> = corners
-                .iter()
-                .map(|c| {
-                    let sp = view.world_to_screen(c.x, c.y);
-                    Pos2::new(sp[0], sp[1])
-                })
-                .collect();
             let geo_fill = Color32::from_rgba_premultiplied(64, 42, 0, 64);
             let geo_stroke = Stroke::new(2.0, Color32::from_rgb(255, 165, 0));
-            painter.add(egui::epaint::PathShape::convex_polygon(
-                screen_corners,
-                geo_fill,
-                geo_stroke,
-            ));
+            if geo.shape == crate::core::body::GeometryShape::Circle {
+                // A true circle: its radius on screen from a world-frame offset,
+                // which the view's rotation (mounting angle) does not change.
+                let c = geo.centre_world(pos.x, pos.y, theta);
+                let sc = view.world_to_screen(c.x, c.y);
+                let se = view.world_to_screen(c.x + geo.width / 2.0, c.y);
+                let radius = ((se[0] - sc[0]).powi(2) + (se[1] - sc[1]).powi(2)).sqrt();
+                painter.circle(Pos2::new(sc[0], sc[1]), radius, geo_fill, geo_stroke);
+            } else {
+                let screen_corners: Vec<Pos2> = geo
+                    .outline_world(pos.x, pos.y, theta)
+                    .iter()
+                    .map(|c| {
+                        let sp = view.world_to_screen(c.x, c.y);
+                        Pos2::new(sp[0], sp[1])
+                    })
+                    .collect();
+                painter.add(egui::epaint::PathShape::convex_polygon(
+                    screen_corners,
+                    geo_fill,
+                    geo_stroke,
+                ));
+            }
         }
 
         // Draw links as rounded rectangles (bars) for visibility and click targets.
@@ -1497,11 +1505,16 @@ pub fn show_body_tooltip(ui: &mut egui::Ui, body: &Body, body_id: &str) {
         ui.label(format!("Mass: {:.3} kg", body.mass));
         ui.label(format!("Izz: {:.6} kg\u{00b7}m\u{00b2}", body.izz_cg));
         if let Some(ref geo) = body.geometry {
-            ui.label(format!(
-                "Geometry: {:.1} \u{00d7} {:.1} mm",
-                geo.width * 1e3,
-                geo.height * 1e3
-            ));
+            ui.label(match geo.shape {
+                crate::core::body::GeometryShape::Rectangle => format!(
+                    "Geometry: {:.1} \u{00d7} {:.1} mm",
+                    geo.width * 1e3,
+                    geo.height * 1e3
+                ),
+                crate::core::body::GeometryShape::Circle => {
+                    format!("Geometry: circle, diameter {:.1} mm", geo.width * 1e3)
+                }
+            });
         }
         if body.attachment_points.len() == 2 {
             let pts: Vec<_> = body.attachment_points.values().collect();

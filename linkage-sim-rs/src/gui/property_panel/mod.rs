@@ -11,6 +11,7 @@ pub(super) mod force_editor;
 
 use eframe::egui;
 use crate::core::state::GROUND_ID;
+use crate::core::body::GeometryShape;
 use crate::gui::state::{AppState, PropertyPanelTab, SelectedEntity};
 
 use pending_edits::{PendingPropertyEdit, apply_pending, draw_force_elements_inner};
@@ -283,6 +284,36 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                     .default_open(false)
                                     .show(ui, |ui| {
                                         if let Some(ref geo) = bp_body.geometry {
+                                            // Shape switch (decision R-2).
+                                            let mut shape = geo.shape;
+                                            ui.horizontal(|ui| {
+                                                ui.label("Shape:");
+                                                ui.selectable_value(&mut shape, GeometryShape::Rectangle, "Rectangle");
+                                                ui.selectable_value(&mut shape, GeometryShape::Circle, "Circle");
+                                            });
+                                            if shape != geo.shape {
+                                                pending = Some(PendingPropertyEdit::SetGeometryShape {
+                                                    body_id: body_id.clone(),
+                                                    shape,
+                                                });
+                                            }
+
+                                            if geo.shape == GeometryShape::Circle {
+                                            // Diameter slider (mm display, m internal)
+                                            let mut diameter_mm = geo.width * 1e3;
+                                            let dr = ui.add(
+                                                egui::Slider::new(&mut diameter_mm, 1.0..=500.0)
+                                                    .text("Diameter (mm)")
+                                                    .clamping(egui::SliderClamping::Never)
+                                                    .logarithmic(true),
+                                            ).on_hover_text("Circle diameter in mm (visual geometry for force zones)");
+                                            if dr.drag_stopped() || (dr.changed() && !dr.dragged()) {
+                                                pending = Some(PendingPropertyEdit::UpdateGeometryDiameter {
+                                                    body_id: body_id.clone(),
+                                                    diameter: diameter_mm * 1e-3,
+                                                });
+                                            }
+                                            } else {
                                             // Width slider (mm display, m internal)
                                             let mut width_mm = geo.width * 1e3;
                                             let wr = ui.add(
@@ -312,6 +343,7 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                                     height: height_mm * 1e-3,
                                                 });
                                             }
+                                            }
 
                                             // Offset X slider (mm display, m internal)
                                             let mut ox_mm = geo.offset.x * 1e3;
@@ -339,24 +371,27 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                                 });
                                             }
 
-                                            ui.horizontal(|ui| {
-                                                if ui.button("Redraw").on_hover_text("Drag on canvas to redefine this body's geometry rectangle").clicked() {
-                                                    pending = Some(PendingPropertyEdit::EnterDrawGeometryMode {
-                                                        body_id: body_id.clone(),
-                                                    });
-                                                }
-                                                if ui.button("Remove").on_hover_text("Remove the visual geometry rectangle from this body").clicked() {
-                                                    pending = Some(PendingPropertyEdit::RemoveGeometry {
-                                                        body_id: body_id.clone(),
-                                                    });
-                                                }
-                                            });
-                                        } else {
-                                            if ui.button("Draw Geometry").on_hover_text("Drag on canvas to define a geometry rectangle for this body (required for force zones)").clicked() {
-                                                pending = Some(PendingPropertyEdit::EnterDrawGeometryMode {
+                                            if ui.button("Remove").on_hover_text("Remove the visual geometry from this body").clicked() {
+                                                pending = Some(PendingPropertyEdit::RemoveGeometry {
                                                     body_id: body_id.clone(),
                                                 });
                                             }
+                                        } else {
+                                            // Add a shape sized from the link (decision R-2).
+                                            ui.horizontal(|ui| {
+                                                if ui.button("Add rectangle").on_hover_text("Give this body a rectangle as long as the link and a quarter as deep, centred on it (required for force zones)").clicked() {
+                                                    pending = Some(PendingPropertyEdit::AddGeometry {
+                                                        body_id: body_id.clone(),
+                                                        shape: GeometryShape::Rectangle,
+                                                    });
+                                                }
+                                                if ui.button("Add circle").on_hover_text("Give this body a circle half the link's length across, centred on it: a wheel (required for force zones)").clicked() {
+                                                    pending = Some(PendingPropertyEdit::AddGeometry {
+                                                        body_id: body_id.clone(),
+                                                        shape: GeometryShape::Circle,
+                                                    });
+                                                }
+                                            });
                                         }
                                     });
                             }

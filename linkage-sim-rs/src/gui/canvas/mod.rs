@@ -899,4 +899,107 @@ mod tests {
             assert!(marker > highlight, "the weight (shape {marker}) is painted under the highlight (shape {highlight})");
         }
     }
+
+    /// Headless canvas frames checking how a circle geometry and a force
+    /// zone's contact point are drawn and dragged (decisions R-2, R-3, R-4).
+    mod geometry_drawing {
+        use eframe::egui::{self, Pos2};
+
+        use crate::core::body::{BodyGeometry, GeometryShape};
+        use crate::forces::elements::{ForceElement, ZoneAppMode};
+        use crate::gui::samples::SampleMechanism;
+        use crate::gui::state::AppState;
+        use crate::gui::test_support::{drawn_texts, primary_button, visit_shapes};
+        use super::weight_clicks::frame;
+
+        /// The Parallelogram Press with a 20 mm wheel on its coupler where its
+        /// rectangle was, the zone grown over the canvas, the zone's force at
+        /// the wheel's contact point when `contact`; after two idle frames.
+        fn press_with_wheel(contact: bool) -> (egui::Context, AppState) {
+            let mut state = AppState::default();
+            state.load_sample(SampleMechanism::ParallelogramPress);
+            let bp = state.blueprint.as_mut().expect("blueprint");
+            let coupler = bp.bodies.get_mut("coupler").expect("coupler");
+            let hub = coupler.geometry.as_ref().expect("the sample's geometry").offset;
+            coupler.geometry = Some(BodyGeometry::circle(0.02, hub).unwrap());
+            for force in &mut bp.forces {
+                if let ForceElement::ForceZone(zone) = force {
+                    zone.zone_min = [-10.0, -10.0];
+                    zone.zone_max = [10.0, 10.0];
+                    zone.at_contact_point = contact;
+                }
+            }
+            state.rebuild();
+            let ctx = egui::Context::default();
+            frame(&ctx, &mut state, Vec::new());
+            frame(&ctx, &mut state, Vec::new());
+            (ctx, state)
+        }
+
+        fn zone(state: &AppState) -> crate::forces::elements::ForceZoneElement {
+            state
+                .mechanism
+                .as_ref()
+                .unwrap()
+                .forces()
+                .iter()
+                .find_map(|f| if let ForceElement::ForceZone(z) = f { Some(z.clone()) } else { None })
+                .expect("the press's zone")
+        }
+
+        #[test]
+        fn a_circle_geometry_is_drawn_as_a_circle_of_its_radius() {
+            let (ctx, mut state) = press_with_wheel(false);
+            let output = frame(&ctx, &mut state, Vec::new());
+            let geo = state.mechanism.as_ref().unwrap().bodies()["coupler"].geometry.clone().unwrap();
+            assert_eq!(geo.shape, GeometryShape::Circle);
+            let a = state.view.world_to_screen(0.0, 0.0);
+            let b = state.view.world_to_screen(0.01, 0.0);
+            let radius_px = ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2)).sqrt();
+            let mut found = false;
+            visit_shapes(&output, |shape| {
+                if let egui::Shape::Circle(c) = shape {
+                    if c.stroke.color == egui::Color32::from_rgb(255, 165, 0) && (c.radius - radius_px).abs() < 0.5 {
+                        found = true;
+                    }
+                }
+            });
+            assert!(found, "a circle of radius {radius_px} px in the geometry colour");
+        }
+
+        #[test]
+        fn the_contact_point_marker_reads_f_contact() {
+            let (ctx, mut state) = press_with_wheel(true);
+            let texts = drawn_texts(&frame(&ctx, &mut state, Vec::new()));
+            assert!(texts.iter().any(|t| t == "F (contact)"), "{texts:?}");
+            assert!(!texts.iter().any(|t| t == "F (locked)"), "{texts:?}");
+        }
+
+        #[test]
+        fn dragging_the_contact_marker_locks_it_where_it_drops() {
+            let (ctx, mut state) = press_with_wheel(true);
+            let fz = zone(&state);
+            let mech = state.mechanism.as_ref().unwrap();
+            let world = crate::gui::canvas::rendering::force_zone_app_point_world(&fz, mech, mech.state(), &state.q)
+                .expect("the contact point");
+            let s = state.view.world_to_screen(world.x, world.y);
+            let from = Pos2::new(s[0], s[1]);
+            let to = from + egui::vec2(40.0, 30.0);
+            // egui starts the drag once the pointer passes its click distance
+            // (6 px) and reports the pointer's position then, which must still
+            // be within the marker's hit radius (12 px): a first step of 8 px.
+            frame(&ctx, &mut state, vec![egui::Event::PointerMoved(from)]);
+            frame(&ctx, &mut state, vec![primary_button(from, true)]);
+            frame(&ctx, &mut state, vec![egui::Event::PointerMoved(from + egui::vec2(8.0, 0.0))]);
+            frame(&ctx, &mut state, vec![egui::Event::PointerMoved(to)]);
+            frame(&ctx, &mut state, vec![primary_button(to, false)]);
+            let fz = zone(&state);
+            assert_eq!(fz.app_mode(), ZoneAppMode::Locked, "the drop locks the point");
+            let [wx, wy] = state.view.screen_to_world(to.x, to.y);
+            let mech = state.mechanism.as_ref().unwrap();
+            let dropped = crate::gui::canvas::rendering::force_zone_app_point_world(&fz, mech, mech.state(), &state.q)
+                .expect("the locked point");
+            assert!((dropped.x - wx).abs() < 1e-9 && (dropped.y - wy).abs() < 1e-9, "{dropped:?} vs ({wx}, {wy})");
+        }
+    }
 }
