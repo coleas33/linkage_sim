@@ -2,6 +2,7 @@
 //! DXF geometry, HTML analysis reports, and firmware-friendly trajectory
 //! command streams (JSON v1; G-code/Aerotech/Beckhoff/Galil planned).
 
+mod animation;
 mod csv;
 pub mod download;
 mod dxf;
@@ -15,6 +16,7 @@ mod svg;
 // String-returning generators are platform-independent and re-exported on
 // both native and web. Path-writing wrappers (file I/O) and raster
 // generation (resvg/gif crates) remain native-only.
+pub use animation::{animation_export_available, generate_animation_html};
 pub use csv::{generate_coupler_csv_string, generate_sweep_csv_string};
 #[cfg(feature = "native")]
 pub use csv::{export_coupler_csv, export_sweep_csv};

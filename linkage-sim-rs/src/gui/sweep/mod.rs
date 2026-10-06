@@ -266,6 +266,22 @@ impl SweepData {
     }
 }
 
+/// The driver time of sweep sample `x_value` (degrees in angle mode, metres
+/// in stroke mode): the inverse of the driver's `f(t) = theta_0 + omega * t`.
+/// In linear mode `omega` is the velocity and `theta_0` the start length; a
+/// stopped linear driver gives 0.
+pub(crate) fn sweep_time(x_value: f64, is_stroke: bool, omega: f64, theta_0: f64) -> f64 {
+    if is_stroke {
+        if omega.abs() > f64::EPSILON {
+            (x_value - theta_0) / omega
+        } else {
+            0.0
+        }
+    } else {
+        (x_value.to_radians() - theta_0) / omega
+    }
+}
+
 pub(crate) fn compute_sweep_data(
     mech: &Mechanism,
     q_start: &DVector<f64>,
@@ -492,22 +508,7 @@ pub(crate) fn compute_sweep_data_with_weights(
     let x_values: Vec<f64> = (0..=num_steps)
         .map(|i| start_angle_deg + (i as f64) * step_size)
         .collect();
-    let ts: Vec<f64> = x_values
-        .iter()
-        .map(|&x_value| {
-            if is_stroke {
-                // f(t) = length_0 + velocity * t  =>  t = (x - length_0) / velocity
-                // (omega = velocity, theta_0 = length_0 in linear mode).
-                if omega.abs() > f64::EPSILON {
-                    (x_value - theta_0) / omega
-                } else {
-                    0.0
-                }
-            } else {
-                (x_value.to_radians() - theta_0) / omega
-            }
-        })
-        .collect();
+    let ts: Vec<f64> = x_values.iter().map(|&x_value| sweep_time(x_value, is_stroke, omega, theta_0)).collect();
 
     // Position solve at every sample (None where unreachable). A full
     // driver revolution lets post-gap samples be reached from the far end
