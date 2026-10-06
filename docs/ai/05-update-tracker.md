@@ -5,6 +5,11 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-06 — colesorkness.com layout and the standalone calculator (branch linkage/url-move)
+- The web output (`linkage-sim-rs/web/`) is laid out for colesorkness.com: the hub page `index.html` at `/`, the linkage app at `/linkage/` (`web/linkage/`), the calculator at `/magcoupler/` (`web/magcoupler/`, was `web/magcoupling/`). `vercel.json` adds `trailingSlash` and redirects: linkage.colesorkness.com to the new paths (share links keep `?m=`; `?tool=magcoupling` goes to the calculator) and `/magcoupling/` to `/magcoupler/`. `tests/web_layout.rs` keeps the pages, `vercel.json`, `.gitignore` and the scripts in step.
+- Share links: `SHARE_URL_BASE` (`https://colesorkness.com/linkage/?m=`, `gui/state/file_io.rs`) and magcoupling-rs `PUBLIC_BASE_URL` (`https://colesorkness.com/magcoupler/`).
+- The calculator is no longer embedded: `gui/calculator_window.rs` deleted, Tools -> Magnetic coupling calculator opens the site in a new tab (`menu_bar::MAGCOUPLER_URL`), linkage-sim-rs drops its magcoupling-rs dependency and the wasm-only rfd; gate 10 guards the calculator's builds only, gate 11 checks only wasm-bindgen against the CLI pin. BL-038 to BL-040 fixed by removal.
+
 ## 2026-10-06 — Animated HTML export (Part B, branch linkage/animation-export)
 - File -> Export Animation (HTML)... saves one self-contained page that plays the mechanism through its sweep: links, shapes, the actuator, force-zone points, weights, joint reactions, readouts with lbf, an actuator force (or driver torque) chart, play/scrub controls. Desktop and browser (`export::download::download_text`).
 - `gui/export/animation.rs` rebuilds each sample's pose from `SweepData::body_angles` and `coupler_traces` (a mount-point actuator's hidden bodies included) instead of solving again; reactions per frame at `sweep_time`, now shared with the sweep.

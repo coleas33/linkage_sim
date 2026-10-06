@@ -382,8 +382,8 @@
   evidence: "M5 plan review 2026-10-02 (docs/superpowers/plans/2026-10-02-magcoupling-m5-embed.md, decision M5-6): linkage-sim-rs/src/gui/calculator_window.rs DesignPicker (native rfd dialog, wasm32 AsyncFileDialog into an inbox) and save_filter follow magcoupling-rs/src/app/files.rs (its DesignPicker and extension filter) almost line for line, because M5 leaves magcoupling-rs unchanged."
   acceptance: "one DesignPicker, behind a magcoupling-rs feature that both hosts enable (e.g. files = [gui, dep:rfd, dep:wasm-bindgen-futures]); the standalone app's and the linkage window's picker tests pass; gate 10 still shows workbook-parity absent from every shipped build"
   priority: 3
-  status: open
-  notes: "Decision M5-6 option (b), deferred: it changes magcoupling-rs's Cargo.toml and its gui-is-egui-only contract."
+  status: fixed
+  notes: "Decision M5-6 option (b), deferred: it changes magcoupling-rs's Cargo.toml and its gui-is-egui-only contract. FIXED 2026-10-06 by removal: the calculator is a site of its own (colesorkness.com/magcoupler) and the linkage app no longer embeds it (gui/calculator_window.rs deleted; plan docs/superpowers/plans/2026-10-06-colesorkness-url-move-and-standalone-calculator.md)."
 
 - id: BL-039
   title: "The calculator window covers the linkage app's 'Recover Unsaved Work?' prompt when both show at once"
@@ -392,8 +392,8 @@
   evidence: "M5 plan review 2026-10-02: linkage-sim-rs/src/gui/mod.rs draws the native and the wasm32 recovery prompts (egui::Window, Middle order, anchored at the centre) inline in update, after the calculator window, which raises itself on its second frame (gui/calculator_window.rs, raise). With ?tool=magcoupling and an autosave on the web, or Tools > Magnetic coupling opened natively while the prompt shows, the window hides the prompt."
   acceptance: "with the calculator window open and a recovery pending, the prompt is in front: a headless test draws the window and the prompt (moved out of update into a function) and Context::layer_id_at at the prompt's centre is the prompt's layer"
   priority: 3
-  status: open
-  notes: "Documented in M5 (decision M5-4, the calculator_window module docs, 02-system limitations): the user can move or collapse the window. Fix sketches: both prompts on Order::Foreground (a press on them then leaves the keyboard where it is, decision M5-5), or open_magcoupling deferred while a recovery is pending."
+  status: fixed
+  notes: "Documented in M5 (decision M5-4, the calculator_window module docs, 02-system limitations): the user can move or collapse the window. Fix sketches: both prompts on Order::Foreground (a press on them then leaves the keyboard where it is, decision M5-5), or open_magcoupling deferred while a recovery is pending. FIXED 2026-10-06 by removal: the calculator is a site of its own (colesorkness.com/magcoupler) and the linkage app no longer embeds it (gui/calculator_window.rs deleted; plan docs/superpowers/plans/2026-10-06-colesorkness-url-move-and-standalone-calculator.md)."
 
 - id: BL-040
   title: "The calculator window's keyboard does not follow Tab focus between it and the linkage app"
@@ -402,8 +402,8 @@
   evidence: "M5 plan review 2026-10-02: CalculatorWindow::follow_presses (linkage-sim-rs/src/gui/calculator_window.rs) moves the keyboard by presses only, while egui's Tab traversal (Focus::begin_pass reads Tab before any widget draws) can move the focus between the parts. Into a calculator field: the keys stay with the linkage app, so its canvas keys the field does not consume still run (Left and Right arrows nudge the selected link). Into a linkage field: the window keeps removing the key events, so Backspace, Enter and the arrows do nothing there."
   acceptance: "decided with the user first (decision M5-5 alternative d: the keyboard also follows egui's focus); then headless tests for both directions: a focus moved into the window gives it the keyboard, a focus moved to a linkage widget takes it, a focus on a Foreground layer leaves it"
   priority: 3
-  status: open
-  notes: "Sketch: each frame compare ctx.memory(|m| m.focused()) with the last frame's, also while the window is closed; on a change to Some(id), apply the press rule to ctx.read_response(id)'s layer_id. Documented in M5 (decision M5-5, the calculator_window module docs, 02-system limitations)."
+  status: fixed
+  notes: "Sketch: each frame compare ctx.memory(|m| m.focused()) with the last frame's, also while the window is closed; on a change to Some(id), apply the press rule to ctx.read_response(id)'s layer_id. Documented in M5 (decision M5-5, the calculator_window module docs, 02-system limitations). FIXED 2026-10-06 by removal: the calculator is a site of its own (colesorkness.com/magcoupler) and the linkage app no longer embeds it (gui/calculator_window.rs deleted; plan docs/superpowers/plans/2026-10-06-colesorkness-url-move-and-standalone-calculator.md)."
 
 - id: BL-041
   title: "A shared link (?m=) plots the wrong crank range when the driven link is drawn at an angle"

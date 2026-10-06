@@ -1,6 +1,6 @@
 project: linkage-simulation
 repo: https://github.com/coleas33/linkage_sim
-deployment: https://linkage.colesorkness.com
+deployment: https://colesorkness.com (hub page; the linkage app at /linkage/, the magnetic coupling calculator at /magcoupler/; linkage.colesorkness.com redirects)
 stack:
   language: Rust (2024 edition)
   gui: eframe + egui + egui_plot
