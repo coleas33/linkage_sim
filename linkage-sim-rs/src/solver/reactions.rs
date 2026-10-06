@@ -287,40 +287,22 @@ pub fn body_equilibrium_residual(
     // the moment through point_force_to_q, while this computes it directly in
     // world frame (accum's r×f), so a point_force_to_q sign/frame bug IS caught.
     // For force zones, two decisions are SHARED with production, not re-derived:
-    // the binary overlap gate (polygon_area < 1e-15) and the unpinned-app-point
-    // centroid (polygon_centroid). A bug in those shared geometry primitives
-    // would corrupt both sides identically and cancel — narrow blast radius
-    // (wrong app-POINT or overlap DECISION only, not a moment-arm projection).
+    // the binary overlap gate and the world application point (the overlap
+    // centroid, the locked point or the shape's contact point), both from
+    // force_zone_application. A bug there would corrupt both sides identically
+    // and cancel — narrow blast radius (wrong app-POINT or overlap DECISION
+    // only, not a moment-arm projection).
     for fe in mech.forces() {
         match fe {
             ForceElement::ForceZone(fz) => {
-                use crate::geometry::{
-                    body_rect_to_world, clip_polygon_to_aabb, polygon_area, polygon_centroid,
-                };
+                use crate::forces::elements::force_zone_application;
                 let Some(body) = mech.bodies().get(&fz.body_id) else { continue };
                 let Some(geo) = body.geometry.as_ref() else { continue };
-                let (bx, by, bth) = state.get_pose(&fz.body_id, q);
-                let corners = body_rect_to_world(bx, by, bth, geo.width, geo.height, &geo.offset);
-                let zmin = Vector2::new(fz.zone_min[0], fz.zone_min[1]);
-                let zmax = Vector2::new(fz.zone_max[0], fz.zone_max[1]);
-                let clipped = clip_polygon_to_aabb(&corners, &zmin, &zmax);
+                let zone = force_zone_application(fz, geo, state.get_pose(&fz.body_id, q));
                 // Binary overlap: any contact → full force (matches
                 // evaluate_force_zone).
-                if polygon_area(&clipped) < 1e-15 {
-                    continue;
-                }
+                let (true, Some(app)) = (zone.active, zone.point) else { continue };
                 let force = Vector2::new(fz.force[0], fz.force[1]);
-                // World application point: pinned body-local override, else
-                // the overlap-polygon centroid.
-                let app = if let Some(lp) = fz.body_local_app_point {
-                    let (c, s) = (bth.cos(), bth.sin());
-                    Vector2::new(
-                        bx + c * lp[0] - s * lp[1],
-                        by + s * lp[0] + c * lp[1],
-                    )
-                } else {
-                    polygon_centroid(&clipped)
-                };
                 accum(&mut net_f, &mut net_m, &cg_world, &mut char_len, &fz.body_id, app, force);
                 force_scale = force_scale.max(force.norm());
             }
@@ -1578,11 +1560,7 @@ mod tests {
         let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
         let mut coupler = make_bar("coupler", "B", "C", 3.0, 3.0, 0.05);
         // Geometry spanning the coupler bar so the zone can overlap it.
-        coupler.geometry = Some(BodyGeometry {
-            width: 3.0,
-            height: 0.4,
-            offset: Vector2::new(1.5, 0.0),
-        });
+        coupler.geometry = Some(BodyGeometry::new(3.0, 0.4, Vector2::new(1.5, 0.0)).unwrap());
         let rocker = make_bar("rocker", "D", "C", 2.0, 2.0, 0.02);
 
         let mut mech = Mechanism::new();
@@ -1622,6 +1600,7 @@ mod tests {
             force: [0.0, -1000.0],
             label: None,
             body_local_app_point: Some([2.5, 0.0]),
+            at_contact_point: false,
         }));
         mech.build().unwrap();
 
@@ -1637,6 +1616,73 @@ mod tests {
         let resid = body_equilibrium_residual(&mech, &q, PI / 3.0, &r.reactions, r.actuator_force)
             .expect("modeled");
         assert!(resid < 1e-9, "force-zone equilibrium residual {resid}");
+    }
+
+    /// Pin the force-zone CONTACT branch through the independent check (schema
+    /// 1.2.0): a wheel on the coupler, the force at its contact point. The check
+    /// and production share the point (force_zone_application), so this pins
+    /// evaluate_force_zone's world-to-local conversion at a turned body with the
+    /// point away from the body origin.
+    #[test]
+    fn validation_verified_force_zone_contact_branch() {
+        use crate::core::body::BodyGeometry;
+        use crate::forces::elements::ForceZoneElement;
+        let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
+        let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
+        let mut coupler = make_bar("coupler", "B", "C", 3.0, 3.0, 0.05);
+        coupler.geometry = Some(BodyGeometry::circle(0.8, Vector2::new(2.0, 0.3)).unwrap());
+        let rocker = make_bar("rocker", "D", "C", 2.0, 2.0, 0.02);
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(crank).unwrap();
+        mech.add_body(coupler).unwrap();
+        mech.add_body(rocker).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+        mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+        mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+        mech.add_revolute_joint("J4", "ground", "O4", "rocker", "D").unwrap();
+        mech.add_revolute_driver("D1", "ground", "crank", |t| t, |_t| 1.0, |_t| 0.0)
+            .unwrap();
+        mech.add_force(ForceElement::Gravity(GravityElement::default()));
+        mech.add_force(ForceElement::LinearActuator(LinearActuatorElement {
+            body_a: "coupler".to_string(),
+            point_a: [1.5, 0.0],
+            point_a_name: None,
+            body_b: "ground".to_string(),
+            point_b: [2.0, 0.0],
+            point_b_name: None,
+            force: 0.0,
+            speed_limit: 0.0,
+            stroke_min: 0.0,
+            stroke_max: 0.0,
+            end_stop_stiffness: 0.0,
+            end_stop_damping: 0.0,
+            end_stop_restitution: 0.0,
+        }));
+        // A zone over the whole wheel; a tilted force at a point away from the
+        // body origin, so a wrong world-to-local conversion would show in the
+        // residual.
+        mech.add_force(ForceElement::ForceZone(ForceZoneElement {
+            body_id: "coupler".to_string(),
+            zone_min: [-10.0, -10.0],
+            zone_max: [10.0, 10.0],
+            force: [300.0, 1000.0],
+            label: None,
+            body_local_app_point: None,
+            at_contact_point: true,
+        }));
+        mech.build().unwrap();
+
+        let q = seed_pose_at_angle(&mech, PI / 3.0);
+        let r = solve_reactions_with_actuator(&mech, &q, PI / 3.0, 1.0).unwrap();
+        assert_eq!(
+            r.validation(),
+            ValidationState::Verified,
+            "gravity + actuator + a contact-point zone should independently verify",
+        );
+        let resid = body_equilibrium_residual(&mech, &q, PI / 3.0, &r.reactions, r.actuator_force)
+            .expect("modeled");
+        assert!(resid < 1e-9, "contact-point equilibrium residual {resid}");
     }
 
     /// A mechanism containing an element type the independent check does
@@ -1930,11 +1976,7 @@ mod tests {
         let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]);
         let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
         let mut coupler = make_bar("coupler", "B", "C", 3.0, 3.0, 0.05);
-        coupler.geometry = Some(BodyGeometry {
-            width: 3.0,
-            height: 0.4,
-            offset: Vector2::new(1.5, 0.0),
-        });
+        coupler.geometry = Some(BodyGeometry::new(3.0, 0.4, Vector2::new(1.5, 0.0)).unwrap());
         let rocker = make_bar("rocker", "D", "C", 2.0, 2.0, 0.02);
         let mut mech = Mechanism::new();
         mech.add_body(ground).unwrap();
@@ -1972,6 +2014,7 @@ mod tests {
             force: [400.0, -1000.0],
             label: None,
             body_local_app_point: None,
+            at_contact_point: false,
         }));
         mech.build().unwrap();
 

@@ -380,6 +380,7 @@ risks:
     any new conversion flow must do the same (push_undo + mutate + rebuild).
 
 lessons_learned:
+  - "Linkage force zones: force_zone_application (forces::elements) is the one place that decides a zone's overlap (binary) and its application point (overlap centroid, locked point, or the shape's contact point: BodyGeometry::extreme_point_world against the force). The force evaluation, the overlap ratio, the independent equilibrium check (reactions.rs) and the canvas marker all call it; never rebuild a body's outline for a zone elsewhere. A circle is a CIRCLE_SEGMENTS (64)-gon in the overlap test, a true circle on the canvas, and exact (centre plus radius) for the contact point."
   - "Linkage canvas: FORCE_ZONE_OVERLAP_FILL is a premultiplied colour with RGB above its alpha, so it adds light: anything painted under it (a gold weight, a green arrow) comes out the same yellow. Draw markers that must stay visible after draw_force_elements (BL-042)."
   - "Linkage AppState: compute_sweep reads driver_display_offset whenever the crank range is on (the stored limits are display degrees). Every path that changes the mechanism and then sweeps must call recompute_driver_display_offset first (BL-041: share links swept a shifted range)."
   - rfd file dialogs are native-only. WASM file import uses drag-and-drop

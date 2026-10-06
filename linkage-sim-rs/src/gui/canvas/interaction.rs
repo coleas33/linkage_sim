@@ -286,7 +286,10 @@ pub fn handle_interaction(
                         cos_t * dx + sin_t * dy,
                         -sin_t * dx + cos_t * dy,
                     ];
+                    // Dropping the marker locks the point there, whatever the
+                    // zone's mode was (decision R-4).
                     let mut updated = fz.clone();
+                    updated.at_contact_point = false;
                     updated.body_local_app_point = Some(local);
                     state.update_force_element(
                         idx,
@@ -1117,6 +1120,7 @@ fn handle_create_force_zone(
                         force: [0.0, -100.0],
                         label: None,
                         body_local_app_point: None,
+                        at_contact_point: false,
                     });
 
                     state.add_force_element(fz);

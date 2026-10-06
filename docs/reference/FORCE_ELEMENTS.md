@@ -372,30 +372,36 @@ Force is applied along the unit vector between attachment points.
 
 ## 13. Force Zone
 
-Spatial force field defined as an axis-aligned rectangular zone. Applies a distributed force proportional to the overlap area between the zone and the body's geometry.
+Spatial force field defined as an axis-aligned rectangular zone. Applies its full force whenever the body's geometry overlaps the zone (binary: any overlap, full force).
 
 | Parameter | Type | Units | Description |
 |-----------|------|-------|-------------|
 | `body_id` | String | -- | Target body (must have `BodyGeometry` set) |
 | `zone_min` | [f64; 2] | m | World-space bottom-left corner of zone |
 | `zone_max` | [f64; 2] | m | World-space top-right corner of zone |
-| `force` | [f64; 2] | N | Force vector at full overlap |
+| `force` | [f64; 2] | N | Force vector while the geometry overlaps the zone |
 | `label` | Option | -- | Optional display label |
+| `body_local_app_point` | Option<[f64; 2]> | m | Locked application point, body-local |
+| `at_contact_point` | bool | -- | Apply at the shape's contact point (schema 1.2.0; default false, left out of files when false) |
 
 **Equation:**
 
 ```
-overlap_area = polygon_clip(body_rect_world, zone_AABB)
-ratio = min(overlap_area / body_area, 1.0)
-F = force * ratio
+overlap = polygon_clip(geometry_outline_world, zone_AABB)   (a circle is a 64-gon here)
+F = force            if area(overlap) >= 1e-15, else 0
 ```
 
-Applied at the centroid of the clipped overlap polygon (converted to body-local coordinates for the generalized force mapping).
+**Application point** (`force_zone_application`, shared by the force evaluation, the overlap ratio, the independent equilibrium check and the canvas):
+- **Contact point** (`at_contact_point`): the shape's extreme point against the force, found at every pose: for an upward force the lowest point (a wheel's bottom, straight below its hub however the wheel turns); a level rectangle edge gives the edge's midpoint. Wins over a locked point. A zero force falls back to the lowest point. The contact point need not lie inside the zone; the force applies only while the geometry overlaps it.
+- **Locked point** (`body_local_app_point`): a fixed point on the body.
+- **Overlap centre** (neither): the centroid of the clipped overlap polygon.
+
+The point is converted to body-local coordinates for the generalized force mapping.
 
 **Special behavior:**
-- Body must have `BodyGeometry` (width, height, offset). Returns zero if geometry is missing.
-- The body rectangle is transformed to world space, then clipped against the axis-aligned zone using Sutherland-Hodgman polygon clipping.
-- Returns zero if overlap area < `1e-15`.
+- Body must have `BodyGeometry`: a rectangle (`width`, `height`, `offset`) or a circle (`shape: "circle"`, diameter in `width`). Returns zero if geometry is missing.
+- The outline is transformed to world space, then clipped against the axis-aligned zone using Sutherland-Hodgman polygon clipping.
+- Returns zero if overlap area < `1e-15`, in every application mode.
 
 ---
 

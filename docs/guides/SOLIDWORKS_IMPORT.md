@@ -24,7 +24,7 @@ All units are **SI**: meters, radians, kg, N.
 
 ```json
 {
-  "schema_version": "1.1.0",
+  "schema_version": "1.2.0",
 
   "bodies": {
     "ground": {
@@ -124,7 +124,7 @@ All units are **SI**: meters, radians, kg, N.
 
 | Field | Description |
 |---|---|
-| `schema_version` | Always `"1.1.0"` |
+| `schema_version` | Always `"1.2.0"` |
 | `bodies` | Map of body ID to body definition. Must include `"ground"`. |
 | `attachment_points` | Body-local coordinates `[x, y]` in meters. `[0, 0]` = body origin. |
 | `mass` | Body mass in kg. Ground = 0. Use 1.0 as default for moving bodies. |

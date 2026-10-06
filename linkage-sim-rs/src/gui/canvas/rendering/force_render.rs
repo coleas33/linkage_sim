@@ -75,45 +75,20 @@ pub(super) fn actuator_label_text(state: &AppState, la: &LinearActuatorElement) 
     }
 }
 
-/// Compute the current world-space application point of a `ForceZoneElement`.
+/// Compute the current world-space application point of a `ForceZoneElement`
+/// (`force_zone_application`): the contact point or the locked point at the
+/// body's current pose, else the overlap centroid.
 ///
-/// - If `body_local_app_point` is `Some`, the override point is transformed
-///   by the body's current pose.
-/// - Otherwise, the overlap polygon (body geometry ∩ zone AABB) is computed
-///   and its centroid is returned.
-///
-/// Returns `None` when the target body is missing, has no geometry, or
-/// there is no overlap and no override.
+/// Returns `None` when the target body is missing, has no geometry, or the
+/// zone uses the centroid and there is no overlap.
 pub fn force_zone_app_point_world(
     fz: &ForceZoneElement,
     mech: &Mechanism,
     mech_state: &State,
     q: &nalgebra::DVector<f64>,
 ) -> Option<nalgebra::Vector2<f64>> {
-    let body = mech.bodies().get(&fz.body_id)?;
-    let geo = body.geometry.as_ref()?;
-    let (bx, by, btheta) = mech_state.get_pose(&fz.body_id, q);
-    let cos_t = btheta.cos();
-    let sin_t = btheta.sin();
-
-    if let Some(lp) = fz.body_local_app_point {
-        return Some(nalgebra::Vector2::new(
-            bx + cos_t * lp[0] - sin_t * lp[1],
-            by + sin_t * lp[0] + cos_t * lp[1],
-        ));
-    }
-
-    let corners = crate::geometry::body_rect_to_world(
-        bx, by, btheta, geo.width, geo.height, &geo.offset,
-    );
-    let zmin = nalgebra::Vector2::new(fz.zone_min[0], fz.zone_min[1]);
-    let zmax = nalgebra::Vector2::new(fz.zone_max[0], fz.zone_max[1]);
-    let clipped = crate::geometry::clip_polygon_to_aabb(&corners, &zmin, &zmax);
-    if clipped.len() >= 3 {
-        Some(crate::geometry::polygon_centroid(&clipped))
-    } else {
-        None
-    }
+    let geo = mech.bodies().get(&fz.body_id)?.geometry.as_ref()?;
+    force_zone_application(fz, geo, mech_state.get_pose(&fz.body_id, q)).point
 }
 
 // ── Force element rendering ──────────────────────────────────────────────────
@@ -465,18 +440,10 @@ fn draw_force_zone(
     // 5. Active overlap highlight + application-point marker.
     if let Some(body) = mech.bodies().get(&fz.body_id) {
         if let Some(ref geo) = body.geometry {
-            let (bx, by, btheta) = mech_state.get_pose(&fz.body_id, q);
-            let corners = crate::geometry::body_rect_to_world(
-                bx, by, btheta, geo.width, geo.height, &geo.offset,
-            );
-            let zone_min_v = nalgebra::Vector2::new(fz.zone_min[0], fz.zone_min[1]);
-            let zone_max_v = nalgebra::Vector2::new(fz.zone_max[0], fz.zone_max[1]);
-            let clipped = crate::geometry::clip_polygon_to_aabb(
-                &corners, &zone_min_v, &zone_max_v,
-            );
-            let has_overlap = clipped.len() >= 3;
-            if has_overlap {
-                let screen_verts: Vec<Pos2> = clipped
+            let zone = force_zone_application(fz, geo, mech_state.get_pose(&fz.body_id, q));
+            if zone.active {
+                let screen_verts: Vec<Pos2> = zone
+                    .overlap
                     .iter()
                     .map(|v| {
                         let sp = view.world_to_screen(v.x, v.y);
@@ -490,34 +457,19 @@ fn draw_force_zone(
                 ));
             }
 
-            // Application-point marker. Always drawn when the zone has
-            // any overlap (or when the user has pinned a body-local
-            // override, regardless of overlap, so they can still see
-            // where the force would act once the mechanism reaches the
-            // zone). Shown as a crosshair + dot. A locked override uses
-            // a stronger color; the auto-centroid uses a softer color.
-            let cos_t = btheta.cos();
-            let sin_t = btheta.sin();
-
-            let (app_world, is_locked) = if let Some(lp) = fz.body_local_app_point {
-                // Override: world = body_pose + R(theta) * local
-                let wx = bx + cos_t * lp[0] - sin_t * lp[1];
-                let wy = by + sin_t * lp[0] + cos_t * lp[1];
-                (Some(nalgebra::Vector2::new(wx, wy)), true)
-            } else if has_overlap {
-                (Some(crate::geometry::polygon_centroid(&clipped)), false)
-            } else {
-                (None, false)
+            // Application-point marker. Drawn whenever the point exists: a
+            // locked or contact point even before the body reaches the zone,
+            // so the user sees where the force will act; the centroid only
+            // with overlap. Shown as a crosshair + dot. A locked or contact
+            // point uses a stronger color; the auto-centroid a softer one.
+            let (color, label) = match zone.mode {
+                ZoneAppMode::Centroid => (Color32::from_rgb(255, 215, 120), "F"),
+                ZoneAppMode::Locked => (Color32::from_rgb(255, 165, 80), "F (locked)"),
+                ZoneAppMode::Contact => (Color32::from_rgb(255, 165, 80), "F (contact)"),
             };
-
-            if let Some(app_w) = app_world {
+            if let Some(app_w) = zone.point {
                 let sp = view.world_to_screen(app_w.x, app_w.y);
                 let center = Pos2::new(sp[0], sp[1]);
-                let color = if is_locked {
-                    Color32::from_rgb(255, 165, 80)
-                } else {
-                    Color32::from_rgb(255, 215, 120)
-                };
                 let stroke = Stroke::new(1.5, color);
                 let half = 8.0_f32;
                 // Crosshair.
@@ -537,8 +489,6 @@ fn draw_force_zone(
                 );
                 // Filled center dot.
                 painter.circle_filled(center, 3.5, color);
-                // Label — "F" for auto, "F (locked)" for override.
-                let label = if is_locked { "F (locked)" } else { "F" };
                 painter.text(
                     Pos2::new(center.x + half + 3.0, center.y),
                     egui::Align2::LEFT_CENTER,
