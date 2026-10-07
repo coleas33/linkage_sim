@@ -52,6 +52,15 @@ pub(crate) fn key_press(key: egui::Key) -> egui::Event {
     egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE }
 }
 
+/// A key tapped with `modifiers` held: its press and its release in one frame. egui keeps a
+/// pressed key in `InputState::keys_down` until its release, so a press alone holds it down for
+/// good (and an egui panel waiting for the keys to settle waits forever).
+pub(crate) fn key_tap(key: egui::Key, modifiers: egui::Modifiers) -> Vec<egui::Event> {
+    [true, false]
+        .map(|pressed| egui::Event::Key { key, physical_key: None, pressed, repeat: false, modifiers })
+        .to_vec()
+}
+
 /// A click at `at` as the input of three frames: the pointer moved there,
 /// the press, the release.
 pub(crate) fn click_events(at: egui::Pos2) -> [Vec<egui::Event>; 3] {

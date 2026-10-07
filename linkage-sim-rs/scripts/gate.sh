@@ -100,6 +100,12 @@ cargo clippy --manifest-path "$MAGCOUPLING" --target wasm32-unknown-unknown --fe
 cargo clippy --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_WEB_ARGS[@]}" -- -D warnings
 
 echo "== gate 10/12: workbook-parity guard (the calculator's shipped native and wasm32 builds; negative controls) =="
+# The linkage builds are left out because they have no magcoupling-rs in them; if that
+# changes, they must come back into the guard.
+if grep -q 'magcoupling-rs' Cargo.toml; then
+  echo "FAIL gate 10/12: linkage-sim-rs depends on magcoupling-rs again; guard its builds here too"
+  exit 1
+fi
 cargo check --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_NATIVE_ARGS[@]}" --message-format=json-render-diagnostics \
   | magcoupling_assert_shipped magcoupling-app
 cargo check --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_WEB_ARGS[@]}" --message-format=json-render-diagnostics \

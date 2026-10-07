@@ -2,7 +2,7 @@
 //!
 //! Built for wasm32-unknown-unknown and bound with wasm-bindgen by
 //! `linkage-sim-rs/scripts/build_magcoupling_web.sh` into
-//! `linkage-sim-rs/web/magcoupler/`, served at `/magcoupler/`. The JS glue
+//! `linkage-sim-rs/web/tools/magcoupler/`, served at `/tools/magcoupler/`. The JS glue
 //! calls [`start`], which runs the app in the page's canvas through eframe's
 //! WebRunner, as `linkage-sim-rs/src/bin/linkage_web.rs` does. On a desktop,
 //! `cargo run --features app --bin magcoupling-web` opens the native window.

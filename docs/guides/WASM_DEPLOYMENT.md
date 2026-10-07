@@ -31,23 +31,23 @@ linkage-sim-rs/scripts/build_web.sh
 
 This script builds both web bundles:
 
-1. **The linkage app** (`web/linkage/`, served at `/linkage/`): `cargo build --release` with the
+1. **The linkage app** (`web/tools/linkage/`, served at `/tools/linkage/`): `cargo build --release` with the
    cargo arguments `LINKAGE_WEB_ARGS` from `scripts/magcoupling_shipped.sh` (`--bin linkage-web
    --target wasm32-unknown-unknown --no-default-features --features raster`), then the JS bindings:
    ```bash
    wasm-bindgen \
        target/wasm32-unknown-unknown/release/linkage-web.wasm \
-       --out-dir web/linkage \
+       --out-dir web/tools/linkage \
        --target web \
        --no-typescript
    ```
 
-2. **The magnetic coupling calculator** (`web/magcoupler/`, served at `/magcoupler/`):
+2. **The magnetic coupling calculator** (`web/tools/magcoupler/`, served at `/tools/magcoupler/`):
    `scripts/build_magcoupling_web.sh`, the same way with `MAGCOUPLING_WEB_ARGS`, piped through the
    workbook-parity guard (`magcoupling_assert_shipped`: the shipped calculator must never have
    magcoupling-rs's test-only `workbook-parity` feature).
 
-The hub page, `web/index.html` (served at `/`), links both and is committed as it is.
+The hub page, `web/tools/index.html` (served at `/tools/`), links both; `web/index.html` forwards `/` to it for a server without the redirect. Both are committed as they are.
 
 To build by hand, run the script rather than copying its commands: the cargo arguments live once,
 in `scripts/magcoupling_shipped.sh`, and the guard runs only through the scripts.
@@ -65,7 +65,7 @@ After building, serve the `web/` directory locally:
 linkage-sim-rs/scripts/serve_web.sh
 ```
 
-This starts a Python HTTP server at `http://localhost:8080`: the hub page at `/`, the linkage app at `/linkage/` and the calculator at `/magcoupler/`. The script will exit with an error if the WASM binary has not been built yet. The redirects in `vercel.json` run on Vercel only.
+This starts a Python HTTP server at `http://localhost:8080`: the hub page at `/tools/` (`/` forwards there), the linkage app at `/tools/linkage/` and the calculator at `/tools/magcoupler/`. The script will exit with an error if the WASM binary has not been built yet. The redirects in `vercel.json` run on Vercel only.
 
 You can also serve manually:
 
@@ -73,7 +73,7 @@ You can also serve manually:
 cd linkage-sim-rs/web && python -m http.server 8080
 ```
 
-Then open `http://localhost:8080/` in your browser.
+Then open `http://localhost:8080/tools/` in your browser.
 
 ## Vercel Deployment
 
@@ -102,8 +102,8 @@ Production deployments are automated via the GitHub Actions workflow at `.github
 The file `linkage-sim-rs/web/vercel.json` configures:
 
 - `outputDirectory` set to `.` (the `web/` folder itself is the deploy root), served on colesorkness.com.
-- `trailingSlash: true`, so `/linkage` becomes `/linkage/` (the pages import their glue by absolute paths either way).
-- Redirects, first match wins: on linkage.colesorkness.com, `/magcoupling/...` to colesorkness.com/magcoupler/..., `/?tool=magcoupling` to the calculator, and every other path to colesorkness.com/linkage/... (old share links keep their `?m=` query); on any host, `/magcoupling/...` to `/magcoupler/...`. `tests/web_layout.rs` pins them.
+- `trailingSlash: true`, so `/linkage` becomes `/tools/linkage/` (the pages import their glue by absolute paths either way).
+- Redirects, first match wins, all temporary (307) until the live checks pass: on linkage.colesorkness.com, `/magcoupling/...` to colesorkness.com/tools/magcoupler/..., `/?tool=magcoupling` (without `m`) to the calculator, and every other path to colesorkness.com/tools/linkage/...; on any host, `/magcoupling/...` to `/tools/magcoupler/...` and `/` to `/tools/`. Share links keep their `m` through an explicit capture (`has` query `m`, `?m=:m`), and the sources use `:path(.*)`, not `:path*`, which Vercel compiles so strictly that it never matches a path ending in `/`. `tests/web_layout.rs` pins them.
 - Header rules: `.wasm` files with `Content-Type: application/wasm`, and the wasm and both JS glue files with `Cache-Control: public, max-age=0, must-revalidate`.
 
 ## Known Limitations (WASM Build)

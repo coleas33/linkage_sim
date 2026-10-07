@@ -1456,7 +1456,7 @@ fn load_background_image(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gui::test_support::{central_panel_frame, drawn_texts, drew_text, key_press, typed};
+    use crate::gui::test_support::{central_panel_frame, drawn_texts, drew_text, key_press, key_tap, screen_input, typed, NATIVE_SCREEN};
 
     /// Four-bar with weights W1 and W2 on the coupler.
     fn fourbar_with_weights() -> AppState {
@@ -1617,6 +1617,67 @@ mod tests {
         assert!(state.find_point_mass("coupler", "W1").is_some(), "the weight survives");
         assert_eq!(state.selected, Some(weight("W1")));
         assert_eq!(state.undo_history.undo_count(), depth);
+    }
+
+    // ── Keyboard shortcuts and the canvas's keys ────────────────────────────
+
+    /// One frame of the linkage app's keyboard readers with `events`, `modifiers` held, in
+    /// `update`'s order: the shortcuts, the delete shortcut, then the canvas (its arrow nudge,
+    /// F, Escape and Enter keys).
+    fn keys_frame(
+        ctx: &egui::Context,
+        state: &mut AppState,
+        modifiers: egui::Modifiers,
+        events: Vec<egui::Event>,
+    ) -> egui::FullOutput {
+        let input = egui::RawInput { modifiers, ..screen_input(events, NATIVE_SCREEN) };
+        ctx.run(input, |ctx| {
+            handle_keyboard_shortcuts(ctx, state);
+            handle_delete_shortcut(ctx, state);
+            egui::CentralPanel::default().show(ctx, |ui| canvas::draw_canvas(ui, state));
+        })
+    }
+
+    /// The four-bar with weights W1 and W2 (two undo steps) on the fitted canvas.
+    fn fourbar_on_the_canvas() -> (egui::Context, AppState) {
+        let ctx = egui::Context::default();
+        let mut state = fourbar_with_weights();
+        for _ in 0..2 {
+            keys_frame(&ctx, &mut state, egui::Modifiers::NONE, Vec::new());
+        }
+        (ctx, state)
+    }
+
+    #[test]
+    fn ctrl_z_undoes_and_ctrl_y_or_ctrl_shift_z_redoes_the_model() {
+        let (ctx, mut state) = fourbar_on_the_canvas();
+        let depth = state.undo_history.undo_count();
+        let ctrl = egui::Modifiers::COMMAND;
+        let ctrl_shift = egui::Modifiers { shift: true, ..egui::Modifiers::COMMAND };
+
+        keys_frame(&ctx, &mut state, ctrl, key_tap(egui::Key::Z, ctrl));
+        assert!(state.find_point_mass("coupler", "W2").is_none(), "Ctrl+Z undid the last edit");
+        assert_eq!(state.undo_history.undo_count(), depth - 1);
+        keys_frame(&ctx, &mut state, ctrl, key_tap(egui::Key::Y, ctrl));
+        assert!(state.find_point_mass("coupler", "W2").is_some(), "Ctrl+Y redid it");
+        assert_eq!(state.undo_history.undo_count(), depth);
+
+        // Ctrl+Shift+Z redoes, and never also undoes (the shift guard on Ctrl+Z).
+        keys_frame(&ctx, &mut state, ctrl, key_tap(egui::Key::Z, ctrl));
+        keys_frame(&ctx, &mut state, ctrl_shift, key_tap(egui::Key::Z, ctrl_shift));
+        assert!(state.find_point_mass("coupler", "W2").is_some(), "Ctrl+Shift+Z redid the edit");
+        assert_eq!(state.undo_history.undo_count(), depth);
+    }
+
+    #[test]
+    fn an_arrow_key_nudges_the_selected_link_by_one_undo_step() {
+        let (ctx, mut state) = fourbar_on_the_canvas();
+        let none = egui::Modifiers::NONE;
+        state.selected = Some(SelectedEntity::Body("coupler".to_string()));
+        let depth = state.undo_history.undo_count();
+        keys_frame(&ctx, &mut state, none, key_tap(egui::Key::ArrowRight, none));
+        assert_eq!(state.undo_history.undo_count(), depth + 1, "the arrow key nudged the link");
+        assert_eq!(state.selected, Some(SelectedEntity::Body("coupler".to_string())));
     }
 
     /// The window titles egui was asked to send in a frame.

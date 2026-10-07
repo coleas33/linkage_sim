@@ -13,8 +13,8 @@ use super::blueprint_ops::detect_driver_joint_id;
 /// The start of every share link: the linkage app's page on colesorkness.com,
 /// then the `?m=` parameter the page reads (`linkage_web.rs`). Links made
 /// before the move point at linkage.colesorkness.com, which redirects here
-/// with the query kept (`web/vercel.json`).
-pub const SHARE_URL_BASE: &str = "https://colesorkness.com/linkage/?m=";
+/// with the `?m=` kept (`web/vercel.json`).
+pub const SHARE_URL_BASE: &str = "https://colesorkness.com/tools/linkage/?m=";
 
 /// Compress a JSON string with deflate and then base64url-encode it.
 /// This produces a URL-safe string suitable for `?m=` parameter.
@@ -728,8 +728,9 @@ mod tests {
     }
 
     /// A link written at commit 49fbd3f, before the magcoupling panel's spreadsheet export
-    /// (rust_xlsxwriter's zip) switched flate2 to its zlib-rs backend: links written since may
-    /// differ in their bytes, and every link written before must still decode.
+    /// (rust_xlsxwriter's zip) switched flate2 to its zlib-rs backend; every link written then
+    /// must still decode. (The linkage app no longer carries the panel, so it is back on
+    /// miniz_oxide; the next test pins a link the zlib-rs builds wrote.)
     #[test]
     fn share_url_written_before_the_zlib_rs_backend_still_decodes() {
         let json = r#"{"schema_version":"1.0.0","bodies":{"ground":{"attachment_points":{"A":[0.0,0.0],"B":[0.1,0.0]},"mass":0.0,"cg_local":[0.0,0.0],"izz_cg":0.0}},"joints":{},"drivers":{},"load_cases":[],"forces":[],"mounting_angle":0.0,"linear_drivers":[]}"#;
@@ -738,6 +739,16 @@ mod tests {
             decode_mechanism_from_url(written).expect("decode failed"),
             json
         );
+    }
+
+    /// A link written by the zlib-rs builds (commits 49fbd3f to 7d6d323, when the linkage app
+    /// carried the calculator's panel): the same mechanism as the test above, in other bytes.
+    /// Every link written then must decode with the miniz_oxide backend the app is back on.
+    #[test]
+    fn share_url_written_by_the_zlib_rs_backend_still_decodes() {
+        let json = r#"{"schema_version":"1.0.0","bodies":{"ground":{"attachment_points":{"A":[0.0,0.0],"B":[0.1,0.0]},"mass":0.0,"cg_local":[0.0,0.0],"izz_cg":0.0}},"joints":{},"drivers":{},"load_cases":[],"forces":[],"mounting_angle":0.0,"linear_drivers":[]}"#;
+        let written = "VU7LCsMgEPyXPUtIrrm1vxGCbNWaLT6K2h4S8u9ZbVPoYWGGeexskNViPMq3SZligBGGru96EHCLmkyGcQOb4ivoirAUVIs3ochnpFCafIFx4ojgmwVcGxsa2wV4zGyqMigrXVTo_uy0rlLZ5tjZ_jhbGetEddWHuIhaKsx10cS5e0zqxJ7nFQpWYrDOfL85CgaT_JVM834A";
+        assert_eq!(decode_mechanism_from_url(written).expect("the zlib-rs link decodes"), json);
     }
 
     #[test]
@@ -759,7 +770,7 @@ mod tests {
         use crate::gui::samples::SampleMechanism;
         use crate::gui::state::AppState;
 
-        assert_eq!(SHARE_URL_BASE, "https://colesorkness.com/linkage/?m=");
+        assert_eq!(SHARE_URL_BASE, "https://colesorkness.com/tools/linkage/?m=");
         let mut src = AppState::default();
         src.load_sample(SampleMechanism::FourBar);
         let url = src.generate_share_url().expect("generate_share_url failed");

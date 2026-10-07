@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn the_web_page_background_is_the_panel_colour() {
-        let page = include_str!("../../../linkage-sim-rs/web/magcoupler/index.html");
+        let page = include_str!("../../../linkage-sim-rs/web/tools/magcoupler/index.html");
         let [r, g, b, _] = cad_dark_visuals().panel_fill.to_array();
         let colour = format!("background: #{r:02x}{g:02x}{b:02x};");
         assert!(page.contains(&colour), "index.html has no {colour}");

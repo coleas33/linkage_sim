@@ -65,7 +65,7 @@ pub const PATH_MIGRATIONS: &[PathMigration] = &[];
 
 /// The public page share links point at when the host does not know its own address (the
 /// native app). The web app uses its own address instead.
-pub const PUBLIC_BASE_URL: &str = "https://colesorkness.com/magcoupler/";
+pub const PUBLIC_BASE_URL: &str = "https://colesorkness.com/tools/magcoupler/";
 
 /// The query parameter of a share link: the linkage tool's `?m=`.
 pub const SHARE_PARAM: &str = "m";
@@ -442,7 +442,7 @@ mod tests {
         for design in [Design::default(), edited()] {
             let link = share_link(PUBLIC_BASE_URL, &design);
             let payload = link
-                .strip_prefix("https://colesorkness.com/magcoupler/?m=")
+                .strip_prefix("https://colesorkness.com/tools/magcoupler/?m=")
                 .expect("the link is the base, then ?m=");
             assert!(
                 payload

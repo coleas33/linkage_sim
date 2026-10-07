@@ -15,12 +15,12 @@
 # "compiler-artifact" line), so it sees exactly the feature set cargo built
 # the shipped binary with.
 
-# The web bundle (linkage-sim-rs/web/magcoupler/, served at /magcoupler/).
+# The web bundle (linkage-sim-rs/web/tools/magcoupler/, served at /tools/magcoupler/).
 MAGCOUPLING_WEB_ARGS=(--features app --bin magcoupling-web --target wasm32-unknown-unknown)
 # The native desktop app.
 MAGCOUPLING_NATIVE_ARGS=(--features app --bin magcoupling-app)
 # The linkage app's web bundle (cargo run from linkage-sim-rs/; served at
-# /linkage/ from linkage-sim-rs/web/linkage/). It has no magcoupling-rs in it,
+# /tools/linkage/ from linkage-sim-rs/web/tools/linkage/). It has no magcoupling-rs in it,
 # so the guard does not check it.
 LINKAGE_WEB_ARGS=(--bin linkage-web --target wasm32-unknown-unknown --no-default-features --features raster)
 

@@ -11,14 +11,18 @@ use super::{dxf_import, export, tutorial};
 /// Tools -> the magnetic coupling calculator's item.
 pub(crate) const MAGCOUPLER_ITEM: &str = "Magnetic coupling calculator";
 
-/// The calculator's own site (magcoupling-rs, `web/magcoupler/`), opened in a
-/// new browser tab. On the web the path resolves against the page's own
-/// address, so a local server opens its own copy; the desktop app opens the
-/// public site.
+/// The calculator's own site (magcoupling-rs, `web/tools/magcoupler/`): its
+/// path on this site, and its public address.
+pub(crate) const MAGCOUPLER_PATH: &str = "/tools/magcoupler/";
+pub(crate) const MAGCOUPLER_PUBLIC_URL: &str = "https://colesorkness.com/tools/magcoupler/";
+
+/// What Tools -> Magnetic coupling calculator opens in a new browser tab. On
+/// the web the path resolves against the page's own address, so a local server
+/// opens its own copy; the desktop app opens the public site.
 #[cfg(target_arch = "wasm32")]
-pub(crate) const MAGCOUPLER_URL: &str = "/magcoupler/";
+pub(crate) const MAGCOUPLER_URL: &str = MAGCOUPLER_PATH;
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) const MAGCOUPLER_URL: &str = "https://colesorkness.com/magcoupler/";
+pub(crate) const MAGCOUPLER_URL: &str = MAGCOUPLER_PUBLIC_URL;
 
 pub(crate) fn draw_menu_bar(
     ctx: &egui::Context,
@@ -883,14 +887,14 @@ pub(crate) fn draw_menu_bar(
                 let tools_resp = ui.menu_button("Tools", |ui| {
                     if ui
                         .button(MAGCOUPLER_ITEM)
-                        .on_hover_text("The magnetic slip coupling calculator, a site of its own (colesorkness.com/magcoupler), in a new browser tab.")
+                        .on_hover_text("The magnetic slip coupling calculator, a site of its own (colesorkness.com/tools/magcoupler), in a new browser tab.")
                         .clicked()
                     {
                         ui.ctx().open_url(egui::OpenUrl::new_tab(MAGCOUPLER_URL));
                         ui.close();
                     }
                 });
-                tools_resp.response.on_hover_text("Calculators beside the mechanism");
+                tools_resp.response.on_hover_text("Related calculators, each a site of its own");
             });
         });
 }
@@ -1104,8 +1108,25 @@ mod tests {
         assert!(text_rect(&after, MAGCOUPLER_ITEM).is_none(), "the menu closed");
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn the_desktop_app_opens_the_public_calculator_site() {
-        assert_eq!(MAGCOUPLER_URL, "https://colesorkness.com/magcoupler/");
+        assert_eq!(MAGCOUPLER_URL, MAGCOUPLER_PUBLIC_URL);
+    }
+
+    #[test]
+    fn the_calculator_link_is_where_the_site_serves_the_calculator() {
+        // The path: the hub page links it, and the calculator's page lives there.
+        let web = concat!(env!("CARGO_MANIFEST_DIR"), "/web");
+        let hub = std::fs::read_to_string(format!("{web}/tools/index.html")).expect("the hub page");
+        assert!(hub.contains(&format!("href=\"{MAGCOUPLER_PATH}\"")), "the hub links {MAGCOUPLER_PATH}");
+        assert!(std::path::Path::new(&format!("{web}{MAGCOUPLER_PATH}index.html")).is_file());
+        // The public address: that path on colesorkness.com, and the calculator's own share base.
+        assert_eq!(MAGCOUPLER_PUBLIC_URL, format!("https://colesorkness.com{MAGCOUPLER_PATH}"));
+        let session = include_str!("../../../magcoupling-rs/src/gui/session.rs");
+        assert!(
+            session.contains(&format!("pub const PUBLIC_BASE_URL: &str = \"{MAGCOUPLER_PUBLIC_URL}\";")),
+            "magcoupling-rs PUBLIC_BASE_URL is {MAGCOUPLER_PUBLIC_URL}"
+        );
     }
 }

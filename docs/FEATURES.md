@@ -237,7 +237,7 @@ All force elements are editable in the GUI property panel and rendered on the ca
 
 ### Magnetic Coupling Calculator
 
-- **Tools > Magnetic coupling calculator** -- opens the magnetic slip coupling calculator (`magcoupling-rs`), a site of its own at colesorkness.com/magcoupler, in a new browser tab (the desktop app opens it in the default browser). Until 2026-10-06 it was a window inside the linkage app; old `?tool=magcoupling` links redirect to the calculator's site
+- **Tools > Magnetic coupling calculator** -- opens the magnetic slip coupling calculator (`magcoupling-rs`), a site of its own at colesorkness.com/tools/magcoupler, in a new browser tab (the desktop app opens it in the default browser). Until 2026-10-06 it was a window inside the linkage app; old `?tool=magcoupling` links redirect to the calculator's site
 
 ### Additional Fixes & Polish
 

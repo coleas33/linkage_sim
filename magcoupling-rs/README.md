@@ -22,7 +22,7 @@ retainer span), inverse sizing (A1), the housing autofit suggestion and the spac
 claim, one aluminium modulus, and each grade-mode ring's own alpha and density
 (decisions A2-1 to A2-9). M4 infrastructure in place: the `gui` and `app` features, the panel
 (`gui::MagcouplingPanel`), the native and web binaries, and the second web
-bundle, served at [colesorkness.com/magcoupler](https://colesorkness.com/magcoupler/) (see [Features and binaries](#features-and-binaries)).
+bundle, served at [colesorkness.com/tools/magcoupler](https://colesorkness.com/tools/magcoupler/) (see [Features and binaries](#features-and-binaries)).
 Addendum A-3 (explanations) complete: the engine side of the equation
 explorer (`src/engine/explain/`: one evaluable markup per result, proven by the drift guard, over
 decision 31's paths, the geometry callouts and the terms they need to reach inputs), the A3
@@ -409,40 +409,40 @@ scroll-area floor lowered to none).
   (under the status line when the Key design group does not list it: the ring radius). Leaving the
   mode keeps the value, solving first a change still waiting for its debounce (M41-7).
 - **No I/O in the panel.** Saving and picking a file are `PanelRequest`s the host does
-  (`take_requests`, then `load_design_file` and `report`), so the M5 linkage window can host the
-  panel with its own file handling; the share link base is the host's (`set_share_base`).
+  (`take_requests`, then `load_design_file` and `report`), so a host (the standalone app; the
+  linkage window from M5 to 2026-10-06) brings its own file handling; the share link base is the
+  host's (`set_share_base`).
 - **Theme** (`app/theme.rs`): the standalone app applies the linkage app's CAD dark visuals and
   spacing, dark whatever the system prefers (M41-3; a test keeps the visuals equal to
   `linkage-sim-rs/src/gui/theme.rs`), and the web page's background is the same panel colour.
-  The panel sets no theme: in M5 the host's applies.
+  The panel sets no theme: the host's applies.
 
-**Versions.** egui and eframe use the same 0.32 line as `linkage-sim-rs`, so
-M5 embeds the panel with one egui; `Cargo.toml` has caret ranges, and
-`Cargo.lock` pins the versions of `linkage-sim-rs/Cargo.lock` (egui and eframe
-0.32.3, egui_plot 0.33.0, wasm-bindgen 0.2.114, which is the `wasm-bindgen-cli`
-version `deploy-web.yml` installs). Gate 11 fails when the two lock files or the CLI
-pin disagree; bump them together.
+**Versions.** `Cargo.toml` has caret ranges (egui and eframe 0.32, egui_plot 0.33).
+`Cargo.lock` pins wasm-bindgen 0.2.114, the `wasm-bindgen-cli` version `deploy-web.yml`
+installs to bind both web bundles; gate 11 fails when either crate's lock or the CLI pin
+disagree, so bump them together. egui and eframe no longer have to match `linkage-sim-rs`
+since the linkage app stopped embedding the panel (2026-10-06).
 
 | Binary | Target | Run |
 |---|---|---|
 | `magcoupling-app` | native | `cargo run --release --features app --bin magcoupling-app` (from `magcoupling-rs/`) |
-| `magcoupling-web` | wasm32 | `bash linkage-sim-rs/scripts/build_magcoupling_web.sh` builds it into `linkage-sim-rs/web/magcoupler/`; `bash linkage-sim-rs/scripts/serve_web.sh [PORT]` serves it at `http://localhost:8080/magcoupler/`, next to the linkage app at `/linkage/`. `build_web.sh` builds both bundles. On a desktop, `cargo run --features app --bin magcoupling-web` opens the native window |
+| `magcoupling-web` | wasm32 | `bash linkage-sim-rs/scripts/build_magcoupling_web.sh` builds it into `linkage-sim-rs/web/tools/magcoupler/`; `bash linkage-sim-rs/scripts/serve_web.sh [PORT]` serves it at `http://localhost:8080/tools/magcoupler/`, next to the linkage app at `/tools/linkage/`. `build_web.sh` builds both bundles. On a desktop, `cargo run --features app --bin magcoupling-web` opens the native window |
 
-The web page is `linkage-sim-rs/web/magcoupler/index.html` (committed; the JS
+The web page is `linkage-sim-rs/web/tools/magcoupler/index.html` (committed; the JS
 glue and the wasm are gitignored build outputs). Its canvas id is
 `app::CANVAS_ID`, which a test checks. `deploy-web.yml` runs
 `build_web.sh`, which builds the linkage bundle and then runs `build_magcoupling_web.sh`, so both bundles ship
-(colesorkness.com/magcoupler/; the old linkage.colesorkness.com/magcoupling/ links redirect there,
+(colesorkness.com/tools/magcoupler/; the old linkage.colesorkness.com/magcoupling/ links redirect there,
 share links included) on the next push of `main`; pushing needs the user's
 go. The web smoke test is the `gui-smoke` workflow (`.claude/workflows/gui-smoke.js`): it opens
-`/magcoupler/` through a pinned share link and checks the canvas, the geometry view in the first
+`/tools/magcoupler/` through a pinned share link and checks the canvas, the geometry view in the first
 screenshot (the default view: no click), the console lines
 `magcoupling: loaded the design from the share link`, `magcoupling sizing: Solved at` and
 `magcoupling explorer: ` (the equation registry built in the browser), then
 clicks "Load design" once (found in a screenshot), uploads a pinned design file through rfd's web
 picker and checks `magcoupling: loaded a design file`, with zero console errors (a test decodes
-the pinned link and the design file). Its other step checks the hub page at `/` and the linkage
-app at `/linkage/`.
+the pinned link and the design file). Its other step checks the hub page at `/tools/` and the linkage
+app at `/tools/linkage/`.
 
 **workbook-parity never ships.** The feature reaches `cargo test` and
 `cargo clippy --all-targets` through the self dev-dependency, and cargo then

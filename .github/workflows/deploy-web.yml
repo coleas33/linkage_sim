@@ -36,11 +36,11 @@ jobs:
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli@0.2.114 --force
 
-      # Both bundles: the linkage app (web/, with the calculator's panel in
-      # Tools -> Magnetic coupling) and the magnetic coupling calculator at
-      # /magcoupling/ (web/magcoupling/). The scripts hold the build arguments
-      # (scripts/magcoupling_shipped.sh) and fail the job if cargo built either
-      # bundle with the test-only workbook-parity feature.
+      # Both bundles: the linkage app at /tools/linkage/ (web/tools/linkage/)
+      # and the magnetic coupling calculator at /tools/magcoupler/
+      # (web/tools/magcoupler/). The scripts hold the build arguments
+      # (scripts/magcoupling_shipped.sh) and fail the job if cargo built the
+      # calculator with the test-only workbook-parity feature.
       - name: Build WASM (both bundles)
         working-directory: linkage-sim-rs
         run: bash scripts/build_web.sh

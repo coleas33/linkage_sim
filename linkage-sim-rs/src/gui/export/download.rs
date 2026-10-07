@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn a_saved_file_holds_the_bytes_as_they_are() {
-        // A zip archive's first bytes (the calculator's spreadsheet export), then bytes that are
+        // A zip archive's first bytes (a spreadsheet, say), then bytes that are
         // no UTF-8 text and line breaks: the file holds them unchanged.
         let contents = [0x50, 0x4B, 0x03, 0x04, 0xFF, 0x00, 0xFE, b'\n', b'\r'];
         let path =
