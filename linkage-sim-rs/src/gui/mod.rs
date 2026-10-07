@@ -1,7 +1,6 @@
 //! GUI module — egui-based visualization shell for the linkage simulator.
 
 mod state;
-mod calculator_window;
 mod canvas;
 pub mod dxf_import;
 mod eq_rendering;
@@ -27,7 +26,6 @@ use std::collections::HashMap;
 use eframe::egui;
 pub use state::{ActuatorLabelForce, AppState};
 pub use state::file_io::{decode_mechanism_from_url, encode_mechanism_for_url};
-pub use calculator_window::{TOOL_MAGCOUPLING, TOOL_PARAM, magcoupling_share_base};
 pub use sweep::{SweepData, SweepMode};
 use samples::SampleMechanism;
 use crate::core::state::GROUND_ID;
@@ -45,8 +43,6 @@ pub struct LinkageApp {
     demo_timer: f64,
     /// Index into SampleMechanism::all() for the current demo sample.
     demo_sample_index: usize,
-    /// Tools → Magnetic coupling: the calculator window, its state independent of the model.
-    calculator: calculator_window::CalculatorWindow,
     /// The window title last sent to the native window (BL-037: sent only when it changes).
     sent_title: Option<String>,
 }
@@ -63,20 +59,8 @@ impl LinkageApp {
             demo_mode: false,
             demo_timer: 0.0,
             demo_sample_index: 0,
-            calculator: calculator_window::CalculatorWindow::default(),
             sent_title: None,
         }
-    }
-
-    /// Opens Tools → Magnetic coupling (the web entry's `?tool=magcoupling`).
-    pub fn open_magcoupling(&mut self) {
-        self.calculator.set_open(true);
-    }
-
-    /// Sets the address the calculator's share links point at (the web entry: the calculator's
-    /// own page on the same server, [`magcoupling_share_base`]).
-    pub fn set_magcoupling_share_base(&mut self, base: impl Into<String>) {
-        self.calculator.set_share_base(base);
     }
 
     /// Load a mechanism from a shared URL's JSON string.
@@ -241,11 +225,6 @@ impl eframe::App for LinkageApp {
             }
         }
 
-        // ── Tools → Magnetic coupling ─────────────────────────────────
-        // Before anything else reads the keyboard: while the calculator window has the
-        // keyboard, it takes the frame's key events (calculator_window module docs).
-        self.calculator.show(ctx);
-
         // ── Keyboard shortcuts ────────────────────────────────────────
         handle_keyboard_shortcuts(ctx, &mut self.state);
 
@@ -326,7 +305,7 @@ impl eframe::App for LinkageApp {
         }
 
         // --- Menu bar ---
-        menu_bar::draw_menu_bar(ctx, &mut self.state, &self.sample_thumbnails, &mut self.calculator);
+        menu_bar::draw_menu_bar(ctx, &mut self.state, &self.sample_thumbnails);
 
 
         // ── Delete / Backspace shortcut ───────────────────────────────────
@@ -1197,7 +1176,6 @@ impl eframe::App for LinkageApp {
                                 ("Right-click joint", "Set Driver / Create Joint"),
                                 ("Right-click body edge", "Add Pivot Here"),
                                 ("Right-click canvas", "Add Ground Pivot / Body"),
-                                ("Magnetic coupling window", "From its opening or a click in it, keys go to the calculator (Ctrl+Z / Ctrl+Y undo there; Ctrl+Plus / Ctrl+Minus still zoom) until you click the mechanism, its panels or the menu bar"),
                             ];
                             for (key, action) in shortcuts {
                                 ui.strong(key);
@@ -1264,8 +1242,7 @@ fn send_title(ctx: &egui::Context, sent: &mut Option<String>, title: String) {
 // ── Keyboard shortcuts ──────────────────────────────────────────────────────
 
 /// Ctrl+Z undo, Ctrl+Y or Ctrl+Shift+Z redo, Ctrl+S save, Ctrl+Shift+S save as (native),
-/// Ctrl+N new mechanism, Ctrl+V the paste hint. Runs after the calculator window, which takes
-/// the key events while it has the keyboard.
+/// Ctrl+N new mechanism, Ctrl+V the paste hint.
 fn handle_keyboard_shortcuts(ctx: &egui::Context, state: &mut AppState) {
     if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Z) && !i.modifiers.shift) {
         state.undo();
@@ -1479,9 +1456,7 @@ fn load_background_image(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::calculator_window::CalculatorWindow;
-    use crate::gui::test_support::{central_panel_frame, click_events, drawn_texts, drew_text, key_press, key_tap, magcoupling_gap_design, screen_input, typed, NATIVE_SCREEN};
-    use magcoupling::gui::session::Design;
+    use crate::gui::test_support::{central_panel_frame, drawn_texts, drew_text, key_press, key_tap, screen_input, typed, NATIVE_SCREEN};
 
     /// Four-bar with weights W1 and W2 on the coupler.
     fn fourbar_with_weights() -> AppState {
@@ -1644,115 +1619,65 @@ mod tests {
         assert_eq!(state.undo_history.undo_count(), depth);
     }
 
-    // ── Tools → Magnetic coupling beside the model (M5) ─────────────────────
+    // ── Keyboard shortcuts and the canvas's keys ────────────────────────────
 
     /// One frame of the linkage app's keyboard readers with `events`, `modifiers` held, in
-    /// `update`'s order (the order test below pins it): the calculator window, the shortcuts,
-    /// the delete shortcut, then the canvas (its arrow nudge, F, Escape and Enter keys).
+    /// `update`'s order: the shortcuts, the delete shortcut, then the canvas (its arrow nudge,
+    /// F, Escape and Enter keys).
     fn keys_frame(
         ctx: &egui::Context,
-        calculator: &mut CalculatorWindow,
         state: &mut AppState,
         modifiers: egui::Modifiers,
         events: Vec<egui::Event>,
     ) -> egui::FullOutput {
         let input = egui::RawInput { modifiers, ..screen_input(events, NATIVE_SCREEN) };
         ctx.run(input, |ctx| {
-            calculator.show(ctx);
             handle_keyboard_shortcuts(ctx, state);
             handle_delete_shortcut(ctx, state);
             egui::CentralPanel::default().show(ctx, |ui| canvas::draw_canvas(ui, state));
         })
     }
 
-    /// The four-bar with weights W1 and W2 (two undo steps) on the fitted canvas, beside the
-    /// calculator window, open (so it has the keyboard) with its design at a 2 mm face gap, one
-    /// undo step of the calculator.
-    fn fourbar_beside_the_calculator() -> (egui::Context, CalculatorWindow, AppState) {
+    /// The four-bar with weights W1 and W2 (two undo steps) on the fitted canvas.
+    fn fourbar_on_the_canvas() -> (egui::Context, AppState) {
         let ctx = egui::Context::default();
         let mut state = fourbar_with_weights();
-        let mut calculator = CalculatorWindow::default();
-        calculator.set_open(true);
         for _ in 0..2 {
-            keys_frame(&ctx, &mut calculator, &mut state, egui::Modifiers::NONE, Vec::new());
+            keys_frame(&ctx, &mut state, egui::Modifiers::NONE, Vec::new());
         }
-        calculator.load_design(&magcoupling_gap_design(2.0));
-        keys_frame(&ctx, &mut calculator, &mut state, egui::Modifiers::NONE, Vec::new());
-        (ctx, calculator, state)
-    }
-
-    /// A click on the canvas beside the calculator window (clear of the fitted four-bar), which
-    /// gives the keyboard back to the linkage app.
-    fn click_the_canvas(ctx: &egui::Context, calculator: &mut CalculatorWindow, state: &mut AppState) {
-        for events in click_events(calculator_window::beside_the_window()) {
-            keys_frame(ctx, calculator, state, egui::Modifiers::NONE, events);
-        }
-        assert!(!calculator.has_keyboard(), "the click took the keyboard back");
+        (ctx, state)
     }
 
     #[test]
-    fn ctrl_z_undoes_only_the_part_that_has_the_keyboard() {
-        let (ctx, mut calculator, mut state) = fourbar_beside_the_calculator();
+    fn ctrl_z_undoes_and_ctrl_y_or_ctrl_shift_z_redoes_the_model() {
+        let (ctx, mut state) = fourbar_on_the_canvas();
         let depth = state.undo_history.undo_count();
         let ctrl = egui::Modifiers::COMMAND;
+        let ctrl_shift = egui::Modifiers { shift: true, ..egui::Modifiers::COMMAND };
 
-        // The calculator has the keyboard: Ctrl+Z and Ctrl+Y undo and redo its design only.
-        keys_frame(&ctx, &mut calculator, &mut state, ctrl, key_tap(egui::Key::Z, ctrl));
-        assert_eq!(calculator.design(), Design::default(), "the calculator undid");
-        assert_eq!(state.undo_history.undo_count(), depth, "the model was not undone");
-        assert!(state.find_point_mass("coupler", "W2").is_some());
-        keys_frame(&ctx, &mut calculator, &mut state, ctrl, key_tap(egui::Key::Y, ctrl));
-        assert_eq!(calculator.design(), magcoupling_gap_design(2.0), "the calculator redid");
+        keys_frame(&ctx, &mut state, ctrl, key_tap(egui::Key::Z, ctrl));
+        assert!(state.find_point_mass("coupler", "W2").is_none(), "Ctrl+Z undid the last edit");
+        assert_eq!(state.undo_history.undo_count(), depth - 1);
+        keys_frame(&ctx, &mut state, ctrl, key_tap(egui::Key::Y, ctrl));
+        assert!(state.find_point_mass("coupler", "W2").is_some(), "Ctrl+Y redid it");
         assert_eq!(state.undo_history.undo_count(), depth);
 
-        // A click on the canvas gives the keyboard back: Ctrl+Z undoes the model only.
-        click_the_canvas(&ctx, &mut calculator, &mut state);
-        keys_frame(&ctx, &mut calculator, &mut state, ctrl, key_tap(egui::Key::Z, ctrl));
-        assert!(state.find_point_mass("coupler", "W2").is_none(), "the model's last edit was undone");
-        assert_eq!(state.undo_history.undo_count(), depth - 1);
-        assert_eq!(calculator.design(), magcoupling_gap_design(2.0), "the calculator was not undone");
+        // Ctrl+Shift+Z redoes, and never also undoes (the shift guard on Ctrl+Z).
+        keys_frame(&ctx, &mut state, ctrl, key_tap(egui::Key::Z, ctrl));
+        keys_frame(&ctx, &mut state, ctrl_shift, key_tap(egui::Key::Z, ctrl_shift));
+        assert!(state.find_point_mass("coupler", "W2").is_some(), "Ctrl+Shift+Z redid the edit");
+        assert_eq!(state.undo_history.undo_count(), depth);
     }
 
     #[test]
-    fn arrow_keys_and_delete_leave_the_model_alone_while_the_calculator_has_the_keyboard() {
-        let (ctx, mut calculator, mut state) = fourbar_beside_the_calculator();
+    fn an_arrow_key_nudges_the_selected_link_by_one_undo_step() {
+        let (ctx, mut state) = fourbar_on_the_canvas();
         let none = egui::Modifiers::NONE;
-        let coupler = SelectedEntity::Body("coupler".to_string());
-        state.selected = Some(coupler.clone());
+        state.selected = Some(SelectedEntity::Body("coupler".to_string()));
         let depth = state.undo_history.undo_count();
-
-        for key in [egui::Key::ArrowRight, egui::Key::Delete, egui::Key::Escape] {
-            keys_frame(&ctx, &mut calculator, &mut state, none, key_tap(key, none));
-        }
-        assert_eq!(state.undo_history.undo_count(), depth, "nothing was nudged or deleted");
-        assert_eq!(state.selected, Some(coupler.clone()));
-
-        // With the keyboard back, the same arrow key nudges the selected link: one undo step.
-        click_the_canvas(&ctx, &mut calculator, &mut state);
-        state.selected = Some(coupler);
-        keys_frame(&ctx, &mut calculator, &mut state, none, key_tap(egui::Key::ArrowRight, none));
+        keys_frame(&ctx, &mut state, none, key_tap(egui::Key::ArrowRight, none));
         assert_eq!(state.undo_history.undo_count(), depth + 1, "the arrow key nudged the link");
-    }
-
-    #[test]
-    fn update_shows_the_calculator_window_before_anything_reads_the_keyboard() {
-        // CalculatorWindow::show takes the frame's key events while the window has the
-        // keyboard, so it must come before every reader of the keys in `update`.
-        let source = include_str!("mod.rs").replace("\r\n", "\n");
-        let start = source.find("fn update(&mut self, ctx: &egui::Context").expect("update");
-        let end = start + source[start..].find("\n    }\n}\n").expect("the end of update");
-        let update = &source[start..end];
-        let show = update.find("self.calculator.show(ctx);").expect("update shows the window");
-        for reader in [
-            "handle_keyboard_shortcuts(ctx",
-            "menu_bar::draw_menu_bar(",
-            "handle_delete_shortcut(ctx",
-            "canvas::draw_canvas(",
-            "key_pressed(",
-        ] {
-            let at = update.find(reader).unwrap_or_else(|| panic!("update calls {reader}"));
-            assert!(show < at, "{reader} comes before the calculator window");
-        }
+        assert_eq!(state.selected, Some(SelectedEntity::Body("coupler".to_string())));
     }
 
     /// The window titles egui was asked to send in a frame.

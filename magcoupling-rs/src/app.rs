@@ -1,6 +1,6 @@
 //! The standalone app (feature `app`): [`MagcouplingApp`] shows the panel as a full page,
 //! for the native binary `magcoupling-app` and the web binary `magcoupling-web` (served at
-//! `/magcoupling/`). It applies the linkage app's theme ([`theme`]) and does the panel's
+//! `/tools/magcoupler/`). It applies the linkage app's theme ([`theme`]) and does the panel's
 //! platform work ([`files`]): saving files and picking a design file. The web entry also
 //! opens a share link's design (`?m=`).
 
@@ -13,7 +13,7 @@ use crate::gui::{MagcouplingPanel, PanelRequest};
 /// Window and page title.
 pub const TITLE: &str = "Magnetic Coupling Calculator";
 
-/// Id of the page's canvas element; `linkage-sim-rs/web/magcoupling/index.html`
+/// Id of the page's canvas element; `linkage-sim-rs/web/tools/magcoupler/index.html`
 /// must use the same.
 pub const CANVAS_ID: &str = "magcoupling_canvas";
 
@@ -213,7 +213,7 @@ mod tests {
         use crate::gui::SIZING_LOG_PREFIX;
         use crate::gui::session::{decode_share_payload, design_from_json};
         use crate::gui::sizing::{SOLVED_PREFIX, SizingMode, SizingState};
-        // .claude/workflows/gui-smoke.js opens /magcoupling/ with this link, loads the design
+        // .claude/workflows/gui-smoke.js opens /tools/magcoupler/ with this link, loads the design
         // file through the picker and looks for the three log lines in the browser console.
         let script = include_str!("../../.claude/workflows/gui-smoke.js");
         let quoted = |name: &str| -> &str {
@@ -261,7 +261,7 @@ mod tests {
 
     #[test]
     fn the_canvas_id_matches_the_web_page() {
-        let page = include_str!("../../linkage-sim-rs/web/magcoupling/index.html");
+        let page = include_str!("../../linkage-sim-rs/web/tools/magcoupler/index.html");
         assert!(
             page.contains(&format!("id=\"{CANVAS_ID}\"")),
             "index.html has no canvas {CANVAS_ID}"

@@ -67,25 +67,13 @@ pub(crate) fn click_events(at: egui::Pos2) -> [Vec<egui::Event>; 3] {
     [vec![egui::Event::PointerMoved(at)], vec![primary_button(at, true)], vec![primary_button(at, false)]]
 }
 
-/// A drag from `from` to `to` as the input of `steps + 3` frames: the pointer
-/// moved to `from`, the press, the pointer moved to `to` in `steps` equal
-/// steps, the release there.
-pub(crate) fn drag_events(from: egui::Pos2, to: egui::Pos2, steps: usize) -> Vec<Vec<egui::Event>> {
-    let moves = (1..=steps).map(|step| vec![egui::Event::PointerMoved(from.lerp(to, step as f32 / steps as f32))]);
-    [vec![egui::Event::PointerMoved(from)], vec![primary_button(from, true)]]
-        .into_iter()
-        .chain(moves)
-        .chain([vec![primary_button(to, false)]])
-        .collect()
-}
-
 /// Text typed into the focused widget.
 pub(crate) fn typed(text: &str) -> egui::Event {
     egui::Event::Text(text.to_string())
 }
 
 /// The native app's default window [points]: the screen of the headless
-/// window and menu tests.
+/// menu tests.
 pub(crate) const NATIVE_SCREEN: egui::Vec2 = egui::vec2(1400.0, 900.0);
 
 /// A frame's input: `events` on a screen of `size` [points] at the origin.
@@ -152,19 +140,6 @@ pub(crate) fn text_rect(output: &egui::FullOutput, needle: &str) -> Option<egui:
     found
 }
 
-/// The clip rect egui painted the first drawn text equal to `needle` with:
-/// what lies outside it is not shown (an area clips to its constrain rect).
-pub(crate) fn text_clip_rect(output: &egui::FullOutput, needle: &str) -> Option<egui::Rect> {
-    fn has_text(shape: &egui::Shape, needle: &str) -> bool {
-        match shape {
-            egui::Shape::Vec(shapes) => shapes.iter().any(|s| has_text(s, needle)),
-            egui::Shape::Text(text) => text.galley.text() == needle,
-            _ => false,
-        }
-    }
-    output.shapes.iter().find(|clipped| has_text(&clipped.shape, needle)).map(|clipped| clipped.clip_rect)
-}
-
 /// The stroke colour of every line segment egui drew in a frame.
 pub(crate) fn drawn_line_colors(output: &egui::FullOutput) -> Vec<egui::Color32> {
     let mut colors = Vec::new();
@@ -205,12 +180,4 @@ pub(crate) fn pose_at(state: &mut AppState, deg: f64) {
     state.solve_at_angle(deg.to_radians());
     assert!(state.solver_status.converged, "the mechanism assembles at {deg} deg");
     assert_eq!(state.current_sweep_index(), Some(sample_at(state, deg)));
-}
-
-/// The magnetic coupling calculator's default design with its face gap at
-/// `gap_mm`: a design file its panel loads, one undo step of the panel.
-pub(crate) fn magcoupling_gap_design(gap_mm: f64) -> magcoupling::gui::session::Design {
-    let mut design = magcoupling::gui::session::Design::default();
-    design.inputs.metal.face_gap_mm = gap_mm;
-    design
 }

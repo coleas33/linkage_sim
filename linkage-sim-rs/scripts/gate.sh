@@ -3,17 +3,17 @@
 # Usage: scripts/gate.sh [--full]   (--full also runs the release WASM builds of both bundles)
 # Exit 0 + "GATE PASS" = all gates green. Any failure exits non-zero.
 #
-# Gates 1-3: linkage-sim-rs (which depends on magcoupling-rs with its feature
-# gui: the calculator window, Tools -> Magnetic coupling). Gates 4-6:
-# magcoupling-rs, a separate crate (not a workspace member), the engine alone
-# (no features); its clippy runs with warnings as errors, as in every
-# magcoupling-rs gate. Gates 7-11: magcoupling-rs with its gui and app
-# features (the panel and the standalone app): their tests, clippy on native
-# and wasm32, the guard that no shipped build (the calculator's own and the
-# linkage app's, native and wasm32) has the test-only workbook-parity feature
-# (with negative controls that prove the guard trips), and the check that both
-# crates lock the same egui, egui_plot, eframe, rust_xlsxwriter and wasm-bindgen
-# (the CLI version deploy-web.yml installs).
+# Gates 1-3: linkage-sim-rs (independent of magcoupling-rs since the
+# calculator became a site of its own; Tools -> Magnetic coupling calculator
+# links to it). Gates 4-6: magcoupling-rs, a separate crate (not a workspace
+# member), the engine alone (no features); its clippy runs with warnings as
+# errors, as in every magcoupling-rs gate. Gates 7-11: magcoupling-rs with its
+# gui and app features (the panel and the standalone app): their tests, clippy
+# on native and wasm32, the guard that neither shipped build of the calculator
+# (native, wasm32) has the test-only workbook-parity feature (with negative
+# controls that prove the guard trips), and the check that both crates lock the
+# wasm-bindgen of the one wasm-bindgen-cli deploy-web.yml installs for both web
+# bundles.
 # Gate 12: the vendored Python oracle, reference/magcoupling-py: its parity
 # suite, and a check that the committed differential test data is current.
 # Gate 12 needs a Python with the oracle's dependencies; see oracle_python
@@ -23,7 +23,7 @@ cd "$(dirname "$0")/.."
 REPO_ROOT="$(cd .. && pwd)"
 MAGCOUPLING="$REPO_ROOT/magcoupling-rs/Cargo.toml"
 ORACLE="$REPO_ROOT/reference/magcoupling-py"
-# MAGCOUPLING_WEB_ARGS, MAGCOUPLING_NATIVE_ARGS, magcoupling_assert_shipped.
+# MAGCOUPLING_WEB_ARGS, MAGCOUPLING_NATIVE_ARGS, LINKAGE_WEB_ARGS, magcoupling_assert_shipped.
 # shellcheck source=magcoupling_shipped.sh
 source scripts/magcoupling_shipped.sh
 
@@ -99,41 +99,32 @@ echo "== gate 9/12: WASM clippy, warnings as errors (magcoupling-rs gui panel; a
 cargo clippy --manifest-path "$MAGCOUPLING" --target wasm32-unknown-unknown --features gui --lib -- -D warnings
 cargo clippy --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_WEB_ARGS[@]}" -- -D warnings
 
-echo "== gate 10/12: workbook-parity guard (shipped native and wasm32 builds of both apps; negative controls) =="
+echo "== gate 10/12: workbook-parity guard (the calculator's shipped native and wasm32 builds; negative controls) =="
+# The linkage builds are left out because they have no magcoupling-rs in them; if that
+# changes, they must come back into the guard.
+if grep -q 'magcoupling-rs' Cargo.toml; then
+  echo "FAIL gate 10/12: linkage-sim-rs depends on magcoupling-rs again; guard its builds here too"
+  exit 1
+fi
 cargo check --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_NATIVE_ARGS[@]}" --message-format=json-render-diagnostics \
   | magcoupling_assert_shipped magcoupling-app
 cargo check --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_WEB_ARGS[@]}" --message-format=json-render-diagnostics \
   | magcoupling_assert_shipped magcoupling-web
-# The linkage app's builds carry the calculator's panel (magcoupling-rs, feature gui).
-cargo check "${LINKAGE_NATIVE_ARGS[@]}" --message-format=json-render-diagnostics \
-  | magcoupling_assert_shipped linkage-gui
-cargo check "${LINKAGE_WEB_ARGS[@]}" --message-format=json-render-diagnostics \
-  | magcoupling_assert_shipped linkage-web
 # Negative controls, one per shipped build: the same build with the feature forced
 # on must trip the guard, or the guard has stopped seeing what cargo builds.
 assert_guard_trips magcoupling-app workbook-parity --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_NATIVE_ARGS[@]}"
 assert_guard_trips magcoupling-web workbook-parity --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_WEB_ARGS[@]}"
-assert_guard_trips linkage-gui magcoupling-rs/workbook-parity "${LINKAGE_NATIVE_ARGS[@]}"
-assert_guard_trips linkage-web magcoupling-rs/workbook-parity "${LINKAGE_WEB_ARGS[@]}"
 
-echo "== gate 11/12: lock parity (egui, egui_plot, eframe, rust_xlsxwriter, wasm-bindgen; wasm-bindgen-cli pin in deploy-web.yml) =="
-LINKAGE_LOCK="Cargo.lock"
-MAGCOUPLING_LOCK="$REPO_ROOT/magcoupling-rs/Cargo.lock"
-for pkg in egui egui_plot eframe rust_xlsxwriter wasm-bindgen; do
-  linkage_version="$(lock_versions "$LINKAGE_LOCK" "$pkg")"
-  magcoupling_version="$(lock_versions "$MAGCOUPLING_LOCK" "$pkg")"
-  if [[ -z "$linkage_version" || "$linkage_version" != "$magcoupling_version" ]]; then
-    echo "FAIL gate 11/12: $pkg is locked at '$linkage_version' in linkage-sim-rs and '$magcoupling_version' in magcoupling-rs"
+echo "== gate 11/12: wasm-bindgen parity (both web bundles are bound by the one wasm-bindgen-cli deploy-web.yml installs) =="
+CLI_PIN="$(grep -oE 'wasm-bindgen-cli@[0-9.]+' "$REPO_ROOT/.github/workflows/deploy-web.yml" | head -n 1 | cut -d@ -f2)"
+for lock in "Cargo.lock" "$REPO_ROOT/magcoupling-rs/Cargo.lock"; do
+  locked="$(lock_versions "$lock" wasm-bindgen)"
+  if [[ -z "$CLI_PIN" || "$locked" != "$CLI_PIN" ]]; then
+    echo "FAIL gate 11/12: deploy-web.yml installs wasm-bindgen-cli '$CLI_PIN', $lock locks wasm-bindgen '$locked'"
     exit 1
   fi
-  echo "$pkg $linkage_version in both lock files"
+  echo "wasm-bindgen $locked in $lock, as deploy-web.yml's wasm-bindgen-cli"
 done
-CLI_PIN="$(grep -oE 'wasm-bindgen-cli@[0-9.]+' "$REPO_ROOT/.github/workflows/deploy-web.yml" | head -n 1 | cut -d@ -f2)"
-if [[ "$CLI_PIN" != "$(lock_versions "$MAGCOUPLING_LOCK" wasm-bindgen)" ]]; then
-  echo "FAIL gate 11/12: deploy-web.yml installs wasm-bindgen-cli '$CLI_PIN', the lock files have wasm-bindgen $(lock_versions "$MAGCOUPLING_LOCK" wasm-bindgen)"
-  exit 1
-fi
-echo "deploy-web.yml installs wasm-bindgen-cli $CLI_PIN"
 
 echo "== gate 12/12: vendored Python oracle (parity suite, differential data freshness) =="
 PY="$(oracle_python)"

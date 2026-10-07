@@ -34,14 +34,6 @@ pub async fn start() {
     // ── Check for ?m= URL parameter (shared mechanism) ───────────────
     let shared_mechanism_json = extract_url_mechanism_param();
 
-    // ── ?tool=magcoupling opens Tools → Magnetic coupling at start ────
-    let open_magcoupling =
-        url_param(linkage_sim_rs::gui::TOOL_PARAM).as_deref() == Some(linkage_sim_rs::gui::TOOL_MAGCOUPLING);
-    // Share links made in that window open the calculator's own page on this server.
-    let magcoupling_share_base = web_sys::window()
-        .and_then(|window| window.location().origin().ok())
-        .map(|origin| linkage_sim_rs::gui::magcoupling_share_base(&origin));
-
     let canvas = web_sys::window()
         .expect("no window")
         .document()
@@ -61,12 +53,6 @@ pub async fn start() {
                 // If a ?m= parameter was found, load the shared mechanism.
                 if let Some(json_str) = shared_mechanism_json {
                     app.load_shared_mechanism(&json_str);
-                }
-                if let Some(base) = magcoupling_share_base {
-                    app.set_magcoupling_share_base(base);
-                }
-                if open_magcoupling {
-                    app.open_magcoupling();
                 }
                 Ok(Box::new(app))
             }),

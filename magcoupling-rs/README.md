@@ -22,7 +22,7 @@ retainer span), inverse sizing (A1), the housing autofit suggestion and the spac
 claim, one aluminium modulus, and each grade-mode ring's own alpha and density
 (decisions A2-1 to A2-9). M4 infrastructure in place: the `gui` and `app` features, the panel
 (`gui::MagcouplingPanel`), the native and web binaries, and the second web
-bundle at `/magcoupling/` (see [Features and binaries](#features-and-binaries)).
+bundle, served at [colesorkness.com/tools/magcoupler](https://colesorkness.com/tools/magcoupler/) (see [Features and binaries](#features-and-binaries)).
 Addendum A-3 (explanations) complete: the engine side of the equation
 explorer (`src/engine/explain/`: one evaluable markup per result, proven by the drift guard, over
 decision 31's paths, the geometry callouts and the terms they need to reach inputs), the A3
@@ -277,8 +277,7 @@ scroll-area floor lowered to none).
   (the Summary, read top to bottom, does neither); the columns are sized, the headings bold (a
   group heading on a light grey, E7E6E6, apart from the section headings inside it) and each check
   level filled with the standalone page's badge colour, a fixed dark-theme palette (green 5AC878,
-  amber FF8F00, red FF0000; the linkage app's calculator window may draw in light visuals, whose
-  green and amber badges are darker, and the fills do not follow them). rust_xlsxwriter 0.99.1 writes
+  amber FF8F00, red FF0000). rust_xlsxwriter 0.99.1 writes
   it; on wasm32 its `wasm` feature is on, without which the workbook's creation time calls
   `SystemTime::now()` and panics in the browser. The host gets the file as bytes
   (`PanelRequest::SaveFile.contents` is a `Vec<u8>`).
@@ -410,39 +409,40 @@ scroll-area floor lowered to none).
   (under the status line when the Key design group does not list it: the ring radius). Leaving the
   mode keeps the value, solving first a change still waiting for its debounce (M41-7).
 - **No I/O in the panel.** Saving and picking a file are `PanelRequest`s the host does
-  (`take_requests`, then `load_design_file` and `report`), so the M5 linkage window can host the
-  panel with its own file handling; the share link base is the host's (`set_share_base`).
+  (`take_requests`, then `load_design_file` and `report`), so a host (the standalone app; the
+  linkage window from M5 to 2026-10-06) brings its own file handling; the share link base is the
+  host's (`set_share_base`).
 - **Theme** (`app/theme.rs`): the standalone app applies the linkage app's CAD dark visuals and
   spacing, dark whatever the system prefers (M41-3; a test keeps the visuals equal to
   `linkage-sim-rs/src/gui/theme.rs`), and the web page's background is the same panel colour.
-  The panel sets no theme: in M5 the host's applies.
+  The panel sets no theme: the host's applies.
 
-**Versions.** egui and eframe use the same 0.32 line as `linkage-sim-rs`, so
-M5 embeds the panel with one egui; `Cargo.toml` has caret ranges, and
-`Cargo.lock` pins the versions of `linkage-sim-rs/Cargo.lock` (egui and eframe
-0.32.3, egui_plot 0.33.0, wasm-bindgen 0.2.114, which is the `wasm-bindgen-cli`
-version `deploy-web.yml` installs). Gate 11 fails when the two lock files or the CLI
-pin disagree; bump them together.
+**Versions.** `Cargo.toml` has caret ranges (egui and eframe 0.32, egui_plot 0.33).
+`Cargo.lock` pins wasm-bindgen 0.2.114, the `wasm-bindgen-cli` version `deploy-web.yml`
+installs to bind both web bundles; gate 11 fails when either crate's lock or the CLI pin
+disagree, so bump them together. egui and eframe no longer have to match `linkage-sim-rs`
+since the linkage app stopped embedding the panel (2026-10-06).
 
 | Binary | Target | Run |
 |---|---|---|
 | `magcoupling-app` | native | `cargo run --release --features app --bin magcoupling-app` (from `magcoupling-rs/`) |
-| `magcoupling-web` | wasm32 | `bash linkage-sim-rs/scripts/build_magcoupling_web.sh` builds it into `linkage-sim-rs/web/magcoupling/`; `bash linkage-sim-rs/scripts/serve_web.sh [PORT]` serves it at `http://localhost:8080/magcoupling/`, next to the linkage app. `build_web.sh` builds both bundles. On a desktop, `cargo run --features app --bin magcoupling-web` opens the native window |
+| `magcoupling-web` | wasm32 | `bash linkage-sim-rs/scripts/build_magcoupling_web.sh` builds it into `linkage-sim-rs/web/tools/magcoupler/`; `bash linkage-sim-rs/scripts/serve_web.sh [PORT]` serves it at `http://localhost:8080/tools/magcoupler/`, next to the linkage app at `/tools/linkage/`. `build_web.sh` builds both bundles. On a desktop, `cargo run --features app --bin magcoupling-web` opens the native window |
 
-The web page is `linkage-sim-rs/web/magcoupling/index.html` (committed; the JS
+The web page is `linkage-sim-rs/web/tools/magcoupler/index.html` (committed; the JS
 glue and the wasm are gitignored build outputs). Its canvas id is
 `app::CANVAS_ID`, which a test checks. `deploy-web.yml` runs
 `build_web.sh`, which builds the linkage bundle and then runs `build_magcoupling_web.sh`, so both bundles ship
-(`linkage.colesorkness.com/magcoupling/`) on the next push of `main`; pushing needs the user's
+(colesorkness.com/tools/magcoupler/; the old linkage.colesorkness.com/magcoupling/ links redirect there,
+share links included) on the next push of `main`; pushing needs the user's
 go. The web smoke test is the `gui-smoke` workflow (`.claude/workflows/gui-smoke.js`): it opens
-`/magcoupling/` through a pinned share link and checks the canvas, the geometry view in the first
+`/tools/magcoupler/` through a pinned share link and checks the canvas, the geometry view in the first
 screenshot (the default view: no click), the console lines
 `magcoupling: loaded the design from the share link`, `magcoupling sizing: Solved at` and
 `magcoupling explorer: ` (the equation registry built in the browser), then
 clicks "Load design" once (found in a screenshot), uploads a pinned design file through rfd's web
 picker and checks `magcoupling: loaded a design file`, with zero console errors (a test decodes
-the pinned link and the design file). Its linkage step opens the linkage app at `/?tool=magcoupling`
-and checks the calculator window and the `magcoupling explorer: ` line there.
+the pinned link and the design file). Its other step checks the hub page at `/tools/` and the linkage
+app at `/tools/linkage/`.
 
 **workbook-parity never ships.** The feature reaches `cargo test` and
 `cargo clippy --all-targets` through the self dev-dependency, and cargo then
@@ -451,45 +451,23 @@ unifies it into every unit of the build, binaries included, so a
 `cargo test --features app`. The guard is
 `linkage-sim-rs/scripts/magcoupling_shipped.sh` instead. It defines the shipped
 cargo arguments once (`MAGCOUPLING_WEB_ARGS`, `MAGCOUPLING_NATIVE_ARGS`, and the linkage
-app's `LINKAGE_WEB_ARGS`, `LINKAGE_NATIVE_ARGS`: its builds carry the panel), and
+app's `LINKAGE_WEB_ARGS`, which has no magcoupling-rs in it), and
 `magcoupling_assert_shipped` reads cargo's `--message-format=json` record of
 the units it compiled. It fails unless the shipped binary was compiled and no
-magcoupling-rs unit has the feature. `build_web.sh` and `build_magcoupling_web.sh` pipe their
-release builds through it, so the shipped path refuses such a bundle. Gate 10
-runs the guard on the native and wasm32 builds of both apps, plus a negative control per
+magcoupling-rs unit has the feature. `build_magcoupling_web.sh` pipes its
+release build through it, so the shipped path refuses such a bundle. Gate 10
+runs the guard on the calculator's native and wasm32 builds, plus a negative control per
 shipped build that must trip.
 
-### In the linkage app (M5)
+### In the linkage app
 
-Plan `docs/superpowers/plans/2026-10-02-magcoupling-m5-embed.md`. `linkage-sim-rs` depends on
-this crate by path with feature `gui` (never `workbook-parity`: gate 10) and shows the panel in
-its Tools → Magnetic coupling window, `linkage-sim-rs/src/gui/calculator_window.rs`, on the
-desktop and on the web:
-
-- The window is closed at start-up; its first opening creates the panel (the equation registry is
-  built then, not at the linkage app's start-up), which keeps its design, undo history and views,
-  open or closed, until the app quits. Nothing in it reads or writes the linkage model.
-- The window, frame included, keeps to the screen below the linkage app's menu bar, so it never
-  covers the Tools menu that toggles it, also when dragged up or on a screen shorter than the
-  window.
-- The keys go to the part the user pressed last: the window from its opening or a press on it (or
-  on the band just outside its frame where egui resizes it), the linkage app from a press on its
-  panels, its canvas or its menu bar's buttons (a press on a popup moves nothing: an open menu's
-  items, a drop-down list, a tooltip). While the window has them, the panel's Ctrl+Z, Ctrl+Shift+Z
-  and Ctrl+Y are on and the linkage app sees no key event but egui's own zoom keys (natively
-  Ctrl+Plus, Ctrl+Minus and Ctrl+0 still zoom the whole UI; on the web the browser zooms the
-  page): not its undo, save, delete, arrow nudge, F or Escape. Otherwise the panel's shortcuts are
-  off (`set_keyboard_shortcuts(false)`) and the keys go to the linkage app. A window collapsed to
-  its title bar draws no panel and takes no keys.
-- Known edges (backlog BL-039, BL-040): the keys follow presses, not egui's keyboard focus (after
-  Tab moves the focus into the other part, click there); and opened while the linkage app's
-  "Recover Unsaved Work?" prompt shows, the window covers it (move or collapse the window).
-- The window does the panel's requests: saving with the linkage app's download helper as bytes
-  (`download_bytes`: a file dialog natively, with an Excel workbook filter for the spreadsheet, a
-  browser download on the web), "Load design" through rfd (the linkage web
-  build carries rfd for the picker). Share links made there open `/magcoupling/` on the same
-  server.
-- `?tool=magcoupling` opens the window when the linkage web app starts (gui-smoke's linkage step).
+From M5 (plan `docs/superpowers/plans/2026-10-02-magcoupling-m5-embed.md`) to 2026-10-06 the
+linkage app embedded the panel in a Tools → Magnetic coupling window. Since then the calculator
+is a site of its own and the linkage app's Tools → Magnetic coupling calculator opens it in a new
+browser tab (`linkage-sim-rs/src/gui/menu_bar.rs`, `MAGCOUPLER_URL`); `linkage-sim-rs` no longer
+depends on this crate (plan
+`docs/superpowers/plans/2026-10-06-colesorkness-url-move-and-standalone-calculator.md`). The old
+`?tool=magcoupling` links redirect to the calculator's site.
 
 ## Tests
 

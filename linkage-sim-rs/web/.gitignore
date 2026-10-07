@@ -1,7 +1,9 @@
-# Generated WASM build artifacts (run scripts/build_web.sh to regenerate)
+# Generated WASM build artifacts (run scripts/build_web.sh to regenerate).
+# The patterns match at any depth: the outputs under tools/ and those of
+# earlier layouts (web/linkage-web.js, web/magcoupling/) stay ignored alike.
 linkage-web.js
 linkage-web_bg.wasm
-magcoupling/magcoupling-web.js
-magcoupling/magcoupling-web_bg.wasm
+magcoupling-web.js
+magcoupling-web_bg.wasm
 
 .vercel

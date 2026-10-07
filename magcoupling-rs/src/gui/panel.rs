@@ -3302,7 +3302,7 @@ mod tests {
         harness.frame(key_tap(egui::Key::ArrowRight));
         harness
             .panel
-            .set_share_base("http://localhost:8080/magcoupling/");
+            .set_share_base("http://localhost:8080/tools/magcoupler/");
         let output = harness.click_text(COPY_SHARE_LINK);
         let copied: Vec<&String> = output
             .platform_output
@@ -3315,7 +3315,7 @@ mod tests {
             .collect();
         assert_eq!(copied, [&harness.panel.share_link()]);
         let payload = copied[0]
-            .strip_prefix("http://localhost:8080/magcoupling/?m=")
+            .strip_prefix("http://localhost:8080/tools/magcoupler/?m=")
             .expect("the page's own address");
         // The link opens the same design in another panel.
         let mut other = MagcouplingPanel::new();
