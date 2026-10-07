@@ -55,10 +55,10 @@
 
 ## Review Focus
 
-1. **An old share link** (`linkage.colesorkness.com/?m=...`). Expected: lands on `colesorkness.com/tools/linkage/?m=...` with the same mechanism. Pinned by `tests/web_layout.rs::old_links_redirect_to_the_new_addresses` (the rule) and Task 5's live check (the query).
+1. **An old share link** (`linkage.colesorkness.com/?m=...`). Expected: lands on `colesorkness.com/tools/linkage/?m=...` with the same mechanism. Pinned by `tests/web_layout.rs::old_links_and_the_root_redirect_to_the_new_addresses` (the rule) and Task 5's live check (the query).
 2. **`/tools/linkage` without the slash.** Expected: `/tools/linkage/` with the app (a relative glue path would resolve against `/tools/`). `folders_get_their_trailing_slash`, plus absolute imports (`each_app_page_imports_its_glue_where_its_build_script_writes_it`).
 3. **The Tools item on the desktop and on the web.** Expected: one new-tab request to the right URL, the menu closed. `tools_opens_the_magnetic_coupling_calculator_s_site_in_a_new_tab`, `the_desktop_app_opens_the_public_calculator_site`.
-4. **A stale reference to the old layout** in a script, a page, `.gitignore` or `vercel.json`. `tests/web_layout.rs` (six tests) ties them together; `the_canvas_id_matches_the_web_page` and `the_web_page_background_is_the_panel_colour` read the moved calculator page.
+4. **A stale reference to the old layout** in a script, a page, `.gitignore` or `vercel.json`. `tests/web_layout.rs` (eight tests) ties them together; `the_canvas_id_matches_the_web_page` and `the_web_page_background_is_the_panel_colour` read the moved calculator page.
 5. **The guard and the parity gate after the dependency is gone.** Expected: gate 10 still trips its negative controls on both calculator builds; gate 11 fails if either lock drifts from the CLI pin. Gate run (Task 4).
 
 ## Layout
@@ -123,6 +123,7 @@ README, `docs/FEATURES.md`, `docs/guides/WASM_DEPLOYMENT.md`, `docs/ai/01-meta.y
   - `curl -sI 'https://linkage.colesorkness.com/?m=TEST'` -> 307, `location: https://colesorkness.com/tools/linkage/?m=TEST` (once or twice in the query, either works).
   - `curl -sI 'https://linkage.colesorkness.com/?tool=magcoupling'` -> 307 to `https://colesorkness.com/tools/magcoupler/`.
   - `curl -sI 'https://linkage.colesorkness.com/magcoupling/?m=TEST'` -> 307 to `https://colesorkness.com/tools/magcoupler/?m=TEST`.
+  - `curl -sIL 'https://linkage.colesorkness.com/magcoupling?m=TEST'` (an old calculator link without the slash: the web app built its share link from its own path, so these can exist) ends on `/tools/magcoupler/?m=TEST`. It depends on Vercel's trailing-slash 308 keeping the query, which the explicit capture can't help with (the slash routes run before the redirects); if the query is lost, add a rule for the slashless form or accept the loss for these rare links.
   - Check the redirects' `cache-control`.
   - Playwright: the press share link from the session opens on the new address with its 21,506 N peak; the calculator's share link opens its design; Tools -> Magnetic coupling calculator opens `/tools/magcoupler/` in a new tab.
 - [ ] When all pass: a follow-up commit makes the old-host and `/magcoupling/` redirects permanent (U-3b), with `tests/web_layout.rs` updated; push.

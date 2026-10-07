@@ -196,7 +196,7 @@ cd linkage-sim-rs
 Requires: `rustup target add wasm32-unknown-unknown` and `cargo install wasm-bindgen-cli@0.2.114` (the version in both `Cargo.lock` files and in CI).
 Note: file dialogs, PNG/SVG/GIF/DXF export, autosave, and HTML reports are native-only. All analysis, editing, and plotting features work in the browser.
 
-**Live deployment:** Pushes to `main` auto-deploy to [colesorkness.com](https://colesorkness.com/) via GitHub Actions + Vercel: the hub page at [`/tools/`](https://colesorkness.com/tools/) (`/` redirects there), the linkage app at [`/tools/linkage/`](https://colesorkness.com/linkage/) and the calculator at [`/tools/magcoupler/`](https://colesorkness.com/tools/magcoupler/). Old linkage.colesorkness.com links (share links included) redirect there (`linkage-sim-rs/web/vercel.json`). See `.github/workflows/deploy-web.yml` for the CI pipeline.
+**Live deployment:** Pushes to `main` auto-deploy to [colesorkness.com](https://colesorkness.com/) via GitHub Actions + Vercel: the hub page at [`/tools/`](https://colesorkness.com/tools/) (`/` redirects there), the linkage app at [`/tools/linkage/`](https://colesorkness.com/tools/linkage/) and the calculator at [`/tools/magcoupler/`](https://colesorkness.com/tools/magcoupler/). Old linkage.colesorkness.com links (share links included) redirect there (`linkage-sim-rs/web/vercel.json`). See `.github/workflows/deploy-web.yml` for the CI pipeline.
 
 ```
 linkage-sim-rs/

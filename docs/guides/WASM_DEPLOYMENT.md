@@ -102,7 +102,7 @@ Production deployments are automated via the GitHub Actions workflow at `.github
 The file `linkage-sim-rs/web/vercel.json` configures:
 
 - `outputDirectory` set to `.` (the `web/` folder itself is the deploy root), served on colesorkness.com.
-- `trailingSlash: true`, so `/linkage` becomes `/tools/linkage/` (the pages import their glue by absolute paths either way).
+- `trailingSlash: true`, so `/tools/linkage` becomes `/tools/linkage/` (the pages import their glue by absolute paths either way).
 - Redirects, first match wins, all temporary (307) until the live checks pass: on linkage.colesorkness.com, `/magcoupling/...` to colesorkness.com/tools/magcoupler/..., `/?tool=magcoupling` (without `m`) to the calculator, and every other path to colesorkness.com/tools/linkage/...; on any host, `/magcoupling/...` to `/tools/magcoupler/...` and `/` to `/tools/`. Share links keep their `m` through an explicit capture (`has` query `m`, `?m=:m`), and the sources use `:path(.*)`, not `:path*`, which Vercel compiles so strictly that it never matches a path ending in `/`. `tests/web_layout.rs` pins them.
 - Header rules: `.wasm` files with `Content-Type: application/wasm`, and the wasm and both JS glue files with `Cache-Control: public, max-age=0, must-revalidate`.
 
