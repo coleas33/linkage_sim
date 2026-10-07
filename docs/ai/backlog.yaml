@@ -263,7 +263,7 @@
   acceptance: "Python inverse and forward dynamics add Q_v (same formula as linkage-sim-rs/src/solver/assembly.rs assemble_quadratic_velocity_forces) with Python tests mirroring the Rust constant-KE and centripetal-pivot checks; golden *_inverse_dynamics.json regenerated (and *_dynamics.json if they change); quadratic_velocity_lambda_shift and its call sites deleted from tests/golden_fixtures.rs; the 'does not include Q_v yet (BL-028)' comment in solver/inverse_dynamics.rs removed; cargo test --all and the Python suite green"
   priority: 2
   status: open
-  notes: "Follow-up of BL-027."
+  notes: "Follow-up of BL-027. REVIEWED 2026-10-06 (Codex report + independent check, docs/analyses/2026-10-06-open-physics-review-response.md): confirmed; Q_v = [m thetadot^2 A s; 0], sign Phi_q^T lambda = M qddot - Q - Q_v. The golden multiplier check is fully blind to Q_v (the shift cancels exactly); fourbar_dynamics.json energy swings 42.3 of 73.5 J and its initial velocity violates the constraints; test_forward_dynamics.py:306-308 and test_golden_fixtures.py:523-527 hide the bug behind loose tolerances. Rust is unaffected. Follow the order in the response doc."
 
 - id: BL-029
   title: "Trapezoidal motion-profile torque uses (tau_ID - tau_statics)/omega^2 as the inertia on alpha"
@@ -273,7 +273,7 @@
   acceptance: "test: on a crank-rocker with off-axis CGs (configuration-dependent I(theta)), the profile torque at samples with alpha_p != 0 equals solve_inverse_dynamics driven with that (omega_p, alpha_p) at the same angle (rel 1e-6); cargo test --all green"
   priority: 2
   status: open
-  notes: "Independent of the BL-027 fix; noted during its review."
+  notes: "Independent of the BL-027 fix; noted during its review. REVIEWED 2026-10-06 (docs/analyses/2026-10-06-open-physics-review-response.md): confirmed and worse: the torque can have the wrong sign (I prime < 0), every single-link crank gets zero acceleration torque, and the overlay feeds the health panel and tutorial sizing. Also broken in the same feature: the 0-360 angle mapping (ignores the sweep range and theta0), negative omega, stroke mode, a failed statics solve stored as 0 not NaN, and every velocity-dependent force in the (omega_p/omega)^2 rescaling."
 
 - id: BL-030
   title: "Driver > reassign on a sample rebuilds from the stock sample and discards user weights"
@@ -363,7 +363,7 @@
   acceptance: "test: an Expression-driven crank with a weight; per-sample shares use the driver's actual rate and share sum + other == total (rel 1e-9); or Expression drivers are documented as outside the breakdown's constant-speed model with the plot showing a note"
   priority: 3
   status: open
-  notes: "Pre-existing sweep limitation, outside the spec's constant-speed model."
+  notes: "Pre-existing sweep limitation, outside the spec's constant-speed model. REVIEWED 2026-10-06 (docs/analyses/2026-10-06-open-physics-review-response.md): confirmed; the acceptance identity is vacuous (reuse assert_gravity_only_sum_invariants). Expression drivers are reachable from the GUI (Custom Expression), not file-only. The wider problem (time sweeps labelled as angles, actuator force/power/reactions at the nominal rate, a debug-build panic) is BL-050."
 
 - id: BL-037
   title: "Linkage web app sends ViewportCommand::Title every frame, flooding the browser console with warnings"
@@ -433,7 +433,7 @@
   acceptance: "scaling a mechanism by k scales body_local_app_point by k; a test scales a zone with a locked point and checks the point and the statics (driver torque scales by k for a force-only load)"
   priority: 3
   status: open
-  notes: "Found while planning the round-geometry work (plan 2026-10-06, Part A); not changed there."
+  notes: "Found while planning the round-geometry work (plan 2026-10-06, Part A); not changed there. REVIEWED 2026-10-06 (docs/analyses/2026-10-06-open-physics-review-response.md): confirmed at runtime (+10 N m stays +10 after x2). Scale the point whenever it is Some, in every mode: contact mode keeps a stored locked point (element_types.rs:365-377). Recommend priority 2 (silent wrong torque); the other missed lengths and the missing tests are BL-052."
 
 - id: BL-044
   title: "The canvas Draw Geometry tool is a stub"
@@ -494,3 +494,33 @@
   priority: 3
   status: open
   notes: "Pre-existing; the page (gui/export/animation.rs) is the reference for the turned drawing."
+
+- id: BL-050
+  title: "Expression drivers: sweeps are time sweeps labelled as angles, and actuator force, power, reactions and gravity totals use the nominal rate"
+  dimension: physics
+  risk: physics
+  evidence: "sweep_time (gui/sweep/mod.rs ~279) assumes theta0 + omega t; for an expression driver AppState fills omega = 2 pi, theta0 = 0 placeholders (blueprint_ops.rs:319-333, file_io.rs:362), so an 'angle' sweep runs t in [0, 1] s labelled 0-360 deg (f = 2 pi t^2: label 90 deg is 22.5 deg). Nominal omega also feeds the reaction solve (sweep/mod.rs:621), actuator force (:703, :712-718; off by omega/f': x4.0 at t = 0.125), actuator power (:725, :729), actuator-basis totals (weights.rs:116), canvas reactions (blueprint_ops.rs:634-635) and the animation export (export/animation.rs:448). ParallelogramActuator with stored force 0 and f = 2 pi t^2 trips the debug_assert at reactions.rs:691 (debug builds panic). Reachable from the GUI (Custom Expression, input_panel.rs:603-768). Found in the 2026-10-06 review of Codex's open-physics report (docs/analyses/2026-10-06-open-physics-review-response.md)."
+  acceptance: "for a non-constant driver either (a) the breakdown and actuator outputs are hidden with a visible note, or (b) every rate uses the actual f'(t) (driver row of assemble_phi_t, or thetadot_j - thetadot_i), actuator reactions go through solve_reactions_with_actuator_using_q_dot, and expression sweeps are plotted against time; tests with f = 2 pi t^2 check the labels or time axis, actuator force against tau / (dL/dtheta), and a gravity-only remainder of ~0"
+  priority: 2
+  status: open
+  notes: "Recommended: (a) now, (b) later. Where f' = 0 use a unit-rate velocity solve (q_theta) so forces need no division by the rate. Overlaps BL-036 (the breakdown part) and BL-017 (the debug_assert)."
+
+- id: BL-051
+  title: "rebuild() moves a linear-driven mechanism to driver length 0"
+  dimension: physics
+  risk: mechanical
+  evidence: "blueprint_ops.rs:345-350 works out the solve time from driver_angle even for a linear driver. Probe (state level, 2026-10-06): a slider at stroke 1.2 (x = 0.2) jumps to x = -1.0 (driver length 0) after a plain rebuild() while the stroke still reads 1.2; after scale x2 it goes to x = -2.0. The slider re-solves only when its value changes (input_panel.rs:316-317), so the wrong pose probably stays on screen. Found in the 2026-10-06 review (docs/analyses/2026-10-06-open-physics-review-response.md)."
+  acceptance: "rebuild() keeps a linear-driven mechanism at its current stroke; a test rebuilds a slider-crank at stroke 1.2 and checks the slider position and the driver length; confirmed first in the GUI (an edit on a linear-driven mechanism)"
+  priority: 2
+  status: open
+  notes: "Reproduced at state level only; confirm in the GUI before fixing. Would affect every edit to a linear-driven mechanism."
+
+- id: BL-052
+  title: "Scale mechanism misses cam profiles, the linear-driver stroke and other lengths, and has no tests"
+  dimension: physics
+  risk: mechanical
+  evidence: "scale_mechanism (blueprint_ops.rs ~1443) leaves: cam profile s(theta) in metres (cam.rs:147-150, schema.rs:351-358; inconsistent geometry), the linear-driver stroke slider value (blueprint_ops.rs:310-311 keeps it while length_0 scales), the sweep range in mm for linear drivers (blueprint_ops.rs:1410-1411), trajectory target points and values (control_target.rs:17-37, types.rs:335-343), BearingFriction.pin_radius (element_types.rs:206; the comment at blueprint_ops.rs:1510-1512 wrongly says bearing friction has no length data). It pushes an undo step before checking a blueprint exists (blueprint_ops.rs:1447-1448). No test covers it; its only caller is pending_edits.rs:290. Found in the 2026-10-06 review (docs/analyses/2026-10-06-open-physics-review-response.md)."
+  acceptance: "each listed length scales with the mechanism (or is documented as kept); tests through AppState::scale_mechanism with literal expected values for each; no undo step without a blueprint"
+  priority: 3
+  status: open
+  notes: "BL-043 (the locked force point) is the same function. Scaling-law decisions for the user: izz_cg (x k^2 for geometric similarity with mass kept; point-mass inertia already scales x k^2), velocities and speed limits, pin radius. Optional guard: destructure ForceZoneElement fully and list every force variant so a new length field fails to compile."
