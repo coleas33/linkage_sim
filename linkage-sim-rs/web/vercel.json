@@ -9,13 +9,13 @@
         { "type": "query", "key": "m", "value": "(?<m>.*)" }
       ],
       "destination": "https://colesorkness.com/tools/magcoupler/:path?m=:m",
-      "permanent": false
+      "permanent": true
     },
     {
       "source": "/magcoupling/:path(.*)",
       "has": [{ "type": "host", "value": "linkage.colesorkness.com" }],
       "destination": "https://colesorkness.com/tools/magcoupler/:path",
-      "permanent": false
+      "permanent": true
     },
     {
       "source": "/",
@@ -25,7 +25,7 @@
       ],
       "missing": [{ "type": "query", "key": "m" }],
       "destination": "https://colesorkness.com/tools/magcoupler/",
-      "permanent": false
+      "permanent": true
     },
     {
       "source": "/:path(.*)",
@@ -34,24 +34,24 @@
         { "type": "query", "key": "m", "value": "(?<m>.*)" }
       ],
       "destination": "https://colesorkness.com/tools/linkage/:path?m=:m",
-      "permanent": false
+      "permanent": true
     },
     {
       "source": "/:path(.*)",
       "has": [{ "type": "host", "value": "linkage.colesorkness.com" }],
       "destination": "https://colesorkness.com/tools/linkage/:path",
-      "permanent": false
+      "permanent": true
     },
     {
       "source": "/magcoupling/:path(.*)",
       "has": [{ "type": "query", "key": "m", "value": "(?<m>.*)" }],
       "destination": "/tools/magcoupler/:path?m=:m",
-      "permanent": false
+      "permanent": true
     },
     {
       "source": "/magcoupling/:path(.*)",
       "destination": "/tools/magcoupler/:path",
-      "permanent": false
+      "permanent": true
     },
     {
       "source": "/",

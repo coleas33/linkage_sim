@@ -71,7 +71,7 @@
 | `/tools/magcoupler/` | `web/tools/magcoupler/index.html` + `magcoupling-web.js`, `magcoupling-web_bg.wasm` | `scripts/build_magcoupling_web.sh` (`OUT_DIR=web/tools/magcoupler`) |
 | `/favicon.svg` | `web/favicon.svg` | - |
 
-Redirects (`web/vercel.json`, first match wins, temporary until Task 5; `:m` is captured from the query):
+Redirects (`web/vercel.json`, first match wins, all permanent (308) after Task 5 except the root's, which stays temporary; `:m` is captured from the query):
 
 | Host | Source | Destination |
 |---|---|---|
@@ -116,9 +116,9 @@ README, `docs/FEATURES.md`, `docs/guides/WASM_DEPLOYMENT.md`, `docs/ai/01-meta.y
 
 ### Task 5: Rollout (after the user's DNS step and go)
 
-- [ ] Before the push: `curl -sI https://colesorkness.com/` answers from Vercel (`server: Vercel`) with the current site.
-- [ ] Merge `linkage/url-move` into `main` with `--no-ff`; push; wait for "Deploy Web to Vercel".
-- [ ] Live checks:
+- [x] Before the push: `curl -sI https://colesorkness.com/` answers from Vercel (`server: Vercel`) with the current site.
+- [x] Merge `linkage/url-move` into `main` with `--no-ff`; push; wait for "Deploy Web to Vercel".
+- [x] Live checks (2026-10-06, all passed; see the record below):
   - `curl -sI https://colesorkness.com/` -> 307 to `/tools/`; `/tools/`, `/tools/linkage/` and `/tools/magcoupler/` 200; `/tools/linkage` -> 308 to `/tools/linkage/`.
   - `curl -sI 'https://linkage.colesorkness.com/?m=TEST'` -> 307, `location: https://colesorkness.com/tools/linkage/?m=TEST` (once or twice in the query, either works).
   - `curl -sI 'https://linkage.colesorkness.com/?tool=magcoupling'` -> 307 to `https://colesorkness.com/tools/magcoupler/`.
@@ -126,11 +126,12 @@ README, `docs/FEATURES.md`, `docs/guides/WASM_DEPLOYMENT.md`, `docs/ai/01-meta.y
   - `curl -sIL 'https://linkage.colesorkness.com/magcoupling?m=TEST'` (an old calculator link without the slash: the web app built its share link from its own path, so these can exist) ends on `/tools/magcoupler/?m=TEST`. It depends on Vercel's trailing-slash 308 keeping the query, which the explicit capture can't help with (the slash routes run before the redirects); if the query is lost, add a rule for the slashless form or accept the loss for these rare links.
   - Check the redirects' `cache-control`.
   - Playwright: the press share link from the session opens on the new address with its 21,506 N peak; the calculator's share link opens its design; Tools -> Magnetic coupling calculator opens `/tools/magcoupler/` in a new tab.
-- [ ] When all pass: a follow-up commit makes the old-host and `/magcoupling/` redirects permanent (U-3b), with `tests/web_layout.rs` updated; push.
-- [ ] Clean the old build outputs in the main checkout (`linkage-sim-rs/web/linkage-web.js`, `linkage-web_bg.wasm`, `magcoupling/`); the `.gitignore` patterns match at any depth, so they stay ignored either way.
+- [x] When all pass: a follow-up commit makes the old-host and `/magcoupling/` redirects permanent (U-3b), with `tests/web_layout.rs` updated; push.
+- [x] Clean the old build outputs in the main checkout (`linkage-sim-rs/web/linkage-web.js`, `linkage-web_bg.wasm`, `magcoupling/`); the `.gitignore` patterns match at any depth, so they stay ignored either way.
 
 ## Self-review record
 
 - Spec coverage: the paths and the hub (Task 1), old links (Task 1's redirects, Task 5's checks), the standalone calculator reachable from the linkage tool (Task 2), docs (Task 3).
 - The dry run is the implementation: every check above was run on the branch; the gate result and the review are recorded in the session's ledger and below.
 - Whole-branch review (session model, 2026-10-06): "with fixes". Critical: the `:path*` sources never match a path ending in `/` (every calculator share link), so old calculator links would 404 (fixed: `:path(.*)`, and a test bans the form). Important: the query pass-through was an assumption (fixed: explicit `m` capture, U-3), the keyboard tests left with the window (fixed: `ctrl_z_undoes_and_ctrl_y_or_ctrl_shift_z_redoes_the_model`, `an_arrow_key_nudges_the_selected_link_by_one_undo_step`, `key_tap` restored), docs still claimed egui lock parity and cited the deleted window (fixed), the old build outputs in the main checkout would become untracked (fixed: `.gitignore` patterns at any depth), nothing tied `MAGCOUPLER_URL` to the layout or `PUBLIC_BASE_URL` (fixed: `the_calculator_link_is_where_the_site_serves_the_calculator`). Minor, fixed: `?tool=magcoupling&m=` keeps the mechanism (`missing` m), temporary redirects (U-3b), `web_layout.rs` compares the redirects and headers with JSON literals and bans protocol-relative URLs, the deploy comment, the hub page's focus outline, narrow screens, reduced motion and colour scheme, a gate 10 tripwire if linkage-sim-rs depends on magcoupling-rs again, a pinned linkage share link written by the zlib-rs builds, the stale texts. Then the user moved everything under `/tools/` (T-1, T-2).
+- Rollout (2026-10-06): merged as 3a324bb and deployed. Live: `/` 307 to `/tools/`; `/tools/`, both apps, the favicon and the wasm 200; `/tools/linkage` 308 to `/tools/linkage/`; linkage.colesorkness.com `/?m=TEST`, `/magcoupling/?m=TEST` and `/magcoupling?m=TEST` (via the trailing-slash 308, which kept the query) all land with `m` once; `?tool=magcoupling&m=TEST` keeps the mechanism; www 308 to the apex; the redirects carry `cache-control: public, max-age=0, must-revalidate`. Vercel does pass the query through: `?tool=magcoupling` lands on `/tools/magcoupler/?tool=magcoupling`, harmless (the calculator reads only `m`; it loads with a clean console). Playwright on the live site: the old press share link opens at `/tools/linkage/?m=...` with 21,506 N (statics); the calculator's smoke share link through the old `/magcoupling/` address opens its design (face gap 1.50 mm, Torque -> Magnets solved at 14.18 mm); Tools -> Magnetic coupling calculator opens `/tools/magcoupler/` in a new tab. Then the follow-up made the old-link redirects permanent (U-3b).

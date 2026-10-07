@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-06 — colesorkness.com/tools/ live; the old-link redirects made permanent
+- Merged (3a324bb) and deployed. Live checks passed: `/` 307 to `/tools/`; the hub and both apps 200; old linkage.colesorkness.com links (share links included, with and without the calculator's slash) land on the new addresses with `m` once; the press share link shows its 21,506 N peak; the calculator's share link opens its design; Tools -> Magnetic coupling calculator opens `/tools/magcoupler/` in a new tab. Vercel also passes the query through, so `?tool=magcoupling` arrives at the calculator as `/tools/magcoupler/?tool=magcoupling` (harmless: the calculator reads only `m`).
+- Then the old-host and `/magcoupling/` redirects became permanent (308, decision 4A); `/` to `/tools/` stays temporary (T-1). `tests/web_layout.rs` pins both.
+
 ## 2026-10-06 — colesorkness.com layout and the standalone calculator (branch linkage/url-move)
 - The web output (`linkage-sim-rs/web/`) is laid out for colesorkness.com/tools/: the hub page at `/tools/` (`web/tools/index.html`; `/` redirects there), the linkage app at `/tools/linkage/` (`web/tools/linkage/`), the calculator at `/tools/magcoupler/` (`web/tools/magcoupler/`, was `web/magcoupling/`). `vercel.json` adds `trailingSlash` and temporary redirects: linkage.colesorkness.com to the new paths (share links keep `?m=` by an explicit capture; `?tool=magcoupling` goes to the calculator), `/magcoupling/` to `/tools/magcoupler/`, `/` to `/tools/`. `tests/web_layout.rs` keeps the pages, `vercel.json`, `.gitignore` and the scripts in step.
 - Share links: `SHARE_URL_BASE` (`https://colesorkness.com/tools/linkage/?m=`, `gui/state/file_io.rs`) and magcoupling-rs `PUBLIC_BASE_URL` (`https://colesorkness.com/tools/magcoupler/`).

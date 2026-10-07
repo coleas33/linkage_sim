@@ -86,25 +86,26 @@ fn folders_get_their_trailing_slash() {
 fn old_links_and_the_root_redirect_to_the_new_addresses() {
     let old = json!({ "type": "host", "value": "linkage.colesorkness.com" });
     let m = json!({ "type": "query", "key": "m", "value": "(?<m>.*)" });
+    // The old addresses redirect permanently (308, decision 4A); the root's stays temporary.
     let expected = json!([
         // The calculator's old page, its share links (?m=) kept explicitly.
         { "source": "/magcoupling/:path(.*)", "has": [old, m],
-          "destination": "https://colesorkness.com/tools/magcoupler/:path?m=:m", "permanent": false },
+          "destination": "https://colesorkness.com/tools/magcoupler/:path?m=:m", "permanent": true },
         { "source": "/magcoupling/:path(.*)", "has": [old],
-          "destination": "https://colesorkness.com/tools/magcoupler/:path", "permanent": false },
+          "destination": "https://colesorkness.com/tools/magcoupler/:path", "permanent": true },
         // The linkage app with the embedded calculator open (a mechanism link wins).
         { "source": "/", "has": [old, { "type": "query", "key": "tool", "value": "magcoupling" }],
           "missing": [{ "type": "query", "key": "m" }],
-          "destination": "https://colesorkness.com/tools/magcoupler/", "permanent": false },
+          "destination": "https://colesorkness.com/tools/magcoupler/", "permanent": true },
         // Everything else on the old host, ?m= share links kept explicitly.
         { "source": "/:path(.*)", "has": [old, m],
-          "destination": "https://colesorkness.com/tools/linkage/:path?m=:m", "permanent": false },
+          "destination": "https://colesorkness.com/tools/linkage/:path?m=:m", "permanent": true },
         { "source": "/:path(.*)", "has": [old],
-          "destination": "https://colesorkness.com/tools/linkage/:path", "permanent": false },
+          "destination": "https://colesorkness.com/tools/linkage/:path", "permanent": true },
         // The old calculator path on the new host.
         { "source": "/magcoupling/:path(.*)", "has": [m],
-          "destination": "/tools/magcoupler/:path?m=:m", "permanent": false },
-        { "source": "/magcoupling/:path(.*)", "destination": "/tools/magcoupler/:path", "permanent": false },
+          "destination": "/tools/magcoupler/:path?m=:m", "permanent": true },
+        { "source": "/magcoupling/:path(.*)", "destination": "/tools/magcoupler/:path", "permanent": true },
         // The root, to the hub (temporary: a page of its own may replace it).
         { "source": "/", "destination": "/tools/", "permanent": false },
     ]);
