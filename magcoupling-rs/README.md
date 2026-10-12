@@ -178,6 +178,15 @@ range. **Detailed inputs** keeps every original input, and all results, equation
 exports remain available. Opening this tab switches to forward calculation, keeping any
 inverse-sized design; direct edits use the existing undo/redo history and file/share format.
 
+**Minimum OD** adjusts the lower end of the diameter slider without resizing the current
+design. Lower it to explore diameters below the original 9 mm mounting-radius range.
+The fixed shaft bore, boss, cap/thread limits and upper radius bound still apply. Magnet-fit
+failures and a keyway breaking through the hub are flagged beside the torque, along with
+the existing guidance for a thin wall past the keyway. These checks remain separate from
+the exploratory torque calculation. The minimum is a view preference: files and share
+links save the actual dimensions, and reopening a smaller design starts the limit at its
+saved diameter. Reset all restores the original range. Inverse sizing retains its bounds.
+
 M4-1 (plan `docs/superpowers/plans/2026-10-01-magcoupling-m4-1-gui-inputs-dashboard-session.md`),
 M4-2 (plan `docs/superpowers/plans/2026-10-01-magcoupling-m4-2-geometry-plots-clamp.md`) and M4-3
 (plan `docs/superpowers/plans/2026-10-01-magcoupling-m4-3-explorer-assumptions-notes-pickers.md`).

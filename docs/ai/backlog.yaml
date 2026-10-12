@@ -5,6 +5,16 @@
 # user review of that item's diff before merge.
 # status: open | in_progress | fixed | deferred | rejected | escalated
 
+- id: BL-054
+  title: "Make the manual magcoupler minimum OD adjustable"
+  dimension: gui
+  risk: mechanical
+  evidence: "User request 2026-10-12 after the 8-magnet OD stopped around 40.4 mm: Let the minimum be a slider too. Before implementation manual_size_has_an_adjustable_minimum_od failed (missing control) and the adapter rejected 8 magnets at 38 mm because of the inherited 9 mm radius range."
+  acceptance: "Minimum OD changes the diameter slider limit without changing the design, torque or undo history; an 8-magnet design can resize to 38 mm after lowering the limit; bore, boss, cap/thread and upper radius bounds remain; smaller designs survive idle frames, undo/redo, load/share and reset; magnet-fit and keyway failures remain visible; independent review and full GATE PASS"
+  priority: 2
+  status: fixed
+  notes: "Exploration range preference only; existing model, input metadata, inverse sizing and file/share schema remain unchanged. Independent geometry and integrated review PASS; full gate GATE PASS, including 529 app unit tests, 21 size-adapter tests, native/WASM clippy, all 1159 Python oracle tests and current differential data. User's prior authorization to publish this magcoupler UX work applies."
+
 - id: BL-053
   title: "Magcoupler needs direct overall size controls with live torque and coordinated housing"
   dimension: gui

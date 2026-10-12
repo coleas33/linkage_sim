@@ -12,6 +12,9 @@
 //!
 //! These are forward controls: an in-range edit may fail block fit, clearance or another
 //! design check. The ordinary engine results expose those checks alongside the torque.
+//! An explicit minimum outside diameter can extend below the legacy 9 mm radius slider
+//! floor. It still preserves a nonnegative hub wall around the bore, the cap/thread input
+//! limits and the fixed boss. Changing that minimum only changes the available range.
 
 use std::f64::consts::PI;
 
@@ -26,6 +29,8 @@ pub struct SizeControls {
     pub diameter_mm: f64,
     pub overall_length_mm: f64,
     pub diameter_range: SliderRange,
+    /// Absolute supported range for a user's minimum outside diameter setting.
+    pub minimum_diameter_range: SliderRange,
     pub length_range: SliderRange,
 }
 
@@ -49,7 +54,10 @@ fn range(min: f64, max: f64) -> Option<SliderRange> {
     })
 }
 
-fn geometry(inputs: &DesignInputs) -> Option<Geometry> {
+fn geometry(inputs: &DesignInputs, minimum_diameter: Option<f64>) -> Option<Geometry> {
+    if minimum_diameter.is_some_and(|value| !value.is_finite() || value <= 0.0) {
+        return None;
+    }
     inputs.validate().ok()?;
     let rows = input_rows(inputs);
     let input_range = |path: &str| {
@@ -63,7 +71,7 @@ fn geometry(inputs: &DesignInputs) -> Option<Geometry> {
     if poles < pole_range.min || poles > pole_range.max || inputs.coupling.npole % 2 != 0 {
         return None;
     }
-    let radius_range = input_range("coupling.inner_back_apothem_mm")?;
+    let mut radius_range = input_range("coupling.inner_back_apothem_mm")?;
     let cap_range = input_range("metal.cap_od_mm")?;
     let thread_range = input_range("metal.cap_thread_dia_mm")?;
     let axial_range = input_range("coupling.magnets.axial_length_mm")?;
@@ -91,19 +99,51 @@ fn geometry(inputs: &DesignInputs) -> Option<Geometry> {
     let thread_offset = md.cap_thread_dia_mm - cup;
     let cap_overhang = cap_offset.max(0.0);
     let radius = inputs.coupling.inner_back_apothem_mm;
-    let cup_min = (cup + slope * (radius_range.min - radius))
-        .max(cap_range.min - cap_offset)
-        .max(thread_range.min - thread_offset);
+    let cup_at_radius = |radius_mm: f64| cup + slope * (radius_mm - radius);
+    let cup_min_at_radius = |radius_mm: f64| {
+        cup_at_radius(radius_mm)
+            .max(cap_range.min - cap_offset)
+            .max(thread_range.min - thread_offset)
+    };
     let cup_max = (cup + slope * (radius_range.max - radius))
         .min(cap_range.max - cap_offset)
         .min(thread_range.max - thread_offset);
-    if !cup_min.is_finite() || !cup_max.is_finite() || cup_min > cup_max {
+    // The explicit floor may relax a UI bound, but cannot put the hub inside its bore.
+    let mut shaft_radius = inputs.coupling.bore_mm / 2.0 + md.bond_inner_mm;
+    if !shaft_radius.is_finite() || shaft_radius <= 0.0 {
         return None;
     }
-    let diameter_range = range(
-        (cup_min + cap_overhang).max(md.boss_od_mm),
+    // Use the engine's subtraction order: rounding a sum down must not create a tiny
+    // negative hub wall at the endpoint. Zero wall is allowed and remains a design warning.
+    if shaft_radius - md.bond_inner_mm - inputs.coupling.bore_mm / 2.0 < 0.0 {
+        shaft_radius = shaft_radius.next_up();
+    }
+    let absolute_cup_min = cup_min_at_radius(shaft_radius);
+    if !absolute_cup_min.is_finite() || !cup_max.is_finite() || absolute_cup_min > cup_max {
+        return None;
+    }
+    let minimum_diameter_range = range(
+        (absolute_cup_min + cap_overhang).max(md.boss_od_mm),
         (cup_max + cap_overhang).max(md.boss_od_mm),
     )?;
+    let diameter_range = if let Some(minimum) = minimum_diameter {
+        // A saved view setting may outlive a change of magnets or gaps. Bound the setting,
+        // rather than rewriting the design to fit its former envelope.
+        let minimum = minimum.clamp(minimum_diameter_range.min, minimum_diameter_range.max);
+        radius_range.min = (radius + (minimum - cap_overhang - cup) / slope)
+            .max(shaft_radius)
+            .min(radius_range.max);
+        range(minimum, minimum_diameter_range.max)?
+    } else {
+        let cup_min = cup_min_at_radius(radius_range.min);
+        if !cup_min.is_finite() || cup_min > cup_max {
+            return None;
+        }
+        range(
+            (cup_min + cap_overhang).max(md.boss_od_mm),
+            minimum_diameter_range.max,
+        )?
+    };
     let at_length = |length_mm| {
         let mut magnets = inputs.coupling.magnets.clone();
         magnets.axial_length_mm = Some(length_mm);
@@ -116,6 +156,7 @@ fn geometry(inputs: &DesignInputs) -> Option<Geometry> {
             diameter_mm: outside,
             overall_length_mm: overall_length,
             diameter_range,
+            minimum_diameter_range,
             length_range,
         },
         cup_od_mm: cup,
@@ -129,7 +170,16 @@ fn geometry(inputs: &DesignInputs) -> Option<Geometry> {
 /// Current outside diameter (cup, cap or boss) and overall axial stack. `None` means the
 /// geometry or the intersection of its supported input ranges cannot define these controls.
 pub fn dimensions(inputs: &DesignInputs) -> Option<SizeControls> {
-    geometry(inputs).map(|geometry| geometry.controls)
+    geometry(inputs, None).map(|geometry| geometry.controls)
+}
+
+/// Current dimensions with a user-selected minimum outside diameter. The positive finite
+/// setting is bounded to the absolute range; the inputs and their current size stay intact.
+pub fn dimensions_with_minimum_diameter(
+    inputs: &DesignInputs,
+    minimum_od_mm: f64,
+) -> Option<SizeControls> {
+    geometry(inputs, Some(minimum_od_mm)).map(|geometry| geometry.controls)
 }
 
 fn check_request(requested: f64, range: SliderRange, name: &str) -> Result<(), String> {
@@ -148,7 +198,31 @@ fn check_request(requested: f64, range: SliderRange, name: &str) -> Result<(), S
 /// Select an outside diameter while preserving fixed dimensions and the cap's existing
 /// signed offsets from the cup. Requests outside the supported range are refused.
 pub fn resize_diameter(inputs: &DesignInputs, requested: f64) -> Result<DesignInputs, String> {
-    let geometry = geometry(inputs).ok_or("The current geometry cannot define a size control")?;
+    let geometry =
+        geometry(inputs, None).ok_or("The current geometry cannot define a size control")?;
+    resize_diameter_using(inputs, requested, geometry)
+}
+
+/// Select an outside diameter with an explicit minimum. This can relax the inherited
+/// radius slider's lower bound, while preserving the absolute housing and shaft limits.
+pub fn resize_diameter_with_minimum(
+    inputs: &DesignInputs,
+    requested: f64,
+    minimum_od_mm: f64,
+) -> Result<DesignInputs, String> {
+    if !minimum_od_mm.is_finite() || minimum_od_mm <= 0.0 {
+        return Err("Minimum outside diameter must be a positive finite number".to_owned());
+    }
+    let geometry = geometry(inputs, Some(minimum_od_mm))
+        .ok_or("The current geometry cannot define a size control")?;
+    resize_diameter_using(inputs, requested, geometry)
+}
+
+fn resize_diameter_using(
+    inputs: &DesignInputs,
+    requested: f64,
+    geometry: Geometry,
+) -> Result<DesignInputs, String> {
     if requested == geometry.controls.diameter_mm {
         return Ok(inputs.clone());
     }
@@ -173,7 +247,8 @@ pub fn resize_diameter(inputs: &DesignInputs, requested: f64) -> Result<DesignIn
 /// Select an overall axial stack by setting both rings' existing axial length override.
 /// The housing module retains each ring's baseline margins and its physical length floor.
 pub fn resize_length(inputs: &DesignInputs, requested: f64) -> Result<DesignInputs, String> {
-    let geometry = geometry(inputs).ok_or("The current geometry cannot define a size control")?;
+    let geometry =
+        geometry(inputs, None).ok_or("The current geometry cannot define a size control")?;
     if requested == geometry.controls.overall_length_mm {
         return Ok(inputs.clone());
     }

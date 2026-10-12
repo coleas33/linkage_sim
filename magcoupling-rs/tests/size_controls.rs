@@ -1,6 +1,9 @@
 //! Manual outside diameter and overall length controls, evaluated through the same engine.
 
-use magcoupling::engine::size_controls::{dimensions, resize_diameter, resize_length};
+use magcoupling::engine::size_controls::{
+    dimensions, dimensions_with_minimum_diameter, resize_diameter, resize_diameter_with_minimum,
+    resize_length,
+};
 use magcoupling::{DesignInputs, compute_all};
 
 fn close(actual: f64, expected: f64) {
@@ -80,6 +83,29 @@ fn eight_magnets_can_fit_at_the_smaller_manually_selected_size() {
         compute_all(&changed).metal.torque_hot_low_Nm < compute_all(&base).metal.torque_hot_low_Nm
     );
     assert_eq!(changed.coupling.npole, 8);
+}
+
+#[test]
+fn an_explicit_minimum_allows_eight_magnets_at_38_mm() {
+    let mut base = DesignInputs::default();
+    base.coupling.npole = 8;
+    assert!(
+        resize_diameter(&base, 38.0).is_err(),
+        "the inherited radius floor stays unchanged"
+    );
+    let changed = resize_diameter_with_minimum(&base, 38.0, 37.0).unwrap();
+    close(changed.coupling.inner_back_apothem_mm, 7.932689121972913);
+    close(changed.metal.cap_od_mm, 38.0);
+    close(changed.metal.cap_thread_dia_mm, 36.2);
+    assert!(
+        compute_all(&changed)
+            .model
+            .inner_flat_check
+            .starts_with("OK")
+    );
+    assert!(
+        compute_all(&changed).metal.torque_hot_low_Nm < compute_all(&base).metal.torque_hot_low_Nm
+    );
 }
 
 #[test]
@@ -243,4 +269,138 @@ fn malformed_designs_and_nonfinite_requests_are_refused_without_panicking() {
         assert!(dimensions(&invalid).is_none(), "count {count}");
         assert!(resize_diameter(&invalid, 41.0).is_err());
     }
+}
+
+#[test]
+fn changing_the_minimum_only_changes_the_range_and_preserves_current_dimensions() {
+    let base = DesignInputs::default();
+    let original = base.clone();
+    for minimum in [0.1, 37.0, 50.0, 200.0] {
+        let size = dimensions_with_minimum_diameter(&base, minimum).unwrap();
+        close(size.diameter_mm, 42.8);
+        close(size.overall_length_mm, 31.8);
+        close(size.minimum_diameter_range.min, 32.07508531276967);
+        close(size.minimum_diameter_range.max, 80.0);
+        close(
+            size.diameter_range.min,
+            minimum.clamp(32.07508531276967, 80.0),
+        );
+        assert_eq!(
+            resize_diameter_with_minimum(&base, 42.8, minimum).unwrap(),
+            original
+        );
+    }
+    assert_eq!(base, original);
+    close(
+        dimensions(&base).unwrap().diameter_range.min,
+        40.38163688425198,
+    );
+}
+
+#[test]
+fn minimum_cannot_remove_the_hub_wall_around_the_shaft() {
+    let mut base = DesignInputs::default();
+    base.coupling.npole = 8;
+    let size = dimensions_with_minimum_diameter(&base, 20.0).unwrap();
+    close(size.minimum_diameter_range.min, 31.759599557017577);
+    close(size.diameter_range.min, 31.759599557017577);
+    let changed = resize_diameter_with_minimum(&base, size.diameter_range.min, 20.0).unwrap();
+    close(changed.coupling.inner_back_apothem_mm, 5.05);
+    assert!(compute_all(&changed).model.hub_wall_mm >= 0.0);
+    assert!(compute_all(&changed).model.hub_wall_past_key_mm < 0.0);
+    assert!(resize_diameter_with_minimum(&base, 31.75, 20.0).is_err());
+}
+
+#[test]
+fn explicit_minimum_keeps_block_fit_failures_visible() {
+    let mut base = DesignInputs::default();
+    base.coupling.npole = 8;
+    let changed = resize_diameter_with_minimum(&base, 37.0, 37.0).unwrap();
+    close(changed.coupling.inner_back_apothem_mm, 7.47074935571727);
+    let results = compute_all(&changed);
+    assert!(results.model.inner_flat_check.starts_with("TOO NARROW"));
+    assert!(results.model.hub_wall_mm > 0.0);
+    assert!(results.metal.torque_hot_low_Nm.is_finite());
+}
+
+#[test]
+fn cap_thread_and_boss_absolute_floors_still_apply() {
+    let mut thread_limited = DesignInputs::default();
+    thread_limited.metal.cap_thread_dia_mm = 20.0;
+    let size = dimensions_with_minimum_diameter(&thread_limited, 25.0).unwrap();
+    close(size.diameter_range.min, 42.8);
+    assert!(resize_diameter_with_minimum(&thread_limited, 42.7, 25.0).is_err());
+
+    let mut cap_limited = DesignInputs::default();
+    cap_limited.metal.cap_od_mm = 20.0;
+    let size = dimensions_with_minimum_diameter(&cap_limited, 25.0).unwrap();
+    close(size.diameter_range.min, 41.32646460566903);
+    assert!(resize_diameter_with_minimum(&cap_limited, 41.3, 25.0).is_err());
+
+    let mut boss_limited = DesignInputs::default();
+    boss_limited.coupling.npole = 8;
+    boss_limited.metal.boss_od_mm = 35.0;
+    let size = dimensions_with_minimum_diameter(&boss_limited, 25.0).unwrap();
+    close(size.diameter_range.min, 35.0);
+    close(size.minimum_diameter_range.min, 35.0);
+    assert!(resize_diameter_with_minimum(&boss_limited, 34.9, 25.0).is_err());
+    close(
+        dimensions(&resize_diameter_with_minimum(&boss_limited, 35.0, 25.0).unwrap())
+            .unwrap()
+            .diameter_mm,
+        35.0,
+    );
+}
+
+#[test]
+fn explicit_minimum_preserves_upper_bounds_and_works_for_arcs() {
+    let mut base = DesignInputs::default();
+    base.coupling.faceted = 0;
+    let size = dimensions_with_minimum_diameter(&base, 20.0).unwrap();
+    close(size.minimum_diameter_range.min, 32.6);
+    close(size.diameter_range.max, 80.0);
+    let changed = resize_diameter_with_minimum(&base, 37.0, 20.0).unwrap();
+    close(changed.coupling.inner_back_apothem_mm, 7.25);
+    close(dimensions(&changed).unwrap().diameter_mm, 37.0);
+    let largest = resize_diameter_with_minimum(&base, 80.0, 20.0).unwrap();
+    close(largest.metal.cap_od_mm, 80.0);
+    assert!(resize_diameter_with_minimum(&base, 80.1, 20.0).is_err());
+    assert!(resize_diameter_with_minimum(&base, 79.9, 200.0).is_err());
+}
+
+#[test]
+fn a_loaded_design_below_the_legacy_radius_floor_is_preserved_and_editable() {
+    let mut base = DesignInputs::default();
+    base.coupling.npole = 8;
+    let mut current = resize_diameter_with_minimum(&base, 38.0, 37.0).unwrap();
+    let legacy_size = dimensions(&current).unwrap();
+    close(legacy_size.diameter_mm, 38.0);
+    assert!(legacy_size.diameter_mm < legacy_size.diameter_range.min);
+    assert_eq!(resize_diameter(&current, 38.0).unwrap(), current);
+    for _ in 0..20 {
+        current = resize_diameter_with_minimum(&current, 37.0, 37.0).unwrap();
+        current = resize_diameter_with_minimum(&current, 38.0, 37.0).unwrap();
+    }
+    close(current.coupling.inner_back_apothem_mm, 7.932689121972913);
+    close(current.metal.cap_od_mm, 38.0);
+    close(current.metal.cap_thread_dia_mm, 36.2);
+    let shortened = resize_length(&current, 29.1).unwrap();
+    close(shortened.coupling.inner_back_apothem_mm, 7.932689121972913);
+    close(dimensions(&shortened).unwrap().overall_length_mm, 29.1);
+}
+
+#[test]
+fn invalid_minimum_settings_are_refused_even_for_unchanged_size() {
+    let base = DesignInputs::default();
+    for minimum in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.0, -1.0] {
+        assert!(dimensions_with_minimum_diameter(&base, minimum).is_none());
+        assert!(resize_diameter_with_minimum(&base, 42.8, minimum).is_err());
+    }
+    for requested in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0] {
+        assert!(resize_diameter_with_minimum(&base, requested, 37.0).is_err());
+    }
+    let mut invalid = base.clone();
+    invalid.metal.face_gap_mm = f64::NAN;
+    assert!(dimensions_with_minimum_diameter(&invalid, 37.0).is_none());
+    assert!(resize_diameter_with_minimum(&invalid, 38.0, 37.0).is_err());
 }

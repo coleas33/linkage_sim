@@ -5,6 +5,11 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-10-12 — Adjustable manual minimum OD (BL-054)
+- **Minimum OD** changes the direct diameter slider's lower limit without changing the current inputs, torque or design undo history. It is a view preference; reset/load starts fresh and a loaded smaller design exposes its actual OD as a pinned starting floor. Existing files/share links preserve actual smaller dimensions without a format change.
+- The explicit adapter minimum can extend below the inherited 9 mm radius range; the bore/bondline envelope, fixed boss, cap/thread bounds and existing upper radius bound remain. Existing model/metadata/inverse sizing are unchanged. The centre view flags magnet-fit failure and keyway breakthrough and displays the existing thin-wall guidance.
+- Red regressions recorded for the absent control and rejection of 8 magnets at 38 mm. The 21 adapter tests cover explicit floors, fixed-part limits, invalid settings, loaded sizes and round trips; headless UI regressions cover unchanged inputs/torque/history when the minimum changes, 38 mm edits, keyboard focus, idle frames, undo/redo, load/share/reset, fit warnings and nonfinite typed input. Independent geometry and integrated review PASS. The full required gate ended **GATE PASS**, including 529 app unit tests, native/WASM checks and clippy, shipped-feature guards, all 1,159 Python oracle tests and current differential data. The user's authorization to publish this magcoupler UX work applies.
+
 ## 2026-10-11 — Direct magcoupler size exploration (BL-053)
 - New **Size and torque** tab: outside diameter, overall length, magnet face gap and magnets per ring, with live expected and hot-low torque and the geometry. The detailed input groups remain available under **Detailed inputs**; results, equations, assumptions, exports, files and share links retain their existing format.
 - Diameter edits move the inner back apothem, cap OD and cap thread together, retaining signed housing allowances, magnet cross sections, shaft dimensions, gaps and wall thicknesses. Overall length edits use the existing axial magnet override and housing allowance/floor rules. Existing fit, clearance, wall and cap/thread checks remain visible; no numerical torque prediction is presented outside the end-effect model's range.

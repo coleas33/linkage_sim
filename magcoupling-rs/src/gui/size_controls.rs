@@ -3,11 +3,14 @@
 
 use crate::DesignInputs;
 use crate::engine::meta::{InputSet, SliderRange, Value};
-use crate::engine::size_controls::{dimensions, resize_diameter, resize_length};
+use crate::engine::size_controls::{
+    dimensions, dimensions_with_minimum_diameter, resize_diameter_with_minimum, resize_length,
+};
 use crate::gui::input_ui::slider;
 use crate::gui::inputs::InputCatalogue;
 
 pub const HEADING: &str = "Size and torque";
+pub const MINIMUM: &str = "Minimum OD";
 pub const DIAMETER: &str = "Outside diameter";
 pub const LENGTH: &str = "Overall length";
 pub const GAP: &str = "Magnet face gap";
@@ -16,34 +19,68 @@ pub const LINKED_HOUSING: &str = "Diameter and length edits resize the associate
 
 pub(crate) struct ControlsOutput {
     pub inputs: DesignInputs,
+    pub minimum_diameter_mm: Option<f64>,
     pub widgets: Vec<egui::Id>,
     pub error: Option<String>,
 }
 
 /// Draw before computing the panel's results, so the readouts reflect this frame's edits.
-pub(crate) fn controls_ui(ui: &mut egui::Ui, inputs: &DesignInputs) -> ControlsOutput {
+pub(crate) fn controls_ui(
+    ui: &mut egui::Ui,
+    inputs: &DesignInputs,
+    minimum_diameter_mm: Option<f64>,
+) -> ControlsOutput {
     let mut output = ControlsOutput {
         inputs: inputs.clone(),
+        minimum_diameter_mm,
         widgets: Vec::new(),
         error: None,
     };
     let catalogue = InputCatalogue::get();
     ui.push_id("direct_size_controls", |ui| {
-        if let Some(size) = dimensions(inputs) {
-            for (label, path, mut value, range, resize) in [
+        let mut minimum_widget = None;
+        if let Some(legacy) = dimensions(inputs) {
+            let entry = catalogue
+                .entry("coupling.inner_back_apothem_mm")
+                .expect("the diameter has input metadata");
+            let range = legacy.minimum_diameter_range;
+            let mut minimum = minimum_diameter_mm
+                .unwrap_or(legacy.diameter_range.min.min(legacy.diameter_mm))
+                .clamp(range.min, range.max);
+            ui.label(MINIMUM).on_hover_text(
+                "Sets the lower end of the diameter slider without changing your current size.",
+            );
+            let response = ui
+                .push_id("minimum_diameter_mm", |ui| {
+                    ui.add(slider(&mut minimum, entry.meta, range))
+                })
+                .inner;
+            minimum_widget = Some(response.id);
+            if response.changed() {
+                output.minimum_diameter_mm = Some(minimum);
+            } else if minimum_diameter_mm.is_none()
+                && legacy.diameter_mm < legacy.diameter_range.min
+            {
+                // Pin a loaded design's starting floor, so increasing its diameter later
+                // does not move the floor upward on every idle frame.
+                output.minimum_diameter_mm = Some(minimum);
+            }
+            // A loaded smaller design starts with its actual diameter exposed. The range
+            // preference itself is local to this view, like the input ordering preference.
+            let size = dimensions_with_minimum_diameter(inputs, minimum)
+                .expect("a bounded minimum defines a diameter range");
+            for (label, path, mut value, range) in [
                 (
                     DIAMETER,
                     "coupling.inner_back_apothem_mm",
                     size.diameter_mm,
                     size.diameter_range,
-                    resize_diameter as fn(&DesignInputs, f64) -> Result<DesignInputs, String>,
                 ),
                 (
                     LENGTH,
                     "coupling.magnets.axial_length_mm",
                     size.overall_length_mm,
                     size.length_range,
-                    resize_length,
                 ),
             ] {
                 ui.label(label);
@@ -55,12 +92,21 @@ pub(crate) fn controls_ui(ui: &mut egui::Ui, inputs: &DesignInputs) -> ControlsO
                     .inner;
                 output.widgets.push(response.id);
                 if response.changed() {
-                    match resize(&output.inputs, value) {
+                    let resized = if path == "coupling.inner_back_apothem_mm" {
+                        resize_diameter_with_minimum(&output.inputs, value, minimum)
+                    } else {
+                        resize_length(&output.inputs, value)
+                    };
+                    match resized {
                         Ok(resized) => output.inputs = resized,
                         Err(error) => output.error = Some(error),
                     }
                 }
             }
+            ui.weak(format!(
+                "Shaft and housing range floor: {:.1} mm",
+                range.min
+            ));
         } else {
             ui.colored_label(
                 ui.visuals().warn_fg_color,
@@ -97,6 +143,10 @@ pub(crate) fn controls_ui(ui: &mut egui::Ui, inputs: &DesignInputs) -> ControlsO
                 }
             }
         }
+        if let Some(widget) = minimum_widget {
+            output.widgets.push(widget);
+        }
+        ui.label("Minimum OD changes the slider limit; your current diameter stays unchanged.");
         ui.label(LINKED_HOUSING);
     });
     output

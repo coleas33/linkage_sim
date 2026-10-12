@@ -246,6 +246,8 @@ pub struct MagcouplingPanel {
     /// How the design inputs are ordered (decision O-1): a view of this session only, never in
     /// a design file or a share link.
     input_order: InputOrder,
+    /// The user-selected lower OD limit, a view preference that does not resize the design.
+    minimum_diameter_mm: Option<f64>,
     /// The inputs filter's text: while it holds more than blanks, the design inputs view shows
     /// the matching inputs alone.
     input_filter: String,
@@ -292,6 +294,7 @@ impl MagcouplingPanel {
             centre: CentreView::Geometry,
             inputs_view: InputsView::Design,
             input_order: InputOrder::default(),
+            minimum_diameter_mm: None,
             input_filter: String::new(),
             banner: None,
             results_table: ResultsTable::default(),
@@ -365,6 +368,7 @@ impl MagcouplingPanel {
     /// starts there, so the first Undo does not throw it away. Every other replacement of the
     /// design (a loaded file, reset all) is an edit and can be undone.
     pub fn open_design(&mut self, design: Design) {
+        self.minimum_diameter_mm = None;
         self.history = History::new(design.clone());
         self.set_design(design);
     }
@@ -404,6 +408,7 @@ impl MagcouplingPanel {
         match design {
             Ok(design) => {
                 apply(self, design);
+                self.minimum_diameter_mm = None;
                 self.status = Some(done.to_owned());
                 Ok(())
             }
@@ -453,6 +458,7 @@ impl MagcouplingPanel {
 
     /// Back to the default design (inputs and sizing state); it can be undone.
     pub fn reset(&mut self) {
+        self.minimum_diameter_mm = None;
         self.set_design(Design::default());
     }
 
@@ -718,6 +724,26 @@ impl MagcouplingPanel {
                         });
                     }
                 });
+                if !crate::engine::model::blocks_fit(&shown.coupling, &self.results.model) {
+                    ui.colored_label(
+                        ui.visuals().error_fg_color,
+                        "Exploration only: magnets do not fit at this diameter.",
+                    );
+                }
+                let key_wall = self.results.model.hub_wall_past_key_mm;
+                if !key_wall.is_finite() || key_wall <= 0.0 {
+                    ui.colored_label(
+                        ui.visuals().error_fg_color,
+                        "Exploration only: the keyway breaks through the hub.",
+                    );
+                } else if key_wall < 2.5 {
+                    ui.colored_label(
+                        ui.visuals().warn_fg_color,
+                        format!(
+                            "Wall past keyway: {key_wall:.2} mm; existing guidance is about 2.5 mm."
+                        ),
+                    );
+                }
                 ui.label("Build checks are shown in the dashboard. The geometry drawing fits the view; use the dimensions to compare sizes.");
                 geometry_ui(ui, &self.shown_inputs(), &self.results, readouts);
             }
@@ -899,10 +925,11 @@ impl MagcouplingPanel {
             let shown = self.shown_inputs();
             let output = ui
                 .add_enabled_ui(self.sizing.mode == SizingMode::MagnetsToTorque, |ui| {
-                    crate::gui::size_controls::controls_ui(ui, &shown)
+                    crate::gui::size_controls::controls_ui(ui, &shown, self.minimum_diameter_mm)
                 })
                 .inner;
             self.design_widgets.extend(output.widgets);
+            self.minimum_diameter_mm = output.minimum_diameter_mm;
             if output.inputs != shown {
                 self.inputs = output.inputs;
                 self.last_error = output.error;
@@ -3558,6 +3585,151 @@ mod tests {
             assert_eq!(count(&output, label), 1, "{label}");
         }
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn manual_size_has_an_adjustable_minimum_od() {
+        let mut harness = Harness::new();
+        harness.panel.inputs.coupling.npole = 8;
+        harness.frame(Vec::new());
+        harness.click_text("Size and torque");
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Minimum OD"), 1);
+        let before = harness.panel.design();
+        let before_results = harness.panel.results.clone();
+        let undo_count = harness.panel.history.undo_len();
+        harness.click_text("40.3 mm");
+        harness.frame([select_all(), vec![egui::Event::Text("37".to_owned())]].concat());
+        harness.frame(key_tap(egui::Key::Enter));
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.minimum_diameter_mm, Some(37.0));
+        assert_eq!(harness.panel.design(), before);
+        assert_eq!(harness.panel.results(), &before_results);
+        assert_eq!(harness.panel.history.undo_len(), undo_count);
+
+        harness.click_text("42.8 mm");
+        harness.frame([select_all(), vec![egui::Event::Text("38".to_owned())]].concat());
+        harness.frame(key_tap(egui::Key::Enter));
+        harness.frame(Vec::new());
+        let smaller = harness.panel.design();
+        assert!(smaller.inputs.coupling.inner_back_apothem_mm < 9.0);
+        assert!((smaller.inputs.metal.cap_od_mm - 38.0).abs() < 1e-9);
+        assert_eq!(harness.panel.results(), &compute_all(&smaller.inputs));
+        assert_ne!(
+            harness.panel.results.model.pullout_Nm,
+            before_results.model.pullout_Nm
+        );
+        for _ in 0..3 {
+            harness.frame(Vec::new());
+            assert_eq!(harness.panel.design(), smaller);
+        }
+        harness.panel.undo();
+        assert_eq!(harness.panel.design(), before);
+        assert_eq!(harness.panel.minimum_diameter_mm, Some(37.0));
+        harness.panel.redo();
+        assert_eq!(harness.panel.design(), smaller);
+    }
+
+    #[test]
+    fn manual_minimum_rejects_nonfinite_typed_values_without_changing_design() {
+        let mut harness = Harness::new();
+        harness.click_text("Size and torque");
+        let before = harness.panel.design();
+        harness.click_text("40.4 mm");
+        harness.frame([select_all(), vec![egui::Event::Text("NaN".to_owned())]].concat());
+        harness.frame(key_tap(egui::Key::Enter));
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.design(), before);
+        assert!(
+            harness
+                .panel
+                .minimum_diameter_mm
+                .is_none_or(|value| value.is_finite())
+        );
+    }
+
+    #[test]
+    fn loaded_smaller_designs_keep_their_size_and_expose_a_stable_minimum() {
+        let mut inputs = DesignInputs::default();
+        inputs.coupling.npole = 8;
+        let smaller =
+            crate::engine::size_controls::resize_diameter_with_minimum(&inputs, 38.0, 37.0)
+                .unwrap();
+        let design = Design {
+            inputs: smaller,
+            ..Design::default()
+        };
+        let text = design_to_json(&design);
+        let mut harness = Harness::new();
+        harness.panel.minimum_diameter_mm = Some(45.0);
+        harness.panel.load_design_file(&text).unwrap();
+        harness.click_text("Size and torque");
+        for _ in 0..3 {
+            harness.frame(Vec::new());
+            assert_eq!(harness.panel.design(), design);
+        }
+        assert!((harness.panel.minimum_diameter_mm.unwrap() - 38.0).abs() < 1e-9);
+        let widget = harness.panel.design_widgets[0];
+        harness.ctx.memory_mut(|m| m.request_focus(widget));
+        // Establish egui's arrow-key focus lock before sending the keyboard edit.
+        harness.frame(Vec::new());
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        harness.frame(Vec::new());
+        assert!((harness.panel.inputs.metal.cap_od_mm - 38.1).abs() < 1e-9);
+        assert!((harness.panel.minimum_diameter_mm.unwrap() - 38.0).abs() < 1e-9);
+        assert_eq!(
+            widget, harness.panel.design_widgets[0],
+            "diameter widget stays stable"
+        );
+        assert!(
+            harness.ctx.memory(|m| m.has_focus(widget)),
+            "diameter keeps keyboard focus"
+        );
+        harness.frame(key_tap(egui::Key::ArrowLeft));
+        harness.frame(Vec::new());
+        assert!(
+            (harness.panel.inputs.metal.cap_od_mm - 38.0).abs() < 1e-9,
+            "diameter={}, minimum={:?}, error={:?}",
+            harness.panel.inputs.metal.cap_od_mm,
+            harness.panel.minimum_diameter_mm,
+            harness.panel.last_error
+        );
+        // The existing share schema carries the actual smaller dimensions.
+        let payload = crate::gui::session::encode_share_payload(&harness.panel.design());
+        let mut reopened = MagcouplingPanel::new();
+        reopened.open_share_payload(&payload).unwrap();
+        assert_eq!(reopened.design(), harness.panel.design());
+        harness.panel.reset();
+        assert_eq!(harness.panel.minimum_diameter_mm, None);
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn smaller_exploration_shows_magnet_fit_and_keyway_breakthrough() {
+        let mut harness = Harness::new();
+        harness.panel.inputs.coupling.npole = 8;
+        harness.panel.inputs = crate::engine::size_controls::resize_diameter_with_minimum(
+            &harness.panel.inputs,
+            35.0,
+            34.0,
+        )
+        .unwrap();
+        harness.click_text("Size and torque");
+        let output = harness.frame(Vec::new());
+        assert_eq!(
+            count(
+                &output,
+                "Exploration only: magnets do not fit at this diameter."
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &output,
+                "Exploration only: the keyway breaks through the hub."
+            ),
+            1
+        );
     }
 
     #[test]
