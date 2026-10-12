@@ -5,6 +5,16 @@
 # user review of that item's diff before merge.
 # status: open | in_progress | fixed | deferred | rejected | escalated
 
+- id: BL-053
+  title: "Magcoupler needs direct overall size controls with live torque and coordinated housing"
+  dimension: gui
+  risk: mechanical
+  evidence: "User report 2026-10-11: 10 to 8 magnets and a lower torque requirement do not select a smaller radius or resize the fixed cap. Requested manual diameter, overall length and gap controls while retaining all calculator data. GUI regression size_and_torque_has_direct_dimension_and_gap_controls failed before implementation (missing tab)."
+  acceptance: "Size and torque tab has outside diameter, overall length, gap and magnets-per-ring controls; housing follows dimension edits with signed allowances and fixed thicknesses retained; torque equals compute_all on the shown design; out-of-range torque is unavailable; idle frames do not edit, changes undo/redo, detailed inputs/files/share links remain available; independent geometry review and full GATE PASS"
+  priority: 2
+  status: fixed
+  notes: "Pure adapter to existing geometry and torque equations; no new model, deviation, schema or default inputs. Independent geometry and final integrated review PASS; full gate GATE PASS with the Python oracle's 1159 tests run and differential data current. User explicitly authorized pushing the completed feature to update the website."
+
 - id: BL-001
   title: linear_driver.rs module doc formula compiled as failing doctest
   dimension: tests

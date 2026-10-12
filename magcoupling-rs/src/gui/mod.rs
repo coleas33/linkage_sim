@@ -24,6 +24,7 @@ pub mod readouts;
 pub mod result_groups;
 pub mod results_table;
 pub mod session;
+mod size_controls;
 pub mod sizing;
 pub mod spreadsheet;
 #[cfg(test)]

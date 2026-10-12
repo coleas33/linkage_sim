@@ -30,7 +30,7 @@ use crate::engine::sizing::FreeVariable;
 use crate::gui::clamp_drawing::clamp_ui;
 use crate::gui::dashboard::{Level, dashboard_ui, end_effect_banner};
 use crate::gui::explorer::{EQUATION_PANEL, Explorer, FOCUS_WIDTH, explorer_ui, panel_heights};
-use crate::gui::format::search_needle;
+use crate::gui::format::{format_value, search_needle, with_unit};
 use crate::gui::geometry_view::geometry_ui;
 use crate::gui::history::History;
 use crate::gui::input_ui::{CHANGED_DOT, RowEdit, input_row, slider};
@@ -169,6 +169,8 @@ pub enum PanelRequest {
 /// The views of the centre region, one tab row (decision M42-1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CentreView {
+    /// Direct envelope dimensions, magnet count and gap, with the live torque and geometry.
+    SizeAndTorque,
     /// The end view and the side view to scale, with the dimension callouts (the default view:
     /// decision M42-2).
     Geometry,
@@ -182,7 +184,8 @@ pub enum CentreView {
 
 impl CentreView {
     /// Every view, in tab order.
-    pub const ALL: [CentreView; 8] = [
+    pub const ALL: [CentreView; 9] = [
+        CentreView::SizeAndTorque,
         CentreView::Geometry,
         CentreView::Plot(PlotKind::TorqueTemperature),
         CentreView::Plot(PlotKind::GapSweep),
@@ -196,6 +199,7 @@ impl CentreView {
     /// The tab text.
     pub const fn label(self) -> &'static str {
         match self {
+            CentreView::SizeAndTorque => crate::gui::size_controls::HEADING,
             CentreView::Geometry => "Geometry",
             CentreView::Plot(kind) => kind.label(),
             CentreView::Clamp => "Clamp",
@@ -554,6 +558,21 @@ impl MagcouplingPanel {
         );
     }
 
+    /// Leaving inverse sizing adopts its result before a manual size edit.
+    fn set_sizing_mode(&mut self, mode: SizingMode) {
+        if mode == self.sizing.mode {
+            return;
+        }
+        if mode == SizingMode::MagnetsToTorque {
+            if !self.runner.is_current(&self.inputs, &self.sizing) {
+                self.runner.solve_now(&self.inputs, &self.sizing);
+                self.log_sizing();
+            }
+            self.inputs = self.runner.shown(&self.inputs, &self.sizing);
+        }
+        self.sizing.mode = mode;
+    }
+
     /// The sizing controls at the top of the Key design group: the mode switch, then in
     /// Torque → Magnets the free variable, the target torque and the outcome.
     fn sizing_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
@@ -563,18 +582,7 @@ impl MagcouplingPanel {
                 ui.selectable_value(&mut mode, choice, choice.label());
             }
         });
-        if mode != self.sizing.mode {
-            if mode == SizingMode::MagnetsToTorque {
-                // Decision M41-7: leaving inverse sizing keeps the value it shows, solved for
-                // this design: a change still waiting for its debounce is solved first.
-                if !self.runner.is_current(&self.inputs, &self.sizing) {
-                    self.runner.solve_now(&self.inputs, &self.sizing);
-                    self.log_sizing();
-                }
-                self.inputs = self.runner.shown(&self.inputs, &self.sizing);
-            }
-            self.sizing.mode = mode;
-        }
+        self.set_sizing_mode(mode);
         if self.sizing.mode != SizingMode::TorqueToMagnets {
             return;
         }
@@ -668,7 +676,12 @@ impl MagcouplingPanel {
         confined(ui, "magcoupling_above_equation_panel", |ui| {
             ui.horizontal_wrapped(|ui| {
                 for view in CentreView::ALL {
-                    ui.selectable_value(&mut self.centre, view, view.label());
+                    let response = ui.selectable_value(&mut self.centre, view, view.label());
+                    if response.changed() && view == CentreView::SizeAndTorque {
+                        self.set_sizing_mode(SizingMode::MagnetsToTorque);
+                        self.results = compute_all(&self.inputs);
+                        ui.ctx().request_repaint();
+                    }
                 }
             });
             ui.separator();
@@ -685,6 +698,29 @@ impl MagcouplingPanel {
     /// readouts (`readouts`). Each view fits itself to `ui`'s available height.
     fn view_ui(&mut self, ui: &mut egui::Ui, shown: &DesignInputs, readouts: &mut Readouts) {
         match self.centre {
+            CentreView::SizeAndTorque => {
+                let outside_model = end_effect_banner(&self.results).is_some();
+                ui.horizontal_wrapped(|ui| {
+                    for (label, path) in [
+                        ("Expected torque", "model.pullout_Nm"),
+                        ("Hot-low torque", "metal.torque_hot_low_Nm"),
+                    ] {
+                        ui.label(label);
+                        let value = self.results.get(path).unwrap_or(Value::None);
+                        let text = if outside_model {
+                            egui::RichText::new("Outside model range").weak()
+                        } else {
+                            egui::RichText::new(with_unit(format_value(&value), "N\u{b7}m"))
+                        };
+                        let response = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
+                        readouts.show(ui, response, path, || {
+                            crate::gui::dashboard::hover_text(path).unwrap_or_default()
+                        });
+                    }
+                });
+                ui.label("Build checks are shown in the dashboard. The geometry drawing fits the view; use the dimensions to compare sizes.");
+                geometry_ui(ui, &self.shown_inputs(), &self.results, readouts);
+            }
             CentreView::Geometry => {
                 geometry_ui(ui, shown, &self.results, readouts);
             }
@@ -853,6 +889,38 @@ impl MagcouplingPanel {
     fn inputs_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
         // This frame's rows only, whichever groups are open.
         self.design_widgets.clear();
+        if self.centre == CentreView::SizeAndTorque {
+            ui.heading(crate::gui::size_controls::HEADING);
+            if self.sizing.mode != SizingMode::MagnetsToTorque
+                && ui.button("Edit size manually").clicked()
+            {
+                self.set_sizing_mode(SizingMode::MagnetsToTorque);
+            }
+            let shown = self.shown_inputs();
+            let output = ui
+                .add_enabled_ui(self.sizing.mode == SizingMode::MagnetsToTorque, |ui| {
+                    crate::gui::size_controls::controls_ui(ui, &shown)
+                })
+                .inner;
+            self.design_widgets.extend(output.widgets);
+            if output.inputs != shown {
+                self.inputs = output.inputs;
+                self.last_error = output.error;
+            } else if output.error.is_some() {
+                self.last_error = output.error;
+            }
+            ui.separator();
+            egui::CollapsingHeader::new("Detailed inputs")
+                .default_open(false)
+                .open(
+                    self.explorer
+                        .focus()
+                        .filter(|focus| focus.scroll)
+                        .map(|_| true),
+                )
+                .show(ui, |ui| self.design_inputs_ui(ui, readouts));
+            return;
+        }
         if let Some(focus) = self.explorer.focus().filter(|f| f.scroll) {
             let assumption = ASSUMPTIONS
                 .iter()
@@ -3472,6 +3540,95 @@ mod tests {
         for text in &texts {
             crate::gui::test_support::assert_glyphs(&harness.ctx, text, "the panel");
         }
+    }
+
+    #[test]
+    fn size_and_torque_has_direct_dimension_and_gap_controls() {
+        let mut harness = Harness::new();
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Size and torque"), 1);
+        harness.click_text("Size and torque");
+        let output = harness.frame(Vec::new());
+        for label in [
+            "Outside diameter",
+            "Overall length",
+            "Magnet face gap",
+            "Magnets per ring",
+        ] {
+            assert_eq!(count(&output, label), 1, "{label}");
+        }
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn manual_size_edits_update_torque_and_are_one_undo_step() {
+        let mut harness = Harness::new();
+        harness.panel.inputs.coupling.npole = 8;
+        harness.frame(Vec::new());
+        harness.click_text("Size and torque");
+        harness.frame(Vec::new());
+        let before = harness.panel.inputs.clone();
+        let before_torque = harness.panel.results.model.pullout_Nm;
+        let diameter_id = harness.panel.design_widgets[0];
+        harness.ctx.memory_mut(|m| m.request_focus(diameter_id));
+        harness.frame(key_tap(egui::Key::ArrowLeft));
+        harness.frame(Vec::new());
+        let resized = harness.panel.inputs.clone();
+        assert!(resized.coupling.inner_back_apothem_mm < before.coupling.inner_back_apothem_mm);
+        assert!(resized.metal.cap_od_mm < before.metal.cap_od_mm);
+        assert_eq!(resized.coupling.npole, 8);
+        assert_eq!(resized.metal.face_gap_mm, before.metal.face_gap_mm);
+        assert_eq!(harness.panel.results(), &compute_all(&resized));
+        assert_ne!(harness.panel.results.model.pullout_Nm, before_torque);
+        harness.panel.undo();
+        assert_eq!(harness.panel.inputs(), &before);
+        harness.panel.redo();
+        assert_eq!(harness.panel.inputs(), &resized);
+    }
+
+    #[test]
+    fn manual_size_gap_is_the_existing_gap_and_idle_frames_do_not_edit() {
+        let mut harness = Harness::new();
+        harness.click_text("Size and torque");
+        harness.frame(Vec::new());
+        let before = harness.panel.inputs.clone();
+        for _ in 0..4 {
+            harness.frame(Vec::new());
+            assert_eq!(harness.panel.inputs(), &before);
+        }
+        let gap_id = harness.panel.design_widgets[2];
+        harness.ctx.memory_mut(|m| m.request_focus(gap_id));
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        harness.frame(Vec::new());
+        assert!(harness.panel.inputs.metal.face_gap_mm > before.metal.face_gap_mm);
+        assert_eq!(harness.panel.inputs.coupling, before.coupling);
+        assert_eq!(
+            harness.panel.results(),
+            &compute_all(harness.panel.inputs())
+        );
+    }
+
+    #[test]
+    fn manual_size_does_not_present_out_of_range_torque_as_a_prediction() {
+        let mut harness = Harness::new();
+        harness.panel.inputs = short_magnets();
+        harness.frame(Vec::new());
+        assert!(end_effect_banner(harness.panel.results()).is_some());
+        harness.click_text("Size and torque");
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Outside model range"), 2);
+    }
+
+    #[test]
+    fn manual_size_adopts_the_inverse_solution_before_editing() {
+        let mut harness = Harness::new();
+        harness.size();
+        let solved = harness.panel.shown_inputs();
+        harness.click_text("Size and torque");
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.sizing.mode, SizingMode::MagnetsToTorque);
+        assert_eq!(harness.panel.inputs(), &solved);
+        assert_eq!(harness.panel.results(), &compute_all(&solved));
     }
 
     #[test]

@@ -167,6 +167,17 @@ Not a Cargo workspace member: `linkage-sim-rs` depends on it by path
 
 ### The panel
 
+For manual size exploration, open **Size and torque**. Adjust **Outside diameter**,
+**Overall length**, **Magnet face gap**, and **Magnets per ring** to see the existing
+model's expected and hot-low torque. Diameter edits move the ring radius, cap OD and cap
+thread together while preserving their signed allowances and fixed thicknesses; length
+edits use the existing axial magnet override and housing rules. Diameter includes the cup,
+cap and shaft boss. Existing input ranges bound these controls, and all fit, clearance and
+build checks stay in the dashboard. Torque is unavailable outside the end-effect model's
+range. **Detailed inputs** keeps every original input, and all results, equations and
+exports remain available. Opening this tab switches to forward calculation, keeping any
+inverse-sized design; direct edits use the existing undo/redo history and file/share format.
+
 M4-1 (plan `docs/superpowers/plans/2026-10-01-magcoupling-m4-1-gui-inputs-dashboard-session.md`),
 M4-2 (plan `docs/superpowers/plans/2026-10-01-magcoupling-m4-2-geometry-plots-clamp.md`) and M4-3
 (plan `docs/superpowers/plans/2026-10-01-magcoupling-m4-3-explorer-assumptions-notes-pickers.md`).
