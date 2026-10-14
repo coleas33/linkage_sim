@@ -50,7 +50,8 @@ use crate::engine::model::{
 };
 use crate::engine::size_controls::{
     DiameterBreakdown, DiameterFit, FIT_TOLERANCE_MM, LengthBreakdown, diameter_breakdown,
-    dimensions, length_breakdown, resize_diameter, smallest_fitting_diameter,
+    dimensions, dimensions_with_minimum_diameter, length_breakdown, resize_diameter,
+    smallest_fitting_diameter,
 };
 use crate::engine::sizing::FreeVariable;
 use crate::engine::temperature::CURE_MARGIN_MIN_C;
@@ -483,6 +484,29 @@ impl FixCache {
         }
         &self.last.as_ref().expect("filled above").fixes
     }
+}
+
+/// `all` (every guide's [`fixes`], as [`FixCache::get`] gives them) as the panel shows them
+/// with the Size tab's Minimum OD at `minimum_diameter_mm`: [`moves`] steps the Outside
+/// diameter over its slider without that floor, so where the floor stops the slider (the
+/// diameter at or below it) "Lower Outside diameter" is left out. Every other fix stays; a
+/// guide left with none shows [`NO_FIX`], whose slider's end this is.
+pub fn within_minimum_diameter(
+    all: &[Vec<(&'static str, Direction)>],
+    inputs: &DesignInputs,
+    minimum_diameter_mm: Option<f64>,
+) -> Vec<Vec<(&'static str, Direction)>> {
+    let floored = minimum_diameter_mm
+        .and_then(|minimum| dimensions_with_minimum_diameter(inputs, minimum))
+        .is_some_and(|size| size.diameter_mm <= size.diameter_range.min);
+    all.iter()
+        .map(|list| {
+            list.iter()
+                .copied()
+                .filter(|&fix| !(floored && fix == (RING, Direction::Lower)))
+                .collect()
+        })
+        .collect()
 }
 
 /// A margin of a design, larger is better: what a fix must raise to help a term.
@@ -3243,6 +3267,44 @@ mod tests {
         );
         assert_eq!(fixes(space, &inputs, &results), []);
         assert!(NO_FIX.contains("not a number"), "{NO_FIX}");
+    }
+
+    #[test]
+    fn the_outside_diameter_is_not_lowered_past_the_minimum_od() {
+        // `fixes` steps the Outside diameter over its slider without the panel's Minimum OD;
+        // the panel's raised floor stops that slider, so "Lower Outside diameter" goes there.
+        // A raise of it (the fit's) and every other fix stay.
+        let lower_ring = (RING, Direction::Lower);
+        let raise_ring = (RING, Direction::Raise);
+        let index = |check: &str| CHECK_GUIDES.iter().position(|g| g.check == check).unwrap();
+        for (inputs, check, fix) in [
+            (breaking(large_ring), SPACE_CLAIM, lower_ring),
+            (with_poles(12), FIT_CHECK, raise_ring),
+        ] {
+            let results = compute_all(&inputs);
+            let all: Vec<_> = CHECK_GUIDES
+                .iter()
+                .map(|g| fixes(g, &inputs, &results))
+                .collect();
+            assert!(all[index(check)].contains(&fix), "{check}: {all:?}");
+            let diameter = dimensions(&inputs).unwrap().diameter_mm;
+            // No floor, or one below the diameter: the slider can still go down.
+            for minimum in [None, Some(diameter - 1.0)] {
+                assert_eq!(within_minimum_diameter(&all, &inputs, minimum), all);
+            }
+            // A floor at the diameter or above it.
+            for minimum in [diameter, diameter + 1.0] {
+                let mut want = all.clone();
+                for list in &mut want {
+                    list.retain(|&f| f != lower_ring);
+                }
+                assert_eq!(
+                    within_minimum_diameter(&all, &inputs, Some(minimum)),
+                    want,
+                    "{check} at {minimum}"
+                );
+            }
+        }
     }
 
     #[test]

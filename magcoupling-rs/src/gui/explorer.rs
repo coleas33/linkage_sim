@@ -344,7 +344,8 @@ impl Explorer {
     }
 
     /// Takes in what the user did with the readouts this frame: the value hovered marks its
-    /// terms from the next frame (asked for at once); a value clicked opens here.
+    /// terms from the next frame (asked for at once); a value clicked opens here; a check
+    /// guide's link highlights its input's row, as a leaf term does.
     pub fn end_frame(&mut self, ctx: &egui::Context, events: ReadoutEvents) {
         if events.hovered != self.hovered {
             self.hovered = events.hovered;
@@ -356,6 +357,10 @@ impl Explorer {
         }
         if let Some(id) = events.note {
             self.open_note(id);
+            ctx.request_repaint();
+        }
+        if let Some(path) = events.focus {
+            self.focus_input(path);
             ctx.request_repaint();
         }
     }
@@ -1175,5 +1180,46 @@ mod tests {
             .find(|e| registry().term_kind(&e.path) == Some(TermKind::CellOnly))
             .expect("a result without a record");
         assert!(results.get(&cell_only.path).is_some());
+    }
+
+    #[test]
+    fn a_check_guide_link_highlights_its_input_s_row_and_leaves_the_panel_as_it_was() {
+        let ctx = egui::Context::default();
+        let mut explorer = Explorer::default();
+        explorer.open_path("model.pullout_Nm");
+        explorer.end_frame(
+            &ctx,
+            ReadoutEvents {
+                focus: Some("metal.cup_wall_corner_mm"),
+                ..ReadoutEvents::default()
+            },
+        );
+        assert_eq!(
+            explorer.focus(),
+            Some(&Focus {
+                path: "metal.cup_wall_corner_mm".to_owned(),
+                scroll: true,
+            })
+        );
+        assert_eq!(
+            explorer.trail(),
+            ["model.pullout_Nm"],
+            "the equation stays open"
+        );
+        assert!(explorer.open);
+        // With the panel shut, it stays shut.
+        let mut explorer = Explorer::default();
+        explorer.end_frame(
+            &ctx,
+            ReadoutEvents {
+                focus: Some("metal.variation"),
+                ..ReadoutEvents::default()
+            },
+        );
+        assert_eq!(
+            explorer.focus().map(|f| f.path.as_str()),
+            Some("metal.variation")
+        );
+        assert!(!explorer.open);
     }
 }
