@@ -1,8 +1,8 @@
 //! Manual outside diameter and overall length controls, evaluated through the same engine.
 
 use magcoupling::engine::size_controls::{
-    dimensions, dimensions_with_minimum_diameter, resize_diameter, resize_diameter_with_minimum,
-    resize_length,
+    DiameterBreakdown, diameter_breakdown, dimensions, dimensions_with_minimum_diameter,
+    length_breakdown, resize_diameter, resize_diameter_with_minimum, resize_length,
 };
 use magcoupling::{DesignInputs, compute_all};
 
@@ -403,4 +403,168 @@ fn invalid_minimum_settings_are_refused_even_for_unchanged_size() {
     invalid.metal.face_gap_mm = f64::NAN;
     assert!(dimensions_with_minimum_diameter(&invalid, 37.0).is_none());
     assert!(resize_diameter_with_minimum(&invalid, 38.0, 37.0).is_err());
+}
+
+/// The default design with `npole` magnets per ring.
+fn with_poles(npole: i64) -> DesignInputs {
+    let mut inputs = DesignInputs::default();
+    inputs.coupling.npole = npole;
+    inputs
+}
+
+/// The axial housing around the outer ring, from the design's own inputs: the cap, the cavity's
+/// margin over its ring (the cup depth in effect minus the ring's length), the web and the boss.
+fn housing_around_the_outer_ring(inputs: &DesignInputs) -> f64 {
+    let results = compute_all(inputs);
+    let metal = &inputs.metal;
+    metal.cap_axial_mm
+        + (results.housing.cup_depth_mm - results.model.outer_length_mm)
+        + metal.web_mm
+        + metal.boss_length_mm
+}
+
+#[test]
+fn diameter_breakdown_names_cap_cup_and_boss_and_its_largest_is_the_outside_diameter() {
+    let base = DesignInputs::default();
+    let parts = diameter_breakdown(&base).unwrap();
+    assert_eq!(
+        parts,
+        DiameterBreakdown {
+            cap_mm: base.metal.cap_od_mm,
+            cup_mm: compute_all(&base).model.cup_od_mm,
+            boss_mm: base.metal.boss_od_mm,
+        }
+    );
+    let largest = |b: DiameterBreakdown| b.cup_mm.max(b.cap_mm).max(b.boss_mm);
+    assert_eq!(largest(parts), dimensions(&base).unwrap().diameter_mm);
+    assert_eq!(largest(parts), parts.cap_mm, "the cap sets the default OD");
+
+    let mut cup_sets = base.clone();
+    cup_sets.metal.cap_od_mm = 35.0;
+    cup_sets.metal.cap_thread_dia_mm = 34.0;
+    let parts = diameter_breakdown(&cup_sets).unwrap();
+    assert_eq!(largest(parts), parts.cup_mm);
+    assert_eq!(largest(parts), dimensions(&cup_sets).unwrap().diameter_mm);
+
+    let mut boss_sets = base.clone();
+    boss_sets.metal.boss_od_mm = 50.0;
+    let parts = diameter_breakdown(&boss_sets).unwrap();
+    assert_eq!(largest(parts), parts.boss_mm);
+    assert_eq!(largest(parts), dimensions(&boss_sets).unwrap().diameter_mm);
+    close(parts.boss_mm, 50.0);
+}
+
+#[test]
+fn eight_magnets_grow_the_cup_while_the_cap_keeps_the_outside_diameter() {
+    // The owner's case (spec 1, T1): 10 -> 8 magnets at the default ring grows the cup, and
+    // the outside diameter stays because the cap sets it.
+    let ten = diameter_breakdown(&DesignInputs::default()).unwrap();
+    let eight = diameter_breakdown(&with_poles(8)).unwrap();
+    assert!(
+        eight.cup_mm > ten.cup_mm,
+        "{} vs {}",
+        eight.cup_mm,
+        ten.cup_mm
+    );
+    assert!(
+        eight.cup_mm < eight.cap_mm,
+        "{} vs {}",
+        eight.cup_mm,
+        eight.cap_mm
+    );
+    assert_eq!(eight.cap_mm, ten.cap_mm);
+    close(
+        dimensions(&with_poles(8)).unwrap().diameter_mm,
+        eight.cap_mm,
+    );
+    close(eight.cap_mm, DesignInputs::default().metal.cap_od_mm);
+}
+
+#[test]
+fn length_breakdown_is_the_outer_ring_and_the_housing_around_it() {
+    let base = DesignInputs::default();
+    let parts = length_breakdown(&base).unwrap();
+    // The default housing is 19.1 mm: 0.8 cap + (15.5 cavity - 12.7 ring) + 2.5 web + 13.0 boss.
+    close(parts.magnets_mm, compute_all(&base).model.outer_length_mm);
+    close(parts.housing_mm, housing_around_the_outer_ring(&base));
+    close(
+        parts.magnets_mm + parts.housing_mm,
+        dimensions(&base).unwrap().overall_length_mm,
+    );
+
+    // The length slider moves the magnets; the housing keeps its allowances.
+    let shorter = resize_length(&base, 29.1).unwrap();
+    let after = length_breakdown(&shorter).unwrap();
+    close(after.magnets_mm, 10.0);
+    close(after.housing_mm, parts.housing_mm);
+    close(after.magnets_mm + after.housing_mm, 29.1);
+
+    // The cup cavity holds the outer ring: a 20 mm manual outer ring counts, not the 12.7 mm
+    // inner part. Its 22.5 mm cavity leaves 2.5 mm: 0.8 cap + 2.5 + 2.5 web + 13.0 boss = 18.8.
+    let mut mixed = base.clone();
+    mixed.coupling.magnets.part_outer.clear();
+    mixed.coupling.magnets.manual_outer_length_mm = 20.0;
+    mixed.metal.cup_depth_mm = 22.5;
+    mixed.metal.retainer_span_mm = 22.0;
+    let parts = length_breakdown(&mixed).unwrap();
+    close(parts.magnets_mm, 20.0);
+    close(parts.housing_mm, housing_around_the_outer_ring(&mixed));
+    close(
+        parts.magnets_mm + parts.housing_mm,
+        dimensions(&mixed).unwrap().overall_length_mm,
+    );
+    let resized = resize_length(&mixed, 33.8).unwrap();
+    let after = length_breakdown(&resized).unwrap();
+    close(after.magnets_mm, 15.0);
+    close(after.housing_mm, housing_around_the_outer_ring(&resized));
+    close(after.housing_mm, parts.housing_mm);
+
+    // At the ring-length floor the cavity has no margin: the housing is the cap, web and boss
+    // (0.8 + 2.5 + 13.0 = 16.3 mm).
+    let mut floored = base.clone();
+    floored.metal.hub_length_mm = 5.0;
+    floored.metal.cup_depth_mm = 5.0;
+    floored.metal.retainer_span_mm = 5.0;
+    let at_floor = resize_length(&floored, 25.0).unwrap();
+    let parts = length_breakdown(&at_floor).unwrap();
+    close(parts.magnets_mm, 8.7);
+    close(parts.housing_mm, housing_around_the_outer_ring(&at_floor));
+    close(
+        parts.housing_mm,
+        floored.metal.cap_axial_mm + floored.metal.web_mm + floored.metal.boss_length_mm,
+    );
+}
+
+#[test]
+fn a_housing_shorter_than_its_outer_ring_has_no_length_breakdown() {
+    // Blank override, a 40 mm manual outer ring in the default 15.5 mm cavity: the stack
+    // (31.8 mm) is shorter than the ring, so no split describes it. The size controls stay.
+    let mut short_housing = DesignInputs::default();
+    short_housing.coupling.magnets.part_outer.clear();
+    short_housing.coupling.magnets.manual_outer_length_mm = 40.0;
+    close(dimensions(&short_housing).unwrap().overall_length_mm, 31.8);
+    assert_eq!(length_breakdown(&short_housing), None);
+    // With the override set the cavity follows the ring (decision A2-8): a split again.
+    short_housing.coupling.magnets.axial_length_mm = Some(40.0);
+    let parts = length_breakdown(&short_housing).unwrap();
+    close(parts.magnets_mm, 40.0);
+    close(
+        parts.housing_mm,
+        housing_around_the_outer_ring(&short_housing),
+    );
+}
+
+#[test]
+fn breakdowns_are_none_exactly_where_the_size_controls_are() {
+    let mut invalid = DesignInputs::default();
+    invalid.metal.face_gap_mm = f64::NAN;
+    assert_eq!(dimensions(&invalid), None);
+    assert_eq!(diameter_breakdown(&invalid), None);
+    assert_eq!(length_breakdown(&invalid), None);
+    for count in [i64::MIN, -4, 0, 1, 2, 3, 9, 41, 42, i64::MAX] {
+        let odd = with_poles(count);
+        assert_eq!(dimensions(&odd), None, "count {count}");
+        assert_eq!(diameter_breakdown(&odd), None, "count {count}");
+        assert_eq!(length_breakdown(&odd), None, "count {count}");
+    }
 }

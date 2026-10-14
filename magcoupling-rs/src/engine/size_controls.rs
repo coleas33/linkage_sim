@@ -15,6 +15,11 @@
 //! An explicit minimum outside diameter can extend below the legacy 9 mm radius slider
 //! floor. It still preserves a nonnegative hub wall around the bore, the cap/thread input
 //! limits and the fixed boss. Changing that minimum only changes the available range.
+//!
+//! Read-outs for the Size tab come from the same geometry: what sets the outside diameter
+//! ([`diameter_breakdown`]: the largest of the cup, the cap and the boss) and how the overall
+//! length divides ([`length_breakdown`]: the outer ring the cup cavity holds, and the housing
+//! around it).
 
 use std::f64::consts::PI;
 
@@ -34,10 +39,37 @@ pub struct SizeControls {
     pub length_range: SliderRange,
 }
 
+/// What sets the outside diameter [mm]: the cup (from the magnet layout), the threaded cap
+/// and the shaft boss. The outside diameter is the largest of the three.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DiameterBreakdown {
+    pub cap_mm: f64,
+    pub cup_mm: f64,
+    pub boss_mm: f64,
+}
+
+impl DiameterBreakdown {
+    /// The outside diameter: the largest of the three (one expression for every caller).
+    fn outside_mm(&self) -> f64 {
+        self.cup_mm.max(self.cap_mm).max(self.boss_mm)
+    }
+}
+
+/// How the overall axial stack divides [mm]: the outer ring's magnets, which the cup cavity
+/// holds, and the housing around them (the cap, the cavity's margin, the web and the boss).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LengthBreakdown {
+    pub magnets_mm: f64,
+    pub housing_mm: f64,
+}
+
 /// The engine geometry and metadata used for a single edit. Every candidate starts from
 /// the supplied design; moving between sizes never overwrites its axial housing allowances.
 struct Geometry {
     controls: SizeControls,
+    diameter: DiameterBreakdown,
+    /// The outer ring's axial length: the ring the cup cavity holds ([`axial_housing`]).
+    magnets_length_mm: f64,
     cup_od_mm: f64,
     diameter_slope: f64,
     cap_offset_mm: f64,
@@ -78,7 +110,12 @@ fn geometry(inputs: &DesignInputs, minimum_diameter: Option<f64>) -> Option<Geom
     let results = compute_all(inputs);
     let cup = results.model.cup_od_mm;
     let md = &inputs.metal;
-    let outside = cup.max(md.cap_od_mm).max(md.boss_od_mm);
+    let diameter = DiameterBreakdown {
+        cap_mm: md.cap_od_mm,
+        cup_mm: cup,
+        boss_mm: md.boss_od_mm,
+    };
+    let outside = diameter.outside_mm();
     let overall_length = results.metal.axial_stack_mm;
     if ![cup, outside, overall_length]
         .iter()
@@ -159,6 +196,8 @@ fn geometry(inputs: &DesignInputs, minimum_diameter: Option<f64>) -> Option<Geom
             minimum_diameter_range,
             length_range,
         },
+        diameter,
+        magnets_length_mm: results.model.outer_length_mm,
         cup_od_mm: cup,
         diameter_slope: slope,
         cap_offset_mm: cap_offset,
@@ -180,6 +219,26 @@ pub fn dimensions_with_minimum_diameter(
     minimum_od_mm: f64,
 ) -> Option<SizeControls> {
     geometry(inputs, Some(minimum_od_mm)).map(|geometry| geometry.controls)
+}
+
+/// What sets the current outside diameter: its largest part is [`dimensions`]'s
+/// `diameter_mm`. `None` exactly when [`dimensions`] is `None`.
+pub fn diameter_breakdown(inputs: &DesignInputs) -> Option<DiameterBreakdown> {
+    geometry(inputs, None).map(|geometry| geometry.diameter)
+}
+
+/// How the current overall length divides: the parts sum to [`dimensions`]'s
+/// `overall_length_mm` (to rounding). `None` when [`dimensions`] is `None`, or when a blank
+/// axial length override leaves the housing shorter than its outer ring, which no split into
+/// magnets and housing describes.
+pub fn length_breakdown(inputs: &DesignInputs) -> Option<LengthBreakdown> {
+    let geometry = geometry(inputs, None)?;
+    let magnets_mm = geometry.magnets_length_mm;
+    let housing_mm = geometry.controls.overall_length_mm - magnets_mm;
+    (magnets_mm.is_finite() && magnets_mm > 0.0 && housing_mm >= 0.0).then_some(LengthBreakdown {
+        magnets_mm,
+        housing_mm,
+    })
 }
 
 fn check_request(requested: f64, range: SliderRange, name: &str) -> Result<(), String> {
