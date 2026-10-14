@@ -4136,4 +4136,107 @@ mod tests {
         cache.get(&hot, &hot_results, Some(lowest));
         assert_eq!(cache.computed, 3);
     }
+
+    /// Prints every user-visible string of the guidance slice, each tagged with where it
+    /// appears and for which design, for the physics review (plan Task 11, step 1). Run:
+    /// `cargo test --features app --lib guidance_strings_for_review -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "prints the strings for the physics review; run by hand"]
+    fn guidance_strings_for_review() {
+        use crate::gui::size_controls as sc;
+        let mut count = 0_usize;
+        let mut emit = |tag: &str, text: &str| {
+            count += 1;
+            println!("[{tag}] {text}");
+        };
+
+        // Each check guide: its Why, its link reason, and its fixes for every design that
+        // shows them, rendered through fix_text.
+        for g in &CHECK_GUIDES {
+            emit(&format!("why/{}", g.label), g.why);
+            if let Learn::None(reason) = g.learn {
+                emit(&format!("learn/{}", g.label), reason);
+            }
+        }
+        for (name, inputs) in designs() {
+            let results = compute_all(&inputs);
+            for g in &CHECK_GUIDES {
+                for (path, direction) in fixes(g, &inputs, &results) {
+                    emit(
+                        &format!("fix/{}/{name}", g.label),
+                        &fix_text(path, direction),
+                    );
+                }
+                if let Some(text) = (g.problem)(&inputs, &results) {
+                    emit(&format!("problem/{}/{name}", g.label), &text);
+                }
+            }
+        }
+        emit("dashboard/no-fix line", NO_FIX);
+
+        // The dashboard rows' link reasons.
+        for (path, learn) in &ROW_LEARN {
+            if let Learn::None(reason) = learn {
+                emit(&format!("learn/row {path}"), reason);
+            }
+        }
+
+        // What moves what, under Magnets per ring, Outside diameter and Overall length.
+        emit("size tab/under Magnets per ring", RING_SIZE_STAYS);
+        let default = DesignInputs::default();
+        for npole in [4, 8, 10, 40] {
+            let inputs = with_magnets(&default, npole);
+            for (label, minimum) in [("Minimum OD unset", None), ("Minimum OD 37 mm", Some(37.0))] {
+                let consequences = consequences_of(&inputs, minimum);
+                for line in consequences.magnet_lines(inputs.coupling.npole) {
+                    emit(&format!("size tab/magnets/{npole} magnets/{label}"), &line);
+                }
+                if let Some(line) = consequences.diameter_line() {
+                    emit(&format!("size tab/diameter/{npole} magnets/{label}"), &line);
+                }
+                if let Some(line) = consequences.length_line() {
+                    emit(&format!("size tab/length/{npole} magnets/{label}"), &line);
+                }
+            }
+        }
+
+        // The Size tab constants.
+        emit("size tab/no prediction", sc::NO_PREDICTION);
+        emit("size tab/no torque", sc::NO_TORQUE);
+        emit("size tab/locked slider", sc::SET_BY_AUTO);
+        emit("size tab/Auto label", sc::AUTO);
+        emit("size tab/Auto suffix", sc::AUTO_SUFFIX);
+        emit("panel/welcome strip", crate::gui::panel::WELCOME);
+
+        // The solved change of each free variable, from the default to each end of its slider.
+        for variable in FreeVariable::ALL {
+            let range = variable.range();
+            for (end, value) in [("min", range.min), ("max", range.max)] {
+                let to = variable.apply(&default, value);
+                emit(
+                    &format!("size tab/solved change/{variable:?}/to slider {end}"),
+                    &sc::change_text(variable, &default, &to),
+                );
+            }
+        }
+
+        // The design status line.
+        for (name, inputs) in [("defaults", default.clone()), ("passing", passing_design())] {
+            let results = compute_all(&inputs);
+            emit(
+                &format!("dashboard/status/{name}"),
+                &design_status_text(&design_status(&inputs, &results)),
+            );
+        }
+
+        emit(
+            "file load/target mismatch notice",
+            &crate::gui::session::target_mismatch_notice(3.0, 2.5),
+        );
+        emit(
+            "size tab/requirement refusal",
+            crate::gui::sizing::REQUIREMENT_NOT_POSITIVE,
+        );
+        println!("TOTAL STRINGS: {count}");
+    }
 }
