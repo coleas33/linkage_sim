@@ -175,8 +175,15 @@ edits use the existing axial magnet override and housing rules. Diameter include
 cap and shaft boss. Existing input ranges bound these controls, and all fit, clearance and
 build checks stay in the dashboard. Torque is unavailable outside the end-effect model's
 range. **Detailed inputs** keeps every original input, and all results, equations and
-exports remain available. Opening this tab switches to forward calculation, keeping any
-inverse-sized design; direct edits use the existing undo/redo history and file/share format.
+exports remain available. **Auto: smallest [magnet length | ring size | magnet count] that
+meets the requirement** runs the inverse sizing on this tab: it locks the matching slider
+(Overall length, Outside diameter, Magnets per ring) at the solved value, or at the best value
+under a red "Not reachable: best Y at X", and solves again 0.25 s after any other edit. Ring
+size searches the ring radii of this tab's diameter range, Minimum OD included, and shows the
+solved ring as the diameter slider would set it: the cap OD and its thread follow the cup, and
+the outcome line names the Outside diameter. Turning Auto off keeps the value shown.
+Opening the tab changes no mode; direct edits use the existing undo/redo history and
+file/share format.
 
 **Minimum OD** adjusts the lower end of the diameter slider without resizing the current
 design. Lower it to explore diameters below the original 9 mm mounting-radius range.
@@ -420,14 +427,14 @@ scroll-area floor lowered to none).
   sizing state's. A later version that renames or removes an input path adds a
   `session::PATH_MIGRATIONS` entry and bumps `DESIGN_VERSION`, so older files and links keep
   opening.
-- **Sizing** (`sizing.rs`, Addendum A1): the mode switch tops the Key design group. In
-  Torque -> Magnets the free variable (axial length, magnets per ring, ring radius) and the target
+- **Sizing** (`sizing.rs`, Addendum A1): Auto on the Size tab is Torque -> Magnets (the Key design group shows
+  only a status line, the solve's status and a button to the tab). In it the free variable (axial length, magnets per ring, ring radius) and the target
   hot-low torque (2.5 N·m to start, M41-9) feed `sizing::solve`, which runs once the design has
   been still for 0.25 s and no edit is in progress, never per frame. The panel then shows the
   design with the free variable at the solved value, "Solved at X", or at the best value it
-  found, "Not reachable (best Y at X)" (M41-8); the free variable's row shows that value, locked
-  (under the status line when the Key design group does not list it: the ring radius). Leaving the
-  mode keeps the value, solving first a change still waiting for its debounce (M41-7).
+  found, "Not reachable: best Y at X" (M41-8; "No valid value of <size> in range" when no value counts); the free variable's row shows that value, locked
+  (under the status line when the Key design group does not list it: the ring radius). Turning Auto
+  off keeps the value, solving first a change still waiting for its debounce (M41-7).
 - **No I/O in the panel.** Saving and picking a file are `PanelRequest`s the host does
   (`take_requests`, then `load_design_file` and `report`), so a host (the standalone app; the
   linkage window from M5 to 2026-10-06) brings its own file handling; the share link base is the

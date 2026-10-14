@@ -1,5 +1,6 @@
-//! The sizing mode of the Key design group (spec Addendum A1): Magnets → Torque, the forward
-//! calculation, or Torque → Magnets, inverse sizing by [`crate::engine::sizing::solve_in`].
+//! The sizing mode, the Size tab's Auto toggle (spec Addendum A1; guidance 3.5): Magnets → Torque,
+//! the forward calculation, or Torque → Magnets, inverse sizing by
+//! [`crate::engine::sizing::solve_in`].
 //!
 //! The mode and the free variable are GUI state (A-2 decision A2-9): the engine takes them as
 //! arguments. Design files and share links record them (decision M41-4). The target torque is
@@ -11,13 +12,14 @@
 //! typing), never per frame (a solve takes about 1 to 3 ms in a release build, longer on wasm,
 //! against compute_all's 17 us). Until then the panel keeps showing the last solved value,
 //! marked as solving. The design the panel shows in Torque → Magnets is the inputs with the
-//! free variable at the solved value, or at the best value when the target is not reachable
-//! (decision M41-8); the inputs keep their own value of the free variable until the user
+//! free variable at the solved value ([`sized`]), or at the best value when the target is not
+//! reachable (decision M41-8); the inputs keep their own value of the free variable until the user
 //! leaves the mode (decision M41-7), when a change still waiting for its debounce is solved at
 //! once ([`SizingRunner::solve_now`]).
 
 use crate::DesignInputs;
-use crate::engine::meta::{SliderRange, Value};
+use crate::engine::meta::{InputSet, SliderRange, Value};
+use crate::engine::size_controls::with_ring_radius;
 use crate::engine::sizing::{FreeVariable, SizingError, SizingOutcome, solve_in};
 use crate::gui::format::{format_value, with_unit};
 
@@ -72,13 +74,65 @@ pub fn variable_from_key(key: &str) -> Option<FreeVariable> {
         .find(|&variable| variable_key(variable) == key)
 }
 
-/// The text of the free-variable picker.
+/// A free variable's name: the spreadsheet's free-variable cell, and the Size tab's Auto
+/// outcome line for the magnet count (and the ring radius without a diameter range).
 pub const fn variable_label(variable: FreeVariable) -> &'static str {
     match variable {
         FreeVariable::AxialLength => "Axial magnet length",
         FreeVariable::MagnetsPerRing => "Magnets per ring",
         FreeVariable::RingRadius => "Ring radius",
     }
+}
+
+/// The Size tab's name for a free variable, after "Auto: smallest" (spec guidance 3.5); each
+/// sets the Size-tab slider [`crate::gui::size_controls::variable_slider`] names.
+pub const fn auto_choice(variable: FreeVariable) -> &'static str {
+    match variable {
+        FreeVariable::AxialLength => "magnet length",
+        FreeVariable::MagnetsPerRing => "magnet count",
+        FreeVariable::RingRadius => "ring size",
+    }
+}
+
+/// The inputs a ring-size design shown moves besides the ring radius: the cap OD and cap thread,
+/// which follow the cup as the Outside diameter slider moves them ([`sized`]).
+const RING_SIZE_FOLLOWERS: [&str; 2] = ["metal.cap_od_mm", "metal.cap_thread_dia_mm"];
+
+/// `inputs` with `variable` at `value`, as the panel shows a solved or best value: a ring radius
+/// through the Outside diameter slider's own mapping
+/// ([`crate::engine::size_controls::with_ring_radius`]: the cap OD and thread follow the cup),
+/// so the locked slider reads the solved outside diameter; the radius alone where that mapping
+/// refuses (no diameter range, as at an odd count). Any other variable sets its input alone.
+pub fn sized(variable: FreeVariable, inputs: &DesignInputs, value: f64) -> DesignInputs {
+    match variable {
+        FreeVariable::RingRadius => {
+            with_ring_radius(inputs, value).unwrap_or_else(|| variable.apply(inputs, value))
+        }
+        _ => variable.apply(inputs, value),
+    }
+}
+
+/// `edited`, a Size-tab edit of the design shown ([`sized`]), with the inputs Auto set back at
+/// their values in `own`: while Auto is on, the inputs keep their own value of the variable it
+/// sets until Auto turns off (decision M41-7). For ring size these are the ring radius and the
+/// cap OD and thread that follow it; no Size-tab control Auto leaves unlocked writes those.
+pub(crate) fn with_own_value(
+    variable: FreeVariable,
+    edited: DesignInputs,
+    own: &DesignInputs,
+) -> DesignInputs {
+    let followers: &[&str] = match variable {
+        FreeVariable::RingRadius => &RING_SIZE_FOLLOWERS,
+        _ => &[],
+    };
+    let mut design = edited;
+    for path in std::iter::once(variable.path()).chain(followers.iter().copied()) {
+        let value = own.get(path).expect("a sized input is an input");
+        design
+            .set(path, value)
+            .expect("an input takes back a value it held");
+    }
+    design
 }
 
 /// The input inverse sizing meets: the hot minimum requirement. Decision G-2 (one torque
@@ -232,7 +286,7 @@ impl SizingRunner {
     }
 
     /// The design the panel shows in Torque → Magnets: `inputs` with the free variable at
-    /// [`SizingRunner::value`] when that value lies in `range` (a value from an earlier search
+    /// [`SizingRunner::value`] ([`sized`]) when that value lies in `range` (a value from an earlier search
     /// outside the range asked for now is not shown), else `inputs` as they are.
     pub fn shown(
         &self,
@@ -244,12 +298,13 @@ impl SizingRunner {
             .value(state.variable)
             .filter(|value| (range.min..=range.max).contains(value))
         {
-            Some(value) => state.variable.apply(inputs, value),
+            Some(value) => sized(state.variable, inputs, value),
             None => inputs.clone(),
         }
     }
 
-    /// The status line under the sizing controls, for the search over `range`.
+    /// The status line of the solve over `range`: the Key design group's, and the Size tab's
+    /// outcome line unless solved.
     pub fn status(&self, inputs: &DesignInputs, state: &SizingState, range: SliderRange) -> String {
         if !self.is_current(inputs, state, range) {
             return SOLVING.to_owned();
@@ -261,13 +316,13 @@ impl SizingRunner {
                 torque_text(point.torque_hot_low_Nm)
             ),
             Some(Ok(SizingOutcome::NotReachable { best: Some(best) })) => format!(
-                "{NOT_REACHABLE_PREFIX} (best {} at {})",
+                "{NOT_REACHABLE_PREFIX}: best {} at {}",
                 torque_text(best.torque_hot_low_Nm),
                 variable_text(state.variable, best.value)
             ),
-            Some(Ok(SizingOutcome::NotReachable { best: None })) => format!(
-                "{NOT_REACHABLE_PREFIX}: no value of the free variable gives a valid design"
-            ),
+            Some(Ok(SizingOutcome::NotReachable { best: None })) => {
+                format!("No valid value of {} in range", auto_choice(state.variable))
+            }
             Some(Err(SizingError::InvalidTarget(_))) => REQUIREMENT_NOT_POSITIVE.to_owned(),
             Some(Err(SizingError::InvalidRange { .. })) => {
                 "Sizing refused: the search range is empty".to_owned()
@@ -302,6 +357,7 @@ fn torque_text(torque_Nm: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compute_all;
     use crate::engine::sizing::solve;
 
     #[test]
@@ -615,14 +671,125 @@ mod tests {
         );
         assert_eq!(
             runner.status(&inputs, &state, range),
-            "Not reachable (best 9.937 N·m at 50.80 mm)"
+            "Not reachable: best 9.937 N·m at 50.80 mm"
         );
         let poles = inverse(FreeVariable::MagnetsPerRing);
         let defaults = DesignInputs::default();
         assert_eq!(
             solved(&defaults, &poles).status(&defaults, &poles, poles.variable.range()),
-            "Not reachable (best 2.285 N·m at 10)"
+            "Not reachable: best 2.285 N·m at 10"
         );
+    }
+
+    #[test]
+    fn each_auto_choice_names_the_size_it_sets() {
+        assert_eq!(auto_choice(FreeVariable::AxialLength), "magnet length");
+        assert_eq!(auto_choice(FreeVariable::MagnetsPerRing), "magnet count");
+        assert_eq!(auto_choice(FreeVariable::RingRadius), "ring size");
+    }
+
+    #[test]
+    fn no_valid_value_names_the_auto_choice_and_keeps_the_inputs() {
+        // 2 mm magnets: f_end <= 0 at every ring radius of the slider, so no layout counts.
+        let inputs = crate::gui::test_support::short_magnets();
+        let state = inverse(FreeVariable::RingRadius);
+        let range = state.variable.range();
+        let mut runner = SizingRunner::default();
+        runner.solve_now(&inputs, &state, range);
+        assert_eq!(
+            runner.outcome(state.variable),
+            Some(&Ok(SizingOutcome::NotReachable { best: None }))
+        );
+        assert_eq!(
+            runner.status(&inputs, &state, range),
+            "No valid value of ring size in range"
+        );
+        assert_eq!(runner.shown(&inputs, &state, range), inputs);
+    }
+
+    #[test]
+    fn a_ring_size_is_shown_as_the_diameter_slider_maps_it() {
+        // T7 amendment (Review Focus 2): the design shown at a solved ring radius moves the cap
+        // OD and its thread with the cup, as the Outside diameter slider does, so the locked
+        // slider reads the solved outside diameter. The other variables set their input alone.
+        use crate::engine::size_controls::{dimensions, with_ring_radius};
+        let inputs = crate::gui::test_support::with_poles(8);
+        let radius = 8.5;
+        let shown = sized(FreeVariable::RingRadius, &inputs, radius);
+        let want = with_ring_radius(&inputs, radius).expect("8.5 mm is inside the reach");
+        assert_eq!(shown, want);
+        assert_eq!(shown.coupling.inner_back_apothem_mm, radius);
+        assert_eq!(
+            shown.metal.cap_od_mm - dimensions(&shown).unwrap().diameter_mm,
+            inputs.metal.cap_od_mm - dimensions(&inputs).unwrap().diameter_mm,
+            "the cap keeps its offset from the outside diameter it sets"
+        );
+        assert_ne!(
+            shown.metal.cap_od_mm, inputs.metal.cap_od_mm,
+            "the cap moved"
+        );
+        // The solve evaluates the radius alone; the cap carries no torque and no part of
+        // validity, so the design shown has the torque and validity the solve found.
+        let solved = FreeVariable::RingRadius.apply(&inputs, radius);
+        let (shown_results, solved_results) = (compute_all(&shown), compute_all(&solved));
+        assert_eq!(
+            shown_results.metal.torque_hot_low_Nm,
+            solved_results.metal.torque_hot_low_Nm
+        );
+        assert_eq!(
+            crate::engine::sizing::is_valid(&shown, &shown_results),
+            crate::engine::sizing::is_valid(&solved, &solved_results)
+        );
+        // Where the slider's mapping refuses (an odd count has no diameter range), the radius
+        // alone moves.
+        let odd = crate::gui::test_support::with_poles(7);
+        assert_eq!(
+            sized(FreeVariable::RingRadius, &odd, radius),
+            FreeVariable::RingRadius.apply(&odd, radius)
+        );
+        for variable in [FreeVariable::AxialLength, FreeVariable::MagnetsPerRing] {
+            let value = variable.range().max;
+            assert_eq!(
+                sized(variable, &inputs, value),
+                variable.apply(&inputs, value)
+            );
+        }
+        // The runner shows the same design.
+        let state = inverse(FreeVariable::RingRadius);
+        let mut required = inputs.clone();
+        required.metal.required_min_Nm = compute_all(&want).metal.torque_hot_low_Nm;
+        let range = state.variable.range();
+        let mut runner = SizingRunner::default();
+        runner.solve_now(&required, &state, range);
+        let value = runner.value(state.variable).expect("a value is shown");
+        assert_eq!(
+            runner.shown(&required, &state, range),
+            sized(FreeVariable::RingRadius, &required, value)
+        );
+    }
+
+    #[test]
+    fn a_size_tab_edit_keeps_the_inputs_own_value_of_the_free_variable() {
+        // Decision M41-7: while Auto is on, an edit of the design shown leaves the inputs' own
+        // value of the variable Auto sets, and for ring size the cap and thread it moved.
+        let own = crate::gui::test_support::with_poles(8);
+        for variable in FreeVariable::ALL {
+            // A gap edit made on the design shown, whose free variable sits at its maximum.
+            let value = match variable {
+                FreeVariable::RingRadius => 9.5,
+                other => other.range().max,
+            };
+            let mut edited = sized(variable, &own, value);
+            assert_ne!(edited, own, "{variable:?}");
+            edited.metal.face_gap_mm = 1.5;
+            let mut want = own.clone();
+            want.metal.face_gap_mm = 1.5;
+            assert_eq!(with_own_value(variable, edited, &own), want, "{variable:?}");
+        }
+        // A blank override comes back blank (above), a set one at its value.
+        let set = FreeVariable::AxialLength.apply(&own, 20.0);
+        let edited = FreeVariable::AxialLength.apply(&set, 30.0);
+        assert_eq!(with_own_value(FreeVariable::AxialLength, edited, &set), set);
     }
 
     #[test]

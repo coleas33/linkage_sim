@@ -1,21 +1,25 @@
 //! Direct controls for the complete envelope, alongside the existing magnet count and gap.
 //! The engine adapter links housing dimensions; every torque still comes from compute_all.
+//! Auto (spec guidance 3.5) runs the inverse sizing from here: it locks the slider of the size it
+//! sets ([`variable_slider`]) at the value shown and names the change ([`change_text`]).
 //!
 //! Under each control, its what-moves-what lines (spec 3.3: [`Consequences`], computed by the
 //! guidance layer). The panel's centre view draws the torque readouts (spec 3.2) with the
 //! texts here: [`REQUIRED`], [`HOT_LOW`] with [`torque_gap_text`], [`pullout_label`], and
 //! [`NO_PREDICTION`] or [`NO_TORQUE`] where the model makes none ([`predicts`]).
 
-use crate::engine::meta::{InputSet, SliderRange, Value};
+use crate::engine::meta::{InputMeta, InputSet, SliderRange, Value};
 use crate::engine::size_controls::{
     dimensions, dimensions_with_minimum_diameter, resize_diameter_with_minimum, resize_length,
 };
+use crate::engine::sizing::FreeVariable;
 use crate::gui::dashboard::end_effect_out_of_range;
 use crate::gui::format::{fixed, signed_percent};
 use crate::gui::guidance::Consequences;
 use crate::gui::input_ui::slider;
 use crate::gui::inputs::InputCatalogue;
-use crate::{DesignInputs, DesignResults};
+use crate::gui::sizing::{SizingMode, SizingState, auto_choice, variable_label};
+use crate::{DesignInputs, DesignResults, compute_all};
 
 pub const HEADING: &str = "Size and torque";
 pub const MINIMUM: &str = "Minimum OD";
@@ -24,6 +28,106 @@ pub const LENGTH: &str = "Overall length";
 pub const GAP: &str = "Magnet face gap";
 pub const MAGNETS: &str = "Magnets per ring";
 pub const LINKED_HOUSING: &str = "Diameter and length edits resize the associated housing, keeping its allowances. Gap and magnet count remain your choices.";
+
+/// The Auto row (spec guidance 3.5): "Auto: smallest [size] that meets the requirement".
+pub const AUTO: &str = "Auto: smallest";
+pub const AUTO_SUFFIX: &str = "that meets the requirement";
+/// The hover text of the Auto toggle.
+pub const AUTO_HOVER: &str = "On: the solver sets the chosen size to the smallest value whose hot-low torque meets the requirement, skipping layouts whose magnets do not fit, whose keyway breaks through the hub or that the end-effect model cannot predict; its slider locks. Off: the design keeps the value shown.";
+/// Under the slider Auto sets, and its hover text.
+pub const SET_BY_AUTO: &str = "Set by Auto; turn Auto off to edit";
+/// The start of the Key design group's line while Auto is on ([`auto_status`]).
+pub const AUTO_STATUS_START: &str = "Auto: ";
+/// The Key design group's button to the Size tab, beside [`auto_status`].
+pub const OPEN_SIZE_TAB: &str = "Open the Size tab";
+
+/// The Size-tab slider a free variable sets, by its label: Auto locks it.
+pub fn variable_slider(variable: FreeVariable) -> &'static str {
+    match variable {
+        FreeVariable::AxialLength => LENGTH,
+        FreeVariable::RingRadius => DIAMETER,
+        FreeVariable::MagnetsPerRing => MAGNETS,
+    }
+}
+
+/// The Auto outcome line of a solved design: the size Auto set, its value in `from` (the
+/// inputs) and in `to` (the design shown), e.g. "Magnet length 12.7 -> 13.8 mm". Ring size reads
+/// as the Outside diameter its slider shows ("Outside diameter 42.8 -> 40.1 mm"), or as the ring
+/// radius where a design has no diameter range (an odd count). Millimetres to the sliders'
+/// 0.1 mm, the magnet count whole.
+pub fn change_text(variable: FreeVariable, from: &DesignInputs, to: &DesignInputs) -> String {
+    let millimetres = |name: &str, value: &dyn Fn(&DesignInputs) -> f64| {
+        format!(
+            "{name} {} -> {} mm",
+            fixed(value(from), 1),
+            fixed(value(to), 1)
+        )
+    };
+    match variable {
+        FreeVariable::AxialLength => millimetres("Magnet length", &|design| {
+            // A blank override reads as the parts' own length.
+            design
+                .coupling
+                .magnets
+                .axial_length_mm
+                .unwrap_or_else(|| compute_all(design).model.active_length_mm)
+        }),
+        FreeVariable::RingRadius => match (dimensions(from), dimensions(to)) {
+            (Some(from), Some(to)) => format!(
+                "{DIAMETER} {} -> {} mm",
+                fixed(from.diameter_mm, 1),
+                fixed(to.diameter_mm, 1)
+            ),
+            _ => millimetres(variable_label(variable), &|design| {
+                design.coupling.inner_back_apothem_mm
+            }),
+        },
+        FreeVariable::MagnetsPerRing => format!(
+            "{} {} -> {}",
+            variable_label(variable),
+            from.coupling.npole,
+            to.coupling.npole
+        ),
+    }
+}
+
+/// The Key design group's line while Auto is on: which size the solver sets, and where.
+pub fn auto_status(variable: FreeVariable) -> String {
+    format!(
+        "{AUTO_STATUS_START}{} set by the solver (Size tab)",
+        auto_choice(variable)
+    )
+}
+
+/// The Auto row: the toggle, the size it sets and the rest of the sentence. Returns the sizing
+/// state asked for; the panel applies a mode change through its own switch, which adopts the
+/// value shown when Auto turns off (decision M41-7).
+pub(crate) fn auto_ui(ui: &mut egui::Ui, state: SizingState) -> SizingState {
+    let mut asked = state;
+    ui.horizontal_wrapped(|ui| {
+        let mut on = state.mode == SizingMode::TorqueToMagnets;
+        if ui
+            .checkbox(&mut on, AUTO)
+            .on_hover_text(AUTO_HOVER)
+            .changed()
+        {
+            asked.mode = if on {
+                SizingMode::TorqueToMagnets
+            } else {
+                SizingMode::MagnetsToTorque
+            };
+        }
+        egui::ComboBox::from_id_salt("auto_free_variable")
+            .selected_text(auto_choice(asked.variable))
+            .show_ui(ui, |ui| {
+                for variable in FreeVariable::ALL {
+                    ui.selectable_value(&mut asked.variable, variable, auto_choice(variable));
+                }
+            });
+        ui.label(AUTO_SUFFIX);
+    });
+    asked
+}
 
 /// The label of the requirement's slider (`metal.required_min_Nm`).
 pub const REQUIRED: &str = "Required";
@@ -96,14 +200,18 @@ pub(crate) struct ControlsOutput {
 }
 
 /// Draw before computing the panel's results, so the readouts reflect this frame's edits.
-/// `consequences` are `inputs`' what-moves-what lines (spec 3.3), each drawn under its control:
-/// they show the design before this frame's edit, and the panel asks for the next frame.
+/// `inputs` is the design shown. `consequences` are its what-moves-what lines (spec 3.3), each
+/// drawn under its control: they show the design before this frame's edit, and the panel asks
+/// for the next frame. With `auto`, the slider of the size Auto sets ([`variable_slider`]) is
+/// locked at its value there: disabled, saying why.
 pub(crate) fn controls_ui(
     ui: &mut egui::Ui,
     inputs: &DesignInputs,
     minimum_diameter_mm: Option<f64>,
     consequences: &Consequences,
+    auto: Option<FreeVariable>,
 ) -> ControlsOutput {
+    let is_locked = |label: &str| auto.is_some_and(|variable| variable_slider(variable) == label);
     let mut output = ControlsOutput {
         inputs: inputs.clone(),
         minimum_diameter_mm,
@@ -163,9 +271,8 @@ pub(crate) fn controls_ui(
                 let entry = catalogue
                     .entry(path)
                     .expect("a size control has input metadata");
-                let response = ui
-                    .push_id(path, |ui| ui.add(slider(&mut value, entry.meta, range)))
-                    .inner;
+                let response =
+                    size_slider(ui, path, &mut value, entry.meta, range, is_locked(label));
                 output.widgets.push(response.id);
                 if response.changed() {
                     let resized = if path == "coupling.inner_back_apothem_mm" {
@@ -214,9 +321,7 @@ pub(crate) fn controls_ui(
             };
             ui.label(label).on_hover_text(entry.meta.help);
             let range: SliderRange = entry.meta.range.expect("a size control has a slider");
-            let response = ui
-                .push_id(path, |ui| ui.add(slider(&mut value, entry.meta, range)))
-                .inner;
+            let response = size_slider(ui, path, &mut value, entry.meta, range, is_locked(label));
             output.widgets.push(response.id);
             if response.changed() {
                 let value = if path == "coupling.npole" {
@@ -239,6 +344,28 @@ pub(crate) fn controls_ui(
         ui.label(LINKED_HOUSING);
     });
     output
+}
+
+/// One size slider: a `locked` one (set by Auto) is disabled, so egui reports no change for it,
+/// and it says why on hover and in a line under it.
+fn size_slider(
+    ui: &mut egui::Ui,
+    path: &str,
+    value: &mut f64,
+    meta: &InputMeta,
+    range: SliderRange,
+    locked: bool,
+) -> egui::Response {
+    let response = ui
+        .push_id(path, |ui| {
+            ui.add_enabled(!locked, slider(value, meta, range))
+        })
+        .inner
+        .on_disabled_hover_text(SET_BY_AUTO);
+    if locked {
+        ui.weak(SET_BY_AUTO);
+    }
+    response
 }
 
 /// One what-moves-what line under its control: weak text, wrapped to the side's width.
@@ -338,6 +465,115 @@ mod tests {
             assert_glyphs(&ctx, text, "a Size tab readout");
             let violations = plain_text_violations(text);
             assert!(violations.is_empty(), "{text:?}: {violations:?}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod auto_tests {
+    use super::*;
+    use crate::compute_all;
+    use crate::engine::sizing::FreeVariable;
+    use crate::gui::format::fixed;
+    use crate::gui::guidance::plain_text_violations;
+    use crate::gui::sizing::{REQUIREMENT_NOT_POSITIVE, auto_choice, sized};
+    use crate::gui::test_support::with_poles;
+
+    #[test]
+    fn each_free_variable_locks_its_own_size_slider() {
+        assert_eq!(variable_slider(FreeVariable::AxialLength), LENGTH);
+        assert_eq!(variable_slider(FreeVariable::RingRadius), DIAMETER);
+        assert_eq!(variable_slider(FreeVariable::MagnetsPerRing), MAGNETS);
+        // Never the gap or the minimum: they stay the user's.
+        for variable in FreeVariable::ALL {
+            assert_ne!(variable_slider(variable), GAP);
+            assert_ne!(variable_slider(variable), MINIMUM);
+        }
+    }
+
+    #[test]
+    fn change_text_names_the_size_and_both_values() {
+        let from = DesignInputs::default();
+        // A blank override starts from the parts' own length (model.active_length_mm).
+        let own = compute_all(&from).model.active_length_mm;
+        let to = FreeVariable::AxialLength.apply(&from, 13.5);
+        assert_eq!(
+            change_text(FreeVariable::AxialLength, &from, &to),
+            format!("Magnet length {} -> 13.5 mm", fixed(own, 1))
+        );
+        let set = FreeVariable::AxialLength.apply(&from, 20.0);
+        assert_eq!(
+            change_text(FreeVariable::AxialLength, &set, &to),
+            "Magnet length 20.0 -> 13.5 mm"
+        );
+        // Ring size names the Outside diameter the slider shows, not the internal radius.
+        let eight = with_poles(8);
+        let to = sized(FreeVariable::RingRadius, &eight, 8.5);
+        let diameter = |design: &DesignInputs| fixed(dimensions(design).unwrap().diameter_mm, 1);
+        assert_ne!(diameter(&eight), diameter(&to), "the diameter moves");
+        assert_eq!(
+            change_text(FreeVariable::RingRadius, &eight, &to),
+            format!(
+                "Outside diameter {} -> {} mm",
+                diameter(&eight),
+                diameter(&to)
+            )
+        );
+        // Without a diameter range (an odd count) it falls back to the ring radius.
+        let odd = with_poles(7);
+        let to = FreeVariable::RingRadius.apply(&odd, 8.5);
+        assert_eq!(
+            change_text(FreeVariable::RingRadius, &odd, &to),
+            format!(
+                "Ring radius {} -> 8.5 mm",
+                fixed(odd.coupling.inner_back_apothem_mm, 1)
+            )
+        );
+        let to = FreeVariable::MagnetsPerRing.apply(&from, 12.0);
+        assert_eq!(
+            change_text(FreeVariable::MagnetsPerRing, &from, &to),
+            format!("Magnets per ring {} -> 12", from.coupling.npole)
+        );
+    }
+
+    #[test]
+    fn auto_status_names_the_choice_and_the_size_tab() {
+        assert_eq!(
+            auto_status(FreeVariable::AxialLength),
+            "Auto: magnet length set by the solver (Size tab)"
+        );
+        for variable in FreeVariable::ALL {
+            let status = auto_status(variable);
+            assert!(status.starts_with(AUTO_STATUS_START), "{status}");
+            assert!(status.contains(auto_choice(variable)), "{status}");
+        }
+    }
+
+    #[test]
+    fn every_auto_text_is_plain_words_with_ascii_arrows() {
+        let from = DesignInputs::default();
+        let mut texts: Vec<String> = [
+            AUTO,
+            AUTO_SUFFIX,
+            AUTO_HOVER,
+            SET_BY_AUTO,
+            OPEN_SIZE_TAB,
+            REQUIREMENT_NOT_POSITIVE,
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        for variable in FreeVariable::ALL {
+            texts.push(auto_choice(variable).to_owned());
+            texts.push(auto_status(variable));
+            let to = sized(variable, &from, variable.range().max);
+            texts.push(change_text(variable, &from, &to));
+        }
+        for text in &texts {
+            assert_eq!(plain_text_violations(text), Vec::<&str>::new(), "{text:?}");
+            assert!(
+                !text.contains('\u{2192}') && !text.contains('\u{2264}'),
+                "{text:?}"
+            );
         }
     }
 }

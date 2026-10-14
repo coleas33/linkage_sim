@@ -19,15 +19,16 @@
 //! no undo step) and may keep the undo keys for itself
 //! ([`MagcouplingPanel::set_keyboard_shortcuts`]).
 //!
-//! Sizing (spec Addendum A1): the mode switch tops the Key design group. In Torque → Magnets
-//! the panel shows the design with the free variable at the solved value
-//! ([`crate::gui::sizing::SizingRunner`], debounced, never per frame), and the free variable's
-//! row shows that value, locked. The target is the requirement (decision G-2): its own input
-//! row under the free-variable picker.
+//! Sizing (spec Addendum A1; guidance 3.5): the Size tab's Auto toggle is Torque → Magnets, the
+//! solver's one home. In it the panel shows the design with the free variable at the solved value
+//! ([`crate::gui::sizing::SizingRunner`], debounced, never per frame); the Size-tab slider and the
+//! input row of the free variable show that value, locked, and the Key design group says so. The
+//! target is the requirement (decision G-2), the Size tab's Required slider.
 
 use crate::engine::assumptions::{self, ASSUMPTIONS};
 use crate::engine::meta::{InputSet, ResultSet, SliderRange, Value};
-use crate::engine::sizing::FreeVariable;
+use crate::engine::size_controls::ring_radius_range;
+use crate::engine::sizing::{FreeVariable, SizingOutcome};
 use crate::gui::clamp_drawing::clamp_ui;
 use crate::gui::dashboard::{Level, dashboard_ui, end_effect_banner};
 use crate::gui::explorer::{EQUATION_PANEL, Explorer, FOCUS_WIDTH, explorer_ui, panel_heights};
@@ -52,7 +53,7 @@ use crate::gui::session::{
 use crate::gui::size_controls;
 use crate::gui::sizing::{
     REQUIREMENT_INPUT, SOLVED_PREFIX, SOLVING, SizingMode, SizingRunner, SizingState,
-    variable_label,
+    with_own_value,
 };
 use crate::gui::spreadsheet::Snapshot;
 use crate::gui::trace::{CLEAR_TRACE, Trace, TraceKind};
@@ -105,8 +106,8 @@ pub const FREE_VARIABLE_LABEL: &str = "Free variable";
 /// The start of the log line of each sizing outcome (the web smoke test looks for it).
 pub const SIZING_LOG_PREFIX: &str = "magcoupling sizing: ";
 
-/// The note under the free variable's row in Torque → Magnets.
-pub const SIZED_NOTE: &str = "Set by Torque -> Magnets";
+/// The note under the free variable's row while Auto (Torque → Magnets) sets it.
+pub const SIZED_NOTE: &str = "Set by Auto (Size tab)";
 
 /// The banner shown while an assumption differs from its workbook default (spec Addendum A3),
 /// followed by the assumptions' names.
@@ -355,9 +356,42 @@ impl MagcouplingPanel {
         &self.sizing
     }
 
-    /// The range inverse sizing searches: the free variable's slider range.
+    /// The range Auto's solve searches (spec guidance 3.5): ring size over the ring radii of the
+    /// Size tab's diameter range, its Minimum OD included
+    /// ([`crate::engine::size_controls::ring_radius_range`]), or over its slider when the size
+    /// controls define no range (an odd magnet count); every other free variable over its slider.
+    /// Read from the inputs, never the design shown, so a solve cannot move its own range.
     fn sizing_range(&self) -> SliderRange {
-        self.sizing.variable.range()
+        match self.sizing.variable {
+            FreeVariable::RingRadius => ring_radius_range(&self.inputs, self.minimum_diameter_mm)
+                .unwrap_or_else(|| FreeVariable::RingRadius.range()),
+            variable => variable.range(),
+        }
+    }
+
+    /// The Size tab's Auto outcome line and its colour: what the solve changed, from the
+    /// inputs' own value to the value `shown` (good); else the runner's status line ("Not
+    /// reachable: best ...", "No valid value of ... in range" or a refusal: bad; "Solving...":
+    /// weak).
+    fn auto_outcome(
+        &self,
+        shown: &DesignInputs,
+        visuals: &egui::Visuals,
+    ) -> (String, egui::Color32) {
+        let range = self.sizing_range();
+        let solved = self.runner.is_current(&self.inputs, &self.sizing, range)
+            && matches!(
+                self.runner.outcome(self.sizing.variable),
+                Some(Ok(SizingOutcome::Solved(_)))
+            );
+        if solved {
+            let line = size_controls::change_text(self.sizing.variable, &self.inputs, shown);
+            (line, Level::Good.color(visuals))
+        } else {
+            let status = self.runner.status(&self.inputs, &self.sizing, range);
+            let color = status_color(&status, visuals);
+            (status, color)
+        }
     }
 
     /// Sets the address share links point at: the page's own address on the web (so a link
@@ -595,7 +629,8 @@ impl MagcouplingPanel {
         );
     }
 
-    /// Leaving inverse sizing adopts its result before a manual size edit.
+    /// Turning Auto off (leaving Torque → Magnets) adopts the value shown (decision M41-7),
+    /// solving first a change still waiting for its debounce.
     fn set_sizing_mode(&mut self, mode: SizingMode) {
         if mode == self.sizing.mode {
             return;
@@ -611,48 +646,25 @@ impl MagcouplingPanel {
         self.sizing.mode = mode;
     }
 
-    /// The sizing controls at the top of the Key design group: the mode switch, then in
-    /// Torque → Magnets the free variable, the target (the requirement's own row) and the
-    /// outcome.
+    /// Auto's line at the top of the Key design group (spec guidance 3.5: the solver's home is
+    /// the Size tab): which size Auto sets, a button to the Size tab and the solve's status;
+    /// then, when the Key design group does not list it, the free variable's row locked at the
+    /// value shown (the ring radius). Nothing while Auto is off.
     fn sizing_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
-        let mut mode = self.sizing.mode;
-        ui.horizontal(|ui| {
-            for choice in SizingMode::ALL {
-                ui.selectable_value(&mut mode, choice, choice.label());
-            }
-        });
-        self.set_sizing_mode(mode);
         if self.sizing.mode != SizingMode::TorqueToMagnets {
             return;
         }
-        egui::ComboBox::from_label(FREE_VARIABLE_LABEL)
-            .selected_text(variable_label(self.sizing.variable))
-            .show_ui(ui, |ui| {
-                for variable in FreeVariable::ALL {
-                    ui.selectable_value(
-                        &mut self.sizing.variable,
-                        variable,
-                        variable_label(variable),
-                    );
-                }
-            });
-        // The target is the requirement (decision G-2): its own input row, an ordinary design
-        // edit (undo, files, links) like its row in the Metal design group.
-        let entry = InputCatalogue::get()
-            .entry(REQUIREMENT_INPUT)
-            .expect("the requirement is an input");
-        let widget = self.input_row_ui(ui, entry, readouts);
-        self.design_widgets.push(widget);
+        ui.horizontal_wrapped(|ui| {
+            ui.label(size_controls::auto_status(self.sizing.variable));
+            if ui.button(size_controls::OPEN_SIZE_TAB).clicked() {
+                self.centre = CentreView::SizeAndTorque;
+                ui.ctx().request_repaint();
+            }
+        });
         let status = self
             .runner
             .status(&self.inputs, &self.sizing, self.sizing_range());
-        let color = if status.starts_with(SOLVED_PREFIX) {
-            Level::Good.color(ui.visuals())
-        } else if status == SOLVING {
-            ui.visuals().weak_text_color()
-        } else {
-            Level::Bad.color(ui.visuals())
-        };
+        let color = status_color(&status, ui.visuals());
         ui.colored_label(color, status);
         // The free variable's row, locked at the value shown, when the Key design group does
         // not list it (the ring radius is in the Coupling group, closed by default).
@@ -708,12 +720,7 @@ impl MagcouplingPanel {
         confined(ui, "magcoupling_above_equation_panel", |ui| {
             ui.horizontal_wrapped(|ui| {
                 for view in CentreView::ALL {
-                    let response = ui.selectable_value(&mut self.centre, view, view.label());
-                    if response.changed() && view == CentreView::SizeAndTorque {
-                        self.set_sizing_mode(SizingMode::MagnetsToTorque);
-                        self.results = compute_all(&self.inputs);
-                        ui.ctx().request_repaint();
-                    }
+                    ui.selectable_value(&mut self.centre, view, view.label());
                 }
             });
             ui.separator();
@@ -981,12 +988,18 @@ impl MagcouplingPanel {
         self.design_widgets.clear();
         if self.centre == CentreView::SizeAndTorque {
             ui.heading(crate::gui::size_controls::HEADING);
-            if self.sizing.mode != SizingMode::MagnetsToTorque
-                && ui.button("Edit size manually").clicked()
-            {
-                self.set_sizing_mode(SizingMode::MagnetsToTorque);
-            }
+            // Auto (spec guidance 3.5) is the solver's one home. Turning it off adopts the value
+            // shown (decision M41-7) through the mode switch.
+            let asked = size_controls::auto_ui(ui, self.sizing);
+            self.sizing.variable = asked.variable;
+            self.set_sizing_mode(asked.mode);
+            let auto =
+                (self.sizing.mode == SizingMode::TorqueToMagnets).then_some(self.sizing.variable);
             let shown = self.shown_inputs();
+            if auto.is_some() {
+                let (line, color) = self.auto_outcome(&shown, ui.visuals());
+                ui.add(egui::Label::new(egui::RichText::new(line).color(color)).wrap());
+            }
             let minimum = self.minimum_diameter_mm;
             // The cache keys on the design alone, so it is handed that design's own results:
             // `self.results` can lag the inputs by a frame (the header's assumptions reset edits
@@ -995,11 +1008,7 @@ impl MagcouplingPanel {
             // runs and the fit search rerun only when the design or the minimum changes.
             let shown_results = compute_all(&shown);
             let consequences = self.consequences.get(&shown, &shown_results, minimum);
-            let output = ui
-                .add_enabled_ui(self.sizing.mode == SizingMode::MagnetsToTorque, |ui| {
-                    crate::gui::size_controls::controls_ui(ui, &shown, minimum, consequences)
-                })
-                .inner;
+            let output = size_controls::controls_ui(ui, &shown, minimum, consequences, auto);
             // The lines under the controls were drawn from the design before this frame's edit:
             // one more frame shows the edited design's.
             if output.inputs != shown || output.minimum_diameter_mm != minimum {
@@ -1010,7 +1019,12 @@ impl MagcouplingPanel {
             self.design_widgets.extend(self.requirement_widget);
             self.minimum_diameter_mm = output.minimum_diameter_mm;
             if output.inputs != shown {
-                self.inputs = output.inputs;
+                // The controls edit the design shown: the inputs keep their own value of the size
+                // Auto sets until Auto turns off (decision M41-7).
+                self.inputs = match auto {
+                    Some(variable) => with_own_value(variable, output.inputs, &self.inputs),
+                    None => output.inputs,
+                };
                 self.last_error = output.error;
             } else if output.error.is_some() {
                 self.last_error = output.error;
@@ -1352,6 +1366,18 @@ pub(crate) fn assumptions_banner(inputs: &DesignInputs) -> Option<String> {
     })
 }
 
+/// The colour of a sizing status line ([`SizingRunner::status`]): good when solved, weak while
+/// solving, bad otherwise (not reachable, no valid value, refused).
+fn status_color(status: &str, visuals: &egui::Visuals) -> egui::Color32 {
+    if status.starts_with(SOLVED_PREFIX) {
+        Level::Good.color(visuals)
+    } else if status == SOLVING {
+        visuals.weak_text_color()
+    } else {
+        Level::Bad.color(visuals)
+    }
+}
+
 /// One torque readout of the Size tab: the value of the result at `path` with its unit, a
 /// readout (`readouts`: hover text and equation; a click opens it), or
 /// [`size_controls::NO_PREDICTION`] / [`size_controls::NO_TORQUE`] where the model makes none
@@ -1475,12 +1501,27 @@ mod tests {
             })
         }
 
-        /// Switches to Torque \u{2192} Magnets and lets the solve run.
+        /// Turns Auto on (Torque -> Magnets) without changing the view shown, and lets the
+        /// solve run. The Auto toggle's own clicks are tested on the Size tab.
         fn size(&mut self) -> egui::FullOutput {
-            self.click_text(SizingMode::TorqueToMagnets.label());
+            self.panel.set_sizing_mode(SizingMode::TorqueToMagnets);
+            self.frame(Vec::new());
             self.frame_after(DEBOUNCE_S + 0.01, Vec::new());
             self.frame(Vec::new());
             self.frame(Vec::new())
+        }
+
+        /// The Size tab's slider under `label` as drawn in the last frame (the Size tab must be
+        /// shown): `size_controls::controls_ui` pushes its sliders first, in this order.
+        fn size_widget(&self, label: &str) -> egui::Response {
+            use crate::gui::size_controls::{DIAMETER, GAP, LENGTH, MAGNETS};
+            let index = [DIAMETER, LENGTH, GAP, MAGNETS]
+                .iter()
+                .position(|l| *l == label)
+                .unwrap_or_else(|| panic!("no size slider {label}"));
+            self.ctx
+                .read_response(self.panel.design_widgets[index])
+                .expect("the slider has a response")
         }
 
         /// The solved point of the last solve.
@@ -1574,6 +1615,14 @@ mod tests {
             label_rect.bottom() <= value_rect.top() && value_rect.bottom() <= note_rect.top(),
             "{value:?} at {value_rect:?} is not in the row between {label_rect:?} and {note_rect:?}"
         );
+    }
+
+    /// Whether `text` is drawn on the row of the slider whose rail is `rail`, at or right of its
+    /// start: the slider's value box.
+    fn on_slider_row(output: &egui::FullOutput, rail: egui::Rect, text: &str) -> bool {
+        text_rects(output, text).iter().any(|r| {
+            r.left() >= rail.left() && (rail.top()..=rail.bottom()).contains(&r.center().y)
+        })
     }
 
     #[test]
@@ -3917,18 +3966,6 @@ mod tests {
         assert_eq!(count(&output, &gap), 0, "{gap}");
     }
 
-    #[test]
-    fn manual_size_adopts_the_inverse_solution_before_editing() {
-        let mut harness = Harness::new();
-        harness.size();
-        let solved = harness.panel.shown_inputs();
-        harness.click_text("Size and torque");
-        harness.frame(Vec::new());
-        assert_eq!(harness.panel.sizing.mode, SizingMode::MagnetsToTorque);
-        assert_eq!(harness.panel.inputs(), &solved);
-        assert_eq!(harness.panel.results(), &compute_all(&solved));
-    }
-
     /// A harness on a screen of `screen` showing the Size tab for `inputs`, set as the panel's
     /// inputs: the tab clicked, then one more frame, so the inputs side draws its controls.
     fn size_tab(screen: egui::Vec2, inputs: DesignInputs) -> Harness {
@@ -4108,8 +4145,8 @@ mod tests {
         // field of the design from the frame it takes focus, although the centre view is drawn
         // after the solve runs: a solve pending when it is clicked waits for the typing to end,
         // as it does for an input row's box. (A typed value applies on Enter alone,
-        // `update_while_editing(false)`.) The Size tab's own tab click leaves Torque ->
-        // Magnets: a file in that mode opened with the tab showing gets here.
+        // `update_while_editing(false)`.) A file in that mode opened with the tab showing gets
+        // here, as Auto turned on there does.
         let mut harness = size_tab(SCREEN, DesignInputs::default());
         let mut design = Design::default();
         design.sizing.mode = SizingMode::TorqueToMagnets;
@@ -4509,7 +4546,7 @@ mod tests {
             assert!(delay <= debounce, "repaint after {delay:?}");
         };
         let mut harness = Harness::new();
-        harness.click_text(SizingMode::TorqueToMagnets.label());
+        harness.panel.set_sizing_mode(SizingMode::TorqueToMagnets);
         for _ in 0..5 {
             asks_within_the_debounce(&harness.frame_after(0.02, Vec::new()));
         }
@@ -4590,7 +4627,7 @@ mod tests {
         harness.size();
         harness.panel.inputs.metal.required_min_Nm = 3.0;
         assert_eq!(count(&harness.frame(Vec::new()), SOLVING), 1);
-        harness.click_text(SizingMode::MagnetsToTorque.label());
+        harness.panel.set_sizing_mode(SizingMode::MagnetsToTorque);
         assert_eq!(harness.panel.sizing().mode, SizingMode::MagnetsToTorque);
         assert_eq!(harness.panel.runner.solves, 2, "solved on leaving");
         let mut required = DesignInputs::default();
@@ -4654,11 +4691,15 @@ mod tests {
 
     #[test]
     fn leaving_torque_to_magnets_keeps_the_sized_value_as_one_undo_step() {
+        use crate::gui::size_controls::AUTO;
         let mut harness = Harness::new();
         harness.size();
         let point = harness.solved();
         let steps = harness.panel.history.undo_len();
-        harness.click_text(SizingMode::MagnetsToTorque.label());
+        // Auto off on the Size tab; opening the tab is no edit.
+        harness.click_text(CentreView::SizeAndTorque.label());
+        assert_eq!(harness.panel.history.undo_len(), steps);
+        harness.click_text(AUTO);
         assert_eq!(harness.panel.sizing().mode, SizingMode::MagnetsToTorque);
         assert_eq!(harness.panel.inputs(), &point.inputs, "decision M41-7");
         assert_eq!(harness.panel.results(), &compute_all(&point.inputs));
@@ -4678,7 +4719,7 @@ mod tests {
         harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
         assert_eq!(
-            count(&output, "Not reachable (best 9.937 N\u{b7}m at 50.80 mm)"),
+            count(&output, "Not reachable: best 9.937 N\u{b7}m at 50.80 mm"),
             1
         );
         assert_eq!(
@@ -4700,11 +4741,16 @@ mod tests {
 
     #[test]
     fn the_free_variable_picker_switches_the_variable() {
+        use crate::gui::sizing::auto_choice;
         let mut harness = Harness::new();
+        harness.click_text(CentreView::Geometry.label());
         harness.size();
-        harness.click_text(variable_label(FreeVariable::AxialLength));
-        harness.click_text(variable_label(FreeVariable::RingRadius));
+        // The picker is the Size tab's Auto row; the Key design group then shows the result.
+        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.click_text(auto_choice(FreeVariable::AxialLength));
+        harness.click_text(auto_choice(FreeVariable::RingRadius));
         assert_eq!(harness.panel.sizing().variable, FreeVariable::RingRadius);
+        harness.click_text(CentreView::Geometry.label());
         harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
         let point = harness.solved();
         // The ring radius is not in the Key design group: its locked row shows there anyway,
@@ -4751,59 +4797,6 @@ mod tests {
         harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
         assert_eq!(other.panel.shown_inputs(), harness.panel.shown_inputs());
         assert_eq!(other.panel.results(), harness.panel.results());
-    }
-
-    #[test]
-    fn the_sizing_target_is_the_requirement_s_row_and_one_undo_restores_it() {
-        // Decision G-2: one torque number. In Torque -> Magnets the target is the requirement's
-        // own input row (metal.required_min_Nm): an ordinary design edit that the solve meets,
-        // that a share link carries and that one undo restores.
-        let mut harness = Harness::new();
-        let output = harness.size();
-        let label = InputCatalogue::get()
-            .entry(REQUIREMENT_INPUT)
-            .unwrap()
-            .meta
-            .label;
-        assert_eq!(
-            count(&output, label),
-            1,
-            "the target row is the requirement's"
-        );
-        assert_eq!(count(&output, TARGET_LABEL), 0, "no second target control");
-        let steps = harness.panel.history.undo_len();
-        // The target row is the first row the Key design group draws.
-        let target = harness.panel.design_widgets[0];
-        harness.ctx.memory_mut(|m| m.request_focus(target));
-        harness.frame(Vec::new());
-        harness.frame(key_tap(egui::Key::ArrowRight));
-        harness.frame(Vec::new());
-        assert_eq!(harness.panel.inputs().metal.required_min_Nm, 2.51);
-        assert_eq!(harness.panel.history.undo_len(), steps + 1, "one step");
-        // The solve meets the new requirement after its debounce.
-        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
-        assert!(harness.panel.runner.is_current(
-            harness.panel.inputs(),
-            harness.panel.sizing(),
-            FreeVariable::AxialLength.range()
-        ));
-        let point = harness.solved();
-        assert!((point.torque_hot_low_Nm - 2.51).abs() < 1e-6);
-        assert_eq!(point.inputs.metal.required_min_Nm, 2.51);
-        // A share link carries it: it is an input.
-        let link = harness.panel.share_link();
-        let payload = link.split("?m=").nth(1).unwrap();
-        assert_eq!(decode_share_payload(payload), Ok(harness.panel.design()));
-        let mut other = MagcouplingPanel::new();
-        other.load_share_payload(payload).unwrap();
-        assert_eq!(other.inputs().metal.required_min_Nm, 2.51);
-        // One undo restores it; the next solve meets it again.
-        harness.panel.undo();
-        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
-        assert_eq!(harness.panel.sizing().mode, SizingMode::TorqueToMagnets);
-        harness.frame(Vec::new());
-        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
-        assert!((harness.solved().torque_hot_low_Nm - 2.5).abs() < 1e-6);
     }
 
     #[test]
@@ -4879,6 +4872,687 @@ mod tests {
         assert_eq!(harness.panel.history.undo_len(), 0);
         assert_eq!(harness.panel.last_error, None);
         assert_eq!(harness.panel.runner.solves, 1, "solved once, then idle");
+    }
+
+    #[test]
+    fn auto_locks_the_matching_size_slider_and_says_why() {
+        use crate::gui::size_controls::{
+            AUTO, DIAMETER, GAP, LENGTH, MAGNETS, SET_BY_AUTO, change_text,
+        };
+        use crate::gui::sizing::auto_choice;
+        let mut harness = Harness::new();
+        tooltips_at_once(&harness);
+        harness.click_text(CentreView::SizeAndTorque.label());
+        // Off: every size slider is the user's.
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, SET_BY_AUTO), 0);
+        for label in [DIAMETER, LENGTH, GAP, MAGNETS] {
+            assert!(harness.size_widget(label).enabled(), "{label}");
+        }
+        harness.click_text(AUTO);
+        assert_eq!(harness.panel.sizing().mode, SizingMode::TorqueToMagnets);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        let output = harness.frame(Vec::new());
+        let point = harness.solved();
+        // Magnet length, the default choice, locks Overall length alone.
+        assert!(!harness.size_widget(LENGTH).enabled(), "locked");
+        for label in [DIAMETER, GAP, MAGNETS] {
+            assert!(harness.size_widget(label).enabled(), "{label}");
+        }
+        assert_eq!(
+            count(&output, SET_BY_AUTO),
+            1,
+            "the line under the locked slider"
+        );
+        // The locked slider shows the solved design's length, as the slider writes it.
+        let rail = harness.size_widget(LENGTH).rect;
+        let length = dimensions(&point.inputs)
+            .expect("a sized design has size controls")
+            .overall_length_mm;
+        assert!(
+            on_slider_row(&output, rail, &format!("{length:.1} mm")),
+            "{length}"
+        );
+        // The outcome line names the change, from the inputs' own length to the one shown.
+        let line = change_text(
+            FreeVariable::AxialLength,
+            harness.panel.inputs(),
+            &point.inputs,
+        );
+        assert_eq!(count(&output, &line), 1, "{:?}", drawn_texts(&output));
+        assert_eq!(
+            crate::gui::test_support::text_color(&output, &line),
+            Some(Level::Good.color(&harness.ctx.style().visuals))
+        );
+        // Its hover says why it does not move.
+        harness.frame_after(0.2, vec![egui::Event::PointerMoved(rail.center())]);
+        assert_eq!(
+            count(&harness.frame(Vec::new()), SET_BY_AUTO),
+            2,
+            "the line and the hover text"
+        );
+        // Neither arrow keys nor a drag move it.
+        let before = (harness.panel.design(), harness.panel.shown_inputs());
+        let id = harness.size_widget(LENGTH).id;
+        harness.ctx.memory_mut(|m| m.request_focus(id));
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        harness.frame(vec![primary_button(rail.center(), true)]);
+        harness.frame(vec![egui::Event::PointerMoved(rail.right_center())]);
+        harness.frame(vec![primary_button(rail.right_center(), false)]);
+        harness.frame(Vec::new());
+        assert_eq!(
+            (harness.panel.design(), harness.panel.shown_inputs()),
+            before
+        );
+        assert_eq!(
+            harness.panel.inputs(),
+            &DesignInputs::default(),
+            "M41-7: the inputs keep their own (blank) length"
+        );
+        // Another size: its slider locks, Overall length is the user's again, nothing is adopted.
+        harness.click_text(auto_choice(FreeVariable::AxialLength));
+        harness.click_text(auto_choice(FreeVariable::MagnetsPerRing));
+        assert_eq!(
+            harness.panel.sizing().variable,
+            FreeVariable::MagnetsPerRing
+        );
+        harness.frame(Vec::new());
+        assert!(!harness.size_widget(MAGNETS).enabled());
+        assert!(harness.size_widget(LENGTH).enabled());
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn auto_solves_again_after_the_debounce_when_another_size_changes() {
+        use crate::engine::sizing::solve_in;
+        use crate::gui::size_controls::{AUTO, GAP, change_text};
+        let mut harness = Harness::new();
+        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.click_text(AUTO);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.runner.solves, 1);
+        let steps = harness.panel.history.undo_len();
+        // A nudge of the gap on the Size tab edits the inputs, not the solved length.
+        let gap = harness.size_widget(GAP).id;
+        harness.ctx.memory_mut(|m| m.request_focus(gap));
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        let output = harness.frame(Vec::new());
+        let inputs = harness.panel.inputs().clone();
+        assert!(inputs.metal.face_gap_mm > DesignInputs::default().metal.face_gap_mm);
+        assert_eq!(
+            inputs.coupling.magnets.axial_length_mm, None,
+            "the inputs keep their own (blank) length"
+        );
+        assert_eq!(harness.panel.runner.solves, 1, "waiting for the debounce");
+        assert_eq!(count(&output, SOLVING), 1);
+        // A keyboard-focused value box is a text field of the design: it holds the solve.
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        assert_eq!(
+            harness.panel.runner.solves, 1,
+            "not while the value box has focus"
+        );
+        harness.frame(key_tap(egui::Key::Enter));
+        assert_eq!(
+            focused_text_field(&harness.ctx),
+            None,
+            "Enter leaves the box"
+        );
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(harness.panel.runner.solves, 2);
+        let range = FreeVariable::AxialLength.range();
+        let required = inputs.metal.required_min_Nm;
+        let Ok(SizingOutcome::Solved(want)) =
+            solve_in(&inputs, FreeVariable::AxialLength, required, range)
+        else {
+            panic!("the requirement is reachable at the nudged gap")
+        };
+        assert_eq!(harness.panel.shown_inputs(), want.inputs);
+        assert_eq!(harness.panel.results(), &compute_all(&want.inputs));
+        let line = change_text(FreeVariable::AxialLength, &inputs, &want.inputs);
+        assert_eq!(count(&output, &line), 1, "{:?}", drawn_texts(&output));
+        // The nudge is one undo step; undoing it keeps Auto on.
+        assert_eq!(harness.panel.history.undo_len(), steps + 1);
+        harness.panel.undo();
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        assert_eq!(harness.panel.sizing().mode, SizingMode::TorqueToMagnets);
+    }
+
+    #[test]
+    fn idle_frames_with_auto_on_change_nothing_and_solve_once() {
+        use crate::gui::size_controls::AUTO;
+        let mut harness = Harness::new();
+        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.click_text(AUTO);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        harness.frame(Vec::new());
+        let design = harness.panel.design();
+        let shown = harness.panel.shown_inputs();
+        let steps = harness.panel.history.undo_len();
+        for _ in 0..6 {
+            harness.frame_after(0.1, Vec::new());
+            assert_eq!(harness.panel.design(), design);
+            assert_eq!(harness.panel.shown_inputs(), shown);
+        }
+        assert_eq!(
+            harness.panel.inputs(),
+            &DesignInputs::default(),
+            "the inputs keep their own length"
+        );
+        assert_eq!(
+            harness.panel.minimum_diameter_mm, None,
+            "no view state moves either"
+        );
+        assert_eq!(harness.panel.history.undo_len(), steps);
+        assert_eq!(harness.panel.runner.solves, 1, "idle frames never solve");
+    }
+
+    #[test]
+    fn auto_out_of_reach_shows_the_best_value_in_red() {
+        use crate::gui::size_controls::{AUTO, LENGTH};
+        use crate::gui::sizing::NOT_REACHABLE_PREFIX;
+        let mut harness = Harness::new();
+        harness.panel.inputs.metal.required_min_Nm = 50.0;
+        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.click_text(AUTO);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        let output = harness.frame(Vec::new());
+        let Some(Ok(SizingOutcome::NotReachable { best: Some(best) })) = harness
+            .panel
+            .runner
+            .outcome(FreeVariable::AxialLength)
+            .cloned()
+        else {
+            panic!("50 N·m is out of reach of the axial length")
+        };
+        let line = format!(
+            "{NOT_REACHABLE_PREFIX}: best {} at {}",
+            with_unit(
+                format_value(&Value::Num(best.torque_hot_low_Nm)),
+                "N\u{b7}m"
+            ),
+            with_unit(format_value(&Value::Num(best.value)), "mm")
+        );
+        assert_eq!(count(&output, &line), 1, "{:?}", drawn_texts(&output));
+        assert_eq!(
+            crate::gui::test_support::text_color(&output, &line),
+            Some(Level::Bad.color(&harness.ctx.style().visuals))
+        );
+        // The locked slider sits at the best value (decision M41-8); the inputs keep their own.
+        assert_eq!(harness.panel.shown_inputs(), best.inputs);
+        assert_eq!(
+            harness.panel.inputs().coupling.magnets.axial_length_mm,
+            None
+        );
+        let rail = harness.size_widget(LENGTH).rect;
+        let length = dimensions(&best.inputs)
+            .expect("the best design has size controls")
+            .overall_length_mm;
+        assert!(
+            on_slider_row(&output, rail, &format!("{length:.1} mm")),
+            "{length}"
+        );
+    }
+
+    #[test]
+    fn auto_with_no_valid_ring_size_says_so_and_keeps_the_inputs_value() {
+        use crate::gui::size_controls::{AUTO, DIAMETER};
+        let mut harness = Harness::new();
+        harness.panel.inputs = short_magnets();
+        harness.panel.sizing.variable = FreeVariable::RingRadius;
+        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.click_text(AUTO);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        let output = harness.frame(Vec::new());
+        // 2 mm magnets: f_end <= 0 at every ring size, so no layout counts.
+        let line = "No valid value of ring size in range";
+        assert_eq!(count(&output, line), 1, "{:?}", drawn_texts(&output));
+        assert_eq!(
+            crate::gui::test_support::text_color(&output, line),
+            Some(Level::Bad.color(&harness.ctx.style().visuals))
+        );
+        assert_eq!(
+            harness.panel.shown_inputs(),
+            short_magnets(),
+            "nothing is sized"
+        );
+        assert!(!harness.size_widget(DIAMETER).enabled());
+        let rail = harness.size_widget(DIAMETER).rect;
+        let diameter = dimensions(&short_magnets())
+            .expect("2 mm magnets still have size controls")
+            .diameter_mm;
+        assert!(
+            on_slider_row(&output, rail, &format!("{diameter:.1} mm")),
+            "the slider keeps the inputs' value: {diameter}"
+        );
+    }
+
+    #[test]
+    fn auto_refuses_a_requirement_that_is_not_positive() {
+        use crate::gui::size_controls::{AUTO, LENGTH};
+        use crate::gui::sizing::REQUIREMENT_NOT_POSITIVE;
+        let mut harness = Harness::new();
+        harness.panel.inputs.metal.required_min_Nm = 0.0;
+        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.click_text(AUTO);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(
+            count(&output, REQUIREMENT_NOT_POSITIVE),
+            1,
+            "{:?}",
+            drawn_texts(&output)
+        );
+        assert_eq!(
+            crate::gui::test_support::text_color(&output, REQUIREMENT_NOT_POSITIVE),
+            Some(Level::Bad.color(&harness.ctx.style().visuals))
+        );
+        assert_eq!(&harness.panel.shown_inputs(), harness.panel.inputs());
+        let rail = harness.size_widget(LENGTH).rect;
+        let length = dimensions(harness.panel.inputs())
+            .expect("the default design has size controls")
+            .overall_length_mm;
+        assert!(
+            on_slider_row(&output, rail, &format!("{length:.1} mm")),
+            "{length}"
+        );
+    }
+
+    #[test]
+    fn auto_ring_size_searches_the_size_tab_range_below_the_old_floor() {
+        use crate::engine::size_controls::ring_radius_range;
+        use crate::engine::sizing::{is_valid, solve, solve_in};
+        use crate::gui::size_controls::{AUTO, DIAMETER, LENGTH, change_text};
+        use crate::gui::sizing::{auto_choice, sized};
+        const RING: FreeVariable = FreeVariable::RingRadius;
+        let mut harness = Harness::new();
+        harness.panel.inputs.coupling.npole = 8;
+        harness.click_text(CentreView::SizeAndTorque.label());
+        // The requirement: the hot-low torque of an 8.5 mm ring of 8 magnets, a valid layout.
+        let at = RING.apply(harness.panel.inputs(), 8.5);
+        let at_results = compute_all(&at);
+        assert!(
+            is_valid(&at, &at_results),
+            "an 8.5 mm ring of 8 magnets fits"
+        );
+        harness.panel.inputs.metal.required_min_Nm = at_results.metal.torque_hot_low_Nm;
+        // Ring size, picked in the Auto row, then Auto on.
+        harness.click_text(auto_choice(FreeVariable::AxialLength));
+        harness.click_text(auto_choice(RING));
+        harness.click_text(AUTO);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        harness.frame(Vec::new());
+        assert_eq!(
+            (harness.panel.sizing().mode, harness.panel.sizing().variable),
+            (SizingMode::TorqueToMagnets, RING)
+        );
+        let inputs = harness.panel.inputs().clone();
+        let required = inputs.metal.required_min_Nm;
+        // At the default Minimum OD the search starts at the radius slider's floor, where it
+        // meets the requirement.
+        let floor = ring_radius_range(&inputs, None).expect("8 magnets define a size range");
+        let at_floor = harness.solved();
+        assert_eq!(
+            Ok(SizingOutcome::Solved(at_floor.clone())),
+            solve_in(&inputs, RING, required, floor)
+        );
+        assert!(at_floor.value >= RING.range().min, "{}", at_floor.value);
+        assert_eq!(harness.panel.minimum_diameter_mm, None);
+        // A lowered Minimum OD widens the search: one more solve, after the debounce.
+        harness.panel.minimum_diameter_mm = Some(37.0);
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.runner.solves, 1, "waiting for the debounce");
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(harness.panel.runner.solves, 2);
+        let range =
+            ring_radius_range(&inputs, Some(37.0)).expect("a bounded minimum defines a range");
+        assert!(range.min < 8.5, "{range:?}");
+        let point = harness.solved();
+        assert_eq!(
+            Ok(SizingOutcome::Solved(point.clone())),
+            solve_in(&inputs, RING, required, range)
+        );
+        assert!(
+            point.value < RING.range().min && point.value >= range.min && point.value <= 8.5 + 1e-6,
+            "{}",
+            point.value
+        );
+        assert!(
+            is_valid(&point.inputs, &compute_all(&point.inputs)),
+            "fit and keyway wall still apply"
+        );
+        assert_eq!(
+            harness.panel.inputs(),
+            &inputs,
+            "the inputs keep their own ring radius"
+        );
+        // T7 amendment (Review Focus 2): the design shown maps the solved radius as the Outside
+        // diameter slider does, so the cap and its thread follow the cup and the locked slider
+        // shows the solved outside diameter.
+        let shown = harness.panel.shown_inputs();
+        assert_eq!(shown, sized(RING, &inputs, point.value));
+        assert_eq!(shown.coupling.inner_back_apothem_mm, point.value);
+        let parts = |design: &DesignInputs| {
+            diameter_breakdown(design).expect("a ring of 8 magnets has a diameter breakdown")
+        };
+        let (own, solved) = (parts(&inputs), parts(&shown));
+        assert!(
+            ((solved.cap_mm - solved.cup_mm) - (own.cap_mm - own.cup_mm)).abs() < 1e-9,
+            "the cap keeps its offset from the cup: {own:?} {solved:?}"
+        );
+        let diameter = dimensions(&shown).expect("size controls").diameter_mm;
+        assert!(
+            diameter < dimensions(&inputs).unwrap().diameter_mm,
+            "a smaller ring is a smaller coupling"
+        );
+        assert!(
+            !harness.size_widget(DIAMETER).enabled(),
+            "ring size locks Outside diameter"
+        );
+        assert!(harness.size_widget(LENGTH).enabled());
+        let rail = harness.size_widget(DIAMETER).rect;
+        assert!(
+            on_slider_row(&output, rail, &format!("{diameter:.1} mm")),
+            "{diameter}"
+        );
+        let line = change_text(RING, &inputs, &shown);
+        assert!(line.starts_with(DIAMETER), "{line}");
+        assert_eq!(count(&output, &line), 1, "{:?}", drawn_texts(&output));
+        // Idle frames move neither the design nor the Minimum OD, and solve nothing.
+        let (design, steps) = (harness.panel.design(), harness.panel.history.undo_len());
+        for _ in 0..3 {
+            harness.frame_after(0.1, Vec::new());
+            assert_eq!(harness.panel.design(), design);
+        }
+        assert_eq!(harness.panel.minimum_diameter_mm, Some(37.0));
+        assert_eq!(harness.panel.history.undo_len(), steps);
+        assert_eq!(harness.panel.runner.solves, 2);
+        // An odd magnet count defines no size range: ring size then searches its own slider.
+        harness.click_text(CentreView::Geometry.label());
+        harness.panel.inputs.coupling.npole = 7;
+        harness.frame(Vec::new());
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        let odd = harness.panel.inputs().clone();
+        assert_eq!(ring_radius_range(&odd, Some(37.0)), None);
+        assert_eq!(
+            harness.panel.runner.outcome(RING),
+            Some(&solve(&odd, RING, odd.metal.required_min_Nm))
+        );
+    }
+
+    #[test]
+    fn a_size_tab_edit_under_ring_size_auto_keeps_the_inputs_cap() {
+        // The ring-size design shown moves the cap OD and thread with the cup. A Size-tab edit
+        // of another size is made on that design: the inputs take the edit and keep their own
+        // ring radius, cap and thread (decision M41-7), so no offset drifts edit by edit.
+        use crate::gui::size_controls::{AUTO, GAP};
+        use crate::gui::sizing::auto_choice;
+        let mut harness = Harness::new();
+        harness.panel.inputs = with_poles(8);
+        harness.panel.inputs.metal.required_min_Nm = 2.0;
+        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.click_text(auto_choice(FreeVariable::AxialLength));
+        harness.click_text(auto_choice(FreeVariable::RingRadius));
+        harness.click_text(AUTO);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        harness.frame(Vec::new());
+        let own = harness.panel.inputs().clone();
+        let shown = harness.panel.shown_inputs();
+        assert_ne!(
+            shown.metal.cap_od_mm, own.metal.cap_od_mm,
+            "the cap follows the cup"
+        );
+        let gap = harness.size_widget(GAP).id;
+        harness.ctx.memory_mut(|m| m.request_focus(gap));
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        harness.frame(Vec::new());
+        let mut want = own.clone();
+        want.metal.face_gap_mm = harness.panel.inputs().metal.face_gap_mm;
+        assert!(
+            want.metal.face_gap_mm > own.metal.face_gap_mm,
+            "the gap moved"
+        );
+        assert_eq!(harness.panel.inputs(), &want);
+    }
+
+    #[test]
+    fn a_diameter_edit_under_magnet_count_auto_maps_under_the_count_shown() {
+        // Critic item 2.7, the behaviour chosen: with magnet-count Auto on, the Size tab edits
+        // the design shown, whose count is the solved one. The typed outside diameter maps to a
+        // ring radius under that count, so the design shown reads the diameter typed; the
+        // inputs take that ring radius and keep their own count (decision M41-7). The solve then
+        // runs again for the new ring.
+        use crate::gui::size_controls::{AUTO, DIAMETER, SET_BY_AUTO};
+        use crate::gui::sizing::auto_choice;
+        let mut harness = Harness::new();
+        // The hot-low torque of 8 magnets per ring: met below the inputs' own 10.
+        let required = compute_all(&with_poles(8)).metal.torque_hot_low_Nm;
+        harness.panel.inputs.metal.required_min_Nm = required;
+        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.click_text(auto_choice(FreeVariable::AxialLength));
+        harness.click_text(auto_choice(FreeVariable::MagnetsPerRing));
+        harness.click_text(AUTO);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        harness.frame(Vec::new());
+        let own = harness.panel.inputs().clone();
+        let solved = harness.solved();
+        assert!((solved.torque_hot_low_Nm - required).abs() < 1e-6);
+        assert_ne!(
+            solved.value as i64, own.coupling.npole,
+            "the test needs a solved count other than the inputs' own"
+        );
+        let before = dimensions(&harness.panel.shown_inputs())
+            .expect("size controls")
+            .diameter_mm;
+        let slider = harness.size_widget(DIAMETER).id;
+        harness.ctx.memory_mut(|m| m.request_focus(slider));
+        // Establish egui's arrow-key focus lock before sending the keyboard edit.
+        harness.frame(Vec::new());
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        let output = harness.frame(Vec::new());
+        let inputs = harness.panel.inputs().clone();
+        assert_eq!(
+            inputs.coupling.npole, own.coupling.npole,
+            "the inputs' own count"
+        );
+        assert_ne!(
+            inputs.coupling.inner_back_apothem_mm, own.coupling.inner_back_apothem_mm,
+            "the edit moved the ring"
+        );
+        // Until the solve runs again the design shown is the inputs at the solved count, and it
+        // reads the diameter the slider was moved to.
+        let shown = harness.panel.shown_inputs();
+        assert_eq!(
+            shown,
+            FreeVariable::MagnetsPerRing.apply(&inputs, solved.value)
+        );
+        let typed = dimensions(&shown).expect("size controls").diameter_mm;
+        assert!(typed > before, "{typed} after {before}");
+        let rail = harness.size_widget(DIAMETER).rect;
+        assert!(
+            on_slider_row(&output, rail, &format!("{typed:.1} mm")),
+            "{typed}"
+        );
+        assert_eq!(
+            count(&output, SET_BY_AUTO),
+            1,
+            "Magnets per ring stays locked"
+        );
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        assert_eq!(harness.panel.runner.solves, 2);
+        assert_eq!(harness.panel.inputs(), &inputs, "the solve edits no input");
+    }
+
+    #[test]
+    fn an_inverse_mode_design_file_opens_with_auto_on() {
+        use crate::gui::size_controls::{LENGTH, SET_BY_AUTO, change_text};
+        let design = Design {
+            inputs: DesignInputs::default(),
+            sizing: SizingState {
+                mode: SizingMode::TorqueToMagnets,
+                variable: FreeVariable::AxialLength,
+            },
+        };
+        let mut harness = Harness::new();
+        harness.click_text(CentreView::Geometry.label());
+        harness
+            .panel
+            .load_design_file(&design_to_json(&design))
+            .unwrap();
+        // Opening the Size tab switches no mode.
+        harness.click_text(CentreView::SizeAndTorque.label());
+        assert_eq!(harness.panel.design(), design);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(harness.panel.sizing().mode, SizingMode::TorqueToMagnets);
+        assert_eq!(
+            harness.panel.inputs(),
+            &DesignInputs::default(),
+            "the inputs keep their own length"
+        );
+        assert!(!harness.size_widget(LENGTH).enabled(), "locked");
+        assert_eq!(count(&output, SET_BY_AUTO), 1);
+        let shown = harness.panel.shown_inputs();
+        let line = change_text(FreeVariable::AxialLength, harness.panel.inputs(), &shown);
+        assert_eq!(count(&output, &line), 1, "{:?}", drawn_texts(&output));
+        // A share link of the same design opens the same way, as the session's start.
+        let mut linked = Harness::new();
+        linked
+            .panel
+            .open_share_payload(&encode_share_payload(&design))
+            .unwrap();
+        linked.click_text(CentreView::SizeAndTorque.label());
+        assert_eq!(linked.panel.design(), design);
+    }
+
+    #[test]
+    fn the_key_design_group_shows_auto_s_status_and_a_button_to_the_size_tab() {
+        use crate::gui::size_controls::{AUTO_STATUS_START, OPEN_SIZE_TAB, auto_status};
+        let mut harness = Harness::new();
+        harness.click_text(CentreView::Geometry.label());
+        let output = harness.frame(Vec::new());
+        // The solver's controls live on the Size tab: no mode switch, picker or target here.
+        let gone = [
+            SizingMode::MagnetsToTorque.label(),
+            SizingMode::TorqueToMagnets.label(),
+            FREE_VARIABLE_LABEL,
+            TARGET_LABEL,
+        ];
+        for text in gone {
+            assert_eq!(count(&output, text), 0, "{text}");
+        }
+        assert!(
+            !drawn_texts(&output)
+                .iter()
+                .any(|t| t.starts_with(AUTO_STATUS_START)),
+            "Auto is off"
+        );
+        // Auto on: one line naming the size it sets, and the button.
+        let output = harness.size();
+        assert_eq!(count(&output, &auto_status(FreeVariable::AxialLength)), 1);
+        assert_eq!(count(&output, OPEN_SIZE_TAB), 1);
+        for text in gone {
+            assert_eq!(count(&output, text), 0, "{text}");
+        }
+        let design = harness.panel.design();
+        harness.click_text(OPEN_SIZE_TAB);
+        assert_eq!(harness.panel.centre, CentreView::SizeAndTorque);
+        assert_eq!(harness.panel.design(), design, "the button edits nothing");
+    }
+
+    #[test]
+    fn the_size_tab_keeps_auto_on_and_auto_off_adopts_the_solution() {
+        use crate::gui::size_controls::{AUTO, LENGTH};
+        let mut harness = Harness::new();
+        harness.click_text(CentreView::Geometry.label());
+        harness.size();
+        let solved = harness.panel.shown_inputs();
+        // Opening the Size tab switches nothing.
+        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.sizing().mode, SizingMode::TorqueToMagnets);
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        assert_eq!(harness.panel.shown_inputs(), solved);
+        assert!(!harness.size_widget(LENGTH).enabled());
+        // Auto off: the inputs adopt the length shown (decision M41-7); the slider is the user's.
+        harness.click_text(AUTO);
+        assert_eq!(harness.panel.sizing().mode, SizingMode::MagnetsToTorque);
+        assert_eq!(harness.panel.inputs(), &solved);
+        assert_eq!(harness.panel.results(), &compute_all(&solved));
+        harness.frame(Vec::new());
+        assert!(harness.size_widget(LENGTH).enabled());
+    }
+
+    #[test]
+    fn the_auto_texts_have_glyphs_and_wrap_on_the_inputs_side() {
+        use crate::gui::size_controls::{
+            AUTO, AUTO_HOVER, AUTO_SUFFIX, LENGTH, OPEN_SIZE_TAB, SET_BY_AUTO, auto_status,
+            change_text,
+        };
+        use crate::gui::sizing::{
+            NOT_REACHABLE_PREFIX, REQUIREMENT_NOT_POSITIVE, auto_choice, sized,
+        };
+        // The M4-1 review's ~930 px window; the inputs side keeps its 320 points.
+        let mut harness = Harness::on_screen(egui::vec2(930.0, 1024.0));
+        tooltips_at_once(&harness);
+        // The longest outcome line: a requirement out of reach.
+        harness.panel.inputs.metal.required_min_Nm = 50.0;
+        harness.frame(Vec::new());
+        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.click_text(AUTO);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        let output = harness.frame(Vec::new());
+        let texts = drawn_texts(&output);
+        let outcome = texts
+            .iter()
+            .find(|t| t.starts_with(NOT_REACHABLE_PREFIX))
+            .cloned()
+            .expect("the outcome line");
+        // The centre region starts at the Size tab's tab (the inputs side's heading of the same
+        // text paints first, further left).
+        let centre_left = text_rects(&output, CentreView::SizeAndTorque.label())
+            .iter()
+            .map(|r| r.left())
+            .fold(f32::MIN, f32::max);
+        let row = [
+            AUTO,
+            AUTO_SUFFIX,
+            SET_BY_AUTO,
+            auto_choice(FreeVariable::AxialLength),
+            outcome.as_str(),
+        ];
+        for text in row {
+            let rects = text_rects(&output, text);
+            assert!(!rects.is_empty(), "{text:?} is drawn");
+            for rect in rects {
+                assert!(
+                    rect.right() <= centre_left,
+                    "{text:?} at {rect:?} runs past the inputs side ({centre_left})"
+                );
+            }
+        }
+        let mut all = texts;
+        // The locked slider's hover text.
+        let rail = harness.size_widget(LENGTH).rect;
+        harness.frame_after(0.2, vec![egui::Event::PointerMoved(rail.center())]);
+        all.extend(drawn_texts(&harness.frame(Vec::new())));
+        // The Key design group's line, on another tab.
+        harness.click_text(CentreView::Geometry.label());
+        all.extend(drawn_texts(&harness.frame(Vec::new())));
+        assert!(all.contains(&auto_status(FreeVariable::AxialLength)));
+        // Every Auto text, each choice's.
+        all.extend([AUTO_HOVER, OPEN_SIZE_TAB, REQUIREMENT_NOT_POSITIVE].map(str::to_owned));
+        let from = DesignInputs::default();
+        for variable in FreeVariable::ALL {
+            all.push(auto_status(variable));
+            let to = sized(variable, &from, variable.range().max);
+            all.push(change_text(variable, &from, &to));
+        }
+        for text in &all {
+            crate::gui::test_support::assert_glyphs(&harness.ctx, text, "the Auto texts");
+        }
     }
 
     /// Shows tooltips at once (no delay, the pointer need not rest), as the geometry view's
