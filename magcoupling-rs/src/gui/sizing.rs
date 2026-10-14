@@ -254,6 +254,9 @@ impl SizingRunner {
                 let paths: Vec<&str> = errors.iter().map(|e| e.path.as_str()).collect();
                 format!("Sizing refused: invalid inputs ({})", paths.join(", "))
             }
+            Some(Err(SizingError::InvalidRange { .. })) => {
+                "Sizing refused: the search range is empty".to_owned()
+            }
             None => SOLVING.to_owned(),
         }
     }
@@ -477,5 +480,28 @@ mod tests {
             runner.status(&bad, &state),
             "Sizing refused: invalid inputs (coupling.backiron)"
         );
+    }
+
+    #[test]
+    fn a_refused_search_range_shows_why_and_keeps_the_inputs() {
+        // The runner passes no range of its own yet (the Size tab's ring-size Auto will), so
+        // the refusal is put in as the last outcome directly.
+        let inputs = DesignInputs::default();
+        let state = inverse(FreeVariable::RingRadius, 2.5);
+        let runner = SizingRunner {
+            last: Some((
+                SolveKey::new(&inputs, &state),
+                Err(SizingError::InvalidRange {
+                    min: 30.0,
+                    max: 9.0,
+                }),
+            )),
+            ..SizingRunner::default()
+        };
+        assert_eq!(runner.value(state.variable), None);
+        assert_eq!(runner.shown(&inputs, &state), inputs);
+        let status = runner.status(&inputs, &state);
+        assert_eq!(status, "Sizing refused: the search range is empty");
+        assert!(status.is_ascii(), "every glyph is in egui's default fonts");
     }
 }

@@ -7,12 +7,13 @@ use magcoupling::engine::api::DesignInputs;
 use magcoupling::engine::housing::{INSIDE_THE_SPACE_CLAIM, SPACE_CLAIM_UNKNOWN};
 use magcoupling::engine::meta::NumOrText;
 use magcoupling::engine::meta::SetErrorKind;
-use magcoupling::engine::meta::{Value, result_rows};
+use magcoupling::engine::meta::{SliderRange, Value, result_rows};
 use magcoupling::engine::model::{END_EFFECT_OUT_OF_RANGE, blocks_fit, pitch_share};
 use magcoupling::engine::sizing::{
     FreeVariable, SCAN_CELLS, SizingError, SizingOutcome, SizingPoint, VALUE_TOLERANCE_MM,
-    is_valid, solve,
+    is_valid, solve, solve_in,
 };
+use std::f64::consts::PI;
 
 /// The hot-low torque with production variation of a design (what sizing makes meet the target).
 fn hot_low(inputs: &DesignInputs) -> f64 {
@@ -32,6 +33,11 @@ fn with_length(length_mm: f64) -> DesignInputs {
     let mut inputs = DesignInputs::default();
     inputs.coupling.magnets.axial_length_mm = Some(length_mm);
     inputs
+}
+
+/// `range` with its ends replaced (its step and scale kept).
+fn span(range: SliderRange, min: f64, max: f64) -> SliderRange {
+    SliderRange { min, max, ..range }
 }
 
 /// Every result of a design as (path, bit pattern), so NaN equals NaN and nothing is rounded.
@@ -467,6 +473,233 @@ fn the_search_constants_are_the_documented_ones() {
         FreeVariable::RingRadius.path(),
         "coupling.inner_back_apothem_mm"
     );
+}
+
+#[test]
+fn the_grid_is_the_grid_in_the_slider_range() {
+    // Spec 4.3: solve is solve_in over the variable's slider range, so its grid is grid_in of
+    // that range, value for value.
+    for variable in FreeVariable::ALL {
+        assert_eq!(
+            variable.grid(),
+            variable.grid_in(variable.range()),
+            "{variable:?}"
+        );
+    }
+}
+
+#[test]
+fn a_caller_range_is_scanned_inside_its_ends() {
+    // A continuous variable: SCAN_CELLS + 1 ascending ends of equal cells from the range's
+    // minimum to its maximum, below the ring radius slider's 9 mm floor too.
+    let range = span(FreeVariable::RingRadius.range(), 6.0, 30.0);
+    let grid = FreeVariable::RingRadius.grid_in(range);
+    assert_eq!(grid.len(), SCAN_CELLS + 1);
+    assert_eq!((grid[0], grid[SCAN_CELLS]), (6.0, 30.0));
+    assert!(grid.windows(2).all(|w| w[0] < w[1]), "{grid:?}");
+    assert!((grid[1] - grid[0] - 24.0 / SCAN_CELLS as f64).abs() < 1e-12);
+    // Magnets per ring: the even whole numbers inside the range, never one below its minimum
+    // (4.5 must not start the grid at 4).
+    let poles = FreeVariable::MagnetsPerRing.range();
+    assert_eq!(
+        FreeVariable::MagnetsPerRing.grid_in(span(poles, 4.5, 13.0)),
+        [6.0, 8.0, 10.0, 12.0]
+    );
+    assert_eq!(
+        FreeVariable::MagnetsPerRing.grid_in(span(poles, 6.0, 6.0)),
+        [6.0]
+    );
+    assert!(
+        FreeVariable::MagnetsPerRing
+            .grid_in(span(poles, 5.0, 5.9))
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_range_of_one_value_evaluates_that_value_once() {
+    // The Size tab's range closes to one value when the minimum outside diameter is set to its
+    // maximum: the grid holds that value once, and the solve meets the target there or reports
+    // it as the best.
+    let radius = span(FreeVariable::RingRadius.range(), 12.5, 12.5);
+    assert_eq!(FreeVariable::RingRadius.grid_in(radius), [12.5]);
+    let base = DesignInputs::default();
+    let torque = hot_low(&FreeVariable::RingRadius.apply(&base, 12.5));
+    let p = solved(solve_in(&base, FreeVariable::RingRadius, torque, radius));
+    assert_eq!((p.value, p.torque_hot_low_Nm), (12.5, torque));
+    match solve_in(&base, FreeVariable::RingRadius, 2.0 * torque, radius) {
+        Ok(SizingOutcome::NotReachable { best: Some(best) }) => {
+            assert_eq!((best.value, best.torque_hot_low_Nm), (12.5, torque))
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn a_range_with_no_valid_value_has_no_best_value() {
+    // Spec 5, "no value valid": the 10 flats of the default design fit only from 9.77 mm of
+    // ring radius, so a range of 6 to 9.5 mm holds no valid layout; 5 to 5.9 magnets per ring
+    // holds no even count at all. Neither reports a best value.
+    let base = DesignInputs::default();
+    let radius = span(FreeVariable::RingRadius.range(), 6.0, 9.5);
+    let poles = span(FreeVariable::MagnetsPerRing.range(), 5.0, 5.9);
+    for (variable, range) in [
+        (FreeVariable::RingRadius, radius),
+        (FreeVariable::MagnetsPerRing, poles),
+    ] {
+        assert_eq!(
+            solve_in(&base, variable, 1.0, range),
+            Ok(SizingOutcome::NotReachable { best: None }),
+            "{variable:?}"
+        );
+    }
+}
+
+#[test]
+fn solve_is_solve_in_over_the_slider_range() {
+    // Spec 4.3: solve becomes solve_in(.., variable.range()): identical outcomes, point for
+    // point, for every free variable on two designs, at targets met, missed and refused. The
+    // torque at 12.12 mm of ring radius is a target computed from each design: on the
+    // no-back-iron design that radius is near its peak, where the meeting interval lies inside
+    // one grid cell (a_meeting_interval_inside_one_cell_is_found).
+    let mut no_iron = DesignInputs::default();
+    no_iron.coupling.backiron = 0;
+    no_iron.metal.face_gap_mm = 0.5;
+    for base in [DesignInputs::default(), no_iron] {
+        let near_peak = hot_low(&FreeVariable::RingRadius.apply(&base, 12.12));
+        for variable in FreeVariable::ALL {
+            for target in [0.5, near_peak, base.metal.required_min_Nm, 10.0, 0.0] {
+                assert_eq!(
+                    solve(&base, variable, target),
+                    solve_in(&base, variable, target, variable.range()),
+                    "{variable:?} {target}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_range_that_is_not_finite_or_is_reversed_is_refused() {
+    // The range is checked before the search: reversed, NaN or infinite ends are refused with
+    // the range's own ends, and grid_in gives no values for them. (min == max is a range of
+    // one value, not a refusal: a_range_of_one_value_evaluates_that_value_once.)
+    let base = DesignInputs::default();
+    let ends = [
+        (30.0, 9.0),
+        (f64::NAN, 30.0),
+        (9.0, f64::NAN),
+        (f64::NEG_INFINITY, 30.0),
+        (9.0, f64::INFINITY),
+    ];
+    for variable in FreeVariable::ALL {
+        for (min, max) in ends {
+            let range = span(variable.range(), min, max);
+            assert!(
+                variable.grid_in(range).is_empty(),
+                "{variable:?} {min} {max}"
+            );
+            match solve_in(&base, variable, 2.0, range) {
+                Err(SizingError::InvalidRange { min: lo, max: hi }) => assert_eq!(
+                    (lo.to_bits(), hi.to_bits()),
+                    (min.to_bits(), max.to_bits()),
+                    "{variable:?}"
+                ),
+                other => panic!("{variable:?} {min} {max}: {other:?}"),
+            }
+        }
+    }
+    // The order of the refusals: the target first, then the range, then the inputs.
+    let reversed = span(FreeVariable::AxialLength.range(), 30.0, 9.0);
+    assert_eq!(
+        solve_in(&base, FreeVariable::AxialLength, -1.0, reversed),
+        Err(SizingError::InvalidTarget(-1.0))
+    );
+    let mut bad = DesignInputs::default();
+    bad.metal.face_gap_mm = f64::NAN;
+    assert_eq!(
+        solve_in(&bad, FreeVariable::AxialLength, 2.0, reversed),
+        Err(SizingError::InvalidRange {
+            min: 30.0,
+            max: 9.0
+        })
+    );
+}
+
+#[test]
+fn a_target_beyond_a_caller_range_is_not_reachable_inside_it() {
+    // solve_in never leaves the caller's range: a target no value meets reports the best value
+    // inside it, here each range's maximum, where the torque still rises (the length; 4 to 8
+    // poles; the ring radius below its 14 mm peak).
+    let base = DesignInputs::default();
+    let cases = [
+        (FreeVariable::AxialLength, 5.0, 20.0),
+        (FreeVariable::MagnetsPerRing, 4.0, 8.0),
+        (FreeVariable::RingRadius, 9.0, 12.0),
+    ];
+    for (variable, min, max) in cases {
+        match solve_in(&base, variable, 10.0, span(variable.range(), min, max)) {
+            Ok(SizingOutcome::NotReachable { best: Some(best) }) => {
+                assert_eq!(best.value, max, "{variable:?}");
+                assert_eq!(best.inputs, variable.apply(&base, max), "{variable:?}");
+            }
+            other => panic!("{variable:?}: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn a_wider_range_solves_the_ring_radius_below_the_slider_floor() {
+    // Spec 4.3 and 6.8: the ring-size Auto passes the Size tab's range, which a lowered minimum
+    // outside diameter takes below the slider's 9 mm. With 8 poles on the default hub the inner
+    // flats fit from 7.67 mm (the block width over 2 tan(pi/8)) and the hot-low torque rises
+    // from there to about 10.2 mm: the torque at 8.5 mm is first met at 8.5 mm over 6 to 30 mm,
+    // and over the slider range at its floor, as it is.
+    let mut base = DesignInputs::default();
+    base.coupling.npole = 8;
+    let slider = FreeVariable::RingRadius.range();
+    assert_eq!(slider.min, 9.0, "the floor this test goes below");
+    let wide = span(slider, 6.0, slider.max);
+    let target = hot_low(&FreeVariable::RingRadius.apply(&base, 8.5));
+    let p = solved(solve_in(&base, FreeVariable::RingRadius, target, wide));
+    assert!((p.value - 8.5).abs() <= 1e-6, "{}", p.value);
+    assert!(p.torque_hot_low_Nm >= target);
+    assert_eq!(p.inputs, FreeVariable::RingRadius.apply(&base, p.value));
+    assert!(is_valid(&p.inputs, &compute_all(&p.inputs)));
+    assert_eq!(
+        solved(solve(&base, FreeVariable::RingRadius, target)).value,
+        slider.min
+    );
+    // is_valid still decides below the floor: a tiny target is met where the flats start to
+    // fit, not at the range's 6 mm.
+    let width = compute_all(&base).model.inner_width_mm;
+    let fit_edge = width / (2.0 * (PI / 8.0).tan());
+    assert!(fit_edge > wide.min && fit_edge < slider.min, "{fit_edge}");
+    let edge = solved(solve_in(&base, FreeVariable::RingRadius, 0.1, wide));
+    assert!(
+        (edge.value - fit_edge).abs() <= 1e-6,
+        "{} vs {fit_edge}",
+        edge.value
+    );
+    let below = FreeVariable::RingRadius.apply(&base, edge.value - 1e-6);
+    assert!(!blocks_fit(&below.coupling, &compute_all(&below).model));
+}
+
+#[test]
+fn the_keyway_wall_still_counts_below_the_slider_floor() {
+    // With 6 poles the flats fit below 6 mm, but the 10 mm bore and 1.7 mm keyway leave hub
+    // wall past the key only above 6.75 mm (0.05 bond + 5 + 1.7): a tiny target over 6 to 30 mm
+    // is met at that edge, below the slider's 9 mm floor.
+    let mut base = DesignInputs::default();
+    base.coupling.npole = 6;
+    let wide = span(FreeVariable::RingRadius.range(), 6.0, 30.0);
+    let edge =
+        base.metal.bond_inner_mm + base.coupling.bore_mm / 2.0 + base.coupling.keyway_depth_mm;
+    let p = solved(solve_in(&base, FreeVariable::RingRadius, 0.1, wide));
+    assert!(compute_all(&p.inputs).model.hub_wall_past_key_mm > 0.0);
+    assert!((p.value - edge).abs() <= 1e-6, "{} vs {edge}", p.value);
+    let below = FreeVariable::RingRadius.apply(&base, p.value - 1e-6);
+    assert!(!is_valid(&below, &compute_all(&below)));
 }
 
 #[test]
