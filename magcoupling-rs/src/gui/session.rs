@@ -24,8 +24,9 @@
 //! G-2: one torque number). A file writes it equal to the requirement. It leaves the key out
 //! when the requirement is not a positive torque, which every reader refuses as a target, so
 //! such a design still round-trips. A reader checks the key as before, then uses the
-//! requirement. When the two differ (a file written before G-2), the load says so
-//! ([`target_mismatch_notice`], in [`LoadedDesign::notice`]).
+//! requirement. When the two differ in the Torque -> Magnets mode (a file written before G-2),
+//! the load says so ([`target_mismatch_notice`], in [`LoadedDesign::notice`]). The forward mode
+//! never used the target, which older files wrote at its default, so it gets no notice.
 //!
 //! A share link carries the same JSON, compact, deflated and URL-safe base64 encoded: the
 //! linkage tool's `?m=` scheme (`linkage-sim-rs/src/gui/state/file_io.rs`).
@@ -138,8 +139,8 @@ impl std::error::Error for LoadError {}
 #[derive(Clone, Debug, PartialEq)]
 pub struct LoadedDesign {
     pub design: Design,
-    /// [`target_mismatch_notice`] when the file's sizing target differed from its requirement
-    /// (the requirement is used); `None` otherwise.
+    /// [`target_mismatch_notice`] when the file is in the Torque -> Magnets mode and its sizing
+    /// target differed from its requirement (the requirement is used); `None` otherwise.
     pub notice: Option<String>,
 }
 
@@ -369,9 +370,12 @@ pub fn read_design_json(text: &str) -> Result<LoadedDesign, LoadError> {
     match (inputs, sizing) {
         (Ok(inputs), Ok((sizing, target))) => {
             // Decision G-2: the requirement is the target; a file that says otherwise was
-            // written before, and loads with the requirement and a notice.
+            // written before, and loads with the requirement and a notice. Only in the
+            // Torque -> Magnets mode: before G-2 every file wrote its target, 2.5 by default,
+            // and the forward mode never used it, so a difference there tells the user nothing.
             let requirement = inputs.metal.required_min_Nm;
             let notice = target
+                .filter(|_| sizing.mode == SizingMode::TorqueToMagnets)
                 .filter(|&target| target != requirement)
                 .map(|target| target_mismatch_notice(target, requirement));
             Ok(LoadedDesign {
@@ -943,15 +947,36 @@ mod tests {
         assert_eq!(design_from_json(text), Ok(want.clone()));
         assert_eq!(decode_share_payload(&payload), Ok(want));
         // A file without the requirement path has the default requirement, compared the same.
-        let text =
-            r#"{"format": "magcoupling-design", "version": 1, "sizing": {"target_torque_Nm": 3}}"#;
+        let text = r#"{"format": "magcoupling-design", "version": 1,
+            "sizing": {"mode": "torque_to_magnets", "target_torque_Nm": 3}}"#;
         assert_eq!(
             read_design_json(text).unwrap().notice,
             Some(target_mismatch_notice(3.0, 2.5))
         );
+        // In the forward mode the target was never used: before G-2 every file and link wrote
+        // its default (2.5), so a difference there is no news and loads with no notice.
+        for sizing in [
+            r#"{"target_torque_Nm": 3}"#,
+            r#"{"mode": "magnets_to_torque", "target_torque_Nm": 3}"#,
+        ] {
+            let text = format!(
+                r#"{{"format": "magcoupling-design", "version": 1,
+                    "inputs": {{"metal.required_min_Nm": 4}}, "sizing": {sizing}}}"#
+            );
+            let loaded = read_design_json(&text).unwrap();
+            assert_eq!(loaded.notice, None, "{sizing}");
+            assert_eq!(loaded.design.inputs.metal.required_min_Nm, 4.0, "{sizing}");
+            let payload = encode_share_text(&text);
+            assert_eq!(
+                read_share_payload(&payload).unwrap().notice,
+                None,
+                "{sizing}"
+            );
+        }
         // A difference below the display's four digits is named in full, not as two equal
         // numbers.
-        let text = r#"{"format": "magcoupling-design", "version": 1, "sizing": {"target_torque_Nm": 2.50001}}"#;
+        let text = r#"{"format": "magcoupling-design", "version": 1,
+            "sizing": {"mode": "torque_to_magnets", "target_torque_Nm": 2.50001}}"#;
         assert_eq!(
             read_design_json(text).unwrap().notice.as_deref(),
             Some(

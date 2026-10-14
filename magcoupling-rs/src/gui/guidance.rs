@@ -1344,9 +1344,10 @@ fn listed(items: &[String]) -> String {
 /// of its fixes that one of its moves helps ([`helps`] against the term's margin), each fix
 /// once. A slip-fault peak gets its cooling only while the hot-day start is below the same
 /// limit ([`TemperatureTerm::peak_start_and_limit`]): otherwise a step lowers the peak by a
-/// fraction of a degree, which [`helps`] would accept, but no move brings it under. A term none of whose fixes helps from this design shows none. The two picks past the
-/// library ([`Direction::CustomHotterGrade`]) show only where the part's own fix does not: a
-/// library part that helps is the simpler change.
+/// fraction of a degree, which [`helps`] would accept, but no move brings it under. A term
+/// none of whose fixes helps from this design shows none. The two picks past the library
+/// ([`Direction::CustomHotterGrade`]) show only where the part's own fix does not: a library
+/// part that helps is the simpler change.
 fn temperature_fixes(
     inputs: &DesignInputs,
     results: &DesignResults,
