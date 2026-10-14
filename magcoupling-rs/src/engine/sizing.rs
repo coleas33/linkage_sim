@@ -10,7 +10,8 @@
 //! **Method.** The torque is not guaranteed monotone in the variable (on the default design
 //! it rises with the ring radius to about 14 mm, falls to about 20 mm and rises again), so a
 //! continuous variable is sampled in ascending order at the [`SCAN_CELLS`] + 1 ends of equal
-//! cells of its slider range, and three refinements find what lies between two samples:
+//! cells of its search range (its slider range, or the caller's range given to [`solve_in`]),
+//! and three refinements find what lies between two samples:
 //!
 //! - **a crossing**: the first sample that meets is bisected against the sample before it to
 //!   [`VALUE_TOLERANCE_MM`]; a range minimum that meets is the answer as it is;
@@ -23,15 +24,16 @@
 //!   is bisected to [`VALUE_TOLERANCE_MM`] and its valid side sampled, so a torque largest
 //!   where the blocks start to fit, or the keyway starts to leave hub wall, is seen there.
 //!
-//! Magnets per ring (poles per ring, one block per pole) steps through the even values of its
-//! slider, with no refinement. Each value is one [`compute_all`] of the design with only the
-//! free variable changed, so the answer is what the forward calculation shows, and every
-//! value tried lies inside the slider range.
+//! Magnets per ring (poles per ring, one block per pole) steps through the even values inside
+//! its search range, with no refinement. Each value is one [`compute_all`] of the design with
+//! only the free variable changed, so the answer is what the forward calculation shows, and
+//! every value tried lies inside the search range.
 //!
 //! **Residual limits** (stated, not handled): a hump of the torque whose rise and fall both
-//! lie inside one cell (0.328 mm of ring radius, 0.778 mm of axial length) leaves no trace on
-//! the samples and is not seen, and neither is a validity change that reverts inside one
-//! cell. Near a peak the torque is flat, so the peak search finds the peak torque to its
+//! lie inside one cell (over the slider ranges, 0.328 mm of ring radius and 0.778 mm of axial
+//! length; over a caller's range, its width over [`SCAN_CELLS`]) leaves no trace on the
+//! samples and is not seen, and neither is a validity change that reverts inside one cell.
+//! Near a peak the torque is flat, so the peak search finds the peak torque to its
 //! floating-point resolution only (about 1e-15 relative): a target within that of the true
 //! peak may read "not reachable".
 //!
@@ -51,7 +53,9 @@ use super::api::{DesignInputs, DesignResults, compute_all};
 use super::meta::{SetError, SliderRange, input_rows};
 use super::model::{blocks_fit, end_effect_in_range};
 
-/// Equal cells of the coarse scan over a continuous variable's slider range.
+/// Equal cells of the coarse scan over a continuous variable's search range. No coarse pass
+/// evaluates more than `SCAN_CELLS` + 1 values: a range holding more even magnet counts is
+/// refused ([`SizingError::InvalidRange`]).
 pub const SCAN_CELLS: usize = 64;
 
 /// Every bisection and peak search stops when its bracket is this narrow [mm]: a solved value
@@ -96,24 +100,63 @@ impl FreeVariable {
             .expect("every free variable is an input with a slider (tests/sizing.rs)")
     }
 
-    /// The values the coarse pass evaluates, ascending: the [`SCAN_CELLS`] + 1 cell ends of a
-    /// continuous variable, or every even whole number of the magnets-per-ring slider.
+    /// The values the coarse pass of [`solve`] evaluates: [`FreeVariable::grid_in`] the
+    /// variable's slider range.
     pub fn grid(self) -> Vec<f64> {
-        let r = self.range();
-        match self {
-            FreeVariable::MagnetsPerRing => (r.min as i64..=r.max as i64)
-                .filter(|n| n % 2 == 0)
-                .map(|n| n as f64)
-                .collect(),
+        self.grid_in(self.range())
+    }
+
+    /// The values the coarse pass evaluates over `range`, ascending and each once: the
+    /// [`SCAN_CELLS`] + 1 cell ends of a continuous variable, or every even whole number inside
+    /// `range` for magnets per ring. Every value lies inside `range` (its step and scale are
+    /// not used). A range of one value gives that value; a range [`solve_in`] refuses
+    /// ([`SizingError::InvalidRange`]) gives none.
+    pub fn grid_in(self, range: SliderRange) -> Vec<f64> {
+        if !self.is_search_range(range) {
+            return Vec::new();
+        }
+        let r = range;
+        let mut grid: Vec<f64> = match self {
+            // 2k from the first whole k at or above min / 2: a minimum of 4.5 starts at 6, never
+            // at 4 below the range. The count is at most SCAN_CELLS + 1 (is_search_range).
+            FreeVariable::MagnetsPerRing => {
+                let (first_k, count) = even_halves(r);
+                (0..count as usize)
+                    .map(|i| 2.0 * (first_k + i as f64))
+                    .collect()
+            }
+            // The width times the cell's fraction of the range (at most one), so a finite width
+            // never overflows; bit for bit the width times i over SCAN_CELLS, a power of two.
             FreeVariable::AxialLength | FreeVariable::RingRadius => (0..=SCAN_CELLS)
                 .map(|i| {
                     if i == SCAN_CELLS {
                         r.max
                     } else {
-                        r.min + (r.max - r.min) * i as f64 / SCAN_CELLS as f64
+                        r.min + (r.max - r.min) * (i as f64 / SCAN_CELLS as f64)
                     }
                 })
                 .collect(),
+        };
+        // A range of one value repeats it at every cell end: evaluate it once.
+        grid.dedup();
+        grid
+    }
+
+    /// Whether the coarse pass can scan `range` for this variable: both ends finite, the
+    /// minimum at most the maximum (a range of one value counts) and the width finite, so no
+    /// cell end overflows; for magnets per ring, also at most [`SCAN_CELLS`] + 1 even values,
+    /// the most a continuous variable's scan evaluates.
+    fn is_search_range(self, range: SliderRange) -> bool {
+        let ends = range.min.is_finite() && range.max.is_finite() && range.min <= range.max;
+        if !(ends && (range.max - range.min).is_finite()) {
+            return false;
+        }
+        match self {
+            FreeVariable::MagnetsPerRing => {
+                let (_, count) = even_halves(range);
+                count <= (SCAN_CELLS + 1) as f64
+            }
+            FreeVariable::AxialLength | FreeVariable::RingRadius => true,
         }
     }
 
@@ -144,7 +187,7 @@ pub struct SizingPoint {
 /// What inverse sizing found.
 #[derive(Clone, Debug, PartialEq)]
 pub enum SizingOutcome {
-    /// The smallest value in the slider range that meets the target, within the module docs'
+    /// The smallest value in the search range that meets the target, within the module docs'
     /// residual limits (a continuous variable to within [`VALUE_TOLERANCE_MM`] of its crossing).
     Solved(SizingPoint),
     /// No value the search evaluated meets the target: the best valid one (the largest
@@ -159,6 +202,20 @@ pub enum SizingError {
     InvalidTarget(f64),
     /// The inputs fail [`DesignInputs::validate`] (every offending path, in schema order).
     InvalidInputs(Vec<SetError>),
+    /// The search range of [`solve_in`] cannot be scanned: an end is not finite, its minimum
+    /// is above its maximum, its width is not finite, or it holds more than [`SCAN_CELLS`] + 1
+    /// even magnet counts. The range's own ends.
+    InvalidRange { min: f64, max: f64 },
+}
+
+/// The even whole numbers inside `range` (finite ends, the minimum at most the maximum) are 2k
+/// for whole k from `ceil(min / 2)` to `floor(max / 2)`: that first k and how many there are,
+/// never negative (the last k is at least the first minus one). Counted in `f64`: converting
+/// an end to an integer would saturate beyond `i64` and give a value outside the range.
+fn even_halves(range: SliderRange) -> (f64, f64) {
+    let first = (range.min / 2.0).ceil();
+    let last = (range.max / 2.0).floor();
+    (first, last - first + 1.0)
 }
 
 /// Whether a design counts for inverse sizing (decision A2-4): its blocks fit
@@ -173,15 +230,38 @@ pub fn is_valid(design: &DesignInputs, results: &DesignResults) -> bool {
 }
 
 /// Makes the hot-low torque of `inputs` meet `target_Nm` by adjusting `variable` alone (spec
-/// A1; the module docs give the method, its limits and what counts).
+/// A1; the module docs give the method, its limits and what counts), over the variable's
+/// slider range: [`solve_in`] that range.
 #[allow(non_snake_case)] // unit suffix
 pub fn solve(
     inputs: &DesignInputs,
     variable: FreeVariable,
     target_Nm: f64,
 ) -> Result<SizingOutcome, SizingError> {
+    solve_in(inputs, variable, target_Nm, variable.range())
+}
+
+/// [`solve`] over the caller's `range` of the free variable instead of its slider range (spec
+/// guidance 4.3: the Size tab's ring-size Auto passes the radius range of its diameter range,
+/// which a lowered minimum outside diameter takes below the slider's floor). Every value tried
+/// lies inside `range`, and [`is_valid`] still decides what counts. Refuses, in this order, a
+/// target that is not a positive finite torque, a range [`FreeVariable::grid_in`] cannot scan
+/// ([`SizingError::InvalidRange`]) and inputs that fail validation.
+#[allow(non_snake_case)] // unit suffix
+pub fn solve_in(
+    inputs: &DesignInputs,
+    variable: FreeVariable,
+    target_Nm: f64,
+    range: SliderRange,
+) -> Result<SizingOutcome, SizingError> {
     if !(target_Nm.is_finite() && target_Nm > 0.0) {
         return Err(SizingError::InvalidTarget(target_Nm));
+    }
+    if !variable.is_search_range(range) {
+        return Err(SizingError::InvalidRange {
+            min: range.min,
+            max: range.max,
+        });
     }
     inputs.validate().map_err(SizingError::InvalidInputs)?;
     let mut evaluate = |value: f64| {
@@ -199,7 +279,7 @@ pub fn solve(
         target_Nm,
         variable != FreeVariable::MagnetsPerRing,
     );
-    Ok(match search.over(&variable.grid()) {
+    Ok(match search.over(&variable.grid_in(range)) {
         Found::Meets(sample) => SizingOutcome::Solved(sample.into_point()),
         Found::Best(best) => SizingOutcome::NotReachable {
             best: best.map(Sample::into_point),

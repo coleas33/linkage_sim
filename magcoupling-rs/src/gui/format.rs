@@ -55,6 +55,29 @@ pub(crate) fn non_finite_text(x: f64) -> Option<&'static str> {
     }
 }
 
+/// A number to `decimals` places: the Size tab's lines, whose precision follows their sliders
+/// (0.1 mm) rather than [`SIGNIFICANT_DIGITS`]. A number that is not finite reads as its
+/// [`non_finite_text`].
+pub(crate) fn fixed(x: f64, decimals: usize) -> String {
+    match non_finite_text(x) {
+        Some(text) => text.to_owned(),
+        None => format!("{x:.decimals$}"),
+    }
+}
+
+/// A change, as a fraction, as a whole signed percentage with its unit: 0.1121 reads `+11 %`,
+/// -0.2679 `-27 %`. A change that rounds to zero reads `+0 %`, never `-0 %`; one that is not
+/// finite reads as its [`non_finite_text`] and the unit.
+pub(crate) fn signed_percent(fraction: f64) -> String {
+    if let Some(text) = non_finite_text(fraction) {
+        return format!("{text} %");
+    }
+    let percent = (fraction * 100.0).round();
+    // round() keeps the sign of a small fall (-0.4 rounds to -0.0, which prints "-0").
+    let percent = if percent == 0.0 { 0.0 } else { percent };
+    format!("{percent:+.0} %")
+}
+
 /// A number to [`SIGNIFICANT_DIGITS`] significant digits: fixed point when it
 /// rounds to at least 1e-3 and below 1e6, scientific outside; zero (either
 /// sign) as `0`.
@@ -175,5 +198,28 @@ mod tests {
         assert_eq!(with_unit("2.688".into(), "N·m"), "2.688 N·m");
         assert_eq!(with_unit("10".into(), "-"), "10");
         assert_eq!(with_unit("OK".into(), ""), "OK");
+    }
+
+    #[test]
+    fn fixed_decimals_follow_the_request_and_non_finite_numbers_keep_their_text() {
+        assert_eq!(fixed(42.8, 1), "42.8");
+        assert_eq!(fixed(42.44, 1), "42.4");
+        assert_eq!(fixed(22.0, 1), "22.0");
+        assert_eq!(fixed(1.96836, 2), "1.97");
+        assert_eq!(fixed(f64::INFINITY, 1), "+inf");
+        assert_eq!(fixed(f64::NAN, 2), "NaN");
+    }
+
+    #[test]
+    fn a_change_reads_as_a_whole_signed_percentage_never_minus_zero() {
+        assert_eq!(signed_percent(0.1121), "+11 %");
+        assert_eq!(signed_percent(-0.2679), "-27 %");
+        assert_eq!(signed_percent(1.1279), "+113 %");
+        assert_eq!(signed_percent(0.0), "+0 %");
+        // A small fall rounds to zero: no minus sign on a zero.
+        assert_eq!(signed_percent(-0.004), "+0 %");
+        assert_eq!(signed_percent(-0.0), "+0 %");
+        assert_eq!(signed_percent(f64::NAN), "NaN %");
+        assert_eq!(signed_percent(f64::NEG_INFINITY), "-inf %");
     }
 }

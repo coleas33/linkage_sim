@@ -36,7 +36,7 @@ use crate::gui::results_table::{
     Line, RUST_ONLY, ResultOrder, TableEntry, entry_level, exact_number, table_entries,
     table_lines, worst_level,
 };
-use crate::gui::sizing::{SizingMode, SizingState, TARGET_RANGE_INPUT, variable_label};
+use crate::gui::sizing::{REQUIREMENT_INPUT, SizingMode, SizingState, set_by_auto, variable_label};
 use crate::{DesignInputs, DesignResults};
 
 /// The sheets' names, in order (decision X-2).
@@ -313,15 +313,16 @@ fn summary_sheet(snapshot: &Snapshot) -> Sheet {
     ];
     if sizing.mode == SizingMode::TorqueToMagnets {
         let target_unit = InputCatalogue::get()
-            .entry(TARGET_RANGE_INPUT)
+            .entry(REQUIREMENT_INPUT)
             .map_or("", |entry| entry.meta.unit);
         rows.push(vec![
             Cell::text(FREE_VARIABLE_LABEL),
             Cell::text(variable_label(sizing.variable)),
         ]);
+        // The target is the requirement (decision G-2).
         rows.push(vec![
             Cell::text(TARGET_LABEL),
-            value_cell(&Value::Num(sizing.target_Nm)),
+            value_cell(&Value::Num(snapshot.inputs.metal.required_min_Nm)),
             Cell::text(target_unit),
         ]);
         if let Some(status) = &snapshot.sizing_status {
@@ -394,18 +395,22 @@ fn summary_sheet(snapshot: &Snapshot) -> Sheet {
 /// workflow order its Advanced heading and the advanced sections
 /// ([`InputGroup::advanced_sections`]).
 fn inputs_sheet(snapshot: &Snapshot) -> Sheet {
-    let sized = (snapshot.sizing.mode == SizingMode::TorqueToMagnets)
-        .then(|| snapshot.sizing.variable.path());
+    // The inputs Auto sets (the free variable's, and ring size's cap OD and thread), noted.
+    let sized: Vec<&str> = if snapshot.sizing.mode == SizingMode::TorqueToMagnets {
+        set_by_auto(snapshot.sizing.variable).collect()
+    } else {
+        Vec::new()
+    };
     let mut rows = vec![header_row(&INPUT_COLUMNS)];
     for group in InputCatalogue::get().groups_in(snapshot.input_order) {
         rows.push(heading_row(group.label, CellStyle::Group));
         for section in group.plain_sections() {
-            section_rows(&mut rows, group, section, snapshot.inputs, sized);
+            section_rows(&mut rows, group, section, snapshot.inputs, &sized);
         }
         if group.has_advanced() {
             rows.push(heading_row(ADVANCED_HEADING, CellStyle::Section));
             for section in group.advanced_sections() {
-                section_rows(&mut rows, group, section, snapshot.inputs, sized);
+                section_rows(&mut rows, group, section, snapshot.inputs, &sized);
             }
         }
     }
@@ -425,7 +430,7 @@ fn section_rows(
     group: &InputGroup,
     section: &InputSection,
     inputs: &DesignInputs,
-    sized: Option<&str>,
+    sized: &[&str],
 ) {
     if let Some(heading) = section.heading_in(group) {
         rows.push(heading_row(heading, CellStyle::Section));
@@ -437,17 +442,18 @@ fn section_rows(
 
 /// One input's row: label, value, unit, workbook cell, path, its flags, and a note naming a
 /// selector's choice, a blank optional input or empty text (a part name left out for manual
-/// magnets), or the free variable Torque -> Magnets set (`sized`).
+/// magnets), or an input Torque -> Magnets set (`sized`: the free variable, and for ring size the
+/// cap OD and thread that follow it).
 fn input_row(
     entry: &InputEntry,
     advanced: bool,
     inputs: &DesignInputs,
-    sized: Option<&str>,
+    sized: &[&str],
 ) -> Vec<Cell> {
     let meta = entry.meta;
     let value = inputs.get(&entry.path).unwrap_or(Value::None);
     let mut notes = Vec::new();
-    if sized == Some(entry.path.as_str()) {
+    if sized.contains(&entry.path.as_str()) {
         notes.push(SIZED_NOTE.to_owned());
     }
     match &value {
@@ -1178,12 +1184,12 @@ mod tests {
         // The design shown: the solved axial length in the override.
         let mut inputs = DesignInputs::default();
         inputs.coupling.magnets.axial_length_mm = Some(14.2);
+        inputs.metal.required_min_Nm = 3.25; // the sizing target (decision G-2)
         let results = compute_all(&inputs);
         let mut shot = snapshot(&inputs, &results);
         shot.sizing = SizingState {
             mode: SizingMode::TorqueToMagnets,
             variable: FreeVariable::AxialLength,
-            target_Nm: 2.5,
         };
         shot.sizing_status = Some("Solved: 14.2 mm".to_owned());
         let book = sheets(&shot);
@@ -1196,7 +1202,7 @@ mod tests {
             row(FREE_VARIABLE_LABEL)[1],
             Cell::text(variable_label(FreeVariable::AxialLength))
         );
-        assert_eq!(row(TARGET_LABEL)[1], Cell::number(2.5));
+        assert_eq!(row(TARGET_LABEL)[1], Cell::number(3.25));
         assert_eq!(row(TARGET_LABEL)[2], Cell::text("N·m"));
         assert_eq!(row(SIZING_OUTCOME)[1], Cell::text("Solved: 14.2 mm"));
         // The free variable's row: the value shown, noted; no other row carries the note.
@@ -1211,6 +1217,42 @@ mod tests {
             .filter(|r| r[note].as_text().contains(SIZED_NOTE))
             .count();
         assert_eq!(noted, 1);
+    }
+
+    #[test]
+    fn ring_size_auto_notes_the_cap_rows_it_moves() {
+        // The ring-size design shown moves the cap OD and thread with the cup; their rows carry
+        // the note as the ring radius's does, and no other row.
+        use crate::gui::sizing::sized;
+        let inputs = sized(
+            FreeVariable::RingRadius,
+            &crate::gui::test_support::with_poles(8),
+            8.5,
+        );
+        let results = compute_all(&inputs);
+        let mut shot = snapshot(&inputs, &results);
+        shot.sizing = SizingState {
+            mode: SizingMode::TorqueToMagnets,
+            variable: FreeVariable::RingRadius,
+        };
+        let book = sheets(&shot);
+        let sheet = sheet(&book, INPUTS_SHEET);
+        let path = column(&INPUT_COLUMNS, "Path");
+        let note = column(&INPUT_COLUMNS, "Note");
+        let mut noted: Vec<&str> = path_rows(sheet, path)
+            .iter()
+            .filter(|r| r[note].as_text().contains(SIZED_NOTE))
+            .map(|r| r[path].as_text())
+            .collect();
+        noted.sort_unstable();
+        assert_eq!(
+            noted,
+            [
+                FreeVariable::RingRadius.path(),
+                "metal.cap_od_mm",
+                "metal.cap_thread_dia_mm"
+            ]
+        );
     }
 
     #[test]

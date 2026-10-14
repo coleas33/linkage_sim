@@ -14,6 +14,7 @@ pub mod explorer;
 mod format;
 pub mod geometry;
 pub mod geometry_view;
+pub mod guidance;
 pub mod history;
 pub mod input_ui;
 pub mod inputs;

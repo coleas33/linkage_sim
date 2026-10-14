@@ -126,10 +126,10 @@ pub fn run_native() -> eframe::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::meta::Value;
+    use crate::gui::guidance::{design_status, design_status_text};
     use crate::gui::session::{Design, encode_share_payload};
     use crate::gui::test_support::drawn_texts;
-    use crate::{DesignInputs, compute_all, headline};
+    use crate::{DesignInputs, compute_all};
 
     #[test]
     fn the_app_shows_the_panel_as_a_full_page() {
@@ -148,14 +148,11 @@ mod tests {
             texts.iter().any(|t| t == "Magnetic coupling calculator"),
             "{texts:?}"
         );
-        // The clamp screw is the last headline row: the dashboard was laid out.
-        let (key, screw) = headline(&compute_all(&DesignInputs::default()))
-            .pop()
-            .expect("15 rows");
-        let Value::Text(screw) = screw else {
-            panic!("{key}: {screw:?}")
-        };
-        assert!(texts.contains(&screw), "missing {screw:?} in {texts:?}");
+        // The design status line tops the dashboard: it was laid out (its lower rows scroll on
+        // this screen, under the check guides).
+        let defaults = DesignInputs::default();
+        let status = design_status_text(&design_status(&defaults, &compute_all(&defaults)));
+        assert!(texts.contains(&status), "missing {status:?} in {texts:?}");
         assert_eq!(ctx.style().visuals, theme::cad_dark_visuals());
     }
 
@@ -229,7 +226,6 @@ mod tests {
         want.sizing = SizingState {
             mode: SizingMode::TorqueToMagnets,
             variable: FreeVariable::AxialLength,
-            target_Nm: 2.5,
         };
         assert_eq!(design, want);
         assert!(script.contains(SHARE_LINK_LOADED));

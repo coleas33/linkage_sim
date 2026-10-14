@@ -1,6 +1,6 @@
-//! The geometry view (spec M4 "Layout": the centre region's default view, decision M42-2):
-//! paints [`crate::gui::geometry`] to scale with egui's painter, both views at one scale
-//! (decision M42-3), then lists the dimension callouts and the notes under them.
+//! The geometry view (spec M4 "Layout": the centre region's Geometry tab; Size and torque
+//! draws it too): paints [`crate::gui::geometry`] to scale with egui's painter, both views at
+//! one scale (decision M42-3), then lists the dimension callouts and the notes under them.
 //!
 //! Each dimension is a line with arrowheads and a tag; the list repeats the tag with the
 //! callout's text. The line and the text are readouts ([`crate::gui::readouts::Readouts`]):

@@ -56,8 +56,11 @@ pub struct ReadoutEvents {
     pub hovered: Option<String>,
     /// The path of the value clicked.
     pub clicked: Option<String>,
-    /// The teaching note a warning's link asked for, by id.
+    /// The teaching note a warning's or a check's Why link asked for, by id.
     pub note: Option<&'static str>,
+    /// The input whose row a check guide's link asked to show (a fix, an assumption's Why
+    /// link), by path.
+    pub focus: Option<&'static str>,
 }
 
 /// One frame's readouts: the term colours they mark and what the user did.
@@ -136,6 +139,12 @@ impl Readouts {
     /// Asks for the teaching note `id` (a warning's link).
     pub fn open_note(&mut self, id: &'static str) {
         self.events.note = Some(id);
+    }
+
+    /// Asks for the row of the input at `path` (a check guide's fix, an assumption's Why
+    /// link).
+    pub fn focus_input(&mut self, path: &'static str) {
+        self.events.focus = Some(path);
     }
 
     /// What the user did this frame.
@@ -249,5 +258,13 @@ mod tests {
         readouts.open_note("a5.low_saturation");
         assert_eq!(readouts.events().note, Some("a5.low_saturation"));
         assert_eq!(readouts.finish().note, Some("a5.low_saturation"));
+    }
+
+    #[test]
+    fn a_check_guide_link_asks_for_its_input_s_row() {
+        let mut readouts = Readouts::default();
+        readouts.focus_input("metal.cup_wall_corner_mm");
+        assert_eq!(readouts.events().focus, Some("metal.cup_wall_corner_mm"));
+        assert_eq!(readouts.finish().focus, Some("metal.cup_wall_corner_mm"));
     }
 }

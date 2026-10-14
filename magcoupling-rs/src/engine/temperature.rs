@@ -728,6 +728,11 @@ pub const RING_INNER: &str = "inner";
 /// See [`RING_INNER`].
 pub const RING_OUTER: &str = "outer";
 
+/// The smallest cure margin the temperature verdict accepts [°C] (Temperature design!C25):
+/// the adhesive's cure temperature at least this far below the single-ring demagnetization
+/// onset. The GUI's temperature guide quotes it (`gui::guidance`).
+pub const CURE_MARGIN_MIN_C: f64 = 10.0;
+
 /// One ring's demagnetization check: the workbook's block (C47 to C61) for a ring with
 /// Br `br20_T`, rating `tmax_lib_C` and grade `grade`. The workbook checks the inner ring
 /// only; E20 checks the outer ring too (Decisions to confirm, A13).
@@ -1367,7 +1372,7 @@ pub fn compute(
     let ok = margin_hot > 0.0
         && (mag_lim - peak) > 0.0
         && (sel.design_limit_C - peak) > 0.0
-        && cure_margin >= 10.0
+        && cure_margin >= CURE_MARGIN_MIN_C
         && cold_ok; // E20: always true unless the coercivity falls on cooling
     let summary = SummaryResults {
         service_max_C: k.op_temp_C,

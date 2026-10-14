@@ -15,6 +15,19 @@
 //! An explicit minimum outside diameter can extend below the legacy 9 mm radius slider
 //! floor. It still preserves a nonnegative hub wall around the bore, the cap/thread input
 //! limits and the fixed boss. Changing that minimum only changes the available range.
+//!
+//! Read-outs for the Size tab come from the same geometry: what sets the outside diameter
+//! ([`diameter_breakdown`]: the largest of the cup, the cap and the boss) and how the overall
+//! length divides ([`length_breakdown`]: the outer ring the cup cavity holds, and the housing
+//! around it).
+//!
+//! [`smallest_fitting_diameter`] finds the smallest outside diameter at which a magnet count's
+//! blocks fit, and [`ring_radius_range`] the ring radii the diameter range spans (the ring-size
+//! search of inverse sizing). At a fixed magnet count the blocks only fit better as the ring
+//! grows: a flat block's polygon flat widens with its apothem, and an arc's share of its pole
+//! pitch falls. The fit is bisected on that basis; tests/size_controls.rs sweeps it for both
+//! shapes. [`with_ring_radius`] applies a ring radius found that way through the diameter
+//! slider's own mapping, so the cap follows the cup instead of keeping its old size.
 
 use std::f64::consts::PI;
 
@@ -22,6 +35,7 @@ use super::api::{DesignInputs, compute_all};
 use super::deviations::Deviations;
 use super::housing::axial_housing;
 use super::meta::{SliderRange, input_rows};
+use super::model::blocks_fit;
 
 /// Current assembly dimensions and the ranges attainable with the other inputs fixed.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -34,14 +48,61 @@ pub struct SizeControls {
     pub length_range: SliderRange,
 }
 
+/// What sets the outside diameter [mm]: the cup (from the magnet layout), the threaded cap
+/// and the shaft boss. The outside diameter is the largest of the three.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DiameterBreakdown {
+    pub cap_mm: f64,
+    pub cup_mm: f64,
+    pub boss_mm: f64,
+}
+
+impl DiameterBreakdown {
+    /// The outside diameter: the largest of the three (one expression for every caller).
+    fn outside_mm(&self) -> f64 {
+        self.cup_mm.max(self.cap_mm).max(self.boss_mm)
+    }
+}
+
+/// How the overall axial stack divides [mm]: the outer ring's magnets, which the cup cavity
+/// holds, and the housing around them (the cap, the cavity's margin, the web and the boss).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LengthBreakdown {
+    pub magnets_mm: f64,
+    pub housing_mm: f64,
+}
+
+/// Where a magnet count's blocks start to fit over the Size tab's diameter range [mm].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DiameterFit {
+    /// They fit from this diameter up; [`FIT_TOLERANCE_MM`] below it they do not.
+    At(f64),
+    /// They fit at the range minimum (this value), so at every diameter in the range.
+    AtMinimum(f64),
+    /// They fit at no diameter in the range; the value is its maximum.
+    Nowhere(f64),
+}
+
+/// The bisection of [`smallest_fitting_diameter`] stops when its bracket is this narrow [mm].
+pub const FIT_TOLERANCE_MM: f64 = 1e-6;
+
 /// The engine geometry and metadata used for a single edit. Every candidate starts from
 /// the supplied design; moving between sizes never overwrites its axial housing allowances.
+#[derive(Clone, Copy)]
 struct Geometry {
     controls: SizeControls,
+    diameter: DiameterBreakdown,
+    /// The outer ring's axial length: the ring the cup cavity holds ([`axial_housing`]).
+    magnets_length_mm: f64,
     cup_od_mm: f64,
     diameter_slope: f64,
     cap_offset_mm: f64,
     radius_range: SliderRange,
+    /// The ring radii the cup reaches with the cap and thread following it: from the radius
+    /// input's floor (with a Minimum OD, the shaft's) to its ceiling, narrowed by the cap and
+    /// thread input limits. Where the boss sets the outside diameter, they bound the radius.
+    ring_floor_mm: f64,
+    ring_ceiling_mm: f64,
     axial_range: SliderRange,
 }
 
@@ -78,7 +139,12 @@ fn geometry(inputs: &DesignInputs, minimum_diameter: Option<f64>) -> Option<Geom
     let results = compute_all(inputs);
     let cup = results.model.cup_od_mm;
     let md = &inputs.metal;
-    let outside = cup.max(md.cap_od_mm).max(md.boss_od_mm);
+    let diameter = DiameterBreakdown {
+        cap_mm: md.cap_od_mm,
+        cup_mm: cup,
+        boss_mm: md.boss_od_mm,
+    };
+    let outside = diameter.outside_mm();
     let overall_length = results.metal.axial_stack_mm;
     if ![cup, outside, overall_length]
         .iter()
@@ -100,14 +166,12 @@ fn geometry(inputs: &DesignInputs, minimum_diameter: Option<f64>) -> Option<Geom
     let cap_overhang = cap_offset.max(0.0);
     let radius = inputs.coupling.inner_back_apothem_mm;
     let cup_at_radius = |radius_mm: f64| cup + slope * (radius_mm - radius);
-    let cup_min_at_radius = |radius_mm: f64| {
-        cup_at_radius(radius_mm)
-            .max(cap_range.min - cap_offset)
-            .max(thread_range.min - thread_offset)
-    };
-    let cup_max = (cup + slope * (radius_range.max - radius))
-        .min(cap_range.max - cap_offset)
-        .min(thread_range.max - thread_offset);
+    let radius_at_cup = |cup_mm: f64| radius + (cup_mm - cup) / slope;
+    // The cup diameters at which the cap and thread, following the cup, meet their input limits.
+    let cup_floor = (cap_range.min - cap_offset).max(thread_range.min - thread_offset);
+    let cup_ceiling = (cap_range.max - cap_offset).min(thread_range.max - thread_offset);
+    let cup_min_at_radius = |radius_mm: f64| cup_at_radius(radius_mm).max(cup_floor);
+    let cup_max = cup_at_radius(radius_range.max).min(cup_ceiling);
     // The explicit floor may relax a UI bound, but cannot put the hub inside its bore.
     let mut shaft_radius = inputs.coupling.bore_mm / 2.0 + md.bond_inner_mm;
     if !shaft_radius.is_finite() || shaft_radius <= 0.0 {
@@ -122,6 +186,15 @@ fn geometry(inputs: &DesignInputs, minimum_diameter: Option<f64>) -> Option<Geom
     if !absolute_cup_min.is_finite() || !cup_max.is_finite() || absolute_cup_min > cup_max {
         return None;
     }
+    // The ring radii the cup reaches, the same floors and ceilings in radius space. The boss
+    // is not among them: it sets the outside diameter over a plateau of radii.
+    let ring_floor = if minimum_diameter.is_some() {
+        shaft_radius
+    } else {
+        radius_range.min
+    }
+    .max(radius_at_cup(cup_floor));
+    let ring_ceiling = radius_range.max.min(radius_at_cup(cup_ceiling));
     let minimum_diameter_range = range(
         (absolute_cup_min + cap_overhang).max(md.boss_od_mm),
         (cup_max + cap_overhang).max(md.boss_od_mm),
@@ -159,10 +232,14 @@ fn geometry(inputs: &DesignInputs, minimum_diameter: Option<f64>) -> Option<Geom
             minimum_diameter_range,
             length_range,
         },
+        diameter,
+        magnets_length_mm: results.model.outer_length_mm,
         cup_od_mm: cup,
         diameter_slope: slope,
         cap_offset_mm: cap_offset,
         radius_range,
+        ring_floor_mm: ring_floor,
+        ring_ceiling_mm: ring_ceiling,
         axial_range,
     })
 }
@@ -180,6 +257,126 @@ pub fn dimensions_with_minimum_diameter(
     minimum_od_mm: f64,
 ) -> Option<SizeControls> {
     geometry(inputs, Some(minimum_od_mm)).map(|geometry| geometry.controls)
+}
+
+/// What sets the current outside diameter: its largest part is [`dimensions`]'s
+/// `diameter_mm`. `None` exactly when [`dimensions`] is `None`.
+pub fn diameter_breakdown(inputs: &DesignInputs) -> Option<DiameterBreakdown> {
+    geometry(inputs, None).map(|geometry| geometry.diameter)
+}
+
+/// How the current overall length divides: the parts sum to [`dimensions`]'s
+/// `overall_length_mm` (to rounding). `None` when [`dimensions`] is `None`, or when a blank
+/// axial length override leaves the housing shorter than its outer ring, which no split into
+/// magnets and housing describes.
+pub fn length_breakdown(inputs: &DesignInputs) -> Option<LengthBreakdown> {
+    let geometry = geometry(inputs, None)?;
+    let magnets_mm = geometry.magnets_length_mm;
+    let housing_mm = geometry.controls.overall_length_mm - magnets_mm;
+    (magnets_mm.is_finite() && magnets_mm > 0.0 && housing_mm >= 0.0).then_some(LengthBreakdown {
+        magnets_mm,
+        housing_mm,
+    })
+}
+
+/// The smallest outside diameter at which `npole` blocks per ring fit ([`blocks_fit`]), every
+/// other input kept. It searches the Size tab's diameter range of the design with `npole`
+/// magnets: [`dimensions`] when `minimum_diameter_mm` is `None`, else
+/// [`dimensions_with_minimum_diameter`]. Each diameter maps to the inputs exactly as the
+/// diameter slider maps it. The fit only improves as the ring grows (module docs), so a
+/// bisection to [`FIT_TOLERANCE_MM`] finds its edge. `None` when that design has no diameter
+/// range: invalid inputs, an odd or out-of-range count, or an invalid minimum.
+pub fn smallest_fitting_diameter(
+    inputs: &DesignInputs,
+    npole: i64,
+    minimum_diameter_mm: Option<f64>,
+) -> Option<DiameterFit> {
+    let mut design = inputs.clone();
+    design.coupling.npole = npole;
+    let geometry = geometry(&design, minimum_diameter_mm)?;
+    let range = geometry.controls.diameter_range;
+    // Every diameter tried lies inside the range, so the resize is never refused.
+    let fits = |diameter_mm: f64| {
+        resize_diameter_using(&design, diameter_mm, geometry)
+            .is_ok_and(|resized| blocks_fit(&resized.coupling, &compute_all(&resized).model))
+    };
+    if fits(range.min) {
+        return Some(DiameterFit::AtMinimum(range.min));
+    }
+    if !fits(range.max) {
+        return Some(DiameterFit::Nowhere(range.max));
+    }
+    // `low` never fits and `high` always does.
+    let (mut low, mut high) = (range.min, range.max);
+    while high - low > FIT_TOLERANCE_MM {
+        let middle = low + (high - low) / 2.0;
+        if middle <= low || middle >= high {
+            break; // adjacent doubles
+        }
+        if fits(middle) {
+            high = middle;
+        } else {
+            low = middle;
+        }
+    }
+    Some(DiameterFit::At(high))
+}
+
+/// The ring radii (`coupling.inner_back_apothem_mm`) at the ends of the Size tab's diameter
+/// range, each mapped as the diameter slider maps it: [`dimensions`] when
+/// `minimum_diameter_mm` is `None`, else [`dimensions_with_minimum_diameter`], so a lowered
+/// minimum reaches below the radius slider's floor. An end at the boss is different: the boss
+/// sets that outside diameter over a plateau of ring radii, so the end is the plateau's edge,
+/// where the cup meets its own floor (the radius input's, or with a Minimum OD the shaft's, and
+/// the cap and thread input floors) or ceiling. The range therefore does not depend on where on
+/// the plateau the ring sits. The step and scale are the radius input's. `None` when the design
+/// has no diameter range.
+pub fn ring_radius_range(
+    inputs: &DesignInputs,
+    minimum_diameter_mm: Option<f64>,
+) -> Option<SliderRange> {
+    ring_radius_span(inputs, geometry(inputs, minimum_diameter_mm)?)
+}
+
+/// [`ring_radius_range`] for a geometry already computed.
+fn ring_radius_span(inputs: &DesignInputs, geometry: Geometry) -> Option<SliderRange> {
+    let diameters = geometry.controls.diameter_range;
+    // A diameter above the boss names one ring radius, the slider's. At the boss the slider's
+    // no-op would name the current radius, one of many on the plateau.
+    let radius_at = |diameter_mm: f64, plateau_edge_mm: f64| {
+        if diameter_mm > geometry.diameter.boss_mm {
+            resize_diameter_using(inputs, diameter_mm, geometry)
+                .ok()
+                .map(|resized| resized.coupling.inner_back_apothem_mm)
+        } else {
+            Some(plateau_edge_mm)
+        }
+    };
+    let min = radius_at(diameters.min, geometry.ring_floor_mm)?;
+    let max = radius_at(diameters.max, geometry.ring_ceiling_mm)?;
+    (min.is_finite() && max.is_finite() && min <= max).then_some(SliderRange {
+        min,
+        max,
+        ..geometry.radius_range
+    })
+}
+
+/// The design with its ring radius (`coupling.inner_back_apothem_mm`) set to `apothem_mm`,
+/// mapped as the diameter slider maps it: the cap OD and cap thread move by the cup's change
+/// and keep their signed offsets from the cup. `None` where that mapping refuses: a radius
+/// that is not a number or lies outside the widest [`ring_radius_range`], the lowest Minimum
+/// OD's (every other range, with or without a Minimum OD, lies inside it), or a design without
+/// a diameter range. The current radius, when inside that range, is an exact no-op.
+pub fn with_ring_radius(inputs: &DesignInputs, apothem_mm: f64) -> Option<DesignInputs> {
+    // Any positive minimum is bounded up to the absolute one, which gives the widest range.
+    let geometry = geometry(inputs, Some(f64::MIN_POSITIVE))?;
+    let reach = ring_radius_span(inputs, geometry)?;
+    // A range never contains NaN.
+    if !(reach.min..=reach.max).contains(&apothem_mm) {
+        return None;
+    }
+    let change = geometry.diameter_slope * (apothem_mm - inputs.coupling.inner_back_apothem_mm);
+    Some(with_cup_change(inputs, change, apothem_mm))
 }
 
 fn check_request(requested: f64, range: SliderRange, name: &str) -> Result<(), String> {
@@ -233,15 +430,22 @@ fn resize_diameter_using(
     )?;
     let requested_cup = requested - geometry.cap_offset_mm.max(0.0);
     let change = requested_cup - geometry.cup_od_mm;
-    let mut changed = inputs.clone();
     // The request was checked before this clamp: it only absorbs endpoint rounding in the
     // algebraic inverse, e.g. a radius a few ulps below its metadata minimum.
-    changed.coupling.inner_back_apothem_mm = (inputs.coupling.inner_back_apothem_mm
-        + change / geometry.diameter_slope)
+    let radius = (inputs.coupling.inner_back_apothem_mm + change / geometry.diameter_slope)
         .clamp(geometry.radius_range.min, geometry.radius_range.max);
-    changed.metal.cap_od_mm += change;
-    changed.metal.cap_thread_dia_mm += change;
-    Ok(changed)
+    Ok(with_cup_change(inputs, change, radius))
+}
+
+/// The diameter slider's mapping of a cup change: the inner back apothem is set to
+/// `radius_mm`, and the cap OD and cap thread move by the cup's change `change_mm`, so they
+/// keep their signed offsets from the cup. The one place that mapping is written.
+fn with_cup_change(inputs: &DesignInputs, change_mm: f64, radius_mm: f64) -> DesignInputs {
+    let mut changed = inputs.clone();
+    changed.coupling.inner_back_apothem_mm = radius_mm;
+    changed.metal.cap_od_mm += change_mm;
+    changed.metal.cap_thread_dia_mm += change_mm;
+    changed
 }
 
 /// Select an overall axial stack by setting both rings' existing axial length override.

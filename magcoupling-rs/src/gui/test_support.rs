@@ -15,6 +15,27 @@ pub(crate) fn short_magnets() -> crate::DesignInputs {
     inputs
 }
 
+/// The defaults with `npole` poles per ring, the ring size kept.
+pub(crate) fn with_poles(npole: i64) -> crate::DesignInputs {
+    let mut inputs = crate::DesignInputs::default();
+    inputs.coupling.npole = npole;
+    inputs
+}
+
+/// A design that passes all 8 guided checks (`gui::guidance::CHECK_GUIDES`), each with room
+/// to spare: the defaults with a 1.8 mm face gap (running clearance about 0.1 mm over its
+/// target), a 2.0 mm cup wall (the flux needs about 1.85 mm at that gap) and a 1.6 N·m
+/// requirement (hot-low torque about 2.0 N·m, a quarter over it: a hotter-rated grade, weaker
+/// than N42SH, still meets it). The guidance tests break one check of it at a time, so a fix
+/// that turns another check red shows.
+pub(crate) fn passing_design() -> crate::DesignInputs {
+    let mut inputs = crate::DesignInputs::default();
+    inputs.metal.face_gap_mm = 1.8;
+    inputs.metal.cup_wall_corner_mm = 2.0;
+    inputs.metal.required_min_Nm = 1.6;
+    inputs
+}
+
 /// The screen of the headless frames [points]: a laptop window.
 pub(crate) const SCREEN: egui::Vec2 = egui::vec2(1280.0, 1024.0);
 
