@@ -486,6 +486,20 @@ fn the_grid_is_the_grid_in_the_slider_range() {
             "{variable:?}"
         );
     }
+    // And value for value the grid the slider ranges have always had: the cell ends
+    // min + width * i / SCAN_CELLS (bit for bit), and the even counts 4 to 40.
+    for variable in [FreeVariable::AxialLength, FreeVariable::RingRadius] {
+        let r = variable.range();
+        let cells: Vec<f64> = (0..=SCAN_CELLS)
+            .map(|i| match i {
+                SCAN_CELLS => r.max,
+                _ => r.min + (r.max - r.min) * i as f64 / SCAN_CELLS as f64,
+            })
+            .collect();
+        assert_eq!(variable.grid(), cells, "{variable:?}");
+    }
+    let evens: Vec<f64> = (2..=20).map(|k| 2.0 * f64::from(k)).collect();
+    assert_eq!(FreeVariable::MagnetsPerRing.grid(), evens);
 }
 
 #[test]
@@ -623,6 +637,103 @@ fn a_range_that_is_not_finite_or_is_reversed_is_refused() {
             min: 30.0,
             max: 9.0
         })
+    );
+}
+
+#[test]
+fn a_range_whose_width_overflows_is_refused() {
+    // Finite ends whose difference is not finite (-1e308 to 1e308 is 2e308): every cell end
+    // would be min + inf * (i / SCAN_CELLS), the first NaN, so the range is refused like one
+    // with a non-finite end, with its own ends.
+    let base = DesignInputs::default();
+    for (min, max) in [(-1e308, 1e308), (-f64::MAX, f64::MAX)] {
+        for variable in FreeVariable::ALL {
+            let range = span(variable.range(), min, max);
+            assert!(
+                variable.grid_in(range).is_empty(),
+                "{variable:?} {min:e} {max:e}"
+            );
+            assert_eq!(
+                solve_in(&base, variable, 2.0, range),
+                Err(SizingError::InvalidRange { min, max }),
+                "{variable:?} {min:e} {max:e}"
+            );
+        }
+    }
+    // The widest range whose width is finite is still scanned, every cell end finite: a cell
+    // end is the width times a fraction of one, never the width times the cell number.
+    let widest = span(
+        FreeVariable::AxialLength.range(),
+        -f64::MAX / 2.0,
+        f64::MAX / 2.0,
+    );
+    let grid = FreeVariable::AxialLength.grid_in(widest);
+    assert_eq!(grid.len(), SCAN_CELLS + 1);
+    assert_eq!((grid[0], grid[SCAN_CELLS]), (widest.min, widest.max));
+    assert!(grid.iter().all(|v| v.is_finite()), "{grid:?}");
+    assert!(grid.windows(2).all(|w| w[0] < w[1]), "{grid:?}");
+}
+
+#[test]
+fn a_magnets_range_holding_more_values_than_a_scan_is_refused() {
+    // Magnets per ring steps through every even count inside the range, so a range holding more
+    // than the SCAN_CELLS + 1 values a continuous scan evaluates is refused, not stepped: 0 to
+    // 1e15 would be 5e14 designs, and -1e300 to 1e300 holds more counts than an integer can.
+    let base = DesignInputs::default();
+    let poles = FreeVariable::MagnetsPerRing.range();
+    let most = span(poles, 4.0, 4.0 + 2.0 * SCAN_CELLS as f64); // 4, 6, ..., 132
+    let grid = FreeVariable::MagnetsPerRing.grid_in(most);
+    assert_eq!(grid.len(), SCAN_CELLS + 1);
+    assert_eq!((grid[0], grid[SCAN_CELLS]), (most.min, most.max));
+    for (min, max) in [
+        (most.min, most.max + 2.0),
+        (most.min - 1.0, most.max + 2.5),
+        (0.0, 1e15),
+        (-1e300, 1e300),
+    ] {
+        let range = span(poles, min, max);
+        assert!(
+            FreeVariable::MagnetsPerRing.grid_in(range).is_empty(),
+            "{min:e} {max:e}"
+        );
+        assert_eq!(
+            solve_in(&base, FreeVariable::MagnetsPerRing, 2.0, range),
+            Err(SizingError::InvalidRange { min, max }),
+            "{min:e} {max:e}"
+        );
+    }
+    // The counts are found without converting an end to an integer, so a narrow range far
+    // beyond the integers still gives its even value, inside the range (not a saturated end).
+    // The cap does not judge the counts themselves: is_valid does, and no layout of that many
+    // poles counts.
+    for end in [1e300, -1e300] {
+        let range = span(poles, end, end);
+        assert_eq!(FreeVariable::MagnetsPerRing.grid_in(range), [end]);
+        assert_eq!(
+            solve_in(&base, FreeVariable::MagnetsPerRing, 2.0, range),
+            Ok(SizingOutcome::NotReachable { best: None }),
+            "{end:e}"
+        );
+    }
+    // Likewise zero and negative counts inside a range are evaluated, never counted: a tiny
+    // target is met at the smallest positive count that counts, as over the positive counts.
+    let through_zero = span(poles, -10.0, 10.0);
+    let positive = span(poles, 2.0, 10.0);
+    let p = solved(solve_in(
+        &base,
+        FreeVariable::MagnetsPerRing,
+        1e-9,
+        through_zero,
+    ));
+    assert!(p.value > 0.0, "{}", p.value);
+    assert_eq!(
+        p,
+        solved(solve_in(
+            &base,
+            FreeVariable::MagnetsPerRing,
+            1e-9,
+            positive
+        ))
     );
 }
 
