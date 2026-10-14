@@ -238,6 +238,10 @@ pub struct MagcouplingPanel {
     /// The main widget of every input row drawn in the last frame (a slider's value box while
     /// it has focus): a text field among them edits the design.
     design_widgets: Vec<egui::Id>,
+    /// The Size tab's Required slider's widget as drawn in the last frame. The centre view is
+    /// drawn after the solve checks [`MagcouplingPanel::editing`], so the inputs side lists it
+    /// in `design_widgets` ahead of that check: typing in its value box holds the solve.
+    requirement_widget: Option<egui::Id>,
     /// Whether the panel acts on the undo and redo keys
     /// ([`MagcouplingPanel::set_keyboard_shortcuts`]).
     keyboard_shortcuts: bool,
@@ -296,6 +300,7 @@ impl MagcouplingPanel {
             results,
             key_widgets: Vec::new(),
             design_widgets: Vec::new(),
+            requirement_widget: None,
             keyboard_shortcuts: true,
             last_error: None,
             centre: CentreView::Geometry,
@@ -726,11 +731,6 @@ impl MagcouplingPanel {
     /// or green margin; the nominal pull-out at the operating temperature. Where the model makes
     /// no prediction a torque reads [`size_controls::NO_PREDICTION`] (or `NO_TORQUE`) and the
     /// gap is left out.
-    ///
-    /// Known limitation: this view is drawn after `run_sizing`, so the Required slider's value
-    /// box joins `design_widgets` too late for that frame's debounce check. It matters only in
-    /// Torque -> Magnets with the Size tab open, where a typed requirement can start a solve
-    /// before Enter; the undo step still waits for the edit (`editing` runs again at the end).
     fn torque_readouts_ui(&mut self, ui: &mut egui::Ui, readouts: &mut Readouts) {
         let entry = InputCatalogue::get()
             .entry(REQUIREMENT_INPUT)
@@ -745,8 +745,12 @@ impl MagcouplingPanel {
                     ui.add(slider(&mut value, entry.meta, range))
                 })
                 .inner;
-            // Its value box is a text field of the design, as an input row's is.
-            self.design_widgets.push(response.id);
+            // Its value box is a text field of the design, as an input row's is; the next
+            // frame's inputs side lists it before the solve looks (`requirement_widget`).
+            if !self.design_widgets.contains(&response.id) {
+                self.design_widgets.push(response.id);
+            }
+            self.requirement_widget = Some(response.id);
             if response.changed() && value != required {
                 self.last_error = self
                     .inputs
@@ -1002,6 +1006,8 @@ impl MagcouplingPanel {
                 ui.ctx().request_repaint();
             }
             self.design_widgets.extend(output.widgets);
+            // The Required slider is drawn after `run_sizing`: last frame's id stands in.
+            self.design_widgets.extend(self.requirement_widget);
             self.minimum_diameter_mm = output.minimum_diameter_mm;
             if output.inputs != shown {
                 self.inputs = output.inputs;
@@ -4094,6 +4100,48 @@ mod tests {
         assert_eq!(harness.panel.inputs(), &lowered);
         harness.panel.undo();
         assert_eq!(harness.panel.design(), before);
+    }
+
+    #[test]
+    fn typing_in_the_size_tab_s_required_box_holds_the_solve() {
+        // Torque -> Magnets with the Size tab open: the Required slider's value box is a text
+        // field of the design from the frame it takes focus, although the centre view is drawn
+        // after the solve runs: a solve pending when it is clicked waits for the typing to end,
+        // as it does for an input row's box. (A typed value applies on Enter alone,
+        // `update_while_editing(false)`.) The Size tab's own tab click leaves Torque ->
+        // Magnets: a file in that mode opened with the tab showing gets here.
+        let mut harness = size_tab(SCREEN, DesignInputs::default());
+        let mut design = Design::default();
+        design.sizing.mode = SizingMode::TorqueToMagnets;
+        harness.panel.open_design(design);
+        harness.frame(Vec::new());
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.centre, CentreView::SizeAndTorque);
+        assert_eq!(harness.panel.runner.solves, 1);
+        let output = harness.frame(Vec::new());
+        let (_, value_box) = beside(&output, REQUIRED).remove(0);
+        harness.click(value_box.center());
+        let focused = focused_text_field(&harness.ctx).expect("the value box has focus");
+        assert!(harness.panel.design_widgets.contains(&focused));
+        // An edit of the design inside the debounce (as the results-search test makes one),
+        // then the box is typed in.
+        harness.panel.inputs.coupling.op_temp_C += 1.0;
+        harness.frame([select_all(), vec![egui::Event::Text("3".to_owned())]].concat());
+        for _ in 0..3 {
+            harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        }
+        assert_eq!(focused_text_field(&harness.ctx), Some(focused));
+        assert_eq!(
+            harness.panel.runner.solves, 1,
+            "not while the box is typed in"
+        );
+        harness.frame(key_tap(egui::Key::Enter));
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.inputs().metal.required_min_Nm, 3.0);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        assert_eq!(harness.panel.runner.solves, 2);
+        assert!((harness.solved().torque_hot_low_Nm - 3.0).abs() < 1e-6);
     }
 
     #[test]
