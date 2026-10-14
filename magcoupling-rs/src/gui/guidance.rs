@@ -10,35 +10,41 @@
 //! level is the dashboard's own badge ([`check_level`]); its Problem quotes the live results
 //! and inputs, each number as the readouts format it, and is `None` while the check passes.
 //!
-//! A fix is an input path and a direction ([`fixes`]): a slider input raised or lowered, or a
-//! choice or picker input changed. The temperature and space-claim guides pick their fixes by
-//! the terms of their verdicts that fail ([`Fixes::PerTerm`]: each temperature limit, ring by
+//! A fix is an input path and a direction ([`fixes`]): a slider input raised or lowered, a
+//! choice or picker input changed, or a ring's magnet part taken to Custom dimensions with a
+//! grade rated hotter than the part ([`Direction::CustomHotterGrade`], the way past the
+//! hottest-rated library part). The temperature and space-claim guides pick their fixes by the
+//! terms of their verdicts that fail ([`Fixes::PerTerm`]: each temperature limit, ring by
 //! ring; each axis of the claim); every other guide has one list. A fix is shown only where
-//! its move helps: one slider step, or one other choice of its input alone, that turns no
-//! passing guided check red; a fix picked per term must also raise that term's margin, while
-//! each fix of a static list raises its check over its whole slider (a test sweeps each). A
-//! failing check left without a fix says so ([`NO_FIX`]). Those checks compute the design each
-//! move reaches, so the panel asks through a [`FixCache`]. A fix's text takes the input's
-//! label from the [`InputCatalogue`], or the Size tab's name for it ([`fix_text`]), so no
-//! guide types a label. The tests hold the fixes to helping: on each test design that fails a
-//! check, every failing term of the check has a shown fix that moves it toward passing, and no
-//! shown fix turns another check red.
+//! its move helps: one slider step, or one other choice of its input alone (those two picks
+//! count as one), that turns no passing guided check red; a fix picked per term must also
+//! raise that term's margin, while each fix of a static list raises its check from a failing
+//! design to its slider's end (a test moves each there). No move leaves a ring's magnet
+//! without a rating, since the engine does not calibrate such a magnet's limit. These checks
+//! compute the design each move reaches, so the panel asks through a [`FixCache`]. A failing
+//! check left without a fix says so ([`NO_FIX`]), and two failing checks that pull one input
+//! both ways each say so ([`trade_offs`]). A fix's text takes the input's label from the
+//! [`InputCatalogue`], or the Size tab's name for it ([`fix_text`]), so no guide types a
+//! label. The tests hold the fixes to helping: on each test design that fails a check, every
+//! failing term of the check has a shown fix that moves it toward passing, and no shown fix
+//! turns another check red.
 //!
 //! The engine's verdict texts, the results table and the exports keep their wording (locked by
 //! `tests/python_schema.rs`): this is a GUI layer over them, in plain words
 //! ([`plain_text_violations`] lists what it must not say). No egui.
 
 use crate::engine::clamps::SCREW_SIZES;
+use crate::engine::deviations::Deviations;
 use crate::engine::grades::GRADES;
-use crate::engine::library::MAGNET_LIBRARY;
+use crate::engine::library::{MAGNET_LIBRARY, lookup};
 use crate::engine::meta::{InputSet, NumOrText, ResultSet, SliderRange, Value};
-use crate::engine::model::{RingFit, blocks_fit, ring_fits};
+use crate::engine::model::{ResolvedMagnet, RingFit, blocks_fit, resolve_magnets, ring_fits};
 use crate::engine::size_controls::{dimensions, resize_diameter};
 use crate::engine::temperature::CURE_MARGIN_MIN_C;
 use crate::gui::dashboard::{DASHBOARD, Level, check_level, result_info};
 use crate::gui::format::{format_value, with_unit};
 use crate::gui::inputs::{InputCatalogue, optional_seed, section_label};
-use crate::gui::pickers::{GRADE_PATHS, PART_PATHS};
+use crate::gui::pickers::{CUSTOM, GRADE_PATHS, PART_PATHS};
 use crate::gui::size_controls;
 use crate::{DesignInputs, DesignResults, compute_all};
 
@@ -51,6 +57,10 @@ pub enum Direction {
     Lower,
     /// To another choice: a selector's code, or a picker's part.
     Change,
+    /// A ring's magnet part to "Custom dimensions" and its grade to one rated hotter than the
+    /// part: two picks scored as one move, the way past the hottest-rated library part. A fix
+    /// on a part input only; its text names both inputs ([`fix_text`]).
+    CustomHotterGrade,
 }
 
 impl Direction {
@@ -59,7 +69,7 @@ impl Direction {
         match self {
             Direction::Raise => "Raise",
             Direction::Lower => "Lower",
-            Direction::Change => "Change",
+            Direction::Change | Direction::CustomHotterGrade => "Change",
         }
     }
 }
@@ -370,8 +380,8 @@ pub fn fixes(
         return Vec::new();
     }
     match guide.fixes {
-        // Each fix of a static list moves its check toward passing over its whole slider (a
-        // test sweeps each one), so only the step itself is checked.
+        // Each fix of a static list moves its check toward passing from a failing design to
+        // its slider's end (a test checks each one), so only the step itself is checked.
         Fixes::Static(list) => list
             .iter()
             .copied()
@@ -385,6 +395,42 @@ pub fn fixes(
 /// Fix): its inputs are at their sliders' ends, have no better choice or would turn another
 /// check red, or, for a claim that is not a number, the Problem says what to enter.
 pub const NO_FIX: &str = "No listed change helps from here: each is at its slider's end, has no better choice, or would fail another check.";
+
+/// The notes to draw under the fixes of the guide at `index`, where another failing check's
+/// fix moves one of its inputs the other way (spec review focus 4). `all` holds every guide's
+/// [`fixes`] in [`CHECK_GUIDES`]' order, as [`FixCache::get`] gives them. Both fixes stay, since
+/// each helps its own check; the note, the same in both blocks, says that moving the input
+/// settles one check and sets the other back. Two checks already failing are the only way
+/// there: a fix whose step turns a passing check red is not offered ([`helps`]).
+pub fn trade_offs(all: &[Vec<(&'static str, Direction)>], index: usize) -> Vec<String> {
+    let (Some(own), Some(guide)) = (all.get(index), CHECK_GUIDES.get(index)) else {
+        return Vec::new();
+    };
+    let mut notes = Vec::new();
+    for &(path, direction) in own {
+        let opposite = match direction {
+            Direction::Raise => Direction::Lower,
+            Direction::Lower => Direction::Raise,
+            Direction::Change | Direction::CustomHotterGrade => continue,
+        };
+        for (other, other_fixes) in CHECK_GUIDES.iter().zip(all) {
+            if other.check == guide.check || !other_fixes.contains(&(path, opposite)) {
+                continue;
+            }
+            let (raising, lowering) = match direction {
+                Direction::Raise => (guide, other),
+                _ => (other, guide),
+            };
+            notes.push(format!(
+                "One input pulls two ways ({}): {} needs it raised and {} needs it lowered, so change another input to settle one of them.",
+                fix_label(path),
+                raising.label,
+                lowering.label
+            ));
+        }
+    }
+    notes
+}
 
 /// Every guide's [`fixes`] for the design they were built for (spec 4.1, as for the
 /// consequences): the panel asks every frame, and each fix runs `compute_all` on the design
@@ -465,9 +511,13 @@ fn helps(
 ///   cap and its thread with the cup (`engine::size_controls`). The panel's Minimum OD is not
 ///   seen here: the slider's range is the one without it.
 /// - **Change:** each other choice: a selector's codes, a part picker's "Custom dimensions" (a
-///   blank part) and its library parts, a grade picker's "Blank" and its grades. A grade
-///   applies to manual dimensions only (its label says so): with a library part it changes
-///   nothing, so no grade helps there.
+///   blank part) and its library parts, a grade picker's "Blank" and its grades, each kept
+///   only where it leaves the ring's magnet rated ([`rated`]). So "Custom dimensions" counts
+///   only with a grade already picked, and a grade only on manual dimensions (its label says
+///   so: with a library part it changes nothing).
+/// - **CustomHotterGrade:** the ring's part to "Custom dimensions" with each grade rated
+///   hotter than its library part ([`custom_hotter_grade`]): this changes the part and the
+///   grade of one ring.
 fn moves(
     inputs: &DesignInputs,
     results: &DesignResults,
@@ -477,6 +527,9 @@ fn moves(
     let Some(entry) = InputCatalogue::get().entry(path) else {
         return Vec::new();
     };
+    if direction == Direction::CustomHotterGrade {
+        return custom_hotter_grade(inputs, path);
+    }
     if direction == Direction::Change {
         // A picker's choices: its blank one ("Custom dimensions", or "Blank"), then its table.
         let picker = |table: Vec<&str>| -> Vec<Value> {
@@ -502,6 +555,7 @@ fn moves(
             .into_iter()
             .filter(|choice| current.as_ref() != Some(choice))
             .filter_map(|choice| with_value(inputs, path, choice))
+            .filter(|design| rated(path, design))
             .collect();
     }
     if path == RING {
@@ -520,8 +574,53 @@ fn moves(
         .collect()
 }
 
+/// Whether `design`, reached by moving the input at `path`, leaves the ring that input sets
+/// with a rated magnet: a library part, or a grade picked for manual dimensions; for a grade
+/// input, that grade in use. A magnet with neither ("Custom dimensions" with a blank grade) has
+/// no rating, so the engine leaves its demagnetization limit uncalibrated: the default block
+/// reads about 10 °C above the same block from the library. A move there would pass the
+/// temperature check with no change of magnet (review N-1). Any other input's move counts.
+fn rated(path: &str, design: &DesignInputs) -> bool {
+    let Some(ring) = magnet_ring(path) else {
+        return true;
+    };
+    let magnet = ring.resolved(design);
+    if path == ring.grade() {
+        magnet.from_grade
+    } else {
+        matches!(magnet.tmax_C, NumOrText::Num(_))
+    }
+}
+
+/// The designs a [`Direction::CustomHotterGrade`] fix on the part input at `path` reaches:
+/// the ring's part set to "Custom dimensions" (a blank part) and its grade to each grade rated
+/// hotter than the part. None for a ring that is not on a library part: there a grade applies
+/// already, and the grade's own fix offers it.
+fn custom_hotter_grade(inputs: &DesignInputs, path: &str) -> Vec<DesignInputs> {
+    let Some(ring) = magnet_ring(path).filter(|ring| ring.part() == path) else {
+        return Vec::new();
+    };
+    let on_library_part =
+        matches!(inputs.get(path), Some(Value::Text(part)) if lookup(&part).is_some());
+    if !on_library_part {
+        return Vec::new();
+    }
+    // A library part always has a rating.
+    let NumOrText::Num(rating) = ring.resolved(inputs).tmax_C else {
+        return Vec::new();
+    };
+    GRADES
+        .iter()
+        .filter(|grade| grade.tmax_C > rating)
+        .filter_map(|grade| {
+            let custom = with_value(inputs, path, Value::Text(String::new()))?;
+            with_value(&custom, ring.grade(), Value::Text(grade.id.to_owned()))
+        })
+        .collect()
+}
+
 /// `x` one step of the slider `range` up (Raise) or down (Lower), kept on the slider: `None`
-/// at the slider's end that way, for a number that is not one, and for a Change. A value
+/// at the slider's end that way, for a number that is not one, and for a choice. A value
 /// typed past the slider's end comes back onto it.
 fn step(x: f64, range: SliderRange, direction: Direction) -> Option<f64> {
     let next = match direction {
@@ -570,10 +669,19 @@ fn current_number(inputs: &DesignInputs, results: &DesignResults, path: &str) ->
 /// Minimum outer return ring wall"), or the Size tab's name for it ([`SIZE_TAB_ALIASES`]). A
 /// label that another input's label equals or ends with ("Boss outside diameter" against
 /// "Shaft boss outside diameter") is followed by its group's heading, so the fix names one
-/// input: "Raise Boss outside diameter (Shaft clamps)". A path that is no input reads as
-/// itself (a test keeps every guide's fixes on real inputs).
+/// input: "Raise Boss outside diameter (Shaft clamps)". A [`Direction::CustomHotterGrade`] fix
+/// names its two picks: "Change Inner magnet part to Custom dimensions (manual), then set
+/// Inner magnet grade (manual dimensions) to one rated hotter than the part". A path that is
+/// no input reads as itself (a test keeps every guide's fixes on real inputs).
 pub fn fix_text(path: &str, direction: Direction) -> String {
-    format!("{} {}", direction.word(), fix_label(path))
+    let text = format!("{} {}", direction.word(), fix_label(path));
+    match (direction, magnet_ring(path)) {
+        (Direction::CustomHotterGrade, Some(ring)) => format!(
+            "{text} to {CUSTOM}, then set {} to one rated hotter than the part",
+            fix_label(ring.grade())
+        ),
+        _ => text,
+    }
 }
 
 /// The input's name in a fix ([`fix_text`]).
@@ -657,25 +765,82 @@ impl Ring {
         }
     }
 
-    /// The ring's magnet: its part, and its grade, which applies to manual dimensions.
+    /// The ring's magnet fixes: its part, and its grade, which applies to manual dimensions.
     const fn magnet(self) -> &'static [(&'static str, Direction)] {
         match self {
             Ring::Inner => &INNER_MAGNET,
             Ring::Outer => &OUTER_MAGNET,
         }
     }
+
+    /// The ring's magnet fixes against its hot-day limit: [`Ring::magnet`]'s, then the two
+    /// picks past the hottest-rated library part ([`Direction::CustomHotterGrade`]).
+    const fn hot_magnet(self) -> &'static [(&'static str, Direction)] {
+        match self {
+            Ring::Inner => &INNER_HOT_MAGNET,
+            Ring::Outer => &OUTER_HOT_MAGNET,
+        }
+    }
+
+    /// The ring's part input.
+    const fn part(self) -> &'static str {
+        match self {
+            Ring::Inner => PART_PATHS[0],
+            Ring::Outer => PART_PATHS[1],
+        }
+    }
+
+    /// The ring's grade input (manual dimensions).
+    const fn grade(self) -> &'static str {
+        match self {
+            Ring::Inner => GRADE_PATHS[0],
+            Ring::Outer => GRADE_PATHS[1],
+        }
+    }
+
+    /// The ring's magnet in `inputs` as the engine resolves it, with every approved correction
+    /// as [`compute_all`] has them: its rating, and whether a grade picked for manual
+    /// dimensions is in use.
+    fn resolved(self, inputs: &DesignInputs) -> ResolvedMagnet {
+        let (inner, outer) = resolve_magnets(&inputs.coupling.magnets, Deviations::ALL);
+        match self {
+            Ring::Inner => inner,
+            Ring::Outer => outer,
+        }
+    }
+}
+
+/// The ring whose magnet the part or grade input at `path` sets; `None` for any other input.
+fn magnet_ring(path: &str) -> Option<Ring> {
+    Ring::BOTH
+        .into_iter()
+        .find(|ring| ring.part() == path || ring.grade() == path)
 }
 
 /// The inner ring's magnet inputs ([`Ring::magnet`]).
 const INNER_MAGNET: [(&str, Direction); 2] = [
-    (PART_PATHS[0], Direction::Change),
-    (GRADE_PATHS[0], Direction::Change),
+    (Ring::Inner.part(), Direction::Change),
+    (Ring::Inner.grade(), Direction::Change),
 ];
 
 /// The outer ring's magnet inputs ([`Ring::magnet`]).
 const OUTER_MAGNET: [(&str, Direction); 2] = [
-    (PART_PATHS[1], Direction::Change),
-    (GRADE_PATHS[1], Direction::Change),
+    (Ring::Outer.part(), Direction::Change),
+    (Ring::Outer.grade(), Direction::Change),
+];
+
+/// The inner ring's magnet fixes against its hot-day limit ([`Ring::hot_magnet`]).
+const INNER_HOT_MAGNET: [(&str, Direction); 3] = [
+    INNER_MAGNET[0],
+    INNER_MAGNET[1],
+    (Ring::Inner.part(), Direction::CustomHotterGrade),
+];
+
+/// The outer ring's magnet fixes against its hot-day limit ([`Ring::hot_magnet`]).
+const OUTER_HOT_MAGNET: [(&str, Direction); 3] = [
+    OUTER_MAGNET[0],
+    OUTER_MAGNET[1],
+    (Ring::Outer.part(), Direction::CustomHotterGrade),
 ];
 
 /// The adhesive: its limit and its cure temperature.
@@ -761,7 +926,8 @@ impl TemperatureTerm {
     /// where one of its moves does.
     const fn fixes(self) -> &'static [(&'static str, Direction)] {
         match self {
-            TemperatureTerm::HotDayMagnet(ring) | TemperatureTerm::Cold(ring) => ring.magnet(),
+            TemperatureTerm::HotDayMagnet(ring) => ring.hot_magnet(),
+            TemperatureTerm::Cold(ring) => ring.magnet(),
             TemperatureTerm::HotDayAdhesive | TemperatureTerm::Cure => &ADHESIVE,
             TemperatureTerm::MagnetPeak | TemperatureTerm::AdhesivePeak => &COOLING,
         }
@@ -873,7 +1039,9 @@ fn listed(items: &[String]) -> String {
 
 /// The temperature guide's fixes ([`Fixes::PerTerm`]): for each failing term in order, each
 /// of its fixes that one of its moves helps ([`helps`] against the term's margin), each fix
-/// once. A term none of whose fixes helps from this design shows none.
+/// once. A term none of whose fixes helps from this design shows none. The two picks past the
+/// library ([`Direction::CustomHotterGrade`]) show only where the part's own fix does not: a
+/// library part that helps is the simpler change.
 fn temperature_fixes(
     inputs: &DesignInputs,
     results: &DesignResults,
@@ -882,7 +1050,10 @@ fn temperature_fixes(
     for term in failing_terms(inputs, results) {
         let margin = |design: &DesignInputs, after: &DesignResults| term.margin(design, after);
         for &fix in term.fixes() {
-            if !shown.contains(&fix) && helps(inputs, results, fix, Some(&margin)) {
+            let (path, direction) = fix;
+            let part_shown = direction == Direction::CustomHotterGrade
+                && shown.contains(&(path, Direction::Change));
+            if !shown.contains(&fix) && !part_shown && helps(inputs, results, fix, Some(&margin)) {
                 shown.push(fix);
             }
         }
@@ -1428,8 +1599,8 @@ mod tests {
     }
 
     /// Every text the guides draw: labels, Whys, the reasons of the links without a note (the
-    /// guides' and the dashboard rows'), every fix, the fallbacks, every Problem of every test
-    /// design and its status line.
+    /// guides' and the dashboard rows'), every fix, the fallbacks, and for every test design
+    /// every Problem, every trade-off note and its status line.
     fn every_text() -> Vec<String> {
         let mut texts = Vec::new();
         for g in &CHECK_GUIDES {
@@ -1452,8 +1623,13 @@ mod tests {
         }
         for (_, inputs) in designs() {
             let results = compute_all(&inputs);
-            for g in &CHECK_GUIDES {
+            let all: Vec<Vec<(&str, Direction)>> = CHECK_GUIDES
+                .iter()
+                .map(|g| fixes(g, &inputs, &results))
+                .collect();
+            for (index, g) in CHECK_GUIDES.iter().enumerate() {
                 texts.extend((g.problem)(&inputs, &results));
+                texts.extend(trade_offs(&all, index));
             }
             texts.push(design_status_text(&design_status(&inputs, &results)));
         }
@@ -1511,8 +1687,14 @@ mod tests {
         for g in &CHECK_GUIDES {
             let possible = possible_fixes(g);
             assert!(!possible.is_empty(), "{}: a guide names a fix", g.check);
-            let paths: BTreeSet<&str> = possible.iter().map(|&(path, _)| path).collect();
-            assert_eq!(paths.len(), possible.len(), "{}: a fix once", g.check);
+            // One guide never moves an input both ways. A part may carry two choice fixes:
+            // another part, or Custom dimensions with a hotter grade.
+            for &(path, _) in &possible {
+                let both_ways = [Direction::Raise, Direction::Lower]
+                    .iter()
+                    .all(|&way| possible.contains(&(path, way)));
+                assert!(!both_ways, "{}: {path} both ways", g.check);
+            }
             for (path, direction) in possible {
                 let entry = catalogue
                     .entry(path)
@@ -1529,6 +1711,11 @@ mod tests {
                             || PART_PATHS.contains(&path)
                             || GRADE_PATHS.contains(&path),
                         "{}: {path} has no choices to change",
+                        g.check
+                    ),
+                    Direction::CustomHotterGrade => assert!(
+                        PART_PATHS.contains(&path),
+                        "{}: {path} is no magnet part",
                         g.check
                     ),
                 }
@@ -1793,7 +1980,7 @@ mod tests {
                                 && before[other] == Level::Good
                                 && level(h, &design, &after) == Level::Bad
                         });
-                        if direction != Direction::Change {
+                        if matches!(direction, Direction::Raise | Direction::Lower) {
                             assert!(!reddens, "{name}: {text} turns another check red");
                         } else if reddens {
                             continue;
@@ -1942,7 +2129,7 @@ mod tests {
             .flat_map(|g| {
                 possible_fixes(g)
                     .into_iter()
-                    .filter(|&(_, d)| d != Direction::Change)
+                    .filter(|&(_, d)| matches!(d, Direction::Raise | Direction::Lower))
                     .map(move |(p, d)| key(g.check, p, d))
             })
             .collect();
@@ -1990,25 +2177,29 @@ mod tests {
         // Each failing term's fixes, each shown only where one of its moves (one step, or one
         // choice of that input alone) moves that term toward passing without turning another
         // check red. A ring's magnet is fixed in that ring: each ring has its own limits.
-        use Direction::{Change, Lower, Raise};
+        use Direction::{Change, CustomHotterGrade, Lower, Raise};
         let [part_inner, part_outer] = PART_PATHS.map(|path| (path, Change));
         let [grade_inner, grade_outer] = GRADE_PATHS.map(|path| (path, Change));
+        let [hotter_inner, hotter_outer] = PART_PATHS.map(|path| (path, CustomHotterGrade));
         let adhesive = ("temperature.adhesive.selected", Change);
         let trip = ("temperature.duty.fault_trip_s", Lower);
         let conductance = ("temperature.thermal.conductance_W_K", Raise);
         let temperature = guide(TEMPERATURE).unwrap();
         let shown = |inputs: DesignInputs| fixes(temperature, &inputs, &compute_all(&inputs));
         // Above both rings' limits and the adhesive's. No library part is rated above the
-        // N42SH blocks in use; manual dimensions with a blank grade are (the grade picker then
-        // offers hotter grades). A grade does nothing to a ring with a library part.
+        // N42SH parts in use, and a grade does nothing to a ring with a library part. Custom
+        // dimensions with a blank grade has no rating, so its limit is not calibrated: no fix.
+        // Each ring's way is Custom dimensions with a grade rated hotter than the part.
         assert_eq!(
             shown(breaking(hot_day)),
-            [part_inner, part_outer, adhesive, trip, conductance]
+            [hotter_inner, hotter_outer, adhesive, trip, conductance]
         );
-        // The inner ring already on manual dimensions: no library part beats it, a grade does.
+        // The inner ring already on manual dimensions with a blank grade: no library part beats
+        // it, a grade does. The ring's own limit is the uncalibrated one, so a grade shows only
+        // where its rated limit beats that. The outer ring is still on its library part.
         assert_eq!(
             shown(breaking(custom_hot_day)),
-            [grade_inner, part_outer, adhesive, trip, conductance]
+            [grade_inner, hotter_outer, adhesive, trip, conductance]
         );
         assert_eq!(
             shown(breaking(n42_parts)),
@@ -2051,9 +2242,10 @@ mod tests {
 
     #[test]
     fn every_move_of_a_fix_changes_its_own_input_only() {
-        // Review I-2: a fix's move changes the input the fix names and nothing else, so the
+        // Review I-2: a fix's move changes the inputs the fix names and nothing else, so the
         // test of what it does is the test of what the screen says. The Outside diameter is
-        // the exception the Size tab makes: its slider moves the cap and its thread with the cup.
+        // the exception the Size tab makes: its slider moves the cap and its thread with the
+        // cup. Custom dimensions with a hotter grade names its ring's part and grade.
         let catalogue = InputCatalogue::get();
         let same = |a: Option<Value>, b: Option<Value>| match (a, b) {
             (Some(Value::Num(x)), Some(Value::Num(y))) => x.to_bits() == y.to_bits(),
@@ -2063,10 +2255,16 @@ mod tests {
             let results = compute_all(&inputs);
             for g in &CHECK_GUIDES {
                 for (path, direction) in possible_fixes(g) {
-                    let allowed: &[&str] = if path == RING {
-                        &[RING, "metal.cap_od_mm", "metal.cap_thread_dia_mm"]
-                    } else {
-                        &[path]
+                    let ring_grade = PART_PATHS
+                        .iter()
+                        .position(|&part| part == path)
+                        .map(|index| GRADE_PATHS[index]);
+                    let allowed: Vec<&str> = match (direction, ring_grade) {
+                        _ if path == RING => {
+                            vec![RING, "metal.cap_od_mm", "metal.cap_thread_dia_mm"]
+                        }
+                        (Direction::CustomHotterGrade, Some(grade)) => vec![path, grade],
+                        _ => vec![path],
                     };
                     for moved in moves(&inputs, &results, path, direction) {
                         let changed: Vec<&str> = catalogue
@@ -2083,6 +2281,121 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The magnet of the ring whose part or grade input is at `path`, as the engine resolves it
+    /// for `inputs`; `None` for any other input.
+    fn ring_magnet(path: &str, inputs: &DesignInputs) -> Option<ResolvedMagnet> {
+        let index = PART_PATHS
+            .iter()
+            .position(|&part| part == path)
+            .or_else(|| GRADE_PATHS.iter().position(|&grade| grade == path))?;
+        let (inner, outer) = resolve_magnets(&inputs.coupling.magnets, Deviations::ALL);
+        Some([inner, outer][index])
+    }
+
+    #[test]
+    fn no_magnet_move_lands_on_a_magnet_without_a_rating() {
+        // Review N-1. A magnet with neither a library part nor a grade ("Custom dimensions" with
+        // a blank grade) has no rating, so the engine leaves its demagnetization limit
+        // uncalibrated: the same block reads about 10 °C above the library part's limit. A move
+        // there would pass the temperature check with no change of magnet, so no magnet fix's
+        // move goes there, and a grade's move puts the grade in use (manual dimensions).
+        let mut checked = 0;
+        for (name, inputs) in designs() {
+            let results = compute_all(&inputs);
+            for g in &CHECK_GUIDES {
+                for (path, direction) in possible_fixes(g) {
+                    for moved in moves(&inputs, &results, path, direction) {
+                        let Some(magnet) = ring_magnet(path, &moved) else {
+                            continue;
+                        };
+                        let text = fix_text(path, direction);
+                        assert!(
+                            matches!(magnet.tmax_C, NumOrText::Num(_)),
+                            "{name}: {text} reaches a magnet without a rating"
+                        );
+                        if GRADE_PATHS.contains(&path) {
+                            assert!(
+                                magnet.from_grade,
+                                "{name}: {text} reaches a grade not in use"
+                            );
+                        }
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert!(checked > 0, "the designs reach some magnet moves");
+    }
+
+    #[test]
+    fn a_warm_day_past_the_hottest_library_part_offers_custom_dimensions_with_a_hotter_grade() {
+        // Review N-1, its probe: the passing design on a 98 °C hot day, above the 150 °C-rated
+        // N42SH parts' limit in both rings. No library part is rated hotter. "Custom dimensions"
+        // with a blank grade is the same block without a rating: its uncalibrated limit would
+        // read the temperature check as passing with the hot-low torque unchanged. So that move
+        // is no fix; the real one is two picks, the part to Custom dimensions and a grade rated
+        // hotter than the part, scored as one move.
+        use Direction::{Change, CustomHotterGrade, Lower, Raise};
+        let warm = breaking(|i| i.temperature.duty.hot_ambient_C = 88.0);
+        let results = compute_all(&warm);
+        assert_eq!(results.temperature.summary.hot_day_start_C, 98.0);
+        let rating = |r: &DesignResults| (r.model.inner_tmax_C, r.model.outer_tmax_C);
+        assert_eq!(
+            rating(&results),
+            (NumOrText::Num(150.0), NumOrText::Num(150.0))
+        );
+        for ring in Ring::BOTH {
+            assert!(
+                failing_terms(&warm, &results).contains(&TemperatureTerm::HotDayMagnet(ring)),
+                "{ring:?}"
+            );
+        }
+        // The false pass the guide must not lead to.
+        let unrated = with(warm.clone(), |i| {
+            i.coupling.magnets.part_inner.clear();
+            i.coupling.magnets.part_outer.clear();
+        });
+        let unrated_results = compute_all(&unrated);
+        assert_eq!(check_level(&results, TEMPERATURE), Some(Level::Caution));
+        assert_eq!(
+            check_level(&unrated_results, TEMPERATURE),
+            Some(Level::Good)
+        );
+        let hot_low = |r: &DesignResults| format_value(&Value::Num(r.metal.torque_hot_low_Nm));
+        assert_eq!(hot_low(&unrated_results), hot_low(&results));
+        // What the guide shows: each ring's two picks, then the cooling for the peak.
+        let shown = fixes(guide(TEMPERATURE).unwrap(), &warm, &results);
+        assert_eq!(
+            shown,
+            [
+                (PART_PATHS[0], CustomHotterGrade),
+                (PART_PATHS[1], CustomHotterGrade),
+                ("temperature.duty.fault_trip_s", Lower),
+                ("temperature.thermal.conductance_W_K", Raise),
+            ]
+        );
+        assert!(!shown.contains(&(PART_PATHS[0], Change)));
+        // Each of the two picks' moves puts a grade rated hotter than the part in use.
+        for (index, part) in PART_PATHS.into_iter().enumerate() {
+            let reached = moves(&warm, &results, part, CustomHotterGrade);
+            assert!(!reached.is_empty(), "{part}");
+            for moved in reached {
+                let after = compute_all(&moved);
+                let magnet = ring_magnet(part, &moved).unwrap();
+                assert!(magnet.from_grade, "{part}");
+                let ring_rating = [rating(&after).0, rating(&after).1][index];
+                match ring_rating {
+                    NumOrText::Num(t) => assert!(t > 150.0, "{part}: {t}"),
+                    NumOrText::Text(text) => panic!("{part}: {text}"),
+                }
+            }
+        }
+        assert_eq!(
+            fix_text(PART_PATHS[0], CustomHotterGrade),
+            "Change Inner magnet part to Custom dimensions (manual), then set Inner magnet grade (manual dimensions) to one rated hotter than the part"
+        );
     }
 
     #[test]
@@ -2165,24 +2478,32 @@ mod tests {
     }
 
     #[test]
-    fn only_two_failing_checks_that_pull_apart_show_one_input_both_ways() {
+    fn two_failing_checks_that_pull_one_input_apart_say_so() {
         // Spec review focus 4: the default design's first screen once said "lower the gap" for
         // the hot-low torque and "raise the gap" for the clearance. A fix whose step turns a
         // passing check red is not offered, so that pair cannot show. One input still shows
         // both ways when two checks that pull it apart both fail already: here the hot-low
         // torque against an overall-length claim the stack is over (magnet length), and the
-        // blocks against a diameter claim (Outside diameter). How the screen should show such a
-        // trade-off is the owner's call (task report); until then this pins what it shows.
+        // blocks against a diameter claim (Outside diameter). Each fix helps its own check, so
+        // both stay, and each of the two blocks says, in the same words, that the input pulls
+        // two ways and another input has to settle one of them (`trade_offs`).
         let pulled_apart: [(&str, &[&str]); 2] = [
             ("length_conflict", &[MAGNET_LENGTH]),
             ("diameter_conflict", &[RING]),
         ];
+        let note = |path: &str, raising: &str, lowering: &str| {
+            format!(
+                "One input pulls two ways ({}): {raising} needs it raised and {lowering} needs it lowered, so change another input to settle one of them.",
+                fix_label(path)
+            )
+        };
         for (name, inputs) in designs() {
             let results = compute_all(&inputs);
-            let shown: Vec<(&str, Direction)> = CHECK_GUIDES
+            let all: Vec<Vec<(&str, Direction)>> = CHECK_GUIDES
                 .iter()
-                .flat_map(|g| fixes(g, &inputs, &results))
+                .map(|g| fixes(g, &inputs, &results))
                 .collect();
+            let shown: Vec<(&str, Direction)> = all.iter().flatten().copied().collect();
             let both_ways: Vec<&str> = shown
                 .iter()
                 .filter(|&&(path, direction)| {
@@ -2195,7 +2516,48 @@ mod tests {
                 .find(|&&(fixture, _)| fixture == name)
                 .map_or(&[][..], |&(_, paths)| paths);
             assert_eq!(both_ways, expected, "{name}");
+            // The guides that raise and lower each such input carry its note; no other does.
+            for (index, g) in CHECK_GUIDES.iter().enumerate() {
+                let mut wanted = Vec::new();
+                for &path in &both_ways {
+                    let by = |direction| {
+                        let at = all.iter().position(|f| f.contains(&(path, direction)));
+                        CHECK_GUIDES[at.unwrap()].label
+                    };
+                    if all[index].iter().any(|&(fixed, _)| fixed == path) {
+                        wanted.push(note(path, by(Direction::Raise), by(Direction::Lower)));
+                    }
+                }
+                assert_eq!(trade_offs(&all, index), wanted, "{name}: {}", g.check);
+            }
         }
+        // The two cases in words: the same note in both blocks.
+        let length = design(|i| i.metal.max_overall_axial_mm = 30.0);
+        let results = compute_all(&length);
+        let all: Vec<Vec<(&str, Direction)>> = CHECK_GUIDES
+            .iter()
+            .map(|g| fixes(g, &length, &results))
+            .collect();
+        let expected = [
+            "One input pulls two ways (Axial magnet length, both rings): Hot-low torque needs it raised and Space claim needs it lowered, so change another input to settle one of them.",
+        ];
+        let at = |check| CHECK_GUIDES.iter().position(|g| g.check == check).unwrap();
+        assert_eq!(trade_offs(&all, at(HOT_MIN)), expected);
+        assert_eq!(trade_offs(&all, at(SPACE_CLAIM)), expected);
+        let crowded = with(with_poles(12), |i| i.metal.max_diameter_mm = 42.0);
+        let results = compute_all(&crowded);
+        let all: Vec<Vec<(&str, Direction)>> = CHECK_GUIDES
+            .iter()
+            .map(|g| fixes(g, &crowded, &results))
+            .collect();
+        let expected = [
+            "One input pulls two ways (Outside diameter): Magnets fit needs it raised and Space claim needs it lowered, so change another input to settle one of them.",
+        ];
+        assert_eq!(trade_offs(&all, at(FIT_CHECK)), expected);
+        assert_eq!(trade_offs(&all, at(SPACE_CLAIM)), expected);
+        // An index past the guides, or lists shorter than the guides, read as no note.
+        assert!(trade_offs(&all, CHECK_GUIDES.len()).is_empty());
+        assert!(trade_offs(&all[..1], at(SPACE_CLAIM)).is_empty());
     }
 
     #[test]
@@ -2571,11 +2933,18 @@ mod tests {
             );
             // The peak is never below the hot-day start, so a start at a ring's magnet limit
             // always brings the peak's fixes too: the cooling fixes sit on the peak terms only,
-            // as neither moves the start.
+            // as neither moves the start. So the screen shows what the plan lists for the
+            // hot-day magnet term, the conductance included (a deviation in where it is listed,
+            // not in what shows).
+            let conductance = ("temperature.thermal.conductance_W_K", Direction::Raise);
             for ring in Ring::BOTH {
                 if failing.contains(&TemperatureTerm::HotDayMagnet(ring)) {
                     assert!(
                         failing.contains(&TemperatureTerm::MagnetPeak),
+                        "{name}: {ring:?}"
+                    );
+                    assert!(
+                        temperature_fixes(&inputs, &results).contains(&conductance),
                         "{name}: {ring:?}"
                     );
                 }
