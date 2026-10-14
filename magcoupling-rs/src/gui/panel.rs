@@ -2,8 +2,9 @@
 //!
 //! Layout (spec M4 "Layout"): a header line, the inputs on the left (the Key design group,
 //! then every input by package group, [`crate::gui::inputs`]), the dashboard on the right and
-//! the centre region between them ([`CentreView`]: the geometry view first, the results table
-//! last; decisions M42-1 and M42-2). Every result is recomputed with every approved correction
+//! the centre region between them ([`CentreView`]: one tab row, the results table last;
+//! decision M42-1), opening on Size and torque under a welcome strip the session can hide
+//! (decision G-5, which reverses M42-2). Every result is recomputed with every approved correction
 //! on ([`compute_all`]) each frame after the inputs are drawn, so the readouts show this
 //! frame's edits.
 //!
@@ -62,6 +63,17 @@ use crate::{DesignInputs, DesignResults, compute_all};
 
 /// The heading of the panel.
 pub const HEADING: &str = "Magnetic coupling calculator";
+
+/// The welcome strip above the centre tabs (spec 3.1), until the session hides it.
+pub const WELCOME: &str =
+    "Set the size -> read the torque -> open any red check to see why and what to change.";
+
+/// The button at the end of the welcome strip that hides it for the rest of the session.
+pub const HIDE_WELCOME: &str = "Hide";
+
+/// The hover text of [`HIDE_WELCOME`].
+pub const HIDE_WELCOME_HINT: &str =
+    "Hide this line until the page is opened again; the design is not changed";
 
 /// The label of the button that restores the default design.
 pub const RESET_ALL: &str = "Reset all";
@@ -174,10 +186,10 @@ pub enum PanelRequest {
 /// The views of the centre region, one tab row (decision M42-1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CentreView {
-    /// Direct envelope dimensions, magnet count and gap, with the live torque and geometry.
+    /// Direct envelope dimensions, magnet count and gap, with the live torque and geometry (the
+    /// view a new panel opens on: decision G-5, which reverses M42-2).
     SizeAndTorque,
-    /// The end view and the side view to scale, with the dimension callouts (the default view:
-    /// decision M42-2).
+    /// The end view and the side view to scale, with the dimension callouts.
     Geometry,
     /// One of the plots (egui_plot).
     Plot(PlotKind),
@@ -250,6 +262,9 @@ pub struct MagcouplingPanel {
     last_error: Option<String>,
     /// The view the centre region shows.
     centre: CentreView,
+    /// Whether the session has hidden the welcome strip (spec 3.1): a view choice, never in a
+    /// design file, a share link or the undo history, and kept by reset all and every load.
+    welcome_dismissed: bool,
     /// What the inputs side shows.
     inputs_view: InputsView,
     /// How the design inputs are ordered (decision O-1): a view of this session only, never in
@@ -307,7 +322,8 @@ impl MagcouplingPanel {
             requirement_widget: None,
             keyboard_shortcuts: true,
             last_error: None,
-            centre: CentreView::Geometry,
+            centre: CentreView::SizeAndTorque,
+            welcome_dismissed: false,
             inputs_view: InputsView::Design,
             input_order: InputOrder::default(),
             minimum_diameter_mm: None,
@@ -739,6 +755,9 @@ impl MagcouplingPanel {
         // the tab row and the banner live in the space above the panel, and the view in the
         // space left under them, each confined to it.
         confined(ui, "magcoupling_above_equation_panel", |ui| {
+            if !self.welcome_dismissed {
+                self.welcome_ui(ui);
+            }
             ui.horizontal_wrapped(|ui| {
                 for view in CentreView::ALL {
                     ui.selectable_value(&mut self.centre, view, view.label());
@@ -805,6 +824,21 @@ impl MagcouplingPanel {
         ui.horizontal_wrapped(|ui| {
             ui.label(size_controls::pullout_label(self.results.metal.op_temp_C));
             torque_readout(ui, &self.results, "model.pullout_Nm", readouts);
+        });
+    }
+
+    /// The welcome strip (spec 3.1): what to do first, wrapping in a narrow region, and the
+    /// button that hides it for the rest of the session.
+    fn welcome_ui(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(WELCOME);
+            if ui
+                .small_button(HIDE_WELCOME)
+                .on_hover_text(HIDE_WELCOME_HINT)
+                .clicked()
+            {
+                self.welcome_dismissed = true;
+            }
         });
     }
 
@@ -1503,11 +1537,27 @@ mod tests {
             Self::on_screen(SCREEN)
         }
 
-        /// A harness on a screen of `size`.
+        /// A harness on a screen of `size`, on the Geometry tab: most tests drive the whole
+        /// inputs side (the Key design group, the groups, the filter, the Assumptions view),
+        /// which the Size tab a new panel opens on folds under "Detailed inputs". The first
+        /// view's own tests use [`Harness::first_view`].
         pub(crate) fn on_screen(size: egui::Vec2) -> Self {
+            let mut panel = MagcouplingPanel::new();
+            panel.centre = CentreView::Geometry;
+            Self::of(panel, size)
+        }
+
+        /// A harness on a new panel as it opens (decision G-5): the Size tab under the welcome
+        /// strip, on the laptop screen.
+        pub(crate) fn first_view() -> Self {
+            Self::of(MagcouplingPanel::new(), SCREEN)
+        }
+
+        /// A harness drawing `panel` on a screen of `size`, one frame in.
+        fn of(panel: MagcouplingPanel, size: egui::Vec2) -> Self {
             let mut harness = Self {
                 ctx: egui::Context::default(),
-                panel: MagcouplingPanel::new(),
+                panel,
                 screen: size,
             };
             harness.frame(Vec::new());
@@ -1653,9 +1703,10 @@ mod tests {
     }
 
     #[test]
-    fn the_geometry_view_is_the_default_and_follows_the_design_shown() {
+    fn the_geometry_view_follows_the_design_shown() {
+        // The harness opens on the Geometry tab (a new panel opens on Size and torque:
+        // a_new_panel_opens_on_size_and_torque_under_the_welcome_strip).
         let mut harness = Harness::new();
-        assert_eq!(harness.panel.centre, CentreView::Geometry);
         let output = harness.frame(Vec::new());
         let texts = drawn_texts(&output);
         assert!(texts.iter().any(|t| t == "Face gap 1.400 mm"), "{texts:?}");
@@ -1693,6 +1744,224 @@ mod tests {
         );
         harness.click_text(CentreView::Geometry.label());
         assert_eq!(harness.panel.centre, CentreView::Geometry);
+    }
+
+    #[test]
+    fn a_new_panel_opens_on_size_and_torque_under_the_welcome_strip() {
+        // Decision G-5 (spec 3.1, reversing M42-2): the first view is the Size tab with the
+        // welcome strip above the centre tabs; showing them edits nothing, and Explain stays
+        // off (M43-2).
+        use crate::gui::guidance::{design_status, design_status_text};
+        use crate::gui::size_controls::{DIAMETER, GAP, LENGTH, MAGNETS};
+        let panel = MagcouplingPanel::new();
+        assert_eq!(panel.centre, CentreView::SizeAndTorque);
+        assert!(!panel.welcome_dismissed);
+        assert!(!panel.explorer.explain);
+        assert_eq!(
+            MagcouplingPanel::default().centre,
+            CentreView::SizeAndTorque
+        );
+        let mut harness = Harness::first_view();
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, WELCOME), 1);
+        assert_eq!(count(&output, HIDE_WELCOME), 1);
+        // The inputs side is the Size tab's: its controls, the Key design group folded away
+        // under the detailed inputs.
+        for label in [DIAMETER, LENGTH, GAP, MAGNETS] {
+            assert_eq!(count(&output, label), 1, "{label}");
+        }
+        assert_eq!(count(&output, KEY_DESIGN_HEADING), 0);
+        // The dashboard's design status line (spec 3.1) is on the first view, counted live.
+        let status = design_status(harness.panel.inputs(), harness.panel.results());
+        assert!(status.is_default);
+        assert_eq!(count(&output, &design_status_text(&status)), 1);
+        // The strip is in the centre region, above the tab row.
+        let strip = text_rect(&output, WELCOME).expect("the strip");
+        let tabs = text_rect(&output, CentreView::Geometry.label()).expect("the tab row");
+        assert!(strip.bottom() <= tabs.top(), "{strip:?} above {tabs:?}");
+        assert!(
+            strip.left() >= INPUTS_WIDTH && strip.right() <= SCREEN.x - DASHBOARD_WIDTH,
+            "{strip:?}"
+        );
+        assert_eq!(harness.panel.design(), Design::default());
+        assert_eq!(harness.panel.history.undo_len(), 0);
+    }
+
+    #[test]
+    fn hiding_the_welcome_strip_frees_its_row_and_edits_no_design() {
+        let mut harness = Harness::first_view();
+        let output = harness.frame(Vec::new());
+        let tabs_under_strip = text_rect(&output, CentreView::Geometry.label()).unwrap();
+        let file = design_to_json(&harness.panel.design());
+        let link = harness.panel.share_link();
+        harness.click_text(HIDE_WELCOME);
+        assert!(harness.panel.welcome_dismissed);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, WELCOME), 0);
+        assert_eq!(count(&output, HIDE_WELCOME), 0);
+        let tabs = text_rect(&output, CentreView::Geometry.label()).unwrap();
+        assert!(
+            tabs.top() < tabs_under_strip.top(),
+            "the tab row moves up into the strip's room: {tabs:?} vs {tabs_under_strip:?}"
+        );
+        // A view choice of this session: the view, the design, its file and its link stay as
+        // they were, and it is no undo step.
+        assert_eq!(harness.panel.centre, CentreView::SizeAndTorque);
+        assert_eq!(harness.panel.design(), Design::default());
+        assert_eq!(design_to_json(&harness.panel.design()), file);
+        assert_eq!(harness.panel.share_link(), link);
+        assert_eq!(harness.panel.history.undo_len(), 0);
+        assert!(!harness.panel.history.can_undo(&Design::default()));
+        assert_eq!(harness.panel.last_error, None);
+    }
+
+    #[test]
+    fn the_hidden_welcome_strip_stays_hidden_for_the_session() {
+        // A loaded file, undo and redo, reset all, a refused file, a share link (as an edit and
+        // as the session's start) and every view keep it hidden; only a new panel (the page
+        // opened again) shows it.
+        let hidden = |harness: &mut Harness, after: &str| {
+            let output = harness.frame(Vec::new());
+            assert!(harness.panel.welcome_dismissed, "{after}");
+            assert_eq!(count(&output, WELCOME), 0, "{after}");
+        };
+        let mut harness = Harness::first_view();
+        harness.click_text(HIDE_WELCOME);
+        harness
+            .panel
+            .load_design_file(&design_to_json(&gap_design(2.0)))
+            .unwrap();
+        hidden(&mut harness, "a loaded design file");
+        harness.click_text(UNDO);
+        assert_eq!(harness.panel.design(), Design::default());
+        hidden(&mut harness, "undo");
+        harness.click_text(REDO);
+        assert_eq!(harness.panel.design(), gap_design(2.0));
+        hidden(&mut harness, "redo");
+        harness.click_text(RESET_ALL);
+        assert_eq!(harness.panel.design(), Design::default());
+        hidden(&mut harness, "reset all");
+        harness.panel.load_design_file("not a design").unwrap_err();
+        hidden(&mut harness, "a refused design file");
+        harness
+            .panel
+            .load_share_payload(&encode_share_payload(&gap_design(1.5)))
+            .unwrap();
+        hidden(&mut harness, "a share link");
+        harness
+            .panel
+            .open_share_payload(&encode_share_payload(&gap_design(1.6)))
+            .unwrap();
+        hidden(&mut harness, "a share link opened as the session's start");
+        for view in CentreView::ALL {
+            harness.panel.centre = view;
+            hidden(&mut harness, view.label());
+        }
+        assert!(!MagcouplingPanel::new().welcome_dismissed, "a new session");
+    }
+
+    #[test]
+    fn a_share_link_opened_at_start_up_opens_on_the_first_view() {
+        // The web app opens a link's design on a new panel (MagcouplingApp::open_share_payload):
+        // the Size tab and the welcome strip, as for the default design.
+        let mut panel = MagcouplingPanel::new();
+        panel
+            .open_share_payload(&encode_share_payload(&gap_design(2.0)))
+            .unwrap();
+        let mut harness = Harness::of(panel, SCREEN);
+        let output = harness.frame(Vec::new());
+        assert_eq!(harness.panel.centre, CentreView::SizeAndTorque);
+        assert_eq!(count(&output, WELCOME), 1);
+        assert_eq!(harness.panel.design(), gap_design(2.0));
+    }
+
+    #[test]
+    fn idle_frames_on_the_first_view_change_no_input() {
+        // The Size tab's controls (the Required slider among them), like every input row, write
+        // only on an edit (decision M41-2): idle frames on the first view keep values off the
+        // sliders' steps as they are.
+        let mut design = Design::default();
+        design.inputs.metal.face_gap_mm = 1.4123;
+        design.inputs.coupling.inner_back_apothem_mm += 0.01234;
+        design.inputs.coupling.magnets.axial_length_mm = Some(12.7123);
+        design.inputs.metal.measured_drag_Nm = Some(0.012345);
+        design.inputs.metal.required_min_Nm = 2.2345;
+        let mut harness = Harness::first_view();
+        harness.panel.open_design(design.clone());
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..15 {
+            output = harness.frame(Vec::new());
+        }
+        assert_eq!(harness.panel.centre, CentreView::SizeAndTorque);
+        assert_eq!(count(&output, WELCOME), 1);
+        assert_eq!(harness.panel.design(), design);
+        assert_eq!(harness.panel.last_error, None);
+        assert_eq!(harness.panel.history.undo_len(), 0);
+    }
+
+    #[test]
+    fn a_focused_input_opens_the_detailed_inputs_on_the_first_view() {
+        // On the Size tab the input groups sit under the closed "Detailed inputs": a leaf term
+        // or a dashboard fix (spec 3.4) naming an input opens them and frames its row, for a
+        // Key design input, an assumption and an input under an Advanced heading alike. A tall
+        // screen draws every row.
+        for path in [FACE_GAP, "coupling.c_end", "coupling.mu0"] {
+            let mut harness = Harness::of(MagcouplingPanel::new(), egui::vec2(1280.0, 3000.0));
+            harness.panel.explorer.focus_input(path);
+            let mut output = harness.frame(Vec::new());
+            for _ in 0..10 {
+                output = harness.frame(Vec::new());
+            }
+            assert_eq!(harness.panel.centre, CentreView::SizeAndTorque, "{path}");
+            let label = InputCatalogue::get().entry(path).unwrap().meta.label;
+            let focus = focus_rects(&output);
+            let rows: Vec<egui::Rect> = text_rects(&output, label)
+                .into_iter()
+                .filter(|r| r.left() < INPUTS_WIDTH)
+                .collect();
+            assert!(
+                rows.iter()
+                    .any(|r| focus.iter().any(|f| f.contains_rect(*r))),
+                "{path}: {rows:?} {focus:?}"
+            );
+            assert_eq!(harness.panel.inputs(), &DesignInputs::default(), "{path}");
+        }
+    }
+
+    #[test]
+    fn the_welcome_strip_wraps_in_a_narrow_window() {
+        // The M4-1 review's ~930 px window leaves the centre region about 300 points: the strip
+        // wraps inside it, left of the dashboard, above the tab row.
+        let width = 930.0;
+        let mut harness = Harness::of(MagcouplingPanel::new(), egui::vec2(width, 1024.0));
+        // The wrapped rows settle on the second frame (egui wraps from the last frame's widths).
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        let strip = text_rect(&output, WELCOME).expect("the strip");
+        let hide = text_rect(&output, HIDE_WELCOME).expect("its button");
+        let tabs = text_rect(&output, CentreView::Geometry.label()).expect("the tab row");
+        assert!(
+            strip.left() >= INPUTS_WIDTH && strip.right() <= width - DASHBOARD_WIDTH,
+            "{strip:?}"
+        );
+        assert!(hide.right() <= width - DASHBOARD_WIDTH, "{hide:?}");
+        assert!(
+            strip.height() >= 2.0 * hide.height(),
+            "wrapped: {strip:?} {hide:?}"
+        );
+        assert!(strip.bottom() <= tabs.top(), "{strip:?} above {tabs:?}");
+    }
+
+    #[test]
+    fn the_welcome_strip_s_texts_are_plain_language() {
+        // Spec section 6, test 3: no cell references, correction ids or workbook jargon.
+        for text in [WELCOME, HIDE_WELCOME, HIDE_WELCOME_HINT] {
+            assert_eq!(
+                crate::gui::guidance::plain_text_violations(text),
+                Vec::<&str>::new(),
+                "{text}"
+            );
+        }
     }
 
     #[test]
@@ -3727,6 +3996,7 @@ mod tests {
             texts.push(crate::gui::trace::Trace::of(path).unwrap().banner());
         }
         texts.push(crate::gui::results_table::CLEAR_TO_CLOSE.to_owned());
+        texts.extend([WELCOME, HIDE_WELCOME, HIDE_WELCOME_HINT].map(str::to_owned));
         // The load's notice of a sizing target that differed from the requirement (G-2).
         texts.push(target_mismatch_notice(3.25, 2.5));
         harness.panel.input_filter = "a".to_owned();
@@ -6970,6 +7240,9 @@ mod tests {
         const TITLE: &str = "Magnetic coupling";
         let ctx = egui::Context::default();
         let mut panel = MagcouplingPanel::new();
+        // The Assumptions view is the inputs side of every view but Size and torque (which
+        // folds the inputs under "Detailed inputs"; a new panel opens there).
+        panel.centre = CentreView::Geometry;
         let frame = |panel: &mut MagcouplingPanel, events: Vec<egui::Event>| {
             let input = egui::RawInput {
                 events,
