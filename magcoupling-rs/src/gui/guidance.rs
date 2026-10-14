@@ -393,8 +393,8 @@ pub fn fixes(
 
 /// The Fix line of a failing check whose [`fixes`] are empty (spec 3.4 gives every block a
 /// Fix): its inputs are at their sliders' ends, have no better choice or would turn another
-/// check red, or, for a claim that is not a number, the Problem says what to enter.
-pub const NO_FIX: &str = "No listed change helps from here: each is at its slider's end, has no better choice, or would fail another check.";
+/// check red, or a value the check needs is not a number, which the Problem names.
+pub const NO_FIX: &str = "No listed change helps from here: each is at its slider's end, has no better choice or would fail another check, or a value the check needs is not a number.";
 
 /// The notes to draw under the fixes of the guide at `index`, where another failing check's
 /// fix moves one of its inputs the other way (spec review focus 4). `all` holds every guide's
@@ -956,9 +956,13 @@ fn temperature_sentences(inputs: &DesignInputs, results: &DesignResults) -> Vec<
     let failing = failing_terms(inputs, results);
     let fails = |term| failing.contains(&term);
     let mut sentences = Vec::new();
-    let mut hot_limits: Vec<String> = Ring::BOTH
+    // A ring whose limit is not a number fails its term but is not quoted as a number.
+    let (unknown_rings, hot_rings): (Vec<Ring>, Vec<Ring>) = Ring::BOTH
         .into_iter()
         .filter(|&ring| fails(HotDayMagnet(ring)))
+        .partition(|&ring| ring.magnet_limit(results).0.is_nan());
+    let mut hot_limits: Vec<String> = hot_rings
+        .into_iter()
         .map(|ring| {
             let (_, limit) = ring.magnet_limit(results);
             format!(
@@ -979,6 +983,12 @@ fn temperature_sentences(inputs: &DesignInputs, results: &DesignResults) -> Vec<
             "Hot-day start {} is at or above {}.",
             result_text(results, "temperature.summary.hot_day_start_C"),
             listed(&hot_limits)
+        ));
+    }
+    for ring in unknown_rings {
+        sentences.push(format!(
+            "The {} magnets' limit is not a number, so the hot-day start cannot be checked against it.",
+            ring.name()
         ));
     }
     if fails(MagnetPeak) {
@@ -2887,6 +2897,46 @@ mod tests {
             "The minimum magnet temperature -40.00 °C is below the inner magnets' 335.7 °C cold demagnetization limit and the outer magnets' 335.7 °C cold demagnetization limit (from stored 3D fields that do not yet follow the magnet grade)."
         );
         assert_eq!(problem(TEMPERATURE, &DesignInputs::default()), None);
+    }
+
+    #[test]
+    fn a_ring_limit_that_is_not_a_number_is_not_quoted_as_one() {
+        // A ring's hot-day term fails on a limit that is not a number, so the Problem says
+        // that limit cannot be checked rather than quote it, ring by ring.
+        let inputs = design(hot_day);
+        let temperature = guide(TEMPERATURE).unwrap();
+        let mut outer_unknown = compute_all(&inputs);
+        outer_unknown.temperature.demag.outer_magnet_limit_C = f64::NAN;
+        assert_eq!(
+            (temperature.problem)(&inputs, &outer_unknown).unwrap(),
+            "Hot-day start 140.0 °C is at or above the inner magnets' 93.06 °C limit and the 120.0 °C adhesive limit. The outer magnets' limit is not a number, so the hot-day start cannot be checked against it. The slip-fault peak of 141.0 °C reaches the 93.06 °C magnet limit. The slip-fault peak of 141.0 °C reaches the 120.0 °C adhesive limit."
+        );
+        let mut both_unknown = outer_unknown.clone();
+        both_unknown.temperature.demag.inner_magnet_limit_C = f64::NAN;
+        let text = (temperature.problem)(&inputs, &both_unknown).unwrap();
+        assert!(
+            text.starts_with(
+                "Hot-day start 140.0 °C is at or above the 120.0 °C adhesive limit. The inner magnets' limit is not a number, so the hot-day start cannot be checked against it. The outer magnets' limit is not a number, so the hot-day start cannot be checked against it."
+            ),
+            "{text}"
+        );
+        assert!(!text.contains("NaN"), "{text}");
+    }
+
+    #[test]
+    fn the_no_fix_line_covers_a_claim_that_is_not_a_number() {
+        // The space claim of a claim that is not a number fails with no fix: the Fix line
+        // must name that case as well as the sliders' ends.
+        let inputs = breaking(unknown_claim);
+        let results = compute_all(&inputs);
+        let space = guide(SPACE_CLAIM).unwrap();
+        assert!(
+            (space.problem)(&inputs, &results)
+                .unwrap()
+                .contains("is not a number")
+        );
+        assert_eq!(fixes(space, &inputs, &results), []);
+        assert!(NO_FIX.contains("not a number"), "{NO_FIX}");
     }
 
     #[test]
