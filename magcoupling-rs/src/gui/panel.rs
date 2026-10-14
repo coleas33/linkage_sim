@@ -7036,21 +7036,9 @@ mod tests {
         assert_eq!(panel.inputs(), &DesignInputs::default());
     }
 
-    /// Every check guide's fixes for `inputs`, in the guides' order (no Minimum OD).
-    fn guide_fixes(
-        inputs: &DesignInputs,
-    ) -> Vec<Vec<(&'static str, crate::gui::guidance::Direction)>> {
-        use crate::gui::guidance::{CHECK_GUIDES, fixes};
-        let results = compute_all(inputs);
-        CHECK_GUIDES
-            .iter()
-            .map(|g| fixes(g, inputs, &results))
-            .collect()
-    }
-
     #[test]
     fn a_fix_link_shows_its_input_s_row_in_either_view_and_edits_nothing() {
-        use crate::gui::guidance::fix_text;
+        use crate::gui::guidance::{all_fixes, fix_text};
         // Every fix of the workbook example's red checks, from the Geometry view (the input's
         // group or the Assumptions view opens) and from Size and torque (its Detailed inputs
         // open). Tall enough for every dashboard row.
@@ -7058,8 +7046,9 @@ mod tests {
         // The dashboard settles its width on the second frame, and the guides above a link wrap
         // to it: click where the link rests.
         harness.frame(Vec::new());
+        let defaults = DesignInputs::default();
         let fixes: std::collections::BTreeSet<(&str, String)> =
-            guide_fixes(&DesignInputs::default())
+            all_fixes(&defaults, &compute_all(&defaults))
                 .into_iter()
                 .flatten()
                 .map(|(path, dir)| (path, fix_text(path, dir)))
@@ -7105,7 +7094,7 @@ mod tests {
 
     #[test]
     fn an_outside_diameter_fix_opens_the_size_tab_and_edits_nothing() {
-        use crate::gui::guidance::{Direction, fix_text};
+        use crate::gui::guidance::{Direction, all_fixes, fix_text};
         use crate::gui::size_controls::DIAMETER;
         // Contract C-4: the ring radius's fix bears the Size tab's name, and its link opens
         // that tab, where the Outside diameter slider is, instead of a row. At 12 poles the
@@ -7113,7 +7102,7 @@ mod tests {
         let inputs = with_poles(12);
         let ring = "coupling.inner_back_apothem_mm";
         assert!(
-            guide_fixes(&inputs)
+            all_fixes(&inputs, &compute_all(&inputs))
                 .iter()
                 .flatten()
                 .any(|&fix| fix == (ring, Direction::Raise))
@@ -7140,14 +7129,14 @@ mod tests {
     #[test]
     fn a_raised_minimum_od_takes_lower_outside_diameter_off_the_dashboard() {
         use crate::engine::size_controls::dimensions;
-        use crate::gui::guidance::{Direction, fix_text};
+        use crate::gui::guidance::{Direction, all_fixes, fix_text};
         // The space claim of a 12 mm ring (the cup sets the diameter, past its claim) offers
         // "Lower Outside diameter"; with the Minimum OD at the diameter the slider cannot go
         // down, so the link goes and the claim's other fixes stay.
         let mut inputs = crate::gui::test_support::passing_design();
         inputs.coupling.inner_back_apothem_mm = 12.0;
         let ring = "coupling.inner_back_apothem_mm";
-        let all = guide_fixes(&inputs);
+        let all = all_fixes(&inputs, &compute_all(&inputs));
         let lower = fix_text(ring, Direction::Lower);
         let others: Vec<String> = all
             .iter()
@@ -7245,7 +7234,7 @@ mod tests {
         // workbook example's red checks and the status line wrap inside the dashboard, never past
         // its right margin (a line past it would widen the dashboard into the centre region).
         use crate::gui::guidance::{
-            CHECK_GUIDES, design_status, design_status_text, fix_text, level,
+            CHECK_GUIDES, all_fixes, design_status, design_status_text, fix_text, level,
         };
         let width = 930.0;
         let mut harness = Harness::on_screen(egui::vec2(width, 3000.0));
@@ -7254,7 +7243,7 @@ mod tests {
         let output = harness.frame(Vec::new());
         let inputs = DesignInputs::default();
         let results = harness.panel.results().clone();
-        let fixes = guide_fixes(&inputs);
+        let fixes = all_fixes(&inputs, &results);
         let mut texts = vec![design_status_text(&design_status(&inputs, &results))];
         for (guide, fixes) in CHECK_GUIDES.iter().zip(&fixes) {
             if level(guide, &inputs, &results) == Level::Bad {

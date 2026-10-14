@@ -476,14 +476,23 @@ impl FixCache {
             self.computed += 1;
             self.last = Some(CachedFixes {
                 inputs: inputs.clone(),
-                fixes: CHECK_GUIDES
-                    .iter()
-                    .map(|guide| fixes(guide, inputs, results))
-                    .collect(),
+                fixes: all_fixes(inputs, results),
             });
         }
         &self.last.as_ref().expect("filled above").fixes
     }
+}
+
+/// Each guide's [`fixes`] for `inputs` (whose results are `results`), in [`CHECK_GUIDES`]'
+/// order, none for a check that passes: what [`FixCache::get`] holds, computed every call.
+pub fn all_fixes(
+    inputs: &DesignInputs,
+    results: &DesignResults,
+) -> Vec<Vec<(&'static str, Direction)>> {
+    CHECK_GUIDES
+        .iter()
+        .map(|guide| fixes(guide, inputs, results))
+        .collect()
 }
 
 /// `all` (every guide's [`fixes`], as [`FixCache::get`] gives them) as the panel shows them
@@ -1963,10 +1972,7 @@ mod tests {
         }
         for (_, inputs) in designs() {
             let results = compute_all(&inputs);
-            let all: Vec<Vec<(&str, Direction)>> = CHECK_GUIDES
-                .iter()
-                .map(|g| fixes(g, &inputs, &results))
-                .collect();
+            let all = all_fixes(&inputs, &results);
             for (index, g) in CHECK_GUIDES.iter().enumerate() {
                 texts.extend((g.problem)(&inputs, &results));
                 texts.extend(trade_offs(&all, index));
@@ -2839,10 +2845,7 @@ mod tests {
         };
         for (name, inputs) in designs() {
             let results = compute_all(&inputs);
-            let all: Vec<Vec<(&str, Direction)>> = CHECK_GUIDES
-                .iter()
-                .map(|g| fixes(g, &inputs, &results))
-                .collect();
+            let all = all_fixes(&inputs, &results);
             let shown: Vec<(&str, Direction)> = all.iter().flatten().copied().collect();
             let both_ways: Vec<&str> = shown
                 .iter()
@@ -2874,10 +2877,7 @@ mod tests {
         // The two cases in words: the same note in both blocks.
         let length = design(|i| i.metal.max_overall_axial_mm = 30.0);
         let results = compute_all(&length);
-        let all: Vec<Vec<(&str, Direction)>> = CHECK_GUIDES
-            .iter()
-            .map(|g| fixes(g, &length, &results))
-            .collect();
+        let all = all_fixes(&length, &results);
         let expected = [
             "One input pulls two ways (Axial magnet length, both rings): Hot-low torque needs it raised and Space claim needs it lowered, so change another input to settle one of them.",
         ];
@@ -2886,10 +2886,7 @@ mod tests {
         assert_eq!(trade_offs(&all, at(SPACE_CLAIM)), expected);
         let crowded = with(with_poles(12), |i| i.metal.max_diameter_mm = 42.0);
         let results = compute_all(&crowded);
-        let all: Vec<Vec<(&str, Direction)>> = CHECK_GUIDES
-            .iter()
-            .map(|g| fixes(g, &crowded, &results))
-            .collect();
+        let all = all_fixes(&crowded, &results);
         let expected = [
             "One input pulls two ways (Outside diameter): Magnets fit needs it raised and Space claim needs it lowered, so change another input to settle one of them.",
         ];
@@ -2901,16 +2898,30 @@ mod tests {
     }
 
     #[test]
+    fn all_fixes_lists_each_guide_s_fixes_in_the_guides_order() {
+        for (name, inputs) in designs() {
+            let results = compute_all(&inputs);
+            let all = all_fixes(&inputs, &results);
+            assert_eq!(all.len(), CHECK_GUIDES.len(), "{name}");
+            for (guide, shown) in CHECK_GUIDES.iter().zip(&all) {
+                assert_eq!(
+                    *shown,
+                    fixes(guide, &inputs, &results),
+                    "{name}: {}",
+                    guide.check
+                );
+            }
+        }
+        let passing = passing_design();
+        let all = all_fixes(&passing, &compute_all(&passing));
+        assert!(all.iter().all(Vec::is_empty), "{all:?}");
+    }
+
+    #[test]
     fn the_fix_cache_computes_once_per_design_and_follows_an_edit() {
         // Every guide's fixes, in the guides' order (none for a passing check), computed once
         // per design: each fix runs `compute_all` on the design its move reaches.
-        let all = |inputs: &DesignInputs| -> Vec<Vec<(&str, Direction)>> {
-            let results = compute_all(inputs);
-            CHECK_GUIDES
-                .iter()
-                .map(|g| fixes(g, inputs, &results))
-                .collect()
-        };
+        let all = |inputs: &DesignInputs| all_fixes(inputs, &compute_all(inputs));
         let mut cache = FixCache::default();
         let defaults = DesignInputs::default();
         let results = compute_all(&defaults);
@@ -3282,10 +3293,7 @@ mod tests {
             (with_poles(12), FIT_CHECK, raise_ring),
         ] {
             let results = compute_all(&inputs);
-            let all: Vec<_> = CHECK_GUIDES
-                .iter()
-                .map(|g| fixes(g, &inputs, &results))
-                .collect();
+            let all = all_fixes(&inputs, &results);
             assert!(all[index(check)].contains(&fix), "{check}: {all:?}");
             let diameter = dimensions(&inputs).unwrap().diameter_mm;
             // No floor, or one below the diameter: the slider can still go down.

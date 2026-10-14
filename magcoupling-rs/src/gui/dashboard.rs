@@ -834,7 +834,7 @@ mod tests {
     use super::*;
     use crate::engine::api::HEADLINE;
     use crate::engine::meta::InputSet;
-    use crate::gui::guidance::{CHECK_GUIDES, Direction, Fixes, ROW_LEARN, trade_offs};
+    use crate::gui::guidance::{CHECK_GUIDES, Direction, Fixes, ROW_LEARN, all_fixes, trade_offs};
     use crate::gui::readouts::ReadoutEvents;
     use crate::gui::test_support::{
         assert_glyphs, drawn_texts, passing_design, primary_button, short_magnets, sized_frame,
@@ -1558,17 +1558,6 @@ mod tests {
     /// magnets and the space claim shorter ones, both failing (a trade-off note in each).
     fn length_conflict() -> DesignInputs {
         design(|i| i.metal.max_overall_axial_mm = 30.0)
-    }
-
-    /// Every guide's fixes for `inputs`, in the guides' order, as the panel's cache gives them.
-    fn all_fixes(
-        inputs: &DesignInputs,
-        results: &DesignResults,
-    ) -> Vec<Vec<(&'static str, Direction)>> {
-        CHECK_GUIDES
-            .iter()
-            .map(|g| guidance::fixes(g, inputs, results))
-            .collect()
     }
 
     /// One frame of the dashboard of `inputs` at full width on a screen tall enough for every
