@@ -229,7 +229,6 @@ mod tests {
         want.sizing = SizingState {
             mode: SizingMode::TorqueToMagnets,
             variable: FreeVariable::AxialLength,
-            target_Nm: 2.5,
         };
         assert_eq!(design, want);
         assert!(script.contains(SHARE_LINK_LOADED));

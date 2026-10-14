@@ -1,21 +1,24 @@
 //! The sizing mode of the Key design group (spec Addendum A1): Magnets → Torque, the forward
-//! calculation, or Torque → Magnets, inverse sizing by [`crate::engine::sizing::solve`].
+//! calculation, or Torque → Magnets, inverse sizing by [`crate::engine::sizing::solve_in`].
 //!
-//! The mode, the free variable and the target torque are GUI state (A-2 decision A2-9): the
-//! engine takes them as arguments. Design files and share links record them (decision M41-4).
+//! The mode and the free variable are GUI state (A-2 decision A2-9): the engine takes them as
+//! arguments. Design files and share links record them (decision M41-4). The target torque is
+//! not GUI state: it is the requirement, the design input [`REQUIREMENT_INPUT`] (decision G-2:
+//! one torque number, so the solve and the hot minimum check read the same value).
 //!
-//! [`SizingRunner`] runs the solve: on a change, once the design has been still for
-//! [`DEBOUNCE_S`] and no edit is in progress (no drag, no typing), never per frame (a solve
-//! takes about 1 to 3 ms in a release build, longer on wasm, against compute_all's 17 us). Until
-//! then the panel keeps showing the last solved value, marked as solving. The design the panel
-//! shows in Torque → Magnets is the inputs with the free variable at the solved value, or at
-//! the best value when the target is not reachable (decision M41-8); the inputs keep their own
-//! value of the free variable until the user leaves the mode (decision M41-7), when a change
-//! still waiting for its debounce is solved at once ([`SizingRunner::solve_now`]).
+//! [`SizingRunner`] runs the solve over the search range the panel gives: on a change, once
+//! the design has been still for [`DEBOUNCE_S`] and no edit is in progress (no drag, no
+//! typing), never per frame (a solve takes about 1 to 3 ms in a release build, longer on wasm,
+//! against compute_all's 17 us). Until then the panel keeps showing the last solved value,
+//! marked as solving. The design the panel shows in Torque → Magnets is the inputs with the
+//! free variable at the solved value, or at the best value when the target is not reachable
+//! (decision M41-8); the inputs keep their own value of the free variable until the user
+//! leaves the mode (decision M41-7), when a change still waiting for its debounce is solved at
+//! once ([`SizingRunner::solve_now`]).
 
 use crate::DesignInputs;
-use crate::engine::meta::Value;
-use crate::engine::sizing::{FreeVariable, SizingError, SizingOutcome, solve};
+use crate::engine::meta::{SliderRange, Value};
+use crate::engine::sizing::{FreeVariable, SizingError, SizingOutcome, solve_in};
 use crate::gui::format::{format_value, with_unit};
 
 /// Which way the calculator runs (spec A1 "Mode switch").
@@ -78,30 +81,23 @@ pub const fn variable_label(variable: FreeVariable) -> &'static str {
     }
 }
 
-/// The input whose metadata gives the target torque its unit, range and step: the hot
-/// minimum requirement, the torque inverse sizing is usually asked to meet.
-pub const TARGET_RANGE_INPUT: &str = "metal.required_min_Nm";
+/// The input inverse sizing meets: the hot minimum requirement. Decision G-2 (one torque
+/// number): the sizing target is this design input, so the solve and the hot minimum check
+/// read one value, and an edit of it is an ordinary design edit (undo, files, links).
+pub const REQUIREMENT_INPUT: &str = "metal.required_min_Nm";
 
-/// The sizing state: the mode, the free variable and the target torque.
+/// The sizing state: the mode and the free variable (the target is [`REQUIREMENT_INPUT`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[allow(non_snake_case)] // unit suffix, as the engine's names
 pub struct SizingState {
     pub mode: SizingMode,
     pub variable: FreeVariable,
-    /// The hot-low torque with production variation that inverse sizing must reach [N·m].
-    pub target_Nm: f64,
 }
-
-/// The default target torque [N·m]: the workbook's hot minimum (`metal.required_min_Nm`,
-/// Metal design C7), decision M41-9.
-pub const DEFAULT_TARGET_NM: f64 = 2.5;
 
 impl Default for SizingState {
     fn default() -> Self {
         Self {
             mode: SizingMode::MagnetsToTorque,
             variable: FreeVariable::ALL[0],
-            target_Nm: DEFAULT_TARGET_NM,
         }
     }
 }
@@ -118,22 +114,32 @@ pub const NOT_REACHABLE_PREFIX: &str = "Not reachable";
 /// The status line while a solve waits for the design to settle.
 pub const SOLVING: &str = "Solving...";
 
-/// What a solve depends on: the inputs (with the free variable cleared, since the solve sets
-/// it), the free variable and the target.
+/// The status line of a solve refused because the requirement ([`REQUIREMENT_INPUT`], the
+/// target) is not a positive torque.
+pub const REQUIREMENT_NOT_POSITIVE: &str = "The requirement must be a positive torque.";
+
+/// What a solve depends on: the inputs with the free variable cleared (the solve sets it; the
+/// target, [`REQUIREMENT_INPUT`], is among them), the free variable and the search range.
 #[derive(Clone, Debug, PartialEq)]
-#[allow(non_snake_case)] // unit suffix, as the engine's names
 struct SolveKey {
     inputs: DesignInputs,
     variable: FreeVariable,
-    target_Nm: f64,
+    /// The search range's min, max, step and log flag as bit patterns: a NaN bound (the solve
+    /// refuses it) still equals itself, so it is refused once instead of awaited every frame.
+    range: [u64; 4],
 }
 
 impl SolveKey {
-    fn new(inputs: &DesignInputs, state: &SizingState) -> Self {
+    fn new(inputs: &DesignInputs, state: &SizingState, range: SliderRange) -> Self {
         Self {
             inputs: state.variable.apply(inputs, 0.0),
             variable: state.variable,
-            target_Nm: state.target_Nm,
+            range: [
+                range.min.to_bits(),
+                range.max.to_bits(),
+                range.step.to_bits(),
+                u64::from(range.log),
+            ],
         }
     }
 }
@@ -150,18 +156,19 @@ pub struct SizingRunner {
 }
 
 impl SizingRunner {
-    /// Called once per frame in Torque → Magnets mode with the frame's time and whether an
-    /// edit is in progress. Solves when the design has been unchanged for [`DEBOUNCE_S`] and no
-    /// edit is in progress. Returns how long to wait before the next frame must run for a
-    /// pending solve [s], or `None` when nothing is pending.
+    /// Called once per frame in Torque → Magnets mode with the search range, the frame's time
+    /// and whether an edit is in progress. Solves when the design and the range have been
+    /// unchanged for [`DEBOUNCE_S`] and no edit is in progress. Returns how long to wait before
+    /// the next frame must run for a pending solve [s], or `None` when nothing is pending.
     pub fn update(
         &mut self,
         inputs: &DesignInputs,
         state: &SizingState,
+        range: SliderRange,
         now: f64,
         editing: bool,
     ) -> Option<f64> {
-        let key = SolveKey::new(inputs, state);
+        let key = SolveKey::new(inputs, state, range);
         if self.last.as_ref().is_some_and(|(last, _)| *last == key) {
             self.pending = None;
             return None;
@@ -177,25 +184,31 @@ impl SizingRunner {
         if waited < DEBOUNCE_S {
             return Some(DEBOUNCE_S - waited);
         }
-        self.solve_now(inputs, state);
+        self.solve_now(inputs, state, range);
         None
     }
 
-    /// Solves this design now, whatever the debounce: the panel calls it once when the user
-    /// leaves Torque → Magnets before a change was solved, so the value written into the
-    /// inputs is this design's solution, not the last one's (decision M41-7). Never per frame.
-    pub fn solve_now(&mut self, inputs: &DesignInputs, state: &SizingState) {
-        let outcome = solve(inputs, state.variable, state.target_Nm);
+    /// Solves this design over `range` now, whatever the debounce: the panel calls it once when
+    /// the user leaves Torque → Magnets before a change was solved, so the value written into
+    /// the inputs is this design's solution, not the last one's (decision M41-7). Never per
+    /// frame. The target is the design's requirement ([`REQUIREMENT_INPUT`]).
+    pub fn solve_now(&mut self, inputs: &DesignInputs, state: &SizingState, range: SliderRange) {
+        let outcome = solve_in(inputs, state.variable, inputs.metal.required_min_Nm, range);
         self.solves += 1;
         self.pending = None;
-        self.last = Some((SolveKey::new(inputs, state), outcome));
+        self.last = Some((SolveKey::new(inputs, state, range), outcome));
     }
 
-    /// Whether the last solve is for this design (nothing pending).
-    pub fn is_current(&self, inputs: &DesignInputs, state: &SizingState) -> bool {
+    /// Whether the last solve is for this design and this search range (nothing pending).
+    pub fn is_current(
+        &self,
+        inputs: &DesignInputs,
+        state: &SizingState,
+        range: SliderRange,
+    ) -> bool {
         self.last
             .as_ref()
-            .is_some_and(|(key, _)| *key == SolveKey::new(inputs, state))
+            .is_some_and(|(key, _)| *key == SolveKey::new(inputs, state, range))
     }
 
     /// The last outcome, if the last solve was for the same free variable (it may be stale:
@@ -219,17 +232,26 @@ impl SizingRunner {
     }
 
     /// The design the panel shows in Torque → Magnets: `inputs` with the free variable at
-    /// [`SizingRunner::value`], else `inputs` as they are.
-    pub fn shown(&self, inputs: &DesignInputs, state: &SizingState) -> DesignInputs {
-        match self.value(state.variable) {
+    /// [`SizingRunner::value`] when that value lies in `range` (a value from an earlier search
+    /// outside the range asked for now is not shown), else `inputs` as they are.
+    pub fn shown(
+        &self,
+        inputs: &DesignInputs,
+        state: &SizingState,
+        range: SliderRange,
+    ) -> DesignInputs {
+        match self
+            .value(state.variable)
+            .filter(|value| (range.min..=range.max).contains(value))
+        {
             Some(value) => state.variable.apply(inputs, value),
             None => inputs.clone(),
         }
     }
 
-    /// The status line under the sizing controls.
-    pub fn status(&self, inputs: &DesignInputs, state: &SizingState) -> String {
-        if !self.is_current(inputs, state) {
+    /// The status line under the sizing controls, for the search over `range`.
+    pub fn status(&self, inputs: &DesignInputs, state: &SizingState, range: SliderRange) -> String {
+        if !self.is_current(inputs, state, range) {
             return SOLVING.to_owned();
         }
         match self.outcome(state.variable) {
@@ -246,16 +268,13 @@ impl SizingRunner {
             Some(Ok(SizingOutcome::NotReachable { best: None })) => format!(
                 "{NOT_REACHABLE_PREFIX}: no value of the free variable gives a valid design"
             ),
-            Some(Err(SizingError::InvalidTarget(target))) => format!(
-                "Sizing refused: the target {} is not a positive torque",
-                torque_text(*target)
-            ),
+            Some(Err(SizingError::InvalidTarget(_))) => REQUIREMENT_NOT_POSITIVE.to_owned(),
+            Some(Err(SizingError::InvalidRange { .. })) => {
+                "Sizing refused: the search range is empty".to_owned()
+            }
             Some(Err(SizingError::InvalidInputs(errors))) => {
                 let paths: Vec<&str> = errors.iter().map(|e| e.path.as_str()).collect();
                 format!("Sizing refused: invalid inputs ({})", paths.join(", "))
-            }
-            Some(Err(SizingError::InvalidRange { .. })) => {
-                "Sizing refused: the search range is empty".to_owned()
             }
             None => SOLVING.to_owned(),
         }
@@ -283,6 +302,7 @@ fn torque_text(torque_Nm: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::sizing::solve;
 
     #[test]
     fn every_mode_and_free_variable_round_trips_through_its_key() {
@@ -297,87 +317,96 @@ mod tests {
     }
 
     #[test]
-    fn the_default_state_is_the_forward_calculation_at_the_hot_minimum() {
+    fn the_default_state_is_the_forward_calculation_with_the_axial_length_free() {
         let state = SizingState::default();
         assert_eq!(state.mode, SizingMode::MagnetsToTorque);
         assert_eq!(state.variable, FreeVariable::AxialLength);
-        assert_eq!(
-            state.target_Nm,
-            DesignInputs::default().metal.required_min_Nm
-        );
     }
 
-    #[allow(non_snake_case)] // unit suffix
-    fn inverse(variable: FreeVariable, target_Nm: f64) -> SizingState {
+    fn inverse(variable: FreeVariable) -> SizingState {
         SizingState {
             mode: SizingMode::TorqueToMagnets,
             variable,
-            target_Nm,
         }
+    }
+
+    /// The default design with the requirement, the sizing target (decision G-2), at
+    /// `required_Nm`.
+    #[allow(non_snake_case)] // unit suffix
+    fn requiring(required_Nm: f64) -> DesignInputs {
+        let mut inputs = DesignInputs::default();
+        inputs.metal.required_min_Nm = required_Nm;
+        inputs
     }
 
     #[test]
     fn a_solve_waits_for_the_debounce_and_runs_once() {
         let inputs = DesignInputs::default();
-        let state = inverse(FreeVariable::AxialLength, 2.5);
+        let state = inverse(FreeVariable::AxialLength);
+        let range = state.variable.range();
         let mut runner = SizingRunner::default();
         assert_eq!(
-            runner.update(&inputs, &state, 10.0, false),
+            runner.update(&inputs, &state, range, 10.0, false),
             Some(DEBOUNCE_S)
         );
-        assert_eq!(runner.status(&inputs, &state), SOLVING);
-        let wait = runner.update(&inputs, &state, 10.1, false).unwrap();
+        assert_eq!(runner.status(&inputs, &state, range), SOLVING);
+        let wait = runner.update(&inputs, &state, range, 10.1, false).unwrap();
         assert!((wait - 0.15).abs() < 1e-12, "{wait}");
         assert_eq!(runner.solves, 0);
-        assert_eq!(runner.update(&inputs, &state, 10.25, false), None);
+        assert_eq!(runner.update(&inputs, &state, range, 10.25, false), None);
         assert_eq!(runner.solves, 1);
         for frame in 0..10 {
             assert_eq!(
-                runner.update(&inputs, &state, 10.3 + frame as f64, false),
+                runner.update(&inputs, &state, range, 10.3 + frame as f64, false),
                 None
             );
         }
         assert_eq!(runner.solves, 1, "never per frame");
-        assert!(runner.is_current(&inputs, &state));
+        assert!(runner.is_current(&inputs, &state, range));
     }
 
     #[test]
     fn an_edit_in_progress_or_a_new_change_restarts_the_wait() {
         let mut inputs = DesignInputs::default();
-        let state = inverse(FreeVariable::AxialLength, 2.5);
+        let state = inverse(FreeVariable::AxialLength);
+        let range = state.variable.range();
         let mut runner = SizingRunner::default();
-        runner.update(&inputs, &state, 0.0, false);
+        runner.update(&inputs, &state, range, 0.0, false);
         // A drag: still editing past the debounce, so nothing runs.
-        runner.update(&inputs, &state, 1.0, true);
+        runner.update(&inputs, &state, range, 1.0, true);
         assert_eq!(runner.solves, 0);
         // Released: the wait starts again from the release.
-        runner.update(&inputs, &state, 1.1, false);
-        runner.update(&inputs, &state, 1.2, false);
+        runner.update(&inputs, &state, range, 1.1, false);
+        runner.update(&inputs, &state, range, 1.2, false);
         assert_eq!(runner.solves, 0);
         inputs.metal.face_gap_mm = 1.5;
-        runner.update(&inputs, &state, 1.4, false);
-        runner.update(&inputs, &state, 1.5, false);
+        runner.update(&inputs, &state, range, 1.4, false);
+        runner.update(&inputs, &state, range, 1.5, false);
         assert_eq!(runner.solves, 0, "a new change restarts the wait");
-        runner.update(&inputs, &state, 1.65, false);
+        runner.update(&inputs, &state, range, 1.65, false);
         assert_eq!(runner.solves, 1);
     }
 
     #[test]
     fn solve_now_solves_a_pending_change_at_once() {
         let mut inputs = DesignInputs::default();
-        let state = inverse(FreeVariable::AxialLength, 2.5);
+        let state = inverse(FreeVariable::AxialLength);
+        let range = state.variable.range();
         let mut runner = SizingRunner::default();
-        runner.update(&inputs, &state, 0.0, false);
-        runner.update(&inputs, &state, 1.0, false);
+        runner.update(&inputs, &state, range, 0.0, false);
+        runner.update(&inputs, &state, range, 1.0, false);
         inputs.metal.face_gap_mm = 1.5;
-        assert_eq!(runner.update(&inputs, &state, 1.1, false), Some(DEBOUNCE_S));
+        assert_eq!(
+            runner.update(&inputs, &state, range, 1.1, false),
+            Some(DEBOUNCE_S)
+        );
         assert!(
-            !runner.is_current(&inputs, &state),
+            !runner.is_current(&inputs, &state, range),
             "waiting for the debounce"
         );
-        runner.solve_now(&inputs, &state);
+        runner.solve_now(&inputs, &state, range);
         assert_eq!(runner.solves, 2);
-        assert!(runner.is_current(&inputs, &state));
+        assert!(runner.is_current(&inputs, &state, range));
         let Some(Ok(SizingOutcome::Solved(point))) = runner.outcome(state.variable) else {
             panic!("2.5 N·m is reachable at a 1.5 mm gap")
         };
@@ -386,7 +415,7 @@ mod tests {
             "this design's solution"
         );
         // Nothing is left pending: the next frame does not solve again.
-        assert_eq!(runner.update(&inputs, &state, 1.2, false), None);
+        assert_eq!(runner.update(&inputs, &state, range, 1.2, false), None);
         assert_eq!(runner.solves, 2);
     }
 
@@ -394,37 +423,39 @@ mod tests {
     fn the_free_variable_s_own_value_does_not_trigger_a_solve() {
         // The solve sets the free variable, so its value in the inputs is not part of the key.
         let mut inputs = DesignInputs::default();
-        let state = inverse(FreeVariable::AxialLength, 2.5);
+        let state = inverse(FreeVariable::AxialLength);
+        let range = state.variable.range();
         let mut runner = SizingRunner::default();
-        runner.update(&inputs, &state, 0.0, false);
-        runner.update(&inputs, &state, 1.0, false);
+        runner.update(&inputs, &state, range, 0.0, false);
+        runner.update(&inputs, &state, range, 1.0, false);
         inputs.coupling.magnets.axial_length_mm = Some(30.0);
-        assert!(runner.is_current(&inputs, &state));
-        assert_eq!(runner.update(&inputs, &state, 2.0, false), None);
+        assert!(runner.is_current(&inputs, &state, range));
+        assert_eq!(runner.update(&inputs, &state, range, 2.0, false), None);
         assert_eq!(runner.solves, 1);
     }
 
-    /// The runner after a solve of `state` at the defaults.
-    fn solved(state: &SizingState) -> SizingRunner {
+    /// The runner after a solve of `state` at `inputs`, over the free variable's slider range.
+    fn solved(inputs: &DesignInputs, state: &SizingState) -> SizingRunner {
+        let range = state.variable.range();
         let mut runner = SizingRunner::default();
-        let inputs = DesignInputs::default();
-        runner.update(&inputs, state, 0.0, false);
-        runner.update(&inputs, state, 1.0, false);
+        runner.update(inputs, state, range, 0.0, false);
+        runner.update(inputs, state, range, 1.0, false);
         runner
     }
 
     #[test]
     fn a_solved_design_shows_the_solved_value() {
-        let state = inverse(FreeVariable::AxialLength, 2.5);
-        let runner = solved(&state);
+        let state = inverse(FreeVariable::AxialLength);
+        let range = state.variable.range();
         let inputs = DesignInputs::default();
+        let runner = solved(&inputs, &state);
         let Some(Ok(SizingOutcome::Solved(point))) = runner.outcome(state.variable) else {
             panic!("2.5 N·m is reachable by the axial length")
         };
         assert_eq!(runner.value(state.variable), Some(point.value));
-        assert_eq!(runner.shown(&inputs, &state), point.inputs);
+        assert_eq!(runner.shown(&inputs, &state, range), point.inputs);
         assert_eq!(
-            runner.status(&inputs, &state),
+            runner.status(&inputs, &state, range),
             format!(
                 "Solved at {} mm (hot-low torque 2.500 N·m)",
                 format_value(&Value::Num(point.value))
@@ -435,73 +466,186 @@ mod tests {
     }
 
     #[test]
-    fn an_unreachable_target_shows_the_best_value() {
-        let state = inverse(FreeVariable::AxialLength, 50.0);
-        let runner = solved(&state);
+    fn the_target_is_the_requirement() {
+        // Decision G-2: the runner solves for metal.required_min_Nm, and an edit of it is a
+        // change of the design: the last solve is stale until the next one runs.
+        let state = inverse(FreeVariable::AxialLength);
+        let range = state.variable.range();
+        let inputs = requiring(3.0);
+        let mut runner = solved(&inputs, &state);
+        assert_eq!(
+            runner.outcome(state.variable),
+            Some(&solve(&inputs, state.variable, 3.0))
+        );
+        let Some(Ok(SizingOutcome::Solved(point))) = runner.outcome(state.variable) else {
+            panic!("3.0 N·m is reachable by the axial length")
+        };
+        assert!((point.torque_hot_low_Nm - 3.0).abs() < 1e-6);
+        let raised = requiring(3.5);
+        assert!(!runner.is_current(&raised, &state, range));
+        assert_eq!(runner.status(&raised, &state, range), SOLVING);
+        assert_eq!(
+            runner.update(&raised, &state, range, 2.0, false),
+            Some(DEBOUNCE_S)
+        );
+        assert_eq!(runner.update(&raised, &state, range, 3.0, false), None);
+        assert_eq!(runner.solves, 2);
+        assert_eq!(
+            runner.outcome(state.variable),
+            Some(&solve(&raised, state.variable, 3.5))
+        );
+    }
+
+    #[test]
+    fn the_search_range_is_part_of_the_key() {
+        // The panel passes the range to search (the ring size's follows the Size tab's
+        // diameter range, Task 7): another range is another solve, over that range.
         let inputs = DesignInputs::default();
+        let state = inverse(FreeVariable::AxialLength);
+        let full = state.variable.range();
+        let mut runner = solved(&inputs, &state);
+        let narrow = SliderRange {
+            min: 20.0,
+            max: 30.0,
+            ..full
+        };
+        assert!(runner.is_current(&inputs, &state, full));
+        assert!(!runner.is_current(&inputs, &state, narrow));
+        assert_eq!(runner.status(&inputs, &state, narrow), SOLVING);
+        assert_eq!(
+            runner.update(&inputs, &state, narrow, 2.0, false),
+            Some(DEBOUNCE_S)
+        );
+        runner.solve_now(&inputs, &state, narrow);
+        assert_eq!(runner.solves, 2);
+        assert!(runner.is_current(&inputs, &state, narrow));
+        assert_eq!(
+            runner.outcome(state.variable),
+            Some(&solve_in(
+                &inputs,
+                state.variable,
+                inputs.metal.required_min_Nm,
+                narrow
+            ))
+        );
+        // 2.5 N·m needs less than 20 mm: the narrow range's smallest value meets it.
+        assert_eq!(runner.value(state.variable), Some(20.0));
+    }
+
+    #[test]
+    fn a_value_outside_the_search_range_is_not_shown() {
+        // A value from an earlier search outside the range asked for now (a raised minimum OD
+        // moves the ring size's range past it) is not shown: the inputs show as they are until
+        // the new search runs. Its bounds count as inside.
+        let inputs = DesignInputs::default();
+        let state = inverse(FreeVariable::AxialLength);
+        let full = state.variable.range();
+        let runner = solved(&inputs, &state);
+        let value = runner.value(state.variable).expect("solved");
+        let sized = state.variable.apply(&inputs, value);
+        assert_eq!(runner.shown(&inputs, &state, full), sized);
+        let above = SliderRange {
+            min: value + 1.0,
+            ..full
+        };
+        assert_eq!(runner.shown(&inputs, &state, above), inputs);
+        let below = SliderRange {
+            max: value - 1.0,
+            ..full
+        };
+        assert_eq!(runner.shown(&inputs, &state, below), inputs);
+        let exact = SliderRange {
+            min: value,
+            max: value,
+            ..full
+        };
+        assert_eq!(runner.shown(&inputs, &state, exact), sized);
+    }
+
+    #[test]
+    fn an_empty_or_nan_search_range_is_refused_once() {
+        // The engine refuses an empty range (Task 2). A NaN bound still equals itself in the
+        // key: one refused solve, not a wait restarted every frame.
+        let inputs = DesignInputs::default();
+        let state = inverse(FreeVariable::RingRadius);
+        let full = state.variable.range();
+        for range in [
+            SliderRange {
+                min: 12.0,
+                max: 11.0,
+                ..full
+            },
+            SliderRange {
+                min: f64::NAN,
+                ..full
+            },
+        ] {
+            let mut runner = SizingRunner::default();
+            runner.update(&inputs, &state, range, 0.0, false);
+            assert_eq!(runner.update(&inputs, &state, range, 1.0, false), None);
+            assert_eq!(runner.solves, 1);
+            for frame in 0..5 {
+                assert_eq!(
+                    runner.update(&inputs, &state, range, 2.0 + frame as f64, false),
+                    None
+                );
+            }
+            assert_eq!(runner.solves, 1, "{range:?}: refused once, not re-awaited");
+            let status = runner.status(&inputs, &state, range);
+            assert_eq!(status, "Sizing refused: the search range is empty");
+            assert!(status.is_ascii(), "every glyph is in egui's default fonts");
+            assert_eq!(runner.shown(&inputs, &state, range), inputs);
+        }
+    }
+
+    #[test]
+    fn an_unreachable_target_shows_the_best_value() {
+        let state = inverse(FreeVariable::AxialLength);
+        let range = state.variable.range();
+        let inputs = requiring(50.0);
+        let runner = solved(&inputs, &state);
         assert_eq!(runner.value(state.variable), Some(50.8));
         assert_eq!(
             runner
-                .shown(&inputs, &state)
+                .shown(&inputs, &state, range)
                 .coupling
                 .magnets
                 .axial_length_mm,
             Some(50.8)
         );
         assert_eq!(
-            runner.status(&inputs, &state),
+            runner.status(&inputs, &state, range),
             "Not reachable (best 9.937 N·m at 50.80 mm)"
         );
-        let poles = inverse(FreeVariable::MagnetsPerRing, 2.5);
+        let poles = inverse(FreeVariable::MagnetsPerRing);
+        let defaults = DesignInputs::default();
         assert_eq!(
-            solved(&poles).status(&inputs, &poles),
+            solved(&defaults, &poles).status(&defaults, &poles, poles.variable.range()),
             "Not reachable (best 2.285 N·m at 10)"
         );
     }
 
     #[test]
     fn a_refused_solve_shows_why_and_keeps_the_inputs() {
-        let state = inverse(FreeVariable::RingRadius, -1.0);
-        let runner = solved(&state);
-        let inputs = DesignInputs::default();
-        assert_eq!(runner.value(state.variable), None);
-        assert_eq!(runner.shown(&inputs, &state), inputs);
-        assert_eq!(
-            runner.status(&inputs, &state),
-            "Sizing refused: the target -1.000 N·m is not a positive torque"
-        );
+        // The requirement is the target: one that is not a positive torque (a file can hold
+        // it; the slider cannot reach it) refuses the solve (spec 5), in plain words.
+        let state = inverse(FreeVariable::RingRadius);
+        let range = state.variable.range();
+        for required in [-1.0, 0.0] {
+            let inputs = requiring(required);
+            let runner = solved(&inputs, &state);
+            assert_eq!(runner.value(state.variable), None);
+            assert_eq!(runner.shown(&inputs, &state, range), inputs);
+            let status = runner.status(&inputs, &state, range);
+            assert_eq!(status, REQUIREMENT_NOT_POSITIVE, "requirement {required}");
+            assert!(status.is_ascii(), "every glyph is in egui's default fonts");
+        }
         let mut bad = DesignInputs::default();
         bad.coupling.backiron = 7;
-        let state = inverse(FreeVariable::RingRadius, 2.5);
-        let mut runner = SizingRunner::default();
-        runner.update(&bad, &state, 0.0, false);
-        runner.update(&bad, &state, 1.0, false);
+        let runner = solved(&bad, &state);
         assert_eq!(
-            runner.status(&bad, &state),
+            runner.status(&bad, &state, range),
             "Sizing refused: invalid inputs (coupling.backiron)"
         );
-    }
-
-    #[test]
-    fn a_refused_search_range_shows_why_and_keeps_the_inputs() {
-        // The runner passes no range of its own yet (the Size tab's ring-size Auto will), so
-        // the refusal is put in as the last outcome directly.
-        let inputs = DesignInputs::default();
-        let state = inverse(FreeVariable::RingRadius, 2.5);
-        let runner = SizingRunner {
-            last: Some((
-                SolveKey::new(&inputs, &state),
-                Err(SizingError::InvalidRange {
-                    min: 30.0,
-                    max: 9.0,
-                }),
-            )),
-            ..SizingRunner::default()
-        };
-        assert_eq!(runner.value(state.variable), None);
-        assert_eq!(runner.shown(&inputs, &state), inputs);
-        let status = runner.status(&inputs, &state);
-        assert_eq!(status, "Sizing refused: the search range is empty");
-        assert!(status.is_ascii(), "every glyph is in egui's default fonts");
     }
 }

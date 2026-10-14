@@ -20,6 +20,13 @@
 //! wrote it). `sizing` is the sizing state (decision M41-4); a file without it is in the
 //! forward mode.
 //!
+//! `sizing.target_torque_Nm` is the requirement, the input `metal.required_min_Nm` (decision
+//! G-2: one torque number). A file writes it equal to the requirement. It leaves the key out
+//! when the requirement is not a positive torque, which every reader refuses as a target, so
+//! such a design still round-trips. A reader checks the key as before, then uses the
+//! requirement. When the two differ (a file written before G-2), the load says so
+//! ([`target_mismatch_notice`], in [`LoadedDesign::notice`]).
+//!
 //! A share link carries the same JSON, compact, deflated and URL-safe base64 encoded: the
 //! linkage tool's `?m=` scheme (`linkage-sim-rs/src/gui/state/file_io.rs`).
 //!
@@ -127,6 +134,27 @@ impl fmt::Display for LoadError {
 
 impl std::error::Error for LoadError {}
 
+/// A design read from a file or a share link, and what the reader resolved on the way.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LoadedDesign {
+    pub design: Design,
+    /// [`target_mismatch_notice`] when the file's sizing target differed from its requirement
+    /// (the requirement is used); `None` otherwise.
+    pub notice: Option<String>,
+}
+
+/// What a load says when a file's sizing target (`sizing.target_torque_Nm`) differs from its
+/// requirement (`metal.required_min_Nm`), decision G-2. The numbers are the file's in full
+/// (shortest round-trip form), not rounded for display: two values that differ below the
+/// panel's four significant digits would otherwise read the same.
+#[allow(non_snake_case)] // unit suffix
+pub fn target_mismatch_notice(target_Nm: f64, requirement_Nm: f64) -> String {
+    format!(
+        "This file's sizing target ({target_Nm} N·m) differed from its requirement \
+         ({requirement_Nm} N·m); the requirement is used."
+    )
+}
+
 /// A number as JSON. JSON has no infinity or NaN (serde_json would write `null`, which reads
 /// back as "not entered"), so a non-finite number is the string `"+inf"`, `"-inf"` or `"NaN"`,
 /// the panel's display text (decision M41-15). The results export uses it too.
@@ -162,7 +190,13 @@ pub(crate) fn design_json(design: &Design) -> Json {
         "free_variable".to_owned(),
         Json::from(variable_key(sizing.variable)),
     );
-    sizing_json.insert("target_torque_Nm".to_owned(), json_number(sizing.target_Nm));
+    // Decision G-2: the target is the requirement. The key stays (version 1 readers check
+    // it); a requirement that is not a positive torque is left out, since every reader refuses
+    // it as a target, so its design still round-trips.
+    let requirement = design.inputs.metal.required_min_Nm;
+    if requirement.is_finite() && requirement > 0.0 {
+        sizing_json.insert("target_torque_Nm".to_owned(), json_number(requirement));
+    }
     let mut top = Map::new();
     top.insert("format".to_owned(), Json::from(DESIGN_FORMAT));
     top.insert("version".to_owned(), Json::from(DESIGN_VERSION));
@@ -262,12 +296,14 @@ fn inputs_from(
     }
 }
 
-/// The sizing state a file's `sizing` object gives; or every problem.
-fn sizing_from(json: &Json) -> Result<SizingState, Vec<String>> {
+/// The sizing state a file's `sizing` object gives, and the target torque it names, if any; or
+/// every problem.
+fn sizing_from(json: &Json) -> Result<(SizingState, Option<f64>), Vec<String>> {
     let Json::Object(map) = json else {
         return Err(vec!["\"sizing\" is not an object".to_owned()]);
     };
     let mut state = SizingState::default();
+    let mut target = None;
     let mut problems = Vec::new();
     for (key, value) in map {
         match (key.as_str(), value) {
@@ -280,21 +316,22 @@ fn sizing_from(json: &Json) -> Result<SizingState, Vec<String>> {
                 None => problems.push(format!("unknown free variable {name:?}")),
             },
             ("target_torque_Nm", Json::Number(n)) => match n.as_f64() {
-                Some(target) if target.is_finite() && target > 0.0 => state.target_Nm = target,
+                Some(torque) if torque.is_finite() && torque > 0.0 => target = Some(torque),
                 _ => problems.push(format!("target torque {n} is not a positive number")),
             },
             (key, value) => problems.push(format!("unexpected {key:?}: {value}")),
         }
     }
     if problems.is_empty() {
-        Ok(state)
+        Ok((state, target))
     } else {
         Err(problems)
     }
 }
 
-/// Reads a design file (the module docs give the format and the rules).
-pub fn design_from_json(text: &str) -> Result<Design, LoadError> {
+/// Reads a design file (the module docs give the format and the rules): the design, and the
+/// notice of a sizing target that differed from the requirement.
+pub fn read_design_json(text: &str) -> Result<LoadedDesign, LoadError> {
     let json: Json =
         serde_json::from_str(text).map_err(|error| LoadError::NotJson(error.to_string()))?;
     let Json::Object(top) = &json else {
@@ -327,15 +364,31 @@ pub fn design_from_json(text: &str) -> Result<Design, LoadError> {
     };
     let sizing = match top.get("sizing") {
         Some(json) => sizing_from(json),
-        None => Ok(SizingState::default()),
+        None => Ok((SizingState::default(), None)),
     };
     match (inputs, sizing) {
-        (Ok(inputs), Ok(sizing)) => Ok(Design { inputs, sizing }),
+        (Ok(inputs), Ok((sizing, target))) => {
+            // Decision G-2: the requirement is the target; a file that says otherwise was
+            // written before, and loads with the requirement and a notice.
+            let requirement = inputs.metal.required_min_Nm;
+            let notice = target
+                .filter(|&target| target != requirement)
+                .map(|target| target_mismatch_notice(target, requirement));
+            Ok(LoadedDesign {
+                design: Design { inputs, sizing },
+                notice,
+            })
+        }
         (inputs, sizing) => Err(LoadError::Refused {
             inputs: inputs.err().unwrap_or_default(),
             sizing: sizing.err().unwrap_or_default(),
         }),
     }
+}
+
+/// Reads a design file: [`read_design_json`]'s design alone.
+pub fn design_from_json(text: &str) -> Result<Design, LoadError> {
+    read_design_json(text).map(|loaded| loaded.design)
 }
 
 /// URL-safe base64 that writes no padding and reads it either way (a link pasted with `=`
@@ -349,17 +402,23 @@ const LINK_BASE64: GeneralPurpose = GeneralPurpose::new(
 
 /// The `?m=` value of a share link: the compact design JSON, deflated, URL-safe base64.
 pub fn encode_share_payload(design: &Design) -> String {
-    let json = design_json(design).to_string();
+    encode_share_text(&design_json(design).to_string())
+}
+
+/// The `?m=` value that holds `text` (a design file's text): deflated, URL-safe base64.
+/// [`read_share_payload`] reads it back as [`read_design_json`] reads the text.
+pub(crate) fn encode_share_text(text: &str) -> String {
     let mut encoder = DeflateEncoder::new(Vec::new(), Compression::best());
     encoder
-        .write_all(json.as_bytes())
+        .write_all(text.as_bytes())
         .expect("writing to a Vec cannot fail");
     let compressed = encoder.finish().expect("finishing into a Vec cannot fail");
     LINK_BASE64.encode(compressed)
 }
 
-/// The design a `?m=` value holds (surrounding whitespace ignored).
-pub fn decode_share_payload(payload: &str) -> Result<Design, LoadError> {
+/// The design a `?m=` value holds (surrounding whitespace ignored), with
+/// [`read_design_json`]'s notice.
+pub fn read_share_payload(payload: &str) -> Result<LoadedDesign, LoadError> {
     let bytes = LINK_BASE64
         .decode(payload.trim())
         .map_err(|error| LoadError::Link(format!("not URL-safe base64 ({error})")))?;
@@ -373,7 +432,12 @@ pub fn decode_share_payload(payload: &str) -> Result<Design, LoadError> {
             "it inflates past {MAX_DESIGN_BYTES} bytes"
         )));
     }
-    design_from_json(&text)
+    read_design_json(&text)
+}
+
+/// The design a `?m=` value holds: [`read_share_payload`]'s design alone.
+pub fn decode_share_payload(payload: &str) -> Result<Design, LoadError> {
+    read_share_payload(payload).map(|loaded| loaded.design)
 }
 
 /// A share link: `base` (the page's address, e.g. [`PUBLIC_BASE_URL`]) with the `?m=` payload.
@@ -386,7 +450,8 @@ mod tests {
     use super::*;
     use crate::engine::sizing::FreeVariable;
 
-    /// A design with a value of every input type changed, and a non-default sizing state.
+    /// A design with a value of every input type changed, a non-default sizing state and a
+    /// non-default requirement (the sizing target, decision G-2).
     fn edited() -> Design {
         let mut inputs = DesignInputs::default();
         inputs.metal.face_gap_mm = 1.41; // f64
@@ -397,12 +462,12 @@ mod tests {
         inputs.metal.measured_drag_Nm = Some(0.0123);
         inputs.temperature.slip_loss.cap_integral_T2m4 = 5.27e-10; // tiny
         inputs.metal.life_events = 2.5e7; // large
+        inputs.metal.required_min_Nm = 3.25; // the sizing target
         Design {
             inputs,
             sizing: SizingState {
                 mode: SizingMode::TorqueToMagnets,
                 variable: FreeVariable::RingRadius,
-                target_Nm: 3.25,
             },
         }
     }
@@ -817,5 +882,99 @@ mod tests {
             refused(&["a: x"], &["m", "n"]),
             "inputs refused: a: x; sizing state refused: m; n"
         );
+    }
+
+    #[test]
+    fn the_sizing_target_a_file_writes_is_its_requirement() {
+        // Decision G-2: one torque number. The schema keeps "target_torque_Nm" (version 1
+        // readers check it), equal to the requirement, and the version stays 1.
+        assert_eq!(DESIGN_VERSION, 1, "decision G-2 keeps the format");
+        let json: Json = serde_json::from_str(&design_to_json(&edited())).unwrap();
+        assert_eq!(json["inputs"]["metal.required_min_Nm"], 3.25);
+        assert_eq!(json["sizing"]["target_torque_Nm"], 3.25);
+        // A requirement that is not a positive torque is no valid target: left out, so the
+        // design still round-trips (file and link), with no notice.
+        for requirement in [0.0, -1.5] {
+            let mut design = edited();
+            design.inputs.metal.required_min_Nm = requirement;
+            let text = design_to_json(&design);
+            let json: Json = serde_json::from_str(&text).unwrap();
+            assert!(json["sizing"].get("target_torque_Nm").is_none(), "{text}");
+            let want = LoadedDesign {
+                design: design.clone(),
+                notice: None,
+            };
+            assert_eq!(read_design_json(&text), Ok(want.clone()));
+            assert_eq!(read_share_payload(&encode_share_payload(&design)), Ok(want));
+        }
+    }
+
+    #[test]
+    fn a_saved_design_reloads_exactly_with_no_notice() {
+        for design in [Design::default(), edited()] {
+            let want = LoadedDesign {
+                design: design.clone(),
+                notice: None,
+            };
+            assert_eq!(read_design_json(&design_to_json(&design)), Ok(want.clone()));
+            assert_eq!(read_share_payload(&encode_share_payload(&design)), Ok(want));
+        }
+    }
+
+    #[test]
+    fn a_target_that_differs_from_the_requirement_loads_the_requirement_with_a_notice() {
+        // A file written before decision G-2: its sizing target was its own number.
+        let text = r#"{"format": "magcoupling-design", "version": 1,
+            "inputs": {"metal.required_min_Nm": 2.5},
+            "sizing": {"mode": "torque_to_magnets", "target_torque_Nm": 3.25}}"#;
+        let mut want = Design::default();
+        want.sizing.mode = SizingMode::TorqueToMagnets;
+        let loaded = read_design_json(text).unwrap();
+        assert_eq!(loaded.design, want, "the requirement is used");
+        assert_eq!(loaded.notice, Some(target_mismatch_notice(3.25, 2.5)));
+        assert_eq!(
+            target_mismatch_notice(3.25, 2.5),
+            "This file's sizing target (3.25 N·m) differed from its requirement (2.5 N·m); \
+             the requirement is used."
+        );
+        // The same text in a share link; the design-only readers give the design alone.
+        let payload = encode_share_text(text);
+        assert_eq!(read_share_payload(&payload), Ok(loaded));
+        assert_eq!(design_from_json(text), Ok(want.clone()));
+        assert_eq!(decode_share_payload(&payload), Ok(want));
+        // A file without the requirement path has the default requirement, compared the same.
+        let text =
+            r#"{"format": "magcoupling-design", "version": 1, "sizing": {"target_torque_Nm": 3}}"#;
+        assert_eq!(
+            read_design_json(text).unwrap().notice,
+            Some(target_mismatch_notice(3.0, 2.5))
+        );
+        // A difference below the display's four digits is named in full, not as two equal
+        // numbers.
+        let text = r#"{"format": "magcoupling-design", "version": 1, "sizing": {"target_torque_Nm": 2.50001}}"#;
+        assert_eq!(
+            read_design_json(text).unwrap().notice.as_deref(),
+            Some(
+                "This file's sizing target (2.50001 N·m) differed from its requirement \
+                 (2.5 N·m); the requirement is used."
+            )
+        );
+        // An equal target, or none: no notice.
+        for sizing in [
+            r#"{"target_torque_Nm": 2.5}"#,
+            r#"{"mode": "torque_to_magnets"}"#,
+            "{}",
+        ] {
+            let text =
+                format!(r#"{{"format": "magcoupling-design", "version": 1, "sizing": {sizing}}}"#);
+            assert_eq!(read_design_json(&text).unwrap().notice, None, "{sizing}");
+        }
+        // A malformed target is still refused, before any comparison (validated as before).
+        let text =
+            r#"{"format": "magcoupling-design", "version": 1, "sizing": {"target_torque_Nm": 0}}"#;
+        assert!(matches!(
+            read_design_json(text),
+            Err(LoadError::Refused { .. })
+        ));
     }
 }

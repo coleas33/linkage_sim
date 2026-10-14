@@ -36,7 +36,7 @@ use crate::gui::results_table::{
     Line, RUST_ONLY, ResultOrder, TableEntry, entry_level, exact_number, table_entries,
     table_lines, worst_level,
 };
-use crate::gui::sizing::{SizingMode, SizingState, TARGET_RANGE_INPUT, variable_label};
+use crate::gui::sizing::{REQUIREMENT_INPUT, SizingMode, SizingState, variable_label};
 use crate::{DesignInputs, DesignResults};
 
 /// The sheets' names, in order (decision X-2).
@@ -313,15 +313,16 @@ fn summary_sheet(snapshot: &Snapshot) -> Sheet {
     ];
     if sizing.mode == SizingMode::TorqueToMagnets {
         let target_unit = InputCatalogue::get()
-            .entry(TARGET_RANGE_INPUT)
+            .entry(REQUIREMENT_INPUT)
             .map_or("", |entry| entry.meta.unit);
         rows.push(vec![
             Cell::text(FREE_VARIABLE_LABEL),
             Cell::text(variable_label(sizing.variable)),
         ]);
+        // The target is the requirement (decision G-2).
         rows.push(vec![
             Cell::text(TARGET_LABEL),
-            value_cell(&Value::Num(sizing.target_Nm)),
+            value_cell(&Value::Num(snapshot.inputs.metal.required_min_Nm)),
             Cell::text(target_unit),
         ]);
         if let Some(status) = &snapshot.sizing_status {
@@ -1178,12 +1179,12 @@ mod tests {
         // The design shown: the solved axial length in the override.
         let mut inputs = DesignInputs::default();
         inputs.coupling.magnets.axial_length_mm = Some(14.2);
+        inputs.metal.required_min_Nm = 3.25; // the sizing target (decision G-2)
         let results = compute_all(&inputs);
         let mut shot = snapshot(&inputs, &results);
         shot.sizing = SizingState {
             mode: SizingMode::TorqueToMagnets,
             variable: FreeVariable::AxialLength,
-            target_Nm: 2.5,
         };
         shot.sizing_status = Some("Solved: 14.2 mm".to_owned());
         let book = sheets(&shot);
@@ -1196,7 +1197,7 @@ mod tests {
             row(FREE_VARIABLE_LABEL)[1],
             Cell::text(variable_label(FreeVariable::AxialLength))
         );
-        assert_eq!(row(TARGET_LABEL)[1], Cell::number(2.5));
+        assert_eq!(row(TARGET_LABEL)[1], Cell::number(3.25));
         assert_eq!(row(TARGET_LABEL)[2], Cell::text("N·m"));
         assert_eq!(row(SIZING_OUTCOME)[1], Cell::text("Solved: 14.2 mm"));
         // The free variable's row: the value shown, noted; no other row carries the note.

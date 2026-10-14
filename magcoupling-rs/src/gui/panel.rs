@@ -22,10 +22,11 @@
 //! Sizing (spec Addendum A1): the mode switch tops the Key design group. In Torque → Magnets
 //! the panel shows the design with the free variable at the solved value
 //! ([`crate::gui::sizing::SizingRunner`], debounced, never per frame), and the free variable's
-//! row shows that value, locked.
+//! row shows that value, locked. The target is the requirement (decision G-2): its own input
+//! row under the free-variable picker.
 
 use crate::engine::assumptions::{self, ASSUMPTIONS};
-use crate::engine::meta::{InputSet, ResultSet, Value};
+use crate::engine::meta::{InputSet, ResultSet, SliderRange, Value};
 use crate::engine::sizing::FreeVariable;
 use crate::gui::clamp_drawing::clamp_ui;
 use crate::gui::dashboard::{Level, dashboard_ui, end_effect_banner};
@@ -33,7 +34,7 @@ use crate::gui::explorer::{EQUATION_PANEL, Explorer, FOCUS_WIDTH, explorer_ui, p
 use crate::gui::format::{format_value, search_needle, with_unit};
 use crate::gui::geometry_view::geometry_ui;
 use crate::gui::history::History;
-use crate::gui::input_ui::{CHANGED_DOT, RowEdit, input_row, slider};
+use crate::gui::input_ui::{CHANGED_DOT, RowEdit, input_row};
 use crate::gui::inputs::{
     ADVANCED_HEADING, FILTER_HINT, InputCatalogue, InputEntry, InputGroup, InputOrder,
     InputSection, KEY_DESIGN, filter_inputs, optional_seed,
@@ -44,11 +45,11 @@ use crate::gui::results_table::{
     CSV_FILE_NAME, JSON_FILE_NAME, ResultsTable, TableAction, results_csv, results_json,
 };
 use crate::gui::session::{
-    Design, LoadError, PUBLIC_BASE_URL, decode_share_payload, design_from_json, design_to_json,
-    share_link,
+    Design, LoadError, LoadedDesign, PUBLIC_BASE_URL, design_to_json, read_design_json,
+    read_share_payload, share_link,
 };
 use crate::gui::sizing::{
-    SOLVED_PREFIX, SOLVING, SizingMode, SizingRunner, SizingState, TARGET_RANGE_INPUT,
+    REQUIREMENT_INPUT, SOLVED_PREFIX, SOLVING, SizingMode, SizingRunner, SizingState,
     variable_label,
 };
 use crate::gui::spreadsheet::Snapshot;
@@ -92,7 +93,8 @@ pub const REDO_SHORTCUTS: [egui::KeyboardShortcut; 2] = [
 /// The heading of the Key design group.
 pub const KEY_DESIGN_HEADING: &str = "Key design";
 
-/// The label of the target torque slider (Torque → Magnets).
+/// The label of the sizing target in the spreadsheet's Summary (Torque → Magnets): the
+/// requirement's value (decision G-2; the panel shows the requirement's own row).
 pub const TARGET_LABEL: &str = "Target hot-low torque";
 
 /// The label of the free-variable picker.
@@ -216,7 +218,7 @@ impl CentreView {
 /// [`MagcouplingPanel::ui`] once per frame.
 pub struct MagcouplingPanel {
     inputs: DesignInputs,
-    /// The sizing mode, free variable and target torque.
+    /// The sizing mode and free variable (the target is the requirement input, decision G-2).
     sizing: SizingState,
     /// Runs inverse sizing in Torque → Magnets.
     runner: SizingRunner,
@@ -330,13 +332,21 @@ impl MagcouplingPanel {
     pub fn shown_inputs(&self) -> DesignInputs {
         match self.sizing.mode {
             SizingMode::MagnetsToTorque => self.inputs.clone(),
-            SizingMode::TorqueToMagnets => self.runner.shown(&self.inputs, &self.sizing),
+            SizingMode::TorqueToMagnets => {
+                self.runner
+                    .shown(&self.inputs, &self.sizing, self.sizing_range())
+            }
         }
     }
 
     /// The sizing state.
     pub fn sizing(&self) -> &SizingState {
         &self.sizing
+    }
+
+    /// The range inverse sizing searches: the free variable's slider range.
+    fn sizing_range(&self) -> SliderRange {
+        self.sizing.variable.range()
     }
 
     /// Sets the address share links point at: the page's own address on the web (so a link
@@ -352,14 +362,14 @@ impl MagcouplingPanel {
 
     /// Loads a design file's text; on refusal the design is unchanged and the panel shows why.
     pub fn load_design_file(&mut self, text: &str) -> Result<(), LoadError> {
-        self.load(design_from_json(text), "Design file loaded")
+        self.load(read_design_json(text), "Design file loaded")
     }
 
     /// Loads the design a share link's `?m=` value holds; on refusal the design is unchanged
     /// and the panel shows why.
     pub fn load_share_payload(&mut self, payload: &str) -> Result<(), LoadError> {
         self.load(
-            decode_share_payload(payload),
+            read_share_payload(payload),
             "Design loaded from the share link",
         )
     }
@@ -378,7 +388,7 @@ impl MagcouplingPanel {
     /// design and the history are unchanged and the panel shows why.
     pub fn open_share_payload(&mut self, payload: &str) -> Result<(), LoadError> {
         self.load_with(
-            decode_share_payload(payload),
+            read_share_payload(payload),
             "Design loaded from the share link",
             Self::open_design,
         )
@@ -393,23 +403,31 @@ impl MagcouplingPanel {
     }
 
     /// Applies a loaded design as an edit that can be undone.
-    fn load(&mut self, design: Result<Design, LoadError>, done: &str) -> Result<(), LoadError> {
-        self.load_with(design, done, Self::set_design)
+    fn load(
+        &mut self,
+        loaded: Result<LoadedDesign, LoadError>,
+        done: &str,
+    ) -> Result<(), LoadError> {
+        self.load_with(loaded, done, Self::set_design)
     }
 
-    /// Applies a loaded design with `apply` (an edit, or a new start) and says `done`; on
+    /// Applies a loaded design with `apply` (an edit, or a new start) and says `done`, then the
+    /// load's notice (a sizing target that differed from the requirement, decision G-2); on
     /// refusal changes nothing and shows why.
     fn load_with(
         &mut self,
-        design: Result<Design, LoadError>,
+        loaded: Result<LoadedDesign, LoadError>,
         done: &str,
         apply: fn(&mut Self, Design),
     ) -> Result<(), LoadError> {
-        match design {
-            Ok(design) => {
+        match loaded {
+            Ok(LoadedDesign { design, notice }) => {
                 apply(self, design);
                 self.minimum_diameter_mm = None;
-                self.status = Some(done.to_owned());
+                self.status = Some(match notice {
+                    Some(notice) => format!("{done}. {notice}"),
+                    None => done.to_owned(),
+                });
                 Ok(())
             }
             Err(error) => {
@@ -541,9 +559,10 @@ impl MagcouplingPanel {
         }
         let now = ui.input(|i| i.time);
         let solves = self.runner.solves;
-        if let Some(wait) = self
-            .runner
-            .update(&self.inputs, &self.sizing, now, self.editing(ui))
+        let range = self.sizing_range();
+        if let Some(wait) =
+            self.runner
+                .update(&self.inputs, &self.sizing, range, now, self.editing(ui))
         {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_secs_f64(wait));
@@ -560,7 +579,8 @@ impl MagcouplingPanel {
     fn log_sizing(&self) {
         log::info!(
             "{SIZING_LOG_PREFIX}{}",
-            self.runner.status(&self.inputs, &self.sizing)
+            self.runner
+                .status(&self.inputs, &self.sizing, self.sizing_range())
         );
     }
 
@@ -570,17 +590,19 @@ impl MagcouplingPanel {
             return;
         }
         if mode == SizingMode::MagnetsToTorque {
-            if !self.runner.is_current(&self.inputs, &self.sizing) {
-                self.runner.solve_now(&self.inputs, &self.sizing);
+            let range = self.sizing_range();
+            if !self.runner.is_current(&self.inputs, &self.sizing, range) {
+                self.runner.solve_now(&self.inputs, &self.sizing, range);
                 self.log_sizing();
             }
-            self.inputs = self.runner.shown(&self.inputs, &self.sizing);
+            self.inputs = self.runner.shown(&self.inputs, &self.sizing, range);
         }
         self.sizing.mode = mode;
     }
 
     /// The sizing controls at the top of the Key design group: the mode switch, then in
-    /// Torque → Magnets the free variable, the target torque and the outcome.
+    /// Torque → Magnets the free variable, the target (the requirement's own row) and the
+    /// outcome.
     fn sizing_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
         let mut mode = self.sizing.mode;
         ui.horizontal(|ui| {
@@ -603,23 +625,16 @@ impl MagcouplingPanel {
                     );
                 }
             });
+        // The target is the requirement (decision G-2): its own input row, an ordinary design
+        // edit (undo, files, links) like its row in the Metal design group.
         let entry = InputCatalogue::get()
-            .entry(TARGET_RANGE_INPUT)
-            .expect("the target's metadata input exists");
-        let range = entry.meta.range.expect("the hot minimum has a slider");
-        ui.horizontal(|ui| {
-            ui.label(TARGET_LABEL).on_hover_text(
-                "The hot-low torque with production variation (metal.torque_hot_low_Nm) the free variable must reach",
-            );
-            let mut target = self.sizing.target_Nm;
-            let response = ui.add(slider(&mut target, entry.meta, range));
-            // Its value box is a text field of the design, as an input row's is.
-            self.design_widgets.push(response.id);
-            if response.changed() && target != self.sizing.target_Nm {
-                self.sizing.target_Nm = target;
-            }
-        });
-        let status = self.runner.status(&self.inputs, &self.sizing);
+            .entry(REQUIREMENT_INPUT)
+            .expect("the requirement is an input");
+        let widget = self.input_row_ui(ui, entry, readouts);
+        self.design_widgets.push(widget);
+        let status = self
+            .runner
+            .status(&self.inputs, &self.sizing, self.sizing_range());
         let color = if status.starts_with(SOLVED_PREFIX) {
             Level::Good.color(ui.visuals())
         } else if status == SOLVING {
@@ -792,8 +807,10 @@ impl MagcouplingPanel {
             inputs: &shown,
             results: &self.results,
             sizing: self.sizing,
-            sizing_status: (self.sizing.mode == SizingMode::TorqueToMagnets)
-                .then(|| self.runner.status(&self.inputs, &self.sizing)),
+            sizing_status: (self.sizing.mode == SizingMode::TorqueToMagnets).then(|| {
+                self.runner
+                    .status(&self.inputs, &self.sizing, self.sizing_range())
+            }),
             input_order: self.input_order,
             share_link: self.share_link(),
             exported_unix_s: now_unix_s(),
@@ -1307,7 +1324,10 @@ mod tests {
     use crate::gui::dashboard::{END_EFFECT_BANNER, STORED_3D_LABEL, result_info};
     use crate::gui::format::{format_value, with_unit};
     use crate::gui::input_ui::{BLANK_TEXT, CHANGED_DOT, OUTSIDE_RANGE_NOTE, RESET_LABEL};
-    use crate::gui::session::encode_share_payload;
+    use crate::gui::session::{
+        decode_share_payload, design_from_json, encode_share_payload, encode_share_text,
+        target_mismatch_notice,
+    };
     use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
         SCREEN, drawn_texts, key_event, key_tap, primary_button, select_all, short_magnets,
@@ -3357,7 +3377,7 @@ mod tests {
     fn a_loaded_design_file_replaces_the_design_and_can_be_undone() {
         let mut harness = Harness::new();
         let mut loaded = gap_design(2.5);
-        loaded.sizing.target_Nm = 3.0;
+        loaded.inputs.metal.required_min_Nm = 3.0;
         harness
             .panel
             .load_design_file(&design_to_json(&loaded))
@@ -3534,6 +3554,8 @@ mod tests {
             texts.push(crate::gui::trace::Trace::of(path).unwrap().banner());
         }
         texts.push(crate::gui::results_table::CLEAR_TO_CLOSE.to_owned());
+        // The load's notice of a sizing target that differed from the requirement (G-2).
+        texts.push(target_mismatch_notice(3.25, 2.5));
         harness.panel.input_filter = "a".to_owned();
         texts.extend(drawn_texts(&harness.frame(Vec::new())));
         harness.panel.input_filter.clear();
@@ -3914,13 +3936,15 @@ mod tests {
         // when the user leaves before the debounce ran out ("Solving...").
         let mut harness = Harness::new();
         harness.size();
-        harness.panel.sizing.target_Nm = 3.0;
+        harness.panel.inputs.metal.required_min_Nm = 3.0;
         assert_eq!(count(&harness.frame(Vec::new()), SOLVING), 1);
         harness.click_text(SizingMode::MagnetsToTorque.label());
         assert_eq!(harness.panel.sizing().mode, SizingMode::MagnetsToTorque);
         assert_eq!(harness.panel.runner.solves, 2, "solved on leaving");
+        let mut required = DesignInputs::default();
+        required.metal.required_min_Nm = 3.0;
         let Ok(SizingOutcome::Solved(point)) =
-            crate::engine::sizing::solve(&DesignInputs::default(), FreeVariable::AxialLength, 3.0)
+            crate::engine::sizing::solve(&required, FreeVariable::AxialLength, 3.0)
         else {
             panic!("3.0 N·m is reachable by the axial length")
         };
@@ -3932,7 +3956,7 @@ mod tests {
     fn typing_in_the_results_search_does_not_defer_the_solve() {
         let mut harness = Harness::new();
         harness.size();
-        harness.panel.sizing.target_Nm = 3.0;
+        harness.panel.inputs.metal.required_min_Nm = 3.0;
         harness.click_text(CentreView::Results.label());
         harness.click_text(crate::gui::results_table::SEARCH_HINT);
         harness.frame(vec![egui::Event::Text("pull".to_owned())]);
@@ -3943,7 +3967,7 @@ mod tests {
         );
         assert_eq!(harness.panel.runner.solves, 2, "the search edits no design");
         // A text field of the design does defer it.
-        harness.panel.sizing.target_Nm = 3.5;
+        harness.panel.inputs.metal.required_min_Nm = 3.5;
         harness.focus(PART_INNER);
         harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
         assert_eq!(
@@ -3996,7 +4020,7 @@ mod tests {
     fn an_unreachable_target_shows_the_best_value_and_its_overshoot() {
         let mut harness = Harness::new();
         harness.size();
-        harness.panel.sizing.target_Nm = 50.0;
+        harness.panel.inputs.metal.required_min_Nm = 50.0;
         harness.frame(Vec::new());
         harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
         harness.frame(Vec::new());
@@ -4063,7 +4087,7 @@ mod tests {
     fn a_share_link_carries_the_sizing_state() {
         let mut harness = Harness::new();
         harness.size();
-        harness.panel.sizing.target_Nm = 3.0;
+        harness.panel.inputs.metal.required_min_Nm = 3.0;
         let link = harness.panel.share_link();
         let payload = link.split("?m=").nth(1).unwrap();
         let mut other = Harness::new();
@@ -4075,6 +4099,134 @@ mod tests {
         harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
         assert_eq!(other.panel.shown_inputs(), harness.panel.shown_inputs());
         assert_eq!(other.panel.results(), harness.panel.results());
+    }
+
+    #[test]
+    fn the_sizing_target_is_the_requirement_s_row_and_one_undo_restores_it() {
+        // Decision G-2: one torque number. In Torque -> Magnets the target is the requirement's
+        // own input row (metal.required_min_Nm): an ordinary design edit that the solve meets,
+        // that a share link carries and that one undo restores.
+        let mut harness = Harness::new();
+        let output = harness.size();
+        let label = InputCatalogue::get()
+            .entry(REQUIREMENT_INPUT)
+            .unwrap()
+            .meta
+            .label;
+        assert_eq!(
+            count(&output, label),
+            1,
+            "the target row is the requirement's"
+        );
+        assert_eq!(count(&output, TARGET_LABEL), 0, "no second target control");
+        let steps = harness.panel.history.undo_len();
+        // The target row is the first row the Key design group draws.
+        let target = harness.panel.design_widgets[0];
+        harness.ctx.memory_mut(|m| m.request_focus(target));
+        harness.frame(Vec::new());
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.inputs().metal.required_min_Nm, 2.51);
+        assert_eq!(harness.panel.history.undo_len(), steps + 1, "one step");
+        // The solve meets the new requirement after its debounce.
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        assert!(harness.panel.runner.is_current(
+            harness.panel.inputs(),
+            harness.panel.sizing(),
+            FreeVariable::AxialLength.range()
+        ));
+        let point = harness.solved();
+        assert!((point.torque_hot_low_Nm - 2.51).abs() < 1e-6);
+        assert_eq!(point.inputs.metal.required_min_Nm, 2.51);
+        // A share link carries it: it is an input.
+        let link = harness.panel.share_link();
+        let payload = link.split("?m=").nth(1).unwrap();
+        assert_eq!(decode_share_payload(payload), Ok(harness.panel.design()));
+        let mut other = MagcouplingPanel::new();
+        other.load_share_payload(payload).unwrap();
+        assert_eq!(other.inputs().metal.required_min_Nm, 2.51);
+        // One undo restores it; the next solve meets it again.
+        harness.panel.undo();
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        assert_eq!(harness.panel.sizing().mode, SizingMode::TorqueToMagnets);
+        harness.frame(Vec::new());
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        assert!((harness.solved().torque_hot_low_Nm - 2.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_file_whose_sizing_target_differs_loads_its_requirement_and_says_so() {
+        // A file written before decision G-2: its Torque -> Magnets target (3.25) was its own
+        // number beside the requirement (2.5). The requirement is used, the solve meets it,
+        // and the header says so (a wrapping line).
+        let text = r#"{"format": "magcoupling-design", "version": 1,
+            "inputs": {"metal.required_min_Nm": 2.5},
+            "sizing": {"mode": "torque_to_magnets", "target_torque_Nm": 3.25}}"#;
+        let notice = target_mismatch_notice(3.25, 2.5);
+        let mut harness = Harness::new();
+        harness.panel.load_design_file(text).unwrap();
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        let status = format!("Design file loaded. {notice}");
+        assert_eq!(count(&output, &status), 1);
+        let wrap = crate::gui::test_support::flat_shapes(&output)
+            .into_iter()
+            .find_map(|shape| match shape {
+                egui::Shape::Text(t) if t.galley.text() == status => {
+                    Some(t.galley.job.wrap.max_width)
+                }
+                _ => None,
+            });
+        assert!(wrap.is_some_and(f32::is_finite), "the line wraps: {wrap:?}");
+        assert_eq!(harness.panel.sizing().mode, SizingMode::TorqueToMagnets);
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        assert!((harness.solved().torque_hot_low_Nm - 2.5).abs() < 1e-6);
+        // The same text as a share link, opened at start-up or loaded: the same notice.
+        let payload = encode_share_text(text);
+        for open in [true, false] {
+            let mut other = Harness::new();
+            if open {
+                other.panel.open_share_payload(&payload).unwrap();
+            } else {
+                other.panel.load_share_payload(&payload).unwrap();
+            }
+            other.frame(Vec::new());
+            let output = other.frame(Vec::new());
+            assert_eq!(
+                count(
+                    &output,
+                    &format!("Design loaded from the share link. {notice}")
+                ),
+                1,
+                "open: {open}"
+            );
+            assert_eq!(other.panel.design(), harness.panel.design());
+        }
+    }
+
+    #[test]
+    fn idle_frames_in_torque_to_magnets_keep_the_requirement_as_loaded() {
+        // A guard test: it passes before decision G-2 too, by design. The target row is the
+        // requirement's slider (SliderClamping::Edits, decision M41-2): idle frames keep a
+        // file's value as it is, off the 0.01 grid and past the slider's 10 N·m, and record no
+        // undo step.
+        let mut design = Design::default();
+        design.inputs.metal.required_min_Nm = 12.345;
+        design.sizing.mode = SizingMode::TorqueToMagnets;
+        let mut harness = Harness::new();
+        harness.panel.open_design(design.clone());
+        for _ in 0..3 {
+            harness.frame(Vec::new());
+        }
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        for _ in 0..5 {
+            harness.frame(Vec::new());
+        }
+        assert_eq!(harness.panel.design(), design);
+        assert_eq!(harness.panel.history.undo_len(), 0);
+        assert_eq!(harness.panel.last_error, None);
+        assert_eq!(harness.panel.runner.solves, 1, "solved once, then idle");
     }
 
     /// Shows tooltips at once (no delay, the pointer need not rest), as the geometry view's
