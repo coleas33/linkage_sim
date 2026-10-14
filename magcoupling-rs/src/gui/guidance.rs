@@ -11,28 +11,36 @@
 //! and inputs, each number as the readouts format it, and is `None` while the check passes.
 //!
 //! A fix is an input path and a direction ([`fixes`]): a slider input raised or lowered, or a
-//! choice or picker input changed. The temperature guide picks its fixes by the terms of its
-//! verdict that fail ([`Fixes::PerTerm`]); every other guide has one list. A fix whose slider
-//! is already at its end that way is left out. A fix's text takes the input's label from the
-//! [`InputCatalogue`], or the Size tab's name for it ([`fix_text`]), so no guide types a
-//! label. The tests hold the fixes to helping: on each test design that fails a check, every
-//! failing term of the check has a fix that moves it toward passing by one slider step or one
-//! choice, and no fix turns another check red.
+//! choice or picker input changed. The temperature and space-claim guides pick their fixes by
+//! the terms of their verdicts that fail ([`Fixes::PerTerm`]: each temperature limit, ring by
+//! ring; each axis of the claim); every other guide has one list. A fix is shown only where
+//! its move helps: one slider step, or one other choice of its input alone, that turns no
+//! passing guided check red; a fix picked per term must also raise that term's margin, while
+//! each fix of a static list raises its check over its whole slider (a test sweeps each). A
+//! failing check left without a fix says so ([`NO_FIX`]). Those checks compute the design each
+//! move reaches, so the panel asks through a [`FixCache`]. A fix's text takes the input's
+//! label from the [`InputCatalogue`], or the Size tab's name for it ([`fix_text`]), so no
+//! guide types a label. The tests hold the fixes to helping: on each test design that fails a
+//! check, every failing term of the check has a shown fix that moves it toward passing, and no
+//! shown fix turns another check red.
 //!
 //! The engine's verdict texts, the results table and the exports keep their wording (locked by
 //! `tests/python_schema.rs`): this is a GUI layer over them, in plain words
-//! ([`plain_text_violations`] lists what it must not say). Pure functions and data: no egui.
+//! ([`plain_text_violations`] lists what it must not say). No egui.
 
 use crate::engine::clamps::SCREW_SIZES;
-use crate::engine::meta::{InputSet, ResultSet, Value};
-use crate::engine::model::{blocks_fit, pitch_share};
+use crate::engine::grades::GRADES;
+use crate::engine::library::MAGNET_LIBRARY;
+use crate::engine::meta::{InputSet, NumOrText, ResultSet, SliderRange, Value};
+use crate::engine::model::{RingFit, blocks_fit, ring_fits};
+use crate::engine::size_controls::{dimensions, resize_diameter};
 use crate::engine::temperature::CURE_MARGIN_MIN_C;
 use crate::gui::dashboard::{DASHBOARD, Level, check_level, result_info};
 use crate::gui::format::{format_value, with_unit};
 use crate::gui::inputs::{InputCatalogue, optional_seed, section_label};
-use crate::gui::pickers::PART_PATHS;
+use crate::gui::pickers::{GRADE_PATHS, PART_PATHS};
 use crate::gui::size_controls;
-use crate::{DesignInputs, DesignResults};
+use crate::{DesignInputs, DesignResults, compute_all};
 
 /// Which way a fix moves its input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,7 +82,8 @@ pub enum Learn {
 pub enum Fixes {
     /// One list, whatever fails.
     Static(&'static [(&'static str, Direction)]),
-    /// A list built from the terms of the check's verdict that fail (the temperature guide).
+    /// A list built from the terms of the check's verdict that fail, each fix checked against
+    /// the term it serves (the temperature and space-claim guides).
     PerTerm(fn(&DesignInputs, &DesignResults) -> Vec<(&'static str, Direction)>),
 }
 
@@ -177,14 +186,55 @@ const SPACE_CLAIM_GUIDE: CheckGuide = CheckGuide {
     label: "Space claim",
     problem: space_claim_problem,
     why: "The coupling must fit the envelope reserved for it: its diameter, its overall length and the length of the large-diameter bay.",
-    // Which one helps depends on what sets the axis; the Problem names the axis.
-    fixes: Fixes::Static(&[
-        (MAGNET_LENGTH, Direction::Lower),
-        ("metal.cap_od_mm", Direction::Lower),
-        (RING, Direction::Lower),
-    ]),
+    fixes: Fixes::PerTerm(space_claim_fixes),
     learn: Learn::None("No note covers the space claim yet."),
 };
+
+/// The inputs that shrink each space-claim axis, in the claim's order (diameter, overall
+/// length, large-diameter bay): the larger of the cap and the cup sets the diameter, and the
+/// Outside diameter's slider moves both; the magnets lengthen both stacks.
+const SPACE_CLAIM_AXES: [&[(&str, Direction)]; 3] = [
+    &[
+        ("metal.cap_od_mm", Direction::Lower),
+        (RING, Direction::Lower),
+    ],
+    &[(MAGNET_LENGTH, Direction::Lower)],
+    &[(MAGNET_LENGTH, Direction::Lower)],
+];
+
+/// Each space-claim axis's reserve, in [`SPACE_CLAIM_AXES`]' order: the claim less the size,
+/// larger is better, below zero when the axis is over its claim.
+fn axis_reserves(results: &DesignResults) -> [f64; 3] {
+    let m = &results.metal;
+    [
+        m.diameter_reserve_mm,
+        m.axial_reserve_mm,
+        m.large_dia_reserve_mm,
+    ]
+}
+
+/// The space claim's fixes ([`Fixes::PerTerm`]): for each axis over its claim, each of its
+/// inputs whose step helps ([`helps`] against the axis's reserve), each input once. An axis
+/// whose size or claim is not a number shows none: its Problem asks for the number.
+fn space_claim_fixes(
+    inputs: &DesignInputs,
+    results: &DesignResults,
+) -> Vec<(&'static str, Direction)> {
+    let mut shown: Vec<(&'static str, Direction)> = Vec::new();
+    for (axis, axis_fixes) in SPACE_CLAIM_AXES.iter().enumerate() {
+        let over = axis_reserves(results)[axis] < 0.0;
+        if !over {
+            continue;
+        }
+        let reserve = |_: &DesignInputs, after: &DesignResults| axis_reserves(after)[axis];
+        for &fix in *axis_fixes {
+            if !shown.contains(&fix) && helps(inputs, results, fix, Some(&reserve)) {
+                shown.push(fix);
+            }
+        }
+    }
+    shown
+}
 
 const END_EFFECT_GUIDE: CheckGuide = CheckGuide {
     check: END_EFFECT,
@@ -306,22 +356,196 @@ fn failing(check: &str, inputs: &DesignInputs, results: &DesignResults) -> bool 
 
 // ------------------------------------------------------------------ the fixes
 
-/// The fixes of `guide` to show for this design, in order: its list, or for the temperature
-/// guide the fixes of each failing term (none while the check passes), less any slider input
-/// already at its slider's end that way, which could not help.
+/// The fixes of `guide` to show for this design, in order; none while its check passes. Of a
+/// static list, each fix that can still move and whose move turns no passing guided check red
+/// ([`helps`]); a list built per failing term ([`Fixes::PerTerm`]) is checked by its builder,
+/// against the term each fix serves. Each check runs `compute_all` on the design a move
+/// reaches, so the panel asks through a [`FixCache`].
 pub fn fixes(
     guide: &CheckGuide,
     inputs: &DesignInputs,
     results: &DesignResults,
 ) -> Vec<(&'static str, Direction)> {
-    let listed = match guide.fixes {
-        Fixes::Static(list) => list.to_vec(),
+    if level(guide, inputs, results) == Level::Good {
+        return Vec::new();
+    }
+    match guide.fixes {
+        // Each fix of a static list moves its check toward passing over its whole slider (a
+        // test sweeps each one), so only the step itself is checked.
+        Fixes::Static(list) => list
+            .iter()
+            .copied()
+            .filter(|&fix| helps(inputs, results, fix, None))
+            .collect(),
         Fixes::PerTerm(build) => build(inputs, results),
+    }
+}
+
+/// The Fix line of a failing check whose [`fixes`] are empty (spec 3.4 gives every block a
+/// Fix): its inputs are at their sliders' ends, have no better choice or would turn another
+/// check red, or, for a claim that is not a number, the Problem says what to enter.
+pub const NO_FIX: &str = "No listed change helps from here: each is at its slider's end, has no better choice, or would fail another check.";
+
+/// Every guide's [`fixes`] for the design they were built for (spec 4.1, as for the
+/// consequences): the panel asks every frame, and each fix runs `compute_all` on the design
+/// its move reaches. They are computed again only when the inputs change.
+#[derive(Default)]
+pub struct FixCache {
+    last: Option<CachedFixes>,
+    /// How many times the fixes were computed (the tests check that a repeat computes
+    /// nothing).
+    pub(crate) computed: usize,
+}
+
+/// What a [`FixCache`] holds: the inputs and every guide's fixes for them.
+struct CachedFixes {
+    inputs: DesignInputs,
+    fixes: Vec<Vec<(&'static str, Direction)>>,
+}
+
+impl FixCache {
+    /// Each guide's [`fixes`] for `inputs` (whose results are `results`), in
+    /// [`CHECK_GUIDES`]' order, none for a check that passes; computed only when the inputs
+    /// differ from the last call's.
+    pub fn get(
+        &mut self,
+        inputs: &DesignInputs,
+        results: &DesignResults,
+    ) -> &[Vec<(&'static str, Direction)>] {
+        if self.last.as_ref().is_none_or(|last| last.inputs != *inputs) {
+            self.computed += 1;
+            self.last = Some(CachedFixes {
+                inputs: inputs.clone(),
+                fixes: CHECK_GUIDES
+                    .iter()
+                    .map(|guide| fixes(guide, inputs, results))
+                    .collect(),
+            });
+        }
+        &self.last.as_ref().expect("filled above").fixes
+    }
+}
+
+/// A margin of a design, larger is better: what a fix must raise to help a term.
+type Margin<'a> = &'a dyn Fn(&DesignInputs, &DesignResults) -> f64;
+
+/// Whether `fix` is worth showing for `inputs` (whose results are `results`): one of the
+/// designs its move reaches ([`moves`]) turns no guided check that passes here red (review
+/// focus 3) and, given a `margin`, raises it.
+fn helps(
+    inputs: &DesignInputs,
+    results: &DesignResults,
+    (path, direction): (&str, Direction),
+    margin: Option<Margin>,
+) -> bool {
+    let before: Vec<Level> = CHECK_GUIDES
+        .iter()
+        .map(|guide| level(guide, inputs, results))
+        .collect();
+    moves(inputs, results, path, direction)
+        .iter()
+        .any(|design| {
+            let after = compute_all(design);
+            let reddens = CHECK_GUIDES.iter().zip(&before).any(|(guide, &was)| {
+                was == Level::Good && level(guide, design, &after) == Level::Bad
+            });
+            let raises = margin.is_none_or(|margin| {
+                let (to, from) = (margin(design, &after), margin(inputs, results));
+                // A margin that is not a number fails whatever it is: any number is better.
+                to > from || (from.is_nan() && !to.is_nan())
+            });
+            !reddens && raises
+        })
+}
+
+/// The designs one move of a fix reaches from `inputs`, each changing the fix's input only:
+/// - **Raise or Lower:** one step of its slider that way ([`step`]). The ring radius steps the
+///   Size tab's Outside diameter slider instead: its fix bears that name
+///   ([`SIZE_TAB_ALIASES`]) and its link opens that tab, and the slider's mapping moves the
+///   cap and its thread with the cup (`engine::size_controls`). The panel's Minimum OD is not
+///   seen here: the slider's range is the one without it.
+/// - **Change:** each other choice: a selector's codes, a part picker's "Custom dimensions" (a
+///   blank part) and its library parts, a grade picker's "Blank" and its grades. A grade
+///   applies to manual dimensions only (its label says so): with a library part it changes
+///   nothing, so no grade helps there.
+fn moves(
+    inputs: &DesignInputs,
+    results: &DesignResults,
+    path: &str,
+    direction: Direction,
+) -> Vec<DesignInputs> {
+    let Some(entry) = InputCatalogue::get().entry(path) else {
+        return Vec::new();
     };
-    listed
+    if direction == Direction::Change {
+        // A picker's choices: its blank one ("Custom dimensions", or "Blank"), then its table.
+        let picker = |table: Vec<&str>| -> Vec<Value> {
+            std::iter::once("")
+                .chain(table)
+                .map(|text| Value::Text(text.to_owned()))
+                .collect()
+        };
+        let choices = if PART_PATHS.contains(&path) {
+            picker(MAGNET_LIBRARY.iter().map(|spec| spec.part).collect())
+        } else if GRADE_PATHS.contains(&path) {
+            picker(GRADES.iter().map(|grade| grade.id).collect())
+        } else {
+            entry
+                .meta
+                .choices
+                .iter()
+                .map(|&(code, _)| Value::Int(code))
+                .collect()
+        };
+        let current = inputs.get(path);
+        return choices
+            .into_iter()
+            .filter(|choice| current.as_ref() != Some(choice))
+            .filter_map(|choice| with_value(inputs, path, choice))
+            .collect();
+    }
+    if path == RING {
+        return dimensions(inputs)
+            .and_then(|size| step(size.diameter_mm, size.diameter_range, direction))
+            .and_then(|diameter| resize_diameter(inputs, diameter).ok())
+            .into_iter()
+            .collect();
+    }
+    let (Some(range), Some(x)) = (entry.meta.range, current_number(inputs, results, path)) else {
+        return Vec::new();
+    };
+    step(x, range, direction)
+        .and_then(|next| with_number(inputs, path, next))
         .into_iter()
-        .filter(|&(path, direction)| can_move(inputs, results, path, direction))
         .collect()
+}
+
+/// `x` one step of the slider `range` up (Raise) or down (Lower), kept on the slider: `None`
+/// at the slider's end that way, for a number that is not one, and for a Change. A value
+/// typed past the slider's end comes back onto it.
+fn step(x: f64, range: SliderRange, direction: Direction) -> Option<f64> {
+    let next = match direction {
+        Direction::Raise if x < range.max => x + range.step,
+        Direction::Lower if x > range.min => x - range.step,
+        _ => return None,
+    };
+    Some(next.clamp(range.min, range.max))
+}
+
+/// `inputs` with the input at `path` set to `value`; `None` where the inputs refuse it.
+fn with_value(inputs: &DesignInputs, path: &str, value: Value) -> Option<DesignInputs> {
+    let mut moved = inputs.clone();
+    moved.set(path, value).ok()?;
+    Some(moved)
+}
+
+/// [`with_value`] with the number `x`, as an integer for an integer input.
+fn with_number(inputs: &DesignInputs, path: &str, x: f64) -> Option<DesignInputs> {
+    let value = match InputCatalogue::get().entry(path)?.default {
+        Value::Int(_) => Value::Int(x.round() as i64),
+        _ => Value::Num(x),
+    };
+    with_value(inputs, path, value)
 }
 
 /// A number of a value: a number or an integer; `None` for a text or no value.
@@ -339,25 +563,6 @@ fn current_number(inputs: &DesignInputs, results: &DesignResults, path: &str) ->
     match inputs.get(path)? {
         Value::None => number(results.get(optional_seed(path)?)?),
         value => number(value),
-    }
-}
-
-/// Whether the input at `path` can move in `direction`: a slider input not yet at its
-/// slider's end that way (a typed value past the end can still come back); a choice always
-/// can, and so can a number that is not one.
-fn can_move(
-    inputs: &DesignInputs,
-    results: &DesignResults,
-    path: &str,
-    direction: Direction,
-) -> bool {
-    let range = InputCatalogue::get()
-        .entry(path)
-        .and_then(|entry| entry.meta.range);
-    match (direction, range, current_number(inputs, results, path)) {
-        (Direction::Raise, Some(range), Some(x)) => x.is_nan() || x < range.max,
-        (Direction::Lower, Some(range), Some(x)) => x.is_nan() || x > range.min,
-        _ => true,
     }
 }
 
@@ -408,29 +613,89 @@ fn ends_with_label(other: &str, label: &str) -> bool {
 
 // ------------------------------------------------------------------ the temperature terms
 
-/// The magnet part of each ring: the weaker ring sets the magnet limit, so a hotter-rated
-/// magnet must go in both.
-const MAGNET_PARTS: [(&str, Direction); 2] = [
+/// A magnet ring. Each ring is checked against its own magnet's limits; the weaker ring sets
+/// the design's magnet limit, and the cold check passes only if both rings pass.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Ring {
+    Inner,
+    Outer,
+}
+
+impl Ring {
+    const BOTH: [Ring; 2] = [Ring::Inner, Ring::Outer];
+
+    /// The ring's name in a sentence.
+    const fn name(self) -> &'static str {
+        match self {
+            Ring::Inner => "inner",
+            Ring::Outer => "outer",
+        }
+    }
+
+    /// The ring's own magnet limit: its value and the result that holds it.
+    fn magnet_limit(self, results: &DesignResults) -> (f64, &'static str) {
+        let d = &results.temperature.demag;
+        match self {
+            Ring::Inner => (
+                d.inner_magnet_limit_C,
+                "temperature.demag.inner_magnet_limit_C",
+            ),
+            Ring::Outer => (
+                d.outer_magnet_limit_C,
+                "temperature.demag.outer_magnet_limit_C",
+            ),
+        }
+    }
+
+    /// The ring's own cold limit ("n/a" for a magnet whose coercivity rises as it cools): its
+    /// value and the result that holds it.
+    fn cold_limit(self, results: &DesignResults) -> (NumOrText, &'static str) {
+        let d = &results.temperature.demag;
+        match self {
+            Ring::Inner => (d.inner_cold_limit_C, "temperature.demag.inner_cold_limit_C"),
+            Ring::Outer => (d.outer_cold_limit_C, "temperature.demag.outer_cold_limit_C"),
+        }
+    }
+
+    /// The ring's magnet: its part, and its grade, which applies to manual dimensions.
+    const fn magnet(self) -> &'static [(&'static str, Direction)] {
+        match self {
+            Ring::Inner => &INNER_MAGNET,
+            Ring::Outer => &OUTER_MAGNET,
+        }
+    }
+}
+
+/// The inner ring's magnet inputs ([`Ring::magnet`]).
+const INNER_MAGNET: [(&str, Direction); 2] = [
     (PART_PATHS[0], Direction::Change),
+    (GRADE_PATHS[0], Direction::Change),
+];
+
+/// The outer ring's magnet inputs ([`Ring::magnet`]).
+const OUTER_MAGNET: [(&str, Direction); 2] = [
     (PART_PATHS[1], Direction::Change),
+    (GRADE_PATHS[1], Direction::Change),
 ];
 
 /// The adhesive: its limit and its cure temperature.
 const ADHESIVE: [(&str, Direction); 1] = [("temperature.adhesive.selected", Direction::Change)];
 
-/// Less heat at the slip-fault peak: a shorter fault, a better path out for the heat.
+/// Less heat at the slip-fault peak: a shorter fault, a better path out for the heat. Neither
+/// moves the hot-day start (the ambient plus the driving rise), so neither is a hot-day fix.
 const COOLING: [(&str, Direction); 2] = [
     ("temperature.duty.fault_trip_s", Direction::Lower),
     ("temperature.thermal.conductance_W_K", Direction::Raise),
 ];
 
 /// A term of the temperature verdict, in the verdict's order; the verdict passes when none
-/// fails (a test checks). The hot-day margin is split by limit: the start must be below the
-/// magnet limit and below the adhesive limit, and each has its own fix.
+/// fails (a test checks). The hot-day margin is split by limit, and the magnet limit and the
+/// cold check by ring, so that each fix is tested against the one term it can move: a hotter
+/// magnet in one ring does not raise a limit the other ring also sets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TemperatureTerm {
-    /// The hot-day start is not below the magnet limit.
-    HotDayMagnet,
+    /// The hot-day start is not below this ring's magnet limit.
+    HotDayMagnet(Ring),
     /// The hot-day start is not below the adhesive limit.
     HotDayAdhesive,
     /// The slip-fault peak reaches the magnet limit.
@@ -440,83 +705,63 @@ enum TemperatureTerm {
     /// The adhesive cures less than [`CURE_MARGIN_MIN_C`] below the single-ring
     /// demagnetization onset.
     Cure,
-    /// A ring whose coercivity falls on cooling (ferrite) is below its cold limit.
-    Cold,
+    /// This ring's coercivity falls on cooling (ferrite), and the minimum magnet temperature
+    /// is below its cold limit.
+    Cold(Ring),
 }
 
 impl TemperatureTerm {
-    const ALL: [TemperatureTerm; 6] = [
-        TemperatureTerm::HotDayMagnet,
+    const ALL: [TemperatureTerm; 8] = [
+        TemperatureTerm::HotDayMagnet(Ring::Inner),
+        TemperatureTerm::HotDayMagnet(Ring::Outer),
         TemperatureTerm::HotDayAdhesive,
         TemperatureTerm::MagnetPeak,
         TemperatureTerm::AdhesivePeak,
         TemperatureTerm::Cure,
-        TemperatureTerm::Cold,
+        TemperatureTerm::Cold(Ring::Inner),
+        TemperatureTerm::Cold(Ring::Outer),
     ];
 
-    /// Whether the term fails, by the verdict's own comparisons (a margin that is not a
-    /// number fails too).
-    fn fails(self, results: &DesignResults) -> bool {
+    /// How far the term is from failing, larger is better: what a fix must raise.
+    fn margin(self, inputs: &DesignInputs, results: &DesignResults) -> f64 {
         let t = &results.temperature;
         let start = t.summary.hot_day_start_C;
         match self {
-            TemperatureTerm::HotDayMagnet => not_positive(t.summary.magnet_limit_C - start),
-            TemperatureTerm::HotDayAdhesive => not_positive(t.summary.adhesive_limit_C - start),
-            TemperatureTerm::MagnetPeak => not_positive(t.magnet_life.margin_limit_C),
-            TemperatureTerm::AdhesivePeak => not_positive(t.adhesive_life.margin_C),
-            TemperatureTerm::Cure => {
-                let cure = t.summary.cure_margin_C;
-                cure.is_nan() || cure < CURE_MARGIN_MIN_C
-            }
-            TemperatureTerm::Cold => {
-                check_level(results, "temperature.demag.cold_check") == Some(Level::Bad)
-            }
+            TemperatureTerm::HotDayMagnet(ring) => ring.magnet_limit(results).0 - start,
+            TemperatureTerm::HotDayAdhesive => t.summary.adhesive_limit_C - start,
+            TemperatureTerm::MagnetPeak => t.magnet_life.margin_limit_C,
+            TemperatureTerm::AdhesivePeak => t.adhesive_life.margin_C,
+            TemperatureTerm::Cure => t.summary.cure_margin_C - CURE_MARGIN_MIN_C,
+            TemperatureTerm::Cold(ring) => match ring.cold_limit(results).0 {
+                NumOrText::Num(limit) => inputs.metal.min_temp_C - limit,
+                NumOrText::Text(_) => f64::INFINITY,
+            },
         }
     }
 
-    /// The term's sentence, its numbers from the results and inputs.
-    fn sentence(self, inputs: &DesignInputs, results: &DesignResults) -> String {
-        let start = result_text(results, "temperature.summary.hot_day_start_C");
-        let magnet_limit = result_text(results, "temperature.summary.magnet_limit_C");
-        let adhesive_limit = result_text(results, "temperature.summary.adhesive_limit_C");
-        let magnet_peak = result_text(results, "temperature.magnet_life.peak_C");
-        let bond_peak = result_text(results, "temperature.adhesive_life.peak_C");
+    /// Whether the term fails, by the verdict's own comparisons: a hot-day or peak margin must
+    /// be above zero, the cure and cold margins at least zero, and a margin that is not a
+    /// number fails. A ring's hot-day term fails only while the design's does: the engine sets
+    /// the design's limit from the other ring when one ring's limit is not a number.
+    fn fails(self, inputs: &DesignInputs, results: &DesignResults) -> bool {
+        let margin = self.margin(inputs, results);
         match self {
-            TemperatureTerm::HotDayMagnet => {
-                format!("Hot-day start {start} is not below the {magnet_limit} magnet limit.")
+            TemperatureTerm::HotDayMagnet(_) => {
+                let s = &results.temperature.summary;
+                not_positive(margin) && not_positive(s.magnet_limit_C - s.hot_day_start_C)
             }
-            TemperatureTerm::HotDayAdhesive => {
-                format!("Hot-day start {start} is not below the {adhesive_limit} adhesive limit.")
-            }
-            TemperatureTerm::MagnetPeak => {
-                format!(
-                    "The slip-fault peak of {magnet_peak} reaches the {magnet_limit} magnet limit."
-                )
-            }
-            TemperatureTerm::AdhesivePeak => format!(
-                "The slip-fault peak of {bond_peak} reaches the {adhesive_limit} adhesive limit."
-            ),
-            TemperatureTerm::Cure => format!(
-                "The adhesive cures at {}, {} below the {} single-ring demagnetization onset; the margin must be at least {}.",
-                result_text(results, "temperature.adhesive.cure_C"),
-                result_text(results, "temperature.summary.cure_margin_C"),
-                result_text(results, "temperature.demag.onset_single_ring_C"),
-                number_text(CURE_MARGIN_MIN_C, "temperature.summary.cure_margin_C"),
-            ),
-            // The cold limit comes from the stored reverse fields, which do not follow the
-            // grade (spec section 8): the sentence says so rather than quote it as ferrite's.
-            TemperatureTerm::Cold => format!(
-                "The minimum magnet temperature {} is below the {} cold demagnetization limit (from stored 3D fields that do not yet follow the magnet grade).",
-                input_text(inputs, "metal.min_temp_C"),
-                result_text(results, "temperature.demag.cold_limit_C"),
-            ),
+            TemperatureTerm::HotDayAdhesive
+            | TemperatureTerm::MagnetPeak
+            | TemperatureTerm::AdhesivePeak => not_positive(margin),
+            TemperatureTerm::Cure | TemperatureTerm::Cold(_) => margin.is_nan() || margin < 0.0,
         }
     }
 
-    /// The fixes that move the term toward passing.
+    /// The inputs that can move the term toward passing; [`temperature_fixes`] shows each only
+    /// where one of its moves does.
     const fn fixes(self) -> &'static [(&'static str, Direction)] {
         match self {
-            TemperatureTerm::HotDayMagnet | TemperatureTerm::Cold => &MAGNET_PARTS,
+            TemperatureTerm::HotDayMagnet(ring) | TemperatureTerm::Cold(ring) => ring.magnet(),
             TemperatureTerm::HotDayAdhesive | TemperatureTerm::Cure => &ADHESIVE,
             TemperatureTerm::MagnetPeak | TemperatureTerm::AdhesivePeak => &COOLING,
         }
@@ -529,33 +774,120 @@ fn not_positive(margin: f64) -> bool {
 }
 
 /// The temperature terms this design fails, in the verdict's order.
-fn failing_terms(results: &DesignResults) -> Vec<TemperatureTerm> {
+fn failing_terms(inputs: &DesignInputs, results: &DesignResults) -> Vec<TemperatureTerm> {
     TemperatureTerm::ALL
         .into_iter()
-        .filter(|term| term.fails(results))
+        .filter(|term| term.fails(inputs, results))
         .collect()
 }
 
-/// The fixes of `terms`, in their order, each input once.
-fn term_fixes(terms: impl IntoIterator<Item = TemperatureTerm>) -> Vec<(&'static str, Direction)> {
-    let mut fixes: Vec<(&'static str, Direction)> = Vec::new();
-    for term in terms {
+/// The temperature Problem's sentences, numbers from the results, in the verdict's order: the
+/// hot-day start against each limit it is not below, each slip-fault peak that reaches its
+/// limit, the cure margin, and the cold limits the minimum temperature is below. A ring's
+/// limit is named with its ring, since each ring needs its own fix.
+fn temperature_sentences(inputs: &DesignInputs, results: &DesignResults) -> Vec<String> {
+    use TemperatureTerm::{AdhesivePeak, Cold, Cure, HotDayAdhesive, HotDayMagnet, MagnetPeak};
+    let failing = failing_terms(inputs, results);
+    let fails = |term| failing.contains(&term);
+    let mut sentences = Vec::new();
+    let mut hot_limits: Vec<String> = Ring::BOTH
+        .into_iter()
+        .filter(|&ring| fails(HotDayMagnet(ring)))
+        .map(|ring| {
+            let (_, limit) = ring.magnet_limit(results);
+            format!(
+                "the {} magnets' {} limit",
+                ring.name(),
+                result_text(results, limit)
+            )
+        })
+        .collect();
+    if fails(HotDayAdhesive) {
+        hot_limits.push(format!(
+            "the {} adhesive limit",
+            result_text(results, "temperature.summary.adhesive_limit_C")
+        ));
+    }
+    if !hot_limits.is_empty() {
+        sentences.push(format!(
+            "Hot-day start {} is at or above {}.",
+            result_text(results, "temperature.summary.hot_day_start_C"),
+            listed(&hot_limits)
+        ));
+    }
+    if fails(MagnetPeak) {
+        sentences.push(format!(
+            "The slip-fault peak of {} reaches the {} magnet limit.",
+            result_text(results, "temperature.magnet_life.peak_C"),
+            result_text(results, "temperature.summary.magnet_limit_C"),
+        ));
+    }
+    if fails(AdhesivePeak) {
+        sentences.push(format!(
+            "The slip-fault peak of {} reaches the {} adhesive limit.",
+            result_text(results, "temperature.adhesive_life.peak_C"),
+            result_text(results, "temperature.summary.adhesive_limit_C"),
+        ));
+    }
+    if fails(Cure) {
+        sentences.push(format!(
+            "The adhesive cures at {}, {} below the {} single-ring demagnetization onset; the margin must be at least {}.",
+            result_text(results, "temperature.adhesive.cure_C"),
+            result_text(results, "temperature.summary.cure_margin_C"),
+            result_text(results, "temperature.demag.onset_single_ring_C"),
+            number_text(CURE_MARGIN_MIN_C, "temperature.summary.cure_margin_C"),
+        ));
+    }
+    let cold_limits: Vec<String> = Ring::BOTH
+        .into_iter()
+        .filter(|&ring| fails(Cold(ring)))
+        .map(|ring| {
+            let (_, limit) = ring.cold_limit(results);
+            format!(
+                "the {} magnets' {} cold demagnetization limit",
+                ring.name(),
+                result_text(results, limit)
+            )
+        })
+        .collect();
+    // The cold limit comes from the stored reverse fields, which do not follow the grade
+    // (spec section 8): the sentence says so rather than quote it as ferrite's.
+    if !cold_limits.is_empty() {
+        sentences.push(format!(
+            "The minimum magnet temperature {} is below {} (from stored 3D fields that do not yet follow the magnet grade).",
+            input_text(inputs, "metal.min_temp_C"),
+            listed(&cold_limits)
+        ));
+    }
+    sentences
+}
+
+/// `items` as one list: "a", "a and b", "a, b and c".
+fn listed(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [only] => only.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+/// The temperature guide's fixes ([`Fixes::PerTerm`]): for each failing term in order, each
+/// of its fixes that one of its moves helps ([`helps`] against the term's margin), each fix
+/// once. A term none of whose fixes helps from this design shows none.
+fn temperature_fixes(
+    inputs: &DesignInputs,
+    results: &DesignResults,
+) -> Vec<(&'static str, Direction)> {
+    let mut shown: Vec<(&'static str, Direction)> = Vec::new();
+    for term in failing_terms(inputs, results) {
+        let margin = |design: &DesignInputs, after: &DesignResults| term.margin(design, after);
         for &fix in term.fixes() {
-            if !fixes.contains(&fix) {
-                fixes.push(fix);
+            if !shown.contains(&fix) && helps(inputs, results, fix, Some(&margin)) {
+                shown.push(fix);
             }
         }
     }
-    fixes
-}
-
-/// The temperature guide's fixes ([`Fixes::PerTerm`]): the failing terms' ([`term_fixes`]).
-/// The terms read the results only.
-fn temperature_fixes(
-    _inputs: &DesignInputs,
-    results: &DesignResults,
-) -> Vec<(&'static str, Direction)> {
-    term_fixes(failing_terms(results))
+    shown
 }
 
 // ------------------------------------------------------------------ the design status
@@ -714,6 +1046,14 @@ fn percent_text(fraction: f64) -> String {
     format!("{digits} %")
 }
 
+/// The temperature Problem when no term reads as failing although the verdict does
+/// ([`joined_or`]).
+const TEMPERATURE_FALLBACK: &str = "A temperature limit is not met: see the temperature results.";
+
+/// The space claim's Problem when no axis reads as over its claim although the check fails
+/// ([`joined_or`]).
+const SPACE_CLAIM_FALLBACK: &str = "The coupling is outside its space claim.";
+
 /// `sentences` as one text, or `fallback` when there are none: a failing check always names
 /// at least one, and the fallback keeps its block from going blank if a verdict and its numbers
 /// ever disagree.
@@ -761,16 +1101,8 @@ fn cup_wall_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<St
 }
 
 fn temperature_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
-    failing(TEMPERATURE, inputs, results).then(|| {
-        let sentences = failing_terms(results)
-            .into_iter()
-            .map(|term| term.sentence(inputs, results))
-            .collect();
-        joined_or(
-            sentences,
-            "A temperature limit is not met: see the temperature results.",
-        )
-    })
+    failing(TEMPERATURE, inputs, results)
+        .then(|| joined_or(temperature_sentences(inputs, results), TEMPERATURE_FALLBACK))
 }
 
 fn clamp_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
@@ -835,7 +1167,7 @@ fn space_claim_problem(inputs: &DesignInputs, results: &DesignResults) -> Option
                 }
             })
             .collect();
-        joined_or(sentences, "The coupling is outside its space claim.")
+        joined_or(sentences, SPACE_CLAIM_FALLBACK)
     })
 }
 
@@ -855,66 +1187,44 @@ fn end_effect_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<
     })
 }
 
+/// The rings in [`ring_fits`]' order: the name a sentence starts with, the name inside one,
+/// and the results that hold the block's width and its flat.
+const FIT_RINGS: [(&str, &str, &str, &str); 2] = [
+    (
+        "Inner",
+        "inner",
+        "model.inner_width_mm",
+        "model.inner_flat_width_mm",
+    ),
+    (
+        "Outer",
+        "outer",
+        "model.outer_width_mm",
+        "model.outer_flat_width_mm",
+    ),
+];
+
 fn fit_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
     failing(FIT_CHECK, inputs, results).then(|| {
-        let m = &results.model;
         let n = inputs.coupling.npole;
         let mut sentences = vec![format!("{n} blocks per ring do not fit at this ring size.")];
-        // The comparisons of `blocks_fit`: flat blocks against their flats, arcs by their
-        // share of the pitch circle at the magnet mid-radius.
-        if inputs.coupling.faceted == 1 {
-            let rings = [
-                (
-                    "Inner",
-                    m.inner_flat_width_mm < m.inner_width_mm,
-                    "model.inner_width_mm",
-                    "model.inner_flat_width_mm",
-                ),
-                (
-                    "Outer",
-                    m.outer_flat_width_mm < m.outer_width_mm,
-                    "model.outer_width_mm",
-                    "model.outer_flat_width_mm",
-                ),
-            ];
-            for (ring, narrow, width, flat) in rings {
-                if narrow {
-                    sentences.push(format!(
-                        "{ring} blocks are {} wide on {} flats.",
-                        result_text(results, width),
-                        result_text(results, flat),
-                    ));
-                }
+        // The engine's rule, ring by ring: the rings it fails, each in its own terms.
+        let rings = ring_fits(&inputs.coupling, &results.model);
+        for (ring, (start, name, width, flat)) in rings.into_iter().zip(FIT_RINGS) {
+            if ring.fits() {
+                continue;
             }
-        } else {
-            let shares = [
-                (
-                    "inner",
-                    pitch_share(
-                        m.inner_width_mm,
-                        inputs.coupling.inner_back_apothem_mm,
-                        m.inner_thickness_mm,
-                        n as f64,
-                    ),
+            sentences.push(match ring {
+                RingFit::Flat { .. } => format!(
+                    "{start} blocks are {} wide on {} flats.",
+                    result_text(results, width),
+                    result_text(results, flat),
                 ),
-                (
-                    "outer",
-                    pitch_share(
-                        m.outer_width_mm,
-                        m.outer_face_apothem_mm,
-                        m.outer_thickness_mm,
-                        n as f64,
-                    ),
+                RingFit::Arc { share } => format!(
+                    "The {n} {name} blocks together need {} of the circle at their mid-radius.",
+                    percent_text(share)
                 ),
-            ];
-            for (ring, share) in shares {
-                if share > 1.0 {
-                    sentences.push(format!(
-                        "The {n} {ring} blocks together need {} of the circle at their mid-radius.",
-                        percent_text(share)
-                    ));
-                }
-            }
+            });
         }
         sentences.join(" ")
     })
@@ -926,12 +1236,9 @@ mod tests {
     use crate::compute_all;
     use crate::engine::assumptions::ASSUMPTIONS;
     use crate::engine::explain::notes;
-    use crate::engine::grades::GRADES;
-    use crate::engine::library::MAGNET_LIBRARY;
-    use crate::engine::meta::NumOrText;
+    use crate::engine::model::ring_fits;
     use crate::gui::dashboard::{CHECKS, DASHBOARD};
     use crate::gui::explorer::reviewed_note;
-    use crate::gui::pickers::GRADE_PATHS;
     use crate::gui::test_support::{assert_glyphs, passing_design, short_magnets, with_poles};
     use std::collections::BTreeSet;
 
@@ -959,6 +1266,13 @@ mod tests {
     fn hot_day(i: &mut DesignInputs) {
         i.temperature.duty.hot_ambient_C = 80.0;
         i.temperature.duty.driving_rise_C = 60.0;
+    }
+
+    /// A hot day with the inner ring on manual dimensions and a blank grade: no library part
+    /// beats it any more, a hotter grade does.
+    fn custom_hot_day(i: &mut DesignInputs) {
+        hot_day(i);
+        i.coupling.magnets.part_inner.clear();
     }
 
     /// Library N42 blocks (rated 80 °C) in both rings: their magnet limit is below the hot-day
@@ -1048,6 +1362,7 @@ mod tests {
             ("defaults", DesignInputs::default()),
             ("passing", passing_design()),
             ("hot_day", breaking(hot_day)),
+            ("custom_hot_day", breaking(custom_hot_day)),
             ("n42_parts", breaking(n42_parts)),
             ("slip_fault", breaking(slip_fault)),
             ("cool_adhesive", breaking(cool_adhesive)),
@@ -1060,7 +1375,11 @@ mod tests {
             ("large_ring", breaking(large_ring)),
             ("unknown_claim", breaking(unknown_claim)),
             ("short_magnets", short_magnets()),
-            ("twelve_poles", breaking(|i| i.coupling.npole = 12)),
+            ("twelve_poles", with_poles(12)),
+            (
+                "twelve_poles_with_room",
+                breaking(|i| i.coupling.npole = 12),
+            ),
             ("crowded", breaking(|i| i.coupling.npole = 40)),
             (
                 "crowded_arcs",
@@ -1071,6 +1390,15 @@ mod tests {
             ),
             ("no_back_iron", breaking(no_back_iron)),
             ("bare_clearance", design(bare_clearance)),
+            // Two failing checks that pull one input apart (review focus 4).
+            (
+                "length_conflict",
+                design(|i| i.metal.max_overall_axial_mm = 30.0),
+            ),
+            (
+                "diameter_conflict",
+                with(with_poles(12), |i| i.metal.max_diameter_mm = 42.0),
+            ),
         ]
     }
 
@@ -1079,30 +1407,43 @@ mod tests {
         (guide(check).unwrap().problem)(inputs, &compute_all(inputs))
     }
 
-    /// Every fix `g` can show: its list, or for the temperature guide every term's fixes.
+    /// Every fix `g` can show: its list, or for a guide that picks its fixes per failing term
+    /// every term's, each once.
     fn possible_fixes(g: &CheckGuide) -> Vec<(&'static str, Direction)> {
-        match g.fixes {
-            Fixes::Static(list) => list.to_vec(),
-            Fixes::PerTerm(_) => {
-                assert_eq!(
-                    g.check, TEMPERATURE,
-                    "only the temperature guide fixes per term"
-                );
-                term_fixes(TemperatureTerm::ALL)
+        let lists: Vec<&[(&str, Direction)]> = match (g.fixes, g.check) {
+            (Fixes::Static(list), _) => vec![list],
+            (Fixes::PerTerm(_), TEMPERATURE) => {
+                TemperatureTerm::ALL.iter().map(|t| t.fixes()).collect()
+            }
+            (Fixes::PerTerm(_), SPACE_CLAIM) => SPACE_CLAIM_AXES.to_vec(),
+            (Fixes::PerTerm(_), check) => panic!("{check}: the test lists no terms"),
+        };
+        let mut all = Vec::new();
+        for &fix in lists.into_iter().flatten() {
+            if !all.contains(&fix) {
+                all.push(fix);
             }
         }
+        all
     }
 
-    /// Every text the guides draw: labels, Whys, the reasons of the links without a note, every
-    /// fix, every Problem of every test design and its status line.
+    /// Every text the guides draw: labels, Whys, the reasons of the links without a note (the
+    /// guides' and the dashboard rows'), every fix, the fallbacks, every Problem of every test
+    /// design and its status line.
     fn every_text() -> Vec<String> {
         let mut texts = Vec::new();
         for g in &CHECK_GUIDES {
             texts.push(g.label.to_owned());
             texts.push(g.why.to_owned());
+            if let Learn::None(reason) = g.learn {
+                texts.push(reason.to_owned());
+            }
             for (path, direction) in possible_fixes(g) {
                 texts.push(fix_text(path, direction));
             }
+        }
+        for fallback in [NO_FIX, TEMPERATURE_FALLBACK, SPACE_CLAIM_FALLBACK] {
+            texts.push(fallback.to_owned());
         }
         for (_, learn) in &ROW_LEARN {
             if let Learn::None(reason) = learn {
@@ -1319,9 +1660,9 @@ mod tests {
 
     /// One term of a check's verdict: its margin, larger is better, and whether it passes as
     /// the verdict compares it.
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Debug)]
     struct Term {
-        name: &'static str,
+        name: String,
         margin: f64,
         passes: bool,
     }
@@ -1347,15 +1688,17 @@ mod tests {
         -shortfall
     }
 
-    /// The terms of `check`'s verdict in a fixed order (two designs' lists pair up).
+    /// The terms of `check`'s verdict in a fixed order (two designs' lists pair up). The
+    /// temperature terms are the guide's own ([`TemperatureTerm`]: a test holds them to the
+    /// verdict), named as they print.
     fn terms(check: &str, inputs: &DesignInputs, results: &DesignResults) -> Vec<Term> {
-        let term = |name, margin: f64, passes| Term {
-            name,
+        let term = |name: &str, margin: f64, passes| Term {
+            name: name.to_owned(),
             margin,
             passes,
         };
         let at_least_zero = |name, margin: f64| term(name, margin, margin >= 0.0);
-        let (m, md, t) = (&results.model, &results.metal, &results.temperature);
+        let (m, md) = (&results.model, &results.metal);
         match check {
             HOT_MIN => vec![at_least_zero(
                 "hot-low torque",
@@ -1370,22 +1713,13 @@ mod tests {
                 results.materials.cup_wall_corner_mm
                     - results.materials.backiron_thickness_needed_mm,
             )],
-            TEMPERATURE => {
-                let above_zero = |name, margin: f64| term(name, margin, margin > 0.0);
-                let start = t.summary.hot_day_start_C;
-                let cold = match t.demag.cold_limit_C {
-                    NumOrText::Num(limit) => inputs.metal.min_temp_C - limit,
-                    NumOrText::Text(_) => f64::INFINITY,
-                };
-                vec![
-                    above_zero("hot day, magnets", t.summary.magnet_limit_C - start),
-                    above_zero("hot day, adhesive", t.summary.adhesive_limit_C - start),
-                    above_zero("peak, magnets", t.magnet_life.margin_limit_C),
-                    above_zero("peak, adhesive", t.adhesive_life.margin_C),
-                    at_least_zero("cure", t.summary.cure_margin_C - CURE_MARGIN_MIN_C),
-                    at_least_zero("cold", cold),
-                ]
-            }
+            TEMPERATURE => TemperatureTerm::ALL
+                .into_iter()
+                .map(|t| {
+                    let margin = t.margin(inputs, results);
+                    term(&format!("{t:?}"), margin, !t.fails(inputs, results))
+                })
+                .collect(),
             CLAMP => vec![term(
                 "screw size",
                 clamp_margin(inputs, results),
@@ -1397,29 +1731,19 @@ mod tests {
                 at_least_zero("large-diameter bay", md.large_dia_reserve_mm),
             ],
             END_EFFECT => vec![term("end-effect factor", m.f_end, m.f_end > 0.0)],
-            FIT_CHECK if inputs.coupling.faceted == 1 => vec![
-                at_least_zero("inner ring", m.inner_flat_width_mm - m.inner_width_mm),
-                at_least_zero("outer ring", m.outer_flat_width_mm - m.outer_width_mm),
-            ],
-            FIT_CHECK => {
-                let n = inputs.coupling.npole as f64;
-                let inner = pitch_share(
-                    m.inner_width_mm,
-                    inputs.coupling.inner_back_apothem_mm,
-                    m.inner_thickness_mm,
-                    n,
-                );
-                let outer = pitch_share(
-                    m.outer_width_mm,
-                    m.outer_face_apothem_mm,
-                    m.outer_thickness_mm,
-                    n,
-                );
-                vec![
-                    at_least_zero("inner ring", 1.0 - inner),
-                    at_least_zero("outer ring", 1.0 - outer),
-                ]
-            }
+            // The engine's rule ring by ring; the margin is the flat's slack, or what is left
+            // of the arcs' share of the circle.
+            FIT_CHECK => ring_fits(&inputs.coupling, m)
+                .into_iter()
+                .zip(["inner ring", "outer ring"])
+                .map(|(ring, name)| {
+                    let margin = match ring {
+                        RingFit::Flat { width_mm, flat_mm } => flat_mm - width_mm,
+                        RingFit::Arc { share } => 1.0 - share,
+                    };
+                    term(name, margin, ring.fits())
+                })
+                .collect(),
             _ => panic!("no terms for {check}"),
         }
     }
@@ -1433,96 +1757,12 @@ mod tests {
             .margin
     }
 
-    /// `inputs` with the input at `path` set to the number `x`, as an integer for an integer
-    /// input.
-    fn set_number(inputs: &DesignInputs, path: &str, x: f64) -> DesignInputs {
-        let entry = InputCatalogue::get().entry(path).unwrap();
-        let value = match entry.default {
-            Value::Int(_) => Value::Int(x.round() as i64),
-            _ => Value::Num(x),
-        };
-        let mut moved = inputs.clone();
-        moved.set(path, value).unwrap();
-        moved
-    }
-
-    /// The designs one move of a fix reaches from `inputs`: one slider step in its direction
-    /// (none at the slider's end), or each other choice of a selector. A magnet part takes one
-    /// magnet for both rings, a library part or the custom block in a grade (the part
-    /// picker's "Custom dimensions" opens the grade picker): the weaker ring sets a limit both
-    /// rings share, so the Fix names both parts and one ring alone cannot move it.
-    fn moves(
-        inputs: &DesignInputs,
-        results: &DesignResults,
-        path: &str,
-        direction: Direction,
-    ) -> Vec<DesignInputs> {
-        let entry = InputCatalogue::get().entry(path).unwrap();
-        match direction {
-            Direction::Raise | Direction::Lower => {
-                let range = entry.meta.range.unwrap();
-                let x = current_number(inputs, results, path).unwrap();
-                let step = match direction {
-                    Direction::Raise => range.step,
-                    _ => -range.step,
-                };
-                let next = (x + step).clamp(range.min, range.max);
-                if next == x {
-                    Vec::new()
-                } else {
-                    vec![set_number(inputs, path, next)]
-                }
-            }
-            Direction::Change if PART_PATHS.contains(&path) => {
-                let m = &inputs.coupling.magnets;
-                let both = |parts: [&str; 2], grades: [&str; 2]| {
-                    let mut moved = inputs.clone();
-                    for (path, text) in PART_PATHS
-                        .iter()
-                        .zip(parts)
-                        .chain(GRADE_PATHS.iter().zip(grades))
-                    {
-                        moved.set(path, Value::Text(text.to_owned())).unwrap();
-                    }
-                    moved
-                };
-                let grades = [m.grade_inner.as_str(), m.grade_outer.as_str()];
-                let parts = MAGNET_LIBRARY
-                    .iter()
-                    .filter(|spec| [&m.part_inner, &m.part_outer] != [spec.part, spec.part])
-                    .map(|spec| both([spec.part; 2], grades));
-                let custom = GRADES
-                    .iter()
-                    .filter(|g| {
-                        !(m.part_inner.is_empty() && m.part_outer.is_empty() && grades == [g.id; 2])
-                    })
-                    .map(|g| both([""; 2], [g.id; 2]));
-                parts.chain(custom).collect()
-            }
-            Direction::Change => {
-                let current = inputs.get(path);
-                entry
-                    .meta
-                    .choices
-                    .iter()
-                    .filter(|&&(code, _)| current != Some(Value::Int(code)))
-                    .map(|&(code, _)| {
-                        let mut moved = inputs.clone();
-                        moved.set(path, Value::Int(code)).unwrap();
-                        moved
-                    })
-                    .collect()
-            }
-        }
-    }
-
     #[test]
     fn each_failing_term_has_a_fix_that_moves_it_and_no_fix_turns_another_check_red() {
         // Spec review focus 3. For every test design and every check it fails: each fix shown
-        // moves a failing term of the check toward passing by one slider step or one choice
-        // (the space claim excepted: it lists the fixes of all three axes and its Problem names
-        // the axis that fails); every failing term has such a fix; and no fix turns another
-        // guided check from green to red (a choice that would is not the one to take).
+        // moves a failing term of the check toward passing by one slider step or one choice of
+        // its input alone; every failing term has such a fix; and no fix turns another guided
+        // check from green to red (a choice that would is not the one to take).
         for (name, inputs) in designs() {
             let results = compute_all(&inputs);
             let before: Vec<Level> = CHECK_GUIDES
@@ -1539,10 +1779,9 @@ mod tests {
                 let failing: BTreeSet<&str> = terms_before
                     .iter()
                     .filter(|t| !t.passes && !t.margin.is_nan())
-                    .map(|t| t.name)
+                    .map(|t| t.name.as_str())
                     .collect();
                 let shown = fixes(g, &inputs, &results);
-                assert!(!shown.is_empty(), "{name}: {} shows no fix", g.check);
                 let mut moved: BTreeSet<&str> = BTreeSet::new();
                 for &(path, direction) in &shown {
                     let text = fix_text(path, direction);
@@ -1561,15 +1800,13 @@ mod tests {
                         }
                         let terms_after = terms(g.check, &design, &after);
                         for (b, a) in terms_before.iter().zip(&terms_after) {
-                            if failing.contains(b.name) && a.margin > b.margin {
-                                moved.insert(b.name);
+                            if failing.contains(b.name.as_str()) && a.margin > b.margin {
+                                moved.insert(b.name.as_str());
                                 helps = true;
                             }
                         }
                     }
-                    if g.check != SPACE_CLAIM {
-                        assert!(helps, "{name}: {text} moves no failing term of {}", g.check);
-                    }
+                    assert!(helps, "{name}: {text} moves no failing term of {}", g.check);
                 }
                 assert_eq!(
                     moved, failing,
@@ -1629,14 +1866,14 @@ mod tests {
                 breaking(slip_fault),
                 "temperature.duty.fault_trip_s",
                 Direction::Lower,
-                "peak, magnets",
+                "MagnetPeak",
             ),
             (
                 TEMPERATURE,
                 breaking(slip_fault),
                 "temperature.thermal.conductance_W_K",
                 Direction::Raise,
-                "peak, magnets",
+                "MagnetPeak",
             ),
             (
                 CLAMP,
@@ -1719,13 +1956,22 @@ mod tests {
                 Level::Good,
                 "{check}: the case's design fails it"
             );
-            let range = catalogue.entry(path).unwrap().meta.range.unwrap();
-            let end = match (path, direction) {
-                ("metal.cap_od_mm", _) => before.model.cup_od_mm,
-                (_, Direction::Raise) => range.max,
+            let to_end = |range: SliderRange| match direction {
+                Direction::Raise => range.max,
                 _ => range.min,
             };
-            let moved = set_number(&failing_design, path, end);
+            // The Outside diameter moves as the Size tab's slider moves it (cap following).
+            let moved = if path == RING {
+                let size = dimensions(&failing_design).unwrap();
+                resize_diameter(&failing_design, to_end(size.diameter_range)).unwrap()
+            } else {
+                let range = catalogue.entry(path).unwrap().meta.range.unwrap();
+                let end = match path {
+                    "metal.cap_od_mm" => before.model.cup_od_mm,
+                    _ => to_end(range),
+                };
+                with_number(&failing_design, path, end).unwrap()
+            };
             let after = compute_all(&moved);
             let (from, to) = (
                 margin(check, term, &failing_design, &before),
@@ -1741,34 +1987,44 @@ mod tests {
 
     #[test]
     fn the_temperature_fixes_follow_the_failing_terms() {
+        // Each failing term's fixes, each shown only where one of its moves (one step, or one
+        // choice of that input alone) moves that term toward passing without turning another
+        // check red. A ring's magnet is fixed in that ring: each ring has its own limits.
         use Direction::{Change, Lower, Raise};
-        let parts = [
-            ("coupling.magnets.part_inner", Change),
-            ("coupling.magnets.part_outer", Change),
-        ];
+        let [part_inner, part_outer] = PART_PATHS.map(|path| (path, Change));
+        let [grade_inner, grade_outer] = GRADE_PATHS.map(|path| (path, Change));
         let adhesive = ("temperature.adhesive.selected", Change);
-        let cooling = [
-            ("temperature.duty.fault_trip_s", Lower),
-            ("temperature.thermal.conductance_W_K", Raise),
-        ];
+        let trip = ("temperature.duty.fault_trip_s", Lower);
+        let conductance = ("temperature.thermal.conductance_W_K", Raise);
         let temperature = guide(TEMPERATURE).unwrap();
         let shown = |inputs: DesignInputs| fixes(temperature, &inputs, &compute_all(&inputs));
-        // Above both limits: a hotter-rated magnet, a hotter adhesive, and less heat at the peak.
+        // Above both rings' limits and the adhesive's. No library part is rated above the
+        // N42SH blocks in use; manual dimensions with a blank grade are (the grade picker then
+        // offers hotter grades). A grade does nothing to a ring with a library part.
         assert_eq!(
             shown(breaking(hot_day)),
-            [parts[0], parts[1], adhesive, cooling[0], cooling[1]]
+            [part_inner, part_outer, adhesive, trip, conductance]
+        );
+        // The inner ring already on manual dimensions: no library part beats it, a grade does.
+        assert_eq!(
+            shown(breaking(custom_hot_day)),
+            [grade_inner, part_outer, adhesive, trip, conductance]
         );
         assert_eq!(
             shown(breaking(n42_parts)),
-            [parts[0], parts[1], cooling[0], cooling[1]]
+            [part_inner, part_outer, trip, conductance]
         );
-        assert_eq!(shown(breaking(slip_fault)), cooling);
+        assert_eq!(shown(breaking(slip_fault)), [trip, conductance]);
         assert_eq!(
             shown(breaking(cool_adhesive)),
-            [adhesive, cooling[0], cooling[1]]
+            [adhesive, trip, conductance]
         );
         assert_eq!(shown(breaking(hot_cure)), [adhesive]);
-        assert_eq!(shown(breaking(ferrite)), parts);
+        // Ferrite in both rings, each below its own cold limit: either ring's part or grade.
+        assert_eq!(
+            shown(breaking(ferrite)),
+            [part_inner, grade_inner, part_outer, grade_outer]
+        );
         assert_eq!(shown(passing_design()), []);
         // A trip time already at its slider's end is not offered: a 92 °C start and the
         // shortest trip still peak past the magnet limit, and only the conductance can help.
@@ -1778,8 +2034,105 @@ mod tests {
             i.temperature.duty.hot_ambient_C = 82.0;
         });
         let results = compute_all(&quick_trip);
-        assert_eq!(failing_terms(&results), [TemperatureTerm::MagnetPeak]);
-        assert_eq!(shown(quick_trip), [cooling[1]]);
+        assert_eq!(
+            failing_terms(&quick_trip, &results),
+            [TemperatureTerm::MagnetPeak]
+        );
+        assert_eq!(shown(quick_trip), [conductance]);
+        // One slip event longer than the fault trip sets the peak: a shorter trip would not
+        // lower it, so only the conductance is offered.
+        let long_event = breaking(|i| {
+            slip_fault(i);
+            i.temperature.duty.fault_trip_s = 0.5;
+            i.metal.slip_event_s = 5.0;
+        });
+        assert_eq!(shown(long_event), [conductance]);
+    }
+
+    #[test]
+    fn every_move_of_a_fix_changes_its_own_input_only() {
+        // Review I-2: a fix's move changes the input the fix names and nothing else, so the
+        // test of what it does is the test of what the screen says. The Outside diameter is
+        // the exception the Size tab makes: its slider moves the cap and its thread with the cup.
+        let catalogue = InputCatalogue::get();
+        let same = |a: Option<Value>, b: Option<Value>| match (a, b) {
+            (Some(Value::Num(x)), Some(Value::Num(y))) => x.to_bits() == y.to_bits(),
+            (a, b) => a == b,
+        };
+        for (name, inputs) in designs() {
+            let results = compute_all(&inputs);
+            for g in &CHECK_GUIDES {
+                for (path, direction) in possible_fixes(g) {
+                    let allowed: &[&str] = if path == RING {
+                        &[RING, "metal.cap_od_mm", "metal.cap_thread_dia_mm"]
+                    } else {
+                        &[path]
+                    };
+                    for moved in moves(&inputs, &results, path, direction) {
+                        let changed: Vec<&str> = catalogue
+                            .all()
+                            .map(|entry| entry.path.as_str())
+                            .filter(|&other| !same(inputs.get(other), moved.get(other)))
+                            .collect();
+                        assert!(
+                            !changed.is_empty() && changed.iter().all(|p| allowed.contains(p)),
+                            "{name}: {} changes {changed:?}",
+                            fix_text(path, direction)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_space_claim_fixes_follow_the_axis_over_its_claim() {
+        // Review I-3: each axis over its claim brings the inputs that shrink it, each shown
+        // where one step does: the magnets for the two lengths; for the diameter the cap, and
+        // the Outside diameter, whose slider moves the cap with the cup. An axis whose claim is
+        // not a number has no fix: its Problem asks for the number.
+        let space = guide(SPACE_CLAIM).unwrap();
+        let shown = |inputs: DesignInputs| fixes(space, &inputs, &compute_all(&inputs));
+        let magnets = (MAGNET_LENGTH, Direction::Lower);
+        let cap = ("metal.cap_od_mm", Direction::Lower);
+        let diameter = (RING, Direction::Lower);
+        // Over the overall length and the bay: the magnets only.
+        assert_eq!(shown(breaking(long_magnets)), [magnets]);
+        // The cap sets the diameter: the cap, or the Outside diameter with the cap following.
+        assert_eq!(shown(breaking(large_cap)), [cap, diameter]);
+        // The cup sets the diameter: a smaller cap leaves it as it is.
+        let ring = breaking(large_ring);
+        let results = compute_all(&ring);
+        assert!(results.model.cup_od_mm > ring.metal.cap_od_mm);
+        assert_eq!(shown(ring), [diameter]);
+        assert_eq!(shown(breaking(unknown_claim)), []);
+        assert_eq!(shown(passing_design()), []);
+    }
+
+    #[test]
+    fn a_slider_fix_whose_step_turns_another_check_red_is_not_offered() {
+        // Review focus 3. The defaults at 12 poles: the blocks do not fit, while the hot-low
+        // torque and the cup wall pass. One step down to 10 poles turns both red, so only the
+        // larger ring is offered. On the passing design at 12 poles the same step only returns
+        // to a passing design, so both fixes are offered.
+        let fit = guide(FIT_CHECK).unwrap();
+        let shown = |inputs: &DesignInputs| fixes(fit, inputs, &compute_all(inputs));
+        let crowded = with_poles(12);
+        let results = compute_all(&crowded);
+        for check in [HOT_MIN, CUP_WALL] {
+            assert_eq!(level_of(check, &crowded, &results), Level::Good, "{check}");
+            let ten = with_poles(10);
+            assert_eq!(
+                level_of(check, &ten, &compute_all(&ten)),
+                Level::Bad,
+                "{check}"
+            );
+        }
+        assert_eq!(shown(&crowded), [(RING, Direction::Raise)]);
+        assert_eq!(
+            shown(&breaking(|i| i.coupling.npole = 12)),
+            [(RING, Direction::Raise), (POLES, Direction::Lower)]
+        );
     }
 
     #[test]
@@ -1812,25 +2165,76 @@ mod tests {
     }
 
     #[test]
-    fn no_design_shows_one_input_raised_and_lowered() {
+    fn only_two_failing_checks_that_pull_apart_show_one_input_both_ways() {
         // Spec review focus 4: the default design's first screen once said "lower the gap" for
-        // the hot-low torque and "raise the gap" for the clearance.
+        // the hot-low torque and "raise the gap" for the clearance. A fix whose step turns a
+        // passing check red is not offered, so that pair cannot show. One input still shows
+        // both ways when two checks that pull it apart both fail already: here the hot-low
+        // torque against an overall-length claim the stack is over (magnet length), and the
+        // blocks against a diameter claim (Outside diameter). How the screen should show such a
+        // trade-off is the owner's call (task report); until then this pins what it shows.
+        let pulled_apart: [(&str, &[&str]); 2] = [
+            ("length_conflict", &[MAGNET_LENGTH]),
+            ("diameter_conflict", &[RING]),
+        ];
         for (name, inputs) in designs() {
             let results = compute_all(&inputs);
             let shown: Vec<(&str, Direction)> = CHECK_GUIDES
                 .iter()
-                .filter(|g| level(g, &inputs, &results) != Level::Good)
                 .flat_map(|g| fixes(g, &inputs, &results))
                 .collect();
-            for &(path, direction) in &shown {
-                if direction == Direction::Raise {
-                    assert!(
-                        !shown.contains(&(path, Direction::Lower)),
-                        "{name}: {path} both ways"
-                    );
-                }
-            }
+            let both_ways: Vec<&str> = shown
+                .iter()
+                .filter(|&&(path, direction)| {
+                    direction == Direction::Raise && shown.contains(&(path, Direction::Lower))
+                })
+                .map(|&(path, _)| path)
+                .collect();
+            let expected = pulled_apart
+                .iter()
+                .find(|&&(fixture, _)| fixture == name)
+                .map_or(&[][..], |&(_, paths)| paths);
+            assert_eq!(both_ways, expected, "{name}");
         }
+    }
+
+    #[test]
+    fn the_fix_cache_computes_once_per_design_and_follows_an_edit() {
+        // Every guide's fixes, in the guides' order (none for a passing check), computed once
+        // per design: each fix runs `compute_all` on the design its move reaches.
+        let all = |inputs: &DesignInputs| -> Vec<Vec<(&str, Direction)>> {
+            let results = compute_all(inputs);
+            CHECK_GUIDES
+                .iter()
+                .map(|g| fixes(g, inputs, &results))
+                .collect()
+        };
+        let mut cache = FixCache::default();
+        let defaults = DesignInputs::default();
+        let results = compute_all(&defaults);
+        for _ in 0..3 {
+            assert_eq!(cache.get(&defaults, &results), all(&defaults).as_slice());
+        }
+        assert_eq!(
+            cache.computed, 1,
+            "a design asked about again is not computed again"
+        );
+        let crowded = with_poles(12);
+        let crowded_results = compute_all(&crowded);
+        assert_eq!(
+            cache.get(&crowded, &crowded_results),
+            all(&crowded).as_slice()
+        );
+        assert_eq!(cache.computed, 2);
+        let passing = passing_design();
+        let passing_results = compute_all(&passing);
+        assert!(
+            cache
+                .get(&passing, &passing_results)
+                .iter()
+                .all(Vec::is_empty)
+        );
+        assert_eq!(cache.computed, 3);
     }
 
     // ------------------------------------------------------------------ plain words
@@ -2086,9 +2490,23 @@ mod tests {
 
     #[test]
     fn the_temperature_problem_names_each_failing_term() {
+        // The hot-day start against every limit it is not below, each ring's by name: each
+        // ring needs its own fix.
         assert_eq!(
             problem(TEMPERATURE, &design(hot_day)).unwrap(),
-            "Hot-day start 140.0 °C is not below the 93.06 °C magnet limit. Hot-day start 140.0 °C is not below the 120.0 °C adhesive limit. The slip-fault peak of 141.0 °C reaches the 93.06 °C magnet limit. The slip-fault peak of 141.0 °C reaches the 120.0 °C adhesive limit."
+            "Hot-day start 140.0 °C is at or above the inner magnets' 93.06 °C limit, the outer magnets' 93.06 °C limit and the 120.0 °C adhesive limit. The slip-fault peak of 141.0 °C reaches the 93.06 °C magnet limit. The slip-fault peak of 141.0 °C reaches the 120.0 °C adhesive limit."
+        );
+        // Only the inner ring's library N42 block (rated 80 °C) is below the start.
+        let text = problem(
+            TEMPERATURE,
+            &design(|i| i.coupling.magnets.part_inner = "B842".to_owned()),
+        )
+        .unwrap();
+        assert!(
+            text.starts_with(
+                "Hot-day start 65.00 °C is at or above the inner magnets' -3.517 °C limit. The slip-fault peak of "
+            ),
+            "{text}"
         );
         assert_eq!(
             problem(TEMPERATURE, &design(slip_fault)).unwrap(),
@@ -2096,7 +2514,7 @@ mod tests {
         );
         assert_eq!(
             problem(TEMPERATURE, &design(cool_adhesive)).unwrap(),
-            "Hot-day start 65.00 °C is not below the 60.00 °C adhesive limit. The slip-fault peak of 65.96 °C reaches the 60.00 °C adhesive limit."
+            "Hot-day start 65.00 °C is at or above the 60.00 °C adhesive limit. The slip-fault peak of 65.96 °C reaches the 60.00 °C adhesive limit."
         );
         assert_eq!(
             problem(TEMPERATURE, &design(hot_cure)).unwrap(),
@@ -2104,7 +2522,7 @@ mod tests {
         );
         assert_eq!(
             problem(TEMPERATURE, &design(ferrite)).unwrap(),
-            "The minimum magnet temperature -40.00 °C is below the 335.7 °C cold demagnetization limit (from stored 3D fields that do not yet follow the magnet grade)."
+            "The minimum magnet temperature -40.00 °C is below the inner magnets' 335.7 °C cold demagnetization limit and the outer magnets' 335.7 °C cold demagnetization limit (from stored 3D fields that do not yet follow the magnet grade)."
         );
         assert_eq!(problem(TEMPERATURE, &DesignInputs::default()), None);
     }
@@ -2139,8 +2557,9 @@ mod tests {
         for (name, inputs) in cases {
             let results = compute_all(&inputs);
             let passes = check_level(&results, TEMPERATURE) == Some(Level::Good);
+            let failing = failing_terms(&inputs, &results);
             assert_eq!(
-                failing_terms(&results).is_empty(),
+                failing.is_empty(),
                 passes,
                 "{name}: {}",
                 results.temperature.summary.verdict
@@ -2150,6 +2569,17 @@ mod tests {
                 passes,
                 "{name}"
             );
+            // The peak is never below the hot-day start, so a start at a ring's magnet limit
+            // always brings the peak's fixes too: the cooling fixes sit on the peak terms only,
+            // as neither moves the start.
+            for ring in Ring::BOTH {
+                if failing.contains(&TemperatureTerm::HotDayMagnet(ring)) {
+                    assert!(
+                        failing.contains(&TemperatureTerm::MagnetPeak),
+                        "{name}: {ring:?}"
+                    );
+                }
+            }
         }
     }
 
@@ -2223,6 +2653,39 @@ mod tests {
             );
         }
         assert_eq!(problem(FIT_CHECK, &DesignInputs::default()), None);
+    }
+
+    #[test]
+    fn a_failing_fit_problem_names_each_ring_that_does_not_fit() {
+        // The fit rule is the engine's, ring by ring (`ring_fits`): the Problem's first sentence
+        // says the blocks do not fit, and one more names each ring that fails the rule, also
+        // when a width is not a number (the rule fails that ring, as it fails the design).
+        let mut cases = designs();
+        for faceted in [1, 0] {
+            cases.push((
+                "a width that is not a number",
+                breaking(move |i| {
+                    i.coupling.faceted = faceted;
+                    i.coupling.magnets.part_inner.clear();
+                    i.coupling.magnets.manual_inner_width_mm = f64::NAN;
+                }),
+            ));
+        }
+        for (name, inputs) in cases {
+            let results = compute_all(&inputs);
+            let failing_rings = ring_fits(&inputs.coupling, &results.model)
+                .iter()
+                .filter(|ring| !ring.fits())
+                .count();
+            match (guide(FIT_CHECK).unwrap().problem)(&inputs, &results) {
+                Some(text) => {
+                    assert!(failing_rings > 0, "{name}: a failing fit fails a ring");
+                    let sentences = text.matches(". ").count() + 1;
+                    assert_eq!(sentences, 1 + failing_rings, "{name}: {text}");
+                }
+                None => assert_eq!(failing_rings, 0, "{name}"),
+            }
+        }
     }
 
     #[test]

@@ -512,32 +512,71 @@ pub fn pitch_share(width_mm: f64, back_apothem_mm: f64, thickness_mm: f64, npole
     width_mm / (2.0 * PI * (back_apothem_mm + thickness_mm / 2.0) / npole)
 }
 
-/// Whether both rings' blocks fit (Addendum A decision A2-4). Faceted blocks (`faceted` 1)
-/// fit their polygon flats: the Calculator's C52 and C59 checks pass (their comparison,
-/// [`flat_fits`]). Arcs (any other code; the flat checks read "n/a (arcs)") fit when neither
-/// ring's blocks overlap at the magnet mid-radius: a [`pitch_share`] of at most 1, where C66
-/// and C67 would otherwise clamp the fill and price overlapping arcs as if they fitted.
-/// Inverse sizing counts only layouts that fit.
-pub fn blocks_fit(ci: &CouplingInputs, r: &ModelResults) -> bool {
+/// How one ring's blocks sit in their places: the comparison [`blocks_fit`] makes for it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RingFit {
+    /// Faceted blocks (`faceted` 1): the block's width and the polygon flat it sits on [mm],
+    /// the Calculator's C52 (inner ring) and C59 (outer ring) checks.
+    Flat { width_mm: f64, flat_mm: f64 },
+    /// Arcs (any other code): the blocks' [`pitch_share`] at the magnet mid-radius.
+    Arc { share: f64 },
+}
+
+impl RingFit {
+    /// Whether the ring's blocks fit: a block no wider than its flat ([`flat_fits`]), or arcs
+    /// that do not overlap (a share of at most 1). A comparison with NaN fails.
+    pub fn fits(self) -> bool {
+        match self {
+            RingFit::Flat { width_mm, flat_mm } => flat_fits(flat_mm, width_mm),
+            RingFit::Arc { share } => share <= 1.0,
+        }
+    }
+}
+
+/// The inner and the outer ring's [`RingFit`], in that order: the one place the fit rule
+/// reads the results, for [`blocks_fit`] and for whatever names the ring that does not fit.
+pub fn ring_fits(ci: &CouplingInputs, r: &ModelResults) -> [RingFit; 2] {
     if ci.faceted == 1 {
-        flat_fits(r.inner_flat_width_mm, r.inner_width_mm)
-            && flat_fits(r.outer_flat_width_mm, r.outer_width_mm)
+        [
+            RingFit::Flat {
+                width_mm: r.inner_width_mm,
+                flat_mm: r.inner_flat_width_mm,
+            },
+            RingFit::Flat {
+                width_mm: r.outer_width_mm,
+                flat_mm: r.outer_flat_width_mm,
+            },
+        ]
     } else {
         let n = ci.npole as f64;
-        let inner = pitch_share(
-            r.inner_width_mm,
-            ci.inner_back_apothem_mm,
-            r.inner_thickness_mm,
-            n,
-        );
-        let outer = pitch_share(
-            r.outer_width_mm,
-            r.outer_face_apothem_mm,
-            r.outer_thickness_mm,
-            n,
-        );
-        inner <= 1.0 && outer <= 1.0
+        [
+            RingFit::Arc {
+                share: pitch_share(
+                    r.inner_width_mm,
+                    ci.inner_back_apothem_mm,
+                    r.inner_thickness_mm,
+                    n,
+                ),
+            },
+            RingFit::Arc {
+                share: pitch_share(
+                    r.outer_width_mm,
+                    r.outer_face_apothem_mm,
+                    r.outer_thickness_mm,
+                    n,
+                ),
+            },
+        ]
     }
+}
+
+/// Whether both rings' blocks fit (Addendum A decision A2-4), each ring by [`ring_fits`].
+/// Faceted blocks fit their polygon flats: the Calculator's C52 and C59 checks pass. Arcs (the
+/// flat checks read "n/a (arcs)") fit when neither ring's blocks overlap at the magnet
+/// mid-radius, where C66 and C67 would otherwise clamp the fill and price overlapping arcs as
+/// if they fitted. Inverse sizing counts only layouts that fit.
+pub fn blocks_fit(ci: &CouplingInputs, r: &ModelResults) -> bool {
+    ring_fits(ci, r).iter().all(|ring| ring.fits())
 }
 
 /// Measured correction only for the prototype's circuit (no iron, same poles, B842SH both rings).

@@ -8,7 +8,9 @@ use magcoupling::engine::housing::{INSIDE_THE_SPACE_CLAIM, SPACE_CLAIM_UNKNOWN};
 use magcoupling::engine::meta::NumOrText;
 use magcoupling::engine::meta::SetErrorKind;
 use magcoupling::engine::meta::{SliderRange, Value, result_rows};
-use magcoupling::engine::model::{END_EFFECT_OUT_OF_RANGE, blocks_fit, pitch_share};
+use magcoupling::engine::model::{
+    END_EFFECT_OUT_OF_RANGE, RingFit, blocks_fit, pitch_share, ring_fits,
+};
 use magcoupling::engine::sizing::{
     FreeVariable, SCAN_CELLS, SizingError, SizingOutcome, SizingPoint, VALUE_TOLERANCE_MM,
     is_valid, solve, solve_in,
@@ -349,6 +351,74 @@ fn arcs_fit_exactly_at_a_pitch_share_of_one() {
     let r = compute_all(&d);
     assert!(share(&r) > 1.0);
     assert!(!blocks_fit(&d.coupling, &r.model));
+}
+
+#[test]
+fn ring_fits_gives_each_ring_s_comparison_and_blocks_fit_is_both() {
+    // The one fit rule, ring by ring (the GUI's fit Problem names the rings that fail it):
+    // flat blocks against their flats, arcs by their share of the mid-radius pitch.
+    let fits = |d: &DesignInputs| {
+        let r = compute_all(d);
+        (
+            ring_fits(&d.coupling, &r.model),
+            blocks_fit(&d.coupling, &r.model),
+            r,
+        )
+    };
+    let (rings, fit, r) = fits(&DesignInputs::default());
+    assert_eq!(
+        rings,
+        [
+            RingFit::Flat {
+                width_mm: r.model.inner_width_mm,
+                flat_mm: r.model.inner_flat_width_mm,
+            },
+            RingFit::Flat {
+                width_mm: r.model.outer_width_mm,
+                flat_mm: r.model.outer_flat_width_mm,
+            },
+        ]
+    );
+    assert!(rings.iter().all(|ring| ring.fits()) && fit);
+    // 12 flat blocks on the default ring: the inner flats are too narrow, the outer ones not.
+    let mut twelve = DesignInputs::default();
+    twelve.coupling.npole = 12;
+    let (rings, fit, _) = fits(&twelve);
+    assert_eq!(rings.map(RingFit::fits), [false, true]);
+    assert!(!fit);
+    // 40 arcs: both rings' shares, computed as the fill is, are over one.
+    let mut arcs = twelve.clone();
+    arcs.coupling.npole = 40;
+    arcs.coupling.faceted = 0;
+    let (rings, fit, r) = fits(&arcs);
+    let a = arcs.coupling.inner_back_apothem_mm;
+    assert_eq!(
+        rings,
+        [
+            RingFit::Arc {
+                share: pitch_share(r.model.inner_width_mm, a, r.model.inner_thickness_mm, 40.0),
+            },
+            RingFit::Arc {
+                share: pitch_share(
+                    r.model.outer_width_mm,
+                    r.model.outer_face_apothem_mm,
+                    r.model.outer_thickness_mm,
+                    40.0,
+                ),
+            },
+        ]
+    );
+    assert_eq!(rings.map(RingFit::fits), [false, false]);
+    assert!(!fit);
+    // A width that is not a number fails its ring, flat or arc, as it fails the design.
+    for faceted in [1, 0] {
+        let mut unknown = DesignInputs::default();
+        unknown.coupling.faceted = faceted;
+        unknown.coupling.magnets.part_inner = String::new();
+        unknown.coupling.magnets.manual_inner_width_mm = f64::NAN;
+        let (rings, fit, _) = fits(&unknown);
+        assert!(!rings[0].fits() && !fit, "faceted {faceted}: {rings:?}");
+    }
 }
 
 #[test]
