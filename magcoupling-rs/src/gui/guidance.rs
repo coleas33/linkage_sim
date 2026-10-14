@@ -23,7 +23,8 @@
 //! without a rating, since the engine does not calibrate such a magnet's limit. These checks
 //! compute the design each move reaches, so the panel asks through a [`FixCache`]. A failing
 //! check left without a fix says so ([`NO_FIX`]), and two failing checks that pull one input
-//! both ways each say so ([`trade_offs`]). A fix's text takes the input's label from the
+//! both ways each say so ([`trade_offs`]), as does a fix that sets back another failing check
+//! ([`side_effects`]). A fix's text takes the input's label from the
 //! [`InputCatalogue`], or the Size tab's name for it ([`fix_text`]), so no guide types a
 //! label. The tests hold the fixes to helping: on each test design that fails a check, every
 //! failing term of the check has a shown fix that moves it toward passing, and no shown fix
@@ -146,6 +147,7 @@ const END_EFFECT: &str = "model.end_effect_check";
 const MAGNET_LENGTH: &str = "coupling.magnets.axial_length_mm";
 const RING: &str = "coupling.inner_back_apothem_mm";
 const POLES: &str = "coupling.npole";
+const FACE_GAP: &str = "metal.face_gap_mm";
 
 /// Inputs the Size tab shows under its own name, by path: a fix on one names the Size-tab
 /// control a user moves it with ("Raise Outside diameter", not the ring's radius).
@@ -167,10 +169,12 @@ const CLEARANCE_GUIDE: CheckGuide = CheckGuide {
     label: "Running clearance",
     problem: clearance_problem,
     why: "Only a small radial gap separates the sleeve from the liner; it must absorb shaft offset, runout, deflection, thermal growth and tolerances, or they rub.",
+    // Thinner sleeve and liner first: they open the gap at no cost in torque, while a larger
+    // face gap lowers the pull-out ([`SIDE_EFFECTS`] says so while the hot-low torque fails).
     fixes: Fixes::Static(&[
-        ("metal.face_gap_mm", Direction::Raise),
         ("metal.sleeve_mm", Direction::Lower),
         ("metal.liner_mm", Direction::Lower),
+        (FACE_GAP, Direction::Raise),
     ]),
     learn: Learn::None("No note covers the running-clearance stack yet."),
 };
@@ -446,6 +450,81 @@ pub fn trade_offs(all: &[Vec<(&'static str, Direction)>], index: usize) -> Vec<S
     notes
 }
 
+/// A fix that also sets back another guide's check, by physics the fix's own check does not
+/// see. [`helps`] blocks only a step that turns a passing check red, so a check that already
+/// fails could be pushed further without a word; [`side_effects`] says so instead.
+struct SideEffect {
+    /// The fix.
+    fix: (&'static str, Direction),
+    /// The check it sets back.
+    check: &'static str,
+    /// What the move does, after "Raising {input} also ".
+    effect: &'static str,
+    /// What follows for the check, after its guide's label.
+    outcome: &'static str,
+}
+
+/// The fixes with a side effect (physics review 2, N2): a larger face gap opens the running
+/// clearance, but lowers the gap flux density and so the pull-out the hot-low torque is
+/// taken from.
+const SIDE_EFFECTS: [SideEffect; 1] = [SideEffect {
+    fix: (FACE_GAP, Direction::Raise),
+    check: HOT_MIN,
+    effect: "lowers the pull-out",
+    outcome: "falls further",
+}];
+
+/// The notes to draw under the fixes of the guide at `index` (in `all`, every guide's
+/// [`fixes`] as [`FixCache::get`] gives them) for each shown fix that sets back another check
+/// that is not passing in this design ([`SIDE_EFFECTS`]), for example "Raising Candidate
+/// flat-face magnetic gap also lowers the pull-out, so Hot-low torque falls further."
+pub fn side_effects(
+    all: &[Vec<(&'static str, Direction)>],
+    index: usize,
+    inputs: &DesignInputs,
+    results: &DesignResults,
+) -> Vec<String> {
+    let Some(own) = all.get(index) else {
+        return Vec::new();
+    };
+    SIDE_EFFECTS
+        .iter()
+        .filter(|effect| own.contains(&effect.fix))
+        .filter_map(|effect| {
+            let other = guide(effect.check)?;
+            if level(other, inputs, results) == Level::Good {
+                return None;
+            }
+            let (path, direction) = effect.fix;
+            let verb = match direction {
+                Direction::Raise => "Raising",
+                Direction::Lower => "Lowering",
+                Direction::Change | Direction::CustomHotterGrade => "Changing",
+            };
+            Some(format!(
+                "{verb} {} also {}, so {} {}.",
+                fix_label(path),
+                effect.effect,
+                other.label,
+                effect.outcome
+            ))
+        })
+        .collect()
+}
+
+/// Every note drawn under the fixes of the guide at `index`: its [`trade_offs`], then its
+/// [`side_effects`].
+pub fn guide_notes(
+    all: &[Vec<(&'static str, Direction)>],
+    index: usize,
+    inputs: &DesignInputs,
+    results: &DesignResults,
+) -> Vec<String> {
+    let mut notes = trade_offs(all, index);
+    notes.extend(side_effects(all, index, inputs, results));
+    notes
+}
+
 /// Every guide's [`fixes`] for the design they were built for (spec 4.1, as for the
 /// consequences): the panel asks every frame, and each fix runs `compute_all` on the design
 /// its move reaches. They are computed again only when the inputs change.
@@ -716,14 +795,15 @@ fn current_number(inputs: &DesignInputs, results: &DesignResults, path: &str) ->
 /// label that another input's label equals or ends with ("Boss outside diameter" against
 /// "Shaft boss outside diameter") is followed by its group's heading, so the fix names one
 /// input: "Raise Boss outside diameter (Shaft clamps)". A [`Direction::CustomHotterGrade`] fix
-/// names its two picks: "Change Inner magnet part to Custom dimensions (manual), then set
-/// Inner magnet grade (manual dimensions) to one rated hotter than the part". A path that is
-/// no input reads as itself (a test keeps every guide's fixes on real inputs).
+/// names its two picks: "Change Inner magnet part to Custom dimensions (manual), enter the
+/// part's dimensions, then set Inner magnet grade (manual dimensions) to one rated hotter than
+/// the part". A path that is no input reads as itself (a test keeps every guide's fixes on
+/// real inputs).
 pub fn fix_text(path: &str, direction: Direction) -> String {
     let text = format!("{} {}", direction.word(), fix_label(path));
     match (direction, magnet_ring(path)) {
         (Direction::CustomHotterGrade, Some(ring)) => format!(
-            "{text} to {CUSTOM}, then set {} to one rated hotter than the part",
+            "{text} to {CUSTOM}, enter the part's dimensions, then set {} to one rated hotter than the part",
             fix_label(ring.grade())
         ),
         _ => text,
@@ -893,7 +973,9 @@ const OUTER_HOT_MAGNET: [(&str, Direction); 3] = [
 const ADHESIVE: [(&str, Direction); 1] = [("temperature.adhesive.selected", Direction::Change)];
 
 /// Less heat at the slip-fault peak: a shorter fault, a better path out for the heat. Neither
-/// moves the hot-day start (the ambient plus the driving rise), so neither is a hot-day fix.
+/// moves the hot-day start (the ambient plus the driving rise), so neither is a hot-day fix,
+/// and neither can bring the peak below a limit that start already reaches
+/// ([`TemperatureTerm::peak_start_and_limit`]).
 const COOLING: [(&str, Direction); 2] = [
     ("temperature.duty.fault_trip_s", Direction::Lower),
     ("temperature.thermal.conductance_W_K", Direction::Raise),
@@ -968,6 +1050,28 @@ impl TemperatureTerm {
         }
     }
 
+    /// For a slip-fault peak, the hot-day start (the ambient plus the driving rise) and the
+    /// peak's limit; `None` for any other term. The engine builds the peak from that start by
+    /// adding heat (`peak = max(T_fault, T0 + rise per event) + duty x steady rise`, no added
+    /// term below zero), so the peak is never below the start: once the start reaches the
+    /// limit, no shorter fault and no better heat path brings the peak under it, and the
+    /// hot-day term's own fixes are the ones that clear both (physics review 2, N1).
+    fn peak_start_and_limit(self, results: &DesignResults) -> Option<(f64, f64)> {
+        let s = &results.temperature.summary;
+        match self {
+            TemperatureTerm::MagnetPeak => Some((s.hot_day_start_C, s.magnet_limit_C)),
+            TemperatureTerm::AdhesivePeak => Some((s.hot_day_start_C, s.adhesive_limit_C)),
+            _ => None,
+        }
+    }
+
+    /// Whether the term is a slip-fault peak whose limit the hot-day start already reaches
+    /// ([`TemperatureTerm::peak_start_and_limit`]).
+    fn start_reaches_peak_limit(self, results: &DesignResults) -> bool {
+        self.peak_start_and_limit(results)
+            .is_some_and(|(start, limit)| start >= limit)
+    }
+
     /// The inputs that can move the term toward passing; [`temperature_fixes`] shows each only
     /// where one of its moves does.
     const fn fixes(self) -> &'static [(&'static str, Direction)] {
@@ -1008,7 +1112,8 @@ fn temperature_sentences(inputs: &DesignInputs, results: &DesignResults) -> Vec<
         .filter(|&ring| fails(HotDayMagnet(ring)))
         .partition(|&ring| ring.magnet_limit(results).0.is_nan());
     let mut hot_limits: Vec<String> = hot_rings
-        .into_iter()
+        .iter()
+        .copied()
         .map(|ring| {
             let (_, limit) = ring.magnet_limit(results);
             format!(
@@ -1037,27 +1142,36 @@ fn temperature_sentences(inputs: &DesignInputs, results: &DesignResults) -> Vec<
             ring.name()
         ));
     }
-    if fails(MagnetPeak) {
+    // A peak whose limit the hot-day start already reaches says nothing the hot-day sentence
+    // does not: the peak is never below the start ([`TemperatureTerm::start_reaches_peak_limit`]).
+    let magnet_peak_quoted = fails(MagnetPeak) && !MagnetPeak.start_reaches_peak_limit(results);
+    if magnet_peak_quoted {
         sentences.push(format!(
             "The slip-fault peak of {} reaches the {} magnet limit.",
             result_text(results, "temperature.magnet_life.peak_C"),
             result_text(results, "temperature.summary.magnet_limit_C"),
         ));
     }
-    if fails(AdhesivePeak) {
+    if fails(AdhesivePeak) && !AdhesivePeak.start_reaches_peak_limit(results) {
         sentences.push(format!(
             "The slip-fault peak of {} reaches the {} adhesive limit.",
             result_text(results, "temperature.adhesive_life.peak_C"),
             result_text(results, "temperature.summary.adhesive_limit_C"),
         ));
     }
+    // The peak sentence quotes the design's magnet limit: the lower ring's.
+    let peak_rings = Ring::BOTH.into_iter().filter(|&ring| {
+        magnet_peak_quoted
+            && ring.magnet_limit(results).0 == results.temperature.summary.magnet_limit_C
+    });
+    let quoted: Vec<Ring> = hot_rings.into_iter().chain(peak_rings).collect();
+    sentences.extend(magnet_limit_sentence(inputs, results, &quoted));
     if fails(Cure) {
+        let (margin, minimum) = cure_margin_texts(results);
         sentences.push(format!(
-            "The adhesive cures at {}, {} below the {} at which a ring alone on its carrier, as during the cure, starts to demagnetize; the margin must be at least {}.",
+            "The adhesive cures at {}, {margin} below the {} at which a ring alone on its carrier, as during the cure, starts to demagnetize; the margin must be at least {minimum}.",
             result_text(results, "temperature.adhesive.cure_C"),
-            cure_margin_text(results),
             result_text(results, "temperature.demag.onset_single_ring_C"),
-            number_text(CURE_MARGIN_MIN_C, "temperature.summary.cure_margin_C"),
         ));
     }
     let cold_limits: Vec<String> = Ring::BOTH
@@ -1091,6 +1205,35 @@ fn temperature_sentences(inputs: &DesignInputs, results: &DesignResults) -> Vec<
     sentences
 }
 
+/// What a quoted hot magnet limit is (physics review 2, S2): for NdFeB, the like-pole
+/// (skipping) onset less the design margin, the temperature at which the field of a slip
+/// starts to demagnetize the ring, not a running rating; without it an 80 °C-rated part with
+/// a limit below zero reads as a bug. `quoted` holds the rings whose limit the Problem quotes
+/// (a ring may be listed twice); a ferrite ring's hot limit is its rating, which needs no
+/// sentence, so only the others are named. `None` when none is left.
+fn magnet_limit_sentence(
+    inputs: &DesignInputs,
+    results: &DesignResults,
+    quoted: &[Ring],
+) -> Option<String> {
+    let onset_rings: Vec<Ring> = Ring::BOTH
+        .into_iter()
+        .filter(|ring| quoted.contains(ring))
+        .filter(|ring| matches!(ring.cold_limit(results).0, NumOrText::Text(_)))
+        .collect();
+    let margin = input_text(inputs, "temperature.demag.design_margin_C");
+    match onset_rings[..] {
+        [] => None,
+        [ring] => Some(format!(
+            "The {} magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the {margin} design margin.",
+            ring.name()
+        )),
+        _ => Some(format!(
+            "Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the {margin} design margin."
+        )),
+    }
+}
+
 /// Whether all four reverse-field inputs of the demagnetization check hold their defaults: the
 /// 3D results for the default NdFeB design.
 fn default_reverse_fields(inputs: &DesignInputs) -> bool {
@@ -1105,27 +1248,36 @@ fn default_reverse_fields(inputs: &DesignInputs) -> bool {
     fields(&inputs.temperature.demag) == fields(&DemagInputs::default())
 }
 
-/// The cure margin with as many decimals as the onset it is measured from shows, so the
-/// numbers printed beside it subtract ("6.0 °C below the 126.0 °C ..."). The margin reads as
-/// any result does where the onset's text has no fixed decimals (an exponent, or not a number),
-/// and where that rounding would carry a failing margin up to the required one (9.96 read as
-/// "10.0" beside "at least 10.00 °C").
-fn cure_margin_text(results: &DesignResults) -> String {
+/// The cure margin and the minimum it must reach, each with as many decimals as the onset the
+/// margin is measured from shows, so the numbers printed beside it subtract ("6.0 °C below
+/// the 126.0 °C ... at least 10.0 °C"). Both read as any result does where the onset's text
+/// has no fixed decimals (an exponent, or not a number), and where that rounding would carry a
+/// failing margin up to the minimum (9.96 read as "10.0" beside "at least 10.0 °C").
+fn cure_margin_texts(results: &DesignResults) -> (String, String) {
     const MARGIN: &str = "temperature.summary.cure_margin_C";
     let onset = format_value(&Value::Num(results.temperature.demag.onset_single_ring_C));
     let margin = results.temperature.summary.cure_margin_C;
+    let as_results = || {
+        (
+            result_text(results, MARGIN),
+            number_text(CURE_MARGIN_MIN_C, MARGIN),
+        )
+    };
     match onset.split_once('.') {
         Some((_, decimals)) if !onset.contains('e') && margin.is_finite() => {
             let shown = fixed(margin, decimals.len());
             let rounded_up_to_pass = margin < CURE_MARGIN_MIN_C
                 && shown.parse::<f64>().is_ok_and(|x| x >= CURE_MARGIN_MIN_C);
             if rounded_up_to_pass {
-                return result_text(results, MARGIN);
+                return as_results();
             }
             let unit = result_info(MARGIN).map_or("", |info| info.meta.unit);
-            with_unit(shown, unit)
+            (
+                with_unit(shown, unit),
+                with_unit(fixed(CURE_MARGIN_MIN_C, decimals.len()), unit),
+            )
         }
-        _ => result_text(results, MARGIN),
+        _ => as_results(),
     }
 }
 
@@ -1140,7 +1292,9 @@ fn listed(items: &[String]) -> String {
 
 /// The temperature guide's fixes ([`Fixes::PerTerm`]): for each failing term in order, each
 /// of its fixes that one of its moves helps ([`helps`] against the term's margin), each fix
-/// once. A term none of whose fixes helps from this design shows none. The two picks past the
+/// once. A slip-fault peak gets its cooling only while the hot-day start is below the same
+/// limit ([`TemperatureTerm::peak_start_and_limit`]): otherwise a step lowers the peak by a
+/// fraction of a degree, which [`helps`] would accept, but no move brings it under. A term none of whose fixes helps from this design shows none. The two picks past the
 /// library ([`Direction::CustomHotterGrade`]) show only where the part's own fix does not: a
 /// library part that helps is the simpler change.
 fn temperature_fixes(
@@ -1150,6 +1304,14 @@ fn temperature_fixes(
     let mut shown: Vec<(&'static str, Direction)> = Vec::new();
     for term in failing_terms(inputs, results) {
         let margin = |design: &DesignInputs, after: &DesignResults| term.margin(design, after);
+        // Cooling only while the start is below the peak's limit; a start or limit that is
+        // not a number gives none either.
+        if term
+            .peak_start_and_limit(results)
+            .is_some_and(|(start, limit)| start >= limit || start.is_nan() || limit.is_nan())
+        {
+            continue;
+        }
         for &fix in term.fixes() {
             let (path, direction) = fix;
             let part_shown = direction == Direction::CustomHotterGrade
@@ -1353,7 +1515,7 @@ fn hot_min_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<Str
 fn clearance_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
     failing(CLEARANCE, inputs, results).then(|| {
         format!(
-            "Sleeve-to-liner gap {} less {} of movement allowances leaves {}, below the {} target.",
+            "Radial running gap {} less {} of movement allowances leaves {}, below the {} target.",
             result_text(results, "metal.sleeve_liner_clearance_mm"),
             result_text(results, "metal.adverse_movement_mm"),
             result_text(results, "metal.min_running_clearance_mm"),
@@ -2022,7 +2184,7 @@ mod tests {
             let all = all_fixes(&inputs, &results);
             for (index, g) in CHECK_GUIDES.iter().enumerate() {
                 texts.extend((g.problem)(&inputs, &results));
-                texts.extend(trade_offs(&all, index));
+                texts.extend(guide_notes(&all, index, &inputs, &results));
             }
             texts.push(design_status_text(&design_status(&inputs, &results)));
         }
@@ -2355,10 +2517,18 @@ mod tests {
                 }
                 let terms_before = terms(g.check, &inputs, &results);
                 // A margin that is not a number (a claim left blank) has no fix to move it:
-                // its Problem asks for the number.
+                // its Problem asks for the number. A slip-fault peak whose limit the hot-day
+                // start already reaches has no fix of its own either (review 2, N1): the
+                // hot-day term at the same limit, which fails too, carries the fixes that
+                // clear both (a test checks it fails).
+                let reached: Vec<String> = TemperatureTerm::ALL
+                    .iter()
+                    .filter(|t| g.check == TEMPERATURE && t.start_reaches_peak_limit(&results))
+                    .map(|t| format!("{t:?}"))
+                    .collect();
                 let failing: BTreeSet<&str> = terms_before
                     .iter()
-                    .filter(|t| !t.passes && !t.margin.is_nan())
+                    .filter(|t| !t.passes && !t.margin.is_nan() && !reached.contains(&t.name))
                     .map(|t| t.name.as_str())
                     .collect();
                 let shown = fixes(g, &inputs, &results);
@@ -2582,27 +2752,23 @@ mod tests {
         // Above both rings' limits and the adhesive's. No library part is rated above the
         // N42SH parts in use, and a grade does nothing to a ring with a library part. Custom
         // dimensions with a blank grade has no rating, so its limit is not calibrated: no fix.
-        // Each ring's way is Custom dimensions with a grade rated hotter than the part.
+        // Each ring's way is Custom dimensions with a grade rated hotter than the part. The
+        // start is above both limits, so no cooling can bring the peak under them (review 2,
+        // N1): the hot-day fixes clear both.
         assert_eq!(
             shown(breaking(hot_day)),
-            [hotter_inner, hotter_outer, adhesive, trip, conductance]
+            [hotter_inner, hotter_outer, adhesive]
         );
         // The inner ring already on manual dimensions with a blank grade: no library part beats
         // it, a grade does. The ring's own limit is the uncalibrated one, so a grade shows only
         // where its rated limit beats that. The outer ring is still on its library part.
         assert_eq!(
             shown(breaking(custom_hot_day)),
-            [grade_inner, hotter_outer, adhesive, trip, conductance]
+            [grade_inner, hotter_outer, adhesive]
         );
-        assert_eq!(
-            shown(breaking(n42_parts)),
-            [part_inner, part_outer, trip, conductance]
-        );
+        assert_eq!(shown(breaking(n42_parts)), [part_inner, part_outer]);
         assert_eq!(shown(breaking(slip_fault)), [trip, conductance]);
-        assert_eq!(
-            shown(breaking(cool_adhesive)),
-            [adhesive, trip, conductance]
-        );
+        assert_eq!(shown(breaking(cool_adhesive)), [adhesive]);
         assert_eq!(shown(breaking(hot_cure)), [adhesive]);
         // Ferrite in both rings, each below its own cold limit: either ring's part or grade.
         assert_eq!(
@@ -2730,7 +2896,7 @@ mod tests {
         // read the temperature check as passing with the hot-low torque unchanged. So that move
         // is no fix; the real one is two picks, the part to Custom dimensions and a grade rated
         // hotter than the part, scored as one move.
-        use Direction::{Change, CustomHotterGrade, Lower, Raise};
+        use Direction::{Change, CustomHotterGrade};
         let warm = breaking(|i| i.temperature.duty.hot_ambient_C = 88.0);
         let results = compute_all(&warm);
         assert_eq!(results.temperature.summary.hot_day_start_C, 98.0);
@@ -2758,15 +2924,14 @@ mod tests {
         );
         let hot_low = |r: &DesignResults| format_value(&Value::Num(r.metal.torque_hot_low_Nm));
         assert_eq!(hot_low(&unrated_results), hot_low(&results));
-        // What the guide shows: each ring's two picks, then the cooling for the peak.
+        // What the guide shows: each ring's two picks. The start is above the magnet limit,
+        // so no cooling can bring the peak under it (review 2, N1).
         let shown = fixes(guide(TEMPERATURE).unwrap(), &warm, &results);
         assert_eq!(
             shown,
             [
                 (PART_PATHS[0], CustomHotterGrade),
                 (PART_PATHS[1], CustomHotterGrade),
-                ("temperature.duty.fault_trip_s", Lower),
-                ("temperature.thermal.conductance_W_K", Raise),
             ]
         );
         assert!(!shown.contains(&(PART_PATHS[0], Change)));
@@ -2787,7 +2952,7 @@ mod tests {
         }
         assert_eq!(
             fix_text(PART_PATHS[0], CustomHotterGrade),
-            "Change Inner magnet part to Custom dimensions (manual), then set Inner magnet grade (manual dimensions) to one rated hotter than the part"
+            "Change Inner magnet part to Custom dimensions (manual), enter the part's dimensions, then set Inner magnet grade (manual dimensions) to one rated hotter than the part"
         );
     }
 
@@ -3231,7 +3396,7 @@ mod tests {
         );
         assert_eq!(
             problem(CLEARANCE, &defaults).unwrap(),
-            "Sleeve-to-liner gap 0.6768 mm less 0.7800 mm of movement allowances leaves -0.1032 mm, below the 0.2000 mm target."
+            "Radial running gap 0.6768 mm less 0.7800 mm of movement allowances leaves -0.1032 mm, below the 0.2000 mm target."
         );
         assert_eq!(
             problem(CUP_WALL, &defaults).unwrap(),
@@ -3244,17 +3409,18 @@ mod tests {
         // A 0.1 mm liner: the gap and the result after the allowances move by its 0.1 mm.
         let thinner = design(|i| i.metal.liner_mm = 0.1);
         let text = problem(CLEARANCE, &thinner).unwrap();
-        assert!(text.starts_with("Sleeve-to-liner gap 0.7768 mm"), "{text}");
+        assert!(text.starts_with("Radial running gap 0.7768 mm"), "{text}");
         assert!(text.contains("leaves -0.003174 mm"), "{text}");
     }
 
     #[test]
     fn the_temperature_problem_names_each_failing_term() {
         // The hot-day start against every limit it is not below, each ring's by name: each
-        // ring needs its own fix.
+        // ring needs its own fix. The peaks reach those limits too, which the start already
+        // says (review 2, S1), and a quoted magnet limit says what it is (S2).
         assert_eq!(
             problem(TEMPERATURE, &design(hot_day)).unwrap(),
-            "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the inner magnets' 93.06 °C limit, the outer magnets' 93.06 °C limit and the 120.0 °C adhesive limit. The slip-fault peak of 141.0 °C reaches the 93.06 °C magnet limit. The slip-fault peak of 141.0 °C reaches the 120.0 °C adhesive limit."
+            "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the inner magnets' 93.06 °C limit, the outer magnets' 93.06 °C limit and the 120.0 °C adhesive limit. Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin."
         );
         // Only the inner ring's library N42 block (rated 80 °C) is below the start.
         let text = problem(
@@ -3264,21 +3430,21 @@ mod tests {
         .unwrap();
         assert!(
             text.starts_with(
-                "Hot-day magnet temperature 65.00 °C (hot ambient plus the driving rise) is at or above the inner magnets' -3.517 °C limit. The slip-fault peak of "
+                "Hot-day magnet temperature 65.00 °C (hot ambient plus the driving rise) is at or above the inner magnets' -3.517 °C limit. The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 10.00 °C design margin."
             ),
             "{text}"
         );
         assert_eq!(
             problem(TEMPERATURE, &design(slip_fault)).unwrap(),
-            "The slip-fault peak of 104.0 °C reaches the 93.06 °C magnet limit."
+            "The slip-fault peak of 104.0 °C reaches the 93.06 °C magnet limit. Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin."
         );
         assert_eq!(
             problem(TEMPERATURE, &design(cool_adhesive)).unwrap(),
-            "Hot-day magnet temperature 65.00 °C (hot ambient plus the driving rise) is at or above the 60.00 °C adhesive limit. The slip-fault peak of 65.96 °C reaches the 60.00 °C adhesive limit."
+            "Hot-day magnet temperature 65.00 °C (hot ambient plus the driving rise) is at or above the 60.00 °C adhesive limit."
         );
         assert_eq!(
             problem(TEMPERATURE, &design(hot_cure)).unwrap(),
-            "The adhesive cures at 120.0 °C, 6.0 °C below the 126.0 °C at which a ring alone on its carrier, as during the cure, starts to demagnetize; the margin must be at least 10.00 °C."
+            "The adhesive cures at 120.0 °C, 6.0 °C below the 126.0 °C at which a ring alone on its carrier, as during the cure, starts to demagnetize; the margin must be at least 10.0 °C."
         );
         assert_eq!(
             problem(TEMPERATURE, &design(ferrite)).unwrap(),
@@ -3324,22 +3490,38 @@ mod tests {
     fn the_cure_margin_has_the_onset_s_decimals_so_the_printed_numbers_subtract() {
         let inputs = design(hot_cure);
         let results = compute_all(&inputs);
-        assert_eq!(cure_margin_text(&results), "6.0 °C");
-        // A margin that is not a number reads as the result does.
+        // The minimum too (physics review 2, S3): "6.0 °C below ... at least 10.0 °C".
+        let texts = |r: &DesignResults| cure_margin_texts(r);
+        let pair = |a: &str, b: &str| (a.to_owned(), b.to_owned());
+        assert_eq!(texts(&results), pair("6.0 °C", "10.0 °C"));
+        // A margin that is not a number reads as the result does, and so does the minimum.
         let mut broken = results.clone();
         broken.temperature.summary.cure_margin_C = f64::NAN;
         assert_eq!(
-            cure_margin_text(&broken),
-            result_text(&broken, "temperature.summary.cure_margin_C")
+            texts(&broken),
+            (
+                result_text(&broken, "temperature.summary.cure_margin_C"),
+                "10.00 °C".to_owned()
+            )
+        );
+        // An onset with no fixed decimals: both read as results do.
+        let mut no_decimals = results.clone();
+        no_decimals.temperature.demag.onset_single_ring_C = f64::INFINITY;
+        assert_eq!(
+            texts(&no_decimals),
+            (
+                result_text(&results, "temperature.summary.cure_margin_C"),
+                "10.00 °C".to_owned()
+            )
         );
         // A failing margin the onset's decimals would round up to the required 10 keeps its
-        // own digits, so the sentence never reads "10.0 °C below ... at least 10.00 °C".
+        // own digits, so the sentence never reads "10.0 °C below ... at least 10.0 °C".
         let mut close = results.clone();
         close.temperature.summary.cure_margin_C = 9.96;
-        assert_eq!(cure_margin_text(&close), "9.960 °C");
+        assert_eq!(texts(&close), pair("9.960 °C", "10.00 °C"));
         // One that rounds down stays at the onset's decimals.
         close.temperature.summary.cure_margin_C = 9.94;
-        assert_eq!(cure_margin_text(&close), "9.9 °C");
+        assert_eq!(texts(&close), pair("9.9 °C", "10.0 °C"));
     }
 
     #[test]
@@ -3352,7 +3534,7 @@ mod tests {
         outer_unknown.temperature.demag.outer_magnet_limit_C = f64::NAN;
         assert_eq!(
             (temperature.problem)(&inputs, &outer_unknown).unwrap(),
-            "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the inner magnets' 93.06 °C limit and the 120.0 °C adhesive limit. The outer magnets' limit is not a number, so the hot-day magnet temperature cannot be checked against it. The slip-fault peak of 141.0 °C reaches the 93.06 °C magnet limit. The slip-fault peak of 141.0 °C reaches the 120.0 °C adhesive limit."
+            "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the inner magnets' 93.06 °C limit and the 120.0 °C adhesive limit. The outer magnets' limit is not a number, so the hot-day magnet temperature cannot be checked against it. The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 10.00 °C design margin."
         );
         let mut both_unknown = outer_unknown.clone();
         both_unknown.temperature.demag.inner_magnet_limit_C = f64::NAN;
@@ -3460,22 +3642,39 @@ mod tests {
                 "{name}"
             );
             // The peak is never below the hot-day start, so a start at a ring's magnet limit
-            // always brings the peak's fixes too: the cooling fixes sit on the peak terms only,
-            // as neither moves the start. So the screen shows what the plan lists for the
-            // hot-day magnet term, the conductance included (a deviation in where it is listed,
-            // not in what shows).
+            // always fails the magnet peak too; but no cooling can bring that peak under a
+            // limit the start already reaches, so the cooling is not offered (review 2, N1).
+            // Each peak whose limit the start reaches fails beside its hot-day term, whose
+            // fixes clear both.
+            let shown = temperature_fixes(&inputs, &results);
             let conductance = ("temperature.thermal.conductance_W_K", Direction::Raise);
+            let trip = ("temperature.duty.fault_trip_s", Direction::Lower);
             for ring in Ring::BOTH {
                 if failing.contains(&TemperatureTerm::HotDayMagnet(ring)) {
                     assert!(
                         failing.contains(&TemperatureTerm::MagnetPeak),
                         "{name}: {ring:?}"
                     );
-                    assert!(
-                        temperature_fixes(&inputs, &results).contains(&conductance),
-                        "{name}: {ring:?}"
-                    );
                 }
+            }
+            let reached = |term: TemperatureTerm| {
+                failing.contains(&term) && term.start_reaches_peak_limit(&results)
+            };
+            if reached(TemperatureTerm::MagnetPeak) {
+                let hot_rings = Ring::BOTH
+                    .into_iter()
+                    .filter(|&ring| failing.contains(&TemperatureTerm::HotDayMagnet(ring)));
+                assert!(hot_rings.count() > 0, "{name}");
+            }
+            if reached(TemperatureTerm::AdhesivePeak) {
+                assert!(failing.contains(&TemperatureTerm::HotDayAdhesive), "{name}");
+            }
+            let any_cooling = [TemperatureTerm::MagnetPeak, TemperatureTerm::AdhesivePeak]
+                .into_iter()
+                .any(|t| failing.contains(&t) && !t.start_reaches_peak_limit(&results));
+            if !any_cooling {
+                assert!(!shown.contains(&conductance), "{name}");
+                assert!(!shown.contains(&trip), "{name}");
             }
         }
     }
@@ -4239,6 +4438,146 @@ mod tests {
         assert_eq!(cache.computed, 3);
     }
 
+    #[test]
+    fn cooling_is_offered_only_while_the_hot_day_start_is_below_the_peak_s_limit() {
+        // Physics review 2, N1: the engine's slip-fault peak is the hot-day start plus heat,
+        // never below it, so once the start reaches a limit no trip time or conductance can
+        // bring the peak under that limit, though each step lowers the peak a little.
+        let temperature = guide(TEMPERATURE).unwrap();
+        let trip = ("temperature.duty.fault_trip_s", Direction::Lower);
+        let conductance = ("temperature.thermal.conductance_W_K", Direction::Raise);
+        let names = ["hot_day", "custom_hot_day", "n42_parts", "cool_adhesive"];
+        let fixtures: Vec<(&str, DesignInputs)> = designs()
+            .into_iter()
+            .filter(|(name, _)| names.contains(name))
+            .collect();
+        assert_eq!(fixtures.len(), names.len());
+        for (name, inputs) in fixtures {
+            let results = compute_all(&inputs);
+            let peaks: Vec<TemperatureTerm> = failing_terms(&inputs, &results)
+                .into_iter()
+                .filter(|t| t.peak_start_and_limit(&results).is_some())
+                .collect();
+            assert!(!peaks.is_empty(), "{name}: a peak fails");
+            for peak in peaks {
+                let (start, limit) = peak.peak_start_and_limit(&results).unwrap();
+                assert!(start >= limit, "{name}: {peak:?} {start} < {limit}");
+                assert!(peak.start_reaches_peak_limit(&results), "{name}");
+            }
+            // The engine's invariant the rule rests on.
+            let t = &results.temperature;
+            assert!(t.magnet_life.peak_C >= t.summary.hot_day_start_C, "{name}");
+            assert!(
+                t.adhesive_life.peak_C >= t.summary.hot_day_start_C,
+                "{name}"
+            );
+            let shown = fixes(temperature, &inputs, &results);
+            assert!(!shown.contains(&trip), "{name}: {shown:?}");
+            assert!(!shown.contains(&conductance), "{name}: {shown:?}");
+            assert!(!shown.is_empty(), "{name}: the hot-day fixes stay");
+            // Nor does the Problem repeat a peak the hot-day sentence already covers (S1).
+            let text = problem(TEMPERATURE, &inputs).unwrap();
+            assert!(!text.contains("The slip-fault peak"), "{name}: {text}");
+        }
+        // A start below the magnet limit: the cooling clears the peak, and both are offered.
+        let inputs = breaking(slip_fault);
+        let results = compute_all(&inputs);
+        let (start, limit) = TemperatureTerm::MagnetPeak
+            .peak_start_and_limit(&results)
+            .unwrap();
+        assert!(start < limit);
+        assert_eq!(fixes(temperature, &inputs, &results), [trip, conductance]);
+        // A limit that is not a number is not "reached": its peak sentence stays.
+        let mut unknown = results.clone();
+        unknown.temperature.summary.magnet_limit_C = f64::NAN;
+        assert!(!TemperatureTerm::MagnetPeak.start_reaches_peak_limit(&unknown));
+        assert_eq!(TemperatureTerm::Cure.peak_start_and_limit(&results), None);
+    }
+
+    #[test]
+    fn a_quoted_magnet_limit_says_what_it_is() {
+        // Physics review 2, S2: an NdFeB magnet limit is the slip (like-pole) onset less the
+        // design margin, the margin read from its input; a ferrite ring's is its rating.
+        let both = problem(TEMPERATURE, &breaking(n42_parts)).unwrap();
+        assert!(
+            both.contains("Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin."),
+            "{both}"
+        );
+        let inner_only = problem(
+            TEMPERATURE,
+            &design(|i| {
+                i.coupling.magnets.part_inner = "B842".to_owned();
+                i.temperature.demag.design_margin_C = 12.5;
+            }),
+        )
+        .unwrap();
+        assert!(
+            inner_only.contains("The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 12.50 °C design margin."),
+            "{inner_only}"
+        );
+        // No magnet limit quoted, or only a ferrite rating's: no sentence.
+        let quiet: [fn(&mut DesignInputs); 3] = [cool_adhesive, hot_cure, ferrite];
+        for edit in quiet {
+            let text = problem(TEMPERATURE, &breaking(edit)).unwrap();
+            assert!(!text.contains("design margin"), "{text}");
+        }
+        // The peak sentence alone quotes the design's limit: its ring is named.
+        let text = problem(TEMPERATURE, &breaking(slip_fault)).unwrap();
+        assert!(text.contains("design margin"), "{text}");
+    }
+
+    #[test]
+    fn raising_the_face_gap_says_it_lowers_the_failing_hot_low_torque() {
+        // Physics review 2, N2: a larger face gap opens the running clearance but lowers the
+        // pull-out. The thinner sleeve and liner come first, at no torque cost, and while the
+        // gap fix is shown beside a hot-low torque that is not passing, a note says so.
+        let note = "Raising Candidate flat-face magnetic gap also lowers the pull-out, so Hot-low torque falls further.";
+        let clearance = CHECK_GUIDES
+            .iter()
+            .position(|g| g.check == CLEARANCE)
+            .unwrap();
+        let gap = (FACE_GAP, Direction::Raise);
+        let notes_of = |inputs: &DesignInputs| {
+            let results = compute_all(inputs);
+            let all = all_fixes(inputs, &results);
+            let notes = guide_notes(&all, clearance, inputs, &results);
+            (all[clearance].clone(), notes)
+        };
+        let defaults = DesignInputs::default();
+        let (shown, notes) = notes_of(&defaults);
+        assert_eq!(
+            shown,
+            [
+                ("metal.sleeve_mm", Direction::Lower),
+                ("metal.liner_mm", Direction::Lower),
+                gap
+            ]
+        );
+        assert_eq!(notes, [note]);
+        // Only the gap is left to open, and the note still says what it costs.
+        let (shown, notes) = notes_of(&design(bare_clearance));
+        assert_eq!(shown, [gap]);
+        assert_eq!(notes, [note]);
+        // A clearance-only failure: the gap fix is shown, the hot-low torque passes, no note.
+        let only = breaking(|i| i.metal.sleeve_mm += 0.5);
+        let results = compute_all(&only);
+        let failing: Vec<&str> = CHECK_GUIDES
+            .iter()
+            .filter(|g| level(g, &only, &results) != Level::Good)
+            .map(|g| g.check)
+            .collect();
+        assert_eq!(failing, [CLEARANCE]);
+        let (shown, notes) = notes_of(&only);
+        assert!(shown.contains(&gap), "{shown:?}");
+        assert!(notes.is_empty(), "{notes:?}");
+        // No other guide gets the note, and an index past the guides gets none.
+        let results = compute_all(&defaults);
+        let all = all_fixes(&defaults, &results);
+        for index in (0..=CHECK_GUIDES.len()).filter(|&i| i != clearance) {
+            assert!(side_effects(&all, index, &defaults, &results).is_empty());
+        }
+    }
+
     /// Prints every user-visible string of the guidance slice, each tagged with where it
     /// appears and for which design, for the physics review (plan Task 11, step 1). Run:
     /// `cargo test --features app --lib guidance_strings_for_review -- --ignored --nocapture`.
@@ -4262,12 +4601,17 @@ mod tests {
         }
         for (name, inputs) in designs() {
             let results = compute_all(&inputs);
-            for g in &CHECK_GUIDES {
-                for (path, direction) in fixes(g, &inputs, &results) {
+            let all = all_fixes(&inputs, &results);
+            for (index, g) in CHECK_GUIDES.iter().enumerate() {
+                for &(path, direction) in &all[index] {
                     emit(
                         &format!("fix/{}/{name}", g.label),
                         &fix_text(path, direction),
                     );
+                }
+                // The notes under the fixes: trade-offs and side effects (review 2, S9).
+                for note in guide_notes(&all, index, &inputs, &results) {
+                    emit(&format!("note/{}/{name}", g.label), &note);
                 }
                 if let Some(text) = (g.problem)(&inputs, &results) {
                     emit(&format!("problem/{}/{name}", g.label), &text);
@@ -4310,11 +4654,13 @@ mod tests {
         emit("size tab/Auto suffix", sc::AUTO_SUFFIX);
         emit("panel/welcome strip", crate::gui::panel::WELCOME);
 
-        // The solved change of each free variable, from the default to each end of its slider.
+        // The solved change of each free variable, from the default to each end of its slider,
+        // built as the panel builds the design shown (the ring radius moves the cap with the
+        // cup: review 2, S9).
         for variable in FreeVariable::ALL {
             let range = variable.range();
             for (end, value) in [("min", range.min), ("max", range.max)] {
-                let to = variable.apply(&default, value);
+                let to = crate::gui::sizing::sized(variable, &default, value);
                 emit(
                     &format!("size tab/solved change/{variable:?}/to slider {end}"),
                     &sc::change_text(variable, &default, &to),

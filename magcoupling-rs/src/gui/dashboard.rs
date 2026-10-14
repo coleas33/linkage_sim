@@ -30,7 +30,7 @@
 //! a guided check's own row, a red level opens its block: the problem from this design's
 //! results, the guide's sentence and its fixes (each a link that shows its input's row, the
 //! Outside diameter's the Size tab), or a line saying no listed change helps, then any
-//! trade-off notes. An amber level keeps the block shut under a one-line header, so the
+//! trade-off and side-effect notes. An amber level keeps the block shut under a one-line header, so the
 //! dashboard stays short. Every row, at any level, has its Why line: a link to its reviewed
 //! note (opened in the Equation panel), a link to its assumption (its row shown, the rationale
 //! in the hover text) or "no note yet" ([`crate::gui::guidance::row_learn`]).
@@ -48,7 +48,7 @@ use crate::gui::explorer::reviewed_note;
 use crate::gui::format::{format_value, with_unit};
 use crate::gui::guidance::{
     self, CHECK_GUIDES, CheckGuide, Direction, FIT_CHECK, Learn, NO_FIX, design_status,
-    design_status_text, fix_text, row_learn, trade_offs,
+    design_status_text, fix_text, guide_notes, row_learn,
 };
 use crate::gui::readouts::Readouts;
 use crate::gui::typeset::glyph_safe;
@@ -639,7 +639,7 @@ fn fit_ui(
 }
 
 /// What a guide's lines are drawn with: its check's level, the fixes to show (empty: the
-/// no-fix line) and the trade-off notes under them.
+/// no-fix line) and the notes under them ([`guide_notes`]).
 struct GuideShown<'a> {
     level: Level,
     fixes: &'a [(&'static str, Direction)],
@@ -647,7 +647,7 @@ struct GuideShown<'a> {
 }
 
 /// The lines of the guide at `index` of [`CHECK_GUIDES`] in this design ([`guide_ui`]): its
-/// level, its fixes from `fixes`, and its trade-off notes.
+/// level, its fixes from `fixes`, and its notes ([`guide_notes`]).
 fn indexed_guide_ui(
     ui: &mut egui::Ui,
     index: usize,
@@ -657,7 +657,7 @@ fn indexed_guide_ui(
     readouts: &mut Readouts,
 ) {
     let guide = &CHECK_GUIDES[index];
-    let notes = trade_offs(fixes, index);
+    let notes = guide_notes(fixes, index, inputs, results);
     let shown = GuideShown {
         level: guidance::level(guide, inputs, results),
         fixes: fixes.get(index).map_or(&[], Vec::as_slice),
@@ -714,8 +714,8 @@ fn caution_header_ui(ui: &mut egui::Ui, check: &str) -> bool {
 }
 
 /// The Fix line of an open block: a link per fix, which asks for its input's row (a two-pick
-/// magnet fix: its part's row), or [`NO_FIX`] when no listed change helps; then the trade-off
-/// notes.
+/// magnet fix: its part's row), or [`NO_FIX`] when no listed change helps; then the notes
+/// ([`guide_notes`]).
 fn fix_line(ui: &mut egui::Ui, shown: &GuideShown, readouts: &mut Readouts) {
     guide_line(ui, FIX, |ui| {
         if shown.fixes.is_empty() {
@@ -1690,7 +1690,7 @@ mod tests {
                 );
             }
             // Each open block has its Fix line: its fixes, each once, or the no-fix line; then
-            // its trade-off notes.
+            // its notes (trade-offs and side effects).
             assert_eq!(count(&texts, FIX), open.len());
             let mut want: Vec<String> = open
                 .iter()
@@ -1706,7 +1706,10 @@ mod tests {
             assert_eq!(drawn, want);
             let no_fix = open.iter().filter(|&&i| fixes[i].is_empty()).count();
             assert_eq!(count(&texts, guidance::NO_FIX), no_fix);
-            let notes: Vec<String> = open.iter().flat_map(|&i| trade_offs(&fixes, i)).collect();
+            let notes: Vec<String> = open
+                .iter()
+                .flat_map(|&i| guide_notes(&fixes, i, &inputs, &results))
+                .collect();
             for note in &notes {
                 assert_eq!(
                     count(&texts, note),
@@ -2060,7 +2063,7 @@ mod tests {
     fn every_guide_line_has_glyphs_in_the_default_fonts_and_plain_words() {
         // On designs where each check fails: the status line, the fit row, every row's Why
         // line, and each guide at red whatever the design (its problem, its sentence, its
-        // fixes for the design and its static ones, its trade-off notes); the fixed texts, and
+        // fixes for the design and its static ones, its notes); the fixed texts, and
         // the hover texts.
         let ctx = egui::Context::default();
         let mut plain: Vec<String> = Vec::new();
@@ -2087,7 +2090,7 @@ mod tests {
                     why_line(ui, None, learn, &mut readouts);
                 }
                 for (i, guide) in CHECK_GUIDES.iter().enumerate() {
-                    let notes = trade_offs(&fixes, i);
+                    let notes = guide_notes(&fixes, i, &inputs, &results);
                     let listed = match guide.fixes {
                         Fixes::Static(list) => list,
                         Fixes::PerTerm(_) => &fixes[i][..],
