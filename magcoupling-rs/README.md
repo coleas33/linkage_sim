@@ -179,8 +179,8 @@ cap and shaft boss. Existing input ranges bound these controls, and all fit, cle
 build checks stay in the dashboard. Torque is unavailable outside the end-effect model's
 range. **Detailed inputs** keeps every original input, and all results, equations and
 exports remain available. **Auto: smallest [magnet length | ring size | magnet count] that
-meets the requirement** runs the inverse sizing on this tab: it locks the matching slider
-(Overall length, Outside diameter, Magnets per ring) at the solved value, or at the best value
+meets the torque requirement** (the hot-low torque; it does not look at the other checks)
+runs the inverse sizing on this tab: it locks the matching slider (Overall length, Outside diameter, Magnets per ring) at the solved value, or at the best value
 under a red "Not reachable: best Y at X", and solves again 0.25 s after any other edit. Ring
 size searches the ring radii of this tab's diameter range, Minimum OD included, and shows the
 solved ring as the diameter slider would set it: the cap OD and its thread follow the cup (their

@@ -4,7 +4,7 @@
 
 active_issues:
   - "Agentic loop queue: see docs/ai/backlog.yaml (open items tracked there, not here)"
-  - "Magcoupler guidance slice 1 (spec docs/superpowers/specs/2026-10-13-magcoupler-guidance-design.md, branch magcoupling/guidance, BL-055; decisions G-1 to G-8 in 05-update-tracker): built. Before release (G-8): a fresh-context session-model physics review of every Why, Problem and consequence sentence (G-3), the whole-branch review and linkage-sim-rs/scripts/gate.sh to GATE PASS; then merge to main and push (the push deploys) and check the deploy run."
+  - "Magcoupler guidance slice 1 (spec docs/superpowers/specs/2026-10-13-magcoupler-guidance-design.md, branch magcoupling/guidance, BL-055; decisions G-1 to G-8 in 05-update-tracker): built. Before release (G-8): a fresh-context session-model physics review of every Why, Problem and consequence sentence (G-3; review 1 done 2026-10-14, its five must-fix items and the clear wording suggestions applied, see .superpowers/sdd/2026-10-13-magcoupler-guidance-slice-1/physics-fixes.md; deferred to slice 2: a caveat on the hot magnet limits for geometry far from the default, the hot-low block on a layout whose blocks do not fit, the clamp boss vs the drawn boss), the whole-branch review and linkage-sim-rs/scripts/gate.sh to GATE PASS; then merge to main and push (the push deploys) and check the deploy run."
   - "Payload weights Track 2: before merge the user runs the hands-on checklist at the end of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md (its section 0 is the gate and gui-smoke)."
 
 open_questions:

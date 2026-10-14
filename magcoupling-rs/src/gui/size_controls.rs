@@ -29,9 +29,9 @@ pub const GAP: &str = "Magnet face gap";
 pub const MAGNETS: &str = "Magnets per ring";
 pub const LINKED_HOUSING: &str = "Diameter and length edits resize the associated housing, keeping its allowances. Gap and magnet count remain your choices.";
 
-/// The Auto row (spec guidance 3.5): "Auto: smallest [size] that meets the requirement".
+/// The Auto row (spec guidance 3.5): "Auto: smallest [size] that meets the torque requirement".
 pub const AUTO: &str = "Auto: smallest";
-pub const AUTO_SUFFIX: &str = "that meets the requirement";
+pub const AUTO_SUFFIX: &str = "that meets the torque requirement";
 /// The hover text of the Auto toggle.
 pub const AUTO_HOVER: &str = "On: the solver sets the chosen size to the smallest value whose hot-low torque meets the requirement, skipping layouts whose magnets do not fit, whose keyway breaks through the hub or that the end-effect model cannot predict; its slider locks. Off: the design keeps the value shown.";
 /// Under the slider Auto sets, and its hover text.

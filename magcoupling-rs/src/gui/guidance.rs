@@ -54,7 +54,7 @@ use crate::engine::size_controls::{
     smallest_fitting_diameter,
 };
 use crate::engine::sizing::FreeVariable;
-use crate::engine::temperature::CURE_MARGIN_MIN_C;
+use crate::engine::temperature::{CURE_MARGIN_MIN_C, DemagInputs};
 use crate::gui::dashboard::{DASHBOARD, Level, check_level, result_info};
 use crate::gui::format::{fixed, format_value, signed_percent, with_unit};
 use crate::gui::inputs::{InputCatalogue, optional_seed, section_label};
@@ -155,7 +155,7 @@ const HOT_MIN_GUIDE: CheckGuide = CheckGuide {
     check: HOT_MIN,
     label: "Hot-low torque",
     problem: hot_min_problem,
-    why: "Magnets weaken as they warm, and production scatter makes some couplings weaker than nominal; hot-low is the pull-out torque after both, and it must reach the requirement.",
+    why: "Magnets weaken as they warm, and production scatter makes some couplings weaker than nominal; hot-low is the pull-out at the operating temperature less that scatter, and must reach the requirement.",
     // Not the gap: a smaller gap raises the torque but takes running clearance, whose own fix
     // opens the gap (both fail on the default design).
     fixes: Fixes::Static(&[(MAGNET_LENGTH, Direction::Raise)]),
@@ -166,7 +166,7 @@ const CLEARANCE_GUIDE: CheckGuide = CheckGuide {
     check: CLEARANCE,
     label: "Running clearance",
     problem: clearance_problem,
-    why: "The sleeve and liner spin past each other across a small radial gap that must absorb runout, deflection, thermal growth and tolerances, or they rub.",
+    why: "Only a small radial gap separates the sleeve from the liner; it must absorb shaft offset, runout, deflection, thermal growth and tolerances, or they rub.",
     fixes: Fixes::Static(&[
         ("metal.face_gap_mm", Direction::Raise),
         ("metal.sleeve_mm", Direction::Lower),
@@ -188,7 +188,7 @@ const TEMPERATURE_GUIDE: CheckGuide = CheckGuide {
     check: TEMPERATURE,
     label: "Temperature limits",
     problem: temperature_problem,
-    why: "Too hot, and the magnets can lose strength for good or the adhesive can weaken; ferrite is the exception, at risk when too cold.",
+    why: "Too hot, and the magnets can lose strength for good or the adhesive can weaken; ferrite magnets are also at risk when too cold.",
     fixes: Fixes::PerTerm(temperature_fixes),
     learn: Learn::Note("demagnetization"),
 };
@@ -264,7 +264,7 @@ const END_EFFECT_GUIDE: CheckGuide = CheckGuide {
     check: END_EFFECT,
     label: "End-effect model",
     problem: end_effect_problem,
-    why: "Field fringes at the magnet ends, so the model trims a length set by the pole pitch; magnets that short leave no usable torque prediction.",
+    why: "Field fringes at the magnet ends, so the model takes off a length set by the pole pitch; magnets no longer than that leave no usable torque prediction.",
     // Not more poles: they shorten the pitch, but at the default ring 12 poles already do not
     // fit.
     fixes: Fixes::Static(&[(MAGNET_LENGTH, Direction::Raise)]),
@@ -1026,14 +1026,14 @@ fn temperature_sentences(inputs: &DesignInputs, results: &DesignResults) -> Vec<
     }
     if !hot_limits.is_empty() {
         sentences.push(format!(
-            "Hot-day start {} is at or above {}.",
+            "Hot-day magnet temperature {} (hot ambient plus the driving rise) is at or above {}.",
             result_text(results, "temperature.summary.hot_day_start_C"),
             listed(&hot_limits)
         ));
     }
     for ring in unknown_rings {
         sentences.push(format!(
-            "The {} magnets' limit is not a number, so the hot-day start cannot be checked against it.",
+            "The {} magnets' limit is not a number, so the hot-day magnet temperature cannot be checked against it.",
             ring.name()
         ));
     }
@@ -1053,9 +1053,9 @@ fn temperature_sentences(inputs: &DesignInputs, results: &DesignResults) -> Vec<
     }
     if fails(Cure) {
         sentences.push(format!(
-            "The adhesive cures at {}, {} below the {} single-ring demagnetization onset; the margin must be at least {}.",
+            "The adhesive cures at {}, {} below the {} at which a ring alone on its carrier, as during the cure, starts to demagnetize; the margin must be at least {}.",
             result_text(results, "temperature.adhesive.cure_C"),
-            result_text(results, "temperature.summary.cure_margin_C"),
+            cure_margin_text(results),
             result_text(results, "temperature.demag.onset_single_ring_C"),
             number_text(CURE_MARGIN_MIN_C, "temperature.summary.cure_margin_C"),
         ));
@@ -1072,16 +1072,61 @@ fn temperature_sentences(inputs: &DesignInputs, results: &DesignResults) -> Vec<
             )
         })
         .collect();
-    // The cold limit comes from the stored reverse fields, which do not follow the grade
-    // (spec section 8): the sentence says so rather than quote it as ferrite's.
+    // The cold limit comes from the reverse-field inputs. Their defaults are 3D results for the
+    // default NdFeB design and follow neither this design's geometry nor its grade (spec
+    // section 8, trap 6): while they are in use the sentence says so and asks for the design's
+    // own; once a user has entered their own, it says nothing about where they came from.
     if !cold_limits.is_empty() {
+        let source = if default_reverse_fields(inputs) {
+            " (from the default reverse-field inputs: 3D results for the default NdFeB design, not for this design's geometry or grade). Enter this design's own reverse fields to check the cold limit."
+        } else {
+            "."
+        };
         sentences.push(format!(
-            "The minimum magnet temperature {} is below {} (from stored 3D fields that do not yet follow the magnet grade).",
+            "The minimum magnet temperature {} is below {}{source}",
             input_text(inputs, "metal.min_temp_C"),
             listed(&cold_limits)
         ));
     }
     sentences
+}
+
+/// Whether all four reverse-field inputs of the demagnetization check hold their defaults: the
+/// 3D results for the default NdFeB design.
+fn default_reverse_fields(inputs: &DesignInputs) -> bool {
+    let fields = |d: &DemagInputs| {
+        [
+            d.h_rev_aligned_kA_m,
+            d.h_rev_pullout_kA_m,
+            d.h_rev_likepole_kA_m,
+            d.h_rev_single_ring_kA_m,
+        ]
+    };
+    fields(&inputs.temperature.demag) == fields(&DemagInputs::default())
+}
+
+/// The cure margin with as many decimals as the onset it is measured from shows, so the
+/// numbers printed beside it subtract ("6.0 °C below the 126.0 °C ..."). The margin reads as
+/// any result does where the onset's text has no fixed decimals (an exponent, or not a number),
+/// and where that rounding would carry a failing margin up to the required one (9.96 read as
+/// "10.0" beside "at least 10.00 °C").
+fn cure_margin_text(results: &DesignResults) -> String {
+    const MARGIN: &str = "temperature.summary.cure_margin_C";
+    let onset = format_value(&Value::Num(results.temperature.demag.onset_single_ring_C));
+    let margin = results.temperature.summary.cure_margin_C;
+    match onset.split_once('.') {
+        Some((_, decimals)) if !onset.contains('e') && margin.is_finite() => {
+            let shown = fixed(margin, decimals.len());
+            let rounded_up_to_pass = margin < CURE_MARGIN_MIN_C
+                && shown.parse::<f64>().is_ok_and(|x| x >= CURE_MARGIN_MIN_C);
+            if rounded_up_to_pass {
+                return result_text(results, MARGIN);
+            }
+            let unit = result_info(MARGIN).map_or("", |info| info.meta.unit);
+            with_unit(shown, unit)
+        }
+        _ => result_text(results, MARGIN),
+    }
 }
 
 /// `items` as one list: "a", "a and b", "a, b and c".
@@ -1320,9 +1365,10 @@ fn clearance_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<S
 fn cup_wall_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
     failing(CUP_WALL, inputs, results).then(|| {
         format!(
-            "Cup wall at the pocket corners is {}; the flux it carries needs {}.",
+            "Cup wall at the pocket corners is {}; the flux it carries needs {} at the {} design flux density.",
             result_text(results, "materials.cup_wall_corner_mm"),
             result_text(results, "materials.backiron_thickness_needed_mm"),
+            result_text(results, "model.bsat_T"),
         )
     })
 }
@@ -1335,10 +1381,11 @@ fn temperature_problem(inputs: &DesignInputs, results: &DesignResults) -> Option
 fn clamp_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
     failing(CLAMP, inputs, results).then(|| {
         format!(
-            "No screw size from {} to {} fits the boss and the clamp length with enough screws to hold {}: the cold-high torque {} times a safety factor of {}.",
+            "No screw size from {} to {} fits the boss and the clamp length with enough screws to hold {}: the highest torque the coupling can pass (cold, plus the {} variation allowance), {}, times a safety factor of {}.",
             SCREW_SIZES[0].name,
             SCREW_SIZES[SCREW_SIZES.len() - 1].name,
             result_text(results, "clamps.required_Nm"),
+            percent_text(inputs.metal.variation),
             result_text(results, "clamps.max_torque_Nm"),
             input_text(inputs, "clamps.safety_factor"),
         )
@@ -1401,7 +1448,7 @@ fn space_claim_problem(inputs: &DesignInputs, results: &DesignResults) -> Option
 fn end_effect_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
     failing(END_EFFECT, inputs, results).then(|| {
         format!(
-            "Magnets {} long with a pole pitch of {} give an end-effect factor of {}; the model gives no torque until the magnets are longer than {} and is rough just above that.",
+            "Magnet overlap {} long with a pole pitch of {} gives an end-effect factor of {}; the model gives no usable torque until the overlap is longer than {} and is rough just above that.",
             result_text(results, "model.active_length_mm"),
             result_text(results, "model.pole_pitch_mm"),
             result_text(results, "model.f_end"),
@@ -1678,15 +1725,15 @@ fn fit_line(fit: DiameterFit, unlocked: Option<DiameterFit>, npole: i64) -> Stri
         ),
         DiameterFit::AtMinimum(mm) => match unlocked {
             Some(DiameterFit::At(lower)) if lower < mm - FIT_TOLERANCE_MM => format!(
-                "Fits down to {}; lower Minimum OD to reach it.",
+                "Fits down to {}; set Minimum OD lower to reach it.",
                 with_unit(fixed(up_to_tenth(lower), 1), "mm")
             ),
             Some(DiameterFit::AtMinimum(lower)) if lower < mm - FIT_TOLERANCE_MM => format!(
-                "Fits down to {}; lower Minimum OD to reach it.",
+                "Fits down to {}; set Minimum OD lower to reach it.",
                 with_unit(fixed(lower, 1), "mm")
             ),
             _ => format!(
-                "Fits down to {} (the minimum)",
+                "Fits at every diameter down to the slider's lowest, {}",
                 with_unit(fixed(mm, 1), "mm")
             ),
         },
@@ -3188,7 +3235,7 @@ mod tests {
         );
         assert_eq!(
             problem(CUP_WALL, &defaults).unwrap(),
-            "Cup wall at the pocket corners is 1.800 mm; the flux it carries needs 1.919 mm."
+            "Cup wall at the pocket corners is 1.800 mm; the flux it carries needs 1.919 mm at the 1.500 T design flux density."
         );
         // The numbers follow an edit: a 2.4 N·m requirement still fails, quoted as such.
         let edited = design(|i| i.metal.required_min_Nm = 2.4);
@@ -3207,7 +3254,7 @@ mod tests {
         // ring needs its own fix.
         assert_eq!(
             problem(TEMPERATURE, &design(hot_day)).unwrap(),
-            "Hot-day start 140.0 °C is at or above the inner magnets' 93.06 °C limit, the outer magnets' 93.06 °C limit and the 120.0 °C adhesive limit. The slip-fault peak of 141.0 °C reaches the 93.06 °C magnet limit. The slip-fault peak of 141.0 °C reaches the 120.0 °C adhesive limit."
+            "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the inner magnets' 93.06 °C limit, the outer magnets' 93.06 °C limit and the 120.0 °C adhesive limit. The slip-fault peak of 141.0 °C reaches the 93.06 °C magnet limit. The slip-fault peak of 141.0 °C reaches the 120.0 °C adhesive limit."
         );
         // Only the inner ring's library N42 block (rated 80 °C) is below the start.
         let text = problem(
@@ -3217,7 +3264,7 @@ mod tests {
         .unwrap();
         assert!(
             text.starts_with(
-                "Hot-day start 65.00 °C is at or above the inner magnets' -3.517 °C limit. The slip-fault peak of "
+                "Hot-day magnet temperature 65.00 °C (hot ambient plus the driving rise) is at or above the inner magnets' -3.517 °C limit. The slip-fault peak of "
             ),
             "{text}"
         );
@@ -3227,17 +3274,72 @@ mod tests {
         );
         assert_eq!(
             problem(TEMPERATURE, &design(cool_adhesive)).unwrap(),
-            "Hot-day start 65.00 °C is at or above the 60.00 °C adhesive limit. The slip-fault peak of 65.96 °C reaches the 60.00 °C adhesive limit."
+            "Hot-day magnet temperature 65.00 °C (hot ambient plus the driving rise) is at or above the 60.00 °C adhesive limit. The slip-fault peak of 65.96 °C reaches the 60.00 °C adhesive limit."
         );
         assert_eq!(
             problem(TEMPERATURE, &design(hot_cure)).unwrap(),
-            "The adhesive cures at 120.0 °C, 5.955 °C below the 126.0 °C single-ring demagnetization onset; the margin must be at least 10.00 °C."
+            "The adhesive cures at 120.0 °C, 6.0 °C below the 126.0 °C at which a ring alone on its carrier, as during the cure, starts to demagnetize; the margin must be at least 10.00 °C."
         );
         assert_eq!(
             problem(TEMPERATURE, &design(ferrite)).unwrap(),
-            "The minimum magnet temperature -40.00 °C is below the inner magnets' 335.7 °C cold demagnetization limit and the outer magnets' 335.7 °C cold demagnetization limit (from stored 3D fields that do not yet follow the magnet grade)."
+            "The minimum magnet temperature -40.00 °C is below the inner magnets' 335.7 °C cold demagnetization limit and the outer magnets' 335.7 °C cold demagnetization limit (from the default reverse-field inputs: 3D results for the default NdFeB design, not for this design's geometry or grade). Enter this design's own reverse fields to check the cold limit."
         );
         assert_eq!(problem(TEMPERATURE, &DesignInputs::default()), None);
+    }
+
+    #[test]
+    fn the_cold_limit_names_its_source_only_while_the_reverse_fields_are_the_defaults() {
+        // Spec section 8, trap 6: the default reverse fields are 3D results for the default
+        // NdFeB design. Once a user enters this design's own, the caveat would be false.
+        let caveat = "(from the default reverse-field inputs";
+        let with_default_fields = problem(TEMPERATURE, &design(ferrite)).unwrap();
+        assert!(
+            with_default_fields.contains(caveat),
+            "{with_default_fields}"
+        );
+        let edits: [fn(&mut DesignInputs); 4] = [
+            |i| i.temperature.demag.h_rev_aligned_kA_m += 1.0,
+            |i| i.temperature.demag.h_rev_pullout_kA_m += 1.0,
+            |i| i.temperature.demag.h_rev_likepole_kA_m += 1.0,
+            |i| i.temperature.demag.h_rev_single_ring_kA_m += 1.0,
+        ];
+        for edit in edits {
+            let own = design(|i| {
+                ferrite(i);
+                edit(i);
+            });
+            assert!(!default_reverse_fields(&own));
+            // A 1 kA/m step leaves the cold check failing; its sentence now ends at the limits,
+            // with neither the caveat nor the request to enter the fields.
+            let text = problem(TEMPERATURE, &own).expect("the cold check still fails");
+            assert!(text.contains("The minimum magnet temperature"), "{text}");
+            assert!(text.ends_with("cold demagnetization limit."), "{text}");
+            assert!(!text.contains(caveat), "{text}");
+            assert!(!text.contains("reverse fields"), "{text}");
+        }
+        assert!(default_reverse_fields(&DesignInputs::default()));
+    }
+
+    #[test]
+    fn the_cure_margin_has_the_onset_s_decimals_so_the_printed_numbers_subtract() {
+        let inputs = design(hot_cure);
+        let results = compute_all(&inputs);
+        assert_eq!(cure_margin_text(&results), "6.0 °C");
+        // A margin that is not a number reads as the result does.
+        let mut broken = results.clone();
+        broken.temperature.summary.cure_margin_C = f64::NAN;
+        assert_eq!(
+            cure_margin_text(&broken),
+            result_text(&broken, "temperature.summary.cure_margin_C")
+        );
+        // A failing margin the onset's decimals would round up to the required 10 keeps its
+        // own digits, so the sentence never reads "10.0 °C below ... at least 10.00 °C".
+        let mut close = results.clone();
+        close.temperature.summary.cure_margin_C = 9.96;
+        assert_eq!(cure_margin_text(&close), "9.960 °C");
+        // One that rounds down stays at the onset's decimals.
+        close.temperature.summary.cure_margin_C = 9.94;
+        assert_eq!(cure_margin_text(&close), "9.9 °C");
     }
 
     #[test]
@@ -3250,14 +3352,14 @@ mod tests {
         outer_unknown.temperature.demag.outer_magnet_limit_C = f64::NAN;
         assert_eq!(
             (temperature.problem)(&inputs, &outer_unknown).unwrap(),
-            "Hot-day start 140.0 °C is at or above the inner magnets' 93.06 °C limit and the 120.0 °C adhesive limit. The outer magnets' limit is not a number, so the hot-day start cannot be checked against it. The slip-fault peak of 141.0 °C reaches the 93.06 °C magnet limit. The slip-fault peak of 141.0 °C reaches the 120.0 °C adhesive limit."
+            "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the inner magnets' 93.06 °C limit and the 120.0 °C adhesive limit. The outer magnets' limit is not a number, so the hot-day magnet temperature cannot be checked against it. The slip-fault peak of 141.0 °C reaches the 93.06 °C magnet limit. The slip-fault peak of 141.0 °C reaches the 120.0 °C adhesive limit."
         );
         let mut both_unknown = outer_unknown.clone();
         both_unknown.temperature.demag.inner_magnet_limit_C = f64::NAN;
         let text = (temperature.problem)(&inputs, &both_unknown).unwrap();
         assert!(
             text.starts_with(
-                "Hot-day start 140.0 °C is at or above the 120.0 °C adhesive limit. The inner magnets' limit is not a number, so the hot-day start cannot be checked against it. The outer magnets' limit is not a number, so the hot-day start cannot be checked against it."
+                "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the 120.0 °C adhesive limit. The inner magnets' limit is not a number, so the hot-day magnet temperature cannot be checked against it. The outer magnets' limit is not a number, so the hot-day magnet temperature cannot be checked against it."
             ),
             "{text}"
         );
@@ -3382,7 +3484,7 @@ mod tests {
     fn the_clamp_problem_names_the_screw_range_and_the_torque() {
         assert_eq!(
             problem(CLAMP, &design(small_boss)).unwrap(),
-            "No screw size from M2.5 to M6 fits the boss and the clamp length with enough screws to hold 7.647 N·m: the cold-high torque 3.823 N·m times a safety factor of 2.000."
+            "No screw size from M2.5 to M6 fits the boss and the clamp length with enough screws to hold 7.647 N·m: the highest torque the coupling can pass (cold, plus the 15 % variation allowance), 3.823 N·m, times a safety factor of 2.000."
         );
         assert_eq!(problem(CLAMP, &DesignInputs::default()), None);
     }
@@ -3413,7 +3515,7 @@ mod tests {
         let results = compute_all(&inputs);
         assert_eq!(
             problem(END_EFFECT, &inputs).unwrap(),
-            "Magnets 2.000 mm long with a pole pitch of 8.809 mm give an end-effect factor of -1.202; the model gives no torque until the magnets are longer than 4.405 mm and is rough just above that."
+            "Magnet overlap 2.000 mm long with a pole pitch of 8.809 mm gives an end-effect factor of -1.202; the model gives no usable torque until the overlap is longer than 4.405 mm and is rough just above that."
         );
         for check in [HOT_MIN, CLAMP] {
             assert_eq!(level(guide(check).unwrap(), &inputs, &results), Level::Good);
@@ -3914,11 +4016,11 @@ mod tests {
             // it could go; at the lowest minimum nothing is in the way.
             let expected = if lowered.diameter_range.min < floor - FIT_TOLERANCE_MM {
                 format!(
-                    "Fits down to {:.1} mm; lower Minimum OD to reach it.",
+                    "Fits down to {:.1} mm; set Minimum OD lower to reach it.",
                     lowered.diameter_range.min
                 )
             } else {
-                format!("Fits down to {floor:.1} mm (the minimum)")
+                format!("Fits at every diameter down to the slider's lowest, {floor:.1} mm")
             };
             assert_eq!(consequences.magnet_lines(fewest).last(), Some(&expected));
         }
@@ -3961,11 +4063,11 @@ mod tests {
         assert_eq!(
             line,
             format!(
-                "Fits down to {} mm; lower Minimum OD to reach it.",
+                "Fits down to {} mm; set Minimum OD lower to reach it.",
                 fixed(up_to_tenth(reach), 1)
             )
         );
-        assert!(!line.contains("(the minimum)"), "{line}");
+        assert!(!line.contains("the slider's lowest"), "{line}");
         // With Minimum OD at its lowest, the edge is a plain smallest diameter.
         let unlocked = consequences_of(&inputs, Some(lowest))
             .magnet_lines(fewer)

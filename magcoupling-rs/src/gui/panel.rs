@@ -4593,7 +4593,7 @@ mod tests {
             .into_iter()
             .find(|line| line.starts_with("Fits down to "))
             .expect("a fit line at the slider's floor");
-        assert!(fit.ends_with("lower Minimum OD to reach it."), "{fit}");
+        assert!(fit.ends_with("set Minimum OD lower to reach it."), "{fit}");
         assert_eq!(count(&output, &fit), 1, "{fit}");
     }
 
