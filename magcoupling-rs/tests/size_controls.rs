@@ -1,9 +1,12 @@
 //! Manual outside diameter and overall length controls, evaluated through the same engine.
 
+use magcoupling::engine::model::blocks_fit;
 use magcoupling::engine::size_controls::{
-    DiameterBreakdown, diameter_breakdown, dimensions, dimensions_with_minimum_diameter,
-    length_breakdown, resize_diameter, resize_diameter_with_minimum, resize_length,
+    DiameterBreakdown, DiameterFit, FIT_TOLERANCE_MM, diameter_breakdown, dimensions,
+    dimensions_with_minimum_diameter, length_breakdown, resize_diameter,
+    resize_diameter_with_minimum, resize_length, ring_radius_range, smallest_fitting_diameter,
 };
+use magcoupling::engine::sizing::FreeVariable;
 use magcoupling::{DesignInputs, compute_all};
 
 fn close(actual: f64, expected: f64) {
@@ -566,5 +569,318 @@ fn breakdowns_are_none_exactly_where_the_size_controls_are() {
         assert_eq!(dimensions(&odd), None, "count {count}");
         assert_eq!(diameter_breakdown(&odd), None, "count {count}");
         assert_eq!(length_breakdown(&odd), None, "count {count}");
+    }
+}
+
+/// `base` with true arcs instead of flat blocks.
+fn as_arcs(mut base: DesignInputs) -> DesignInputs {
+    base.coupling.faceted = 0;
+    base
+}
+
+/// `base` with a manual outer ring of 10 mm wide blocks, so the outer ring sets the fit.
+fn with_wide_outer_blocks(mut base: DesignInputs) -> DesignInputs {
+    base.coupling.magnets.part_outer.clear();
+    base.coupling.magnets.manual_outer_width_mm = 10.0;
+    base
+}
+
+/// The design after the diameter slider moves to an outside diameter (with the Minimum OD
+/// setting when there is one).
+fn resized_to(design: &DesignInputs, diameter_mm: f64, minimum_mm: Option<f64>) -> DesignInputs {
+    match minimum_mm {
+        Some(minimum) => resize_diameter_with_minimum(design, diameter_mm, minimum),
+        None => resize_diameter(design, diameter_mm),
+    }
+    .expect("the diameter lies inside the Size tab's range")
+}
+
+/// Whether both rings' blocks fit at an outside diameter, mapped to the inputs by the
+/// diameter slider's own resize.
+fn fits_at(design: &DesignInputs, diameter_mm: f64, minimum_mm: Option<f64>) -> bool {
+    let resized = resized_to(design, diameter_mm, minimum_mm);
+    blocks_fit(&resized.coupling, &compute_all(&resized).model)
+}
+
+/// The diameter of an `At` fit, or a panic naming the other form.
+fn fit_edge(fit: Option<DiameterFit>) -> f64 {
+    match fit {
+        Some(DiameterFit::At(diameter_mm)) => diameter_mm,
+        other => panic!("expected a fit inside the range, got {other:?}"),
+    }
+}
+
+#[test]
+fn smallest_fitting_diameter_fits_at_the_result_and_not_a_thousandth_below() {
+    // Flat blocks, 10 magnets, the legacy range: the inner flats bind inside the range.
+    let base = DesignInputs::default();
+    let edge = fit_edge(smallest_fitting_diameter(&base, 10, None));
+    let range = dimensions(&base).unwrap().diameter_range;
+    assert!(range.min < edge - 1e-3 && edge < range.max, "{edge}");
+    assert!(fits_at(&base, edge, None));
+    assert!(!fits_at(&base, edge - 1e-3, None));
+
+    // The owner's 8 magnets with a lowered Minimum OD: between the existing 37 mm (too
+    // narrow) and 38 mm (fits) cases.
+    let edge = fit_edge(smallest_fitting_diameter(&base, 8, Some(37.0)));
+    assert!(37.0 < edge && edge < 38.0, "{edge}");
+    let eight = with_poles(8);
+    assert!(fits_at(&eight, edge, Some(37.0)));
+    assert!(!fits_at(&eight, edge - 1e-3, Some(37.0)));
+
+    // Arcs, 10 magnets, a lowered Minimum OD: the inner arcs' pitch share binds.
+    let arcs = as_arcs(base.clone());
+    let edge = fit_edge(smallest_fitting_diameter(&arcs, 10, Some(20.0)));
+    assert!(fits_at(&arcs, edge, Some(20.0)));
+    assert!(!fits_at(&arcs, edge - 1e-3, Some(20.0)));
+
+    // Wide outer blocks: the outer ring binds, for both shapes.
+    for wide in [
+        with_wide_outer_blocks(base.clone()),
+        as_arcs(with_wide_outer_blocks(base.clone())),
+    ] {
+        let edge = fit_edge(smallest_fitting_diameter(&wide, 10, Some(20.0)));
+        assert!(fits_at(&wide, edge, Some(20.0)));
+        assert!(!fits_at(&wide, edge - 1e-3, Some(20.0)));
+    }
+}
+
+#[test]
+fn smallest_fitting_diameter_reports_both_range_ends() {
+    let base = DesignInputs::default();
+    // Four magnets fit at the smallest diameter, legacy or lowered.
+    let four = with_poles(4);
+    assert_eq!(
+        smallest_fitting_diameter(&base, 4, None),
+        Some(DiameterFit::AtMinimum(
+            dimensions(&four).unwrap().diameter_range.min
+        ))
+    );
+    assert_eq!(
+        smallest_fitting_diameter(&base, 4, Some(20.0)),
+        Some(DiameterFit::AtMinimum(
+            dimensions_with_minimum_diameter(&four, 20.0)
+                .unwrap()
+                .diameter_range
+                .min
+        ))
+    );
+    // Arcs at 10 magnets fit from the legacy 9 mm radius floor up.
+    let arcs = as_arcs(base.clone());
+    let legacy = dimensions(&arcs).unwrap().diameter_range;
+    assert_eq!(
+        smallest_fitting_diameter(&arcs, 10, None),
+        Some(DiameterFit::AtMinimum(legacy.min))
+    );
+    assert!(fits_at(&arcs, legacy.min, None));
+    // A Minimum OD above the fit's edge is the answer as it is.
+    assert_eq!(
+        smallest_fitting_diameter(&base, 10, Some(50.0)),
+        Some(DiameterFit::AtMinimum(50.0))
+    );
+    // A Minimum OD at the top of the range leaves one diameter: either form, never a search.
+    assert_eq!(
+        smallest_fitting_diameter(&base, 10, Some(200.0)),
+        Some(DiameterFit::AtMinimum(80.0))
+    );
+    assert_eq!(
+        smallest_fitting_diameter(&base, 40, Some(200.0)),
+        Some(DiameterFit::Nowhere(80.0))
+    );
+    // Forty magnets fit nowhere up to the largest diameter, for both shapes.
+    for design in [base.clone(), as_arcs(base.clone())] {
+        let mut forty = design.clone();
+        forty.coupling.npole = 40;
+        let largest = dimensions(&forty).unwrap().diameter_range.max;
+        assert_eq!(
+            smallest_fitting_diameter(&design, 40, None),
+            Some(DiameterFit::Nowhere(largest))
+        );
+        assert!(!fits_at(&forty, largest, None));
+    }
+}
+
+#[test]
+fn the_magnet_count_argument_replaces_the_designs_own() {
+    let ten = DesignInputs::default();
+    let eight = with_poles(8);
+    assert_eq!(
+        smallest_fitting_diameter(&ten, 8, Some(37.0)),
+        smallest_fitting_diameter(&eight, 8, Some(37.0))
+    );
+    assert_eq!(
+        smallest_fitting_diameter(&eight, 10, None),
+        smallest_fitting_diameter(&ten, 10, None)
+    );
+    assert_ne!(
+        smallest_fitting_diameter(&ten, 8, Some(37.0)),
+        smallest_fitting_diameter(&ten, 10, Some(37.0))
+    );
+}
+
+#[test]
+fn blocks_fit_never_stops_as_the_diameter_grows_at_a_fixed_magnet_count() {
+    // The basis of the bisection (module docs): over the widest diameter range (the lowest
+    // Minimum OD) of every magnet count, flat blocks and arcs, the default blocks and a wide
+    // outer ring, a design that fits keeps fitting as the diameter grows. Each sweep also
+    // pins smallest_fitting_diameter to the samples on either side of its answer.
+    const SAMPLES: usize = 48;
+    let lowest = 0.1;
+    let base = DesignInputs::default();
+    for (blocks_name, blocks) in [
+        ("default blocks", base.clone()),
+        ("wide outer blocks", with_wide_outer_blocks(base.clone())),
+    ] {
+        for (shape_name, shape) in [("flat blocks", 1), ("arcs", 0)] {
+            // How often each form was the answer: at the minimum, inside the range, nowhere.
+            let mut forms = [0; 3];
+            for npole in (4..=40).step_by(2) {
+                let mut design = blocks.clone();
+                design.coupling.faceted = shape;
+                design.coupling.npole = npole;
+                let case = format!("{blocks_name}, {shape_name}, {npole} magnets");
+                let range = dimensions_with_minimum_diameter(&design, lowest)
+                    .unwrap()
+                    .diameter_range;
+                let diameters: Vec<f64> = (0..=SAMPLES)
+                    .map(|i| {
+                        if i == SAMPLES {
+                            range.max
+                        } else {
+                            range.min + (range.max - range.min) * i as f64 / SAMPLES as f64
+                        }
+                    })
+                    .collect();
+                let fits: Vec<bool> = diameters
+                    .iter()
+                    .map(|&diameter| fits_at(&design, diameter, Some(lowest)))
+                    .collect();
+                assert!(
+                    fits.windows(2).all(|pair| pair[0] <= pair[1]),
+                    "{case}: {fits:?}"
+                );
+                match smallest_fitting_diameter(&design, npole, Some(lowest)).unwrap() {
+                    DiameterFit::AtMinimum(diameter) => {
+                        forms[0] += 1;
+                        assert_eq!(diameter, range.min, "{case}");
+                        assert!(fits.iter().all(|&fit| fit), "{case}");
+                    }
+                    DiameterFit::At(edge) => {
+                        forms[1] += 1;
+                        for (&diameter, &fit) in diameters.iter().zip(&fits) {
+                            if diameter >= edge {
+                                assert!(fit, "{case}: {diameter} at or above {edge}");
+                            } else if diameter < edge - FIT_TOLERANCE_MM {
+                                assert!(!fit, "{case}: {diameter} below {edge}");
+                            }
+                        }
+                    }
+                    DiameterFit::Nowhere(diameter) => {
+                        forms[2] += 1;
+                        assert_eq!(diameter, range.max, "{case}");
+                        assert!(fits.iter().all(|&fit| !fit), "{case}");
+                    }
+                }
+            }
+            // Not vacuous: every form occurs, so the sweeps cross fit edges.
+            assert!(
+                forms.iter().all(|&count| count > 0),
+                "{blocks_name}, {shape_name}: {forms:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn ring_radius_range_spans_the_size_tabs_diameter_range() {
+    let base = DesignInputs::default();
+    let radius = FreeVariable::RingRadius.range();
+    let diameters = dimensions(&base).unwrap().diameter_range;
+    let ring = ring_radius_range(&base, None).unwrap();
+    close(ring.min, radius.min);
+    close(
+        ring.min,
+        resize_diameter(&base, diameters.min)
+            .unwrap()
+            .coupling
+            .inner_back_apothem_mm,
+    );
+    assert_eq!(
+        ring.max,
+        resize_diameter(&base, diameters.max)
+            .unwrap()
+            .coupling
+            .inner_back_apothem_mm
+    );
+    assert!(
+        ring.max < radius.max,
+        "the cap's 80 mm limit binds first: {}",
+        ring.max
+    );
+    assert_eq!((ring.step, ring.log), (radius.step, radius.log));
+    // A Minimum OD at the top of the range leaves one radius.
+    let top = ring_radius_range(&base, Some(200.0)).unwrap();
+    assert_eq!(top.min, top.max);
+    assert_eq!(top.max, ring.max);
+
+    // A lowered Minimum OD reaches below the radius slider's 9 mm floor (8 magnets at 37 mm):
+    // its smallest radius is what the diameter slider gives at the range's smallest diameter.
+    let eight = with_poles(8);
+    let ring = ring_radius_range(&eight, Some(37.0)).unwrap();
+    let smallest = dimensions_with_minimum_diameter(&eight, 37.0)
+        .unwrap()
+        .diameter_range
+        .min;
+    close(smallest, 37.0);
+    close(
+        ring.min,
+        resize_diameter_with_minimum(&eight, smallest, 37.0)
+            .unwrap()
+            .coupling
+            .inner_back_apothem_mm,
+    );
+    assert!(ring.min < radius.min);
+
+    // A boss larger than the legacy floor raises the smallest radius with the diameter.
+    let mut boss = base.clone();
+    boss.metal.boss_od_mm = 50.0;
+    let ring = ring_radius_range(&boss, None).unwrap();
+    close(
+        ring.min,
+        resize_diameter(&boss, 50.0)
+            .unwrap()
+            .coupling
+            .inner_back_apothem_mm,
+    );
+    assert!(ring.min > radius.min, "{}", ring.min);
+}
+
+#[test]
+fn fit_and_ring_range_are_none_where_the_size_controls_are() {
+    let base = DesignInputs::default();
+    let mut invalid = base.clone();
+    invalid.metal.face_gap_mm = f64::NAN;
+    assert_eq!(smallest_fitting_diameter(&invalid, 10, None), None);
+    assert_eq!(ring_radius_range(&invalid, None), None);
+    for count in [i64::MIN, -4, 0, 1, 2, 3, 9, 41, 42, i64::MAX] {
+        assert_eq!(
+            ring_radius_range(&with_poles(count), None),
+            None,
+            "count {count}"
+        );
+        assert_eq!(
+            smallest_fitting_diameter(&base, count, None),
+            None,
+            "count {count}"
+        );
+        assert_eq!(
+            smallest_fitting_diameter(&base, count, Some(37.0)),
+            None,
+            "count {count}"
+        );
+    }
+    for minimum in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.0, -1.0] {
+        assert_eq!(smallest_fitting_diameter(&base, 10, Some(minimum)), None);
+        assert_eq!(ring_radius_range(&base, Some(minimum)), None);
     }
 }

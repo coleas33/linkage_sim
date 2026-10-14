@@ -20,6 +20,13 @@
 //! ([`diameter_breakdown`]: the largest of the cup, the cap and the boss) and how the overall
 //! length divides ([`length_breakdown`]: the outer ring the cup cavity holds, and the housing
 //! around it).
+//!
+//! [`smallest_fitting_diameter`] finds the smallest outside diameter at which a magnet count's
+//! blocks fit, and [`ring_radius_range`] the ring radii the diameter range spans (the ring-size
+//! search of inverse sizing). At a fixed magnet count the blocks only fit better as the ring
+//! grows: a flat block's polygon flat widens with its apothem, and an arc's share of its pole
+//! pitch falls. The fit is bisected on that basis; tests/size_controls.rs sweeps it for both
+//! shapes.
 
 use std::f64::consts::PI;
 
@@ -27,6 +34,7 @@ use super::api::{DesignInputs, compute_all};
 use super::deviations::Deviations;
 use super::housing::axial_housing;
 use super::meta::{SliderRange, input_rows};
+use super::model::blocks_fit;
 
 /// Current assembly dimensions and the ranges attainable with the other inputs fixed.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -63,8 +71,23 @@ pub struct LengthBreakdown {
     pub housing_mm: f64,
 }
 
+/// Where a magnet count's blocks start to fit over the Size tab's diameter range [mm].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DiameterFit {
+    /// They fit from this diameter up; [`FIT_TOLERANCE_MM`] below it they do not.
+    At(f64),
+    /// They fit at the range minimum (this value), so at every diameter in the range.
+    AtMinimum(f64),
+    /// They fit at no diameter in the range; the value is its maximum.
+    Nowhere(f64),
+}
+
+/// The bisection of [`smallest_fitting_diameter`] stops when its bracket is this narrow [mm].
+pub const FIT_TOLERANCE_MM: f64 = 1e-6;
+
 /// The engine geometry and metadata used for a single edit. Every candidate starts from
 /// the supplied design; moving between sizes never overwrites its axial housing allowances.
+#[derive(Clone, Copy)]
 struct Geometry {
     controls: SizeControls,
     diameter: DiameterBreakdown,
@@ -238,6 +261,73 @@ pub fn length_breakdown(inputs: &DesignInputs) -> Option<LengthBreakdown> {
     (magnets_mm.is_finite() && magnets_mm > 0.0 && housing_mm >= 0.0).then_some(LengthBreakdown {
         magnets_mm,
         housing_mm,
+    })
+}
+
+/// The smallest outside diameter at which `npole` blocks per ring fit ([`blocks_fit`]), every
+/// other input kept. It searches the Size tab's diameter range of the design with `npole`
+/// magnets: [`dimensions`] when `minimum_diameter_mm` is `None`, else
+/// [`dimensions_with_minimum_diameter`]. Each diameter maps to the inputs exactly as the
+/// diameter slider maps it. The fit only improves as the ring grows (module docs), so a
+/// bisection to [`FIT_TOLERANCE_MM`] finds its edge. `None` when that design has no diameter
+/// range: invalid inputs, an odd or out-of-range count, or an invalid minimum.
+pub fn smallest_fitting_diameter(
+    inputs: &DesignInputs,
+    npole: i64,
+    minimum_diameter_mm: Option<f64>,
+) -> Option<DiameterFit> {
+    let mut design = inputs.clone();
+    design.coupling.npole = npole;
+    let geometry = geometry(&design, minimum_diameter_mm)?;
+    let range = geometry.controls.diameter_range;
+    // Every diameter tried lies inside the range, so the resize is never refused.
+    let fits = |diameter_mm: f64| {
+        resize_diameter_using(&design, diameter_mm, geometry)
+            .is_ok_and(|resized| blocks_fit(&resized.coupling, &compute_all(&resized).model))
+    };
+    if fits(range.min) {
+        return Some(DiameterFit::AtMinimum(range.min));
+    }
+    if !fits(range.max) {
+        return Some(DiameterFit::Nowhere(range.max));
+    }
+    // `low` never fits and `high` always does.
+    let (mut low, mut high) = (range.min, range.max);
+    while high - low > FIT_TOLERANCE_MM {
+        let middle = low + (high - low) / 2.0;
+        if middle <= low || middle >= high {
+            break; // adjacent doubles
+        }
+        if fits(middle) {
+            high = middle;
+        } else {
+            low = middle;
+        }
+    }
+    Some(DiameterFit::At(high))
+}
+
+/// The ring radii (`coupling.inner_back_apothem_mm`) at the ends of the Size tab's diameter
+/// range, each mapped as the diameter slider maps it: [`dimensions`] when
+/// `minimum_diameter_mm` is `None`, else [`dimensions_with_minimum_diameter`], so a lowered
+/// minimum reaches below the radius slider's floor. The step and scale are the radius
+/// input's. `None` when the design has no diameter range.
+pub fn ring_radius_range(
+    inputs: &DesignInputs,
+    minimum_diameter_mm: Option<f64>,
+) -> Option<SliderRange> {
+    let geometry = geometry(inputs, minimum_diameter_mm)?;
+    let diameters = geometry.controls.diameter_range;
+    let radius_at = |diameter_mm: f64| {
+        resize_diameter_using(inputs, diameter_mm, geometry)
+            .ok()
+            .map(|resized| resized.coupling.inner_back_apothem_mm)
+    };
+    let (min, max) = (radius_at(diameters.min)?, radius_at(diameters.max)?);
+    (min.is_finite() && max.is_finite() && min <= max).then_some(SliderRange {
+        min,
+        max,
+        ..geometry.radius_range
     })
 }
 
