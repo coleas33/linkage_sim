@@ -98,6 +98,11 @@ struct Geometry {
     diameter_slope: f64,
     cap_offset_mm: f64,
     radius_range: SliderRange,
+    /// The ring radii the cup reaches with the cap and thread following it: from the radius
+    /// input's floor (with a Minimum OD, the shaft's) to its ceiling, narrowed by the cap and
+    /// thread input limits. Where the boss sets the outside diameter, they bound the radius.
+    ring_floor_mm: f64,
+    ring_ceiling_mm: f64,
     axial_range: SliderRange,
 }
 
@@ -161,14 +166,12 @@ fn geometry(inputs: &DesignInputs, minimum_diameter: Option<f64>) -> Option<Geom
     let cap_overhang = cap_offset.max(0.0);
     let radius = inputs.coupling.inner_back_apothem_mm;
     let cup_at_radius = |radius_mm: f64| cup + slope * (radius_mm - radius);
-    let cup_min_at_radius = |radius_mm: f64| {
-        cup_at_radius(radius_mm)
-            .max(cap_range.min - cap_offset)
-            .max(thread_range.min - thread_offset)
-    };
-    let cup_max = (cup + slope * (radius_range.max - radius))
-        .min(cap_range.max - cap_offset)
-        .min(thread_range.max - thread_offset);
+    let radius_at_cup = |cup_mm: f64| radius + (cup_mm - cup) / slope;
+    // The cup diameters at which the cap and thread, following the cup, meet their input limits.
+    let cup_floor = (cap_range.min - cap_offset).max(thread_range.min - thread_offset);
+    let cup_ceiling = (cap_range.max - cap_offset).min(thread_range.max - thread_offset);
+    let cup_min_at_radius = |radius_mm: f64| cup_at_radius(radius_mm).max(cup_floor);
+    let cup_max = cup_at_radius(radius_range.max).min(cup_ceiling);
     // The explicit floor may relax a UI bound, but cannot put the hub inside its bore.
     let mut shaft_radius = inputs.coupling.bore_mm / 2.0 + md.bond_inner_mm;
     if !shaft_radius.is_finite() || shaft_radius <= 0.0 {
@@ -183,6 +186,15 @@ fn geometry(inputs: &DesignInputs, minimum_diameter: Option<f64>) -> Option<Geom
     if !absolute_cup_min.is_finite() || !cup_max.is_finite() || absolute_cup_min > cup_max {
         return None;
     }
+    // The ring radii the cup reaches, the same floors and ceilings in radius space. The boss
+    // is not among them: it sets the outside diameter over a plateau of radii.
+    let ring_floor = if minimum_diameter.is_some() {
+        shaft_radius
+    } else {
+        radius_range.min
+    }
+    .max(radius_at_cup(cup_floor));
+    let ring_ceiling = radius_range.max.min(radius_at_cup(cup_ceiling));
     let minimum_diameter_range = range(
         (absolute_cup_min + cap_overhang).max(md.boss_od_mm),
         (cup_max + cap_overhang).max(md.boss_od_mm),
@@ -226,6 +238,8 @@ fn geometry(inputs: &DesignInputs, minimum_diameter: Option<f64>) -> Option<Geom
         diameter_slope: slope,
         cap_offset_mm: cap_offset,
         radius_range,
+        ring_floor_mm: ring_floor,
+        ring_ceiling_mm: ring_ceiling,
         axial_range,
     })
 }
@@ -311,8 +325,12 @@ pub fn smallest_fitting_diameter(
 /// The ring radii (`coupling.inner_back_apothem_mm`) at the ends of the Size tab's diameter
 /// range, each mapped as the diameter slider maps it: [`dimensions`] when
 /// `minimum_diameter_mm` is `None`, else [`dimensions_with_minimum_diameter`], so a lowered
-/// minimum reaches below the radius slider's floor. The step and scale are the radius
-/// input's. `None` when the design has no diameter range.
+/// minimum reaches below the radius slider's floor. An end at the boss is different: the boss
+/// sets that outside diameter over a plateau of ring radii, so the end is the plateau's edge,
+/// where the cup meets its own floor (the radius input's, or with a Minimum OD the shaft's, and
+/// the cap and thread input floors) or ceiling. The range therefore does not depend on where on
+/// the plateau the ring sits. The step and scale are the radius input's. `None` when the design
+/// has no diameter range.
 pub fn ring_radius_range(
     inputs: &DesignInputs,
     minimum_diameter_mm: Option<f64>,
@@ -323,12 +341,19 @@ pub fn ring_radius_range(
 /// [`ring_radius_range`] for a geometry already computed.
 fn ring_radius_span(inputs: &DesignInputs, geometry: Geometry) -> Option<SliderRange> {
     let diameters = geometry.controls.diameter_range;
-    let radius_at = |diameter_mm: f64| {
-        resize_diameter_using(inputs, diameter_mm, geometry)
-            .ok()
-            .map(|resized| resized.coupling.inner_back_apothem_mm)
+    // A diameter above the boss names one ring radius, the slider's. At the boss the slider's
+    // no-op would name the current radius, one of many on the plateau.
+    let radius_at = |diameter_mm: f64, plateau_edge_mm: f64| {
+        if diameter_mm > geometry.diameter.boss_mm {
+            resize_diameter_using(inputs, diameter_mm, geometry)
+                .ok()
+                .map(|resized| resized.coupling.inner_back_apothem_mm)
+        } else {
+            Some(plateau_edge_mm)
+        }
     };
-    let (min, max) = (radius_at(diameters.min)?, radius_at(diameters.max)?);
+    let min = radius_at(diameters.min, geometry.ring_floor_mm)?;
+    let max = radius_at(diameters.max, geometry.ring_ceiling_mm)?;
     (min.is_finite() && max.is_finite() && min <= max).then_some(SliderRange {
         min,
         max,
@@ -339,9 +364,9 @@ fn ring_radius_span(inputs: &DesignInputs, geometry: Geometry) -> Option<SliderR
 /// The design with its ring radius (`coupling.inner_back_apothem_mm`) set to `apothem_mm`,
 /// mapped as the diameter slider maps it: the cap OD and cap thread move by the cup's change
 /// and keep their signed offsets from the cup. `None` where that mapping refuses: a radius
-/// that is not a number or lies outside the widest range the slider reaches (every
-/// [`ring_radius_range`], whatever the Minimum OD, lies inside it), or a design without a
-/// diameter range. The current radius is an exact no-op.
+/// that is not a number or lies outside the widest [`ring_radius_range`], the lowest Minimum
+/// OD's (every other range, with or without a Minimum OD, lies inside it), or a design without
+/// a diameter range. The current radius, when inside that range, is an exact no-op.
 pub fn with_ring_radius(inputs: &DesignInputs, apothem_mm: f64) -> Option<DesignInputs> {
     // Any positive minimum is bounded up to the absolute one, which gives the widest range.
     let geometry = geometry(inputs, Some(f64::MIN_POSITIVE))?;

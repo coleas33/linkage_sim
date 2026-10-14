@@ -1,5 +1,6 @@
 //! Manual outside diameter and overall length controls, evaluated through the same engine.
 
+use magcoupling::engine::meta::input_rows;
 use magcoupling::engine::model::blocks_fit;
 use magcoupling::engine::size_controls::{
     DiameterBreakdown, DiameterFit, FIT_TOLERANCE_MM, diameter_breakdown, dimensions,
@@ -841,19 +842,142 @@ fn ring_radius_range_spans_the_size_tabs_diameter_range() {
             .inner_back_apothem_mm,
     );
     assert!(ring.min < radius.min);
+}
 
-    // A boss larger than the legacy floor raises the smallest radius with the diameter.
+#[test]
+fn the_ring_radius_range_does_not_follow_the_ring_along_the_boss_plateau() {
+    // A 50 mm boss sets the outside diameter over a plateau of ring radii, every one of them a
+    // 50 mm design. Wherever on that plateau the ring sits, the range's floor is the cup's own
+    // and every radius in the range applies.
+    let base = DesignInputs::default();
+    let radius = FreeVariable::RingRadius.range();
+    // The lowest floor a Minimum OD reaches: the hub around the shaft (bore radius + bondline).
+    let shaft_mm = base.coupling.bore_mm / 2.0 + base.metal.bond_inner_mm;
     let mut boss = base.clone();
     boss.metal.boss_od_mm = 50.0;
+    for current in [radius.min, base.coupling.inner_back_apothem_mm, 12.0, 14.0] {
+        let mut design = boss.clone();
+        design.coupling.inner_back_apothem_mm = current;
+        let size = dimensions(&design).unwrap();
+        assert_eq!(size.diameter_mm, boss.metal.boss_od_mm, "ring {current}");
+        assert_eq!(
+            size.diameter_range.min, boss.metal.boss_od_mm,
+            "ring {current}"
+        );
+        // The same design with the default boss, which sets no part of the diameter range.
+        let mut no_boss = design.clone();
+        no_boss.metal.boss_od_mm = base.metal.boss_od_mm;
+        let plain = ring_radius_range(&no_boss, None).unwrap();
+
+        // Without a Minimum OD the floor is the radius input's; above the boss nothing changes.
+        let ring = ring_radius_range(&design, None).unwrap();
+        assert_eq!(ring.min, radius.min, "ring {current}");
+        assert_eq!(ring.max, plain.max, "ring {current}");
+        // A Minimum OD at or below the boss leaves every radius a 50 mm design, so the floor is
+        // the shaft's; above the boss it is the same diameter floor as without the boss.
+        for minimum in [0.1, 37.0, boss.metal.boss_od_mm] {
+            let lowered = ring_radius_range(&design, Some(minimum)).unwrap();
+            close(lowered.min, shaft_mm);
+            assert_eq!(
+                lowered.max, plain.max,
+                "ring {current}, Minimum OD {minimum}"
+            );
+        }
+        assert_eq!(
+            ring_radius_range(&design, Some(60.0)),
+            ring_radius_range(&no_boss, Some(60.0)),
+            "ring {current}"
+        );
+
+        // Every radius down to the floor, below the current one too, applies and keeps the
+        // boss's outside diameter.
+        let widest = ring_radius_range(&design, Some(0.1)).unwrap();
+        for apothem_mm in [widest.min, radius.min, 10.0, current] {
+            let case = format!("ring {current} -> {apothem_mm}");
+            let shown = with_ring_radius(&design, apothem_mm).unwrap_or_else(|| panic!("{case}"));
+            assert_eq!(shown.coupling.inner_back_apothem_mm, apothem_mm, "{case}");
+            assert_eq!(
+                dimensions(&shown).unwrap().diameter_mm,
+                boss.metal.boss_od_mm,
+                "{case}"
+            );
+        }
+    }
+
+    // Moving the ring along the plateau, as a ring-size solve shows it (the cap following the
+    // cup), moves neither end.
     let ring = ring_radius_range(&boss, None).unwrap();
-    close(
-        ring.min,
-        resize_diameter(&boss, 50.0)
-            .unwrap()
-            .coupling
-            .inner_back_apothem_mm,
+    for apothem_mm in [ring.min, 12.0] {
+        let moved = with_ring_radius(&boss, apothem_mm).unwrap();
+        assert_eq!(
+            dimensions(&moved).unwrap().diameter_mm,
+            boss.metal.boss_od_mm,
+            "{apothem_mm}"
+        );
+        let again = ring_radius_range(&moved, None).unwrap();
+        assert_eq!(again.min, ring.min, "{apothem_mm}");
+        close(again.max, ring.max);
+    }
+
+    // On the plateau the cap and thread input floors still bound the radius: a small cap's
+    // thread, following the cup down, meets its input minimum above the shaft's floor.
+    let mut small_cap = boss.clone();
+    small_cap.metal.cap_od_mm = 25.0;
+    small_cap.metal.cap_thread_dia_mm = 24.0;
+    let thread_min = input_rows(&small_cap)
+        .iter()
+        .find(|row| row.path == "metal.cap_thread_dia_mm")
+        .and_then(|row| row.meta.range)
+        .unwrap()
+        .min;
+    let floor = ring_radius_range(&small_cap, Some(0.1)).unwrap().min;
+    assert!(floor > shaft_mm, "{floor}");
+    let at_floor = with_ring_radius(&small_cap, floor).unwrap();
+    close(at_floor.metal.cap_thread_dia_mm, thread_min);
+    assert_eq!(
+        dimensions(&at_floor).unwrap().diameter_mm,
+        boss.metal.boss_od_mm
     );
-    assert!(ring.min > radius.min, "{}", ring.min);
+    assert_eq!(with_ring_radius(&small_cap, floor - 1e-3), None);
+}
+
+#[test]
+fn a_boss_above_every_reachable_diameter_leaves_the_cups_whole_radius_reach() {
+    // A boss larger than the largest diameter the cap can reach (its input maximum) is the only
+    // outside diameter left; every ring radius the cup reaches gives it, so the range is the
+    // same as without the boss rather than the current radius alone.
+    let base = DesignInputs::default();
+    let plain_size = dimensions(&base).unwrap();
+    let mut largest = base.clone();
+    largest.metal.boss_od_mm = plain_size.diameter_range.max + 10.0;
+    let size = dimensions(&largest).unwrap();
+    assert_eq!(size.diameter_range.min, largest.metal.boss_od_mm);
+    assert_eq!(size.diameter_range.max, largest.metal.boss_od_mm);
+
+    for minimum in [None, Some(0.1), Some(37.0)] {
+        let plain = ring_radius_range(&base, minimum).unwrap();
+        let ring = ring_radius_range(&largest, minimum).unwrap();
+        // With a Minimum OD at or below the boss the floor is the shaft's, as at the lowest one.
+        let floor = match minimum {
+            None => plain.min,
+            Some(_) => ring_radius_range(&base, Some(0.1)).unwrap().min,
+        };
+        close(ring.min, floor);
+        close(ring.max, plain.max);
+        let current = base.coupling.inner_back_apothem_mm;
+        assert!(
+            ring.min < current && current < ring.max,
+            "{minimum:?}: {ring:?}"
+        );
+        for apothem_mm in [ring.min, ring.max] {
+            let shown = with_ring_radius(&largest, apothem_mm)
+                .unwrap_or_else(|| panic!("{minimum:?}: {apothem_mm}"));
+            assert_eq!(
+                dimensions(&shown).unwrap().diameter_mm,
+                largest.metal.boss_od_mm
+            );
+        }
+    }
 }
 
 #[test]
@@ -965,7 +1089,7 @@ fn every_radius_the_size_tab_can_reach_is_applicable_and_none_beyond_it() {
         ("default", DesignInputs::default()),
         ("arcs", as_arcs(DesignInputs::default())),
         ("eight magnets", with_poles(8)),
-        ("boss sets the floor", boss),
+        ("boss sets the diameter", boss),
     ];
     let legacy_floor = FreeVariable::RingRadius.range().min;
     let mut reached_below_the_legacy_floor = false;
