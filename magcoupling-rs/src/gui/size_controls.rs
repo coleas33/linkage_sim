@@ -304,7 +304,7 @@ pub(crate) fn controls_ui(
             (
                 MAGNETS,
                 "coupling.npole",
-                consequences.magnet_lines(inputs.coupling.npole),
+                consequences.magnet_lines(inputs.coupling.npole, auto),
             ),
         ] {
             let entry = catalogue

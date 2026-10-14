@@ -1497,7 +1497,9 @@ mod tests {
     use crate::engine::sizing::SizingOutcome;
     use crate::gui::dashboard::{END_EFFECT_BANNER, STORED_3D_LABEL, result_info};
     use crate::gui::format::{format_value, with_unit};
-    use crate::gui::guidance::{Consequences, RING_SIZE_STAYS, plain_text_violations};
+    use crate::gui::guidance::{
+        AUTO_RESETS_LENGTH, AUTO_RESIZES_RING, Consequences, RING_SIZE_STAYS, plain_text_violations,
+    };
     use crate::gui::input_ui::{BLANK_TEXT, CHANGED_DOT, OUTSIDE_RANGE_NOTE, RESET_LABEL};
     use crate::gui::session::{
         decode_share_payload, design_from_json, encode_share_payload, encode_share_text,
@@ -4528,7 +4530,7 @@ mod tests {
         assert!(rect(diameter.as_str()).bottom() <= rect(LENGTH).top());
         assert!(rect(LENGTH).bottom() <= rect(length.as_str()).top());
         assert!(rect(length.as_str()).bottom() <= rect(GAP).top());
-        let lines = consequences.magnet_lines(10);
+        let lines = consequences.magnet_lines(10, None);
         assert_eq!(lines.first().map(String::as_str), Some(RING_SIZE_STAYS));
         let mut above = rect(MAGNETS);
         for line in &lines {
@@ -4589,7 +4591,7 @@ mod tests {
         // T5/T6 amendment: with Minimum OD unset the slider floor, not the coupling, stops the
         // fit search. The line says how far it could go and that Minimum OD unlocks it.
         let fit = consequences
-            .magnet_lines(8)
+            .magnet_lines(8, None)
             .into_iter()
             .find(|line| line.starts_with("Fits down to "))
             .expect("a fit line at the slider's floor");
@@ -4598,11 +4600,57 @@ mod tests {
     }
 
     #[test]
+    fn size_tab_first_magnet_line_follows_the_auto_state() {
+        // Physics review 3, N4: the line under Magnets per ring says what a new count does to
+        // the size Auto sets: the ring keeps its radius with Auto off, Auto resizes the ring
+        // or resets the length when it sets them, and with Auto on the count (its slider
+        // locked) no line speaks of changing it. Only the state's own line is drawn, under
+        // Magnets per ring, and the neighbour lines are drawn with each.
+        let firsts = [RING_SIZE_STAYS, AUTO_RESIZES_RING, AUTO_RESETS_LENGTH];
+        let states = [
+            (None, Some(RING_SIZE_STAYS)),
+            (Some(FreeVariable::RingRadius), Some(AUTO_RESIZES_RING)),
+            (Some(FreeVariable::AxialLength), Some(AUTO_RESETS_LENGTH)),
+            (Some(FreeVariable::MagnetsPerRing), None),
+        ];
+        for (auto, first) in states {
+            let mut harness = size_tab(SCREEN, DesignInputs::default());
+            if let Some(variable) = auto {
+                harness.panel.sizing.variable = variable;
+                harness.panel.set_sizing_mode(SizingMode::TorqueToMagnets);
+            }
+            harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+            harness.frame(Vec::new());
+            let output = harness.frame(Vec::new());
+            for line in firsts {
+                let wanted = usize::from(Some(line) == first);
+                assert_eq!(count(&output, line), wanted, "{auto:?}: {line}");
+            }
+            let shown = harness.panel.shown_inputs();
+            let lines = shown_consequences(&harness).magnet_lines(shown.coupling.npole, auto);
+            assert_eq!(
+                lines.first().map(String::as_str) == first,
+                first.is_some(),
+                "{auto:?}"
+            );
+            let rect =
+                |text: &str| text_rect(&output, text).unwrap_or_else(|| panic!("no {text:?}"));
+            let mut above = rect(MAGNETS);
+            for line in &lines {
+                assert_eq!(count(&output, line), 1, "{auto:?}: {line}");
+                let at = rect(line.as_str());
+                assert!(above.bottom() <= at.top() + 0.5, "{auto:?}: {line:?}");
+                above = at;
+            }
+        }
+    }
+
+    #[test]
     fn size_tab_what_moves_what_lines_follow_each_edit() {
         // Spec 6 test 5: the lines are recomputed when the design changes (the cache keys on
         // it), from the magnet count's own slider and from any other input.
         let mut harness = size_tab(SCREEN, DesignInputs::default());
-        let at_10 = shown_consequences(&harness).magnet_lines(10);
+        let at_10 = shown_consequences(&harness).magnet_lines(10, None);
         // The controls' widgets in drawing order: diameter, length, gap, magnets, Minimum OD.
         let magnets = harness.panel.design_widgets[3];
         harness.ctx.memory_mut(|m| m.request_focus(magnets));
@@ -4611,7 +4659,7 @@ mod tests {
         harness.frame(key_tap(egui::Key::ArrowLeft));
         let output = harness.frame(Vec::new());
         assert_eq!(harness.panel.inputs().coupling.npole, 8);
-        let at_8 = shown_consequences(&harness).magnet_lines(8);
+        let at_8 = shown_consequences(&harness).magnet_lines(8, None);
         assert_ne!(at_8, at_10);
         for line in &at_8 {
             assert_eq!(count(&output, line), 1, "{line}");
@@ -4623,7 +4671,7 @@ mod tests {
         harness.panel.inputs.metal.face_gap_mm = 2.0;
         let output = harness.frame(Vec::new());
         let wider = shown_consequences(&harness);
-        let lines = wider.magnet_lines(8);
+        let lines = wider.magnet_lines(8, None);
         assert_ne!(lines, at_8);
         for line in &lines {
             assert_eq!(count(&output, line), 1, "{line}");
@@ -4658,7 +4706,7 @@ mod tests {
             "{:?}",
             lowered.fit
         );
-        let (old, new) = (floor.magnet_lines(8), lowered.magnet_lines(8));
+        let (old, new) = (floor.magnet_lines(8, None), lowered.magnet_lines(8, None));
         assert_ne!(old, new);
         for line in &new {
             assert_eq!(count(&output, line), 1, "{line}");
@@ -4680,7 +4728,7 @@ mod tests {
             let consequences = shown_consequences(&harness);
             let neighbours: Vec<i64> = consequences.neighbours.iter().map(|n| n.npole).collect();
             assert_eq!(neighbours, [inside], "{npole}");
-            let lines = consequences.magnet_lines(npole);
+            let lines = consequences.magnet_lines(npole, None);
             assert!(lines.contains(&RING_SIZE_STAYS.to_owned()), "{lines:?}");
             for line in &lines {
                 assert_eq!(count(&output, line), 1, "{line}");
@@ -4712,7 +4760,7 @@ mod tests {
         let dashboard_left = side("magcoupling_dashboard").left();
         let rect = |text: &str| text_rect(&output, text).unwrap_or_else(|| panic!("no {text:?}"));
         let consequences = shown_consequences(&harness);
-        let magnet_lines = consequences.magnet_lines(8);
+        let magnet_lines = consequences.magnet_lines(8, None);
         let mut above = rect(MAGNETS);
         for line in &magnet_lines {
             let at = rect(line.as_str());
@@ -4783,7 +4831,7 @@ mod tests {
             let shown = harness.panel.shown_inputs();
             let results = compute_all(&shown);
             let consequences = shown_consequences(&harness);
-            let mut texts = consequences.magnet_lines(shown.coupling.npole);
+            let mut texts = consequences.magnet_lines(shown.coupling.npole, None);
             if dimensions(&shown).is_some() {
                 texts.extend(consequences.diameter_line());
                 texts.extend(consequences.length_line());

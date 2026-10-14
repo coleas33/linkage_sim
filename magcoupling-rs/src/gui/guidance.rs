@@ -168,7 +168,7 @@ const CLEARANCE_GUIDE: CheckGuide = CheckGuide {
     check: CLEARANCE,
     label: "Running clearance",
     problem: clearance_problem,
-    why: "Only a small radial gap separates the sleeve from the liner; it must absorb shaft offset, runout, deflection, thermal growth and tolerances, or they rub.",
+    why: "Only a small radial gap separates the inner and outer rotors; it must absorb shaft offset, runout, deflection, thermal growth and tolerances, or they rub.",
     // Thinner sleeve and liner first: they open the gap at no cost in torque, while a larger
     // face gap lowers the pull-out ([`SIDE_EFFECTS`] says so while the hot-low torque fails).
     fixes: Fixes::Static(&[
@@ -388,7 +388,8 @@ fn failing(check: &str, inputs: &DesignInputs, results: &DesignResults) -> bool 
 /// static list, each fix that can still move and whose move turns no passing guided check red
 /// ([`helps`]); a list built per failing term ([`Fixes::PerTerm`]) is checked by its builder,
 /// against the term each fix serves. Each check runs `compute_all` on the design a move
-/// reaches, so the panel asks through a [`FixCache`].
+/// reaches, so the panel asks through a [`FixCache`]. The fit guide also leaves out "Raise
+/// Outside diameter" where no diameter on its slider fits the magnets ([`fits_on_the_slider`]).
 pub fn fixes(
     guide: &CheckGuide,
     inputs: &DesignInputs,
@@ -403,10 +404,28 @@ pub fn fixes(
         Fixes::Static(list) => list
             .iter()
             .copied()
+            .filter(|&fix| {
+                let raises_the_fit_diameter =
+                    guide.check == FIT_CHECK && fix == (RING, Direction::Raise);
+                !raises_the_fit_diameter || fits_on_the_slider(inputs)
+            })
             .filter(|&fix| helps(inputs, results, fix, None))
             .collect(),
         Fixes::PerTerm(build) => build(inputs, results),
     }
+}
+
+/// Whether the design's magnet count fits at some diameter on the Outside diameter slider
+/// (without the panel's Minimum OD, as [`moves`] steps it). Where it does not, "Raise Outside
+/// diameter" cannot make the blocks fit, and the Size tab says so beside it ("Does not fit at
+/// any diameter up to ..."), so the fit guide leaves that fix out (physics review 3, N3): one
+/// step does widen each block's place, but no step on the slider makes it wide enough. A
+/// design without size controls keeps the fix: [`helps`] still judges it.
+fn fits_on_the_slider(inputs: &DesignInputs) -> bool {
+    !matches!(
+        smallest_fitting_diameter(inputs, inputs.coupling.npole, None),
+        Some(DiameterFit::Nowhere(_))
+    )
 }
 
 /// The Fix line of a failing check whose [`fixes`] are empty (spec 3.4 gives every block a
@@ -512,8 +531,29 @@ pub fn side_effects(
         .collect()
 }
 
-/// Every note drawn under the fixes of the guide at `index`: its [`trade_offs`], then its
-/// [`side_effects`].
+/// The fixes whose cost no guided check sees, each with the note drawn while one of them is
+/// shown (physics review 3, S14): the retaining sleeve and the keeper liner go down to 0 mm on
+/// their sliders, which opens the running clearance but takes away what holds the magnets,
+/// and their hoop stress, buckling and bond-loss capture are validation items only.
+const UNCHECKED_COSTS: [(&[(&str, Direction)], &str); 1] = [(
+    &[
+        ("metal.sleeve_mm", Direction::Lower),
+        ("metal.liner_mm", Direction::Lower),
+    ],
+    "A thinner sleeve or liner holds the magnets less securely; no check here covers that, so confirm it separately.",
+)];
+
+/// The [`UNCHECKED_COSTS`] notes of the fixes shown in `own`, each note once.
+fn unchecked_costs(own: &[(&'static str, Direction)]) -> Vec<String> {
+    UNCHECKED_COSTS
+        .iter()
+        .filter(|(costly, _)| costly.iter().any(|fix| own.contains(fix)))
+        .map(|&(_, note)| note.to_owned())
+        .collect()
+}
+
+/// Every note drawn under the fixes of the guide at `index`: its [`trade_offs`], its
+/// [`side_effects`], then the costs no check sees ([`unchecked_costs`]).
 pub fn guide_notes(
     all: &[Vec<(&'static str, Direction)>],
     index: usize,
@@ -522,6 +562,9 @@ pub fn guide_notes(
 ) -> Vec<String> {
     let mut notes = trade_offs(all, index);
     notes.extend(side_effects(all, index, inputs, results));
+    if let Some(own) = all.get(index) {
+        notes.extend(unchecked_costs(own));
+    }
     notes
 }
 
@@ -1147,14 +1190,14 @@ fn temperature_sentences(inputs: &DesignInputs, results: &DesignResults) -> Vec<
     let magnet_peak_quoted = fails(MagnetPeak) && !MagnetPeak.start_reaches_peak_limit(results);
     if magnet_peak_quoted {
         sentences.push(format!(
-            "The slip-fault peak of {} reaches the {} magnet limit.",
+            "The slip-fault peak of {} is at or above the {} magnet limit.",
             result_text(results, "temperature.magnet_life.peak_C"),
             result_text(results, "temperature.summary.magnet_limit_C"),
         ));
     }
     if fails(AdhesivePeak) && !AdhesivePeak.start_reaches_peak_limit(results) {
         sentences.push(format!(
-            "The slip-fault peak of {} reaches the {} adhesive limit.",
+            "The slip-fault peak of {} is at or above the {} adhesive limit.",
             result_text(results, "temperature.adhesive_life.peak_C"),
             result_text(results, "temperature.summary.adhesive_limit_C"),
         ));
@@ -1222,14 +1265,21 @@ fn magnet_limit_sentence(
         .filter(|ring| matches!(ring.cold_limit(results).0, NumOrText::Text(_)))
         .collect();
     let margin = input_text(inputs, "temperature.demag.design_margin_C");
+    // The onset comes from the stored reverse fields, as the cold limit does (physics review
+    // 3, S16): while they hold the default design's, the sentence says so.
+    let source = if default_reverse_fields(inputs) {
+        " (slip fields from the default design; enter this design's own to confirm)"
+    } else {
+        ""
+    };
     match onset_rings[..] {
         [] => None,
         [ring] => Some(format!(
-            "The {} magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the {margin} design margin.",
+            "The {} magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the {margin} design margin{source}.",
             ring.name()
         )),
         _ => Some(format!(
-            "Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the {margin} design margin."
+            "Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the {margin} design margin{source}."
         )),
     }
 }
@@ -1669,10 +1719,32 @@ fn fit_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String>
 // What moves what (spec 3.3, 4.1). Lengths read to 0.1 mm (the Size tab sliders' precision),
 // torques to 0.01 N·m and changes to whole percent.
 
-/// The first line under Magnets per ring, always shown: the ring radius
+/// The first line under Magnets per ring with Auto off: the ring radius
 /// (`coupling.inner_back_apothem_mm`) is its own input; the magnet count only sets how many
 /// blocks go around it.
 pub const RING_SIZE_STAYS: &str = "The ring radius stays the same when you change the magnet count; the cup OD below can still change.";
+
+/// The first line under Magnets per ring with Auto on the ring size (physics review 3, N4): a
+/// new count changes the solve, so Auto solves the ring radius again, while the neighbour
+/// lines are built at the present ring.
+pub const AUTO_RESIZES_RING: &str = "Auto resizes the ring when you change the magnet count; the lines below keep the present ring size.";
+
+/// The first line under Magnets per ring with Auto on the magnet length (physics review 3,
+/// N4): the ring stays, but Auto solves the length again, while the neighbour lines are built
+/// at the present length.
+pub const AUTO_RESETS_LENGTH: &str = "Auto resets the magnet length when you change the magnet count; the lines below keep the present length.";
+
+/// The first line under Magnets per ring for the Auto state `auto` (`None`: Auto off): what a
+/// new magnet count does to the size Auto sets. `None` with Auto on the magnet count itself:
+/// its slider is locked, so no one changes the count there.
+pub fn magnet_count_line(auto: Option<FreeVariable>) -> Option<&'static str> {
+    match auto {
+        None => Some(RING_SIZE_STAYS),
+        Some(FreeVariable::RingRadius) => Some(AUTO_RESIZES_RING),
+        Some(FreeVariable::AxialLength) => Some(AUTO_RESETS_LENGTH),
+        Some(FreeVariable::MagnetsPerRing) => None,
+    }
+}
 
 /// A neighbour line's words when its blocks do not fit.
 const NEIGHBOUR_DOES_NOT_FIT: &str = "magnets do not fit";
@@ -1780,11 +1852,15 @@ impl Consequences {
         }
     }
 
-    /// The lines under Magnets per ring: [`RING_SIZE_STAYS`], one line per neighbour, then
-    /// the smallest diameter that fits. `npole` is the count the consequences were built for
+    /// The lines under Magnets per ring: the line for the Auto state `auto`
+    /// ([`magnet_count_line`]; `None`: Auto off), one line per neighbour, then the smallest
+    /// diameter that fits. `npole` is the count the consequences were built for
     /// (`inputs.coupling.npole`).
-    pub fn magnet_lines(&self, npole: i64) -> Vec<String> {
-        let mut lines = vec![RING_SIZE_STAYS.to_owned()];
+    pub fn magnet_lines(&self, npole: i64, auto: Option<FreeVariable>) -> Vec<String> {
+        let mut lines: Vec<String> = magnet_count_line(auto)
+            .map(str::to_owned)
+            .into_iter()
+            .collect();
         lines.extend(self.neighbours.iter().map(Neighbour::line));
         lines.extend(self.fit.map(|fit| fit_line(fit, self.fit_unlocked, npole)));
         lines
@@ -3007,6 +3083,49 @@ mod tests {
     }
 
     #[test]
+    fn raising_the_diameter_is_not_offered_where_no_diameter_on_its_slider_fits() {
+        // Physics review 3, N3: 40 blocks need about four times the ring's flats, past the
+        // slider's top, and the Size tab says so beside the fix ("Does not fit at any diameter
+        // up to ..."). Only fewer poles is offered. Where a larger diameter does fit, the
+        // larger diameter is offered.
+        let fit = guide(FIT_CHECK).unwrap();
+        let shown = |inputs: &DesignInputs| fixes(fit, inputs, &compute_all(inputs));
+        let nowhere = |inputs: &DesignInputs| {
+            matches!(
+                smallest_fitting_diameter(inputs, inputs.coupling.npole, None),
+                Some(DiameterFit::Nowhere(_))
+            )
+        };
+        let crowded = breaking(|i| i.coupling.npole = 40);
+        let crowded_arcs = breaking(|i| {
+            i.coupling.npole = 40;
+            arcs(i);
+        });
+        for (name, inputs) in [("crowded", &crowded), ("crowded_arcs", &crowded_arcs)] {
+            assert!(nowhere(inputs), "{name}");
+            assert!(!fits_on_the_slider(inputs), "{name}");
+            // One step up would still widen each place and turn nothing red: the slider's
+            // reach, not the step, rules the fix out.
+            assert!(
+                helps(inputs, &compute_all(inputs), (RING, Direction::Raise), None),
+                "{name}"
+            );
+            assert_eq!(shown(inputs), [(POLES, Direction::Lower)], "{name}");
+        }
+        let twelve_poles = with_poles(12);
+        let twelve_poles_with_room = breaking(|i| i.coupling.npole = 12);
+        for (name, inputs) in [
+            ("twelve_poles", &twelve_poles),
+            ("twelve_poles_with_room", &twelve_poles_with_room),
+        ] {
+            assert!(!nowhere(inputs), "{name}");
+            assert!(shown(inputs).contains(&(RING, Direction::Raise)), "{name}");
+        }
+        // Only the fit guide drops it: the space claim lowers the diameter, never raises it.
+        assert!(fits_on_the_slider(&DesignInputs::default()));
+    }
+
+    #[test]
     fn a_fix_at_its_slider_end_is_not_offered() {
         let shown = |check: &str, inputs: &DesignInputs| {
             fixes(guide(check).unwrap(), inputs, &compute_all(inputs))
@@ -3420,7 +3539,7 @@ mod tests {
         // says (review 2, S1), and a quoted magnet limit says what it is (S2).
         assert_eq!(
             problem(TEMPERATURE, &design(hot_day)).unwrap(),
-            "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the inner magnets' 93.06 °C limit, the outer magnets' 93.06 °C limit and the 120.0 °C adhesive limit. Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin."
+            "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the inner magnets' 93.06 °C limit, the outer magnets' 93.06 °C limit and the 120.0 °C adhesive limit. Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin (slip fields from the default design; enter this design's own to confirm)."
         );
         // Only the inner ring's library N42 block (rated 80 °C) is below the start.
         let text = problem(
@@ -3430,13 +3549,13 @@ mod tests {
         .unwrap();
         assert!(
             text.starts_with(
-                "Hot-day magnet temperature 65.00 °C (hot ambient plus the driving rise) is at or above the inner magnets' -3.517 °C limit. The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 10.00 °C design margin."
+                "Hot-day magnet temperature 65.00 °C (hot ambient plus the driving rise) is at or above the inner magnets' -3.517 °C limit. The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 10.00 °C design margin (slip fields from the default design; enter this design's own to confirm)."
             ),
             "{text}"
         );
         assert_eq!(
             problem(TEMPERATURE, &design(slip_fault)).unwrap(),
-            "The slip-fault peak of 104.0 °C reaches the 93.06 °C magnet limit. Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin."
+            "The slip-fault peak of 104.0 °C is at or above the 93.06 °C magnet limit. Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin (slip fields from the default design; enter this design's own to confirm)."
         );
         assert_eq!(
             problem(TEMPERATURE, &design(cool_adhesive)).unwrap(),
@@ -3534,7 +3653,7 @@ mod tests {
         outer_unknown.temperature.demag.outer_magnet_limit_C = f64::NAN;
         assert_eq!(
             (temperature.problem)(&inputs, &outer_unknown).unwrap(),
-            "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the inner magnets' 93.06 °C limit and the 120.0 °C adhesive limit. The outer magnets' limit is not a number, so the hot-day magnet temperature cannot be checked against it. The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 10.00 °C design margin."
+            "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the inner magnets' 93.06 °C limit and the 120.0 °C adhesive limit. The outer magnets' limit is not a number, so the hot-day magnet temperature cannot be checked against it. The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 10.00 °C design margin (slip fields from the default design; enter this design's own to confirm)."
         );
         let mut both_unknown = outer_unknown.clone();
         both_unknown.temperature.demag.inner_magnet_limit_C = f64::NAN;
@@ -3973,7 +4092,7 @@ mod tests {
         let results = compute_all(&inputs);
         let npole = inputs.coupling.npole;
         let fewer = compute_all(&with_magnets(&inputs, npole - 2));
-        let lines = Consequences::of(&inputs, &results, None).magnet_lines(npole);
+        let lines = Consequences::of(&inputs, &results, None).magnet_lines(npole, None);
         assert_eq!(lines[0], RING_SIZE_STAYS);
         assert_eq!(
             lines[1],
@@ -4001,7 +4120,7 @@ mod tests {
             let consequences = consequences_of(&inputs, None);
             let counts: Vec<i64> = consequences.neighbours.iter().map(|n| n.npole).collect();
             assert_eq!(counts, [inside], "{npole} magnets");
-            let lines = consequences.magnet_lines(npole);
+            let lines = consequences.magnet_lines(npole, None);
             assert!(
                 lines
                     .iter()
@@ -4034,7 +4153,7 @@ mod tests {
         assert!(neighbour_counts(i64::MIN).is_empty());
         // An odd count shows the ring-size line and no neighbour.
         let odd = with_magnets(&DesignInputs::default(), fewest + 5);
-        let lines = consequences_of(&odd, None).magnet_lines(odd.coupling.npole);
+        let lines = consequences_of(&odd, None).magnet_lines(odd.coupling.npole, None);
         assert_eq!(lines[0], RING_SIZE_STAYS);
         assert!(!lines.iter().any(|l| l.starts_with("At ")), "{lines:?}");
     }
@@ -4116,7 +4235,7 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-        let lines = consequences.magnet_lines(npole);
+        let lines = consequences.magnet_lines(npole, None);
         assert_eq!(lines[1], format!("At {}: no prediction", npole - 2));
         assert_eq!(
             lines[2],
@@ -4133,7 +4252,7 @@ mod tests {
     fn with_magnets_too_short_for_the_model_every_neighbour_reads_words() {
         let inputs = crate::gui::test_support::short_magnets();
         let npole = inputs.coupling.npole;
-        let lines = consequences_of(&inputs, None).magnet_lines(npole);
+        let lines = consequences_of(&inputs, None).magnet_lines(npole, None);
         let neighbour_lines: Vec<&String> = lines.iter().filter(|l| l.starts_with("At ")).collect();
         assert_eq!(neighbour_lines.len(), 2, "{lines:?}");
         for (line, count) in neighbour_lines.into_iter().zip([npole - 2, npole + 2]) {
@@ -4164,7 +4283,10 @@ mod tests {
                 consequences.fit
             )
         };
-        let line = consequences.magnet_lines(npole).pop().expect("a fit line");
+        let line = consequences
+            .magnet_lines(npole, None)
+            .pop()
+            .expect("a fit line");
         let prefix = format!("Smallest outside diameter that fits {npole} magnets: ");
         let shown: f64 = line
             .strip_prefix(&prefix)
@@ -4221,7 +4343,10 @@ mod tests {
             } else {
                 format!("Fits at every diameter down to the slider's lowest, {floor:.1} mm")
             };
-            assert_eq!(consequences.magnet_lines(fewest).last(), Some(&expected));
+            assert_eq!(
+                consequences.magnet_lines(fewest, None).last(),
+                Some(&expected)
+            );
         }
         // The most magnets fit nowhere on the slider.
         let inputs = with_magnets(&DesignInputs::default(), most);
@@ -4232,7 +4357,7 @@ mod tests {
         let consequences = consequences_of(&inputs, None);
         assert_eq!(consequences.fit, Some(DiameterFit::Nowhere(top)));
         assert_eq!(
-            consequences.magnet_lines(most).last(),
+            consequences.magnet_lines(most, None).last(),
             Some(&format!("Does not fit at any diameter up to {top:.1} mm"))
         );
     }
@@ -4256,7 +4381,7 @@ mod tests {
         };
         assert!(reach < floor - FIT_TOLERANCE_MM, "{reach} vs {floor}");
         let line = consequences_of(&inputs, None)
-            .magnet_lines(fewer)
+            .magnet_lines(fewer, None)
             .pop()
             .expect("a fit line");
         assert_eq!(
@@ -4269,7 +4394,7 @@ mod tests {
         assert!(!line.contains("the slider's lowest"), "{line}");
         // With Minimum OD at its lowest, the edge is a plain smallest diameter.
         let unlocked = consequences_of(&inputs, Some(lowest))
-            .magnet_lines(fewer)
+            .magnet_lines(fewer, None)
             .pop()
             .expect("a fit line");
         assert_eq!(
@@ -4330,7 +4455,7 @@ mod tests {
             default.coupling.inner_back_apothem_mm
         );
         let consequences = consequences_of(&inputs, None);
-        assert_eq!(consequences.magnet_lines(fewer)[0], RING_SIZE_STAYS);
+        assert_eq!(consequences.magnet_lines(fewer, None)[0], RING_SIZE_STAYS);
         let d = consequences.diameter.expect("a diameter breakdown");
         assert!(d.cap_mm > d.cup_mm && d.cap_mm > d.boss_mm, "{d:?}");
         assert_eq!(
@@ -4358,7 +4483,7 @@ mod tests {
             diameter: None,
             length: None,
         };
-        assert_eq!(empty.magnet_lines(10), [RING_SIZE_STAYS]);
+        assert_eq!(empty.magnet_lines(10, None), [RING_SIZE_STAYS]);
         assert_eq!(empty.diameter_line(), None);
         assert_eq!(empty.length_line(), None);
     }
@@ -4381,12 +4506,56 @@ mod tests {
         ];
         for inputs in &designs {
             let consequences = consequences_of(inputs, None);
-            let mut lines = consequences.magnet_lines(inputs.coupling.npole);
+            let mut lines = consequences.magnet_lines(inputs.coupling.npole, None);
             lines.extend(consequences.diameter_line());
             lines.extend(consequences.length_line());
             for line in &lines {
                 crate::gui::test_support::assert_glyphs(&ctx, line, "a consequence line");
                 assert_eq!(plain_text_violations(line), Vec::<&str>::new(), "{line}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_first_magnet_line_follows_the_auto_state() {
+        // Physics review 3, N4: the ring keeps its radius only with Auto off. With Auto on the
+        // ring size a new count is solved again, and on the magnet length the length is; the
+        // neighbour lines keep the present size, and the first line says so. With Auto on the
+        // count its slider is locked, so no line speaks of changing it.
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let inputs = DesignInputs::default();
+        let npole = inputs.coupling.npole;
+        let consequences = consequences_of(&inputs, None);
+        let off = consequences.magnet_lines(npole, None);
+        let states: [(Option<FreeVariable>, Option<&str>); 4] = [
+            (None, Some(RING_SIZE_STAYS)),
+            (
+                Some(FreeVariable::RingRadius),
+                Some(
+                    "Auto resizes the ring when you change the magnet count; the lines below keep the present ring size.",
+                ),
+            ),
+            (
+                Some(FreeVariable::AxialLength),
+                Some(
+                    "Auto resets the magnet length when you change the magnet count; the lines below keep the present length.",
+                ),
+            ),
+            (Some(FreeVariable::MagnetsPerRing), None),
+        ];
+        for (auto, first) in states {
+            assert_eq!(magnet_count_line(auto), first, "{auto:?}");
+            let lines = consequences.magnet_lines(npole, auto);
+            // The first line alone follows the state: the rest are the Auto-off lines.
+            match first {
+                Some(first) => {
+                    assert_eq!(lines[0], first, "{auto:?}");
+                    assert_eq!(lines[1..], off[1..], "{auto:?}");
+                    crate::gui::test_support::assert_glyphs(&ctx, first, "a magnet count line");
+                    assert_eq!(plain_text_violations(first), Vec::<&str>::new(), "{first}");
+                }
+                None => assert_eq!(lines[..], off[1..], "{auto:?}"),
             }
         }
     }
@@ -4500,7 +4669,7 @@ mod tests {
         // design margin, the margin read from its input; a ferrite ring's is its rating.
         let both = problem(TEMPERATURE, &breaking(n42_parts)).unwrap();
         assert!(
-            both.contains("Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin."),
+            both.contains("Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin (slip fields from the default design; enter this design's own to confirm)."),
             "{both}"
         );
         let inner_only = problem(
@@ -4512,9 +4681,24 @@ mod tests {
         )
         .unwrap();
         assert!(
-            inner_only.contains("The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 12.50 °C design margin."),
+            inner_only.contains("The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 12.50 °C design margin (slip fields from the default design; enter this design's own to confirm)."),
             "{inner_only}"
         );
+        // Physics review 3, S16: the onset comes from the stored slip fields. Once this
+        // design's own are entered, the sentence no longer says where they came from.
+        let own_fields = problem(
+            TEMPERATURE,
+            &breaking(|i| {
+                n42_parts(i);
+                i.temperature.demag.h_rev_aligned_kA_m += 1.0;
+            }),
+        )
+        .unwrap();
+        assert!(
+            own_fields.contains("less the 10.00 °C design margin."),
+            "{own_fields}"
+        );
+        assert!(!own_fields.contains("slip fields from"), "{own_fields}");
         // No magnet limit quoted, or only a ferrite rating's: no sentence.
         let quiet: [fn(&mut DesignInputs); 3] = [cool_adhesive, hot_cure, ferrite];
         for edit in quiet {
@@ -4540,7 +4724,7 @@ mod tests {
         let notes_of = |inputs: &DesignInputs| {
             let results = compute_all(inputs);
             let all = all_fixes(inputs, &results);
-            let notes = guide_notes(&all, clearance, inputs, &results);
+            let notes = side_effects(&all, clearance, inputs, &results);
             (all[clearance].clone(), notes)
         };
         let defaults = DesignInputs::default();
@@ -4576,6 +4760,51 @@ mod tests {
         for index in (0..=CHECK_GUIDES.len()).filter(|&i| i != clearance) {
             assert!(side_effects(&all, index, &defaults, &results).is_empty());
         }
+    }
+
+    #[test]
+    fn thinning_the_sleeve_or_liner_says_no_check_covers_magnet_retention() {
+        // Physics review 3, S14: the sleeve and liner fixes go down to 0 mm, which takes away
+        // what holds the magnets, and no guided check covers retention. While either fix is
+        // shown the note says so, once, after the side-effect note; with neither shown (no
+        // sleeve or liner left to thin) it is gone.
+        let retention = "A thinner sleeve or liner holds the magnets less securely; no check here covers that, so confirm it separately.";
+        let gap_note = "Raising Candidate flat-face magnetic gap also lowers the pull-out, so Hot-low torque falls further.";
+        let clearance = CHECK_GUIDES
+            .iter()
+            .position(|g| g.check == CLEARANCE)
+            .unwrap();
+        let notes_of = |inputs: &DesignInputs| {
+            let results = compute_all(inputs);
+            let all = all_fixes(inputs, &results);
+            guide_notes(&all, clearance, inputs, &results)
+        };
+        assert_eq!(notes_of(&DesignInputs::default()), [gap_note, retention]);
+        assert_eq!(notes_of(&design(bare_clearance)), [gap_note]);
+        // The liner alone left to thin still brings it.
+        let liner_only = design(|i| i.metal.sleeve_mm = 0.0);
+        let results = compute_all(&liner_only);
+        let shown = &all_fixes(&liner_only, &results)[clearance];
+        assert!(
+            !shown.contains(&("metal.sleeve_mm", Direction::Lower)),
+            "{shown:?}"
+        );
+        assert!(
+            shown.contains(&("metal.liner_mm", Direction::Lower)),
+            "{shown:?}"
+        );
+        assert!(notes_of(&liner_only).contains(&retention.to_owned()));
+        // Only the clearance guide shows those fixes, so no other guide gets the note, in any
+        // design.
+        for (name, inputs) in designs() {
+            let results = compute_all(&inputs);
+            let all = all_fixes(&inputs, &results);
+            for index in (0..CHECK_GUIDES.len()).filter(|&i| i != clearance) {
+                let notes = guide_notes(&all, index, &inputs, &results);
+                assert!(!notes.contains(&retention.to_owned()), "{name}: {notes:?}");
+            }
+        }
+        assert_eq!(unchecked_costs(&[]), Vec::<String>::new());
     }
 
     /// Prints every user-visible string of the guidance slice, each tagged with where it
@@ -4628,13 +4857,21 @@ mod tests {
         }
 
         // What moves what, under Magnets per ring, Outside diameter and Overall length.
-        emit("size tab/under Magnets per ring", RING_SIZE_STAYS);
+        // The first line under Magnets per ring, in each Auto state (physics review 3, N4).
+        for auto in [None].into_iter().chain(FreeVariable::ALL.map(Some)) {
+            if let Some(line) = magnet_count_line(auto) {
+                emit(
+                    &format!("size tab/under Magnets per ring/Auto {auto:?}"),
+                    line,
+                );
+            }
+        }
         let default = DesignInputs::default();
         for npole in [4, 8, 10, 40] {
             let inputs = with_magnets(&default, npole);
             for (label, minimum) in [("Minimum OD unset", None), ("Minimum OD 37 mm", Some(37.0))] {
                 let consequences = consequences_of(&inputs, minimum);
-                for line in consequences.magnet_lines(inputs.coupling.npole) {
+                for line in consequences.magnet_lines(inputs.coupling.npole, None) {
                     emit(&format!("size tab/magnets/{npole} magnets/{label}"), &line);
                 }
                 if let Some(line) = consequences.diameter_line() {
