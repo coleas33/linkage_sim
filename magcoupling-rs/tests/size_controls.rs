@@ -5,6 +5,7 @@ use magcoupling::engine::size_controls::{
     DiameterBreakdown, DiameterFit, FIT_TOLERANCE_MM, diameter_breakdown, dimensions,
     dimensions_with_minimum_diameter, length_breakdown, resize_diameter,
     resize_diameter_with_minimum, resize_length, ring_radius_range, smallest_fitting_diameter,
+    with_ring_radius,
 };
 use magcoupling::engine::sizing::FreeVariable;
 use magcoupling::{DesignInputs, compute_all};
@@ -882,5 +883,131 @@ fn fit_and_ring_range_are_none_where_the_size_controls_are() {
     for minimum in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.0, -1.0] {
         assert_eq!(smallest_fitting_diameter(&base, 10, Some(minimum)), None);
         assert_eq!(ring_radius_range(&base, Some(minimum)), None);
+    }
+}
+
+#[test]
+fn a_ring_radius_applies_through_the_diameter_sliders_own_mapping() {
+    let mut small_cap = DesignInputs::default();
+    small_cap.metal.cap_od_mm = 35.0;
+    small_cap.metal.cap_thread_dia_mm = 34.0;
+    // (case, design, a diameter inside its range, the Minimum OD setting)
+    let cases = [
+        ("default", DesignInputs::default(), 41.0, None),
+        ("arcs", as_arcs(DesignInputs::default()), 41.0, None),
+        ("cap smaller than the cup", small_cap, 40.0, None),
+        ("below the radius floor", with_poles(8), 38.0, Some(37.0)),
+    ];
+    let cup_of = |design: &DesignInputs| compute_all(design).model.cup_od_mm;
+    for (case, base, diameter_mm, minimum_mm) in cases {
+        let slid = resized_to(&base, diameter_mm, minimum_mm);
+        let apothem_mm = slid.coupling.inner_back_apothem_mm;
+        let shown = with_ring_radius(&base, apothem_mm).unwrap_or_else(|| panic!("{case}"));
+        assert_eq!(shown.coupling.inner_back_apothem_mm, apothem_mm, "{case}");
+
+        // The outside diameter is the one the slider gave for that radius.
+        let outside = dimensions(&shown).unwrap().diameter_mm;
+        assert!((outside - diameter_mm).abs() < 1e-9, "{case}: {outside}");
+        // The cap and thread followed the cup, as the slider moves them.
+        for (name, got, want) in [
+            ("cap OD", shown.metal.cap_od_mm, slid.metal.cap_od_mm),
+            (
+                "cap thread",
+                shown.metal.cap_thread_dia_mm,
+                slid.metal.cap_thread_dia_mm,
+            ),
+        ] {
+            assert!((got - want).abs() < 1e-9, "{case}: {name} {got} vs {want}");
+        }
+        // Their signed offsets from the cup are kept.
+        let offsets = |design: &DesignInputs| {
+            (
+                design.metal.cap_od_mm - cup_of(design),
+                design.metal.cap_thread_dia_mm - cup_of(design),
+            )
+        };
+        let (before, after) = (offsets(&base), offsets(&shown));
+        assert!(
+            (before.0 - after.0).abs() < 1e-9,
+            "{case}: {before:?} {after:?}"
+        );
+        assert!(
+            (before.1 - after.1).abs() < 1e-9,
+            "{case}: {before:?} {after:?}"
+        );
+
+        // Nothing else moved.
+        let mut rest = shown.clone();
+        rest.coupling.inner_back_apothem_mm = base.coupling.inner_back_apothem_mm;
+        rest.metal.cap_od_mm = base.metal.cap_od_mm;
+        rest.metal.cap_thread_dia_mm = base.metal.cap_thread_dia_mm;
+        assert_eq!(
+            rest, base,
+            "{case}: only the radius, cap OD and thread move"
+        );
+    }
+}
+
+#[test]
+fn the_current_ring_radius_is_an_exact_noop() {
+    let base = DesignInputs::default();
+    assert_eq!(
+        with_ring_radius(&base, base.coupling.inner_back_apothem_mm),
+        Some(base)
+    );
+}
+
+#[test]
+fn every_radius_the_size_tab_can_reach_is_applicable_and_none_beyond_it() {
+    let mut boss = DesignInputs::default();
+    boss.metal.boss_od_mm = 50.0;
+    let designs = [
+        ("default", DesignInputs::default()),
+        ("arcs", as_arcs(DesignInputs::default())),
+        ("eight magnets", with_poles(8)),
+        ("boss sets the floor", boss),
+    ];
+    let legacy_floor = FreeVariable::RingRadius.range().min;
+    let mut reached_below_the_legacy_floor = false;
+    for (case, base) in designs {
+        // The widest reach is the lowest Minimum OD; a higher one only narrows it.
+        let widest = ring_radius_range(&base, Some(0.1)).unwrap();
+        for minimum in [None, Some(0.1), Some(37.0), Some(50.0)] {
+            let range = ring_radius_range(&base, minimum).unwrap();
+            for end in [range.min, range.max] {
+                assert!(
+                    with_ring_radius(&base, end).is_some(),
+                    "{case}, Minimum OD {minimum:?}: {end}"
+                );
+            }
+        }
+        for inside in [widest.min, 0.5 * (widest.min + widest.max), widest.max] {
+            assert!(
+                with_ring_radius(&base, inside).is_some(),
+                "{case}: {inside}"
+            );
+        }
+        assert_eq!(with_ring_radius(&base, widest.min - 1e-3), None, "{case}");
+        assert_eq!(with_ring_radius(&base, widest.max + 1e-3), None, "{case}");
+        reached_below_the_legacy_floor |= widest.min < legacy_floor;
+    }
+    assert!(reached_below_the_legacy_floor, "the reach is not vacuous");
+}
+
+#[test]
+fn a_ring_radius_the_mapping_cannot_define_is_refused() {
+    let base = DesignInputs::default();
+    for apothem_mm in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.0, -1.0] {
+        assert_eq!(with_ring_radius(&base, apothem_mm), None, "{apothem_mm}");
+    }
+    let mut invalid = base.clone();
+    invalid.metal.face_gap_mm = f64::NAN;
+    assert_eq!(with_ring_radius(&invalid, 10.0), None);
+    for count in [i64::MIN, -4, 0, 1, 2, 3, 9, 41, 42, i64::MAX] {
+        assert_eq!(
+            with_ring_radius(&with_poles(count), 10.0),
+            None,
+            "count {count}"
+        );
     }
 }

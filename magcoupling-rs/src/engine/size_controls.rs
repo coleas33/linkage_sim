@@ -26,7 +26,8 @@
 //! search of inverse sizing). At a fixed magnet count the blocks only fit better as the ring
 //! grows: a flat block's polygon flat widens with its apothem, and an arc's share of its pole
 //! pitch falls. The fit is bisected on that basis; tests/size_controls.rs sweeps it for both
-//! shapes.
+//! shapes. [`with_ring_radius`] applies a ring radius found that way through the diameter
+//! slider's own mapping, so the cap follows the cup instead of keeping its old size.
 
 use std::f64::consts::PI;
 
@@ -316,7 +317,11 @@ pub fn ring_radius_range(
     inputs: &DesignInputs,
     minimum_diameter_mm: Option<f64>,
 ) -> Option<SliderRange> {
-    let geometry = geometry(inputs, minimum_diameter_mm)?;
+    ring_radius_span(inputs, geometry(inputs, minimum_diameter_mm)?)
+}
+
+/// [`ring_radius_range`] for a geometry already computed.
+fn ring_radius_span(inputs: &DesignInputs, geometry: Geometry) -> Option<SliderRange> {
     let diameters = geometry.controls.diameter_range;
     let radius_at = |diameter_mm: f64| {
         resize_diameter_using(inputs, diameter_mm, geometry)
@@ -329,6 +334,24 @@ pub fn ring_radius_range(
         max,
         ..geometry.radius_range
     })
+}
+
+/// The design with its ring radius (`coupling.inner_back_apothem_mm`) set to `apothem_mm`,
+/// mapped as the diameter slider maps it: the cap OD and cap thread move by the cup's change
+/// and keep their signed offsets from the cup. `None` where that mapping refuses: a radius
+/// that is not a number or lies outside the widest range the slider reaches (every
+/// [`ring_radius_range`], whatever the Minimum OD, lies inside it), or a design without a
+/// diameter range. The current radius is an exact no-op.
+pub fn with_ring_radius(inputs: &DesignInputs, apothem_mm: f64) -> Option<DesignInputs> {
+    // Any positive minimum is bounded up to the absolute one, which gives the widest range.
+    let geometry = geometry(inputs, Some(f64::MIN_POSITIVE))?;
+    let reach = ring_radius_span(inputs, geometry)?;
+    // A range never contains NaN.
+    if !(reach.min..=reach.max).contains(&apothem_mm) {
+        return None;
+    }
+    let change = geometry.diameter_slope * (apothem_mm - inputs.coupling.inner_back_apothem_mm);
+    Some(with_cup_change(inputs, change, apothem_mm))
 }
 
 fn check_request(requested: f64, range: SliderRange, name: &str) -> Result<(), String> {
@@ -382,15 +405,22 @@ fn resize_diameter_using(
     )?;
     let requested_cup = requested - geometry.cap_offset_mm.max(0.0);
     let change = requested_cup - geometry.cup_od_mm;
-    let mut changed = inputs.clone();
     // The request was checked before this clamp: it only absorbs endpoint rounding in the
     // algebraic inverse, e.g. a radius a few ulps below its metadata minimum.
-    changed.coupling.inner_back_apothem_mm = (inputs.coupling.inner_back_apothem_mm
-        + change / geometry.diameter_slope)
+    let radius = (inputs.coupling.inner_back_apothem_mm + change / geometry.diameter_slope)
         .clamp(geometry.radius_range.min, geometry.radius_range.max);
-    changed.metal.cap_od_mm += change;
-    changed.metal.cap_thread_dia_mm += change;
-    Ok(changed)
+    Ok(with_cup_change(inputs, change, radius))
+}
+
+/// The diameter slider's mapping of a cup change: the inner back apothem is set to
+/// `radius_mm`, and the cap OD and cap thread move by the cup's change `change_mm`, so they
+/// keep their signed offsets from the cup. The one place that mapping is written.
+fn with_cup_change(inputs: &DesignInputs, change_mm: f64, radius_mm: f64) -> DesignInputs {
+    let mut changed = inputs.clone();
+    changed.coupling.inner_back_apothem_mm = radius_mm;
+    changed.metal.cap_od_mm += change_mm;
+    changed.metal.cap_thread_dia_mm += change_mm;
+    changed
 }
 
 /// Select an overall axial stack by setting both rings' existing axial length override.
