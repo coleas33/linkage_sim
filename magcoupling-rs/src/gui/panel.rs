@@ -33,8 +33,9 @@ use crate::gui::dashboard::{Level, dashboard_ui, end_effect_banner};
 use crate::gui::explorer::{EQUATION_PANEL, Explorer, FOCUS_WIDTH, explorer_ui, panel_heights};
 use crate::gui::format::{format_value, search_needle, with_unit};
 use crate::gui::geometry_view::geometry_ui;
+use crate::gui::guidance::ConsequenceCache;
 use crate::gui::history::History;
-use crate::gui::input_ui::{CHANGED_DOT, RowEdit, input_row};
+use crate::gui::input_ui::{CHANGED_DOT, RowEdit, input_row, slider};
 use crate::gui::inputs::{
     ADVANCED_HEADING, FILTER_HINT, InputCatalogue, InputEntry, InputGroup, InputOrder,
     InputSection, KEY_DESIGN, filter_inputs, optional_seed,
@@ -48,6 +49,7 @@ use crate::gui::session::{
     Design, LoadError, LoadedDesign, PUBLIC_BASE_URL, design_to_json, read_design_json,
     read_share_payload, share_link,
 };
+use crate::gui::size_controls;
 use crate::gui::sizing::{
     REQUIREMENT_INPUT, SOLVED_PREFIX, SOLVING, SizingMode, SizingRunner, SizingState,
     variable_label,
@@ -250,6 +252,9 @@ pub struct MagcouplingPanel {
     input_order: InputOrder,
     /// The user-selected lower OD limit, a view preference that does not resize the design.
     minimum_diameter_mm: Option<f64>,
+    /// The Size tab's what-moves-what lines (spec 3.3) for the design shown and the minimum OD,
+    /// recomputed only when either changes: view state, in no design file, link or undo step.
+    consequences: ConsequenceCache,
     /// The inputs filter's text: while it holds more than blanks, the design inputs view shows
     /// the matching inputs alone.
     input_filter: String,
@@ -297,6 +302,7 @@ impl MagcouplingPanel {
             inputs_view: InputsView::Design,
             input_order: InputOrder::default(),
             minimum_diameter_mm: None,
+            consequences: ConsequenceCache::default(),
             input_filter: String::new(),
             banner: None,
             results_table: ResultsTable::default(),
@@ -715,30 +721,67 @@ impl MagcouplingPanel {
         });
     }
 
+    /// The Size tab's torque readouts (spec 3.2): the requirement's slider, an ordinary design
+    /// edit (undo, files, links); the hot-low torque with its gap to the requirement, red short
+    /// or green margin; the nominal pull-out at the operating temperature. Where the model makes
+    /// no prediction a torque reads [`size_controls::NO_PREDICTION`] (or `NO_TORQUE`) and the
+    /// gap is left out.
+    ///
+    /// Known limitation: this view is drawn after `run_sizing`, so the Required slider's value
+    /// box joins `design_widgets` too late for that frame's debounce check. It matters only in
+    /// Torque -> Magnets with the Size tab open, where a typed requirement can start a solve
+    /// before Enter; the undo step still waits for the edit (`editing` runs again at the end).
+    fn torque_readouts_ui(&mut self, ui: &mut egui::Ui, readouts: &mut Readouts) {
+        let entry = InputCatalogue::get()
+            .entry(REQUIREMENT_INPUT)
+            .expect("the requirement has input metadata");
+        let range = entry.meta.range.expect("the requirement has a slider");
+        let required = self.inputs.metal.required_min_Nm;
+        ui.horizontal_wrapped(|ui| {
+            ui.label(size_controls::REQUIRED);
+            let mut value = required;
+            let response = ui
+                .push_id(REQUIREMENT_INPUT, |ui| {
+                    ui.add(slider(&mut value, entry.meta, range))
+                })
+                .inner;
+            // Its value box is a text field of the design, as an input row's is.
+            self.design_widgets.push(response.id);
+            if response.changed() && value != required {
+                self.last_error = self
+                    .inputs
+                    .set(REQUIREMENT_INPUT, Value::Num(value))
+                    .err()
+                    .map(|e| e.to_string());
+                // The dashboard was drawn before this edit: the readouts below show it now, the
+                // dashboard on the next frame.
+                self.results = compute_all(&self.shown_inputs());
+                ui.ctx().request_repaint();
+            }
+        });
+        let required = self.inputs.metal.required_min_Nm;
+        ui.horizontal_wrapped(|ui| {
+            ui.label(size_controls::HOT_LOW);
+            if let Some(hot_low) =
+                torque_readout(ui, &self.results, "metal.torque_hot_low_Nm", readouts)
+            {
+                let (gap, meets) = size_controls::torque_gap_text(hot_low, required);
+                let level = if meets { Level::Good } else { Level::Bad };
+                ui.colored_label(level.color(ui.visuals()), gap);
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.label(size_controls::pullout_label(self.results.metal.op_temp_C));
+            torque_readout(ui, &self.results, "model.pullout_Nm", readouts);
+        });
+    }
+
     /// The view of the centre region the tabs select, of `shown`, the design shown, its values
     /// readouts (`readouts`). Each view fits itself to `ui`'s available height.
     fn view_ui(&mut self, ui: &mut egui::Ui, shown: &DesignInputs, readouts: &mut Readouts) {
         match self.centre {
             CentreView::SizeAndTorque => {
-                let outside_model = end_effect_banner(&self.results).is_some();
-                ui.horizontal_wrapped(|ui| {
-                    for (label, path) in [
-                        ("Expected torque", "model.pullout_Nm"),
-                        ("Hot-low torque", "metal.torque_hot_low_Nm"),
-                    ] {
-                        ui.label(label);
-                        let value = self.results.get(path).unwrap_or(Value::None);
-                        let text = if outside_model {
-                            egui::RichText::new("Outside model range").weak()
-                        } else {
-                            egui::RichText::new(with_unit(format_value(&value), "N\u{b7}m"))
-                        };
-                        let response = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
-                        readouts.show(ui, response, path, || {
-                            crate::gui::dashboard::hover_text(path).unwrap_or_default()
-                        });
-                    }
-                });
+                self.torque_readouts_ui(ui, readouts);
                 if !crate::engine::model::blocks_fit(&shown.coupling, &self.results.model) {
                     ui.colored_label(
                         ui.visuals().error_fg_color,
@@ -940,11 +983,24 @@ impl MagcouplingPanel {
                 self.set_sizing_mode(SizingMode::MagnetsToTorque);
             }
             let shown = self.shown_inputs();
+            let minimum = self.minimum_diameter_mm;
+            // The cache keys on the design alone, so it is handed that design's own results:
+            // `self.results` can lag the inputs by a frame (the header's assumptions reset edits
+            // them after the last compute), and a lagging pull-out would stick in the lines until
+            // the next edit. One compute_all (about 17 us) per frame of this tab; the neighbour
+            // runs and the fit search rerun only when the design or the minimum changes.
+            let shown_results = compute_all(&shown);
+            let consequences = self.consequences.get(&shown, &shown_results, minimum);
             let output = ui
                 .add_enabled_ui(self.sizing.mode == SizingMode::MagnetsToTorque, |ui| {
-                    crate::gui::size_controls::controls_ui(ui, &shown, self.minimum_diameter_mm)
+                    crate::gui::size_controls::controls_ui(ui, &shown, minimum, consequences)
                 })
                 .inner;
+            // The lines under the controls were drawn from the design before this frame's edit:
+            // one more frame shows the edited design's.
+            if output.inputs != shown || output.minimum_diameter_mm != minimum {
+                ui.ctx().request_repaint();
+            }
             self.design_widgets.extend(output.widgets);
             self.minimum_diameter_mm = output.minimum_diameter_mm;
             if output.inputs != shown {
@@ -1290,6 +1346,35 @@ pub(crate) fn assumptions_banner(inputs: &DesignInputs) -> Option<String> {
     })
 }
 
+/// One torque readout of the Size tab: the value of the result at `path` with its unit, a
+/// readout (`readouts`: hover text and equation; a click opens it), or
+/// [`size_controls::NO_PREDICTION`] / [`size_controls::NO_TORQUE`] where the model makes none
+/// ([`size_controls::predicts`]). Returns the torque shown [N·m], if any.
+fn torque_readout(
+    ui: &mut egui::Ui,
+    results: &DesignResults,
+    path: &str,
+    readouts: &mut Readouts,
+) -> Option<f64> {
+    let Some(Value::Num(torque)) = results.get(path) else {
+        unreachable!("{path} is a torque result")
+    };
+    if !size_controls::predicts(results, torque) {
+        ui.weak(if end_effect_banner(results).is_some() {
+            size_controls::NO_PREDICTION
+        } else {
+            size_controls::NO_TORQUE
+        });
+        return None;
+    }
+    let text = with_unit(format_value(&Value::Num(torque)), "N\u{b7}m");
+    let response = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
+    readouts.show(ui, response, path, || {
+        crate::gui::dashboard::hover_text(path).unwrap_or_default()
+    });
+    Some(torque)
+}
+
 /// Draws `add` in a child of `ui` (salted `id_salt`) confined to the space left in `ui`: the
 /// child's max rect and clip rect are that space, so nothing drawn in it paints or takes a
 /// click outside it. `ui` then moves past the whole space, never past what the child used, so
@@ -1320,18 +1405,24 @@ fn focused_text_field(ctx: &egui::Context) -> Option<egui::Id> {
 mod tests {
     use super::*;
     use crate::engine::api::HEADLINE;
+    use crate::engine::size_controls::{DiameterFit, diameter_breakdown, dimensions};
     use crate::engine::sizing::SizingOutcome;
     use crate::gui::dashboard::{END_EFFECT_BANNER, STORED_3D_LABEL, result_info};
     use crate::gui::format::{format_value, with_unit};
+    use crate::gui::guidance::{Consequences, RING_SIZE_STAYS, plain_text_violations};
     use crate::gui::input_ui::{BLANK_TEXT, CHANGED_DOT, OUTSIDE_RANGE_NOTE, RESET_LABEL};
     use crate::gui::session::{
         decode_share_payload, design_from_json, encode_share_payload, encode_share_text,
         target_mismatch_notice,
     };
+    use crate::gui::size_controls::{
+        DIAMETER, GAP, HOT_LOW, LENGTH, MAGNETS, NO_PREDICTION, REQUIRED, predicts, pullout_label,
+        torque_gap_text,
+    };
     use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
         SCREEN, drawn_texts, key_event, key_tap, primary_button, select_all, short_magnets,
-        sized_frame, sized_frame_at, text_rect, text_rects,
+        sized_frame, sized_frame_at, text_rect, text_rects, with_poles,
     };
     use crate::headline;
 
@@ -3810,7 +3901,14 @@ mod tests {
         assert!(end_effect_banner(harness.panel.results()).is_some());
         harness.click_text("Size and torque");
         let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, "Outside model range"), 2);
+        // Hot-low and the pull-out read no prediction, and the gap is not shown (spec 3.2, 5).
+        assert_eq!(count(&output, NO_PREDICTION), 2);
+        assert_eq!(beside(&output, HOT_LOW)[0].0, NO_PREDICTION);
+        let (gap, _) = torque_gap_text(
+            harness.panel.results().metal.torque_hot_low_Nm,
+            harness.panel.inputs().metal.required_min_Nm,
+        );
+        assert_eq!(count(&output, &gap), 0, "{gap}");
     }
 
     #[test]
@@ -3823,6 +3921,512 @@ mod tests {
         assert_eq!(harness.panel.sizing.mode, SizingMode::MagnetsToTorque);
         assert_eq!(harness.panel.inputs(), &solved);
         assert_eq!(harness.panel.results(), &compute_all(&solved));
+    }
+
+    /// A harness on a screen of `screen` showing the Size tab for `inputs`, set as the panel's
+    /// inputs: the tab clicked, then one more frame, so the inputs side draws its controls.
+    fn size_tab(screen: egui::Vec2, inputs: DesignInputs) -> Harness {
+        let mut harness = Harness::on_screen(screen);
+        harness.panel.inputs = inputs;
+        harness.frame(Vec::new());
+        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.frame(Vec::new());
+        harness
+    }
+
+    /// The what-moves-what lines of the design the panel shows, as the Size tab computes them:
+    /// that design, its own results, the panel's Minimum OD.
+    fn shown_consequences(harness: &Harness) -> Consequences {
+        let shown = harness.panel.shown_inputs();
+        Consequences::of(
+            &shown,
+            &compute_all(&shown),
+            harness.panel.minimum_diameter_mm,
+        )
+    }
+
+    /// The rows egui laid the first drawn text equal to `needle` out on: more than one once it
+    /// wrapped.
+    fn rows(output: &egui::FullOutput, needle: &str) -> usize {
+        crate::gui::test_support::flat_shapes(output)
+            .into_iter()
+            .find_map(|shape| match shape {
+                egui::Shape::Text(text) if text.galley.text() == needle => {
+                    Some(text.galley.rows.len())
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no {needle:?}"))
+    }
+
+    /// The texts drawn on the row of the label `label` and right of it, nearest first, with
+    /// their rects: what a readout row shows beside its label (texts further right on the same
+    /// row, the dashboard's, come after).
+    fn beside(output: &egui::FullOutput, label: &str) -> Vec<(String, egui::Rect)> {
+        let at = text_rect(output, label).unwrap_or_else(|| panic!("no {label:?}"));
+        let mut row: Vec<(String, egui::Rect)> = crate::gui::test_support::flat_shapes(output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Text(text) => {
+                    let mut rect = text.galley.rect.translate(text.pos.to_vec2());
+                    // In a wrapped row a label's galley starts at the row's left edge and is
+                    // indented to where the text goes: its first glyph marks the text's left.
+                    if let Some(glyph) = text.galley.rows.first().and_then(|r| r.glyphs.first()) {
+                        rect.min.x = rect.min.x.max(text.pos.x + glyph.pos.x);
+                    }
+                    let on_row = (rect.center().y - at.center().y).abs() < at.height() / 2.0;
+                    (on_row && rect.left() >= at.right() - 0.5)
+                        .then(|| (text.galley.text().to_owned(), rect))
+                }
+                _ => None,
+            })
+            .collect();
+        row.sort_by(|a, b| a.1.left().total_cmp(&b.1.left()));
+        row
+    }
+
+    #[test]
+    fn size_tab_reads_the_requirement_the_hot_low_gap_and_the_nominal_pull_out() {
+        // Spec 3.2 at the default design, whose hot-low torque is below the requirement: the gap
+        // reads short, in red, as the dashboard's hot minimum check fails.
+        let mut harness = size_tab(SCREEN, DesignInputs::default());
+        let output = harness.frame(Vec::new());
+        let results = harness.panel.results().clone();
+        let label = pullout_label(results.metal.op_temp_C);
+        for text in [REQUIRED, HOT_LOW, label.as_str()] {
+            assert_eq!(count(&output, text), 1, "{text}");
+        }
+        assert_eq!(
+            count(&output, "Expected torque"),
+            0,
+            "replaced by the nominal pull-out"
+        );
+        let shown = |path: &str| with_unit(format_value(&results.get(path).unwrap()), "N\u{b7}m");
+        let required = harness.panel.inputs().metal.required_min_Nm;
+        let (gap, meets) = torque_gap_text(results.metal.torque_hot_low_Nm, required);
+        assert!(!meets && gap.starts_with("short "), "{gap}");
+        let hot_low_row: Vec<String> = beside(&output, HOT_LOW)
+            .into_iter()
+            .take(2)
+            .map(|(text, _)| text)
+            .collect();
+        assert_eq!(hot_low_row, [shown("metal.torque_hot_low_Nm"), gap.clone()]);
+        assert_eq!(beside(&output, &label)[0].0, shown("model.pullout_Nm"));
+        assert!(
+            beside(&output, REQUIRED)[0].0.ends_with(" N\u{b7}m"),
+            "the Required slider's value box"
+        );
+        assert_eq!(
+            crate::gui::test_support::text_color(&output, &gap),
+            Some(Level::Bad.color(&harness.ctx.style().visuals))
+        );
+        assert_eq!(
+            crate::gui::dashboard::check_level(&results, "metal.hot_min_check"),
+            Some(Level::Bad),
+            "the gap agrees with the hot minimum check"
+        );
+        // The label follows the live operating temperature.
+        harness.panel.inputs.coupling.op_temp_C = 37.5;
+        let output = harness.frame(Vec::new());
+        assert_eq!(harness.panel.results().metal.op_temp_C, 37.5);
+        assert_eq!(count(&output, &pullout_label(37.5)), 1);
+        assert_eq!(count(&output, &label), 0);
+    }
+
+    #[test]
+    fn size_tab_required_slider_is_an_ordinary_design_edit() {
+        // Spec 3.2 and G-2: the requirement's own slider is an edit like any other (one undo
+        // step, carried by files and links), typed values clamped into its range (decision
+        // M41-2); a value that is no number changes nothing.
+        let mut harness = size_tab(SCREEN, DesignInputs::default());
+        let before = harness.panel.design();
+        let undo = harness.panel.history.undo_len();
+        let type_in = |harness: &mut Harness, text: &str| {
+            let output = harness.frame(Vec::new());
+            let (_, value_box) = beside(&output, REQUIRED).remove(0);
+            harness.click(value_box.center());
+            harness.frame([select_all(), vec![egui::Event::Text(text.to_owned())]].concat());
+            harness.frame(key_tap(egui::Key::Enter));
+            harness.frame(Vec::new())
+        };
+        let output = type_in(&mut harness, "2");
+        let mut lowered = before.inputs.clone();
+        lowered.metal.required_min_Nm = 2.0;
+        assert_eq!(
+            harness.panel.inputs(),
+            &lowered,
+            "only the requirement changed"
+        );
+        assert_eq!(harness.panel.results(), &compute_all(&lowered));
+        assert_eq!(harness.panel.last_error, None);
+        assert_eq!(harness.panel.history.undo_len(), undo + 1);
+        // The gap now reads a margin, in green, from the design's own hot-low torque.
+        let hot_low = harness.panel.results().metal.torque_hot_low_Nm;
+        let (gap, meets) = torque_gap_text(hot_low, 2.0);
+        assert!(meets && gap.starts_with("margin +"), "{gap}");
+        assert_eq!(
+            crate::gui::test_support::text_color(&output, &gap),
+            Some(Level::Good.color(&harness.ctx.style().visuals))
+        );
+        // Files and links carry it.
+        let design = harness.panel.design();
+        assert_eq!(
+            decode_share_payload(&encode_share_payload(&design)).unwrap(),
+            design
+        );
+        assert_eq!(design_from_json(&design_to_json(&design)).unwrap(), design);
+        // Past the slider's range: clamped to its end.
+        let range = InputCatalogue::get()
+            .entry(REQUIREMENT_INPUT)
+            .unwrap()
+            .meta
+            .range
+            .unwrap();
+        type_in(&mut harness, &format!("{}", range.max * 5.0));
+        assert_eq!(harness.panel.inputs().metal.required_min_Nm, range.max);
+        assert_eq!(harness.panel.history.undo_len(), undo + 2);
+        // Not a number: nothing changes.
+        type_in(&mut harness, "NaN");
+        assert_eq!(harness.panel.inputs().metal.required_min_Nm, range.max);
+        assert_eq!(harness.panel.history.undo_len(), undo + 2);
+        // One undo per edit.
+        harness.panel.undo();
+        assert_eq!(harness.panel.inputs(), &lowered);
+        harness.panel.undo();
+        assert_eq!(harness.panel.design(), before);
+    }
+
+    #[test]
+    fn size_tab_idle_frames_keep_an_off_step_or_out_of_range_requirement() {
+        // Spec 5 and the invariant of `idle_frames_change_no_input`: the Required slider writes
+        // only on an edit (decision M41-2), so a file's requirement off its step or past its
+        // range is kept, and drawing the what-moves-what lines edits nothing.
+        let range = InputCatalogue::get()
+            .entry(REQUIREMENT_INPUT)
+            .unwrap()
+            .meta
+            .range
+            .unwrap();
+        for required in [2.345, range.max + 2.0] {
+            let mut design = Design::default();
+            design.inputs.metal.required_min_Nm = required;
+            design.inputs.coupling.npole = 8;
+            let mut harness = Harness::new();
+            harness.panel.open_design(design.clone());
+            harness.click_text(CentreView::SizeAndTorque.label());
+            for _ in 0..10 {
+                harness.frame(Vec::new());
+            }
+            assert_eq!(harness.panel.design(), design, "{required}");
+            assert_eq!(harness.panel.last_error, None, "{required}");
+            assert_eq!(
+                harness.panel.history.undo_len(),
+                0,
+                "{required}: no edit reported"
+            );
+        }
+    }
+
+    #[test]
+    fn size_tab_draws_each_what_moves_what_line_under_its_control() {
+        // Spec 3.3 at the default design: the Set-by line under Outside diameter, the length
+        // split under Overall length, and the magnet count's lines under Magnets per ring, the
+        // ring-size line first, each under the one before.
+        let mut harness = size_tab(SCREEN, DesignInputs::default());
+        let output = harness.frame(Vec::new());
+        let consequences = shown_consequences(&harness);
+        let rect = |text: &str| text_rect(&output, text).unwrap_or_else(|| panic!("no {text:?}"));
+        let diameter = consequences
+            .diameter_line()
+            .expect("the default design has a breakdown");
+        let length = consequences.length_line().expect("and a length split");
+        assert_eq!(count(&output, &diameter), 1);
+        assert_eq!(count(&output, &length), 1);
+        assert!(rect(DIAMETER).bottom() <= rect(diameter.as_str()).top());
+        assert!(rect(diameter.as_str()).bottom() <= rect(LENGTH).top());
+        assert!(rect(LENGTH).bottom() <= rect(length.as_str()).top());
+        assert!(rect(length.as_str()).bottom() <= rect(GAP).top());
+        let lines = consequences.magnet_lines(10);
+        assert_eq!(lines.first().map(String::as_str), Some(RING_SIZE_STAYS));
+        let mut above = rect(MAGNETS);
+        for line in &lines {
+            assert_eq!(count(&output, line), 1, "{line}");
+            let at = rect(line.as_str());
+            assert!(
+                above.bottom() <= at.top() + 0.5,
+                "{line:?} is not under the line above it"
+            );
+            above = at;
+        }
+        assert_eq!(
+            harness.panel.inputs(),
+            &DesignInputs::default(),
+            "drawing them edits nothing"
+        );
+    }
+
+    #[test]
+    fn size_tab_owner_case_at_8_magnets_says_the_ring_stays_and_the_cap_sets_the_diameter() {
+        // Spec 6 test 10, the owner's case of 2026-10-13: from 10 to 8 magnets the coupling did
+        // not shrink and nothing said why. At 8 magnets the Size tab says the ring keeps its
+        // size, and its Set-by line shows the cap as the largest part: the outside diameter is
+        // the cap's, so fewer magnets cannot lower it.
+        let mut harness = size_tab(SCREEN, with_poles(8));
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, RING_SIZE_STAYS), 1);
+        let shown = harness.panel.shown_inputs();
+        let parts =
+            diameter_breakdown(&shown).expect("the default ring at 8 magnets has a breakdown");
+        assert!(
+            parts.cap_mm > parts.cup_mm && parts.cap_mm > parts.boss_mm,
+            "{parts:?}"
+        );
+        assert_eq!(
+            parts.cap_mm,
+            dimensions(&shown).expect("size controls").diameter_mm,
+            "the cap is the outside diameter"
+        );
+        let consequences = shown_consequences(&harness);
+        assert_eq!(consequences.diameter, Some(parts));
+        let set_by = consequences.diameter_line().expect("a Set-by line");
+        assert!(set_by.starts_with("Set by: cap "), "{set_by}");
+        assert_eq!(count(&output, &set_by), 1);
+        let rect = |text: &str| text_rect(&output, text).unwrap_or_else(|| panic!("no {text:?}"));
+        assert!(
+            rect(DIAMETER).bottom() <= rect(set_by.as_str()).top(),
+            "under Outside diameter"
+        );
+        assert!(
+            rect(set_by.as_str()).bottom() <= rect(LENGTH).top(),
+            "above Overall length"
+        );
+        assert!(
+            rect(MAGNETS).bottom() <= rect(RING_SIZE_STAYS).top(),
+            "under Magnets per ring"
+        );
+        // T5/T6 amendment: with Minimum OD unset the slider floor, not the coupling, stops the
+        // fit search. The line says how far it could go and that Minimum OD unlocks it.
+        let fit = consequences
+            .magnet_lines(8)
+            .into_iter()
+            .find(|line| line.starts_with("Fits down to "))
+            .expect("a fit line at the slider's floor");
+        assert!(fit.ends_with("lower Minimum OD to reach it."), "{fit}");
+        assert_eq!(count(&output, &fit), 1, "{fit}");
+    }
+
+    #[test]
+    fn size_tab_what_moves_what_lines_follow_each_edit() {
+        // Spec 6 test 5: the lines are recomputed when the design changes (the cache keys on
+        // it), from the magnet count's own slider and from any other input.
+        let mut harness = size_tab(SCREEN, DesignInputs::default());
+        let at_10 = shown_consequences(&harness).magnet_lines(10);
+        // The controls' widgets in drawing order: diameter, length, gap, magnets, Minimum OD.
+        let magnets = harness.panel.design_widgets[3];
+        harness.ctx.memory_mut(|m| m.request_focus(magnets));
+        // Establish egui's arrow-key focus lock before sending the keyboard edit.
+        harness.frame(Vec::new());
+        harness.frame(key_tap(egui::Key::ArrowLeft));
+        let output = harness.frame(Vec::new());
+        assert_eq!(harness.panel.inputs().coupling.npole, 8);
+        let at_8 = shown_consequences(&harness).magnet_lines(8);
+        assert_ne!(at_8, at_10);
+        for line in &at_8 {
+            assert_eq!(count(&output, line), 1, "{line}");
+        }
+        for line in at_10.iter().filter(|line| !at_8.contains(line)) {
+            assert_eq!(count(&output, line), 0, "stale: {line}");
+        }
+        // Another input: a wider face gap moves every neighbour's pull-out and cup.
+        harness.panel.inputs.metal.face_gap_mm = 2.0;
+        let output = harness.frame(Vec::new());
+        let wider = shown_consequences(&harness);
+        let lines = wider.magnet_lines(8);
+        assert_ne!(lines, at_8);
+        for line in &lines {
+            assert_eq!(count(&output, line), 1, "{line}");
+        }
+        for line in at_8.iter().filter(|line| !lines.contains(line)) {
+            assert_eq!(count(&output, line), 0, "stale: {line}");
+        }
+        for line in wider.diameter_line().into_iter().chain(wider.length_line()) {
+            assert_eq!(count(&output, &line), 1, "{line}");
+        }
+    }
+
+    #[test]
+    fn size_tab_smallest_diameter_line_searches_with_the_minimum_od() {
+        // Spec 3.3 and 3.5: the fit search covers the Size tab's diameter range, the Minimum OD
+        // preference included. At 8 magnets the blocks fit at the slider's floor, so the line
+        // takes its minimum form; a lower Minimum OD lets the search find the smallest fit.
+        let mut harness = size_tab(SCREEN, with_poles(8));
+        assert_eq!(harness.panel.minimum_diameter_mm, None);
+        let floor = shown_consequences(&harness);
+        assert!(
+            matches!(floor.fit, Some(DiameterFit::AtMinimum(_))),
+            "{:?}",
+            floor.fit
+        );
+        let undo = harness.panel.history.undo_len();
+        harness.panel.minimum_diameter_mm = Some(34.0);
+        let output = harness.frame(Vec::new());
+        let lowered = shown_consequences(&harness);
+        assert!(
+            matches!(lowered.fit, Some(DiameterFit::At(_))),
+            "{:?}",
+            lowered.fit
+        );
+        let (old, new) = (floor.magnet_lines(8), lowered.magnet_lines(8));
+        assert_ne!(old, new);
+        for line in &new {
+            assert_eq!(count(&output, line), 1, "{line}");
+        }
+        for line in old.iter().filter(|line| !new.contains(line)) {
+            assert_eq!(count(&output, line), 0, "stale: {line}");
+        }
+        // A view preference: the design and its history stay as they were.
+        assert_eq!(harness.panel.inputs(), &with_poles(8));
+        assert_eq!(harness.panel.history.undo_len(), undo);
+    }
+
+    #[test]
+    fn size_tab_magnet_slider_ends_show_only_the_neighbour_in_range() {
+        // Spec 5: at 4 or 40 magnets per ring the line for 2 or 42 is left out.
+        for (npole, inside, outside) in [(4, 6, 2), (40, 38, 42)] {
+            let mut harness = size_tab(SCREEN, with_poles(npole));
+            let output = harness.frame(Vec::new());
+            let consequences = shown_consequences(&harness);
+            let neighbours: Vec<i64> = consequences.neighbours.iter().map(|n| n.npole).collect();
+            assert_eq!(neighbours, [inside], "{npole}");
+            let lines = consequences.magnet_lines(npole);
+            assert!(lines.contains(&RING_SIZE_STAYS.to_owned()), "{lines:?}");
+            for line in &lines {
+                assert_eq!(count(&output, line), 1, "{line}");
+            }
+            let texts = drawn_texts(&output);
+            assert!(
+                !texts
+                    .iter()
+                    .any(|t| t.starts_with(&format!("At {outside}:"))),
+                "{npole}: {texts:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn size_tab_narrow_window_wraps_the_new_lines_inside_their_sides() {
+        // Spec 5 "Narrow windows", at the M4-1 review's ~930 px window and the owner's 8 magnets:
+        // the what-moves-what lines wrap inside the inputs side (its 320 points), one under the
+        // next, and the torque readouts stay in the centre region, left of the dashboard.
+        let mut harness = size_tab(egui::vec2(930.0, 1024.0), with_poles(8));
+        let output = harness.frame(Vec::new());
+        let side = |id: &str| {
+            egui::containers::panel::PanelState::load(&harness.ctx, egui::Id::new(id))
+                .unwrap_or_else(|| panic!("{id} is drawn"))
+                .rect
+        };
+        let inputs_left = side("magcoupling_inputs").left();
+        let inputs_right = inputs_left + INPUTS_WIDTH;
+        let dashboard_left = side("magcoupling_dashboard").left();
+        let rect = |text: &str| text_rect(&output, text).unwrap_or_else(|| panic!("no {text:?}"));
+        let consequences = shown_consequences(&harness);
+        let magnet_lines = consequences.magnet_lines(8);
+        let mut above = rect(MAGNETS);
+        for line in &magnet_lines {
+            let at = rect(line.as_str());
+            assert!(
+                above.bottom() <= at.top() + 0.5,
+                "{line:?} overlaps the line above it"
+            );
+            above = at;
+        }
+        let mut lines = magnet_lines.clone();
+        lines.extend(consequences.diameter_line());
+        lines.extend(consequences.length_line());
+        for line in &lines {
+            let at = rect(line.as_str());
+            assert!(
+                at.left() >= inputs_left - 1.0 && at.right() <= inputs_right + 1.0,
+                "{line:?} at {at:?} runs out of the inputs side ({inputs_left} to {inputs_right})"
+            );
+        }
+        assert!(
+            lines.iter().any(|line| rows(&output, line) > 1),
+            "no line wrapped: the test no longer exercises wrapping"
+        );
+        let results = harness.panel.results().clone();
+        let (gap, _) = torque_gap_text(
+            results.metal.torque_hot_low_Nm,
+            harness.panel.inputs().metal.required_min_Nm,
+        );
+        let label = pullout_label(results.metal.op_temp_C);
+        for text in [REQUIRED, HOT_LOW, gap.as_str(), label.as_str()] {
+            let at = rect(text);
+            assert!(
+                at.left() >= inputs_right - 1.0 && at.right() <= dashboard_left + 1.0,
+                "{text:?} at {at:?} runs out of the centre ({inputs_right} to {dashboard_left})"
+            );
+        }
+    }
+
+    #[test]
+    fn size_tab_new_texts_have_glyphs_and_plain_words() {
+        // Spec 6 tests 3 and 11 for the Size tab, in each state its new texts take: the
+        // default, a met requirement, both ends of the magnet slider, the owner's 8 magnets, no
+        // prediction (short magnets) and a ring too small for its magnets. Every drawn text has
+        // glyphs in the default fonts; the new ones name no workbook cell, correction or sheet.
+        let mut met = DesignInputs::default();
+        met.metal.required_min_Nm = 2.0;
+        let too_small =
+            crate::engine::size_controls::resize_diameter_with_minimum(&with_poles(8), 35.0, 34.0)
+                .unwrap();
+        let states = [
+            (DesignInputs::default(), None),
+            (met, None),
+            (with_poles(4), None),
+            (with_poles(8), None),
+            (with_poles(40), None),
+            (short_magnets(), None),
+            (too_small, Some(34.0)),
+        ];
+        let mut harness = size_tab(egui::vec2(1280.0, 4000.0), DesignInputs::default());
+        let mut drawn = Vec::new();
+        let mut new_texts = vec![REQUIRED.to_owned(), HOT_LOW.to_owned()];
+        for (inputs, minimum) in states {
+            harness.panel.inputs = inputs;
+            harness.panel.minimum_diameter_mm = minimum;
+            // The second frame draws with any minimum the first one pinned.
+            harness.frame(Vec::new());
+            let output = harness.frame(Vec::new());
+            let shown = harness.panel.shown_inputs();
+            let results = compute_all(&shown);
+            let consequences = shown_consequences(&harness);
+            let mut texts = consequences.magnet_lines(shown.coupling.npole);
+            if dimensions(&shown).is_some() {
+                texts.extend(consequences.diameter_line());
+                texts.extend(consequences.length_line());
+            }
+            texts.push(pullout_label(results.metal.op_temp_C));
+            let hot_low = results.metal.torque_hot_low_Nm;
+            texts.push(if predicts(&results, hot_low) {
+                torque_gap_text(hot_low, shown.metal.required_min_Nm).0
+            } else {
+                NO_PREDICTION.to_owned()
+            });
+            let all = drawn_texts(&output);
+            for text in &texts {
+                assert!(all.contains(text), "{text:?} is not drawn");
+            }
+            new_texts.extend(texts);
+            drawn.extend(all);
+        }
+        for text in &drawn {
+            crate::gui::test_support::assert_glyphs(&harness.ctx, text, "the Size tab");
+        }
+        for text in &new_texts {
+            let violations = plain_text_violations(text);
+            assert!(violations.is_empty(), "{text:?}: {violations:?}");
+        }
     }
 
     #[test]
