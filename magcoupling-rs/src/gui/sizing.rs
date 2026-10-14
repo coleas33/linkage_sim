@@ -19,9 +19,10 @@
 
 use crate::DesignInputs;
 use crate::engine::meta::{InputSet, SliderRange, Value};
-use crate::engine::size_controls::with_ring_radius;
+use crate::engine::size_controls::{dimensions, with_ring_radius};
 use crate::engine::sizing::{FreeVariable, SizingError, SizingOutcome, solve_in};
-use crate::gui::format::{format_value, with_unit};
+use crate::gui::format::{fixed, format_value, with_unit};
+use crate::gui::size_controls::DIAMETER;
 
 /// Which way the calculator runs (spec A1 "Mode switch").
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -112,6 +113,17 @@ pub fn sized(variable: FreeVariable, inputs: &DesignInputs, value: f64) -> Desig
     }
 }
 
+/// The inputs a design shown at `variable` sets ([`sized`]): its own and, for ring size, the cap
+/// OD and thread that follow it. While Auto is on their rows are locked at the design shown, the
+/// inputs keep their own values ([`with_own_value`]) and the spreadsheet notes them.
+pub(crate) fn set_by_auto(variable: FreeVariable) -> impl Iterator<Item = &'static str> {
+    let followers: &'static [&'static str] = match variable {
+        FreeVariable::RingRadius => &RING_SIZE_FOLLOWERS,
+        _ => &[],
+    };
+    std::iter::once(variable.path()).chain(followers.iter().copied())
+}
+
 /// `edited`, a Size-tab edit of the design shown ([`sized`]), with the inputs Auto set back at
 /// their values in `own`: while Auto is on, the inputs keep their own value of the variable it
 /// sets until Auto turns off (decision M41-7). For ring size these are the ring radius and the
@@ -121,12 +133,8 @@ pub(crate) fn with_own_value(
     edited: DesignInputs,
     own: &DesignInputs,
 ) -> DesignInputs {
-    let followers: &[&str] = match variable {
-        FreeVariable::RingRadius => &RING_SIZE_FOLLOWERS,
-        _ => &[],
-    };
     let mut design = edited;
-    for path in std::iter::once(variable.path()).chain(followers.iter().copied()) {
+    for path in set_by_auto(variable) {
         let value = own.get(path).expect("a sized input is an input");
         design
             .set(path, value)
@@ -312,13 +320,13 @@ impl SizingRunner {
         match self.outcome(state.variable) {
             Some(Ok(SizingOutcome::Solved(point))) => format!(
                 "{SOLVED_PREFIX}{} (hot-low torque {})",
-                variable_text(state.variable, point.value),
+                value_text(state.variable, inputs, point.value),
                 torque_text(point.torque_hot_low_Nm)
             ),
             Some(Ok(SizingOutcome::NotReachable { best: Some(best) })) => format!(
                 "{NOT_REACHABLE_PREFIX}: best {} at {}",
                 torque_text(best.torque_hot_low_Nm),
-                variable_text(state.variable, best.value)
+                value_text(state.variable, inputs, best.value)
             ),
             Some(Ok(SizingOutcome::NotReachable { best: None })) => {
                 format!("No valid value of {} in range", auto_choice(state.variable))
@@ -333,6 +341,21 @@ impl SizingRunner {
             }
             None => SOLVING.to_owned(),
         }
+    }
+}
+
+/// A solved or best value of `variable` as the status line shows it: ring size as the Outside
+/// diameter of the design shown ([`sized`]), the slider it locks (T7 amendment, Review Focus 2),
+/// or as the radius where that slider's mapping refuses (an odd count); any other variable as
+/// its own value ([`variable_text`]).
+fn value_text(variable: FreeVariable, inputs: &DesignInputs, value: f64) -> String {
+    let diameter = match variable {
+        FreeVariable::RingRadius => dimensions(&sized(variable, inputs, value)),
+        _ => None,
+    };
+    match diameter {
+        Some(size) => format!("{DIAMETER} {} mm", fixed(size.diameter_mm, 1)),
+        None => variable_text(variable, value),
     }
 }
 
@@ -678,6 +701,75 @@ mod tests {
         assert_eq!(
             solved(&defaults, &poles).status(&defaults, &poles, poles.variable.range()),
             "Not reachable: best 2.285 N·m at 10"
+        );
+    }
+
+    #[test]
+    fn a_ring_size_status_names_the_outside_diameter_not_the_radius() {
+        // T7 amendment (Review Focus 2): the user reads ring size as the Outside diameter slider
+        // it locks, so the status gives the outside diameter of the design shown, solved or best.
+        use crate::engine::size_controls::ring_radius_range;
+        let state = inverse(FreeVariable::RingRadius);
+        let diameter = |inputs: &DesignInputs, value: f64| {
+            let shown = sized(state.variable, inputs, value);
+            let mm = dimensions(&shown).expect("8 magnets define size controls");
+            format!("{DIAMETER} {} mm", fixed(mm.diameter_mm, 1))
+        };
+        let out_of_reach = {
+            let mut inputs = crate::gui::test_support::with_poles(8);
+            inputs.metal.required_min_Nm = 50.0;
+            inputs
+        };
+        let range = ring_radius_range(&out_of_reach, None).expect("8 magnets define a range");
+        let mut runner = SizingRunner::default();
+        runner.solve_now(&out_of_reach, &state, range);
+        let Some(Ok(SizingOutcome::NotReachable { best: Some(best) })) =
+            runner.outcome(state.variable).cloned()
+        else {
+            panic!("50 N·m is out of reach of the ring size")
+        };
+        assert_eq!(
+            runner.status(&out_of_reach, &state, range),
+            format!(
+                "{NOT_REACHABLE_PREFIX}: best {} at {}",
+                torque_text(best.torque_hot_low_Nm),
+                diameter(&out_of_reach, best.value)
+            )
+        );
+        let reachable = {
+            let mut inputs = crate::gui::test_support::with_poles(8);
+            inputs.metal.required_min_Nm = 1.0;
+            inputs
+        };
+        let range = ring_radius_range(&reachable, None).expect("8 magnets define a range");
+        runner.solve_now(&reachable, &state, range);
+        let Some(Ok(SizingOutcome::Solved(point))) = runner.outcome(state.variable).cloned() else {
+            panic!("1 N·m is reachable by the ring size at 8 magnets")
+        };
+        assert_eq!(
+            runner.status(&reachable, &state, range),
+            format!(
+                "{SOLVED_PREFIX}{} (hot-low torque {})",
+                diameter(&reachable, point.value),
+                torque_text(point.torque_hot_low_Nm)
+            )
+        );
+        // Where the diameter slider's mapping refuses (an odd count), the radius is all there is.
+        let odd = crate::gui::test_support::with_poles(7);
+        let range = state.variable.range();
+        assert_eq!(
+            dimensions(&odd),
+            None,
+            "an odd count defines no size controls"
+        );
+        runner.solve_now(&odd, &state, range);
+        let value = runner
+            .value(state.variable)
+            .expect("a solved or best radius");
+        let status = runner.status(&odd, &state, range);
+        assert!(
+            status.contains(&variable_text(state.variable, value)) && !status.contains(DIAMETER),
+            "{status}"
         );
     }
 

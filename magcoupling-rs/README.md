@@ -180,8 +180,9 @@ meets the requirement** runs the inverse sizing on this tab: it locks the matchi
 (Overall length, Outside diameter, Magnets per ring) at the solved value, or at the best value
 under a red "Not reachable: best Y at X", and solves again 0.25 s after any other edit. Ring
 size searches the ring radii of this tab's diameter range, Minimum OD included, and shows the
-solved ring as the diameter slider would set it: the cap OD and its thread follow the cup, and
-the outcome line names the Outside diameter. Turning Auto off keeps the value shown.
+solved ring as the diameter slider would set it: the cap OD and its thread follow the cup (their
+detailed-input rows are locked at those values), and the outcome line, solved or not
+reachable, names the Outside diameter. Turning Auto off keeps the value shown.
 Opening the tab changes no mode; direct edits use the existing undo/redo history and
 file/share format.
 
@@ -432,8 +433,10 @@ scroll-area floor lowered to none).
   hot-low torque (2.5 N·m to start, M41-9) feed `sizing::solve`, which runs once the design has
   been still for 0.25 s and no edit is in progress, never per frame. The panel then shows the
   design with the free variable at the solved value, "Solved at X", or at the best value it
-  found, "Not reachable: best Y at X" (M41-8; "No valid value of <size> in range" when no value counts); the free variable's row shows that value, locked
-  (under the status line when the Key design group does not list it: the ring radius). Turning Auto
+  found, "Not reachable: best Y at X" (M41-8; "No valid value of <size> in range" when no value counts;
+  for ring size X is the Outside diameter). The free variable's row shows that value, locked
+  (under the status line when the Key design group does not list it: the ring radius), as do the
+  cap OD and thread rows ring size moves (`set_by_auto`; the spreadsheet notes the same rows). Turning Auto
   off keeps the value, solving first a change still waiting for its debounce (M41-7).
 - **No I/O in the panel.** Saving and picking a file are `PanelRequest`s the host does
   (`take_requests`, then `load_design_file` and `report`), so a host (the standalone app; the

@@ -52,7 +52,7 @@ use crate::gui::session::{
 };
 use crate::gui::size_controls;
 use crate::gui::sizing::{
-    REQUIREMENT_INPUT, SOLVED_PREFIX, SOLVING, SizingMode, SizingRunner, SizingState,
+    REQUIREMENT_INPUT, SOLVED_PREFIX, SOLVING, SizingMode, SizingRunner, SizingState, set_by_auto,
     with_own_value,
 };
 use crate::gui::spreadsheet::Snapshot;
@@ -1279,8 +1279,9 @@ impl MagcouplingPanel {
     }
 
     /// One input row; applies its edit. Returns the id of its main widget. In Torque →
-    /// Magnets the free variable's row shows the value the panel shows, locked (its label still
-    /// traces the input). The row is framed in its term's colour while the equation in view
+    /// Magnets the rows of the inputs Auto sets ([`set_by_auto`]: the free variable's, and for
+    /// ring size the cap OD and thread that follow it) show the value the panel shows, locked
+    /// (the label still traces the input). The row is framed in its term's colour while the equation in view
     /// reads the input (`readouts`).
     fn input_row_ui(
         &mut self,
@@ -1289,8 +1290,8 @@ impl MagcouplingPanel {
         readouts: &Readouts,
     ) -> egui::Id {
         let locked = self.sizing.mode == SizingMode::TorqueToMagnets
-            && entry.path == self.sizing.variable.path();
-        // The locked row reads the design shown (one clone, for that row only).
+            && set_by_auto(self.sizing.variable).any(|path| path == entry.path);
+        // A locked row reads the design shown (one clone, for that row only).
         let current = if locked {
             self.shown_inputs().get(&entry.path)
         } else {
@@ -4976,6 +4977,8 @@ mod tests {
         // A nudge of the gap on the Size tab edits the inputs, not the solved length.
         let gap = harness.size_widget(GAP).id;
         harness.ctx.memory_mut(|m| m.request_focus(gap));
+        // Establish egui's arrow-key focus lock before sending the keyboard edit.
+        harness.frame(Vec::new());
         harness.frame(key_tap(egui::Key::ArrowRight));
         let output = harness.frame(Vec::new());
         let inputs = harness.panel.inputs().clone();
@@ -4986,18 +4989,8 @@ mod tests {
         );
         assert_eq!(harness.panel.runner.solves, 1, "waiting for the debounce");
         assert_eq!(count(&output, SOLVING), 1);
-        // A keyboard-focused value box is a text field of the design: it holds the solve.
-        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
-        assert_eq!(
-            harness.panel.runner.solves, 1,
-            "not while the value box has focus"
-        );
-        harness.frame(key_tap(egui::Key::Enter));
-        assert_eq!(
-            focused_text_field(&harness.ctx),
-            None,
-            "Enter leaves the box"
-        );
+        // The slider keeps keyboard focus; it is not a text field, so it holds no solve.
+        assert_eq!(focused_text_field(&harness.ctx), None);
         harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
         let output = harness.frame(Vec::new());
         assert_eq!(harness.panel.runner.solves, 2);
@@ -5279,6 +5272,144 @@ mod tests {
         assert_eq!(
             harness.panel.runner.outcome(RING),
             Some(&solve(&odd, RING, odd.metal.required_min_Nm))
+        );
+    }
+
+    #[test]
+    fn auto_ring_size_out_of_reach_names_the_outside_diameter_shown() {
+        // T7 amendment (Review Focus 2): the outcome line names Outside diameter, the value the
+        // locked slider below it reads, never the internal ring radius.
+        use crate::gui::format::fixed;
+        use crate::gui::size_controls::{AUTO, DIAMETER};
+        use crate::gui::sizing::{NOT_REACHABLE_PREFIX, auto_choice};
+        let mut harness = Harness::new();
+        harness.panel.inputs = with_poles(8);
+        harness.panel.inputs.metal.required_min_Nm = 50.0;
+        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.click_text(auto_choice(FreeVariable::AxialLength));
+        harness.click_text(auto_choice(FreeVariable::RingRadius));
+        harness.click_text(AUTO);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        let output = harness.frame(Vec::new());
+        let Some(Ok(SizingOutcome::NotReachable { best: Some(best) })) = harness
+            .panel
+            .runner
+            .outcome(FreeVariable::RingRadius)
+            .cloned()
+        else {
+            panic!("50 N·m is out of reach of the ring size")
+        };
+        let shown = harness.panel.shown_inputs();
+        assert_eq!(shown.coupling.inner_back_apothem_mm, best.value);
+        let diameter = dimensions(&shown).expect("size controls").diameter_mm;
+        let line = format!(
+            "{NOT_REACHABLE_PREFIX}: best {} at {DIAMETER} {} mm",
+            with_unit(
+                format_value(&Value::Num(best.torque_hot_low_Nm)),
+                "N\u{b7}m"
+            ),
+            fixed(diameter, 1)
+        );
+        assert_eq!(count(&output, &line), 1, "{:?}", drawn_texts(&output));
+        assert_eq!(
+            crate::gui::test_support::text_color(&output, &line),
+            Some(Level::Bad.color(&harness.ctx.style().visuals))
+        );
+        let radius = with_unit(format_value(&Value::Num(best.value)), "mm");
+        assert!(
+            !drawn_texts(&output)
+                .iter()
+                .any(|t| t.starts_with(NOT_REACHABLE_PREFIX) && t.contains(&radius)),
+            "no outcome line quotes the radius {radius}"
+        );
+        // The longer outcome line wraps; one more frame settles the rows below it.
+        let output = harness.frame(Vec::new());
+        let rail = harness.size_widget(DIAMETER).rect;
+        assert!(
+            on_slider_row(&output, rail, &format!("{diameter:.1} mm")),
+            "the locked slider reads the same diameter, {diameter}"
+        );
+    }
+
+    #[test]
+    fn ring_size_auto_locks_the_cap_rows_at_the_design_shown() {
+        // The ring-size design shown moves the cap OD and its thread with the cup. While Auto is
+        // on, their rows in the detailed inputs read the design shown and are locked like the
+        // ring radius's, so no row shows or takes a value the results do not use.
+        use crate::gui::inputs::step_decimals;
+        use crate::gui::size_controls::AUTO;
+        use crate::gui::sizing::auto_choice;
+        let mut harness = Harness::new();
+        harness.panel.inputs = with_poles(8);
+        harness.panel.inputs.metal.required_min_Nm = 1.0;
+        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.click_text(auto_choice(FreeVariable::AxialLength));
+        harness.click_text(auto_choice(FreeVariable::RingRadius));
+        harness.click_text(AUTO);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        harness.solved();
+        let own = harness.panel.inputs().clone();
+        let shown = harness.panel.shown_inputs();
+        // The cap's rows, and two cap rows Auto does not set, on the inputs side of another tab.
+        harness.click_text(CentreView::Geometry.label());
+        harness.panel.input_filter = "metal.cap_".to_owned();
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(
+            count(&output, SIZED_NOTE),
+            2,
+            "the cap OD and thread rows only: {:?}",
+            drawn_texts(&output)
+        );
+        let number = |design: &DesignInputs, path: &str| match design.get(path) {
+            Some(Value::Num(value)) => value,
+            other => panic!("{path} is a number: {other:?}"),
+        };
+        // The value box of `path`'s row, showing `value`: the first such text below its label.
+        let value_box = |path: &str, value: f64| {
+            let entry = InputCatalogue::get().entry(path).unwrap();
+            let decimals = step_decimals(entry.meta.range.expect("a slider").step);
+            let text = format!("{value:.decimals$} mm");
+            let label = text_rect(&output, entry.meta.label).expect("the row is drawn");
+            text_rects(&output, &text)
+                .into_iter()
+                .filter(|r| r.top() >= label.bottom())
+                .min_by(|a, b| a.top().total_cmp(&b.top()))
+                .unwrap_or_else(|| panic!("{path} shows {text:?}: {:?}", drawn_texts(&output)))
+        };
+        let notes = text_rects(&output, SIZED_NOTE);
+        let mut locked = Vec::new();
+        for path in ["metal.cap_od_mm", "metal.cap_thread_dia_mm"] {
+            let value = number(&shown, path);
+            assert_ne!(value, number(&own, path), "{path} follows the cup");
+            let rect = value_box(path, value);
+            assert!(
+                notes
+                    .iter()
+                    .any(|n| n.top() >= rect.bottom() && n.top() - rect.bottom() < 40.0),
+                "{path}'s row is noted as set by Auto"
+            );
+            locked.push(rect.center());
+        }
+        let free = value_box("metal.cap_axial_mm", number(&own, "metal.cap_axial_mm")).center();
+        // A drag on a value box: an edit wherever the row takes one.
+        let mut drag = |at: egui::Pos2| {
+            let to = at + egui::vec2(60.0, 0.0);
+            harness.frame(vec![egui::Event::PointerMoved(at)]);
+            harness.frame(vec![primary_button(at, true)]);
+            harness.frame(vec![egui::Event::PointerMoved(to)]);
+            harness.frame(vec![primary_button(to, false)]);
+            harness.panel.inputs().clone()
+        };
+        // A locked row takes no edit: the inputs keep their own cap.
+        for at in locked {
+            assert_eq!(drag(at), own);
+        }
+        // The same drag edits a cap row Auto does not set.
+        let edited = drag(free);
+        assert_ne!(
+            edited.metal.cap_axial_mm, own.metal.cap_axial_mm,
+            "the drag edits an unlocked row"
         );
     }
 
