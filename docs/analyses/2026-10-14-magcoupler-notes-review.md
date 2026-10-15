@@ -715,6 +715,110 @@ fill wording (T-A) is in sentences[2] and unchanged.
 **Repo state:** this review is read-only. It wrote only this file and the dump under
 `magcoupling-rs/target/`. The probes ran from the session scratchpad.
 
+### Re-review: code-review fix round 1 (re-check 2)
+
+- Reviewer: a fresh-context physics reviewer (session model), 2026-10-15, on commit `925350a`
+  (`task-12-textreview-2.md`): the re-review above's MF-1 as applied. This is the second text
+  re-review of the code-review fix round 1 (controller ruling 7).
+- Scope: `harmonics` sentences[4], "On this design the fills are {model.fill_inner} inner and
+  {model.fill_outer} outer; the fundamental alone peaks at {model.amp1_Pa}, the summed harmonics
+  at σ = {model.tau_Pa}." (24 words), and every on-screen text whose meaning depends on it:
+  sentences[1] to [3], change[3], the watch-out, the note's square-wave diagram, `pullout_angle`
+  sentences[3] ("The fundamental alone peaks at 90°") and the σ gloss in `torque_from_shear`.
+  The dump (`NOTES_FOR_REVIEW=harmonics`) draws the line at the five probe designs with no
+  brace left and no plain-words flag.
+- Verdict: PASS, no must-fix.
+  - "The fundamental alone peaks at A_1" holds at every design the app reaches: A_1 > 0, and
+    with the harmonic set at 1 σ equals A_1 bit for bit.
+  - σ is the summed curve's maximum. The reviewer's grid: the example design, no back iron,
+    304, arcs and Y30 ferrite; 4 to 40 magnets per ring; every ring radius the Size tab reaches
+    from 9 to 30 mm by 0.5 mm; every harmonic set from 1 to 11. At all 22,200 design-sets (8,976
+    of them fit), σ equals a brute-force maximum over 200,001 samples, with a worst relative gap
+    of 8.2e-10.
+  - Both values read the same circuit, the effective back iron after the material pick.
+  - The line states no ordering, which is right: σ < A_1 at 132 of the 289 fitting library-part
+    designs and σ > A_1 at 157. σ − A_1 is the harmonic set's effect on the stress and the 2D
+    torque, with the right sign at every design.
+  - Caps, plain words and traps: 24 words, clean at the five probe designs, no trap written.
+- Should-fix, left open for the controller (both optional; no code, test or on-screen text
+  changed in this step):
+  - SF-1 (clarity): sentences[1] and [2] and the square-wave diagram call the magnet pattern's
+    first harmonic, a field, "the fundamental". The diagram's n = 1 curve peaks above the summed
+    one (1.24 against about 1.01 at the diagram's fill of 0.85). This line's "fundamental alone"
+    is the pair's shear stress, A_1, which at the default design lies below σ (200000 against
+    201400 Pa). The unit and σ keep the line correct, and `pullout_angle` uses the same phrase
+    for the same stress curve, but a reader who sets the line beside the picture can think the
+    two contradict. The review offers "Here the fills are {model.fill_inner} inner and
+    {model.fill_outer} outer; the fundamental alone gives a peak shear stress of
+    {model.amp1_Pa}, the summed harmonics σ = {model.tau_Pa}." (25 words), which keeps every
+    check of `harmonics_claims_hold_off_the_probe_designs`. Not applied: it would change
+    reviewed on-screen text, and the review says the current text stands as true.
+  - SF-2 (test strength): pin (iii) of `harmonics_claims_hold_off_the_probe_designs`, the sign
+    of σ − A_1 against the 2D torque's change from the set 1, follows from pin (i) and
+    T_2D = σ·A_L, where A_L does not depend on the set, so it adds no protection. To pin the
+    reader's step from the line to the watch-out, the review suggests the change in
+    `model.pullout_Nm` at the probe designs instead. It agrees in sign at all five; on the 304
+    design the bench factor is refitted with the set, giving +1.129 % in stress against
+    +0.546 % in pull-out. Off the probe designs, bench-calibrated free-space designs with 10
+    magnets can disagree (12 of 3,675 design-sets each for no back iron and 304, all off the
+    default set, under 1.4 %), so such a pin belongs at the probe designs only.
+  - Carried from the re-review above, unchanged: its SF-1 (change[3]'s "narrow").
+
+The reviewer's report for the record, as returned:
+
+**sentences[4]** (current text, 24 words): PASS.
+
+**Physics.**
+- "The fundamental alone peaks at A_1" is true at every design the app reaches:
+  - The fundamental's stress against electrical angle is A_1·sin φ, with A_1 = B_i,1·B_o,1·S_1/(2μ0).
+  - A_1 > 0 at every design, because B_n is proportional to sin(πλ/2) > 0 for fills in (0, 1], S_1 > 0, and Br at the operating temperature is positive. So its peak is A_1, at 90°.
+  - With the harmonic set at 1 the engine's pull-out stress is A_1 exactly, so "alone" is literal. It is what the user sees on choosing "1" in the same note's harmonic-set entry.
+- "The summed harmonics [peak] at σ" is true:
+  - The app always runs E7 (`compute_all` uses `Deviations::ALL`).
+  - `tau_Pa` is the summed curve's maximum, and it equals the brute-force maximum at all 22,200 design-sets.
+- Same circuit: both values read `ci.backiron`, the effective circuit after the back-iron material pick. The 304 probe draws both in free space.
+- No ordering and no share:
+  - The line states no ordering, which is right. σ < A_1 at 132 of the 289 fitting library-part designs and σ > A_1 at 157.
+  - σ − A_1 is the harmonic set's effect on the stress and the 2D torque, with the right sign at every design.
+- Size of that effect at the default set (library parts, 289 fitting designs):
+  - more than 2 % at 162 designs and more than 10 % at 99;
+  - up to +271.6 % at 4 magnets on a 23 mm ring;
+  - every design above 10 % has a smaller fill under 0.5;
+  - at a smaller fill of 0.5 or more the most is 2.65 %.
+
+  This agrees with sentences[3] (hedged: "usually add little") and with the watch-out ("At low fill ... the third harmonic can change the pull-out by more than a tenth"). The fills drawn in the same line let the reader connect the two.
+- Bench-calibrated designs, for the record only (the line claims nothing about pull-out):
+  - Free-space designs that keep the prototype's 10 B842SH magnets use the bench factor, which is refitted with the harmonic set.
+  - Off the default set, on a ring other than the prototype's, the pull-out's change from the set 1 can have the opposite sign to σ − A_1. This happens at 12 of 3,675 design-sets for the no-back-iron variant and 12 for the 304 variant, all at 10 magnets with the sets 3, 7, 9 or 11.
+  - Both changes stay under 1.4 % there. The worst is the set 3 on a 13.5 mm ring: +0.20 % stress, −1.16 % pull-out.
+  - At the default set 5 there is no disagreement on any grid. On steel designs the two always agree, because f_cal,0 does not depend on the set.
+  - Re-review 1's record ("0 disagreements" on the steel example grid; the same sign on the 304 probe) is accurate as written.
+
+**Consistency.**
+- `pullout_angle` sentences[3] uses "The fundamental alone peaks at 90°" for the same curve.
+- `torque_from_shear` glosses σ as the shear stress "at its peak".
+- The torque-angle diagram labels its dashed curve "fundamental alone".
+- The square-wave diagram's fundamental is the magnet pattern (SF-1, optional).
+
+**Caps and words.**
+- 24 words, under the 25 cap, and the note still has 5 sentences.
+- The placeholders sit in the "On this design" clause, with no unit typed after them.
+- The glyphs are σ and =, with no ∝, ϑ or U+207B, and this is not sentence 0.
+- No input label is typed.
+- `plain_text_violations` and `audit_ids` return nothing at the five probe designs.
+
+**Traps.** The line writes no item of slice-2 spec section 8, slice-1 spec section 8, `phys-new-notes.md` T-A to T-P, or the added "more magnets make the coupling stiffer" trap. The fill wording (T-A) is unchanged.
+
+**Tests and docs.** `harmonics_claims_hold_off_the_probe_designs` pins the line as follows:
+- the sentence draws `{model.amp1_Pa}` and `{model.tau_Pa}` and names "the fundamental alone";
+- no share word stands between the two values;
+- σ(set 1) = A_1 at the five probe designs and on a 17.5 mm ring;
+- σ_1 < σ < A_1 on the 20 mm design.
+
+The README row, `05-update-tracker.md`, BL-056 and the record's "Re-review: task review fix round 1" describe the line and the test accurately.
+
+**Repo state.** This review is read-only. It wrote only this file and the dump under `magcoupling-rs/target/`. The probes ran from the session scratchpad (`hsweep2`).
+
 ## back_iron_factor
 
 Task T12. Rewrite of "Back iron: the sinh factor against free space" as "Back iron: why steel
