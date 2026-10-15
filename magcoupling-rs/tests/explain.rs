@@ -30,10 +30,12 @@ use magcoupling::engine::assumptions::{self, ASSUMPTIONS};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::DeviationId;
 use magcoupling::engine::explain::markup::{Expr, Symbol};
+use magcoupling::engine::explain::notes::{Change, Sense, Step};
+use magcoupling::engine::explain::plain::plain_text_violations;
 use magcoupling::engine::explain::record::Eval;
 use magcoupling::engine::explain::registry::{Design, Registry, TermKind};
 use magcoupling::engine::explain::scope::{SCOPE, Status};
-use magcoupling::engine::explain::{TermSource, Trace, notes, render};
+use magcoupling::engine::explain::{TermSource, Trace, note_text, notes, probes, render};
 use magcoupling::engine::library;
 use magcoupling::engine::meta::{
     FieldType, InputMeta, InputSet, ResultSet, Value, input_rows, result_rows,
@@ -1838,4 +1840,414 @@ fn the_panel_labels_selector_codes_and_names_upstream_corrections() {
             r.used_by(path)
         );
     }
+}
+
+// ---------------------------------------------------------------------------------------
+// Guidance slice 2: live values in the notes, at the five probe designs, and the change
+// entries' directions (spec 3.2 and section 6, tests 2 and 3)
+// ---------------------------------------------------------------------------------------
+
+/// The probe designs (`probes::probe_designs`), each with its name and its results.
+fn probe_points() -> Vec<(&'static str, DesignInputs, DesignResults)> {
+    probes::probe_designs()
+        .into_iter()
+        .map(|(name, inputs)| {
+            let results = compute_all(&inputs);
+            (name, inputs, results)
+        })
+        .collect()
+}
+
+/// A live value as these engine tests put it into note text: a finite number or a whole
+/// number as Rust prints it; `None` (read as `note_text::NO_VALUE`) otherwise. The panel's
+/// own text (four significant digits and the unit) is tested in `gui::explorer`.
+fn engine_value(results: &DesignResults, path: &str) -> Option<String> {
+    match results.get(path)? {
+        Value::Num(x) if x.is_finite() => Some(x.to_string()),
+        Value::Int(n) => Some(n.to_string()),
+        Value::Num(_) | Value::Text(_) | Value::None => None,
+    }
+}
+
+/// The placeholders in `text` followed by their own unit typed again: the value is drawn with
+/// its unit, so `{model.pullout_Nm} N·m` would show the unit twice.
+fn units_typed_after(text: &str, unit_of: &dyn Fn(&str) -> &'static str) -> Vec<String> {
+    let Ok(pieces) = note_text::segments(text) else {
+        return Vec::new();
+    };
+    pieces
+        .windows(2)
+        .filter_map(|pair| match pair {
+            [
+                note_text::Segment::Value(path),
+                note_text::Segment::Text(after),
+            ] => {
+                let unit = unit_of(path);
+                let typed = !unit.is_empty() && unit != "-" && after.trim_start().starts_with(unit);
+                typed.then(|| (*path).to_owned())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_unit_typed_after_a_live_value_is_found() {
+    let unit_of = |path: &str| {
+        if path == "model.pullout_Nm" {
+            "N·m"
+        } else {
+            ""
+        }
+    };
+    assert_eq!(
+        units_typed_after("Here {model.pullout_Nm} N·m.", &unit_of),
+        ["model.pullout_Nm"]
+    );
+    assert!(units_typed_after("Here {model.pullout_Nm}.", &unit_of).is_empty());
+    assert!(units_typed_after("Here {model.f_end} at the ends.", &unit_of).is_empty());
+}
+
+/// Whether `text` holds a live value outside a "here" clause (spec 3.2): a number stands where
+/// the text says "here" or "on this design", so it reads as this design's, not as a constant.
+fn live_value_outside_a_here_clause(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    text.contains('{') && !(lower.contains("here") || lower.contains("on this design"))
+}
+
+#[test]
+fn a_live_value_outside_a_here_clause_is_found() {
+    assert!(live_value_outside_a_here_clause(
+        "The pull-out is {model.pullout_Nm}."
+    ));
+    assert!(!live_value_outside_a_here_clause(
+        "Here the pull-out is {model.pullout_Nm}."
+    ));
+    assert!(!live_value_outside_a_here_clause(
+        "The end factor is {model.f_end} on this design."
+    ));
+    assert!(!live_value_outside_a_here_clause(
+        "No live value in this one."
+    ));
+}
+
+/// Each result's type and unit, by path.
+fn result_kinds(results: &DesignResults) -> BTreeMap<String, (FieldType, &'static str)> {
+    result_rows(results)
+        .into_iter()
+        .map(|r| (r.path, (r.meta.ty, r.meta.unit)))
+        .collect()
+}
+
+/// What is wrong with `note`'s live values (spec 3.2), each fault named: a brace in a title, a
+/// sentence 0 or a source (no live value stands there); a text the parser refuses; a unit typed
+/// after a placeholder; a placeholder that names no result or no number result; a placeholder
+/// outside a "here" clause; a brace left after rendering at a probe design.
+fn placeholder_problems(
+    note: &notes::Note,
+    kinds: &BTreeMap<String, (FieldType, &'static str)>,
+    points: &[(&str, DesignInputs, DesignResults)],
+) -> Vec<String> {
+    let unit_of = |path: &str| kinds.get(path).map_or("", |(_, unit)| *unit);
+    let mut failures = Vec::new();
+    let plain = [note.title]
+        .into_iter()
+        .chain(note.sentences.first().copied())
+        .chain(note.sources.iter().copied());
+    for text in plain {
+        if text.contains(['{', '}']) {
+            failures.push(format!("{}: a brace in {text:?}", note.id));
+        }
+    }
+    for text in note_text::rendered_texts(note) {
+        if let Err(fault) = note_text::segments(text) {
+            failures.push(format!("{}: {fault}", note.id));
+        }
+        for path in units_typed_after(text, &unit_of) {
+            failures.push(format!("{}: the unit typed after {{{path}}}", note.id));
+        }
+        if live_value_outside_a_here_clause(text) {
+            failures.push(format!(
+                "{}: a live value outside a 'here' clause: {text:?}",
+                note.id
+            ));
+        }
+    }
+    for path in note_text::placeholders(note) {
+        match kinds.get(path) {
+            None => failures.push(format!("{}: {{{path}}} names no result", note.id)),
+            Some((FieldType::F64 | FieldType::I64 | FieldType::NumOrText, _)) => {}
+            Some((other, _)) => failures.push(format!(
+                "{}: {{{path}}} is a {other:?} result, not a number",
+                note.id
+            )),
+        }
+    }
+    for (name, _, results) in points {
+        for text in note_text::rendered_texts(note) {
+            let drawn = note_text::render(text, |path| engine_value(results, path));
+            if drawn.contains(['{', '}']) {
+                failures.push(format!("{} at the {name} design: {drawn:?}", note.id));
+            }
+        }
+    }
+    failures
+}
+
+#[test]
+fn every_note_placeholder_names_a_number_result_and_renders_at_every_probe_design() {
+    let points = probe_points();
+    let kinds = result_kinds(&points[0].2);
+    let failures: Vec<String> = notes::NOTES
+        .iter()
+        .flat_map(|note| placeholder_problems(note, &kinds, &points))
+        .collect();
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+#[test]
+fn the_placeholder_check_names_each_kind_of_mistake() {
+    let points = probe_points();
+    let kinds = result_kinds(&points[0].2);
+    let good = notes::Note {
+        id: "test.placeholders",
+        title: "A title",
+        equations: &[],
+        sentences: &[
+            "A plain first sentence.",
+            "Here the pull-out is {model.pullout_Nm}.",
+            "On this design the end factor is {model.f_end}.",
+        ],
+        change: &[Change {
+            input: "metal.face_gap_mm",
+            step: Step::Lower,
+            aim: Some(("model.pullout_Nm", Sense::Up)),
+            text: "the pull-out here is {model.pullout_Nm}.",
+        }],
+        watch_out: &[],
+        diagram: None,
+        sources: &["A source."],
+        review: notes::Review::Draft,
+    };
+    assert_eq!(
+        placeholder_problems(&good, &kinds, &points),
+        Vec::<String>::new()
+    );
+    for (bad, fault) in [
+        (
+            notes::Note {
+                title: "A {model.f_end} title",
+                ..good
+            },
+            "a brace in",
+        ),
+        (
+            notes::Note {
+                sentences: &["First {model.f_end}.", "Here {model.f_end}.", "Third."],
+                ..good
+            },
+            "a brace in",
+        ),
+        (
+            notes::Note {
+                sources: &["A {model.f_end} source."],
+                ..good
+            },
+            "a brace in",
+        ),
+        (
+            notes::Note {
+                sentences: &["Plain.", "Here {model.f_end", "Third."],
+                ..good
+            },
+            "with no '}' after it",
+        ),
+        (
+            notes::Note {
+                sentences: &["Plain.", "Here {model.f_end", "Third."],
+                ..good
+            },
+            "at the default design",
+        ),
+        (
+            notes::Note {
+                sentences: &["Plain.", "Here {= model.a / model.b}.", "Third."],
+                ..good
+            },
+            "is not a result path",
+        ),
+        (
+            notes::Note {
+                sentences: &["Plain.", "Here {model.pullout_Nm} N·m.", "Third."],
+                ..good
+            },
+            "the unit typed after {model.pullout_Nm}",
+        ),
+        (
+            notes::Note {
+                sentences: &["Plain.", "Here {model.nothing}.", "Third."],
+                ..good
+            },
+            "{model.nothing} names no result",
+        ),
+        (
+            notes::Note {
+                sentences: &["Plain.", "Here {materials.cup_wall_check}.", "Third."],
+                ..good
+            },
+            "{materials.cup_wall_check} is a Text result, not a number",
+        ),
+        (
+            notes::Note {
+                sentences: &["Plain.", "The pull-out is {model.pullout_Nm}.", "Third."],
+                ..good
+            },
+            "a live value outside a 'here' clause",
+        ),
+    ] {
+        let problems = placeholder_problems(&bad, &kinds, &points);
+        assert!(
+            problems.iter().any(|p| p.contains(fault)),
+            "{fault}: {problems:?}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "un-ignored in T18 when every note is rewritten"]
+fn every_note_reads_in_plain_words_at_every_probe_design() {
+    let mut failures = Vec::new();
+    for (name, _, results) in &probe_points() {
+        for note in notes::NOTES {
+            let rendered = note_text::rendered_texts(note)
+                .into_iter()
+                .map(|text| note_text::render(text, |path| engine_value(results, path)));
+            let fixed = [note.title]
+                .into_iter()
+                .chain(note.sources.iter().copied())
+                .map(str::to_owned);
+            for text in rendered.chain(fixed) {
+                let banned = plain_text_violations(&text);
+                if !banned.is_empty() {
+                    failures.push(format!(
+                        "{} at the {name} design: {banned:?} in {text:?}",
+                        note.id
+                    ));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+/// One change entry's aim checked at `points`: at each design where the input moves one
+/// slider step its way (`probes::step_input`) and the aimed result is a finite number before
+/// and after, the result must move the way the entry says. The failures, and at how many
+/// designs the aim was checked.
+fn aim_failures(
+    id: &str,
+    change: &Change,
+    points: &[(&str, DesignInputs, DesignResults)],
+) -> (Vec<String>, usize) {
+    let Some((aim, sense)) = change.aim else {
+        return (Vec::new(), 0);
+    };
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    for (name, inputs, results) in points {
+        let Ok(stepped) = probes::step_input(inputs, change.input, change.step) else {
+            continue;
+        };
+        let (Some(Value::Num(before)), Some(Value::Num(after))) =
+            (results.get(aim), compute_all(&stepped).get(aim))
+        else {
+            continue;
+        };
+        if !(before.is_finite() && after.is_finite()) {
+            continue;
+        }
+        checked += 1;
+        let moved = match sense {
+            Sense::Up => after > before,
+            Sense::Down => after < before,
+        };
+        if !moved {
+            failures.push(format!(
+                "{id}: {} {} should move {aim} {sense:?} at the {name} design: {before} -> {after}",
+                change.step.word(),
+                change.input
+            ));
+        }
+    }
+    (failures, checked)
+}
+
+#[test]
+fn every_change_entry_moves_its_aim_the_way_it_says() {
+    let points = probe_points();
+    let mut failures = Vec::new();
+    for note in notes::NOTES {
+        for change in note.change.iter().filter(|c| c.aim.is_some()) {
+            let (found, checked) = aim_failures(note.id, change, &points);
+            failures.extend(found);
+            if checked == 0 {
+                failures.push(format!(
+                    "{}: {} {} is checked at no probe design (held, at its end or no number at all five)",
+                    note.id,
+                    change.step.word(),
+                    change.input
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+#[test]
+fn the_aim_check_confirms_a_true_direction_and_catches_a_false_one() {
+    let points = probe_points();
+    let entry = |input, step, aim| Change {
+        input,
+        step,
+        aim: Some(aim),
+        text: "",
+    };
+    // True at every probe design: a smaller gap, longer magnets (stepped from the length in
+    // use, the axial length being blank), and a hotter magnet that weakens.
+    for truth in [
+        entry(
+            "metal.face_gap_mm",
+            Step::Lower,
+            ("model.pullout_Nm", Sense::Up),
+        ),
+        entry(
+            "coupling.magnets.axial_length_mm",
+            Step::Raise,
+            ("model.pullout_Nm", Sense::Up),
+        ),
+        entry(
+            "coupling.op_temp_C",
+            Step::Raise,
+            ("model.pullout_Nm", Sense::Down),
+        ),
+    ] {
+        let (failures, checked) = aim_failures("test", &truth, &points);
+        assert_eq!(failures, Vec::<String>::new(), "{truth:?}");
+        assert_eq!(checked, points.len(), "{truth:?}");
+    }
+    let false_claim = entry(
+        "metal.face_gap_mm",
+        Step::Lower,
+        ("model.pullout_Nm", Sense::Down),
+    );
+    let (failures, checked) = aim_failures("test", &false_claim, &points);
+    assert_eq!((failures.len(), checked), (points.len(), points.len()));
+    // An input a pick sets at every probe design is checked nowhere: the manual Br (the
+    // library part sets it, or on the ferrite rings the grade).
+    let held = entry(
+        "coupling.magnets.manual_inner_br_T",
+        Step::Raise,
+        ("model.pullout_Nm", Sense::Up),
+    );
+    assert_eq!(aim_failures("test", &held, &points), (Vec::new(), 0));
 }

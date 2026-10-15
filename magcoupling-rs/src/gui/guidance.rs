@@ -1449,7 +1449,7 @@ pub use crate::engine::explain::plain::{BANNED, plain_text_violations};
 // ------------------------------------------------------------------ the Problem builders
 
 /// The result at `path` as the readouts show it: four significant digits, then its unit.
-fn result_text(results: &DesignResults, path: &str) -> String {
+pub(crate) fn result_text(results: &DesignResults, path: &str) -> String {
     let unit = result_info(path).map_or("", |info| info.meta.unit);
     with_unit(
         format_value(&results.get(path).unwrap_or(Value::None)),

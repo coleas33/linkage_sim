@@ -1191,6 +1191,141 @@ mod tests {
         assert!(failures.is_empty(), "{failures:#?}");
     }
 
+    /// What reads as jargon in one note's text (slice-2 spec 3.4, A-13): a word the plain-words
+    /// guard bans in its title, a sentence, a change text, a watch-out or a source (a live value
+    /// stands as the number 1), and an audit id (`TC-`, `PA-`, `CG-`) in a source, which the
+    /// guard does not know.
+    fn plain_words_problems(n: &Note) -> Vec<String> {
+        use super::super::note_text::render;
+        use super::super::plain::plain_text_violations;
+        let texts = std::iter::once(n.title)
+            .chain(n.sentences.iter().copied())
+            .chain(n.change.iter().map(|c| c.text))
+            .chain(n.watch_out.iter().copied())
+            .chain(n.sources.iter().copied());
+        let mut problems: Vec<String> = texts
+            .filter_map(|text| {
+                let banned = plain_text_violations(&render(text, |_| Some("1".to_owned())));
+                (!banned.is_empty()).then(|| format!("{}: {banned:?} in {text:?}", n.id))
+            })
+            .collect();
+        for source in n.sources {
+            for id in ["TC-", "PA-", "CG-"] {
+                if source.contains(id) {
+                    problems.push(format!("{}: an audit id {id} in {source:?}", n.id));
+                }
+            }
+        }
+        problems
+    }
+
+    /// The notes rewritten in plain words so far (slice-2 spec 3.4, A-13): each note task adds
+    /// its ids; the task that turns the all-notes tests on deletes this list and
+    /// `the_rewritten_notes_read_in_plain_words`.
+    const REWRITTEN: &[&str] = &[];
+
+    #[test]
+    fn the_plain_words_rule_names_each_kind_of_mistake() {
+        let good = Note {
+            id: "test.plain",
+            title: "A plain title",
+            equations: &[],
+            sentences: &["One.", "Two with {model.pullout_Nm}.", "Three."],
+            change: &[Change {
+                input: "metal.face_gap_mm",
+                step: Step::Lower,
+                aim: None,
+                text: "a change in plain words.",
+            }],
+            watch_out: &["A watch-out in plain words."],
+            diagram: None,
+            sources: &["Math audit of 2026-09-29: the planar harmonic model"],
+            review: Review::Draft,
+        };
+        assert_eq!(plain_words_problems(&good), Vec::<String>::new());
+        let leak = |v: Vec<&'static str>| -> &'static [&'static str] { v.leak() };
+        for (bad, why) in [
+            (
+                Note {
+                    title: "How the workbook does it",
+                    ..good
+                },
+                "workbook",
+            ),
+            (
+                Note {
+                    sentences: leak(vec!["One.", "Two (correction E7).", "Three."]),
+                    ..good
+                },
+                "correction E",
+            ),
+            (
+                Note {
+                    change: vec![Change {
+                        text: "see Calculator!C5.",
+                        ..good.change[0]
+                    }]
+                    .leak(),
+                    ..good
+                },
+                "Calculator!",
+            ),
+            (
+                Note {
+                    watch_out: &["Per decision 29 it is so."],
+                    ..good
+                },
+                "decision",
+            ),
+            (
+                Note {
+                    sources: &["M1 audit E7"],
+                    ..good
+                },
+                "M1 audit",
+            ),
+            (
+                Note {
+                    sources: &["A source (TC-RC2)"],
+                    ..good
+                },
+                "an audit id TC-",
+            ),
+            (
+                Note {
+                    sources: &["PA-3 says so"],
+                    ..good
+                },
+                "an audit id PA-",
+            ),
+            (
+                Note {
+                    sources: &["CG-1 says so"],
+                    ..good
+                },
+                "an audit id CG-",
+            ),
+        ] {
+            let problems = plain_words_problems(&bad);
+            assert!(
+                problems.iter().any(|p| p.contains(why)),
+                "{why}: {problems:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_rewritten_notes_read_in_plain_words() {
+        let failures: Vec<String> = REWRITTEN
+            .iter()
+            .flat_map(|id| {
+                let note = note(id).unwrap_or_else(|| panic!("REWRITTEN names no note: {id}"));
+                plain_words_problems(note)
+            })
+            .collect();
+        assert!(failures.is_empty(), "{failures:#?}");
+    }
+
     #[test]
     fn the_before_snapshot_format_reads_back() {
         let text = before::snapshot_text();

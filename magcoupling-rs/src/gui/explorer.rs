@@ -23,11 +23,12 @@
 //! equation the reviewed note that explains it ([`notes::note_for`]: only notes a physics
 //! reviewer has checked), with its diagram ([`crate::gui::diagrams`]), its "What to change"
 //! entries, its "Watch out" lines and its sources under a "Where this comes from" fold that
-//! starts closed ([`note_ui`]), so it follows what the user investigates. An entry's input is a
-//! link to its row, or plain text with the reason where the input is not free on the design
-//! shown ([`held_reason`]: Auto holds it or a part pick sets it; or the slider is at its end
-//! that way). "Start here" walks the suggested order
-//! ([`notes::START_HERE`]): each step opens its equation with Explain on. A warning's link
+//! starts closed ([`note_ui`]), so it follows what the user investigates. A `{result.path}` in a
+//! note's text is drawn as that result's number on the design shown ([`live_value`]), or as
+//! "no prediction" where it has none. An entry's input is a link to its row, or plain text with
+//! the reason where the input is not free on the design shown ([`held_reason`]: Auto holds it
+//! or a part pick sets it; or the slider is at its end that way). "Start here" walks the
+//! suggested order ([`notes::START_HERE`]): each step opens its equation with Explain on. A warning's link
 //! opens its note on its own ([`Explorer::open_note`]; five of the six warning notes explain
 //! no single equation), with links to the equations it does explain. Every note the panel
 //! names or draws by id goes through [`reviewed_note`], so a note sent back to Draft never
@@ -45,14 +46,16 @@
 use egui::{Color32, Sense, Vec2};
 
 use crate::engine::explain::markup::{Expr, Symbol};
+use crate::engine::explain::note_text;
 use crate::engine::explain::notes::{self, Change, Note, Review, START_HERE, covers};
 use crate::engine::explain::{Design, Equation, TermKind, TermStyle};
 use crate::engine::meta::{InputSet, ResultSet, Value};
 use crate::engine::picks::set_by_pick;
 use crate::gui::corrections::correction_title;
-use crate::gui::dashboard::result_info;
+use crate::gui::dashboard::{end_effect_out_of_range, greyed_by_end_effect, result_info};
 use crate::gui::diagrams::diagram_ui;
 use crate::gui::format::{format_value, with_unit};
+use crate::gui::guidance::result_text;
 use crate::gui::input_ui::CHANGED_DOT;
 use crate::gui::inputs::InputCatalogue;
 use crate::gui::plain_text::label_for;
@@ -672,16 +675,52 @@ fn unlinked_reason(change: &Change, view: &NoteView<'_>) -> Option<String> {
     Some(if up { AT_TOP } else { AT_BOTTOM }.to_owned())
 }
 
+/// What a `{path}` in a note shows on the design whose results are `results` (slice-2 spec
+/// 3.2): the result's number with its unit, as the readouts show it
+/// (`guidance::result_text`); `None`, drawn as [`note_text::NO_VALUE`], for a
+/// path no result has, a number that is not finite, a text (a result that reads "n/a"
+/// where it has no number, or a verdict: a live value is a number), and a result computed
+/// from an out-of-range end effect (the pull-out and everything after it: the model gives no
+/// prediction there, spec 5).
+pub fn live_value(results: &DesignResults, path: &str) -> Option<String> {
+    if end_effect_out_of_range(results).is_some()
+        && (after_the_end_factor().contains(path) || greyed_by_end_effect(results, path))
+    {
+        return None;
+    }
+    match results.get(path)? {
+        Value::Num(x) if x.is_finite() => Some(result_text(results, path)),
+        Value::Int(_) => Some(result_text(results, path)),
+        Value::Num(_) | Value::Text(_) | Value::None => None,
+    }
+}
+
+/// Every result computed from the end-effect factor (the registry is fixed: computed once).
+fn after_the_end_factor() -> &'static std::collections::BTreeSet<String> {
+    static AFTER: std::sync::OnceLock<std::collections::BTreeSet<String>> =
+        std::sync::OnceLock::new();
+    AFTER.get_or_init(|| registry().downstream("model.f_end"))
+}
+
+/// A note's text as drawn on `view`'s design: each `{path}` replaced by its live value
+/// ([`live_value`]), then through `glyph_safe`.
+fn note_text_on(text: &str, view: &NoteView<'_>) -> String {
+    glyph_safe(&note_text::render(text, |path| {
+        live_value(view.results, path)
+    }))
+}
+
 /// A teaching note (slice-2 spec 3.1): its title; what it is (its sentences) and its diagram;
 /// "What to change", each entry "`<Step> <input's label>: <text>`", the label a link to the
 /// input's row unless `unlinked_reason` gives a reason (then plain text with the reason);
 /// "Watch out" and its lines; and the "Where this comes from" fold, closed until clicked,
-/// holding its sources. Every text is drawn through `glyph_safe`. Returns the link clicked.
+/// holding its sources. The sentences, change texts and watch-outs show live values
+/// (`note_text_on`); every text is drawn through `glyph_safe`. Returns the link clicked.
 pub fn note_ui(ui: &mut egui::Ui, note: &Note, view: &NoteView<'_>) -> Option<NoteLink> {
     let mut clicked = None;
     ui.strong(glyph_safe(note.title));
     for sentence in note.sentences {
-        ui.add(egui::Label::new(glyph_safe(sentence)).wrap());
+        ui.add(egui::Label::new(note_text_on(sentence, view)).wrap());
     }
     if let Some(diagram) = note.diagram {
         diagram_ui(ui, diagram);
@@ -698,7 +737,8 @@ pub fn note_ui(ui: &mut egui::Ui, note: &Note, view: &NoteView<'_>) -> Option<No
         let warn = ui.visuals().warn_fg_color;
         ui.label(egui::RichText::new(WATCH_OUT).strong().color(warn));
         for line in note.watch_out {
-            ui.add(egui::Label::new(egui::RichText::new(glyph_safe(line)).color(warn)).wrap());
+            let text = egui::RichText::new(note_text_on(line, view)).color(warn);
+            ui.add(egui::Label::new(text).wrap());
         }
     }
     egui::CollapsingHeader::new(WHERE_FROM)
@@ -729,7 +769,7 @@ fn change_ui(ui: &mut egui::Ui, change: &Change, view: &NoteView<'_>) -> bool {
             }
             None => clicked = ui.link(label).clicked(),
         }
-        ui.add(egui::Label::new(format!(": {}", glyph_safe(change.text))).wrap());
+        ui.add(egui::Label::new(format!(": {}", note_text_on(change.text, view))).wrap());
     });
     clicked
 }
@@ -1770,6 +1810,310 @@ mod tests {
                 "{reason}"
             );
         }
+    }
+
+    #[test]
+    fn a_live_value_reads_as_the_readouts_and_none_where_there_is_no_prediction() {
+        use crate::engine::explain::probes::probe_designs;
+        let designs = probe_designs();
+        let default = compute_all(&designs[0].1);
+        let pullout = "model.pullout_Nm";
+        let unit = result_info(pullout).unwrap().meta.unit;
+        assert_eq!(
+            live_value(&default, pullout),
+            Some(with_unit(
+                format_value(&default.get(pullout).unwrap()),
+                unit
+            ))
+        );
+        // A text where a number belongs: the cold limit of NdFeB rings reads "n/a".
+        let cold = "temperature.demag.cold_limit_C";
+        assert!(matches!(default.get(cold), Some(Value::Text(_))));
+        assert_eq!(live_value(&default, cold), None);
+        // On the ferrite probe the cold limit is a number and the hot onsets are not finite.
+        let ferrite = compute_all(&designs[3].1);
+        let cold_unit = result_info(cold).unwrap().meta.unit;
+        assert_eq!(
+            live_value(&ferrite, cold),
+            Some(with_unit(
+                format_value(&ferrite.get(cold).unwrap()),
+                cold_unit
+            ))
+        );
+        let onset = "temperature.demag.onset_skipping_C";
+        assert!(matches!(ferrite.get(onset), Some(Value::Num(x)) if !x.is_finite()));
+        assert_eq!(live_value(&ferrite, onset), None);
+        // A verdict, an input and a path no result has: none.
+        assert_eq!(live_value(&default, "materials.cup_wall_check"), None);
+        assert_eq!(live_value(&default, "metal.face_gap_mm"), None);
+        assert_eq!(live_value(&default, "no.such.result"), None);
+    }
+
+    #[test]
+    fn a_value_computed_from_an_out_of_range_pull_out_reads_no_prediction() {
+        let results = compute_all(&crate::gui::test_support::short_magnets());
+        assert!(crate::gui::dashboard::end_effect_out_of_range(&results).is_some());
+        for path in [
+            "model.pullout_Nm",
+            "metal.torque_hot_low_Nm",
+            "metal.cold_high_input_Nm",
+            "model.gearbox_input_ripple_Nm",
+        ] {
+            assert_eq!(live_value(&results, path), None, "{path}");
+        }
+        for path in [
+            "model.f_end",
+            "model.pole_pitch_mm",
+            "model.active_length_mm",
+        ] {
+            assert!(live_value(&results, path).is_some(), "{path}");
+        }
+    }
+
+    /// A note with live values in a sentence, a change entry and a watch-out.
+    const LIVE_NOTE: Note = Note {
+        id: "test.live",
+        title: "A note with live values",
+        equations: &[],
+        sentences: &[
+            "The first sentence has none.",
+            "Here the pull-out is {model.pullout_Nm}.",
+        ],
+        change: &[Change {
+            input: "metal.face_gap_mm",
+            step: notes::Step::Lower,
+            aim: Some(("model.pullout_Nm", notes::Sense::Up)),
+            text: "the skipping onset is {temperature.demag.onset_skipping_C} here.",
+        }],
+        watch_out: &["The end factor is {model.f_end} on this design."],
+        diagram: None,
+        sources: &["A source."],
+        review: Review::Draft,
+    };
+
+    #[test]
+    fn a_note_draws_its_live_values_from_the_design_shown() {
+        use crate::engine::explain::note_text::NO_VALUE;
+        use crate::engine::explain::probes::probe_designs;
+        use crate::gui::test_support::drawn_texts;
+        let ctx = egui::Context::default();
+        let designs = probe_designs();
+        for (name, inputs) in [&designs[0], &designs[3]] {
+            let results = compute_all(inputs);
+            let view = NoteView {
+                inputs,
+                results: &results,
+                held: &nothing_held,
+            };
+            note_frame(&ctx, &LIVE_NOTE, &view, Vec::new());
+            let (output, _) = note_frame(&ctx, &LIVE_NOTE, &view, Vec::new());
+            let texts = drawn_texts(&output);
+            let value = |path: &str| live_value(&results, path).unwrap_or(NO_VALUE.to_owned());
+            for want in [
+                LIVE_NOTE.sentences[0].to_owned(),
+                format!("Here the pull-out is {}.", value("model.pullout_Nm")),
+                format!(
+                    ": the skipping onset is {} here.",
+                    value("temperature.demag.onset_skipping_C")
+                ),
+                format!("The end factor is {} on this design.", value("model.f_end")),
+            ] {
+                assert!(texts.contains(&want), "{name}: {want:?} in {texts:?}");
+            }
+        }
+        // The ferrite rings' hot onset has no prediction; the NdFeB default's has one.
+        let onset = "temperature.demag.onset_skipping_C";
+        assert!(live_value(&compute_all(&designs[0].1), onset).is_some());
+        assert_eq!(live_value(&compute_all(&designs[3].1), onset), None);
+    }
+
+    #[test]
+    fn every_note_draws_at_every_probe_design_with_glyphs_and_no_braces() {
+        use crate::engine::explain::note_text::rendered_texts;
+        use crate::engine::explain::probes::probe_designs;
+        use crate::gui::test_support::assert_glyphs;
+        let ctx = egui::Context::default();
+        // The fonts load on the context's first frame.
+        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        for (name, inputs) in probe_designs() {
+            let results = compute_all(&inputs);
+            let view = NoteView {
+                inputs: &inputs,
+                results: &results,
+                held: &nothing_held,
+            };
+            for note in notes::NOTES {
+                for text in rendered_texts(note) {
+                    let drawn = note_text_on(text, &view);
+                    assert!(
+                        !drawn.contains(['{', '}']),
+                        "{} at {name}: {drawn}",
+                        note.id
+                    );
+                    assert_glyphs(&ctx, &drawn, note.id);
+                }
+            }
+        }
+    }
+
+    /// The per-note physics review's sheet (slice-2 spec section 4): each note, or each named
+    /// in `NOTES_FOR_REVIEW` (ids, comma-separated), its title and sources once, then at each
+    /// probe design its sentences, change entries and watch-outs as the panel draws them; a
+    /// change entry with its input's display label, the reason it is not a link there, and
+    /// its aim's value before and after one step. A text the parser refuses or the plain-words
+    /// guard flags is marked "<<<". Written to `NOTES_REVIEW_OUT` (a path from `magcoupling-rs/`;
+    /// default `target/notes-for-review.txt` there).
+    #[test]
+    #[ignore = "a review tool, not a check: NOTES_FOR_REVIEW=id1,id2 NOTES_REVIEW_OUT=<file> cargo test --manifest-path magcoupling-rs/Cargo.toml --features app --lib notes_for_review -- --ignored --nocapture"]
+    fn notes_for_review() {
+        use std::fmt::Write as _;
+
+        use crate::engine::explain::note_text::segments;
+        use crate::engine::explain::plain::plain_text_violations;
+        use crate::engine::explain::probes::{probe_designs, step_input};
+        let wanted: Vec<String> = std::env::var("NOTES_FOR_REVIEW")
+            .map(|ids| {
+                ids.split(',')
+                    .map(|id| id.trim().to_owned())
+                    .filter(|id| !id.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let unknown: Vec<&String> = wanted
+            .iter()
+            .filter(|id| notes::note(id).is_none())
+            .collect();
+        assert!(
+            unknown.is_empty(),
+            "NOTES_FOR_REVIEW names no note: {unknown:?}"
+        );
+        let chosen: Vec<&Note> = notes::NOTES
+            .iter()
+            .filter(|n| wanted.is_empty() || wanted.iter().any(|id| id == n.id))
+            .collect();
+        let designs: Vec<(&str, DesignInputs, DesignResults)> = probe_designs()
+            .into_iter()
+            .map(|(name, inputs)| {
+                let results = compute_all(&inputs);
+                (name, inputs, results)
+            })
+            .collect();
+        // A raw text the parser refuses, or a drawn text the guard flags, is marked.
+        let marks = |raw: &str, drawn: &str| {
+            let mut found = Vec::new();
+            if let Err(fault) = segments(raw) {
+                found.push(fault);
+            }
+            let banned = plain_text_violations(drawn);
+            if !banned.is_empty() {
+                found.push(format!("plain words: {banned:?}"));
+            }
+            if found.is_empty() {
+                String::new()
+            } else {
+                format!("   <<< {}", found.join("; "))
+            }
+        };
+        let sizing = SizingState::default();
+        let mut sheet = String::new();
+        for note in &chosen {
+            let status = match note.review {
+                Review::Draft => "Draft",
+                Review::Reviewed { .. } => "Reviewed",
+            };
+            writeln!(sheet, "==== {} ({status})", note.id).unwrap();
+            writeln!(
+                sheet,
+                "Title: {}{}",
+                note.title,
+                marks(note.title, note.title)
+            )
+            .unwrap();
+            writeln!(sheet, "{WHERE_FROM}:").unwrap();
+            for source in note.sources {
+                writeln!(sheet, "  - {source}{}", marks(source, source)).unwrap();
+            }
+            for (name, inputs, results) in &designs {
+                let held = |path: &str| held_reason(&sizing, inputs, path);
+                let view = NoteView {
+                    inputs,
+                    results,
+                    held: &held,
+                };
+                writeln!(sheet, "\n-- at the {name} design").unwrap();
+                writeln!(sheet, "What it is:").unwrap();
+                for (i, sentence) in note.sentences.iter().enumerate() {
+                    let drawn = note_text_on(sentence, &view);
+                    writeln!(sheet, "  {}. {drawn}{}", i + 1, marks(sentence, &drawn)).unwrap();
+                }
+                if !note.change.is_empty() {
+                    writeln!(sheet, "{WHAT_TO_CHANGE}:").unwrap();
+                }
+                for change in note.change {
+                    let reason =
+                        unlinked_reason(change, &view).map_or(String::new(), |r| format!(" ({r})"));
+                    let drawn = note_text_on(change.text, &view);
+                    writeln!(
+                        sheet,
+                        "  - {} {}{reason}: {drawn}{}",
+                        change.step.word(),
+                        label_for(change.input),
+                        marks(change.text, &drawn)
+                    )
+                    .unwrap();
+                    let Some((aim, sense)) = change.aim else {
+                        continue;
+                    };
+                    let outcome = match step_input(inputs, change.input, change.step) {
+                        Err(why) => format!("not stepped here: {why:?}"),
+                        Ok(stepped) => match (results.get(aim), compute_all(&stepped).get(aim)) {
+                            (Some(Value::Num(before)), Some(Value::Num(after)))
+                                if before.is_finite() && after.is_finite() =>
+                            {
+                                let holds = match sense {
+                                    notes::Sense::Up => after > before,
+                                    notes::Sense::Down => after < before,
+                                };
+                                let verdict = if holds {
+                                    "moves as it says"
+                                } else {
+                                    "DOES NOT MOVE AS IT SAYS"
+                                };
+                                format!("{before} -> {after}: {verdict}")
+                            }
+                            (before, after) => {
+                                format!("no numbers to compare: {before:?} -> {after:?}")
+                            }
+                        },
+                    };
+                    writeln!(sheet, "      aim {aim} {sense:?}, one step: {outcome}").unwrap();
+                }
+                if !note.watch_out.is_empty() {
+                    writeln!(sheet, "{WATCH_OUT}:").unwrap();
+                }
+                for line in note.watch_out {
+                    let drawn = note_text_on(line, &view);
+                    writeln!(sheet, "  - {drawn}{}", marks(line, &drawn)).unwrap();
+                }
+            }
+            writeln!(sheet).unwrap();
+        }
+        let out = std::env::var("NOTES_REVIEW_OUT").map_or_else(
+            |_| {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/notes-for-review.txt")
+            },
+            std::path::PathBuf::from,
+        );
+        if let Some(dir) = out.parent().filter(|dir| !dir.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir).expect("the sheet's folder is made");
+        }
+        std::fs::write(&out, &sheet).expect("the sheet is written");
+        println!(
+            "{} notes at {} designs: {}",
+            chosen.len(),
+            designs.len(),
+            out.display()
+        );
     }
 
     #[test]

@@ -582,16 +582,9 @@ pub const WORKFLOW: [WorkflowGroup; 8] = [
     },
 ];
 
-/// Where an optional input starts when the user enters a value (decision M41-12): the result
-/// it overrides, unrounded. The axial length override enters at the inner ring's length in
-/// use (both rings take it), so nothing moves. The measured drag enters at the model's
-/// equivalent mean drag torque; entering any measured drag switches the thermal summary from
-/// the not-measured high estimate to the measured branch, so the slip loss and the steady
-/// temperatures move (the drag torque itself is the model's).
-pub const OPTIONAL_SEEDS: [(&str, &str); 2] = [
-    ("coupling.magnets.axial_length_mm", "model.inner_length_mm"),
-    ("metal.measured_drag_Nm", "temperature.slip_loss.drag_Nm"),
-];
+/// Where an optional input starts when the user enters a value: the engine's table (decision
+/// M41-12), which a teaching note's change entry steps from too.
+pub use crate::engine::api::OPTIONAL_SEEDS;
 
 /// One input: its path, metadata and default value.
 #[derive(Clone, Debug, PartialEq)]
