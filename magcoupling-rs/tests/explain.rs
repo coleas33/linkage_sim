@@ -1311,15 +1311,19 @@ fn harmonics_claims_hold_at_the_probe_designs() {
 }
 
 /// `harmonics` off the five probe designs, on designs the Size tab reaches from the example
-/// design with its library parts (T12 task review, I1 and I2).
+/// design with its library parts (T12 task review, I1 and I2; its text re-review 1, MF-1).
 /// - The harmonic-set entry. At the fewest magnets per ring the slider allows, on the probes'
 ///   20 mm ring, each block is narrower than the space beside it (both fills under one half:
 ///   narrow, widely spaced blocks), and summing past the fifth harmonic moves the pull-out by
 ///   more than a twentieth. So the entry names that case and states no bound on the change.
-/// - The σ line. At pull-out the fundamental's stress σ_1 is below the summed σ on the example
-///   design but above it on a 17.5 mm ring, where a same-sign third harmonic subtracts at 90°.
-///   So the sentence that draws both values says where they are taken and words neither as a
-///   share of the other.
+/// - The σ line. With the harmonic set at 1, σ equals the fundamental's peak A_1, at the five
+///   probe designs and on a 17.5 mm ring, so A_1 is what the fundamental alone gives. Beside
+///   the summed σ, A_1 shows the set's real effect: σ − A_1 has the sign of the 2D torque's
+///   change from the set 1 to the design's set. The fundamental's stress at the summed curve's
+///   pull-out angle, σ_1, is no such baseline: it lies below σ on the example design but above
+///   it on a 17.5 mm ring, and on the 20 mm ring radius design σ_1 < σ < A_1, so σ_1 beside σ
+///   would show the harmonics adding stress where they take it away. So the sentence that draws
+///   σ draws A_1 as "the fundamental alone" and words neither as a share of the other.
 #[test]
 fn harmonics_claims_hold_off_the_probe_designs() {
     let example = DesignInputs::default();
@@ -1369,21 +1373,57 @@ fn harmonics_claims_hold_off_the_probe_designs() {
     let larger_ring = with_ring_radius(&example, 17.5).expect("the Size tab reaches 17.5 mm");
     let (first, summed) = split(&larger_ring);
     assert!(first > summed, "17.5 mm ring: {first} against {summed}");
+
+    let mut designs = probes::probe_designs();
+    designs.push(("17.5 mm ring", larger_ring));
+    for (design, inputs) in &designs {
+        let model = compute_all(inputs).model;
+        let mut fundamental_only = inputs.clone();
+        fundamental_only.coupling.max_harmonic = 1;
+        let alone = compute_all(&fundamental_only).model;
+        assert!(
+            (alone.tau_Pa / model.amp1_Pa - 1.0).abs() < 1e-12,
+            "{design}: the set 1 gives σ = {} against A_1 = {}",
+            alone.tau_Pa,
+            model.amp1_Pa
+        );
+        assert_eq!(
+            (model.tau_Pa - model.amp1_Pa).signum(),
+            (model.torque_2d_Nm - alone.torque_2d_Nm).signum(),
+            "{design}: σ {} against A_1 {}, T_2D {} against {} at the set 1",
+            model.tau_Pa,
+            model.amp1_Pa,
+            model.torque_2d_Nm,
+            alone.torque_2d_Nm
+        );
+    }
+    let low_fill = compute_all(&probe_inputs("20 mm ring radius")).model;
+    assert!(
+        low_fill.tau1_Pa < low_fill.tau_Pa && low_fill.tau_Pa < low_fill.amp1_Pa,
+        "20 mm ring radius: σ_1 {} < σ {} < A_1 {}",
+        low_fill.tau1_Pa,
+        low_fill.tau_Pa,
+        low_fill.amp1_Pa
+    );
+
     let line = harmonics
         .sentences
         .iter()
-        .find(|s| s.contains("{model.tau1_Pa}") && s.contains("{model.tau_Pa}"))
-        .expect("the sentence that draws σ_1 and σ");
-    let between =
-        &line[line.find("{model.tau1_Pa}").expect("σ_1")..line.find("{model.tau_Pa}").expect("σ")];
+        .find(|s| s.contains("{model.amp1_Pa}") && s.contains("{model.tau_Pa}"))
+        .expect("the sentence that draws A_1 and σ");
     assert!(
-        line.contains("at pull-out"),
-        "where the split is taken: {line:?}"
+        line.contains("the fundamental alone"),
+        "names A_1 as the fundamental alone: {line:?}"
     );
+    let (alone_at, summed_at) = (
+        line.find("{model.amp1_Pa}").expect("A_1"),
+        line.find("{model.tau_Pa}").expect("σ"),
+    );
+    let between = &line[alone_at.min(summed_at)..alone_at.max(summed_at)];
     for share in [" of ", "total", "share", "part"] {
         assert!(
             !between.contains(share),
-            "{share:?} between σ_1 and σ: {line:?}"
+            "{share:?} between A_1 and σ: {line:?}"
         );
     }
 }

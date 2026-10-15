@@ -606,6 +606,115 @@ round-5 PASS):
 - A text re-review of these two fields follows (controller ruling 7). Its report goes below as
   `### Re-review: task review fix round 1`.
 
+### Re-review: task review fix round 1
+
+- Reviewer: a fresh-context physics reviewer (session model), 2026-10-15, on commit `5d489bf`
+  (`task-12-textreview-1.md`). This is the text re-review of the code-review fix round 1 above
+  (controller ruling 7).
+- Scope: the two fields the fix round changed, change[3] and sentences[4], and every on-screen
+  text whose meaning depends on them: sentences[1] and [3], the watch-out, `pullout_angle`
+  sentences[3] ("The fundamental alone peaks at 90°") and the σ gloss in `torque_from_shear`.
+  The dump (`NOTES_FOR_REVIEW=harmonics`) draws both fields at the five probe designs with no
+  plain-words flag.
+- Verdict: MUST_FIX, one item, in sentences[4]. change[3] passes.
+- MF-1, applied verbatim (sentences[4]):
+  - Old: "On this design the fills are {model.fill_inner} inner and {model.fill_outer} outer; at
+    pull-out the fundamental gives σ_1 = {model.tau1_Pa}, the summed harmonics σ =
+    {model.tau_Pa}." (25 words)
+  - New: "On this design the fills are {model.fill_inner} inner and {model.fill_outer} outer; the
+    fundamental alone peaks at {model.amp1_Pa}, the summed harmonics at σ = {model.tau_Pa}."
+    (24 words)
+  - Why: σ_1 = A_1·sin(φ_pull) is the fundamental's stress at the summed curve's pull-out
+    angle. Set beside σ, it reads as what the harmonics do to the pull-out, which holds only
+    while the pull-out angle stays at 90°.
+    - On the 20 mm ring radius design (pull-out angle 52.96°) the old line read σ_1 = 64870 Pa
+      against σ = 71440 Pa, which looks like the harmonics adding 10.1 %. In fact the harmonic
+      set lowers the pull-out by 12.09 % against the fundamental alone (A_1 = 81273 Pa; pull-out
+      2.8886 -> 2.5393 N·m), and the watch-out's "more than a tenth" then read with the wrong
+      sign.
+    - On the example design's library-part grid (4 to 40 magnets per ring, every ring radius the
+      Size tab reaches from 9 to 30 mm by 0.5 mm, 289 fitting designs) the sign was wrong at 34
+      designs, 32 of them with a real effect above 2 %. The worst, 10 magnets on a 23.5 mm ring,
+      showed +45.04 % where the real effect is −1.25 %.
+  - A_1 (`model.amp1_Pa`) is the pull-out stress of the fundamental alone: with the harmonic set
+    at 1, σ equals A_1 exactly, at the five probe designs and on a 17.5 mm ring. So σ against
+    A_1 is the set's real effect, with the right sign. On the same grid, σ/A_1 − 1 matches the
+    pull-out's change from the set 1 to the design's set at all 289 designs (0 disagreements).
+    `model.amp#_Pa` is already in this note's equations, so no equation ownership moves.
+  - Rendered at the five probe designs (default, 8 magnets, 304, Y30, 20 mm): the fundamental
+    alone peaks at 200000, 149100, 113800, 15400 and 81270 Pa; the summed harmonics at σ =
+    201400, 151800, 115100, 15510 and 71440 Pa. On the 20 mm design the harmonics now visibly
+    take stress away, as the watch-out says.
+  - Tests: `tests/explain.rs` `harmonics_claims_hold_off_the_probe_designs` now finds the
+    sentence that draws `{model.amp1_Pa}` and `{model.tau_Pa}`, asserts that it names "the
+    fundamental alone", and keeps the check that no " of ", "total", "share" or "part" stands
+    between the two values. Its "at pull-out" assert gave way to engine pins:
+    - with the harmonic set at 1, `model.tau_Pa` equals the design's `model.amp1_Pa` (1e-12
+      relative) at the five probe designs and on the 17.5 mm ring;
+    - at the same designs, σ − A_1 has the sign of `model.torque_2d_Nm` with the design's set
+      minus `model.torque_2d_Nm` with the set 1;
+    - on the 20 mm design, σ_1 < σ < A_1: the case the old line misread.
+
+    The σ_1-against-σ asserts on the example design and the 17.5 mm ring stay, as the record of
+    why the line uses no share wording.
+- Should-fix, not in this round's list, left open for the controller:
+  - SF-1 (optional): change[3]'s "narrow" leaves out wide blocks on a long pitch. With custom
+    widths (10,787 fitting designs) blocks wider than their spaces on 4 to 6 magnets and a large
+    ring still move by up to about 5 % when summing to 11, inside the model's stated
+    uncertainty. The review offers "a model setting, not a design lever: keep at least 1, 3, 5;
+    more for widely spaced blocks, where higher harmonics can move pull-out." (24 words), with
+    the test's phrase becoming "widely spaced blocks". Not applied; the current text stands as
+    true.
+
+The reviewer's report for the record, as returned:
+
+**change[3]** ("a model setting, not a design lever: keep at least 1, 3, 5; more for narrow,
+widely spaced blocks, where higher harmonics can move pull-out."): PASS.
+- Physics:
+  - Narrow blocks keep their higher-harmonic amplitudes close to the fundamental's:
+    B_n ∝ sin(nπλ/2)/n, which is about πλ/2 for small nλ.
+  - A long pole pitch against the gap and the magnet thickness lets those harmonics cross the
+    gap: S_n grows with n while n·k·t is small, and fades as e^(−n·k·g) only when the pitch is
+    short.
+  - So the truncation after 5 matters exactly where the entry says.
+- Library parts grid (example design, 4 to 40 magnets, every reachable ring radius by 0.5 mm,
+  305 fitting designs):
+  - 14 designs move by more than 2 %. All have 4 magnets on a 16.5 to 23 mm ring, with fills of
+    at most 0.224 and 0.178, and all move upward, up to +16.78 % at 23 mm.
+  - The task review's grid, with ring radii to 30 mm, found 36 of 353, up to 43.89 %.
+- The entry states no bound and no direction. That is right, because the custom-width grid
+  moves both ways.
+- "Keep at least 1, 3, 5" is right:
+  - at low fill the third harmonic moves the pull-out by more than a tenth (the watch-out; at
+    the 20 mm design −12.09 % from the set 1 to the set 1, 3, 5);
+  - more harmonics only bring the model closer to its own square-wave limit.
+- "Not a design lever": the setting changes the model, not the hardware. The bench factor is
+  recomputed with the same set (on the 304 design 1.0495 against 1.0555 at the set 1), so it
+  stays like for like.
+- It is consistent with sentences[3] ("higher pairs usually add little", hedged), with the
+  watch-out (the third harmonic at low fill), and with the input's help.
+- Caps and words: 25 words (cap 25). No input label is typed, the drawn label comes from
+  `label_for`, and "1, 3, 5" names the choice "1, 3, 5 (default)". Plain words are clean at all
+  five designs (dump). No trap is written.
+
+**sentences[4]** (current text): literally true, misleading as a pair (MF-1).
+- σ_1 and σ are both read at φ_pull (`model.rs:997-1000, 1106, 1143`), so "at pull-out" is
+  accurate. σ_1 exceeds σ on the 17.5 mm ring (103045 against 92559 Pa), so dropping "of the
+  total" was right.
+- The remaining defect is the implied comparison, on the 20 mm probe design and at 34 of 289
+  library-part grid designs (MF-1).
+- Caps and words: 25 words (cap 25). Plain words are clean at all five designs. The placeholders
+  sit in the "On this design" clause.
+
+**Traps:** neither field writes any item of slice-2 spec section 8, slice-1 spec section 8,
+`phys-new-notes.md` T-A to T-P, or the added trap "more magnets make the coupling stiffer". The
+fill wording (T-A) is in sentences[2] and unchanged.
+
+**Seeds:** none were assigned to this re-review.
+
+**Repo state:** this review is read-only. It wrote only this file and the dump under
+`magcoupling-rs/target/`. The probes ran from the session scratchpad.
+
 ## back_iron_factor
 
 Task T12. Rewrite of "Back iron: the sinh factor against free space" as "Back iron: why steel

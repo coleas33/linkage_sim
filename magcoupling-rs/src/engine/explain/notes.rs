@@ -217,7 +217,7 @@ pub const NOTES: &[Note] = &[
             "It equals a sine wave, the fundamental (one wave per pair of poles), plus weaker odd harmonics with 3, 5, 7 times the waves.",
             "The fundamental grows with sin(π·λ/2), where the fill λ is the block's width over the room each pole has on that ring.",
             "Each harmonic pulls only on its match on the other ring; higher pairs usually add little, being weaker and fading faster across the gap.",
-            "On this design the fills are {model.fill_inner} inner and {model.fill_outer} outer; at pull-out the fundamental gives σ_1 = {model.tau1_Pa}, the summed harmonics σ = {model.tau_Pa}.",
+            "On this design the fills are {model.fill_inner} inner and {model.fill_outer} outer; the fundamental alone peaks at {model.amp1_Pa}, the summed harmonics at σ = {model.tau_Pa}.",
         ],
         change: &[
             Change {
