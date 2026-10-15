@@ -51,7 +51,213 @@ const LABELS: &[(&str, &str)] = &[
 /// The overlay help of an input or a result, by path: 1-2 sentences of at most 30 words, what
 /// it physically is, what it moves and which way, and the trade-off (spec 3.5). Filled by the
 /// slice-2 help batches; while a path has no row its engine help shows.
-const HELP: &[(&str, &str)] = &[];
+const HELP: &[(&str, &str)] = &[
+    // Help batch A (slice 2, T7; G-3 review docs/analyses/2026-10-14-magcoupler-help-review.md).
+    // Requirements and operating conditions.
+    (
+        "metal.required_min_Nm",
+        "The torque the coupling must hold at the operating magnet temperature. The hot-low torque must reach it; when on, Auto sizes the design to meet it.",
+    ),
+    (
+        "coupling.op_temp_C",
+        "The magnet temperature in normal running. Magnets weaken as they warm, so the pull-out and hot-low torque fall as it rises; cold-high uses the minimum temperature instead.",
+    ),
+    (
+        "metal.max_diameter_mm",
+        "Largest diameter the coupling may take, over the cup or the front cap, whichever is larger. Past it, the space claim check fails.",
+    ),
+    (
+        "metal.max_overall_axial_mm",
+        "Longest the coupling may be, from the front cap to the end of the shaft boss. Past it, the space claim check fails.",
+    ),
+    (
+        "metal.max_large_dia_axial_mm",
+        "Longest the full-diameter part may be: front cap, magnet cup and its rear wall, without the shaft boss. Past it, the space claim check fails.",
+    ),
+    (
+        "coupling.drive_torque_Nm",
+        "Torque the wheel needs while driving. Times its safety factor it can raise the floor for the nominal pull-out in the results table and sweeps; the hot-low check ignores it.",
+    ),
+    (
+        "coupling.drive_safety_factor",
+        "Margin wanted on the driving torque. Driving torque times this factor sets the floor for the nominal pull-out when it exceeds the torque requirement.",
+    ),
+    (
+        "coupling.gear_ratio",
+        "Reduction ratio of the gearbox; the coupling sits on its wheel side. A higher ratio lowers the coupling torques referred to the gearbox input, such as the slip ripple.",
+    ),
+    (
+        "coupling.gear_efficiency",
+        "Share of torque the gearbox passes. With the ratio it refers the coupling torques to the gearbox input; a higher efficiency lowers them there.",
+    ),
+    (
+        "coupling.gearbox_input_rating_Nm",
+        "Peak torque the gearbox input is rated for. Only an informational reference uses it: no check compares the coupling's torques with it.",
+    ),
+    (
+        "temperature.duty.hot_ambient_C",
+        "Air temperature around the coupling on the hottest day; with the driving rise it sets the hot-day magnet temperature. Higher lowers the hot-day pull-out and temperature margins, not hot-low torque.",
+    ),
+    (
+        "temperature.adhesive_life.service_years",
+        "Years the coupling must last. It sets only the count of daily temperature cycles reported for the adhesive; no check reads it.",
+    ),
+    (
+        "temperature.adhesive_life.daily_swing_C",
+        "How far the coupling's temperature swings each day. A larger swing raises the daily bond shear; above the adhesive's fatigue endurance, the screen asks for thermal-cycling tests.",
+    ),
+    (
+        "metal.slip_rpm",
+        "Speed of one ring relative to the other while the coupling slips. Faster slip raises the slip heat, the temperature rise per event and the slip frequency.",
+    ),
+    (
+        "temperature.duty.fault_trip_s",
+        "How long an unbroken slip can last before a fault trips the drive. Longer lets the magnets heat more and can raise the slip-fault peak toward the temperature limits.",
+    ),
+    // Magnets and rings.
+    (
+        "coupling.npole",
+        "Magnet blocks per ring, always even; Auto can set it. At the same ring radius, fewer usually lose torque and, if flat, enlarge the cup; more may not fit.",
+    ),
+    (
+        "coupling.magnets.part_outer",
+        "Library part for the outer ring's blocks, matched by exact name. Blank or not in the library uses the manual outer block sizes, with the outer grade if picked.",
+    ),
+    (
+        "coupling.inner_back_apothem_mm",
+        "Shaft centre to the back face of the inner magnets. A larger ring adds lever arm, leaves more space between blocks and grows the cup; Auto can set it.",
+    ),
+    (
+        "coupling.magnets.manual_inner_width_mm",
+        "Width of one inner block around the ring, used only without a library part. Wider raises torque but must still fit, and on flat blocks takes running clearance.",
+    ),
+    (
+        "coupling.magnets.manual_inner_thickness_mm",
+        "Radial thickness of one inner block, used only without a library part. Thicker usually adds torque, with shrinking gains; it needs more steel wall and grows the cup.",
+    ),
+    (
+        "coupling.magnets.manual_inner_br_T",
+        "Magnet strength (remanence) of the inner manual blocks, used only with no library part and no grade picked. Stronger raises torque, and the cold-high torque the clamp must hold.",
+    ),
+    (
+        "coupling.magnets.manual_outer_length_mm",
+        "Axial length of one outer block, used only without a library part. Torque uses the shorter ring, so a longer outer ring alone adds no torque past the inner length.",
+    ),
+    (
+        "coupling.magnets.manual_outer_width_mm",
+        "Width of one outer block around the ring, used only without a library part. Wider raises torque but the blocks must still fit side by side.",
+    ),
+    (
+        "coupling.magnets.manual_outer_thickness_mm",
+        "Radial thickness of one outer block, used only without a library part. Thicker adds torque only up to a point, needs more steel wall and grows the cup.",
+    ),
+    (
+        "coupling.magnets.manual_outer_br_T",
+        "Magnet strength (remanence) of the outer manual blocks, used only with no library part and no grade picked. Stronger raises torque, and the cold-high torque the clamp must hold.",
+    ),
+    // Gap and clearances.
+    (
+        "metal.face_gap_mm",
+        "Radial gap between the inner and outer magnet faces. Smaller raises torque but leaves less running clearance; at wide gaps the torque estimate runs optimistic.",
+    ),
+    (
+        "metal.residual_target_mm",
+        "The running clearance you want left after every allowance. The running-clearance check fails when the clearance left is below it.",
+    ),
+    (
+        "metal.shaft_displacement_mm",
+        "Allowance for the two shafts moving sideways relative to each other; the default is unconfirmed. It is one of six allowances subtracted from the running clearance.",
+    ),
+    (
+        "metal.runout_mm",
+        "Allowance for the assembled rotors running off-centre. It is one of six allowances subtracted from the running clearance.",
+    ),
+    (
+        "metal.deflection_mm",
+        "Allowance for the shafts deflecting or tilting under load. It is one of six allowances subtracted from the running clearance.",
+    ),
+    (
+        "metal.thermal_mm",
+        "Allowance for the two rotors growing by different amounts as they warm. It is one of six allowances subtracted from the running clearance.",
+    ),
+    (
+        "metal.sleeve_form_mm",
+        "Allowance for the sleeve's fit, thickness tolerance and out-of-roundness. It is one of six allowances subtracted from the running clearance.",
+    ),
+    (
+        "metal.magnet_position_mm",
+        "Allowance for magnet placement and size tolerances; the default is unconfirmed. It is one of six allowances subtracted from the running clearance.",
+    ),
+    (
+        "metal.sleeve_bedding_mm",
+        "Radial clearance between the inner magnets and the bore of the sleeve over them. More enlarges the sleeve and takes running clearance; the torque does not change.",
+    ),
+    (
+        "metal.liner_bedding_mm",
+        "Radial clearance between the outer magnet faces and the liner inside them. More shrinks the liner and takes running clearance; the torque does not change.",
+    ),
+    // Shaft, key and clamps.
+    (
+        "coupling.bore_mm",
+        "The shaft diameter under the hub and clamp. Larger lets each screw carry more torque but moves the screws outward, so fewer sizes may fit, and thins the hub wall.",
+    ),
+    (
+        "coupling.keyway_depth_mm",
+        "Depth of the key slot cut into the hub bore. Deeper leaves a thinner hub wall past the key, and too deep breaks through the hub.",
+    ),
+    (
+        "clamps.key_width_mm",
+        "Width of the shaft key. Only the drawings use it; the key pressure uses the contact height instead.",
+    ),
+    (
+        "clamps.key_contact_mm",
+        "Height of the key face bearing on the hub. Taller lowers the key bearing pressure, so the key alone holds the clamp's design torque with more margin.",
+    ),
+    (
+        "clamps.clamp_length_mm",
+        "Axial length of the clamp from its free end to the relief cut. Longer fits more screws in a row and lowers the key bearing pressure.",
+    ),
+    (
+        "clamps.preload_fraction",
+        "Screw preload as a share of proof load (yield for stainless), capped by aluminium thread stripping. Higher grips harder per screw, at a higher tightening torque.",
+    ),
+    (
+        "clamps.slit_mm",
+        "Width of the saw slit that lets the clamp close. Wider leaves less jaw and thread for each screw, so fewer sizes may fit, and can need a longer screw.",
+    ),
+    (
+        "clamps.ligament_mm",
+        "Least material between the shaft bore and the screw hole. More moves the screws outward, so fewer screw sizes may fit the boss.",
+    ),
+    (
+        "clamps.wall_out_mm",
+        "Least wall to leave outside the screw hole. A screw size with a thinner wall is rejected, so more means fewer sizes may fit.",
+    ),
+    (
+        "clamps.grip_min_mm",
+        "Least jaw to leave under the screw head. A screw size with less is rejected, so more means fewer sizes may fit.",
+    ),
+    (
+        "clamps.axial_margin_mm",
+        "Margin from each clamp end to the nearest counterbore edge. More shortens the row the screws sit in, so fewer may fit along the clamp.",
+    ),
+    (
+        "clamps.relief_mm",
+        "Width of the relief cut that leaves the clamp's hinge. Only the clamp layout and drawing show it; no check reads it.",
+    ),
+    (
+        "clamps.factor_two_piece",
+        "Share of the screw force that presses a two-piece clamp onto the shaft, used only for that clamp type. Higher means more torque per screw.",
+    ),
+    (
+        "clamps.engagement_x_d",
+        "Thread engaged in the aluminium, as a multiple of the screw diameter. More lifts the stripping limit on preload but needs longer screws and more room in the far jaw.",
+    ),
+    (
+        "clamps.strip_sf",
+        "Safety factor on stripping the aluminium thread. Higher lowers the stripping cap on screw preload, so more screws may be needed.",
+    ),
+];
 
 /// The hint key of the Size tab's Minimum OD control: it edits no input, so its hint line is
 /// keyed by name (spec 3.5).
@@ -71,7 +277,63 @@ pub const SIZE_TAB_HINT_KEYS: [&str; 3] = [MINIMUM_OD_HINT_KEY, DIAMETER_HINT_KE
 
 /// The hint line under a Key design input or a Size-tab control, by input path or Size-tab hint
 /// key ([`SIZE_TAB_HINT_KEYS`]): at most 12 words (spec 3.5). Filled by the slice-2 help batches.
-const HINTS: &[(&str, &str)] = &[];
+const HINTS: &[(&str, &str)] = &[
+    // The Key design group (inputs::KEY_DESIGN), in its order. The Size tab's Magnet face gap and
+    // Magnets per ring draw the first two.
+    (
+        "metal.face_gap_mm",
+        "Smaller gap: more torque, less running clearance.",
+    ),
+    (
+        "coupling.npole",
+        "Fewer blocks usually lose torque; more may not fit.",
+    ),
+    (
+        "coupling.magnets.part_inner",
+        "Sets the inner blocks' size, strength and temperature rating.",
+    ),
+    (
+        "coupling.magnets.part_outer",
+        "Sets the outer blocks' size, strength and temperature rating.",
+    ),
+    (
+        "coupling.magnets.axial_length_mm",
+        "Blank keeps each ring's length; longer adds torque, length and clamp demand.",
+    ),
+    (
+        "coupling.op_temp_C",
+        "Hotter magnets are weaker: pull-out and hot-low torque fall.",
+    ),
+    (
+        "coupling.backiron",
+        "Magnetic steel behind the magnets adds torque if thick enough.",
+    ),
+    (
+        "metal.cup_wall_corner_mm",
+        "Thicker passes the wall check more easily but grows the cup.",
+    ),
+    (
+        "temperature.thermal.conductance_W_K",
+        "Higher lowers the slip temperatures; best measured on a bench.",
+    ),
+    (
+        "metal.measured_drag_Nm",
+        "Blank uses the model's estimate; a bench value replaces it.",
+    ),
+    // The Size tab's other three controls (SIZE_TAB_HINT_KEYS).
+    (
+        MINIMUM_OD_HINT_KEY,
+        "Sets the diameter slider's lower end; your design does not change.",
+    ),
+    (
+        DIAMETER_HINT_KEY,
+        "Largest of cup, cap and boss; it moves the magnet rings.",
+    ),
+    (
+        LENGTH_HINT_KEY,
+        "Sets both rings' magnet length; longer adds torque and clamp demand.",
+    ),
+];
 
 /// The text of `path`'s row in `table`, if it has one.
 fn row(table: &[(&'static str, &'static str)], path: &str) -> Option<&'static str> {
@@ -343,6 +605,8 @@ mod tests {
                 !text.contains('\n') && text.trim() == text,
                 "{what}: one line, no outer blanks"
             );
+            // Overlay text is drawn as written: a brace would read as an unfilled live value.
+            assert!(!text.contains(['{', '}']), "{what}: a brace");
             assert!(
                 !text.to_lowercase().contains("guarantee"),
                 "{what}: no torque is called guaranteed"
@@ -416,5 +680,170 @@ mod tests {
             println!("[{table}] {path}\n  now: {text}\n  was: {was}");
         }
         println!("TOTAL ROWS: {}", rows.len());
+    }
+}
+
+/// Help batch A (slice 2, T7) and the hint lines: batch A's coverage, the hint keys, no number
+/// and no typed label in them, and the G-3 review sheet. Every row's key, caps, plain words and
+/// glyphs are the `tests` module's checks; the coverage of every input (ignored until T8) too.
+#[cfg(test)]
+mod help_tests {
+    use super::*;
+    use crate::gui::inputs::{KEY_DESIGN, WORKFLOW};
+
+    /// The workflow groups of help batch A: their inputs' help is this batch's.
+    const BATCH_A: [&str; 4] = ["operating", "magnets", "gap", "shaft"];
+
+    /// The inputs of the workflow group `id`, in its sections' order.
+    fn group_paths(id: &str) -> Vec<&'static str> {
+        WORKFLOW
+            .iter()
+            .find(|group| group.id == id)
+            .unwrap_or_else(|| panic!("no workflow group {id}"))
+            .sections
+            .iter()
+            .flat_map(|section| section.paths.iter().copied())
+            .collect()
+    }
+
+    /// The inputs of batch A, every group in turn.
+    fn batch_a_paths() -> Vec<&'static str> {
+        BATCH_A
+            .iter()
+            .flat_map(|group| group_paths(group))
+            .collect()
+    }
+
+    #[test]
+    fn batch_a_gives_every_input_of_its_groups_help() {
+        let missing: Vec<&str> = batch_a_paths()
+            .into_iter()
+            .filter(|path| help_for(path).trim().is_empty())
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "{} inputs without help: {missing:?}",
+            missing.len()
+        );
+    }
+
+    #[test]
+    fn hints_cover_the_key_design_inputs_and_the_size_tab_controls_only() {
+        let mut wanted: Vec<&str> = KEY_DESIGN.to_vec();
+        wanted.extend(SIZE_TAB_HINT_KEYS);
+        let missing: Vec<&str> = wanted
+            .iter()
+            .copied()
+            .filter(|key| hint_for(key).is_none())
+            .collect();
+        assert!(missing.is_empty(), "no hint for {missing:?}");
+        for &(key, _) in HINTS {
+            assert!(wanted.contains(&key), "{key}: a hint no control draws");
+        }
+        // The Size tab's own keys are not input paths: no input row can draw them by mistake.
+        let catalogue = InputCatalogue::get();
+        for key in SIZE_TAB_HINT_KEYS {
+            assert!(catalogue.entry(key).is_none(), "{key} names an input");
+        }
+    }
+
+    #[test]
+    fn batch_a_help_and_every_hint_type_no_number() {
+        // Spec 3.5: no default values (the tooltip prints the default), cells or audit ids.
+        let batch = batch_a_paths();
+        let rows = HELP
+            .iter()
+            .filter(|&&(key, _)| batch.contains(&key))
+            .chain(HINTS);
+        for &(key, text) in rows {
+            assert!(!text.chars().any(|c| c.is_ascii_digit()), "{key}: {text}");
+        }
+    }
+
+    #[test]
+    fn no_hint_types_an_input_label() {
+        // Contract: an input's label comes from label_for at display time, never typed.
+        for &(key, text) in HINTS {
+            let hint = text.to_lowercase();
+            for entry in InputCatalogue::get().all() {
+                for label in [entry.meta.label, label_for(&entry.path)] {
+                    assert!(
+                        label.is_empty() || !hint.contains(&label.to_lowercase()),
+                        "{key}: {text:?} types the label {label:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The G-3 review sheet of `groups` (workflow group ids): each input's display label and
+    /// path, the help shown and, for an overlay row, the engine help it replaces; then every
+    /// hint line.
+    fn review_sheet(groups: &[&str]) -> String {
+        use std::fmt::Write as _;
+        let catalogue = InputCatalogue::get();
+        let mut sheet = String::new();
+        for &group in groups {
+            let workflow = WORKFLOW
+                .iter()
+                .find(|g| g.id == group)
+                .unwrap_or_else(|| panic!("no workflow group {group}"));
+            writeln!(sheet, "# {}\n", workflow.label).unwrap();
+            for section in workflow.sections {
+                for &path in section.paths {
+                    let engine = catalogue
+                        .entry(path)
+                        .expect("a workflow path is an input")
+                        .meta
+                        .help;
+                    writeln!(sheet, "## {} ({path})", label_for(path)).unwrap();
+                    writeln!(sheet, "help: {}", help_for(path)).unwrap();
+                    if HELP.iter().any(|&(key, _)| key == path) {
+                        let replaced = if engine.is_empty() {
+                            "(no help)"
+                        } else {
+                            engine
+                        };
+                        writeln!(sheet, "replaces: {replaced}").unwrap();
+                    }
+                    writeln!(sheet).unwrap();
+                }
+            }
+        }
+        writeln!(sheet, "# Hint lines\n").unwrap();
+        for &(key, hint) in HINTS {
+            writeln!(sheet, "{key}: {hint}").unwrap();
+        }
+        sheet
+    }
+
+    #[test]
+    fn the_review_sheet_lists_every_input_of_its_groups_and_every_hint() {
+        let sheet = review_sheet(&BATCH_A);
+        for path in batch_a_paths() {
+            let entry = format!("({path})\nhelp: {}\n", help_for(path));
+            assert!(sheet.contains(&entry), "{path}");
+        }
+        for &(key, hint) in HINTS {
+            assert!(sheet.contains(&format!("{key}: {hint}\n")), "{key}");
+        }
+    }
+
+    /// Writes the review sheet for the G-3 physics review (spec section 4): the groups in
+    /// `HELP_REVIEW_GROUPS` (comma-separated workflow group ids; batch A's by default) to
+    /// `HELP_REVIEW_OUT` (`target/help-for-review.txt` by default).
+    #[test]
+    #[ignore = "writes the G-3 review sheet (HELP_REVIEW_GROUPS, HELP_REVIEW_OUT)"]
+    fn help_for_review() {
+        let groups: Vec<String> = match std::env::var("HELP_REVIEW_GROUPS") {
+            Ok(list) => list.split(',').map(|id| id.trim().to_owned()).collect(),
+            Err(_) => BATCH_A.iter().map(|id| (*id).to_owned()).collect(),
+        };
+        let groups: Vec<&str> = groups.iter().map(String::as_str).collect();
+        let out = std::env::var("HELP_REVIEW_OUT")
+            .unwrap_or_else(|_| "target/help-for-review.txt".to_owned());
+        let sheet = review_sheet(&groups);
+        std::fs::write(&out, &sheet).expect("the review sheet is written");
+        println!("{sheet}");
     }
 }

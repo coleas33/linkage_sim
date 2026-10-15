@@ -39,7 +39,7 @@ use crate::gui::format::{format_value, search_needle, with_unit};
 use crate::gui::geometry_view::geometry_ui;
 use crate::gui::guidance::{ConsequenceCache, FixCache, SIZE_TAB_ALIASES, within_minimum_diameter};
 use crate::gui::history::History;
-use crate::gui::input_ui::{CHANGED_DOT, RowEdit, input_row, slider};
+use crate::gui::input_ui::{CHANGED_DOT, RowEdit, hint_line, input_row, slider};
 use crate::gui::inputs::{
     ADVANCED_HEADING, FILTER_HINT, InputCatalogue, InputEntry, InputGroup, InputOrder,
     InputSection, KEY_DESIGN, filter_inputs, optional_seed,
@@ -1221,10 +1221,10 @@ impl MagcouplingPanel {
             });
     }
 
-    /// The design inputs: the order toggle and the filter box, then the Key design group and
-    /// every input by group in the order chosen (decision O-1), each workflow group's advanced
-    /// sections under its closed Advanced heading; while the filter holds more than blanks, the
-    /// matching inputs alone.
+    /// The design inputs: the order toggle and the filter box, then the Key design group (each
+    /// row with its hint line, slice 2 spec 3.5) and every input by group in the order chosen
+    /// (decision O-1), each workflow group's advanced sections under its closed Advanced heading;
+    /// while the filter holds more than blanks, the matching inputs alone.
     fn design_inputs_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
         let catalogue = InputCatalogue::get();
         // A leaf term clicked in the Equation panel: its group (and its Advanced heading) opens
@@ -1283,6 +1283,7 @@ impl MagcouplingPanel {
                             let widget = self.input_row_ui(ui, entry, readouts);
                             self.key_widgets.push((entry.path.as_str(), widget));
                             self.design_widgets.push(widget);
+                            hint_line(ui, &entry.path);
                         }
                     });
                 for group in groups {
@@ -1543,14 +1544,17 @@ mod tests {
         AUTO_RESETS_LENGTH, AUTO_RESIZES_RING, Consequences, RING_SIZE_STAYS, plain_text_violations,
     };
     use crate::gui::input_ui::{BLANK_TEXT, CHANGED_DOT, OUTSIDE_RANGE_NOTE, RESET_LABEL};
-    use crate::gui::plain_text::label_for;
+    use crate::gui::inputs::WORKFLOW;
+    use crate::gui::plain_text::{
+        DIAMETER_HINT_KEY, LENGTH_HINT_KEY, MINIMUM_OD_HINT_KEY, hint_for, label_for,
+    };
     use crate::gui::session::{
         decode_share_payload, design_from_json, encode_share_payload, encode_share_text,
         target_mismatch_notice,
     };
     use crate::gui::size_controls::{
-        DIAMETER, GAP, HOT_LOW, LENGTH, MAGNETS, NO_PREDICTION, REQUIRED, predicts, pullout_label,
-        torque_gap_text,
+        DIAMETER, GAP, HOT_LOW, LENGTH, MAGNETS, MINIMUM, NO_PREDICTION, REQUIRED, predicts,
+        pullout_label, torque_gap_text,
     };
     use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
@@ -2637,8 +2641,9 @@ mod tests {
     fn the_order_toggle_switches_the_view_and_changes_no_input() {
         // Decision O-1: the workflow order by default, the workbook's package groups one click
         // away; a view of this session only, so the design, its share link and the undo history
-        // stay as they are.
-        let mut harness = Harness::new();
+        // stay as they are. On a tall screen: the Key design group's hint lines push the
+        // groups' headings below a laptop screen's fold, and egui paints no label scrolled out.
+        let mut harness = Harness::on_screen(TALL);
         let link = harness.panel.share_link();
         let workflow: Vec<&str> = InputCatalogue::get()
             .workflow
@@ -4799,6 +4804,122 @@ mod tests {
         );
     }
 
+    /// The Size tab's five controls in drawing order, each with its hint key (spec 3.5): the gap
+    /// and the magnet count draw their Key design rows' hints.
+    const SIZE_TAB_HINTS: [(&str, &str); 5] = [
+        (MINIMUM, MINIMUM_OD_HINT_KEY),
+        (DIAMETER, DIAMETER_HINT_KEY),
+        (LENGTH, LENGTH_HINT_KEY),
+        (GAP, FACE_GAP),
+        (MAGNETS, POLES),
+    ];
+
+    #[test]
+    fn key_design_draws_each_hint_line_under_its_row() {
+        // Slice 2 spec 3.5 (S2-7): one weak line under each Key design input, between its row
+        // and the next; not repeated when the input's own group is open.
+        let mut harness = Harness::on_screen(TALL);
+        let output = harness.frame(Vec::new());
+        let rect = |text: &str| text_rect(&output, text).unwrap_or_else(|| panic!("no {text:?}"));
+        for (i, &path) in KEY_DESIGN.iter().enumerate() {
+            let hint = hint_for(path).unwrap_or_else(|| panic!("{path} has no hint"));
+            assert_eq!(count(&output, hint), 1, "{path}: {hint}");
+            let at = rect(hint);
+            assert!(
+                harness.widget(path).rect.bottom() <= at.top() + 0.5,
+                "{path}: the hint is not under its row"
+            );
+            if let Some(&next) = KEY_DESIGN.get(i + 1) {
+                assert!(
+                    at.bottom() <= harness.widget(next).rect.top() + 0.5,
+                    "{path}: the hint runs into the next row"
+                );
+            }
+        }
+        // The face gap's own group open: its row there draws no second hint.
+        let gap = WORKFLOW
+            .iter()
+            .find(|group| group.id == "gap")
+            .expect("the gap group")
+            .label;
+        harness.click_text(gap);
+        // The header opens over a few frames (its animation).
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..10 {
+            output = harness.frame(Vec::new());
+        }
+        let residual = label_for("metal.residual_target_mm");
+        assert_eq!(count(&output, residual), 1, "the gap group is open");
+        let hint = hint_for(FACE_GAP).expect("the face gap has a hint");
+        assert_eq!(count(&output, hint), 1, "{hint}");
+    }
+
+    #[test]
+    fn size_tab_draws_each_hint_line_under_its_control() {
+        // Slice 2 spec 3.5 (S2-7): one weak line under each of the five Size-tab controls,
+        // under its label and above the next control's.
+        let mut harness = size_tab(SCREEN, DesignInputs::default());
+        let output = harness.frame(Vec::new());
+        let rect = |text: &str| text_rect(&output, text).unwrap_or_else(|| panic!("no {text:?}"));
+        for (i, &(label, key)) in SIZE_TAB_HINTS.iter().enumerate() {
+            let hint = hint_for(key).unwrap_or_else(|| panic!("{key} has no hint"));
+            assert_eq!(count(&output, hint), 1, "{label}: {hint}");
+            let at = rect(hint);
+            assert!(
+                rect(label).bottom() <= at.top() + 0.5,
+                "{label}: the hint is not under its control"
+            );
+            if let Some(&(next, _)) = SIZE_TAB_HINTS.get(i + 1) {
+                assert!(
+                    at.bottom() <= rect(next).top() + 0.5,
+                    "{label}: the hint runs past {next}"
+                );
+            }
+        }
+        assert_eq!(
+            harness.panel.inputs(),
+            &DesignInputs::default(),
+            "drawing them edits nothing"
+        );
+    }
+
+    #[test]
+    fn hint_lines_stay_inside_the_inputs_side_in_a_narrow_window() {
+        // Spec 5 "A narrow window: hint lines wrap": at the M4-1 review's 930-point window every
+        // hint, on the Size tab and in the Key design group, wraps inside the inputs side.
+        let narrow = egui::vec2(930.0, 3000.0);
+        let size_keys: Vec<&str> = SIZE_TAB_HINTS.iter().map(|&(_, key)| key).collect();
+        let views = [
+            (size_tab(narrow, DesignInputs::default()), size_keys),
+            (Harness::on_screen(narrow), KEY_DESIGN.to_vec()),
+        ];
+        let mut wrapped = false;
+        for (mut harness, keys) in views {
+            let output = harness.frame(Vec::new());
+            let left = egui::containers::panel::PanelState::load(
+                &harness.ctx,
+                egui::Id::new("magcoupling_inputs"),
+            )
+            .expect("the inputs side is drawn")
+            .rect
+            .left();
+            let right = left + INPUTS_WIDTH;
+            for key in keys {
+                let hint = hint_for(key).unwrap_or_else(|| panic!("{key} has no hint"));
+                let at = text_rect(&output, hint).unwrap_or_else(|| panic!("no {hint:?}"));
+                assert!(
+                    at.left() >= left - 1.0 && at.right() <= right + 1.0,
+                    "{hint:?} at {at:?} runs out of the inputs side ({left} to {right})"
+                );
+                wrapped |= rows(&output, hint) > 1;
+            }
+        }
+        assert!(
+            wrapped,
+            "no hint wrapped: the test no longer exercises wrapping"
+        );
+    }
+
     #[test]
     fn size_tab_owner_case_at_8_magnets_says_the_ring_stays_and_the_cap_sets_the_diameter() {
         // Spec 6 test 10, the owner's case of 2026-10-13: from 10 to 8 magnets the coupling did
@@ -5192,7 +5313,9 @@ mod tests {
 
     #[test]
     fn the_free_variable_s_row_shows_the_solved_value_locked() {
-        let mut harness = Harness::new();
+        // On a tall screen: with Auto's lines and the hint lines the measured drag row sits
+        // below a laptop screen's fold, and egui paints no label scrolled out.
+        let mut harness = Harness::on_screen(TALL);
         // Magnets -> Torque: the axial length override and the measured drag are blank.
         assert_eq!(count(&harness.frame(Vec::new()), BLANK_TEXT), 2);
         let output = harness.size();

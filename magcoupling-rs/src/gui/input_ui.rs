@@ -9,12 +9,15 @@
 //! same way. The material, magnet-part and grade rows add their pickers
 //! ([`crate::gui::pickers`]): a material choice's properties on hover, a part or grade picked
 //! from the library tables.
+//!
+//! [`hint_line`] draws the short always-visible hint under a Key design row or a Size-tab control
+//! (slice 2 spec 3.5), as a [`weak_line`].
 
 use crate::engine::meta::{FieldType, InputMeta, SliderRange, Value};
 use crate::gui::format::{format_value, with_unit};
 use crate::gui::inputs::{InputEntry, input_tooltip, outside_range, step_decimals, text_hint};
 use crate::gui::pickers::{choice_hover, picker_ui};
-use crate::gui::plain_text::label_for;
+use crate::gui::plain_text::{hint_for, label_for};
 
 /// The changed-from-default dot.
 pub const CHANGED_DOT: &str = "\u{2022}";
@@ -263,5 +266,20 @@ fn widget(
             }
             _ => ui.label(format_value(current)),
         },
+    }
+}
+
+/// A line of weak text under a control, wrapped to the side's width: an input's hint line
+/// ([`hint_line`]) and the Size tab's what-moves-what lines.
+pub(crate) fn weak_line(ui: &mut egui::Ui, text: &str) {
+    ui.add(egui::Label::new(egui::RichText::new(text).weak()).wrap());
+}
+
+/// The hint line under a control (slice 2 spec 3.5): the [`hint_for`] text of `key` (an input
+/// path, or one of the Size tab's `plain_text::SIZE_TAB_HINT_KEYS`) as a [`weak_line`];
+/// nothing for a key without a hint.
+pub(crate) fn hint_line(ui: &mut egui::Ui, key: &str) {
+    if let Some(hint) = hint_for(key) {
+        weak_line(ui, hint);
     }
 }

@@ -3,10 +3,11 @@
 //! Auto (spec guidance 3.5) runs the inverse sizing from here: it locks the slider of the size it
 //! sets ([`variable_slider`]) at the value shown and names the change ([`change_text`]).
 //!
-//! Under each control, its what-moves-what lines (spec 3.3: [`Consequences`], computed by the
-//! guidance layer). The panel's centre view draws the torque readouts (spec 3.2) with the
-//! texts here: [`REQUIRED`], [`HOT_LOW`] with [`torque_gap_text`], [`pullout_label`], and
-//! [`NO_PREDICTION`] or [`NO_TORQUE`] where the model makes none ([`predicts`]).
+//! Under each control, its hint line ([`hint_line`], slice 2 spec 3.5) and its what-moves-what
+//! lines (spec 3.3: [`Consequences`], computed by the guidance layer). The panel's centre view
+//! draws the torque readouts (spec 3.2) with the texts here: [`REQUIRED`], [`HOT_LOW`] with
+//! [`torque_gap_text`], [`pullout_label`], and [`NO_PREDICTION`] or [`NO_TORQUE`] where the model
+//! makes none ([`predicts`]).
 
 use crate::engine::meta::{InputMeta, InputSet, SliderRange, Value};
 use crate::engine::size_controls::{
@@ -16,9 +17,12 @@ use crate::engine::sizing::FreeVariable;
 use crate::gui::dashboard::end_effect_out_of_range;
 use crate::gui::format::{fixed, signed_percent};
 use crate::gui::guidance::Consequences;
-use crate::gui::input_ui::slider;
+use crate::gui::input_ui::{hint_line, slider, weak_line};
 use crate::gui::inputs::InputCatalogue;
-use crate::gui::plain_text::{HOT_LOW_TORQUE, REQUIRED_TORQUE, help_for};
+use crate::gui::plain_text::{
+    DIAMETER_HINT_KEY, HOT_LOW_TORQUE, LENGTH_HINT_KEY, MINIMUM_OD_HINT_KEY, REQUIRED_TORQUE,
+    help_for,
+};
 use crate::gui::sizing::{SizingMode, SizingState, auto_choice, variable_label};
 use crate::{DesignInputs, DesignResults, compute_all};
 
@@ -250,6 +254,7 @@ pub(crate) fn controls_ui(
                 })
                 .inner;
             minimum_widget = Some(response.id);
+            hint_line(ui, MINIMUM_OD_HINT_KEY);
             if response.changed() {
                 output.minimum_diameter_mm = Some(minimum);
             } else if minimum_diameter_mm.is_none()
@@ -263,11 +268,12 @@ pub(crate) fn controls_ui(
             // preference itself is local to this view, like the input ordering preference.
             let size = dimensions_with_minimum_diameter(inputs, minimum)
                 .expect("a bounded minimum defines a diameter range");
-            for (label, hover, path, mut value, range, line) in [
+            for (label, hover, path, hint, mut value, range, line) in [
                 (
                     DIAMETER,
                     DIAMETER_HOVER,
                     "coupling.inner_back_apothem_mm",
+                    DIAMETER_HINT_KEY,
                     size.diameter_mm,
                     size.diameter_range,
                     consequences.diameter_line(),
@@ -276,6 +282,7 @@ pub(crate) fn controls_ui(
                     LENGTH,
                     LENGTH_HOVER,
                     "coupling.magnets.axial_length_mm",
+                    LENGTH_HINT_KEY,
                     size.overall_length_mm,
                     size.length_range,
                     consequences.length_line(),
@@ -288,6 +295,7 @@ pub(crate) fn controls_ui(
                 let response =
                     size_slider(ui, path, &mut value, entry.meta, range, is_locked(label));
                 output.widgets.push(response.id);
+                hint_line(ui, hint);
                 if response.changed() {
                     let resized = if path == "coupling.inner_back_apothem_mm" {
                         resize_diameter_with_minimum(&output.inputs, value, minimum)
@@ -300,7 +308,7 @@ pub(crate) fn controls_ui(
                     }
                 }
                 if let Some(line) = line {
-                    consequence_line(ui, &line);
+                    weak_line(ui, &line);
                 }
             }
             ui.weak(format!(
@@ -337,6 +345,7 @@ pub(crate) fn controls_ui(
             let range: SliderRange = entry.meta.range.expect("a size control has a slider");
             let response = size_slider(ui, path, &mut value, entry.meta, range, is_locked(label));
             output.widgets.push(response.id);
+            hint_line(ui, path);
             if response.changed() {
                 let value = if path == "coupling.npole" {
                     Value::Int(value as i64)
@@ -348,13 +357,12 @@ pub(crate) fn controls_ui(
                 }
             }
             for line in &lines {
-                consequence_line(ui, line);
+                weak_line(ui, line);
             }
         }
         if let Some(widget) = minimum_widget {
             output.widgets.push(widget);
         }
-        ui.label("Minimum OD changes the slider limit; your current diameter stays unchanged.");
         ui.label(LINKED_HOUSING);
     });
     output
@@ -380,11 +388,6 @@ fn size_slider(
         ui.weak(SET_BY_AUTO);
     }
     response
-}
-
-/// One what-moves-what line under its control: weak text, wrapped to the side's width.
-fn consequence_line(ui: &mut egui::Ui, text: &str) {
-    ui.add(egui::Label::new(egui::RichText::new(text).weak()).wrap());
 }
 
 #[cfg(test)]

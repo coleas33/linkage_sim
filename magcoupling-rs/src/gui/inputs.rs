@@ -1395,10 +1395,19 @@ mod tests {
     fn tooltips_carry_help_path_cell_range_and_default() {
         // With the spreadsheet details on (spec S2-5): the path and the cell too.
         let catalogue = InputCatalogue::new();
+        let help = help_for("metal.face_gap_mm");
+        let original =
+            original_help("metal.face_gap_mm").expect("the overlay replaces the workbook help");
+        assert_ne!(
+            help, original,
+            "the face gap's terse workbook note is replaced on screen"
+        );
         assert_eq!(
             input_tooltip(catalogue.entry("metal.face_gap_mm").unwrap(), true),
-            "Same as the measured prototype.\nmetal.face_gap_mm\nMetal design!C119\n\
-             Slider 0.3 to 5 mm, step 0.01\nDefault: 1.400"
+            format!(
+                "{help}\nOriginal spreadsheet note: {original}\nmetal.face_gap_mm\n\
+                 Metal design!C119\nSlider 0.3 to 5 mm, step 0.01\nDefault: 1.400"
+            )
         );
         let backiron = input_tooltip(catalogue.entry("coupling.backiron").unwrap(), true);
         assert!(
