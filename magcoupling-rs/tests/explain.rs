@@ -1713,19 +1713,29 @@ fn the_end_effect_note_s_length_claims_hold_at_every_probe_design() {
     }
 }
 
-/// `end_effect`'s second watch-out says that below a third of a pole pitch of overlap f_end can
-/// read high or low, and names no design (T13 text re-review 1, MF-1). Against 3D, no single
-/// direction holds across designs the inputs reach with a prediction (the check reads OK):
-/// - low: the example design at the magnet length slider's floor (2.0 mm) reads −20.72 %
-///   without steel and −4.0 % with its own steel behind both rings;
-/// - high: the example design with that steel reads +12.8 % at 2.5 mm and +17.6 % at 2.9 mm, and
-///   the narrower B822 block on both rings of the example ring reads +3.80 % with 10 per ring at
-///   2.5 mm and +9.29 % with 12 at the floor (the in-task review's round 3, SF-C).
+/// `end_effect`'s second watch-out says that at short overlap f_end is least reliable and can
+/// read too high or too low, draws no pole-pitch boundary and names no design (T13 text
+/// re-reviews 1 and 2, MF-1 each). Against 3D, no single direction holds across designs the
+/// inputs reach with a prediction (the check reads OK):
+/// - low: the example design at the magnet length slider's floor (2.0 mm) reads −19.9 % without
+///   steel (−20.7 % on rings) and −1.3 to −4.0 % with its own steel behind both rings;
+/// - high: the example design with that steel reads +12.8 to +15.6 % at 2.5 mm, and the narrower
+///   B822 block on both rings of the example ring reads +3.2 to +3.8 % with 10 per ring at 2.5 mm
+///   and +8.7 to +9.3 % with 12 at the floor.
 ///
-/// So a one-direction claim ("reads low", even scoped to the example design) is false somewhere,
-/// and false in the optimistic direction. The engine has no 3D model: the figures are the
-/// reviewers' (the record's `## end_effect`), and this test pins the engine side, that each of
-/// those designs sits below a third of a pole pitch and still gets a prediction.
+/// The ranges span the reviewers' methods: planar or ring 3D, with ideal steel flush with the
+/// magnets or as infinite plates. So a one-direction claim ("reads low", even scoped to the
+/// example design) is false somewhere, and false in the optimistic direction.
+///
+/// No fraction of a pole pitch bounds the error either. In all ten circuits re-review 2 checked,
+/// the largest error lies at a short overlap, 0.16 to 0.42 τ_p. On the example design with steel
+/// it lies above τ_p/3 (+21.5 % at 3.66 mm), so "below a third of a pole pitch" would put the
+/// largest optimistic error on its safe side.
+///
+/// The engine has no 3D model: the figures are the reviewers' (the record's `## end_effect`).
+/// This test pins the engine side, that each of those designs has a short overlap and still gets
+/// a prediction. "Short" is the test's own measure, below a third of a pole pitch; the note draws
+/// no such line.
 #[test]
 fn the_end_effect_note_s_short_overlap_watch_out_names_both_directions() {
     let example = DesignInputs::default();
@@ -1741,8 +1751,9 @@ fn the_end_effect_note_s_short_overlap_watch_out_names_both_directions() {
         d.coupling.magnets.axial_length_mm = Some(length);
         d
     };
-    // Below a third of a pole pitch, with a prediction: the blocks fit, the end factor is
-    // positive and the end-effect check reads OK.
+    // A short overlap, with a prediction: the blocks fit, the overlap is below a third of a pole
+    // pitch (this test's measure of short, not the note's), the end factor is positive and the
+    // end-effect check reads OK.
     let predicted_below_a_third = |design: &DesignInputs, name: &str| {
         let model = compute_all(design).model;
         assert!(
@@ -1782,7 +1793,7 @@ fn the_end_effect_note_s_short_overlap_watch_out_names_both_directions() {
     let short = note
         .watch_out
         .iter()
-        .find(|w| w.contains("a third of a pole pitch"))
+        .find(|w| w.to_lowercase().contains("short overlap") || w.contains("c_end·τ_p"))
         .expect("the short-overlap watch-out");
     let (claim, _) = short
         .split_once(';')
@@ -1800,6 +1811,10 @@ fn the_end_effect_note_s_short_overlap_watch_out_names_both_directions() {
     assert!(
         !claim.to_lowercase().contains("on the example design"),
         "scopes the claim to no one design: {short:?}"
+    );
+    assert!(
+        !claim.to_lowercase().contains("pole pitch"),
+        "draws no pole-pitch boundary: {short:?}"
     );
 }
 
