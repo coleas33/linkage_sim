@@ -5,10 +5,10 @@
 //! ported one to the Python engine byte for byte, and the results table, the exports, design
 //! files and share links keep them. On screen, [`label_for`] gives one name per quantity
 //! (`LABELS`, spec 3.5's canonical names) and [`help_for`] the overlay's help (`HELP`)
-//! where the engine's is empty, terse, stale or wrong; [`original_help`] keeps the engine's
-//! text for the spreadsheet-details toggle, and [`hint_for`] the short line under a Key design
-//! input or a Size-tab control (`HINTS`). Every lookup falls back to the metadata, so a path
-//! the overlay leaves out reads as the engine names it.
+//! where the engine's is empty, terse, stale or wrong; [`original_help`] keeps the original
+//! spreadsheet's note for the spreadsheet-details toggle, and [`hint_for`] the short line under
+//! a Key design input or a Size-tab control (`HINTS`). Every lookup falls back to the
+//! metadata, so a path the overlay leaves out reads as the engine names it.
 //!
 //! The Size tab's Outside diameter is a control, not an input: it moves the ring radius through
 //! `engine::size_controls`, so it has no row here. A fix on the ring radius names that control
@@ -257,6 +257,346 @@ const HELP: &[(&str, &str)] = &[
         "clamps.strip_sf",
         "Safety factor on stripping the aluminium thread. Higher lowers the stripping cap on screw preload, so more screws may be needed.",
     ),
+    // Batch B (T8), empty engine help: Calibration and model.
+    (
+        "coupling.mu0",
+        "Magnetic constant of free space, used in every torque calculation; a physical constant, not a design choice. Leave it unchanged: a larger value lowers every predicted torque.",
+    ),
+    (
+        "calibration.mu0",
+        "Magnetic constant for the prototype model; leave it unchanged. It sets the updated calibration coefficient, used only by no-back-iron designs with the prototype's magnet part and count.",
+    ),
+    (
+        "calibration.apothem_mm",
+        "The bench prototype's radius to its inner magnet backs, not your design's. It sets the updated calibration coefficient, used only by no-back-iron designs with the prototype's magnet part and count.",
+    ),
+    (
+        "calibration.magnet_length_mm",
+        "Axial length of the bench prototype's magnets, not your design's. It sets the updated calibration coefficient, used only by no-back-iron designs with the prototype's magnet part and count.",
+    ),
+    (
+        "calibration.magnet_width_mm",
+        "Width of the bench prototype's magnets around the ring, not your design's. It sets the updated calibration coefficient, used only by no-back-iron designs with the prototype's magnet part and count.",
+    ),
+    (
+        "calibration.magnet_thickness_mm",
+        "Radial thickness of the bench prototype's magnets, not your design's. It sets the updated calibration coefficient, used only by no-back-iron designs with the prototype's magnet part and count.",
+    ),
+    (
+        "calibration.br_T",
+        "Strength (remanence) of the prototype's magnets at 20 °C, not your design's. It sets the updated calibration coefficient, used only by no-back-iron designs with the prototype's magnet part and count.",
+    ),
+    (
+        "calibration.c_end",
+        "End-loss coefficient of the bench prototype's model, not your design's. It sets the updated calibration coefficient, used only by no-back-iron designs with the prototype's magnet part and count.",
+    ),
+    (
+        "calibration.fea_torque2_Nm",
+        "Stored 3D pull-out of the prototype at a 1.5 mm corner gap, interpolated with the 1.0 mm result to check the bench measurement. Your design's torque ignores it.",
+    ),
+    // Batch B (T8), empty engine help: Materials.
+    (
+        "materials.steel.mu_r_incremental",
+        "Steel's relative permeability under the magnets' field; it sets how deep slip eddy currents reach, and higher means less estimated slip heat in steel. No material pick replaces it.",
+    ),
+    (
+        "materials.steel.specific_heat_J_kgK",
+        "Specific heat of the steel parts, including keys, screws and lock tabs; higher slows slip heating, not the steady temperature. Picking another magnetic back-iron material replaces it.",
+    ),
+    (
+        "materials.steel.cte_per_C",
+        "Thermal expansion of the steel hub; its difference from the magnets' expansion sets the bond shear from temperature swings, so higher raises it. Picking another back-iron material replaces it.",
+    ),
+    (
+        "materials.steel.modulus_GPa",
+        "Stiffness (Young's modulus) of the steel hub; a stiffer hub slightly raises the bond shear from temperature swings. Picking another back-iron material replaces it.",
+    ),
+    (
+        "temperature.mismatch.ndfeb_modulus_GPa",
+        "Stiffness (Young's modulus) of the magnets; a stiffer magnet slightly raises the bond shear from temperature swings. Used whatever the magnet grade.",
+    ),
+    (
+        "temperature.slip_loss.sigma_ndfeb_S_m",
+        "Electrical conductivity of the magnets: eddy-current heat inside the blocks during slip rises with it. Used whatever the magnet grade, which overstates the heat in ferrite.",
+    ),
+    (
+        "temperature.thermal.c_ndfeb",
+        "Specific heat of the magnets; higher slows slip heating, not the steady temperature. Used whatever the magnet grade.",
+    ),
+    (
+        "metal.bond_inner_mm",
+        "Adhesive thickness under the inner magnets. The ring radius includes it, so thicker thins the hub; it also lowers the bond shear from temperature swings.",
+    ),
+    (
+        "metal.bond_outer_mm",
+        "Adhesive thickness behind the outer magnets. Thicker pushes the cup wall outward, growing the cup diameter and its mass; the torque does not change.",
+    ),
+    (
+        "temperature.mismatch.recommended_bondline_mm",
+        "A second adhesive thickness at which the bond shear from temperature swings is also computed; the daily-cycle screen uses it. Thicker lowers that shear.",
+    ),
+    (
+        "temperature.adhesive_life.fatigue_endurance",
+        "Share of the adhesive's static strength it keeps for over a hundred million load cycles; the bond fatigue screens pass more easily when it is higher.",
+    ),
+    (
+        "temperature.slip_loss.sigma_316_S_m",
+        "Electrical conductivity of the sleeve and liner: their eddy-current heat during slip rises with it. Picking another sleeve and liner material replaces it.",
+    ),
+    (
+        "temperature.thermal.c_316",
+        "Specific heat of the sleeve, liner and endplates; higher slows slip heating, not the steady temperature. Picking another sleeve and liner material replaces it.",
+    ),
+    (
+        "temperature.thermal.c_aluminium",
+        "Specific heat of the aluminium cap, and of the hub, cup and boss with no back iron; higher slows slip heating. Picking another cap material replaces it for the cap.",
+    ),
+    (
+        "metal.steel_density_g_mm3",
+        "Density of the steel hub, cup and boss, which sets their mass and heat capacity. Unused with no back iron; picking another back-iron material replaces it.",
+    ),
+    (
+        "metal.sleeve_density_g_mm3",
+        "Density of the sleeve, liner and both endplates, which sets their mass and heat capacity. Picking another sleeve and liner material replaces it.",
+    ),
+    (
+        "metal.al_density_g_mm3",
+        "Density of the aluminium cap, the optional adapter and, with no back iron, the hub, cup and boss: their masses. Picking another cap material replaces it for the cap.",
+    ),
+    (
+        "metal.hardware_g",
+        "Mass of keys, screws and lock tabs, added to the rotating mass and, as steel, to the heat capacity.",
+    ),
+    (
+        "materials.screws.proof_10_9_MPa",
+        "Proof stress of class 10.9 screws, used only for that screw class. Preload is a share of it unless the aluminium thread limits first; more preload grips the shaft harder.",
+    ),
+    (
+        "materials.screws.yield_A4_70_MPa",
+        "Yield stress of stainless A4-70 screws, used only for that screw class in place of a proof stress. Preload is a share of it unless the aluminium thread limits first.",
+    ),
+    // Batch B (T8), empty engine help: Housing and retainers.
+    (
+        "metal.hub_length_mm",
+        "Axial length of the hub under the inner magnets: it sets the hub mass, not the overall length. With an axial magnet length set, it follows the inner ring.",
+    ),
+    (
+        "metal.cup_depth_mm",
+        "Depth of the cup's magnet pocket: it adds to the overall length, the large-diameter length and the cup mass. With an axial magnet length set, it follows the outer ring.",
+    ),
+    (
+        "metal.web_mm",
+        "Thickness of the cup's closed rear wall: it adds to the overall and large-diameter lengths and the cup mass. With no back iron it also adds slip heat.",
+    ),
+    (
+        "metal.boss_length_mm",
+        "Axial length of the shaft boss behind the rear wall: it adds to the overall length and the boss mass, not to the large-diameter length.",
+    ),
+    (
+        "metal.boss_od_mm",
+        "Outside diameter of the drawn shaft boss: it sets the boss mass and the outside diameter when larger than the cup and cap. Separate from the clamp's own boss diameter.",
+    ),
+    (
+        "metal.cap_axial_mm",
+        "Thickness of the front cap at the open end: it adds to the overall and large-diameter lengths, the cap mass and the cap's slip heat.",
+    ),
+    (
+        "metal.cap_od_mm",
+        "Front cap diameter; when larger than the cup and boss, it sets the outside diameter. Size-tab diameter changes and Auto on the ring radius move it with the cup.",
+    ),
+    (
+        "metal.cap_thread_engagement_mm",
+        "Length of the cap's thread engagement. Only the cap mass reads it: no check covers the thread's strength.",
+    ),
+    (
+        "metal.front_endplate_mm",
+        "Thickness of the endplate at the front (open) end of the inner rotor; only the endplate mass reads it, not the overall length.",
+    ),
+    (
+        "metal.rear_endplate_mm",
+        "Thickness of the endplate at the rear end of the inner rotor; only the endplate mass reads it, not the overall length.",
+    ),
+    (
+        "metal.retainer_span_mm",
+        "Axial length of the sleeve and liner that retain the magnets; only their mass reads it. With an axial magnet length set, it follows the longer ring.",
+    ),
+    (
+        "metal.rear_endplate_hole_mm",
+        "Diameter of the screw clearance hole in the rear endplate; a larger hole only lowers the endplate mass.",
+    ),
+    (
+        "metal.adapter_flange_dia_mm",
+        "Flange diameter of the optional aluminium adapter that replaces the integral steel boss. It changes only the optional adapter variant's results, never the main design.",
+    ),
+    (
+        "metal.adapter_flange_mm",
+        "Flange thickness of the optional aluminium adapter; it adds to the adapter variant's length. It changes only the optional adapter variant's results, never the main design.",
+    ),
+    (
+        "metal.adapter_pilot_dia_mm",
+        "Pilot diameter of the optional aluminium adapter; a larger pilot bores more out of the rear wall. It changes only the optional adapter variant's results, never the main design.",
+    ),
+    (
+        "metal.adapter_pilot_mm",
+        "Pilot length of the optional aluminium adapter. It changes only the optional adapter variant's results, never the main design.",
+    ),
+    (
+        "metal.adapter_boss_mm",
+        "Axial boss extension of the optional aluminium adapter; it adds to the adapter variant's length. It changes only the optional adapter variant's results, never the main design.",
+    ),
+    (
+        "metal.adapter_hardware_g",
+        "Extra screw and dowel mass for the optional adapter's joint. It changes only the optional adapter variant's results, never the main design.",
+    ),
+    (
+        "clamps.joint_bolt_circle_mm",
+        "Bolt-circle diameter of the optional adapter's joint screws; a larger circle raises the joint's slip torque and its margin over the clamp design torque.",
+    ),
+    (
+        "clamps.joint_friction",
+        "Friction between the nickel-plated faces of the optional adapter's joint; the joint's slip torque rises in proportion. It is not the clamp's shaft-to-bore friction.",
+    ),
+    // Batch B (T8), empty engine help: Thermal and demagnetization.
+    (
+        "temperature.demag.knee_fraction",
+        "Reverse field where a magnet starts losing strength for good, as a share of its coercivity (Hcj). Higher raises the magnet design limit and lowers ferrite's cold magnet limit.",
+    ),
+    (
+        "temperature.demag.design_margin_C",
+        "Degrees kept between the temperature where demagnetization starts and the magnet design limit; larger lowers that limit and raises ferrite's cold magnet limit.",
+    ),
+    (
+        "temperature.slip_loss.end_factor",
+        "End correction on the slip heat of thin parts: the sleeve, liner and cap, and with no back iron the aluminium hub, cup and web. Higher means more heat.",
+    ),
+    // Batch B (T8), overrides: the grade-mode density, rating and coefficient helps.
+    (
+        "calibration.alpha_br_per_C",
+        "Change in magnet strength (Br) per °C; more negative means torque falls faster above 20 °C and rises faster below. A ring with a picked grade uses its grade's value.",
+    ),
+    (
+        "mass.magnets_g",
+        "Mass of every magnet in both rings: NdFeB density for library parts and ungraded magnets, the grade's own density for a ring with a picked grade.",
+    ),
+    (
+        "model.inner_temp_check",
+        "Compares the operating magnet temperature with the inner ring's rating: its library part's or its picked grade's. Unknown for a manual magnet with no grade.",
+    ),
+    (
+        "model.outer_temp_check",
+        "Compares the operating magnet temperature with the outer ring's rating: its library part's or its picked grade's. Unknown for a manual magnet with no grade.",
+    ),
+    // Batch B (T8), overrides: the stored 3D fields ("3D." and the reverse fields).
+    (
+        "temperature.slip_loss.b_hub_T",
+        "Outer-ring field at the hub's steel surface, doubled by the steel; hub slip heat grows with its square. Stored 3D value for the example design; it does not follow yours.",
+    ),
+    (
+        "temperature.slip_loss.b_cup_T",
+        "Inner-ring field at the cup's steel surface, doubled by the steel; cup slip heat grows with its square. Stored 3D value for the example design; it does not follow yours.",
+    ),
+    (
+        "temperature.slip_loss.b_sleeve_T",
+        "Outer-ring field at the inner sleeve; the sleeve's slip heat grows with its square. Stored 3D value for the example design; it does not follow yours.",
+    ),
+    (
+        "temperature.slip_loss.b_liner_T",
+        "Inner-ring field at the outer liner; the liner's slip heat grows with its square. Stored 3D value for the example design; it does not follow yours.",
+    ),
+    (
+        "temperature.slip_loss.cap_integral_T2m4",
+        "Field integral over the cap face; the cap's slip heat grows in proportion. Stored 3D value for the example design; it does not follow yours.",
+    ),
+    (
+        "temperature.slip_loss.web_integral_T2m2",
+        "Squared-field integral over the rear wall, field doubled by the steel; the wall's slip heat grows in proportion. Stored 3D value for the example design; it does not follow yours.",
+    ),
+    (
+        "temperature.slip_loss.b_magnet_T",
+        "Alternating field inside the magnet blocks during slip; their eddy-current heat grows with its square. Stored 3D value for the example design; it does not follow yours.",
+    ),
+    (
+        "temperature.demag.h_rev_aligned_kA_m",
+        "Worst reverse field in the magnets, rings aligned; it sets only that case's onset, which no check uses. Stored 3D value for the example design; it does not follow yours.",
+    ),
+    (
+        "temperature.demag.h_rev_pullout_kA_m",
+        "Worst reverse field in the magnets at pull-out; it sets only that case's onset, which no check uses. Stored 3D value for the example design; it does not follow yours.",
+    ),
+    (
+        "temperature.demag.h_rev_likepole_kA_m",
+        "Worst reverse field as like poles pass; higher lowers the magnet design limit (raises ferrite's cold limit). Stored 3D value for the example design; it does not follow yours.",
+    ),
+    (
+        "temperature.demag.h_rev_single_ring_kA_m",
+        "Worst reverse field on a single ring during adhesive cure; higher lowers the cure margin. Stored 3D value for the example design; it does not follow yours.",
+    ),
+    // Batch B (T8), overrides: "Placeholder", "ASSUMED" and "Illustrative".
+    (
+        "temperature.duty.driving_rise_C",
+        "Rise of the coupling above outside air while driving, from housing air, sun and gearbox heat; it raises the hot-day starting magnet temperature. The default is a guess.",
+    ),
+    (
+        "temperature.duty.life_hours",
+        "Hours the coupling runs over its life; slip time divided by it gives the average slip duty, which adds to the peak temperature. The default is a guess.",
+    ),
+    (
+        "temperature.adhesive_life.hot_strength_retained",
+        "Share of the adhesive's lap-shear strength left at the peak temperature; the hot fatigue screen scales with it. The default is a guess.",
+    ),
+    (
+        "calibration.test_temp_C",
+        "Magnet temperature during the prototype's bench test; enter the recorded value. It sets the updated calibration coefficient, used only by no-back-iron designs with the prototype's magnet part and count.",
+    ),
+    (
+        "metal.slip_event_s",
+        "How long one slip event lasts; heat per event, slip duty and life cycles grow with it. The default is a guess: enter the recorded value.",
+    ),
+    // Batch B (T8), overrides: developer wording, jargon, stale or wrong facts.
+    (
+        "metal.measured_drag_Nm",
+        "Mean drag torque measured on the bench while slipping; leave blank if not measured. Once entered, it replaces the estimated slip heat in every temperature check.",
+    ),
+    (
+        "materials.steel.density_g_cm3",
+        "For reference only: no result reads it. The steel parts' mass uses the steel density listed with the other part densities.",
+    ),
+    (
+        "temperature.demag.hcj20_kA_m",
+        "Coercivity (Hcj) at 20 °C; higher raises the magnet design limit. Used only for ungraded manual magnets, or when the coercivity choice selects these inputs.",
+    ),
+    (
+        "temperature.demag.beta_hcj_per_C",
+        "How fast coercivity changes per °C (negative for NdFeB). Used only for ungraded manual magnets or when the coercivity choice selects these inputs; ferrite needs the Y30 grade instead.",
+    ),
+    (
+        "temperature.mismatch.adhesive_shear_modulus_GPa",
+        "Shear stiffness of the cured adhesive; stiffer raises the bond shear from temperature swings. It does not follow the selected adhesive: enter your adhesive's value.",
+    ),
+    (
+        "metal.cup_wall_corner_mm",
+        "Cup wall at the magnet pocket corners, its thinnest point. Thinner than the back iron needs fails the cup wall check; thicker grows the cup diameter by twice the change.",
+    ),
+    (
+        "materials.steel.bsat_T",
+        "Flux density the back-iron wall rule designs the steel to; lower asks for thicker cup and hub walls. Picking another back-iron material with its own value replaces it.",
+    ),
+    (
+        "materials.steel.conductivity_S_m",
+        "Electrical conductivity of the back-iron steel: slip heat in a steel hub, cup and web rises with it. Picking another back-iron material replaces it.",
+    ),
+    (
+        "temperature.mismatch.ndfeb_cte_per_C",
+        "Thermal expansion of the magnets in the bonded face; the further it is from the hub's, the higher the bond shear from temperature swings. Used whatever the magnet grade.",
+    ),
+    (
+        "temperature.slip_loss.high_multiplier",
+        "Multiplies the estimated slip heat for the high case, which the temperature checks use. Ignored once a measured drag is entered.",
+    ),
+    (
+        "clamps.joint_screws",
+        "Number of M3 screws in the optional adapter's joint, beside its pilot and dowel; the joint's slip torque rises in proportion.",
+    ),
 ];
 
 /// The hint key of the Size tab's Minimum OD control: it edits no input, so its hint line is
@@ -373,9 +713,10 @@ pub fn help_for(path: &str) -> &'static str {
     help_in(HELP, path)
 }
 
-/// The engine's help of `path` where `HELP` replaces a non-empty one, shown under the
-/// spreadsheet-details toggle as the original note; `None` where the overlay fills an empty
-/// help or has no row.
+/// The original spreadsheet's note of `path` where `HELP` replaces the engine's help, shown
+/// under the spreadsheet-details toggle as "Original spreadsheet note: ...": the engine's help,
+/// or the workbook's own text where a correction reworded it; `None` where that note is empty
+/// or the overlay has no row.
 pub fn original_help(path: &str) -> Option<&'static str> {
     original_in(HELP, path)
 }
@@ -391,12 +732,26 @@ fn help_in(table: &[(&'static str, &'static str)], path: &str) -> &'static str {
     row(table, path).unwrap_or_else(|| metadata(path).map_or("", |(_, help)| help))
 }
 
-/// [`original_help`] over `table`.
+/// [`original_help`] over `table`: the original spreadsheet's note of the help a `table` row
+/// replaces. That is the engine's help, except where a correction reworded it: then the
+/// workbook's own text, which the deviation registry keeps (`spreadsheet_help`). `None` when
+/// that note is empty or `table` has no row for `path`.
 fn original_in(table: &[(&'static str, &'static str)], path: &str) -> Option<&'static str> {
     row(table, path)?;
-    metadata(path)
-        .map(|(_, help)| help)
+    spreadsheet_help(path)
+        .or_else(|| metadata(path).map(|(_, help)| help))
         .filter(|help| !help.is_empty())
+}
+
+/// The workbook's text of a help a correction reworded, as the deviation registry records it
+/// (`Deviation::workbook_help`, possibly empty); `None` for a help the port kept as the
+/// workbook wrote it.
+fn spreadsheet_help(path: &str) -> Option<&'static str> {
+    crate::engine::deviations::REGISTRY
+        .iter()
+        .flat_map(|deviation| deviation.workbook_help)
+        .find(|(key, _)| *key == path)
+        .map(|(_, text)| *text)
 }
 
 #[cfg(test)]
@@ -515,8 +870,10 @@ mod tests {
         );
     }
 
-    /// A stand-in overlay: the mechanism is tested on it while `HELP` fills (T7, T8). One row
-    /// over an input with engine help, one over an input without, one over a result.
+    /// A stand-in overlay: the mechanism is tested on it, apart from what `HELP` holds. One row
+    /// over an input with engine help, one over an input without, one over a result, and two
+    /// over helps a correction reworded: an input whose workbook text the deviation registry
+    /// keeps, and a result whose workbook text was empty.
     const TEST_HELP: &[(&str, &str)] = &[
         (
             "metal.face_gap_mm",
@@ -527,6 +884,14 @@ mod tests {
             "Stand-in help over an empty engine help.",
         ),
         ("model.pullout_Nm", "Stand-in help over a result's help."),
+        (
+            "clamps.boss_od_mm",
+            "Stand-in help over a help a correction reworded.",
+        ),
+        (
+            "temperature.slip_loss.hub_W",
+            "Stand-in help over a reworded help the workbook left empty.",
+        ),
     ];
 
     #[test]
@@ -539,7 +904,9 @@ mod tests {
         for &(path, text) in TEST_HELP {
             assert_eq!(help_in(TEST_HELP, path), text, "{path}");
         }
-        // The original is kept only where the overlay replaces a non-empty engine help.
+        // Over a help no correction reworded, the original is kept only where the overlay
+        // replaces a non-empty engine help.
+        assert_eq!(spreadsheet_help("metal.face_gap_mm"), None);
         assert_eq!(
             original_in(TEST_HELP, "metal.face_gap_mm"),
             Some(engine("metal.face_gap_mm"))
@@ -549,6 +916,14 @@ mod tests {
             original_in(TEST_HELP, "model.pullout_Nm"),
             Some(engine("model.pullout_Nm"))
         );
+        // Where a correction reworded the help, the original is the workbook's own text, which
+        // the registry keeps, not the corrected engine help; none where the workbook had none.
+        let boss = original_in(TEST_HELP, "clamps.boss_od_mm").expect("the workbook's text");
+        assert_eq!(Some(boss), spreadsheet_help("clamps.boss_od_mm"));
+        assert_ne!(boss, engine("clamps.boss_od_mm"));
+        assert_eq!(spreadsheet_help("temperature.slip_loss.hub_W"), Some(""));
+        assert!(!engine("temperature.slip_loss.hub_W").is_empty());
+        assert_eq!(original_in(TEST_HELP, "temperature.slip_loss.hub_W"), None);
         // A path the overlay leaves out shows the engine's help and has no original.
         assert_eq!(
             help_in(TEST_HELP, "coupling.npole"),
@@ -560,17 +935,19 @@ mod tests {
         assert_eq!(original_in(TEST_HELP, "no.such"), None);
         assert_eq!(hint_for("no.such"), None);
         // The public accessors read HELP over each input's own engine help: its row where it
-        // has one (the engine's kept as the original only where it is not empty), else the
-        // engine's help and no original.
+        // has one (the spreadsheet's note kept as the original only where it is not empty: the
+        // registry's workbook text for a reworded help, else the engine's), else the engine's
+        // help and no original.
         for entry in InputCatalogue::get().all() {
             let path = entry.path.as_str();
             let engine = entry.meta.help;
             match row(HELP, path) {
                 Some(text) => {
+                    let note = spreadsheet_help(path).unwrap_or(engine);
                     assert_eq!(help_for(path), text, "{path}");
                     assert_eq!(
                         original_help(path),
-                        Some(engine).filter(|help| !help.is_empty()),
+                        Some(note).filter(|help| !help.is_empty()),
                         "{path}"
                     );
                 }
@@ -648,7 +1025,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "un-ignored in T8, when the overlay fills every input whose engine help is empty"]
     fn every_input_has_help_from_the_engine_or_the_overlay() {
         // Spec 3.5 coverage test, its other half: 87 inputs have no help at b0166ad.
         let missing: Vec<&str> = InputCatalogue::get()
@@ -685,7 +1061,7 @@ mod tests {
 
 /// Help batch A (slice 2, T7) and the hint lines: batch A's coverage, the hint keys, no number
 /// and no typed label in them, and the G-3 review sheet. Every row's key, caps, plain words and
-/// glyphs are the `tests` module's checks; the coverage of every input (ignored until T8) too.
+/// glyphs are the `tests` module's checks; the coverage of every input too.
 #[cfg(test)]
 mod help_tests {
     use super::*;
@@ -845,5 +1221,612 @@ mod help_tests {
         let sheet = review_sheet(&groups);
         std::fs::write(&out, &sheet).expect("the review sheet is written");
         println!("{sheet}");
+    }
+}
+
+/// Help batch B (T8, spec 3.5): the empty helps of the Calibration and model, Materials,
+/// Housing and retainers, and Thermal and demagnetization groups, and the overrides batch A
+/// leaves. Every direction a batch-B help states is checked against the engine here.
+#[cfg(test)]
+mod batch_b_tests {
+    use super::*;
+    use crate::engine::meta::{InputSet, ResultSet, Value};
+    use crate::engine::size_controls::{dimensions, resize_diameter, with_ring_radius};
+    use crate::gui::inputs::WORKFLOW;
+    use crate::{DesignInputs, compute_all};
+    use std::collections::BTreeSet;
+
+    /// Batch B's share of the 87 empty engine helps (map-help section 5), by workflow group:
+    /// Calibration and model, Materials, Housing and retainers, Thermal and demagnetization.
+    const BATCH_B_EMPTY: [&str; 52] = [
+        "coupling.mu0",
+        "calibration.mu0",
+        "calibration.apothem_mm",
+        "calibration.magnet_length_mm",
+        "calibration.magnet_width_mm",
+        "calibration.magnet_thickness_mm",
+        "calibration.br_T",
+        "calibration.c_end",
+        "calibration.fea_torque2_Nm",
+        "materials.steel.mu_r_incremental",
+        "materials.steel.specific_heat_J_kgK",
+        "materials.steel.cte_per_C",
+        "materials.steel.modulus_GPa",
+        "temperature.mismatch.ndfeb_modulus_GPa",
+        "temperature.slip_loss.sigma_ndfeb_S_m",
+        "temperature.thermal.c_ndfeb",
+        "metal.bond_inner_mm",
+        "metal.bond_outer_mm",
+        "temperature.mismatch.recommended_bondline_mm",
+        "temperature.adhesive_life.fatigue_endurance",
+        "temperature.slip_loss.sigma_316_S_m",
+        "temperature.thermal.c_316",
+        "temperature.thermal.c_aluminium",
+        "metal.steel_density_g_mm3",
+        "metal.sleeve_density_g_mm3",
+        "metal.al_density_g_mm3",
+        "metal.hardware_g",
+        "materials.screws.proof_10_9_MPa",
+        "materials.screws.yield_A4_70_MPa",
+        "metal.hub_length_mm",
+        "metal.cup_depth_mm",
+        "metal.web_mm",
+        "metal.boss_length_mm",
+        "metal.boss_od_mm",
+        "metal.cap_axial_mm",
+        "metal.cap_od_mm",
+        "metal.cap_thread_engagement_mm",
+        "metal.front_endplate_mm",
+        "metal.rear_endplate_mm",
+        "metal.retainer_span_mm",
+        "metal.rear_endplate_hole_mm",
+        "metal.adapter_flange_dia_mm",
+        "metal.adapter_flange_mm",
+        "metal.adapter_pilot_dia_mm",
+        "metal.adapter_pilot_mm",
+        "metal.adapter_boss_mm",
+        "metal.adapter_hardware_g",
+        "clamps.joint_bolt_circle_mm",
+        "clamps.joint_friction",
+        "temperature.demag.knee_fraction",
+        "temperature.demag.design_margin_C",
+        "temperature.slip_loss.end_factor",
+    ];
+
+    /// The non-empty engine helps batch B replaces (spec 3.5): the grade-mode helps, the stored
+    /// 3D fields, the "User supplied", "Placeholder" and "UNCONFIRMED" family, and helps with
+    /// jargon or a stale or wrong fact.
+    const BATCH_B_OVERRIDES: [&str; 31] = [
+        "calibration.alpha_br_per_C",
+        "mass.magnets_g",
+        "model.inner_temp_check",
+        "model.outer_temp_check",
+        "temperature.slip_loss.b_hub_T",
+        "temperature.slip_loss.b_cup_T",
+        "temperature.slip_loss.b_sleeve_T",
+        "temperature.slip_loss.b_liner_T",
+        "temperature.slip_loss.cap_integral_T2m4",
+        "temperature.slip_loss.web_integral_T2m2",
+        "temperature.slip_loss.b_magnet_T",
+        "temperature.demag.h_rev_aligned_kA_m",
+        "temperature.demag.h_rev_pullout_kA_m",
+        "temperature.demag.h_rev_likepole_kA_m",
+        "temperature.demag.h_rev_single_ring_kA_m",
+        "temperature.duty.driving_rise_C",
+        "temperature.duty.life_hours",
+        "temperature.adhesive_life.hot_strength_retained",
+        "calibration.test_temp_C",
+        "metal.slip_event_s",
+        "metal.measured_drag_Nm",
+        "materials.steel.density_g_cm3",
+        "temperature.demag.hcj20_kA_m",
+        "temperature.demag.beta_hcj_per_C",
+        "temperature.mismatch.adhesive_shear_modulus_GPa",
+        "metal.cup_wall_corner_mm",
+        "materials.steel.bsat_T",
+        "materials.steel.conductivity_S_m",
+        "temperature.mismatch.ndfeb_cte_per_C",
+        "temperature.slip_loss.high_multiplier",
+        "clamps.joint_screws",
+    ];
+
+    /// The stored 3D fields: each help ends with the caveat that they do not follow the design.
+    const STORED_3D: [&str; 11] = [
+        "temperature.slip_loss.b_hub_T",
+        "temperature.slip_loss.b_cup_T",
+        "temperature.slip_loss.b_sleeve_T",
+        "temperature.slip_loss.b_liner_T",
+        "temperature.slip_loss.cap_integral_T2m4",
+        "temperature.slip_loss.web_integral_T2m2",
+        "temperature.slip_loss.b_magnet_T",
+        "temperature.demag.h_rev_aligned_kA_m",
+        "temperature.demag.h_rev_pullout_kA_m",
+        "temperature.demag.h_rev_likepole_kA_m",
+        "temperature.demag.h_rev_single_ring_kA_m",
+    ];
+
+    /// The bench-prototype inputs: each help ends with what the calibration coefficient is for.
+    const PROTOTYPE: [&str; 8] = [
+        "calibration.mu0",
+        "calibration.apothem_mm",
+        "calibration.magnet_length_mm",
+        "calibration.magnet_width_mm",
+        "calibration.magnet_thickness_mm",
+        "calibration.br_T",
+        "calibration.c_end",
+        "calibration.test_temp_C",
+    ];
+
+    /// Defaults nobody has measured: each help ends with the same warning.
+    const GUESSES: [&str; 3] = [
+        "temperature.duty.driving_rise_C",
+        "temperature.duty.life_hours",
+        "temperature.adhesive_life.hot_strength_retained",
+    ];
+
+    /// The optional adapter's geometry: each help ends with what it cannot change.
+    const ADAPTER: [&str; 6] = [
+        "metal.adapter_flange_dia_mm",
+        "metal.adapter_flange_mm",
+        "metal.adapter_pilot_dia_mm",
+        "metal.adapter_pilot_mm",
+        "metal.adapter_boss_mm",
+        "metal.adapter_hardware_g",
+    ];
+
+    /// Which way a help says a result moves when its input rises one slider step.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum Moves {
+        Up,
+        Down,
+        Stays,
+    }
+    use Moves::{Down, Stays, Up};
+
+    /// The design a claim is checked on: the example design, or it with one setting changed.
+    fn claim_design(name: &str) -> DesignInputs {
+        let mut inputs = DesignInputs::default();
+        let mut set = |path: &str, value: Value| {
+            inputs
+                .set(path, value)
+                .unwrap_or_else(|e| panic!("{name}: {path}: {e:?}"));
+        };
+        match name {
+            "example" => {}
+            "no back iron" => set("coupling.backiron", Value::Int(0)),
+            "1018 back iron" => set("materials.parts.back_iron", Value::Int(2)),
+            "304 back iron" => set("materials.parts.back_iron", Value::Int(7)),
+            "titanium sleeve" => set("materials.parts.sleeve_liner", Value::Int(2)),
+            "7075 cap" => set("materials.parts.cap_housing", Value::Int(2)),
+            "class 10.9" => set("clamps.screw_class", Value::Int(2)),
+            "class A4-70" => set("clamps.screw_class", Value::Int(3)),
+            "coercivity inputs" => set("temperature.demag.coercivity_source", Value::Int(0)),
+            "measured drag" => set("metal.measured_drag_Nm", Value::Num(0.05)),
+            "manual, no grade" => {
+                set("coupling.magnets.part_inner", Value::Text(String::new()));
+                set("coupling.magnets.part_outer", Value::Text(String::new()));
+            }
+            "Y30 grades" => {
+                set("coupling.magnets.part_inner", Value::Text(String::new()));
+                set("coupling.magnets.part_outer", Value::Text(String::new()));
+                set(
+                    "coupling.magnets.grade_inner",
+                    Value::Text("Y30".to_owned()),
+                );
+                set(
+                    "coupling.magnets.grade_outer",
+                    Value::Text("Y30".to_owned()),
+                );
+            }
+            other => panic!("no claim design {other:?}"),
+        }
+        inputs
+    }
+
+    /// Every direction a batch-B help states, as (input, design, result, how the result moves
+    /// when the input rises one slider step on that design). `Stays` pins "only", "not",
+    /// "unused" and "replaces it" claims bit for bit.
+    #[rustfmt::skip]
+    const CLAIMS: &[(&str, &str, &str, Moves)] = &[
+        // Calibration and model
+        ("coupling.mu0", "example", "model.pullout_Nm", Down),
+        ("calibration.mu0", "example", "model.pullout_Nm", Stays),
+        ("calibration.mu0", "no back iron", "calibration.f_cal_updated", Up),
+        ("calibration.apothem_mm", "example", "model.pullout_Nm", Stays),
+        ("calibration.apothem_mm", "no back iron", "model.pullout_Nm", Down),
+        ("calibration.magnet_length_mm", "example", "model.pullout_Nm", Stays),
+        ("calibration.magnet_length_mm", "no back iron", "calibration.f_cal_updated", Down),
+        ("calibration.magnet_width_mm", "no back iron", "calibration.f_cal_updated", Down),
+        ("calibration.magnet_width_mm", "example", "model.pullout_Nm", Stays),
+        ("calibration.magnet_thickness_mm", "no back iron", "calibration.f_cal_updated", Down),
+        ("calibration.magnet_thickness_mm", "example", "model.pullout_Nm", Stays),
+        ("calibration.br_T", "no back iron", "calibration.f_cal_updated", Down),
+        ("calibration.br_T", "example", "model.pullout_Nm", Stays),
+        ("calibration.c_end", "example", "model.pullout_Nm", Stays),
+        ("calibration.c_end", "no back iron", "model.pullout_Nm", Up),
+        ("calibration.fea_torque2_Nm", "example", "calibration.fea_interp_Nm", Up),
+        ("calibration.fea_torque2_Nm", "no back iron", "model.pullout_Nm", Stays),
+        // Materials
+        ("materials.steel.mu_r_incremental", "example", "temperature.slip_loss.total_W", Down),
+        ("materials.steel.mu_r_incremental", "1018 back iron", "temperature.slip_loss.total_W", Down),
+        ("materials.steel.mu_r_incremental", "no back iron", "temperature.slip_loss.total_W", Stays),
+        ("materials.steel.specific_heat_J_kgK", "example", "temperature.thermal.heat_capacity_J_K", Up),
+        ("materials.steel.specific_heat_J_kgK", "example", "temperature.thermal.steady_high_C", Stays),
+        ("materials.steel.specific_heat_J_kgK", "1018 back iron", "temperature.thermal.heat_capacity_J_K", Stays),
+        ("materials.steel.specific_heat_J_kgK", "304 back iron", "temperature.thermal.heat_capacity_J_K", Up),
+        ("materials.steel.cte_per_C", "example", "temperature.mismatch.peak_shear_current_MPa", Up),
+        ("materials.steel.cte_per_C", "1018 back iron", "temperature.mismatch.peak_shear_current_MPa", Stays),
+        ("materials.steel.cte_per_C", "no back iron", "temperature.mismatch.peak_shear_current_MPa", Stays),
+        ("materials.steel.modulus_GPa", "example", "temperature.mismatch.peak_shear_current_MPa", Up),
+        ("materials.steel.modulus_GPa", "1018 back iron", "temperature.mismatch.peak_shear_current_MPa", Stays),
+        ("temperature.mismatch.ndfeb_modulus_GPa", "example", "temperature.mismatch.peak_shear_current_MPa", Up),
+        ("temperature.mismatch.ndfeb_modulus_GPa", "Y30 grades", "temperature.mismatch.peak_shear_current_MPa", Up),
+        ("temperature.slip_loss.sigma_ndfeb_S_m", "example", "temperature.slip_loss.magnets_W", Up),
+        ("temperature.slip_loss.sigma_ndfeb_S_m", "Y30 grades", "temperature.slip_loss.magnets_W", Up),
+        ("temperature.thermal.c_ndfeb", "Y30 grades", "temperature.thermal.heat_capacity_J_K", Up),
+        ("temperature.thermal.c_ndfeb", "example", "temperature.thermal.steady_high_C", Stays),
+        ("temperature.thermal.c_ndfeb", "example", "temperature.thermal.heat_capacity_J_K", Up),
+        ("metal.bond_inner_mm", "example", "model.hub_wall_mm", Down),
+        ("metal.bond_inner_mm", "example", "temperature.mismatch.peak_shear_current_MPa", Down),
+        ("metal.bond_inner_mm", "example", "model.pullout_Nm", Stays),
+        ("metal.bond_outer_mm", "example", "model.cup_od_mm", Up),
+        ("metal.bond_outer_mm", "example", "mass.cup_g", Up),
+        ("metal.bond_outer_mm", "example", "model.pullout_Nm", Stays),
+        ("temperature.mismatch.recommended_bondline_mm", "example", "temperature.adhesive_life.daily_peak_shear_MPa", Down),
+        ("temperature.mismatch.recommended_bondline_mm", "example", "temperature.mismatch.peak_shear_current_MPa", Stays),
+        ("temperature.adhesive_life.fatigue_endurance", "example", "temperature.adhesive_life.hot_fatigue_margin", Up),
+        ("temperature.slip_loss.sigma_316_S_m", "example", "temperature.slip_loss.sleeve_W", Up),
+        ("temperature.slip_loss.sigma_316_S_m", "titanium sleeve", "temperature.slip_loss.total_W", Stays),
+        ("temperature.slip_loss.sigma_316_S_m", "example", "temperature.slip_loss.liner_W", Up),
+        ("temperature.thermal.c_316", "example", "temperature.thermal.heat_capacity_J_K", Up),
+        ("temperature.thermal.c_316", "titanium sleeve", "temperature.thermal.heat_capacity_J_K", Stays),
+        ("temperature.thermal.c_aluminium", "example", "temperature.thermal.heat_capacity_J_K", Up),
+        ("temperature.thermal.c_aluminium", "7075 cap", "temperature.thermal.heat_capacity_J_K", Stays),
+        ("temperature.thermal.c_aluminium", "no back iron", "temperature.thermal.heat_capacity_J_K", Up),
+        ("metal.steel_density_g_mm3", "example", "mass.cup_g", Up),
+        ("metal.steel_density_g_mm3", "1018 back iron", "mass.total_g", Stays),
+        ("metal.steel_density_g_mm3", "no back iron", "mass.total_g", Stays),
+        ("metal.sleeve_density_g_mm3", "example", "retainers.endplates_g", Up),
+        ("metal.sleeve_density_g_mm3", "titanium sleeve", "mass.total_g", Stays),
+        ("metal.al_density_g_mm3", "example", "retainers.cap_g", Up),
+        ("metal.al_density_g_mm3", "7075 cap", "retainers.cap_g", Stays),
+        ("metal.al_density_g_mm3", "7075 cap", "metal.adapter_g", Up),
+        ("metal.al_density_g_mm3", "no back iron", "mass.hub_g", Up),
+        ("metal.al_density_g_mm3", "example", "metal.adapter_g", Up),
+        ("metal.hardware_g", "example", "mass.total_g", Up),
+        ("metal.hardware_g", "example", "temperature.thermal.heat_capacity_J_K", Up),
+        ("materials.screws.proof_10_9_MPa", "example", "clamps.joint_preload_N", Stays),
+        ("materials.screws.proof_10_9_MPa", "class 10.9", "clamps.joint_preload_N", Up),
+        ("materials.screws.yield_A4_70_MPa", "example", "clamps.joint_preload_N", Stays),
+        ("materials.screws.yield_A4_70_MPa", "class A4-70", "clamps.joint_preload_N", Up),
+        // Housing and retainers
+        ("metal.hub_length_mm", "example", "mass.hub_g", Up),
+        ("metal.hub_length_mm", "example", "metal.axial_stack_mm", Stays),
+        ("metal.cup_depth_mm", "example", "metal.axial_stack_mm", Up),
+        ("metal.cup_depth_mm", "example", "metal.large_dia_stack_mm", Up),
+        ("metal.cup_depth_mm", "example", "mass.cup_g", Up),
+        ("metal.cup_depth_mm", "example", "metal.hybrid_length_mm", Up),
+        ("metal.web_mm", "example", "metal.axial_stack_mm", Up),
+        ("metal.web_mm", "example", "metal.large_dia_stack_mm", Up),
+        ("metal.web_mm", "example", "temperature.slip_loss.web_W", Stays),
+        ("metal.web_mm", "no back iron", "temperature.slip_loss.web_W", Up),
+        ("metal.web_mm", "example", "mass.cup_g", Up),
+        ("metal.boss_length_mm", "example", "metal.axial_stack_mm", Up),
+        ("metal.boss_length_mm", "example", "metal.large_dia_stack_mm", Stays),
+        ("metal.boss_length_mm", "example", "mass.boss_g", Up),
+        ("metal.boss_od_mm", "example", "mass.boss_g", Up),
+        ("metal.boss_od_mm", "example", "metal.adapter_g", Up),
+        ("metal.cap_axial_mm", "example", "metal.axial_stack_mm", Up),
+        ("metal.cap_axial_mm", "example", "metal.large_dia_stack_mm", Up),
+        ("metal.cap_axial_mm", "example", "temperature.slip_loss.cap_W", Up),
+        ("metal.cap_axial_mm", "example", "retainers.cap_g", Up),
+        ("metal.cap_od_mm", "example", "metal.rotating_od_mm", Up),
+        ("metal.cap_od_mm", "example", "retainers.cap_g", Up),
+        ("metal.cap_thread_engagement_mm", "example", "retainers.cap_g", Up),
+        ("metal.cap_thread_engagement_mm", "example", "metal.axial_stack_mm", Stays),
+        ("metal.front_endplate_mm", "example", "retainers.endplates_g", Up),
+        ("metal.front_endplate_mm", "example", "metal.axial_stack_mm", Stays),
+        ("metal.rear_endplate_mm", "example", "retainers.endplates_g", Up),
+        ("metal.rear_endplate_mm", "example", "metal.axial_stack_mm", Stays),
+        ("metal.retainer_span_mm", "example", "retainers.retainers_g", Up),
+        ("metal.retainer_span_mm", "example", "temperature.slip_loss.sleeve_W", Stays),
+        ("metal.rear_endplate_hole_mm", "example", "retainers.endplates_g", Down),
+        ("metal.adapter_flange_dia_mm", "example", "metal.adapter_variant_mass_g", Up),
+        ("metal.adapter_flange_dia_mm", "example", "mass.total_g", Stays),
+        ("metal.adapter_flange_mm", "example", "metal.hybrid_length_mm", Up),
+        ("metal.adapter_flange_mm", "example", "mass.total_g", Stays),
+        ("metal.adapter_pilot_dia_mm", "example", "metal.adapter_steel_removed_g", Up),
+        ("metal.adapter_pilot_dia_mm", "example", "mass.total_g", Stays),
+        ("metal.adapter_pilot_mm", "example", "metal.adapter_g", Up),
+        ("metal.adapter_pilot_mm", "example", "mass.total_g", Stays),
+        ("metal.adapter_boss_mm", "example", "metal.hybrid_length_mm", Up),
+        ("metal.adapter_boss_mm", "example", "mass.total_g", Stays),
+        ("metal.adapter_hardware_g", "example", "metal.adapter_variant_mass_g", Up),
+        ("metal.adapter_hardware_g", "example", "mass.total_g", Stays),
+        ("clamps.joint_bolt_circle_mm", "example", "clamps.joint_torque_Nm", Up),
+        ("clamps.joint_bolt_circle_mm", "example", "clamps.joint_sf", Up),
+        ("clamps.joint_friction", "example", "clamps.joint_torque_Nm", Up),
+        // Thermal and demagnetization
+        ("temperature.demag.knee_fraction", "example", "temperature.summary.magnet_limit_C", Up),
+        ("temperature.demag.knee_fraction", "Y30 grades", "temperature.demag.cold_limit_C", Down),
+        ("temperature.demag.design_margin_C", "example", "temperature.summary.magnet_limit_C", Down),
+        ("temperature.demag.design_margin_C", "Y30 grades", "temperature.demag.cold_limit_C", Up),
+        ("temperature.slip_loss.end_factor", "example", "temperature.slip_loss.cap_W", Up),
+        ("temperature.slip_loss.end_factor", "example", "temperature.slip_loss.cup_W", Stays),
+        ("temperature.slip_loss.end_factor", "no back iron", "temperature.slip_loss.cup_W", Up),
+        ("temperature.slip_loss.end_factor", "example", "temperature.slip_loss.sleeve_W", Up),
+        // Overrides: grade mode
+        ("calibration.alpha_br_per_C", "example", "metal.torque_hot_low_Nm", Up),
+        ("calibration.alpha_br_per_C", "example", "metal.torque_cold_Nm", Down),
+        ("calibration.alpha_br_per_C", "Y30 grades", "metal.torque_hot_low_Nm", Stays),
+        // Overrides: stored 3D fields
+        ("temperature.slip_loss.b_hub_T", "example", "temperature.slip_loss.hub_W", Up),
+        ("temperature.slip_loss.b_hub_T", "no back iron", "temperature.slip_loss.hub_W", Stays),
+        ("temperature.slip_loss.b_cup_T", "example", "temperature.slip_loss.cup_W", Up),
+        ("temperature.slip_loss.b_cup_T", "no back iron", "temperature.slip_loss.cup_W", Stays),
+        ("temperature.slip_loss.b_sleeve_T", "example", "temperature.slip_loss.sleeve_W", Up),
+        ("temperature.slip_loss.b_liner_T", "example", "temperature.slip_loss.liner_W", Up),
+        ("temperature.slip_loss.cap_integral_T2m4", "example", "temperature.slip_loss.cap_W", Up),
+        ("temperature.slip_loss.web_integral_T2m2", "example", "temperature.slip_loss.web_W", Up),
+        ("temperature.slip_loss.web_integral_T2m2", "no back iron", "temperature.slip_loss.web_W", Stays),
+        ("temperature.slip_loss.b_magnet_T", "example", "temperature.slip_loss.magnets_W", Up),
+        ("temperature.demag.h_rev_aligned_kA_m", "example", "temperature.demag.onset_aligned_C", Down),
+        ("temperature.demag.h_rev_aligned_kA_m", "example", "temperature.summary.magnet_limit_C", Stays),
+        ("temperature.demag.h_rev_pullout_kA_m", "example", "temperature.demag.onset_pullout_C", Down),
+        ("temperature.demag.h_rev_pullout_kA_m", "example", "temperature.summary.magnet_limit_C", Stays),
+        ("temperature.demag.h_rev_likepole_kA_m", "example", "temperature.summary.magnet_limit_C", Down),
+        ("temperature.demag.h_rev_likepole_kA_m", "Y30 grades", "temperature.demag.cold_limit_C", Up),
+        ("temperature.demag.h_rev_single_ring_kA_m", "example", "temperature.summary.cure_margin_C", Down),
+        ("temperature.demag.h_rev_single_ring_kA_m", "example", "temperature.summary.magnet_limit_C", Stays),
+        // Overrides: placeholders and assumed values
+        ("temperature.duty.driving_rise_C", "example", "temperature.thermal.start_C", Up),
+        ("temperature.duty.driving_rise_C", "example", "temperature.summary.hot_day_start_C", Up),
+        ("temperature.duty.life_hours", "example", "temperature.slip_life.slip_duty", Down),
+        ("temperature.duty.life_hours", "example", "temperature.magnet_life.peak_C", Down),
+        ("temperature.adhesive_life.hot_strength_retained", "example", "temperature.adhesive_life.hot_fatigue_margin", Up),
+        ("calibration.test_temp_C", "no back iron", "calibration.f_cal_updated", Up),
+        ("calibration.test_temp_C", "example", "model.pullout_Nm", Stays),
+        ("metal.slip_event_s", "example", "temperature.slip_life.slip_duty", Up),
+        ("metal.slip_event_s", "example", "metal.magnetic_cycles", Up),
+        // Overrides: bench drag, jargon and stale facts
+        ("materials.steel.density_g_cm3", "example", "mass.total_g", Stays),
+        ("temperature.demag.hcj20_kA_m", "example", "temperature.summary.magnet_limit_C", Stays),
+        ("temperature.demag.hcj20_kA_m", "coercivity inputs", "temperature.summary.magnet_limit_C", Up),
+        ("temperature.demag.hcj20_kA_m", "manual, no grade", "temperature.summary.magnet_limit_C", Up),
+        ("temperature.demag.beta_hcj_per_C", "example", "temperature.summary.magnet_limit_C", Stays),
+        ("temperature.demag.beta_hcj_per_C", "coercivity inputs", "temperature.summary.magnet_limit_C", Down),
+        ("temperature.demag.beta_hcj_per_C", "manual, no grade", "temperature.summary.magnet_limit_C", Up),
+        ("temperature.mismatch.adhesive_shear_modulus_GPa", "example", "temperature.mismatch.peak_shear_current_MPa", Up),
+        ("metal.cup_wall_corner_mm", "example", "model.cup_od_mm", Up),
+        ("materials.steel.bsat_T", "example", "materials.backiron_thickness_needed_mm", Down),
+        ("materials.steel.bsat_T", "1018 back iron", "materials.backiron_thickness_needed_mm", Stays),
+        ("materials.steel.conductivity_S_m", "example", "temperature.slip_loss.total_W", Up),
+        ("materials.steel.conductivity_S_m", "1018 back iron", "temperature.slip_loss.total_W", Stays),
+        ("temperature.mismatch.ndfeb_cte_per_C", "example", "temperature.mismatch.peak_shear_current_MPa", Down),
+        ("temperature.mismatch.ndfeb_cte_per_C", "Y30 grades", "temperature.mismatch.peak_shear_current_MPa", Down),
+        ("temperature.slip_loss.high_multiplier", "example", "temperature.thermal.steady_high_C", Up),
+        ("temperature.slip_loss.high_multiplier", "measured drag", "temperature.thermal.steady_high_C", Stays),
+        ("temperature.slip_loss.high_multiplier", "example", "temperature.slip_loss.total_W", Stays),
+        ("clamps.joint_screws", "example", "clamps.joint_torque_Nm", Up),
+    ];
+
+    #[test]
+    fn batch_b_fills_every_empty_help_of_its_four_groups() {
+        // The split with batch A (T7) is by workflow group: these four groups are batch B's.
+        let catalogue = InputCatalogue::get();
+        let empty_in_batch_b: BTreeSet<&str> = WORKFLOW
+            .iter()
+            .filter(|group| ["calibration", "materials", "housing", "thermal"].contains(&group.id))
+            .flat_map(|group| group.sections.iter())
+            .flat_map(|section| section.paths.iter().copied())
+            .filter(|&path| {
+                catalogue
+                    .entry(path)
+                    .is_some_and(|e| e.meta.help.is_empty())
+            })
+            .collect();
+        assert_eq!(empty_in_batch_b, BTreeSet::from(BATCH_B_EMPTY));
+        for path in BATCH_B_EMPTY {
+            assert!(row(HELP, path).is_some(), "{path}: no help row");
+            assert_eq!(original_help(path), None, "{path}: nothing to keep");
+        }
+    }
+
+    #[test]
+    fn batch_b_overrides_replace_a_non_empty_engine_help() {
+        for path in BATCH_B_OVERRIDES {
+            let (_, engine) = metadata(path).unwrap_or_else(|| panic!("{path}: no such path"));
+            assert!(!engine.is_empty(), "{path}: the engine help is empty");
+            assert!(row(HELP, path).is_some(), "{path}: no help row");
+            // A Rust-only input's help is rewritten in the engine (T9), never overlaid.
+            if let Some(entry) = InputCatalogue::get().entry(path) {
+                assert!(!entry.meta.rust_only, "{path} is Rust-only");
+            }
+            assert!(!BATCH_B_EMPTY.contains(&path), "{path} is in both lists");
+        }
+    }
+
+    #[test]
+    fn the_original_note_is_the_spreadsheet_s_own_text() {
+        // Under the toggle, "Original spreadsheet note" shows what the spreadsheet said: the
+        // engine help, except where a correction reworded it, when the registry keeps the
+        // workbook's text (and an empty one shows no note).
+        let reworded: Vec<&str> = BATCH_B_OVERRIDES
+            .into_iter()
+            .filter(|&path| spreadsheet_help(path).is_some())
+            .collect();
+        assert_eq!(
+            reworded,
+            [
+                "temperature.slip_loss.web_integral_T2m2",
+                "temperature.demag.hcj20_kA_m",
+                "temperature.demag.beta_hcj_per_C",
+                "temperature.mismatch.adhesive_shear_modulus_GPa",
+            ]
+        );
+        for path in BATCH_B_OVERRIDES {
+            let engine = metadata(path).map(|(_, help)| help);
+            let spreadsheet = spreadsheet_help(path).or(engine).filter(|t| !t.is_empty());
+            assert_eq!(original_help(path), spreadsheet, "{path}");
+            if reworded.contains(&path) {
+                assert_ne!(original_help(path), engine, "{path}: the corrected text");
+            }
+        }
+    }
+
+    #[test]
+    fn each_cluster_ends_with_one_shared_caveat() {
+        let last_sentence = |path: &str| help_for(path).rsplit(". ").next().unwrap_or_default();
+        for cluster in [&STORED_3D[..], &PROTOTYPE[..], &GUESSES[..], &ADAPTER[..]] {
+            let caveat = last_sentence(cluster[0]);
+            for &path in cluster {
+                assert_eq!(last_sentence(path), caveat, "{path} against {}", cluster[0]);
+            }
+        }
+    }
+
+    #[test]
+    fn no_help_row_repeats_its_input_s_default() {
+        // Spec 3.5: no default numbers in help; the tooltip already prints "Default: ...".
+        for &(path, text) in HELP {
+            let Some(entry) = InputCatalogue::get().entry(path) else {
+                continue;
+            };
+            let default = match entry.default {
+                Value::Num(x) => x,
+                Value::Int(n) => n as f64,
+                _ => continue,
+            };
+            let repeats = text
+                .split(|c: char| c.is_whitespace() || ",;:()".contains(c))
+                .filter_map(|token| token.trim_end_matches('.').parse::<f64>().ok())
+                .any(|number| number == default);
+            assert!(!repeats, "{path}: {text:?} repeats the default");
+        }
+    }
+
+    #[test]
+    fn every_direction_a_batch_b_help_states_holds_one_slider_step_up() {
+        let catalogue = InputCatalogue::get();
+        for &(input, design, result, moves) in CLAIMS {
+            assert!(
+                BATCH_B_EMPTY.contains(&input) || BATCH_B_OVERRIDES.contains(&input),
+                "{input} is not batch B's"
+            );
+            let before = claim_design(design);
+            let step = catalogue
+                .entry(input)
+                .and_then(|entry| entry.meta.range)
+                .unwrap_or_else(|| panic!("{input}: no slider"))
+                .step;
+            let raised = match before.get(input) {
+                Some(Value::Num(x)) => Value::Num(x + step),
+                Some(Value::Int(n)) => Value::Int(n + step as i64),
+                other => panic!("{input}: {other:?}"),
+            };
+            let mut after = before.clone();
+            after
+                .set(input, raised)
+                .unwrap_or_else(|e| panic!("{input}: {e:?}"));
+            let value = |inputs: &DesignInputs| match compute_all(inputs).get(result) {
+                Some(Value::Num(x)) => x,
+                other => panic!("{result}: {other:?}"),
+            };
+            let (was, now) = (value(&before), value(&after));
+            let seen = if now > was {
+                Up
+            } else if now < was {
+                Down
+            } else {
+                Stays
+            };
+            assert_eq!(
+                seen, moves,
+                "{input} one step up on the {design} design: {result} {was} -> {now}"
+            );
+        }
+        // Every batch-B input with a slider and a value has its help's claim checked here; the
+        // blank measured drag and the three results are checked in the next test.
+        for path in BATCH_B_EMPTY.iter().chain(&BATCH_B_OVERRIDES) {
+            let Some(entry) = catalogue.entry(path) else {
+                continue;
+            };
+            if entry.default != Value::None {
+                assert!(
+                    CLAIMS.iter().any(|claim| claim.0 == *path),
+                    "{path}: no claim"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_batch_b_claims_beyond_one_result_hold() {
+        let example = DesignInputs::default();
+        let number = |inputs: &DesignInputs, path: &str| match compute_all(inputs).get(path) {
+            Some(Value::Num(x)) => x,
+            other => panic!("{path}: {other:?}"),
+        };
+        // metal.boss_od_mm: the boss sets the outside diameter only when it is the largest part.
+        let outside = dimensions(&example).expect("a size").diameter_mm;
+        assert!(example.metal.boss_od_mm < outside);
+        let mut big_boss = example.clone();
+        big_boss.metal.boss_od_mm = outside + 1.0;
+        assert_eq!(
+            dimensions(&big_boss).expect("a size").diameter_mm,
+            outside + 1.0
+        );
+        // metal.cap_od_mm: the cap sets the outside diameter only when it is the largest part.
+        let cap_step = 0.1;
+        assert_eq!(example.metal.cap_od_mm, outside);
+        let mut wider_cap = example.clone();
+        wider_cap.metal.cap_od_mm += cap_step;
+        assert_eq!(
+            dimensions(&wider_cap).expect("a size").diameter_mm,
+            outside + cap_step
+        );
+        let mut wider_cap_under_boss = big_boss.clone();
+        wider_cap_under_boss.metal.cap_od_mm += cap_step;
+        assert_eq!(
+            dimensions(&wider_cap_under_boss)
+                .expect("a size")
+                .diameter_mm,
+            outside + 1.0
+        );
+        // metal.cap_od_mm: Size-tab diameter changes and Auto on the ring radius move the cap.
+        let wider = resize_diameter(&example, outside + 1.0).expect("a wider design");
+        assert!(wider.metal.cap_od_mm > example.metal.cap_od_mm);
+        let radius = example.coupling.inner_back_apothem_mm + 0.5;
+        let larger_ring = with_ring_radius(&example, radius).expect("a larger ring");
+        assert!(larger_ring.metal.cap_od_mm > example.metal.cap_od_mm);
+        // metal.cup_wall_corner_mm: a thicker wall grows the cup diameter by twice the change.
+        let change = 0.1;
+        let mut thicker = example.clone();
+        thicker.metal.cup_wall_corner_mm += change;
+        let grown = number(&thicker, "model.cup_od_mm") - number(&example, "model.cup_od_mm");
+        assert!((grown - 2.0 * change).abs() < 1e-9, "{grown}");
+        // metal.measured_drag_Nm: a measured drag replaces the estimate in both cases.
+        let measured = claim_design("measured drag");
+        let heat = measured.metal.measured_drag_Nm.expect("a drag")
+            * number(&measured, "temperature.duty.slip_rad_s");
+        assert_eq!(number(&measured, "temperature.slip_loss.used_W"), heat);
+        assert_eq!(number(&measured, "temperature.slip_loss.high_W"), heat);
+        // mass.magnets_g: a picked grade brings its density; an ungraded magnet keeps NdFeB's.
+        let (manual, graded) = (claim_design("manual, no grade"), claim_design("Y30 grades"));
+        assert_ne!(
+            number(&manual, "mass.magnets_g"),
+            number(&graded, "mass.magnets_g")
+        );
+        assert_eq!(
+            number(&manual, "model.inner_magnet_density_g_mm3"),
+            number(&example, "model.inner_magnet_density_g_mm3")
+        );
+        // model.inner_temp_check, model.outer_temp_check: no rating without a part or a grade.
+        let unknown = Some(Value::Text("unknown".to_owned()));
+        for path in ["model.inner_temp_check", "model.outer_temp_check"] {
+            assert_eq!(compute_all(&manual).get(path), unknown, "{path}");
+            assert_ne!(compute_all(&graded).get(path), unknown, "{path}");
+            assert_ne!(compute_all(&example).get(path), unknown, "{path}");
+        }
     }
 }

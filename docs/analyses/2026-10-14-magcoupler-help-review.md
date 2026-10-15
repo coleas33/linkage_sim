@@ -176,3 +176,88 @@ lower torque; the space claim leaves out the shaft boss; "with Auto on"; the mag
   - no changed row touches A-20's or A-22's claims.
 - A-13: every changed drawn field has no audit, correction or spreadsheet id and no file or code name.
   Batch A has no note sources.
+
+## Batch B (T8)
+
+- Scope: the 52 empty helps of Calibration and model, Materials, Housing and retainers, and Thermal
+  and demagnetization, and 31 overrides (tables A and B of the slice-2 plan, Task 8).
+- Read: T7's review sheet for the four groups, T2's overlay dump for the six rows outside them,
+  `batch_b_tests::CLAIMS` (172 direction claims, all holding), spec section 8 and slice-1 spec
+  section 8, and the engine code behind each claim. Each round also probed the engine from a
+  scratch crate outside the repository: round 1 stepped every batch-B input one slider step up and
+  diffed every result, and re-ran the claims on 14 designs beyond the example (304 and 6061 back
+  irons, 8 magnets per ring, Y30 grades with and without the coercivity inputs, SmCo grades, manual
+  magnets with no grade, no back iron alone and at 8 magnets, a 1018 back iron, a 20 mm ring radius,
+  the coercivity inputs, a measured drag, class 10.9, an axial length set, true arcs).
+- Round 1: 4 must-fix items, text applied verbatim:
+  - `calibration.mu0` (seed S-17): the unit identity "(H/m equals T·m/A)" dropped. New: "Magnetic
+    constant for the prototype model; leave it unchanged. It sets the updated calibration
+    coefficient, used only by no-back-iron designs with the prototype's magnet part and count."
+  - `temperature.duty.driving_rise_C`: "where slip events start" -> "the hot-day starting magnet
+    temperature". New: "Rise of the coupling above outside air while driving, from housing air, sun
+    and gearbox heat; it raises the hot-day starting magnet temperature. The default is a guess."
+    Why: the old phrase named no result and read as a slip threshold. The rise adds to the hot-day
+    starting temperature, which lowers the hot-day pull-out and margin (+0.5 °C at the example
+    design: 65.0 -> 65.5 °C, hot-day pull-out 2.589 -> 2.586 N·m). A claim on the hot-day start
+    was added.
+  - `metal.cap_od_mm` (T-P): "above the cup's, it sets the outside diameter" -> "when larger than
+    the cup and boss, it sets the outside diameter". New: "Front cap diameter; when larger than the
+    cup and boss, it sets the outside diameter. Size-tab diameter changes and Auto on the ring
+    radius move it with the cup." Why: the Size tab's Outside diameter is the largest of cup, cap
+    and boss; at a 7 mm ring radius with the cap at 36 mm and the boss at 38 mm, a cap step changes
+    nothing. Two pins added: a cap step moves the Outside diameter when the cap is the largest part
+    and leaves it at a larger boss.
+  - `materials.steel.specific_heat_J_kgK`: "Picking another back-iron material replaces it" ->
+    "A magnetic back-iron pick replaces it". New: "Specific heat of the steel parts, including keys,
+    screws and lock tabs; higher slows slip heating, not the steady temperature. A magnetic
+    back-iron pick replaces it." Why: a 304 or 6061 pick leaves this input on the keys, screws and
+    lock tabs (heat capacity +0.006 J/K per step). A "304 back iron" claim design and its Up row
+    were added. Round 2 corrected the last sentence again.
+
+  Should-fix offered, not applied: S-a, `coupling.mu0`'s "every torque" leaves out the prototype
+  and its demagnetization and slip-heat uses; S-b, name "magnetic cycles over life" in the slip
+  event help; S-c, "Squared-field integral" for the cap; S-d, a ferrite ring's hot-side limit does
+  not move with the knee fraction or the design margin (the cold limit does); S-e, for the
+  controller, override `metal.cap_thread_dia_mm` ("M41 × 0.5 concept.", stale after a resize) and
+  `materials.screws.proof_12_9_MPa` ("ISO 898-1."); S-f, for the code review, the cluster caveats
+  typed in every row.
+
+  Recorded, no change asked: the single-ring field's "lowers the cure margin" is moot for ferrite
+  (the margin is infinite on the cold side); with the Back iron toggle off and a non-magnetic pick,
+  the hub, cup and boss take the pick's values, not the aluminium inputs; some engine helps in batch
+  B's groups outside its 31 still read terse (`coupling.c_end`, `calibration.f_cal_original`,
+  `temperature.thermal.conductance_W_K`, `calibration.fea_torque1_Nm`).
+- Round 2: 1 must-fix item, text applied verbatim:
+  - `materials.steel.specific_heat_J_kgK`: "... A magnetic back-iron pick replaces it." -> "Specific
+    heat of the steel parts, including keys, screws and lock tabs; higher slows slip heating, not
+    the steady temperature. Picking another magnetic back-iron material replaces it." Why: the
+    picker's default, "4140 annealed", is a magnetic pick that keeps the input (heat capacity +0.12
+    J/K per step at the example design); only the five other magnetic picks replace it. No `CLAIMS`
+    change: the example, 1018 and 304 rows pin the new wording.
+  - The other three round-1 replacements were confirmed as applied (`calibration.mu0`,
+    `temperature.duty.driving_rise_C`, `metal.cap_od_mm`); their claims hold at every probed design.
+
+  Should-fix offered, not applied: S-1, one name for the hot-day starting temperature in T7's
+  ambient help; S-2, the cup wall adds slip heat with no back iron or a non-magnetic pick; S-3, a
+  third cap pin with the cup as the largest part.
+- Round 3: none. The round-2 replacement for `materials.steel.specific_heat_J_kgK` was confirmed as
+  applied, and it is exact on all eight back-iron picks with the toggle on and off: the default 4140
+  and the non-magnetic 304 and 6061 keep the input; 1018, 12L14, 416 and both 17-4PH picks move no
+  result; the high-case steady temperature never moves.
+
+  Should-fix offered, not applied: S-1, name the 4140 hub, cup and boss, so that a 304 user does not
+  read the input as their hub's (at 304 only the keys, screws and lock tabs take it, +0.006 J/K per
+  step); S-2, the aluminium specific heat and density do not reach the hub, cup and boss at the 304
+  and 6061 picks (no change proposed).
+- Seeds: A-24 S-17 (`calibration.mu0`) ACCEPTED, applied verbatim in round 1. Reason: the unit
+  identity is notation, not physics the user acts on; the seed keeps the prototype caveat last,
+  states no new direction and fits the cap (27 words).
+- Amendments: A-7 applied (all eleven stored-3D helps end with "Stored 3D value for the example
+  design; it does not follow yours."; the hub, cup and web fields keep "doubled by the steel", and
+  the aligned and pull-out reverse fields "which no check uses");
+  A-6 applied (Step 4c dropped; T2's all-rows test admits a result key); A-13 met (no audit,
+  correction or spreadsheet id and no file or code name in any drawn field; batch B has no note
+  sources). Ruling 5: no "Corrected note" toggle line; the three engine gaps (the space claim leaves
+  out the boss, ferrite eddy heat uses the NdFeB conductivity, the daily-cycle screen reads the
+  recommended bondline) go to T20 as BL-061..BL-063, and the helps state today's behaviour.
+- Verdict: PASS.
