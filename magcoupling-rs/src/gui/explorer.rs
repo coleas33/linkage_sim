@@ -1219,33 +1219,22 @@ mod tests {
         assert!(results.get(&cell_only.path).is_some());
     }
 
-    /// Frames of `explorer_ui` on the default design at `show_details`, tooltips at once: the
-    /// first, then one with the pointer moved to the centre of the first drawn `text`, then
-    /// the frame that shows its tooltip.
+    /// Frames of `explorer_ui` on the default design at `show_details` with the first drawn
+    /// `text` hovered ([`hover_frames`](crate::gui::test_support::hover_frames)): one before the
+    /// pointer is there, and one that shows its tooltip.
     fn hover_in_panel(
         explorer: &mut Explorer,
         show_details: bool,
         text: &str,
     ) -> (egui::FullOutput, egui::FullOutput) {
-        use crate::gui::test_support::{SCREEN, sized_frame_at, text_rect};
+        use crate::gui::test_support::{SCREEN, hover_frames, text_center};
         let (inputs, results) = design();
-        let ctx = egui::Context::default();
-        ctx.style_mut(|s| {
-            s.interaction.tooltip_delay = 0.0;
-            s.interaction.show_tooltips_only_when_still = false;
-        });
-        let mut frame = |time: f64, events: Vec<egui::Event>| {
-            sized_frame_at(&ctx, SCREEN, Some(time), events, |ui| {
-                explorer_ui(ui, explorer, &inputs, &results, show_details);
-            })
-        };
-        let first = frame(0.0, Vec::new());
-        let at = text_rect(&first, text)
-            .unwrap_or_else(|| panic!("no {text:?}"))
-            .center();
-        frame(0.1, vec![egui::Event::PointerMoved(at)]);
-        frame(0.2, Vec::new());
-        (first, frame(0.3, Vec::new()))
+        hover_frames(
+            &egui::Context::default(),
+            SCREEN,
+            |output| text_center(output, text),
+            |ui| explorer_ui(ui, explorer, &inputs, &results, show_details),
+        )
     }
 
     #[test]
@@ -1274,8 +1263,8 @@ mod tests {
             } else {
                 eq.label
             };
-            let (first, output) = hover_in_panel(&mut explorer, show_details, hovered);
-            let texts = drawn_texts(&first);
+            let (before, output) = hover_in_panel(&mut explorer, show_details, hovered);
+            let texts = drawn_texts(&before);
             assert_eq!(texts.contains(&line), show_details);
             assert_eq!(texts.contains(&with_cell), show_details);
             assert_eq!(texts.contains(&eq.label.to_owned()), !show_details);

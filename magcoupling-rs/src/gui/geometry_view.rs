@@ -397,7 +397,7 @@ mod tests {
     use crate::compute_all;
     use crate::gui::geometry::{NOT_DRAWN, mm};
     use crate::gui::test_support::{
-        drawn_texts, flat_shapes, sized_frame, sized_frame_at, text_color, text_rects,
+        drawn_texts, flat_shapes, hover_frames, sized_frame, text_color, text_rects,
     };
 
     /// One frame of the geometry view of `inputs` on a `size` screen, with `events`.
@@ -601,45 +601,61 @@ mod tests {
         let results = compute_all(&inputs);
         // With and without the spreadsheet details (spec S2-5): the path only with them.
         for show_details in [false, true] {
-            let ctx = egui::Context::default();
-            ctx.style_mut(|s| {
-                s.interaction.tooltip_delay = 0.0;
-                s.interaction.show_tooltips_only_when_still = false;
-            });
-            let (_, layout) = frame(&ctx, &inputs, size, Vec::new());
-            let (_, rect) = layout
-                .dimensions
-                .iter()
-                .find(|(tag, _)| *tag == 1)
-                .copied()
-                .expect("the face gap is drawn");
-            let at = rect.center();
+            // The face gap's dimension line (tag 1) where the last frame laid it out.
+            let face_gap = std::cell::Cell::<Option<Rect>>::new(None);
+            let (before, output) = hover_frames(
+                &egui::Context::default(),
+                size,
+                |_| face_gap.get().expect("the face gap is drawn").center(),
+                |ui| {
+                    let mut readouts = Readouts::new(TermColors::default(), show_details);
+                    let layout = geometry_ui(ui, &inputs, &results, &mut readouts);
+                    face_gap.set(
+                        layout
+                            .dimensions
+                            .iter()
+                            .find(|(tag, _)| *tag == 1)
+                            .map(|(_, rect)| *rect),
+                    );
+                },
+            );
             let want = hover_text("model.face_gap_mm", show_details).unwrap();
             assert_eq!(
                 want.lines().any(|line| line == "model.face_gap_mm"),
                 show_details,
                 "{want}"
             );
-            let (before, _) = frame(&ctx, &inputs, size, vec![egui::Event::PointerMoved(at)]);
             assert!(
                 !drawn_texts(&before).contains(&want),
                 "not before the pointer is there"
             );
-            let mut output = None;
-            for dt in [0.1, 0.2] {
-                output = Some(sized_frame_at(&ctx, size, Some(dt), Vec::new(), |ui| {
-                    let mut readouts = Readouts::new(TermColors::default(), show_details);
-                    geometry_ui(ui, &inputs, &results, &mut readouts);
-                }));
-            }
             assert_eq!(
                 want.lines().next(),
                 Some("Gap at the flat centres (effective gap)"),
                 "{want}"
             );
-            let texts = drawn_texts(&output.unwrap());
+            let texts = drawn_texts(&output);
             assert!(texts.contains(&want), "no hover text in {texts:?}");
         }
+    }
+
+    #[test]
+    fn hovering_a_callout_in_the_list_names_its_path_only_with_the_spreadsheet_details() {
+        use crate::gui::test_support::assert_hover_names_path_only_with_details;
+        // The list under the drawing repeats each callout's text: the first one's, hovered.
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let g = geometry(&inputs, &results);
+        let callout = g.callouts().next().expect("a callout");
+        assert_hover_names_path_only_with_details(
+            egui::vec2(1000.0, 700.0),
+            callout.path,
+            &callout.text,
+            |show_details| hover_text(callout.path, show_details).expect("a result"),
+            |ui, readouts| {
+                geometry_ui(ui, &inputs, &results, readouts);
+            },
+        );
     }
 
     #[test]

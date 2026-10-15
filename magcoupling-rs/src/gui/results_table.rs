@@ -870,6 +870,33 @@ mod tests {
     }
 
     #[test]
+    fn a_row_s_hover_names_its_path_cell_and_corrections_only_with_the_spreadsheet_details() {
+        use crate::gui::test_support::{SCREEN, assert_hover_names_path_only_with_details};
+        // The headline group is open: the pull-out's row is on screen, its label hovered.
+        let results = compute_all(&DesignInputs::default());
+        let path = "model.pullout_Nm";
+        let entry = &table_entries()[entry_index(path).expect("the pull-out's row")];
+        let value = results.get(path).expect("a result");
+        let cell = entry.info.cell.clone().expect("the pull-out has a cell");
+        let heading = format!("{}:", crate::gui::corrections::MARKER_HEADING);
+        for show_details in [false, true] {
+            let text = row_tooltip(entry, &value, show_details);
+            assert_eq!(text.contains(&cell), show_details, "{text}");
+            assert_eq!(text.contains(&heading), show_details, "{text}");
+        }
+        let mut table = ResultsTable::default();
+        assert_hover_names_path_only_with_details(
+            SCREEN,
+            path,
+            entry.info.meta.label,
+            |show_details| row_tooltip(entry, &value, show_details),
+            |ui, readouts| {
+                table.ui(ui, &results, None, readouts);
+            },
+        );
+    }
+
+    #[test]
     fn the_search_matches_label_path_and_cell_ignoring_case() {
         let entries = table_entries();
         let paths = |query: &str| -> Vec<&str> {

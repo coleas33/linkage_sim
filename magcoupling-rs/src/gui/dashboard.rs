@@ -875,8 +875,8 @@ mod tests {
     use crate::gui::guidance::{CHECK_GUIDES, Direction, Fixes, ROW_LEARN, all_fixes, trade_offs};
     use crate::gui::readouts::ReadoutEvents;
     use crate::gui::test_support::{
-        assert_glyphs, drawn_texts, passing_design, primary_button, short_magnets, sized_frame,
-        text_color, text_rect, with_poles,
+        assert_glyphs, drawn_texts, hover_frames, passing_design, primary_button, short_magnets,
+        sized_frame, text_center, text_color, text_rect, tooltips_at_once, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -1939,11 +1939,6 @@ mod tests {
         // Spec S2-5: "Example design" at the defaults, its hover the original spreadsheet;
         // "Your design" has no hover.
         for (inputs, example) in [(DesignInputs::default(), true), (passing_design(), false)] {
-            let ctx = egui::Context::default();
-            ctx.style_mut(|s| {
-                s.interaction.tooltip_delay = 0.0;
-                s.interaction.show_tooltips_only_when_still = false;
-            });
             let results = compute_all(&inputs);
             let fixes = all_fixes(&inputs, &results);
             let text = design_status_text(&design_status(&inputs, &results));
@@ -1952,16 +1947,12 @@ mod tests {
                 example,
                 "{text}"
             );
-            let frame = |events: Vec<egui::Event>| {
-                sized_frame(&ctx, egui::vec2(1280.0, 4000.0), events, |ui| {
-                    dashboard_ui(ui, &inputs, &results, &fixes, &mut Readouts::default());
-                })
-            };
-            let output = frame(Vec::new());
-            let at = text_rect(&output, &text).expect("the status line").center();
-            frame(vec![egui::Event::PointerMoved(at)]);
-            frame(Vec::new());
-            let output = frame(Vec::new());
+            let (_, output) = hover_frames(
+                &egui::Context::default(),
+                egui::vec2(1280.0, 4000.0),
+                |output| text_center(output, &text),
+                |ui| dashboard_ui(ui, &inputs, &results, &fixes, &mut Readouts::default()),
+            );
             let hover = guidance::EXAMPLE_DESIGN_HOVER.to_owned();
             assert_eq!(drawn_texts(&output).contains(&hover), example, "{text}");
         }
@@ -2120,10 +2111,7 @@ mod tests {
     /// (no delay, the pointer need not rest): its hover text among them.
     fn hover_in_guide(guide: &CheckGuide, block: &GuideShown, text: &str) -> Vec<String> {
         let ctx = egui::Context::default();
-        ctx.style_mut(|s| {
-            s.interaction.tooltip_delay = 0.0;
-            s.interaction.show_tooltips_only_when_still = false;
-        });
+        tooltips_at_once(&ctx);
         let at = guide_text_at(&ctx, guide, block, text);
         let hover = vec![vec![egui::Event::PointerMoved(at)], Vec::new()];
         drawn_texts(&guide_frames(&ctx, guide, block, hover).0)

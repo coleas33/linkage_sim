@@ -70,6 +70,77 @@ pub(crate) fn sized_frame_at(
     })
 }
 
+/// Shows `ctx`'s tooltips at once: no delay, and the pointer need not rest.
+pub(crate) fn tooltips_at_once(ctx: &egui::Context) {
+    ctx.style_mut(|s| {
+        s.interaction.tooltip_delay = 0.0;
+        s.interaction.show_tooltips_only_when_still = false;
+    });
+}
+
+/// Frames of `draw` on a screen of `size`, `ctx`'s tooltips at once ([`tooltips_at_once`]):
+/// two to lay it out, one with the pointer moved to the point `target` finds in the second, and
+/// two more, so what the pointer hovers shows its tooltip. Returns the second frame (the
+/// pointer not there yet) and the last.
+pub(crate) fn hover_frames(
+    ctx: &egui::Context,
+    size: egui::Vec2,
+    target: impl FnOnce(&egui::FullOutput) -> egui::Pos2,
+    mut draw: impl FnMut(&mut egui::Ui),
+) -> (egui::FullOutput, egui::FullOutput) {
+    tooltips_at_once(ctx);
+    let mut frame = |time: f64, events: Vec<egui::Event>| {
+        sized_frame_at(ctx, size, Some(time), events, &mut draw)
+    };
+    frame(0.0, Vec::new());
+    let before = frame(0.1, Vec::new());
+    frame(0.2, vec![egui::Event::PointerMoved(target(&before))]);
+    frame(0.3, Vec::new());
+    (before, frame(0.4, Vec::new()))
+}
+
+/// Hovers the first drawn `text` of `draw` on a screen of `size` ([`hover_frames`]), with the
+/// spreadsheet details off and then on (spec S2-5: off hides every provenance line), and asserts
+/// that the hover drew `hover(show_details)` and not `hover(!show_details)`, and that `path` is
+/// a line of the hover text only with the details. `draw` draws the view with the readouts it is
+/// handed. The hover text without the details can be the label alone, which the view may draw
+/// too: the hover counts as one more drawn copy of its text.
+pub(crate) fn assert_hover_names_path_only_with_details(
+    size: egui::Vec2,
+    path: &str,
+    text: &str,
+    hover: impl Fn(bool) -> String,
+    mut draw: impl FnMut(&mut egui::Ui, &mut crate::gui::readouts::Readouts),
+) {
+    use crate::gui::readouts::Readouts;
+    use crate::gui::typeset::TermColors;
+    for show_details in [false, true] {
+        let ctx = egui::Context::default();
+        let (before, after) = hover_frames(
+            &ctx,
+            size,
+            |output| text_center(output, text),
+            |ui| draw(ui, &mut Readouts::new(TermColors::default(), show_details)),
+        );
+        let (want, other) = (hover(show_details), hover(!show_details));
+        assert_eq!(
+            drawn_count(&after, &want),
+            drawn_count(&before, &want) + 1,
+            "details {show_details}: the hover draws {want:?}"
+        );
+        assert_eq!(
+            drawn_count(&after, &other),
+            drawn_count(&before, &other),
+            "details {show_details}: the hover draws {other:?}"
+        );
+        assert_eq!(
+            want.lines().any(|line| line == path),
+            show_details,
+            "details {show_details}: {want:?}"
+        );
+    }
+}
+
 /// One headless frame of `draw` in a child ui whose max rect is `region`, on a screen of
 /// `size`, as the centre region lays a view out above the Equation panel but without its clip:
 /// what the view lays out past the region's foot shows in the rect the child used. Returns what
@@ -158,6 +229,11 @@ pub(crate) fn drawn_texts(output: &egui::FullOutput) -> Vec<String> {
         .collect()
 }
 
+/// How many drawn texts of a frame equal `text`.
+pub(crate) fn drawn_count(output: &egui::FullOutput, text: &str) -> usize {
+    drawn_texts(output).iter().filter(|t| *t == text).count()
+}
+
 /// Screen rects of every drawn text equal to `needle`, in paint order.
 pub(crate) fn text_rects(output: &egui::FullOutput, needle: &str) -> Vec<egui::Rect> {
     flat_shapes(output)
@@ -175,6 +251,14 @@ pub(crate) fn text_rects(output: &egui::FullOutput, needle: &str) -> Vec<egui::R
 /// label: lets a test click a widget whose id it cannot know.
 pub(crate) fn text_rect(output: &egui::FullOutput, needle: &str) -> Option<egui::Rect> {
     text_rects(output, needle).into_iter().next()
+}
+
+/// The centre of the first drawn text equal to `needle`: where a test points to hover it.
+/// Panics when no such text is drawn.
+pub(crate) fn text_center(output: &egui::FullOutput, needle: &str) -> egui::Pos2 {
+    text_rect(output, needle)
+        .unwrap_or_else(|| panic!("no {needle:?} drawn"))
+        .center()
 }
 
 /// Asserts that every character of `text` but whitespace has a glyph in egui's default fonts

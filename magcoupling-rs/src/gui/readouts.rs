@@ -176,7 +176,10 @@ impl Readouts {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gui::test_support::{drawn_texts, flat_shapes, sized_frame, sized_frame_at};
+    use crate::gui::test_support::{
+        drawn_texts, flat_shapes, hover_frames, sized_frame, sized_frame_at, text_center,
+        tooltips_at_once,
+    };
 
     /// A label of `text` showing the result at `path`, drawn with `readouts`.
     fn draw(ui: &mut egui::Ui, readouts: &mut Readouts, path: &str, text: &str) -> Rect {
@@ -194,10 +197,7 @@ mod tests {
     #[test]
     fn a_hovered_value_shows_its_text_and_equation_and_a_click_asks_for_it() {
         let ctx = egui::Context::default();
-        ctx.style_mut(|s| {
-            s.interaction.tooltip_delay = 0.0;
-            s.interaction.show_tooltips_only_when_still = false;
-        });
+        tooltips_at_once(&ctx);
         let size = egui::vec2(800.0, 600.0);
         let mut rect = Rect::NOTHING;
         sized_frame(&ctx, size, Vec::new(), |ui| {
@@ -272,28 +272,20 @@ mod tests {
         // The header's Show spreadsheet details reaches every readout's hover text through the
         // frame's readouts (spec S2-5); readouts made without it have it off.
         assert!(!Readouts::default().show_details());
-        let size = egui::vec2(800.0, 600.0);
         for show_details in [false, true] {
-            let ctx = egui::Context::default();
-            ctx.style_mut(|s| {
-                s.interaction.tooltip_delay = 0.0;
-                s.interaction.show_tooltips_only_when_still = false;
-            });
-            let frame = |time: f64, events: Vec<egui::Event>| {
-                let mut rect = Rect::NOTHING;
-                let output = sized_frame_at(&ctx, size, Some(time), events, |ui| {
+            let (_, output) = hover_frames(
+                &egui::Context::default(),
+                egui::vec2(800.0, 600.0),
+                |output| text_center(output, "2.688 N·m"),
+                |ui| {
                     let mut readouts = Readouts::new(TermColors::default(), show_details);
                     assert_eq!(readouts.show_details(), show_details);
-                    rect = ui.label("2.688 N·m").rect;
+                    let rect = ui.label("2.688 N·m").rect;
                     readouts.show_over(ui, rect, "model.pullout_Nm", |details| {
                         format!("details shown: {details}")
                     });
-                });
-                (output, rect)
-            };
-            let (_, rect) = frame(0.0, Vec::new());
-            frame(0.1, vec![egui::Event::PointerMoved(rect.center())]);
-            let (output, _) = frame(0.2, Vec::new());
+                },
+            );
             let want = format!("details shown: {show_details}");
             assert!(drawn_texts(&output).contains(&want), "{want}");
         }

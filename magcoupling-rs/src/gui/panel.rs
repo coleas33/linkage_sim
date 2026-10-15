@@ -1543,7 +1543,7 @@ mod tests {
     use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
         SCREEN, drawn_texts, key_event, key_tap, primary_button, select_all, short_magnets,
-        sized_frame, sized_frame_at, text_rect, text_rects, with_poles,
+        sized_frame, sized_frame_at, text_rect, text_rects, tooltips_at_once, with_poles,
     };
     use crate::headline;
 
@@ -1898,7 +1898,7 @@ mod tests {
         let mut harness = Harness::new();
         assert!(!harness.panel.show_details);
         assert!(!MagcouplingPanel::default().show_details);
-        tooltips_at_once(&harness);
+        tooltips_at_once(&harness.ctx);
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, SHOW_DETAILS), 1);
         // Its hover says what it shows.
@@ -1986,7 +1986,7 @@ mod tests {
         for show_details in [false, true] {
             let mut harness = Harness::first_view();
             harness.panel.show_details = show_details;
-            tooltips_at_once(&harness);
+            tooltips_at_once(&harness.ctx);
             let output = harness.frame(Vec::new());
             let row = dashboard_lines(harness.panel.results())
                 .into_iter()
@@ -2027,7 +2027,7 @@ mod tests {
             // The Key design group's face-gap row, its label's hover.
             let mut harness = Harness::new();
             harness.panel.show_details = show_details;
-            tooltips_at_once(&harness);
+            tooltips_at_once(&harness.ctx);
             let output = harness.frame(Vec::new());
             let rect = text_rect(&output, label).unwrap_or_else(|| panic!("no {label:?}"));
             harness.frame(vec![egui::Event::PointerMoved(rect.center())]);
@@ -2913,7 +2913,7 @@ mod tests {
         let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
         // The cell column, drawn with the spreadsheet details (spec S2-5).
         harness.panel.show_details = true;
-        tooltips_at_once(&harness);
+        tooltips_at_once(&harness.ctx);
         harness.click_text(CentreView::Results.label());
         harness.click_text(SEARCH_HINT);
         harness.frame(vec![egui::Event::Text("f_end".to_owned())]);
@@ -5437,7 +5437,7 @@ mod tests {
         };
         use crate::gui::sizing::auto_choice;
         let mut harness = Harness::new();
-        tooltips_at_once(&harness);
+        tooltips_at_once(&harness.ctx);
         harness.click_text(CentreView::SizeAndTorque.label());
         // Off: every size slider is the user's.
         let output = harness.frame(Vec::new());
@@ -6182,7 +6182,7 @@ mod tests {
         };
         // The M4-1 review's ~930 px window; the inputs side keeps its 320 points.
         let mut harness = Harness::on_screen(egui::vec2(930.0, 1024.0));
-        tooltips_at_once(&harness);
+        tooltips_at_once(&harness.ctx);
         // The longest outcome line: a requirement out of reach.
         harness.panel.inputs.metal.required_min_Nm = 50.0;
         harness.frame(Vec::new());
@@ -6241,15 +6241,6 @@ mod tests {
         }
     }
 
-    /// Shows tooltips at once (no delay, the pointer need not rest), as the geometry view's
-    /// hover test does.
-    fn tooltips_at_once(harness: &Harness) {
-        harness.ctx.style_mut(|s| {
-            s.interaction.tooltip_delay = 0.0;
-            s.interaction.show_tooltips_only_when_still = false;
-        });
-    }
-
     /// The rects of the term marks painted in a frame, in `color` (any colour for `None`).
     fn mark_rects(output: &egui::FullOutput, color: Option<egui::Color32>) -> Vec<egui::Rect> {
         use crate::gui::readouts::MARK_WIDTH;
@@ -6286,7 +6277,7 @@ mod tests {
         // filled and a label stops showing it.
         for (label, path) in [(GAP, FACE_GAP), (MAGNETS, POLES)] {
             let mut harness = size_tab(SCREEN, DesignInputs::default());
-            tooltips_at_once(&harness);
+            tooltips_at_once(&harness.ctx);
             let output = harness.frame(Vec::new());
             let at = text_rect(&output, label)
                 .unwrap_or_else(|| panic!("no {label:?}"))
@@ -6307,7 +6298,7 @@ mod tests {
     fn hovering_a_dashboard_value_shows_its_equation() {
         use crate::gui::readouts::OPEN_HINT;
         let mut harness = Harness::new();
-        tooltips_at_once(&harness);
+        tooltips_at_once(&harness.ctx);
         let output = harness.frame(Vec::new());
         let pullout = displayed_pullout(&DesignInputs::default());
         let at = text_rect(&output, &pullout).unwrap().center();
@@ -6333,7 +6324,7 @@ mod tests {
         // design row of the wall in its term's colour, from the next frame, and its tooltip
         // draws t_wall in that colour; moving the pointer away clears every mark.
         let mut harness = Harness::new();
-        tooltips_at_once(&harness);
+        tooltips_at_once(&harness.ctx);
         // The dashboard settles its width on the second frame, and the check guides above the
         // cup OD wrap to it: measure where the row rests.
         harness.frame(Vec::new());
