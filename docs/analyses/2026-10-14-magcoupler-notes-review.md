@@ -219,6 +219,41 @@ round-2 PASS):
   equation's label "2D pull-out torque (infinite length)". It needs a ruling on A-13, which fixes
   sources[0] verbatim with "endless-ring"; the reviewer advises changing both or neither.
 
+### Re-review: changed by the implementer after its review
+
+- Reviewer: a fresh-context physics reviewer (session model), 2026-10-15, on commit `9d68db5`
+  (`task-12b-textreview-1.md`). It re-reviews the texts that T12b, the shaft-clamp pause
+  (controller ruling 11), changed after their review.
+- Scope here: change[0].text, made joint-neutral by T12b (ruling 11, 3A): "... Costs: longer
+  stack, higher clamp and gearbox loads." -> "... Costs: longer stack, higher shaft-joint and
+  gearbox loads." The same re-review covered eight help, hint and GUI strings. Its whole report,
+  with its one must-fix item (the bore help, applied), is recorded in
+  `docs/analyses/2026-10-14-magcoupler-help-review.md`, Batch A (T7), "Re-review: changed by the
+  implementer after its review".
+- Verdict for this note: PASS, no must-fix. The dump (`NOTES_FOR_REVIEW=torque_from_shear`)
+  reads change[0] "moves as it says" at all five probe designs. No text of this note changed.
+
+The reviewer's report for the record, as returned (its opening line, this note's item, and the
+traps and rules items, which cover every changed text):
+
+T12b text re-review 1 (2026-10-15, fresh-context physics reviewer, session model). Commit
+`9d68db5`. Nine changed items; one must-fix.
+
+- **`torque_from_shear` change[0]: PASS.**
+  - The text: "torque rises almost linearly; on the example design each millimetre beats a
+    millimetre of radius. Costs: longer stack, higher shaft-joint and gearbox loads." (23 words.)
+  - The new cost holds at every design. T_2D is proportional to L, and f_end = 1 − c_end·τ_p/L
+    rises with L, so the pull-out rises with L. The cold-high torque (`metal.torque_cold_high_Nm`)
+    and its gearbox-input value (`metal.cold_high_input_Nm`) scale with the pull-out.
+  - `the_joint_neutral_texts_claim_what_the_engine_does` pins all three one slider step up at the
+    example design. The dump reads "moves as it says" at all five probe designs.
+  - The text names no joint method and does not say the coupling protects the gearbox (spec 8,
+    T-G, ruling 8).
+- **Traps:** no text writes a trap from slice-1 section 8, slice-2 section 8, T-A to T-P, or the
+  stiffness trap.
+- **Rules:** none says a joint method is chosen or sized, or that the coupling protects the
+  gearbox. Every cap holds.
+
 ## harmonics
 
 Task T12. Rewrite of "Harmonic decomposition" as "Block fill and the magnet pattern (harmonics)",

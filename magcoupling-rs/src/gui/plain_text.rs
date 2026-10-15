@@ -255,7 +255,7 @@ const HELP: &[(&str, &str)] = &[
     // Shaft and hub joint.
     (
         "coupling.bore_mm",
-        "Diameter of the shaft in the hub bore. Larger thins the hub wall left past the keyway, and too large can break through the hub.",
+        "Diameter of the shaft in the hub bore. Larger thins the hub wall: the hub check can fail, and the wall past the keyway can break through.",
     ),
     (
         "coupling.keyway_depth_mm",
@@ -1927,12 +1927,15 @@ mod batch_b_tests {
     /// Ruling 11 (3A): the texts that named the clamp as a cost now name what rises in its
     /// place, the shaft-joint and gearbox loads: the cold-high torque, which whatever holds the
     /// hub on the shaft and the gearbox output both carry, and its value at the gearbox input.
-    /// Each claim holds one slider step up on a design where the input is free.
+    /// Each claim holds one slider step up on a design where the input is free. The bore help's
+    /// two limits hold at the bore's slider top: the hub check fails on the 8-magnet probe
+    /// design, keyed or keyless, and the wall past the keyway breaks through on the smallest ring.
     #[test]
     fn the_joint_neutral_texts_claim_what_the_engine_does() {
         use crate::engine::explain::notes::Step;
-        use crate::engine::explain::probes::step_input;
+        use crate::engine::explain::probes::{probe_designs, step_input};
         use crate::engine::size_controls::dimensions;
+        use crate::gui::dashboard::{Level, check_level};
         let number = |inputs: &DesignInputs, path: &str| match compute_all(inputs).get(path) {
             Some(Value::Num(x)) => x,
             other => panic!("{path}: {other:?}"),
@@ -1993,6 +1996,48 @@ mod batch_b_tests {
             number(&smallest, wall) <= 0.0,
             "the bore alone breaks through"
         );
+        // A larger bore also thins the hub wall under the magnets, which the hub check reads: the
+        // help names the check by the label the results table draws it under. At the 8-magnet
+        // probe design the bore's slider top fails it, with the design's keyway and keyless
+        // alike, while the wall past the keyway still stands: the check fails first there.
+        let hub_check = "model.hub_check";
+        let bore_help = help_for("coupling.bore_mm").to_lowercase();
+        assert!(
+            bore_help.contains(&label_for(hub_check).to_lowercase()),
+            "the bore help names the {hub_check} row: {bore_help}"
+        );
+        let hub_wall = "model.hub_wall_mm";
+        let (_, eight) = probe_designs()
+            .into_iter()
+            .find(|(name, _)| *name == "8 magnets per ring")
+            .expect("the 8-magnet probe design");
+        let keyless = range("coupling.keyway_depth_mm").min;
+        assert_ne!(eight.coupling.keyway_depth_mm, keyless, "two keyways");
+        let level = |inputs: &DesignInputs| check_level(&compute_all(inputs), hub_check);
+        for keyway in [eight.coupling.keyway_depth_mm, keyless] {
+            let mut own_bore = eight.clone();
+            own_bore.coupling.keyway_depth_mm = keyway;
+            let mut widest = own_bore.clone();
+            widest.coupling.bore_mm = range("coupling.bore_mm").max;
+            assert_eq!(
+                level(&own_bore),
+                Some(Level::Good),
+                "keyway {keyway} mm, the design's bore"
+            );
+            assert_eq!(
+                level(&widest),
+                Some(Level::Bad),
+                "keyway {keyway} mm, the widest bore"
+            );
+            assert!(
+                number(&widest, hub_wall) < number(&own_bore, hub_wall),
+                "keyway {keyway} mm: {hub_wall}"
+            );
+            assert!(
+                number(&widest, wall) > 0.0,
+                "keyway {keyway} mm: {wall} at the widest bore"
+            );
+        }
     }
 
     #[test]

@@ -177,6 +177,129 @@ lower torque; the space claim leaves out the shaft boss; "with Auto on"; the mag
 - A-13: every changed drawn field has no audit, correction or spreadsheet id and no file or code name.
   Batch A has no note sources.
 
+### Re-review: changed by the implementer after its review
+
+- Reviewer: a fresh-context physics reviewer (session model), 2026-10-15, on commit `9d68db5`
+  (`task-12b-textreview-1.md`). It re-reviews the strings that T12b, the shaft-clamp pause
+  (controller ruling 11), changed after their review, so that no shown text names the clamp while
+  the section is paused (ruling 11, 3A).
+- Scope: nine changed items.
+  - From this batch: the `coupling.bore_mm` help (item 4 above), both manual Br helps, the
+    magnet-length hint, the Size tab's overall-length hint (`LENGTH_HINT_KEY`), and the workflow
+    group "Shaft and hub joint" (was "Shaft, key and clamps") with its first section.
+  - From batch B: the `metal.boss_od_mm` help.
+  - From the engine wording: the help of `materials.parts.cap_housing`.
+  - From the explorer: the Start here hover (`start_here_hover(true)`).
+  - The one note field, `torque_from_shear` change[0], is recorded under that note in
+    `docs/analyses/2026-10-14-magcoupler-notes-review.md`.
+- Verdict: MUST_FIX, one item (MF-1, the bore help). The other eight items pass.
+- MF-1, applied verbatim (the `coupling.bore_mm` help):
+  - Reviewed (round 1's must-fix item 4 above, passed in round 2): "The shaft diameter under the
+    hub and clamp. Larger lets each screw carry more torque but moves the screws outward, so fewer
+    sizes may fit, and thins the hub wall."
+  - T12b's text: "Diameter of the shaft in the hub bore. Larger thins the hub wall left past the
+    keyway, and too large can break through the hub."
+  - Now: "Diameter of the shaft in the hub bore. Larger thins the hub wall: the hub check can
+    fail, and the wall past the keyway can break through." (27 words, 2 sentences, no
+    plain-words problem.)
+  - Why: T12b's text named only the wall past the keyway. A larger bore also thins the hub wall
+    under the magnets (`model.hub_wall_mm`), which the hub check (`model.hub_check`) reads. The
+    results table badges that check and its failing filter lists it.
+    - On the 8-magnet probe design the hub check reads "Too thin" from a 15.5 mm bore, keyed or
+      keyless: the hub wall is 2.350 mm against the back-iron rule's 2.399 mm. The wall past the
+      keyway is still 0.65 mm there, and 0.40 mm at the 16 mm slider top. The keyway breaks
+      through at none of the five probe designs on the bore slider.
+    - For a keyless joint (BL-064's likely shrink fit), no slider design breaks through: the wall
+      is at least 0.95 mm, at the 9 mm ring and the 16 mm bore.
+  - Test: `the_joint_neutral_texts_claim_what_the_engine_does` (`gui/plain_text.rs`) now also
+    pins, from the engine:
+    - the help names the hub check by its display label (`label_for("model.hub_check")`);
+    - on the 8-magnet probe design, with the design's keyway (1.7 mm) and keyless (the keyway
+      slider's minimum), the bore's slider top turns `dashboard::check_level(..,
+      "model.hub_check")` from `Some(Level::Good)` at the design's bore to `Some(Level::Bad)`;
+    - there, `model.hub_wall_mm` falls (5.1 mm to 2.1 mm) and `model.hub_wall_past_key_mm` stays
+      above zero, so the check fails before any break-through.
+
+    The test keeps its smallest-ring break-through assertion for "can break through".
+- Should-fix, both optional, left open for the controller:
+  - SF-1: the `metal.boss_od_mm` help no longer tells the two bosses apart once the section
+    returns. The cheapest fix is a note on BL-060.
+  - SF-2: the cap material help's "6061-T6 uses the inputs" covers the density and specific heat,
+    not the conductivity.
+  - The reviewer also notes, for the controller, the housing section "Optional adapter and its
+    joint", whose three joint inputs are hidden while paused.
+
+The reviewer's report for the record, as returned:
+
+T12b text re-review 1 (2026-10-15, fresh-context physics reviewer, session model). Commit
+`9d68db5`. Nine changed items; one must-fix.
+
+- **`torque_from_shear` change[0]: PASS.**
+  - The text: "torque rises almost linearly; on the example design each millimetre beats a
+    millimetre of radius. Costs: longer stack, higher shaft-joint and gearbox loads." (23 words.)
+  - The new cost holds at every design. T_2D is proportional to L, and f_end = 1 − c_end·τ_p/L
+    rises with L, so the pull-out rises with L. The cold-high torque (`metal.torque_cold_high_Nm`)
+    and its gearbox-input value (`metal.cold_high_input_Nm`) scale with the pull-out.
+  - `the_joint_neutral_texts_claim_what_the_engine_does` pins all three one slider step up at the
+    example design. The dump reads "moves as it says" at all five probe designs.
+  - The text names no joint method and does not say the coupling protects the gearbox (spec 8,
+    T-G, ruling 8).
+- **HELP `coupling.bore_mm`: MUST-FIX MF-1.**
+  - The new text names only the wall past the keyway. A larger bore also thins the hub wall under
+    the magnets, which the results table's Hub check (`model.hub_check`) reads.
+  - At the 8-magnet probe design the hub check turns "Too thin" from a 15.5 mm bore, keyed or
+    keyless, with 0.65 mm still past the keyway.
+  - For a keyless joint (BL-064's likely shrink fit), break-through is unreachable on any slider:
+    the wall is at least 0.95 mm.
+  - Replacement: "Diameter of the shaft in the hub bore. Larger thins the hub wall: the hub check
+    can fail, and the wall past the keyway can break through." (27 words.)
+- **HELP `manual_inner_br_T` / `manual_outer_br_T`: PASS** (28 words each).
+  - "Stronger raises torque; shaft-joint and gearbox loads rise with it." holds:
+    - the pull-out rises with either ring's Br;
+    - manual blocks leave the calibration factor at its default, since the bench factor needs
+      B842SH on both rings (`model.rs:583-599`);
+    - the cold-high torque and its gearbox-input value follow the pull-out.
+  - The test pins both helps at the example design with the parts cleared.
+- **HELP `metal.boss_od_mm`: PASS** (23 words).
+  - The drawn boss is `metal.boss_od_mm` (`geometry.rs:663`). It sets `mass.boss_g` and the
+    adapter's mass.
+  - It sets the Size tab's outside diameter when larger than the cup and cap (T-P; pinned at
+    `plain_text.rs:2005-2030`).
+  - The section-8 boss trap concerns the hidden clamp input.
+  - SF-1 (optional) records the lost two-boss distinction for un-pausing.
+  - Not changed by T12b: "outside diameter" here is the Size tab's canonical one (spec 3.5).
+    `metal.rotating_od_mm` leaves the boss out (BL-061).
+- **HINT `coupling.magnets.axial_length_mm`: PASS** (12 words, at the cap).
+  - "Blank keeps ring lengths; longer adds torque, length, shaft-joint and gearbox loads."
+  - Pinned: the pull-out, the cold-high torque, its input-equivalent value and the overall length
+    all rise one step up.
+- **HINT `LENGTH_HINT_KEY`: PASS** (12 words). It covers the same claims as the axial-length hint.
+- **help `materials.parts.cap_housing`: PASS** (23 words).
+  - The adapter's mass uses the aluminium density input whatever the pick.
+  - SF-2 (optional) covers the existing "uses the inputs" against the fixed 6061-T6 conductivity.
+- **WORKFLOW "Shaft and hub joint": PASS.**
+  - Paused, the group holds the bore and the keyway depth. Unpaused, it holds the key and the
+    clamp sections too; the label fits both states and names no method.
+  - No "Shaft, key and clamps" is left in `magcoupling-rs/src` or the README.
+- **`start_here_hover(true)`: PASS.**
+  - Its nine topics map onto the eleven steps of `start_here_for(true)`, in order. "Slipping and
+    its heat" covers slip heating and the thermal time constant. "Demagnetization" covers the
+    demagnetization and ferrite cold-side notes.
+  - The unpaused form is the reviewed text, unchanged.
+  - Neither form contains "clamp" when paused, and both pass `plain_text_violations`.
+- **Traps:** no text writes a trap from slice-1 section 8, slice-2 section 8, T-A to T-P, or the
+  stiffness trap.
+- **Rules:** none says a joint method is chosen or sized, or that the coupling protects the
+  gearbox. Every cap holds.
+- **Outside the listed items, for the controller:** the housing section "Optional adapter and its
+  joint" (`inputs.rs:311`) keeps its label while its three joint inputs (`clamps.joint_*`) are
+  hidden. Paused, it shows only the six adapter inputs. The label is joint-neutral and has no clamp
+  word; leave it, or show "Optional adapter" while paused.
+- **Scratchpad mishap:** while setting up the probe I overwrote `scratchpad/probe/Cargo.toml` and
+  `scratchpad/probe/src/main.rs`. Both belong to an earlier session agent's scratch crate, which
+  has bins `p1` to `p4` and an egui `lib.rs`; its `lib.rs` no longer builds against the new
+  manifest. My probes ran from `scratchpad/t12b-rr1-probe`. Nothing in the repository changed.
+
 ## Batch B (T8)
 
 - Scope: the 52 empty helps of Calibration and model, Materials, Housing and retainers, and Thermal
