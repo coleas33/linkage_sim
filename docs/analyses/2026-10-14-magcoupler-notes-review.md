@@ -1415,3 +1415,277 @@ Must-fix items applied: none.
 
 Should-fix items applied by controller ruling 9:
 - `square_wave` label (round-2 DIAGRAMS should-fix 1, so that "gap" means only the gap between the rings): "blocks and gaps (fill {FILL})" -> "blocks and spaces (fill {FILL})", drawn as "blocks and spaces (fill 0.85)"; the test's `wave_label` and the doc comments of `square_wave` and `Diagram::SquareWaveHarmonics` match.
+
+## end_effect
+
+Task T13. Rewrite of "End effect" as "Magnet ends: the length lost to fringing", the note behind
+the end factor (`model.f_end`, `calibration.f_end`) and the end-effect check's Why link. It keeps
+the end-fringing diagram, whose brackets were reviewed with T12's diagrams (`## pullout_angle`).
+Reviewer: physics reviewer (session model), fresh context. Date: 2026-10-14 (the date the slice
+plan fixes for the note's `review` field; all three rounds ran on 2026-10-15).
+
+Rounds: 3. Verdict: PASS. Note: "Magnet ends: the length lost to fringing" (plan T13).
+
+Verdict by round: 1 MUST-FIX (4 items); 2 MUST-FIX (1); 3 PASS. Each round's full answer is
+`.superpowers/sdd/2026-10-14-magcoupler-guidance-slice-2/task-13-inreview-r<N>.md`, and the
+fields that rounds 1 and 2 changed are listed with their old and new text in
+`task-13-inreview-r<N>-changes.md` beside it. Rounds 2 and 3 re-checked only the changed fields
+and the fields whose meaning depends on them. Each round wrote its own free-space 3D check with no
+code shared (round 1: magpylib's cuboid field and surface charges; round 2: its own closed-form
+charged-rectangle field; round 3: equivalent surface currents). All three reproduce the math
+audit's 1.777459 N·m and agree with one another to the digits shown.
+
+The text reviewed in round 1 already carried A-2, A-13 and A-28a: the joint-neutral change[0] and
+change[1] texts ("shaft-joint and gearbox loads" in place of the clamp load) and A-13's plain-words
+sources. Every round confirmed them applied.
+
+The reviewer's report for the record, round by round, as returned:
+
+Round 1:
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; round 1.
+- Read:
+  - the dump `notes-review-T13.txt`; `notes.rs` end_effect literal;
+  - `model.rs:94-114` (`END_EFFECT_OUT_OF_RANGE`, `end_effect_in_range` f_end > 0) and `:913-1004` (L = min of the ring lengths, R_g = r_face + g/2, τ_p = 2πR_g/N, T_2D = τ·2πR_g²·L, f_end = 1 − c_end·τ_p/L, pull-out = T_2D·f_end·f_cal);
+  - `calibration.rs:155-235` (the prototype's own c_end and f_end); `metal_design.rs:455, 509` (cold-high and its gearbox-input equivalent);
+  - `assumptions.rs:68-73`; `guidance.rs:270-279` (the end-effect guide offers only magnet length);
+  - `diagrams.rs:349-398` (the brackets: c_end·τ_p/2 at each end, which matches "half at each end");
+  - math audit rows M8, M9 and the results JSON (T3-RC1 pole and gap sweeps, T3-RC3 short-magnet table, all three lenses).
+- Numbers reproduced from `compute_all`, in design order: default, 8 magnets per ring, 304 back iron, Y30 ferrite custom dimensions, 20 mm ring radius.
+  - f_end: 0.8960, 0.8699, 0.8960, 0.8960, 0.8229.
+  - τ_p: 8.809, 11.01, 8.809, 8.809, 15.00 mm.
+  - L: 12.70 mm at all five.
+  - Every rendered value matches the dump. Placeholders sit only in sentence 2's "here" clause, and no comparison depends on them.
+- Sentence 3 holds exactly: pull-out at L, L+1 and L+2 mm steps by 0.236274, 0.178159, 0.149171, 0.018198 and 0.242984 N·m per mm. The second differences are at most 9e-16, and each step equals T_pull/(L − c_end·τ_p).
+- Out-of-range edge (watch-out 2): 0.999·c_end·τ_p reads "End-effect model out of range" and 1.001·c_end·τ_p reads "OK" at all five. c_end·τ_p is 1.3214, 1.6517, 1.3214, 1.3214 and 2.2497 mm.
+  - At 2.0 mm, f_end is 0.3393, 0.1742, 0.3393, 0.3393 and −0.1248. The 20 mm design is out of range there.
+  - At 1.0 mm f_end is negative at all five, with a negative pull-out, flagged.
+- Gap probe (model): f_end at 0.6, 1.4, 2.0, 3.0 and 4.4 mm is 0.8989, 0.8960, 0.8937, 0.8900 and 0.8848 on the example ring. The end loss length runs 1.284 to 1.463 mm. The gap enters only through τ_p at R_g (14.02 to 15.52 mm).
+- Levers, one slider step (`step_input`) at all five designs:
+  - Axial length +0.01 mm:
+    - f_end rises (default 0.895956 to 0.896038);
+    - pull-out, hot-low, cold-high and `metal.cold_high_input_Nm` rise (default 3.823310 to 3.826670 and 0.804907 to 0.805615 N·m);
+    - `calibration.f_end` stays 0.898183.
+  - c_end +0.005: f_end and every predicted torque fall by the same ratio (0.996129 at the default: the 20 predicted torque rows of the model, metal and temperature results, and the two hidden clamp rows), cold-high and its gearbox-input value included; `calibration.f_end` stays 0.898183.
+  - Magnets per ring +2:
+    - f_end rises in the model at all five (0.8960 to 0.9133 at the default);
+    - 12 blocks do not fit the example ring (or the 304 and Y30 designs); they fit at 8 to 10 and at the 20 mm ring.
+- Independent free-space 3D check, written for this review (magpylib cuboid field; surface-charge torque on the outer ring; half a pole pitch; Br 1.29 T):
+  - It reproduces the audit's 1.777459 N·m at 10 magnets, 12.7 mm and 1.4 mm.
+  - By length (example ring), model/3D: 2.0 mm −20.7 %; 2.94 mm (τ_p/3) −0.6 %; 3.17 +0.8 %; 3.6 +2.15 %; 4.0 +2.61 %; 4.5 +2.69 %; 5.0 +2.53 %; 5.5 +2.28 %; 6.35 +1.83 %; 8.0 +1.15 %; 12.7 +0.37 %; 25.4 +0.10 %.
+  - By gap (12.7 mm): 0.6 mm −3.2 %; 1.4 +0.4 %; 2.0 +2.7 %; 3.0 +6.4 %; 4.4 +11.2 % (0.8848 against 0.7955).
+  - By count, example ring: 6 magnets −11.75 %, 8 −3.42 %, 10 +0.37 % (3D f_end 0.937, 0.901, 0.893).
+  - By count, 20 mm ring: 10 magnets −12.25 %, 12 −5.65 %, 14 −2.40 % (3D f_end 0.938, 0.903, 0.895).
+- Traps checked:
+  - "the end factor is accurate": not written; MF-2 scopes the 3D agreement to the example design, and watch-out 1 keeps wide-gap optimism.
+  - "more poles help until end effects bite": not written; MF-1 removes "more magnets lose less at the ends", which is the model's direction but not 3D's at fixed blocks.
+  - "more magnets make the coupling stiffer": not written.
+  - Any torque called guaranteed: none.
+  - "a shaft-joint method is chosen or sized here, or the coupling is said to protect the gearbox": not written.
+  - "clamp" in any field, sources included: none.
+- Form:
+  - Sentences 24, 22, 18, 23 and 25 words (MF-2 25, MF-3 25).
+  - Change texts 23 and 24 words after MF-1, each starting in lower case with no label typed.
+  - Watch-outs 28 and 28 words.
+  - Sentence 0 has no symbol and no placeholder. The title is plain and unique.
+- Seeds:
+  - S-3 accepted, amended (MF-3).
+  - S-4 rejected as written: its point is in MF-2, and it kept the 2 % figure and a scope that the 20 mm ring meets while reading 12 % low.
+- Must-fix items and how they were applied (round 1): MF-1 (change[1] deleted, tests and commit text follow), MF-2 (sentences[4]), MF-3 (sentences[1]), MF-4 (sources[1], BL-056 and commit text follow). Pending the round-2 re-check.
+- Verdict, round 1: MUST_FIX.
+
+Round 2:
+
+- Round 2 (physics reviewer, session model, fresh context, 2026-10-15) re-checked the round-1 changes:
+  - change[1] (magnets per ring) deleted;
+  - sentences[4] (3D agreement);
+  - sentences[1] (c_end glossed as an empirical coefficient);
+  - sources[1] (this review's 3D sweeps).
+- Independent free-space 3D check, written for round 2 with no code shared with round 1 or the audit:
+  - Method: own closed-form field of a uniformly charged rectangle; torque on the outer ring from the surface charges on its radial faces; composite Gauss-Legendre (0.8 mm and 0.4 mm panels agree to 7 digits); half a pole pitch.
+  - Validation: it reproduces the audit's 1.777459 N·m (10 magnets, 12.7 mm, 1.4 mm gap, Br 1.29 T) and its 3D end factors 0.5785, 0.7777, 0.8926 and 0.9470 at 3.17, 6.35, 12.7 and 25.4 mm. The long-length slope is 156.792 N·m/m.
+- By length, example ring, model/3D: 2.0 mm −20.72 %; 2.94 −0.58 %; 3.17 +0.80 %; 3.2 +0.94 %; 3.4 +1.67 %; 3.6 +2.15 %; 3.8 +2.45 %; 4.0 +2.61 %; 4.25 +2.70 %; 4.5 +2.69 %; 4.75 +2.63 %; 5.0 +2.53 %; 5.5 +2.28 %; 6.35 +1.83 %; 8.0 +1.15 %; 12.7 +0.37 %; 25.4 +0.10 %; 50.8 +0.05 %.
+  - So "within 3 % at 3.2 mm or longer" holds on the example design; the worst case is +2.70 % near 4.25 mm.
+- By count, example ring, 12.7 mm: 6 magnets −11.75 %, 8 −3.42 %, 10 +0.37 %, 12 +2.64 %, 14 +3.92 % (12 and 14 do not fit with B842SH).
+  - The 3D end deficit is 0.80, 1.26, 1.36, 1.40 and 1.39 mm, against the model's 2.20, 1.65, 1.32, 1.10 and 0.94 mm. More magnets do not cut the real end loss; this confirms the deletion of change[1].
+- By ring size, 10 magnets, 12.7 mm: 12 mm apothem −1.44 %, 14 mm −3.52 %, 20 mm −12.25 %.
+  - The 20 mm ring at 12, 14 and 16 magnets: −5.65 %, −2.40 %, −0.10 %.
+  - The 20 mm ring at 3.2, 4.5 and 6.35 mm: −49.7 %, −30.0 %, −21.2 %.
+  - 8 magnets on the example ring at 3.2, 4.5 and 6.35 mm: −17.61 %, −8.90 %, −5.85 %.
+- By gap, 12.7 mm: 0.6 mm −3.18 %; 4.4 mm +11.23 % (0.8848 against 0.7955), as watch-out 0 says.
+- Engine values reproduced with `compute_all` at the five designs (default, 8 magnets per ring, 304 back iron, Y30 ferrite custom dimensions, 20 mm ring radius):
+  - f_end 0.895956, 0.869945, 0.895956, 0.895956, 0.822859;
+  - τ_p 8.809, 11.01, 8.809, 8.809, 15.00 mm;
+  - L 12.70 mm at all five. Each matches the dump.
+- Levers, one `step_input` step at all five designs:
+  - axial length up raises f_end, cold-high and cold-high at the gearbox input;
+  - c_end up lowers f_end, hot-low, cold-high and the gearbox input;
+  - `calibration.f_end` stays 0.898183.
+- Form, after round 2's fix:
+  - sentences 24, 25, 18, 23 and 25 words;
+  - change texts 23 and 24 words;
+  - watch-outs 28 and 28 words;
+  - sources 18 and 30 words;
+  - every field plain, with no audit id and no "clamp".
+- Must-fix, round 2: R2-MF-1, sentences[4]. "low with fewer magnets or larger rings" could be read as 3D confirming the formula's lower f_end on sparser rings, which is false in 3D. It becomes "below 3D with fewer magnets or larger rings", with "at 3.2 mm or longer" to stay within 25 words. Pending the round-3 re-check.
+- Seeds: S-3 accepted as amended (in place); S-4 rejected (2 % exceeded from about 3.5 to 6.0 mm; its scope admits the 20 mm ring at −12 %).
+- Verdict, round 2: MUST_FIX (one item).
+
+Round 3:
+
+- Round 3 (physics reviewer, session model, fresh context, 2026-10-15) re-checked sentences[4] after R2-MF-1: "Steel-free 3D checks of the example design put f_end within 3 % at 3.2 mm or longer, below 3D with fewer magnets or larger rings." It also re-checked the fields that depend on it: sentences[1] to [3], both watch-outs and sources[1].
+- **Independent free-space 3D check, third method.**
+  - The outer ring's force comes from its equivalent surface currents on the four side faces of each block, in the closed-form field of the inner ring's charged pole faces. It shares no force formulation or code with rounds 1 and 2 or the audit.
+  - Validation: 1.7774591 N·m against the audit's 1.777459 (10 magnets, 12.7 mm, 1.4 mm gap, Br 1.29 T), converged at 0.8, 0.4 and 0.2 mm panels.
+  - Slope 156.790 N·m/m. Half a pole pitch is the 3D peak.
+- **Example design by length** (model/3D): 3.2 mm +0.94 %; 3.4 +1.67; 3.6 +2.15; 3.8 +2.44; 4.0 +2.61; 4.25 +2.70; 4.5 +2.69; 4.75 +2.63; 5.0 +2.53; 5.5 +2.28; 6.35 +1.83; 8.0 +1.15; 12.7 +0.37; 25.4 +0.10. "Within 3 % at 3.2 mm or longer" holds, with the worst case +2.70 % at 4.25 mm.
+- **Below 3D with fewer magnets or larger rings** (3.2, 4.25, 6.35, 12.7 and 25.4 mm):
+  - 8 magnets −17.61, −9.79, −5.85, −3.42, −1.80 %;
+  - 6 magnets −46.60, −29.86, −19.61, −11.81, −6.58 %;
+  - 12 mm ring −8.78 to −0.78 %; 14 mm −19.17 to −1.81 %; 20 mm −49.74, −32.28, −21.23, −12.27, −6.51 %;
+  - B822 at 8 magnets and at a 20 mm ring: also below.
+  - Inside the 3 % band only: a 10.6 mm ring +1.14 % at 4.25 mm; the 20 mm ring at 16 magnets −3.27 to +0.42 %.
+- **Gap:** 4.4 mm gives +11.23 % (0.8848 against 0.7955), as watch-out 0 says.
+- **Engine values at the five designs:**
+  - f_end 0.895956, 0.869945, 0.895956, 0.895956, 0.822859;
+  - τ_p 8.8090, 11.0113, 8.8090, 8.8090, 14.9980 mm;
+  - L 12.700 mm at all five. Each matches the dump.
+- **Levers** (`step_input`, all five designs):
+  - the axial step raises f_end, the pull-out, cold-high and its gearbox-input value;
+  - the c_end step lowers f_end, hot-low, cold-high and the gearbox input;
+  - `calibration.f_end` stays 0.898183.
+- **Form:** sentences 24, 25, 18, 23 and 25 words; changes 23 and 24; watch-outs 28 and 28; sources 18 and 30. Every field is plain, with no audit id and no "clamp".
+- **Seeds:**
+  - S-3 accepted as amended (in place since round 1).
+  - S-4 rejected: 2 % is exceeded from about 3.5 to 6.0 mm, and its scope admits the 20 mm ring (−12.27 %) and B822 blocks (+8.82 % at 4.25 mm).
+- **Open for the controller, outside round-3 scope (SF-C):**
+  - Narrower or more tightly packed blocks read high: B822 on the example ring at 10, 12, 16 and 20 per ring (all fit) gives +1.87, +3.29, +4.62 and +5.23 % at 12.7 mm, and up to +27 % at 3.2 mm. B842SH at 18 per ring on the 20 mm ring gives +5.99 % at 4.25 mm.
+  - watch_out[1]'s unscoped "reads well low" is false for B822 below τ_p/3: +3.80 % at 2.5 mm with 10, +9.29 % at 2.0 mm with 12.
+  - Candidate texts W1 and W0 are in the round-3 review file.
+- **Verdict, round 3:** PASS. R2-MF-1 was applied verbatim and is true; no must-fix remains.
+
+Must-fix items applied:
+- change[1] (round 1, MF-1: at fixed blocks, more magnets per ring do not cut the real end loss in free-space 3D, so the entry offered a model artefact as a design move), deleted: input `coupling.npole`, Raise, aim `model.f_end` Up, "a shorter pole pitch loses less at the ends; more blocks must then fit around the same ring, so check the fit." The note keeps two entries. `the_end_effect_note_s_levers_move_the_end_factor_as_it_says` follows: two levers, aims Up and Down, and the magnet-count blocks deleted.
+- sentences[4] (round 1, MF-2: "within 2 %" is exceeded from about 3.5 to 6.0 mm; the scope "10 poles and a 1.4 mm gap" admits the 20 mm ring at −12 %; "poles" is not the on-screen name; "it" can read as the torque): "A 3D field check without steel, at 10 poles and a 1.4 mm gap, put it within 2 % for magnets 3.2 mm and longer." -> "Steel-free 3D checks of the example design put f_end within 3 % for magnets 3.2 mm or longer, low with fewer magnets or larger rings."
+- sentences[1] (round 1, MF-3, seed S-3 accepted with the reviewer's amendment: c_end was unglossed at its first use): "The model counts this as missing length: f_end = 1 − c_end·τ_p/L, with τ_p the pole pitch and L the magnet overlap." -> "The model counts this as missing length: f_end = 1 − c_end·τ_p/L, with c_end an empirical coefficient, τ_p the pole pitch, L the magnet overlap."
+- sources[1] (round 1, MF-4: the line repeated, under the fold, the 2 % figure MF-2 corrects): "Guidance audit of 2026-10-13: within 2 % of free-space 3D for magnets 3.2 mm and longer, not 1 %" -> "Physics review of 2026-10-15: the end factor against free-space 3D by magnet length (within 3 % from 3.2 mm), by magnets per ring and at a 20 mm ring radius"
+- sentences[4] (round 2, R2-MF-1: the bare "low" could be read as 3D confirming the formula's lower end factor on sparser rings, which is false in 3D): "Steel-free 3D checks of the example design put f_end within 3 % for magnets 3.2 mm or longer, low with fewer magnets or larger rings." -> "Steel-free 3D checks of the example design put f_end within 3 % at 3.2 mm or longer, below 3D with fewer magnets or larger rings."
+
+Seeds (A-24):
+- S-3 (sentences[1]: "The model counts this as missing length: f_end = 1 − c_end·τ_p/L, with c_end an end coefficient, τ_p the pole pitch, L the overlap."): accepted in round 1 with one change and applied as MF-3; rounds 2 and 3 confirm it in place. Reason: c_end was unglossed at its first use. "An empirical coefficient" says what kind of number it is (fitted to 3D, not derived), which change[1]'s "only with 3D or bench evidence" relies on; the seed's "an end coefficient" says less, and its "L the overlap" drops what overlaps.
+- S-4 (sentences[4]: "A free-space 3D check at 10 magnets per ring and a 1.4 mm gap put it within 2 % for magnets 3.2 mm or longer."): rejected in rounds 1 to 3. Its "within 2 %" is false on the example design from about 3.5 to 6.0 mm (+2.70 % at 4.25 mm, the worst). Its scope (10 magnets per ring, a 1.4 mm gap) admits the 20 mm ring (−12.27 % at 12.7 mm) and B822 blocks on the example ring (+8.82 % at 4.25 mm). Its "it" can be taken for the torque. Its one valid point, naming the count in magnets rather than poles, is carried by the final sentences[4] ("fewer magnets").
+
+Should-fix offered, not applied (open for the controller; no on-screen text changed after the
+round-3 PASS):
+- SF-1 (rounds 1 to 3), watch_out[0] (28 words): "The model's end loss barely grows with the gap: at a 4.4 mm gap a 3D check found f_end 11 % high, so treat wide-gap torque as optimistic." Why: in "Its end loss ... it read 11 % high", "Its" can attach to the bench prototype named at the end of the entry above it, and "it" to "end loss", which inverts the direction. The 11 % is the end factor's (+11.23 %); the total free-space torque is +7.0 %.
+- SF-2 (rounds 1 to 3), watch_out[1] (28 words): "Below about a third of a pole pitch of overlap it reads increasingly low; at or below c_end·τ_p it gives no prediction and the end-effect check flags it." Why: at τ_p/3 (2.94 mm) the model is only −0.58 % against 3D, and −20.7 % at 2.0 mm. Round 3's W1 (under SF-C) replaces it.
+- SF-A (rounds 2 and 3), sources[1]: scope the figure as sentences[4] does (34 words): "Physics review of 2026-10-15: the end factor against free-space 3D by magnet length (within 3 % from 3.2 mm on the example design), by magnets per ring and at a 20 mm ring radius". Round 3 offers a 32-word form that also names block width: "Physics review of 2026-10-15: the end factor against free-space 3D by magnet length (within 3 % from 3.2 mm on the example design), by magnets per ring, block width and ring radius".
+- SF-C (round 3, new; physics; outside round 3's scope): narrow or tightly packed blocks read HIGH against 3D.
+  - B822 (3.17 mm wide) fits the example ring at 10, 12, 16 and 20 per ring, with the end-effect check "OK". The model's f_end reads above 3D there: +1.87, +3.29, +4.62 and +5.23 % at 12.7 mm, and up to +27 % at 3.2 mm. B842SH at 18 per ring on the 20 mm ring reads +5.99 % at 4.25 mm. The model's end loss c_end·τ_p tracks only the pole pitch, while the 3D loss stays about 1.2 to 1.6 mm at this gap until the pitch gets long.
+  - sentences[4] stays true: it is scoped to the example design and to its two named levers.
+  - watch_out[1]'s unscoped "reads well low" is false for B822 below τ_p/3 (+3.80 % at 2.5 mm with 10 blocks; +9.29 % at 2.0 mm with 12). It is true at the five probe designs and at the brief's extra probes, which is why rounds 1 and 2 passed it.
+  - Candidate texts, checked by the reviewer for form: W1, watch_out[1] (30 words): "On the example design it reads low below a third of a pole pitch of overlap; at or below c_end·τ_p it gives no prediction and the end-effect check flags it." W0, watch_out[0] (29 words; it folds in SF-1 and needs its own per-note pass, because it drops "treat wide-gap torque as optimistic"): "The model's end loss ignores block width and barely grows with the gap; 3D read f_end 11 % high at a 4.4 mm gap and high with narrower blocks."
+  - The reviewer recommends W1 before the flip if a 4th round is taken, and otherwise routing it with SF-4 to the final fix wave or a G-3 re-review. The controller closed the in-task loop at the round-3 PASS, so it is routed.
+- SF-4 (rounds 1 to 3; outside T13's fields, seen in the Assumptions view): the `end_effect` assumption rationale (`assumptions.rs:71`) still says "Checked at 10 magnets per ring and a 1.4 mm gap, it is within 2 % of free-space 3D for magnets 3.2 mm and longer", which the note now contradicts: 2 % is exceeded from about 3.5 to 6.0 mm, the scope admits the 20 mm ring at −12 %, and it is blind to block width. Route it to the final fix wave or a G-3 re-review. Also from round 1: phys-new-notes T-B ("end effects grow with fewer poles") is a statement about the model only. At fixed blocks the free-space 3D end loss grows with more magnets per ring, so no note may present "more magnets lose less at the ends" as physics.
+
+## calibration
+
+Task T13. Rewrite of "The one-point calibration" as "Calibration: what scales the torque
+estimate"; it now also owns `calibration.model_torque_Nm` (the prototype's modelled torque, the
+measured factor's divisor), which had no owner. Reviewer: physics reviewer (session model), fresh
+context. Date: 2026-10-14 (the date the slice plan fixes for the note's `review` field; all three
+rounds ran on 2026-10-15).
+
+Rounds: 3. Verdict: PASS. Note: "Calibration: what scales the torque estimate" (plan T13).
+
+Verdict by round: 1 MUST-FIX (2 items); 2 PASS; 3 PASS (no field changed after round 2). Each
+round's full answer is `task-13-inreview-r<N>.md`, as under `## end_effect`; the two notes were
+reviewed together.
+
+The text reviewed in round 1 already carried A-2 (the two bench entries are `Step::Enter` with no
+aim, so the panel draws "Enter <input>" and never invites tuning them to a design; the assumed
+factor is `Step::Lower` with no aim, under A-1's model-assumption exception) and A-13's
+plain-words sources. Every round confirmed them applied.
+
+The reviewer's report for the record, round by round, as returned:
+
+Round 1:
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; round 1.
+- Read:
+  - the dump; `notes.rs` calibration literal;
+  - `model.rs:583-599` (`select_calibration_factor`: circuit 0, npole = the prototype's poles per ring, B842SH on both rings);
+  - `calibration.rs:1-235`: the prototype at `test_temp_C` through `alpha_br_per_C`, model = T_2D·f_end·f_cal_original, f_cal_updated = f_cal_original·measured/model, so the assumed factor cancels;
+  - `material_library.rs:355-361, 731-740` (304 is "304 stainless (non-magnetic)", not ferromagnetic); `assumptions.rs:74-80`;
+  - math audit M4 to M6 and the T3-RC5 lenses (raw prototype −3.8 %).
+- Numbers reproduced from `compute_all`:
+  - `model.f_cal`: 0.9500, 0.9500, 1.049 (the 304 back iron design, circuit 0, the only match), 0.9500, 0.9500. The renders match.
+  - `calibration.f_cal_updated` 1.049450, `model_torque_Nm` 1.629425 N·m, measured/model 1.104684 and model error −9.48 % at all five.
+- Change entries:
+  - Original calibration coefficient −0.005 (0.95 to 0.945): outside the match, pull-out, hot-low and cold-high scale by exactly 0.994737, as do all 20 predicted torque rows of the model, metal and temperature results (probe section H). At the 304 match `model.f_cal` and the pull-out are unchanged (ratio 1.000000).
+  - Measured pull-out +0.01 N·m: `f_cal_updated` 1.049450 to 1.055280 at all five; `model.f_cal` moves only at the match.
+  - Test temperature +0.5 °C: the prototype model 1.629425 to 1.627470 N·m and `f_cal_updated` 1.049450 to 1.050711 at all five. At α = 0 nothing moves; this is an edge case and noted.
+- Rule probes on the 304 design:
+  - Resized (ring radius 20 mm via the Size tab and raw, gap 2.0 mm, axial 20 mm): it keeps 1.049450.
+  - At 8 magnets per ring: 0.9500, a −9.5 % step in every torque.
+  - At 8 with Total installed magnets 16: 1.567470 (+49 % on the bench factor), the watch-out's hazard.
+  - The default with no back iron at all: a match at 1.049450.
+  - The same with custom dimensions equal to B842SH: 0.9500, pull-out 1.5365 against 1.6974 N·m.
+- Traps checked:
+  - "edit the calibration inputs to match your design": the watch-out forbids it.
+  - "the bench calibration applies beyond prototype-matching designs": not written; s3 states that the rule ignores size, and s4 that the step is "by rule, not physics".
+  - "steel gives the torque shown": not written.
+  - No torque is called guaranteed; nothing on joints or gearbox protection; no "clamp".
+  - A-2's Enter entries keep "Raise <Measured pull-out torque>" from reading as an invitation to tune it.
+- Form:
+  - Sentences 22, 25 (MF-5), 25 (MF-6), 21 and 23 words.
+  - Change texts 23, 23 and 17 words; the watch-out 26 words.
+  - Sentence 0 is plain; the placeholder sits only in s4's "here" clause.
+  - The sources are A-13's lines, plain, with no ids and no "clamp".
+- Must-fix items and how they were applied (round 1): MF-5 (sentences[1]) and MF-6 (sentences[2]): "magnetic steel" in place of "steel", because the 304 design is steel-backed and gets the measured factor; "B842SH parts" in place of "blocks". Pending the round-2 re-check.
+- Verdict, round 1: MUST_FIX.
+
+Round 2:
+
+- Round 2 (physics reviewer, session model, fresh context, 2026-10-15) re-checked:
+  - sentences[1] ("a design backed by magnetic steel");
+  - sentences[2] ("no magnetic steel behind the magnets ... B842SH parts on both rings").
+- Rule probes (`model.f_cal`, `materials.circuit_backiron`):
+  - back-iron picks at the default:
+    - 4140, 1018, 12L14, 416, 17-4PH H1150 and H900: circuit 1, 0.9500;
+    - 304 and 6061: circuit 0, 1.049450.
+  - "Back iron" set to "no back iron" with the 4140 pick: circuit 0, 1.049450 (the engine then takes the hub as aluminium).
+  - 304 with a B842-N52 outer part: 0.9500.
+  - 304 with N52 typed in the grade fields on B842SH parts: ignored (Br 1.30 T, pull-out 1.697369 N·m unchanged), still 1.049450.
+  - 304 at a 25.4 mm axial length: 1.049450.
+  - Round 1's custom-dimensions probe (B842SH sizes, no part: 0.9500) stands.
+- At the five designs `model.f_cal` is 0.9500, 0.9500, 1.049, 0.9500 and 0.9500.
+  - The four magnetic-steel designs get the assumed factor ("a judgement").
+  - The 304 design, which has steel but not magnetic steel, gets the measured one. Sentences 1, 2 and 4 now agree at every design.
+- Dependent text: s3, s4, change[0] ("no steel bench test backs any value", true: no bench test had any steel) and the watch-out are unchanged and true.
+- Form: sentences 22, 25, 25, 21 and 23 words; change texts 23, 23 and 17; watch-out 26; all fields plain, no audit id, no "clamp".
+- Must-fix items of round 1 (MF-5, MF-6) are applied verbatim and pass.
+- Verdict, round 2: PASS.
+
+Round 3:
+
+- Round 3 (physics reviewer, session model, fresh context, 2026-10-15): no calibration field changed after round 2.
+- The re-check confirmed that every field still passes `plain_text_violations` and `audit_ids` and names no clamp. Sentences are 22, 25, 25, 21 and 23 words; changes 23, 23 and 17; the watch-out 26.
+- A-2's Enter entries are in place.
+- Verdict, round 3: PASS (unchanged since round 2).
+
+Must-fix items applied:
+- sentences[1] (round 1, MF-5: the rule tests the back-iron circuit, not steel; the 304 back iron design has non-magnetic stainless behind the magnets and gets the measured factor): "The only bench test it holds is of a prototype without steel, so for a steel-backed design the factor is a judgement." -> "The only bench test it holds is of a prototype without steel, so for a design backed by magnetic steel the factor is a judgement."
+- sentences[2] (round 1, MF-6: the same circuit point, and the rule reads the picked part name, so custom dimensions equal to B842SH get the assumed factor): "A design gets the measured factor only with no steel behind the magnets, the prototype's magnets per ring and B842SH blocks on both rings." -> "A design gets the measured factor only with no magnetic steel behind the magnets, the prototype's magnets per ring and B842SH parts on both rings."
+
+Seeds (A-24): none names `calibration` (S-3 and S-4 are `end_effect`'s).
+
+Considered, no change (the reviewer's reasons):
+- "Every torque" (sentences[4] and change[0]) leaves out the slip drag (`temperature.slip_loss.drag_Nm`) and the requirement rows (`metal.required_20C_Nm`, `metal.cold_for_hot_min_Nm`), which do not scale. Sentence 0 frames the subject as the torque model's predictions, and every one of those scales (round 1).
+- change[2] at a coefficient α of 0, which the slider allows: the test temperature then moves nothing. This is an edge case, and the text is right at every real grade (round 1).
+- change[0]'s "no steel bench test backs any value" is true as written: no bench test had any steel. A hyphenated "no magnetic-steel bench test" would only align the term (round 2).
+
+Should-fix offered, not applied (open for the controller; no on-screen text changed after the
+round-2 PASS):
+- SF-3 (rounds 1 to 3; not on screen): the doc comment of `the_calibration_note_s_levers_and_rule_hold_at_every_probe_design` in `tests/explain.rs` still says "(the rule's own terms: no steel behind the magnets, ...)"; to follow MF-6 it becomes "no magnetic steel behind the magnets". The test's `circuit_backiron == 0` check is already right.
+- SF-4 (rounds 1 to 3; outside T13's fields, seen in the Assumptions view): the `calibration_factor` assumption rationale (`assumptions.rs:78`) still says "no steel behind the magnets ... B842SH blocks", while a 304 design matches and the note now says "no magnetic steel" and "B842SH parts". Route it with `end_effect`'s SF-4 to the final fix wave or a G-3 re-review, so the Assumptions view and the notes agree.

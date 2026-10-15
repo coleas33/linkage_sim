@@ -1614,6 +1614,249 @@ fn pullout_angle_claims_hold_on_the_engine() {
     );
 }
 
+// Slice 2 note claims: the end-effect and calibration notes (plan T13). Each lever moves by
+// one slider step (`probes::step_input`; a blank axial length starts from the length in use).
+
+/// `end_effect`'s two entries at the five probe designs: longer magnets lose a smaller share
+/// at the ends; a larger end coefficient lowers every torque but leaves the bench prototype's
+/// own end factor. The trade-offs the entries name hold too: cold-high, and with it the
+/// shaft-joint load (cold-high itself) and the gearbox load (cold-high through the gear ratio
+/// and efficiency at its input).
+#[test]
+fn the_end_effect_note_s_levers_move_the_end_factor_as_it_says() {
+    let note = notes::note("end_effect").expect("the end-effect note");
+    let levers: Vec<&str> = note.change.iter().map(|c| c.input).collect();
+    // Magnet length first (lengthen first), then the assumption that only evidence should move.
+    assert_eq!(
+        levers,
+        ["coupling.magnets.axial_length_mm", "coupling.c_end"]
+    );
+    assert!(note.change.iter().all(|c| matches!(c.step, Step::Raise)));
+    assert_eq!(note.change[0].aim, Some(("model.f_end", Sense::Up)));
+    assert_eq!(note.change[1].aim, Some(("model.f_end", Sense::Down)));
+    let step = |design: &DesignInputs, path: &str| {
+        probes::step_input(design, path, Step::Raise)
+            .unwrap_or_else(|why| panic!("{path} is free at every probe design: {why:?}"))
+    };
+    for (name, design) in probes::probe_designs() {
+        let base = compute_all(&design);
+        // Entry 1: a smaller share lost at the ends, more torque, and the trade-off it names:
+        // cold-high rises, and with it the shaft-joint load (cold-high itself) and the gearbox
+        // load (cold-high through the gear ratio and efficiency at its input).
+        let r = compute_all(&step(&design, "coupling.magnets.axial_length_mm"));
+        assert!(r.model.f_end > base.model.f_end, "{name}: f_end");
+        assert!(
+            r.model.pullout_Nm > base.model.pullout_Nm,
+            "{name}: pull-out"
+        );
+        assert!(
+            r.metal.torque_cold_high_Nm > base.metal.torque_cold_high_Nm,
+            "{name}: cold-high"
+        );
+        assert!(
+            r.metal.cold_high_input_Nm > base.metal.cold_high_input_Nm,
+            "{name}: gearbox input"
+        );
+        // Entry 2: every torque falls, cold-high and the shaft-joint and gearbox loads
+        // included; the bench prototype's own end factor does not move.
+        let r = compute_all(&step(&design, "coupling.c_end"));
+        assert!(r.model.pullout_Nm < base.model.pullout_Nm, "{name}");
+        assert!(
+            r.metal.torque_hot_low_Nm < base.metal.torque_hot_low_Nm,
+            "{name}: hot-low"
+        );
+        assert!(
+            r.metal.torque_cold_high_Nm < base.metal.torque_cold_high_Nm,
+            "{name}"
+        );
+        assert!(
+            r.metal.cold_high_input_Nm < base.metal.cold_high_input_Nm,
+            "{name}: gearbox input"
+        );
+        assert_eq!(r.calibration.f_end, base.calibration.f_end, "{name}");
+    }
+}
+
+/// `end_effect`'s length sentences and its second watch-out at the five probe designs: every
+/// extra millimetre of overlap adds the same torque, and at or below c_end·τ_p the end-effect
+/// check flags the overlap (no prediction) while just above it reads OK.
+#[test]
+fn the_end_effect_note_s_length_claims_hold_at_every_probe_design() {
+    use magcoupling::engine::model::END_EFFECT_OUT_OF_RANGE;
+    for (name, design) in probes::probe_designs() {
+        let base = compute_all(&design);
+        let at = |length: f64| {
+            let mut d = design.clone();
+            d.coupling.magnets.axial_length_mm = Some(length);
+            compute_all(&d)
+        };
+        // Sentence 4: every extra millimetre of overlap adds the same torque.
+        let l = base.model.active_length_mm;
+        let t: Vec<f64> = [l, l + 1.0, l + 2.0]
+            .iter()
+            .map(|&x| at(x).model.pullout_Nm)
+            .collect();
+        assert!(t[1] > t[0], "{name}: {t:?}");
+        assert!(
+            ((t[2] - t[1]) - (t[1] - t[0])).abs() <= 1e-9 * (t[1] - t[0]),
+            "{name}: {t:?}"
+        );
+        // Watch-out 2: at or below c_end·τ_p there is no prediction and the check flags it;
+        // just above it, a prediction.
+        let lost = design.coupling.c_end * base.model.pole_pitch_mm;
+        assert_eq!(
+            at(0.999 * lost).model.end_effect_check,
+            END_EFFECT_OUT_OF_RANGE,
+            "{name}"
+        );
+        assert_eq!(at(1.001 * lost).model.end_effect_check, "OK", "{name}");
+    }
+}
+
+/// `calibration`'s three entries and its rule at the five probe designs. A prototype match
+/// (the rule's own terms: no steel behind the magnets, the prototype's magnets per ring, B842SH
+/// on both rings) ignores the assumed factor; elsewhere every torque scales with it. The two
+/// bench entries are entered from the test, so they claim no aim: the measured factor rises
+/// with a larger measurement or a warmer test, and only a match uses it.
+#[test]
+fn the_calibration_note_s_levers_and_rule_hold_at_every_probe_design() {
+    let note = notes::note("calibration").expect("the calibration note");
+    let levers: Vec<&str> = note.change.iter().map(|c| c.input).collect();
+    assert_eq!(
+        levers,
+        [
+            "calibration.f_cal_original",
+            "calibration.measured_torque_Nm",
+            "calibration.test_temp_C",
+        ]
+    );
+    assert!(matches!(note.change[0].step, Step::Lower));
+    assert!(
+        note.change[1..]
+            .iter()
+            .all(|c| matches!(c.step, Step::Enter))
+    );
+    // A prototype match ignores the assumed factor, and the bench values are entered, not
+    // stepped, so no entry claims a direction a test could check at every design: each is
+    // checked here, design by design.
+    assert!(note.change.iter().all(|c| c.aim.is_none()));
+    // A prototype match by the rule's own terms (sentence 3).
+    let is_match = |d: &DesignInputs, r: &DesignResults| {
+        r.materials.circuit_backiron == 0
+            && d.coupling.npole as f64 == r.calibration.poles_per_ring
+            && d.coupling.magnets.part_inner == "B842SH"
+            && d.coupling.magnets.part_outer == "B842SH"
+    };
+    let step = |design: &DesignInputs, path: &str, step: Step| {
+        probes::step_input(design, path, step)
+            .unwrap_or_else(|why| panic!("{path} is free at every probe design: {why:?}"))
+    };
+    let (mut matching, mut other) = (0, 0);
+    for (name, design) in probes::probe_designs() {
+        let base = compute_all(&design);
+        let matched = is_match(&design, &base);
+        // Entry 1: every torque outside a match falls in proportion, cold-high included; a
+        // match ignores it.
+        let lower = step(&design, "calibration.f_cal_original", Step::Lower);
+        let r = compute_all(&lower);
+        if matched {
+            matching += 1;
+            assert_eq!(base.model.f_cal, base.calibration.f_cal_updated, "{name}");
+            assert!(
+                (r.model.pullout_Nm / base.model.pullout_Nm - 1.0).abs() < 1e-12,
+                "{name}: a match ignores the assumed factor"
+            );
+        } else {
+            other += 1;
+            assert_eq!(
+                base.model.f_cal, design.calibration.f_cal_original,
+                "{name}"
+            );
+            let ratio = lower.calibration.f_cal_original / design.calibration.f_cal_original;
+            assert!(ratio < 1.0, "{name}: {ratio}");
+            for (before, after) in [
+                (base.model.pullout_Nm, r.model.pullout_Nm),
+                (base.metal.torque_hot_low_Nm, r.metal.torque_hot_low_Nm),
+                (base.metal.torque_cold_high_Nm, r.metal.torque_cold_high_Nm),
+            ] {
+                assert!(
+                    (after / before - ratio).abs() < 1e-12,
+                    "{name}: {before} -> {after}"
+                );
+            }
+        }
+        // Entry 2: the measured factor rises with the measurement, and only a match uses it.
+        let r = compute_all(&step(
+            &design,
+            "calibration.measured_torque_Nm",
+            Step::Raise,
+        ));
+        assert!(
+            r.calibration.f_cal_updated > base.calibration.f_cal_updated,
+            "{name}"
+        );
+        assert_eq!(
+            r.model.f_cal != base.model.f_cal,
+            matched,
+            "{name}: only a match uses it"
+        );
+        // Entry 3: a warmer test weakens the modelled prototype, so the measured factor rises.
+        let r = compute_all(&step(&design, "calibration.test_temp_C", Step::Raise));
+        assert!(
+            r.calibration.model_torque_Nm < base.calibration.model_torque_Nm,
+            "{name}: a weaker modelled prototype"
+        );
+        assert!(
+            r.calibration.f_cal_updated > base.calibration.f_cal_updated,
+            "{name}"
+        );
+    }
+    assert!(
+        matching >= 1 && other >= 1,
+        "the probe designs hold a match and others"
+    );
+}
+
+/// `calibration`'s match sentences and its watch-out, on the 304 back iron probe design (the
+/// one prototype match): the rule ignores ring radius, gap and magnet length; another magnet
+/// count leaves the match for the assumed factor; and "matching" the prototype inputs to that
+/// count makes a match again, with a factor far from the bench one.
+#[test]
+fn the_calibration_note_s_match_claims_hold() {
+    let matched = probe_inputs("304 back iron");
+    let bench = compute_all(&matched);
+    assert_eq!(bench.model.f_cal, bench.calibration.f_cal_updated);
+    // Sentence 4: the rule ignores ring radius, gap and magnet length.
+    let mut resized = matched.clone();
+    resized.coupling.inner_back_apothem_mm = 20.0;
+    resized.metal.face_gap_mm = 2.0;
+    resized.coupling.magnets.axial_length_mm = Some(20.0);
+    assert_eq!(
+        compute_all(&resized).model.f_cal,
+        bench.calibration.f_cal_updated
+    );
+    // Sentence 5: leaving the match (another magnet count) switches to the assumed factor.
+    let mut left = matched.clone();
+    left.coupling.npole = 8;
+    assert_eq!(
+        compute_all(&left).model.f_cal,
+        left.calibration.f_cal_original
+    );
+    // The watch-out: "matching" the prototype inputs to the new count makes a match again,
+    // with a factor far from the bench one: the prototype model at another count, not a
+    // measurement.
+    let mut faked = left.clone();
+    faked.calibration.total_magnets = 2 * faked.coupling.npole;
+    let fake = compute_all(&faked);
+    assert_eq!(fake.model.f_cal, fake.calibration.f_cal_updated);
+    assert!(
+        fake.model.f_cal / bench.model.f_cal - 1.0 > 0.4,
+        "{} against the bench {}",
+        fake.model.f_cal,
+        bench.model.f_cal
+    );
+}
+
 // ---------------------------------------------------------------------------------------
 // A3 traceability
 // ---------------------------------------------------------------------------------------
