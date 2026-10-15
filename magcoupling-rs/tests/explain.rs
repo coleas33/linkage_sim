@@ -40,6 +40,7 @@ use magcoupling::engine::library;
 use magcoupling::engine::meta::{
     FieldType, InputMeta, InputSet, ResultSet, Value, input_rows, result_rows,
 };
+use magcoupling::engine::model::blocks_fit;
 
 /// One input set the guard evaluates at.
 struct Point {
@@ -1262,6 +1263,232 @@ fn torque_from_shear_claims_hold_on_the_engine() {
     assert!(
         after < before,
         "8 magnets, ring radius +1 mm: {before} -> {after}"
+    );
+}
+
+/// `harmonics` states two things about the engine. Its harmonic-set entry: summing past the
+/// fifth moved the pull-out under 2 % where checked (the five probe designs). Its watch-out: at
+/// low fill the third harmonic can change the pull-out by more than a tenth and move its angle
+/// (the 20 mm ring radius design, both fills under one half).
+#[test]
+fn harmonics_claims_hold_at_the_probe_designs() {
+    let with_set = |inputs: &DesignInputs, set: i64| {
+        let mut edited = inputs.clone();
+        edited.coupling.max_harmonic = set;
+        compute_all(&edited).model
+    };
+    for (design, inputs) in probes::probe_designs() {
+        let five = with_set(&inputs, 5).pullout_Nm;
+        for set in [7, 9, 11] {
+            let more = with_set(&inputs, set).pullout_Nm;
+            assert!(
+                (more / five - 1.0).abs() < 0.02,
+                "{design}, harmonics to {set}: {more} against {five}"
+            );
+        }
+    }
+    let low_fill = probe_inputs("20 mm ring radius");
+    let (first, third) = (with_set(&low_fill, 1), with_set(&low_fill, 3));
+    assert!(
+        third.fill_inner < 0.5 && third.fill_outer < 0.5,
+        "{} {}",
+        third.fill_inner,
+        third.fill_outer
+    );
+    assert!(
+        (third.pullout_Nm / first.pullout_Nm - 1.0).abs() > 0.1,
+        "{} against {}",
+        third.pullout_Nm,
+        first.pullout_Nm
+    );
+    assert!(
+        (third.pullout_angle_rad - FRAC_PI_2).abs() > 0.1,
+        "{}",
+        third.pullout_angle_rad
+    );
+}
+
+/// `harmonics`' outer-part entry, on the example design. B862, a wider outer block of equal
+/// thickness, fits and raises the outer fill and the pull-out; the cold-high torque the shaft
+/// joint and the gearbox carry rises, and its grade lowers the magnet limit. B861, as wide but
+/// thinner, also fits yet lowers the pull-out, so the entry needs "equally thick".
+#[test]
+fn harmonics_outer_part_entry_holds_on_the_example_design() {
+    let example = DesignInputs::default();
+    let base = compute_all(&example);
+    let picked = |part: &str| {
+        let mut inputs = example.clone();
+        inputs.coupling.magnets.part_outer = part.to_owned();
+        let results = compute_all(&inputs);
+        assert!(blocks_fit(&inputs.coupling, &results.model), "{part} fits");
+        assert!(
+            results.model.outer_width_mm > base.model.outer_width_mm,
+            "{part} is wider"
+        );
+        results
+    };
+    let (equal, thinner) = (picked("B862"), picked("B861"));
+    assert_eq!(
+        equal.model.outer_thickness_mm,
+        base.model.outer_thickness_mm
+    );
+    assert!(thinner.model.outer_thickness_mm < base.model.outer_thickness_mm);
+    for (what, after, before) in [
+        ("outer fill", equal.model.fill_outer, base.model.fill_outer),
+        ("pull-out", equal.model.pullout_Nm, base.model.pullout_Nm),
+        (
+            "cold-high torque",
+            equal.metal.torque_cold_high_Nm,
+            base.metal.torque_cold_high_Nm,
+        ),
+    ] {
+        assert!(
+            after > before,
+            "B862 raises the {what}: {before} -> {after}"
+        );
+    }
+    let limit = |r: &DesignResults| r.temperature.summary.magnet_limit_C;
+    assert!(
+        limit(&equal) < limit(&base),
+        "B862's grade lowers the magnet limit: {} -> {}",
+        limit(&base),
+        limit(&equal)
+    );
+    assert!(
+        thinner.model.pullout_Nm < base.model.pullout_Nm,
+        "B861 lowers the pull-out: {} -> {}",
+        base.model.pullout_Nm,
+        thinner.model.pullout_Nm
+    );
+}
+
+/// `back_iron_factor`'s two choice entries: among the back-iron materials only 304 and
+/// aluminium switch the torque model to free space, and with no back iron it is free space
+/// whatever material is picked.
+#[test]
+fn back_iron_factor_claims_hold_on_the_engine() {
+    use magcoupling::engine::material_library::BACK_IRON_CHOICES;
+    let circuit = |code: i64, backiron: i64| {
+        let mut inputs = DesignInputs::default();
+        inputs.materials.parts.back_iron = code;
+        inputs.coupling.backiron = backiron;
+        compute_all(&inputs).materials.circuit_backiron
+    };
+    let free_space: Vec<&str> = BACK_IRON_CHOICES
+        .iter()
+        .filter(|&&(code, _)| circuit(code, 1) == 0)
+        .map(|&(_, id)| id)
+        .collect();
+    assert_eq!(free_space, ["304_annealed", "6061_T6"]);
+    for &(code, id) in &BACK_IRON_CHOICES {
+        assert_eq!(circuit(code, 0), 0, "{id} with no back iron");
+    }
+}
+
+/// `pullout_angle`'s grade entry. On the example design a same-size, stronger-grade block on
+/// the inner ring (B842-N52 for B842SH: the same width, thickness and length) raises the
+/// pull-out in proportion to that ring's Br, raises the cold-high torque the shaft joint and
+/// the gearbox carry, and is rated for less heat. "Same-size" is needed: M5026, a stronger
+/// grade that fits but is thinner, lowers the pull-out and the cold-high torque. "Unless
+/// calibration changes": on the 304 back iron design the same-size pick ends the bench factor
+/// (the default factor applies), so the pull-out moves by the Br ratio times the factor ratio.
+#[test]
+fn pullout_angle_claims_hold_on_the_engine() {
+    use magcoupling::engine::meta::NumOrText;
+    let with_inner = |inputs: &DesignInputs, part: &str| {
+        let mut picked = inputs.clone();
+        picked.coupling.magnets.part_inner = part.to_owned();
+        let results = compute_all(&picked);
+        (picked, results)
+    };
+    let stronger_inner =
+        |inputs: &DesignInputs| (compute_all(inputs), with_inner(inputs, "B842-N52").1);
+    let example = DesignInputs::default();
+    assert_eq!(example.coupling.magnets.part_inner, "B842SH");
+    let (base, n52) = stronger_inner(&example);
+    for (what, picked_mm, base_mm) in [
+        ("width", n52.model.inner_width_mm, base.model.inner_width_mm),
+        (
+            "thickness",
+            n52.model.inner_thickness_mm,
+            base.model.inner_thickness_mm,
+        ),
+        (
+            "length",
+            n52.model.inner_length_mm,
+            base.model.inner_length_mm,
+        ),
+    ] {
+        assert_eq!(picked_mm, base_mm, "B842-N52 has B842SH's {what}");
+    }
+    assert!(n52.model.inner_br_T > base.model.inner_br_T);
+    assert_eq!(n52.model.f_cal, base.model.f_cal);
+    let (torque, br) = (
+        n52.model.pullout_Nm / base.model.pullout_Nm,
+        n52.model.inner_br_T / base.model.inner_br_T,
+    );
+    assert!((torque / br - 1.0).abs() < 1e-12, "{torque} against {br}");
+    assert!(
+        n52.metal.torque_cold_high_Nm > base.metal.torque_cold_high_Nm,
+        "cold-high: {} -> {}",
+        base.metal.torque_cold_high_Nm,
+        n52.metal.torque_cold_high_Nm
+    );
+    match (n52.model.inner_tmax_C, base.model.inner_tmax_C) {
+        (NumOrText::Num(rated), NumOrText::Num(base_rated)) => {
+            assert!(rated < base_rated, "{rated} against {base_rated}")
+        }
+        other => panic!("{other:?}"),
+    }
+
+    let (arc_inputs, arc) = with_inner(&example, "M5026");
+    assert!(blocks_fit(&arc_inputs.coupling, &arc.model), "M5026 fits");
+    assert!(
+        arc.model.inner_br_T > base.model.inner_br_T,
+        "M5026 is a stronger grade: {} -> {}",
+        base.model.inner_br_T,
+        arc.model.inner_br_T
+    );
+    assert!(
+        arc.model.inner_thickness_mm < base.model.inner_thickness_mm,
+        "M5026 is thinner: {} -> {}",
+        base.model.inner_thickness_mm,
+        arc.model.inner_thickness_mm
+    );
+    for (what, after, before) in [
+        ("pull-out", arc.model.pullout_Nm, base.model.pullout_Nm),
+        (
+            "cold-high torque",
+            arc.metal.torque_cold_high_Nm,
+            base.metal.torque_cold_high_Nm,
+        ),
+    ] {
+        assert!(
+            after < before,
+            "M5026 lowers the {what}: {before} -> {after}"
+        );
+    }
+
+    let bench = probe_inputs("304 back iron");
+    let (base, n52) = stronger_inner(&bench);
+    let (bench_factor, default_factor) = (
+        base.calibration.f_cal_updated,
+        bench.calibration.f_cal_original,
+    );
+    assert_ne!(bench_factor, default_factor);
+    assert_eq!(base.model.f_cal, bench_factor, "B842SH: the bench factor");
+    assert_eq!(
+        n52.model.f_cal, default_factor,
+        "B842-N52: the default factor"
+    );
+    let (torque, br, factor) = (
+        n52.model.pullout_Nm / base.model.pullout_Nm,
+        n52.model.inner_br_T / base.model.inner_br_T,
+        n52.model.f_cal / base.model.f_cal,
+    );
+    assert!(
+        (torque / (br * factor) - 1.0).abs() < 1e-12,
+        "304: {torque} against {br} x {factor}"
     );
 }
 

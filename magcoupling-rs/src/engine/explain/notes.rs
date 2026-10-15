@@ -20,7 +20,7 @@
 /// A small diagram the M4 panel paints beside a note (egui painter, no image files).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Diagram {
-    /// The magnetization's rectangular wave (blocks and gaps) and its first odd harmonics.
+    /// The magnetization's rectangular wave (blocks and spaces) and its first odd harmonics.
     SquareWaveHarmonics,
     /// Flux paths across the gap with and without back iron.
     FluxPathBackIron,
@@ -202,62 +202,119 @@ pub const NOTES: &[Note] = &[
     },
     Note {
         id: "harmonics",
-        title: "Harmonic decomposition",
+        title: "Block fill and the magnet pattern (harmonics)",
         equations: &[
             "model.b_i#",
             "model.b_o#",
             "model.amp#_Pa",
             "model.tau_Pa",
             "calibration.amp#_Pa",
+            "model.fill_inner",
+            "model.fill_outer",
         ],
         sentences: &[
-            "Each ring's magnetization alternates north and south around the circle, so along the gap it is a rectangular wave, blocks separated by gaps, not a smooth sine.",
-            "Such a wave is a sum of sine waves at odd multiples of its basic frequency: harmonic n has n times as many wavelengths around the ring and an amplitude of 4/(nπ) times the remanence, scaled by sin(nπλ/2), where λ is the fraction of each pole the magnet fills (λ < 1 when there are gaps between blocks); that factor sets each harmonic's size and sign, so some amplitudes come out negative even with no gaps (sin(3π/2) = −1), and the fill decides which ones.",
-            "Harmonic n of one ring pulls only on harmonic n of the other, so the total shear stress is a sum with one term per harmonic.",
-            "Higher harmonics have shorter wavelengths and a lower amplitude ceiling, 4/(nπ) times the remanence (the fill can still make a higher one larger than a lower one), and above all their fields fade across the gap much faster, which is why the workbook keeps only 1, 3 and 5 (the calculator's default; it can sum the odd harmonics up to 11).",
+            "Around each ring, blocks alternate north and south with spaces between them, so the magnet pattern along the gap is squarish, not smooth.",
+            "It equals a sine wave, the fundamental (one wave per pair of poles), plus weaker odd harmonics with 3, 5, 7 times the waves.",
+            "The fundamental grows with sin(π·λ/2), where the fill λ is the block's width over the room each pole has on that ring.",
+            "Each harmonic pulls only on its match on the other ring; higher pairs usually add little, being weaker and fading faster across the gap.",
+            "On this design the fills are {model.fill_inner} inner and {model.fill_outer} outer, and the fundamental gives σ_1 = {model.tau1_Pa} of the total σ = {model.tau_Pa}.",
         ],
-        change: &[],
+        change: &[
+            Change {
+                input: "coupling.magnets.part_outer",
+                step: Step::Choose,
+                aim: None,
+                text: "a wider, equally thick outer block raises outer fill and torque if blocks fit; shaft-joint and gearbox loads rise; its grade may tolerate less heat.",
+            },
+            Change {
+                input: "coupling.magnets.manual_outer_width_mm",
+                step: Step::Raise,
+                aim: Some(("model.pullout_Nm", Sense::Up)),
+                text: "with custom dimensions, a wider outer block fills more of its pole and raises torque while the blocks still fit; shaft-joint and gearbox loads rise.",
+            },
+            Change {
+                input: "coupling.npole",
+                step: Step::Raise,
+                aim: Some(("model.fill_outer", Sense::Up)),
+                text: "more blocks on the same ring fill more of each pole; they must still fit, and fewer magnets leave wider spaces between blocks.",
+            },
+            Change {
+                input: "coupling.max_harmonic",
+                step: Step::Choose,
+                aim: None,
+                text: "a model setting, not a design lever: keep at least 1, 3, 5; adding more moved the pull-out under 2 % where checked.",
+            },
+        ],
         watch_out: &[
-            "A fill of exactly 0.4 makes the fifth harmonic vanish, because sin(5π·0.4/2) = sin(π) = 0: that is geometry, not an error.",
+            "At low fill, from few magnets, a large ring or narrow blocks, the third harmonic can change the pull-out by more than a tenth and move its angle.",
         ],
         diagram: Some(Diagram::SquareWaveHarmonics),
         sources: &[
-            "M1 audit M3, M4, M7 (the planar harmonic model against exact 2D sections)",
-            "Addendum A decision 29 (odd harmonics up to 11)",
+            "Math audit of 2026-09-29: the planar harmonic model against exact 2D sections",
+            "The odd-harmonic set, summed up to 11",
+            "Physics read of 2026-10-14: the third harmonic at low fill (6 magnets, a 20 mm ring radius, narrow blocks)",
         ],
         review: Review::Reviewed {
-            reviewer: "independent physics review 2026-10-01",
-            date: "2026-10-01",
-            record: "independent physics review 2026-10-01 of the A4 notes: commit \"docs(magcoupling-rs): apply the independent physics review to six A4 notes\" (the seven findings and their fixes)",
+            reviewer: "physics reviewer (session model)",
+            date: "2026-10-14",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#harmonics",
         },
     },
     Note {
         id: "back_iron_factor",
-        title: "Back iron: the sinh factor against free space",
+        title: "Back iron: why steel behind the magnets adds torque",
         equations: &["model.s#_iron", "model.s#_free", "model.k#"],
         sentences: &[
-            "The geometry factor S_n says how much of harmonic n's field from one ring reaches through the other ring.",
-            "With steel behind both rings, the field lines cross the gap and close through the steel instead of spreading into the air behind the magnets, and the factor takes the sinh form.",
-            "The steel makes the field meet its surface at right angles, so the growing and decaying exponentials across the gap combine into sinh; in free space only the decaying one remains.",
-            "Without back iron each ring's field leaks out behind it as well as across the gap, so the free-space factor, with its decay e^(−kg), is smaller.",
-            "Both fall off with k·g, the gap measured against the harmonic's wavelength, so a small gap matters most for the high harmonics.",
+            "Magnetic steel behind each ring gives the flux an easy return path, so more of it crosses the gap instead of leaking out behind.",
+            "The geometry factor S_n, which turns both rings' magnet strengths into pull across the gap, is therefore always larger with steel.",
+            "On this design S_1 is {model.s1_iron} with magnetic steel and {model.s1_free} without; the gain is largest when the pole pitch is long against magnet thickness.",
+            "Across the gap the fundamental fades about as e^(−π·g/τ_p), g being the gap, so what matters is the gap against the pole pitch.",
+            "S_1 has a best pole pitch: too long for thin magnets and the field is weak; too short and it fades across the gap.",
         ],
-        change: &[],
-        watch_out: &[],
+        change: &[
+            Change {
+                input: "materials.parts.back_iron",
+                step: Step::Choose,
+                aim: None,
+                text: "4140 or 1018 keep the steel circuit; 304 and aluminium switch to free space and lose much torque; 12L14, 416 and 17-4PH may saturate.",
+            },
+            Change {
+                input: "coupling.backiron",
+                step: Step::Choose,
+                aim: None,
+                text: "keep the steel circuit; with no back iron the torque model uses free space, whatever material is picked.",
+            },
+            Change {
+                input: "metal.face_gap_mm",
+                step: Step::Lower,
+                aim: Some(("model.pullout_Nm", Sense::Up)),
+                text: "less of the field fades across the gap, so torque rises; running clearance and room for the sleeve and liner shrink.",
+            },
+            Change {
+                input: "coupling.magnets.manual_outer_thickness_mm",
+                step: Step::Raise,
+                aim: Some(("model.s1_iron", Sense::Up)),
+                text: "a thicker outer block raises S_n with shrinking gains, but it lowers the outer fill, so past a point torque falls; the cup grows.",
+            },
+        ],
+        watch_out: &[
+            "The torque assumes the steel never saturates: where the cup wall check fails, the real coupling can fall below the torque shown.",
+        ],
         diagram: Some(Diagram::FluxPathBackIron),
         sources: &[
-            "M1 audit M3 (planar factor against the cylindrical one)",
-            "M1 audit M5 (steel at the magnet backs)",
+            "Math audit of 2026-09-29: the planar back-iron factor against the cylindrical one",
+            "Math audit of 2026-09-29: steel at the magnet backs",
+            "Guidance audit of 2026-10-13: S_1 with steel at 8, 10 and 12 magnets (its best pole pitch)",
         ],
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
-            date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
+            date: "2026-10-14",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#back_iron_factor",
         },
     },
     Note {
         id: "pullout_angle",
-        title: "Pull-out torque against rotation angle",
+        title: "Pull-out: the most torque before the rings slip",
         equations: &[
             "model.tau#_Pa",
             "model.pullout_angle_rad",
@@ -268,21 +325,45 @@ pub const NOTES: &[Note] = &[
             "calibration.tau#_Pa",
         ],
         sentences: &[
-            "Twist one ring against the other and the torque rises from zero, peaks and falls again: the peak is the pull-out torque, the most the coupling carries before it slips.",
-            "Harmonic n contributes A_n sin(nφ), where φ is the electrical angle, 90° at half a pole pitch.",
-            "With the fundamental alone the peak is at φ = 90°; a strong third harmonic can move it, so the calculator takes the angle where the summed curve is highest (correction E7).",
+            "Pull-out torque is the peak of torque against twist: the most the coupling is expected to pass before the rings slip, a nominal estimate.",
+            "It is computed at the magnet temperature while running (here: {metal.op_temp_C}) as T_pull = T_2D·f_end·f_cal: the endless-ring torque times end and calibration factors.",
+            "Angles in this model are electrical: φ = N/2 times the mechanical twist, so 90° is half a pole pitch, a twist of 180°/N.",
+            "The fundamental alone peaks at 90°; at low fill a same-sign third harmonic above about a ninth of it shifts the peak below 90°.",
+            "Loaded past it, the rings slip: torque then swings between plus and minus pull-out once per pole pair passed, averaging only a small drag.",
         ],
-        change: &[],
-        watch_out: &[],
+        change: &[
+            Change {
+                input: "coupling.magnets.axial_length_mm",
+                step: Step::Raise,
+                aim: Some(("model.pullout_Nm", Sense::Up)),
+                text: "pull-out grows almost linearly with the overlap; the stack lengthens, and shaft-joint and gearbox loads rise.",
+            },
+            Change {
+                input: "coupling.magnets.part_inner",
+                step: Step::Choose,
+                aim: None,
+                text: "a same-size, stronger-grade block raises pull-out proportionally to its built-in flux density Br unless calibration changes; shaft-joint and gearbox loads rise; heat tolerance often drops.",
+            },
+            Change {
+                input: "coupling.op_temp_C",
+                step: Step::Lower,
+                aim: Some(("model.pullout_Nm", Sense::Up)),
+                text: "the pull-out is reported at this temperature; lower it only if the magnets really run cooler, or the estimate is optimistic.",
+            },
+        ],
+        watch_out: &[
+            "A slipping coupling may keep slipping after the load drops below pull-out: it locks again only once the slip speed falls, and meanwhile it heats.",
+        ],
         diagram: Some(Diagram::TorqueAngle),
         sources: &[
-            "M1 audit E7 (T3-RC2)",
-            "Addendum A decision 29 (one peak search for any harmonic set)",
+            "Math audit of 2026-09-29: the pull-out is the highest point of the summed curve, not always half a pole pitch",
+            "One peak search for any harmonic set",
+            "Guidance audit of 2026-10-13: the same-sign third harmonic above a ninth; electrical against mechanical angle",
         ],
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
-            date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
+            date: "2026-10-14",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#pullout_angle",
         },
     },
     Note {
@@ -920,18 +1001,39 @@ mod tests {
         }
     }
 
-    /// The step-1 note keeps to the slice-2 caps and its sentence 0 is plain words, ahead of
-    /// the all-notes tests that stay ignored until every note is rewritten.
     #[test]
-    fn torque_from_shear_keeps_to_the_slice_2_caps() {
-        let id = "torque_from_shear";
-        let note = note(id).unwrap_or_else(|| panic!("no note {id}"));
-        assert_eq!(cap_problems(note), Vec::<String>::new(), "{id}");
-        assert_eq!(
-            sentence_zero_problems(note.sentences[0]),
-            Vec::<&str>::new(),
-            "{id}"
-        );
+    fn the_torque_chain_notes_say_what_to_change_and_harmonics_owns_the_fill() {
+        // Slice 2: Start here steps 2 to 4 say what to change, and the block fill they teach
+        // belongs to the harmonics note (spec 3.3 R3).
+        for id in ["harmonics", "back_iron_factor", "pullout_angle"] {
+            let n = note(id).unwrap_or_else(|| panic!("{id}"));
+            assert!(!n.change.is_empty(), "{id}: what to change");
+        }
+        for path in ["model.fill_inner", "model.fill_outer"] {
+            assert_eq!(
+                note_for_any_status(path).map(|n| n.id),
+                Some("harmonics"),
+                "{path}"
+            );
+        }
+    }
+
+    /// The rewritten notes keep to the slice-2 caps and each sentence 0 is plain words, ahead
+    /// of the all-notes tests that stay ignored until every note is rewritten (driven by
+    /// `REWRITTEN`, so it goes with that list).
+    #[test]
+    fn the_rewritten_notes_keep_to_the_slice_2_caps() {
+        let failures: Vec<String> = REWRITTEN
+            .iter()
+            .flat_map(|id| {
+                let note = note(id).unwrap_or_else(|| panic!("REWRITTEN names no note: {id}"));
+                let sentence_zero = sentence_zero_problems(note.sentences[0])
+                    .into_iter()
+                    .map(move |p| format!("{id}: sentence 0 has {p}"));
+                cap_problems(note).into_iter().chain(sentence_zero)
+            })
+            .collect();
+        assert!(failures.is_empty(), "{failures:#?}");
     }
 
     #[test]
@@ -1361,9 +1463,15 @@ mod tests {
     }
 
     /// The notes rewritten in plain words so far (slice-2 spec 3.4, A-13): each note task adds
-    /// its ids; the task that turns the all-notes tests on deletes this list and
-    /// `the_rewritten_notes_read_in_plain_words`.
-    const REWRITTEN: &[&str] = &["torque_from_shear"];
+    /// its ids; the task that turns the all-notes tests on deletes this list and the two tests
+    /// it drives, `the_rewritten_notes_read_in_plain_words` and
+    /// `the_rewritten_notes_keep_to_the_slice_2_caps`.
+    const REWRITTEN: &[&str] = &[
+        "torque_from_shear",
+        "harmonics",
+        "back_iron_factor",
+        "pullout_angle",
+    ];
 
     #[test]
     fn the_plain_words_rule_names_each_kind_of_mistake() {

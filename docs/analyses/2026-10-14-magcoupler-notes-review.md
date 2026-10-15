@@ -9,8 +9,9 @@ physics reviewer before it ships. The reviewer reads the note rendered at the fi
 20 mm ring radius; `engine::explain::probes`), the engine code behind every claim and the
 physics traps of the slice-1 and slice-2 specs (section 8 of each), reproduces every number from
 `compute_all` and probes every "What to change" direction. Must-fix items are applied and
-re-reviewed, up to three rounds. A note becomes `Reviewed` in the same commit that appends its
-section here; its `record` names the section as `<this file>#<note id>`.
+re-reviewed, up to three rounds (four from T12 on, by controller ruling 9; T12 ran a fifth under
+ruling 12). A note becomes `Reviewed` in the same commit that appends its section here; its
+`record` names the section as `<this file>#<note id>`.
 
 ## torque_from_shear
 
@@ -217,3 +218,888 @@ round-2 PASS):
 - Round 2 S-2: "infinite-length" in place of "endless-ring" in sentences[2], to match the T_2D
   equation's label "2D pull-out torque (infinite length)". It needs a ruling on A-13, which fixes
   sources[0] verbatim with "endless-ring"; the reviewer advises changing both or neither.
+
+## harmonics
+
+Task T12. Rewrite of "Harmonic decomposition" as "Block fill and the magnet pattern (harmonics)",
+Start here step 2; it now also owns the fill rows (`model.fill_inner`, `model.fill_outer`).
+Reviewer: physics reviewer (session model), fresh context. Date: 2026-10-14 (the date the slice
+plan fixes for the note's `review` field; all five rounds ran on 2026-10-15).
+
+Rounds: 5. Verdict: PASS.
+
+Verdict by round: 1 MUST-FIX (2 items); 2 MUST-FIX (1); 3 MUST-FIX (1); 4 PASS; 5 PASS (no field
+had changed since round 4, so the round-4 PASS stood). Rounds 4 and 5 ran under controller
+rulings 9 and 12, which raised T12's round limit. Each round's full answer is
+`.superpowers/sdd/2026-10-14-magcoupler-guidance-slice-2/task-12-inreview-r<N>.md`; its opening
+amendment checks, which the reports below call "above", hold the seed verdicts summarized under
+"Seeds (A-24)" in each section.
+
+Round 1:
+
+**What I read**
+- The dump `magcoupling-rs/target/notes-review-T12.txt`: harmonics, Draft, at the five probe designs.
+- The literals in `notes.rs`: harmonics, plus torque_from_shear for context (lines 150-258).
+- `diagrams.rs` `square_wave`, unchanged: fill 0.85, harmonics 1, 3 and 5.
+- `model.rs`:
+  - `pitch_share` (:509-514);
+  - `harmonic_amplitude` (:645-650);
+  - `shear_stress` (:676-712);
+  - `peak_off_half_pitch`, `stationary_polynomial` and `at_pull_out` (:714-892);
+  - `compute` (:900-1178), including the clamped fills at :973-974 and the summed σ at the E7 angle at :998-1000.
+- `probes.rs`.
+- The 2026-10-14 spec: 3.1, 3.2, 3.3, R5, R6, R8 and 8.
+- The slice-1 spec, section 8.
+- `phys-notes-a.md`, sections 1, 2 and 8.
+- `phys-new-notes.md`, section 2 (T-A to T-P).
+- `amendments.md`.
+
+**How I reproduced the numbers.** I used a new scratch probe crate outside the repo (scratchpad `t12-inreview-r1-probe`, magcoupling-rs by path, default-features = false). It calls `compute_all`, `probes::{probe_designs, step_input}`, `model::blocks_fit`, and `plain::{word_count, plain_text_violations, audit_ids}`.
+
+**Numbers reproduced** (fills inner/outer; σ_1 of σ, both at the pull-out angle; A3/A1; pull-out with the harmonic set to 1, 3, 5, 7, 9 and 11):
+
+| Design | Fills | σ_1 of σ (Pa) | A3/A1 | Pull-out (N·m) |
+|---|---|---|---|---|
+| default | 0.8612 / 0.6198 | 199961 of 201380 | −0.0109 | 2.6695 (1), 2.6987 (3), 2.6885 (5), 2.6886 (7), 2.6884 (9), 2.6885 (11) |
+| 8 magnets | 0.6890 / 0.4959 | 149136 of 151848 | −0.0085 | 1.9332 (1), 1.9497 (3), 1.9684 (5), 1.9742 (7, +0.295 %), 1.9737 (9), 1.9740 (11) |
+| 304 back iron | 0.8612 / 0.6198 | 113808 of 115093 | −0.0179 | 1.6881 (1), 1.6974 (5); 7-11 within −0.05 % |
+| Y30 custom | 0.8612 / 0.6198 | 15401.5 of 15510.8 | −0.0109 | 7-11 within ±0.005 % |
+| 20 mm ring | 0.4682 / 0.3864 | 64874 of 71445 (amplitude A1 81274) | +0.2158 | 2.8886 (1, at 90°), 2.5303 (3, 0.9234 rad, −12.40 % against 1), 2.5393 (5, 0.9243 rad), 2.5535 (7, +0.560 %), 2.5513 (9), 2.5492 (11) |
+
+The dump's rounded values (0.8612/0.6198 ... 200000 of 201400 Pa ... 64870 of 71440 Pa) match at all five designs.
+
+**Check a: physical truth at all five designs.**
+- Sentence 0: false ("small gaps"), must-fix 1.
+- Sentence 1: true. No harmonic exceeds the fundamental, since |sin nx| ≤ n|sin x|. Alternating N/S blocks give odd harmonics only.
+- Sentence 2: true. B_1 = Br·4/π·sin(πλ/2) (model.rs:649).
+- Sentence 3: true (see check c).
+- Sentence 4: true as rendered. Should-fix 1 clarifies where the split is taken.
+- change[0]: true at all five designs, B862 (9.5 mm) outer against B842SH:
+  - +15.0 % and fits at the default;
+  - +28.7 % at 8 magnets;
+  - +1.1 % at the 304 design, where the bench calibration lapses (1.0495 -> 0.95) but the torque still rises;
+  - +50.2 % at the 20 mm design;
+  - at the Y30 design the pick also brings an NdFeB grade.
+  B882 (12.7 mm) does not fit at four designs (fill clamped at 1). Must-fix 2 is wording only.
+- change[1] (manual outer width): held by the part pick at four designs, as the dump draws. At the Y30 design one step (6.35 -> 6.36 mm) moves the pull-out 0.207074 -> 0.207243 N·m. The sweep to 25.4 mm rises until the blocks stop fitting at about 9.7 mm, then stays flat (fill clamped at 1). "While the blocks still fit" names the limit.
+- change[2] (magnets per ring, aim outer fill Up): one step holds at all five designs (0.6198 -> 0.7438 at the default, 0.4959 -> 0.6198 at 8 magnets, 0.3864 -> 0.4637 at 20 mm). The sweep to 40 never falls; the fill clamps at 1. At the default ring 12 magnets already fail the fit (inner flat 5.44 mm against a 6.35 mm block), which "they must still fit" names. At 20 mm the blocks fit up to 18.
+- change[3]: true. It presents a model setting, not a design lever. "Under 2 % where checked" holds: at most +0.560 % from 7-11 against 5, at the 20 mm design.
+- watch_out[0]: true. At the 20 mm design the third harmonic moves the pull-out by −12.4 % and its angle from 90° to 52.9°. At the default ring with 6 magnets the angle is 59.15°, and with 4 magnets 33.4°.
+
+**Check b: change entries.** As above. Every Raise entry was stepped one slider step and swept to its slider end at each design where the input is free. Trade-offs: fit and magnet mass (change[0]); the fit (change[1] and change[2]).
+
+**Check c: the physics of the note.**
+- The fill is each ring's own `pitch_share` at its magnet mid-radius ("the room each pole has on that ring"), never w/τ_p. At the default w/τ_p is 0.721, against fills of 0.8612 and 0.6198.
+- Higher pairs add little mainly through the amplitude product. At the default, B_i3·B_o3/(B_i1·B_o1) = −0.024, against S_3/S_1 = 0.456 with steel. "Being weaker" comes first, then "fading faster across the gap" (e^(−n·k·g)).
+- In free space S_3/S_1 can exceed 1: 1.107 at 8 magnets and 1.762 at 20 mm, through the thickness terms. The sentence claims only the gap fade and says "usually", so it stays true.
+- The setting matters at low fill (watch-out and change[3]).
+
+**Check g: plain words and caps.**
+- Word counts: sentences 24, 24, 22, 24 and 24; changes 21, 21, 23 and 23; watch-out 28.
+- Sentence 0 has no symbol and no placeholder.
+- The placeholders sit in an "On this design" clause.
+- No input label is typed. The title is plain and unique.
+- Replacements checked with `word_count`, `plain_text_violations` and `audit_ids`: 23 and 23 words (should-fix: 25 and 23), all clean.
+
+**Check h: sources.** Correct and plain (A-13). The low-fill third harmonic (6 magnets, a 20 mm ring, narrow B822 blocks) is phys-notes-a section 2's probe set.
+
+**Trap check.** No spec-8, slice-1-8, T-A to T-P or "more magnets stiffer" trap appears. DRY: change[2] overlaps torque_from_shear change[2] on the same input. Accepted: the aims differ (outer fill against T_2D), and each note is reached on its own.
+
+**Verdict:** MUST-FIX (2).
+
+Round 2:
+
+**What I read**
+- `task-12-inreview-r1-changes.md` and the round-1 answer `task-12-inreview-r1.md`.
+- The regenerated dump `magcoupling-rs/target/notes-review-T12.txt` (harmonics, at the five designs).
+- The harmonics literal in `notes.rs` (lines 203-258).
+- `model.rs`:
+  - `pitch_share` and `flat_fits` (:505-515);
+  - `ring_fits` and `blocks_fit` (:518-582);
+  - the outer flat and pocket geometry in `compute`: `A_o = r_corner_i + corner_gap` and `r_pocket` from `A_back = A_o + t_o`, so a wider outer block does not grow the cup.
+- `library.rs`: all 15 parts with their width, thickness, length and grade.
+- `diagrams.rs` `square_wave`: the label "blocks and gaps (fill 0.85)", for the dependent-wording check.
+- Spec 8, slice-1 spec 8, phys-new-notes section 2 and phys-notes-a section 8.
+
+**How I reproduced the numbers.** I built a new scratch crate outside the repo: scratchpad `t12-inreview-r2-own-probe`, with magcoupling-rs by path, default-features = false, and its own target directory. It calls:
+- `compute_all`;
+- `probes::probe_designs`;
+- the result paths `model.fill_*`, `model.*_flat_check`, `model.pullout_Nm` and `mass.magnets_g`;
+- `plain::{word_count, plain_text_violations, audit_ids}`.
+
+**sentences[0] (new: "spaces between them").** It is true at all five designs: every ring has room between its blocks.
+
+| Design | Fills (inner / outer) | Inner flat slack | Outer blocks apart at the faces |
+|---|---|---|---|
+| default | 0.8612 / 0.6198 | 0.25 mm | 3.22 mm |
+| 8 magnets | 0.6890 / 0.4959 | 2.06 mm | 5.84 mm |
+| 304 | 0.8612 / 0.6198 | 0.25 mm | 3.22 mm |
+| Y30 | 0.8612 / 0.6198 | 0.25 mm | 3.22 mm |
+| 20 mm | 0.4682 / 0.3864 | 6.65 mm | 9.62 mm |
+
+- At the default inner ring the 0.25 mm slack is at the block backs. The faces along the gap fan apart (fill 0.8612, so 14 % of the pole is empty at the mid-radius).
+- "Spaces" makes no size claim, so the round-1 falsehood ("small gaps") is gone.
+- Sentence-0 rules hold: no symbol and no placeholder. It has 23 words.
+
+**change[0] (new: A-24 S-2 text).** I tried every library part wider than the 6.35 mm outer block, at each design. Pull-out change; fit; magnet-mass change:
+
+| Part (w x t mm, grade) | default | 8 magnets | 304 | Y30 | 20 mm |
+|---|---|---|---|---|---|
+| B862 (9.5 x 3.17, N42) | +14.96 %; fits; +9.51 g | +28.68 %; fits; +7.61 g | +1.14 %; fits; +9.51 g | +314.21 %; fits; +15.90 g | +50.24 %; fits; +9.51 g |
+| B882 (12.7 x 3.17, N42) | +15.51 %; no fit | +37.25 %; no fit | +1.51 %; no fit | +316.21 %; no fit | +99.73 %; fits; +19.17 g |
+| B882-N52 (12.7 x 3.17, N52) | +28.84 %; no fit | +53.09 %; no fit | +13.23 %; no fit | +364.24 %; no fit | +122.78 %; fits |
+| BX082SH (12.7 x 3.17, 25.4 long) | no fit | no fit | no fit | no fit | +99.73 %; fits |
+| B861 (9.5 x 1.59, N42) | **−12.76 %; fits; −4.79 g** | **−4.83 %; fits; −3.83 g** | **−36.47 %; fits; −4.79 g** | +214.34 %; fits; +1.61 g | +6.42 %; fits; −4.79 g |
+| B881 (12.7 x 1.59, N42) | −12.71 %; no fit | −0.93 %; no fit | −36.45 %; no fit | +214.51 %; no fit | +43.20 %; fits; +0.06 g |
+| M5026 (6.4 x 1.67, 15 long, N50) | **−12.10 %; fits; −7.15 g** | **−14.36 %; fits; −5.72 g** | **−33.06 %; fits; −7.15 g** | +216.73 %; fits; −0.76 g | **−18.48 %; fits; −7.15 g** |
+
+- The rows in bold contradict the round-1 text: a wider block that fits, yet the pull-out and the magnet mass fall. That is must-fix 1.
+- Every equal-thickness wider part that fits raises the outer fill, the pull-out and the mass. So "of equal thickness" makes the entry true at all five designs.
+- The f_cal is unchanged in every outer pick (0.95, and the 304 bench factor ends exactly as round 1 found).
+- A wider outer block does not move the pocket or the cup: `A_o` comes from the inner ring, and `r_pocket` from the outer thickness. So "it adds magnet mass" is the complete trade-off.
+
+**Dependent fields.**
+- change[1] (manual outer width) stays consistent: with custom dimensions the thickness is its own input.
+- change[2] keeps "gaps" against sentences[0]'s "spaces" (should-fix 1). It is not false: the room between blocks does widen with fewer magnets.
+- The square-wave label "blocks and gaps" is the same wording point (DIAGRAMS should-fix 1).
+- change[2] does not say "fewer poles keep the same size" or "more magnets make the coupling stiffer".
+
+**Check g.**
+- Word counts: sentences[0] 23; change[0] 23 now, 25 after must-fix 1; should-fix 1 text 23. All are plain-words clean with no ids.
+- No input label is typed.
+
+**Verdict:** MUST-FIX (1).
+
+Round 3:
+
+**What I read**
+- Inputs to this round:
+  - the task-12 brief, Step 8 (the reviewer prompt) and Step 9;
+  - `amendments.md`: the Global Constraints, the index row for T12, A-13, A-19 to A-24 and A-27;
+  - `task-12-inreview-r2-changes.md` and the round-2 answer `task-12-inreview-r2.md`;
+  - the regenerated dump `magcoupling-rs/target/notes-review-T12.txt` (all three notes, five designs).
+- Code:
+  - the harmonics literal (`notes.rs:203-258`) and the A-19 line (`notes.rs:165`);
+  - `probes.rs` (`probe_designs`, `step_input`);
+  - `library.rs`: all 15 parts with length, width, thickness, grade and Br;
+  - `model.rs`: `pitch_share`, `RingFit`, `ring_fits`, `blocks_fit` and `select_calibration_factor` (:505-600);
+  - the `SummaryResults` fields in `temperature.rs` (:426-449);
+  - the three claim tests in `tests/explain.rs` (:1273-1356).
+- Specs:
+  - the 2026-10-14 spec, 3.1 (the change-entry rules), 4 and 8;
+  - the slice-1 spec, section 8;
+  - phys-new-notes.md, section 2 (T-A to T-P).
+
+**How I reproduced the numbers.** I built a new scratch crate outside the repo: scratchpad `t12-inreview-r3-own-probe`, with magcoupling-rs by path, default-features = false. It calls:
+- `compute_all`, `probes::probe_designs`, `model::blocks_fit` and `meta::result_rows`;
+- the result paths `model.fill_outer`, `model.pullout_Nm`, `model.pullout_20C_Nm`, `metal.torque_hot_low_Nm`, `metal.torque_cold_high_Nm`, `mass.magnets_g`, `model.f_cal`, `model.pullout_angle_rad`, `temperature.summary.*` and `clamps.recommended`;
+- `plain::{word_count, plain_text_violations, audit_ids}`.
+
+For every library part wider than the current outer block, at each design, I compared every text result (checks, verdicts, notes) against the design as it stands.
+
+**The outer block at each design.** It is 6.35 mm wide and 3.17 mm thick, with the part's own length of 12.7 mm (axial length left blank).
+- At four designs the outer part is B842SH (N42SH, 1.29 T, rated 150 °C).
+- At the Y30 design it is blank, with manual dimensions 6.35 x 3.17 and grade Y30.
+
+**change[0], round-2 text: "a wider outer block of equal thickness raises the outer fill and torque while the blocks still fit side by side; it adds magnet mass."**
+
+The library's wider parts of equal thickness (3.17 mm) are B862 (9.5 wide, N42), B882 (12.7, N42), B882-N52 (12.7, N52) and BX082SH (12.7 wide, 25.4 long, N42SH). Picked on the outer ring at each design (fill_outer; pull-out change; cold-high change; mass change; temperature verdict; clamp screw):
+
+| Design | B862 | B882 | B882-N52 | BX082SH |
+|---|---|---|---|---|
+| default | fits; 0.6198 -> 0.9273; +14.96 %; +14.96 %; +9.51 g; **OK -> CHECK**; **M4 x 14 -> None** | no fit | no fit | no fit |
+| 8 magnets | fits; 0.4959 -> 0.7418; +28.68 %; +28.68 %; +7.61 g; **OK -> CHECK**; unchanged | no fit | no fit | no fit |
+| 304 | fits; 0.6198 -> 0.9273; +1.14 % (f_cal 1.0495 -> 0.95); +1.14 %; +9.51 g; **OK -> CHECK**; unchanged | no fit | no fit | no fit |
+| Y30 | fits; 0.6198 -> 0.9273; +314.21 %; +286.59 %; +15.90 g; CHECK stays CHECK (governing limit 120 °C, adhesive -> −3.52 °C, magnets); unchanged | no fit | no fit | no fit |
+| 20 mm | fits; 0.3864 -> 0.5781; +50.24 %; +50.24 %; +9.51 g; **OK -> CHECK**; **M4 x 14 -> None** | fits; -> 0.7728; +99.73 %; +19.17 g; **OK -> CHECK**; **-> None** | fits; -> 0.7728; +122.78 %; +19.17 g; **OK -> CHECK**; **-> None** | fits; -> 0.7728; +99.73 %; +57.52 g; OK stays OK; **-> None** |
+
+- The round-2 text's three claims hold in all 8 fitting cases: the outer fill, the pull-out and the mass all rise.
+- The 20 °C pull-out, hot-low and cold-high move by the same percentage as the pull-out, except at Y30, where the grade change makes them differ (+303.90 %, +314.21 %, +286.59 %).
+- The qualifier is still needed. The wider but thinner parts that fit lower the pull-out:
+  - B861 at the default, 8-magnet and 304 designs (−12.76 %, −4.83 %, −36.47 %);
+  - M5026 at the same three and at 20 mm (−12.10 %, −14.36 %, −33.06 %, −18.48 %).
+- What the round-2 text misses is spec 3.1's trade-off:
+  - The temperature verdict turns red at the default, 8-magnet, 304 and 20 mm designs whenever the pick is N42 or N52. The magnet design limit (the skipping-case onset) falls from 93.06 °C to −3.52 °C for N42 (margin −68.52 °C) or 0.17 °C for N52 (B882-N52 at 20 mm, margin −64.83 °C). Both are below the 65 °C hot-day start.
+  - The same block in N42 (B842, same size as B842SH) gives the same −3.52 °C. So the grade causes it, not the width.
+  - BX082SH, the one equal-thickness wider part in N42SH, keeps 93.06 °C. Hence "may".
+  - The clamp turns red at the default and 20 mm designs: the cold-high rise leaves no M4 screw length that engages its thread inside the boss ("None: enlarge the boss or the clamp length"). This holds even for BX082SH at 20 mm.
+  - Base cold-high values (N·m): 3.823 (default), 2.799 (8 magnets), 2.414 (304), 0.338 (Y30), 3.611 (20 mm).
+- Correction to the round-2 record. It said "it adds magnet mass" was the complete trade-off. That held for the cup and pocket geometry: `A_o` comes from the inner ring and `r_pocket` from the outer thickness. It did not hold for the picked part's grade or for cold-high.
+- The B862 pick also changes things the replacement does not need to name, because they are improvements or not red:
+  - the default design's hot-low turns from "Below hot minimum" to "Estimate covers hot min" (it does the same at 20 mm);
+  - the adhesive fatigue margin narrows but stays OK.
+
+**Replacement (must-fix 1): "a wider, equally thick outer block raises the outer fill and torque if the blocks fit; clamp loads rise; its grade may tolerate less heat."** Checked against the table:
+- "raises the outer fill and torque if the blocks fit": true in all 8 fitting cases. The non-fitting picks are excluded by the condition.
+- "clamp loads rise": cold-high rises in all 8 (by +1.14 % to +286.59 %). The clamp is sized to cold-high times its safety factor, and it turns red at two designs.
+- "its grade may tolerate less heat": the picks are N42, N52 (80 °C) or N42SH (150 °C), against N42SH, or Y30 at the ferrite design.
+  - Three of the four picks that fit at some design lower the magnet limit: B862 and B882 to −3.52 °C, B882-N52 to 0.17 °C.
+  - BX082SH keeps 93.06 °C. Hence "may".
+  - The wording matches pullout_angle's grade entry ("it often tolerates less heat").
+- It drops "it adds magnet mass" (true, but no check) to fit the cap. The two checks that go red outrank it.
+- It drops "side by side": "if the blocks fit" carries the same condition, as change[1] and change[2] word it ("while the blocks still fit", "they must still fit").
+- It has no "its flat" (S-2's purpose) and no typed label, symbol or placeholder.
+- Check g: 25 words by `word_count`; `plain_text_violations` [] and `audit_ids` [].
+
+**Dependent fields.**
+- sentences[2] ("The fundamental grows with sin(π·λ/2) ... the block's width over the room each pole has on that ring") is consistent: an equally thick, wider block raises λ at the same mid-radius.
+- change[1] (manual outer width) stays true. With custom dimensions the thickness is its own input, so it needs no "equally thick", and the grade does not change. It now lacks the clamp trade-off that change[0] names (should-fix 1).
+- change[2] keeps "gaps" against sentences[0]'s "spaces" (should-fix 2). It is not false.
+- The watch-out (low fill, the third harmonic) does not depend on change[0].
+- The square-wave label "blocks and gaps (fill 0.85)" makes the same wording point as change[2]. It is DIAGRAMS should-fix 1 of round 2, still open.
+
+**Verdict:** MUST-FIX (1).
+
+Round 4:
+
+**What I read**
+- `task-12-inreview-r3-changes.md` and the answers of rounds 1 to 3 (`task-12-inreview-r1.md` to `-r3.md`).
+- The brief's Step 8 prompt and Step 9.
+- `amendments.md`: the Global Constraints, the index row for T12, rulings 9 and 11, A-13, A-19 to A-24 and A-28 (its rules for every task, A-28j and A-28k).
+- The regenerated dump `magcoupling-rs/target/notes-review-T12.txt`.
+- The literals in `notes.rs:150-356` (torque_from_shear for context, then the three notes).
+- `diagrams.rs` `square_wave` (:135-197) and the test's `wave_label` (:792).
+- `tests/explain.rs:1269-1444` (the four T12 claim tests).
+- `probes.rs` (`probe_designs`, `step_input`), `library.rs` (all 15 parts), the cold-high and gearbox-input lines in `metal_design.rs` (:455, :509), and `pickers.rs` (every library part is offered on either ring).
+- The 2026-10-14 spec section 8, the slice-1 spec section 8 and phys-new-notes section 2.
+
+**How I reproduced the numbers.** I built a new scratch crate outside the repo: scratchpad `t12-inreview-r4-own-probe`, with magcoupling-rs by path, default-features = false. It calls:
+- `compute_all`, `probes::{probe_designs, step_input}`, `model::blocks_fit`, `meta::{input_rows, result_rows}` and `notes::NOTES`;
+- `plain::{word_count, plain_text_violations, audit_ids}`.
+
+For each design and each move, it compared every text result row before and after.
+
+**change[0]** ("a wider, equally thick outer block raises outer fill and torque if blocks fit; shaft-joint and gearbox loads rise; its grade may tolerate less heat.", 25 words). It was tried with every library part wider than the 6.35 x 3.17 mm outer block, at each design. The wider parts of equal thickness that fit are (outer fill; pull-out, cold-high and gearbox input; magnet limit; temperature verdict):
+
+| Design | Part | Fill | Pull-out = cold-high = input | Magnet limit (°C) | Verdict |
+|---|---|---|---|---|---|
+| default | B862 (N42) | 0.6198 -> 0.9273 | +14.96 % | 93.06 -> −3.52 | OK -> CHECK |
+| 8 magnets | B862 | 0.4959 -> 0.7418 | +28.68 % | 93.06 -> −3.52 | OK -> CHECK |
+| 304 | B862 | 0.6198 -> 0.9273 | +1.14 % | 93.06 -> −3.52 | OK -> CHECK |
+| Y30 | B862 | 0.6198 -> 0.9273 | +314.21 % (cold-high and input +286.59 %) | 250.00 -> −3.52 | CHECK stays CHECK |
+| 20 mm | B862 | 0.3864 -> 0.5781 | +50.24 % | 93.06 -> −3.52 | OK -> CHECK |
+| 20 mm | B882 (N42) | -> 0.7728 | +99.73 % | −3.52 | OK -> CHECK |
+| 20 mm | B882-N52 | -> 0.7728 | +122.78 % | 0.17 | OK -> CHECK |
+| 20 mm | BX082SH (N42SH) | -> 0.7728 | +99.73 % | 93.06 (kept) | OK stays OK |
+
+- All 8 fitting cases raise the outer fill, the pull-out, the cold-high torque and the gearbox input. So "raises outer fill and torque if blocks fit" and "shaft-joint and gearbox loads rise" hold at every design.
+- "Its grade may tolerate less heat": seven of the eight picks lower the magnet limit and BX082SH keeps it. Hence "may".
+- "Equally thick" is still needed:
+  - B861 (9.5 x 1.59) fits and changes the pull-out by −12.76 %, −4.83 % and −36.47 % at the default, 8-magnet and 304 designs.
+  - M5026 (6.4 x 1.67) fits and changes it by −12.10 %, −14.36 %, −33.06 % and −18.48 % at the default, 8-magnet, 304 and 20 mm designs.
+  - The cold-high torque falls with the pull-out in each case.
+- The non-fitting picks are excluded by "if blocks fit".
+- The new test `harmonics_outer_part_entry_holds_on_the_example_design` pins the B862 and B861 cases at the default design from the engine, and it passes.
+
+**change[1]** ("with custom dimensions, a wider outer block fills more of its pole and raises torque while the blocks still fit; shaft-joint and gearbox loads rise.", 25 words; aim `model.pullout_Nm` Up).
+- It is held by the part pick at four designs (the dump names the pick).
+- At the Y30 design, one step (6.35 -> 6.36 mm) moves:
+  - the pull-out 0.207074 -> 0.207243 N·m;
+  - cold-high 0.338067 -> 0.338343 N·m;
+  - the gearbox input 0.071172 -> 0.071230 N·m;
+  - the outer fill 0.6198 -> 0.6208.
+- A sweep in 0.05 mm steps raises all three at every width up to 9.55 mm, where the blocks are 0.02 mm apart at the faces. Past that they no longer fit, which "while the blocks still fit" names.
+- At 9.55 mm the pull-out, cold-high and input are each +15.03 %, the fill is 0.9322, the cup OD stays 41.326 mm, and the magnet mass goes from 25.564 to 32.006 g.
+- The only text rows that change are the outer flat check (still OK), the adhesive fatigue screen (84x -> 73x, still OK) and the statuses in the sweep tables. So the named trade-off is the only one that matters at that design.
+- The thickness is its own input with custom dimensions, so the entry needs no "equally thick". The grade does not change.
+
+**change[2]** ("... fewer magnets leave wider spaces between blocks.", 23 words; aim `model.fill_outer` Up). One step up (+2 magnets) gives:
+- outer fill 0.6198 -> 0.7438 (default, 304, Y30), 0.4959 -> 0.6198 (8 magnets) and 0.3864 -> 0.4637 (20 mm);
+- the space between outer blocks (1 − fill) 0.3802 -> 0.2562, 0.5041 -> 0.3802 and 0.6136 -> 0.5363.
+
+So fewer magnets leave wider spaces. The word now matches sentences[0] ("spaces between them") and the square-wave label, and "gap" means only the gap between the rings (sentences[0] and [3]). It does not say more magnets make the coupling stiffer.
+
+**Dependent sentences.**
+- sentences[2]: the fill is "the block's width over the room each pole has on that ring". An equally thick, wider block at the same mid-radius raises λ, as change[0] says.
+- sentences[0] and [3]: their wording now agrees with change[2] and the label.
+- The watch-out does not depend on the changed fields.
+
+**Check g.** Word counts: change[0] 25, change[1] 25, change[2] 23. All three are plain-words clean, with no ids and no typed input label.
+
+**Verdict:** PASS.
+
+Round 5:
+
+No harmonics field changed since round 4, and none depends on pullout_angle change[1]. harmonics change[0] ("a wider, equally thick outer block ...") now has a matching size qualifier in the inner-ring entry of the next note; its text is unchanged. The round-4 PASS stands. I re-ran `harmonics_outer_part_entry_holds_on_the_example_design` (it passes) and re-checked the S-2 numbers above.
+
+**Verdict:** PASS.
+
+Must-fix items applied:
+- sentences[0] (round 1, must-fix 1: "small gaps" is false where the space between outer blocks is 38 % to 61 % of each pole): "Around each ring, blocks alternate north and south with small gaps between them, so the magnet pattern along the gap is squarish, not smooth." -> "Around each ring, blocks alternate north and south with spaces between them, so the magnet pattern along the gap is squarish, not smooth."
+- change[0].text (round 1, must-fix 2, the A-24 S-2 text: "its flat" is undefined): "a wider outer block raises the outer fill and the torque, while it still fits its flat; it adds magnet mass." -> "a wider outer block raises the outer fill and the torque while the blocks still fit side by side; it adds magnet mass."
+- change[0].text (round 2, must-fix 1: wider but thinner parts that fit, B861 and M5026, lower the pull-out and the magnet mass): "a wider outer block raises the outer fill and the torque while the blocks still fit side by side; it adds magnet mass." -> "a wider outer block of equal thickness raises the outer fill and torque while the blocks still fit side by side; it adds magnet mass."
+- change[0].text (round 3, must-fix 1: spec 3.1, the entry named no check that the pick turns red; applied in controller ruling 9's wording, which ruling 11 made joint-neutral in place of the reviewer's "clamp loads rise"): "a wider outer block of equal thickness raises the outer fill and torque while the blocks still fit side by side; it adds magnet mass." -> "a wider, equally thick outer block raises outer fill and torque if blocks fit; shaft-joint and gearbox loads rise; its grade may tolerate less heat."
+
+Should-fix items applied by controller ruling 9 (the ruling's text, verbatim):
+- change[1].text (round-3 should-fix 1, made joint-neutral): "with custom dimensions, a wider outer block fills more of its pole and raises the torque, while the blocks still fit." -> "with custom dimensions, a wider outer block fills more of its pole and raises torque while the blocks still fit; shaft-joint and gearbox loads rise."
+- change[2].text (should-fix 2 of round 1, repeated in rounds 2 and 3): "more blocks on the same ring fill more of each pole; they must still fit, and fewer magnets leave wider gaps between blocks." -> "more blocks on the same ring fill more of each pole; they must still fit, and fewer magnets leave wider spaces between blocks."
+- `tests/explain.rs` `harmonics_outer_part_entry_holds_on_the_example_design` (round-3 should-fix 3; round-2 should-fix 2 asked for the same pin with the magnet mass, which the final text no longer claims): at the example design, B862 on the outer ring fits by `model::blocks_fit`, raises `model.fill_outer`, `model.pullout_Nm` and `metal.torque_cold_high_Nm`, and lowers `temperature.summary.magnet_limit_C`; B861 also fits but lowers `model.pullout_Nm`.
+
+Seeds (A-24):
+- S-2 (change[0]: "a wider outer block raises the outer fill and the torque while the blocks still fit side by side; it adds magnet mass."): accepted in round 1 for its purpose, removing the undefined "its flat", and applied as must-fix 2. Round 2 found its claim false for wider, thinner parts (must-fix 1). Rounds 3 to 5 reject the seed's exact text: B861 (9.5 x 1.59 mm) and M5026 (6.4 x 1.67 mm) are wider and fit at the example design, yet lower the pull-out by 12.76 % and 12.10 % and the magnet mass by 4.79 g and 7.15 g; and its only trade-off, magnet mass, is no check. The final change[0] keeps the seed's aim.
+
+Should-fix offered, not applied (open for the controller; no on-screen text changed after the
+round-5 PASS):
+- Round 1 S-1: say where sentences[4] takes the split: "On this design the fills are {model.fill_inner} inner and {model.fill_outer} outer; at pull-out the fundamental gives σ_1 = {model.tau1_Pa} of the total σ = {model.tau_Pa}." (25 words). At the 20 mm design both values are read at the 52.96° pull-out angle, so "σ_1 = 64870 Pa of the total σ = 71440 Pa" can read as the harmonics adding 10 %, while the third harmonic lowers the pull-out by 12.4 % against the fundamental alone.
+
+## back_iron_factor
+
+Task T12. Rewrite of "Back iron: the sinh factor against free space" as "Back iron: why steel
+behind the magnets adds torque", Start here step 3; its flux diagram letters each block N or S
+(TC-24). Reviewer: physics reviewer (session model), fresh context. Date: 2026-10-14 (the date
+the slice plan fixes for the note's `review` field; all five rounds ran on 2026-10-15).
+
+Rounds: 5. Verdict: PASS.
+
+Verdict by round: 1 MUST-FIX (1 item); 2 PASS; 3 PASS (no field changed, not re-reviewed); 4 PASS
+(sentences[2] changed under ruling 9); 5 PASS (no field changed, not re-reviewed).
+
+Round 1:
+
+**What I read**
+- The dump (back_iron_factor at the five designs).
+- The literal in `notes.rs` (lines 259-306).
+- `diagrams.rs` `flux_panel` and `flux_paths`.
+- `model.rs`: `geometry_factor` (:632-643), `Harmonic::s`/`amplitude` (:614-630), `shear_stress` (k = n·(N/2)/R_g, :695) and `compute` (the wall rule at :1033-1052).
+- `material_library.rs`: `BACK_IRON_CHOICES` (:731-740) and `resolve` (:880-900).
+- `warnings.rs`: `LOW_SATURATION_T` and the low-saturation rule.
+- Spec R11 and section 8.
+- phys-notes-a section 3.
+- phys-new-notes T-D, T-K and T-L.
+
+**Numbers reproduced:**
+
+| Design | S_1 steel / free | Gain | e^(−π·g/τ_p) | Circuit |
+|---|---|---|---|---|
+| default | 0.2445 / 0.1392 | 1.757 | 0.607 (π·g/τ_p = 0.4993) | steel |
+| 8 magnets | 0.2373 / 0.1188 | 1.998 | 0.671 | steel |
+| 304 back iron | 0.2445 / 0.1392 | 1.757 | 0.607 | free space (circuit 0) |
+| Y30 custom | 0.2445 / 0.1392 | 1.757 | 0.607 | steel |
+| 20 mm ring | 0.2096 / 0.0878 | 2.388 | 0.746 | steel |
+
+These match the dump (including "0.08780").
+
+**Check a and check d: physical truth.**
+- Sentence 0: false at the 304 design as written (must-fix 1).
+- Sentence 1: true. S_iron/S_free = (1+e^(−k·t_i))(1+e^(−k·t_o))/(1−e^(−2k(t_i+t_o+g))) > 1 for every n, derived from `geometry_factor`. S_n is the factor that turns B_i,n·B_o,n/(2μ0) into shear stress, not "how much field reaches through".
+- Sentence 2: true. The steel gain is 3.01 at 4 magnets (τ_p 22.0 mm), 1.757 at 10 and 1.14 at 24 (3.67 mm), so it is largest when the pole pitch is long against the magnet thickness.
+- Sentence 3: true. The free factor carries e^(−k·g), k_1 = π/τ_p. With steel, d ln S/dg = −k·coth(k(t_i+t_o+g)), which is −1.008·k at the default.
+- Sentence 4: true, and it is not the "fewer poles reach across better" trap. S_1 with steel at the default ring is:
+  - 0.1630 (4 magnets), 0.2120 (6), 0.2373 (8), 0.2445 (10), 0.2397 (12), 0.2281 (14) and 0.1495 (24): best near 10 magnets, τ_p 8.8 mm;
+  - at the 20 mm ring, best near 16-18 (0.2439 and 0.2441, τ_p 9.4 and 8.3 mm);
+  - it tends to 0 for a long pitch and a short pitch (the gap is at least 0.3 mm on the slider).
+
+**Check b: change entries.**
+- change[0]: true on the library.
+  - Codes 1 (4140) and 2 (1018) keep the steel circuit with no caution.
+  - Codes 3-6 (12L14, 416, 17-4PH H1150 and H900) keep it but trip the low-saturation caution ("may saturate"; R11 {3,4,5,6}). None is offered as a clean swap.
+  - Codes 7 (304) and 8 (6061-T6) give circuit 0 and 1.6974 against 2.6885 N·m (−36.9 % on screen, including the bench factor 1.0495).
+- change[1]: true. With Back iron 0 every code gives circuit 0. At the 304 design the dump draws it as set by the material pick.
+- change[2]: one step (1.40 -> 1.39 mm) raises the pull-out at all five designs:
+  - default 2.688476 -> 2.697267;
+  - 8 magnets 1.968360 -> 1.974247;
+  - 304 1.697369 -> 1.703137;
+  - Y30 0.207074 -> 0.207751;
+  - 20 mm 2.539258 -> 2.545905.
+  The sweep to 0.3 mm rises monotonically (default 3.851 N·m). The trade-off (running clearance, sleeve and liner room) is named.
+- change[3] (A-20): held by the part pick at four designs. At the Y30 design:
+  - one step (3.17 -> 3.18 mm) moves S_1 with steel 0.244488 -> 0.244683;
+  - the sweep to 10 mm gives 0.2616 (4.54), 0.2680 (5.91), 0.2704 (7.27), 0.2713 (8.64) and 0.2716 (10.0): shrinking gains;
+  - the outer fill falls 0.620 -> 0.512;
+  - the pull-out peaks at about 5.2 mm (0.2173 N·m) and falls to 0.2053 at 10 mm.
+  The cup grows (A_back = A_o + t_o feeds the pocket radius and the OD). Every clause holds.
+- watch_out[0]: true, and T-L is respected. The wall check never changes the torque. The cup wall reads "Too thin" at the default (wants 2.0 mm), 8 magnets (2.4) and 20 mm (3.3), "OK" at Y30 and "No back iron" at 304.
+
+**Check g.**
+- Word counts: sentences 23, 21, 24, 23 and 24; changes 24, 18, 21 and 24; watch-out 22.
+- Material names are plain designations, not input labels.
+- "the cup wall check" names a result row, not a typed input label.
+- The title is plain and unique.
+
+**Check h: sources.** Correct and plain: M3 (planar against cylindrical), M5 (steel at the magnet backs), and TC-11 corrected (the best pole pitch) as reproduced above.
+
+**Trap check.** "416, 17-4PH or 12L14 are clean swaps": not written. "Steel gives the torque shown" without the caveat: not written (watch-out). "Fewer poles reach across the gap better": not written. "1.5 T is 4140's saturation": not written.
+
+**Verdict:** MUST-FIX (1).
+
+Round 2:
+
+**What I read**
+- The dump (back_iron_factor at the five designs).
+- The literal in `notes.rs` (lines 259-306).
+- `diagrams.rs` flux labels ("with back iron", "free space").
+- The 304 probe design's circuit flag.
+
+**sentences[0] (new: "Magnetic steel behind each ring ...").** True at all five designs as a statement of what magnetic back iron does.
+- The steel carries each magnet's back-side flux to the next pole, so the gap side gets the field that would otherwise loop behind the magnets.
+- S_1 with steel against free space is 0.2445/0.13915 (default, 304, Y30), 0.2373/0.11881 (8 magnets) and 0.2096/0.08780 (20 mm), as the dump draws.
+- At the 304 design the sentence no longer misdescribes the design's steel. 304 is non-magnetic: circuit 0, and the torque uses S_1 = 0.13915 (pull-out 1.69737 N·m).
+- Sentence-0 rules hold (no symbol, no placeholder). It has 24 words, plain-words clean.
+- Traps checked:
+  - "416 is a safe back iron": not implied. Magnetic steels that trip the low-saturation caution stay named in change[0] as "may saturate".
+  - "Steel gives the torque shown": not implied. The watch-out keeps the saturation caveat.
+
+**Dependent fields.**
+- sentences[1] ("is therefore always larger with steel") now refers back to "Magnetic steel" through "therefore": correct.
+- sentences[2]: correct as the shorthand of sentences[0]; should-fix 1 makes it explicit at the 304 design.
+- The title ("why steel behind the magnets adds torque") reads as the magnetic case, with "back iron" in the same title. Unchanged and not re-reviewed.
+- The flux diagram's "with back iron" panel is the magnetic case. It matches.
+
+**Verdict:** PASS.
+
+Round 3:
+
+No field of this note changed since round 2.
+- The dump draws the round-2 text at all five designs, and change[3] keeps A-20's text and aim (`model.s1_iron` Up).
+- The A-13 sources are unchanged.
+- No changed harmonics field feeds a sentence of this note.
+- Per Step 9 ("a note that returned PASS in an earlier round is not re-reviewed unless one of its fields changed"), the round-2 PASS stands.
+
+**Verdict:** PASS (not re-reviewed).
+
+Round 4:
+
+**sentences[2]** ("On this design S_1 is {model.s1_iron} with magnetic steel and {model.s1_free} without; the gain is largest when the pole pitch is long against magnet thickness.", 25 words). The reproduced values match the dump:
+
+| Design | S_1 with magnetic steel / without | Gain | Circuit used |
+|---|---|---|---|
+| default | 0.2445 / 0.13915 | 1.757 | steel |
+| 8 magnets | 0.2373 / 0.11881 | 1.998 | steel |
+| 304 | 0.2445 / 0.13915 | 1.757 | free space (304 is not magnetic) |
+| Y30 | 0.2445 / 0.13915 | 1.757 | steel |
+| 20 mm | 0.2096 / 0.08780 | 2.388 | steel |
+
+- "With magnetic steel" removes the 304-design misreading. That design's back iron is a steel, yet its torque uses the free-space 0.1392, and the sentence no longer suggests otherwise.
+- The gain claim is general, and true. On the default ring, with both blocks 3.17 mm thick:
+
+| Magnets | Pole pitch (mm) | Gain |
+|---|---|---|
+| 4 | 22.02 | 3.008 |
+| 6 | 14.68 | 2.358 |
+| 8 | 11.01 | 1.998 |
+| 10 | 8.81 | 1.757 |
+| 12 | 7.34 | 1.583 |
+| 16 | 5.51 | 1.355 |
+| 24 | 3.67 | 1.137 |
+
+- The placeholders sit in the "On this design" clause. The comparison does not depend on their values (spec 3.2).
+- It is plain-words clean with no ids.
+- Dependent sentences: sentences[0] ("Magnetic steel ...") and sentences[1] ("always larger with steel", referring back) read consistently with it. No harmonics change feeds this note.
+
+**Verdict:** PASS.
+
+Round 5:
+
+No back_iron_factor field changed since round 4, and none depends on the changed pullout_angle entry. The round-4 PASS stands. All 14 of its fields are still plain-words clean with no ids and no "clamp".
+
+**Verdict:** PASS.
+
+Must-fix items applied:
+- sentences[0] (round 1, must-fix 1: "Steel" is false for the 304 design's steel, which is not magnetic and runs on the free-space circuit): "Steel behind each ring gives the flux an easy return path, so more of it crosses the gap instead of leaking out behind." -> "Magnetic steel behind each ring gives the flux an easy return path, so more of it crosses the gap instead of leaking out behind."
+
+Should-fix items applied by controller ruling 9 (the ruling's text, verbatim):
+- sentences[2] (round-2 should-fix 1: at the 304 design, "with steel" reads as the design's own 304): "On this design S_1 is {model.s1_iron} with steel and {model.s1_free} without; the gain is largest when the pole pitch is long against magnet thickness." -> "On this design S_1 is {model.s1_iron} with magnetic steel and {model.s1_free} without; the gain is largest when the pole pitch is long against magnet thickness."
+
+Amendment applied before round 1 (A-20, binding): change[3].text "a thicker outer block raises S_n, with diminishing returns past about a third of a pole pitch; the cup grows with it." -> "a thicker outer block raises S_n with shrinking gains, but it lowers the outer fill, so past a point torque falls; the cup grows." Round 1 confirmed every clause at the Y30 design, the only design where the outer thickness is free.
+
+Seeds (A-24): none names back_iron_factor.
+
+Should-fix offered, not applied (open for the controller; no on-screen text changed after the
+round-5 PASS):
+- Round 1 S-1: "sideways pull across the gap" in place of "pull across the gap" in sentences[1] (22 words), the name step 1 gives the shear stress, so that a reader does not take it for the radial attraction between the rings.
+
+## pullout_angle
+
+Task T12. Rewrite of "Pull-out torque against rotation angle" as "Pull-out: the most torque before
+the rings slip", Start here step 4 and the dashboard Why link of the pull-out row (and of the
+gearbox ripple row until T15); its torque-angle diagram draws the fundamental alone dashed (TC-22).
+The end-fringing diagram's brackets (TC-24, shown by `end_effect`) were reviewed in this round.
+Reviewer: physics reviewer (session model), fresh context. Date: 2026-10-14 (the date the slice
+plan fixes for the note's `review` field; all five rounds ran on 2026-10-15).
+
+Rounds: 5. Verdict: PASS.
+
+Verdict by round: 1 MUST-FIX (1 item); 2 PASS; 3 PASS (no field changed, not re-reviewed); 4
+MUST-FIX (1); 5 PASS.
+
+Round 1:
+
+**What I read**
+- The dump (pullout_angle at the five designs).
+- The literal in `notes.rs` (lines 307-356).
+- `diagrams.rs` `torque_angle` (the T12 version) and `t12-diagrams.png`.
+- `model.rs`:
+  - `peak_off_half_pitch` (:728-746);
+  - `stationary_polynomial`, whose Q(0) = a1 − 9·a3 + 25·a5 gives the "about a ninth" rule (:752);
+  - `at_pull_out` (:876-892);
+  - `compute`: T_pull = T_2D·f_end·f_cal at :1002-1004, Br at `ci.op_temp_C` at :978-979, `gearbox_input_ripple_Nm` at :1156;
+  - `select_calibration_factor` (:584-600).
+- `api.rs` (f_cal selection; `metal.op_temp_C` is `ci.op_temp_C` passed through).
+- `library.rs` (B842SH 150 °C, B842-N52 1.45 T at 80 °C).
+- `temperature.slip_loss.drag_Nm`.
+- phys-notes-a section 4.
+- phys-new-notes T-E, T-H and T-M.
+- Spec section 8.
+
+**Numbers reproduced** (pull-out; angle electrical and twist; A3/A1; drag as a share of the pull-out):
+
+| Design | Pull-out (N·m) | Angle / twist | A3/A1 | Drag |
+|---|---|---|---|---|
+| default | 2.6885 | 90° / 18.0° | −0.0109 | 0.0131 N·m, 0.49 % |
+| 8 magnets | 1.9684 | 90° / 22.5° | −0.0085 | 0.70 % |
+| 304 back iron | 1.6974 (f_cal 1.0495) | 90° / 18.0° | −0.0179 | 0.26 % |
+| Y30 custom | 0.2071 | 90° / 18.0° | −0.0109 | 6.3 % (the stored slip fields do not follow the ferrite grade) |
+| 20 mm ring | 2.5393 | 52.96° / 10.59° | +0.2158 | 1.84 % |
+
+The operating temperature is 50 °C at all five, and `metal.op_temp_C` = `coupling.op_temp_C` at all five.
+
+**Check a and check e: physical truth.**
+- Sentence 0: true. It says nominal estimate, not guaranteed, and answers "what is the pull-out torque".
+- Sentence 1: true. It names T_2D·f_end·f_cal at the operating magnet temperature. The "here:" placeholder renders 50.00 °C.
+- Sentence 2: true. φ = N/2 × twist; 90° = 180°/N = 18° at 10 magnets.
+- Sentence 3: true. Only the 20 mm design has a same-sign third above a ninth: −1 + 9·0.2158 + 25·0.0031 = +1.02 > 0, so the peak is at 52.96°.
+  - At the 8-magnet design the inner fill (0.689) is above 2/3. The thirds are then of opposite sign and the peak stays at 90°.
+  - The first peak lies below 90° (S-1 rejected).
+- Sentence 4: true (T-M). The torque swings ±pull-out once per pole pair. The average is only the drag, at most 1.84 % of the pull-out on the NdFeB designs.
+- watch_out[0]: true. The rings lock again only once the slip speed falls, never "below pull-out".
+
+**Check b: change entries.**
+- change[0] (axial length, blank seed): one step raises the pull-out at all five designs (2.688476 -> 2.690839 at the default). The sweep to 50.8 mm is linear: pull-out ∝ L − c_end·τ_p, 11.69 N·m at the default. The trade-offs are true: stack length, and clamp and gearbox loads through cold-high.
+- change[1]: false at the 304 design (must-fix 1). The proportion holds exactly:
+  - ×1.115385 at the default, 8-magnet and 20 mm designs (B842-N52 for B842SH, inner or outer);
+  - ×4.019 at the Y30 design, which is the Br ratio at 50 °C (the grades' coefficients differ; at 20 °C the ratio is 3.919).
+  The rating falls from 150 to 80 °C ("often tolerates less heat" holds).
+- change[2] (operating temperature, Lower): one step raises the pull-out at all five designs (2.688476 -> 2.691824 at the default). The sweep to −40 °C is monotone (3.3246 N·m at the default). The "only if they really run cooler" trade-off is named.
+
+**Check g.**
+- Word counts: sentences 24, 23, 24, 24 and 24; changes 16, 23 and 21; watch-out 25. Must-fix 1's replacement is 25.
+- Sentence 0 has no symbol and no placeholder.
+- The title is plain and unique against the dashboard's "Pull-out torque ..." rows.
+- R8 glosses: electrical angle, φ, T_2D·f_end·f_cal and Br ("built-in flux density") are all glossed. N and T_2D come from step 1.
+
+**Check h: sources.** Correct and plain: E7, the one peak search, and PA-8 with TC-12. They omit the past-pull-out finding (should-fix 2).
+
+**Trap check.**
+- "Pull-out is guaranteed": not written.
+- "The rings re-lock below pull-out": not written; the watch-out states the opposite.
+- "The coupling protects the gearbox": not written.
+- "A hotter-rated grade is free": not written.
+- "More magnets make the coupling stiffer": not written (phys-notes-a's draft list had it, and the note rightly leaves it out).
+- DRY: change[0] repeats torque_from_shear change[0] almost word for word. Accepted: the pull-out row's Why link reaches this note alone, and the axial length is its most direct lever.
+- A-27: `when_slipping` (T15) must not repeat sentences[4] and the watch-out.
+
+**Verdict:** MUST-FIX (1).
+
+Round 2:
+
+**What I read**
+- The dump (pullout_angle at the five designs).
+- The literal in `notes.rs` (lines 307-356).
+- `select_calibration_factor` (`model.rs` :583-600). The bench factor applies only with no back iron, the prototype's magnets per ring, and B842SH on both rings.
+- `library.rs` grades and Br: B842SH N42SH 1.29 T, 1.30 T with correction E3; B842 N42 1.30 T; B842-N52 N52 1.45 T.
+- The calibration note's own wording ("measured on the bench") for terminology.
+- `tests/explain.rs` `pullout_angle_claims_hold_on_the_engine` (lines 1333-1356).
+
+**change[1] (new: "..., unless the bench-measured calibration then stops applying; it often tolerates less heat").** Inner part to B842-N52 at each design; pull-out ratio against the Br ratio at the operating temperature:
+
+| Design | Pull-out (N·m) | Ratio | Br(op) ratio | f_cal |
+|---|---|---|---|---|
+| default | 2.68848 -> 2.99869 | ×1.115385 | ×1.115385 | 0.95 -> 0.95 |
+| 8 magnets | 1.96836 -> 2.19548 | ×1.115385 | ×1.115385 | 0.95 -> 0.95 |
+| 304 | 1.69737 -> 1.71381 | ×1.009686 | ×1.115385 | 1.0495 -> 0.95 |
+| Y30 (parts blank) | 0.20707 -> 0.83222 | ×4.018976 | ×4.018976 (×3.918919 at 20 °C) | 0.95 -> 0.95 |
+| 20 mm | 2.53926 -> 2.83225 | ×1.115385 | ×1.115385 | 0.95 -> 0.95 |
+
+- The proportion is exact wherever the calibration stays. At the 304 design the clause names exactly why it fails.
+- The proportion is to Br at the running temperature. Sentence[1] sets that context ("computed at the magnet temperature while running").
+- An equal-Br pick (B842) at the 304 design drops the pull-out ×0.905236 for the same reason. B842 is not "a stronger grade", but the clause still warns the reader that a pick can end the bench factor.
+- "It often tolerates less heat" holds: B842-N52 is rated 80 °C against 150 °C, as the existing test pins.
+- The round-1 drop of "the outer part likewise" loses nothing that this input's entry needs.
+
+**Traps.**
+- "The bench calibration applies beyond prototype-matching designs": not written. The clause says it applies and then stops.
+- "A hotter-rated grade is free": not written. The entry says a stronger grade often tolerates less heat.
+- "More magnets make the coupling stiffer": not written.
+
+**Dependent fields.** sentences[1] ("end and calibration factors", T_pull = T_2D·f_end·f_cal) is consistent with the clause. Nothing else in the note depends on the change.
+
+**Check g.**
+- 25 words (at the cap); plain-words clean, no ids.
+- "Br" is glossed in the same entry ("built-in flux density").
+- No input label is typed.
+
+**Verdict:** PASS.
+
+Round 3:
+
+No field of this note changed since round 2.
+- The dump draws the round-2 text at all five designs, and the A-13 sources are unchanged.
+- The S-1 seed is rejected (see the amendment checks above). From my probe, `model.pullout_angle_rad` is 1.57080 (90.00°) at four designs and 0.92434 (52.96°) at the 20 mm design.
+- The round-2 PASS stands.
+- The clamp point in should-fix 1 comes from my probe of the B842-N52 inner pick at the five designs. It is recorded so that it is not lost, not as a must-fix in a round where this field did not change.
+
+**Verdict:** PASS (not re-reviewed).
+
+Round 4:
+
+**What I read:** as for harmonics, plus `model.rs` (`br_inner_T_op` at :264, `pullout_angle_rad` at :1152) and `library.rs` (M5044, M5045 and M5026 are SuperMagnetMan arcs; B842-N52 is K&J's N52 block at B842SH's size).
+
+**change[0]** ("pull-out grows almost linearly with the overlap; the stack lengthens, and shaft-joint and gearbox loads rise.", 16 words; aim `model.pullout_Nm` Up). One step (12.70 -> 12.71 mm; the input is blank and seeded from the overlap) raises the pull-out, cold-high and gearbox input at all five designs:
+
+| Design | Pull-out (N·m) | Cold-high (N·m) | Gearbox input (N·m) |
+|---|---|---|---|
+| default | 2.688476 -> 2.690839 | 3.823310 -> 3.826670 | 0.804907 -> 0.805615 |
+| 8 magnets | 1.968360 -> 1.970141 | 2.799225 -> 2.801759 | 0.589311 -> 0.589844 |
+| 304 | 1.697369 -> 1.698861 | 2.413847 -> 2.415968 | 0.508178 -> 0.508625 |
+| Y30 | 0.207074 -> 0.207256 | 0.338067 -> 0.338364 | 0.071172 -> 0.071235 |
+| 20 mm | 2.539258 -> 2.541688 | 3.611106 -> 3.614561 | 0.760233 -> 0.760960 |
+
+At 50.8 mm all three are higher still (default 11.6905 / 16.6252 / 3.5000 N·m). Every clause holds. Only the trade-off wording changed this round ("clamp and gearbox" became "shaft-joint and gearbox").
+
+**change[1], current text** ("a stronger grade raises pull-out in proportion to its built-in flux density Br unless calibration changes; shaft-joint and gearbox loads rise; heat tolerance often drops.", 25 words). These are the inner-ring picks with a higher Br than the current block. Pull-out ratio; fit; cold-high change, which equals the gearbox-input change:
+
+| Part (w x t x L mm, grade) | default | 8 magnets | 304 | Y30 | 20 mm |
+|---|---|---|---|---|---|
+| B842-N52 (6.35 x 3.17 x 12.7, N52, same size) | x1.115385; fits; +11.54 % | x1.115385; fits; +11.54 % | x1.009686 (f_cal 1.0495 -> 0.95); fits; +0.97 % | x4.018976; fits; +275.10 % | x1.115385; fits; +11.54 % |
+| B882-N52 (12.7 x 3.17 x 12.7, N52) | x1.140467; no fit | x1.315905; no fit | x1.030827; no fit | x4.109354; no fit | **x2.213568; fits; +121.36 %** |
+| M5044 (arc 5.5 x 1.31 x 13, N50) | **x0.614561; fits; −38.54 %** | **x0.604027; fits; −39.60 %** | **x0.477403; fits; −52.26 %** | x2.214398; fits; +106.67 % | **x0.615606; fits; −38.44 %** |
+| M5045 (arc 5.6 x 1.12 x 6.56, N50M) | **x0.260125; fits; −73.99 %** | **x0.251279; fits; −74.87 %** | **x0.196984; fits; −80.30 %** | **x0.937288; fits; −12.52 %** | **x0.235937; fits; −76.41 %** |
+| M5026 (arc 6.4 x 1.67 x 15, N50) | **x0.748577; fits; −25.14 %** | **x0.781540; fits; −21.85 %** | **x0.602630; fits; −39.74 %** | x2.697288; fits; +151.74 % | **x0.775969; fits; −22.40 %** |
+
+- At Y30 every library part has a higher Br than Y30. Of the same-size ones, B842SH and B842 give x3.603220 each, equal to their Br ratio at 50 °C.
+- The bold cells contradict the entry: the pull-out and the loads fall, or the rise is far from "in proportion".
+- At four designs, three of the four stronger-grade parts that fit lower the pull-out.
+
+**Must-fix 1's replacement, checked.** These are the same-size, stronger-grade picks (equal width, thickness and length) at each design. The pull-out ratio matches the Br ratio at the running temperature (`model.br_inner_T_op`) times the f_cal ratio to 2.2e-16 in every case:
+- default, 8 magnets and 20 mm: B842-N52, x1.115385, cold-high and input +11.54 %, rated 150 -> 80 °C.
+- 304: B842-N52, x1.115385 x 0.905236 = x1.009686 (the bench factor ends), cold-high and input +0.97 %, rated 150 -> 80 °C. This is "unless calibration changes".
+- Y30: B842SH x3.603220 (+236.29 %, rated 250 -> 150 °C), B842 x3.603220 (+236.29 %, 250 -> 80 °C) and B842-N52 x4.018976 (+275.10 %, 250 -> 80 °C).
+
+The calibration can also start. At the 304 design, a custom inner ring at B842SH's size in N35, changed to B842SH, gives pull-out x1.227427 against Br x1.111111 (f_cal 0.95 -> 1.0495) and cold-high +22.74 %. In N42 it gives x1.104684 against Br x1.000000 and cold-high +10.47 %. "Unless calibration changes" covers both directions, and the loads still rise.
+
+So with "same-size":
+- "raises pull-out proportionally to its ... Br unless calibration changes" holds at all five designs;
+- "shaft-joint and gearbox loads rise" holds in every case (+0.97 % to +275.10 %);
+- the rating falls in every library case.
+
+"Often" stays, because a same-size stronger pick can carry a higher rating: a custom N35 block rated 80 °C, changed to B842SH, is rated 150 °C. "Its" refers to the block. Br keeps its gloss ("built-in flux density") at its first use in the note.
+
+**Dependent sentences.**
+- sentences[1] (T_pull = T_2D·f_end·f_cal, "end and calibration factors") is what "unless calibration changes" refers to. It is consistent.
+- sentences[3] is unchanged; S-1 is rejected above.
+- Nothing else in the note depends on the two changed entries.
+
+**Tests.** `pullout_angle_claims_hold_on_the_engine` now pins three things, all computed from the engine, and it passes:
+- the B842-N52 proportion, unchanged f_cal and higher cold-high at the default design;
+- the lower rating;
+- the 304 case, f_cal moving from `calibration.f_cal_updated` to `f_cal_original` and the pull-out ratio equal to Br x f_cal.
+
+It does not pin the size qualifier (should-fix 1).
+
+**Check g.**
+- Word counts: change[0] 16, change[1] 25, must-fix replacement 25.
+- All are plain-words clean, with no ids, no "clamp" and no typed input label.
+
+**Verdict:** MUST-FIX (1).
+
+Round 5:
+
+**What I read**
+- `task-12-inreview-r4-changes.md` and the answers of rounds 1 to 4 (`task-12-inreview-r1.md` to `-r4.md`).
+- The brief's Step 8 prompt and Step 9.
+- `amendments.md`: the Global Constraints, the index row for T12, rulings 9, 11 and 12, A-13, A-19 to A-25, A-27 and A-28 (its rules for every task, A-28j and A-28k).
+- The regenerated dump `magcoupling-rs/target/notes-review-T12.txt`.
+- The pullout_angle literal (`notes.rs:307-356`) and the test (`tests/explain.rs:1388-1493`).
+- For the claims:
+  - `model.rs`: `resolve_magnets` (:445-503), `select_calibration_factor` (:584-599), the Br at the running temperature (:977-979) and `blocks_fit` (:579);
+  - `calibration.rs`: the bench factor `f_cal_updated = f_cal_original x measured / model` (:190-235), whose model sums the design's harmonic set;
+  - `library.rs`: all 15 parts;
+  - `grades.rs`: the grade table and its coefficients;
+  - `engine/sizing.rs` and `gui/sizing.rs`: the header comments on Auto.
+- The 2026-10-14 spec section 8, the slice-1 spec section 8 and phys-new-notes section 2.
+
+**How I reproduced the numbers.** I built a new scratch crate outside the repo (scratchpad `t12-inreview-r5-own-probe`), with magcoupling-rs by path and default-features = false. It calls:
+- `compute_all`, `probes::probe_designs`, `model::blocks_fit` and `model::MAX_HARMONIC_CHOICES`;
+- `library::MAGNET_LIBRARY`, `grades::GRADES` and `notes::NOTES`;
+- `plain::{word_count, plain_text_violations, audit_ids}`.
+
+"Same size" means `model.inner_width_mm`, `model.inner_thickness_mm` and `model.inner_length_mm` are exactly equal after the pick. "Stronger grade" means a higher 20 °C Br (`model.inner_br_T`).
+
+**The probe designs' inner ring.** B842SH (6.35 x 3.17 x 12.7 mm, Br 1.30 T at 20 °C, 1.2532 T at 50 °C, rated 150 °C) at the default, 8-magnet, 304 and 20 mm designs. At the Y30 design it is a custom ring of the same size in Y30 (0.37 T, 0.3478 T at 50 °C, α −0.002/°C, rated 250 °C). f_cal is 0.95 everywhere except the 304 design, which has the bench factor 1.049450.
+
+**change[1], new text** ("a same-size, stronger-grade block raises pull-out proportionally to its built-in flux density Br unless calibration changes; shaft-joint and gearbox loads rise; heat tolerance often drops.", 25 words).
+
+These are the same-size, stronger-grade library picks on the inner ring. Columns: pull-out ratio; Br ratio at 50 °C; f_cal before and after; cold-high change, which equals the gearbox-input change; rating:
+
+| Design | Pick | Pull-out | Br (50 °C) | f_cal | Cold-high = input | Rated (°C) |
+|---|---|---|---|---|---|---|
+| default | B842-N52 | x1.115385 | x1.115385 | 0.95 kept | +11.54 % | 150 -> 80 |
+| 8 magnets | B842-N52 | x1.115385 | x1.115385 | 0.95 kept | +11.54 % | 150 -> 80 |
+| 304 | B842-N52 | x1.009686 | x1.115385 | 1.0495 -> 0.95 | +0.97 % | 150 -> 80 |
+| Y30 | B842SH | x3.603220 | x3.603220 | 0.95 kept | +236.29 % | 250 -> 150 |
+| Y30 | B842 | x3.603220 | x3.603220 | 0.95 kept | +236.29 % | 250 -> 80 |
+| Y30 | B842-N52 | x4.018976 | x4.018976 | 0.95 kept | +275.10 % | 250 -> 80 |
+| 20 mm | B842-N52 | x1.115385 | x1.115385 | 0.95 kept | +11.54 % | 150 -> 80 |
+
+- In every row the pull-out ratio divided by (Br ratio at the running temperature x f_cal ratio) is 1.000000000000. So "raises pull-out proportionally to its ... Br unless calibration changes" holds at all five designs. The 304 row is the "unless" case.
+- "Shaft-joint and gearbox loads rise" holds in every row (+0.97 % to +275.10 %).
+- "Heat tolerance often drops": the rating drops in every row.
+- The parts "same-size" now excludes are the ones round 4 found false. M5044, M5045 and M5026 (arcs, 1.12-1.67 mm thick) fit but cut the pull-out and the loads by 21.85 % to 80.30 % at four designs, and M5045 by 12.52 % at Y30. B882-N52 fits at the 20 mm design and gives x2.213568 against Br x1.115385. None of these is the same size as the inner block.
+
+**Generality beyond the probe designs' own block.** I tried every library part as the base on the inner ring wherever it fits, and every same-size library part with a higher Br. That gives 11 pairs over the five designs: B842SH -> B842-N52, B842 -> B842-N52 and, at 20 mm, B882 -> B882-N52.
+- All 11 keep pull-out = Br ratio x f_cal ratio to 1e-12, and all raise the cold-high torque and the gearbox input.
+- The rating drops (150 -> 80) or stays (80 -> 80). Hence "often".
+
+I also tried a custom ring at the inner block's size changed to a library part (N35, N42 or Y30 to B842SH, B842 or B842-N52). All 35 cases hold.
+- At the 304 design, custom N35 -> B842SH starts the bench factor: x1.227427 against Br x1.111111 (f_cal 0.95 -> 1.0495), cold-high +22.74 %. The rating rises 80 -> 150 °C, which is why the entry says "often".
+
+**The bench design across settings.** B842SH -> B842-N52 on the 304 design at each harmonic setting:
+
+| Harmonics summed | Bench factor | Pull-out = cold-high = input |
+|---|---|---|
+| 1 | 1.055530 | +0.39 % |
+| 1, 3 | 1.041240 | +1.77 % |
+| 1, 3, 5 (default) | 1.049450 | +0.97 % |
+| up to 7 | 1.048993 | +1.01 % |
+| up to 9 | 1.049012 | +1.01 % |
+| up to 11 | 1.048955 | +1.02 % |
+
+- The break-even bench factor is 0.95 x 1.45 / 1.30 = 1.059615, so the loads rise at every setting.
+- The operating temperature (−20, 20, 50, 80 °C) does not change the result (+0.97 % each), because both library parts share one Br coefficient.
+- The margin is small, hence SHOULD-FIX 1.
+
+**Edges checked, not findings.**
+- **Br at the running temperature.** At the Y30 design the pull-out follows Br at the running temperature: x3.603220 for B842SH, against x3.513514 for the 20 °C datasheet values. The two differ by 2.55 %, and by up to 5.27 % for a SmCo grade, because a ferrite or SmCo ring uses its grade's own coefficient. Within NdFeB (every NdFeB grade and every library part at −0.0012/°C) the two ratios are equal. Sentence[1] says the pull-out is computed at the running magnet temperature, and the dashboard shows Br at that temperature (`model.br_inner_T_op`). Physically, torque at a temperature follows Br at that temperature. So "proportionally to its ... Br" is true as written.
+- **The custom-grade route on the bench design.** Choosing manual dimensions in this picker and then a stronger NdFeB grade in the separate grade input, at B842SH's size on the 304 design, ends the bench factor:
+  - N48: pull-out, cold-high and input −3.91 %;
+  - N50 and N50M: −1.82 % each;
+  - N52: +0.97 %.
+
+  Elsewhere every such grade raises all three, and the pull-out stays exactly proportional to Br x f_cal.
+
+  I do not count this against the entry, for three reasons:
+  - it needs a second input (the grade under custom dimensions), which this entry does not offer;
+  - the entry names the cause ("unless calibration changes");
+  - the drop is the model switching from the measured bench factor to the assumed one, while the stronger magnet itself still pulls harder.
+
+  The step on leaving the bench match belongs to the calibration note (T13, A-13's calibration source "the step on leaving a match"). I record it here for T13's reviewer.
+- **Auto (Torque -> Magnets).** Auto re-solves its free variable after any change (`gui/sizing.rs` header). With Auto on, a stronger grade shortens the magnets to hold the hot-low target, rather than raising the pull-out. This applies equally to every torque-raising entry in every note and was there in all earlier rounds. It is outside this round's scope and is not a finding on this field.
+
+**Plain words and form.**
+- 25 words by `plain::word_count`, at the cap.
+- `plain_text_violations` and `audit_ids` are empty, and there is no "clamp".
+- No input label is typed as text.
+- Br is glossed ("built-in flux density") at its first use in the note.
+- The drawn line reads "Choose Inner magnet part: a same-size, stronger-grade block raises ...". "Its" refers to the block.
+
+**Dependent sentences.**
+- sentences[1] ("T_pull = T_2D·f_end·f_cal ... end and calibration factors") is what "unless calibration changes" refers to. It is consistent.
+- change[0] and change[2] do not depend on change[1].
+- harmonics change[0] now has a matching size qualifier, as noted above.
+
+**The test.** `pullout_angle_claims_hold_on_the_engine` passes. I ran it with `--locked --test explain` in a scratch target, together with `harmonics_outer_part_entry_holds_on_the_example_design`: 2 passed. `--lib engine::explain::notes` gave 16 passed and 3 ignored, including `the_rewritten_notes_keep_to_the_slice_2_caps` and `the_rewritten_notes_read_in_plain_words`.
+- What it asserts, every value from `compute_all`:
+  - the example design's inner part is "B842SH";
+  - B842-N52 has B842SH's width, thickness and length (exact equality);
+  - B842-N52 keeps f_cal, its pull-out ratio equals the Br ratio to 1e-12, the cold-high torque rises and the rating drops;
+  - M5026 fits by `blocks_fit`, has a higher `inner_br_T` (1.42 against 1.30), is thinner (1.67 against 3.17 mm), and lowers the pull-out (2.688476 -> 2.012532 N·m) and the cold-high torque (3.823310 -> 2.862042 N·m);
+  - at the 304 design, B842-N52 moves f_cal from `f_cal_updated` to `f_cal_original`, and the pull-out ratio equals Br x f_cal.
+- The new asserts bite. With B882-N52 as the same-size pick, the width assert fails (12.7 against 6.35 mm). With B842-N52 in place of M5026, the "thinner" assert fails (3.17 against 3.17 mm). Both values come from my probe, and they agree with the implementer's two mutation runs.
+- The `with_inner` closure removes the duplicated clone-set-compute path; this is DRY and explicit.
+- The doc comment says "a same-size, stronger-grade block" and says why "same-size" is needed. It is not drawn.
+- What is missing is only the loads' sign on the bench design and the gearbox-input row (SHOULD-FIX 1).
+
+**Verdict:** PASS.
+
+Must-fix items applied:
+- change[1].text (round 1, must-fix 1: false at the 304 design, where the pick ends the bench calibration): "a stronger grade raises pull-out in proportion to its built-in flux density Br, the outer part likewise; stronger grades often tolerate less heat." -> "a stronger grade raises pull-out in proportion to its built-in flux density Br, unless the bench-measured calibration then stops applying; it often tolerates less heat."
+- change[1].text (round 4, must-fix 1, bound by controller ruling 12: stronger-grade parts of another size, M5044, M5045, M5026 and, at the 20 mm design, B882-N52, break both claims): "a stronger grade raises pull-out in proportion to its built-in flux density Br unless calibration changes; shaft-joint and gearbox loads rise; heat tolerance often drops." -> "a same-size, stronger-grade block raises pull-out proportionally to its built-in flux density Br unless calibration changes; shaft-joint and gearbox loads rise; heat tolerance often drops."
+
+Changes by controller ruling (the rulings' text, verbatim):
+- change[0].text (ruling 11, the shaft-clamp section paused: joint-neutral wording): "pull-out grows almost linearly with the overlap; the stack lengthens, and clamp and gearbox loads rise." -> "pull-out grows almost linearly with the overlap; the stack lengthens, and shaft-joint and gearbox loads rise."
+- change[1].text (ruling 9: round-3 should-fix 1, the entry named no load trade-off; round-2 should-fix 2, "unless calibration changes" covers the bench factor starting as well as stopping; joint-neutral): "a stronger grade raises pull-out in proportion to its built-in flux density Br, unless the bench-measured calibration then stops applying; it often tolerates less heat." -> "a stronger grade raises pull-out in proportion to its built-in flux density Br unless calibration changes; shaft-joint and gearbox loads rise; heat tolerance often drops." Round 4 then replaced it (must-fix above).
+- `tests/explain.rs` `pullout_angle_claims_hold_on_the_engine`, ruling 9 (should-fix 1 of rounds 1 and 2): at the "304 back iron" design, B842-N52 on the inner ring moves `model.f_cal` from the bench factor to the default one, and the pull-out ratio equals the inner Br ratio times the f_cal ratio; at the example design `model.f_cal` is unchanged and `metal.torque_cold_high_Nm` rises.
+- The same test, ruling 12 (round-4 should-fix 1): at the example design, B842-N52 has B842SH's `model.inner_width_mm`, `model.inner_thickness_mm` and `model.inner_length_mm`; M5026 on the inner ring fits by `model::blocks_fit`, has a higher `model.inner_br_T` and a smaller `model.inner_thickness_mm`, and lowers `model.pullout_Nm` and `metal.torque_cold_high_Nm`.
+
+Seeds (A-24):
+- S-1 (sentences[3]: "The fundamental alone peaks at 90°; at low fill a same-sign third harmonic above about a ninth of it moves the peak off 90°."): rejected in every round, 1 to 5. The engine's pull-out is the first peak, the one a rising load reaches (`peak_off_half_pitch` returns x in [0, π/2]): 52.96° electrical at the 20 mm design and 90° at the other four. "Below 90°" says the rings slip at a smaller twist; "off 90°" drops that direction. The mirror peak at 180° − φ lies past slip and is never reached under a rising load. sentences[3] keeps the drafted text.
+
+A-27 (prose duplicates): no `when_slipping` note existed during T12, so nothing was trimmed. Recorded for T15 (round 1): `when_slipping` must not repeat sentences[4] or the watch-out verbatim.
+
+Should-fix offered, not applied (open for the controller; no on-screen text changed after the
+round-5 PASS):
+- Round 1 S-2: a fourth source line for the past-pull-out finding behind sentences[4] and the watch-out, "Guidance audit of 2026-10-13: what happens past pull-out; the rings re-lock only when the slip speed falls". A-13 fixes the three lines verbatim, so adding one needs a controller ruling.
+- Round 5 S-1: pin the sign of the loads where the entry's margin is smallest. At the "304 back iron" design, assert that B842-N52 raises `metal.torque_cold_high_Nm` and `metal.cold_high_input_Nm` (+0.97 %: the Br gain x1.115385 beats the bench-factor drop x0.905236; the break-even bench factor is 1.059615); at the example design, add the `metal.cold_high_input_Nm` assert beside the cold-high one and add that row to the M5026 check.
+
+Diagrams (torque angle, flux paths, end fringing):
+
+Verdict by round: 1 PASS; 2 and 3 PASS (no diagram changed, not re-reviewed); 4 PASS (the
+square-wave label); 5 PASS (no diagram changed).
+
+Round 1:
+
+**What I read**
+- `diagrams.rs`, the T12 diff: the module doc, `FUNDAMENTAL_ALONE`, `STRONG_THIRD`, `END_LOSS_LABEL` and `END_LOSS`, `flux_panel`, `torque_angle` and `end_fringing`, and the three new tests plus `no_two_labels_of_a_diagram_overlap`.
+- The rendered picture `magcoupling-rs/target/t12-diagrams.png`.
+
+**Torque angle.**
+- The dashed fundamental is the ink colour, its label "fundamental alone" above its top. It peaks at its middle sample, t = 0.5 (90°), where the 90° tick and its label sit.
+- The solid sum is sin φ + 0.15·sin 3φ, a same-sign third above a ninth (−1 + 9·0.15 = +0.35 > 0). It dips to 0.85 at 90° and peaks at about 63° and 117°, at about 0.87 of the fundamental's peak.
+- The engine agrees: at the 20 mm design the third harmonic lowers the pull-out by 12.4 % and moves it to 53°.
+- The marker and "pull-out" sit on the first peak, left of 90°. That matches pullout_angle sentences[3] ("below 90°") and `peak_off_half_pitch`, which returns x in [0, π/2].
+- The sum is labelled "strong third harmonic" in its own colour, so the unusual case is named.
+
+**Flux paths.**
+- Every block carries a white N (on red) or S (on blue), centred.
+- Across the gap an N faces an S at zero twist, the attracting alignment.
+- With steel, the loops close from one steel bar to the other. In free space they bulge far behind the blocks.
+- This matches back_iron_factor sentence 0 (with must-fix 1 applied, the picture's "with back iron" is the magnetic case).
+
+**End fringing.**
+- Two level brackets, each END_LOSS = 0.08 of the block, sit under its ends in the label's colour: "magnet length L, c_end·τ_p/2 lost per end".
+- f_end = 1 − c_end·τ_p/L (model.rs:1003) takes c_end·τ_p in total, half at each end. That matches the current end_effect text ("half at each end") and A-8's rationale.
+- The share is schematic: at the default design 1 − f_end = 0.104, so 0.052 per end. The code comment says so.
+
+**Contradictions.** No picture teaches anything the notes or the engine contradict.
+
+**Verdict:** PASS.
+
+Round 2:
+
+No diagram changed since round 1: `diagrams.rs` was last written at 08:22, before the round-1 answer at 08:41. The round-1 DIAGRAMS PASS stands, and I did not re-review the torque-angle, flux or end-fringing pictures. The one dependent point is the square-wave label wording above (should-fix 1). It is a wording consistency, not a physics error: the picture's low level is the room between blocks.
+
+**Verdict:** PASS (not re-reviewed; round-1 PASS stands).
+
+Round 3:
+
+No diagram changed since round 1: `diagrams.rs` was last written at 08:22, before the round-1 answer (08:41). Must-fix 1 changes only note text and draws no picture. The round-1 DIAGRAMS PASS stands, and I did not re-review the torque-angle, flux or end-fringing pictures.
+
+**Verdict:** PASS (not re-reviewed; round-1 PASS stands).
+
+Round 4:
+
+**The change.** The square-wave label is now "blocks and spaces (fill 0.85)" (`diagrams.rs:179`). The test's `wave_label` (:792) expects it, and two doc comments (:135 and `notes.rs:23`) match. The picture is unchanged.
+- The ink wave is +1 over north blocks, −1 over south blocks and 0 between them. Those zero stretches are the spaces, so the label is true.
+- It now uses the same word as harmonics sentences[0] and change[2], so "gap" is left to the gap between the rings.
+
+**Verification.** `cargo test --features app --lib gui::diagrams` (scratch target directory, `--locked`): 10 passed. This includes:
+- `no_two_labels_of_a_diagram_overlap`: the label grew by two characters beside "n = 1" and "1 + 3 + 5";
+- `the_square_wave_paints_the_sum_of_its_harmonics_at_its_fill`;
+- `every_diagram_draws_inside_its_rect_with_finite_points_and_labels`.
+
+**Not drawn.** The code comments at `diagrams.rs:139` ("0 in the gaps") and in the test at :797 ("its gaps are 0") still say "gaps". They are not drawn, so this is no finding.
+
+**Earlier rounds.** The torque-angle, flux-path and end-fringing pictures did not change, and the round-1 PASS stands for them.
+
+**Verdict:** PASS.
+
+Round 5:
+
+`diagrams.rs` was not changed since round 4 (file time 09:13; md5 unchanged across this review). No picture depends on the changed entry. The round-4 PASS stands for the square wave, and the round-1 PASS for the torque-angle, flux-path and end-fringing pictures.
+
+**Verdict:** PASS.
+
+Must-fix items applied: none.
+
+Should-fix items applied by controller ruling 9:
+- `square_wave` label (round-2 DIAGRAMS should-fix 1, so that "gap" means only the gap between the rings): "blocks and gaps (fill {FILL})" -> "blocks and spaces (fill {FILL})", drawn as "blocks and spaces (fill 0.85)"; the test's `wave_label` and the doc comments of `square_wave` and `Diagram::SquareWaveHarmonics` match.

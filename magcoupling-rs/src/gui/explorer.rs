@@ -1857,6 +1857,48 @@ mod tests {
     }
 
     #[test]
+    fn the_outer_block_entries_name_the_part_pick_that_sets_them() {
+        // Review Focus RF-4 (amendment A-25 T-4, the harmonics part): at the defaults the outer
+        // library part sets the block's width and thickness, so the harmonics and back-iron
+        // entries on them are plain text naming the pick; with custom dimensions (the Y30 probe
+        // design, both parts blank) the same entries are links.
+        use crate::engine::explain::probes::probe_designs;
+        let entry = |id: &str, input: &str| {
+            *notes::note(id)
+                .and_then(|n| n.change.iter().find(|c| c.input == input))
+                .unwrap_or_else(|| panic!("{id}: no entry on {input}"))
+        };
+        let width = entry("harmonics", "coupling.magnets.manual_outer_width_mm");
+        let thickness = entry(
+            "back_iron_factor",
+            "coupling.magnets.manual_outer_thickness_mm",
+        );
+        let reason = |inputs: &DesignInputs, change: &Change| {
+            let results = compute_all(inputs);
+            let held = |path: &str| held_reason(&SizingState::default(), inputs, path);
+            let view = NoteView {
+                inputs,
+                results: &results,
+                held: &held,
+            };
+            unlinked_reason(change, &view)
+        };
+        let pick = format!(
+            "set by the {} pick",
+            label_for("coupling.magnets.part_outer")
+        );
+        let defaults = DesignInputs::default();
+        assert_eq!(reason(&defaults, &width), Some(pick.clone()));
+        assert_eq!(reason(&defaults, &thickness), Some(pick));
+        let (_, custom) = probe_designs()
+            .into_iter()
+            .find(|(name, _)| *name == "Y30 ferrite, custom dimensions")
+            .expect("the custom-dimensions probe design");
+        assert_eq!(reason(&custom, &width), None);
+        assert_eq!(reason(&custom, &thickness), None);
+    }
+
+    #[test]
     fn a_live_value_reads_as_the_readouts_and_none_where_there_is_no_prediction() {
         use crate::engine::explain::probes::probe_designs;
         let designs = probe_designs();
