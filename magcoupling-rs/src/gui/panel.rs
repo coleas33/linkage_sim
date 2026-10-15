@@ -1501,6 +1501,7 @@ mod tests {
         AUTO_RESETS_LENGTH, AUTO_RESIZES_RING, Consequences, RING_SIZE_STAYS, plain_text_violations,
     };
     use crate::gui::input_ui::{BLANK_TEXT, CHANGED_DOT, OUTSIDE_RANGE_NOTE, RESET_LABEL};
+    use crate::gui::plain_text::label_for;
     use crate::gui::session::{
         decode_share_payload, design_from_json, encode_share_payload, encode_share_text,
         target_mismatch_notice,
@@ -1915,7 +1916,7 @@ mod tests {
                 output = harness.frame(Vec::new());
             }
             assert_eq!(harness.panel.centre, CentreView::SizeAndTorque, "{path}");
-            let label = InputCatalogue::get().entry(path).unwrap().meta.label;
+            let label = label_for(path);
             let focus = focus_rects(&output);
             let rows: Vec<egui::Rect> = text_rects(&output, label)
                 .into_iter()
@@ -2053,14 +2054,14 @@ mod tests {
         assert_drew_headline(&output, &DesignInputs::default());
         let texts = drawn_texts(&output);
         for (_, path) in HEADLINE {
-            let label = result_info(path).unwrap().meta.label;
+            let label = label_for(path);
             assert!(texts.iter().any(|t| t == label), "missing {label:?}");
         }
         for entry in &InputCatalogue::get().key_design {
             assert!(
-                texts.iter().any(|t| t == entry.meta.label),
+                texts.iter().any(|t| t == label_for(&entry.path)),
                 "missing input {:?}",
-                entry.meta.label
+                label_for(&entry.path)
             );
         }
         // The corrected headline (E2: M4 x 14), not the workbook's (M4 x 12).
@@ -2421,10 +2422,10 @@ mod tests {
                     }
                     for entry in &section.entries {
                         assert!(
-                            texts.iter().any(|t| t == entry.meta.label),
+                            texts.iter().any(|t| t == label_for(&entry.path)),
                             "{}: missing {:?}",
                             group.name,
-                            entry.meta.label
+                            label_for(&entry.path)
                         );
                     }
                 }
@@ -2823,7 +2824,7 @@ mod tests {
         let output = harness.frame(Vec::new());
         let visuals = harness.ctx.style().visuals.clone();
         // Between the inputs and the dashboard's badges (left of its first label).
-        let pullout = result_info("model.pullout_Nm").unwrap().meta.label;
+        let pullout = label_for("model.pullout_Nm");
         let dashboard_left = text_rects(&output, pullout)
             .into_iter()
             .map(|r| r.left())
@@ -2905,7 +2906,7 @@ mod tests {
         use crate::gui::dashboard::DASHBOARD;
         use crate::gui::trace::TraceKind;
         let mut harness = Harness::new();
-        let gap = InputCatalogue::get().entry(FACE_GAP).unwrap().meta.label;
+        let gap = label_for(FACE_GAP);
         harness.click_text(gap);
         let trace = harness.panel.trace.clone().expect("a trace");
         assert_eq!(
@@ -2918,7 +2919,7 @@ mod tests {
         let marks = trace_marks(&harness, &output);
         // On the dashboard (right of its first label's badge): one frame per row the gap
         // drives, none on the others.
-        let pullout_label = result_info("model.pullout_Nm").unwrap().meta.label;
+        let pullout_label = label_for("model.pullout_Nm");
         let dashboard_left = text_rect(&output, pullout_label).unwrap().left() - 30.0;
         let on_dashboard = marks
             .iter()
@@ -2970,7 +2971,7 @@ mod tests {
         // Each Key design row is framed exactly when the pull-out reads its input.
         let marks = trace_marks(&harness, &output);
         for entry in &InputCatalogue::get().key_design {
-            let row = text_rects(&output, entry.meta.label)
+            let row = text_rects(&output, label_for(&entry.path))
                 .into_iter()
                 .find(|r| r.left() < INPUTS_WIDTH)
                 .unwrap();
@@ -3011,7 +3012,7 @@ mod tests {
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
         // Trace the face gap and show only the results it drives.
-        harness.click_text(InputCatalogue::get().entry(FACE_GAP).unwrap().meta.label);
+        harness.click_text(label_for(FACE_GAP));
         harness.click_text(TRACED_ONLY);
         let output = harness.frame(Vec::new());
         let trace = harness.panel.trace.clone().unwrap();
@@ -3069,7 +3070,7 @@ mod tests {
         let output = harness.frame(Vec::new());
         assert_eq!(harness.panel.trace, None);
         assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
-        harness.click_text(InputCatalogue::get().entry(FACE_GAP).unwrap().meta.label);
+        harness.click_text(label_for(FACE_GAP));
         let output = harness.frame(Vec::new());
         assert!(harness.panel.trace.is_some());
         assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
@@ -3086,7 +3087,7 @@ mod tests {
         let total = entries.len();
         let mut harness = Harness::new();
         harness.click_text(CentreView::Results.label());
-        harness.click_text(InputCatalogue::get().entry(FACE_GAP).unwrap().meta.label);
+        harness.click_text(label_for(FACE_GAP));
         harness.click_text(TRACED_ONLY);
         let gap = harness.panel.trace.clone().expect("a trace");
         let gap_rows = entries.iter().filter(|e| gap.marks(&e.path)).count();
@@ -3097,7 +3098,7 @@ mod tests {
         harness.click_text(CentreView::Geometry.label());
         harness.click_text(CLEAR_TRACE);
         assert_eq!(harness.panel.trace, None);
-        harness.click_text(InputCatalogue::get().entry(POLES).unwrap().meta.label);
+        harness.click_text(label_for(POLES));
         let poles = harness.panel.trace.clone().expect("a trace");
         assert_eq!(poles.source, POLES);
         let pole_rows = entries.iter().filter(|e| poles.marks(&e.path)).count();
@@ -3130,7 +3131,7 @@ mod tests {
         let total = entries.len();
         let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
         harness.click_text(CentreView::Results.label());
-        harness.click_text(InputCatalogue::get().entry(FACE_GAP).unwrap().meta.label);
+        harness.click_text(label_for(FACE_GAP));
         harness.click_text(TRACED_ONLY);
         let gap = harness.panel.trace.clone().expect("a trace");
         harness.click_text(CentreView::Geometry.label());
@@ -3150,7 +3151,7 @@ mod tests {
             (replaced.kind, replaced.source.as_str()),
             (TraceKind::Result, outside.path)
         );
-        harness.click_text(InputCatalogue::get().entry(POLES).unwrap().meta.label);
+        harness.click_text(label_for(POLES));
         let poles = harness.panel.trace.clone().expect("a trace");
         assert_eq!(
             (poles.kind, poles.source.as_str()),
@@ -3178,7 +3179,7 @@ mod tests {
         let total = entries.len();
         let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
         harness.click_text(CentreView::Results.label());
-        harness.click_text(InputCatalogue::get().entry(FACE_GAP).unwrap().meta.label);
+        harness.click_text(label_for(FACE_GAP));
         harness.click_text(TRACED_ONLY);
         let trace = harness.panel.trace.clone().unwrap();
         let traced = entries.iter().filter(|e| trace.marks(&e.path)).count();
@@ -3249,7 +3250,7 @@ mod tests {
         let total = entries.len();
         let mut harness = Harness::new();
         harness.click_text(CentreView::Results.label());
-        harness.click_text(InputCatalogue::get().entry(FACE_GAP).unwrap().meta.label);
+        harness.click_text(label_for(FACE_GAP));
         let trace = harness.panel.trace.clone().expect("a trace");
         // A search for one row the trace marks: the headline's heading counts the traced rows
         // it shows, not every row of the group the trace marks.
@@ -3291,7 +3292,7 @@ mod tests {
         // second click of "a second click on the label ends the trace" lands on the label again,
         // not on whatever a banner on top would have pushed under the pointer.
         let mut harness = Harness::new();
-        let gap = InputCatalogue::get().entry(FACE_GAP).unwrap().meta.label;
+        let gap = label_for(FACE_GAP);
         let on_inputs_side = |output: &egui::FullOutput, text: &str| {
             text_rects(output, text)
                 .into_iter()
@@ -5102,11 +5103,7 @@ mod tests {
         // with the Coupling group closed.
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, SIZED_NOTE), 1);
-        let label = InputCatalogue::get()
-            .entry(FreeVariable::RingRadius.path())
-            .unwrap()
-            .meta
-            .label;
+        let label = label_for(FreeVariable::RingRadius.path());
         assert_eq!(count(&output, label), 1);
         // Its value box shows the solved radius, not the inputs' own.
         assert_locked_row_shows(&output, label, &format!("{:.2} mm", point.value));
@@ -6068,6 +6065,31 @@ mod tests {
     }
 
     #[test]
+    fn the_size_tab_s_gap_and_count_labels_show_the_overlay_help() {
+        use crate::gui::plain_text::help_for;
+        // F19's second help site: the Size tab's gap and magnet-count labels hover their
+        // input's plain_text::help_for. It passes before HELP has rows; it bites once help is
+        // filled and a label stops showing it.
+        for (label, path) in [(GAP, FACE_GAP), (MAGNETS, POLES)] {
+            let mut harness = size_tab(SCREEN, DesignInputs::default());
+            tooltips_at_once(&harness);
+            let output = harness.frame(Vec::new());
+            let at = text_rect(&output, label)
+                .unwrap_or_else(|| panic!("no {label:?}"))
+                .center();
+            // egui shows a tooltip only after time has passed with the pointer on the widget.
+            harness.frame_after(0.5, vec![egui::Event::PointerMoved(at)]);
+            let output = harness.frame_after(0.5, Vec::new());
+            let help = help_for(path);
+            assert!(!help.is_empty(), "{path}");
+            assert!(
+                drawn_texts(&output).iter().any(|t| t == help),
+                "{path}: {help:?}"
+            );
+        }
+    }
+
+    #[test]
     fn hovering_a_dashboard_value_shows_its_equation() {
         use crate::gui::readouts::OPEN_HINT;
         let mut harness = Harness::new();
@@ -6082,7 +6104,7 @@ mod tests {
         assert!(
             texts
                 .iter()
-                .any(|t| t.starts_with("Pull-out torque at operating temperature\n")),
+                .any(|t| t.starts_with(&format!("{}\n", label_for("model.pullout_Nm")))),
             "the hover text: {texts:?}"
         );
         // T_pull = T_2D f_end f_cal, typeset run by run, and the hint.
@@ -7395,7 +7417,7 @@ mod tests {
                 for _ in 0..10 {
                     output = harness.frame(Vec::new());
                 }
-                let label = InputCatalogue::get().entry(path).unwrap().meta.label;
+                let label = label_for(path);
                 let rows: Vec<egui::Rect> = text_rects(&output, label)
                     .into_iter()
                     .filter(|r| r.left() < INPUTS_WIDTH)
@@ -7576,7 +7598,7 @@ mod tests {
         // Left of its first label's badge; right, the side panel's margin inside the frame's
         // (8 points each), give or take egui's rounding of a widget's edges (a line that wraps
         // to the full width can end one rounding step past it).
-        let pullout = result_info("model.pullout_Nm").unwrap().meta.label;
+        let pullout = label_for("model.pullout_Nm");
         let dashboard = text_rect(&output, pullout).unwrap().left() - 30.0
             ..=width - 16.0 + egui::emath::GUI_ROUNDING;
         for text in &texts {

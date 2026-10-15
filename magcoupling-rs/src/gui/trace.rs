@@ -83,6 +83,7 @@ impl Trace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gui::plain_text::label_for;
     use crate::gui::results_table::table_entries;
 
     #[test]
@@ -99,7 +100,8 @@ mod tests {
         assert_eq!(
             trace.banner(),
             format!(
-                "{TRACING} Candidate flat-face magnetic gap: drives {} explained results",
+                "{TRACING} {}: drives {} explained results",
+                label_for("metal.face_gap_mm"),
                 trace.paths.len()
             )
         );
@@ -119,7 +121,8 @@ mod tests {
         assert_eq!(
             trace.banner(),
             format!(
-                "{TRACING} Pull-out torque at operating temperature: reads {} inputs",
+                "{TRACING} {}: reads {} inputs",
+                label_for("model.pullout_Nm"),
                 inputs.len()
             )
         );

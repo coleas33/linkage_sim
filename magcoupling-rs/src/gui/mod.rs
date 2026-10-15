@@ -20,6 +20,7 @@ pub mod input_ui;
 pub mod inputs;
 mod panel;
 pub mod pickers;
+pub mod plain_text;
 pub mod plots;
 pub mod readouts;
 pub mod result_groups;

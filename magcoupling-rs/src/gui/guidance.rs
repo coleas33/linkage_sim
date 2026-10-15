@@ -60,6 +60,7 @@ use crate::gui::dashboard::{DASHBOARD, Level, check_level, result_info};
 use crate::gui::format::{fixed, format_value, signed_percent, with_unit};
 use crate::gui::inputs::{InputCatalogue, optional_seed, section_label};
 use crate::gui::pickers::{CUSTOM, GRADE_PATHS, PART_PATHS};
+use crate::gui::plain_text::display_label;
 use crate::gui::size_controls;
 use crate::{DesignInputs, DesignResults, compute_all};
 
@@ -495,8 +496,8 @@ const SIDE_EFFECTS: [SideEffect; 1] = [SideEffect {
 
 /// The notes to draw under the fixes of the guide at `index` (in `all`, every guide's
 /// [`fixes`] as [`FixCache::get`] gives them) for each shown fix that sets back another check
-/// that is not passing in this design ([`SIDE_EFFECTS`]), for example "Raising Candidate
-/// flat-face magnetic gap also lowers the pull-out, so Hot-low torque falls further."
+/// that is not passing in this design ([`SIDE_EFFECTS`]), for example "Raising Magnet
+/// face gap also lowers the pull-out, so Hot-low torque falls further."
 pub fn side_effects(
     all: &[Vec<(&'static str, Direction)>],
     index: usize,
@@ -833,8 +834,9 @@ fn current_number(inputs: &DesignInputs, results: &DesignResults, path: &str) ->
     }
 }
 
-/// A fix's text: its direction, then the input's label as the inputs side shows it ("Raise
-/// Minimum outer return ring wall"), or the Size tab's name for it ([`SIZE_TAB_ALIASES`]). A
+/// A fix's text: its direction, then the input's label as the inputs side shows it (its display
+/// label, `gui::plain_text`: "Raise Magnets per ring"), or the Size tab's name for it
+/// ([`SIZE_TAB_ALIASES`], which wins over the display label in fix text only). A
 /// label that another input's label equals or ends with ("Boss outside diameter" against
 /// "Shaft boss outside diameter") is followed by its group's heading, so the fix names one
 /// input: "Raise Boss outside diameter (Shaft clamps)". A [`Direction::CustomHotterGrade`] fix
@@ -865,10 +867,11 @@ fn fix_label(path: &str) -> String {
     let Some(entry) = catalogue.entry(path) else {
         return path.to_owned();
     };
-    let label = entry.meta.label;
-    let shared = catalogue
-        .all()
-        .any(|other| other.path != path && ends_with_label(other.meta.label, label));
+    // C-3 compares the labels drawn on screen: the display labels (spec 3.5).
+    let label = display_label(path, entry.meta.label);
+    let shared = catalogue.all().any(|other| {
+        other.path != path && ends_with_label(display_label(&other.path, other.meta.label), label)
+    });
     let heading = path
         .rsplit_once('.')
         .and_then(|(group, _)| section_label(group));
@@ -1992,6 +1995,7 @@ mod tests {
     use crate::engine::model::ring_fits;
     use crate::gui::dashboard::{CHECKS, DASHBOARD};
     use crate::gui::explorer::reviewed_note;
+    use crate::gui::plain_text::label_for;
     use crate::gui::test_support::{assert_glyphs, passing_design, short_magnets, with_poles};
     use std::collections::BTreeSet;
 
@@ -2356,7 +2360,7 @@ mod tests {
         );
         assert_eq!(
             fix_text("coupling.npole", Direction::Lower),
-            "Lower Number of poles per ring"
+            "Lower Magnets per ring"
         );
         assert_eq!(
             fix_text("coupling.magnets.part_inner", Direction::Change),
@@ -2390,15 +2394,12 @@ mod tests {
             "Lower Vacuum permeability (Calibration)"
         );
         // Every fix: its direction, then its input's label (the alias, or with its group).
-        let catalogue = InputCatalogue::get();
         for g in &CHECK_GUIDES {
             for (path, direction) in possible_fixes(g) {
                 let label = SIZE_TAB_ALIASES
                     .iter()
                     .find(|&&(aliased, _)| aliased == path)
-                    .map_or(catalogue.entry(path).unwrap().meta.label, |&(_, alias)| {
-                        alias
-                    });
+                    .map_or(label_for(path), |&(_, alias)| alias);
                 let text = fix_text(path, direction);
                 assert!(
                     text.starts_with(&format!("{} {label}", direction.word())),
@@ -2420,6 +2421,41 @@ mod tests {
             let text = fix_text(&entry.path, Direction::Raise);
             assert!(seen.insert(text.clone()), "{}: {text} twice", entry.path);
         }
+    }
+
+    #[test]
+    fn the_fix_label_is_the_display_label_and_still_names_one_input() {
+        // Spec 3.5: the overlay's names reach the fix text ...
+        assert_eq!(
+            fix_text(FACE_GAP, Direction::Raise),
+            format!("Raise {}", label_for(FACE_GAP))
+        );
+        // ... but a fix on the ring radius names the Size-tab control a user moves it with.
+        assert_eq!(
+            fix_text(RING, Direction::Raise),
+            format!("Raise {}", size_controls::DIAMETER)
+        );
+        assert_ne!(label_for(RING), size_controls::DIAMETER);
+        // C-3 runs on the display labels: the inputs whose fix text adds a group heading are
+        // still the seven whose label another input's equals or ends with (map-help 3.5).
+        let headed: Vec<&str> = InputCatalogue::get()
+            .all()
+            .map(|e| e.path.as_str())
+            .filter(|p| !SIZE_TAB_ALIASES.iter().any(|&(aliased, _)| aliased == *p))
+            .filter(|p| fix_text(p, Direction::Raise) != format!("Raise {}", label_for(p)))
+            .collect();
+        assert_eq!(
+            headed,
+            [
+                "coupling.c_end",
+                "coupling.mu0",
+                "calibration.mu0",
+                "materials.steel.modulus_GPa",
+                "materials.steel.density_g_cm3",
+                "clamps.alloy",
+                "clamps.boss_od_mm",
+            ]
+        );
     }
 
     // ------------------------------------------------------------------ the fixes help
@@ -4626,7 +4662,8 @@ mod tests {
         // Physics review 2, N2: a larger face gap opens the running clearance but lowers the
         // pull-out. The thinner sleeve and liner come first, at no torque cost, and while the
         // gap fix is shown beside a hot-low torque that is not passing, a note says so.
-        let note = "Raising Candidate flat-face magnetic gap also lowers the pull-out, so Hot-low torque falls further.";
+        let note =
+            "Raising Magnet face gap also lowers the pull-out, so Hot-low torque falls further.";
         let clearance = CHECK_GUIDES
             .iter()
             .position(|g| g.check == CLEARANCE)
@@ -4680,7 +4717,8 @@ mod tests {
         // shown the note says so, once, after the side-effect note; with neither shown (no
         // sleeve or liner left to thin) it is gone.
         let retention = "A thinner sleeve or liner holds the magnets less securely; no check here covers that, so confirm it separately.";
-        let gap_note = "Raising Candidate flat-face magnetic gap also lowers the pull-out, so Hot-low torque falls further.";
+        let gap_note =
+            "Raising Magnet face gap also lowers the pull-out, so Hot-low torque falls further.";
         let clearance = CHECK_GUIDES
             .iter()
             .position(|g| g.check == CLEARANCE)

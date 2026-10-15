@@ -47,7 +47,7 @@ use crate::gui::dashboard::result_info;
 use crate::gui::diagrams::diagram_ui;
 use crate::gui::format::{format_value, with_unit};
 use crate::gui::input_ui::CHANGED_DOT;
-use crate::gui::inputs::InputCatalogue;
+use crate::gui::plain_text::label_for;
 use crate::gui::readouts::{ReadoutEvents, registry};
 use crate::gui::typeset::{
     TermColors, glyph_safe, laid_ui, layout_equation, layout_symbol, term_at,
@@ -366,12 +366,14 @@ impl Explorer {
     }
 }
 
-/// The label of an input or result path (the path itself for neither).
+/// The on-screen name of an input or result path ([`label_for`]: the overlay's display label,
+/// else the metadata's); the path itself for neither. The term list, the breadcrumb, the "used
+/// by" links and the trace banner all read it.
 pub fn term_label(path: &str) -> &str {
-    result_info(path)
-        .map(|info| info.meta.label)
-        .or_else(|| InputCatalogue::get().entry(path).map(|e| e.meta.label))
-        .unwrap_or(path)
+    match label_for(path) {
+        "" => path,
+        label => label,
+    }
 }
 
 /// A symbol as one line of plain text the default fonts draw (`T_pull`, `θ_op`, `S_3^iron`),
@@ -1156,6 +1158,14 @@ mod tests {
         assert_eq!(term_label("model.f_end"), "End-effect factor");
         assert_eq!(term_label("coupling.c_end"), "End-effect coefficient");
         assert_eq!(term_label("no.such"), "no.such");
+        // An input or result the overlay renames reads by its display label (gui::plain_text).
+        for path in ["metal.face_gap_mm", "model.pullout_Nm"] {
+            assert_eq!(term_label(path), crate::gui::plain_text::label_for(path));
+        }
+        assert_eq!(
+            term_label("metal.face_gap_mm"),
+            crate::gui::size_controls::GAP
+        );
         assert_eq!(plain_symbol("ϑ_{op}"), "θ_op");
         assert_eq!(plain_symbol("T_{pull}"), "T_pull");
         assert_eq!(plain_symbol("S_{3}^{iron}"), "S_3^iron");

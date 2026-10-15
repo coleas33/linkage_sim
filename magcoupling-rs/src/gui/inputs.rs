@@ -18,6 +18,7 @@ use crate::engine::grades;
 use crate::engine::library;
 use crate::engine::meta::{FieldType, InputMeta, SliderRange, Value, input_rows};
 use crate::gui::format::{search_haystack, search_needle};
+use crate::gui::plain_text::{display_label, help_for};
 
 /// The Key design group, in order (spec M4 "Layout": face gap, pole count, magnet part, axial
 /// length, operating temperature, back iron, cup wall, conductance, measured drag). The axial
@@ -598,8 +599,8 @@ pub struct InputEntry {
     pub path: String,
     pub meta: &'static InputMeta,
     pub default: Value,
-    /// Label, path and cell, lowercase: what the inputs filter matches ([`search_haystack`],
-    /// built once, as the results table's).
+    /// Display label, catalogue label, path and cell, lowercase: what the inputs filter matches
+    /// ([`search_haystack`], built once, as the results table's).
     haystack: String,
 }
 
@@ -682,7 +683,12 @@ impl InputCatalogue {
             path: row.path.clone(),
             meta: row.meta,
             default: row.value.clone(),
-            haystack: search_haystack(row.meta.label, &row.path, row.meta.cell),
+            haystack: search_haystack(
+                display_label(&row.path, row.meta.label),
+                row.meta.label,
+                &row.path,
+                row.meta.cell,
+            ),
         };
         let key_design = KEY_DESIGN
             .iter()
@@ -820,9 +826,10 @@ impl SectionMatches<'_> {
     }
 }
 
-/// The inputs of `groups` whose label, path or workbook cell contains `query`, ignoring case
-/// and the surrounding blanks (as the results search), by section in the order of `groups`;
-/// a section without a match is left out. Every input of `groups` for a blank query.
+/// The inputs of `groups` whose display label, catalogue label, path or workbook cell contains
+/// `query`, ignoring case and the surrounding blanks (as the results search), by section in the
+/// order of `groups`; a section without a match is left out. Every input of `groups` for a
+/// blank query.
 pub fn filter_inputs<'a>(groups: &'a [InputGroup], query: &str) -> Vec<SectionMatches<'a>> {
     let needle = search_needle(query);
     let mut matches = Vec::new();
@@ -902,13 +909,15 @@ pub fn text_hint(path: &str, text: &str) -> Option<&'static str> {
     }
 }
 
-/// The hover text of an input: help, path, workbook cell, slider range, default, and whether
-/// it is a model assumption.
+/// The hover text of an input: its help (the overlay's, else the engine's:
+/// [`help_for`]), path, workbook cell, slider range, default, and whether it is a model
+/// assumption.
 pub fn input_tooltip(entry: &InputEntry) -> String {
     let meta = entry.meta;
     let mut lines = Vec::new();
-    if !meta.help.is_empty() {
-        lines.push(meta.help.to_owned());
+    let help = help_for(&entry.path);
+    if !help.is_empty() {
+        lines.push(help.to_owned());
     }
     lines.push(entry.path.clone());
     lines.push(meta.cell.map_or_else(
@@ -1507,5 +1516,58 @@ mod tests {
         assert!(
             filter_inputs(catalogue.groups_in(InputOrder::Workflow), "no such input").is_empty()
         );
+    }
+
+    #[test]
+    fn the_filter_matches_the_display_label_and_still_the_catalogue_label() {
+        use crate::gui::plain_text::label_for;
+        let catalogue = InputCatalogue::new();
+        let paths = |query: &str| -> Vec<String> {
+            filter_inputs(catalogue.groups_in(InputOrder::Workflow), query)
+                .iter()
+                .flat_map(|m| m.entries.iter().map(|e| e.path.clone()))
+                .collect()
+        };
+        for path in [
+            "metal.face_gap_mm",
+            "coupling.npole",
+            "coupling.inner_back_apothem_mm",
+            "metal.required_min_Nm",
+            "metal.variation",
+        ] {
+            let entry = catalogue.entry(path).unwrap();
+            // The overlay renames it (else this test proves nothing) ...
+            assert_ne!(label_for(path), entry.meta.label, "{path}");
+            // ... and it is found by its name on screen, its old label, its path and its cell.
+            for query in [
+                label_for(path),
+                entry.meta.label,
+                path,
+                entry.meta.cell.unwrap(),
+            ] {
+                assert!(
+                    paths(query).contains(&path.to_owned()),
+                    "{path} by {query:?}"
+                );
+            }
+        }
+        // The display label's words alone find it: no catalogue label says "ring radius".
+        assert_eq!(paths("ring radius"), ["coupling.inner_back_apothem_mm"]);
+    }
+
+    #[test]
+    fn a_tooltip_opens_with_the_help_the_overlay_gives() {
+        // F19's first help site. It passes before HELP has rows (help_for is then the engine's
+        // help); it is the guard that bites if an overlay row is not shown.
+        for entry in InputCatalogue::get().all() {
+            let tooltip = input_tooltip(entry);
+            match help_for(&entry.path) {
+                "" => assert!(
+                    tooltip.starts_with(&format!("{}\n", entry.path)),
+                    "{tooltip}"
+                ),
+                help => assert!(tooltip.starts_with(&format!("{help}\n")), "{tooltip}"),
+            }
+        }
     }
 }

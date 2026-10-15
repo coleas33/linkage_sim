@@ -30,10 +30,22 @@ pub fn with_unit(text: String, unit: &str) -> String {
     }
 }
 
-/// What a search box matches an input or a result by: its label, path and workbook cell, one
-/// per line, lowercase. The results search and the inputs filter share it, so both match alike.
-pub(crate) fn search_haystack(label: &str, path: &str, cell: Option<&str>) -> String {
-    format!("{label}\n{path}\n{}", cell.unwrap_or("")).to_lowercase()
+/// What a search box matches an input or a result by: its display label (`gui::plain_text`),
+/// its catalogue label when the overlay renames it, its path and its workbook cell, one per
+/// line, lowercase. The results search and the inputs filter share it, so both match alike, and
+/// an old label, a path or a cell still finds a renamed input (spec 3.5).
+pub(crate) fn search_haystack(
+    display: &str,
+    label: &str,
+    path: &str,
+    cell: Option<&str>,
+) -> String {
+    let names = if display == label {
+        label.to_owned()
+    } else {
+        format!("{display}\n{label}")
+    };
+    format!("{names}\n{path}\n{}", cell.unwrap_or("")).to_lowercase()
 }
 
 /// A search box's text as it is matched against a [`search_haystack`]: lowercase, without the
@@ -116,14 +128,31 @@ mod tests {
         assert_eq!(
             search_haystack(
                 "Gearbox ratio",
+                "Gearbox ratio",
                 "coupling.gear_ratio",
                 Some("Calculator!C45")
             ),
             "gearbox ratio\ncoupling.gear_ratio\ncalculator!c45"
         );
+        // A display label the overlay gives (gui::plain_text) comes first; the catalogue label
+        // stays searchable after it.
+        assert_eq!(
+            search_haystack(
+                "Magnet face gap",
+                "Candidate flat-face magnetic gap",
+                "metal.face_gap_mm",
+                Some("Metal design!C119")
+            ),
+            "magnet face gap\ncandidate flat-face magnetic gap\nmetal.face_gap_mm\nmetal design!c119"
+        );
         // A Rust-only input or result has no cell.
         assert_eq!(
-            search_haystack("Highest odd harmonic summed", "coupling.max_harmonic", None),
+            search_haystack(
+                "Highest odd harmonic summed",
+                "Highest odd harmonic summed",
+                "coupling.max_harmonic",
+                None
+            ),
             "highest odd harmonic summed\ncoupling.max_harmonic\n"
         );
         assert_eq!(search_needle("  GEARBOX Ratio "), "gearbox ratio");

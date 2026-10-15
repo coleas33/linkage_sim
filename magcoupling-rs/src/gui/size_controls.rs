@@ -18,6 +18,7 @@ use crate::gui::format::{fixed, signed_percent};
 use crate::gui::guidance::Consequences;
 use crate::gui::input_ui::slider;
 use crate::gui::inputs::InputCatalogue;
+use crate::gui::plain_text::help_for;
 use crate::gui::sizing::{SizingMode, SizingState, auto_choice, variable_label};
 use crate::{DesignInputs, DesignResults, compute_all};
 
@@ -319,7 +320,7 @@ pub(crate) fn controls_ui(
                 Value::Int(value) => value as f64,
                 _ => unreachable!("the gap and magnet count are numbers"),
             };
-            ui.label(label).on_hover_text(entry.meta.help);
+            ui.label(label).on_hover_text(help_for(path));
             let range: SliderRange = entry.meta.range.expect("a size control has a slider");
             let response = size_slider(ui, path, &mut value, entry.meta, range, is_locked(label));
             output.widgets.push(response.id);

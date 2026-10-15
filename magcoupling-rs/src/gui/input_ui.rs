@@ -13,6 +13,7 @@ use crate::engine::meta::{FieldType, InputMeta, SliderRange, Value};
 use crate::gui::format::{format_value, with_unit};
 use crate::gui::inputs::{InputEntry, input_tooltip, outside_range, step_decimals, text_hint};
 use crate::gui::pickers::{choice_hover, picker_ui};
+use crate::gui::plain_text::label_for;
 
 /// The changed-from-default dot.
 pub const CHANGED_DOT: &str = "\u{2022}";
@@ -112,7 +113,7 @@ pub fn input_row(
             ui.colored_label(ui.visuals().selection.stroke.color, dot)
                 .on_hover_text("Changed from the default");
             label_clicked = ui
-                .add(egui::Label::new(meta.label).sense(egui::Sense::click()))
+                .add(egui::Label::new(label_for(&entry.path)).sense(egui::Sense::click()))
                 .on_hover_text(format!("{tooltip}\n{TRACE_HINT}"))
                 .clicked();
             ui.add_enabled_ui(!locked, |ui| {

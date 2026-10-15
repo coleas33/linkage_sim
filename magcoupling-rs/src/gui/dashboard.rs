@@ -50,6 +50,7 @@ use crate::gui::guidance::{
     self, CHECK_GUIDES, CheckGuide, Direction, FIT_CHECK, Learn, NO_FIX, design_status,
     design_status_text, fix_text, guide_notes, row_learn,
 };
+use crate::gui::plain_text::{display_label, help_for, label_for};
 use crate::gui::readouts::Readouts;
 use crate::gui::typeset::glyph_safe;
 use crate::{DesignInputs, DesignResults, compute_all};
@@ -401,13 +402,14 @@ pub struct ResultNotes<'a> {
     pub stored_3d: bool,
 }
 
-/// The hover text of a displayed result: label, help, path, workbook cell, then the notes.
-/// The text every readout shows (`Readouts::show` adds the equation under it).
+/// The hover text of a displayed result: its on-screen name and help (`gui::plain_text`: the
+/// overlay's, else the metadata's), path, workbook cell, then the notes. The text every readout
+/// shows (`Readouts::show` adds the equation under it).
 pub fn result_tooltip(path: &str, info: &ResultInfo, notes: ResultNotes<'_>) -> String {
-    let meta = info.meta;
-    let mut lines = vec![meta.label.to_owned()];
-    if !meta.help.is_empty() {
-        lines.push(meta.help.to_owned());
+    let mut lines = vec![display_label(path, info.meta.label).to_owned()];
+    let help = help_for(path);
+    if !help.is_empty() {
+        lines.push(help.to_owned());
     }
     lines.push(path.to_owned());
     lines.push(
@@ -449,6 +451,8 @@ pub fn hover_text(path: &str) -> Option<String> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct DashboardLine {
     pub path: &'static str,
+    /// The result's catalogue label: the spreadsheet's Summary writes it. The dashboard draws
+    /// the path's on-screen name, [`label_for`].
     pub label: &'static str,
     /// The value with its unit.
     pub value: String,
@@ -558,7 +562,7 @@ pub fn dashboard_ui(
         let tint = |rich: egui::RichText| if line.greyed { rich.color(weak) } else { rich };
         let title = ui.horizontal(|ui| {
             badge(ui, line.level);
-            ui.add(egui::Label::new(tint(egui::RichText::new(line.label))).wrap());
+            ui.add(egui::Label::new(tint(egui::RichText::new(label_for(line.path)))).wrap());
         });
         let value = ui.horizontal(|ui| {
             ui.add_space(16.0);
@@ -1466,10 +1470,14 @@ mod tests {
     fn the_result_tooltip_names_the_path_cell_and_notes() {
         let info = result_info("model.pullout_Nm").unwrap();
         let tooltip = result_tooltip("model.pullout_Nm", info, ResultNotes::default());
-        assert!(
-            tooltip.starts_with("Pull-out torque at operating temperature\n"),
-            "{tooltip}"
+        // The on-screen name and the help first (gui::plain_text).
+        let first = format!(
+            "{}\n{}\n",
+            label_for("model.pullout_Nm"),
+            help_for("model.pullout_Nm")
         );
+        assert!(!help_for("model.pullout_Nm").is_empty());
+        assert!(tooltip.starts_with(&first), "{tooltip}");
         assert!(
             tooltip.contains("\nmodel.pullout_Nm\nCalculator!C93"),
             "{tooltip}"
@@ -1494,7 +1502,7 @@ mod tests {
     fn the_hover_text_carries_the_marks_and_needs_a_result() {
         let text = hover_text("model.pullout_Nm").unwrap();
         assert!(
-            text.starts_with("Pull-out torque at operating temperature\n"),
+            text.starts_with(&format!("{}\n", label_for("model.pullout_Nm"))),
             "{text}"
         );
         assert!(text.contains("Corrected vs workbook:"), "{text}");
@@ -1504,6 +1512,39 @@ mod tests {
                 .contains("Rust-only result (no workbook cell)")
         );
         assert_eq!(hover_text("no.such"), None);
+    }
+
+    #[test]
+    fn each_row_is_drawn_under_its_display_label_and_exported_under_its_catalogue_label() {
+        let ctx = egui::Context::default();
+        let texts = drawn_texts(&dashboard_frame(&ctx, &DesignInputs::default()));
+        let lines = dashboard_lines(&compute_all(&DesignInputs::default()));
+        for line in &lines {
+            assert!(
+                texts.iter().any(|t| t == label_for(line.path)),
+                "{}",
+                line.path
+            );
+            // The line keeps the catalogue label: the spreadsheet's Summary writes it.
+            assert_eq!(line.label, result_info(line.path).unwrap().meta.label);
+        }
+        // The overlay renames three rows (spec 3.5); their catalogue labels are not drawn.
+        let renamed: Vec<&str> = lines
+            .iter()
+            .filter(|line| label_for(line.path) != line.label)
+            .map(|line| line.path)
+            .collect();
+        assert_eq!(
+            renamed,
+            [
+                "model.pullout_Nm",
+                "metal.torque_hot_low_Nm",
+                "metal.torque_cold_high_Nm"
+            ]
+        );
+        for line in lines.iter().filter(|line| renamed.contains(&line.path)) {
+            assert!(!texts.iter().any(|t| t == line.label), "{}", line.path);
+        }
     }
 
     #[test]

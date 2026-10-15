@@ -24,6 +24,7 @@ use crate::gui::dashboard::{
 use crate::gui::format::{
     format_value, non_finite_text, search_haystack, search_needle, with_unit,
 };
+use crate::gui::plain_text::display_label;
 use crate::gui::readouts::Readouts;
 use crate::gui::result_groups::{OTHER_RESULTS, result_groups};
 use crate::gui::session::{Design, design_json, json_value};
@@ -111,7 +112,7 @@ pub struct TableEntry {
     pub marker: String,
     /// One of the design's checks ([`CHECKS`]): its row carries a badge.
     pub check: bool,
-    /// Label, path and cell, lowercase: what the search matches.
+    /// Display label, catalogue label, path and cell, lowercase: what the search matches.
     haystack: String,
 }
 
@@ -123,7 +124,12 @@ pub fn table_entries() -> &'static [TableEntry] {
             .into_iter()
             .map(|row| {
                 let info = result_info(&row.path).expect("every result has its info");
-                let haystack = search_haystack(info.meta.label, &row.path, info.cell.as_deref());
+                let haystack = search_haystack(
+                    display_label(&row.path, info.meta.label),
+                    info.meta.label,
+                    &row.path,
+                    info.cell.as_deref(),
+                );
                 TableEntry {
                     marker: marker_text(CorrectionIndex::get().marks(info.cell.as_deref())),
                     check: CHECKS.contains(&row.path.as_str()),
@@ -810,6 +816,28 @@ mod tests {
     }
 
     #[test]
+    fn the_search_matches_the_display_label_and_the_catalogue_label() {
+        use crate::gui::plain_text::label_for;
+        let entries = table_entries();
+        for path in [
+            "model.pullout_Nm",
+            "model.gap_radius_mm",
+            "metal.torque_hot_low_Nm",
+            "metal.torque_cold_high_Nm",
+        ] {
+            let index = entry_index(path).unwrap();
+            let catalogue = entries[index].info.meta.label;
+            assert_ne!(label_for(path), catalogue, "{path}");
+            for query in [label_for(path), catalogue] {
+                assert!(
+                    search(entries, query).contains(&index),
+                    "{path} by {query:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_row_tooltip_is_the_hover_hook_s_with_the_exact_value() {
         let entries = table_entries();
         let pullout = entries
@@ -818,10 +846,8 @@ mod tests {
             .unwrap();
         let value = Value::Num(2.6884762950539796);
         let tooltip = row_tooltip(pullout, &value);
-        assert!(
-            tooltip.starts_with("Pull-out torque at operating temperature\n"),
-            "{tooltip}"
-        );
+        let label = crate::gui::plain_text::label_for("model.pullout_Nm");
+        assert!(tooltip.starts_with(&format!("{label}\n")), "{tooltip}");
         assert!(tooltip.contains("Corrected vs workbook:"), "{tooltip}");
         assert!(
             tooltip.ends_with("\nExact value: 2.6884762950539796"),
