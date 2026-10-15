@@ -105,7 +105,8 @@ pub fn original_help(path: &str) -> Option<&'static str> {
     original_in(HELP, path)
 }
 
-/// The hint line under the input at `path`, if `HINTS` has one.
+/// The hint line under a Key design input or a Size-tab control, if `HINTS` has one: `path` is
+/// the input's path or one of the [`SIZE_TAB_HINT_KEYS`].
 pub fn hint_for(path: &str) -> Option<&'static str> {
     row(HINTS, path)
 }
@@ -208,10 +209,6 @@ mod tests {
         // The Size tab names its gap and magnet-count controls as the input rows do.
         assert_eq!(GAP, label_for("metal.face_gap_mm"));
         assert_eq!(MAGNETS, label_for("coupling.npole"));
-        // No torque is ever called guaranteed (slice-1 spec 8).
-        for &(path, label) in LABELS {
-            assert!(!label.to_lowercase().contains("guarantee"), "{path}");
-        }
     }
 
     #[test]
@@ -287,18 +284,35 @@ mod tests {
         assert_eq!(help_in(TEST_HELP, "no.such"), "");
         assert_eq!(original_in(TEST_HELP, "no.such"), None);
         assert_eq!(hint_for("no.such"), None);
-        // The public accessors read HELP itself, for every input.
+        // The public accessors read HELP over each input's own engine help: its row where it
+        // has one (the engine's kept as the original only where it is not empty), else the
+        // engine's help and no original.
         for entry in InputCatalogue::get().all() {
-            assert_eq!(help_for(&entry.path), help_in(HELP, &entry.path));
-            assert_eq!(original_help(&entry.path), original_in(HELP, &entry.path));
+            let path = entry.path.as_str();
+            let engine = entry.meta.help;
+            match row(HELP, path) {
+                Some(text) => {
+                    assert_eq!(help_for(path), text, "{path}");
+                    assert_eq!(
+                        original_help(path),
+                        Some(engine).filter(|help| !help.is_empty()),
+                        "{path}"
+                    );
+                }
+                None => {
+                    assert_eq!(help_for(path), engine, "{path}");
+                    assert_eq!(original_help(path), None, "{path}");
+                }
+            }
         }
     }
 
     #[test]
     fn every_overlay_text_is_plain_words_with_glyphs_and_within_its_caps() {
         // Spec 3.5 and 6 test 9: every label, help and hint passes the plain-words guard and
-        // the glyph test, and keeps the caps (help <= 30 words in 1-2 sentences, a hint <= 12
-        // words in one, a label a name, not a sentence). The counters are plain.rs's (A-16).
+        // the glyph test, calls no torque guaranteed (slice-1 spec 8), and keeps the caps (help
+        // <= 30 words in 1-2 sentences, a hint <= 12 words in one, a label a name, not a
+        // sentence). The counters are plain.rs's (A-16).
         let ctx = egui::Context::default();
         let _ = ctx.run(egui::RawInput::default(), |_| {});
         for (table, path, text) in every_row() {
@@ -315,6 +329,10 @@ mod tests {
             assert!(
                 !text.contains('\n') && text.trim() == text,
                 "{what}: one line, no outer blanks"
+            );
+            assert!(
+                !text.to_lowercase().contains("guarantee"),
+                "{what}: no torque is called guaranteed"
             );
             let words = word_count(text);
             let sentences = sentence_count(text);

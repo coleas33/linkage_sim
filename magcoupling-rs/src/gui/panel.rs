@@ -2057,13 +2057,22 @@ mod tests {
             let label = label_for(path);
             assert!(texts.iter().any(|t| t == label), "missing {label:?}");
         }
+        let mut renamed = 0;
         for entry in &InputCatalogue::get().key_design {
-            assert!(
-                texts.iter().any(|t| t == label_for(&entry.path)),
-                "missing input {:?}",
-                label_for(&entry.path)
-            );
+            let label = label_for(&entry.path);
+            assert!(texts.iter().any(|t| t == label), "missing input {label:?}");
+            // A renamed input draws its display label in place of its catalogue label.
+            if label != entry.meta.label {
+                renamed += 1;
+                assert!(
+                    !texts.iter().any(|t| t == entry.meta.label),
+                    "{} also drew {:?}",
+                    entry.path,
+                    entry.meta.label
+                );
+            }
         }
+        assert!(renamed > 0, "the Key design group holds renamed inputs");
         // The corrected headline (E2: M4 x 14), not the workbook's (M4 x 12).
         assert!(texts.iter().any(|t| t.contains("M4 x 14")), "{texts:?}");
         // Every Key design row drew its widget.
