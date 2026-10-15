@@ -1599,6 +1599,10 @@ round-3 PASS):
     gives no prediction and the end-effect check flags it."
   - New: "On the example design it reads low below a third of a pole pitch of overlap; at or below
     c_end·τ_p it gives no prediction and the end-effect check flags it."
+  - Superseded by the text re-review's MF-1 below. It is now "Below a third of a pole pitch of
+    overlap f_end can read well high or low; at or below c_end·τ_p there is no prediction and the
+    end-effect check flags it." The 3D figures below are steel-free, but the example design has
+    magnetic steel behind both rings, and with that steel the model reads high there.
   - Why: the unscoped claim is false for the narrower B822 block on the example ring with the
     end-effect check "OK". Free-space 3D reads the model high there: +3.80 % at 2.5 mm with 10
     blocks, and +9.29 % at 2.0 mm (the magnet length slider's floor) with 12. "Reads low" sounds
@@ -1624,10 +1628,84 @@ round-3 PASS):
   - the watch-out's claim (the clause before ";") says "reads low" on the example design.
 
   The old text fails it ("scopes \"reads low\" to the example design").
+
+  The re-review's MF-1 below renamed it
+  `the_end_effect_note_s_short_overlap_watch_out_names_both_directions`: the claim now names both
+  directions and no one design.
 - Not changed: W0 (watch_out[0]) and the rest of SF-C (the note does not say that narrower or more
   tightly packed blocks read high), SF-1, SF-A and SF-4. They stay open as listed above.
-- A text re-review of this field follows (controller ruling 7). Its report goes below as
-  `### Re-review: task review fix round 1`.
+- A text re-review of this field follows (controller ruling 7). Its report is below, as
+  `### Re-review: code-review fix round 1`.
+
+### Re-review: code-review fix round 1
+
+The reviewer's report for the record follows unchanged. Its "(method above)" is the 3D method in
+the full answer, `.superpowers/sdd/2026-10-14-magcoupler-guidance-slice-2/task-13-textreview-1.md`:
+rings unrolled to a plane, two solvers (exact Fourier and finite difference) with no code shared
+with rounds 1 to 3, ideal steel, and the 3D table by length for each circuit.
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; text re-review 1 of the T13 task review's fix round 1 (`bbec565`).
+- Scope: end_effect watch_out[1], changed to round 3's W1: "On the example design it reads low below a third of a pole pitch of overlap; at or below c_end·τ_p it gives no prediction and the end-effect check flags it." Also the fields it depends on: sentences[1] to [4] and watch_out[0].
+- Read:
+  - the diff `HEAD~3..HEAD`, `task-13-review.md` I-1, `task-13-inreview-r3.md` SF-C, and the record's `## end_effect`;
+  - the trap lists (slice-2 spec 8, slice-1 spec 8, phys-new-notes T-A to T-P, the Global Constraints extra);
+  - the caps and plain-words rules;
+  - `model.rs` 94-114, 165 and 970-1004;
+  - `metal_design.rs` 99-104;
+  - the audit's M8 to M10 rows and limits line.
+- Dump `target/rereview-T13-1.txt`: the field renders identically at the five probe designs. The three end_effect tests in `tests/explain.rs` pass.
+- **Engine side, confirmed.**
+  - 10 B822 per ring at 2.5 mm: f_end = 1 − 1.3214/2.5 = 0.4715.
+  - 12 B822 per ring at 2.0 mm: τ_p 7.3409 mm, f_end = 1 − 1.1011/2.0 = 0.4494, check "OK".
+  - The example design at 2.0 mm: f_end 0.3393, check "OK".
+  - At L <= c_end·τ_p, f_end <= 0 and the check reads "End-effect model out of range". The no-prediction clause holds.
+- **Independent 3D check, with steel** (method above):
+  - The example design has magnetic steel behind both rings (`coupling.backiron` 1), but every 3D figure in rounds 1 to 3 is steel-free.
+  - With ideal steel roughly flush with the magnets, model/3D on the example ring is −4.0 % at 2.0 mm, +12.8 % at 2.5, +17.6 % at 2.9, +19.0 % at 3.2 and +6.2 % at 12.7 mm.
+  - With overhang or infinite plates the result is the same in sign and larger.
+  - Steel-free on the same planar method: −19.6, −4.6, +0.3, +2.1 and +1.1 %, within about 1 % of the rounds' ring results.
+  - The long-overlap end loss is about 1.98 mm with steel, 1.44 mm without, and 1.32 mm in the model.
+- **Verdict: MUST_FIX.** MF-1: "On the example design it reads low" is false for the example design as shipped (steel) below a third of a pole pitch, except near the 2 mm floor, and it errs in the optimistic direction. Replacement, 30 words: "Below a third of a pole pitch of overlap f_end can read well high or low; at or below c_end·τ_p there is no prediction and the end-effect check flags it."
+  - It is true at every design checked: high with steel and with B822; low without steel at 2.0 mm.
+  - It names f_end in place of "it".
+  - The no-prediction clause is unchanged in meaning.
+  - The test and the docs that quote the fix-round wording follow.
+- **Should-fix, for the controller.**
+  - SF-S (new): the steel circuit's end factor is unchecked by any 3D model with steel, and reads about 5 to 6 % high at 12.7 mm in the ideal-steel planar check. sentences[4] is scoped "Steel-free" and stays true, but nothing warns a steel-backed design. Route it with SF-4 and SF-A, and add a backlog item (risk: physics) for a permeable-steel 3D check.
+  - Still open: SF-1, SF-A, W0 and the rest of SF-C, and SF-4.
+- **Traps:** none written by the current text or by the replacement.
+  - "The end factor is accurate": the replacement states that error.
+  - T-B: no magnet-count lever.
+  - "More magnets make the coupling stiffer": not written.
+  - No torque is called guaranteed.
+  - The coupling is not said to protect the gearbox, and no joint method is chosen or sized.
+  - No "clamp".
+- **Form.**
+  - Current text: 30 words, 1 sentence.
+  - Replacement: 30 words, 1 sentence.
+  - Both pass `plain_text_violations` and `audit_ids`, with no placeholder.
+
+- MF-1, applied verbatim by the implementer (session model), 2026-10-15:
+  - watch_out[1]: "On the example design it reads low below a third of a pole pitch of overlap; at
+    or below c_end·τ_p it gives no prediction and the end-effect check flags it." -> "Below a third
+    of a pole pitch of overlap f_end can read well high or low; at or below c_end·τ_p there is no
+    prediction and the end-effect check flags it." (30 words, 1 sentence; the caps and
+    plain-words tests pass).
+  - Test: `tests/explain.rs`
+    `the_end_effect_note_s_short_overlap_watch_out_is_scoped_to_the_example_design` is now
+    `the_end_effect_note_s_short_overlap_watch_out_names_both_directions`. Computed from the
+    engine and the input metadata, it keeps the two B822 pins (10 per ring at 2.5 mm, 12 at the
+    magnet length slider's floor: the blocks fit, are narrower than the example's, sit below a
+    third of a pole pitch, have f_end above 0 and read the end-effect check "OK"). It adds the
+    example design at the slider's floor, read from the metadata, with the same pins except the
+    width. It asserts that the claim (the clause before ";") has the whole words "high" and
+    "low" ("below" does not count) and does not contain "on the example design". The
+    fix-round text fails it ("names both directions").
+  - Docs that quoted the fix-round wording now give the new one: the README `tests/explain.rs`
+    row, the fix-round subsection above (a superseded line and the test's new name), BL-056 and
+    the update tracker.
+  - Not applied in this round (the round's list names MF-1 only): SF-S, and the carried SF-1,
+    SF-A, W0 and the rest of SF-C, and SF-4. They stay open for the controller.
 
 ## calibration
 

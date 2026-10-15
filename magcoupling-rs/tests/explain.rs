@@ -1713,15 +1713,21 @@ fn the_end_effect_note_s_length_claims_hold_at_every_probe_design() {
     }
 }
 
-/// `end_effect`'s second watch-out says the model reads low below a third of a pole pitch of
-/// overlap only on the example design (T13 task review, I-1). Off it, designs the inputs reach
-/// below that overlap still get a prediction: on the example ring with the narrower B822 block
-/// on both rings, 10 per ring at 2.5 mm and 12 per ring at the magnet length slider's floor fit
-/// and read the end-effect check OK. There free-space 3D reads the model high, not low (+3.80 %
-/// and +9.29 %: the in-task review's round 3, SF-C), so an unscoped "reads low" is false in the
-/// optimistic direction.
+/// `end_effect`'s second watch-out says that below a third of a pole pitch of overlap f_end can
+/// read high or low, and names no design (T13 text re-review 1, MF-1). Against 3D, no single
+/// direction holds across designs the inputs reach with a prediction (the check reads OK):
+/// - low: the example design at the magnet length slider's floor (2.0 mm) reads −20.72 %
+///   without steel and −4.0 % with its own steel behind both rings;
+/// - high: the example design with that steel reads +12.8 % at 2.5 mm and +17.6 % at 2.9 mm, and
+///   the narrower B822 block on both rings of the example ring reads +3.80 % with 10 per ring at
+///   2.5 mm and +9.29 % with 12 at the floor (the in-task review's round 3, SF-C).
+///
+/// So a one-direction claim ("reads low", even scoped to the example design) is false somewhere,
+/// and false in the optimistic direction. The engine has no 3D model: the figures are the
+/// reviewers' (the record's `## end_effect`), and this test pins the engine side, that each of
+/// those designs sits below a third of a pole pitch and still gets a prediction.
 #[test]
-fn the_end_effect_note_s_short_overlap_watch_out_is_scoped_to_the_example_design() {
+fn the_end_effect_note_s_short_overlap_watch_out_names_both_directions() {
     let example = DesignInputs::default();
     let example_width = compute_all(&example).model.inner_width_mm;
     let floor = input_rows(&example)
@@ -1730,30 +1736,47 @@ fn the_end_effect_note_s_short_overlap_watch_out_is_scoped_to_the_example_design
         .and_then(|row| row.meta.range)
         .expect("the magnet length has a slider")
         .min;
-    for (per_ring, length) in [(10, 2.5), (12, floor)] {
-        let mut narrow = example.clone();
-        narrow.coupling.npole = per_ring;
-        narrow.coupling.magnets.part_inner = "B822".to_owned();
-        narrow.coupling.magnets.part_outer = "B822".to_owned();
-        narrow.coupling.magnets.axial_length_mm = Some(length);
-        let model = compute_all(&narrow).model;
-        let design = format!("{per_ring} B822 per ring at {length} mm");
+    let at = |design: &DesignInputs, length: f64| {
+        let mut d = design.clone();
+        d.coupling.magnets.axial_length_mm = Some(length);
+        d
+    };
+    // Below a third of a pole pitch, with a prediction: the blocks fit, the end factor is
+    // positive and the end-effect check reads OK.
+    let predicted_below_a_third = |design: &DesignInputs, name: &str| {
+        let model = compute_all(design).model;
         assert!(
-            blocks_fit(&narrow.coupling, &model),
-            "{design}: the blocks fit"
-        );
-        assert!(
-            model.inner_width_mm < example_width,
-            "{design}: block width {} mm against the example's {example_width} mm",
-            model.inner_width_mm
+            blocks_fit(&design.coupling, &model),
+            "{name}: the blocks fit"
         );
         assert!(
             model.active_length_mm < model.pole_pitch_mm / 3.0,
-            "{design}: overlap {} mm against a third of the pole pitch {} mm",
+            "{name}: overlap {} mm against a third of the pole pitch {} mm",
             model.active_length_mm,
             model.pole_pitch_mm
         );
-        assert_eq!(model.end_effect_check, "OK", "{design}: a prediction");
+        assert!(model.f_end > 0.0, "{name}: f_end {}", model.f_end);
+        assert_eq!(model.end_effect_check, "OK", "{name}: a prediction");
+        model
+    };
+    // The low side: the example design itself at the slider's floor.
+    predicted_below_a_third(
+        &at(&example, floor),
+        &format!("the example design at {floor} mm"),
+    );
+    // The high side: the narrower B822 block on both rings of the example ring.
+    for (per_ring, length) in [(10, 2.5), (12, floor)] {
+        let mut narrow = at(&example, length);
+        narrow.coupling.npole = per_ring;
+        narrow.coupling.magnets.part_inner = "B822".to_owned();
+        narrow.coupling.magnets.part_outer = "B822".to_owned();
+        let name = format!("{per_ring} B822 per ring at {length} mm");
+        let model = predicted_below_a_third(&narrow, &name);
+        assert!(
+            model.inner_width_mm < example_width,
+            "{name}: block width {} mm against the example's {example_width} mm",
+            model.inner_width_mm
+        );
     }
     let note = notes::note("end_effect").expect("the end-effect note");
     let short = note
@@ -1764,9 +1787,19 @@ fn the_end_effect_note_s_short_overlap_watch_out_is_scoped_to_the_example_design
     let (claim, _) = short
         .split_once(';')
         .expect("the claim, then the no-prediction clause");
+    // Whole words, so "below" does not count as "low".
+    let says = |word: &str| {
+        claim
+            .split(|c: char| !c.is_alphanumeric())
+            .any(|w| w.eq_ignore_ascii_case(word))
+    };
     assert!(
-        claim.contains("reads low") && claim.to_lowercase().contains("on the example design"),
-        "scopes \"reads low\" to the example design: {short:?}"
+        says("high") && says("low"),
+        "names both directions: {short:?}"
+    );
+    assert!(
+        !claim.to_lowercase().contains("on the example design"),
+        "scopes the claim to no one design: {short:?}"
     );
 }
 

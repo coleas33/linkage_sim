@@ -395,7 +395,7 @@ pub const NOTES: &[Note] = &[
         ],
         watch_out: &[
             "Its end loss barely grows with the gap: in a 3D check at a 4.4 mm gap it read 11 % high, so treat wide-gap torque as optimistic.",
-            "On the example design it reads low below a third of a pole pitch of overlap; at or below c_end·τ_p it gives no prediction and the end-effect check flags it.",
+            "Below a third of a pole pitch of overlap f_end can read well high or low; at or below c_end·τ_p there is no prediction and the end-effect check flags it.",
         ],
         diagram: Some(Diagram::EndFringing),
         sources: &[
