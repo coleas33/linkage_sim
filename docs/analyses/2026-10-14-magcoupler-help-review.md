@@ -228,6 +228,10 @@ lower torque; the space claim leaves out the shaft boss; "with Auto on"; the mag
     not the conductivity.
   - The reviewer also notes, for the controller, the housing section "Optional adapter and its
     joint", whose three joint inputs are hidden while paused.
+- Correction (text re-review 2): keyless, the input sliders leave at least 0.80 mm of hub wall (the
+  9 mm ring, the 16 mm bore and the 0.2 mm bondline), not 0.95 mm; and the Size tab's lowest
+  Minimum OD takes the ring radius down to the bore radius plus the bondline, where the wall is
+  zero keyless too. The bore help's "can break through" holds either way.
 
 The reviewer's report for the record, as returned:
 
@@ -299,6 +303,89 @@ T12b text re-review 1 (2026-10-15, fresh-context physics reviewer, session model
   `scratchpad/probe/src/main.rs`. Both belong to an earlier session agent's scratch crate, which
   has bins `p1` to `p4` and an egui `lib.rs`; its `lib.rs` no longer builds against the new
   manifest. My probes ran from `scratchpad/t12b-rr1-probe`. Nothing in the repository changed.
+
+### Re-review: changed by the implementer after its review (re-check 2)
+
+- Reviewer: a fresh-context physics reviewer (session model), 2026-10-15, on commit `2c9a0d1`
+  (`task-12b-textreview-2.md`): the re-review above's MF-1 as applied. This is the second text
+  re-review of the strings T12b changed after their review.
+- Scope: one changed item, the `coupling.bore_mm` help (item 4 above), "Diameter of the shaft in
+  the hub bore. Larger thins the hub wall: the hub check can fail, and the wall past the keyway can
+  break through." (27 words, 2 sentences), with the assertions it added to
+  `the_joint_neutral_texts_claim_what_the_engine_does`.
+- Verdict: PASS, no must-fix.
+  - "Larger thins the hub wall": the wall falls one-for-one with half the bore, at all five probe
+    designs with the design's keyway, keyless and the deepest keyway. Auto with the ring radius
+    free keeps the ring at 11.676 mm for bores of 10 to 16 mm, so the wall still thins.
+  - "the hub check can fail": on the 8-magnet probe design from a 15.5 mm bore, keyed or keyless,
+    and at the smallest ring. It cannot fail where it does not apply ("No back iron", the 304 probe
+    design).
+  - "the wall past the keyway can break through": at the smallest ring with the design's keyway,
+    and from a 12.2 mm bore with the deepest keyway at four of the five probe designs.
+  - Not named, rightly: the key and clamp results (hidden while paused), and the lighter coupling
+    and shorter thermal time constant, which change no check.
+  - The test's new assertions each check one claim against the engine.
+  - Caps, plain words and traps: 27 words, no violation, no trap written.
+- Should-fix SF-1 (optional, record only), applied: the correction line in the re-review above.
+  Keyless, the input sliders leave at least 0.80 mm of hub wall, not 0.95 mm, and the Size tab's
+  lowest Minimum OD reaches a zero wall. The reviewer asked that the quoted report stay as
+  returned, so the line is added and the quote is not edited. No code, test or on-screen text
+  changed in this step.
+- Left open for the controller (both outside the changed item):
+  - At a keyless zero wall reached through the Size tab's Minimum OD, the Size tab's red line reads
+    "Exploration only: the keyway breaks through the hub." (`gui/panel.rs`), though there is no
+    keyway.
+  - The input label "Keyed bore diameter" is the engine's Python-locked label. It will read oddly
+    beside a keyless shrink fit (BL-064).
+
+The reviewer's report for the record, as returned:
+
+T12b text re-review 2 (2026-10-15, fresh-context physics reviewer, session model). Commit
+`2c9a0d1`. One changed item. Verdict: PASS, no must-fix.
+
+- **HELP `coupling.bore_mm`: PASS.**
+  - The text: "Diameter of the shaft in the hub bore. Larger thins the hub wall: the hub check can
+    fail, and the wall past the keyway can break through." (27 words, 2 sentences, no plain-words
+    or glyph problem.) It is re-review 1's MF-1 replacement, verbatim.
+  - **Engine:** `hub_wall = a_i − bond_inner − bore/2` (`model.rs:931`) feeds the hub check, which
+    reads "Too thin" below t_bi (`:1043-1052`, `:1168`). The wall past the keyway is
+    `hub_wall − keyway` (`:1084`). t_bi does not depend on the bore.
+  - **Reproduced:**
+    - At the 8-magnet probe the hub check turns "Too thin" from 15.5 mm, with the 1.7 mm keyway,
+      keyless and the 4 mm keyway. The hub wall is 2.350 mm against 2.399 mm, with 0.650 mm past
+      the 1.7 mm keyway.
+    - At the 16 mm bore the hub wall is 2.100 mm (from 5.100 mm) and 0.400 mm is left past the
+      keyway.
+    - At the smallest ring and the 16 mm bore, keyed, both fail (0.950 mm against 1.762 mm;
+      −0.750 mm past the keyway). Keyless, only the hub check fails.
+    - The 4 mm keyway breaks through from 12.2 mm at four probe designs.
+  - **Auto** (ring radius free, default target) keeps the ring at 11.676 mm for bores of 10 to
+    16 mm, so the wall still thins. Auto never makes the bore its free variable.
+  - **Not named, rightly:**
+    - the key and clamp effects (hidden while paused);
+    - the 16 % lighter coupling and its 16 % shorter thermal time constant (no check changes,
+      +0.04 °C peak, no room in the cap, close to the slip-heating trap).
+  - **Test:** `the_joint_neutral_texts_claim_what_the_engine_does` pins, from the engine:
+    - the help names the hub check by its display label;
+    - at the 8-magnet probe, keyed and keyless, the bore's slider top turns the hub check from Good
+      to Bad, lowers the hub wall and leaves wall past the keyway;
+    - the smallest-ring break-through.
+- **Traps and rules:** no trap from slice-1 section 8, slice-2 section 8, T-A to T-P, or the
+  stiffness trap. No joint method, sizing or gearbox claim. Every cap holds.
+- **SF-1 (optional, record only):**
+  - The help-review record's keyless floor "at least 0.95 mm" is 0.80 mm at the 0.2 mm bondline.
+  - The Size tab's lowest Minimum OD reaches a zero hub wall keyless too (ring radius 8.05 mm).
+  - An exact line to append is given above.
+- **For the controller, outside the changed item:**
+  - At a keyless zero wall reached through the Size tab's Minimum OD, the Size tab's red line
+    reads "Exploration only: the keyway breaks through the hub." (`panel.rs:916`), though there is
+    no keyway. It is an existing GUI string, reachable only at the Minimum OD floor with a keyless
+    joint.
+  - The input label "Keyed bore diameter" is the engine's Python-locked label, so it cannot be
+    renamed in this slice. It will read oddly beside a keyless shrink fit (BL-064).
+- **Probes:** a fresh scratch crate, `scratchpad/t12b-rr2-probe` (bins `main`, `moved`, `floor`),
+  with its own target directory. No other scratch crate was touched, and nothing in the
+  repository changed apart from this file.
 
 ## Batch B (T8)
 
