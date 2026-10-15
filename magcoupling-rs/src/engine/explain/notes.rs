@@ -142,12 +142,11 @@ pub struct Note {
     pub review: Review,
 }
 
-/// Every note: 18, the spec's list (harmonics, back iron, pull-out against angle, end effect,
+/// Every note: 19. Spec A4's list (harmonics, back iron, pull-out against angle, end effect,
 /// Br(T), demagnetization, slip loss, the thermal time constant, clamps and the six A5
-/// warnings) plus ferrite's cold side (spec A6), the one-point calibration and slice 2's
-/// torque_from_shear (how the coupling makes torque, Start here step 1). While the shaft-clamp
-/// section is paused (`clamps::PAUSED`) the clamp note stays here, unchanged, but is not shown
-/// ([`shown`]).
+/// warnings), ferrite's cold side (spec A6) and the calibration; slice 2 adds how the coupling
+/// makes torque and the torque band (hot-low and cold-high). The clamp note stays here, but is
+/// not shown while the shaft-clamp section is paused ([`shown`]).
 pub const NOTES: &[Note] = &[
     Note {
         id: "torque_from_shear",
@@ -464,7 +463,7 @@ pub const NOTES: &[Note] = &[
     },
     Note {
         id: "br_temperature",
-        title: "Remanence against temperature, and torque ∝ Br²",
+        title: "Heat weakens magnets: torque against temperature",
         equations: &[
             "model.br_inner_T_op",
             "model.br_outer_T_op",
@@ -473,26 +472,125 @@ pub const NOTES: &[Note] = &[
             "temperature.magnet_life.torque_hot_day_Nm",
             "temperature.magnet_life.torque_peak_Nm",
             "temperature.demag.torque_at_limit_Nm",
+            "model.alpha_br_per_C",
+            "model.inner_alpha_br_per_C",
+            "model.outer_alpha_br_per_C",
         ],
         sentences: &[
-            "A magnet's remanence Br, the flux density it keeps with no applied field, falls reversibly as it warms: Br(ϑ) = Br(20 °C) · (1 + α (ϑ − 20 °C)), with α about −0.12 %/°C for sintered NdFeB.",
-            "Each ring's field is proportional to its own Br, and the shear stress is a product of the two rings' fields, so the torque scales as Br,i · Br,o: the square of Br when both rings are one grade.",
-            "So a 30 °C rise costs about 7 % of the torque: (1 − 0.0012 · 30)² ≈ 0.93.",
-            "The loss is reversible: cool the magnet and the torque comes back, unless on the way it passed a demagnetization onset, the temperature where its reverse field reaches the knee, which is a separate, permanent loss; the calculator's demagnetization limit sits 10 °C below the lowest onset, the one while the coupling skips.",
+            "Magnets lose strength reversibly as they warm, so the pull-out torque depends on the magnet temperature.",
+            "Remanence Br, a magnet's built-in flux density, falls by a fixed share of its 20 °C value per °C: the coefficient α.",
+            "Torque is proportional to inner Br times outer Br, so each °C of warming changes it by a share of about α_i + α_o.",
+            "Here the pull-out is {model.pullout_Nm} at {metal.op_temp_C} and {model.pullout_20C_Nm} at 20 °C: the dashboard's two pull-out rows.",
+            "Each torque has its own temperature: hot-low the operating one, cold-high the minimum, the hot-day torque ambient plus the driving rise.",
         ],
-        change: &[],
+        change: &[
+            Change {
+                input: "coupling.op_temp_C",
+                step: Step::Raise,
+                aim: Some(("model.pullout_Nm", Sense::Down)),
+                text: "set it to the magnet temperature while running; hotter lowers the pull-out and hot-low, not the 20 °C row.",
+            },
+            Change {
+                input: "calibration.alpha_br_per_C",
+                step: Step::Raise,
+                aim: None,
+                text: "a value nearer zero changes torque less with temperature, hot and cold. Take it from the datasheet; rings with a picked grade ignore it.",
+            },
+            Change {
+                input: "coupling.magnets.grade_inner",
+                step: Step::Choose,
+                aim: None,
+                text: "a grade whose coefficient is nearer zero loses a smaller share when hot; SmCo, the nearest, starts weaker than sintered NdFeB. Custom dimensions only.",
+            },
+            Change {
+                input: "temperature.duty.hot_ambient_C",
+                step: Step::Raise,
+                aim: Some(("temperature.magnet_life.torque_hot_day_Nm", Sense::Down)),
+                text: "a hotter day lowers the hot-day torque and the hot-day temperature margin; the hot-day start is this ambient plus the driving rise.",
+            },
+        ],
         watch_out: &[
-            "Each ring keeps its own coefficient: a ferrite ring (α about −0.2 %/°C) loses torque faster with heat than an NdFeB one.",
+            "Library magnets share one coefficient input; only a ring with custom dimensions and a picked grade uses its grade's own. In use here: inner {model.inner_alpha_br_per_C}, outer {model.outer_alpha_br_per_C}.",
+            "The loss is reversible only inside the magnet's limits: too hot for NdFeB, or too cold for ferrite, and it loses strength for good.",
         ],
         diagram: None,
         sources: &[
-            "M1 audit, confirmed: the Br(T) and torque-temperature rows (Calculator C69, C70, C94; Metal design C8)",
-            "Addendum A decision A2-7 (each ring with its own coefficient)",
+            "Math audit of 2026-09-29, confirmed: the remanence and torque-against-temperature rows",
+            "Design ruling: a ring with custom dimensions and a picked grade uses its grade's coefficient; library parts share one input",
+            "Guidance audit of 2026-10-13: which temperature each torque uses; the two pull-out rows",
         ],
         review: Review::Reviewed {
-            reviewer: "independent physics review 2026-10-01",
-            date: "2026-10-01",
-            record: "independent physics review 2026-10-01 of the A4 notes: commit \"docs(magcoupling-rs): apply the independent physics review to six A4 notes\" (the seven findings and their fixes)",
+            reviewer: "physics reviewer (session model)",
+            date: "2026-10-14",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#br_temperature",
+        },
+    },
+    Note {
+        id: "hot_low_cold_high",
+        title: "Hot-low and cold-high: the torque band",
+        equations: &[
+            "metal.torque_hot_low_Nm",
+            "metal.torque_cold_high_Nm",
+            "metal.hot_min_check",
+            "metal.hot_margin",
+            "metal.required_20C_Nm",
+            "metal.required_20C_zero_scatter_Nm",
+            "metal.cold_for_hot_min_Nm",
+            "metal.cold_for_hot_min_input_Nm",
+            "metal.torque_op_Nm",
+            "metal.torque_20C_Nm",
+            "metal.torque_cold_zero_var_Nm",
+            "metal.cold_high_Nm",
+            "metal.cold_high_input_Nm",
+        ],
+        sentences: &[
+            "Pull-out is a nominal estimate: production scatter makes real couplings weaker or stronger, and magnets weaken as they warm.",
+            "Hot-low, here {metal.torque_hot_low_Nm}, is the pull-out at the operating temperature less the variation allowance; it must reach the requirement.",
+            "Cold-high, here {metal.torque_cold_high_Nm}, is the pull-out at the minimum temperature plus that allowance: the most torque expected before it slips.",
+            "Whatever holds the hub on the shaft must carry cold-high with margin, and the gearbox output carries it too, so added torque loads both.",
+            "On this design, hot-low passes once the 20 °C pull-out reaches {metal.required_20C_Nm}, the requirement taken back to 20 °C with the allowance.",
+        ],
+        change: &[
+            Change {
+                input: "coupling.magnets.axial_length_mm",
+                step: Step::Raise,
+                aim: Some(("metal.torque_hot_low_Nm", Sense::Up)),
+                text: "torque rises at every temperature, so hot-low rises; cold-high rises too, and with it the shaft-joint and gearbox loads; the stack grows.",
+            },
+            Change {
+                input: "metal.variation",
+                step: Step::Lower,
+                aim: Some(("metal.torque_hot_low_Nm", Sense::Up)),
+                text: "only with measured production scatter; the band narrows both ways, so hot-low rises and cold-high falls.",
+            },
+            Change {
+                input: "coupling.op_temp_C",
+                step: Step::Lower,
+                aim: Some(("metal.torque_hot_low_Nm", Sense::Up)),
+                text: "only if the magnets really run cooler; hot-low rises and cold-high stays. The hot-day torque is reported apart.",
+            },
+            Change {
+                input: "metal.min_temp_C",
+                step: Step::Lower,
+                aim: Some(("metal.torque_cold_high_Nm", Sense::Up)),
+                text: "a colder minimum raises cold-high and with it the shaft-joint and gearbox loads; enter the coldest the magnets really get.",
+            },
+        ],
+        watch_out: &[
+            "Hot-low uses the operating temperature you enter, not the hot-day start ({temperature.duty.hot_day_start_C} here); the hot-day torque is reported apart, without the allowance.",
+            "Nothing checks cold-high against the gearbox: at its input it is {metal.cold_high_input_Nm} here; compare that with the gearbox's input rating yourself.",
+        ],
+        diagram: None,
+        sources: &[
+            "Model assumption: the production variation allowance (symmetric; an engineering allowance, not measured)",
+            "Math audit of 2026-09-29, confirmed: the hot and cold torque rows and the hot-minimum check",
+            "Design rulings of 2026-10-14 and 2026-10-15: the coupling sits on the gearbox output, and whatever holds the hub on the shaft carries the cold-high torque",
+            "Guidance audit of 2026-10-13: which temperature each torque uses; the gearbox input",
+        ],
+        review: Review::Reviewed {
+            reviewer: "physics reviewer (session model)",
+            date: "2026-10-14",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#hot_low_cold_high",
         },
     },
     Note {
@@ -821,8 +919,9 @@ pub const NOTES: &[Note] = &[
 
 /// The whole suggested reading order (slice-2 spec 3.3: how the coupling makes torque, the
 /// torque chain with back iron, temperature, slipping and its heat, demagnetization, clamps):
-/// (note id, the equation it opens). The slice's two later notes join at steps 8 and 9. The
-/// clamp step stays last: [`start_here_for`] leaves it out while the clamp section is paused.
+/// (note id, the equation it opens). The torque band is step 8; the slice's last note joins at
+/// step 9. The clamp step stays last: [`start_here_for`] leaves it out while the clamp section
+/// is paused.
 pub const START_HERE_ALL: &[(&str, &str)] = &[
     ("torque_from_shear", "model.torque_2d_Nm"),
     ("harmonics", "model.tau_Pa"),
@@ -831,6 +930,7 @@ pub const START_HERE_ALL: &[(&str, &str)] = &[
     ("end_effect", "model.f_end"),
     ("calibration", "model.f_cal"),
     ("br_temperature", "model.pullout_20C_Nm"),
+    ("hot_low_cold_high", "metal.torque_hot_low_Nm"),
     ("slip_heating", "temperature.slip_loss.total_W"),
     (
         "thermal_time_constant",
@@ -1025,6 +1125,23 @@ mod tests {
                 );
                 assert_eq!(note_for(&path).is_some(), reviewed, "{}: {path}", n.id);
             }
+        }
+    }
+
+    #[test]
+    fn the_torque_band_note_follows_the_temperature_note_in_start_here() {
+        // Spec 3.3: step 8, after the temperature note (step 7), opening hot-low, in the full
+        // order and in the order shown while the clamp section is paused (ruling 11).
+        for paused in [false, true] {
+            let steps = start_here_for(paused);
+            let ids: Vec<&str> = steps.iter().map(|&(id, _)| id).collect();
+            let at = ids
+                .iter()
+                .position(|&id| id == "hot_low_cold_high")
+                .expect("the torque band is a Start here step");
+            assert_eq!(at, 7, "step 8 (paused: {paused})");
+            assert_eq!(ids[at - 1], "br_temperature", "paused: {paused}");
+            assert_eq!(steps[at].1, "metal.torque_hot_low_Nm", "paused: {paused}");
         }
     }
 
@@ -1596,6 +1713,8 @@ mod tests {
         "pullout_angle",
         "end_effect",
         "calibration",
+        "br_temperature",
+        "hot_low_cold_high",
     ];
 
     #[test]

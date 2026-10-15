@@ -1882,3 +1882,306 @@ Should-fix offered, not applied (open for the controller; no on-screen text chan
 round-2 PASS):
 - SF-3 (rounds 1 to 3; not on screen): the doc comment of `the_calibration_note_s_levers_and_rule_hold_at_every_probe_design` in `tests/explain.rs` still says "(the rule's own terms: no steel behind the magnets, ...)"; to follow MF-6 it becomes "no magnetic steel behind the magnets". The test's `circuit_backiron == 0` check is already right.
 - SF-4 (rounds 1 to 3; outside T13's fields, seen in the Assumptions view): the `calibration_factor` assumption rationale (`assumptions.rs:78`) still says "no steel behind the magnets ... B842SH blocks", while a 304 design matches and the note now says "no magnetic steel" and "B842SH parts". Route it with `end_effect`'s SF-4 to the final fix wave or a G-3 re-review, so the Assumptions view and the notes agree.
+
+## hot_low_cold_high
+
+Task T14. New note "Hot-low and cold-high: the torque band", Start here step 8 (after the
+temperature note, in the full order and in the order shown while the shaft-clamp section is
+paused). It owns the band's equations: hot-low, cold-high, the hot-minimum check and its margin,
+the required 20 °C torque, the cold rows and cold-high at the gearbox input. The hot-minimum
+guide and the hot-low, hot-minimum and cold-high dashboard rows now link it as their Why link
+(they linked the production-variation assumption before). Reviewer: physics reviewer (session
+model), fresh context. Date: 2026-10-14 (the date the slice plan fixes for the note's `review`
+field; all three rounds ran on 2026-10-15).
+
+Rounds: 3. Verdict: PASS. Note: "Hot-low and cold-high: the torque band" (new; plan T14).
+
+Verdict by round: 1 PASS on physics (the round's verdict was MUST-FIX, for `br_temperature`,
+reviewed in the same rounds); 2 PASS (no field changed, not re-reviewed); 3 PASS (no field
+changed). Each round's full answer is
+`.superpowers/sdd/2026-10-14-magcoupler-guidance-slice-2/task-14-inreview-r<N>.md`, and the
+fields that rounds 1 and 2 changed, all in `br_temperature`, are listed with their old and new
+text in `task-14-inreview-r<N>-changes.md` beside it.
+
+The text reviewed in round 1 already carried A-13's plain-words sources and A-28b's joint-neutral
+texts (ruling 11, the shaft-clamp section paused): sentences[3] ("Whatever holds the hub on the
+shaft must carry cold-high with margin, and the gearbox output carries it too, so added torque
+loads both."), change[0] and change[3] ("the shaft-joint and gearbox loads" in place of the
+clamp load) and sources[2] (the design rulings of 2026-10-14 and 2026-10-15 in place of the
+clamp's sizing). The gearbox watch-out is the plan's text with live values only (ruling 8: the
+coupling sits on the gearbox output, which carries its torque directly); the reviewer proposed
+no rephrase. Every round confirmed them applied.
+
+The reviewer's report for the record, round by round, as returned:
+
+Round 1:
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; round 1.
+- Read:
+  - the dump `notes-review-T14.txt`; the `hot_low_cold_high` literal in `notes.rs`;
+  - `metal_design.rs:404-466`: cold = T_20·th_i(T_min)·th_o(T_min); hot-low = T_op·(1 − v); cold-high = cold·(1 + v); the hot-minimum check `hot_low < required`; required at 20 °C = required/(th_i·th_o(T_op)·(1 − v)); the nominal margin T_op/required − 1;
+  - `metal_design.rs:506-509` (cold-high at the gearbox input = cold-high/(ratio·efficiency));
+  - `temperature.rs:918` (hot-day start = hot ambient + driving rise) and `:1336-1350` (hot-day torque = T_20·th_i·th_o(start), checked against the requirement without the allowance);
+  - `temperature.rs:1030` (the adhesive load reads cold-high) and `:1066` (the mismatch swing reads the minimum);
+  - `model.rs:978-1005` (Br at the operating temperature; T_pull20 = T_pull·Br_i·Br_o/(Br_i,op·Br_o,op));
+  - `assumptions.rs:82-87` (production variation, symmetric, not measured);
+  - `guidance.rs:158-167` (HOT_MIN_GUIDE, its why and its new link);
+  - `dashboard.rs:154-184` (DASHBOARD) and `:259-290` (CHECKS);
+  - spec 2 (S2-9), 3.1-3.3, 5 and 8; slice-1 spec 8; phys-new-notes 2 and 3.2; phys-notes-a 7 and 8; amendments ruling 8, ruling 11, A-13, A-24 and A-28/A-28b.
+- Numbers reproduced from `compute_all`, in design order (default, 8 magnets per ring, 304 back iron, Y30 ferrite custom dimensions, 20 mm ring radius); every rendered value matches the dump:
+  - hot-low: 2.285205, 1.673106, 1.442764, 0.176013, 2.158370 N·m.
+  - cold-high: 3.823310, 2.799225, 2.413847, 0.338067, 3.611106 N·m.
+  - required at 20 °C: 3.164951 at four designs and 3.328629 N·m at Y30 (zero-scatter 2.690209 and 2.829335).
+  - cold-high at the gearbox input: 0.804907, 0.589311, 0.508178, 0.071172, 0.760233 N·m. At the default this is above the 0.6 N·m input rating.
+  - hot-day start: 65.00 °C at all five. Hot-day torque: 2.589014 ("Meets it nominally (no variation allowance)") at the default, while hot-low reads "Below hot minimum" (T-E reproduced); 1.895539, 1.634574, 0.194067, 2.445316 ("Below it") at the others.
+  - Nominal hot margin against the hot-low margin (T-F, never conflated in the text): +7.54 / −8.59 %, −21.27 / −33.08 %, −32.11 / −42.29 %, −91.72 / −92.96 %, +1.57 / −13.67 %.
+- Identities, at all five designs:
+  - hot-low = pull-out × (1 − v), exactly;
+  - cold-high = the same design's pull-out run at the minimum temperature, × (1 + v), within 2.2e-16;
+  - cold-high at the input × ratio × efficiency = cold-high, within 2.2e-16;
+  - hot-low ≥ requirement exactly when the 20 °C pull-out ≥ the required 20 °C torque, with the requirement at 0.99 and 1.01 × hot-low;
+  - the hot-minimum check flips with it.
+- Placeholders sit only in "here" or "on this design" clauses (s1, s2, s4, w0, w1). None sits inside a comparison whose truth depends on its value. Sentence 0 has no symbol and no placeholder.
+- Levers, one slider step (`step_input`) at all five designs:
+  - Axial length +0.01 mm:
+    - hot-low, cold-high and the gearbox-input value rise (default 2.285205 to 2.287213; 3.823310 to 3.826670; 0.804907 to 0.805615 N·m);
+    - the axial stack grows 31.80 to 31.81 mm at all five (the cup depth follows the magnet length).
+  - Allowance −0.005: hot-low rises, and cold-high falls (default 2.285205 to 2.298647, 3.823310 to 3.806687 N·m).
+  - Operating temperature −0.5 °C:
+    - hot-low rises (default to 2.288050);
+    - cold-high and the hot-day torque stay to rounding;
+    - the cup-wall rule asks slightly more (a reviewer note, T-J).
+  - Minimum temperature −0.5 °C: cold-high and the gearbox-input value rise (default to 3.827591 and 0.805809 N·m), and hot-low is bit-identical.
+  - Every aim line in the dump reads "moves as it says".
+- Extra probes:
+  - Required torque 2.0 N·m:
+    - the check reads "Estimate covers hot min";
+    - s4 renders 2.532 N·m;
+    - the 20 °C pull-out (2.893) is above it, so "passes once ... reaches" reads right.
+  - Operating temperature 0 °C:
+    - hot-low is 2.579 N·m and passes;
+    - s4 renders 2.805 N·m;
+    - every sentence still reads true.
+  - Operating temperature 120 °C: hot-low is 1.904 N·m and s4 renders 3.798 N·m.
+  - Mixed design (inner ring custom dimensions with Y30, outer library):
+    - hot-low 0.6342, cold-high 1.137, gearbox input 0.2393 N·m;
+    - s4 renders 3.246 N·m.
+  - Gearbox input rating 1.0 N·m: watch-out[1] stays true; nothing checks it (`nothing_checks_a_gearbox_torque_against_its_rating_yet`).
+  - Axial length 1.0 mm (f_end −0.3214, "End-effect model out of range"):
+    - hot-low, cold-high and the gearbox-input value render "no prediction";
+    - the required 20 °C torque (3.165 N·m) and the hot-day start (65.00 °C) render, as they do not depend on f_end;
+    - no negative torque is rendered, so nothing goes to the controller for T5.
+- Traps checked:
+  - "hot" is the operating-temperature input, not the hot-day start (w0 says so);
+  - the nominal hot margin is never called the hot-low margin;
+  - cold-high is "expected", with "margin" (T-O);
+  - nothing says the coupling protects the gearbox; w1 says nothing checks it;
+  - no shaft-joint method is chosen or sized;
+  - no torque is called guaranteed ("a nominal estimate");
+  - nothing says the stored 3D fields follow the design;
+  - "more magnets make the coupling stiffer" is not written;
+  - slice-1 traps none; T-H (gearbox ripple) not written;
+  - "clamp" in any field, sources included: none.
+- Form:
+  - title 6 words, plain and unique against the drawn dashboard labels ("Hot-low torque", "Cold-high torque");
+  - sentences 19, 19, 20, 24, 22 words raw (rendered 19, 20, 21, 24, 23);
+  - changes 22, 16, 18, 20, each starting in lower case with no label typed;
+  - watch-outs 22, 21 (rendered 23, 22);
+  - sources 12, 15, 25, 12;
+  - every field passes `plain_text_violations` and `audit_ids`;
+  - "variation allowance" is glossed by sentence 0's "production scatter"; "hot-day start" is glossed at Start here step 7.
+- Seeds: S-6 rejected ("made weaker by heat" double-counts heat against the dashboard pull-out and is false below 20 °C). S-7 rejected ("once ... reaches" states the threshold; "exactly" adds nothing a user acts on).
+- Must-fix items: none in this note in round 1. Should-fix offered: SF-1 (change[2]) and SF-3 (sentences[2]).
+- Verdict for this note, round 1: PASS on physics. The task's verdict is MUST_FIX because of br_temperature.
+
+Round 2:
+
+- Round 2 (2026-10-15): no field of this note changed in round 1 (`task-14-inreview-r1-changes.md`), and no changed `br_temperature` field changes its meaning. Round 1's PASS on physics stands. Its should-fix items SF-1 and SF-3 remain offered, not applied.
+
+Round 3:
+
+- Round 3 (2026-10-15): no field of this note changed in rounds 1 or 2, and the `br_temperature` field changed in round 2 changes the meaning of no sentence here. A-28b's texts (sentences[3], change[0], change[3], sources[2]) are verbatim. No field, sources included, contains "clamp" (0 of 16 fields), and the guards are empty. Round 1's PASS on physics stands. SF-1 and SF-3 remain offered, not applied. **Verdict for this note: PASS.** Rounds: 3.
+
+Must-fix items applied: none. Round 1 passed this note on physics, and no field of it changed in
+any round.
+
+Seeds (A-24):
+- S-6 (sentences[0]: "Hot-low and cold-high are the pull-out made weaker by heat and production scatter, and stronger by cold and scatter: the torque band."): rejected in rounds 1 to 3. Reason: "the pull-out made weaker by heat" double-counts heat. The dashboard's pull-out is already at the operating temperature, and hot-low is that value less the allowance only (2.688 × 0.85 = 2.285 N·m, an exact identity): the T-E confusion over which temperature hot-low uses. It is also false below 20 °C: at 0 °C hot-low is 2.579 N·m, above the 20 °C pull-out less the allowance (2.893 × 0.85 = 2.459 N·m). The shipped sentence 0 is true at every probe and, with sentences 1 and 2, answers the three linking rows.
+- S-7 (sentences[4]: "On this design, hot-low passes exactly when the 20 °C pull-out reaches {metal.required_20C_Nm}, the requirement taken back to 20 °C with the allowance."): rejected in rounds 1 to 3. Reason: "passes once the 20 °C pull-out reaches X" already states the threshold the user acts on, and "exactly when" adds an iff that changes no action. At the boundary itself floating-point rounding makes the two comparisons disagree, so "exactly" claims more than the numbers show. The equivalence holds at all five designs with the requirement at 0.99 and 1.01 times hot-low, which `the_torque_band_note_s_sentences_hold_at_every_probe_design` pins.
+
+Should-fix offered, not applied (open for the controller; no on-screen text changed after the
+round-1 PASS):
+- SF-1 (round 1; rounds 2 and 3 keep it offered), change[2] (`coupling.op_temp_C`, Lower; aim unchanged), 16 words: "only if the magnets really run cooler; hot-low rises, while cold-high and the hot-day torque stay." Why: "The hot-day torque is reported apart." repeats watch_out[0]'s words in the same note and does not say what the lever does to it; one step down leaves the hot-day torque unchanged to rounding at all five designs (it is the 20 °C pull-out times the factor at the hot-day start and never reads the operating temperature). Its test: in the levers test's entry 3, assert that the hot-day torque stays.
+- SF-3 (round 1; rounds 2 and 3 keep it offered), sentences[2], 21 words raw: "Cold-high, here {metal.torque_cold_high_Nm}, is the pull-out at the minimum temperature plus that allowance: the most torque expected before the coupling slips." Why: in "before it slips", "it" follows "allowance" and "cold-high", and only the coupling slips. The physics is unchanged ("expected" keeps T-O).
+
+Considered, no change (the reviewer's observations, round 1):
+- A cooler operating temperature raises the gap flux density the cup-wall rule reads, since Br is taken at the operating temperature (`model.backiron_needed_mm` up about 0.06 % per step; at the 8-magnet design the suggested wall goes from 2.4 to 2.5 mm, a check already red there). phys-new-notes T-J keeps the wall rule's temperature dependence out of note text, and change[2] is an honest-input entry ("only if the magnets really run cooler"), so it stays unnamed.
+- The magnet bonds also carry cold-high: the adhesive fatigue screen reads it (7x, 8x, 12x, 84x and 14x margin at the five designs, against a pass at 4x), and a colder minimum widens the bond's thermal-mismatch swing only once the cold side governs (below about −49 °C at the default; at −60 °C the peak shear rises from 11.68 to 13.48 MPa, still below the lap-shear strength). The joint-neutral "shaft-joint and gearbox loads" is controller-mandated and true, and no probe brings either bond check near red.
+- `HOT_MIN_GUIDE.why` and sentences 0 and 1 say nearly the same thing without contradiction; the note is also reached from the cold-high row and Start here, so it must stand alone.
+
+## br_temperature
+
+Task T14. Rewrite of "Remanence against temperature, and torque ∝ Br²" as "Heat weakens magnets:
+torque against temperature", Start here step 7; it now also owns the three coefficient rows
+(`model.alpha_br_per_C`, `model.inner_alpha_br_per_C`, `model.outer_alpha_br_per_C`). The old
+watch-out "Each ring keeps its own coefficient", false for library parts, is gone: only a ring
+with custom dimensions and a picked grade uses its grade's coefficient. Reviewer: physics
+reviewer (session model), fresh context. Date: 2026-10-14 (the date the slice plan fixes for the
+note's `review` field; all three rounds ran on 2026-10-15).
+
+Rounds: 3. Verdict: PASS. Note: "Heat weakens magnets: torque against temperature" (plan T14).
+
+Verdict by round: 1 MUST-FIX (2 items); 2 MUST-FIX (1); 3 PASS. Each round's full answer is
+`task-14-inreview-r<N>.md`, as under `## hot_low_cold_high`; the two notes were reviewed
+together. Rounds 2 and 3 re-checked only the changed fields and the fields whose meaning depends
+on them.
+
+The text reviewed in round 1 already carried A-22 (change[1], the coefficient input: "a value
+nearer zero changes torque less with temperature, hot and cold. Take it from the datasheet;
+rings with a picked grade ignore it.", `Step::Raise` with no aim under A-1's model-assumption
+exception) and A-13's plain-words sources. Every round confirmed them applied.
+
+The reviewer's report for the record, round by round, as returned:
+
+Round 1:
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; round 1.
+- Read:
+  - the dump; the `br_temperature` literal;
+  - `model.rs:412-426` (`alpha_br`: the grade's α only in the grade mode, else the shared input) and `:445-475` (`resolve_magnets`: library parts are never in the grade mode; a manual ring with no grade uses the input);
+  - `model.rs:663-674` (`br_factor`, `ring_pair_factor`), `:978-979` (Br at the operating temperature) and `:1005` (pull-out at 20 °C);
+  - `temperature.rs:918, 1336-1350, 1380-1410` (hot-day start, hot-day torque, the margins);
+  - `assumptions.rs:88-94`; `grades.rs` (all 17 grades: family, Br, α, rating).
+- Numbers reproduced from `compute_all`, in design order:
+  - pull-out at 50.00 °C / at 20 °C: 2.688 / 2.893, 1.968 / 2.118, 1.697 / 1.827, 0.2071 / 0.2344, 2.539 / 2.732 N·m (s3, as the dump shows).
+  - α in use, inner / outer: −0.001200 / −0.001200 1/°C at the four library designs, −0.002000 / −0.002000 at Y30 (w0); the mixed design renders −0.002000 / −0.001200.
+  - Per +1 °C from 50 °C: −0.231 % of the 20 °C pull-out (−0.249 % of the current one) against α_i + α_o = −0.240 %; at Y30, −0.376 % (−0.425 %) against −0.400 %.
+  - Pull-out = 20 °C pull-out × th_i·th_o(T_op), within 2.2e-16 at all five.
+- Levers:
+  - Operating temperature +0.5 °C: the pull-out and hot-low fall at all five (default 2.688476 to 2.685131); the 20 °C pull-out stays to 1e-12. Also at 0 °C (3.033556 to 3.030002) and 120 °C (2.240358 to 2.237304).
+  - Coefficient +1e-5 (nearer zero):
+    - library designs: the 50 °C pull-out rises and the cold torque falls (default 2.688476 to 2.690150; 3.324618 to 3.320897);
+    - Y30: nothing moves;
+    - mixed design: only the outer ring's α moves;
+    - at 0 °C both the 0 °C pull-out and the cold torque fall, so "less with temperature, hot and cold" holds;
+    - `f_cal` is unchanged at the 304 design.
+  - Grade (Choose), both rings on custom dimensions, pull-out at 20 / 50 / 120 °C:
+    - N42SH 2.893 / 2.688 / 2.240;
+    - SmCo_2_17_30 2.034 / 1.991 / 1.894 (kept 0.979 at 50 °C against 0.929);
+    - SmCo_2_17_26 1.712 / 1.676 / 1.594; SmCo_1_5_20 1.237 / 1.204 / 1.128;
+    - Y30 0.234 / 0.207 / 0.150; bonded NdFeB 0.723 / 0.664 / 0.535.
+    - From the Y30 design, SmCo_2_17_30 on both rings raises the 20 °C pull-out from 0.2344 to 2.034 N·m and the kept share from 0.884 to 0.979. That is MF-1.
+  - Hot-day ambient +0.5 °C, at all five:
+    - the hot-day torque falls (default 2.589014 to 2.585731 N·m);
+    - the hot-day, magnet-limit and adhesive margins each fall by 0.5 °C;
+    - the pull-out at the operating temperature is unchanged.
+- Extra probes:
+  - Required torque 2.0 N·m: the note is unchanged and true.
+  - Operating temperature 0 °C: s3 renders "3.034 N·m at 0 °C and 2.893 N·m at 20 °C", and every sentence holds.
+  - Operating temperature 120 °C: s3 renders "2.240 N·m at 120.0 °C".
+  - Mixed design: w0 renders "inner -0.002000 1/°C, outer -0.001200 1/°C", which matches the engine.
+  - Gearbox rating 1.0 N·m: no effect.
+  - Axial length 1.0 mm: s3 renders "no prediction" for both pull-outs; the temperature and the α values render; no negative torque.
+- Traps checked:
+  - "each ring uses its own α": not written; w0 says only a ring with custom dimensions and a picked grade does;
+  - "a hotter-rated or lower-coefficient grade is free": the cost is named ("starts weaker"); MF-1 keeps it and makes it true design by design;
+  - "the stored 3D fields follow the design": not written;
+  - no torque is called guaranteed;
+  - no shaft-joint method is chosen or sized, and nothing says the coupling protects the gearbox;
+  - "clamp" in any field: none.
+- Form:
+  - title 6 words, plain, no ∝ (the old title's ∝ is gone);
+  - sentences 16, 22, 21, 17 (rendered 20), 21; after MF-2 sentence 2 has 24;
+  - changes 19, 24, 24, 22; after MF-1 change 2 has 24;
+  - watch-outs 27 (rendered 29), 24;
+  - sources 10, 20, 13;
+  - all within the caps; guards empty; sentence 0 plain.
+  - Br and α are glossed at first use (s1). "Hot-low" and "cold-high" are dashboard row names, glossed at step 8.
+- Seeds: S-5 accepted as MF-2.
+- Must-fix items, round 1:
+  - MF-1, change[2]: "starts weaker" was false at the Y30 design; the replacement text and its claims test are above.
+  - MF-2, sentences[2]: S-5 verbatim.
+  - Pending the round-2 re-check.
+- Should-fix offered: SF-2 (change[3], "the temperature margins"), SF-4 (an optional test of the per-degree share).
+- Verdict for this note, round 1: MUST_FIX.
+
+Round 2:
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; round 2. The scope is the fields round 1 changed: change[2] (MF-1) and sentences[2] (MF-2, S-5), plus the sentences that depend on them.
+- Read: the dump; the `br_temperature` literal (`notes.rs:464-523`); `model.rs:412-426, 445-475, 647-649, 663-674, 978-1005`; `grades.rs` (all 17 grades); the grade claims test (`tests/explain.rs:2237-2317`); the round-1 changes file; spec section 8, slice-1 spec section 8, phys-new-notes section 2; A-13, A-22, A-24, A-28/A-28b, ruling 11.
+- Sentences[2] (S-5) is confirmed true.
+  - Torque ∝ Br_i·Br_o is exact in the model: within 2.7e-16 across temperature, and within 6.7e-16 across the 17 grades at fixed geometry, at all five designs.
+  - Per °C at the designs' 50 °C, as the share of the 20 °C pull-out / the share of the current pull-out against α_i + α_o:
+    - NdFeB designs: −0.231 / −0.249 against −0.240 %/°C;
+    - Y30: −0.376 / −0.425 against −0.400 %/°C;
+    - mixed design: −0.306 / −0.337 against −0.320 %/°C.
+  - α_i + α_o always lies between the two readings. The widest gap is Y30 at 120 °C: −0.32 / −0.50 against −0.40.
+  - Verdict on this field: PASS.
+- Change[2] (MF-1) is confirmed fixed on "starts weaker".
+  - Every SmCo grade starts (at 20 °C) below every sintered NdFeB grade at all five designs, on one ring or both, at 0, 50 and 120 °C, and on the mixed design. The smallest ratio is 1.0459.
+  - SmCo is the nearest to zero (≤ 0.045 against ≥ 0.12 %/°C).
+  - From the Y30 design, SmCo starts stronger: 2.034 against 0.2344 N·m on both rings.
+- New must-fix MF-3 (change[2]): "loses less when hot" changes to "loses a smaller share when hot", and ", per ring" is dropped to fit the cap.
+  - Why: the nearer-zero grade loses more N·m in 30 to 32 of 69 grade pairs at every warm probe.
+    - On the Y30 design, SmCo on the inner ring loses 0.0482 N·m against Y30's 0.0273 while keeping 0.930 against 0.884.
+    - On both rings it loses 0.0425 N·m and keeps 0.979.
+  - Read as a share, the claim holds in 69 of 69 pairs.
+  - New text, 24 words: "a grade whose coefficient is nearer zero loses a smaller share when hot; SmCo, the nearest, starts weaker than sintered NdFeB. Custom dimensions only."
+  - The test pins "smaller share" and the N·m counterexample (0.0425 against 0.0273 N·m).
+  - Pending the round-3 re-check.
+- Form of both fields: 24 words each; guards empty; no "clamp"; no new glyph; within the caps and plain-words tests.
+- Seeds: S-5 accepted (applied); S-6 and S-7 rejected (fields unchanged, round-1 reasons stand).
+- Verdict for this note, round 2: MUST_FIX (MF-3).
+
+Round 3:
+
+- **Reviewer:** physics reviewer (session model), fresh context, 2026-10-15; round 3.
+- **Scope:** the field changed in round 2, change[2] (MF-3), and its claims test, plus the sentences that depend on it: sentences[1] and [2], change[1] and watch-out[0].
+- **Read:**
+  - the dump; the `br_temperature` literal (`notes.rs:464-523`);
+  - `model.rs:416-426` (each ring's α), `:445-475` (the grade mode), `:663-674` (`br_factor`, `ring_pair_factor`) and `:1005` (the 20 °C pull-out);
+  - `grades.rs` (all 17 grades: family, Br, α, rating);
+  - `calibration.rs:65-68` (the coefficient input, −0.0025 to 0);
+  - the grade claims test (`tests/explain.rs:2237-2335`);
+  - the round-2 changes file;
+  - A-13, A-22, A-24, A-28/A-28b and ruling 11.
+- **Change[2] is confirmed true:** "a grade whose coefficient is nearer zero loses a smaller share when hot; SmCo, the nearest, starts weaker than sintered NdFeB. Custom dimensions only."
+  - **"A smaller share when hot"** is an identity of the model. The kept share is (1 + α_i(T − 20))(1 + α_o(T − 20)), and every α is ≤ 0.
+    - Probed: 69 grade pairs; 20.5 to 150 °C; one ring and both; five probe designs, the mixed design and an ungraded manual ring. That is 6762 comparisons and 0 failures.
+    - The hot-day and peak torques, as shares, also gave 0 failures.
+    - Against the shared input, from −0.0025 to 0, there were 0 failures.
+  - **Read as N·m, the claim would fail** in 30 to 33 of 69 pairs at every design. On the Y30 design at 50 °C, SmCo_2_17_30 on the inner ring loses 0.0482 N·m against Y30's 0.0273, while keeping 0.930 against 0.884. On both rings it loses 0.0425 N·m and keeps 0.979.
+  - **"SmCo, the nearest, starts weaker than sintered NdFeB"** is re-confirmed: 504 comparisons at 20 °C, 0 failures, with a smallest ratio of 1.0459. |α| is at most 0.00045 for SmCo, against at least 0.0012 for every other grade.
+  - **"Custom dimensions only"** is true (`resolve_magnets`). The per-ring rule stays on screen in the entry's label and in watch-out[0].
+- **Form:** 24 words, 2 sentences, lower-case start; guards empty; no "clamp" in any of the note's 15 fields; no typed label, no placeholder, no new glyph.
+- **Test:** `a_grade_nearer_zero_loses_a_smaller_share_when_hot_and_smco_starts_below_sintered_ndfeb` pins "smaller share" and the N·m counterexample. It passes on the current tree, run with `--locked` and an outside target dir.
+- **Seeds:** S-5 accepted (applied in round 1); S-6 and S-7 rejected (fields unchanged; the reasons of rounds 1 and 2 stand).
+- **Should-fix offered:** SF-5 (the README wording at Step 16) and SF-6 (an optional loop of the kept-share assert over the five probe designs).
+- **Must-fix items, all rounds:**
+  - MF-1 (change[2], "starts weaker" tied to "nearer zero"): fixed in round 1, confirmed in round 2.
+  - MF-2 (sentences[2], S-5): fixed in round 1, confirmed in round 2.
+  - MF-3 (change[2], "loses less" made a share): fixed in round 2, confirmed in round 3.
+- **Verdict for this note, round 3: PASS.** Rounds: 3.
+
+Must-fix items applied:
+- sentences[2] (round 1, MF-2, seed S-5 accepted verbatim: "about α_i + α_o" left the unit open beside the watch-out's α printed in 1/°C, so the change could be read as an absolute torque; "a share of" matches sentence 1's definition): "Torque is proportional to inner Br times outer Br, so each °C of warming changes it by about α_i + α_o." -> "Torque is proportional to inner Br times outer Br, so each °C of warming changes it by a share of about α_i + α_o."
+- change[2] (round 1, MF-1; input `coupling.magnets.grade_inner`, `Step::Choose`, no aim, unchanged: "starts weaker" was tied to any grade nearer zero, which is false on the "Y30 ferrite, custom dimensions" design, the one probe where the entry is a live link, since there every other grade is nearer zero and starts stronger): "a grade whose coefficient is nearer zero, such as SmCo, loses less when hot but starts weaker; custom dimensions only, each ring its own." -> "a grade whose coefficient is nearer zero loses less when hot; SmCo, the nearest, starts weaker than sintered NdFeB. Custom dimensions only, per ring."
+- change[2] (round 2, MF-3; input, step and aim unchanged: "loses less when hot" reads as fewer N·m, but the nearer-zero grade loses more N·m in 30 to 33 of the 69 grade pairs at every warm probe, though it always keeps a larger share; ", per ring" dropped for the 25-word cap, the entry's label and watch_out[0] carrying the per-ring rule): "a grade whose coefficient is nearer zero loses less when hot; SmCo, the nearest, starts weaker than sintered NdFeB. Custom dimensions only, per ring." -> "a grade whose coefficient is nearer zero loses a smaller share when hot; SmCo, the nearest, starts weaker than sintered NdFeB. Custom dimensions only."
+- The claims test follows MF-1 and MF-3: `a_grade_nearer_zero_loses_a_smaller_share_when_hot_and_smco_starts_below_sintered_ndfeb` in `tests/explain.rs` (first `a_grade_nearer_zero_loses_less_when_hot_but_starts_weaker`) pins, computed and never typed: the grade table (every SmCo grade nearest zero, and below every sintered NdFeB grade's Br); SmCo_2_17_30 against N42SH on the default design (a larger kept share, a lower 20 °C pull-out); SmCo_2_17_30 against Y30 on the Y30 design (a larger kept share, more N·m lost, a higher 20 °C pull-out); and the entry's shape ("smaller share", "weaker than sintered NdFeB", no clause that ties "weaker" to "nearer zero").
+
+Seeds (A-24):
+- S-5 (sentences[2]: "Torque is proportional to inner Br times outer Br, so each °C of warming changes it by a share of about α_i + α_o."): accepted in round 1 and applied verbatim as MF-2; rounds 2 and 3 confirm it. Reason: "a share of" makes the unit explicit and matches sentence 1's definition; torque ∝ Br_i·Br_o is exact in the model, and α_i + α_o lies between the two readings of the share (of the 20 °C pull-out and of the current one) at every probe.
+
+Should-fix offered (open for the controller; no on-screen text changed after the round-3 PASS):
+- SF-2 (round 1; rounds 2 and 3 keep it offered), change[3] (`temperature.duty.hot_ambient_C`, Raise; aim unchanged), 21 words: "a hotter day lowers the hot-day torque and the temperature margins; the hot-day start is this ambient plus the driving rise." Why: one step lowers all three margins the temperature verdict reads (the hot-day, magnet-limit and adhesive margins, each by 0.5 °C at all five designs), not only the hot-day one; the shipped help for this input already says "temperature margins". Its test: also assert that `temperature.magnet_life.margin_limit_C` and `temperature.adhesive_life.margin_C` fall.
+- SF-4 (round 1, an optional test): at each design, one degree up from the operating temperature changes the pull-out, as a share of the 20 °C pull-out, by within 10 % of α_i + α_o (the worst case, 6.4 %, is at Y30).
+- SF-5 (rounds 2 and 3; the README, not on-screen text): applied with this task's docs. The README's `tests/explain.rs` row says "a grade with a coefficient nearer zero loses a smaller share of its torque when hot (not always fewer N·m), and SmCo, the nearest, starts below sintered NdFeB (on the Y30 design it starts above Y30)", in place of the plan's "keeps more of its torque hot but starts weaker", which restated the claim MF-1 and MF-3 remove.
+- SF-6 (round 3, an optional test): loop the kept-share assert over the five probe designs (SmCo_2_17_30 on both rings against each design as it is), so the claims test's "design by design" is tested at every design, not two.
+
+Considered, no change (the reviewer's observations):
+- "Custom" against "manual" dimensions: the grade input's label says "(manual dimensions)" and the note "custom dimensions"; the part picker's blank choice is named "Custom dimensions" on screen, so both point to what the user picks (round 1).
+- The rendered α, "-0.001200 1/°C" (four significant digits from the dashboard formatter), is correct and readable to an engineer (round 1).
+- A hotter operating temperature approaches the magnet temperature check; change[0] is an honest-input entry ("set it to the magnet temperature while running") and names its torque cost (round 1).
+- Sentence 2's "about" far from 20 °C: for ferrite at 120 °C the two readings are −0.32 and −0.50 %/°C against −0.40 %/°C. The first-order rule is what an engineer needs, sentence 3 shows the real values, and the cap leaves no room for "near 20 °C" (round 2).
+- Only the Y30 design draws change[2] as a live link; the other four draw "(set by the Inner magnet part pick)", which is correct because library parts are never in the grade mode (round 2).
+- A grade nearer zero can carry a lower heat rating (from the Y30 design every sintered NdFeB grade is nearer zero, and N35 to N52 are rated 80 °C). The entry's claim concerns the reversible share, watch_out[1] names the magnet's limits, and the dashboard's magnet temperature check flags an operating temperature over the rating (round 3).

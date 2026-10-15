@@ -36,6 +36,7 @@ use magcoupling::engine::explain::record::Eval;
 use magcoupling::engine::explain::registry::{Design, Registry, TermKind};
 use magcoupling::engine::explain::scope::{SCOPE, Status};
 use magcoupling::engine::explain::{TermSource, Trace, note_text, notes, probes, render};
+use magcoupling::engine::grades::{GRADES, Grade, GradeFamily};
 use magcoupling::engine::library;
 use magcoupling::engine::meta::{
     FieldType, InputMeta, InputSet, ResultSet, Value, input_rows, result_rows,
@@ -1617,6 +1618,13 @@ fn pullout_angle_claims_hold_on_the_engine() {
 // Slice 2 note claims: the end-effect and calibration notes (plan T13). Each lever moves by
 // one slider step (`probes::step_input`; a blank axial length starts from the length in use).
 
+/// `design` with the input at `path` one slider step `step`'s way (`probes::step_input`): the
+/// note levers the claims tests move are free at every probe design.
+fn stepped(design: &DesignInputs, path: &str, step: Step) -> DesignInputs {
+    probes::step_input(design, path, step)
+        .unwrap_or_else(|why| panic!("{path} is free at every probe design: {why:?}"))
+}
+
 /// `end_effect`'s two entries at the five probe designs: longer magnets lose a smaller share
 /// at the ends; a larger end coefficient lowers every torque but leaves the bench prototype's
 /// own end factor. The trade-offs the entries name hold too: cold-high, and with it the
@@ -1634,16 +1642,16 @@ fn the_end_effect_note_s_levers_move_the_end_factor_as_it_says() {
     assert!(note.change.iter().all(|c| matches!(c.step, Step::Raise)));
     assert_eq!(note.change[0].aim, Some(("model.f_end", Sense::Up)));
     assert_eq!(note.change[1].aim, Some(("model.f_end", Sense::Down)));
-    let step = |design: &DesignInputs, path: &str| {
-        probes::step_input(design, path, Step::Raise)
-            .unwrap_or_else(|why| panic!("{path} is free at every probe design: {why:?}"))
-    };
     for (name, design) in probes::probe_designs() {
         let base = compute_all(&design);
         // Entry 1: a smaller share lost at the ends, more torque, and the trade-off it names:
         // cold-high rises, and with it the shaft-joint load (cold-high itself) and the gearbox
         // load (cold-high through the gear ratio and efficiency at its input).
-        let r = compute_all(&step(&design, "coupling.magnets.axial_length_mm"));
+        let r = compute_all(&stepped(
+            &design,
+            "coupling.magnets.axial_length_mm",
+            Step::Raise,
+        ));
         assert!(r.model.f_end > base.model.f_end, "{name}: f_end");
         assert!(
             r.model.pullout_Nm > base.model.pullout_Nm,
@@ -1659,7 +1667,7 @@ fn the_end_effect_note_s_levers_move_the_end_factor_as_it_says() {
         );
         // Entry 2: every torque falls, cold-high and the shaft-joint and gearbox loads
         // included; the bench prototype's own end factor does not move.
-        let r = compute_all(&step(&design, "coupling.c_end"));
+        let r = compute_all(&stepped(&design, "coupling.c_end", Step::Raise));
         assert!(r.model.pullout_Nm < base.model.pullout_Nm, "{name}");
         assert!(
             r.metal.torque_hot_low_Nm < base.metal.torque_hot_low_Nm,
@@ -1852,17 +1860,13 @@ fn the_calibration_note_s_levers_and_rule_hold_at_every_probe_design() {
             && d.coupling.magnets.part_inner == "B842SH"
             && d.coupling.magnets.part_outer == "B842SH"
     };
-    let step = |design: &DesignInputs, path: &str, step: Step| {
-        probes::step_input(design, path, step)
-            .unwrap_or_else(|why| panic!("{path} is free at every probe design: {why:?}"))
-    };
     let (mut matching, mut other) = (0, 0);
     for (name, design) in probes::probe_designs() {
         let base = compute_all(&design);
         let matched = is_match(&design, &base);
         // Entry 1: every torque outside a match falls in proportion, cold-high included; a
         // match ignores it.
-        let lower = step(&design, "calibration.f_cal_original", Step::Lower);
+        let lower = stepped(&design, "calibration.f_cal_original", Step::Lower);
         let r = compute_all(&lower);
         if matched {
             matching += 1;
@@ -1891,7 +1895,7 @@ fn the_calibration_note_s_levers_and_rule_hold_at_every_probe_design() {
             }
         }
         // Entry 2: the measured factor rises with the measurement, and only a match uses it.
-        let r = compute_all(&step(
+        let r = compute_all(&stepped(
             &design,
             "calibration.measured_torque_Nm",
             Step::Raise,
@@ -1906,7 +1910,7 @@ fn the_calibration_note_s_levers_and_rule_hold_at_every_probe_design() {
             "{name}: only a match uses it"
         );
         // Entry 3: a warmer test weakens the modelled prototype, so the measured factor rises.
-        let r = compute_all(&step(&design, "calibration.test_temp_C", Step::Raise));
+        let r = compute_all(&stepped(&design, "calibration.test_temp_C", Step::Raise));
         assert!(
             r.calibration.model_torque_Nm < base.calibration.model_torque_Nm,
             "{name}: a weaker modelled prototype"
@@ -1959,6 +1963,374 @@ fn the_calibration_note_s_match_claims_hold() {
         "{} against the bench {}",
         fake.model.f_cal,
         bench.model.f_cal
+    );
+}
+
+// Slice 2 note claims: the torque-band and temperature notes (plan T14). Each lever moves by
+// one slider step ([`stepped`]).
+
+/// `hot_low_cold_high`'s four entries at the five probe designs: each moves hot-low or
+/// cold-high the way it says, and the edge it says stays stays.
+#[test]
+fn the_torque_band_note_s_levers_move_hot_low_and_cold_high_as_it_says() {
+    let note = notes::note("hot_low_cold_high").expect("the torque-band note");
+    let levers: Vec<&str> = note.change.iter().map(|c| c.input).collect();
+    assert_eq!(
+        levers,
+        [
+            "coupling.magnets.axial_length_mm",
+            "metal.variation",
+            "coupling.op_temp_C",
+            "metal.min_temp_C",
+        ]
+    );
+    assert!(matches!(note.change[0].step, Step::Raise));
+    assert!(
+        note.change[1..]
+            .iter()
+            .all(|c| matches!(c.step, Step::Lower))
+    );
+    let hot_low_up = Some(("metal.torque_hot_low_Nm", Sense::Up));
+    assert_eq!(note.change[0].aim, hot_low_up);
+    assert_eq!(note.change[1].aim, hot_low_up);
+    assert_eq!(note.change[2].aim, hot_low_up);
+    assert_eq!(
+        note.change[3].aim,
+        Some(("metal.torque_cold_high_Nm", Sense::Up))
+    );
+    let close = |a: f64, b: f64| (a / b - 1.0).abs() < 1e-12;
+    for (name, design) in probes::probe_designs() {
+        let base = compute_all(&design);
+        let (hot, cold) = (base.metal.torque_hot_low_Nm, base.metal.torque_cold_high_Nm);
+        // Entry 1: longer magnets raise both edges and, with cold-high, the shaft-joint and
+        // gearbox loads (the trade-off it names; the gearbox input sees cold-high through the
+        // ratio and the efficiency).
+        let r = compute_all(&stepped(
+            &design,
+            "coupling.magnets.axial_length_mm",
+            Step::Raise,
+        ));
+        assert!(
+            r.metal.torque_hot_low_Nm > hot && r.metal.torque_cold_high_Nm > cold,
+            "{name}: length"
+        );
+        assert!(
+            r.metal.cold_high_input_Nm > base.metal.cold_high_input_Nm,
+            "{name}: gearbox input"
+        );
+        // Entry 2: a smaller allowance narrows the band both ways.
+        let r = compute_all(&stepped(&design, "metal.variation", Step::Lower));
+        assert!(
+            r.metal.torque_hot_low_Nm > hot && r.metal.torque_cold_high_Nm < cold,
+            "{name}: allowance"
+        );
+        // Entry 3: a cooler operating temperature raises hot-low; cold-high stays.
+        let r = compute_all(&stepped(&design, "coupling.op_temp_C", Step::Lower));
+        assert!(r.metal.torque_hot_low_Nm > hot, "{name}: operating");
+        assert!(
+            close(r.metal.torque_cold_high_Nm, cold),
+            "{name}: cold-high stays"
+        );
+        // Entry 4: a colder minimum raises cold-high, and with it the shaft-joint and gearbox
+        // loads; hot-low stays.
+        let r = compute_all(&stepped(&design, "metal.min_temp_C", Step::Lower));
+        assert!(r.metal.torque_cold_high_Nm > cold, "{name}: minimum");
+        assert!(
+            r.metal.cold_high_input_Nm > base.metal.cold_high_input_Nm,
+            "{name}: minimum, gearbox input"
+        );
+        assert_eq!(r.metal.torque_hot_low_Nm, hot, "{name}: hot-low stays");
+    }
+}
+
+/// `hot_low_cold_high`'s sentences at the five probe designs: what each edge of the band is,
+/// what carries cold-high, and the 20 °C pull-out at which hot-low passes.
+#[test]
+fn the_torque_band_note_s_sentences_hold_at_every_probe_design() {
+    let close = |a: f64, b: f64| (a / b - 1.0).abs() < 1e-12;
+    for (name, design) in probes::probe_designs() {
+        let base = compute_all(&design);
+        let m = &base.metal;
+        let v = design.metal.variation;
+        // Sentence 1: hot-low is the pull-out at the operating temperature less the allowance.
+        assert!(
+            close(m.torque_hot_low_Nm, base.model.pullout_Nm * (1.0 - v)),
+            "{name}: hot-low"
+        );
+        // Sentence 2: cold-high is the pull-out at the minimum temperature plus the allowance.
+        let mut cold_running = design.clone();
+        cold_running.coupling.op_temp_C = design.metal.min_temp_C;
+        assert!(
+            close(
+                m.torque_cold_high_Nm,
+                compute_all(&cold_running).model.pullout_Nm * (1.0 + v)
+            ),
+            "{name}: cold-high"
+        );
+        // Sentence 3: the gearbox output carries cold-high itself (the coupling sits on it,
+        // ruling 8), so its input sees cold-high through the ratio and the efficiency;
+        // whatever holds the hub on the shaft carries the same torque, and no joint is sized
+        // while the clamp section is paused (ruling 11).
+        let c = &design.coupling;
+        assert!(
+            close(
+                m.cold_high_input_Nm * c.gear_ratio * c.gear_efficiency,
+                m.torque_cold_high_Nm
+            ),
+            "{name}"
+        );
+        // Sentence 4: hot-low passes exactly when the 20 °C pull-out reaches the requirement
+        // taken back to 20 °C with the allowance; the requirement just either side of hot-low.
+        for scale in [0.99, 1.01] {
+            let mut d = design.clone();
+            d.metal.required_min_Nm = scale * m.torque_hot_low_Nm;
+            let r = compute_all(&d);
+            let passes = r.metal.torque_hot_low_Nm >= d.metal.required_min_Nm;
+            assert_eq!(passes, scale < 1.0, "{name} at {scale}");
+            assert_eq!(
+                passes,
+                r.model.pullout_20C_Nm >= r.metal.required_20C_Nm,
+                "{name} at {scale}"
+            );
+        }
+    }
+}
+
+/// `hot_low_cold_high`'s watch-outs on the example design.
+#[test]
+fn the_torque_band_note_s_watch_outs_hold() {
+    // Watch-out 1: hot-low reads the operating temperature, not the hot-day start, and the
+    // hot-day torque is compared with the requirement without the allowance: on the example
+    // design hot-low fails while the hot-day torque meets the requirement.
+    let defaults = DesignInputs::default();
+    let r = compute_all(&defaults);
+    let required = defaults.metal.required_min_Nm;
+    assert!(r.metal.torque_hot_low_Nm < required);
+    assert!(r.temperature.magnet_life.torque_hot_day_Nm >= required);
+    assert_ne!(
+        r.temperature.duty.hot_day_start_C,
+        defaults.coupling.op_temp_C
+    );
+    let hotter_day = stepped(&defaults, "temperature.duty.hot_ambient_C", Step::Raise);
+    assert_eq!(
+        compute_all(&hotter_day).metal.torque_hot_low_Nm,
+        r.metal.torque_hot_low_Nm
+    );
+    // Watch-out 2: cold-high at the gearbox input (the relation: the sentences test) is above
+    // the input rating on the example design (the GUI test
+    // `nothing_checks_a_gearbox_torque_against_its_rating_yet` holds the "nothing checks it").
+    let c = &defaults.coupling;
+    assert!(r.metal.cold_high_input_Nm > c.gearbox_input_rating_Nm);
+}
+
+/// `br_temperature`'s four entries at the five probe designs. The coefficient input moves only
+/// rings without a picked grade, so it is checked design by design.
+#[test]
+fn the_temperature_note_s_levers_hold_at_every_probe_design() {
+    let note = notes::note("br_temperature").expect("the temperature note");
+    let levers: Vec<&str> = note.change.iter().map(|c| c.input).collect();
+    assert_eq!(
+        levers,
+        [
+            "coupling.op_temp_C",
+            "calibration.alpha_br_per_C",
+            "coupling.magnets.grade_inner",
+            "temperature.duty.hot_ambient_C",
+        ]
+    );
+    assert!(matches!(note.change[0].step, Step::Raise));
+    assert!(matches!(note.change[1].step, Step::Raise));
+    assert!(matches!(note.change[2].step, Step::Choose));
+    assert!(matches!(note.change[3].step, Step::Raise));
+    assert_eq!(note.change[0].aim, Some(("model.pullout_Nm", Sense::Down)));
+    // The coefficient moves only library rings, and which way the torque goes depends on the
+    // temperature: no single direction to check, so it is checked here, design by design.
+    assert_eq!(note.change[1].aim, None);
+    assert_eq!(note.change[2].aim, None);
+    assert_eq!(
+        note.change[3].aim,
+        Some(("temperature.magnet_life.torque_hot_day_Nm", Sense::Down))
+    );
+    let close = |a: f64, b: f64| (a / b - 1.0).abs() < 1e-12;
+    let (mut library, mut graded) = (0, 0);
+    for (name, design) in probes::probe_designs() {
+        let base = compute_all(&design);
+        // Entry 1: hotter running lowers the pull-out and hot-low, never the 20 °C row.
+        let r = compute_all(&stepped(&design, "coupling.op_temp_C", Step::Raise));
+        assert!(r.model.pullout_Nm < base.model.pullout_Nm, "{name}");
+        assert!(
+            r.metal.torque_hot_low_Nm < base.metal.torque_hot_low_Nm,
+            "{name}"
+        );
+        assert!(
+            close(r.model.pullout_20C_Nm, base.model.pullout_20C_Nm),
+            "{name}"
+        );
+        // Entry 2 and watch-out 1: the coefficient input moves only rings without a picked
+        // grade; there, nearer zero, less is lost hot (the pull-out at the warmer operating
+        // temperature rises) and less is gained cold (the cold torque falls).
+        let r = compute_all(&stepped(&design, "calibration.alpha_br_per_C", Step::Raise));
+        let inner = r.model.inner_alpha_br_per_C != base.model.inner_alpha_br_per_C;
+        let outer = r.model.outer_alpha_br_per_C != base.model.outer_alpha_br_per_C;
+        assert_eq!(
+            inner, outer,
+            "{name}: the probe designs have both rings of one kind"
+        );
+        if inner {
+            library += 1;
+            assert!(design.coupling.op_temp_C > 20.0, "{name}: runs warm");
+            assert!(r.model.pullout_Nm > base.model.pullout_Nm, "{name}");
+            assert!(r.metal.torque_cold_Nm < base.metal.torque_cold_Nm, "{name}");
+        } else {
+            graded += 1;
+            assert_eq!(r.model.pullout_Nm, base.model.pullout_Nm, "{name}");
+            assert_eq!(r.metal.torque_cold_Nm, base.metal.torque_cold_Nm, "{name}");
+        }
+        // Entry 4: a hotter day lowers the hot-day torque and its temperature margin, not the
+        // pull-out at the operating temperature.
+        let r = compute_all(&stepped(
+            &design,
+            "temperature.duty.hot_ambient_C",
+            Step::Raise,
+        ));
+        assert!(
+            r.temperature.magnet_life.torque_hot_day_Nm
+                < base.temperature.magnet_life.torque_hot_day_Nm,
+            "{name}"
+        );
+        assert!(
+            r.temperature.summary.margin_hot_day_C < base.temperature.summary.margin_hot_day_C,
+            "{name}"
+        );
+        assert_eq!(r.model.pullout_Nm, base.model.pullout_Nm, "{name}");
+    }
+    assert!(
+        library >= 1 && graded >= 1,
+        "library and graded rings among the probes"
+    );
+}
+
+#[test]
+fn only_a_ring_with_a_picked_grade_keeps_its_own_coefficient() {
+    // Watch-out 1 of the temperature note, on a mixed design: the inner ring on custom
+    // dimensions with Y30, the outer on its library part; the input moves the outer ring only.
+    let mut mixed = DesignInputs::default();
+    mixed.coupling.magnets.part_inner = String::new();
+    mixed.coupling.magnets.grade_inner = "Y30".to_owned();
+    let base = compute_all(&mixed);
+    let moved = stepped(&mixed, "calibration.alpha_br_per_C", Step::Raise);
+    let r = compute_all(&moved);
+    assert_eq!(
+        r.model.inner_alpha_br_per_C,
+        base.model.inner_alpha_br_per_C
+    );
+    assert_eq!(
+        r.model.outer_alpha_br_per_C,
+        moved.calibration.alpha_br_per_C
+    );
+    assert_ne!(
+        base.model.inner_alpha_br_per_C,
+        base.model.outer_alpha_br_per_C
+    );
+}
+
+/// `br_temperature`'s grade entry. A grade whose coefficient is nearer zero loses a smaller share
+/// when hot, design by design, though not always fewer N·m; the cost named is SmCo's, the
+/// nearest: it starts (at 20 °C) weaker than every sintered NdFeB grade. "Nearer zero" alone
+/// does not mean weaker: from the Y30 probe design every other grade is nearer zero, and SmCo
+/// starts stronger.
+#[test]
+fn a_grade_nearer_zero_loses_a_smaller_share_when_hot_and_smco_starts_below_sintered_ndfeb() {
+    let note = notes::note("br_temperature").expect("the temperature note");
+    let entry = note
+        .change
+        .iter()
+        .find(|c| c.input == "coupling.magnets.grade_inner")
+        .expect("the grade entry");
+    assert!(
+        entry
+            .text
+            .split(';')
+            .all(|clause| !(clause.contains("nearer zero") && clause.contains("weaker"))),
+        "ties no weakness to nearer zero as such: {:?}",
+        entry.text
+    );
+    assert!(
+        entry.text.contains("weaker than sintered NdFeB"),
+        "names what SmCo starts weaker than: {:?}",
+        entry.text
+    );
+    assert!(
+        entry.text.contains("smaller share"),
+        "says the loss is a share, not an amount: {:?}",
+        entry.text
+    );
+
+    // "SmCo, the nearest" and "starts weaker than sintered NdFeB", over the whole grade table.
+    let is_smco = |g: &&Grade| matches!(g.family, GradeFamily::SmCo2_17 | GradeFamily::SmCo1_5);
+    let (smco_grades, others): (Vec<&Grade>, Vec<&Grade>) = GRADES.iter().partition(is_smco);
+    assert!(!smco_grades.is_empty() && others.iter().any(|g| g.family == GradeFamily::NdFeB));
+    for s in &smco_grades {
+        for o in &others {
+            assert!(
+                s.alpha_br_per_C.abs() < o.alpha_br_per_C.abs(),
+                "{} nearer zero than {}",
+                s.id,
+                o.id
+            );
+            if o.family == GradeFamily::NdFeB {
+                assert!(s.br_T < o.br_T, "{} Br below {}", s.id, o.id);
+            }
+        }
+    }
+
+    // Both rings on custom dimensions with one grade.
+    let graded = |design: &DesignInputs, grade: &str| {
+        let mut d = design.clone();
+        let m = &mut d.coupling.magnets;
+        m.part_inner = String::new();
+        m.part_outer = String::new();
+        m.grade_inner = grade.to_owned();
+        m.grade_outer = grade.to_owned();
+        compute_all(&d)
+    };
+    // The share of the 20 °C pull-out kept at the operating temperature.
+    let kept = |r: &DesignResults| r.model.pullout_Nm / r.model.pullout_20C_Nm;
+    let default = DesignInputs::default();
+    assert!(default.coupling.op_temp_C > 20.0, "the default runs warm");
+    let (ndfeb, smco) = (graded(&default, "N42SH"), graded(&default, "SmCo_2_17_30"));
+    assert!(smco.model.inner_alpha_br_per_C.abs() < ndfeb.model.inner_alpha_br_per_C.abs());
+    assert!(smco.model.outer_alpha_br_per_C.abs() < ndfeb.model.outer_alpha_br_per_C.abs());
+    assert!(
+        kept(&smco) > kept(&ndfeb),
+        "default: loses a smaller share when hot"
+    );
+    assert!(
+        smco.model.pullout_20C_Nm < ndfeb.model.pullout_20C_Nm,
+        "default: starts weaker than sintered NdFeB"
+    );
+
+    let ferrite = probe_inputs("Y30 ferrite, custom dimensions");
+    assert!(
+        ferrite.coupling.op_temp_C > 20.0,
+        "the Y30 design runs warm"
+    );
+    let (y30, smco) = (compute_all(&ferrite), graded(&ferrite, "SmCo_2_17_30"));
+    assert!(smco.model.inner_alpha_br_per_C.abs() < y30.model.inner_alpha_br_per_C.abs());
+    assert!(smco.model.outer_alpha_br_per_C.abs() < y30.model.outer_alpha_br_per_C.abs());
+    assert!(
+        kept(&smco) > kept(&y30),
+        "Y30 design: loses a smaller share when hot"
+    );
+    // A smaller share is not fewer N·m: SmCo starts far stronger than Y30.
+    let lost = |r: &DesignResults| r.model.pullout_20C_Nm - r.model.pullout_Nm;
+    assert!(
+        lost(&smco) > lost(&y30),
+        "Y30 design: a smaller share, yet more N·m lost"
+    );
+    assert!(
+        smco.model.pullout_20C_Nm > y30.model.pullout_20C_Nm,
+        "Y30 design: nearer zero, and stronger at 20 °C"
     );
 }
 

@@ -7988,7 +7988,7 @@ mod tests {
 
     #[test]
     fn every_start_here_step_shows_with_glyphs_in_the_default_fonts() {
-        // The bar names each step's note (one title holds ∝, decision M43-6); it sits above
+        // The bar names each step's note (glyph-safe, decision M43-6); it sits above
         // the panel's scroll area, so it is drawn whatever the panel's height.
         use crate::engine::explain::notes::{START_HERE, note};
         use crate::gui::explorer::start_here_text;

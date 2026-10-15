@@ -163,7 +163,7 @@ const HOT_MIN_GUIDE: CheckGuide = CheckGuide {
     // Not the gap: a smaller gap raises the torque but takes running clearance, whose own fix
     // opens the gap (both fail on the default design).
     fixes: Fixes::Static(&[(MAGNET_LENGTH, Direction::Raise)]),
-    learn: Learn::Assumption("production_variation"),
+    learn: Learn::Note("hot_low_cold_high"),
 };
 
 const CLEARANCE_GUIDE: CheckGuide = CheckGuide {
@@ -309,11 +309,11 @@ pub static ROW_LEARN: [(&str, Learn); DASHBOARD.len()] = [
     ("model.pullout_20C_Nm", Learn::Note("br_temperature")),
     ("metal.torque_hot_low_Nm", HOT_MIN_GUIDE.learn),
     ("metal.hot_min_check", HOT_MIN_GUIDE.learn),
-    // The cold pull-out with the variation allowance added, as the hot-low torque has it taken
-    // off: the allowance's rationale states both.
+    // The cold pull-out with the variation allowance added: the torque-band note explains it
+    // beside hot-low (a value row a reviewed note covers links to that note).
     (
         "metal.torque_cold_high_Nm",
-        Learn::Assumption("production_variation"),
+        Learn::Note("hot_low_cold_high"),
     ),
     // The pull-out through the gearbox: the torque-angle curve's amplitude.
     (
@@ -2393,6 +2393,45 @@ mod tests {
             }
         }
         assert_eq!(row_learn("no.such"), None);
+    }
+
+    #[test]
+    fn the_hot_low_hot_minimum_and_cold_high_rows_lead_to_the_torque_band_note() {
+        // Spec 6 test 6: the hot-minimum guide and the three rows of the band link the note
+        // that explains their equations, and it has passed review.
+        let band = Learn::Note("hot_low_cold_high");
+        assert_eq!(guide(HOT_MIN).map(|g| g.learn), Some(band));
+        for path in [
+            "metal.torque_hot_low_Nm",
+            "metal.hot_min_check",
+            "metal.torque_cold_high_Nm",
+        ] {
+            assert_eq!(row_learn(path), Some(band), "{path}");
+            assert_eq!(
+                notes::note_for(path).map(|n| n.id),
+                Some("hot_low_cold_high"),
+                "{path}"
+            );
+        }
+        assert!(reviewed_note("hot_low_cold_high").is_some());
+    }
+
+    /// The torque-band note's second watch-out says nothing checks cold-high at the gearbox
+    /// input against the gearbox's rating. When such a check lands (BL-059) this fails, and
+    /// that watch-out changes in the same commit.
+    #[test]
+    fn nothing_checks_a_gearbox_torque_against_its_rating_yet() {
+        let gearbox_rows: Vec<(&str, Option<&str>)> = DASHBOARD
+            .iter()
+            .copied()
+            .filter(|&(row, check)| {
+                row.contains("gearbox") || check.is_some_and(|c| c.contains("gearbox"))
+            })
+            .collect();
+        // The ripple row: a value with no check.
+        assert_eq!(gearbox_rows, [("model.gearbox_input_ripple_Nm", None)]);
+        assert!(CHECKS.iter().all(|c| !c.contains("gearbox")));
+        assert!(CHECK_GUIDES.iter().all(|g| !g.check.contains("gearbox")));
     }
 
     // ------------------------------------------------------------------ the fix texts
