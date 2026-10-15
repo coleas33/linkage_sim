@@ -48,6 +48,7 @@ use crate::engine::model::{end_effect_in_range, harmonic_count, ring_pair_factor
 use crate::engine::sweeps::SweepRow;
 use crate::gui::dashboard::{Level, end_effect_out_of_range, hover_text, result_info};
 use crate::gui::format::{format_value, with_unit};
+use crate::gui::plain_text::label_for;
 use crate::gui::readouts::Readouts;
 use crate::{DesignInputs, DesignResults};
 
@@ -145,18 +146,17 @@ pub const SLIP_HEATING_ID: &str = "magcoupling_plot_slip_heating";
 pub const TORQUE_ANGLE_ID: &str = "magcoupling_plot_torque_angle";
 
 /// The legend names.
-pub const PULL_OUT: &str = "Pull-out torque";
-/// The pole sweep's line: its rows are not at the design's apothem.
-pub const PULL_OUT_SMALLEST_APOTHEM: &str =
-    "Pull-out torque (rows at their smallest fitting apothem)";
-pub const LOW_BAND: &str = "Low: minus the variation allowance";
-pub const HIGH_BAND: &str = "High: plus the variation allowance";
-pub const REQUIRED: &str = "Required minimum";
+pub const PULL_OUT: &str = "Pull-out torque (nominal)";
+/// The pole sweep's line: its rows are not at the design's ring radius.
+pub const PULL_OUT_SMALLEST_APOTHEM: &str = "Pull-out torque (nominal), each row at the smallest ring radius its inner magnets and the keyed bore allow";
+pub const LOW_BAND: &str = "Low: minus the production variation allowance";
+pub const HIGH_BAND: &str = "High: plus the production variation allowance";
+pub const REQUIRED: &str = "Required torque";
 pub const OPERATING: &str = "Operating temperature";
 pub const LIMIT: &str = "Governing limit";
 pub const THIS_DESIGN: &str = "This design";
 pub const NOMINAL: &str = "Nominal: test needed";
-pub const BELOW_MINIMUM: &str = "Below hot minimum";
+pub const BELOW_MINIMUM: &str = "Below the required floor";
 pub const NO_FIT: &str = "Does not fit";
 pub const OUT_OF_RANGE: &str = "End-effect model out of range";
 pub const REQUIRED_FLOOR: &str = "Required floor";
@@ -164,6 +164,12 @@ pub const ESTIMATE: &str = "Estimate";
 pub const HIGH_CASE: &str = "High case";
 pub const TIME_TO_LIMIT: &str = "Time to the limit (high case)";
 pub const PULL_OUT_POINT: &str = "Pull-out point";
+/// The torque-rotation plot's curve: the torque at each relative rotation, whose peak is the
+/// pull-out ([`PULL_OUT_POINT`]).
+pub const TORQUE_CURVE: &str = "Torque (nominal)";
+
+/// The sweeps' vertical axis: each row's nominal pull-out at the operating temperature.
+pub const SWEEP_Y_AXIS: &str = "Pull-out torque (nominal) [N·m]";
 
 /// The text shown instead of a plot with nothing finite to draw.
 pub const NOTHING_TO_PLOT: &str = "Nothing to plot: the values are not numbers";
@@ -463,7 +469,7 @@ pub fn plot_ui(
         PlotKind::PoleSweep => sweep_ui(
             ui,
             kind,
-            "Poles per ring",
+            label_for("coupling.npole"),
             PULL_OUT_SMALLEST_APOTHEM,
             &results.pole_sweep,
             [inputs.coupling.npole as f64, results.model.pullout_Nm],
@@ -492,7 +498,7 @@ fn readouts_ui(
             let value = results.get(path).unwrap_or(Value::None);
             let text = format!(
                 "{}: {}",
-                info.meta.label,
+                label_for(path),
                 with_unit(format_value(&value), info.meta.unit)
             );
             let rect = ui.small(text).rect;
@@ -588,7 +594,7 @@ fn sweep_ui(
         ui.weak(rows_not_plotted(s.dropped));
     }
     let visuals = ui.visuals().clone();
-    plot(ui, kind, x, "Pull-out at the operating temperature [N·m]").show(ui, |p| {
+    plot(ui, kind, x, SWEEP_Y_AXIS).show(ui, |p| {
         p.line(Line::new(line, s.line).color(BLUE).width(1.5));
         for (name, points, color) in [
             (NOMINAL, s.nominal, Level::Good.color(&visuals)),
@@ -659,7 +665,7 @@ fn torque_angle_ui(ui: &mut egui::Ui, inputs: &DesignInputs, results: &DesignRes
         "Torque [N·m]",
     )
     .show(ui, |p| {
-        p.line(Line::new(PULL_OUT, s.curve).color(color).width(2.0));
+        p.line(Line::new(TORQUE_CURVE, s.curve).color(color).width(2.0));
         let point = finite([s.pull_out]);
         if !point.is_empty() {
             p.points(
@@ -1048,7 +1054,7 @@ mod tests {
         let value = results.get(path).expect("a result");
         let shown = format!(
             "{}: {}",
-            info.meta.label,
+            crate::gui::plain_text::label_for(path),
             with_unit(format_value(&value), info.meta.unit)
         );
         assert_hover_names_path_only_with_details(
@@ -1071,7 +1077,7 @@ mod tests {
                 let value = results.get(path).unwrap();
                 let want = format!(
                     "{}: {}",
-                    info.meta.label,
+                    crate::gui::plain_text::label_for(path),
                     with_unit(format_value(&value), info.meta.unit)
                 );
                 assert!(texts.contains(&want), "{kind:?}: missing {want:?}");
@@ -1138,6 +1144,9 @@ mod tests {
         assert_eq!(count(&paths, ANGLE_SAMPLES), 1);
         assert_eq!(at(POINT_RADIUS + 1.0, &circles), 1, "the pull-out point");
         assert!(drawn_texts(&output).iter().any(|t| t == PULL_OUT_POINT));
+        // The curve is the torque at each rotation; only its peak is the pull-out.
+        assert!(drawn_texts(&output).iter().any(|t| t == TORQUE_CURVE));
+        assert!(!drawn_texts(&output).iter().any(|t| t == PULL_OUT));
     }
 
     #[test]
@@ -1291,6 +1300,79 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn the_legends_and_axes_use_the_on_screen_names() {
+        use crate::gui::plain_text::label_for;
+        // One name per quantity (spec 3.5): the pull-out and the required torque read as the
+        // dashboard and the input rows name them, the band edges name the production variation
+        // allowance, the pole sweep's axis the magnet count and its line the ring radius.
+        let pullout = label_for("model.pullout_Nm");
+        assert!(PULL_OUT.starts_with(pullout), "{PULL_OUT}");
+        assert!(
+            PULL_OUT_SMALLEST_APOTHEM.starts_with(pullout),
+            "{PULL_OUT_SMALLEST_APOTHEM}"
+        );
+        assert_eq!(REQUIRED, label_for("metal.required_min_Nm"));
+        let allowance = label_for("metal.variation").to_lowercase();
+        for band in [LOW_BAND, HIGH_BAND] {
+            assert!(band.contains(&allowance), "{band}");
+        }
+        let ring = label_for("coupling.inner_back_apothem_mm").to_lowercase();
+        assert!(
+            PULL_OUT_SMALLEST_APOTHEM.contains(&ring),
+            "{PULL_OUT_SMALLEST_APOTHEM}"
+        );
+        assert!(!PULL_OUT_SMALLEST_APOTHEM.contains("apothem"));
+        // The pole sweep's rows sit at the larger of the inner blocks' fit radius and the keyed
+        // bore's wall (engine::sweeps::pole_sweep): at the defaults the bore sets some rows.
+        let r = compute_all(&DesignInputs::default());
+        let fit = |n: f64| r.model.inner_width_mm / (2.0 * (std::f64::consts::PI / n).tan()) + 0.05;
+        assert!(
+            r.pole_sweep
+                .iter()
+                .any(|row| row.inner_apothem_mm > fit(row.variable) + 1e-9)
+        );
+        assert!(
+            PULL_OUT_SMALLEST_APOTHEM.contains("keyed bore"),
+            "{PULL_OUT_SMALLEST_APOTHEM}"
+        );
+        // The sweeps' axes: the magnet count's name, and the nominal pull-out in N·m.
+        let y_axis = format!("{pullout} [N\u{b7}m]");
+        let texts = drawn_texts(&draw(PlotKind::PoleSweep, &DesignInputs::default()));
+        assert!(
+            texts.iter().any(|t| t == label_for("coupling.npole")),
+            "the pole sweep's x axis: {texts:?}"
+        );
+        assert!(texts.contains(&y_axis), "the sweeps' y axis: {texts:?}");
+        // The sweeps' amber status compares the nominal pull-out with the required floor
+        // (engine::sweeps), not the hot-low torque with the required torque: the legend says
+        // so, and names the floor as its own line does.
+        assert!(
+            BELOW_MINIMUM.contains(&REQUIRED_FLOOR.to_lowercase()),
+            "{BELOW_MINIMUM}"
+        );
+        // Plain words and the default fonts' glyphs.
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        for text in [
+            PULL_OUT,
+            PULL_OUT_SMALLEST_APOTHEM,
+            LOW_BAND,
+            HIGH_BAND,
+            REQUIRED,
+            BELOW_MINIMUM,
+            TORQUE_CURVE,
+            y_axis.as_str(),
+        ] {
+            assert_eq!(
+                crate::gui::guidance::plain_text_violations(text),
+                Vec::<&str>::new(),
+                "{text}"
+            );
+            crate::gui::test_support::assert_glyphs(&ctx, text, "a plot legend or axis");
         }
     }
 }

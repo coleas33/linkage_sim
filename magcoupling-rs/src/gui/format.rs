@@ -21,13 +21,22 @@ pub fn format_value(value: &Value) -> String {
     }
 }
 
-/// `text` followed by the unit, unless the unit is empty or `-` (dimensionless).
+/// `text` followed by the unit as the screen writes it (`display_unit`), unless the unit is
+/// empty or `-` (dimensionless).
 pub fn with_unit(text: String, unit: &str) -> String {
+    let unit = display_unit(unit);
     if unit.is_empty() || unit == "-" {
         text
     } else {
         format!("{text} {unit}")
     }
+}
+
+/// A unit as the screen writes it: the sweep tables' workbook header "Nm" reads "N·m", as every
+/// other torque's unit does (spec 3.5). The metadata and the exports keep "Nm":
+/// `tests/schema.rs` holds the sweep columns to the workbook headers.
+fn display_unit(unit: &str) -> &str {
+    if unit == "Nm" { "N·m" } else { unit }
 }
 
 /// What a search box matches an input or a result by: its display label (`gui::plain_text`),
@@ -227,6 +236,27 @@ mod tests {
         assert_eq!(with_unit("2.688".into(), "N·m"), "2.688 N·m");
         assert_eq!(with_unit("10".into(), "-"), "10");
         assert_eq!(with_unit("OK".into(), ""), "OK");
+    }
+
+    #[test]
+    fn the_sweep_tables_torque_unit_reads_as_every_other_torque_does() {
+        // The sweep columns keep the workbook header "Nm" (tests/schema.rs
+        // table_columns_match_the_workbook_headers holds them to it; the exports write it);
+        // the screen writes N·m, as for every other torque (spec 3.5).
+        assert_eq!(with_unit("2.688".into(), "Nm"), "2.688 N·m");
+        let sweep =
+            crate::engine::meta::result_rows(&crate::compute_all(&crate::DesignInputs::default()))
+                .into_iter()
+                .find(|row| row.path == "gap_sweep[0].pullout_op_Nm")
+                .expect("the gap sweep's pull-out column");
+        assert_eq!(
+            sweep.meta.unit, "Nm",
+            "the metadata keeps the workbook header"
+        );
+        assert_eq!(with_unit("1".into(), sweep.meta.unit), "1 N·m");
+        // Every other unit is written as the metadata has it.
+        assert_eq!(with_unit("2.688".into(), "N·m"), "2.688 N·m");
+        assert_eq!(with_unit("3".into(), "mm"), "3 mm");
     }
 
     #[test]

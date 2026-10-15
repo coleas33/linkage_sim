@@ -68,7 +68,7 @@ pub const ASSUMPTIONS: [Assumption; 14] = [
     },
     Assumption {
         id: "production_variation",
-        label: "Production variation",
+        label: "Production variation allowance",
         paths: &["metal.variation"],
         rationale: "Symmetric allowance on the pull-out for magnet, gap and assembly scatter: the hot low torque is the pull-out at the operating temperature times (1 − variation), the cold high torque the cold pull-out times (1 + variation). An engineering allowance, not measured.",
         source: "Workbook Metal design!C18 (±15 %).",

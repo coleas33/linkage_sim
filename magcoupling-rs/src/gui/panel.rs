@@ -4528,11 +4528,23 @@ mod tests {
             .unwrap_or_else(|| panic!("no {needle:?}"))
     }
 
+    /// The rect of `label` in the centre region: its leftmost copy right of the inputs side.
+    /// The dashboard, drawn before the centre, can carry the same name (the Size tab's Hot-low
+    /// torque readout and the dashboard row are one quantity, one name), so the first drawn
+    /// copy is not always the centre's.
+    fn centre_rect(output: &egui::FullOutput, label: &str) -> egui::Rect {
+        text_rects(output, label)
+            .into_iter()
+            .filter(|r| r.left() >= INPUTS_WIDTH)
+            .min_by(|a, b| a.left().total_cmp(&b.left()))
+            .unwrap_or_else(|| panic!("no {label:?} right of the inputs side"))
+    }
+
     /// The texts drawn on the row of the label `label` and right of it, nearest first, with
     /// their rects: what a readout row shows beside its label (texts further right on the same
     /// row, the dashboard's, come after).
     fn beside(output: &egui::FullOutput, label: &str) -> Vec<(String, egui::Rect)> {
-        let at = text_rect(output, label).unwrap_or_else(|| panic!("no {label:?}"));
+        let at = centre_rect(output, label);
         let mut row: Vec<(String, egui::Rect)> = crate::gui::test_support::flat_shapes(output)
             .into_iter()
             .filter_map(|shape| match shape {
@@ -4562,9 +4574,19 @@ mod tests {
         let output = harness.frame(Vec::new());
         let results = harness.panel.results().clone();
         let label = pullout_label(results.metal.op_temp_C);
-        for text in [REQUIRED, HOT_LOW, label.as_str()] {
+        for text in [REQUIRED, label.as_str()] {
             assert_eq!(count(&output, text), 1, "{text}");
         }
+        // Hot-low torque is the dashboard row's name too (spec 3.5): one readout in the centre.
+        let in_centre =
+            |r: &egui::Rect| r.left() >= INPUTS_WIDTH && r.right() <= SCREEN.x - DASHBOARD_WIDTH;
+        assert_eq!(
+            text_rects(&output, HOT_LOW)
+                .iter()
+                .filter(|r| in_centre(r))
+                .count(),
+            1
+        );
         assert_eq!(
             count(&output, "Expected torque"),
             0,
@@ -5018,7 +5040,7 @@ mod tests {
         );
         let label = pullout_label(results.metal.op_temp_C);
         for text in [REQUIRED, HOT_LOW, gap.as_str(), label.as_str()] {
-            let at = rect(text);
+            let at = centre_rect(&output, text);
             assert!(
                 at.left() >= inputs_right - 1.0 && at.right() <= dashboard_left + 1.0,
                 "{text:?} at {at:?} runs out of the centre ({inputs_right} to {dashboard_left})"
@@ -5666,7 +5688,7 @@ mod tests {
         harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
         let output = harness.frame(Vec::new());
         // 2 mm magnets: f_end <= 0 at every ring size, so no layout counts.
-        let line = "No valid value of ring size in range";
+        let line = "No valid value of ring radius in range";
         assert_eq!(count(&output, line), 1, "{:?}", drawn_texts(&output));
         assert_eq!(
             crate::gui::test_support::text_color(&output, line),
@@ -6307,6 +6329,28 @@ mod tests {
     }
 
     #[test]
+    fn the_size_tab_s_diameter_and_length_labels_say_what_they_move() {
+        use crate::gui::size_controls::{DIAMETER_HOVER, LENGTH_HOVER};
+        // R-3: the Outside diameter control had no hover; it and Overall length now say what
+        // they are and what moving them changes.
+        for (label, hover) in [(DIAMETER, DIAMETER_HOVER), (LENGTH, LENGTH_HOVER)] {
+            let mut harness = size_tab(SCREEN, DesignInputs::default());
+            tooltips_at_once(&harness.ctx);
+            let output = harness.frame(Vec::new());
+            let at = text_rect(&output, label)
+                .unwrap_or_else(|| panic!("no {label:?}"))
+                .center();
+            // egui shows a tooltip only after time has passed with the pointer on the widget.
+            harness.frame_after(0.5, vec![egui::Event::PointerMoved(at)]);
+            let output = harness.frame_after(0.5, Vec::new());
+            assert!(
+                drawn_texts(&output).iter().any(|t| t == hover),
+                "{label}: {hover:?}"
+            );
+        }
+    }
+
+    #[test]
     fn hovering_a_dashboard_value_shows_its_equation() {
         use crate::gui::readouts::OPEN_HINT;
         let mut harness = Harness::new();
@@ -6940,7 +6984,8 @@ mod tests {
         // the cell and the corrections only with the spreadsheet details (spec S2-5), the
         // label alone without them.
         let value_line = format!("T_pull = {}", displayed_pullout(&DesignInputs::default()));
-        let label = "Pull-out torque at operating temperature";
+        let label = label_for("model.pullout_Nm");
+        let header = format!("{label} (Calculator!C93)");
         for show_details in [false, true] {
             let mut harness = Harness::new();
             harness.panel.show_details = show_details;
@@ -6949,10 +6994,7 @@ mod tests {
             harness.frame(Vec::new());
             let output = harness.frame(Vec::new());
             assert_eq!(count(&output, &value_line), 1, "{value_line:?}");
-            for line in [
-                "Pull-out torque at operating temperature (Calculator!C93)",
-                "Embodies corrections: E7, E8, E3",
-            ] {
+            for line in [header.as_str(), "Embodies corrections: E7, E8, E3"] {
                 assert_eq!(count(&output, line), usize::from(show_details), "{line:?}");
             }
             assert_eq!(

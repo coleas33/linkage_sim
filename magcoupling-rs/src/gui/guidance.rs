@@ -280,7 +280,7 @@ const FIT_GUIDE: CheckGuide = CheckGuide {
     check: FIT_CHECK,
     label: "Magnets fit",
     problem: fit_problem,
-    why: "Each ring holds one block per pole; at a given ring size, more blocks leave each a narrower place, and a block wider than its place does not fit.",
+    why: "Each ring holds one block per pole; at a given ring radius, more blocks leave each a narrower place, and a block wider than its place does not fit.",
     fixes: Fixes::Static(&[(RING, Direction::Raise), (POLES, Direction::Lower)]),
     learn: Learn::None("No note covers block fit yet."),
 };
@@ -1647,7 +1647,9 @@ const FIT_RINGS: [(&str, &str, &str, &str); 2] = [
 fn fit_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
     failing(FIT_CHECK, inputs, results).then(|| {
         let n = inputs.coupling.npole;
-        let mut sentences = vec![format!("{n} blocks per ring do not fit at this ring size.")];
+        let mut sentences = vec![format!(
+            "{n} blocks per ring do not fit at this ring radius."
+        )];
         // The engine's rule, ring by ring: the rings it fails, each in its own terms.
         let rings = ring_fits(&inputs.coupling, &results.model);
         for (ring, (start, name, width, flat)) in rings.into_iter().zip(FIT_RINGS) {
@@ -1681,7 +1683,7 @@ pub const RING_SIZE_STAYS: &str = "The ring radius stays the same when you chang
 /// The first line under Magnets per ring with Auto on the ring size (physics review 3, N4): a
 /// new count changes the solve, so Auto solves the ring radius again, while the neighbour
 /// lines are built at the present ring.
-pub const AUTO_RESIZES_RING: &str = "Auto resizes the ring when you change the magnet count; the lines below keep the present ring size.";
+pub const AUTO_RESIZES_RING: &str = "Auto resizes the ring when you change the magnet count; the lines below keep the present ring radius.";
 
 /// The first line under Magnets per ring with Auto on the magnet length (physics review 3,
 /// N4): the ring stays, but Auto solves the length again, while the neighbour lines are built
@@ -3287,6 +3289,17 @@ mod tests {
         }
     }
 
+    #[test]
+    fn no_guide_text_calls_the_ring_radius_ring_size() {
+        // One name per quantity (spec 3.5): the input row says Ring radius, so no guide, fix,
+        // problem or consequence line says "ring size".
+        let mut texts = every_text();
+        texts.extend([RING_SIZE_STAYS, AUTO_RESIZES_RING, AUTO_RESETS_LENGTH].map(str::to_owned));
+        for text in texts {
+            assert!(!text.to_lowercase().contains("ring size"), "{text:?}");
+        }
+    }
+
     // ------------------------------------------------------------------ the Problems
 
     #[test]
@@ -3796,16 +3809,16 @@ mod tests {
     fn the_fit_problem_names_the_rings_that_do_not_fit() {
         assert_eq!(
             problem(FIT_CHECK, &with_poles(40)).unwrap(),
-            "40 blocks per ring do not fit at this ring size. Inner blocks are 6.350 mm wide on 1.598 mm flats. Outer blocks are 6.350 mm wide on 2.317 mm flats."
+            "40 blocks per ring do not fit at this ring radius. Inner blocks are 6.350 mm wide on 1.598 mm flats. Outer blocks are 6.350 mm wide on 2.317 mm flats."
         );
         assert_eq!(
             problem(FIT_CHECK, &with(with_poles(40), arcs)).unwrap(),
-            "40 blocks per ring do not fit at this ring size. The 40 inner blocks together need 344.5 % of the circle at their mid-radius. The 40 outer blocks together need 247.9 % of the circle at their mid-radius."
+            "40 blocks per ring do not fit at this ring radius. The 40 inner blocks together need 344.5 % of the circle at their mid-radius. The 40 outer blocks together need 247.9 % of the circle at their mid-radius."
         );
         // 12 flat blocks: the inner flats are too narrow, the outer ones are not.
         assert_eq!(
             problem(FIT_CHECK, &with_poles(12)).unwrap(),
-            "12 blocks per ring do not fit at this ring size. Inner blocks are 6.350 mm wide on 5.439 mm flats."
+            "12 blocks per ring do not fit at this ring radius. Inner blocks are 6.350 mm wide on 5.439 mm flats."
         );
         // The level follows the engine's fit rule, the one inverse sizing counts.
         for (name, inputs) in designs() {
@@ -4480,7 +4493,7 @@ mod tests {
             (
                 Some(FreeVariable::RingRadius),
                 Some(
-                    "Auto resizes the ring when you change the magnet count; the lines below keep the present ring size.",
+                    "Auto resizes the ring when you change the magnet count; the lines below keep the present ring radius.",
                 ),
             ),
             (
@@ -4838,6 +4851,41 @@ mod tests {
         emit("size tab/locked slider", sc::SET_BY_AUTO);
         emit("size tab/Auto label", sc::AUTO);
         emit("size tab/Auto suffix", sc::AUTO_SUFFIX);
+        emit("size tab/Auto hover", sc::AUTO_HOVER);
+        for variable in FreeVariable::ALL {
+            emit(
+                &format!("size tab/Auto choice/{variable:?}"),
+                crate::gui::sizing::auto_choice(variable),
+            );
+        }
+        emit("size tab/Required label", sc::REQUIRED);
+        emit("size tab/Hot-low label", sc::HOT_LOW);
+        emit("size tab/Outside diameter hover", sc::DIAMETER_HOVER);
+        emit("size tab/Overall length hover", sc::LENGTH_HOVER);
+        emit("size tab/footnote", sc::LINKED_HOUSING);
+        {
+            use crate::gui::plots as pl;
+            for (tag, text) in [
+                ("pull-out", pl::PULL_OUT),
+                ("torque-rotation curve", pl::TORQUE_CURVE),
+                ("pole sweep line", pl::PULL_OUT_SMALLEST_APOTHEM),
+                ("low band", pl::LOW_BAND),
+                ("high band", pl::HIGH_BAND),
+                ("required", pl::REQUIRED),
+                ("below the floor", pl::BELOW_MINIMUM),
+                ("sweep y axis", pl::SWEEP_Y_AXIS),
+            ] {
+                emit(&format!("plots/{tag}"), text);
+            }
+        }
+        emit(
+            "assumptions/production variation",
+            ASSUMPTIONS
+                .iter()
+                .find(|a| a.id == "production_variation")
+                .unwrap()
+                .label,
+        );
         emit("panel/welcome strip", crate::gui::panel::WELCOME);
 
         // The solved change of each free variable, from the default to each end of its slider,

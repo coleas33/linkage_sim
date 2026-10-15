@@ -826,11 +826,11 @@ fn equation_body(
     if show_details {
         ui.weak(format!(
             "{} ({})",
-            eq.label,
+            label_for(&eq.target),
             eq.cell.as_deref().unwrap_or("Rust-only result")
         ));
     } else {
-        ui.weak(eq.label);
+        ui.weak(label_for(&eq.target));
     }
     let colors = TermColors::of(eq);
     let ink = ui.visuals().text_color();
@@ -1420,22 +1420,19 @@ mod tests {
         let line = format!("{CORRECTIONS}: {}", ids.join(", "));
         let titles: Vec<String> = corrections.iter().map(|&id| correction_title(id)).collect();
         let titles = titles.join("\n");
-        let with_cell = format!("{} ({cell})", eq.label);
+        let label = crate::gui::plain_text::label_for(path);
+        let with_cell = format!("{label} ({cell})");
         for show_details in [false, true] {
             let mut explorer = Explorer::default();
             explorer.open_path(path);
             // The label line is drawn either way; hovered, the corrections line names each
             // correction's title.
-            let hovered = if show_details {
-                line.as_str()
-            } else {
-                eq.label
-            };
+            let hovered = if show_details { line.as_str() } else { label };
             let (before, output) = hover_in_panel(&mut explorer, show_details, hovered);
             let texts = drawn_texts(&before);
             assert_eq!(texts.contains(&line), show_details);
             assert_eq!(texts.contains(&with_cell), show_details);
-            assert_eq!(texts.contains(&eq.label.to_owned()), !show_details);
+            assert_eq!(texts.contains(&label.to_owned()), !show_details);
             assert_eq!(drawn_texts(&output).contains(&titles), show_details);
         }
     }

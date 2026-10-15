@@ -2340,4 +2340,16 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn the_production_variation_assumption_is_named_as_its_input() {
+        // Map-jargon T-15: the Assumptions view's heading and the input row name the allowance
+        // alike (spec 3.5).
+        let assumption = ASSUMPTIONS
+            .iter()
+            .find(|a| a.id == "production_variation")
+            .unwrap();
+        assert_eq!(assumption.paths, ["metal.variation"]);
+        assert_eq!(assumption.label, label_for("metal.variation"));
+    }
 }

@@ -91,7 +91,7 @@ pub const fn auto_choice(variable: FreeVariable) -> &'static str {
     match variable {
         FreeVariable::AxialLength => "magnet length",
         FreeVariable::MagnetsPerRing => "magnet count",
-        FreeVariable::RingRadius => "ring size",
+        FreeVariable::RingRadius => "ring radius",
     }
 }
 
@@ -814,7 +814,7 @@ mod tests {
     fn each_auto_choice_names_the_size_it_sets() {
         assert_eq!(auto_choice(FreeVariable::AxialLength), "magnet length");
         assert_eq!(auto_choice(FreeVariable::MagnetsPerRing), "magnet count");
-        assert_eq!(auto_choice(FreeVariable::RingRadius), "ring size");
+        assert_eq!(auto_choice(FreeVariable::RingRadius), "ring radius");
     }
 
     #[test]
@@ -831,7 +831,7 @@ mod tests {
         );
         assert_eq!(
             runner.status(&inputs, &state, range),
-            "No valid value of ring size in range"
+            "No valid value of ring radius in range"
         );
         assert_eq!(runner.shown(&inputs, &state, range), inputs);
     }
@@ -942,6 +942,25 @@ mod tests {
         assert_eq!(
             runner.status(&bad, &state, range),
             "Sizing refused: invalid inputs (coupling.backiron)"
+        );
+    }
+
+    #[test]
+    fn the_ring_radius_and_magnet_count_read_by_their_inputs_display_labels() {
+        use crate::gui::plain_text::label_for;
+        // The spreadsheet's free-variable cell and the Size tab's fallback line name the ring
+        // radius and the magnet count as their input rows do (spec 3.5).
+        for variable in [FreeVariable::RingRadius, FreeVariable::MagnetsPerRing] {
+            assert_eq!(
+                variable_label(variable),
+                label_for(variable.path()),
+                "{variable:?}"
+            );
+        }
+        // The Auto dropdown says the ring radius in a sentence's lowercase.
+        assert_eq!(
+            auto_choice(FreeVariable::RingRadius),
+            label_for(FreeVariable::RingRadius.path()).to_lowercase()
         );
     }
 }
