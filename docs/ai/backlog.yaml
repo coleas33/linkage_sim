@@ -5,6 +5,51 @@
 # user review of that item's diff before merge.
 # status: open | in_progress | fixed | deferred | rejected | escalated
 
+- id: BL-056
+  title: "Magcoupler teaching notes are dense, never say what to change and miss core topics; inputs lack help; on-screen jargon (four names for one radius, workbook cells, E-badges)"
+  dimension: gui
+  risk: physics
+  evidence: "Audit 2026-10-13 themes T4, T6 (note part), T7 and the rest of T5; read-only slice-2 research 2026-10-14 (docs/superpowers/specs/2026-10-14-magcoupler-guidance-2-research/synthesis.md, facts F1-F36): 17 notes, median sentence 31 words (max 85), 4 notes with serious problems (e.g. demagnetization 'here 863 kA/m' presents a stored 3D default as the user's design); 87 of 172 inputs with empty help (all Python-locked, tests/python_schema.rs:72-136); the ring radius has four on-screen names"
+  acceptance: "Spec docs/superpowers/specs/2026-10-14-magcoupler-guidance-2-design.md S2-1..S2-10 and section 6 tests: every note has What it is / What to change (structured, live input links) / Watch out with Sources folded; live values render at the five probe designs; three new notes and the 14-step Start here; display-name and help overlays with full help coverage; Show spreadsheet details toggle off by default; Why links from the Size tab, Required, Hot-low and the end-effect banner; plain-words guard over notes, help, tooltips and rationales; per-note session-model physics review committed (docs/analyses/2026-10-14-magcoupler-notes-review.md) and release_notes_are_reviewed un-ignored; owner sign-off of the note sheet; GATE PASS with gate 12 running"
+  priority: 2
+  status: in_progress
+  notes: "Owner decisions 2026-10-14: all recommended options (S2-1..S2-10) and rulings R1-R14. Engine gaps split out as BL-057..BL-060 (S2-9)."
+- id: BL-057
+  title: "E21 not landed: a negative calibration offset raises demagnetization onsets for hotter or stronger grades (non-conservative)"
+  dimension: physics
+  risk: physics
+  evidence: "Slice-2 physics research 2026-10-14 (phys-notes-b.md demagnetization s4; audit PA-16): the onset shift assumes a Pc = 1 knee rating; for N52, N50, N50M, N38UH, N35EH and 2:17 SmCo the offset is negative and raises onsets (N38UH +7.3 C, N35EH +3.6 C, N52 +9.7 C). E21 (clamp the offset at 0) is user-approved but absent from deviations.rs (docs/ai/04-memory.yaml)"
+  acceptance: "red test first: a grade with a negative offset gets an onset no higher than its unshifted value; deviation E21 registered with its audit row and probes; demagnetization note and its watch-out updated in the same commit; physics review; GATE PASS"
+  priority: 2
+  status: open
+  notes: "Split from BL-056 (S2-9). The slice-2 demagnetization note carries a watch-out until this lands."
+- id: BL-058
+  title: "E22 not landed: the NdFeB bond-plane CTE is used for every magnet grade in the expansion caution"
+  dimension: physics
+  risk: physics
+  evidence: "Slice-2 physics research 2026-10-14 (phys-notes-c.md a5.cte_mismatch_with_magnets; audit PA-13): ferrite and SmCo rings expand far more in that plane than the NdFeB value used; no E22 in deviations.rs"
+  acceptance: "red test first: the caution's expansion figure follows the selected grade family; deviation E22 registered; a5.cte note updated in the same commit; physics review; GATE PASS"
+  priority: 3
+  status: open
+  notes: "Split from BL-056 (S2-9)."
+- id: BL-059
+  title: "Nothing checks cold-high torque at the gearbox input against its rating (0.805 N m against a 0.6 N m rating at the defaults)"
+  dimension: physics
+  risk: physics
+  evidence: "Slice-2 research 2026-10-14 (synthesis.md section 3, decision 9; finding T-G): the coupling slips at its pull-out, largest cold and at the + end of the variation, so the gearbox input sees up to the cold-high torque through the ratio; no dashboard row compares it with a gearbox limit"
+  acceptance: "owner confirms the limit and where it comes from; then a red test, a dashboard check with its slice-1 guide (Problem, Why, Fix), and the when_slipping note updated; physics review; GATE PASS"
+  priority: 2
+  status: open
+  notes: "Split from BL-056 (S2-9). Needs the owner's answer first: is 0.6 N m the right gearbox input limit? Until then no note may say the coupling protects the gearbox."
+- id: BL-060
+  title: "The clamp's Boss outside diameter (Shaft clamps, 25 mm) is unlinked from the drawn Shaft boss outside diameter (Metal design, 22 mm)"
+  dimension: physics
+  risk: physics
+  evidence: "Slice-2 research 2026-10-14 (phys-notes-b.md clamp_preload): the clamp is sized on its own boss input; the outside diameter, drawing and mass use the other (size_controls.rs:81); at 22 mm with the 10 mm clamp no screw size works"
+  acceptance: "decide link or explicit warning; red test; the clamp_preload note's watch-out updated; GATE PASS"
+  priority: 3
+  status: open
+  notes: "Split from BL-056 (S2-9)."
 - id: BL-055
   title: "Magcoupler gives no cause, remedy or consequence on screen: two unlinked torque targets, an invisible size model, red checks without guidance"
   dimension: gui
