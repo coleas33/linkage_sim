@@ -217,7 +217,7 @@ pub const NOTES: &[Note] = &[
             "It equals a sine wave, the fundamental (one wave per pair of poles), plus weaker odd harmonics with 3, 5, 7 times the waves.",
             "The fundamental grows with sin(π·λ/2), where the fill λ is the block's width over the room each pole has on that ring.",
             "Each harmonic pulls only on its match on the other ring; higher pairs usually add little, being weaker and fading faster across the gap.",
-            "On this design the fills are {model.fill_inner} inner and {model.fill_outer} outer, and the fundamental gives σ_1 = {model.tau1_Pa} of the total σ = {model.tau_Pa}.",
+            "On this design the fills are {model.fill_inner} inner and {model.fill_outer} outer; at pull-out the fundamental gives σ_1 = {model.tau1_Pa}, the summed harmonics σ = {model.tau_Pa}.",
         ],
         change: &[
             Change {
@@ -242,7 +242,7 @@ pub const NOTES: &[Note] = &[
                 input: "coupling.max_harmonic",
                 step: Step::Choose,
                 aim: None,
-                text: "a model setting, not a design lever: keep at least 1, 3, 5; adding more moved the pull-out under 2 % where checked.",
+                text: "a model setting, not a design lever: keep at least 1, 3, 5; more for narrow, widely spaced blocks, where higher harmonics can move pull-out.",
             },
         ],
         watch_out: &[
@@ -1463,9 +1463,10 @@ mod tests {
     }
 
     /// The notes rewritten in plain words so far (slice-2 spec 3.4, A-13): each note task adds
-    /// its ids; the task that turns the all-notes tests on deletes this list and the two tests
-    /// it drives, `the_rewritten_notes_read_in_plain_words` and
-    /// `the_rewritten_notes_keep_to_the_slice_2_caps`.
+    /// its ids, which holds those notes to plain words and to the caps, so no per-id
+    /// `cap_problems` assert (A-15) is needed beside it; the task that turns the all-notes tests
+    /// on deletes this list and the two tests it drives, `the_rewritten_notes_read_in_plain_words`
+    /// and `the_rewritten_notes_keep_to_the_slice_2_caps`.
     const REWRITTEN: &[&str] = &[
         "torque_from_shear",
         "harmonics",

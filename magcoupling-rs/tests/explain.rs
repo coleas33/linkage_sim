@@ -41,6 +41,7 @@ use magcoupling::engine::meta::{
     FieldType, InputMeta, InputSet, ResultSet, Value, input_rows, result_rows,
 };
 use magcoupling::engine::model::blocks_fit;
+use magcoupling::engine::size_controls::with_ring_radius;
 
 /// One input set the guard evaluates at.
 struct Point {
@@ -1266,10 +1267,11 @@ fn torque_from_shear_claims_hold_on_the_engine() {
     );
 }
 
-/// `harmonics` states two things about the engine. Its harmonic-set entry: summing past the
-/// fifth moved the pull-out under 2 % where checked (the five probe designs). Its watch-out: at
-/// low fill the third harmonic can change the pull-out by more than a tenth and move its angle
-/// (the 20 mm ring radius design, both fills under one half).
+/// `harmonics` states two things about the engine. Its harmonic-set entry, "keep at least 1, 3,
+/// 5": at the five probe designs summing past the fifth moves the pull-out under 2 % (designs
+/// off the probes where it moves more: `harmonics_claims_hold_off_the_probe_designs`). Its
+/// watch-out: at low fill the third harmonic can change the pull-out by more than a tenth and
+/// move its angle (the 20 mm ring radius design, both fills under one half).
 #[test]
 fn harmonics_claims_hold_at_the_probe_designs() {
     let with_set = |inputs: &DesignInputs, set: i64| {
@@ -1306,6 +1308,84 @@ fn harmonics_claims_hold_at_the_probe_designs() {
         "{}",
         third.pullout_angle_rad
     );
+}
+
+/// `harmonics` off the five probe designs, on designs the Size tab reaches from the example
+/// design with its library parts (T12 task review, I1 and I2).
+/// - The harmonic-set entry. At the fewest magnets per ring the slider allows, on the probes'
+///   20 mm ring, each block is narrower than the space beside it (both fills under one half:
+///   narrow, widely spaced blocks), and summing past the fifth harmonic moves the pull-out by
+///   more than a twentieth. So the entry names that case and states no bound on the change.
+/// - The σ line. At pull-out the fundamental's stress σ_1 is below the summed σ on the example
+///   design but above it on a 17.5 mm ring, where a same-sign third harmonic subtracts at 90°.
+///   So the sentence that draws both values says where they are taken and words neither as a
+///   share of the other.
+#[test]
+fn harmonics_claims_hold_off_the_probe_designs() {
+    let example = DesignInputs::default();
+    let harmonics = notes::note("harmonics").expect("the harmonics note");
+
+    let fewest = input_rows(&example)
+        .into_iter()
+        .find(|row| row.path == "coupling.npole")
+        .and_then(|row| row.meta.range)
+        .expect("the magnet count has a slider")
+        .min as i64;
+    let mut few = example.clone();
+    few.coupling.npole = fewest;
+    let spaced = with_ring_radius(&few, probes::PROBE_RING_RADIUS_MM)
+        .expect("the Size tab reaches the probes' ring radius at the fewest magnets");
+    let model = compute_all(&spaced).model;
+    assert!(blocks_fit(&spaced.coupling, &model), "{fewest} magnets fit");
+    assert!(
+        model.fill_inner < 0.5 && model.fill_outer < 0.5,
+        "narrow, widely spaced: fills {} {}",
+        model.fill_inner,
+        model.fill_outer
+    );
+    let to_fifth = pullout_after(&spaced, |i| i.coupling.max_harmonic = 5);
+    let to_eleventh = pullout_after(&spaced, |i| i.coupling.max_harmonic = 11);
+    assert!(
+        (to_eleventh / to_fifth - 1.0).abs() > 0.05,
+        "{fewest} magnets: {to_fifth} -> {to_eleventh}"
+    );
+    let entry = harmonics
+        .change
+        .iter()
+        .find(|c| c.input == "coupling.max_harmonic")
+        .expect("the harmonic-set entry");
+    assert!(
+        entry.text.contains("narrow, widely spaced blocks") && !entry.text.contains('%'),
+        "names the case, bounds no change: {:?}",
+        entry.text
+    );
+
+    let split = |inputs: &DesignInputs| {
+        let m = compute_all(inputs).model;
+        (m.tau1_Pa, m.tau_Pa)
+    };
+    let (first, summed) = split(&example);
+    assert!(first < summed, "example design: {first} against {summed}");
+    let larger_ring = with_ring_radius(&example, 17.5).expect("the Size tab reaches 17.5 mm");
+    let (first, summed) = split(&larger_ring);
+    assert!(first > summed, "17.5 mm ring: {first} against {summed}");
+    let line = harmonics
+        .sentences
+        .iter()
+        .find(|s| s.contains("{model.tau1_Pa}") && s.contains("{model.tau_Pa}"))
+        .expect("the sentence that draws σ_1 and σ");
+    let between =
+        &line[line.find("{model.tau1_Pa}").expect("σ_1")..line.find("{model.tau_Pa}").expect("σ")];
+    assert!(
+        line.contains("at pull-out"),
+        "where the split is taken: {line:?}"
+    );
+    for share in [" of ", "total", "share", "part"] {
+        assert!(
+            !between.contains(share),
+            "{share:?} between σ_1 and σ: {line:?}"
+        );
+    }
 }
 
 /// `harmonics`' outer-part entry, on the example design. B862, a wider outer block of equal

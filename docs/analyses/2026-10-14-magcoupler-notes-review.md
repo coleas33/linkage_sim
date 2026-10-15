@@ -540,7 +540,71 @@ Seeds (A-24):
 
 Should-fix offered, not applied (open for the controller; no on-screen text changed after the
 round-5 PASS):
-- Round 1 S-1: say where sentences[4] takes the split: "On this design the fills are {model.fill_inner} inner and {model.fill_outer} outer; at pull-out the fundamental gives σ_1 = {model.tau1_Pa} of the total σ = {model.tau_Pa}." (25 words). At the 20 mm design both values are read at the 52.96° pull-out angle, so "σ_1 = 64870 Pa of the total σ = 71440 Pa" can read as the harmonics adding 10 %, while the third harmonic lowers the pull-out by 12.4 % against the fundamental alone.
+- Round 1 S-1: say where sentences[4] takes the split: "On this design the fills are {model.fill_inner} inner and {model.fill_outer} outer; at pull-out the fundamental gives σ_1 = {model.tau1_Pa} of the total σ = {model.tau_Pa}." (25 words). At the 20 mm design both values are read at the 52.96° pull-out angle, so "σ_1 = 64870 Pa of the total σ = 71440 Pa" can read as the harmonics adding 10 %, while the third harmonic lowers the pull-out by 12.4 % against the fundamental alone. (Superseded by the task review fix round 1 below, which adds "at pull-out" and drops "of the total".)
+
+### Task review fix round 1 (2026-10-15): the harmonic-set entry and the σ line
+
+- The task code review (`task-12-review.md`, Important I1 and I2) found two fields that hold at
+  the five probe designs but not on designs the sliders reach with the example design's library
+  parts. Its grid: the ring radius from 9 to 30 mm by 0.5 mm against 4 to 40 magnets per ring;
+  353 of those designs fit. The fix round reproduced every number below with a scratch probe
+  outside the repo.
+- **change[3].text** (`coupling.max_harmonic`; input, step and aim unchanged):
+  - Old: "a model setting, not a design lever: keep at least 1, 3, 5; adding more moved the
+    pull-out under 2 % where checked."
+  - New: "a model setting, not a design lever: keep at least 1, 3, 5; more for narrow, widely
+    spaced blocks, where higher harmonics can move pull-out." (25 words)
+  - Why: "where checked" meant the five probe designs, which the reader cannot see. Summing up
+    to 11 in place of 1, 3, 5 moves the pull-out by more than 2 % at 36 of the 353 designs, by
+    up to 43.89 % (4 magnets on a 30 mm ring), and every one of the 36 has both fills under
+    0.224. T9's G-3 design (4 magnets, 30 mm, 1 mm custom blocks, 0.3 mm gap, no back iron)
+    gives +284.43 %. T9's G-3 review had rejected seed S-16 ("Past the fifth they add little")
+    for this reason.
+  - The new text names the case in the words of the input's own help ("Higher ones matter most
+    for narrow, widely spaced blocks"), which `model::tests::higher_harmonics_matter_most_for_narrow_widely_spaced_blocks`
+    pins. Narrow blocks keep their higher harmonics strong; a long pole pitch, from few magnets
+    on a large ring, lets them cross the gap. With custom block widths (a coarser grid, 634
+    fitting designs) the largest change falls as the smaller fill rises:
+    - up to 116 % below 0.1, and 49 % between 0.1 and 0.2;
+    - 8 to 11 % between 0.2 and 0.5;
+    - 5.65 % between 0.5 and 0.6, and 2.66 % between 0.6 and 0.7;
+    - at most 1.09 % above 0.7.
+
+    The few cases above 2 % at a fill over one half are 4 or 8 magnets on 18 to 30 mm rings:
+    wide blocks, but widely spaced.
+- **sentences[4]**:
+  - Old: "On this design the fills are {model.fill_inner} inner and {model.fill_outer} outer, and
+    the fundamental gives σ_1 = {model.tau1_Pa} of the total σ = {model.tau_Pa}."
+  - New: "On this design the fills are {model.fill_inner} inner and {model.fill_outer} outer; at
+    pull-out the fundamental gives σ_1 = {model.tau1_Pa}, the summed harmonics σ =
+    {model.tau_Pa}." (25 words)
+  - Why: both values are taken at the pull-out angle, and σ sums each harmonic there; a
+    same-sign third harmonic subtracts at 90°. σ_1 exceeds σ at 114 of the 353 designs, from 6
+    to 28 magnets per ring. For example:
+    - 12 magnets on a 12 mm ring: 211331 against 210445 Pa;
+    - 14 magnets on a 26.5 mm ring: 99669 against 87528 Pa;
+    - the example design with only its ring moved to 17.5 mm on the Size tab: 103045 against
+      92559 Pa.
+
+    There "σ_1 ... of the total σ" put a part above its whole: a comparison whose truth depends
+    on the values, which spec 3.2 forbids. The new line says where both are taken (round 1's
+    S-1) and makes no share claim. Rendered at the five probe designs (default, 8 magnets, 304,
+    Y30, 20 mm): σ_1 = 200000, 149100, 113800, 15400 and 64870 Pa; the summed harmonics σ =
+    201400, 151800, 115100, 15510 and 71440 Pa.
+- **Tests.** New: `tests/explain.rs` `harmonics_claims_hold_off_the_probe_designs`, computed
+  from the engine:
+  - at the slider's fewest magnets on the probes' 20 mm ring (Size tab), the blocks fit, both
+    fills are under one half, and summing to 11 moves the pull-out by more than a twentieth
+    (+8.58 %); the harmonic-set entry names "narrow, widely spaced blocks" and states no bound
+    (no "%");
+  - σ_1 lies below σ on the example design and above it on a 17.5 mm ring; the sentence that
+    draws both says "at pull-out", and no " of ", "total", "share" or "part" stands between the
+    two values. Round 1's S-1 text alone (with "of the total") fails it.
+
+  `harmonics_claims_hold_at_the_probe_designs` keeps its under-2 % pin at the five probe
+  designs, as the evidence for "keep at least 1, 3, 5" there.
+- A text re-review of these two fields follows (controller ruling 7). Its report goes below as
+  `### Re-review: task review fix round 1`.
 
 ## back_iron_factor
 
