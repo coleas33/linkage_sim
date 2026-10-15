@@ -142,10 +142,64 @@ pub struct Note {
     pub review: Review,
 }
 
-/// Every note: 17, the spec's list (harmonics, back iron, pull-out against angle, end effect,
+/// Every note: 18, the spec's list (harmonics, back iron, pull-out against angle, end effect,
 /// Br(T), demagnetization, slip loss, the thermal time constant, clamps and the six A5
-/// warnings) plus ferrite's cold side (spec A6) and the one-point calibration.
+/// warnings) plus ferrite's cold side (spec A6), the one-point calibration and slice 2's
+/// torque_from_shear (how the coupling makes torque, Start here step 1).
 pub const NOTES: &[Note] = &[
+    Note {
+        id: "torque_from_shear",
+        title: "How the coupling makes torque",
+        equations: &[
+            "model.torque_2d_Nm",
+            "model.area_lever_m3",
+            "model.gap_radius_mm",
+            "model.pole_pitch_mm",
+            "model.active_length_mm",
+        ],
+        sentences: &[
+            "Twist one ring against the other and the magnets across the gap pull each other back into line, so the rings pass torque.",
+            "That sideways pull, spread over the cylinder at the gap's mid radius R_g, is a shear stress σ (at its peak, here: {model.tau_Pa}).",
+            "σ times the cylinder's area 2π·R_g·L, times lever arm R_g, is the endless-ring torque T_2D = σ·2π·R_g²·L (magnet ends ignored), L the overlapping magnet length.",
+            "σ grows with stronger magnet grades and magnetic steel behind the magnets; it falls as the gap widens or blocks fill less of each pole.",
+            "The magnet count N keeps the gap radius R_g: blocks share one ring, each pole spanning τ_p = 2π·R_g/N; fewer flat blocks grow the cup.",
+        ],
+        change: &[
+            Change {
+                input: "coupling.magnets.axial_length_mm",
+                step: Step::Raise,
+                aim: Some(("model.pullout_Nm", Sense::Up)),
+                text: "torque rises almost linearly; on the example design each millimetre beats a millimetre of radius. Costs: longer stack, higher clamp and gearbox loads.",
+            },
+            Change {
+                input: "coupling.inner_back_apothem_mm",
+                step: Step::Raise,
+                aim: Some(("model.area_lever_m3", Sense::Up)),
+                text: "more area and lever arm; at the same magnet count the blocks spread apart, so add magnets as it grows. The cup grows too.",
+            },
+            Change {
+                input: "coupling.npole",
+                step: Step::Raise,
+                aim: Some(("model.torque_2d_Nm", Sense::Up)),
+                text: "blocks fill more of each pole and torque usually rises, until they stop fitting; fewer usually lose torque and, with flat blocks, grow the cup.",
+            },
+        ],
+        watch_out: &[
+            "T_2D grows as R_g² only at fixed σ: a larger ring with the same magnet count fills each pole less, so the pull-out can even fall.",
+            "The dashboard's pull-out torque is T_2D corrected for the magnet ends and by a calibration factor (here: {model.torque_2d_Nm} becomes {model.pullout_Nm}).",
+        ],
+        diagram: None,
+        sources: &[
+            "The torque model's equations: gap radius, pole pitch, overlapping length, area times lever arm, and the endless-ring torque",
+            "Math audit of 2026-09-29: the planar harmonic model against exact 2D sections and real 3D rings",
+            "Guidance audit of 2026-10-13: probes of 10 against 8 magnets, and of magnet length against ring radius",
+        ],
+        review: Review::Reviewed {
+            reviewer: "physics reviewer (session model)",
+            date: "2026-10-14",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#torque_from_shear",
+        },
+    },
     Note {
         id: "harmonics",
         title: "Harmonic decomposition",
@@ -641,22 +695,24 @@ pub const NOTES: &[Note] = &[
     },
 ];
 
-/// The suggested reading order (spec A4 "Start here": torque chain → back iron →
-/// temperature → demagnetization → slip heating → clamps): (note id, the equation it opens).
+/// The suggested reading order (slice-2 spec 3.3: how the coupling makes torque, the torque
+/// chain with back iron, temperature, slipping and its heat, demagnetization, clamps): (note id,
+/// the equation it opens). The slice's two later notes join at steps 8 and 9.
 pub const START_HERE: &[(&str, &str)] = &[
+    ("torque_from_shear", "model.torque_2d_Nm"),
     ("harmonics", "model.tau_Pa"),
+    ("back_iron_factor", "model.s1_iron"),
     ("pullout_angle", "model.pullout_Nm"),
     ("end_effect", "model.f_end"),
     ("calibration", "model.f_cal"),
-    ("back_iron_factor", "model.s1_iron"),
     ("br_temperature", "model.pullout_20C_Nm"),
-    ("demagnetization", "temperature.demag.onset_skipping_C"),
-    ("ferrite_cold_demag", "temperature.demag.cold_check"),
     ("slip_heating", "temperature.slip_loss.total_W"),
     (
         "thermal_time_constant",
         "temperature.thermal.time_constant_s",
     ),
+    ("demagnetization", "temperature.demag.onset_skipping_C"),
+    ("ferrite_cold_demag", "temperature.demag.cold_check"),
     ("clamp_preload", "clamps.capacity_Nm"),
 ];
 
@@ -814,6 +870,68 @@ mod tests {
                 assert_eq!(note_for(&path).is_some(), reviewed, "{}: {path}", n.id);
             }
         }
+    }
+
+    /// Slice-2 spec 3.3: Start here's 14 steps, in this order. A step whose note a later task of
+    /// the slice adds is skipped until then, so every task keeps the order (T18 asserts all 14).
+    const SLICE_2_ORDER: [&str; 14] = [
+        "torque_from_shear",
+        "harmonics",
+        "back_iron_factor",
+        "pullout_angle",
+        "end_effect",
+        "calibration",
+        "br_temperature",
+        "hot_low_cold_high",
+        "when_slipping",
+        "slip_heating",
+        "thermal_time_constant",
+        "demagnetization",
+        "ferrite_cold_demag",
+        "clamp_preload",
+    ];
+
+    #[test]
+    fn start_here_follows_the_slice_2_order_from_how_the_coupling_makes_torque() {
+        let ids: Vec<&str> = START_HERE.iter().map(|&(id, _)| id).collect();
+        let want: Vec<&str> = SLICE_2_ORDER
+            .iter()
+            .copied()
+            .filter(|id| ids.contains(id))
+            .collect();
+        assert_eq!(
+            ids, want,
+            "spec 3.3 order (a step outside the list fails too)"
+        );
+        assert_eq!(START_HERE[0], ("torque_from_shear", "model.torque_2d_Nm"));
+        // The step-1 note owns the area-and-lever chain (spec 3.3 R3).
+        for path in [
+            "model.torque_2d_Nm",
+            "model.area_lever_m3",
+            "model.gap_radius_mm",
+            "model.pole_pitch_mm",
+            "model.active_length_mm",
+        ] {
+            assert_eq!(
+                note_for_any_status(path).map(|n| n.id),
+                Some("torque_from_shear"),
+                "{path}"
+            );
+        }
+    }
+
+    /// The step-1 note keeps to the slice-2 caps and its sentence 0 is plain words, ahead of
+    /// the all-notes tests that stay ignored until every note is rewritten.
+    #[test]
+    fn torque_from_shear_keeps_to_the_slice_2_caps() {
+        let id = "torque_from_shear";
+        let note = note(id).unwrap_or_else(|| panic!("no note {id}"));
+        assert_eq!(cap_problems(note), Vec::<String>::new(), "{id}");
+        assert_eq!(
+            sentence_zero_problems(note.sentences[0]),
+            Vec::<&str>::new(),
+            "{id}"
+        );
     }
 
     #[test]
@@ -1245,7 +1363,7 @@ mod tests {
     /// The notes rewritten in plain words so far (slice-2 spec 3.4, A-13): each note task adds
     /// its ids; the task that turns the all-notes tests on deletes this list and
     /// `the_rewritten_notes_read_in_plain_words`.
-    const REWRITTEN: &[&str] = &[];
+    const REWRITTEN: &[&str] = &["torque_from_shear"];
 
     #[test]
     fn the_plain_words_rule_names_each_kind_of_mistake() {

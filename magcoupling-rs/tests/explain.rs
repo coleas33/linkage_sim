@@ -1220,6 +1220,52 @@ fn notes_link_to_records_and_each_equation_has_at_most_one() {
 }
 
 // ---------------------------------------------------------------------------------------
+// Slice-2 notes: what the note text claims about the engine
+// ---------------------------------------------------------------------------------------
+
+/// The pull-out of `inputs` after `edit`.
+fn pullout_after(inputs: &DesignInputs, edit: impl FnOnce(&mut DesignInputs)) -> f64 {
+    let mut edited = inputs.clone();
+    edit(&mut edited);
+    compute_all(&edited).model.pullout_Nm
+}
+
+/// The probe design named `name` (spec 3.2, `probes::probe_designs`).
+fn probe_inputs(name: &str) -> DesignInputs {
+    probes::probe_designs()
+        .into_iter()
+        .find(|(design, _)| *design == name)
+        .map(|(_, inputs)| inputs)
+        .unwrap_or_else(|| panic!("no probe design {name:?}"))
+}
+
+/// `torque_from_shear` states two things about the engine. Its length entry: on the example
+/// design a millimetre of magnet length adds more pull-out than a millimetre of ring radius.
+/// Its first watch-out: a larger ring at the same magnet count can lower the pull-out (the
+/// 8-magnet probe design, 1 mm larger).
+#[test]
+fn torque_from_shear_claims_hold_on_the_engine() {
+    let example = DesignInputs::default();
+    let results = compute_all(&example);
+    let (base, length) = (results.model.pullout_Nm, results.model.inner_length_mm);
+    let per_mm_length = pullout_after(&example, |i| {
+        i.coupling.magnets.axial_length_mm = Some(length + 1.0);
+    }) - base;
+    let per_mm_radius = pullout_after(&example, |i| i.coupling.inner_back_apothem_mm += 1.0) - base;
+    assert!(
+        per_mm_radius > 0.0 && per_mm_length > per_mm_radius,
+        "per mm: length {per_mm_length}, ring radius {per_mm_radius}"
+    );
+    let eight = probe_inputs("8 magnets per ring");
+    let before = compute_all(&eight).model.pullout_Nm;
+    let after = pullout_after(&eight, |i| i.coupling.inner_back_apothem_mm += 1.0);
+    assert!(
+        after < before,
+        "8 magnets, ring radius +1 mm: {before} -> {after}"
+    );
+}
+
+// ---------------------------------------------------------------------------------------
 // A3 traceability
 // ---------------------------------------------------------------------------------------
 

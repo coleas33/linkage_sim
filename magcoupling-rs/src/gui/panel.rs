@@ -7583,6 +7583,47 @@ mod tests {
     }
 
     #[test]
+    fn with_auto_on_the_step_1_note_names_the_length_auto_holds_and_draws_the_design_shown() {
+        // Review Focus RF-1 (A-25 T-1): Auto on, its default free variable the axial magnet
+        // length. torque_from_shear offers "Raise <axial magnet length>": that entry is plain
+        // text with the reason, a click on its label asks for no row, and the note's live
+        // value is the design shown's (the solved length in place).
+        use crate::engine::explain::note_text;
+        use crate::engine::explain::notes::note;
+        use crate::gui::explorer::{HELD_BY_AUTO, live_value};
+        let id = "torque_from_shear";
+        let mut harness = Harness::on_screen(TALL);
+        harness.size();
+        assert_eq!(
+            harness.panel.sizing(),
+            &SizingState {
+                mode: SizingMode::TorqueToMagnets,
+                variable: FreeVariable::AxialLength,
+            }
+        );
+        harness.panel.explorer.open_note(id);
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &format!(" ({HELD_BY_AUTO})")), 1);
+        let shown = compute_all(&harness.panel.shown_inputs());
+        let sentence = note(id).unwrap().sentences[1];
+        let drawn = note_text::render(sentence, |p| live_value(&shown, p));
+        assert_eq!(count(&output, &drawn), 1, "{drawn:?}");
+        let label = centre_rect(&output, label_for(AXIAL_LENGTH));
+        harness.click(label.center());
+        assert_eq!(
+            harness.panel.explorer.focus(),
+            None,
+            "a held input is no link"
+        );
+        assert_eq!(
+            harness.panel.explorer.note(),
+            Some(id),
+            "the note stays open"
+        );
+    }
+
+    #[test]
     fn every_start_here_step_shows_with_glyphs_in_the_default_fonts() {
         // The bar names each step's note (one title holds ∝, decision M43-6); it sits above
         // the panel's scroll area, so it is drawn whatever the panel's height.

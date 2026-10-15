@@ -102,6 +102,10 @@ pub const EXPLAIN: &str = "Explain";
 /// The button that starts the suggested reading order.
 pub const START_HERE_BUTTON: &str = "Start here";
 
+/// The Start here button's hover: the walk's topics in [`START_HERE`]'s order (slice-2 spec
+/// 3.3), in plain words.
+pub const START_HERE_HOVER: &str = "A suggested order: how the coupling makes torque, the magnet pattern, back iron, pull-out, magnet ends, calibration, temperature, slipping and its heat, demagnetization, clamps";
+
 /// The start-here steps' buttons.
 pub const PREVIOUS: &str = "Previous";
 pub const NEXT: &str = "Next";
@@ -530,7 +534,7 @@ pub fn explorer_ui(
             }
             if ui
                 .button(START_HERE_BUTTON)
-                .on_hover_text("A suggested order: torque, back iron, temperature, demagnetization, slip heating, clamps")
+                .on_hover_text(START_HERE_HOVER)
                 .clicked()
             {
                 explorer.start(0);
@@ -1283,10 +1287,13 @@ mod tests {
         assert_eq!(
             start_here_text(0),
             format!(
-                "{START_HERE_BUTTON} 1 of {}: Harmonic decomposition",
+                "{START_HERE_BUTTON} 1 of {}: How the coupling makes torque",
                 START_HERE.len()
             )
         );
+        // The button's hover names the walk's topics in plain words, step 1's first.
+        assert!(crate::gui::guidance::plain_text_violations(START_HERE_HOVER).is_empty());
+        assert!(START_HERE_HOVER.starts_with("A suggested order: how the coupling makes torque"));
     }
 
     #[test]
