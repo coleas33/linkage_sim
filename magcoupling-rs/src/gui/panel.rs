@@ -7587,7 +7587,8 @@ mod tests {
         // Review Focus RF-1 (A-25 T-1): Auto on, its default free variable the axial magnet
         // length. torque_from_shear offers "Raise <axial magnet length>": that entry is plain
         // text with the reason, a click on its label asks for no row, and the note's live
-        // value is the design shown's (the solved length in place).
+        // values are the design shown's (the solved length in place), not the stored inputs'
+        // (the axial override blank).
         use crate::engine::explain::note_text;
         use crate::engine::explain::notes::note;
         use crate::gui::explorer::{HELD_BY_AUTO, live_value};
@@ -7605,10 +7606,26 @@ mod tests {
         harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, &format!(" ({HELD_BY_AUTO})")), 1);
-        let shown = compute_all(&harness.panel.shown_inputs());
-        let sentence = note(id).unwrap().sentences[1];
-        let drawn = note_text::render(sentence, |p| live_value(&shown, p));
+        let shown_inputs = harness.panel.shown_inputs();
+        assert_ne!(
+            &shown_inputs,
+            harness.panel.inputs(),
+            "the solved length, not the blank override"
+        );
+        let shown = compute_all(&shown_inputs);
+        let stored = compute_all(harness.panel.inputs());
+        let step_1 = note(id).unwrap();
+        let drawn = note_text::render(step_1.sentences[1], |p| live_value(&shown, p));
         assert_eq!(count(&output, &drawn), 1, "{drawn:?}");
+        // σ takes no magnet length, so sentence 1 reads alike on both designs. The second
+        // watch-out's T_2D and pull-out move with the length: the design shown's copy is drawn,
+        // the stored inputs' is not.
+        let watch_out = |results: &DesignResults| {
+            note_text::render(step_1.watch_out[1], |p| live_value(results, p))
+        };
+        let (drawn, not_drawn) = (watch_out(&shown), watch_out(&stored));
+        assert_eq!(count(&output, &drawn), 1, "{drawn:?}");
+        assert_eq!(count(&output, &not_drawn), 0, "{not_drawn:?}");
         let label = centre_rect(&output, label_for(AXIAL_LENGTH));
         harness.click(label.center());
         assert_eq!(
