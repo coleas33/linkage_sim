@@ -8,10 +8,11 @@ mod common;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use common::{cell_values_for, num};
+use common::{cell_values_for, code_names, num, provenance_words};
 use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::Deviations;
+use magcoupling::engine::explain::plain::plain_text_violations;
 use magcoupling::engine::material_library::{
     BACK_IRON_CHOICES, CAP_HOUSING_CHOICES, SLEEVE_LINER_CHOICES, material,
 };
@@ -399,4 +400,24 @@ fn each_warning_fires_on_the_design_that_meets_its_condition() {
     let mut bare_304 = with_back_iron(7);
     bare_304.materials.nickel.thickness_mm = 0.0;
     assert_eq!(fired(&bare_304), open_circuit, "stainless needs no plating");
+}
+
+#[test]
+fn every_warning_text_reads_in_plain_words() {
+    // Spec 3.4: the warning texts are drawn over the dashboard and are the value of their
+    // result: plain words, no spreadsheet, audit or code names.
+    use magcoupling::engine::warnings::WARNING_RULES;
+    let mut failures = Vec::new();
+    for rule in WARNING_RULES {
+        let guard = plain_text_violations(rule.text);
+        let provenance = provenance_words(rule.text);
+        let code = code_names(rule.text);
+        if !(guard.is_empty() && provenance.is_empty() && code.is_empty()) {
+            failures.push(format!(
+                "{}: {guard:?} {provenance:?} {code:?}: {}",
+                rule.id, rule.text
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
 }

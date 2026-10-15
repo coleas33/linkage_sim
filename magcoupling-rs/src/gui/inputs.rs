@@ -78,7 +78,7 @@ impl InputOrder {
     pub const fn label(self) -> &'static str {
         match self {
             InputOrder::Workflow => "By workflow",
-            InputOrder::Workbook => "Workbook groups",
+            InputOrder::Workbook => "By original sheet",
         }
     }
 }
@@ -532,13 +532,13 @@ pub const WORKFLOW: [WorkflowGroup; 8] = [
             },
             WorkflowSection {
                 id: "calibration.fea",
-                label: "3D results: reference torques",
+                label: "3D reference torques",
                 advanced: false,
                 paths: &["calibration.fea_torque1_Nm", "calibration.fea_torque2_Nm"],
             },
             WorkflowSection {
                 id: "calibration.stored_demag",
-                label: "3D results: stored reverse fields (refresh after a 3D run)",
+                label: "Reverse fields from 3D analysis (example design)",
                 advanced: false,
                 paths: &[
                     "temperature.demag.h_rev_aligned_kA_m",
@@ -549,7 +549,7 @@ pub const WORKFLOW: [WorkflowGroup; 8] = [
             },
             WorkflowSection {
                 id: "calibration.stored_slip",
-                label: "3D results: stored slip-loss fields (refresh after a 3D run)",
+                label: "Slip-loss fields from 3D analysis (example design)",
                 advanced: false,
                 paths: &[
                     "temperature.slip_loss.b_hub_T",
@@ -906,6 +906,9 @@ pub fn text_hint(path: &str, text: &str) -> Option<&'static str> {
     }
 }
 
+/// The last line of a model assumption's hover text (map-locks J2).
+pub const ASSUMPTION_LINE: &str = "Model assumption: see Assumptions for why it has this value";
+
 /// The hover text of an input: its help (the overlay's, else the engine's:
 /// [`help_for`]), path, workbook cell, slider range, default, and whether it is a model
 /// assumption.
@@ -925,7 +928,7 @@ pub fn input_tooltip(entry: &InputEntry, show_details: bool) -> String {
         }
         lines.push(entry.path.clone());
         lines.push(meta.cell.map_or_else(
-            || "Rust-only input (no workbook cell)".to_owned(),
+            || crate::gui::plain_text::NO_SPREADSHEET_CELL.to_owned(),
             str::to_owned,
         ));
     }
@@ -948,7 +951,7 @@ pub fn input_tooltip(entry: &InputEntry, show_details: bool) -> String {
     };
     lines.push(format!("Default: {default}"));
     if meta.assumption {
-        lines.push("Model assumption (Addendum A3)".to_owned());
+        lines.push(ASSUMPTION_LINE.to_owned());
     }
     lines.join("\n")
 }
@@ -1421,8 +1424,8 @@ mod tests {
         );
         let harmonic = input_tooltip(catalogue.entry("coupling.max_harmonic").unwrap(), true);
         assert!(
-            harmonic.contains("Rust-only input (no workbook cell)")
-                && harmonic.ends_with("Model assumption (Addendum A3)"),
+            harmonic.contains(crate::gui::plain_text::NO_SPREADSHEET_CELL)
+                && harmonic.ends_with(ASSUMPTION_LINE),
             "{harmonic}"
         );
         let npole = input_tooltip(catalogue.entry("coupling.npole").unwrap(), true);

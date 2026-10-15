@@ -71,10 +71,16 @@ impl Trace {
         let label = term_label(&self.source);
         let count = self.paths.len();
         match self.kind {
-            TraceKind::Input if count == 0 => format!(
-                "{TRACING} {label}: no explained result reads it (its results have no equation record)"
-            ),
-            TraceKind::Input => format!("{TRACING} {label}: drives {count} explained results"),
+            TraceKind::Input if count == 0 => {
+                format!("{TRACING} {label}: no result with an equation reads it")
+            }
+            TraceKind::Input if count == 1 => {
+                format!("{TRACING} {label}: drives 1 result with an equation")
+            }
+            TraceKind::Input => {
+                format!("{TRACING} {label}: drives {count} results with an equation")
+            }
+            TraceKind::Result if count == 1 => format!("{TRACING} {label}: reads 1 input"),
             TraceKind::Result => format!("{TRACING} {label}: reads {count} inputs"),
         }
     }
@@ -100,10 +106,35 @@ mod tests {
         assert_eq!(
             trace.banner(),
             format!(
-                "{TRACING} {}: drives {} explained results",
+                "{TRACING} {}: drives {} results with an equation",
                 label_for("metal.face_gap_mm"),
                 trace.paths.len()
             )
+        );
+    }
+
+    #[test]
+    fn a_banner_counts_one_in_the_singular() {
+        let input = Trace {
+            source: "metal.face_gap_mm".to_owned(),
+            kind: TraceKind::Input,
+            paths: BTreeSet::from(["model.pullout_Nm".to_owned()]),
+        };
+        assert_eq!(
+            input.banner(),
+            format!(
+                "{TRACING} {}: drives 1 result with an equation",
+                label_for("metal.face_gap_mm")
+            )
+        );
+        let result = Trace {
+            source: "model.pullout_Nm".to_owned(),
+            kind: TraceKind::Result,
+            paths: BTreeSet::from(["metal.face_gap_mm".to_owned()]),
+        };
+        assert_eq!(
+            result.banner(),
+            format!("{TRACING} {}: reads 1 input", label_for("model.pullout_Nm"))
         );
     }
 
@@ -144,8 +175,8 @@ mod tests {
         assert_eq!(
             trace.banner(),
             format!(
-                "{TRACING} Torque the coupling must carry for driving (at the wheel): no \
-                 explained result reads it (its results have no equation record)"
+                "{TRACING} Torque the coupling must carry for driving (at the wheel): no result \
+                 with an equation reads it"
             )
         );
         // Only the explained results are traced: those with an equation record.

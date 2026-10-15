@@ -18,6 +18,7 @@
 //! Search matches the display label, the catalogue label, the path and the cell
 //! (`format::search_haystack`). No egui.
 
+use crate::engine::materials::CUP_WALL_TOO_THIN;
 use crate::gui::dashboard::result_info;
 use crate::gui::inputs::InputCatalogue;
 
@@ -32,6 +33,28 @@ pub const PULL_OUT_NOMINAL: &str = "Pull-out torque (nominal)";
 /// The display label of the hot-low torque (`metal.torque_hot_low_Nm`), which the Size tab's
 /// readout draws as well.
 pub const HOT_LOW_TORQUE: &str = "Hot-low torque";
+
+/// The provenance line of an input or result the original spreadsheet does not have, drawn in
+/// place of a cell with Show spreadsheet details on (map-locks J1, J3, J10).
+pub const NO_SPREADSHEET_CELL: &str = "Not in the original spreadsheet";
+
+/// The input whose wall the cup wall verdict asks to raise (ruling R9).
+pub const CUP_WALL_INPUT: &str = "metal.cup_wall_corner_mm";
+
+/// A text literal of an equation as the screen draws it (ruling R9, amendment A-9): the cup
+/// wall verdict's engine prefix, [`CUP_WALL_TOO_THIN`], with the wall input's label in place of
+/// the spreadsheet cell; any other literal as written. The record keeps the engine text, so it
+/// still evaluates to the engine's verdict, and the exports keep it.
+pub fn shown_literal(text: &str) -> std::borrow::Cow<'_, str> {
+    if text == CUP_WALL_TOO_THIN {
+        std::borrow::Cow::Owned(format!(
+            "Too thin: raise {} to at least ",
+            label_for(CUP_WALL_INPUT)
+        ))
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    }
+}
 
 /// The display label of an input or a result, by path: spec 3.5's canonical names. A row is
 /// never longer than the catalogue label it replaces and names one quantity only (tests). A

@@ -33,7 +33,14 @@ pub const BLANK_TEXT: &str = "blank";
 
 /// The line the label's hover text ends with: a click on the label traces the input
 /// (decision O-8).
-pub const TRACE_HINT: &str = "Click the label to trace the explained results it drives";
+pub const TRACE_HINT: &str =
+    "Click the label to highlight the results it drives that have an equation";
+
+/// The hover text of the changed-from-default dot, on an input row and an assumption alike.
+pub const CHANGED_FROM_DEFAULT: &str = "Changed from the default";
+
+/// The hover text of [`OUTSIDE_RANGE_NOTE`].
+pub const OUTSIDE_RANGE_HINT: &str = "Kept until you edit it. Outside the slider range the calculator is not checked against the original spreadsheet.";
 
 /// What the user asked of an input row this frame.
 #[derive(Clone, Debug, PartialEq)]
@@ -118,7 +125,7 @@ pub fn input_row(
         ui.horizontal(|ui| {
             let dot = if changed { CHANGED_DOT } else { " " };
             ui.colored_label(ui.visuals().selection.stroke.color, dot)
-                .on_hover_text("Changed from the default");
+                .on_hover_text(CHANGED_FROM_DEFAULT);
             label_clicked = ui
                 .add(egui::Label::new(label_for(&entry.path)).sense(egui::Sense::click()))
                 .on_hover_text(format!("{tooltip}\n{TRACE_HINT}"))
@@ -126,9 +133,7 @@ pub fn input_row(
             ui.add_enabled_ui(!locked, |ui| {
                 if outside_range(meta.range, current) {
                     ui.colored_label(ui.visuals().warn_fg_color, OUTSIDE_RANGE_NOTE)
-                        .on_hover_text(
-                            "Kept until edited. The differential tests cover the slider range only.",
-                        );
+                        .on_hover_text(OUTSIDE_RANGE_HINT);
                 }
                 if changed
                     && ui

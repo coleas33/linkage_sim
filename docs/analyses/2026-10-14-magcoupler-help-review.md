@@ -576,3 +576,307 @@ Recorded, no change asked:
 #### Should-fix status from earlier rounds
 
 - S-b (`materials.cup_wall_suggested_mm`) stays open, as `task-9-review.md` M-1 and the analysis record say. It is not part of this change set, so this review does not rule on it.
+
+## GUI strings and rationales (T10)
+
+- Scope: not an overlay batch. These are T10's on-screen strings outside the help overlay,
+  reviewed under the same G-3 rule (the brief's Step 12 prompt):
+  - the 8 assumption rationales rewritten in plain words (ruling R10, `engine/assumptions.rs`);
+    the end-effect one is A-8's text;
+  - the uncoated-steel warning text;
+  - the cup wall's failing verdict as drawn (ruling R9, A-9, ruling D-4): the dashboard, the
+    results table, the Equation panel's value line and, after round 1, the equation's formula in
+    the Equation panel and in every readout's hover; the engine string and the exports keep the
+    engine text;
+  - the end-effect banner and the greyed rows' hover;
+  - the cheap jargon rows (map-locks J1-J3, J7, J8, J10, J12, J13, J15; map-jargon C-4 to C-6,
+    C-8, C-11, A-10): the no-cell provenance line, the assumption line, the reset strings, the
+    order toggle, the stored-field headings (A-7), the trace hint and banners, the no-equation
+    text and tag, the outside-the-slider-range hover, the geometry notes and the one-piece clamp
+    note.
+- Read: the string dump (`git diff -U0 -- magcoupling-rs/src`, written to
+  `magcoupling-rs/target/g3/T10-strings.diff`) and a review sheet (`T10-rendered.txt`: every
+  changed string as drawn, and the engine values behind the rationales' claims at the five probe
+  designs), not `help_for_review`; T10's brief, drafter notes and open questions; the amendments
+  (Global Constraints, the T10 row: A-7, A-8, A-9, A-25 T-3, A-27; A-13, A-19 to A-24, ruling D-4,
+  RF-3); slice-2 spec 3.2, 3.4, 3.6, 3.8, 5 and 8, slice-1 spec 8 and `phys-new-notes.md` section
+  2; the engine and GUI code behind every changed string. Both rounds probed the engine from
+  scratch crates outside the repository:
+  - round 1: the harmonic sets (1 / 1, 3 / 1, 3, 5 / up to 11) at the five probe designs and at a
+    0.5 mm gap; the knee fraction at 0.8, 0.9 and 1.0; the cup wall at the five designs. The three
+    must-fix items were applied in a mirror of the crate, whose suites and both clippy runs passed;
+  - round 2: the guard and counters on the changed fields; the cup wall equation as the
+    typesetter lays it out; the cup wall at the five designs; the knee fraction on rated,
+    gradeless and Y30 magnets; the end effect out of range at the five designs.
+- Round 1: 3 must-fix items, text applied verbatim:
+  - The cup wall equation's verdict literal (R9 wherever it is drawn: A-9, D-4, RF-3).
+    - Old (drawn in the Equation panel's formula and in every cup-wall readout's hover): "Too
+      thin: raise Metal design C122 to at least "
+    - New: "Too thin: raise Minimum outer return ring wall to at least ". The typesetter draws a
+      text literal through `gui::plain_text::shown_literal`, which `verdict_display` also builds
+      on. The record keeps the engine text, so it still evaluates to the engine verdict, and the
+      spreadsheet export (`render::plain`) keeps it. New test:
+      `typeset::tests::the_cup_wall_equation_names_the_wall_input_by_its_label`.
+    - Why: with Show spreadsheet details off, the spreadsheet cell was still drawn in the Equation
+      panel (Review Focus RF-3's failure) and in every cup-wall readout's hover.
+  - `END_EFFECT_GREYED`, the end of every greyed row's hover.
+    - Old: "computed from the pull-out, which is not valid while the end-effect factor is zero or
+      below."
+    - New: "the pull-out and every number computed from it are not valid while the end-effect
+      factor is zero or below."
+    - Why: the first greyed row is the pull-out itself, whose hover said it was computed from the
+      pull-out.
+  - The `knee_fraction` rationale.
+    - Old: "The knee of the demagnetization curve as a fraction of Hcj: the reverse field at which
+      irreversible loss starts. The onsets are calibrated to the magnet's rating. Other reasonable
+      calibration forms move the example design's onset by up to 9.83 °C, nearly all of the
+      default demagnetization margin, so little is left for model uncertainty."
+    - New: "The knee of the demagnetization curve as a fraction of Hcj: the reverse field at which
+      irreversible loss starts. For a rated magnet the onsets reached on heating are calibrated to
+      its rating; a hard ferrite's cold onsets are not. Other reasonable calibration forms move the
+      example design's skipping onset by up to 9.83 °C, nearly all of the default demagnetization
+      margin, so little is left for model uncertainty."
+    - Why: with a positive coercivity coefficient the calibration offset is 0 and the cold onsets
+      are not calibrated. At the Y30 probe the knee fraction moves the cold limit uncalibrated:
+      352.4 / 335.7 / 319.9 °C at 0.8 / 0.9 / 1.0. A gradeless magnet has no rating and is not
+      calibrated either, which the word "rated" covers.
+
+  Should-fix offered, not applied (open for the controller):
+  - SF-1, `harmonics` rationale, sentence 1: "a square wave" is exact only at full fill, and "each
+    contributing to the torque" reads as "each adds torque" (at the 20 mm ring-radius probe the
+    third harmonic lowers the pull-out by 12.4 %). Suggested: "Each ring's alternating blocks make
+    a stepped magnetization wave of odd harmonics 1, 3, 5, ..., each of which can raise or lower
+    the torque."
+  - SF-2, `end_effect` rationale (A-8's binding text, so the controller's call): "magnet length"
+    is the overlapping length, which differs from a ring's length only when the rings' parts
+    differ and the axial override is blank. Suggested: "... / overlapping magnet length" and "At
+    or below an overlapping magnet length of coefficient × pole pitch ...".
+  - SF-3, `preload_fraction` rationale (not in T10's diff, but now under the guard): for A4-70
+    stainless the stress is the yield, as A-21 fixed in T7's help and T16's note. Suggested:
+    "Screw preload as a share of the proof load (the yield load for stainless; bolted-joint
+    practice), capped by thread stripping in the aluminium."
+  - SF-4, the assumption Source lines (drawn only with Show spreadsheet details on): audit and
+    plan-decision ids are not spreadsheet details; a later pass could rewrite them as A-13 does,
+    keeping the cells.
+  - SF-5, the wall-rule note prints the rule's wall to four significant figures ("at least 2.000
+    mm") beside the verdict's "at least 2.0 mm". Cosmetic.
+  - SF-6, the `coupling.c_end` and `calibration.c_end` hovers still show the engine help "f_end =
+    1 − c_end · pole pitch / L." (T8's overlay table, not T10's diff). Suggested HELP row: "The
+    magnet length lost at the ends, in pole pitches: end-effect factor = 1 − coefficient × pole
+    pitch / magnet length. Change it only with 3D or bench evidence."
+
+  Recorded, no change asked:
+  - the implementer's departures, all accepted: `demag_margin` sentence 2 (a hard ferrite has no
+    hot onset, so its rating is its hot limit; the drafted text was false at the Y30 probe); the
+    Br rationale's "the inner Br times the outer Br" (a graded manual ring has its own
+    coefficient); "example design" in the headings, the warning and the knee rationale (A-7); the
+    end-effect rationale byte for byte A-8's; R9 through one `shown_text` helper for the results
+    table and the value line; the dashboard's wrapped value-and-ids flow is a layout change,
+    outside G-3, for the task code review;
+  - typed numbers, all allowed: "1, 3 and 5" (the assumption's own default set), "10 magnets per
+    ring and a 1.4 mm gap" (where the free-space check ran, A-8), "9.83 °C" (an audit finding),
+    "20 to 150 °C" (the coefficient's fitted range), "0.10" (the oily-bore advice; the default is
+    0.15).
+- Round 2: PASS, no must-fix. It re-reviewed the three changed fields and every sentence whose
+  meaning depends on them; round 1's findings on the unchanged fields stand.
+
+  Should-fix:
+  - SF-R2-1, the doc comment of `engine::materials::CUP_WALL_TOO_THIN` was stale after round 1's
+    first item. Applied before the commit, the reviewer's text verbatim (a code comment, not
+    on-screen text).
+  - SF-R2-2, the brief's drafted commit message said the results table keeps the engine text,
+    false after A-9 and round 1's first item. Applied: the commit message carries the reviewer's
+    sentence.
+  - SF-R2-3 (optional), `END_EFFECT_GREYED`: "every number" -> "every result", since two greyed
+    rows are texts (the hot-minimum check and the recommended screw). Not applied: it would change
+    reviewed on-screen text. Open for the controller.
+
+  Recorded, no change asked: the typesetter draws `fmt`'s decimals as "(to 1 decimals)" beside the
+  changed literal; pre-existing wording, not a T10 string.
+- Seeds: the T10 index row names none of A-24's seeds, so there was no seed to accept or reject.
+  For consistency only, the round-1 reviewer checked that S-4 (T13's end-effect sentence) uses the
+  same facts as the end-effect rationale, and that S-16 agrees with the harmonics rationale at the
+  default gap (S-16 itself stays rejected, as recorded under Engine wording (T9)).
+- Amendments: A-7 applied (the headings read "Reverse fields from 3D analysis (example design)"
+  and "Slip-loss fields from 3D analysis (example design)"); A-8 applied (T3's hover-text check
+  un-ignored, the drafted inputs tooltip test and Step 10's contingency rows not added, the
+  end-effect rationale byte for byte A-8's, checked by script); A-9 and D-4 complete after round 1
+  (the dashboard, the results table, the Equation panel's value line and formula, and every
+  readout's hover; the CSV, JSON and spreadsheet keep the engine text); A-25 T-3 present
+  (`results_table::tests::the_cup_wall_verdict_is_drawn_with_the_wall_input_s_label_and_exported_as_the_engine_s`);
+  A-27 present (the rationale-branch comment in the dashboard guide test). A-13: no drawn field
+  carries a cell, correction, audit or decision id, or a file or code name; the assumption Source
+  lines, drawn only with the details on, are SF-4's. A-19 to A-23 are other tasks' texts, and no
+  T10 string contradicts them.
+- Traps: none of spec section 8's, slice-1 spec section 8's, `phys-new-notes.md` T-A to T-P, or
+  "more magnets make the coupling stiffer" is written in any T10 string.
+- Verdict: PASS (round 2).
+
+### Report for the record, round 1 (as returned)
+
+#### Amendments for T10
+
+- **A-7 (one name for the example design): applied.**
+  - The headings read "Reverse fields from 3D analysis (example design)" and "Slip-loss fields from 3D analysis (example design)" (`inputs.rs:541, 552`).
+  - The implementer carried the name into the warning text and the knee rationale. Accepted.
+- **A-8: applied.**
+  - The `#[ignore]` on T3's `every_hover_text_with_the_details_off_is_in_plain_words` is deleted.
+  - T10's drafted inputs tooltip test is not added.
+  - Step 10's contingency HELP rows are not added.
+  - The end_effect rationale is A-8's text byte for byte (checked by script).
+- **A-9 / D-4: partly applied.**
+  - The dashboard, the results-table row (`row_ui` → `shown_text`) and the Equation panel's value line (`value_text` → `shown_text`) draw the plain verdict.
+  - The CSV keeps the engine text (test `the_cup_wall_verdict_is_drawn_with_the_wall_input_s_label_and_exported_as_the_engine_s`).
+  - The formula's literal is not yet converted: must-fix 1.
+- **A-25 T-3: present** (A-9's results-table test).
+- **A-27: present** (the rationale-branch comment in the dashboard guide test).
+- **A-24 seeds:** the T10 index row names none. There is no seed to accept or reject.
+  - For consistency only: S-4 (T13 end_effect sentence 4) uses the same facts as the end_effect rationale (10 magnets per ring, 1.4 mm, 2 %, 3.2 mm).
+  - S-16 ("past the fifth they add little") agrees with the harmonics rationale and with the probe (1,3,5 → 11 changes the pull-out by under 0.4 % at the default gap at all five designs).
+- **A-19 to A-23:** none is indexed for T10, so there is nothing to apply.
+  - The T10 texts do not contradict them. A-22's "rings with a picked grade ignore it" agrees with the br rationale ("A ring on manual dimensions with a picked grade uses that grade's own coefficient instead").
+  - A-21's stress basis is the point of SF-3.
+
+#### Traps
+
+None of spec section 8's, slice-1 section 8's, `phys-new-notes.md` T-A to T-P, or "more magnets make the coupling stiffer" is written in any T10 string.
+
+**Spec section 8 traps:**
+- "The end factor is accurate": not written. The rationale gives the checked band and says it reads optimistic at wider gaps.
+- "Edit the calibration inputs to match your design": not written. The calibration rationale states the match rule (no steel, the prototype's magnets per ring, B842SH on both rings, `model.rs:584-601`, `api.rs:184-192`) and that size is not compared. No direction is stated, per brief open question 5.
+- "Each ring uses its own α": not written. Only a manual ring with a picked grade does, which is exactly `ResolvedMagnet::alpha_br`. Every library part's grade is −0.0012 /°C (the default).
+- "The clamp is sized to the drive": not written.
+- "A stored 3D field follows the design": not written. The headings say "(example design)".
+- "Raising Boss outside diameter enlarges the drawn boss": not written. The design check says only that the two bosses differ, naming each by its label and "in the clamp inputs" (ruling 3).
+- "1.5 T is 4140's saturation": no saturation figure is printed.
+- T-L: the verdict says nothing about torque.
+- "The coupling protects the gearbox": not touched.
+
+**Slice-1 section 8:** nothing written about radius, pole count, re-locking, 416, or the bench calibration beyond the prototype.
+
+#### Strings checked against the engine, at the five designs where a condition is named
+
+- **`calibration_factor`:** correct (f_cal 0.95, 0.95, 1.049 at 304, 0.95, 0.95).
+- **`br_temperature_coefficient`:** correct, with the implementer's departure 2 accepted (`ring_pair_factor`; `shear_stress` multiplies bi·bo).
+- **`hcj_temperature_coefficient`:** correct (`temperature.rs:787-792`: the grade's Hcj and β when E20 is on and the source is 1; otherwise the inputs for both rings).
+- **`demag_margin`:** correct, with departure 1 accepted. NdFeB: limit = skipping onset − margin (103.06 → 93.06 °C). Y30: hot limit = rating 250 °C, cold limit = cold onset 325.71 + 10 = 335.71 °C.
+- **`clamp_friction`:** correct (Tper = µ·min(Fb, Fs)·d·k at `clamps.rs:366`; 0.10 is the engine help's advice, not the 0.15 default; the joint friction is the separate input `clamps.joint_friction`).
+- **`harmonics`:** correct apart from SF-1.
+- **`knee_fraction`:** must-fix 3.
+- **`uncoated_low_alloy_steel`:** correct. The default plating input is electroless nickel, 0.015 mm (`materials.rs:52-56`); the rule fires only at a plating thickness of zero.
+- **Cup-wall verdict.** The dashboard, table and value line are correct at every design, failing or not. "Raise Minimum outer return ring wall to at least X mm" passes the check, because X ≥ the rule's unrounded wall and the wall input is the check's operand.
+- **End-effect banner:** correct ("end-effect factor -1.202" with short magnets).
+- **Greyed hover:** must-fix 2.
+- **Geometry notes.** The numbers come from results and inputs, and the labels from `label_for`. The design-check wording is correct at all five designs.
+- **The other strings:**
+  - **Trace banners:** correct.
+  - **The singular forms:** correct.
+  - **TRACE_HINT:** correct.
+  - **NO_EQUATION:** correct; the "name = value" line is drawn above it (`no_equation_body`).
+  - **NOTHING_TRACED:** correct.
+  - **ONE_PIECE_ONLY:** correct.
+  - **The J7 reset strings:** correct.
+  - **"By original sheet":** correct.
+  - **ASSUMPTION_LINE:** correct; the view is named "Assumptions" (`panel.rs:172`).
+- **OUTSIDE_RANGE_HINT: correct.** The differential tests run seeded cases across every slider range against the spreadsheet's formulas (the Python port, corrections off; `tests/differential.rs:1-10`). Outside the range nothing checks them.
+
+#### Rulings on the implementer's departures
+
+1. **demag_margin, sentence 2:** accepted. Sentence 1 alone was false for ferrite.
+2. **br, "the inner Br times the outer Br":** accepted.
+3. **knee, "example design's onset" and "nearly all of the default demagnetization margin":** accepted. Must-fix 3 adds "skipping" and the calibration scope.
+4. **The warning's "example design":** accepted (A-7).
+5. **The headings' "(example design)":** accepted (A-7).
+6. **end_effect, A-8 verbatim:** confirmed.
+7. **R9 through `shown_text` to the table and the value line:** accepted. The "known limit" (the formula's literal) is not accepted: must-fix 1.
+8. **The dashboard's wrapped value-and-ids flow:** a layout change, not a string. It is outside G-3; the post-commit task code review owns it.
+
+#### Typed numbers
+
+All five are allowed.
+- **"1, 3 and 5":** the assumption's own default set. The choice label itself reads "1, 3, 5 (default)".
+- **"10 magnets per ring and a 1.4 mm gap":** A-8's text. These are where the free-space check ran, not the user's design (brief open question 4).
+- **"9.83 °C":** an audit finding, not a default. It was measured against the workbook's 102.55 °C onset; the example design's is now 103.06 °C. That is close enough for "up to".
+- **"20 to 150 °C":** the coefficient's fitted range, in the input's label.
+- **"0.10":** the oily-bore advice, also in the engine help; the default is 0.15.
+
+No editable default is typed anywhere else. The geometry and verdict numbers are computed.
+
+### Report for the record, round 2 (as returned)
+
+#### Round-1 must-fix items: applied and checked
+
+**MF-1 (R9 wherever drawn; A-9, D-4, RF-3): applied verbatim.**
+- `plain_text.rs:21, 41-57` adds `CUP_WALL_INPUT` and `shown_literal`.
+- `typeset.rs:756-759` draws through it, as do both test oracles (`typeset.rs` about 1383 and 1555).
+- `verdict_display` builds on it (`dashboard.rs:385-388`). The private `CUP_WALL_INPUT` in `dashboard.rs` is gone (DRY: one copy of the plain prefix).
+- New test `typeset::tests::the_cup_wall_equation_names_the_wall_input_by_its_label`, byte for byte as specified.
+- Physics:
+  - `t_wall` in the drawn formula is the wall input (`symbols.rs:74`). The literal names that same input by its label.
+  - The rule says "raise ... to at least t_wall,sug mm", where t_wall,sug = ceil(t_bi, 0.1) ≥ t_bi.
+  - So the advice passes the check at every failing design (default, 8 magnets, 20 mm ring radius).
+  - It says nothing about torque (T-L). It prints no saturation figure (T-K). It speaks of the rule only (T-I).
+- Coverage:
+  - Every on-screen equation goes through `layout_equation`: the explorer at `explorer.rs:841`, and readout hovers at `readouts.rs:135`.
+  - Only the spreadsheet export uses `render::plain` (`spreadsheet.rs:528`). It keeps the engine text, as D-4 requires.
+- The record still evaluates to the engine verdict, so `tests/explain.rs` is unaffected.
+
+**MF-2 (`END_EFFECT_GREYED`, `dashboard.rs:246`): applied verbatim.**
+- It is true on all seven greyed rows at all five designs: the pull-out row no longer says it is "computed from the pull-out".
+- It agrees with:
+  - the banner ("the pull-out and the numbers computed from it are greyed");
+  - the end_effect rationale ("the factor is zero or negative, and the model gives no prediction");
+  - A-11's "no prediction" for the explorer's live values.
+- "Zero or below" is `end_effect_in_range`'s condition (f_end > 0 to be in range).
+- It carries no "f_end", and the panel test holds it to the guard and the INTERNAL list.
+- See SF-R2-3 for the optional word change.
+
+**MF-3 (`knee_fraction` rationale, `assumptions.rs:94`): applied verbatim.**
+- Sentence 2 holds at every case probed:
+  - Rated magnets (library parts and picked grades, `model.rs:454, 464`) have calibrated heating onsets (`offset = t_ref − tmax`, `temperature.rs:804-807`).
+  - Gradeless magnets ("n/a") are uncalibrated, which matches the "rated" scope.
+  - A hard ferrite has no heating onset (+inf). Its cold onsets come from `cold_onset_C`, which takes no offset.
+- Sentence 3 matches the audit:
+  - It quotes the 9.83 °C as the strictest form against the engine's skipping onset, and "up to" covers it.
+  - "Nearly all of the default demagnetization margin" types no 10 °C.
+- Dependent sentences:
+  - The demag_margin rationale ("A positive-beta magnet (hard ferrite) has no hot onset, so its rating is its hot limit; its cold limit is its cold onset plus this margin") agrees with it.
+  - So does T16's demagnetization source in A-13 ("other calibration forms move the skipping onset by up to 9.83 °C").
+- Two traps, checked:
+  - "A hotter-rated grade is free": not written. The rationale describes the calibration and closes on how little margin is left for model uncertainty.
+  - "Model ferrite by typing a positive β": not written. The rationale names hard ferrite and suggests no typed value.
+- The word "calibration" here is the onset calibration, not the bench calibration factor. Nothing suggests the bench calibration reaches other designs (slice-1 section 8).
+
+#### Amendments for T10
+
+- **A-24 seeds.** The T10 index row names none (A-7, A-8, A-9, A-25 T-3, A-27 only). There is no seed to accept or reject.
+- **A-19 to A-23.** None is indexed for T10, so there is nothing for T10 to apply. The changed T10 texts contradict none of them.
+- **Text-changing amendments that are T10's own:**
+  - **A-7 (headings): still applied.** "Reverse fields from 3D analysis (example design)" and "Slip-loss fields from 3D analysis (example design)".
+  - **A-8 (end_effect rationale): still byte for byte A-8's text**, checked by script against `amendments.md:267`. T3's tooltip check is still un-ignored: `dashboard.rs` has no `#[ignore]`.
+  - **A-9 / D-4: now complete.** The plain verdict is drawn on the dashboard, in the results table, on the Equation panel's value line, and (MF-1) in the formula in the Equation panel and every readout's hover. The CSV, JSON and spreadsheet export keep the engine text.
+  - **A-25 T-3: present.** The test is `results_table::tests::the_cup_wall_verdict_is_drawn_with_the_wall_input_s_label_and_exported_as_the_engine_s`.
+  - **A-27: present.** The rationale-branch comment is in the dashboard guide test.
+- **A-13 (every drawn field checked like any other).**
+  - The three changed fields and the drawn formula literal are plain words. None carries a cell, correction, audit or decision id, or a file or code name.
+  - The assumption Source lines were not changed this round. They are drawn only with Show spreadsheet details on (spec 3.6). Round 1's SF-4 covers their audit ids (for example the knee's "M1 audit rulings (onset calibration) and M13"), and it stands.
+
+#### Traps
+
+None is written in any changed field:
+- spec section 8;
+- slice-1 spec section 8;
+- `phys-new-notes.md` T-A to T-P;
+- "more magnets make the coupling stiffer".
+
+The relevant ones were checked above: T-I, T-K and T-L on the verdict; "a hotter-rated grade is free" and "model ferrite by typing a positive β" on the knee; "the bench calibration applies beyond the prototype" on the word "calibration".
+
+#### Typed numbers
+
+- The only typed number in a changed field is "9.83 °C" (knee). It is an audit finding, not a default, and round 1 already allowed it.
+- The verdict's number and the banner's factor are computed.
+
+#### Observation outside T10's diff (not a finding)
+
+- The typesetter draws `fmt`'s decimals as "(to 1 decimals)" (`typeset.rs:662`, and the oracle at 1626). It sits beside the changed literal in the cup wall formula.
+- It is pre-existing wording, not a T10 string. A later pass could singularize it for 1.

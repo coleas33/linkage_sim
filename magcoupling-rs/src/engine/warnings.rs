@@ -82,7 +82,7 @@ pub const WARNING_RULES: [WarningRule; 6] = [
         id: "uncoated_low_alloy_steel",
         severity: Severity::Caution,
         note_id: "a5.uncoated_low_alloy_steel",
-        text: "Uncoated low-alloy steel: it corrodes, so it needs plating (the workbook plans electroless nickel).",
+        text: "Uncoated low-alloy steel: it corrodes, so it needs plating; the example design uses electroless nickel.",
     },
     WarningRule {
         id: "cte_mismatch_with_magnets",

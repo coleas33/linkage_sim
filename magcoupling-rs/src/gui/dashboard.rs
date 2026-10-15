@@ -41,6 +41,7 @@ use std::sync::OnceLock;
 
 use crate::engine::assumptions::ASSUMPTIONS;
 use crate::engine::explain::notes;
+use crate::engine::materials::CUP_WALL_TOO_THIN;
 use crate::engine::meta::{ResultMeta, ResultSet, Value, result_rows};
 use crate::engine::model::END_EFFECT_OUT_OF_RANGE;
 use crate::engine::warnings::{Severity, WARNING_RULES, WarningRule};
@@ -241,6 +242,9 @@ pub const STORED_3D_SENTENCE: &str = crate::engine::temperature::stored_3d_sente
 /// The start of the banner shown when f_end ≤ 0.
 pub const END_EFFECT_BANNER: &str = END_EFFECT_OUT_OF_RANGE;
 
+/// What a greyed row's hover text says after [`END_EFFECT_OUT_OF_RANGE`].
+pub const END_EFFECT_GREYED: &str = "the pull-out and every number computed from it are not valid while the end-effect factor is zero or below.";
+
 /// The line over the dashboard's rows while the spreadsheet details show (spec S2-5): what the
 /// ids beside the values are.
 pub const MARKER_LEGEND: &str = "E-numbers beside a value are corrections to the original spreadsheet that change it; hover the value to see each one.";
@@ -368,6 +372,34 @@ pub fn verdict_level(path: &str, text: &str) -> Option<Level> {
     }
 }
 
+/// What the screen draws for a check's verdict in place of the engine's text (ruling R9): the
+/// cup wall's "Too thin" verdict names the wall by its input's on-screen label instead of the
+/// original spreadsheet's cell. [`verdict_level`] has already read the engine text, and the
+/// number is the engine's own, kept as written. `None` for any other path or text, and for a
+/// number that is not a finite number: the engine text is then drawn.
+pub fn verdict_display(path: &str, text: &str) -> Option<String> {
+    if path != "materials.cup_wall_check" || verdict_level(path, text) != Some(Level::Bad) {
+        return None;
+    }
+    let number = text.strip_prefix(CUP_WALL_TOO_THIN)?.strip_suffix(" mm")?;
+    number.parse::<f64>().ok().filter(|x| x.is_finite())?;
+    Some(format!(
+        "{}{number} mm",
+        crate::gui::plain_text::shown_literal(CUP_WALL_TOO_THIN)
+    ))
+}
+
+/// A result's value as the screen draws it, before its unit: [`format_value`]'s text, with
+/// [`verdict_display`]'s words in place of the cup wall's failing verdict. The results table and
+/// the Equation panel draw it (the dashboard, [`DashboardLine::shown_value`]); the exports keep
+/// the engine's text.
+pub fn shown_text(path: &str, value: &Value) -> String {
+    match value {
+        Value::Text(text) => verdict_display(path, text).unwrap_or_else(|| text.clone()),
+        other => format_value(other),
+    }
+}
+
 /// The badge level of the check at `path` for `results`: [`verdict_level`] of its text; `None`
 /// for a path that is no check or holds no text, a verdict that gives no badge, or a check
 /// computed from an invalid pull-out ([`greyed_by_end_effect`]: the dashboard greys its row).
@@ -459,13 +491,11 @@ pub fn result_tooltip(
         lines.push(
             info.cell
                 .clone()
-                .unwrap_or_else(|| "Rust-only result (no workbook cell)".to_owned()),
+                .unwrap_or_else(|| crate::gui::plain_text::NO_SPREADSHEET_CELL.to_owned()),
         );
     }
     if notes.greyed {
-        lines.push(format!(
-            "{END_EFFECT_OUT_OF_RANGE}: computed from the pull-out, which is not valid while f_end <= 0."
-        ));
+        lines.push(format!("{END_EFFECT_OUT_OF_RANGE}: {END_EFFECT_GREYED}"));
     }
     if notes.stored_3d {
         lines.push(format!("{STORED_3D_LABEL}: {STORED_3D_NOTE}"));
@@ -528,6 +558,12 @@ impl DashboardLine {
             show_details,
         )
     }
+
+    /// The value as the dashboard draws it: [`verdict_display`]'s words for the cup wall's
+    /// failing verdict, else the value as the engine gives it (the exports keep that).
+    pub fn shown_value(&self) -> String {
+        verdict_display(self.path, &self.value).unwrap_or_else(|| self.value.clone())
+    }
 }
 
 /// The f_end of the design when it is out of the end-effect model's range, else `None`.
@@ -547,7 +583,7 @@ pub fn greyed_by_end_effect(results: &DesignResults, path: &str) -> bool {
 pub fn end_effect_banner(results: &DesignResults) -> Option<String> {
     end_effect_out_of_range(results).map(|f_end| {
         format!(
-            "{END_EFFECT_BANNER} (f_end = {}): the pull-out and the numbers computed from it are greyed.",
+            "{END_EFFECT_BANNER} (end-effect factor {}): the pull-out and the numbers computed from it are greyed.",
             format_value(&Value::Num(f_end))
         )
     })
@@ -621,10 +657,16 @@ pub fn dashboard_ui(
         });
         let value = ui.horizontal(|ui| {
             ui.add_space(16.0);
-            ui.add(egui::Label::new(tint(egui::RichText::new(&line.value).strong())).wrap());
-            if show_details && !line.marker.is_empty() {
-                ui.small(&line.marker);
-            }
+            // One wrapped flow, indented: the correction ids follow the value on its last line
+            // or the next. Beside a value wrapped to the full width they would run past the row,
+            // and the resizable dashboard would widen every frame.
+            ui.horizontal_wrapped(|ui| {
+                let value = egui::RichText::new(line.shown_value()).strong();
+                ui.add(egui::Label::new(tint(value)).wrap());
+                if show_details && !line.marker.is_empty() {
+                    ui.add(egui::Label::new(egui::RichText::new(&line.marker).small()).extend());
+                }
+            });
         });
         let rect = title.response.rect.union(value.response.rect);
         readouts.show_over(ui, rect, line.path, |show_details| {
@@ -1644,7 +1686,7 @@ mod tests {
                 ResultNotes::default(),
                 true
             )
-            .contains("Rust-only result (no workbook cell)")
+            .contains(crate::gui::plain_text::NO_SPREADSHEET_CELL)
         );
         assert!(result_info("no.such").is_none());
         assert_eq!(
@@ -1664,7 +1706,7 @@ mod tests {
         assert!(
             hover_text("housing.length_overshoot_mm", true)
                 .unwrap()
-                .contains("Rust-only result (no workbook cell)")
+                .contains(crate::gui::plain_text::NO_SPREADSHEET_CELL)
         );
         assert_eq!(hover_text("no.such", true), None);
         assert_eq!(hover_text("no.such", false), None);
@@ -1741,7 +1783,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "un-ignored in T10, once T7 to T10 have rewritten the help and hover lines that still use spreadsheet words"]
     fn every_hover_text_with_the_details_off_is_in_plain_words() {
         // Spec 3.4: every drawn tooltip with Show spreadsheet details off passes the guard:
         // every input's, every result's and every dashboard row's (in range and with the end
@@ -2401,20 +2442,25 @@ mod tests {
             ]
             .map(str::to_owned),
         );
-        // An assumption's rationale is the Assumptions view's own text, which may cite cells:
-        // glyphs only.
-        let mut rationales: Vec<&str> = Vec::new();
+        // An assumption's rationale is the hover text of its Why link: plain words too (spec
+        // 3.4, ruling R10; the slice-1 exemption for cells is gone). The branch stays even while
+        // no row links an assumption: it covers a row linked to one again.
         let fit = guidance::guide(FIT_CHECK).unwrap().learn;
         for learn in ROW_LEARN.iter().map(|&(_, learn)| learn).chain([fit]) {
             match learn {
                 Learn::None(reason) => plain.push(reason.to_owned()),
-                Learn::Assumption(id) => {
-                    rationales.push(ASSUMPTIONS.iter().find(|a| a.id == id).unwrap().rationale)
-                }
+                Learn::Assumption(id) => plain.push(
+                    ASSUMPTIONS
+                        .iter()
+                        .find(|a| a.id == id)
+                        .unwrap()
+                        .rationale
+                        .to_owned(),
+                ),
                 Learn::Note(_) => {}
             }
         }
-        for text in plain.iter().map(String::as_str).chain(rationales) {
+        for text in &plain {
             assert_glyphs(&ctx, text, "the check guides");
         }
         for text in &plain {
@@ -2436,5 +2482,109 @@ mod tests {
             .unwrap();
         assert_eq!(assumption.paths, ["metal.variation"]);
         assert_eq!(assumption.label, label_for("metal.variation"));
+    }
+
+    #[test]
+    fn the_cup_wall_verdict_is_shown_with_the_wall_input_s_label() {
+        use crate::engine::compat::fmt_fixed;
+        use crate::engine::meta::NumOrText;
+        // Ruling R9: the default design's cup wall fails; the screen names the wall by its
+        // input's label, with the engine's own number.
+        let results = compute_all(&DesignInputs::default());
+        let engine = &results.materials.cup_wall_check;
+        let NumOrText::Num(wall) = results.materials.cup_wall_suggested_mm else {
+            panic!("a steel circuit has a wall rule")
+        };
+        let want = format!(
+            "Too thin: raise {} to at least {} mm",
+            label_for("metal.cup_wall_corner_mm"),
+            fmt_fixed(wall, 1)
+        );
+        assert_eq!(
+            verdict_display("materials.cup_wall_check", engine).as_deref(),
+            Some(want.as_str())
+        );
+        assert_eq!(
+            guidance::plain_text_violations(&want),
+            Vec::<&str>::new(),
+            "{want}"
+        );
+        // The engine text is unchanged: the badge reads it, the line keeps it, and the
+        // exports, which read the results, write it.
+        assert!(engine.starts_with(CUP_WALL_TOO_THIN), "{engine}");
+        assert_eq!(
+            verdict_level("materials.cup_wall_check", engine),
+            Some(Level::Bad)
+        );
+        let line = |results: &DesignResults| {
+            dashboard_lines(results)
+                .into_iter()
+                .find(|l| l.path == "materials.cup_wall_check")
+                .expect("the cup wall row")
+        };
+        assert_eq!(&line(&results).value, engine);
+        assert_eq!(line(&results).shown_value(), want);
+        assert_eq!(
+            shown_text("materials.cup_wall_check", &Value::Text(engine.clone())),
+            want
+        );
+        // Every other row of the default design draws its value as the line holds it.
+        for other in dashboard_lines(&results)
+            .iter()
+            .filter(|l| l.path != "materials.cup_wall_check")
+        {
+            assert_eq!(other.shown_value(), other.value, "{}", other.path);
+        }
+        // A passing wall and a design without back iron draw the engine text.
+        for inputs in [passing_design(), design(|i| i.coupling.backiron = 0)] {
+            let results = compute_all(&inputs);
+            let row = line(&results);
+            assert_eq!(row.shown_value(), row.value, "{}", row.value);
+        }
+        // Not that verdict, or its number not a finite number: no display text (the engine text
+        // is drawn), never a panic.
+        let nan = format!("{CUP_WALL_TOO_THIN}nan mm");
+        let inches = format!("{CUP_WALL_TOO_THIN}2.0 inches");
+        let words = format!("{CUP_WALL_TOO_THIN}two mm");
+        for (path, text) in [
+            ("materials.cup_wall_check", "OK"),
+            ("materials.cup_wall_check", "No back iron"),
+            ("materials.cup_wall_check", nan.as_str()),
+            ("materials.cup_wall_check", inches.as_str()),
+            ("materials.cup_wall_check", words.as_str()),
+            ("metal.hot_min_check", engine.as_str()),
+        ] {
+            assert_eq!(verdict_display(path, text), None, "{path}: {text}");
+            assert_eq!(
+                shown_text(path, &Value::Text(text.to_owned())),
+                text,
+                "{path}"
+            );
+        }
+        // A value that is no text reads as the readouts format it.
+        for value in [Value::Num(2.5), Value::Int(3), Value::None] {
+            assert_eq!(
+                shown_text("materials.cup_wall_check", &value),
+                format_value(&value)
+            );
+        }
+    }
+
+    #[test]
+    fn the_dashboard_draws_the_cup_wall_verdict_in_plain_words() {
+        let ctx = egui::Context::default();
+        let results = compute_all(&DesignInputs::default());
+        let shown = verdict_display(
+            "materials.cup_wall_check",
+            &results.materials.cup_wall_check,
+        )
+        .expect("the default cup wall fails");
+        let texts = drawn_texts(&dashboard_frame(&ctx, &DesignInputs::default()));
+        assert_eq!(texts.iter().filter(|t| **t == shown).count(), 1, "{shown}");
+        let engine_words = CUP_WALL_TOO_THIN.trim_end();
+        assert!(
+            !texts.iter().any(|t| t.contains(engine_words)),
+            "the engine's cell-named verdict is drawn"
+        );
     }
 }

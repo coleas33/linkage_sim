@@ -138,7 +138,14 @@ pub const SIZED_NOTE: &str = "Set by Auto (Size tab)";
 pub const ASSUMPTIONS_MODIFIED: &str = "Assumptions modified";
 
 /// The button beside the banner.
-pub const RESET_ASSUMPTIONS: &str = "Reset to workbook defaults";
+pub const RESET_ASSUMPTIONS: &str = "Reset assumptions to defaults";
+
+/// The hover text of [`RESET_ASSUMPTIONS`].
+pub const RESET_ASSUMPTIONS_HINT: &str =
+    "Every assumption back to its default; the design inputs stay as they are";
+
+/// The status line after [`RESET_ASSUMPTIONS`].
+pub const ASSUMPTIONS_RESET: &str = "Assumptions reset to their defaults";
 
 /// The start of an assumption's source line.
 pub const SOURCE: &str = "Source";
@@ -1056,13 +1063,11 @@ impl MagcouplingPanel {
                 ui.colored_label(ui.visuals().warn_fg_color, banner);
                 if ui
                     .button(RESET_ASSUMPTIONS)
-                    .on_hover_text(
-                        "Every assumption back to its workbook default; the design inputs stay as they are",
-                    )
+                    .on_hover_text(RESET_ASSUMPTIONS_HINT)
                     .clicked()
                 {
                     assumptions::reset_to_workbook_defaults(&mut self.inputs);
-                    self.status = Some("Assumptions reset to the workbook defaults".to_owned());
+                    self.status = Some(ASSUMPTIONS_RESET.to_owned());
                     self.last_error = None;
                 }
             });
@@ -1194,7 +1199,7 @@ impl MagcouplingPanel {
                     ui.horizontal(|ui| {
                         let dot = if state.modified { CHANGED_DOT } else { " " };
                         ui.colored_label(ui.visuals().selection.stroke.color, dot)
-                            .on_hover_text("Changed from the workbook default");
+                            .on_hover_text(crate::gui::input_ui::CHANGED_FROM_DEFAULT);
                         ui.strong(assumption.label);
                     });
                     for path in assumption.paths {
@@ -1704,13 +1709,17 @@ mod tests {
         }
     }
 
-    /// The headline of `inputs`, as the panel displays it (value with unit).
+    /// The headline of `inputs`, as the panel displays it (value with unit; the cup wall's
+    /// failing verdict with its input's label, ruling R9).
     fn displayed_headline(inputs: &DesignInputs) -> Vec<String> {
         headline(&compute_all(inputs))
             .into_iter()
             .zip(HEADLINE)
             .map(|((_, value), (_, path))| {
-                with_unit(format_value(&value), result_info(path).unwrap().meta.unit)
+                with_unit(
+                    crate::gui::dashboard::shown_text(path, &value),
+                    result_info(path).unwrap().meta.unit,
+                )
             })
             .collect()
     }
@@ -2803,7 +2812,7 @@ mod tests {
             .collect();
         // Over the dashboard and over the centre region, whichever view it shows (decision
         // M42-1).
-        let text = "End-effect model out of range (f_end = -1.202): the pull-out and the numbers computed from it are greyed.";
+        let text = "End-effect model out of range (end-effect factor -1.202): the pull-out and the numbers computed from it are greyed.";
         assert_eq!(banner, [text, text]);
     }
 
@@ -3276,7 +3285,11 @@ mod tests {
         assert!(trace.paths.is_empty());
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, &trace.banner()), 1);
-        assert!(trace.banner().contains("no explained result reads it"));
+        assert!(
+            trace
+                .banner()
+                .contains("no result with an equation reads it")
+        );
         harness.click_text(CentreView::Results.label());
         harness.click_text(TRACED_ONLY);
         let output = harness.frame(Vec::new());
@@ -3360,7 +3373,7 @@ mod tests {
             .expect("a dashboard result the face gap does not drive");
         let output = harness.frame(Vec::new());
         // The rightmost: the dashboard's.
-        let value = text_rects(&output, &outside.value)
+        let value = text_rects(&output, &outside.shown_value())
             .into_iter()
             .max_by(|a, b| a.left().total_cmp(&b.left()))
             .unwrap();
@@ -3446,7 +3459,7 @@ mod tests {
             .expect("a dashboard result the face gap does not drive");
         let output = harness.frame(Vec::new());
         // The rightmost: the dashboard's.
-        let value = text_rects(&output, &outside.value)
+        let value = text_rects(&output, &outside.shown_value())
             .into_iter()
             .max_by(|a, b| a.left().total_cmp(&b.left()))
             .unwrap();
@@ -7068,8 +7081,12 @@ mod tests {
                 harness.frame(Vec::new());
                 let output = harness.frame(Vec::new());
                 assert_eq!(count(&output, NO_EQUATION), 1);
-                // The panel adds a line to what the views draw: the cell, or "Rust-only result".
-                let cell = entry.info.cell.as_deref().unwrap_or("Rust-only result");
+                // The panel adds a line to what the views draw: the cell, or NO_SPREADSHEET_CELL.
+                let cell = entry
+                    .info
+                    .cell
+                    .as_deref()
+                    .unwrap_or(crate::gui::plain_text::NO_SPREADSHEET_CELL);
                 assert_eq!(
                     count(&output, cell),
                     count(&shut, cell) + usize::from(show_details),
@@ -7111,6 +7128,122 @@ mod tests {
                 count(&shut, label) + usize::from(!show_details),
                 "{label:?}"
             );
+        }
+    }
+
+    #[test]
+    fn the_dashboard_keeps_its_width_with_the_spreadsheet_details_on() {
+        // Each value and its correction ids flow as one wrapped text: a long value (the cup
+        // wall's verdict in plain words, ruling R9) with its ids never runs past the row, which
+        // would widen the resizable dashboard a little more every frame.
+        for size in [egui::vec2(930.0, 1024.0), SCREEN] {
+            let mut harness = Harness::on_screen(size);
+            harness.panel.show_details = true;
+            let lefts: Vec<f32> = (0..4)
+                .map(|_| {
+                    let output = harness.frame(Vec::new());
+                    // The rightmost: the dashboard's row.
+                    text_rects(&output, label_for("model.pullout_Nm"))
+                        .into_iter()
+                        .map(|rect| rect.left())
+                        .fold(f32::NEG_INFINITY, f32::max)
+                })
+                .collect();
+            assert!(
+                lefts[0].is_finite(),
+                "{size:?}: the pull-out's row is drawn"
+            );
+            assert!(
+                lefts.iter().all(|&left| left == lefts[0]),
+                "{size:?}: the dashboard moved {lefts:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_panel_s_own_strings_read_in_plain_words() {
+        // Spec 3.8 (map-locks J1-J3, J7, J8, J10, J12, J13, J16; map-jargon C-4 to C-6, C-8,
+        // C-11, A-10): the panel's own words name no spreadsheet cell, correction, file or code,
+        // and none of the engine's internal words. The welcome strip is pinned unchanged (R14).
+        use crate::engine::explain::{TermKind, TermStyle};
+        use crate::gui::clamp_drawing::ONE_PIECE_ONLY;
+        use crate::gui::dashboard::END_EFFECT_GREYED;
+        use crate::gui::explorer::{NO_EQUATION, term_tag};
+        use crate::gui::input_ui::{CHANGED_FROM_DEFAULT, OUTSIDE_RANGE_HINT, TRACE_HINT};
+        use crate::gui::inputs::ASSUMPTION_LINE;
+        use crate::gui::plain_text::NO_SPREADSHEET_CELL;
+        use crate::gui::results_table::NOTHING_TRACED;
+        // Words of the engine and its tests that mean nothing to a reader of the page.
+        const INTERNAL: [&str; 7] = [
+            "explained result",
+            "equation record",
+            "differential test",
+            "refresh after a 3d run",
+            "f_end",
+            "autofit",
+            "rust-only",
+        ];
+        let mut texts: Vec<String> = [
+            WELCOME,
+            RESET_ASSUMPTIONS,
+            RESET_ASSUMPTIONS_HINT,
+            ASSUMPTIONS_RESET,
+            CHANGED_FROM_DEFAULT,
+            NO_EQUATION,
+            TRACE_HINT,
+            OUTSIDE_RANGE_HINT,
+            NOTHING_TRACED,
+            ONE_PIECE_ONLY,
+            NO_SPREADSHEET_CELL,
+            ASSUMPTION_LINE,
+            END_EFFECT_GREYED,
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        texts.extend(InputOrder::ALL.map(|order| order.label().to_owned()));
+        for group in &WORKFLOW {
+            texts.push(group.label.to_owned());
+            texts.extend(
+                group
+                    .sections
+                    .iter()
+                    .map(|section| section.label.to_owned()),
+            );
+        }
+        texts.push(term_tag(TermStyle {
+            kind: TermKind::CellOnly,
+            changed_from_default: false,
+            affected_by_modified_assumption: false,
+        }));
+        for path in [
+            "coupling.drive_torque_Nm",
+            "metal.face_gap_mm",
+            "model.pullout_Nm",
+        ] {
+            texts.push(Trace::of(path).expect("a traceable path").banner());
+        }
+        texts.push(
+            end_effect_banner(&compute_all(&short_magnets()))
+                .expect("short magnets are out of the end-effect range"),
+        );
+        let defaults = DesignInputs::default();
+        let notes = crate::gui::geometry::geometry(&defaults, &compute_all(&defaults)).notes;
+        assert_eq!(
+            notes.len(),
+            3,
+            "the wall rule and both design checks at the defaults"
+        );
+        texts.extend(notes.into_iter().map(|note| note.text));
+        for text in &texts {
+            assert_eq!(
+                crate::gui::guidance::plain_text_violations(text),
+                Vec::<&str>::new(),
+                "{text:?}"
+            );
+            let lower = text.to_lowercase();
+            for word in INTERNAL {
+                assert!(!lower.contains(word), "{word:?} in {text:?}");
+            }
         }
     }
 

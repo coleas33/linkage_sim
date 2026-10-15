@@ -221,6 +221,12 @@ results! {
 /// no magnetic rule sizes an aluminium cup's wall.
 pub const NO_WALL_RULE: &str = "n/a";
 
+/// The start of the cup wall check's failing verdict, before the wall the rule asks for. The
+/// text is the Python port's and the differential data pin it; the dashboard, the results table,
+/// the Equation panel and every readout's hover draw it with the wall input's on-screen name
+/// instead (`gui::plain_text::shown_literal`, which `gui::dashboard::verdict_display` builds on).
+pub const CUP_WALL_TOO_THIN: &str = "Too thin: raise Metal design C122 to at least ";
+
 /// Cup wall check against the back-iron need, and electroless-nickel pre-plate offsets.
 /// `backiron` is the Calculator selector C6 in effect (1 steel, 0 none); only E9
 /// reads it. `parts` names the materials in effect (Rust-only results).
@@ -240,10 +246,7 @@ pub fn compute(
     } else if wall_corner_mm >= t_bi_req_mm {
         "OK".to_owned()
     } else {
-        format!(
-            "Too thin: raise Metal design C122 to at least {} mm",
-            fmt_fixed(suggested, 1)
-        )
+        format!("{CUP_WALL_TOO_THIN}{} mm", fmt_fixed(suggested, 1))
     };
     let t = mat.nickel.thickness_mm;
     MaterialsResults {

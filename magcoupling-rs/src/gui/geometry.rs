@@ -42,6 +42,7 @@ use std::f64::consts::PI;
 use crate::engine::meta::{NumOrText, Value};
 use crate::gui::dashboard::{Level, verdict_level};
 use crate::gui::format::{format_value, with_unit};
+use crate::gui::plain_text::label_for;
 use crate::{DesignInputs, DesignResults};
 
 /// A point [mm]: x right, y up.
@@ -212,7 +213,7 @@ impl View {
     }
 }
 
-/// A line of text under the views: the autofit hint, a design check, or why something is not
+/// A line of text under the views: the wall-rule line, a design check, or why something is not
 /// drawn.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Note {
@@ -246,8 +247,8 @@ pub const NOT_DRAWN: &str = "Not drawn";
 /// user's decision of 2026-10-01: flagged in the GUI, no engine change).
 pub const DESIGN_CHECK: &str = "Design check";
 
-/// The start of the autofit hint.
-pub const AUTOFIT: &str = "Autofit";
+/// The start of the wall-rule line: what the cup wall check asks for at the pocket corners.
+pub const WALL_RULE: &str = "Wall rule";
 
 /// Whether both coordinates of `p` are finite.
 pub(crate) fn finite(p: Mm) -> bool {
@@ -776,16 +777,17 @@ fn side_view(
     }
 }
 
-/// The notes under the views: the autofit wall (Addendum A1, decision 27) and the two design
-/// checks (decision 28, flagged only), each while it applies (decision M42-9).
+/// The notes under the views: the wall rule's cup wall (Addendum A1, decision 27) and the two
+/// design checks (decision 28, flagged only), each while it applies (decision M42-9).
 fn notes(inputs: &DesignInputs, results: &DesignResults) -> Vec<Note> {
     let md = &inputs.metal;
     let mut notes = Vec::new();
     if let NumOrText::Num(wall) = results.materials.cup_wall_suggested_mm {
         notes.push(Note {
             text: format!(
-                "{AUTOFIT}: the wall rule asks for at least {} at the pocket corners (input {})",
+                "{WALL_RULE}: at least {} of cup wall at the pocket corners; {} is {}",
                 mm(wall),
+                label_for("metal.cup_wall_corner_mm"),
                 mm(md.cup_wall_corner_mm)
             ),
             level: None,
@@ -795,8 +797,10 @@ fn notes(inputs: &DesignInputs, results: &DesignResults) -> Vec<Note> {
     if md.cap_thread_dia_mm < cup_body {
         notes.push(Note {
             text: format!(
-                "{DESIGN_CHECK}: the cap thread diameter {} (Metal design C169) is below the cup body OD {} (C165)",
+                "{DESIGN_CHECK}: {} {} is below {} {}",
+                label_for("metal.cap_thread_dia_mm"),
                 mm(md.cap_thread_dia_mm),
+                label_for("metal.cup_body_od_mm"),
                 mm(cup_body)
             ),
             level: Some(Level::Caution),
@@ -805,8 +809,10 @@ fn notes(inputs: &DesignInputs, results: &DesignResults) -> Vec<Note> {
     if md.boss_od_mm != inputs.clamps.boss_od_mm {
         notes.push(Note {
             text: format!(
-                "{DESIGN_CHECK}: the boss OD is {} in Metal design (C127) and {} in Shaft clamps (C35)",
+                "{DESIGN_CHECK}: {} {} differs from {} {} in the clamp inputs",
+                label_for("metal.boss_od_mm"),
                 mm(md.boss_od_mm),
+                label_for("clamps.boss_od_mm"),
                 mm(inputs.clamps.boss_od_mm)
             ),
             level: Some(Level::Caution),
@@ -1159,14 +1165,37 @@ mod tests {
                 .map(|n| n.text)
                 .collect()
         };
-        // The workbook's defaults hold both (decision 28).
+        // The defaults hold both (decision 28): each names its inputs by their on-screen labels,
+        // with the numbers of the design.
+        let defaults = DesignInputs::default();
+        let results = compute_all(&defaults);
+        let found = checks(&defaults);
         assert_eq!(
-            checks(&DesignInputs::default()),
+            found,
             [
-                "Design check: the cap thread diameter 41.00 mm (Metal design C169) is below the cup body OD 41.33 mm (C165)",
-                "Design check: the boss OD is 22.00 mm in Metal design (C127) and 25.00 mm in Shaft clamps (C35)",
+                format!(
+                    "Design check: {} {} is below {} {}",
+                    label_for("metal.cap_thread_dia_mm"),
+                    mm(defaults.metal.cap_thread_dia_mm),
+                    label_for("metal.cup_body_od_mm"),
+                    mm(results.metal.cup_body_od_mm)
+                ),
+                format!(
+                    "Design check: {} {} differs from {} {} in the clamp inputs",
+                    label_for("metal.boss_od_mm"),
+                    mm(defaults.metal.boss_od_mm),
+                    label_for("clamps.boss_od_mm"),
+                    mm(defaults.clamps.boss_od_mm)
+                ),
             ]
         );
+        for check in &found {
+            assert_eq!(
+                crate::gui::guidance::plain_text_violations(check),
+                Vec::<&str>::new(),
+                "{check}"
+            );
+        }
         let fixed = design(|i| {
             i.metal.cap_thread_dia_mm = 42.0;
             i.metal.boss_od_mm = 25.0;
@@ -1179,17 +1208,30 @@ mod tests {
     }
 
     #[test]
-    fn the_autofit_hint_shows_the_wall_rule_unless_there_is_no_back_iron() {
+    fn the_wall_rule_line_shows_unless_there_is_no_back_iron() {
         let hint = |inputs: &DesignInputs| {
             of(inputs)
                 .notes
                 .into_iter()
-                .find(|n| n.text.starts_with(AUTOFIT))
+                .find(|n| n.text.starts_with(WALL_RULE))
         };
         let note = hint(&DesignInputs::default()).expect("a steel circuit has a wall rule");
+        let defaults = DesignInputs::default();
+        let NumOrText::Num(wall) = compute_all(&defaults).materials.cup_wall_suggested_mm else {
+            panic!("a steel circuit has a wall rule")
+        };
         assert_eq!(
             note.text,
-            "Autofit: the wall rule asks for at least 2.000 mm at the pocket corners (input 1.800 mm)"
+            format!(
+                "Wall rule: at least {} of cup wall at the pocket corners; {} is {}",
+                mm(wall),
+                label_for("metal.cup_wall_corner_mm"),
+                mm(defaults.metal.cup_wall_corner_mm)
+            )
+        );
+        assert_eq!(
+            crate::gui::guidance::plain_text_violations(&note.text),
+            Vec::<&str>::new()
         );
         assert_eq!(note.level, None);
         assert_eq!(hint(&design(|i| i.coupling.backiron = 0)), None);

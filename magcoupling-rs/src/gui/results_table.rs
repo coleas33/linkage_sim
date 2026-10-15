@@ -20,10 +20,9 @@ use crate::engine::meta::{ResultSet, Value, result_rows};
 use crate::gui::corrections::{CorrectionIndex, marker_text};
 use crate::gui::dashboard::{
     CHECKS, Level, ResultInfo, badge, check_level, failing_checks, hover_text, result_info,
+    shown_text,
 };
-use crate::gui::format::{
-    format_value, non_finite_text, search_haystack, search_needle, with_unit,
-};
+use crate::gui::format::{non_finite_text, search_haystack, search_needle, with_unit};
 use crate::gui::plain_text::display_label;
 use crate::gui::readouts::Readouts;
 use crate::gui::result_groups::{OTHER_RESULTS, result_groups};
@@ -66,7 +65,7 @@ pub const TRACED_ONLY: &str = "Traced only";
 /// through ([`empty_text`]): the trace reaches only results with an equation record, and an input
 /// may reach none of them.
 pub const NOTHING_TRACED: &str =
-    "The trace marks no result shown here (only results with an equation record are traced).";
+    "The trace marks no result shown here (only results with an equation are traced).";
 
 /// What the table says when the failing filter finds no check to show.
 pub const NOTHING_FAILS: &str = "No check fails or asks for a look.";
@@ -749,10 +748,12 @@ fn row_ui(
         };
         let [label, number, workbook, marker] = widths;
         cell(ui, label, entry.info.meta.label, None);
+        // The cup wall's failing verdict with its input's label (ruling R9); the exports keep
+        // the engine text.
         cell(
             ui,
             number,
-            &with_unit(format_value(&value), entry.info.meta.unit),
+            &with_unit(shown_text(&entry.path, &value), entry.info.meta.unit),
             level,
         );
         if show_details {
@@ -773,6 +774,7 @@ fn row_ui(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gui::format::format_value;
 
     /// A positive beta typed in for manual magnets with no grade (E20): no hot limit, +inf, and
     /// no torque at it, NaN (`tests/robustness.rs`).
@@ -1038,6 +1040,46 @@ mod tests {
             .find(|l| l.starts_with("housing.space_claim_check,"))
             .unwrap();
         assert!(claim.ends_with(",Inside the space claim,,"), "{claim}");
+    }
+
+    #[test]
+    fn the_cup_wall_verdict_is_drawn_with_the_wall_input_s_label_and_exported_as_the_engine_s() {
+        use crate::engine::materials::CUP_WALL_TOO_THIN;
+        use crate::gui::dashboard::verdict_display;
+        use crate::gui::test_support::{SCREEN, drawn_texts, sized_frame};
+        // Ruling R9 (amendment A-9): the default design's cup wall fails. The table draws its
+        // verdict as the dashboard does, once, and nowhere the engine's cell-named words; the
+        // exports keep the engine text.
+        let results = compute_all(&DesignInputs::default());
+        let engine = &results.materials.cup_wall_check;
+        let shown = verdict_display("materials.cup_wall_check", engine)
+            .expect("the default cup wall fails");
+        // The failing filter lists the checks flat: the cup wall's row is on screen.
+        let ctx = egui::Context::default();
+        let mut table = ResultsTable {
+            failing_only: true,
+            ..ResultsTable::default()
+        };
+        let mut output = None;
+        for _ in 0..2 {
+            output = Some(sized_frame(&ctx, SCREEN, Vec::new(), |ui| {
+                table.ui(ui, &results, None, &mut Readouts::default());
+            }));
+        }
+        let texts = drawn_texts(&output.unwrap());
+        assert_eq!(texts.iter().filter(|t| **t == shown).count(), 1, "{shown}");
+        let engine_words = CUP_WALL_TOO_THIN.trim_end();
+        assert!(
+            !texts.iter().any(|t| t.contains(engine_words)),
+            "the engine's cell-named verdict is drawn"
+        );
+        let csv = results_csv(&results);
+        let row = csv
+            .split("\r\n")
+            .find(|line| line.starts_with("materials.cup_wall_check,"))
+            .expect("the cup wall's CSV line");
+        assert!(row.contains(&format!(",{engine},")), "{row}");
+        assert!(!row.contains(&shown), "{row}");
     }
 
     #[test]

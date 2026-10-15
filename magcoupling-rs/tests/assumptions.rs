@@ -8,13 +8,17 @@
 //! overrides (`src/engine/assumptions.rs`), only C45's shows at the default design: its
 //! library parts still read C22, and it has no 1018 back iron.
 
+mod common;
+
 use std::collections::BTreeSet;
 
+use common::{code_names, provenance_words};
 use magcoupling::engine::api::{DesignInputs, compute_all};
 use magcoupling::engine::assumptions::{
     ASSUMPTIONS, any_modified, modified, reset_to_workbook_defaults, states,
 };
 use magcoupling::engine::deviations::Deviations;
+use magcoupling::engine::explain::plain::plain_text_violations;
 use magcoupling::engine::meta::{FieldType, InputMeta, InputSet, Value, input_rows, result_rows};
 
 /// The metadata of the input at `path`.
@@ -242,4 +246,54 @@ fn each_assumption_moves_a_result_at_the_default_design() {
             assert!(matches!(m.ty, FieldType::F64 | FieldType::I64), "{path}");
         }
     }
+}
+
+/// The rationale of the assumption `id`.
+fn rationale(id: &str) -> &'static str {
+    ASSUMPTIONS
+        .iter()
+        .find(|a| a.id == id)
+        .unwrap_or_else(|| panic!("{id}: no assumption"))
+        .rationale
+}
+
+#[test]
+fn every_label_and_rationale_reads_in_plain_words() {
+    // Spec 3.4 and R10: the rationale is drawn under each assumption and is the hover text of a
+    // dashboard Why link, so it names no spreadsheet cell, correction, audit, decision or code
+    // name. The source keeps its cells (the test above) and is drawn only with Show spreadsheet
+    // details on.
+    let mut failures = Vec::new();
+    for a in &ASSUMPTIONS {
+        for (what, text) in [("label", a.label), ("rationale", a.rationale)] {
+            let guard = plain_text_violations(text);
+            let provenance = provenance_words(text);
+            let code = code_names(text);
+            if !(guard.is_empty() && provenance.is_empty() && code.is_empty()) {
+                failures.push(format!(
+                    "{}: {what} {guard:?} {provenance:?} {code:?}: {text:?}",
+                    a.id
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+#[test]
+fn the_end_effect_and_calibration_rationales_state_what_was_checked() {
+    // R10: the end factor's band against free-space 3D, as the end-effect note states it.
+    let end = rationale("end_effect");
+    assert!(
+        end.contains("within 2 % of free-space 3D for magnets 3.2 mm and longer"),
+        "{end}"
+    );
+    assert!(!end.contains("1 %"), "{end}");
+    // PA-18: the measured factor goes to a design that matches the prototype's circuit, magnet
+    // count and part, and nothing else is compared.
+    let cal = rationale("calibration_factor");
+    for named in ["no steel", "magnets per ring", "B842SH", "not compared"] {
+        assert!(cal.contains(named), "{named:?} missing: {cal}");
+    }
+    assert!(!cal.contains("own rings"), "{cal}");
 }

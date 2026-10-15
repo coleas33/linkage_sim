@@ -521,12 +521,13 @@ mod tests {
         let red = Level::Bad.color(&ctx.style().visuals);
         assert_eq!(text_color(&output, run), Some(red));
         assert!(segment_colors(&output).contains(&red));
-        assert!(
-            texts
-                .iter()
-                .any(|t| t.starts_with("Design check: the boss OD"))
+        let boss_check = format!(
+            "Design check: {}",
+            crate::gui::plain_text::label_for("metal.boss_od_mm")
         );
-        assert!(texts.iter().any(|t| t.starts_with("Autofit:")));
+        assert!(texts.iter().any(|t| t.starts_with(&boss_check)));
+        let wall_rule = format!("{}:", crate::gui::geometry::WALL_RULE);
+        assert!(texts.iter().any(|t| t.starts_with(&wall_rule)));
     }
 
     /// The stroke colour of every line segment.

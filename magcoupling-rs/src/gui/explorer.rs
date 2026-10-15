@@ -52,9 +52,11 @@ use crate::engine::explain::{Design, Equation, TermKind, TermStyle};
 use crate::engine::meta::{InputSet, ResultSet, Value};
 use crate::engine::picks::set_by_pick;
 use crate::gui::corrections::correction_title;
-use crate::gui::dashboard::{end_effect_out_of_range, greyed_by_end_effect, result_info};
+use crate::gui::dashboard::{
+    end_effect_out_of_range, greyed_by_end_effect, result_info, shown_text,
+};
 use crate::gui::diagrams::diagram_ui;
-use crate::gui::format::{format_value, with_unit};
+use crate::gui::format::with_unit;
 use crate::gui::guidance::result_text;
 use crate::gui::input_ui::CHANGED_DOT;
 use crate::gui::inputs::InputCatalogue;
@@ -83,8 +85,7 @@ pub const TERMS: &str = "Terms";
 pub const USED_BY: &str = "Used by";
 
 /// What a result without an equation record shows under its value.
-pub const NO_EQUATION: &str =
-    "No equation record: the value, its label and its workbook cell are what the explorer knows.";
+pub const NO_EQUATION: &str = "This value has no equation to show; its name and value are above.";
 
 /// The start of the line naming the corrections an equation embodies.
 pub const CORRECTIONS: &str = "Embodies corrections";
@@ -437,9 +438,10 @@ fn crumb(path: &str) -> String {
 }
 
 /// A value with its unit; a selector code with its choice's label after a colon
-/// (`1: steel circuit`, and `5: 1, 3, 5 (default)` without nested parentheses).
+/// (`1: steel circuit`, and `5: 1, 3, 5 (default)` without nested parentheses); the cup wall's
+/// failing verdict with its input's label ([`shown_text`], ruling R9).
 fn value_text(path: &str, value: &Value, unit: &str) -> String {
-    let text = with_unit(format_value(value), unit);
+    let text = with_unit(shown_text(path, value), unit);
     match value {
         Value::Int(code) => registry()
             .choices(path)
@@ -827,7 +829,9 @@ fn equation_body(
         ui.weak(format!(
             "{} ({})",
             label_for(&eq.target),
-            eq.cell.as_deref().unwrap_or("Rust-only result")
+            eq.cell
+                .as_deref()
+                .unwrap_or(crate::gui::plain_text::NO_SPREADSHEET_CELL)
         ));
     } else {
         ui.weak(label_for(&eq.target));
@@ -960,7 +964,7 @@ pub fn term_tag(style: TermStyle) -> String {
         TermKind::Input { assumption: true } => ASSUMPTION_TAG,
         TermKind::Input { assumption: false } => "input: click to find its row",
         TermKind::Explained => "click to open its equation",
-        TermKind::CellOnly => "no equation record",
+        TermKind::CellOnly => "no equation",
     };
     let mut tag = if style.changed_from_default {
         format!("{CHANGED_DOT} changed; {kind}")
@@ -988,7 +992,7 @@ fn no_equation_body(ui: &mut egui::Ui, path: &str, results: &DesignResults, show
     if show_details {
         let cell = result_info(path)
             .and_then(|info| info.cell.clone())
-            .unwrap_or_else(|| "Rust-only result".to_owned());
+            .unwrap_or_else(|| crate::gui::plain_text::NO_SPREADSHEET_CELL.to_owned());
         ui.weak(cell);
     }
     ui.weak(NO_EQUATION);
@@ -999,6 +1003,7 @@ mod tests {
     use super::*;
     use crate::compute_all;
     use crate::engine::meta::ResultSet;
+    use crate::gui::format::format_value;
     use crate::gui::results_table::table_entries;
 
     fn design() -> (DesignInputs, DesignResults) {
@@ -1435,6 +1440,41 @@ mod tests {
             assert_eq!(texts.contains(&label.to_owned()), !show_details);
             assert_eq!(drawn_texts(&output).contains(&titles), show_details);
         }
+    }
+
+    #[test]
+    fn the_equation_panel_s_value_line_names_the_cup_wall_input_by_its_label() {
+        // Ruling R9 (amendment A-9): the value under the cup wall's equation reads as the
+        // dashboard draws it; a passing wall reads as the engine gives it.
+        use crate::gui::dashboard::verdict_display;
+        use crate::gui::test_support::{SCREEN, drawn_texts, sized_frame};
+        let path = "materials.cup_wall_check";
+        let symbol = plain_symbol(
+            &registry()
+                .equation_for(path)
+                .expect("the cup wall's equation")
+                .symbol,
+        );
+        let value_lines = |inputs: &DesignInputs| {
+            let results = compute_all(inputs);
+            let mut explorer = Explorer::default();
+            explorer.open_path(path);
+            let output = sized_frame(&egui::Context::default(), SCREEN, Vec::new(), |ui| {
+                explorer_ui(ui, &mut explorer, inputs, &results, false, &nothing_held);
+            });
+            let engine = results.materials.cup_wall_check.clone();
+            let lines: Vec<String> = drawn_texts(&output)
+                .into_iter()
+                .filter(|t| t.starts_with(&format!("{symbol} = ")))
+                .collect();
+            (engine, lines)
+        };
+        let (engine, lines) = value_lines(&DesignInputs::default());
+        let shown = verdict_display(path, &engine).expect("the default cup wall fails");
+        assert_eq!(lines, [format!("{symbol} = {shown}")]);
+        let (engine, lines) = value_lines(&crate::gui::test_support::passing_design());
+        assert_eq!(engine, "OK");
+        assert_eq!(lines, [format!("{symbol} = OK")]);
     }
 
     #[test]

@@ -36,7 +36,7 @@ pub const NO_SCREW_FITS: &str = "No screw size fits; enlarge the boss or the cla
 /// The note under the drawing when the two-piece clamp is selected: drawing.py draws only the
 /// one-piece layout.
 pub const ONE_PIECE_ONLY: &str =
-    "The drawing shows the one-piece slotted clamp (drawing.py's only layout).";
+    "Only the one-piece slotted clamp is drawn; the two-piece clamp has no drawing.";
 
 /// The most screws the top view draws (a design file can hold any clamp).
 pub const MAX_DRAWN_SCREWS: i64 = 50;
