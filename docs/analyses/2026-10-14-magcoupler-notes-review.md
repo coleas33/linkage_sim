@@ -2575,6 +2575,48 @@ Considered, no change (the reviewer's observations):
 - A text re-review of this field follows (controller ruling 7). Its report goes below as
   `### Re-review: code-review fix round 1`.
 
+### Re-review: code-review fix round 1
+
+- Reviewer: a fresh-context physics reviewer (session model), 2026-10-15, on commit `8cb78d4`
+  (`task-15-textreview-1.md`). This is the text re-review of the code-review fix round 1 above
+  (controller ruling 7). It re-checked the six fields that round changed in the three slip notes
+  together; this note's is sentences[0].
+- Scope here: sentences[0], and the fields whose meaning depends on it: sentences[1] ("The swing
+  runs from plus to minus the pull-out ..."), sentences[4] (the ripple "at its input"),
+  watch_out[0] (nothing checks the gearbox) and the dashboard's gearbox ripple row that links
+  here (Start here step 9). The dump
+  (`NOTES_FOR_REVIEW=when_slipping,slip_heating,thermal_time_constant`, written to
+  `magcoupling-rs/target/rereview-T15-1.txt`, "3 notes at 5 designs") draws the six fields
+  identically at the five probe designs. None holds a placeholder, `{`, `}` or "no prediction",
+  and every aim line reads "moves as it says".
+- Verdict: PASS, no must-fix, and no should-fix for this field. The re-review's three optional
+  should-fix items are recorded under `## slip_heating` (SF-1 and SF-2, on-screen text, left open)
+  and `## thermal_time_constant` (SF-3, a test, applied).
+
+The reviewer's report for the record on this field follows unchanged.
+
+- **Engine.**
+  - The coupling sits on the gearbox's wheel (output) side (`plain_text.rs:143`; ruling 8), so the gearbox output carries the torque between the rings.
+  - The ripple row is that torque's swing referred to the input: T_pull/(ratio·efficiency) (`model.rs:1156`).
+  - Probe: 0.5660, 0.4144, 0.3573, 0.04359 and 0.5346 N·m at the five designs. Each equals pull-out (2.6885, 1.9684, 1.6974, 0.2071, 2.5393 N·m) / (5 × 0.95) exactly.
+- **Spec 3.1, sentence 0.** It answers the gearbox ripple row (label "Estimated gearbox input torque ripple amplitude"; `ROW_LEARN`, `guidance.rs:318-321`) and Start here step 9. The swing is the gearbox's, and sentences[1] and [4] give its size and where it is quoted. No symbol, placeholder, ϑ, U+207B or ∝. 24 words by `word_count`.
+- **Traps.**
+  - "The coupling protects the gearbox" (spec 8, ruling 8): the sentence says the opposite. The gearbox carries the swing, and watch_out[0] says nothing checks it.
+  - "Pull-out is guaranteed" and "the rings re-lock below pull-out" (slice-1 and slice-2 spec 8): neither is written. Sentence 3 covers re-locking.
+  - T-H, T-M and T-O: unchanged by this field.
+  - Ruling 11: no "clamp" and no shaft-joint method.
+- **Dependent fields.** "The swing" in sentences[1] takes "swings back and forth" as its antecedent. "sends torque ripple to the gearbox: at its input" in sentences[4] stays consistent. The gearbox is now named twice (sentences 0 and 4), which is the intended Why-target structure.
+- **Test.** `the_slip_note_s_claims_hold_at_every_probe_design` pins "gearbox" in sentence 0. `the_slip_notes_keep_the_caps` holds the caps and the sentence-0 rule.
+- **Observation (engine scope, no text change).** The engine assumes the gearbox carries the full swing. Real shaft torque at the slip frequency depends on the drive ring's inertia and the shaft's stiffness, and can exceed the swing near a torsional resonance. This is input for the gearbox and joint backlog.
+- Verdict for this field: PASS.
+
+Considered, no change (the reviewer's observations on this field):
+- **"Past pull-out" without "torque"** (`when_slipping` sentences[0]). The dashboard row is "Pull-out torque", and sentences[1] uses "the pull-out" as a noun. Keeping "its pull-out torque" with the gearbox clause would make 26 words.
+- **"carried by the gearbox" and the drive train's inertia.** The engine (`model.rs:1156`) and ruling 8 take the gearbox to carry the full swing. The sentence matches them.
+  - Physically, at the slip frequency (166.7 Hz at the default) the shaft torque is the magnetic swing minus what the drive ring's own inertia absorbs.
+  - Near a torsional resonance of the drive train it can be larger. As the drive slows after a slip, the ripple frequency falls through the range, and nothing checks for that.
+  - This is an engine-scope observation for the gearbox and joint backlog (BL-059, BL-064), not a text matter.
+
 ## slip_heating
 
 Task T15. Rewrite of "Eddy-current slip loss and skin depth" as "Slip heating: where the heat
@@ -2749,6 +2791,69 @@ Considered, no change (the reviewer's observations):
 - A text re-review of these three fields follows (controller ruling 7). Its report goes below as
   `### Re-review: code-review fix round 1`.
 
+### Re-review: code-review fix round 1
+
+- Reviewer: as under `## when_slipping` (`task-15-textreview-1.md`, on commit `8cb78d4`; ruling
+  7).
+- Scope here: sentences[2], sentences[4] and sources[3], and the fields whose meaning depends on
+  them: sentences[3] (the shells' and magnets' speed-squared law), and sources[0] and [4] (the
+  skin-limited steel loss). The dump: as under `## when_slipping`.
+- Verdict: PASS, no must-fix. Two optional should-fix items, SF-1 (sources[3]) and SF-2
+  (sentences[4]), are offered below the report and not applied: each would change reviewed
+  on-screen text, which ruling 7 sends to another text re-review, so they stay open for the
+  controller (as T12's re-review 2 left its optional items).
+
+The reviewer's report for the record on these fields follows unchanged.
+
+- **Engine.**
+  - The hub, cup and web take the skin-limited form only with the magnetic-steel circuit (`materials.circuit_backiron` = 1, `records/slip_heating.rs:93-120`).
+  - The circuit is 0 for a non-ferromagnetic back-iron pick (304, 6061) or with the back-iron switch off (`records/torque.rs:161-162`).
+  - Magnetic steel is offered only as a back-iron pick. The sleeve, liner and cap choices are all non-magnetic (`material_library.rs:731-754`), so sentences[2] covers every part the engine prices with a skin.
+- **Probe: speed exponents at twice the slip speed.**
+  - Hub, cup and web: 1.5000 at the four magnetic-steel designs, 2.0000 at the 304 design.
+  - Without magnetic steel the body is the pick's own metal: 304's 1.389 MS/m and 500 J/(kg·K) at its design. With the switch off and the 4140 pick, it is the workbook's 6061 (25 MS/m, 900 J/(kg·K)).
+  - So "non-magnetic metal" in sentences[4] holds in every branch.
+  - Body losses with the switch off: hub 0.1942, cup 1.5433, web 0.3737 W. At the 304 design: 0.0108, 0.0857, 0.0208 W.
+- **sentences[2]** ("In thick magnetic steel ..."). Now true at the 304 design, where it does not apply to the reader's parts. The "about" keeps the model's exact 1.5 apart from the audit's 1.54 to 1.64. 24 words.
+- **sentences[4]** ("Without magnetic steel back iron ..."). Now reads as applying to the 304 pick, whose hub, cup and web are non-magnetic. The weaker field holds: b_hub_free 0.07832 against 0.207 T, and b_cup_free 0.08764 against 0.214 T. 24 words.
+  - The unchanged clause "heat through their whole thickness" is loose for a thick non-magnetic hub (d_eff / wall 0.197 at the default geometry, 0.133 at 20 mm) and close for the cup and web (0.631, 0.414), which carry most of the body loss. SF-2 offers a replacement; not required.
+- **sources[3]** ("Design report: the weak-field, whole-thickness loss of non-magnetic body parts").
+  - The report's T1 is linear in σ for any μr = 1 conductor in the low-Reynolds regime. 304 (σ 18 times lower than 6061) sits deeper in that regime, so citing it for every non-magnetic body is sound.
+  - "Whole-thickness" describes the thin-sheet form T0 that the report replaces. SF-1 offers a replacement that keeps the tested phrase; not required.
+- **Traps.**
+  - "Steel gives the torque shown" and "1.5 T is 4140's saturation": not written. The 1.5 is a speed exponent.
+  - No lower-conductivity back iron is offered as a slip-loss lever.
+  - "The stored 3D fields follow the design": unchanged watch_out[0] covers it.
+  - Ruling 11: no "clamp".
+- **Tests.**
+  - `the_slip_heating_note_s_claims_hold_at_every_probe_design` pins the two "magnetic steel" openings and allows no bare "steel" in any sentence. Its exponents key on the circuit.
+  - `the_non_magnetic_body_is_the_picked_metal_not_only_aluminium` pins both sources' "non-magnetic body parts", and no "aluminium". It asserts the body takes the pick's σ and c at the non-ferromagnetic probe design, with at least one such design not aluminium.
+- Verdict for these fields: PASS. Should-fix offered: SF-1 (sources[3]), SF-2 (sentences[4], optional).
+
+Should-fix offered, not applied (open for the controller; no on-screen text changed after this
+re-review):
+- **SF-1 (`slip_heating` sources[3]; the cited report's form is not "whole-thickness").**
+  - Replacement (15 words; guards empty; still contains "non-magnetic body parts" and no "aluminium", so `the_non_magnetic_body_is_the_picked_metal_not_only_aluminium` passes unchanged): "Design report: the eddy loss of non-magnetic body parts in the weaker field they see"
+  - Why:
+    - The report's T1 loss (section 5.5.3) is σω_e²B_free²/(2k²)·d_eff, with d_eff = (1 − e^(−2kd))/(2k). Its depth is set by how far the field reaches, which "saturates at 1/(2k) for thick parts".
+    - What sets T1 apart is that it replaces the whole-thickness thin-sheet form T0, which the report shows overstates these parts' loss 1.6 to 5.1 times (table 5.5.2, "because kd is not small"). Labelling the report's form "whole-thickness" describes the form it rejects.
+    - Probe, at the 304 design (the default geometry), d_eff / wall: hub 0.197 (5.10 mm wall, kd 2.525), cup 0.631, web 0.414. At the 20 mm design the hub's ratio is 0.133.
+    - "Weak-field" is also ambiguous: it could mean the weaker free-space field or the low-Reynolds "weak reaction". The replacement says the plain thing that is true in both readings and in the report (section 5.5.4: the free-space fields are 0.38 to 0.41 of the steel-circuit ones), and it matches sentences[4].
+- **SF-2 (`slip_heating` sentences[4], the unchanged clause "heat through their whole thickness"; lower priority).**
+  - Replacement (25 words; starts "Without magnetic steel back iron "; one "steel", as " magnetic steel"; guards empty; the claims test passes unchanged): "Without magnetic steel back iron the non-magnetic hub, cup and web see a weaker field and form no skin: their loss grows as speed squared."
+  - Why:
+    - In-task round 1 accepted "whole thickness" as the plain contrast with "a thin surface skin", and the clause did not change here. A fresh look at the numbers shows it is loose for the hub.
+    - At the 304 design, 80 % of the non-magnetic hub's heat lies within 1.60 mm of its 5.10 mm wall (the field at the back face is 8 % of the front). A magnetic-steel hub at the same speed puts 80 % within 1.05 mm. So for the hub, the contrast "thin skin" against "whole thickness" is not what separates the two cases.
+    - What separates them is what sets the depth: speed for the skin (δ ∝ speed^−1/2, hence 1.5), and the field's spread, which does not depend on speed, for non-magnetic metal (hence 2; the probe's hub, cup and web exponents are 2.0000 at the 304 design).
+    - The cup and web carry most of the body loss: 1.543 of 2.111 W with the back-iron switch off, 0.0857 of 0.1173 W at the 304 design. They are closer to whole-thickness (0.631 and 0.414), so the shipped text misleads little. That is why this is optional.
+    - The replacement states the speed-squared law outright instead of leaving it to the parallel with sentences[3].
+
+Considered, no change (the reviewer's observations on these fields; the "body parts" item covers
+`thermal_time_constant` sources[1] too):
+- **"body parts"** (both sources). The word "body" is new on screen. It ties to the σ_body, ρ_body and c_body symbols the Equation panel shows above the note, and `slip_heating` sentences[4] names the hub, cup and web just above the fold. Kept.
+- **`slip_heating` sources[0] and [4]** ("thin-skin steel losses", "the steel loss's speed exponent"). Both name the skin-limited case, which only magnetic steel has, and they sit under sentences[2], which now says "magnetic steel". The fix round considered and declined this. I agree.
+- **"thick"** (`slip_heating` sentences[2]). It is a general physics statement. The model applies the half-space form to every magnetic-steel wall (the default's 1.80 mm cup corner wall is 1.4 skin depths). In-task round 1 reviewed it; the fix only inserted "magnetic".
+
 ## thermal_time_constant
 
 Task T15. Rewrite of "The thermal time constant" as "Slip temperature: how hot, and how fast",
@@ -2908,3 +3013,46 @@ Considered, no change (the reviewer's observations):
 - The dump for the re-review: as under `## when_slipping`.
 - A text re-review of these two fields follows (controller ruling 7). Its report goes below as
   `### Re-review: code-review fix round 1`.
+
+### Re-review: code-review fix round 1
+
+- Reviewer: as under `## when_slipping` (`task-15-textreview-1.md`, on commit `8cb78d4`; ruling
+  7).
+- Scope here: sentences[0] and sources[1], and the fields whose meaning depends on them:
+  sentences[2] (τ_th = C/G, 63 %), change[0] (the conductance shortens τ_th) and the Start here
+  step that opens the note on the thermal time constant (`temperature.thermal.time_constant_s`).
+  The dump: as under `## when_slipping`.
+- Verdict: PASS, no must-fix. One optional should-fix item, SF-3 (a test), applied with no
+  on-screen text change (below the report).
+
+The reviewer's report for the record on these fields follows unchanged.
+
+- **Engine.** The steady rise is P/G and τ_th = C/G (`records/slip_heating.rs:231-236`). The heat capacity is the only place mass enters.
+- **Probe: +100 g of hardware.**
+  - τ_th: 273.98 to 431.65 s (default), 276.07 to 433.74, 289.03 to 446.69, 255.23 to 412.90 and 553.14 to 710.81 s.
+  - The high-case and estimate steady temperatures are bit-identical before and after at all five designs (default 92.513112 and 74.171037 °C).
+  - So "steady rise set by loss and heat path; mass changes only how fast" holds exactly.
+  - Mass still lowers the checked peak through "how fast" (default 65.9644 to 65.8914 °C). That is consistent with the sentence and with sentences[3] and [4].
+- **Spec 3.1, sentence 0.** It names the time constant, the row Start here step 11 opens the note on ("Thermal time constant"). No symbol, placeholder or Greek letter: τ_th first appears in sentences[2], which defines it as C/G. 25 words, at the cap.
+- **sources[1].**
+  - Without magnetic steel the heat capacity prices the hub, cup and boss at the body's own specific heat (`records/slip_heating.rs:222-229`): 304's 500 J/(kg·K) at its design, or 6061's 900.
+  - E15's ruling was written for the aluminium body. The engine applies the same rule to any non-magnetic pick, so the source is accurate.
+  - With magnetic steel, the hub, cup, boss and hardware take the steel's own specific heat, so the source implies nothing false about steel.
+- **Traps.**
+  - "More mass lowers the steady temperature": the sentence says the opposite.
+  - "The coupling can slip indefinitely": not written. watch_out[0] ties "never" to the placeholder conductance.
+  - Ruling 11: no "clamp".
+- **Test.** The claims test pins "time constant" in sentence 0 and the heavier design's unchanged steady rise. SF-3 offers pinning "mass changes only how fast" as well.
+- Verdict for these fields: PASS. Should-fix offered: SF-3 (test).
+
+- SF-3, applied by the implementer (session model), 2026-10-15:
+  `the_slip_temperature_note_s_claims_hold_at_every_probe_design` (`tests/explain.rs`) also
+  asserts that sentence 0 contains "mass changes only how fast", the words that keep it clear of
+  the trap "more mass lowers the steady temperature"; before, only "time constant" was pinned.
+  With "only" dropped from sentence 0 the test fails ("sentence 0 keeps the mass trap guard");
+  the shipped text passes.
+
+Considered, no change (the reviewer's observations on these fields; "body parts" in sources[1]:
+as under `## slip_heating`):
+- **"mass changes only how fast"** (`thermal_time_constant` sentences[0]). Mass still lowers the checked peak through "how fast": +100 g of hardware takes the default's peak from 65.9644 to 65.8914 °C (fault 65.2001 to 65.1272 °C), while the steady temperatures stay exact (92.513112 and 74.171037 °C). The sentence does not say mass cannot lower the peak, and sentences[3] and [4] show the finite-time terms. Consistent.
+- **"which the time constant measures."** "Which" binds to "how fast". τ_th = C/G also depends on the heat path, and change[0] says so ("shortens τ_th"). No false implication.

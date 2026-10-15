@@ -2735,11 +2735,16 @@ fn the_slip_temperature_note_s_claims_hold_at_every_probe_design() {
         ]
     );
     // Sentence 0 answers the time-constant row Start here opens the note on (spec 3.1): mass
-    // changes how fast, which the time constant measures (the heavier design, below).
+    // changes how fast, which the time constant measures (the heavier design, below). "Only"
+    // keeps it clear of the trap "more mass lowers the steady temperature".
     let sentence_zero = notes::note("thermal_time_constant").unwrap().sentences[0];
     assert!(
         sentence_zero.contains("time constant"),
         "sentence 0 names the time constant: {sentence_zero:?}"
+    );
+    assert!(
+        sentence_zero.contains("mass changes only how fast"),
+        "sentence 0 keeps the mass trap guard: {sentence_zero:?}"
     );
     let (mut never, mut reached) = (0, 0);
     for (name, design) in probes::probe_designs() {
