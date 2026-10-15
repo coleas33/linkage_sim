@@ -1578,15 +1578,56 @@ Seeds (A-24):
 Should-fix offered, not applied (open for the controller; no on-screen text changed after the
 round-3 PASS):
 - SF-1 (rounds 1 to 3), watch_out[0] (28 words): "The model's end loss barely grows with the gap: at a 4.4 mm gap a 3D check found f_end 11 % high, so treat wide-gap torque as optimistic." Why: in "Its end loss ... it read 11 % high", "Its" can attach to the bench prototype named at the end of the entry above it, and "it" to "end loss", which inverts the direction. The 11 % is the end factor's (+11.23 %); the total free-space torque is +7.0 %.
-- SF-2 (rounds 1 to 3), watch_out[1] (28 words): "Below about a third of a pole pitch of overlap it reads increasingly low; at or below c_end·τ_p it gives no prediction and the end-effect check flags it." Why: at τ_p/3 (2.94 mm) the model is only −0.58 % against 3D, and −20.7 % at 2.0 mm. Round 3's W1 (under SF-C) replaces it.
+- SF-2 (rounds 1 to 3), watch_out[1] (28 words): "Below about a third of a pole pitch of overlap it reads increasingly low; at or below c_end·τ_p it gives no prediction and the end-effect check flags it." Why: at τ_p/3 (2.94 mm) the model is only −0.58 % against 3D, and −20.7 % at 2.0 mm. Round 3's W1 (under SF-C) replaces it. (Superseded: W1 applied by the task review fix round 1 below.)
 - SF-A (rounds 2 and 3), sources[1]: scope the figure as sentences[4] does (34 words): "Physics review of 2026-10-15: the end factor against free-space 3D by magnet length (within 3 % from 3.2 mm on the example design), by magnets per ring and at a 20 mm ring radius". Round 3 offers a 32-word form that also names block width: "Physics review of 2026-10-15: the end factor against free-space 3D by magnet length (within 3 % from 3.2 mm on the example design), by magnets per ring, block width and ring radius".
 - SF-C (round 3, new; physics; outside round 3's scope): narrow or tightly packed blocks read HIGH against 3D.
   - B822 (3.17 mm wide) fits the example ring at 10, 12, 16 and 20 per ring, with the end-effect check "OK". The model's f_end reads above 3D there: +1.87, +3.29, +4.62 and +5.23 % at 12.7 mm, and up to +27 % at 3.2 mm. B842SH at 18 per ring on the 20 mm ring reads +5.99 % at 4.25 mm. The model's end loss c_end·τ_p tracks only the pole pitch, while the 3D loss stays about 1.2 to 1.6 mm at this gap until the pitch gets long.
   - sentences[4] stays true: it is scoped to the example design and to its two named levers.
   - watch_out[1]'s unscoped "reads well low" is false for B822 below τ_p/3 (+3.80 % at 2.5 mm with 10 blocks; +9.29 % at 2.0 mm with 12). It is true at the five probe designs and at the brief's extra probes, which is why rounds 1 and 2 passed it.
   - Candidate texts, checked by the reviewer for form: W1, watch_out[1] (30 words): "On the example design it reads low below a third of a pole pitch of overlap; at or below c_end·τ_p it gives no prediction and the end-effect check flags it." W0, watch_out[0] (29 words; it folds in SF-1 and needs its own per-note pass, because it drops "treat wide-gap torque as optimistic"): "The model's end loss ignores block width and barely grows with the gap; 3D read f_end 11 % high at a 4.4 mm gap and high with narrower blocks."
-  - The reviewer recommends W1 before the flip if a 4th round is taken, and otherwise routing it with SF-4 to the final fix wave or a G-3 re-review. The controller closed the in-task loop at the round-3 PASS, so it is routed.
+  - The reviewer recommends W1 before the flip if a 4th round is taken, and otherwise routing it with SF-4 to the final fix wave or a G-3 re-review. The controller closed the in-task loop at the round-3 PASS, so it is routed. (W1 applied by the task review fix round 1 below; W0 and the rest of SF-C stay open.)
 - SF-4 (rounds 1 to 3; outside T13's fields, seen in the Assumptions view): the `end_effect` assumption rationale (`assumptions.rs:71`) still says "Checked at 10 magnets per ring and a 1.4 mm gap, it is within 2 % of free-space 3D for magnets 3.2 mm and longer", which the note now contradicts: 2 % is exceeded from about 3.5 to 6.0 mm, the scope admits the 20 mm ring at −12 %, and it is blind to block width. Route it to the final fix wave or a G-3 re-review. Also from round 1: phys-new-notes T-B ("end effects grow with fewer poles") is a statement about the model only. At fixed blocks the free-space 3D end loss grows with more magnets per ring, so no note may present "more magnets lose less at the ends" as physics.
+
+### Task review fix round 1 (2026-10-15): the short-overlap watch-out scoped to the example design
+
+- The task code review (`task-13-review.md`, Important I-1) found watch_out[1] false at designs
+  the inputs reach, in the optimistic direction. That is round 3's SF-C, which had been routed to
+  the final fix wave. The review recommended applying round 3's W1 now, with a per-note re-review
+  (controller ruling 7).
+- **watch_out[1]** (round 3's W1, verbatim; 30 words by `word_count`, at the cap):
+  - Old: "Below about a third of a pole pitch of overlap it reads well low; at or below c_end·τ_p it
+    gives no prediction and the end-effect check flags it."
+  - New: "On the example design it reads low below a third of a pole pitch of overlap; at or below
+    c_end·τ_p it gives no prediction and the end-effect check flags it."
+  - Why: the unscoped claim is false for the narrower B822 block on the example ring with the
+    end-effect check "OK". Free-space 3D reads the model high there: +3.80 % at 2.5 mm with 10
+    blocks, and +9.29 % at 2.0 mm (the magnet length slider's floor) with 12. "Reads low" sounds
+    conservative, but for those blocks the short-magnet torque is optimistic. "Well low" also
+    overstated the case near τ_p/3 on the example design (−0.58 % at 2.94 mm; SF-2). W1 narrows the
+    claim to the design the 3D data cover: −0.58, −5.75 and −20.72 % at 2.94, 2.5 and 2.0 mm.
+    The no-prediction clause is unchanged.
+- **Engine side, reproduced** with `compute_all` in a scratch crate outside the repo (B822 on both
+  rings of the example ring; the example's c_end 0.15):
+  - 10 per ring at 2.5 mm: the blocks fit (3.17 mm wide against B842SH's 6.35); τ_p 8.8090 mm, so
+    τ_p/3 is 2.9363 mm and c_end·τ_p 1.3214 mm; f_end 0.471458; check "OK"; pull-out 0.086963 N·m.
+  - 12 per ring at 2.0 mm: the blocks fit; τ_p 7.3409 mm, τ_p/3 2.4470 mm, c_end·τ_p 1.1011 mm;
+    f_end 0.449436; check "OK"; pull-out 0.095710 N·m.
+  - The model gives 10 B822 at 2.5 mm the same f_end as the example design at 2.5 mm (0.471458),
+    because f_end does not depend on block width. 3D gives them opposite signs (+3.80 % against
+    −5.75 %): this is SF-C's cause.
+- **Test.** New: `tests/explain.rs`
+  `the_end_effect_note_s_short_overlap_watch_out_is_scoped_to_the_example_design`, computed from
+  the engine and the input metadata:
+  - at both B822 designs above (12 per ring at the slider's floor, read from the metadata), the
+    blocks fit, are narrower than the example's, sit below a third of the pole pitch, and read
+    the end-effect check "OK";
+  - the watch-out's claim (the clause before ";") says "reads low" on the example design.
+
+  The old text fails it ("scopes \"reads low\" to the example design").
+- Not changed: W0 (watch_out[0]) and the rest of SF-C (the note does not say that narrower or more
+  tightly packed blocks read high), SF-1, SF-A and SF-4. They stay open as listed above.
+- A text re-review of this field follows (controller ruling 7). Its report goes below as
+  `### Re-review: task review fix round 1`.
 
 ## calibration
 

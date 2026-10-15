@@ -1713,6 +1713,63 @@ fn the_end_effect_note_s_length_claims_hold_at_every_probe_design() {
     }
 }
 
+/// `end_effect`'s second watch-out says the model reads low below a third of a pole pitch of
+/// overlap only on the example design (T13 task review, I-1). Off it, designs the inputs reach
+/// below that overlap still get a prediction: on the example ring with the narrower B822 block
+/// on both rings, 10 per ring at 2.5 mm and 12 per ring at the magnet length slider's floor fit
+/// and read the end-effect check OK. There free-space 3D reads the model high, not low (+3.80 %
+/// and +9.29 %: the in-task review's round 3, SF-C), so an unscoped "reads low" is false in the
+/// optimistic direction.
+#[test]
+fn the_end_effect_note_s_short_overlap_watch_out_is_scoped_to_the_example_design() {
+    let example = DesignInputs::default();
+    let example_width = compute_all(&example).model.inner_width_mm;
+    let floor = input_rows(&example)
+        .into_iter()
+        .find(|row| row.path == "coupling.magnets.axial_length_mm")
+        .and_then(|row| row.meta.range)
+        .expect("the magnet length has a slider")
+        .min;
+    for (per_ring, length) in [(10, 2.5), (12, floor)] {
+        let mut narrow = example.clone();
+        narrow.coupling.npole = per_ring;
+        narrow.coupling.magnets.part_inner = "B822".to_owned();
+        narrow.coupling.magnets.part_outer = "B822".to_owned();
+        narrow.coupling.magnets.axial_length_mm = Some(length);
+        let model = compute_all(&narrow).model;
+        let design = format!("{per_ring} B822 per ring at {length} mm");
+        assert!(
+            blocks_fit(&narrow.coupling, &model),
+            "{design}: the blocks fit"
+        );
+        assert!(
+            model.inner_width_mm < example_width,
+            "{design}: block width {} mm against the example's {example_width} mm",
+            model.inner_width_mm
+        );
+        assert!(
+            model.active_length_mm < model.pole_pitch_mm / 3.0,
+            "{design}: overlap {} mm against a third of the pole pitch {} mm",
+            model.active_length_mm,
+            model.pole_pitch_mm
+        );
+        assert_eq!(model.end_effect_check, "OK", "{design}: a prediction");
+    }
+    let note = notes::note("end_effect").expect("the end-effect note");
+    let short = note
+        .watch_out
+        .iter()
+        .find(|w| w.contains("a third of a pole pitch"))
+        .expect("the short-overlap watch-out");
+    let (claim, _) = short
+        .split_once(';')
+        .expect("the claim, then the no-prediction clause");
+    assert!(
+        claim.contains("reads low") && claim.to_lowercase().contains("on the example design"),
+        "scopes \"reads low\" to the example design: {short:?}"
+    );
+}
+
 /// `calibration`'s three entries and its rule at the five probe designs. A prototype match
 /// (the rule's own terms: no steel behind the magnets, the prototype's magnets per ring, B842SH
 /// on both rings) ignores the assumed factor; elsewhere every torque scales with it. The two
