@@ -898,10 +898,11 @@ The relevant ones were checked above: T-I, T-K and T-L on the verdict; "a hotter
   - At the defaults (1.8 mm): "Wall rule: at least 1.919 mm of cup wall at the pocket corners;
     Minimum outer return ring wall is 1.800 mm"
 - The line now quotes the same need as the cup wall guide's Problem line ("the flux it carries
-  needs 1.919 mm at the 1.500 T design flux density"). Since the re-check below the line rounds it
-  up and the guide to the nearest digit, so the two can differ in the last digit (its SF-2). The
-  failing verdict still advises "at least 2.0 mm", the suggestion, which passes the check, so the two numbers differ on purpose: the
-  rule's wall and its rounding. SF-5 (one number in two formats) no longer applies.
+  needs 1.919 mm at the 1.500 T design flux density"). Since the re-check below, the line rounds
+  it up and the guide rounds it to the nearest digit, so the two differ in the last digit at
+  about half the failing designs (the re-check's SF-2). The failing verdict still advises "at
+  least 2.0 mm", the suggestion, which passes the check, so the two numbers differ on purpose:
+  the rule's wall and its rounding. SF-5 (one number in two formats) no longer applies.
 - New test: `geometry::tests::the_wall_rule_line_asks_for_the_wall_the_check_compares_with`. It
   steps the wall's slider up from the defaults to the first wall the check passes (1.95 mm),
   checks that the wall lies between the rule's wall and its rounding, and pins the line.
@@ -1053,3 +1054,162 @@ Default design except where the row says. The line is quoted after "Wall rule: a
 - The record subsection, `docs/analyses/2026-10-14-magcoupler-help-review.md` "Task review fix
   round 1": true, including that SF-5 no longer applies.
 - After MF-1, each of these gets the "rounded up at its last digit" clause.
+
+### Re-review: code-review fix round 1 (re-check 2)
+
+- Reviewer: a fresh-context physics reviewer (session model), 2026-10-15, on commit `8a45797`
+  (`task-10-textreview-2.md`): the re-review above's MF-1 as applied.
+- Scope: the wall-rule line under the Geometry tab's views (`gui/geometry.rs`, `notes()`), whose
+  number is now `mm_at_least(materials.backiron_thickness_needed_mm)`, and every on-screen text
+  whose meaning depends on it. The wording is unchanged. The notes dump does not cover the line,
+  so the reviewer probed it with a scratch crate on `compute_all` designs.
+- Verdict: PASS, no must-fix.
+  - MF-1 is applied verbatim: the import, the helper, the comment, the call, the oracle and both
+    tests.
+  - The line prints the wall the check compares with, rounded up at its last shown digit. Over
+    the 379,620 slider designs, a wall shown at or above it passes and a wall shown below it
+    fails: 0 disagree, against 19 for the nearest digit.
+  - The line is 21 words, guard-clean at every design, and writes no trap.
+- SF-3, applied: the garbled sentence in "Task review fix round 1" above now reads as the review
+  gives it, in the form for SF-2 left open.
+- Should-fix, left open for the controller:
+  - SF-1: `mm_at_least` meets its guarantee only to within a few ulps, while its doc comment and
+    the README's geometry row and geometry test row state it exactly.
+    - A need 1 to 3 ulps above a digit is shown at that digit: 1.9000000000000001 shows
+      "1.900 mm", and a 1.90 mm wall fails.
+    - 40 of the 9,000 lengths on a digit from 0.1 to 10 mm are lifted one digit (4.001 shows
+      "4.002 mm"), so the test row's "a length already on a digit stays" is false as a general
+      statement.
+    - No slider design (0 of 379,620) and no random need (0 of 2,000,000) reaches either case.
+    - The review recommends option A: show the nearest number, and step one digit up only when
+      that number reads back below the need. It gives the exact code and two red-first asserts.
+      Option B, the fallback if no further code round is wanted, qualifies the three claims
+      (docs only).
+  - SF-2 (re-review 1's SF-2, new numbers): the cup wall guide's Problem line rounds the same
+    need to the nearest digit.
+    - It quotes a different last digit from this line at 48,563 of the 94,832 failing slider
+      designs. At a 20 mm ring radius it reads "needs 3.267 mm" beside "at least 3.268 mm".
+    - At the boundary designs it still reads "is 1.950 mm; ... needs 1.950 mm" beside a red
+      badge.
+    - The review leans to rounding the guide's need up too. That changes slice 1's G-3 contract
+      (a Problem's numbers as the readouts show them), so it is the controller's ruling.
+  - Carried from re-review 1, unchanged: SF-1 (the suggestion's label and help) and SF-3 (test
+    comments). SF-3's list gains two code comments that call the suggestion the rule's wall:
+    `engine/materials.rs:224` (T10's) and `engine/materials.rs:241` (pre-existing).
+- Corrections to re-review 1's copied report above, which stays as returned:
+  - Its probe table gives the line's numbers from before MF-1. Three rows now read one digit
+    up: the 20 mm ring radius 3.268 mm (was 3.267), the 1018 back iron 1.694 mm (was 1.693) and
+    40 poles 0.4798 mm (was 0.4797). The other rows are unchanged.
+  - Its "Float edge" bullet names only the conservative direction, a need on a digit lifted one
+    digit. SF-1 gives the other: a need a few ulps above a digit shown at that digit.
+
+The reviewer's report for the record, as returned:
+
+#### MF-1 as applied
+
+The commit matches re-review 1's exact replacement:
+- the import (`SIGNIFICANT_DIGITS`);
+- `mm_at_least` after `mm`;
+- the four-line comment in `notes()`;
+- the call `mm_at_least(results.materials.backiron_thickness_needed_mm)`;
+- the oracle `expected_wall_rule`;
+- `a_wall_shown_equal_to_the_wall_rule_passes_the_check`, verbatim;
+- `a_minimum_length_is_rounded_up_at_its_last_shown_digit`, with the review's six values plus
+  both infinities, zero and a negative length.
+
+`the_wall_rule_line_asks_for_the_wall_the_check_compares_with` still holds: at the defaults the
+rounded-up need is 1.919 mm, not 2.000 mm.
+
+#### The claim against the engine (unchanged by this round)
+
+- The line's two numbers are the check's two operands: `t_bi_req_mm` and `wall_corner_mm`
+  (`materials.rs:246`), and the model's `thick_check` compares the same pair (`model.rs:1043`).
+- Rounding the need up keeps the line a true statement of a minimum. At 4 significant digits, a
+  wall shown at or above the shown rule meets the unrounded rule. This holds for every wall on
+  the 0.05 mm slider grid, which lies on the display's 1e-3 mm grid from 1 mm up and on its
+  1e-4 mm grid below 1 mm.
+- The gating is unchanged: the line shows exactly while the suggestion is a number, that is,
+  while the circuit in effect has back iron.
+
+#### Probe
+
+Named designs, quoted as the app draws them:
+
+| Design | Need (mm) | Check (shown) | Wall-rule line |
+|---|---|---|---|
+| defaults | 1.918913657 | Too thin: raise Minimum outer return ring wall to at least 2.0 mm | at least 1.919 mm ...; ... is 1.800 mm |
+| 12 poles, 1.23 T, 1.95 mm | 1.950115505 | Too thin: ... 2.0 mm | at least 1.951 mm ...; ... is 1.950 mm |
+| 12 poles, 1.23 T, 2.00 mm | 1.950115505 | OK (none) | at least 1.951 mm ...; ... is 2.000 mm |
+| 8 poles, 2.18 T, 1.65 mm | 1.650441792 | Too thin: ... 1.7 mm | at least 1.651 mm ...; ... is 1.650 mm |
+| 6 poles, 1.17 T, 4.10 mm | 4.100242856 | Too thin: ... 4.2 mm | at least 4.101 mm ...; ... is 4.100 mm |
+| 2 poles, 0.50 T | 28.783704848 | Too thin: ... 28.8 mm | at least 28.79 mm ...; ... is 1.800 mm |
+| 40 poles, 2.20 T | 0.327087555 | OK (none) | at least 0.3271 mm ...; ... is 1.800 mm |
+
+- Each line is 21 words, has level `None`, and is guard-clean.
+- Each failing design's line shows the wall below the rule.
+
+The slider sweep, through the real notes: every pole count (2 to 40), every design flux density
+(0.50 to 2.20 T, 0.01 T steps) and every wall (0.50 to 6.00 mm, 0.05 mm steps), with the default
+design otherwise. That is 379,620 designs, every one with a line.
+
+| Rounding | Shown met, check fails | Shown short, check passes |
+|---|---|---|
+| up (as shipped) | 0 | 0 |
+| to the nearest (before MF-1) | 19 | 0 |
+
+- Across the sweep, 0 lines tripped the guard, 0 lines were not 21 words, and 0 numbers failed
+  to parse.
+- `mm_at_least` was also checked against every slider wall for 2,000,000 random needs
+  (log-uniform, 0.05 to 20 mm): it never showed a need too low and never disagreed with a wall.
+- The commit message's and the record's "19 ... now none" is verified.
+
+Display range and edge inputs:
+- 4.321e-4 shows "4.321e-4 mm", 9.9999e-4 "0.001000 mm", 1.234567e6 "1.235e6 mm" and 999999.9
+  "1.000e6 mm", so scientific display rounds up too.
+- NaN, +inf, 0 and -1 show as `mm` shows them.
+
+#### Traps (none written)
+
+- **Slice-2 section 8** and **slice-1 section 8**: nothing in the line touches a trap. The change
+  moves only the last digit of a number already reviewed.
+- **T-I** (the rule reads 12 to 16 % thin): rounding up nudges the shown minimum the
+  conservative way, by less than 1 µm. The line still attributes the number to "Wall rule" and
+  claims no sufficiency. The cup wall guide's learn note, `a5.low_saturation`, still carries
+  the margin caution.
+- **T-J, T-K, T-L**: no temperature, saturation figure or torque effect.
+- **The added trap** (more magnets make the coupling stiffer): not touched.
+
+#### Caps and plain words
+
+- The wording is byte-equal to the reviewed text: 21 words. Only the number's rounding changed.
+- The geometry notes have no row in the caps table.
+- The number is a computed result. The input's name comes from `label_for(CUP_WALL_INPUT)`.
+- No cell, correction id, file or code name appears.
+- `plain_text_violations` is empty on all 379,620 sweep lines and all 7 named designs.
+
+#### Docs checked against the code
+
+- README `README.md:418`, "rounded up at its last digit (`mm_at_least`), so a wall shown equal
+  to it passes": true on every reachable design. It is exact to within the ulps of SF-1.
+- README geometry test row: true for the tests it describes. "A length already on a digit
+  stays" is false as a general statement for 40 of 9,000 on-digit lengths between 0.1 and 10 mm
+  (SF-1).
+- `02-system.yaml` sentence: true.
+- Tracker bullet: true. "The rule's wall is 1.9501 mm, shown 1.950 mm, now 1.951 mm" was
+  probed (1.950115505 mm).
+- BL-056: true. Its should-fix list matches re-review 1's.
+- The record:
+  - "Re-review: code-review fix round 1": an accurate account of the round.
+  - Its copied report: as returned, with the caveats under SF-3.
+  - "Task review fix round 1": the sentence in SF-3 is garbled.
+
+#### Pre-existing, for the record
+
+- **Off-grid walls from a design file or share link.** Typed values snap to the step, but a
+  file can carry any wall. Near the rule, the wall shown to the nearest digit can then read one
+  digit below the rounded-up rule while the check passes. Probed: at 12 poles and 1.23 T (need
+  1.9501155 mm), a 1.9503 mm wall passes, and the line reads "at least 1.951 mm ...; ... is
+  1.950 mm". This is the conservative direction, inherent to showing a 4-digit wall, and not a
+  false safety claim.
+- **Non-finite input from a design file:** "at least +inf mm" or "at least NaN mm", as recorded
+  by re-review 1. Unchanged by this round.
