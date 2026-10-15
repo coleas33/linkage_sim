@@ -2070,11 +2070,7 @@ mod tests {
                             (Some(Value::Num(before)), Some(Value::Num(after)))
                                 if before.is_finite() && after.is_finite() =>
                             {
-                                let holds = match sense {
-                                    notes::Sense::Up => after > before,
-                                    notes::Sense::Down => after < before,
-                                };
-                                let verdict = if holds {
+                                let verdict = if sense.holds(before, after) {
                                     "moves as it says"
                                 } else {
                                     "DOES NOT MOVE AS IT SAYS"

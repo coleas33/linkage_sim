@@ -92,6 +92,18 @@ pub enum Sense {
     Down,
 }
 
+impl Sense {
+    /// Whether a result that went from `before` to `after` moved this way: strictly, so an
+    /// unmoved result (or a NaN) never holds. The one rule the aim test and the reviewer's
+    /// sheet both apply.
+    pub fn holds(self, before: f64, after: f64) -> bool {
+        match self {
+            Sense::Up => after > before,
+            Sense::Down => after < before,
+        }
+    }
+}
+
 /// One "What to change" entry. The GUI draws "`<Step word> <display label of input>: <text>`",
 /// the label a link that highlights the input's row, or plain text with the reason where the
 /// input is not free on the design shown.
@@ -811,6 +823,20 @@ mod tests {
         assert_eq!(steps.map(Step::up), [Some(true), Some(false), None, None]);
     }
 
+    #[test]
+    fn a_sense_holds_only_for_a_move_its_way() {
+        assert!(Sense::Up.holds(1.0, 2.0));
+        assert!(!Sense::Up.holds(2.0, 1.0));
+        assert!(!Sense::Up.holds(1.0, 1.0));
+        assert!(Sense::Down.holds(2.0, 1.0));
+        assert!(!Sense::Down.holds(1.0, 2.0));
+        assert!(!Sense::Down.holds(1.0, 1.0));
+        for sense in [Sense::Up, Sense::Down] {
+            assert!(!sense.holds(f64::NAN, 1.0), "{sense:?}");
+            assert!(!sense.holds(1.0, f64::NAN), "{sense:?}");
+        }
+    }
+
     /// What is wrong with a change entry (slice-2 spec 3.1 and section 6 test 2): an input
     /// that is no input; Choose on a number, Enter on a choice, or Raise or Lower on a choice
     /// (a selector or a part, grade or material name); a number with no slider to step; an aim
@@ -1191,29 +1217,26 @@ mod tests {
         assert!(failures.is_empty(), "{failures:#?}");
     }
 
-    /// What reads as jargon in one note's text (slice-2 spec 3.4, A-13): a word the plain-words
-    /// guard bans in its title, a sentence, a change text, a watch-out or a source (a live value
-    /// stands as the number 1), and an audit id (`TC-`, `PA-`, `CG-`) in a source, which the
-    /// guard does not know.
+    /// What reads as jargon in one note's text (slice-2 spec 3.4, A-13): in its title, a
+    /// sentence, a change text, a watch-out or a source, a word the plain-words guard bans (a
+    /// live value stands as the number 1) and an audit id (`plain::audit_ids`), which the guard
+    /// does not know.
     fn plain_words_problems(n: &Note) -> Vec<String> {
         use super::super::note_text::render;
-        use super::super::plain::plain_text_violations;
+        use super::super::plain::{audit_ids, plain_text_violations};
         let texts = std::iter::once(n.title)
             .chain(n.sentences.iter().copied())
             .chain(n.change.iter().map(|c| c.text))
             .chain(n.watch_out.iter().copied())
             .chain(n.sources.iter().copied());
-        let mut problems: Vec<String> = texts
-            .filter_map(|text| {
-                let banned = plain_text_violations(&render(text, |_| Some("1".to_owned())));
-                (!banned.is_empty()).then(|| format!("{}: {banned:?} in {text:?}", n.id))
-            })
-            .collect();
-        for source in n.sources {
-            for id in ["TC-", "PA-", "CG-"] {
-                if source.contains(id) {
-                    problems.push(format!("{}: an audit id {id} in {source:?}", n.id));
-                }
+        let mut problems = Vec::new();
+        for text in texts {
+            let banned = plain_text_violations(&render(text, |_| Some("1".to_owned())));
+            if !banned.is_empty() {
+                problems.push(format!("{}: {banned:?} in {text:?}", n.id));
+            }
+            for id in audit_ids(text) {
+                problems.push(format!("{}: an audit id {id} in {text:?}", n.id));
             }
         }
         problems
@@ -1304,6 +1327,13 @@ mod tests {
                     ..good
                 },
                 "an audit id CG-",
+            ),
+            (
+                Note {
+                    watch_out: &["As PA-8 found, it is so."],
+                    ..good
+                },
+                "an audit id PA-",
             ),
         ] {
             let problems = plain_words_problems(&bad);

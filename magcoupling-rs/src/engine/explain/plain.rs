@@ -105,6 +105,18 @@ pub fn sentence_count(text: &str) -> usize {
         .count()
 }
 
+/// The audit-id prefixes `text` contains (`TC-`, `PA-`, `CG-`, case and dash as written: the
+/// guidance audits' finding ids such as TC-12 or PA-8), in that order, each once. Not in
+/// [`BANNED`]: the notes' texts and sources are held to an empty list (slice-2 spec 3.4, A-13;
+/// the audit cross-references stay in the committed review report), by the notes' plain-words
+/// rule and by the all-notes test in `tests/explain.rs`, which both call this.
+pub fn audit_ids(text: &str) -> Vec<&'static str> {
+    ["TC-", "PA-", "CG-"]
+        .into_iter()
+        .filter(|id| text.contains(id))
+        .collect()
+}
+
 /// Whether `c` continues a word: a letter, a digit or an underscore.
 fn is_word(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
@@ -372,5 +384,27 @@ mod tests {
         assert_eq!(sentence_count("Why? Because! Yes."), 3);
         assert_eq!(sentence_count("No stop"), 0);
         assert_eq!(sentence_count(""), 0);
+    }
+
+    #[test]
+    fn audit_ids_names_each_prefix_once_in_its_order() {
+        assert_eq!(
+            audit_ids("Guidance audit 2026-10-13, TC-1, CG-3 and CG-4: probes"),
+            ["TC-", "CG-"]
+        );
+        assert_eq!(audit_ids("PA-8 and TC-12"), ["TC-", "PA-"]);
+        assert_eq!(audit_ids("A source (TC-RC2)"), ["TC-"]);
+        // Not ids: a date, the letters without the dash, or in lower case.
+        for clean in [
+            "Math audit of 2026-09-29: the planar harmonic model",
+            "TC 1, a PA66 nylon and a cg-shift",
+        ] {
+            assert_eq!(audit_ids(clean), Vec::<&str>::new(), "{clean:?}");
+        }
+        // The plain-words guard does not know them: a note's texts are held to both lists.
+        assert_eq!(
+            plain_text_violations("TC-1, PA-8 and CG-3"),
+            Vec::<&str>::new()
+        );
     }
 }

@@ -31,7 +31,7 @@ use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::DeviationId;
 use magcoupling::engine::explain::markup::{Expr, Symbol};
 use magcoupling::engine::explain::notes::{Change, Sense, Step};
-use magcoupling::engine::explain::plain::plain_text_violations;
+use magcoupling::engine::explain::plain::{audit_ids, plain_text_violations};
 use magcoupling::engine::explain::record::Eval;
 use magcoupling::engine::explain::registry::{Design, Registry, TermKind};
 use magcoupling::engine::explain::scope::{SCOPE, Status};
@@ -1910,9 +1910,17 @@ fn a_unit_typed_after_a_live_value_is_found() {
 
 /// Whether `text` holds a live value outside a "here" clause (spec 3.2): a number stands where
 /// the text says "here" or "on this design", so it reads as this design's, not as a constant.
+/// Both match as whole words (the runs of letters, in any case), so "where", "there" and
+/// "upon this design" do not count.
 fn live_value_outside_a_here_clause(text: &str) -> bool {
     let lower = text.to_lowercase();
-    text.contains('{') && !(lower.contains("here") || lower.contains("on this design"))
+    let words: Vec<&str> = lower
+        .split(|c: char| !c.is_alphabetic())
+        .filter(|word| !word.is_empty())
+        .collect();
+    let here_clause =
+        words.contains(&"here") || words.windows(3).any(|w| w == ["on", "this", "design"]);
+    text.contains('{') && !here_clause
 }
 
 #[test]
@@ -1929,6 +1937,24 @@ fn a_live_value_outside_a_here_clause_is_found() {
     assert!(!live_value_outside_a_here_clause(
         "No live value in this one."
     ));
+    // "here" counts as a whole word only: where, there, somewhere and adhere hold no "here"
+    // clause, and "on this design" counts as those three words.
+    for outside in [
+        "Where the gap closes, the pull-out is {model.pullout_Nm}.",
+        "There the pull-out is {model.pullout_Nm}.",
+        "Somewhere the pull-out is {model.pullout_Nm}.",
+        "The magnets adhere; the pull-out is {model.pullout_Nm}.",
+        "Upon this design the pull-out is {model.pullout_Nm}.",
+    ] {
+        assert!(live_value_outside_a_here_clause(outside), "{outside}");
+    }
+    for inside in [
+        "The pull-out, here, is {model.pullout_Nm}.",
+        "The pull-out (here: {model.pullout_Nm}) falls.",
+        "On this\ndesign the pull-out is {model.pullout_Nm}.",
+    ] {
+        assert!(!live_value_outside_a_here_clause(inside), "{inside}");
+    }
 }
 
 /// Each result's type and unit, by path.
@@ -2134,6 +2160,14 @@ fn every_note_reads_in_plain_words_at_every_probe_design() {
                         note.id
                     ));
                 }
+                // The guard does not know audit ids (A-13, RF-5): checked here for good once
+                // the notes' own REWRITTEN list goes.
+                for id in audit_ids(&text) {
+                    failures.push(format!(
+                        "{} at the {name} design: an audit id {id} in {text:?}",
+                        note.id
+                    ));
+                }
             }
         }
     }
@@ -2167,11 +2201,7 @@ fn aim_failures(
             continue;
         }
         checked += 1;
-        let moved = match sense {
-            Sense::Up => after > before,
-            Sense::Down => after < before,
-        };
-        if !moved {
+        if !sense.holds(before, after) {
             failures.push(format!(
                 "{id}: {} {} should move {aim} {sense:?} at the {name} design: {before} -> {after}",
                 change.step.word(),
