@@ -38,7 +38,7 @@ use magcoupling::engine::explain::scope::{SCOPE, Status};
 use magcoupling::engine::explain::{TermSource, Trace, note_text, notes, probes, render};
 use magcoupling::engine::grades::{GRADES, Grade, GradeFamily};
 use magcoupling::engine::library;
-use magcoupling::engine::material_library::SLEEVE_LINER_CHOICES;
+use magcoupling::engine::material_library::{BACK_IRON_CHOICES, SLEEVE_LINER_CHOICES, chosen};
 use magcoupling::engine::meta::{
     FieldType, InputMeta, InputSet, ResultSet, Value, input_rows, result_rows,
 };
@@ -2459,6 +2459,13 @@ fn the_slip_note_s_claims_hold_at_every_probe_design() {
             ),
         ]
     );
+    // Sentence 0 answers the gearbox ripple row that links the note (spec 3.1): the swinging
+    // torque is the gearbox's (sentence 4's ripple, below).
+    let sentence_zero = notes::note("when_slipping").unwrap().sentences[0];
+    assert!(
+        sentence_zero.contains("gearbox"),
+        "sentence 0 names the gearbox: {sentence_zero:?}"
+    );
     for (name, design) in probes::probe_designs() {
         let r = compute_all(&design);
         let c = &design.coupling;
@@ -2507,10 +2514,10 @@ fn the_slip_note_s_claims_hold_at_every_probe_design() {
 }
 
 /// `slip_heating` at the five probe designs: the heat is the drag times the slip speed; the
-/// steel parts' loss grows as the slip speed to the power 1.5 (skin-limited), the shells', the
-/// cap's and the magnets' as its square, and with no magnetic steel the hub's, cup's and web's
-/// as its square too; a library sleeve and liner material other than 316L, or a thinner sleeve
-/// or liner, heats less, and the thinner one widens the running clearance.
+/// magnetic-steel parts' loss grows as the slip speed to the power 1.5 (skin-limited), the
+/// shells', the cap's and the magnets' as its square, and with no magnetic steel the hub's,
+/// cup's and web's as its square too; a library sleeve and liner material other than 316L, or
+/// a thinner sleeve or liner, heats less, and the thinner one widens the running clearance.
 #[test]
 fn the_slip_heating_note_s_claims_hold_at_every_probe_design() {
     let total_down = Some(("temperature.slip_loss.total_W", Sense::Down));
@@ -2523,6 +2530,27 @@ fn the_slip_heating_note_s_claims_hold_at_every_probe_design() {
             ("metal.liner_mm", Step::Lower, total_down),
         ]
     );
+    // Sentences 2 and 4 say magnetic steel: a 304 back iron is steel but not magnetic, and its
+    // hub, cup and web take the whole-thickness form (the speed squared, below). Every "steel"
+    // in the sentences is " magnetic steel" (the space keeps "non-magnetic steel" out).
+    let sentences = notes::note("slip_heating").unwrap().sentences;
+    assert!(
+        sentences[2].starts_with("In thick magnetic steel "),
+        "{:?}",
+        sentences[2]
+    );
+    assert!(
+        sentences[4].starts_with("Without magnetic steel back iron "),
+        "{:?}",
+        sentences[4]
+    );
+    for s in sentences {
+        assert_eq!(
+            s.matches("steel").count(),
+            s.matches(" magnetic steel").count(),
+            "only magnetic steel: {s:?}"
+        );
+    }
     let code = |id: &str| {
         SLEEVE_LINER_CHOICES
             .iter()
@@ -2604,6 +2632,48 @@ fn the_slip_heating_note_s_claims_hold_at_every_probe_design() {
     );
 }
 
+/// The slip notes' non-magnetic-body sources (`slip_heating` sources[3] and
+/// `thermal_time_constant` sources[1]): with a non-magnetic back-iron pick the hub, cup and web
+/// take the pick's own conductivity and specific heat (304 stainless at its probe design), so
+/// the rules they cite are the non-magnetic body's, not aluminium's alone.
+#[test]
+fn the_non_magnetic_body_is_the_picked_metal_not_only_aluminium() {
+    for (id, i) in [("slip_heating", 3), ("thermal_time_constant", 1)] {
+        let sources = notes::note(id).unwrap().sources;
+        assert!(
+            sources[i].contains("non-magnetic body parts"),
+            "{id}: {:?}",
+            sources[i]
+        );
+        assert!(
+            sources.iter().all(|s| !s.contains("aluminium")),
+            "{id}: {sources:?}"
+        );
+    }
+    let mut not_aluminium = 0;
+    for (name, design) in probes::probe_designs() {
+        let pick = chosen(&BACK_IRON_CHOICES, design.materials.parts.back_iron)
+            .unwrap_or_else(|| panic!("{name}: a back-iron choice"));
+        if pick.ferromagnetic {
+            continue;
+        }
+        let m = compute_all(&design).materials;
+        assert_ne!(m.circuit_backiron, 1, "{name}: no magnetic steel");
+        assert_eq!(
+            (m.body_sigma_S_m, m.body_c_J_kgK),
+            (pick.engine.sigma_S_m, pick.engine.cp_J_kgK),
+            "{name}: the body is the picked metal"
+        );
+        if pick.id != "6061_T6" {
+            not_aluminium += 1;
+        }
+    }
+    assert!(
+        not_aluminium >= 1,
+        "a non-magnetic body other than aluminium among the probes"
+    );
+}
+
 /// The two notes' measured-drag entries (`slip_heating` and `thermal_time_constant`, A-2): a
 /// drag measured on the bench replaces the estimated loss and its high case in the temperature
 /// results (both become the measurement), while the slip-loss rows the notes call "estimated"
@@ -2663,6 +2733,13 @@ fn the_slip_temperature_note_s_claims_hold_at_every_probe_design() {
                 Some(("temperature.magnet_life.peak_C", Sense::Down))
             ),
         ]
+    );
+    // Sentence 0 answers the time-constant row Start here opens the note on (spec 3.1): mass
+    // changes how fast, which the time constant measures (the heavier design, below).
+    let sentence_zero = notes::note("thermal_time_constant").unwrap().sentences[0];
+    assert!(
+        sentence_zero.contains("time constant"),
+        "sentence 0 names the time constant: {sentence_zero:?}"
     );
     let (mut never, mut reached) = (0, 0);
     for (name, design) in probes::probe_designs() {

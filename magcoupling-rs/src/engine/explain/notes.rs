@@ -675,7 +675,7 @@ pub const NOTES: &[Note] = &[
         title: "When the coupling slips",
         equations: &["model.gearbox_input_ripple_Nm", "metal.slip_freq_Hz"],
         sentences: &[
-            "Past its pull-out torque the coupling slips: one ring turns against the other, and the torque between them swings back and forth.",
+            "Past pull-out the coupling slips: one ring turns against the other, and the torque between them, carried by the gearbox, swings back and forth.",
             "The swing runs from plus to minus the pull-out once per pole pair passed, so the load gets almost no torque on average.",
             "What remains is a drag from eddy currents, which the moving field drives in the metal parts, heating them: here an estimated {temperature.slip_loss.drag_Nm}.",
             "The rings re-lock only once the slip speed falls, so slow the drive; a load dropping just below pull-out is not enough.",
@@ -733,9 +733,9 @@ pub const NOTES: &[Note] = &[
         sentences: &[
             "When the coupling slips, each ring's field sweeps over the other ring's metal parts and magnets, driving eddy currents that heat them.",
             "The heat power is the drag torque times the slip speed: here an estimated {temperature.slip_loss.total_W}, a drag of {temperature.slip_loss.drag_Nm}.",
-            "In thick steel the currents crowd into a thin surface skin, so its loss grows about as slip speed to the power 1.5.",
+            "In thick magnetic steel the currents crowd into a thin surface skin, so its loss grows about as slip speed to the power 1.5.",
             "The thin sleeve, liner and cap, and the magnets, heat through their whole thickness, so their loss grows as the square of the speed.",
-            "Without steel back iron the hub, cup and web are non-magnetic metal: they see a weaker field and heat through their whole thickness.",
+            "Without magnetic steel back iron the hub, cup and web are non-magnetic metal: they see a weaker field and heat through their whole thickness.",
         ],
         change: &[
             Change {
@@ -772,7 +772,7 @@ pub const NOTES: &[Note] = &[
             "Math audit of 2026-09-29: thin-skin steel losses against Stoll's half-space solution",
             "Math audit of 2026-09-29: the magnet eddy loss",
             "Math audit of 2026-09-29: the shell end factor",
-            "Design report: the low-Reynolds form for aluminium parts",
+            "Design report: the weak-field, whole-thickness loss of non-magnetic body parts",
             "Guidance audit of 2026-10-13: the stored slip fields; the steel loss's speed exponent is about 1.54 to 1.64",
         ],
         review: Review::Reviewed {
@@ -800,7 +800,7 @@ pub const NOTES: &[Note] = &[
             "temperature.magnet_life.peak_C",
         ],
         sentences: &[
-            "Unbroken slip heats the coupling toward a steady rise set by the loss and the heat path; more mass changes only how fast.",
+            "Unbroken slip heats the coupling toward a steady rise set by loss and heat path; mass changes only how fast, which the time constant measures.",
             "One lump stands for the rotating parts: heat capacity C, conductance G to its surroundings, starting at the hot-day start, hot ambient plus driving rise.",
             "Slipping with loss P heats it toward a rise of P/G above that start, reaching 63 % after τ_th = C/G, here {temperature.thermal.time_constant_s}.",
             "One short slip adds only P·t/C, but many slips over the life add an average rise: the slip duty times P/G.",
@@ -833,7 +833,7 @@ pub const NOTES: &[Note] = &[
         diagram: Some(Diagram::HeatingCurve),
         sources: &[
             "Math audit of 2026-09-29: the placeholder inputs and how far each moves the results, the conductance among them",
-            "Design ruling: aluminium parts at their own specific heat",
+            "Design ruling: non-magnetic body parts at their own specific heat",
             "Math audit of 2026-09-29: a start above the limit",
             "Guidance audit of 2026-10-13: the panel's symbols τ_th and the hot-day start; the limit on the heating curve",
         ],
@@ -1286,6 +1286,23 @@ mod tests {
             "temperature.slip_life.rise_per_event_high_C",
         ] {
             assert_eq!(owner(path), Some("thermal_time_constant"), "{path}");
+        }
+    }
+
+    /// A-15's per-id form for T15's notes (A-28c item 9); `REWRITTEN` runs the same two checks.
+    #[test]
+    fn the_slip_notes_keep_the_caps() {
+        for id in ["when_slipping", "slip_heating", "thermal_time_constant"] {
+            assert_eq!(
+                cap_problems(note(id).unwrap()),
+                Vec::<String>::new(),
+                "{id}"
+            );
+            assert_eq!(
+                sentence_zero_problems(note(id).unwrap().sentences[0]),
+                Vec::<&str>::new(),
+                "{id}"
+            );
         }
     }
 
@@ -1846,10 +1863,11 @@ mod tests {
     }
 
     /// The notes rewritten in plain words so far (slice-2 spec 3.4, A-13): each note task adds
-    /// its ids, which holds those notes to plain words and to the caps, so no per-id
-    /// `cap_problems` assert (A-15) is needed beside it; the task that turns the all-notes tests
-    /// on deletes this list and the two tests it drives, `the_rewritten_notes_read_in_plain_words`
-    /// and `the_rewritten_notes_keep_to_the_slice_2_caps`.
+    /// its ids, which holds those notes to plain words and to the caps (A-15's per-id form,
+    /// `the_slip_notes_keep_the_caps`, repeats the caps check for T15's notes, A-28c item 9);
+    /// the task that turns the all-notes tests on deletes this list and the two tests it drives,
+    /// `the_rewritten_notes_read_in_plain_words` and
+    /// `the_rewritten_notes_keep_to_the_slice_2_caps`.
     const REWRITTEN: &[&str] = &[
         "torque_from_shear",
         "harmonics",
