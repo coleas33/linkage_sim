@@ -1999,7 +1999,12 @@ mod tests {
         // fundamental's, and a long pole pitch lets those harmonics cross the gap. So raising
         // the set moves the pull-out more for narrow blocks than for the default ones on the same
         // pitch, and more on a long pitch than on the default one with the same blocks.
-        let change = |npole: i64, ring_radius_mm: f64, width_mm: f64, from: i64, to: i64| {
+        let change = |dev: Deviations,
+                      npole: i64,
+                      ring_radius_mm: f64,
+                      width_mm: f64,
+                      from: i64,
+                      to: i64| {
             let pullout = |max_harmonic| {
                 let mut ci = CouplingInputs {
                     npole,
@@ -2010,7 +2015,7 @@ mod tests {
                 let m = &mut ci.magnets;
                 (m.part_inner, m.part_outer) = (String::new(), String::new());
                 (m.manual_inner_width_mm, m.manual_outer_width_mm) = (width_mm, width_mm);
-                at(&ci).pullout_Nm
+                at_with(&ci, 0.05, dev).pullout_Nm
             };
             (pullout(to) / pullout(from) - 1.0).abs()
         };
@@ -2022,18 +2027,28 @@ mod tests {
         );
         // The longest pitch the sliders reach (4 magnets on a 30 mm ring) and 1 mm blocks.
         let (long_pitch, long_radius, narrow) = (4, 30.0, 1.0);
-        // From the fundamental alone, and from the default set, to every harmonic.
-        for (from, to) in [(1, 11), (5, 11)] {
-            let narrow_long = change(long_pitch, long_radius, narrow, from, to);
-            let narrow_only = change(pitch, radius, narrow, from, to);
-            let long_only = change(long_pitch, long_radius, width, from, to);
-            let neither = change(pitch, radius, width, from, to);
-            let all = format!("{from} -> {to}: {narrow_long} {narrow_only} {long_only} {neither}");
-            assert!(
-                narrow_long > narrow_only && narrow_long > long_only,
-                "{all}"
-            );
-            assert!(narrow_only > neither && long_only > neither, "{all}");
+        // As the app shows it (every correction on: E7 takes the true pull-out angle, which narrow
+        // blocks move well away from half a pitch), and with the corrections off (the workbook's
+        // half-pitch evaluation). From the fundamental alone, and from the default set, to every
+        // harmonic.
+        for (set, dev) in [
+            ("as shown", Deviations::ALL),
+            ("corrections off", Deviations::NONE),
+        ] {
+            for (from, to) in [(1, 11), (5, 11)] {
+                let narrow_long = change(dev, long_pitch, long_radius, narrow, from, to);
+                let narrow_only = change(dev, pitch, radius, narrow, from, to);
+                let long_only = change(dev, long_pitch, long_radius, width, from, to);
+                let neither = change(dev, pitch, radius, width, from, to);
+                let all = format!(
+                    "{set}, {from} -> {to}: {narrow_long} {narrow_only} {long_only} {neither}"
+                );
+                assert!(
+                    narrow_long > narrow_only && narrow_long > long_only,
+                    "{all}"
+                );
+                assert!(narrow_only > neither && long_only > neither, "{all}");
+            }
         }
     }
 

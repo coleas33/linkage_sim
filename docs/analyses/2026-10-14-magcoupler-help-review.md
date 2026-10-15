@@ -410,10 +410,169 @@ lower torque; the space claim leaves out the shaft boss; "with Auto on"; the mag
     re-blessed (one help line). A new engine test pins its claim
     (`model::tests::higher_harmonics_matter_most_for_narrow_widely_spaced_blocks`; steel circuit,
     1.4 mm face gap). Going from harmonic 1, or from the 1, 3, 5 set, to every harmonic up to 11
-    moves the pull-out by:
-    - 2.16 and 1.70 (relative) for 1 mm blocks at 4 magnets per ring on a 30 mm ring;
-    - 0.32 and 0.039 for 1 mm blocks at the default pitch;
-    - 1.12 and 1.11 for the default blocks on the long pitch;
-    - 0.0071 and under 0.0001 for the default blocks at the default pitch.
+    moves the pull-out by (relative; with the corrections the app uses, E7 on; the test's
+    corrections-off values in brackets):
+    - 11.27 and 1.16 (2.16 and 1.70) for 1 mm blocks at 4 magnets per ring on a 30 mm ring;
+    - 0.045 and 0.034 (0.32 and 0.039) for 1 mm blocks at the default pitch;
+    - 5.78 and 0.44 (1.12 and 1.11) for the default blocks on the long pitch;
+    - 0.0071 and 0.00001 (the same) for the default blocks at the default pitch.
 - S-b stays open.
-- Still to run: a G-3 re-check of each of the two changed strings.
+- The G-3 re-check of the two changed strings ran: PASS, no must-fix (the re-review below).
+
+### Re-review: code-review fix round 1
+
+- Reviewer: a fresh-context physics and wording reviewer (session model), 2026-10-15, on commit
+  `5379ea5` (`task-9-textreview-1.md`).
+- Scope: the two strings the task review's fix round 1 changed, `STORED_3D_NOTE` (S-c) and the
+  `coupling.max_harmonic` help (S-a), and every on-screen sentence whose meaning depends on them.
+- Verdict: PASS, no must-fix. Both strings are byte-equal to G-3 round 1's S-a and S-c texts, both
+  are true at every probed design with the corrections the app uses, and neither writes a trap.
+- Should-fix, both applied after the re-review (no on-screen text changed):
+  1. The harmonic claim test pinned the help with the corrections off only. It now runs as the
+     app shows it (every correction on) and with the corrections off, and names the set in its
+     message. At both sets its values match the figures in "Task review fix round 1" above, to
+     their rounding.
+  2. Those figures now give the app's values, with the corrections-off values in brackets
+     (the reviewer's replacement text, verbatim).
+
+The reviewer's report for the record, as returned:
+
+#### Currency
+
+- Both strings are byte-equal to the round-1 texts. This was checked by script against `task-9-inreview-r1.md`:
+  - S-a: `model.rs:187` and the re-blessed schema help (`input_schema.json:186`) are both equal to it;
+  - S-c: `dashboard.rs:212` is equal to it.
+- `git diff --numstat HEAD~1 HEAD -- magcoupling-rs/tests/data/input_schema.json` reads `1 1`, which is only the help line. Against `ad992e1` it reads `11 11`, as round 2 recorded, so the re-bless swapped only this one line.
+- The repo was clean before and after this review: `git status --short` shows only the untracked owner file `docs/analyses/2026-05-28-press-4bar-analysis.md`.
+
+#### Tests run (in the repo; they wrote only `magcoupling-rs/target/`)
+
+All pass:
+- `--features app --lib stored_3d` (5 tests), which includes the new `the_stored_3d_note_says_the_slip_fields_feed_the_checks_not_the_limits`;
+- `--features app --lib` filtered on `higher_harmonics_matter_most`, `each_cluster_ends_with_one_shared_caveat` and `harmonic` (21 tests);
+- `--features app --test schema` (11 tests), which includes `input_schema_json_is_current` and `engine_owned_help_is_plain_and_short` (it names `coupling.max_harmonic` and checks the guard, `provenance_words`, `code_names` and the 30-word, 2-sentence cap).
+
+#### Probes
+
+- Location: a scratch crate outside the repo, `<scratchpad>/t9-rr1-probe`, with `magcoupling-rs` by path, `default-features = false` and `workbook-parity` (only for the corrections-off comparison). Every other run uses `compute_all`, as the app does.
+- Bins: `src/main.rs` (the harmonic grid and the five probe designs), `src/bin/corners.rs` (the test's corners, corrections off and on), `src/bin/note.rs` (what the stored fields move) and `src/bin/y30.rs`.
+
+#### `STORED_3D_NOTE`
+
+Text: "The temperature checks use the demagnetization reverse fields and the slip-heating fields, computed in 3D for the example design. Those fields stay fixed when you change the geometry, magnet count or grade; for another design, enter its own 3D fields to check the limits."
+
+- **Caps and words:**
+  - 44 words in 2 sentences (19 and 25), as A-7 set it; the only change is one word.
+  - `plain_text_violations` is empty (the dashboard test).
+  - No cell, id, file or code name, no typed number, no "live".
+- **"The temperature checks use the reverse fields":** true.
+  - The reverse fields set the four onsets. The like-pole onset minus the design margin is the magnet limit (`temperature.rs:827-835`).
+  - The single-ring onset gives the cure margin (`:978`, `:1382`).
+  - On the cold side the reverse fields give the cold limit (`:845-856`).
+  - All three reach the verdict's `ok` (`:1383-1388`).
+- **"... and the slip-heating fields":** true while no drag is measured.
+  - The slip fields set the losses (`:1120-1196`), then the peak with the fault (`:1335`), which the verdict compares with both limits.
+  - Probe, each of the 10 slip fields doubled, at all five probe designs:
+    - the governing limit and the hot-day margin never move;
+    - the peak moves for 7 of the 10 (the steel-circuit or the free-space variants, whichever circuit is on).
+- **The fix is right, and "limits" was wrong in more than one way:**
+  - Slip fields: they never set a limit (probe above).
+  - Y30 probe (a positive coercivity coefficient, E20 cold side):
+    - the magnet limit is the grade's rating (250 °C) and the adhesive governs (120 °C), so the like-pole field ×1.2 moves no limit row;
+    - it does move the cold limit (335.7 -> 361.1 °C), which the verdict reads;
+    - so "checks" holds there too.
+- **"Those fields stay fixed when you change the geometry, magnet count or grade":** true.
+  - They are inputs, and nothing scales them with the design.
+  - The losses built from them do change with the geometry (radius, length, pitch), but the sentence says the fields stay fixed, not the losses.
+- **"enter its own 3D fields to check the limits":** reads as "check against the limits". That covers both field sets: the reverse fields set the limits and the slip fields set what is compared with them.
+- **Dependent texts, all consistent:**
+  - `STORED_3D_LABEL` and `STORED_3D_SENTENCE` (unchanged).
+  - T8's `metal.measured_drag_Nm` overlay: "Once entered, it replaces the estimated slip heat in every temperature check." This is the same "temperature check" vocabulary the note now uses.
+  - The three rows the note is attached to (`STORED_3D_ROWS`): governing limit, hot-day margin and verdict.
+  - `docs/ai/02-system.yaml` and `05-update-tracker.md` describe the change correctly.
+- **Traps:** none written.
+  - Slice-1 trap 6 and T-N: the note says the fields stay fixed and does not follow the design.
+  - No live 3D model is promised.
+
+Recorded, no change asked:
+- **Once a measured drag is entered, the slip fields reach no check.**
+  - Probe: with a 0.02 N·m drag, doubling any slip field moves nothing, at all five designs.
+  - So "the slip-heating fields" in the note's first sentence then over-includes.
+  - Not worth a change: the drag's own help says it replaces the slip estimate in every temperature check; the reverse fields still matter, so the note's advice stands; and the 44 words are A-7's.
+- **The stored reverse fields are the NdFeB example design's.**
+  - At the Y30 probe they give a cold limit of 335.7 °C, so the verdict reads CHECK.
+  - The note's advice ("for another design, enter its own 3D fields") is what that user needs.
+  - The engine behaviour is outside this review.
+- **A naming gap ahead:**
+  - A-7's planned T10 headings say "Slip-loss fields from 3D analysis (example design)", and the note says "slip-heating fields".
+  - Both are A-7's texts and the meaning is clear; T10's reviewer may want one name.
+
+#### `coupling.max_harmonic` help
+
+Text: "The torque model sums odd field harmonics up to this one, for your design and the bench prototype. Higher ones matter most for narrow, widely spaced blocks."
+
+- **Caps and words:**
+  - 27 words in 2 sentences.
+  - The guard, `provenance_words` and `code_names` are clean (schema test).
+  - No default number (spec 3.5): the choice text carries "(default)".
+- **"sums odd field harmonics up to this one":** exact.
+  - The choices are 1, 3, 5 (default), 7, 9 and 11, each the highest odd harmonic summed (`model.rs:51-58`).
+  - The model sums the first `harmonic_count` terms, each built from both rings' field-harmonic amplitudes (`model.rs:993-999`, `680-711`).
+- **"for your design and the bench prototype":** exact.
+  - `calibration::compute(cal_in, ci.max_harmonic, dev)` (`api.rs:183`) sums the same set for the prototype's model torque (`calibration.rs:193-213`).
+  - The sweeps read it too (`api.rs:392`); the help need not name them.
+- **"Higher ones matter most for narrow, widely spaced blocks":** true with the corrections the app uses.
+  - Grid: 9 pole counts (4-40) × 4 ring radii (9-30 mm) × 4 face gaps (0.3-5 mm) × 9 widths (1-25.4 mm) × 5 thicknesses (0.5-10 mm) × both circuits. That is 12,960 designs, each run at sets 1, 5 and 11, and every one had a positive pull-out.
+  - 5 -> 11, median (max) change by mean fill:
+
+    | Fill | Median | Max |
+    |---|---|---|
+    | Below 0.2 | 5.07 % | 527 % |
+    | 0.2 to 0.4 | 0.27 % | 51 % |
+    | 0.4 to 0.6 | 0.21 % | 51 % |
+    | 0.6 to 0.8 | 0.06 % | 72 % |
+    | 0.8 to 1 | 0.02 % | 43 % |
+
+  - 5 -> 11, median (max) change by pole pitch over the face gap:
+
+    | Pitch / gap | Median | Max |
+    |---|---|---|
+    | Below 5 | 0.00 % | 9 % |
+    | 5 to 10 | 0.39 % | 62 % |
+    | 10 to 30 | 1.42 % | 263 % |
+    | 30 to 100 | 4.56 % | 376 % |
+    | 100 and above | 28.5 % | 527 % |
+
+  - In the fill × pitch table, the cell with fill below 0.2 and pitch at least 100 gaps has the highest median (86.5 %) and the highest maximum.
+    - All top-8 changes are fills of 0.02 to 0.06 on 24-50 mm pitches at a 0.3 mm gap.
+    - With wide blocks on a short pitch (fill ≥ 0.6, pitch < 10 gaps) the largest change is 7.0 %.
+  - From harmonic 1 the pattern is the same: by fill, the median falls from 142 % below 0.2 to 1.5-2.7 % above 0.6.
+  - The five probe designs, 5 -> 11:
+
+    | Probe design | Change |
+    |---|---|
+    | Default | +0.00 % |
+    | 8 magnets per ring | +0.29 % |
+    | 304 back iron | −0.04 % |
+    | Y30 | +0.00 % |
+    | 20 mm ring radius | +0.39 % |
+
+  - Thickness is a weaker, secondary factor: by thickness, the medians are 0.17-0.46 % and the maxima fall from 527 % (0.5 mm) to 153 % (10 mm). The help may leave it out.
+- **No direction is stated, and that is right:** on the grid the 5 -> 11 change runs from −14.4 % to +527 %.
+- **Dependent texts:**
+  - The "harmonics" assumption's rationale ("add little at the default gap and more at small gaps or low fill") agrees.
+  - The harmonics note's "which is why the workbook keeps only 1, 3 and 5" does not contradict it.
+  - S-16 ("past the fifth they add little") stays rejected. The probe reproduces round 1's reason (+527 %).
+- **Traps:** none written.
+  - T-A: no fill formula.
+  - T-D: no pitch optimum.
+  - Not "fewer poles reach across the gap better": the sentence says which designs need the higher set, not which design has more torque.
+  - Nothing on stiffness or magnet count, so the Global Constraints trap is not touched.
+
+Recorded, no change asked:
+- **"Widely spaced" could, at a stretch, be read as a wide ring gap, which would be backwards** (a wider gap fades the higher harmonics: pitch/gap below 5 gives a 0.00 % median). The phrase attaches to "blocks", and the face gap has its own screen name, "Magnet face gap". The natural reading is spacing along the ring, which is right.
+- **The calibration factor.** On a bench-matched design, raising the set also moves the prototype's model torque and so the bench-matched factor. That case is a free-space circuit with the library blocks, which are not narrow, so the shown change there stays small. No text claims otherwise.
+
+#### Should-fix status from earlier rounds
+
+- S-b (`materials.cup_wall_suggested_mm`) stays open, as `task-9-review.md` M-1 and the analysis record say. It is not part of this change set, so this review does not rule on it.
