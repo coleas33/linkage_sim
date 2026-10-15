@@ -10,9 +10,10 @@
 //! - **End effect (audit M9).** When f_end ≤ 0 the pull-out and the numbers computed from it
 //!   ([`END_EFFECT_ROWS`]) are greyed, without a badge, under the banner "End-effect model out
 //!   of range".
-//! - **Stored 3D values.** M3 (the live 3D field model) comes after M4, so the temperature
-//!   rows that read the workbook's stored 3D fields ([`STORED_3D_ROWS`]) carry the label
-//!   "3D values from the workbook" instead of a "3D updating" badge.
+//! - **Stored 3D values.** The temperature rows that read the stored 3D fields
+//!   ([`STORED_3D_ROWS`]) carry the label [`STORED_3D_LABEL`]: the fields
+//!   ([`STORED_3D_INPUTS`]) are 3D results for the example design and stay fixed when the
+//!   design changes; no live 3D model runs.
 //!
 //! Over the rows, the material warnings that fire (spec Addendum A5: "plain language,
 //! colour-coded, linked to their teaching note"): each rule's text in its severity's colour (a
@@ -205,10 +206,37 @@ pub const STORED_3D_ROWS: [&str; 3] = [
 ];
 
 /// The label of the stored-3D rows.
-pub const STORED_3D_LABEL: &str = "3D values from the workbook";
+pub const STORED_3D_LABEL: &str = "Fixed 3D fields from the example design";
 
 /// Its hover text.
-pub const STORED_3D_NOTE: &str = "The demagnetization reverse fields and the slip-loss fields are the workbook's stored 3D values: they do not follow geometry changes until M3 computes them live.";
+pub const STORED_3D_NOTE: &str = "The temperature limits use the demagnetization reverse fields and the slip-heating fields, computed in 3D for the example design. Those fields stay fixed when you change the geometry, magnet count or grade; for another design, enter its own 3D fields to check the limits.";
+
+/// The stored 3D inputs: the four reverse fields of the demagnetization check and the
+/// slip-loss fields (the steel circuit's eleven, and the three free-space ones). They are 3D
+/// results for the example design and stay fixed when the design changes
+/// ([`STORED_3D_SENTENCE`]); [`STORED_3D_ROWS`] are the headline rows that move with them.
+pub const STORED_3D_INPUTS: [&str; 14] = [
+    "temperature.demag.h_rev_aligned_kA_m",
+    "temperature.demag.h_rev_pullout_kA_m",
+    "temperature.demag.h_rev_likepole_kA_m",
+    "temperature.demag.h_rev_single_ring_kA_m",
+    "temperature.slip_loss.b_hub_T",
+    "temperature.slip_loss.b_cup_T",
+    "temperature.slip_loss.b_sleeve_T",
+    "temperature.slip_loss.b_liner_T",
+    "temperature.slip_loss.cap_integral_T2m4",
+    "temperature.slip_loss.web_integral_T2m2",
+    "temperature.slip_loss.b_magnet_T",
+    "temperature.slip_loss.b_hub_free_T",
+    "temperature.slip_loss.b_cup_free_T",
+    "temperature.slip_loss.web_integral_free_T2m2",
+];
+
+/// The sentence the on-screen help of every stored 3D input ends with, whether the overlay
+/// (`gui::plain_text`) or the engine words it (spec 3.8 and section 8, amendment A-7: the
+/// stored fields never follow the design).
+pub const STORED_3D_SENTENCE: &str =
+    "Stored 3D value for the example design; it does not follow yours.";
 
 /// The start of the banner shown when f_end ≤ 0.
 pub const END_EFFECT_BANNER: &str = END_EFFECT_OUT_OF_RANGE;
@@ -1330,32 +1358,52 @@ mod tests {
 
     #[test]
     fn the_stored_3d_rows_are_the_headline_rows_that_move_with_the_stored_3d_inputs() {
-        // The stored 3D inputs: the four reverse fields of the demagnetization check and the
-        // slip-loss fields (steel circuit, and E17's free-space ones), which M3 computes live.
-        let inputs: Vec<String> = [
-            "temperature.demag.h_rev_aligned_kA_m",
-            "temperature.demag.h_rev_pullout_kA_m",
-            "temperature.demag.h_rev_likepole_kA_m",
-            "temperature.demag.h_rev_single_ring_kA_m",
-            "temperature.slip_loss.b_hub_T",
-            "temperature.slip_loss.b_cup_T",
-            "temperature.slip_loss.b_sleeve_T",
-            "temperature.slip_loss.b_liner_T",
-            "temperature.slip_loss.cap_integral_T2m4",
-            "temperature.slip_loss.web_integral_T2m2",
-            "temperature.slip_loss.b_magnet_T",
-            "temperature.slip_loss.b_hub_free_T",
-            "temperature.slip_loss.b_cup_free_T",
-            "temperature.slip_loss.web_integral_free_T2m2",
-        ]
-        .map(str::to_owned)
-        .to_vec();
+        let inputs: Vec<String> = STORED_3D_INPUTS.map(str::to_owned).to_vec();
         let catalogue = crate::gui::inputs::InputCatalogue::get();
         let moved = headline_moved_by(&inputs, |path| {
             let range = catalogue.entry(path).unwrap().meta.range.unwrap();
             vec![range.min, range.max]
         });
         assert_eq!(moved, STORED_3D_ROWS.into_iter().collect());
+    }
+
+    #[test]
+    fn the_stored_3d_label_and_note_say_the_fields_are_fixed_in_plain_words() {
+        // Spec 3.8: "3D values from the workbook ... until M3" becomes a plain statement that
+        // the values are the example design's and do not follow the design; no live 3D model is
+        // promised (section 8, slice-1 trap 6). Amendment A-7: "example design", the name the
+        // screen gives the defaults.
+        for text in [STORED_3D_LABEL, STORED_3D_NOTE, STORED_3D_SENTENCE] {
+            assert_eq!(
+                guidance::plain_text_violations(text),
+                Vec::<&str>::new(),
+                "{text}"
+            );
+            assert!(text.contains("example design"), "{text}");
+            assert!(!text.contains("live"), "{text}");
+        }
+        assert!(STORED_3D_NOTE.contains("stay fixed"), "{STORED_3D_NOTE}");
+        assert!(
+            STORED_3D_SENTENCE.contains("does not follow"),
+            "{STORED_3D_SENTENCE}"
+        );
+    }
+
+    #[test]
+    fn every_stored_3d_input_says_it_is_the_example_design_s_and_stays_fixed() {
+        // The help on screen of every stored 3D input ends with one sentence, whether the
+        // overlay or the engine words it.
+        let catalogue = crate::gui::inputs::InputCatalogue::get();
+        for path in STORED_3D_INPUTS {
+            assert!(catalogue.entry(path).is_some(), "{path}: not an input");
+            let help = help_for(path);
+            assert!(help.ends_with(STORED_3D_SENTENCE), "{path}: {help:?}");
+            assert_eq!(
+                guidance::plain_text_violations(help),
+                Vec::<&str>::new(),
+                "{path}: {help:?}"
+            );
+        }
     }
 
     #[test]

@@ -50,7 +50,7 @@ rows! {
     /// units are the workbook headers (rows 4 and 5).
     pub struct SweepRow {
         variable: f64 => col("", "Swept variable",
-            "Corner gap [mm] in the gap sweep (workbook 'Corner gap (mm)'); poles per ring in the pole sweep ('Poles').", "B"),
+            "The corner gap in mm in the gap sweep; the magnets per ring in the pole sweep.", "B"),
         inner_apothem_mm: f64 => col("mm", "Inner apothem", "", "C"),
         corner_gap_mm: f64 => col("mm", "Corner gap", "", "D"),
         centre_gap_mm: f64 => col("mm", "Centre gap", "", "E"),

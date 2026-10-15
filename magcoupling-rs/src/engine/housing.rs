@@ -50,19 +50,19 @@ results! {
     pub struct HousingResults {
         fields {
             diameter_overshoot_mm: f64 => out_rust_only("mm", "Diameter beyond the space claim",
-                "Addendum A1: the rotating OD (Metal design C135, the larger of the cup and the cap) minus the claimed diameter (C131) when it is larger; 0 inside or at the claim."),
+                "How far the larger of the cup and cap diameters exceeds the maximum diameter of the space claim; 0 inside or at the claim."),
             length_overshoot_mm: f64 => out_rust_only("mm", "Overall length beyond the space claim",
-                "The axial stack (Metal design C134) minus the claimed overall length (C130) when it is larger; 0 inside or at the claim."),
+                "How far the axial stack exceeds the maximum overall length of the space claim; 0 inside or at the claim."),
             bay_overshoot_mm: f64 => out_rust_only("mm", "Large-diameter stack beyond its bay",
-                "The large-diameter stack (Metal design C137) minus the claimed bay (C129) when it is larger; 0 inside or at the claim."),
+                "How far the large-diameter stack exceeds its bay in the space claim; 0 inside or at the claim."),
             space_claim_check: String => out_rust_only("", "Space claim",
-                "The dashboard badge: 'Inside the space claim', or 'Exceeds the space claim:' and each axis it exceeds with the overshoot in mm (at least 0.01), an axis that is not a number reading 'unknown'; 'Space claim unknown' when nothing is exceeded and an axis is not a number."),
+                "Whether the coupling fits the space claim, naming each axis it exceeds and by how much in mm. An axis that cannot be computed reads unknown."),
             hub_length_mm: f64 => out_rust_only("mm", "Steel inner hub axial length in effect",
-                "Metal design C123; with the axial length override set, C123 plus the inner ring's length change, and at least the ring's length (decision A2-8)."),
+                "The hub length as typed; with a magnet length set for both rings, it follows the inner ring's length change, never shorter than the ring."),
             cup_depth_mm: f64 => out_rust_only("mm", "Cup cavity axial depth in effect",
-                "Metal design C124; with the axial length override set, C124 plus the outer ring's length change, and at least the ring's length (decision A2-8). Both axial stacks sum it."),
+                "The cup cavity depth as typed; with a magnet length set for both rings, it follows the outer ring's length change, never shorter than the ring."),
             retainer_span_mm: f64 => out_rust_only("mm", "Retainer axial span in effect",
-                "Metal design C172; with the axial length override set, C172 plus the longer ring's length change, and at least that ring's length (decision A2-8)."),
+                "The retainer span as typed; with a magnet length set for both rings, it follows the longer ring's length change, never shorter than that ring."),
         }
     }
 }

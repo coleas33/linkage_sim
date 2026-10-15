@@ -97,17 +97,17 @@ results! {
     pub struct WarningResults {
         fields {
             non_ferromagnetic_back_iron: String => out_rust_only("", "Non-ferromagnetic back iron",
-                "Fires when the circuit in effect is free space: a non-ferromagnetic back iron, or Calculator C6 = 0."),
+                "Fires when the circuit is free space: a non-ferromagnetic back-iron material, or back iron switched off."),
             ferromagnetic_sleeve_or_liner: String => out_rust_only("", "Ferromagnetic sleeve or liner",
                 "Fires when the sleeve and liner material is ferromagnetic."),
             high_conductivity_sleeve_or_liner: String => out_rust_only("", "High-conductivity sleeve or liner",
                 "Fires when the sleeve conductivity in effect exceeds 316L's 1.35e6 S/m."),
             low_saturation: String => out_rust_only("", "Low saturation",
-                "Fires for a ferromagnetic back iron whose saturation is below 1.7 T (the highest design flux density the workbook names for a back-iron steel) or that has no design flux density of its own (the wall check then keeps Materials C13)."),
+                "Fires for a steel back iron that saturates below 1.7 T, or has no design flux density of its own: the wall check then uses the design flux density input."),
             uncoated_low_alloy_steel: String => out_rust_only("", "Uncoated low-alloy steel",
-                "Fires for a plain or low-alloy steel back iron with no plating (Materials C26 = 0)."),
+                "Fires for a plain or low-alloy steel back iron with a plating thickness of zero."),
             cte_mismatch_with_magnets: String => out_rust_only("", "Expansion mismatch with the magnets",
-                "Fires when the hub's expansion coefficient differs from the magnets' (Temperature design C95) by more than 15e-6 /°C."),
+                "Fires when the hub's expansion coefficient differs from the magnets' by more than 15e-6 /°C."),
         }
     }
 }

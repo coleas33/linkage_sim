@@ -103,7 +103,7 @@ inputs! {
                 "Adhesive-cure case (inner ring alone: 545).", "Temperature design!C55")
                 .range(0.0, 1500.0, 1.0),
             coercivity_source: i64 = 1 => param_rust_only("-", "Coercivity for the demagnetization check",
-                "Correction E20: 1 = each magnet's own grade (its library part, or the grade picked for manual dimensions); 0 = Hcj and beta above (C44, C45) for both rings, which then override the grades. A magnet without a grade always uses C44 and C45; a code other than 1 falls through to them, as the else of a two-way IF.")
+                "Where the demagnetization check takes each ring's coercivity: its magnet grade, or the Hcj and beta inputs for both rings. A magnet with no grade always uses the inputs.")
                 .choices(&[(1, "magnet grade"), (0, "Hcj and beta inputs")]),
         }
     }
@@ -255,13 +255,13 @@ inputs! {
                 "Set to 1 once measured.", "Temperature design!C133")
                 .range(1.0, 10.0, 0.1),
             b_hub_free_T: f64 = 0.07832 => param_rust_only("T", "Opposite-ring field at an aluminium hub (fundamental, free space)",
-                "Correction E17, no back iron with an aluminium cup: 3D, no steel image and not doubled (the steel-circuit field is C116). Stored at 4 significant figures (decision 12) until M3 computes it live.")
+                "The opposite ring's field at the hub when there is no back iron, for slip heating. Stored 3D value for the example design; it does not follow yours.")
                 .range(0.0, 1.0, 0.00001),
             b_cup_free_T: f64 = 0.08764 => param_rust_only("T", "Opposite-ring field at an aluminium cup (fundamental, free space)",
-                "Correction E17, no back iron: 3D, no steel image and not doubled (the steel-circuit field is C117). Stored at 4 significant figures (decision 12) until M3 computes it live.")
+                "The opposite ring's field at the cup when there is no back iron, for slip heating. Stored 3D value for the example design; it does not follow yours.")
                 .range(0.0, 1.0, 0.00001),
             web_integral_free_T2m2: f64 = 6.837e-6 => param_rust_only("T²·m²", "Rear-web end field of an aluminium web, ∫B² dA (free space)",
-                "Correction E17, no back iron: the inner ring alone, no steel image (the steel-circuit value is C121). Stored at 4 significant figures (decision 12) until M3 computes it live.")
+                "The end field on the rear web when there is no back iron, for slip heating. Stored 3D value for the example design; it does not follow yours.")
                 .range(1e-8, 1e-3, 1e-9)
                 .log(),
         }
@@ -473,38 +473,38 @@ results! {
             torque_at_limit_Nm: f64 => out("N·m", "Pull-out torque at the magnet limit (reversible)", "", "Temperature design!C61"),
             torque_at_service_Nm: f64 => out("N·m", "Pull-out torque at the service maximum", "", "Temperature design!C62"),
             hcj20_used_kA_m: f64 => out_rust_only("kA/m", "Hcj at 20 °C used",
-                "Correction E20: the governing ring's grade, or C44 when that magnet has no grade or the source is set to the inputs."),
+                "The governing ring's grade value, or the Hcj input when that magnet has no grade or the coercivity source is set to the inputs."),
             beta_used_per_C: f64 => out_rust_only("1/°C", "Hcj temperature coefficient used",
-                "Correction E20: the governing ring's grade's, or C45. Positive for hard ferrite: its coercivity falls as it cools."),
+                "The governing ring's grade value, or the beta input. Positive for hard ferrite: its coercivity falls as it cools."),
             demag_ring: String => out_rust_only("", "Ring the demagnetization block shows",
-                "Correction E20: both rings are checked, each against its own grade, Br and rating; the ring with the lower magnet limit governs and the block shows it (the inner ring on a tie). Without E20 the workbook checks the inner ring only."),
+                "Both rings are checked, each with its own grade, Br and rating; the block shows the ring with the lower magnet limit (the inner ring on a tie)."),
             cold_onset_aligned_C: NumOrText => out_rust_only("°C", "Cold demag onset, rings aligned",
-                "Correction E20, positive beta only: below this temperature the reverse field exceeds the knee. 'n/a' when coercivity rises as the magnet cools."),
+                "Positive beta only: below this temperature the reverse field with the rings aligned exceeds the knee. 'n/a' when coercivity rises as the magnet cools."),
             cold_onset_pullout_C: NumOrText => out_rust_only("°C", "Cold demag onset at pull-out", ""),
             cold_onset_skipping_C: NumOrText => out_rust_only("°C", "Cold demag onset while skipping", ""),
             cold_onset_single_ring_C: NumOrText => out_rust_only("°C", "Cold demag onset, single ring on its carrier", ""),
             cold_limit_C: NumOrText => out_rust_only("°C", "Cold magnet limit",
-                "The skipping cold onset plus the design margin (C51): the minimum magnet temperature (Metal design C16) must not be below it."),
+                "The cold onset while skipping plus the design margin: the minimum magnet temperature must not be below it."),
             cold_ring: String => out_rust_only("", "Ring the cold-side results show",
-                "Correction E20: the ring with the higher cold limit (the inner ring when neither has one)."),
+                "The ring with the higher cold limit (the inner ring when neither has one)."),
             cold_check: String => out_rust_only("", "Cold demagnetization check",
-                "Against the minimum magnet temperature (Metal design C16); it passes only if both rings pass."),
+                "Against the minimum magnet temperature; it passes only if both rings pass."),
             inner_hcj20_kA_m: f64 => out_rust_only("kA/m", "Inner ring: Hcj at 20 °C used",
-                "Plan A-3 (a term of the equation explorer): correction E20, the inner ring's grade, or C44 when it has no grade or the coercivity source is set to the inputs."),
+                "The inner ring's grade value, or the Hcj input when it has no grade or the coercivity source is set to the inputs."),
             inner_beta_per_C: f64 => out_rust_only("1/°C", "Inner ring: Hcj temperature coefficient used",
-                "Correction E20: the inner ring's grade's, or C45."),
+                "The inner ring's grade value, or the beta input."),
             inner_magnet_limit_C: f64 => out_rust_only("°C", "Inner ring: magnet design limit",
-                "Correction E20: the inner ring's own block (C47 to C60), whichever ring governs: its skipping onset minus the design margin, or with a positive beta its rating (+inf without one)."),
+                "The inner ring's own limit, whichever ring governs: its onset while skipping minus the design margin, or with a positive beta its rating (no limit without one)."),
             inner_cold_limit_C: NumOrText => out_rust_only("°C", "Inner ring: cold magnet limit",
-                "Correction E20, positive beta only: the inner ring's skipping cold onset plus the design margin; 'n/a' otherwise."),
+                "Positive beta only: the inner ring's cold onset while skipping plus the design margin; 'n/a' otherwise."),
             outer_hcj20_kA_m: f64 => out_rust_only("kA/m", "Outer ring: Hcj at 20 °C used",
-                "Correction E20: the outer ring's grade, or C44. Without E20 the workbook checks the inner ring only, and the outer ring's block (from C44 and C45) governs nothing."),
+                "The outer ring's grade value, or the Hcj input when it has no grade or the coercivity source is set to the inputs."),
             outer_beta_per_C: f64 => out_rust_only("1/°C", "Outer ring: Hcj temperature coefficient used",
-                "Correction E20: the outer ring's grade's, or C45."),
+                "The outer ring's grade value, or the beta input."),
             outer_magnet_limit_C: f64 => out_rust_only("°C", "Outer ring: magnet design limit",
-                "Correction E20: as the inner ring's, for the outer ring."),
+                "As the inner ring's, for the outer ring."),
             outer_cold_limit_C: NumOrText => out_rust_only("°C", "Outer ring: cold magnet limit",
-                "Correction E20: as the inner ring's, for the outer ring."),
+                "As the inner ring's, for the outer ring."),
         }
     }
 }
@@ -557,13 +557,13 @@ results! {
             cap_sigma_S_m: f64 => out("S/m", "Aluminium cap conductivity (6061-T6)", "", "Temperature design!C112"),
             skin_depth_mm: f64 => out("mm", "Steel skin depth at the field frequency", "", "Temperature design!C115"),
             hub_W: f64 => out("W", "Hub surface (solid steel)",
-                "Solid back-iron steel with back iron (skin-limited formula). With no back iron the hub is the body material (the workbook's 6061 aluminium, or a non-ferromagnetic back-iron pick): low-Reynolds form of correction E17.",
+                "Eddy heating of the solid steel hub, limited by skin depth. With no back iron the hub is aluminium or the picked non-magnetic metal, in the free-space field.",
                 "Temperature design!C123"),
             cup_W: f64 => out("W", "Cup surface (solid steel)",
-                "Solid back-iron steel with back iron (skin-limited formula). With no back iron the cup is the body material (E9; the workbook's 6061 aluminium, or a non-ferromagnetic back-iron pick): low-Reynolds form of correction E17.",
+                "Eddy heating of the solid steel cup, limited by skin depth. With no back iron the cup is aluminium or the picked non-magnetic metal, in the free-space field.",
                 "Temperature design!C124"),
             web_W: f64 => out("W", "Rear web (solid steel)",
-                "Solid back-iron steel with back iron (skin-limited formula). With no back iron the web is the body material (E9; the workbook's 6061 aluminium, or a non-ferromagnetic back-iron pick): low-Reynolds form of correction E17.",
+                "Eddy heating of the solid steel rear web, limited by skin depth. With no back iron the web is aluminium or the picked non-magnetic metal, in the free-space field.",
                 "Temperature design!C125"),
             sleeve_W: f64 => out("W", "Inner 316L sleeve", "", "Temperature design!C126"),
             liner_W: f64 => out("W", "Outer 316L liner", "", "Temperature design!C127"),

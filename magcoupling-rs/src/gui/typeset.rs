@@ -1291,7 +1291,7 @@ mod tests {
         let texts: Vec<String> = laid.texts().into_iter().map(|(t, _)| t).collect();
         assert!(texts.iter().any(|t| t == "\"steel circuit\""), "{texts:?}");
         // σ_5 = A_5 · sin(5 φ_pull) if 5 ≤ N_h: an ordering keeps its number, though N_h is a
-        // selector whose code 5 reads "1, 3, 5 (workbook)" (the index 5 is no code). The tau
+        // selector whose code 5 reads "1, 3, 5 (default)" (the index 5 is no code). The tau
         // records hold no text literal, so no run is quoted.
         let tau = registry().equation_for("model.tau5_Pa").unwrap();
         let laid = with_fonts(|f| {

@@ -167,7 +167,7 @@
         ],
         [
           5,
-          "1, 3, 5 (workbook)"
+          "1, 3, 5 (default)"
         ],
         [
           7,
@@ -183,7 +183,7 @@
         ]
       ],
       "default": 5,
-      "help": "Addendum A3 assumption. The torque model sums the odd space harmonics 1, 3, ... up to this one: the pull-out, the two circuit sums (C95, C96), every sweep row and the Calibration prototype, so the measured correction compares like with like. Workbook: 1, 3, 5. The cells of harmonics 1, 3 and 5 keep their terms; a harmonic left out reads 0 shear stress, and harmonics 7 to 11 add the Rust-only tau7_Pa, tau9_Pa and tau11_Pa.",
+      "help": "The torque model adds the magnet field's odd harmonics up to this one, for your design and the bench prototype alike. Each higher one fades faster across the gap.",
       "label": "Highest odd harmonic summed",
       "path": "coupling.max_harmonic",
       "range": null,
@@ -474,7 +474,7 @@
       "cell": null,
       "choices": [],
       "default": "",
-      "help": "Addendum A6: a grade of the grade table, by exact name (e.g. N42SH, Y30). Used only when the inner part is not in the library: the manual dimensions with the grade's Br at 20 °C and maximum temperature. Blank = the manual Br and no rating.",
+      "help": "A grade, such as N42SH or Y30, for inner magnets on manual dimensions; it sets their Br, coercivity, temperature coefficients, density and rating. Blank: the manual Br and no rating.",
       "label": "Inner magnet grade (manual dimensions)",
       "path": "coupling.magnets.grade_inner",
       "range": null,
@@ -500,7 +500,7 @@
       "cell": null,
       "choices": [],
       "default": null,
-      "help": "Addendum A1. Blank = each ring's part or manual length. A value sets both rings' axial length and keeps everything else each ring has (part or manual cross-section, grade, Br, rating): blocks cut or stacked to length. The calibration factor still follows the part names (Calculator C42). The hub length, cup cavity depth and retainer span follow the length change (Metal design C123 with the inner ring, C124 with the outer ring, C172 with the longer ring; each at least its ring's length: decision A2-8), so both axial stacks and the space claim follow; housing.* shows them. Inverse sizing's default free variable.",
+      "help": "Sets both rings' magnet length (blank keeps each ring's own), as blocks cut or stacked. Longer adds torque but also cold-high torque and length; Auto can set it.",
       "label": "Axial magnet length, both rings",
       "path": "coupling.magnets.axial_length_mm",
       "range": {
@@ -1905,7 +1905,7 @@
         ]
       ],
       "default": 1,
-      "help": "Addendum A5. 1 = the workbook's 4140: the steel inputs above. Another choice supplies its library conductivity, density, specific heat, expansion and modulus, and its design flux density where the library has one (else C13 stays). A non-ferromagnetic choice selects the free-space circuit and becomes the hub, cup and boss material; with a ferromagnetic one, Calculator C6 = 0 still selects the free-space circuit (the override).",
+      "help": "The hub, cup and boss material. 4140 uses the steel inputs; other steels bring library values, some tripping the saturation caution; 304 or aluminium drops the steel path, losing torque.",
       "label": "Back iron material (hub, cup and boss)",
       "path": "materials.parts.back_iron",
       "range": null,
@@ -1935,7 +1935,7 @@
         ]
       ],
       "default": 1,
-      "help": "Addendum A5. 1 = the workbook's 316L (Temperature design C111 and C139, Metal design C44). Another choice supplies its conductivity, density and specific heat; the endplates follow it, as C44 prices them.",
+      "help": "The material of the thin sleeve and liner in the gap. 316L uses the inputs; another choice brings its library conductivity, density and specific heat, changing slip heating and mass.",
       "label": "Sleeve and liner material",
       "path": "materials.parts.sleeve_liner",
       "range": null,
@@ -1961,7 +1961,7 @@
         ]
       ],
       "default": 1,
-      "help": "Addendum A5. 1 = the workbook's 6061-T6 (Materials C43, Temperature design C140, Metal design C42). Another choice supplies the cap's conductivity, density and specific heat; the aluminium adapter and the clamp alloy keep their own inputs.",
+      "help": "The cap material: 6061-T6 uses the inputs, another choice its library conductivity, density and specific heat. The aluminium adapter and the clamp alloy keep their own inputs.",
       "label": "Cap and housing material",
       "path": "materials.parts.cap_housing",
       "range": null,
@@ -2217,7 +2217,7 @@
         ]
       ],
       "default": 1,
-      "help": "Correction E20: 1 = each magnet's own grade (its library part, or the grade picked for manual dimensions); 0 = Hcj and beta above (C44, C45) for both rings, which then override the grades. A magnet without a grade always uses C44 and C45; a code other than 1 falls through to them, as the else of a two-way IF.",
+      "help": "Where the demagnetization check takes each ring's coercivity: its magnet grade, or the Hcj and beta inputs for both rings. A magnet with no grade always uses the inputs.",
       "label": "Coercivity for the demagnetization check",
       "path": "temperature.demag.coercivity_source",
       "range": null,
@@ -2530,7 +2530,7 @@
       "cell": null,
       "choices": [],
       "default": 0.07832,
-      "help": "Correction E17, no back iron with an aluminium cup: 3D, no steel image and not doubled (the steel-circuit field is C116). Stored at 4 significant figures (decision 12) until M3 computes it live.",
+      "help": "The opposite ring's field at the hub when there is no back iron, for slip heating. Stored 3D value for the example design; it does not follow yours.",
       "label": "Opposite-ring field at an aluminium hub (fundamental, free space)",
       "path": "temperature.slip_loss.b_hub_free_T",
       "range": {
@@ -2548,7 +2548,7 @@
       "cell": null,
       "choices": [],
       "default": 0.08764,
-      "help": "Correction E17, no back iron: 3D, no steel image and not doubled (the steel-circuit field is C117). Stored at 4 significant figures (decision 12) until M3 computes it live.",
+      "help": "The opposite ring's field at the cup when there is no back iron, for slip heating. Stored 3D value for the example design; it does not follow yours.",
       "label": "Opposite-ring field at an aluminium cup (fundamental, free space)",
       "path": "temperature.slip_loss.b_cup_free_T",
       "range": {
@@ -2566,7 +2566,7 @@
       "cell": null,
       "choices": [],
       "default": 6.837e-6,
-      "help": "Correction E17, no back iron: the inner ring alone, no steel image (the steel-circuit value is C121). Stored at 4 significant figures (decision 12) until M3 computes it live.",
+      "help": "The end field on the rear web when there is no back iron, for slip heating. Stored 3D value for the example design; it does not follow yours.",
       "label": "Rear-web end field of an aluminium web, ∫B² dA (free space)",
       "path": "temperature.slip_loss.web_integral_free_T2m2",
       "range": {

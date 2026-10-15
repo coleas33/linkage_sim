@@ -219,6 +219,59 @@ pub fn report(failures: &[String]) -> String {
     format!("{} failure(s):\n{}{tail}", failures.len(), shown.join("\n"))
 }
 
+/// Words of the engine's own provenance a reader of the screen never needs, beyond what the
+/// plain-words guard holds (`engine::explain::plain`): the audit and its decisions, the plans,
+/// the explorer's code name, the autofit and the 3D milestone (any case), and a bare workbook
+/// cell such as "C6" or "C9" (the guard holds cells of two or three digits). The listed words
+/// first, in the list's order, then the cells in text order.
+pub fn provenance_words(text: &str) -> Vec<String> {
+    const WORDS: [&str; 6] = [
+        "decision",
+        "audit",
+        "plan a-",
+        "equation explorer",
+        "autofit",
+        "until m3",
+    ];
+    let lower = text.to_lowercase();
+    let mut hits: Vec<String> = WORDS
+        .iter()
+        .filter(|word| lower.contains(*word))
+        .map(|word| (*word).to_owned())
+        .collect();
+    hits.extend(
+        text.split_whitespace()
+            .map(|word| word.trim_matches(|c: char| "()[],.;:'\"".contains(c)))
+            .filter(|word| {
+                word.len() > 1
+                    && word.starts_with('C')
+                    && word[1..].chars().all(|c| c.is_ascii_digit())
+            })
+            .map(str::to_owned),
+    );
+    hits
+}
+
+/// The places `text` names code rather than a quantity, each as its three characters: a
+/// snake_case identifier (an ASCII lowercase letter or digit, an underscore, an ASCII letter or
+/// digit: `f_end`, `tau7_Pa`) or a dotted path (ASCII lowercase letters each side of a dot:
+/// `coupling.npole`). A symbol such as B_i,1, S_1 or τ_n starts with a capital or a Greek
+/// letter and is no code.
+pub fn code_names(text: &str) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    chars
+        .windows(3)
+        .filter(|w| {
+            let identifier = w[1] == '_'
+                && (w[0].is_ascii_lowercase() || w[0].is_ascii_digit())
+                && w[2].is_ascii_alphanumeric();
+            let path = w[1] == '.' && w[0].is_ascii_lowercase() && w[2].is_ascii_lowercase();
+            identifier || path
+        })
+        .map(|w| w.iter().collect())
+        .collect()
+}
+
 /// The data file whose cases vary every input group and compare every result.
 pub const FULL: &str = "full";
 

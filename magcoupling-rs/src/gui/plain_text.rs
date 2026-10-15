@@ -1155,6 +1155,21 @@ mod tests {
         );
     }
 
+    #[test]
+    fn rust_only_inputs_keep_their_engine_help() {
+        // Ruling R1: a Rust-only input has no spreadsheet note, and its plain help is written in
+        // the engine (T9); the overlay never covers one, so no "Original spreadsheet note" shows.
+        let rust_only: Vec<&crate::gui::inputs::InputEntry> = InputCatalogue::get()
+            .all()
+            .filter(|entry| entry.meta.rust_only)
+            .collect();
+        assert!(!rust_only.is_empty());
+        for entry in rust_only {
+            assert_eq!(help_for(&entry.path), entry.meta.help, "{}", entry.path);
+            assert_eq!(original_help(&entry.path), None, "{}", entry.path);
+        }
+    }
+
     /// Prints every overlay row beside the engine text it replaces, for the G-3 physics review
     /// of each batch. Run from the repo root:
     /// `cargo test --manifest-path magcoupling-rs/Cargo.toml --features app --lib overlay_strings_for_review -- --ignored --nocapture`.
@@ -1792,10 +1807,11 @@ mod batch_b_tests {
 
     #[test]
     fn each_cluster_ends_with_one_shared_caveat() {
-        // Amendment A-7 fixes the stored-3D sentence word for word (T9's STORED_3D_SENTENCE).
+        // Amendment A-7 fixes the stored-3D sentence word for word: the dashboard's, which the
+        // engine's free-space fields end with too.
         assert_eq!(
             stored_3d_caveat!(),
-            "Stored 3D value for the example design; it does not follow yours."
+            crate::gui::dashboard::STORED_3D_SENTENCE
         );
         // A cluster is exactly the rows whose last sentence is its caveat.
         for (cluster, caveat) in [

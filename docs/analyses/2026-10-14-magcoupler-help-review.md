@@ -262,3 +262,136 @@ lower torque; the space claim leaves out the shaft boss; "with Auto on"; the mag
   out the boss, ferrite eddy heat uses the NdFeB conductivity, the daily-cycle screen reads the
   recommended bondline) go to T20 as BL-061..BL-063, and the helps state today's behaviour.
 - Verdict: PASS.
+
+## Engine wording (T9)
+
+- Scope: not an overlay batch but the engine's own wording, reviewed under the same G-3 rule. The
+  96 on-screen strings T9 rewrote:
+  - every Rust-only input and result help, and three labels (two with cell ids, and the autofit
+    label);
+  - the help of the five ported results and the screw-length column whose correction already
+    rewords it, and the sweeps' swept-variable column;
+  - the harmonic set's default choice, `1, 3, 5 (default)`;
+  - the stored-3D label, note and sentence (`gui::dashboard`).
+- Read: the string dump (`git diff -U0 -- magcoupling-rs/src`) and a review sheet of the 96 strings
+  (old, new, word and sentence counts), not `help_for_review`; T9's brief and drafter notes; the
+  amendments (Global Constraints, A-7, A-13, A-16, A-19 to A-24); slice-2 spec 3.2, 3.5, 3.8 and 8,
+  slice-1 spec 8 and `phys-new-notes.md` section 2; the engine code behind every changed string.
+  Both rounds probed the engine from scratch crates outside the repository:
+  - round 1: the five probe designs; grid A, 945 designs (4 to 40 magnets per ring, ring radius 9
+    to 30 mm, face gap 0.3 to 5 mm, the library B842SH or six manual cross-sections), each with
+    the back iron on and off (1890 runs); grid B, 18,000 designs over the same ranges;
+  - round 2: the two changed fields at the five probe designs, eight grade states, and 68,688 runs
+    at the bench prototype's magnet count and part.
+- Round 1: 2 must-fix items, text applied verbatim:
+  - `materials.parts.back_iron` help (seed S-15, accepted).
+    - Old: "The hub, cup and boss material. 4140 uses the steel inputs; another steel brings its own
+      library values, and 304 or aluminium removes the steel return path, so torque drops."
+    - New: "The hub, cup and boss material. 4140 uses the steel inputs; other steels bring library
+      values, some tripping the saturation caution; 304 or aluminium drops the steel path, losing
+      torque."
+    - Why: the old text set "another steel" (no warning) against the one pick that loses torque,
+      which invites spec 8's clean-swap reading ("416, 17-4PH or 12L14 are clean swaps") and "steel
+      gives the torque shown" without the caveat. 12L14, 416 and both 17-4PH tempers trip the
+      low-saturation caution at every design with the back iron on (the rule reads no geometry);
+      4140 and 1018 do not, so "some" is exact. 304 and 6061 lose torque on all 945 grid-A designs
+      (pull-out ratio 0.138 to 0.9999).
+  - `model.inner_alpha_br_per_C` help.
+    - Old: "The picked grade's coefficient for manual dimensions with a grade; otherwise the shared
+      Br temperature coefficient input, the same for both rings."
+    - New: "The picked grade's coefficient for manual dimensions with a grade; otherwise the shared
+      Br temperature coefficient input, which every ring without a picked grade uses."
+    - Why: each ring takes its own grade's coefficient only in grade mode. With the library B842SH
+      inside and Y30 on manual dimensions outside, the rows read −0.0012 and −0.002 /°C, beside a
+      hover that said "the same for both rings". The new text agrees with A-22 and T8's
+      `calibration.alpha_br_per_C` overlay, and closes spec 8's "each ring uses its own α" both ways.
+
+  Should-fix offered, not applied (open for the controller):
+  - S-a, `coupling.max_harmonic` help: "The torque model sums odd field harmonics up to this one,
+    for your design and the bench prototype. Higher ones matter most for narrow, widely spaced
+    blocks." (27 words). The current "Each higher one fades faster across the gap." is true at every
+    design but names no case where the set matters: going from harmonic 1 to the 1, 3, 5 set changes
+    the pull-out by +33 % at 4 magnets per ring and +31 % at a 30 mm ring radius.
+  - S-b, `materials.cup_wall_suggested_mm` help: "The back-iron wall rule's thickness at the back
+    iron's design flux density, rounded up to 0.1 mm. The cup wall check asks for it; n/a without
+    back iron." (28 words). Why: T-I, the rule's error depends on the pole count (1.92 mm at the
+    defaults against 2.17 to 2.27 mm from exact solutions; 2.40 mm at 8 magnets against 2.17 mm
+    from the flat-top form), and the label already says "the rule asks for".
+  - S-c, `STORED_3D_NOTE` (A-7's text, so the controller's call): "The temperature limits use" ->
+    "The temperature checks use". Only the reverse fields feed the limits; the slip-heating fields
+    feed the slip-fault peak the verdict compares with them.
+
+  Recorded, no change asked:
+  - the grade's "it sets their ... coercivity" holds at the default coercivity source (the
+    coercivity-source help names the override); `demag_ring`'s "each with its own grade": with the
+    source on the inputs, only the rating and Br come from each ring's grade;
+  - the free-space slip-field helps dropped the old "not doubled" (T8's steel rows say "doubled by
+    the steel"); parallel wording would be a nicety only.
+- Round 2: none. Both round-1 replacements were confirmed as applied and hold at every probed design:
+  - `materials.parts.back_iron`: at the bench prototype's magnet count and part the free-space
+    circuit takes the bench-matched factor (about 1.05) and the steel circuit the original 0.95, so
+    the shown torque was checked too: 304 or aluminium loses it on all 68,688 runs (highest shown
+    ratio 0.679).
+  - `model.inner_alpha_br_per_C` holds in eight grade states, among them a library ring on an
+    edited input (−0.0009 /°C) beside a graded manual ring keeping its grade's −0.0012 /°C, the case
+    the old text got wrong.
+
+  Recorded, no change asked:
+  - calibration edits can make 304 show more torque than 4140 (at the default design a measured
+    bench torque above 2.85 N·m does); that is spec 8's "edit the calibration inputs to match your
+    design", and the jump between circuits is S-10's watch-out (T17), not a 30-word input help;
+  - with the Back iron toggle already off, the back-iron help's clauses presuppose the steel
+    circuit; a user there sees no torque change and no caution, and is not led to a wrong pick;
+  - the coefficient help does not cover a grade typed while a library part is picked (the ring then
+    reads the shared input, which the text's relative clause still states); "every other ring"
+    would read as "the outer ring" on the inner row.
+- Seeds:
+  - A-24 S-15 (`materials.parts.back_iron`): ACCEPTED, applied verbatim in round 1. Reason: it names
+    the caution four of the five other steels trip, which closes the clean-swap trap within the
+    30-word cap; "some" is exact (1018 does not trip it) and the torque loss holds at every probed
+    design.
+  - A-24 S-16 (`coupling.max_harmonic`): REJECTED. Reason: "Past the fifth they add little" is false
+    at reachable designs; T12's test pins under 2 % only at the five probe designs. On grid A, 458 of
+    1890 runs move the pull-out by more than 2 % from the 1, 3, 5 set to the set up to 11, 295 by
+    more than 5 %; the worst is +284 % (4 magnets per ring, 30 mm ring radius, 1 mm-wide blocks,
+    0.3 mm gap, no back iron). S-a offers a true replacement.
+- Amendments: A-7 applied (`STORED_3D_SENTENCE`, `STORED_3D_LABEL` and `STORED_3D_NOTE` byte-equal
+  to A-7; the three free-space engine helps end with the sentence; at 8 magnets per ring the stored
+  fields keep their values, so "it does not follow yours" holds and no string promises a live 3D
+  model); A-23 applied verbatim (the pull-out, the cold-high torque and the axial stack rise at
+  every step of the magnet length from 2 to 50.8 mm, 8550 points); A-16 applied (`tests/schema.rs`
+  uses `engine::explain::plain`'s counters); A-13 met (no audit, correction or spreadsheet id and
+  no file or code name in any changed string; T9 adds no notes or sources). A-19 to A-22 are other
+  tasks' texts; must-fix 2 brings the coefficient help into line with A-22.
+- Drafter flags: "NdFeB's 7.5 g/cm³" kept (the engine constant every non-grade magnet gets, not an
+  editable default); "1, 3, 5 (default)" accepted (spec 3.8 names it).
+- Verdict: PASS (round 2).
+
+### Report for the record, round 1 (as returned)
+
+- G-3 round 1 (T9 engine wording, 96 strings): MUST_FIX, 2 items.
+  - `materials.parts.back_iron`: seed S-15 accepted. Other steels are named as tripping the
+    saturation caution, against the spec 8 clean-swap trap.
+  - `model.inner_alpha_br_per_C`: "the same for both rings" -> "which every ring without a picked
+    grade uses". On a mixed design the two coefficients differ, −0.0012 against −0.002 /°C.
+  - Seed S-16 rejected: past the fifth harmonic the pull-out moves by more than 2 % on 458 of 1890
+    grid runs, up to +284 %.
+  - A-7, A-16 and A-23 were applied verbatim. A-23's direction holds at 8550 probe points.
+  - Should-fix S-a (when the harmonic set matters), S-b (name the wall rule) and S-c (A-7 note:
+    "checks", not "limits") offered.
+
+### Report for the record, round 2 (as returned)
+
+- G-3 round 2 (T9 engine wording, the two fields changed in round 1): PASS, no must-fix.
+  - `materials.parts.back_iron` (seed S-15, verbatim):
+    - the other steels' saturation caution trips for 12L14, 416 and both 17-4PH tempers, not for
+      4140 or 1018;
+    - the torque loss of 304 or aluminium holds on 68,688 runs at the prototype's magnet count and
+      part, where the free-space circuit takes the bench factor (highest shown ratio 0.679).
+  - `model.inner_alpha_br_per_C` ("which every ring without a picked grade uses") holds in eight
+    grade states. One is a mixed design with an edited input: −0.0009 on the library ring against
+    −0.0012 on the graded ring.
+  - S-16 stays rejected: past the fifth harmonic the pull-out moves +284 % (4 magnets per ring,
+    30 mm, narrow blocks).
+  - A-7 and A-23 are byte-equal to the amendments.
+  - Round 1's should-fix items S-a, S-b and S-c stay open for the controller.

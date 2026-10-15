@@ -437,7 +437,7 @@ fn crumb(path: &str) -> String {
 }
 
 /// A value with its unit; a selector code with its choice's label after a colon
-/// (`1: steel circuit`, and `5: 1, 3, 5 (workbook)` without nested parentheses).
+/// (`1: steel circuit`, and `5: 1, 3, 5 (default)` without nested parentheses).
 fn value_text(path: &str, value: &Value, unit: &str) -> String {
     let text = with_unit(format_value(value), unit);
     match value {
@@ -1365,14 +1365,14 @@ mod tests {
         assert_eq!(plain_symbol("T_{pull}"), "T_pull");
         assert_eq!(plain_symbol("S_{3}^{iron}"), "S_3^iron");
         // A selector code with its choice's label, after a colon: a label holding its own
-        // parentheses (the workbook's harmonic set) reads without nesting them.
+        // parentheses (the default harmonic set) reads without nesting them.
         assert_eq!(
             value_text("coupling.backiron", &Value::Int(1), "-"),
             "1: steel circuit"
         );
         assert_eq!(
             value_text("coupling.max_harmonic", &Value::Int(5), "-"),
-            "5: 1, 3, 5 (workbook)"
+            "5: 1, 3, 5 (default)"
         );
         // A code outside the choices has no label to add.
         assert_eq!(

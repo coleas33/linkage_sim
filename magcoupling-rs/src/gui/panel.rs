@@ -7315,7 +7315,7 @@ mod tests {
             "the tag fits without scrolling: the test would prove nothing"
         );
         // The pointer on the start of the set's value, in view at the left of the list.
-        let at = text_rect(&output, "5: 1, 3, 5 (workbook)")
+        let at = text_rect(&output, "5: 1, 3, 5 (default)")
             .expect("the set's value in the term list")
             .left_center()
             + egui::vec2(4.0, 0.0);
