@@ -43,6 +43,18 @@ pub struct Assumption {
     pub source: &'static str,
 }
 
+impl Assumption {
+    /// Whether the panel shows this assumption while the shaft-clamp section is paused
+    /// (`clamps_paused`) or not: not when the section hides one of its inputs
+    /// ([`super::clamps::hides`]: the clamp friction and the preload fraction while paused).
+    pub fn shown(&self, clamps_paused: bool) -> bool {
+        !self
+            .paths
+            .iter()
+            .any(|path| super::clamps::hides(path, clamps_paused))
+    }
+}
+
 /// The spec's v1 set, in the spec's order.
 pub const ASSUMPTIONS: [Assumption; 14] = [
     Assumption {

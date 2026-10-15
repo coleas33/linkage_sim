@@ -40,6 +40,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use crate::engine::assumptions::ASSUMPTIONS;
+use crate::engine::clamps;
 use crate::engine::explain::notes;
 use crate::engine::materials::CUP_WALL_TOO_THIN;
 use crate::engine::meta::{ResultMeta, ResultSet, Value, result_rows};
@@ -414,10 +415,12 @@ pub fn check_level(results: &DesignResults, path: &str) -> Option<Level> {
 }
 
 /// The checks of `results` that fail (red) or ask for a look (amber), the red first, each in
-/// [`CHECKS`] order: what the results table's failing filter shows.
-pub fn failing_checks(results: &DesignResults) -> Vec<(&'static str, Level)> {
+/// [`CHECKS`] order: what the results table's failing filter shows. While the shaft-clamp
+/// section is paused (`clamps_paused`) its checks are left out ([`clamps::hides`]).
+pub fn failing_checks(results: &DesignResults, clamps_paused: bool) -> Vec<(&'static str, Level)> {
     let mut failing: Vec<(&'static str, Level)> = CHECKS
         .iter()
+        .filter(|&&path| !clamps::hides(path, clamps_paused))
         .filter_map(|&path| match check_level(results, path) {
             Some(level @ (Level::Bad | Level::Caution)) => Some((path, level)),
             _ => None,
@@ -619,6 +622,14 @@ pub fn dashboard_lines(results: &DesignResults) -> Vec<DashboardLine> {
         .collect()
 }
 
+/// The dashboard rows drawn while the shaft-clamp section is paused (`clamps_paused`) or not.
+pub fn shown_lines(results: &DesignResults, clamps_paused: bool) -> Vec<DashboardLine> {
+    dashboard_lines(results)
+        .into_iter()
+        .filter(|line| !clamps::hides(line.path, clamps_paused))
+        .collect()
+}
+
 /// Draws the dashboard of `results`, computed from `inputs`: the design status line, the
 /// end-effect banner when f_end <= 0, then a row per line (badge and label, then the value and,
 /// with the spreadsheet details, its correction ids under a one-line legend, so a narrow side
@@ -626,16 +637,19 @@ pub fn dashboard_lines(results: &DesignResults) -> Vec<DashboardLine> {
 /// block over its Why line, the stored-3D label after the last temperature row, and the
 /// Magnets fit row last. `fixes` holds every guide's fixes in [`CHECK_GUIDES`]' order
 /// (`guidance::FixCache`). Each result row is a readout (`readouts`): its hover text and
-/// equation while hovered, a click opens it in the Equation panel.
+/// equation while hovered, a click opens it in the Equation panel. While the shaft-clamp
+/// section is paused (`clamps_paused`) its rows, their guide and their Why links are left out
+/// and the status line does not count its check.
 pub fn dashboard_ui(
     ui: &mut egui::Ui,
     inputs: &DesignInputs,
     results: &DesignResults,
     fixes: &[Vec<(&'static str, Direction)>],
+    clamps_paused: bool,
     readouts: &mut Readouts,
 ) {
-    status_ui(ui, inputs, results);
-    let lines = dashboard_lines(results);
+    status_ui(ui, inputs, results, clamps_paused);
+    let lines = shown_lines(results, clamps_paused);
     if let Some(banner) = end_effect_banner(results) {
         ui.colored_label(ui.visuals().error_fg_color, banner);
         ui.separator();
@@ -693,10 +707,16 @@ pub fn dashboard_ui(
 }
 
 /// The design status line (guidance spec 3.1): whose design it is and how many guided checks
-/// fail, in the colour of the worst level, over a separator; at the defaults its hover says
-/// where the example's values come from (spec S2-5).
-fn status_ui(ui: &mut egui::Ui, inputs: &DesignInputs, results: &DesignResults) {
-    let status = design_status(inputs, results);
+/// fail (those that count with the shaft-clamp section's pause, `clamps_paused`), in the colour
+/// of the worst level, over a separator; at the defaults its hover says where the example's
+/// values come from (spec S2-5).
+fn status_ui(
+    ui: &mut egui::Ui,
+    inputs: &DesignInputs,
+    results: &DesignResults,
+    clamps_paused: bool,
+) {
+    let status = design_status(inputs, results, clamps_paused);
     let level = if status.bad > 0 {
         Level::Bad
     } else if status.caution > 0 {
@@ -1322,7 +1342,7 @@ mod tests {
         // The defaults fail four checks, all red.
         let defaults = compute_all(&DesignInputs::default());
         assert_eq!(
-            failing_checks(&defaults),
+            failing_checks(&defaults, false),
             [
                 ("model.cup_ring_check", Bad),
                 ("metal.hot_min_check", Bad),
@@ -1336,7 +1356,7 @@ mod tests {
             i.coupling.magnets.part_outer.clear();
         }));
         assert_eq!(
-            failing_checks(&manual),
+            failing_checks(&manual, false),
             [
                 ("model.cup_ring_check", Bad),
                 ("metal.hot_min_check", Bad),
@@ -1349,7 +1369,10 @@ mod tests {
         // Exactly the checks whose level is red or amber, each once.
         for inputs in [DesignInputs::default(), short_magnets(), design(ferrite)] {
             let results = compute_all(&inputs);
-            let failing: Vec<&str> = failing_checks(&results).iter().map(|(p, _)| *p).collect();
+            let failing: Vec<&str> = failing_checks(&results, false)
+                .iter()
+                .map(|(p, _)| *p)
+                .collect();
             let want: Vec<&str> = CHECKS
                 .iter()
                 .copied()
@@ -1575,7 +1598,7 @@ mod tests {
             assert_eq!(check_level(&results, path), None, "{path}");
         }
         assert_eq!(
-            failing_checks(&results),
+            failing_checks(&results, false),
             [
                 ("model.end_effect_check", Bad),
                 ("model.verdict", Bad),
@@ -1636,19 +1659,19 @@ mod tests {
         use crate::gui::typeset::TermColors;
         let inputs = DesignInputs::default();
         let results = compute_all(&inputs);
-        let fixes = all_fixes(&inputs, &results);
+        let fixes = all_fixes(&inputs, &results, false);
         let markers: Vec<String> = dashboard_lines(&results)
             .into_iter()
             .map(|line| line.marker)
             .filter(|marker| !marker.is_empty())
             .collect();
         assert!(!markers.is_empty(), "the defaults carry correction ids");
-        let status = design_status_text(&design_status(&inputs, &results));
+        let status = design_status_text(&design_status(&inputs, &results, false));
         for show_details in [false, true] {
             let ctx = egui::Context::default();
             let output = sized_frame(&ctx, egui::vec2(1280.0, 4000.0), Vec::new(), |ui| {
                 let mut readouts = Readouts::new(TermColors::default(), show_details);
-                dashboard_ui(ui, &inputs, &results, &fixes, &mut readouts);
+                dashboard_ui(ui, &inputs, &results, &fixes, false, &mut readouts);
             });
             let texts = drawn_texts(&output);
             for marker in &markers {
@@ -1867,11 +1890,77 @@ mod tests {
     /// One frame of the dashboard of `inputs` at full width on a screen tall enough for every
     /// row: what it drew.
     fn dashboard_frame(ctx: &egui::Context, inputs: &DesignInputs) -> egui::FullOutput {
+        dashboard_frame_with(ctx, inputs, false)
+    }
+
+    /// [`dashboard_frame`] with the shaft-clamp section paused (`clamps_paused`) or not.
+    fn dashboard_frame_with(
+        ctx: &egui::Context,
+        inputs: &DesignInputs,
+        clamps_paused: bool,
+    ) -> egui::FullOutput {
         let results = compute_all(inputs);
-        let fixes = all_fixes(inputs, &results);
+        let fixes = all_fixes(inputs, &results, clamps_paused);
         sized_frame(ctx, egui::vec2(1280.0, 4000.0), Vec::new(), |ui| {
-            dashboard_ui(ui, inputs, &results, &fixes, &mut Readouts::default());
+            dashboard_ui(
+                ui,
+                inputs,
+                &results,
+                &fixes,
+                clamps_paused,
+                &mut Readouts::default(),
+            );
         })
+    }
+
+    #[test]
+    fn while_the_clamp_section_is_paused_its_row_and_guide_leave_the_dashboard() {
+        // Ruling 11: a design that fails only the clamp reads as passing while it is paused;
+        // with the section shown its row, its Problem and its Why sentence are drawn.
+        let ctx = egui::Context::default();
+        let mut inputs = passing_design();
+        inputs.clamps.boss_od_mm = 12.0;
+        let results = compute_all(&inputs);
+        let clamp = guidance::guide("clamps.recommended").expect("the clamp's guide");
+        let problem = (clamp.problem)(&inputs, &results).expect("no screw fits a 12 mm boss");
+        for paused in [false, true] {
+            let output = dashboard_frame_with(&ctx, &inputs, paused);
+            let texts = drawn_texts(&output);
+            let count = |text: &str| texts.iter().filter(|t| *t == text).count();
+            let status = design_status_text(&design_status(&inputs, &results, paused));
+            assert_eq!(texts.first(), Some(&status), "paused {paused}");
+            let shown = usize::from(!paused);
+            assert_eq!(
+                count(label_for("clamps.recommended")),
+                shown,
+                "paused {paused}"
+            );
+            assert_eq!(count(&problem), shown, "paused {paused}");
+            assert_eq!(count(clamp.why), shown, "paused {paused}");
+        }
+        assert_eq!(
+            design_status_text(&design_status(&inputs, &results, true)),
+            "Your design: passes all 7 checks"
+        );
+    }
+
+    #[test]
+    fn while_the_clamp_section_is_paused_its_checks_leave_the_failing_list() {
+        let mut inputs = passing_design();
+        inputs.clamps.boss_od_mm = 12.0;
+        let results = compute_all(&inputs);
+        let shown = failing_checks(&results, false);
+        assert!(
+            shown.contains(&("clamps.recommended", Level::Bad)),
+            "{shown:?}"
+        );
+        let want: Vec<(&str, Level)> = shown
+            .iter()
+            .copied()
+            .filter(|&(path, _)| !clamps::hides(path, true))
+            .collect();
+        assert_eq!(failing_checks(&results, true), want);
+        assert!(want.len() < shown.len());
     }
 
     /// The text of the Why link to `learn`, as a reader would name it: a reviewed note's title,
@@ -1959,7 +2048,7 @@ mod tests {
             design(|i| i.metal.max_diameter_mm = f64::NAN),
         ] {
             let results = compute_all(&inputs);
-            let fixes = all_fixes(&inputs, &results);
+            let fixes = all_fixes(&inputs, &results, false);
             fix_texts.extend(
                 fixes
                     .iter()
@@ -2054,7 +2143,7 @@ mod tests {
         assert_eq!(red, BTreeSet::from(want));
         // The designs above reach a trade-off note and an amber header.
         let conflict = length_conflict();
-        let fixes = all_fixes(&conflict, &compute_all(&conflict));
+        let fixes = all_fixes(&conflict, &compute_all(&conflict), false);
         assert!((0..CHECK_GUIDES.len()).any(|i| !trade_offs(&fixes, i).is_empty()));
         let texts = drawn_texts(&dashboard_frame(&ctx, &hot_day()));
         assert_eq!(count(&texts, CAUTION_DETAILS), 1);
@@ -2066,8 +2155,8 @@ mod tests {
         // "Your design" has no hover.
         for (inputs, example) in [(DesignInputs::default(), true), (passing_design(), false)] {
             let results = compute_all(&inputs);
-            let fixes = all_fixes(&inputs, &results);
-            let text = design_status_text(&design_status(&inputs, &results));
+            let fixes = all_fixes(&inputs, &results, false);
+            let text = design_status_text(&design_status(&inputs, &results, false));
             assert_eq!(
                 text.starts_with(guidance::EXAMPLE_DESIGN),
                 example,
@@ -2077,7 +2166,16 @@ mod tests {
                 &egui::Context::default(),
                 egui::vec2(1280.0, 4000.0),
                 |output| text_center(output, &text),
-                |ui| dashboard_ui(ui, &inputs, &results, &fixes, &mut Readouts::default()),
+                |ui| {
+                    dashboard_ui(
+                        ui,
+                        &inputs,
+                        &results,
+                        &fixes,
+                        false,
+                        &mut Readouts::default(),
+                    )
+                },
             );
             let hover = guidance::EXAMPLE_DESIGN_HOVER.to_owned();
             assert_eq!(drawn_texts(&output).contains(&hover), example, "{text}");
@@ -2108,7 +2206,7 @@ mod tests {
         ];
         for (inputs, bad, caution, colour) in cases {
             let results = compute_all(&inputs);
-            let status = design_status(&inputs, &results);
+            let status = design_status(&inputs, &results, false);
             assert_eq!((status.bad, status.caution), (bad, caution));
             assert_eq!(status.total, CHECK_GUIDES.len());
             assert_eq!(status.is_default, inputs == DesignInputs::default());
@@ -2406,10 +2504,10 @@ mod tests {
             design(|i| i.coupling.magnets.axial_length_mm = Some(50.8)),
         ] {
             let results = compute_all(&inputs);
-            let fixes = all_fixes(&inputs, &results);
+            let fixes = all_fixes(&inputs, &results, false);
             let output = sized_frame(&ctx, egui::vec2(600.0, 8000.0), Vec::new(), |ui| {
                 let mut readouts = Readouts::default();
-                status_ui(ui, &inputs, &results);
+                status_ui(ui, &inputs, &results, false);
                 fit_ui(ui, &inputs, &results, &fixes, &mut readouts);
                 for &(_, learn) in &ROW_LEARN {
                     why_line(ui, None, learn, &mut readouts);

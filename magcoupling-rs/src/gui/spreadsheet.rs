@@ -332,7 +332,8 @@ fn summary_sheet(snapshot: &Snapshot) -> Sheet {
     if let Some(banner) = end_effect_banner(results) {
         rows.push(heading_row(&banner, CellStyle::Level(Level::Bad)));
     }
-    if let Some(banner) = assumptions_banner(snapshot.inputs) {
+    // The exports keep every input, the paused shaft-clamp section's too (ruling 11).
+    if let Some(banner) = assumptions_banner(snapshot.inputs, false) {
         rows.push(heading_row(&banner, CellStyle::Level(Level::Caution)));
     }
     rows.push(Vec::new());
@@ -503,7 +504,7 @@ fn results_sheet(results: &DesignResults) -> Sheet {
                 heading.extend([
                     Cell::empty(),
                     Cell::empty(),
-                    level_cell(worst_level(results, &group.rows)),
+                    level_cell(worst_level(results, &group.rows, false)),
                 ]);
                 rows.push(heading);
             }
@@ -613,6 +614,48 @@ mod tests {
             .rows
             .iter()
             .find(|row| row.first().map(Cell::as_text) == Some(label))
+    }
+
+    #[test]
+    fn every_export_keeps_the_paused_clamp_section() {
+        // Ruling 11, decided from evidence: the exports have no single filter point (the CSV
+        // and the JSON each walk `result_rows`, and these four sheets each read their own
+        // source) and pins hold them to every input and result, so they keep the full dump while
+        // the panel hides the section.
+        use crate::engine::clamps;
+        use crate::gui::results_table::{results_csv, results_json};
+        use crate::gui::session::Design;
+        let design = Design::default();
+        let results = compute_all(&design.inputs);
+        let csv = results_csv(&results);
+        assert!(csv.contains("\r\nclamps.recommended,"), "the CSV row");
+        let json = results_json(&design, &results);
+        assert!(
+            json.contains("\"path\": \"clamps.recommended\""),
+            "the JSON row"
+        );
+        assert!(
+            json.contains("\"clamps.boss_od_mm\""),
+            "the JSON design's input"
+        );
+        let book = sheets(&snapshot(&design.inputs, &results));
+        let inputs = sheet(&book, INPUTS_SHEET);
+        let input_path = column(&INPUT_COLUMNS, "Path");
+        let results_sheet = sheet(&book, RESULTS_SHEET);
+        let result_path = column(&RESULT_COLUMNS, "Path");
+        for path in ["clamps.boss_od_mm", "materials.screws.proof_12_9_MPa"] {
+            assert!(clamps::hides(path, true));
+            row_of(inputs, input_path, path);
+        }
+        row_of(results_sheet, result_path, "clamps.recommended");
+        let label = crate::gui::dashboard::result_info("clamps.recommended")
+            .expect("a result")
+            .meta
+            .label;
+        assert!(
+            summary_row(&book, label).is_some(),
+            "the Summary's dashboard row"
+        );
     }
 
     #[test]
@@ -981,7 +1024,7 @@ mod tests {
                     .unwrap();
                 assert_eq!(
                     heading[check],
-                    level_cell(worst_level(&results, &group.rows))
+                    level_cell(worst_level(&results, &group.rows, false))
                 );
             }
         }
@@ -1173,7 +1216,7 @@ mod tests {
         assert_eq!(rows[heading + 1][0].as_text(), "Warning");
         assert!(summary_row(&book, NO_WARNING).is_none());
         // The assumptions banner, amber, as the header shows it.
-        let banner = assumptions_banner(&inputs).expect("the variation is an assumption");
+        let banner = assumptions_banner(&inputs, false).expect("the variation is an assumption");
         assert!(rows.contains(&vec![
             Cell::text(banner).styled(CellStyle::Level(Level::Caution))
         ]));

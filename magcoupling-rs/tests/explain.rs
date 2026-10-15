@@ -1207,7 +1207,9 @@ fn notes_link_to_records_and_each_equation_has_at_most_one() {
             .collect();
         assert!(owners.len() <= 1, "{}: notes {owners:?}", eq.target);
     }
-    for (id, path) in notes::START_HERE {
+    // The whole order, the paused clamp step's too: it must still resolve when the section
+    // comes back.
+    for (id, path) in notes::START_HERE_ALL {
         assert!(results.contains(*path), "start here {id}: {path}");
         let explained_chain = SCOPE
             .iter()

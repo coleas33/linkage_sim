@@ -14,6 +14,7 @@
 use std::sync::OnceLock;
 
 use crate::DesignInputs;
+use crate::engine::clamps;
 use crate::engine::grades;
 use crate::engine::library;
 use crate::engine::meta::{FieldType, InputMeta, SliderRange, Value, input_rows};
@@ -325,11 +326,11 @@ pub const WORKFLOW: [WorkflowGroup; 8] = [
     },
     WorkflowGroup {
         id: "shaft",
-        label: "Shaft, key and clamps",
+        label: "Shaft and hub joint",
         sections: &[
             WorkflowSection {
                 id: "shaft",
-                label: "Shaft, key and clamps",
+                label: "Shaft and hub joint",
                 advanced: false,
                 paths: &[
                     "coupling.bore_mm",
@@ -777,6 +778,60 @@ impl InputCatalogue {
         CATALOGUE.get_or_init(InputCatalogue::new)
     }
 
+    /// This catalogue less the inputs the paused shaft-clamp section hides
+    /// ([`clamps::hides`] with `clamps_paused`): each group and section keeps its other inputs,
+    /// in order, and a section or group left with none is dropped. The whole catalogue when
+    /// `clamps_paused` is false.
+    pub fn without_hidden(&self, clamps_paused: bool) -> InputCatalogue {
+        let shown = |entry: &InputEntry| !clamps::hides(&entry.path, clamps_paused);
+        let keep = |groups: &[InputGroup]| -> Vec<InputGroup> {
+            groups
+                .iter()
+                .map(|group| InputGroup {
+                    name: group.name.clone(),
+                    label: group.label,
+                    sections: group
+                        .sections
+                        .iter()
+                        .map(|section| InputSection {
+                            entries: section
+                                .entries
+                                .iter()
+                                .filter(|e| shown(e))
+                                .cloned()
+                                .collect(),
+                            ..section.clone()
+                        })
+                        .filter(|section| !section.entries.is_empty())
+                        .collect(),
+                })
+                .filter(|group| !group.sections.is_empty())
+                .collect()
+        };
+        InputCatalogue {
+            key_design: self
+                .key_design
+                .iter()
+                .filter(|e| shown(e))
+                .cloned()
+                .collect(),
+            groups: keep(&self.groups),
+            workflow: keep(&self.workflow),
+        }
+    }
+
+    /// What the inputs side draws and filters: [`InputCatalogue::get`] less the inputs the
+    /// shaft-clamp section hides while `clamps_paused` ([`InputCatalogue::without_hidden`]),
+    /// built once. Metadata lookups keep using [`InputCatalogue::get`], which finds every input.
+    pub fn shown(clamps_paused: bool) -> &'static InputCatalogue {
+        static WITHOUT_THE_SECTION: OnceLock<InputCatalogue> = OnceLock::new();
+        if clamps_paused {
+            WITHOUT_THE_SECTION.get_or_init(|| Self::get().without_hidden(true))
+        } else {
+            Self::get()
+        }
+    }
+
     /// Every entry of the package groups, in schema order.
     pub fn all(&self) -> impl Iterator<Item = &InputEntry> {
         self.groups
@@ -963,6 +1018,65 @@ mod tests {
     use crate::engine::meta::{InputSet, ResultSet};
 
     #[test]
+    fn the_shown_catalogue_leaves_out_the_paused_section_s_inputs() {
+        use crate::engine::clamps::hides;
+        let all = InputCatalogue::get();
+        assert_eq!(all.without_hidden(false), *all);
+        assert!(std::ptr::eq(InputCatalogue::shown(false), all));
+        let shown = InputCatalogue::shown(true);
+        assert_eq!(*shown, all.without_hidden(true));
+        // Each order keeps every other input, in the same order.
+        let paths = |groups: &[InputGroup]| -> Vec<String> {
+            groups
+                .iter()
+                .flat_map(|g| g.sections.iter())
+                .flat_map(|s| s.entries.iter())
+                .map(|e| e.path.clone())
+                .collect()
+        };
+        for order in InputOrder::ALL {
+            let want: Vec<String> = paths(all.groups_in(order))
+                .into_iter()
+                .filter(|path| !hides(path, true))
+                .collect();
+            assert_eq!(paths(shown.groups_in(order)), want, "{order:?}");
+            for group in shown.groups_in(order) {
+                for section in &group.sections {
+                    assert!(!section.entries.is_empty(), "{}", section.id);
+                }
+            }
+        }
+        assert_eq!(shown.key_design, all.key_design);
+        // The clamp's own group goes; the shaft group keeps the bore and the keyway depth.
+        let names: Vec<&str> = shown.groups.iter().map(|g| g.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "coupling",
+                "metal",
+                "calibration",
+                "materials",
+                "temperature"
+            ]
+        );
+        let shaft = shown.workflow.iter().find(|g| g.name == "shaft").unwrap();
+        assert_eq!(shaft.label, "Shaft and hub joint");
+        let rows: Vec<&str> = shaft
+            .sections
+            .iter()
+            .flat_map(|s| s.entries.iter())
+            .map(|e| e.path.as_str())
+            .collect();
+        assert_eq!(rows, ["coupling.bore_mm", "coupling.keyway_depth_mm"]);
+        // The screw classes only the clamp reads go with it.
+        assert!(
+            shown
+                .section_of(InputOrder::Workflow, "materials.screws.proof_12_9_MPa")
+                .is_none()
+        );
+    }
+
+    #[test]
     fn every_input_is_in_exactly_one_section_in_schema_order() {
         let catalogue = InputCatalogue::new();
         let rows = input_rows(&DesignInputs::default());
@@ -1070,7 +1184,7 @@ mod tests {
                 "Magnets and rings",
                 "Gap and clearances",
                 "Housing and retainers",
-                "Shaft, key and clamps",
+                "Shaft and hub joint",
                 "Materials",
                 "Thermal and demagnetization",
                 "Calibration and model",

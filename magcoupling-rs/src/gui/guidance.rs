@@ -109,8 +109,9 @@ pub enum Fixes {
     /// One list, whatever fails.
     Static(&'static [(&'static str, Direction)]),
     /// A list built from the terms of the check's verdict that fail, each fix checked against
-    /// the term it serves (the temperature and space-claim guides).
-    PerTerm(fn(&DesignInputs, &DesignResults) -> Vec<(&'static str, Direction)>),
+    /// the term it serves (the temperature and space-claim guides), with the shaft-clamp
+    /// section's pause ([`helps`]).
+    PerTerm(fn(&DesignInputs, &DesignResults, bool) -> Vec<(&'static str, Direction)>),
 }
 
 /// One check's guide.
@@ -248,6 +249,7 @@ fn axis_reserves(results: &DesignResults) -> [f64; 3] {
 fn space_claim_fixes(
     inputs: &DesignInputs,
     results: &DesignResults,
+    clamps_paused: bool,
 ) -> Vec<(&'static str, Direction)> {
     let mut shown: Vec<(&'static str, Direction)> = Vec::new();
     for (axis, axis_fixes) in SPACE_CLAIM_AXES.iter().enumerate() {
@@ -257,7 +259,7 @@ fn space_claim_fixes(
         }
         let reserve = |_: &DesignInputs, after: &DesignResults| axis_reserves(after)[axis];
         for &fix in *axis_fixes {
-            if !shown.contains(&fix) && helps(inputs, results, fix, Some(&reserve)) {
+            if !shown.contains(&fix) && helps(inputs, results, fix, Some(&reserve), clamps_paused) {
                 shown.push(fix);
             }
         }
@@ -357,6 +359,22 @@ pub fn guide(check: &str) -> Option<&'static CheckGuide> {
     CHECK_GUIDES.iter().find(|guide| guide.check == check)
 }
 
+/// Whether `guide`'s check counts while the shaft-clamp section is paused (`clamps_paused`) or
+/// not: every guide but the clamp's while paused ([`crate::engine::clamps::hides`] its check).
+/// A guide that does not count is not drawn, shows no fix, holds back no other guide's fix and
+/// is not in the design status.
+pub fn counts(guide: &CheckGuide, clamps_paused: bool) -> bool {
+    !crate::engine::clamps::hides(guide.check, clamps_paused)
+}
+
+/// The guides that count while the shaft-clamp section is paused (`clamps_paused`) or not
+/// ([`counts`]), in [`CHECK_GUIDES`]' order.
+pub fn counted_guides(clamps_paused: bool) -> impl Iterator<Item = &'static CheckGuide> {
+    CHECK_GUIDES
+        .iter()
+        .filter(move |guide| counts(guide, clamps_paused))
+}
+
 /// The level of `guide`'s check in this design: the dashboard's badge of the check
 /// ([`check_level`]), green where it gives none (a check that does not apply, such as the cup
 /// wall without back iron, or one greyed while the end-effect model is out of range: the
@@ -385,18 +403,21 @@ fn failing(check: &str, inputs: &DesignInputs, results: &DesignResults) -> bool 
 
 // ------------------------------------------------------------------ the fixes
 
-/// The fixes of `guide` to show for this design, in order; none while its check passes. Of a
-/// static list, each fix that can still move and whose move turns no passing guided check red
-/// ([`helps`]); a list built per failing term ([`Fixes::PerTerm`]) is checked by its builder,
-/// against the term each fix serves. Each check runs `compute_all` on the design a move
-/// reaches, so the panel asks through a [`FixCache`]. The fit guide also leaves out "Raise
-/// Outside diameter" where no diameter on its slider fits the magnets ([`fits_on_the_slider`]).
+/// The fixes of `guide` to show for this design, in order; none while its check passes, and
+/// none for a guide that does not count while the shaft-clamp section is paused
+/// (`clamps_paused`, [`counts`]). Of a static list, each fix that can still move and whose
+/// move turns no passing guided check red ([`helps`]); a list built per failing term
+/// ([`Fixes::PerTerm`]) is checked by its builder, against the term each fix serves. Each
+/// check runs `compute_all` on the design a move reaches, so the panel asks through a
+/// [`FixCache`]. The fit guide also leaves out "Raise Outside diameter" where no diameter on
+/// its slider fits the magnets ([`fits_on_the_slider`]).
 pub fn fixes(
     guide: &CheckGuide,
     inputs: &DesignInputs,
     results: &DesignResults,
+    clamps_paused: bool,
 ) -> Vec<(&'static str, Direction)> {
-    if level(guide, inputs, results) == Level::Good {
+    if !counts(guide, clamps_paused) || level(guide, inputs, results) == Level::Good {
         return Vec::new();
     }
     match guide.fixes {
@@ -410,9 +431,9 @@ pub fn fixes(
                     guide.check == FIT_CHECK && fix == (RING, Direction::Raise);
                 !raises_the_fit_diameter || fits_on_the_slider(inputs)
             })
-            .filter(|&fix| helps(inputs, results, fix, None))
+            .filter(|&fix| helps(inputs, results, fix, None, clamps_paused))
             .collect(),
-        Fixes::PerTerm(build) => build(inputs, results),
+        Fixes::PerTerm(build) => build(inputs, results, clamps_paused),
     }
 }
 
@@ -571,7 +592,8 @@ pub fn guide_notes(
 
 /// Every guide's [`fixes`] for the design they were built for (spec 4.1, as for the
 /// consequences): the panel asks every frame, and each fix runs `compute_all` on the design
-/// its move reaches. They are computed again only when the inputs change.
+/// its move reaches. They are computed again only when the inputs or the shaft-clamp
+/// section's pause change.
 #[derive(Default)]
 pub struct FixCache {
     last: Option<CachedFixes>,
@@ -580,41 +602,52 @@ pub struct FixCache {
     pub(crate) computed: usize,
 }
 
-/// What a [`FixCache`] holds: the inputs and every guide's fixes for them.
+/// What a [`FixCache`] holds: the inputs, the shaft-clamp section's pause and every guide's
+/// fixes for them.
 struct CachedFixes {
     inputs: DesignInputs,
+    clamps_paused: bool,
     fixes: Vec<Vec<(&'static str, Direction)>>,
 }
 
 impl FixCache {
-    /// Each guide's [`fixes`] for `inputs` (whose results are `results`), in
-    /// [`CHECK_GUIDES`]' order, none for a check that passes; computed only when the inputs
-    /// differ from the last call's.
+    /// Each guide's [`fixes`] for `inputs` (whose results are `results`) with the shaft-clamp
+    /// section's pause (`clamps_paused`), in [`CHECK_GUIDES`]' order, none for a check that
+    /// passes or does not count; computed only when the inputs or the pause differ from the
+    /// last call's.
     pub fn get(
         &mut self,
         inputs: &DesignInputs,
         results: &DesignResults,
+        clamps_paused: bool,
     ) -> &[Vec<(&'static str, Direction)>] {
-        if self.last.as_ref().is_none_or(|last| last.inputs != *inputs) {
+        if self
+            .last
+            .as_ref()
+            .is_none_or(|last| last.inputs != *inputs || last.clamps_paused != clamps_paused)
+        {
             self.computed += 1;
             self.last = Some(CachedFixes {
                 inputs: inputs.clone(),
-                fixes: all_fixes(inputs, results),
+                clamps_paused,
+                fixes: all_fixes(inputs, results, clamps_paused),
             });
         }
         &self.last.as_ref().expect("filled above").fixes
     }
 }
 
-/// Each guide's [`fixes`] for `inputs` (whose results are `results`), in [`CHECK_GUIDES`]'
-/// order, none for a check that passes: what [`FixCache::get`] holds, computed every call.
+/// Each guide's [`fixes`] for `inputs` (whose results are `results`) with the shaft-clamp
+/// section's pause (`clamps_paused`), in [`CHECK_GUIDES`]' order, none for a check that passes
+/// or does not count: what [`FixCache::get`] holds, computed every call.
 pub fn all_fixes(
     inputs: &DesignInputs,
     results: &DesignResults,
+    clamps_paused: bool,
 ) -> Vec<Vec<(&'static str, Direction)>> {
     CHECK_GUIDES
         .iter()
-        .map(|guide| fixes(guide, inputs, results))
+        .map(|guide| fixes(guide, inputs, results, clamps_paused))
         .collect()
 }
 
@@ -646,14 +679,17 @@ type Margin<'a> = &'a dyn Fn(&DesignInputs, &DesignResults) -> f64;
 
 /// Whether `fix` is worth showing for `inputs` (whose results are `results`): one of the
 /// designs its move reaches ([`moves`]) turns no guided check that passes here red (review
-/// focus 3) and, given a `margin`, raises it.
+/// focus 3) and, given a `margin`, raises it. Only the checks that count with the shaft-clamp
+/// section's pause (`clamps_paused`, [`counts`]) hold a fix back: a hidden check never does.
 fn helps(
     inputs: &DesignInputs,
     results: &DesignResults,
     (path, direction): (&str, Direction),
     margin: Option<Margin>,
+    clamps_paused: bool,
 ) -> bool {
-    let before: Vec<Level> = CHECK_GUIDES
+    let counted: Vec<&CheckGuide> = counted_guides(clamps_paused).collect();
+    let before: Vec<Level> = counted
         .iter()
         .map(|guide| level(guide, inputs, results))
         .collect();
@@ -661,7 +697,7 @@ fn helps(
         .iter()
         .any(|design| {
             let after = compute_all(design);
-            let reddens = CHECK_GUIDES.iter().zip(&before).any(|(guide, &was)| {
+            let reddens = counted.iter().zip(&before).any(|(guide, &was)| {
                 was == Level::Good && level(guide, design, &after) == Level::Bad
             });
             let raises = margin.is_none_or(|margin| {
@@ -1354,6 +1390,7 @@ fn listed(items: &[String]) -> String {
 fn temperature_fixes(
     inputs: &DesignInputs,
     results: &DesignResults,
+    clamps_paused: bool,
 ) -> Vec<(&'static str, Direction)> {
     let mut shown: Vec<(&'static str, Direction)> = Vec::new();
     for term in failing_terms(inputs, results) {
@@ -1370,7 +1407,10 @@ fn temperature_fixes(
             let (path, direction) = fix;
             let part_shown = direction == Direction::CustomHotterGrade
                 && shown.contains(&(path, Direction::Change));
-            if !shown.contains(&fix) && !part_shown && helps(inputs, results, fix, Some(&margin)) {
+            if !shown.contains(&fix)
+                && !part_shown
+                && helps(inputs, results, fix, Some(&margin), clamps_paused)
+            {
                 shown.push(fix);
             }
         }
@@ -1396,16 +1436,24 @@ pub struct DesignStatus {
     pub bad: usize,
     /// The checks that ask for a look (amber), counted apart from the failures.
     pub caution: usize,
-    /// Every guide's check: [`CHECK_GUIDES`]'s length.
+    /// Every guide's check that counts ([`counts`]): [`CHECK_GUIDES`]'s length, less the
+    /// clamp's while the shaft-clamp section is paused.
     pub total: usize,
     /// Whether the inputs are the defaults (the example design).
     pub is_default: bool,
 }
 
-/// The design status of `inputs` and their `results`, counted live from the guides' levels.
-pub fn design_status(inputs: &DesignInputs, results: &DesignResults) -> DesignStatus {
+/// The design status of `inputs` and their `results`, counted live from the levels of the
+/// guides that count while the shaft-clamp section is paused (`clamps_paused`) or not
+/// ([`counts`]): a failing clamp moves no count while paused.
+pub fn design_status(
+    inputs: &DesignInputs,
+    results: &DesignResults,
+    clamps_paused: bool,
+) -> DesignStatus {
+    let counted: Vec<&CheckGuide> = counted_guides(clamps_paused).collect();
     let count = |wanted: Level| {
-        CHECK_GUIDES
+        counted
             .iter()
             .filter(|guide| level(guide, inputs, results) == wanted)
             .count()
@@ -1413,14 +1461,15 @@ pub fn design_status(inputs: &DesignInputs, results: &DesignResults) -> DesignSt
     DesignStatus {
         bad: count(Level::Bad),
         caution: count(Level::Caution),
-        total: CHECK_GUIDES.len(),
+        total: counted.len(),
         is_default: *inputs == DesignInputs::default(),
     }
 }
 
 /// The design status line: "Example design: fails 3 of 8 checks", "Your design: fails
 /// 2 of 8 checks", "Your design: passes all 8 checks", each followed by ", 1 caution" or ", 2
-/// cautions" when a check asks for a look.
+/// cautions" when a check asks for a look. The count is of the guides that count ([`counts`]):
+/// 7 while the shaft-clamp section is paused.
 pub fn design_status_text(status: &DesignStatus) -> String {
     let design = if status.is_default {
         EXAMPLE_DESIGN
@@ -2214,12 +2263,12 @@ mod tests {
         }
         for (_, inputs) in designs() {
             let results = compute_all(&inputs);
-            let all = all_fixes(&inputs, &results);
+            let all = all_fixes(&inputs, &results, false);
             for (index, g) in CHECK_GUIDES.iter().enumerate() {
                 texts.extend((g.problem)(&inputs, &results));
                 texts.extend(guide_notes(&all, index, &inputs, &results));
             }
-            texts.push(design_status_text(&design_status(&inputs, &results)));
+            texts.push(design_status_text(&design_status(&inputs, &results, false)));
         }
         texts
     }
@@ -2596,7 +2645,7 @@ mod tests {
                     .filter(|t| !t.passes && !t.margin.is_nan() && !reached.contains(&t.name))
                     .map(|t| t.name.as_str())
                     .collect();
-                let shown = fixes(g, &inputs, &results);
+                let shown = fixes(g, &inputs, &results, false);
                 let mut moved: BTreeSet<&str> = BTreeSet::new();
                 for &(path, direction) in &shown {
                     let text = fix_text(path, direction);
@@ -2813,7 +2862,8 @@ mod tests {
         let trip = ("temperature.duty.fault_trip_s", Lower);
         let conductance = ("temperature.thermal.conductance_W_K", Raise);
         let temperature = guide(TEMPERATURE).unwrap();
-        let shown = |inputs: DesignInputs| fixes(temperature, &inputs, &compute_all(&inputs));
+        let shown =
+            |inputs: DesignInputs| fixes(temperature, &inputs, &compute_all(&inputs), false);
         // Above both rings' limits and the adhesive's. No library part is rated above the
         // N42SH parts in use, and a grade does nothing to a ring with a library part. Custom
         // dimensions with a blank grade has no rating, so its limit is not calibrated: no fix.
@@ -2991,7 +3041,7 @@ mod tests {
         assert_eq!(hot_low(&unrated_results), hot_low(&results));
         // What the guide shows: each ring's two picks. The start is above the magnet limit,
         // so no cooling can bring the peak under it (review 2, N1).
-        let shown = fixes(guide(TEMPERATURE).unwrap(), &warm, &results);
+        let shown = fixes(guide(TEMPERATURE).unwrap(), &warm, &results, false);
         assert_eq!(
             shown,
             [
@@ -3028,7 +3078,7 @@ mod tests {
         // the Outside diameter, whose slider moves the cap with the cup. An axis whose claim is
         // not a number has no fix: its Problem asks for the number.
         let space = guide(SPACE_CLAIM).unwrap();
-        let shown = |inputs: DesignInputs| fixes(space, &inputs, &compute_all(&inputs));
+        let shown = |inputs: DesignInputs| fixes(space, &inputs, &compute_all(&inputs), false);
         let magnets = (MAGNET_LENGTH, Direction::Lower);
         let cap = ("metal.cap_od_mm", Direction::Lower);
         let diameter = (RING, Direction::Lower);
@@ -3052,7 +3102,7 @@ mod tests {
         // larger ring is offered. On the passing design at 12 poles the same step only returns
         // to a passing design, so both fixes are offered.
         let fit = guide(FIT_CHECK).unwrap();
-        let shown = |inputs: &DesignInputs| fixes(fit, inputs, &compute_all(inputs));
+        let shown = |inputs: &DesignInputs| fixes(fit, inputs, &compute_all(inputs), false);
         let crowded = with_poles(12);
         let results = compute_all(&crowded);
         for check in [HOT_MIN, CUP_WALL] {
@@ -3078,7 +3128,7 @@ mod tests {
         // up to ..."). Only fewer poles is offered. Where a larger diameter does fit, the
         // larger diameter is offered.
         let fit = guide(FIT_CHECK).unwrap();
-        let shown = |inputs: &DesignInputs| fixes(fit, inputs, &compute_all(inputs));
+        let shown = |inputs: &DesignInputs| fixes(fit, inputs, &compute_all(inputs), false);
         let nowhere = |inputs: &DesignInputs| {
             matches!(
                 smallest_fitting_diameter(inputs, inputs.coupling.npole, None),
@@ -3096,7 +3146,13 @@ mod tests {
             // One step up would still widen each place and turn nothing red: the slider's
             // reach, not the step, rules the fix out.
             assert!(
-                helps(inputs, &compute_all(inputs), (RING, Direction::Raise), None),
+                helps(
+                    inputs,
+                    &compute_all(inputs),
+                    (RING, Direction::Raise),
+                    None,
+                    false
+                ),
                 "{name}"
             );
             assert_eq!(shown(inputs), [(POLES, Direction::Lower)], "{name}");
@@ -3117,7 +3173,7 @@ mod tests {
     #[test]
     fn a_fix_at_its_slider_end_is_not_offered() {
         let shown = |check: &str, inputs: &DesignInputs| {
-            fixes(guide(check).unwrap(), inputs, &compute_all(inputs))
+            fixes(guide(check).unwrap(), inputs, &compute_all(inputs), false)
         };
         // No sleeve and no liner to thin: only the gap can still open.
         assert_eq!(
@@ -3165,7 +3221,7 @@ mod tests {
         };
         for (name, inputs) in designs() {
             let results = compute_all(&inputs);
-            let all = all_fixes(&inputs, &results);
+            let all = all_fixes(&inputs, &results, false);
             let shown: Vec<(&str, Direction)> = all.iter().flatten().copied().collect();
             let both_ways: Vec<&str> = shown
                 .iter()
@@ -3197,7 +3253,7 @@ mod tests {
         // The two cases in words: the same note in both blocks.
         let length = design(|i| i.metal.max_overall_axial_mm = 30.0);
         let results = compute_all(&length);
-        let all = all_fixes(&length, &results);
+        let all = all_fixes(&length, &results, false);
         let expected = [
             "One input pulls two ways (Axial magnet length, both rings): Hot-low torque needs it raised and Space claim needs it lowered, so change another input to settle one of them.",
         ];
@@ -3206,7 +3262,7 @@ mod tests {
         assert_eq!(trade_offs(&all, at(SPACE_CLAIM)), expected);
         let crowded = with(with_poles(12), |i| i.metal.max_diameter_mm = 42.0);
         let results = compute_all(&crowded);
-        let all = all_fixes(&crowded, &results);
+        let all = all_fixes(&crowded, &results, false);
         let expected = [
             "One input pulls two ways (Outside diameter): Magnets fit needs it raised and Space claim needs it lowered, so change another input to settle one of them.",
         ];
@@ -3221,19 +3277,19 @@ mod tests {
     fn all_fixes_lists_each_guide_s_fixes_in_the_guides_order() {
         for (name, inputs) in designs() {
             let results = compute_all(&inputs);
-            let all = all_fixes(&inputs, &results);
+            let all = all_fixes(&inputs, &results, false);
             assert_eq!(all.len(), CHECK_GUIDES.len(), "{name}");
             for (guide, shown) in CHECK_GUIDES.iter().zip(&all) {
                 assert_eq!(
                     *shown,
-                    fixes(guide, &inputs, &results),
+                    fixes(guide, &inputs, &results, false),
                     "{name}: {}",
                     guide.check
                 );
             }
         }
         let passing = passing_design();
-        let all = all_fixes(&passing, &compute_all(&passing));
+        let all = all_fixes(&passing, &compute_all(&passing), false);
         assert!(all.iter().all(Vec::is_empty), "{all:?}");
     }
 
@@ -3241,12 +3297,15 @@ mod tests {
     fn the_fix_cache_computes_once_per_design_and_follows_an_edit() {
         // Every guide's fixes, in the guides' order (none for a passing check), computed once
         // per design: each fix runs `compute_all` on the design its move reaches.
-        let all = |inputs: &DesignInputs| all_fixes(inputs, &compute_all(inputs));
+        let all = |inputs: &DesignInputs| all_fixes(inputs, &compute_all(inputs), false);
         let mut cache = FixCache::default();
         let defaults = DesignInputs::default();
         let results = compute_all(&defaults);
         for _ in 0..3 {
-            assert_eq!(cache.get(&defaults, &results), all(&defaults).as_slice());
+            assert_eq!(
+                cache.get(&defaults, &results, false),
+                all(&defaults).as_slice()
+            );
         }
         assert_eq!(
             cache.computed, 1,
@@ -3255,7 +3314,7 @@ mod tests {
         let crowded = with_poles(12);
         let crowded_results = compute_all(&crowded);
         assert_eq!(
-            cache.get(&crowded, &crowded_results),
+            cache.get(&crowded, &crowded_results, false),
             all(&crowded).as_slice()
         );
         assert_eq!(cache.computed, 2);
@@ -3263,7 +3322,7 @@ mod tests {
         let passing_results = compute_all(&passing);
         assert!(
             cache
-                .get(&passing, &passing_results)
+                .get(&passing, &passing_results, false)
                 .iter()
                 .all(Vec::is_empty)
         );
@@ -3642,7 +3701,7 @@ mod tests {
                 .unwrap()
                 .contains("is not a number")
         );
-        assert_eq!(fixes(space, &inputs, &results), []);
+        assert_eq!(fixes(space, &inputs, &results, false), []);
         assert!(NO_FIX.contains("not a number"), "{NO_FIX}");
     }
 
@@ -3659,7 +3718,7 @@ mod tests {
             (with_poles(12), FIT_CHECK, raise_ring),
         ] {
             let results = compute_all(&inputs);
-            let all = all_fixes(&inputs, &results);
+            let all = all_fixes(&inputs, &results, false);
             assert!(all[index(check)].contains(&fix), "{check}: {all:?}");
             let diameter = dimensions(&inputs).unwrap().diameter_mm;
             // No floor, or one below the diameter: the slider can still go down.
@@ -3719,7 +3778,7 @@ mod tests {
                 results.temperature.summary.verdict
             );
             assert_eq!(
-                temperature_fixes(&inputs, &results).is_empty(),
+                temperature_fixes(&inputs, &results, false).is_empty(),
                 passes,
                 "{name}"
             );
@@ -3728,7 +3787,7 @@ mod tests {
             // limit the start already reaches, so the cooling is not offered (review 2, N1).
             // Each peak whose limit the start reaches fails beside its hot-day term, whose
             // fixes clear both.
-            let shown = temperature_fixes(&inputs, &results);
+            let shown = temperature_fixes(&inputs, &results, false);
             let conductance = ("temperature.thermal.conductance_W_K", Direction::Raise);
             let trip = ("temperature.duty.fault_trip_s", Direction::Lower);
             for ring in Ring::BOTH {
@@ -3883,7 +3942,7 @@ mod tests {
 
     #[test]
     fn the_design_status_counts_the_failing_checks() {
-        let status = |inputs: &DesignInputs| design_status(inputs, &compute_all(inputs));
+        let status = |inputs: &DesignInputs| design_status(inputs, &compute_all(inputs), false);
         let defaults = status(&DesignInputs::default());
         assert_eq!(
             defaults,
@@ -3954,6 +4013,96 @@ mod tests {
         );
         assert!(text(1, 0, true).starts_with(EXAMPLE_DESIGN));
         assert!(text(1, 0, false).starts_with(YOUR_DESIGN));
+    }
+
+    // ------------------------------------------------------------------ the paused clamp section
+
+    /// The passing design with no screw fitting its 12 mm clamp boss: it fails the clamp
+    /// alone.
+    fn only_the_clamp_fails() -> DesignInputs {
+        breaking(small_boss)
+    }
+
+    #[test]
+    fn only_the_clamp_guide_stops_counting_and_only_while_the_section_is_paused() {
+        for guide in CHECK_GUIDES.iter() {
+            assert!(counts(guide, false), "{}", guide.check);
+            assert_eq!(counts(guide, true), guide.check != CLAMP, "{}", guide.check);
+        }
+    }
+
+    #[test]
+    fn a_design_failing_only_the_clamp_passes_while_the_section_is_paused() {
+        // Ruling 11: the clamp counts toward no verdict while it is paused.
+        let inputs = only_the_clamp_fails();
+        let results = compute_all(&inputs);
+        assert_eq!(level(guide(CLAMP).unwrap(), &inputs, &results), Level::Bad);
+        let shown = design_status(&inputs, &results, false);
+        assert_eq!((shown.bad, shown.caution, shown.total), (1, 0, 8));
+        assert_eq!(
+            design_status_text(&shown),
+            "Your design: fails 1 of 8 checks"
+        );
+        let paused = design_status(&inputs, &results, true);
+        assert_eq!((paused.bad, paused.caution, paused.total), (0, 0, 7));
+        assert_eq!(
+            design_status_text(&paused),
+            "Your design: passes all 7 checks"
+        );
+        // The example design fails the same three checks either way.
+        let defaults = DesignInputs::default();
+        let results = compute_all(&defaults);
+        assert_eq!(
+            design_status_text(&design_status(&defaults, &results, true)),
+            "Example design: fails 3 of 7 checks"
+        );
+    }
+
+    #[test]
+    fn a_paused_clamp_offers_no_fix_and_holds_back_no_other_guide_s_fix() {
+        let (clamp, hot) = (guide(CLAMP).unwrap(), guide(HOT_MIN).unwrap());
+        let index = CHECK_GUIDES.iter().position(|g| g.check == CLAMP).unwrap();
+        // Its own fixes: shown while the section shows, none while it is paused.
+        let inputs = only_the_clamp_fails();
+        let results = compute_all(&inputs);
+        let shown = fixes(clamp, &inputs, &results, false);
+        assert!(!shown.is_empty(), "the clamp's fixes show with the section");
+        assert_eq!(fixes(clamp, &inputs, &results, true), []);
+        assert!(all_fixes(&inputs, &results, true)[index].is_empty());
+        // At the clamp's limit (its safety factor raised until its capacity only just covers
+        // the requirement) one step of longer magnets fails the clamp: the hot-low guide's one
+        // fix is held back while the clamp shows, and offered while it is paused.
+        let defaults = DesignInputs::default();
+        let base = compute_all(&defaults);
+        let NumOrText::Num(capacity) = base.clamps.capacity_Nm else {
+            panic!("a screw fits the example design's clamp")
+        };
+        let mut at_limit = defaults.clone();
+        at_limit.clamps.safety_factor = capacity / base.clamps.max_torque_Nm * (1.0 - 1e-9);
+        let results = compute_all(&at_limit);
+        assert_eq!(level(clamp, &at_limit, &results), Level::Good);
+        assert_eq!(level(hot, &at_limit, &results), Level::Bad);
+        assert_eq!(fixes(hot, &at_limit, &results, false), []);
+        assert_eq!(
+            fixes(hot, &at_limit, &results, true),
+            [(MAGNET_LENGTH, Direction::Raise)]
+        );
+    }
+
+    #[test]
+    fn the_fix_cache_computes_again_when_the_pause_changes() {
+        let inputs = only_the_clamp_fails();
+        let results = compute_all(&inputs);
+        let mut cache = FixCache::default();
+        let index = CHECK_GUIDES.iter().position(|g| g.check == CLAMP).unwrap();
+        assert!(!cache.get(&inputs, &results, false)[index].is_empty());
+        assert!(cache.get(&inputs, &results, true)[index].is_empty());
+        assert_eq!(cache.computed, 2);
+        cache.get(&inputs, &results, true);
+        assert_eq!(
+            cache.computed, 2,
+            "the same inputs and pause: nothing computed"
+        );
     }
 
     // What moves what (spec 3.3, test 5): every number is recomputed here with compute_all.
@@ -4600,7 +4749,7 @@ mod tests {
                 t.adhesive_life.peak_C >= t.summary.hot_day_start_C,
                 "{name}"
             );
-            let shown = fixes(temperature, &inputs, &results);
+            let shown = fixes(temperature, &inputs, &results, false);
             assert!(!shown.contains(&trip), "{name}: {shown:?}");
             assert!(!shown.contains(&conductance), "{name}: {shown:?}");
             assert!(!shown.is_empty(), "{name}: the hot-day fixes stay");
@@ -4615,7 +4764,10 @@ mod tests {
             .peak_start_and_limit(&results)
             .unwrap();
         assert!(start < limit);
-        assert_eq!(fixes(temperature, &inputs, &results), [trip, conductance]);
+        assert_eq!(
+            fixes(temperature, &inputs, &results, false),
+            [trip, conductance]
+        );
         // A limit that is not a number is not "reached": its peak sentence stays.
         let mut unknown = results.clone();
         unknown.temperature.summary.magnet_limit_C = f64::NAN;
@@ -4684,7 +4836,7 @@ mod tests {
         let gap = (FACE_GAP, Direction::Raise);
         let notes_of = |inputs: &DesignInputs| {
             let results = compute_all(inputs);
-            let all = all_fixes(inputs, &results);
+            let all = all_fixes(inputs, &results, false);
             let notes = side_effects(&all, clearance, inputs, &results);
             (all[clearance].clone(), notes)
         };
@@ -4717,7 +4869,7 @@ mod tests {
         assert!(notes.is_empty(), "{notes:?}");
         // No other guide gets the note, and an index past the guides gets none.
         let results = compute_all(&defaults);
-        let all = all_fixes(&defaults, &results);
+        let all = all_fixes(&defaults, &results, false);
         for index in (0..=CHECK_GUIDES.len()).filter(|&i| i != clearance) {
             assert!(side_effects(&all, index, &defaults, &results).is_empty());
         }
@@ -4738,7 +4890,7 @@ mod tests {
             .unwrap();
         let notes_of = |inputs: &DesignInputs| {
             let results = compute_all(inputs);
-            let all = all_fixes(inputs, &results);
+            let all = all_fixes(inputs, &results, false);
             guide_notes(&all, clearance, inputs, &results)
         };
         assert_eq!(notes_of(&DesignInputs::default()), [gap_note, retention]);
@@ -4746,7 +4898,7 @@ mod tests {
         // The liner alone left to thin still brings it.
         let liner_only = design(|i| i.metal.sleeve_mm = 0.0);
         let results = compute_all(&liner_only);
-        let shown = &all_fixes(&liner_only, &results)[clearance];
+        let shown = &all_fixes(&liner_only, &results, false)[clearance];
         assert!(
             !shown.contains(&("metal.sleeve_mm", Direction::Lower)),
             "{shown:?}"
@@ -4760,7 +4912,7 @@ mod tests {
         // design.
         for (name, inputs) in designs() {
             let results = compute_all(&inputs);
-            let all = all_fixes(&inputs, &results);
+            let all = all_fixes(&inputs, &results, false);
             for index in (0..CHECK_GUIDES.len()).filter(|&i| i != clearance) {
                 let notes = guide_notes(&all, index, &inputs, &results);
                 assert!(!notes.contains(&retention.to_owned()), "{name}: {notes:?}");
@@ -4792,7 +4944,7 @@ mod tests {
         }
         for (name, inputs) in designs() {
             let results = compute_all(&inputs);
-            let all = all_fixes(&inputs, &results);
+            let all = all_fixes(&inputs, &results, false);
             for (index, g) in CHECK_GUIDES.iter().enumerate() {
                 for &(path, direction) in &all[index] {
                     emit(
@@ -4907,7 +5059,7 @@ mod tests {
             let results = compute_all(&inputs);
             emit(
                 &format!("dashboard/status/{name}"),
-                &design_status_text(&design_status(&inputs, &results)),
+                &design_status_text(&design_status(&inputs, &results, false)),
             );
         }
 

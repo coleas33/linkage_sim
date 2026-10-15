@@ -16,6 +16,7 @@ use std::sync::OnceLock;
 
 use serde_json::{Map, Value as Json};
 
+use crate::engine::clamps;
 use crate::engine::meta::{ResultSet, Value, result_rows};
 use crate::gui::corrections::{CorrectionIndex, marker_text};
 use crate::gui::dashboard::{
@@ -279,10 +280,12 @@ pub fn entry_level(results: &DesignResults, entry: &TableEntry) -> Option<Level>
 
 /// The worst level of the checks among `rows` (indices into [`table_entries`]) for `results`: a
 /// group heading's badge in the table and the spreadsheet; `None` when none of them is a check
-/// with a level.
-pub fn worst_level(results: &DesignResults, rows: &[usize]) -> Option<Level> {
+/// with a level. While the shaft-clamp section is paused (`clamps_paused`) its rows do not
+/// count ([`clamps::hides`]): the table does not show them.
+pub fn worst_level(results: &DesignResults, rows: &[usize], clamps_paused: bool) -> Option<Level> {
     let entries = table_entries();
     rows.iter()
+        .filter(|&&index| !clamps::hides(&entries[index].path, clamps_paused))
         .filter_map(|&index| entry_level(results, &entries[index]))
         .max()
 }
@@ -300,10 +303,12 @@ pub fn empty_text(trace_marks_none: bool, failing_only: bool, searching: bool) -
 }
 
 /// The indices of the rows whose label, path or cell contains `query`, ignoring case and the
-/// surrounding blanks; every row for a blank query.
-pub fn search(entries: &[TableEntry], query: &str) -> Vec<usize> {
+/// surrounding blanks; every row for a blank query. While the shaft-clamp section is paused
+/// (`clamps_paused`) its rows are never matched ([`clamps::hides`]).
+pub fn search(entries: &[TableEntry], query: &str, clamps_paused: bool) -> Vec<usize> {
     let needle = search_needle(query);
     (0..entries.len())
+        .filter(|&i| !clamps::hides(&entries[i].path, clamps_paused))
         .filter(|&i| needle.is_empty() || entries[i].haystack.contains(&needle))
         .collect()
 }
@@ -386,9 +391,11 @@ pub fn results_json(design: &Design, results: &DesignResults) -> String {
 #[derive(Clone, Debug, Default)]
 pub struct ResultsTable {
     query: String,
-    /// The rows matching `matched_query`; `None` until the first frame.
+    /// The rows matching `matched_query` with the pause `matched_paused`; `None` until the
+    /// first frame.
     matches: Option<Vec<usize>>,
     matched_query: String,
+    matched_paused: bool,
     order: ResultOrder,
     /// The failing checks alone (decision O-7).
     failing_only: bool,
@@ -459,12 +466,15 @@ impl ResultsTable {
     /// centre region's, over every view: decision M42-1), each row a readout (`readouts`, which
     /// frame the rows `trace` marks), each group heading a button that opens or closes it (not
     /// while the search holds more than blanks: every group is open then), with the worst level
-    /// of its checks and the rows the trace marks among those shown. Returns an export asked for.
+    /// of its checks and the rows the trace marks among those shown. While the shaft-clamp
+    /// section is paused (`clamps_paused`) its rows are left out of every line, count, filter
+    /// and heading badge. Returns an export asked for.
     pub fn ui(
         &mut self,
         ui: &mut egui::Ui,
         results: &DesignResults,
         trace: Option<&Trace>,
+        clamps_paused: bool,
         readouts: &mut Readouts,
     ) -> Option<TableAction> {
         self.sync_trace_filter(trace);
@@ -493,14 +503,18 @@ impl ResultsTable {
                 egui::Checkbox::new(&mut self.traced_only, TRACED_ONLY),
             )
             .on_hover_text("The results an input's trace marks: click the input's label");
-            if self.matches.is_none() || self.query != self.matched_query {
-                self.matches = Some(search(entries, &self.query));
+            if self.matches.is_none()
+                || self.query != self.matched_query
+                || self.matched_paused != clamps_paused
+            {
+                self.matches = Some(search(entries, &self.query, clamps_paused));
                 self.matched_query = self.query.clone();
+                self.matched_paused = clamps_paused;
             }
             traced = self.traced(trace);
             let matches = self.shown(&traced);
             failing = self.failing_only.then(|| {
-                failing_checks(results)
+                failing_checks(results, clamps_paused)
                     .iter()
                     .filter_map(|(path, _)| entry_index(path))
                     .collect()
@@ -512,7 +526,11 @@ impl ResultsTable {
                     .count(),
                 None => matches.len(),
             };
-            ui.weak(format!("{shown} of {} results", entries.len()));
+            let total = entries
+                .iter()
+                .filter(|entry| !clamps::hides(&entry.path, clamps_paused))
+                .count();
+            ui.weak(format!("{shown} of {total} results"));
             if ui.button(EXPORT_CSV).clicked() {
                 action = Some(TableAction::ExportCsv);
             }
@@ -537,7 +555,10 @@ impl ResultsTable {
             // The trace's text only when the trace itself marks none of the rows the failing
             // filter lets through (an input's trace may reach no result); a search that hides
             // the traced rows is the search's doing.
-            let marked = |index: usize| trace.is_some_and(|t| t.marks(&entries[index].path));
+            let marked = |index: usize| {
+                !clamps::hides(&entries[index].path, clamps_paused)
+                    && trace.is_some_and(|t| t.marks(&entries[index].path))
+            };
             let trace_marks_none = self.traced_only
                 && match &failing {
                     Some(rows) => !rows.iter().any(|&index| marked(index)),
@@ -592,7 +613,7 @@ impl ResultsTable {
                             };
                             // The worst level of the group's checks: a closed group shows that
                             // one of them fails.
-                            let level = worst_level(results, &heading.rows);
+                            let level = worst_level(results, &heading.rows, clamps_paused);
                             let line = HeadingLine {
                                 text: &text,
                                 open,
@@ -855,7 +876,7 @@ mod tests {
             for _ in 0..2 {
                 output = Some(sized_frame(&ctx, SCREEN, Vec::new(), |ui| {
                     let mut readouts = Readouts::new(TermColors::default(), show_details);
-                    table.ui(ui, &results, None, &mut readouts);
+                    table.ui(ui, &results, None, false, &mut readouts);
                 }));
             }
             let texts = drawn_texts(&output.unwrap());
@@ -865,7 +886,7 @@ mod tests {
             // The value shows either way, and the search still matches the cell.
             assert!(count(&value) > 0, "{value}");
             assert!(
-                search(table_entries(), &cell)
+                search(table_entries(), &cell, false)
                     .contains(&entry_index("model.pullout_Nm").expect("the pull-out's row"))
             );
         }
@@ -893,7 +914,7 @@ mod tests {
             entry.info.meta.label,
             |show_details| row_tooltip(entry, &value, show_details),
             |ui, readouts| {
-                table.ui(ui, &results, None, readouts);
+                table.ui(ui, &results, None, false, readouts);
             },
         );
     }
@@ -902,7 +923,7 @@ mod tests {
     fn the_search_matches_label_path_and_cell_ignoring_case() {
         let entries = table_entries();
         let paths = |query: &str| -> Vec<&str> {
-            search(entries, query)
+            search(entries, query, false)
                 .into_iter()
                 .map(|i| entries[i].path.as_str())
                 .collect()
@@ -916,9 +937,9 @@ mod tests {
             .filter(|r| r.path.starts_with("gap_sweep[3]."))
             .count();
         assert_eq!(row3.len(), columns);
-        assert_eq!(search(entries, "").len(), entries.len());
-        assert_eq!(search(entries, "   ").len(), entries.len());
-        assert!(search(entries, "no such result anywhere").is_empty());
+        assert_eq!(search(entries, "", false).len(), entries.len());
+        assert_eq!(search(entries, "   ", false).len(), entries.len());
+        assert!(search(entries, "no such result anywhere", false).is_empty());
     }
 
     #[test]
@@ -936,7 +957,7 @@ mod tests {
             assert_ne!(label_for(path), catalogue, "{path}");
             for query in [label_for(path), catalogue] {
                 assert!(
-                    search(entries, query).contains(&index),
+                    search(entries, query, false).contains(&index),
                     "{path} by {query:?}"
                 );
             }
@@ -1063,7 +1084,7 @@ mod tests {
         let mut output = None;
         for _ in 0..2 {
             output = Some(sized_frame(&ctx, SCREEN, Vec::new(), |ui| {
-                table.ui(ui, &results, None, &mut Readouts::default());
+                table.ui(ui, &results, None, false, &mut Readouts::default());
             }));
         }
         let texts = drawn_texts(&output.unwrap());
@@ -1204,7 +1225,7 @@ mod tests {
         let groups = result_groups();
         let pullout = entry_index("model.pullout_Nm").unwrap();
         assert_eq!(entries[pullout].path, "model.pullout_Nm");
-        let matches = search(entries, "calculator!c93");
+        let matches = search(entries, "calculator!c93", false);
         let lines = table_lines(&matches, ResultOrder::Grouped, None, &|_| true);
         assert_eq!(
             lines,
@@ -1218,7 +1239,7 @@ mod tests {
             ]
         );
         // A sweep row's columns: the Other results heading, the gap sweep's heading, the rows.
-        let matches = search(entries, "gap_sweep[3].");
+        let matches = search(entries, "gap_sweep[3].", false);
         let lines = table_lines(&matches, ResultOrder::Grouped, None, &|_| true);
         let gap_sweep = groups.iter().position(|g| g.id == "gap_sweep").unwrap();
         assert_eq!(lines[0], Line::OtherResults);
@@ -1254,7 +1275,7 @@ mod tests {
         inputs.coupling.magnets.part_inner.clear();
         inputs.coupling.magnets.part_outer.clear();
         let results = compute_all(&inputs);
-        let failing: Vec<usize> = failing_checks(&results)
+        let failing: Vec<usize> = failing_checks(&results, false)
             .iter()
             .map(|(path, _)| entry_index(path).unwrap())
             .collect();
@@ -1267,7 +1288,7 @@ mod tests {
             );
         }
         // And only those the search matches: the two amber rating checks.
-        let matches = search(entries, "temperature check");
+        let matches = search(entries, "temperature check", false);
         let lines = table_lines(&matches, ResultOrder::Grouped, Some(&failing), &|_| true);
         assert_eq!(
             lines,
@@ -1315,7 +1336,7 @@ mod tests {
                     .iter()
                     .filter_map(|&i| entry_level(results, &entries[i]));
                 assert_eq!(
-                    worst_level(results, &group.rows),
+                    worst_level(results, &group.rows, false),
                     levels.max(),
                     "{}",
                     group.label
@@ -1326,9 +1347,95 @@ mod tests {
             entry_index("model.pullout_Nm").unwrap(),
             entry_index("metal.hot_min_check").unwrap(),
         ];
-        assert_eq!(worst_level(&results, &pair), Some(Level::Bad));
-        assert_eq!(worst_level(&results, &pair[..1]), None);
-        assert_eq!(worst_level(&results, &[]), None);
+        assert_eq!(worst_level(&results, &pair, false), Some(Level::Bad));
+        assert_eq!(worst_level(&results, &pair[..1], false), None);
+        assert_eq!(worst_level(&results, &[], false), None);
+    }
+
+    #[test]
+    fn while_the_clamp_section_is_paused_the_table_leaves_out_its_rows() {
+        use crate::gui::result_groups::HEADLINE_LABEL;
+        use crate::gui::test_support::{drawn_texts, passing_design, sized_frame};
+        let entries = table_entries();
+        let hidden = entries
+            .iter()
+            .filter(|entry| clamps::hides(&entry.path, true))
+            .count();
+        assert!(hidden > 0);
+        // The search: every row, less the section's while paused; "clamp" finds only those.
+        assert_eq!(search(entries, "", false).len(), entries.len());
+        assert_eq!(search(entries, "", true).len(), entries.len() - hidden);
+        assert!(!search(entries, "clamp", false).is_empty());
+        assert_eq!(search(entries, "clamp", true), Vec::<usize>::new());
+        // A design that fails only the clamp: the headline's badge is red only while the
+        // clamp shows.
+        let mut inputs = passing_design();
+        inputs.clamps.boss_od_mm = 12.0;
+        let results = compute_all(&inputs);
+        let headline = &result_groups()[0];
+        assert_eq!(headline.label, HEADLINE_LABEL);
+        assert_eq!(
+            worst_level(&results, &headline.rows, false),
+            Some(Level::Bad)
+        );
+        assert_eq!(
+            worst_level(&results, &headline.rows, true),
+            Some(Level::Good)
+        );
+        // Drawn: the count, and the clamp chain and package headings only with the section.
+        for (paused, total) in [(false, entries.len()), (true, entries.len() - hidden)] {
+            let ctx = egui::Context::default();
+            let mut table = ResultsTable::default();
+            let mut output = None;
+            for _ in 0..2 {
+                output = Some(sized_frame(
+                    &ctx,
+                    egui::vec2(1280.0, 3000.0),
+                    Vec::new(),
+                    |ui| {
+                        table.ui(ui, &results, None, paused, &mut Readouts::default());
+                    },
+                ));
+            }
+            let texts = drawn_texts(&output.unwrap());
+            assert!(
+                texts.contains(&format!("{total} of {total} results")),
+                "paused {paused}"
+            );
+            let clamp_headings = texts
+                .iter()
+                .filter(|t| t.starts_with("Clamps (") || t.starts_with("Shaft clamps ("))
+                .count();
+            assert_eq!(
+                clamp_headings,
+                if paused { 0 } else { 2 },
+                "paused {paused}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_correction_of_the_paused_section_alone_marks_nothing_shown() {
+        // Ruling 11: the correction rows that concern only the clamp leave with it. E2 (the
+        // screw length) marks only the section's cells: while it is paused no shown row
+        // carries its marker and no shown equation embodies it.
+        use crate::engine::deviations::DeviationId;
+        use crate::gui::readouts::registry;
+        let marked = |paused: bool| -> BTreeSet<String> {
+            table_entries()
+                .iter()
+                .filter(|entry| !clamps::hides(&entry.path, paused))
+                .flat_map(|entry| entry.marker.split_whitespace().map(str::to_owned))
+                .collect()
+        };
+        assert!(marked(false).contains("E2"));
+        assert!(!marked(true).contains("E2"));
+        for eq in registry().equations() {
+            if !clamps::hides(&eq.target, true) {
+                let upstream = registry().corrections_upstream(&eq.target);
+                assert!(!upstream.contains(&DeviationId::E2), "{}", eq.target);
+            }
+        }
     }
 
     #[test]
@@ -1360,7 +1467,7 @@ mod tests {
                 egui::Rect::from_min_size(egui::pos2(20.0, 30.0), egui::vec2(700.0, height));
             for _ in 0..2 {
                 let (_, used) = crate::gui::test_support::region_frame(&ctx, size, region, |ui| {
-                    table.ui(ui, &results, None, &mut Readouts::default());
+                    table.ui(ui, &results, None, false, &mut Readouts::default());
                 });
                 assert!(
                     used.bottom() <= region.bottom() + 0.01,

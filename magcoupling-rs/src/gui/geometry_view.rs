@@ -153,14 +153,16 @@ pub(crate) fn arrowhead(painter: &egui::Painter, tip: Pos2, dir: Vec2, stroke: S
 }
 
 /// Draws the geometry of the design shown (`inputs` and the `results` computed from them),
-/// each callout a readout (`readouts`), and returns what it drew.
+/// without the paused shaft-clamp section's parts while `clamps_paused` ([`geometry`]), each
+/// callout a readout (`readouts`), and returns what it drew.
 pub fn geometry_ui(
     ui: &mut egui::Ui,
     inputs: &DesignInputs,
     results: &DesignResults,
+    clamps_paused: bool,
     readouts: &mut Readouts,
 ) -> GeometryLayout {
-    let g = geometry(inputs, results);
+    let g = geometry(inputs, results, clamps_paused);
     let row = ui.text_style_height(&egui::TextStyle::Body) + ui.spacing().item_spacing.y;
     let rows = g.end.callouts.len() + g.side.callouts.len() + g.notes.len();
     let list = rows as f32 * row * 1.5;
@@ -410,7 +412,13 @@ mod tests {
         let results = compute_all(inputs);
         let mut layout = None;
         let output = sized_frame(ctx, size, events, |ui| {
-            layout = Some(geometry_ui(ui, inputs, &results, &mut Readouts::default()));
+            layout = Some(geometry_ui(
+                ui,
+                inputs,
+                &results,
+                false,
+                &mut Readouts::default(),
+            ));
         });
         (output, layout.expect("drawn"))
     }
@@ -446,7 +454,7 @@ mod tests {
         let ctx = egui::Context::default();
         let inputs = DesignInputs::default();
         let (_, layout) = frame(&ctx, &inputs, egui::vec2(1000.0, 700.0), Vec::new());
-        let g = geometry(&inputs, &compute_all(&inputs));
+        let g = geometry(&inputs, &compute_all(&inputs), false);
         let end = layout.end.expect("the end view is drawn");
         let side = layout.side.expect("the side view is drawn");
         assert_eq!(end.scale, side.scale);
@@ -477,7 +485,7 @@ mod tests {
         assert!(has_radius(&radii, 5.0 * s), "{radii:?}");
         // The face gap's dimension spans 1.4 mm at the scale.
         let end = layout.end.unwrap();
-        let g = geometry(&inputs, &r);
+        let g = geometry(&inputs, &r, false);
         let face = g.callouts().find(|c| c.tag == 1).unwrap();
         let span = (end.to_px(face.to) - end.to_px(face.from)).length();
         assert!((span - 1.4 * s).abs() < 1e-2, "{span} vs {}", 1.4 * s);
@@ -610,7 +618,7 @@ mod tests {
                 |_| face_gap.get().expect("the face gap is drawn").center(),
                 |ui| {
                     let mut readouts = Readouts::new(TermColors::default(), show_details);
-                    let layout = geometry_ui(ui, &inputs, &results, &mut readouts);
+                    let layout = geometry_ui(ui, &inputs, &results, false, &mut readouts);
                     face_gap.set(
                         layout
                             .dimensions
@@ -646,7 +654,7 @@ mod tests {
         // The list under the drawing repeats each callout's text: the first one's, hovered.
         let inputs = DesignInputs::default();
         let results = compute_all(&inputs);
-        let g = geometry(&inputs, &results);
+        let g = geometry(&inputs, &results, false);
         let callout = g.callouts().next().expect("a callout");
         assert_hover_names_path_only_with_details(
             egui::vec2(1000.0, 700.0),
@@ -654,7 +662,7 @@ mod tests {
             &callout.text,
             |show_details| hover_text(callout.path, show_details).expect("a result"),
             |ui, readouts| {
-                geometry_ui(ui, &inputs, &results, readouts);
+                geometry_ui(ui, &inputs, &results, false, readouts);
             },
         );
     }
@@ -740,7 +748,13 @@ mod tests {
             let mut layout = None;
             for _ in 0..2 {
                 let (_, used) = crate::gui::test_support::region_frame(&ctx, size, region, |ui| {
-                    layout = Some(geometry_ui(ui, &inputs, &results, &mut Readouts::default()));
+                    layout = Some(geometry_ui(
+                        ui,
+                        &inputs,
+                        &results,
+                        false,
+                        &mut Readouts::default(),
+                    ));
                 });
                 assert!(
                     used.bottom() <= region.bottom() + 0.01,
@@ -777,7 +791,7 @@ mod tests {
         inputs.metal.max_diameter_mm = 1e300;
         let (output, layout) = frame(&ctx, &inputs, egui::vec2(1000.0, 700.0), Vec::new());
         assert!(layout.end.is_some() && layout.side.is_some());
-        let g = geometry(&inputs, &compute_all(&inputs));
+        let g = geometry(&inputs, &compute_all(&inputs), false);
         let tall = (g.end.max[1] - g.end.min[1]) as f32 * layout.scale;
         assert!(
             layout.scale > 0.0 && tall > 0.5 * layout.rect.height(),

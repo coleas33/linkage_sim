@@ -290,3 +290,15 @@ fn the_end_effect_and_calibration_rationales_state_what_was_checked() {
     }
     assert!(!cal.contains("own rings"), "{cal}");
 }
+
+#[test]
+fn only_the_clamp_assumptions_are_hidden_and_only_while_the_clamp_section_is_paused() {
+    // Ruling 11: the paused shaft-clamp section takes its two assumptions with it.
+    let hidden: Vec<&str> = ASSUMPTIONS
+        .iter()
+        .filter(|a| !a.shown(true))
+        .map(|a| a.id)
+        .collect();
+    assert_eq!(hidden, ["clamp_friction", "preload_fraction"]);
+    assert!(ASSUMPTIONS.iter().all(|a| a.shown(false)));
+}

@@ -151,7 +151,7 @@ inputs! {
                     (4, "PEEK"),
                 ]),
             cap_housing: i64 = 1 => param_rust_only("-", "Cap and housing material",
-                "The cap material: 6061-T6 uses the inputs, another choice its library conductivity, density and specific heat. The aluminium adapter and the clamp alloy keep their own inputs.")
+                "The cap material: 6061-T6 uses the inputs, another choice its library conductivity, density and specific heat. The aluminium adapter keeps its own inputs.")
                 .choices(&[
                     (1, "6061-T6 aluminium"),
                     (2, "7075-T6 aluminium"),

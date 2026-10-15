@@ -45,6 +45,7 @@
 
 use egui::{Color32, Sense, Vec2};
 
+use crate::engine::clamps;
 use crate::engine::explain::markup::{Expr, Symbol};
 use crate::engine::explain::note_text;
 use crate::engine::explain::notes::{self, Change, Note, Review, START_HERE, covers};
@@ -102,9 +103,28 @@ pub const EXPLAIN: &str = "Explain";
 /// The button that starts the suggested reading order.
 pub const START_HERE_BUTTON: &str = "Start here";
 
-/// The Start here button's hover: the walk's topics in [`START_HERE`]'s order (slice-2 spec
-/// 3.3), in plain words.
-pub const START_HERE_HOVER: &str = "A suggested order: how the coupling makes torque, the magnet pattern, back iron, pull-out, magnet ends, calibration, temperature, slipping and its heat, demagnetization, clamps";
+/// The Start here walk's topics before its last, the clamp note's: typed once, for
+/// [`start_here_hover`]'s two forms.
+macro_rules! start_here_topics {
+    () => {
+        "A suggested order: how the coupling makes torque, the magnet pattern, back iron, pull-out, magnet ends, calibration, temperature, slipping and its heat, demagnetization"
+    };
+}
+
+/// The Start here button's hover: the walk's topics in [`notes::start_here_for`]'s order
+/// (slice-2 spec 3.3), in plain words; the clamp step's topic only while the shaft-clamp section
+/// is not paused (`clamps_paused`).
+pub const fn start_here_hover(clamps_paused: bool) -> &'static str {
+    if clamps_paused {
+        start_here_topics!()
+    } else {
+        concat!(start_here_topics!(), ", clamps")
+    }
+}
+
+/// The hover the Start here button shows: [`start_here_hover`] the shaft-clamp section's pause
+/// (`clamps::PAUSED`).
+pub const START_HERE_HOVER: &str = start_here_hover(clamps::PAUSED);
 
 /// The start-here steps' buttons.
 pub const PREVIOUS: &str = "Previous";
@@ -139,6 +159,17 @@ pub const EXPLAINS: &str = "Explains";
 /// [`notes::note_for`] gives an equation's: every note the panel or the dashboard shows by id.
 pub fn reviewed_note(id: &str) -> Option<&'static Note> {
     notes::note(id).filter(|n| matches!(n.review, Review::Reviewed { .. }))
+}
+
+/// The results that use `path`, its "Used by" links: the registry's, less those the paused
+/// shaft-clamp section hides while `clamps_paused` ([`clamps::hides`]), so no link leads into
+/// it (the cold-high torque's clamp demand).
+pub fn used_by_shown(path: &str, clamps_paused: bool) -> Vec<&'static String> {
+    registry()
+        .used_by(path)
+        .iter()
+        .filter(|user| !clamps::hides(user, clamps_paused))
+        .collect()
 }
 
 /// The start of the start-here bar.
@@ -607,7 +638,7 @@ pub fn explorer_ui(
                 explorer.follow_note_link(link);
             }
             ui.add_space(6.0);
-            let users = registry().used_by(&path);
+            let users = used_by_shown(&path, clamps::PAUSED);
             let mut up = None;
             if !users.is_empty() {
                 ui.horizontal_wrapped(|ui| {
@@ -1294,6 +1325,53 @@ mod tests {
         // The button's hover names the walk's topics in plain words, step 1's first.
         assert!(crate::gui::guidance::plain_text_violations(START_HERE_HOVER).is_empty());
         assert!(START_HERE_HOVER.starts_with("A suggested order: how the coupling makes torque"));
+    }
+
+    #[test]
+    fn the_start_here_hover_names_the_clamp_step_only_while_the_section_shows() {
+        assert_eq!(
+            start_here_hover(false),
+            format!("{}, clamps", start_here_hover(true))
+        );
+        assert!(!start_here_hover(true).to_lowercase().contains("clamp"));
+        assert_eq!(START_HERE_HOVER, start_here_hover(clamps::PAUSED));
+        for paused in [false, true] {
+            assert!(
+                crate::gui::guidance::plain_text_violations(start_here_hover(paused)).is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn no_equation_shown_leads_into_the_paused_clamp_section() {
+        // Ruling 11: no route into the section while it is paused. A shown equation reads none
+        // of its terms (a click on a term drills only into what it reads), and its Used by
+        // leaves the section's results out.
+        for eq in registry().equations() {
+            if clamps::hides(&eq.target, true) {
+                continue;
+            }
+            for term in &eq.terms {
+                assert!(!clamps::hides(term, true), "{} reads {term}", eq.target);
+            }
+            for user in used_by_shown(&eq.target, true) {
+                assert!(!clamps::hides(user, true), "{} -> {user}", eq.target);
+            }
+        }
+        // The cold-high torque is the clamp's demand: its Used by shows the clamp only while
+        // the section shows.
+        let users = |paused| -> Vec<&str> {
+            used_by_shown("metal.torque_cold_high_Nm", paused)
+                .into_iter()
+                .map(String::as_str)
+                .collect()
+        };
+        assert!(users(false).contains(&"clamps.max_torque_Nm"));
+        assert!(!users(true).contains(&"clamps.max_torque_Nm"));
+        assert_eq!(
+            users(false).len(),
+            registry().used_by("metal.torque_cold_high_Nm").len()
+        );
     }
 
     #[test]

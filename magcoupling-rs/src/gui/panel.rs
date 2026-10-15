@@ -27,6 +27,7 @@
 //! target is the requirement (decision G-2), the Size tab's Required slider.
 
 use crate::engine::assumptions::{self, ASSUMPTIONS};
+use crate::engine::clamps;
 use crate::engine::meta::{InputSet, ResultSet, SliderRange, Value};
 use crate::engine::size_controls::ring_radius_range;
 use crate::engine::sizing::{FreeVariable, SizingOutcome};
@@ -232,6 +233,14 @@ impl CentreView {
         CentreView::Results,
     ];
 
+    /// The views the tab row offers, in tab order: every view but the clamp drawing while the
+    /// shaft-clamp section is paused (`clamps_paused`).
+    pub fn tabs(clamps_paused: bool) -> impl Iterator<Item = CentreView> {
+        Self::ALL
+            .into_iter()
+            .filter(move |&view| !(clamps_paused && view == CentreView::Clamp))
+    }
+
     /// The tab text.
     pub const fn label(self) -> &'static str {
         match self {
@@ -315,6 +324,9 @@ pub struct MagcouplingPanel {
     /// The input or result traced (decision O-8): a click on an input's label or on a result
     /// sets it; every path it reaches is framed in the selection colour.
     trace: Option<Trace>,
+    /// Whether the shaft-clamp section is paused ([`clamps::PAUSED`], which every panel starts
+    /// from): the views leave it out. A field, not the constant, so a test draws either state.
+    clamps_paused: bool,
 }
 
 impl Default for MagcouplingPanel {
@@ -358,6 +370,7 @@ impl MagcouplingPanel {
             requests: Vec::new(),
             explorer: Explorer::default(),
             trace: None,
+            clamps_paused: clamps::PAUSED,
         }
     }
 
@@ -596,7 +609,7 @@ impl MagcouplingPanel {
             self.results = compute_all(&shown);
             // The guides' fixes, the Outside diameter's left out where the Minimum OD stops it.
             let fixes = within_minimum_diameter(
-                self.fixes.get(&shown, &self.results),
+                self.fixes.get(&shown, &self.results, self.clamps_paused),
                 &shown,
                 self.minimum_diameter_mm,
             );
@@ -607,7 +620,14 @@ impl MagcouplingPanel {
                     egui::ScrollArea::vertical()
                         .id_salt("magcoupling_dashboard_scroll")
                         .show(ui, |ui| {
-                            dashboard_ui(ui, &shown, &self.results, &fixes, &mut readouts)
+                            dashboard_ui(
+                                ui,
+                                &shown,
+                                &self.results,
+                                &fixes,
+                                self.clamps_paused,
+                                &mut readouts,
+                            )
                         });
                 });
             egui::CentralPanel::default()
@@ -795,7 +815,7 @@ impl MagcouplingPanel {
                 self.welcome_ui(ui);
             }
             ui.horizontal_wrapped(|ui| {
-                for view in CentreView::ALL {
+                for view in CentreView::tabs(self.clamps_paused) {
                     ui.selectable_value(&mut self.centre, view, view.label());
                 }
             });
@@ -905,17 +925,27 @@ impl MagcouplingPanel {
                     );
                 }
                 ui.label("Build checks are shown in the dashboard. The geometry drawing fits the view; use the dimensions to compare sizes.");
-                geometry_ui(ui, &self.shown_inputs(), &self.results, readouts);
+                geometry_ui(
+                    ui,
+                    &self.shown_inputs(),
+                    &self.results,
+                    self.clamps_paused,
+                    readouts,
+                );
             }
             CentreView::Geometry => {
-                geometry_ui(ui, shown, &self.results, readouts);
+                geometry_ui(ui, shown, &self.results, self.clamps_paused, readouts);
             }
             CentreView::Plot(kind) => plot_ui(ui, kind, shown, &self.results, readouts),
             CentreView::Clamp => clamp_ui(ui, shown, &self.results, readouts),
             CentreView::Results => {
-                let action =
-                    self.results_table
-                        .ui(ui, &self.results, self.trace.as_ref(), readouts);
+                let action = self.results_table.ui(
+                    ui,
+                    &self.results,
+                    self.trace.as_ref(),
+                    self.clamps_paused,
+                    readouts,
+                );
                 match action {
                     Some(TableAction::ExportCsv) => self.requests.push(PanelRequest::SaveFile {
                         file_name: CSV_FILE_NAME.to_owned(),
@@ -1053,7 +1083,7 @@ impl MagcouplingPanel {
             }
         });
         // Spec Addendum A3: the banner while any assumption differs from its workbook default.
-        let banner = assumptions_banner(&self.inputs);
+        let banner = assumptions_banner(&self.inputs, self.clamps_paused);
         if banner != self.banner {
             self.banner.clone_from(&banner);
             ui.ctx().request_repaint();
@@ -1158,7 +1188,8 @@ impl MagcouplingPanel {
         // The trace's banner at the foot of the side, laid out bottom up first so the view takes
         // the room above it in the same frame: a trace moves no row above it, so a second click
         // on the label lands on the label again (decision O-8).
-        let banner = self.trace.as_ref().map(Trace::banner);
+        let clamps_paused = self.clamps_paused;
+        let banner = self.trace.as_ref().map(|trace| trace.banner(clamps_paused));
         ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
             if let Some(banner) = banner {
                 if ui.small_button(CLEAR_TRACE).clicked() {
@@ -1188,6 +1219,7 @@ impl MagcouplingPanel {
     /// spreadsheet details (spec S2-5), its source.
     fn assumptions_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
         let catalogue = InputCatalogue::get();
+        let clamps_paused = self.clamps_paused;
         egui::ScrollArea::vertical()
             .id_salt("magcoupling_assumptions_scroll")
             .auto_shrink([false, false])
@@ -1195,6 +1227,10 @@ impl MagcouplingPanel {
                 ui.add(egui::Label::new(egui::RichText::new(ASSUMPTIONS_NOTE).weak()).wrap());
                 for state in assumptions::states(&self.inputs) {
                     let assumption = state.assumption;
+                    // The paused shaft-clamp section's assumptions are left out with it.
+                    if !assumption.shown(clamps_paused) {
+                        continue;
+                    }
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
                         let dot = if state.modified { CHANGED_DOT } else { " " };
@@ -1231,7 +1267,8 @@ impl MagcouplingPanel {
     /// (decision O-1), each workflow group's advanced sections under its closed Advanced heading;
     /// while the filter holds more than blanks, the matching inputs alone.
     fn design_inputs_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
-        let catalogue = InputCatalogue::get();
+        // Every input but those the paused shaft-clamp section hides.
+        let catalogue = InputCatalogue::shown(self.clamps_paused);
         // A leaf term clicked in the Equation panel: its group (and its Advanced heading) opens
         // so its row can scroll into view (the Key design group for a Key design input), and
         // the filter is cleared so the row is drawn.
@@ -1364,7 +1401,7 @@ impl MagcouplingPanel {
     ) {
         let matches = filter_inputs(groups, &self.input_filter);
         let shown: usize = matches.iter().map(|m| m.entries.len()).sum();
-        let total = InputCatalogue::get().all().count();
+        let total = InputCatalogue::shown(self.clamps_paused).all().count();
         ui.weak(format!("{shown} of {total} inputs"));
         egui::ScrollArea::vertical()
             .id_salt("magcoupling_inputs_filter_scroll")
@@ -1460,10 +1497,14 @@ impl MagcouplingPanel {
 }
 
 /// The assumptions banner (spec Addendum A3) of `inputs`: [`ASSUMPTIONS_MODIFIED`] and the names
-/// of the assumptions that differ from their workbook default; `None` while none does. The header
-/// shows it, and the spreadsheet's Summary.
-pub(crate) fn assumptions_banner(inputs: &DesignInputs) -> Option<String> {
-    let modified = assumptions::modified(inputs);
+/// of the assumptions that differ from their workbook default, those the paused shaft-clamp
+/// section hides left out while `clamps_paused`; `None` while none does. The header shows it
+/// (with the pause), and the spreadsheet's Summary (without: the exports keep every input).
+pub(crate) fn assumptions_banner(inputs: &DesignInputs, clamps_paused: bool) -> Option<String> {
+    let modified: Vec<_> = assumptions::modified(inputs)
+        .into_iter()
+        .filter(|assumption| assumption.shown(clamps_paused))
+        .collect();
     (!modified.is_empty()).then(|| {
         let names: Vec<&str> = modified.iter().map(|a| a.label).collect();
         format!("{ASSUMPTIONS_MODIFIED}: {}", names.join(", "))
@@ -1608,8 +1649,13 @@ mod tests {
             Self::of(MagcouplingPanel::new(), SCREEN)
         }
 
-        /// A harness drawing `panel` on a screen of `size`, one frame in.
-        fn of(panel: MagcouplingPanel, size: egui::Vec2) -> Self {
+        /// A harness drawing `panel` on a screen of `size`, one frame in. Its panel draws the
+        /// whole shaft-clamp section, as every panel test did before the pause (ruling 11): a
+        /// test of the paused panel sets `harness.panel.clamps_paused` itself. The explorer
+        /// reads `clamps::PAUSED` itself (Start here, its hover, Used by), so even this harness
+        /// walks the paused Start here.
+        fn of(mut panel: MagcouplingPanel, size: egui::Vec2) -> Self {
+            panel.clamps_paused = false;
             let mut harness = Self {
                 ctx: egui::Context::default(),
                 panel,
@@ -1831,7 +1877,7 @@ mod tests {
         }
         assert_eq!(count(&output, KEY_DESIGN_HEADING), 0);
         // The dashboard's design status line (spec 3.1) is on the first view, counted live.
-        let status = design_status(harness.panel.inputs(), harness.panel.results());
+        let status = design_status(harness.panel.inputs(), harness.panel.results(), false);
         assert!(status.is_default);
         assert_eq!(count(&output, &design_status_text(&status)), 1);
         // The strip is in the centre region, above the tab row.
@@ -2934,7 +2980,7 @@ mod tests {
         let entries = table_entries();
         let torque = &result_groups()[1];
         assert_eq!(torque.id, "torque");
-        let matches = search(entries, "f_end");
+        let matches = search(entries, "f_end", false);
         let shown = torque.rows.iter().filter(|i| matches.contains(i)).count();
         let heading = format!("{} ({shown})", torque.label);
         let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
@@ -2981,7 +3027,7 @@ mod tests {
         harness.click_text(CentreView::Results.label());
         harness.click_text(FAILING_ONLY);
         let output = harness.frame(Vec::new());
-        let failing = failing_checks(harness.panel.results());
+        let failing = failing_checks(harness.panel.results(), false);
         assert_eq!(failing.len(), 6);
         let total = table_entries().len();
         assert_eq!(count(&output, &format!("6 of {total} results")), 1);
@@ -3090,7 +3136,7 @@ mod tests {
         // The failing filter: the hot minimum is not listed; the end-effect check is, first.
         harness.click_text(FAILING_ONLY);
         let output = harness.frame(Vec::new());
-        let failing = failing_checks(harness.panel.results());
+        let failing = failing_checks(harness.panel.results(), false);
         assert!(
             failing
                 .iter()
@@ -3143,7 +3189,7 @@ mod tests {
         );
         assert_eq!(trace.paths, registry().downstream(FACE_GAP));
         let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, &trace.banner()), 1);
+        assert_eq!(count(&output, &trace.banner(false)), 1);
         let marks = trace_marks(&harness, &output);
         // On the dashboard (right of its first label's badge): one frame per row the gap
         // drives, none on the others.
@@ -3195,7 +3241,7 @@ mod tests {
         );
         assert!(harness.panel.explorer.open, "the click still opens it");
         let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, &trace.banner()), 1);
+        assert_eq!(count(&output, &trace.banner(false)), 1);
         // Each Key design row is framed exactly when the pull-out reads its input.
         let marks = trace_marks(&harness, &output);
         for entry in &InputCatalogue::get().key_design {
@@ -3284,10 +3330,10 @@ mod tests {
         assert_eq!(trace.source, drive);
         assert!(trace.paths.is_empty());
         let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, &trace.banner()), 1);
+        assert_eq!(count(&output, &trace.banner(false)), 1);
         assert!(
             trace
-                .banner()
+                .banner(false)
                 .contains("no result with an equation reads it")
         );
         harness.click_text(CentreView::Results.label());
@@ -3509,7 +3555,7 @@ mod tests {
         harness.frame(key_tap(egui::Key::Backspace));
         harness.frame(vec![egui::Event::Text("bondline".to_owned())]);
         let output = harness.frame(Vec::new());
-        let bondline = search(entries, "bondline");
+        let bondline = search(entries, "bondline", false);
         assert!(!bondline.is_empty());
         assert!(bondline.iter().all(|&i| !trace.marks(&entries[i].path)));
         assert_eq!(count(&output, &format!("0 of {total} results")), 1);
@@ -3542,7 +3588,7 @@ mod tests {
         // The strip sizes from the last frame: let it settle.
         harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, &trace.banner()), 1);
+        assert_eq!(count(&output, &trace.banner(false)), 1);
         assert_eq!(on_inputs_side(&output, gap), label);
         assert_eq!(on_inputs_side(&output, toggle), toggle_at);
         assert!(on_inputs_side(&output, CLEAR_TRACE).top() > label.bottom());
@@ -4180,16 +4226,137 @@ mod tests {
     }
 
     #[test]
-    fn every_text_the_panel_shows_has_glyphs_in_the_default_fonts() {
+    fn every_text_the_panel_shows_has_glyphs_and_none_names_the_paused_clamp() {
         // egui draws an empty box for a character its default fonts lack (U+2192, the
-        // spec's arrow, is one): every drawn text, in each state, and every hover text.
-        let mut harness = Harness::on_screen(egui::vec2(1280.0, 12000.0));
+        // spec's arrow, is one): every text the guard collects, the clamp section paused or not
+        // (every drawn text, and the hover texts of inputs, dashboard rows, table rows, callouts
+        // and the named static hovers).
+        // Ruling 11 (3A): while the section is paused none of them names the clamp, nor does a
+        // text in a table the panel draws from (below). Texts allowed to, each with why: none.
+        const ALLOWED: &[(&str, &str)] = &[];
+        let names_the_clamp = |text: &str| {
+            text.to_lowercase().contains("clamp") && !ALLOWED.iter().any(|&(t, _)| t == text)
+        };
+        for clamps_paused in [false, true] {
+            let mut harness = Harness::on_screen(egui::vec2(1280.0, 12000.0));
+            harness.panel.clamps_paused = clamps_paused;
+            let mut texts = every_shown_text(&mut harness);
+            for text in &texts {
+                crate::gui::test_support::assert_glyphs(&harness.ctx, text, "the panel");
+            }
+            if clamps_paused {
+                // The dashboard and its guides on designs failing every check, the clamp's too.
+                let mut no_screw = crate::gui::test_support::passing_design();
+                no_screw.clamps.boss_od_mm = 12.0;
+                let mut hot_day = DesignInputs::default();
+                hot_day.temperature.duty.hot_ambient_C = 80.0;
+                hot_day.temperature.duty.driving_rise_C = 60.0;
+                for inputs in [
+                    DesignInputs::default(),
+                    no_screw,
+                    hot_day,
+                    short_magnets(),
+                    with_poles(40),
+                ] {
+                    harness.panel.inputs = inputs;
+                    harness.frame(Vec::new());
+                    texts.extend(drawn_texts(&harness.frame(Vec::new())));
+                }
+                // The teaching notes shown, their change entries as drawn, their Start here
+                // walk and its hover. No change entry or equation of theirs leads into the
+                // section.
+                use crate::engine::explain::notes;
+                for note in notes::NOTES
+                    .iter()
+                    .filter(|n| notes::shown_when(n.id, true))
+                {
+                    texts.push(note.title.to_owned());
+                    texts.extend(note.sentences.iter().map(|s| s.to_string()));
+                    texts.extend(note.change.iter().map(|c| c.text.to_owned()));
+                    texts.extend(note.watch_out.iter().map(|w| w.to_string()));
+                    texts.extend(note.sources.iter().map(|s| s.to_string()));
+                    for change in note.change {
+                        assert!(
+                            !clamps::hides(change.input, true),
+                            "{}: a change entry leads to the hidden {}",
+                            note.id,
+                            change.input
+                        );
+                        texts.push(format!(
+                            "{} {}",
+                            change.step.word(),
+                            label_for(change.input)
+                        ));
+                    }
+                    for equation in note.equations {
+                        assert!(
+                            !clamps::hides(equation, true),
+                            "{}: explains the hidden {equation}",
+                            note.id
+                        );
+                    }
+                }
+                texts.push(crate::gui::explorer::start_here_hover(true).to_owned());
+                for &(id, path) in notes::start_here_for(true) {
+                    texts.push(id.to_owned());
+                    texts.push(label_for(path).to_owned());
+                }
+                // The check guides that count: their names and Why sentences.
+                for guide in crate::gui::guidance::counted_guides(true) {
+                    texts.push(guide.label.to_owned());
+                    texts.push(guide.why.to_owned());
+                }
+                // The Why links' reasons where no note explains a shown row (their hover texts).
+                for &(path, learn) in crate::gui::guidance::ROW_LEARN.iter() {
+                    if let crate::gui::guidance::Learn::None(reason) = learn
+                        && !clamps::hides(path, true)
+                    {
+                        texts.push(reason.to_owned());
+                    }
+                }
+                // The assumptions shown: their names, rationales and sources.
+                for a in ASSUMPTIONS.iter().filter(|a| a.shown(true)) {
+                    texts.extend([a.label, a.rationale, a.source].map(str::to_owned));
+                }
+                let named: Vec<&String> = texts.iter().filter(|t| names_the_clamp(t)).collect();
+                assert!(named.is_empty(), "{named:#?}");
+            } else {
+                // Not vacuous: with the section shown, the same enumeration names the clamp and
+                // reaches each surface the pause hides.
+                assert!(texts.iter().any(|t| names_the_clamp(t)));
+                let friction = ASSUMPTIONS
+                    .iter()
+                    .find(|a| a.id == "clamp_friction")
+                    .expect("the clamp friction")
+                    .label;
+                for surface in [
+                    CentreView::Clamp.label(),
+                    label_for("clamps.recommended"),
+                    label_for("clamps.boss_od_mm"),
+                    "Shaft clamps",
+                    friction,
+                ] {
+                    assert!(
+                        texts.iter().any(|t| t.contains(surface)),
+                        "{surface}: the enumeration does not reach it with the section shown"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The texts the guard collects from the panel of `harness`, with its shaft-clamp pause
+    /// (`harness.panel.clamps_paused`): every drawn text, in each state, and the hover texts of
+    /// inputs, dashboard rows, table rows, callouts and the named static hovers. The glyph
+    /// check and the paused section's guard read it.
+    fn every_shown_text(harness: &mut Harness) -> Vec<String> {
+        let clamps_paused = harness.panel.clamps_paused;
         // With the spreadsheet details on: every provenance line is drawn too (spec S2-5).
         harness.panel.show_details = true;
         let mut texts = drawn_texts(&harness.frame(Vec::new()));
         texts.extend(drawn_texts(&harness.size()));
         // Every view of the centre region, and the geometry callouts' hover texts.
-        for view in CentreView::ALL {
+        for view in CentreView::tabs(clamps_paused) {
             texts.extend(drawn_texts(&harness.click_text(view.label())));
             texts.extend(drawn_texts(&harness.frame(Vec::new())));
         }
@@ -4203,17 +4370,19 @@ mod tests {
         harness.panel.explorer.open = false;
         harness.click_text(CentreView::Geometry.label());
         let shown = harness.panel.shown_inputs();
-        let geometry = crate::gui::geometry::geometry(&shown, harness.panel.results());
+        let geometry =
+            crate::gui::geometry::geometry(&shown, harness.panel.results(), clamps_paused);
         texts.extend(
             geometry
                 .callouts()
                 .filter_map(|c| crate::gui::dashboard::hover_text(c.path, true)),
         );
         // Every group open, in both orders; every workflow heading; the filtered view's runs.
+        let catalogue = InputCatalogue::shown(clamps_paused);
         for order in [InputOrder::Workflow, InputOrder::Workbook] {
             harness.click_text(order.label());
             // Bottom up: opening a group moves only the groups below it.
-            for group in InputCatalogue::get().groups_in(order).iter().rev() {
+            for group in catalogue.groups_in(order).iter().rev() {
                 harness.click_text(group.label);
             }
             for _ in 0..10 {
@@ -4221,7 +4390,7 @@ mod tests {
             }
             texts.extend(drawn_texts(&harness.frame(Vec::new())));
         }
-        for group in &crate::gui::inputs::WORKFLOW {
+        for group in &catalogue.workflow {
             texts.push(group.label.to_owned());
             texts.extend(group.sections.iter().map(|s| s.label.to_owned()));
         }
@@ -4234,13 +4403,32 @@ mod tests {
         texts.push(crate::gui::trace::CLEAR_TRACE.to_owned());
         texts.push(crate::gui::results_table::NOTHING_TRACED.to_owned());
         for path in [FACE_GAP, "model.pullout_Nm", "coupling.drive_torque_Nm"] {
-            texts.push(crate::gui::trace::Trace::of(path).unwrap().banner());
+            texts.push(
+                crate::gui::trace::Trace::of(path)
+                    .unwrap()
+                    .banner(clamps_paused),
+            );
         }
         texts.push(crate::gui::results_table::CLEAR_TO_CLOSE.to_owned());
         texts.extend([WELCOME, HIDE_WELCOME, HIDE_WELCOME_HINT].map(str::to_owned));
         texts.extend([SHOW_DETAILS, SHOW_DETAILS_HINT].map(str::to_owned));
         texts.push(crate::gui::dashboard::MARKER_LEGEND.to_owned());
         texts.push(crate::gui::guidance::EXAMPLE_DESIGN_HOVER.to_owned());
+        // The hover texts that are named consts (an inline hover literal is not collected).
+        texts.extend(
+            [
+                crate::gui::size_controls::DIAMETER_HOVER,
+                crate::gui::size_controls::LENGTH_HOVER,
+                crate::gui::size_controls::AUTO_HOVER,
+                crate::gui::size_controls::SET_BY_AUTO,
+                crate::gui::input_ui::CHANGED_FROM_DEFAULT,
+                crate::gui::input_ui::OUTSIDE_RANGE_HINT,
+                crate::gui::dashboard::STORED_3D_NOTE,
+                crate::gui::dashboard::NOTE_NOT_REVIEWED,
+                RESET_ASSUMPTIONS_HINT,
+            ]
+            .map(str::to_owned),
+        );
         // The load's notice of a sizing target that differed from the requirement (G-2).
         texts.push(target_mismatch_notice(3.25, 2.5));
         harness.panel.input_filter = "a".to_owned();
@@ -4255,7 +4443,6 @@ mod tests {
         // Its c_end of 0.5 is a modified assumption: the banner (the header grows a frame later).
         texts.extend(drawn_texts(&harness.frame(Vec::new())));
         assert!(texts.iter().any(|t| t.starts_with(ASSUMPTIONS_MODIFIED)));
-        let catalogue = InputCatalogue::get();
         texts.extend(
             catalogue
                 .all()
@@ -4268,18 +4455,182 @@ mod tests {
                 .map(|rule| rule.text.to_owned()),
         );
         let results = harness.panel.results().clone();
+        // The dashboard rows and the table rows the panel draws (its own filters).
         texts.extend(
-            crate::gui::dashboard::dashboard_lines(&results)
+            crate::gui::dashboard::shown_lines(&results, clamps_paused)
                 .into_iter()
                 .map(|line| line.tooltip(true)),
         );
-        for entry in crate::gui::results_table::table_entries() {
+        let entries = crate::gui::results_table::table_entries();
+        for index in crate::gui::results_table::search(entries, "", clamps_paused) {
+            let entry = &entries[index];
             let value = results.get(&entry.path).unwrap_or(Value::None);
             texts.push(crate::gui::results_table::row_tooltip(entry, &value, true));
         }
-        for text in &texts {
-            crate::gui::test_support::assert_glyphs(&harness.ctx, text, "the panel");
+        texts
+    }
+
+    #[test]
+    fn the_clamp_tab_and_the_clamp_inputs_show_only_while_the_section_shows() {
+        assert_eq!(CentreView::tabs(false).collect::<Vec<_>>(), CentreView::ALL);
+        let without: Vec<CentreView> = CentreView::ALL
+            .into_iter()
+            .filter(|&view| view != CentreView::Clamp)
+            .collect();
+        assert_eq!(CentreView::tabs(true).collect::<Vec<_>>(), without);
+        for clamps_paused in [false, true] {
+            let mut harness = Harness::on_screen(TALL);
+            harness.panel.clamps_paused = clamps_paused;
+            let shown = usize::from(!clamps_paused);
+            let output = harness.frame(Vec::new());
+            assert_eq!(count(&output, CentreView::Clamp.label()), shown, "the tab");
+            // By workflow: the bore and the keyway stay, the clamp's sections go.
+            harness.click_text("Shaft and hub joint");
+            harness.frame(Vec::new());
+            let output = harness.frame(Vec::new());
+            assert_eq!(count(&output, label_for("coupling.bore_mm")), 1);
+            assert_eq!(count(&output, label_for("coupling.keyway_depth_mm")), 1);
+            assert_eq!(count(&output, "Clamp geometry"), shown);
+            assert_eq!(count(&output, label_for("clamps.boss_od_mm")), shown);
+            // By original sheet: the Shaft clamps group.
+            harness.click_text(InputOrder::Workbook.label());
+            let output = harness.frame(Vec::new());
+            assert_eq!(count(&output, "Shaft clamps"), shown);
+            // The filter finds no clamp input while paused.
+            harness.click_text(InputOrder::Workflow.label());
+            harness.panel.input_filter = "clamp".to_owned();
+            let output = harness.frame(Vec::new());
+            let total = InputCatalogue::shown(clamps_paused).all().count();
+            let matching = filter_inputs(
+                InputCatalogue::shown(clamps_paused).groups_in(InputOrder::Workflow),
+                "clamp",
+            )
+            .iter()
+            .map(|run| run.entries.len())
+            .sum::<usize>();
+            assert_eq!(matching == 0, clamps_paused);
+            assert_eq!(count(&output, &format!("{matching} of {total} inputs")), 1);
         }
+    }
+
+    #[test]
+    fn the_paused_section_s_assumptions_leave_the_view_and_the_banner() {
+        let mut friction = DesignInputs::default();
+        friction.clamps.friction = 0.1;
+        let label = ASSUMPTIONS
+            .iter()
+            .find(|a| a.id == "clamp_friction")
+            .expect("the clamp friction")
+            .label;
+        assert_eq!(
+            assumptions_banner(&friction, false),
+            Some(format!("{ASSUMPTIONS_MODIFIED}: {label}"))
+        );
+        assert_eq!(assumptions_banner(&friction, true), None);
+        for clamps_paused in [false, true] {
+            let mut harness = Harness::on_screen(egui::vec2(1280.0, 6000.0));
+            harness.panel.clamps_paused = clamps_paused;
+            harness.click_text(InputsView::Assumptions.label());
+            let texts = drawn_texts(&harness.frame(Vec::new()));
+            for a in ASSUMPTIONS {
+                assert_eq!(
+                    texts.contains(&a.label.to_owned()),
+                    a.shown(clamps_paused),
+                    "{}",
+                    a.id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_panel_passes_its_pause_to_the_fixes_the_banner_and_the_trace() {
+        use crate::engine::meta::NumOrText;
+        use crate::gui::guidance::{Direction, fix_text};
+        // The shipped panel starts from the switch (the harness overrides it).
+        assert_eq!(MagcouplingPanel::new().clamps_paused, clamps::PAUSED);
+        // At the clamp's limit, the hot-low torque's one fix is withheld only while the clamp
+        // shows (guidance's a_paused_clamp_offers_no_fix_and_holds_back_no_other_guide_s_fix).
+        let defaults = DesignInputs::default();
+        let base = compute_all(&defaults);
+        let NumOrText::Num(capacity) = base.clamps.capacity_Nm else {
+            panic!("a screw fits the example design's clamp")
+        };
+        let mut at_limit = defaults.clone();
+        at_limit.clamps.safety_factor = capacity / base.clamps.max_torque_Nm * (1.0 - 1e-9);
+        let fix = fix_text(AXIAL_LENGTH, Direction::Raise);
+        let mut friction = DesignInputs::default();
+        friction.clamps.friction = 0.1;
+        for clamps_paused in [false, true] {
+            let mut harness = Harness::on_screen(TALL);
+            harness.panel.clamps_paused = clamps_paused;
+            harness.panel.inputs = at_limit.clone();
+            harness.frame(Vec::new());
+            let output = harness.frame(Vec::new());
+            assert_eq!(
+                count(&output, &fix) > 0,
+                clamps_paused,
+                "the fix, paused {clamps_paused}"
+            );
+            // A modified clamp assumption: the header's banner only while the clamp shows.
+            harness.panel.inputs = friction.clone();
+            harness.frame(Vec::new());
+            let output = harness.frame(Vec::new());
+            assert_eq!(
+                drawn_texts(&output)
+                    .iter()
+                    .any(|t| t.starts_with(ASSUMPTIONS_MODIFIED)),
+                !clamps_paused,
+                "the banner, paused {clamps_paused}"
+            );
+            // A trace of the face gap (it drives clamp results): the drawn banner counts as
+            // the pause says.
+            let trace = crate::gui::trace::Trace::of(FACE_GAP).expect("an input");
+            harness.panel.trace = Some(trace.clone());
+            let output = harness.frame(Vec::new());
+            assert_eq!(
+                count(&output, &trace.banner(clamps_paused)),
+                1,
+                "paused {clamps_paused}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_design_file_and_a_share_link_keep_their_clamp_values_while_the_section_is_paused() {
+        // A design file written before the pause, its clamp values away from the defaults.
+        const PRE_PAUSE: &str = r#"{"format": "magcoupling-design", "version": 1, "inputs": {"clamps.boss_od_mm": 30.0, "clamps.friction": 0.1, "clamps.key_width_mm": 5.0, "clamps.joint_screws": 4, "clamps.screw_class": 2, "materials.screws.proof_10_9_MPa": 900.0}}"#;
+        let mut panel = MagcouplingPanel::new();
+        panel.clamps_paused = true;
+        panel
+            .load_design_file(PRE_PAUSE)
+            .expect("a pre-pause file loads");
+        let design = panel.design();
+        let c = &design.inputs.clamps;
+        assert_eq!(
+            (
+                c.boss_od_mm,
+                c.friction,
+                c.key_width_mm,
+                c.joint_screws,
+                c.screw_class
+            ),
+            (30.0, 0.1, 5.0, 4, 2)
+        );
+        assert_eq!(design.inputs.materials.screws.proof_10_9_MPa, 900.0);
+        // The engine still computes the hidden section from them.
+        assert_eq!(panel.results().clamps.boss_radius_mm, 15.0);
+        // Saved and shared, every clamp value comes back.
+        let text = crate::gui::session::design_to_json(&design);
+        assert_eq!(design_from_json(&text), Ok(design.clone()));
+        let payload = encode_share_payload(&design);
+        assert_eq!(decode_share_payload(&payload), Ok(design.clone()));
+        let mut reopened = MagcouplingPanel::new();
+        reopened.clamps_paused = true;
+        reopened
+            .load_share_payload(&payload)
+            .expect("the link loads");
+        assert_eq!(reopened.design(), design);
     }
 
     #[test]
@@ -7220,14 +7571,14 @@ mod tests {
             "metal.face_gap_mm",
             "model.pullout_Nm",
         ] {
-            texts.push(Trace::of(path).expect("a traceable path").banner());
+            texts.push(Trace::of(path).expect("a traceable path").banner(false));
         }
         texts.push(
             end_effect_banner(&compute_all(&short_magnets()))
                 .expect("short magnets are out of the end-effect range"),
         );
         let defaults = DesignInputs::default();
-        let notes = crate::gui::geometry::geometry(&defaults, &compute_all(&defaults)).notes;
+        let notes = crate::gui::geometry::geometry(&defaults, &compute_all(&defaults), false).notes;
         assert_eq!(
             notes.len(),
             3,
@@ -7948,7 +8299,11 @@ mod tests {
         // The dashboard's top in view (its lower rows scroll, under the check guides): the
         // status line and the first headline value.
         let defaults = DesignInputs::default();
-        let status = design_status_text(&design_status(&defaults, &compute_all(&defaults)));
+        let status = design_status_text(&design_status(
+            &defaults,
+            &compute_all(&defaults),
+            clamps::PAUSED,
+        ));
         assert_eq!(count(&output, &status), 1);
         assert!(count(&output, &displayed_pullout(&defaults)) >= 1);
         let window = || ctx.memory(|m| m.area_rect(egui::Id::new(TITLE)));
@@ -7992,7 +8347,7 @@ mod tests {
         harness.frame(Vec::new());
         let defaults = DesignInputs::default();
         let fixes: std::collections::BTreeSet<(&str, String)> =
-            all_fixes(&defaults, &compute_all(&defaults))
+            all_fixes(&defaults, &compute_all(&defaults), false)
                 .into_iter()
                 .flatten()
                 .map(|(path, dir)| (path, fix_text(path, dir)))
@@ -8046,7 +8401,7 @@ mod tests {
         let inputs = with_poles(12);
         let ring = "coupling.inner_back_apothem_mm";
         assert!(
-            all_fixes(&inputs, &compute_all(&inputs))
+            all_fixes(&inputs, &compute_all(&inputs), false)
                 .iter()
                 .flatten()
                 .any(|&fix| fix == (ring, Direction::Raise))
@@ -8080,7 +8435,7 @@ mod tests {
         let mut inputs = crate::gui::test_support::passing_design();
         inputs.coupling.inner_back_apothem_mm = 12.0;
         let ring = "coupling.inner_back_apothem_mm";
-        let all = all_fixes(&inputs, &compute_all(&inputs));
+        let all = all_fixes(&inputs, &compute_all(&inputs), false);
         let lower = fix_text(ring, Direction::Lower);
         let others: Vec<String> = all
             .iter()
@@ -8135,7 +8490,7 @@ mod tests {
         use crate::gui::guidance::{design_status, design_status_text};
         let mut harness = Harness::new();
         let output = harness.frame(Vec::new());
-        let status = design_status(harness.panel.inputs(), harness.panel.results());
+        let status = design_status(harness.panel.inputs(), harness.panel.results(), false);
         // The workbook example fails its hot minimum, its clearance and its cup wall.
         assert_eq!(
             (status.bad, status.caution, status.total, status.is_default),
@@ -8145,13 +8500,13 @@ mod tests {
         // A fix: the cup wall at 2.4 mm (its rule asks for 2.0 mm and up).
         harness.panel.inputs.metal.cup_wall_corner_mm = 2.4;
         let output = harness.frame(Vec::new());
-        let status = design_status(harness.panel.inputs(), harness.panel.results());
+        let status = design_status(harness.panel.inputs(), harness.panel.results(), false);
         assert_eq!((status.bad, status.is_default), (2, false));
         assert_eq!(count(&output, &design_status_text(&status)), 1);
         // Reset all: the example again.
         harness.click_text(RESET_ALL);
         let output = harness.frame(Vec::new());
-        let status = design_status(harness.panel.inputs(), harness.panel.results());
+        let status = design_status(harness.panel.inputs(), harness.panel.results(), false);
         assert_eq!((status.bad, status.is_default), (3, true));
         assert_eq!(count(&output, &design_status_text(&status)), 1);
     }
@@ -8187,8 +8542,8 @@ mod tests {
         let output = harness.frame(Vec::new());
         let inputs = DesignInputs::default();
         let results = harness.panel.results().clone();
-        let fixes = all_fixes(&inputs, &results);
-        let mut texts = vec![design_status_text(&design_status(&inputs, &results))];
+        let fixes = all_fixes(&inputs, &results, false);
+        let mut texts = vec![design_status_text(&design_status(&inputs, &results, false))];
         for (guide, fixes) in CHECK_GUIDES.iter().zip(&fixes) {
             if level(guide, &inputs, &results) == Level::Bad {
                 texts.extend((guide.problem)(&inputs, &results));

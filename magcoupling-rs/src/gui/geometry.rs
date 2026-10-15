@@ -368,6 +368,7 @@ fn end_view(
     inputs: &DesignInputs,
     results: &DesignResults,
     diameter: Option<f64>,
+    clamps_paused: bool,
     notes: &mut Vec<Note>,
 ) -> View {
     let (c, m, ret) = (&inputs.coupling, &results.model, &results.retainers);
@@ -445,14 +446,17 @@ fn end_view(
         outline: Outline::Disc { r: bore },
     });
     // The key in the hub's keyway, at 0°: from where its sides cross the bore to the keyway's
-    // depth past the bore (Calculator C40), the key's width (Shaft clamps C58).
-    let w = inputs.clamps.key_width_mm / 2.0;
-    let seat = (bore * bore - w * w).max(0.0).sqrt();
-    let tip = bore + c.keyway_depth_mm;
-    pieces.push(Piece {
-        part: Part::Key,
-        outline: Outline::Polygon(vec![[seat, -w], [tip, -w], [tip, w], [seat, w]]),
-    });
+    // depth past the bore (Calculator C40), the key's width (Shaft clamps C58). The key is the
+    // shaft-clamp section's: not drawn while it is paused.
+    if !clamps_paused {
+        let w = inputs.clamps.key_width_mm / 2.0;
+        let seat = (bore * bore - w * w).max(0.0).sqrt();
+        let tip = bore + c.keyway_depth_mm;
+        pieces.push(Piece {
+            part: Part::Key,
+            outline: Outline::Polygon(vec![[seat, -w], [tip, -w], [tip, w], [seat, w]]),
+        });
+    }
 
     // Dimensions: the face gap at face 0; the corner gap along face 1's normal, from the circle
     // its inner block's corners sweep to its outer block's flat (the corner gap is the outer
@@ -790,8 +794,9 @@ fn side_view(
 
 /// The notes under the views: the wall the cup wall check compares the wall input with
 /// (Addendum A1, decision 27) and the two design checks (decision 28, flagged only), each while
-/// it applies (decision M42-9).
-fn notes(inputs: &DesignInputs, results: &DesignResults) -> Vec<Note> {
+/// it applies (decision M42-9); the boss check compares the clamp inputs' boss, so not while the
+/// shaft-clamp section is paused (`clamps_paused`).
+fn notes(inputs: &DesignInputs, results: &DesignResults, clamps_paused: bool) -> Vec<Note> {
     let md = &inputs.metal;
     let mut notes = Vec::new();
     // The rule's own wall, not the failing verdict's suggestion (that wall rounded up to
@@ -822,7 +827,7 @@ fn notes(inputs: &DesignInputs, results: &DesignResults) -> Vec<Note> {
             level: Some(Level::Caution),
         });
     }
-    if md.boss_od_mm != inputs.clamps.boss_od_mm {
+    if !clamps_paused && md.boss_od_mm != inputs.clamps.boss_od_mm {
         notes.push(Note {
             text: format!(
                 "{DESIGN_CHECK}: {} {} differs from {} {} in the clamp inputs",
@@ -848,8 +853,9 @@ fn parts_not_drawn(dropped: usize, name: &str) -> String {
     }
 }
 
-/// The geometry of the design shown: its inputs and the results computed from them.
-pub fn geometry(inputs: &DesignInputs, results: &DesignResults) -> Geometry {
+/// The geometry of the design shown: its inputs and the results computed from them; while
+/// the shaft-clamp section is paused (`clamps_paused`) without its key and its boss check.
+pub fn geometry(inputs: &DesignInputs, results: &DesignResults, clamps_paused: bool) -> Geometry {
     let mut all_notes = Vec::new();
     // The diameter claim is decided once, for both views, against the body's largest OD.
     let diameter = drawn_claim(
@@ -858,7 +864,7 @@ pub fn geometry(inputs: &DesignInputs, results: &DesignResults) -> Geometry {
         body_od(inputs, results),
         &mut all_notes,
     );
-    let mut end = end_view(inputs, results, diameter, &mut all_notes);
+    let mut end = end_view(inputs, results, diameter, clamps_paused, &mut all_notes);
     let mut side = side_view(inputs, results, diameter, &mut all_notes);
     for (view, name) in [(&mut end, "end"), (&mut side, "side")] {
         let dropped = view.retain_finite();
@@ -874,7 +880,7 @@ pub fn geometry(inputs: &DesignInputs, results: &DesignResults) -> Geometry {
             });
         }
     }
-    all_notes.extend(notes(inputs, results));
+    all_notes.extend(notes(inputs, results, clamps_paused));
     Geometry {
         end,
         side,
@@ -894,7 +900,7 @@ mod tests {
     }
 
     fn of(inputs: &DesignInputs) -> Geometry {
-        geometry(inputs, &compute_all(inputs))
+        geometry(inputs, &compute_all(inputs), false)
     }
 
     fn callout(g: &Geometry, tag: usize) -> &Callout {
@@ -909,7 +915,7 @@ mod tests {
     fn the_end_view_draws_every_part_from_the_results() {
         let inputs = DesignInputs::default();
         let r = compute_all(&inputs);
-        let g = geometry(&inputs, &r);
+        let g = geometry(&inputs, &r, false);
         let n = inputs.coupling.npole as usize;
         let magnets = g
             .end
@@ -969,6 +975,30 @@ mod tests {
         // From where its 4 mm sides cross the 10 mm bore to 1.7 mm past the bore.
         assert_eq!(key[1], [6.7, -2.0]);
         assert!((key[0][0] - 21.0_f64.sqrt()).abs() < 1e-12);
+    }
+
+    #[test]
+    fn the_key_and_the_clamp_boss_check_are_drawn_only_while_the_clamp_section_shows() {
+        // Ruling 11: the key (its width is a clamp input) and the check against the clamp
+        // inputs' boss go with the paused section; the wall rule and the cap check stay.
+        let defaults = DesignInputs::default();
+        let results = compute_all(&defaults);
+        for (paused, keys, notes) in [(false, 1, 3), (true, 0, 2)] {
+            let g = geometry(&defaults, &results, paused);
+            let drawn = g.end.pieces.iter().chain(&g.side.pieces);
+            assert_eq!(
+                drawn.filter(|p| p.part == Part::Key).count(),
+                keys,
+                "paused {paused}"
+            );
+            assert_eq!(g.notes.len(), notes, "paused {paused}");
+            assert_eq!(
+                g.notes
+                    .iter()
+                    .any(|n| n.text.ends_with("in the clamp inputs")),
+                !paused
+            );
+        }
     }
 
     #[test]
@@ -1064,7 +1094,7 @@ mod tests {
     fn the_side_view_uses_the_housing_in_effect() {
         let inputs = design(|i| i.coupling.magnets.axial_length_mm = Some(50.8));
         let r = compute_all(&inputs);
-        let g = geometry(&inputs, &r);
+        let g = geometry(&inputs, &r, false);
         let rects: Vec<(Part, Mm, Mm)> = g
             .side
             .pieces
@@ -1359,7 +1389,7 @@ mod tests {
         // poles the pocket and the hub are drawn round, and the blocks still on their flats.
         let inputs = design(|i| i.coupling.npole = 2);
         let r = compute_all(&inputs);
-        let g = geometry(&inputs, &r);
+        let g = geometry(&inputs, &r, false);
         let magnets: Vec<&Piece> = g
             .end
             .pieces

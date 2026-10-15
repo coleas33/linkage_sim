@@ -193,7 +193,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "coupling.magnets.manual_inner_br_T",
-        "Magnet strength (remanence) of the inner manual blocks, used only with no library part and no grade picked. Stronger raises torque, and the cold-high torque the clamp must hold.",
+        "Magnet strength (remanence) of the inner manual blocks, used only with no library part and no grade picked. Stronger raises torque; shaft-joint and gearbox loads rise with it.",
     ),
     (
         "coupling.magnets.manual_outer_length_mm",
@@ -209,7 +209,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "coupling.magnets.manual_outer_br_T",
-        "Magnet strength (remanence) of the outer manual blocks, used only with no library part and no grade picked. Stronger raises torque, and the cold-high torque the clamp must hold.",
+        "Magnet strength (remanence) of the outer manual blocks, used only with no library part and no grade picked. Stronger raises torque; shaft-joint and gearbox loads rise with it.",
     ),
     // Gap and clearances.
     (
@@ -252,10 +252,10 @@ const HELP: &[(&str, &str)] = &[
         "metal.liner_bedding_mm",
         "Radial clearance between the outer magnet faces and the liner inside them. More shrinks the liner and takes running clearance; the torque does not change.",
     ),
-    // Shaft, key and clamps.
+    // Shaft and hub joint.
     (
         "coupling.bore_mm",
-        "The shaft diameter under the hub and clamp. Larger lets each screw carry more torque but moves the screws outward, so fewer sizes may fit, and thins the hub wall.",
+        "Diameter of the shaft in the hub bore. Larger thins the hub wall left past the keyway, and too large can break through the hub.",
     ),
     (
         "coupling.keyway_depth_mm",
@@ -471,7 +471,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "metal.boss_od_mm",
-        "Outside diameter of the drawn shaft boss: it sets the boss mass and the outside diameter when larger than the cup and cap. Separate from the clamp's own boss diameter.",
+        "Outside diameter of the drawn shaft boss: it sets the boss mass and the outside diameter when larger than the cup and cap.",
     ),
     (
         "metal.cap_axial_mm",
@@ -778,7 +778,7 @@ const HINTS: &[(&str, &str)] = &[
     ),
     (
         "coupling.magnets.axial_length_mm",
-        "Blank keeps each ring's length; longer adds torque, length and clamp demand.",
+        "Blank keeps ring lengths; longer adds torque, length, shaft-joint and gearbox loads.",
     ),
     (
         "coupling.op_temp_C",
@@ -811,7 +811,7 @@ const HINTS: &[(&str, &str)] = &[
     ),
     (
         LENGTH_HINT_KEY,
-        "Sets both rings' magnet length; longer adds torque and clamp demand.",
+        "Sets both rings' magnet length; longer adds torque, shaft-joint and gearbox loads.",
     ),
 ];
 
@@ -1922,6 +1922,77 @@ mod batch_b_tests {
                 );
             }
         }
+    }
+
+    /// Ruling 11 (3A): the texts that named the clamp as a cost now name what rises in its
+    /// place, the shaft-joint and gearbox loads: the cold-high torque, which whatever holds the
+    /// hub on the shaft and the gearbox output both carry, and its value at the gearbox input.
+    /// Each claim holds one slider step up on a design where the input is free.
+    #[test]
+    fn the_joint_neutral_texts_claim_what_the_engine_does() {
+        use crate::engine::explain::notes::Step;
+        use crate::engine::explain::probes::step_input;
+        use crate::engine::size_controls::dimensions;
+        let number = |inputs: &DesignInputs, path: &str| match compute_all(inputs).get(path) {
+            Some(Value::Num(x)) => x,
+            other => panic!("{path}: {other:?}"),
+        };
+        let raised = |design: &DesignInputs, input: &str| {
+            step_input(design, input, Step::Raise).unwrap_or_else(|e| panic!("{input}: {e:?}"))
+        };
+        let torque_and_loads = [
+            "model.pullout_Nm",
+            "metal.torque_cold_high_Nm",
+            "metal.cold_high_input_Nm",
+        ];
+        let rise = |before: &DesignInputs, after: &DesignInputs, input: &str| {
+            for result in torque_and_loads {
+                assert!(
+                    number(after, result) > number(before, result),
+                    "{input} up: {result}"
+                );
+            }
+        };
+        // Stronger manual blocks (no library part, no grade picked): both helps.
+        let mut manual = DesignInputs::default();
+        manual.coupling.magnets.part_inner.clear();
+        manual.coupling.magnets.part_outer.clear();
+        for input in [
+            "coupling.magnets.manual_inner_br_T",
+            "coupling.magnets.manual_outer_br_T",
+        ] {
+            rise(&manual, &raised(&manual, input), input);
+        }
+        // Longer magnets (the Key design row's hint and the Size tab's overall length): the
+        // torque, both loads and the overall length.
+        let example = DesignInputs::default();
+        let length = "coupling.magnets.axial_length_mm";
+        let longer = raised(&example, length);
+        rise(&example, &longer, length);
+        let overall = |inputs: &DesignInputs| dimensions(inputs).expect("a size").overall_length_mm;
+        assert!(overall(&longer) > overall(&example));
+        // A larger bore thins the hub wall past the keyway; at its slider top it breaks through
+        // the smallest ring's hub, the keyway at its default.
+        let wall = "model.hub_wall_past_key_mm";
+        let wider = raised(&example, "coupling.bore_mm");
+        assert!(number(&wider, wall) < number(&example, wall));
+        let range = |path: &str| {
+            InputCatalogue::get()
+                .entry(path)
+                .and_then(|entry| entry.meta.range)
+                .expect("a slider")
+        };
+        let mut smallest = example.clone();
+        smallest.coupling.inner_back_apothem_mm = range("coupling.inner_back_apothem_mm").min;
+        assert!(
+            number(&smallest, wall) > 0.0,
+            "the smallest ring holds the example bore"
+        );
+        smallest.coupling.bore_mm = range("coupling.bore_mm").max;
+        assert!(
+            number(&smallest, wall) <= 0.0,
+            "the bore alone breaks through"
+        );
     }
 
     #[test]

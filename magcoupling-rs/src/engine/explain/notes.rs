@@ -145,7 +145,9 @@ pub struct Note {
 /// Every note: 18, the spec's list (harmonics, back iron, pull-out against angle, end effect,
 /// Br(T), demagnetization, slip loss, the thermal time constant, clamps and the six A5
 /// warnings) plus ferrite's cold side (spec A6), the one-point calibration and slice 2's
-/// torque_from_shear (how the coupling makes torque, Start here step 1).
+/// torque_from_shear (how the coupling makes torque, Start here step 1). While the shaft-clamp
+/// section is paused (`clamps::PAUSED`) the clamp note stays here, unchanged, but is not shown
+/// ([`shown`]).
 pub const NOTES: &[Note] = &[
     Note {
         id: "torque_from_shear",
@@ -169,7 +171,7 @@ pub const NOTES: &[Note] = &[
                 input: "coupling.magnets.axial_length_mm",
                 step: Step::Raise,
                 aim: Some(("model.pullout_Nm", Sense::Up)),
-                text: "torque rises almost linearly; on the example design each millimetre beats a millimetre of radius. Costs: longer stack, higher clamp and gearbox loads.",
+                text: "torque rises almost linearly; on the example design each millimetre beats a millimetre of radius. Costs: longer stack, higher shaft-joint and gearbox loads.",
             },
             Change {
                 input: "coupling.inner_back_apothem_mm",
@@ -776,10 +778,11 @@ pub const NOTES: &[Note] = &[
     },
 ];
 
-/// The suggested reading order (slice-2 spec 3.3: how the coupling makes torque, the torque
-/// chain with back iron, temperature, slipping and its heat, demagnetization, clamps): (note id,
-/// the equation it opens). The slice's two later notes join at steps 8 and 9.
-pub const START_HERE: &[(&str, &str)] = &[
+/// The whole suggested reading order (slice-2 spec 3.3: how the coupling makes torque, the
+/// torque chain with back iron, temperature, slipping and its heat, demagnetization, clamps):
+/// (note id, the equation it opens). The slice's two later notes join at steps 8 and 9. The
+/// clamp step stays last: [`start_here_for`] leaves it out while the clamp section is paused.
+pub const START_HERE_ALL: &[(&str, &str)] = &[
     ("torque_from_shear", "model.torque_2d_Nm"),
     ("harmonics", "model.tau_Pa"),
     ("back_iron_factor", "model.s1_iron"),
@@ -796,6 +799,37 @@ pub const START_HERE: &[(&str, &str)] = &[
     ("ferrite_cold_demag", "temperature.demag.cold_check"),
     ("clamp_preload", "clamps.capacity_Nm"),
 ];
+
+/// The note the paused shaft-clamp section takes with it ([`shown_when`]).
+pub const PAUSED_NOTE: &str = "clamp_preload";
+
+/// The Start here order shown: [`START_HERE_ALL`], less its last step, the clamp note's, while
+/// `clamps_paused`.
+pub const fn start_here_for(clamps_paused: bool) -> &'static [(&'static str, &'static str)] {
+    if clamps_paused {
+        START_HERE_ALL.split_at(START_HERE_ALL.len() - 1).0
+    } else {
+        START_HERE_ALL
+    }
+}
+
+/// The Start here order the panel walks: [`start_here_for`] the shaft-clamp section's pause
+/// (`clamps::PAUSED`).
+pub const START_HERE: &[(&str, &str)] = start_here_for(crate::engine::clamps::PAUSED);
+
+/// Whether the note `id` is shown while the shaft-clamp section is paused (`clamps_paused`) or
+/// not: every note but [`PAUSED_NOTE`] while paused, every note otherwise. Its review status is
+/// the accuracy gate's ([`note_for`]), not this.
+pub fn shown_when(id: &str, clamps_paused: bool) -> bool {
+    !(clamps_paused && id == PAUSED_NOTE)
+}
+
+/// [`shown_when`] the shaft-clamp section's pause (`clamps::PAUSED`): what the review sheets and
+/// the release gates ask. The panel reaches no note it hides: Start here walks [`START_HERE`],
+/// and the clamp's dashboard row, the clamp note's only Why link, is hidden with the section.
+pub fn shown(id: &str) -> bool {
+    shown_when(id, crate::engine::clamps::PAUSED)
+}
 
 /// Whether a note's equation entry (a path or a `#` template) covers `path`.
 pub fn covers(entry: &str, path: &str) -> bool {
@@ -909,7 +943,7 @@ mod tests {
                 rule.note_id
             );
         }
-        for (id, path) in START_HERE {
+        for (id, path) in START_HERE_ALL {
             let n = note(id).unwrap_or_else(|| panic!("start-here note {id}"));
             assert!(
                 n.equations.iter().any(|e| covers(e, path)),
@@ -974,7 +1008,7 @@ mod tests {
 
     #[test]
     fn start_here_follows_the_slice_2_order_from_how_the_coupling_makes_torque() {
-        let ids: Vec<&str> = START_HERE.iter().map(|&(id, _)| id).collect();
+        let ids: Vec<&str> = START_HERE_ALL.iter().map(|&(id, _)| id).collect();
         let want: Vec<&str> = SLICE_2_ORDER
             .iter()
             .copied()
@@ -984,7 +1018,10 @@ mod tests {
             ids, want,
             "spec 3.3 order (a step outside the list fails too)"
         );
-        assert_eq!(START_HERE[0], ("torque_from_shear", "model.torque_2d_Nm"));
+        assert_eq!(
+            START_HERE_ALL[0],
+            ("torque_from_shear", "model.torque_2d_Nm")
+        );
         // The step-1 note owns the area-and-lever chain (spec 3.3 R3).
         for path in [
             "model.torque_2d_Nm",
@@ -998,6 +1035,50 @@ mod tests {
                 Some("torque_from_shear"),
                 "{path}"
             );
+        }
+    }
+
+    #[test]
+    fn start_here_leaves_out_the_clamp_step_only_while_the_clamp_section_is_paused() {
+        // Ruling 11: the clamp note's step is the whole order's last, and the only step the
+        // pause takes out; the panel walks the order for `clamps::PAUSED`.
+        assert_eq!(START_HERE_ALL.last().map(|&(id, _)| id), Some(PAUSED_NOTE));
+        for paused in [false, true] {
+            let want: Vec<(&str, &str)> = START_HERE_ALL
+                .iter()
+                .copied()
+                .filter(|&(id, _)| shown_when(id, paused))
+                .collect();
+            assert_eq!(start_here_for(paused), want.as_slice(), "paused {paused}");
+        }
+        assert_eq!(start_here_for(false), START_HERE_ALL);
+        assert_eq!(start_here_for(true).len(), START_HERE_ALL.len() - 1);
+        assert_eq!(START_HERE, start_here_for(crate::engine::clamps::PAUSED));
+    }
+
+    #[test]
+    fn only_the_clamp_note_is_hidden_and_only_while_the_clamp_section_is_paused() {
+        for n in NOTES {
+            assert!(shown_when(n.id, false), "{}", n.id);
+            assert_eq!(shown_when(n.id, true), n.id != PAUSED_NOTE, "{}", n.id);
+            assert_eq!(
+                shown(n.id),
+                shown_when(n.id, crate::engine::clamps::PAUSED),
+                "{}",
+                n.id
+            );
+        }
+        // The note stays, unchanged, for the section's return.
+        assert!(note(PAUSED_NOTE).is_some());
+        assert_eq!(NOTES.iter().filter(|n| !shown_when(n.id, true)).count(), 1);
+        // The hidden note is the one whose every equation the section hides; no other note's
+        // are (a warning's note, with no equation, is not one).
+        for n in NOTES {
+            let all_hidden = !n.equations.is_empty()
+                && n.equations
+                    .iter()
+                    .all(|e| crate::engine::clamps::hides(e, true));
+            assert_eq!(all_hidden, n.id == PAUSED_NOTE, "{}", n.id);
         }
     }
 

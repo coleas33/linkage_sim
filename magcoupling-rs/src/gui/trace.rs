@@ -10,6 +10,7 @@
 
 use std::collections::BTreeSet;
 
+use crate::engine::clamps;
 use crate::gui::explorer::term_label;
 use crate::gui::readouts::registry;
 
@@ -66,10 +67,16 @@ impl Trace {
         paths.into_iter().filter(|path| self.marks(path)).count()
     }
 
-    /// The banner at the foot of the inputs side: what is traced and how far it reaches.
-    pub fn banner(&self) -> String {
+    /// The banner at the foot of the inputs side: what is traced and how far it reaches,
+    /// counting only the paths shown while the shaft-clamp section is paused (`clamps_paused`,
+    /// [`clamps::hides`]).
+    pub fn banner(&self, clamps_paused: bool) -> String {
         let label = term_label(&self.source);
-        let count = self.paths.len();
+        let count = self
+            .paths
+            .iter()
+            .filter(|path| !clamps::hides(path, clamps_paused))
+            .count();
         match self.kind {
             TraceKind::Input if count == 0 => {
                 format!("{TRACING} {label}: no result with an equation reads it")
@@ -104,7 +111,7 @@ mod tests {
         // The source is marked too: its own row is framed.
         assert!(trace.marks("metal.face_gap_mm"));
         assert_eq!(
-            trace.banner(),
+            trace.banner(false),
             format!(
                 "{TRACING} {}: drives {} results with an equation",
                 label_for("metal.face_gap_mm"),
@@ -121,7 +128,7 @@ mod tests {
             paths: BTreeSet::from(["model.pullout_Nm".to_owned()]),
         };
         assert_eq!(
-            input.banner(),
+            input.banner(false),
             format!(
                 "{TRACING} {}: drives 1 result with an equation",
                 label_for("metal.face_gap_mm")
@@ -133,7 +140,7 @@ mod tests {
             paths: BTreeSet::from(["metal.face_gap_mm".to_owned()]),
         };
         assert_eq!(
-            result.banner(),
+            result.banner(false),
             format!("{TRACING} {}: reads 1 input", label_for("model.pullout_Nm"))
         );
     }
@@ -150,7 +157,7 @@ mod tests {
         // Every traced path is an input.
         assert!(trace.paths.iter().all(|p| registry().is_leaf_input(p)));
         assert_eq!(
-            trace.banner(),
+            trace.banner(false),
             format!(
                 "{TRACING} {}: reads {} inputs",
                 label_for("model.pullout_Nm"),
@@ -173,7 +180,7 @@ mod tests {
         assert_eq!(trace.kind, TraceKind::Input);
         assert!(trace.paths.is_empty());
         assert_eq!(
-            trace.banner(),
+            trace.banner(false),
             format!(
                 "{TRACING} Torque the coupling must carry for driving (at the wheel): no result \
                  with an equation reads it"
@@ -190,6 +197,27 @@ mod tests {
             let trace = Trace::of(&entry.path).unwrap_or_else(|| panic!("{}", entry.path));
             assert_eq!(trace.kind, TraceKind::Input, "{}", entry.path);
         }
+    }
+
+    #[test]
+    fn the_banner_counts_only_the_results_shown_while_the_clamp_section_is_paused() {
+        // The gap drives the clamp's demand through the cold-high torque: those results are
+        // not counted while the section is paused.
+        let trace = Trace::of("metal.face_gap_mm").expect("an input");
+        let hidden = trace
+            .paths
+            .iter()
+            .filter(|path| clamps::hides(path, true))
+            .count();
+        assert!(hidden > 0);
+        let banner = |count: usize| {
+            format!(
+                "{TRACING} {}: drives {count} results with an equation",
+                label_for("metal.face_gap_mm")
+            )
+        };
+        assert_eq!(trace.banner(false), banner(trace.paths.len()));
+        assert_eq!(trace.banner(true), banner(trace.paths.len() - hidden));
     }
 
     #[test]

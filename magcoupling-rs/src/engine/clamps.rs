@@ -35,6 +35,29 @@ use super::meta::{
     NumOrText, TableLayout, at_row, inputs, out, out_rust_only, param, results, rows, uncelled_col,
 };
 
+/// The shaft-clamp section is paused (the owner, 2026-10-15: "Get rid of the clamping with
+/// screw section for now. Put all of that on pause, we will likely use permanent shrink fit or
+/// other method"). While it is, the panel leaves out every input and result of [`SECTION`]:
+/// the slotted clamp, the shaft key and the adapter-joint screws (their input groups, the Clamp
+/// view, the dashboard's clamp rows and their check guide, the results table's clamp rows, the
+/// clamp assumptions, the keyway in the geometry drawing and its boss design check, the
+/// `clamp_preload` teaching note and its Start here step), and the clamp checks count toward
+/// no verdict. The engine still computes the section, and design files, share links and the
+/// exports keep every clamp input and result.
+///
+/// Set false to bring the section back: no other code edit is needed.
+pub const PAUSED: bool = true;
+
+/// The path prefixes of the paused section ([`PAUSED`]): the 'Shaft clamps' sheet's inputs and
+/// results, and the screw-class strengths, which only the clamp's screws read.
+pub const SECTION: [&str; 2] = ["clamps.", "materials.screws."];
+
+/// Whether the panel leaves out the input or result at `path` (a table row's too, such as
+/// `clamps.table[2].preload_N`): a path of the [`SECTION`] while `paused`.
+pub fn hides(path: &str, paused: bool) -> bool {
+    paused && SECTION.iter().any(|prefix| path.starts_with(prefix))
+}
+
 /// A metric screw size (Python `ScrewSize`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(non_snake_case)] // Python's As_mm2
@@ -538,6 +561,99 @@ pub fn compute(
 mod tests {
     use super::*;
     use crate::engine::materials::AL7075;
+
+    #[test]
+    fn the_paused_section_hides_the_clamp_and_screw_class_paths_only_while_paused() {
+        let section = [
+            "clamps.boss_od_mm",
+            "clamps.recommended",
+            "clamps.table[2].preload_N",
+            "clamps.key_width_mm",
+            "clamps.joint_screws",
+            "materials.screws.proof_10_9_MPa",
+        ];
+        let others = [
+            "coupling.bore_mm",
+            "coupling.keyway_depth_mm",
+            "metal.boss_od_mm",
+            "metal.torque_cold_high_Nm",
+            "materials.parts.back_iron",
+            "model.pullout_Nm",
+            "clamps",
+            "",
+        ];
+        for path in section {
+            assert!(hides(path, true), "{path}");
+            assert!(!hides(path, false), "{path}");
+        }
+        for path in others {
+            assert!(!hides(path, true), "{path}");
+            assert!(!hides(path, false), "{path}");
+        }
+    }
+
+    #[test]
+    fn the_paused_section_s_inputs_move_no_result_outside_it() {
+        // Hiding the section hides no cause of anything still shown: each of its inputs, at
+        // every probe design, both slider ends or every choice, changes only results of the
+        // section.
+        use crate::engine::api::{DesignInputs, compute_all};
+        use crate::engine::meta::{InputSet, Value, input_rows, result_rows};
+        let outside = |inputs: &DesignInputs| -> Vec<(String, String)> {
+            result_rows(&compute_all(inputs))
+                .into_iter()
+                .filter(|row| !hides(&row.path, true))
+                .map(|row| (row.path, format!("{:?}", row.value)))
+                .collect()
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        for (name, design) in crate::engine::explain::probes::probe_designs() {
+            let base = outside(&design);
+            for row in input_rows(&design)
+                .into_iter()
+                .filter(|row| hides(&row.path, true))
+            {
+                // A selector at every choice (its own changes nothing); a count or a number at
+                // both slider ends.
+                let others: Vec<Value> = match (row.meta.choices, row.meta.range, &row.value) {
+                    ([_, _, ..], _, Value::Int(_)) => row
+                        .meta
+                        .choices
+                        .iter()
+                        .map(|&(code, _)| Value::Int(code))
+                        .collect(),
+                    ([], Some(range), Value::Int(_)) => {
+                        vec![Value::Int(range.min as i64), Value::Int(range.max as i64)]
+                    }
+                    (_, Some(range), Value::Num(_)) => {
+                        vec![Value::Num(range.min), Value::Num(range.max)]
+                    }
+                    other => panic!(
+                        "{}: an input of the section with no other value: {other:?}",
+                        row.path
+                    ),
+                };
+                for value in others {
+                    let mut edited = design.clone();
+                    edited
+                        .set(&row.path, value.clone())
+                        .expect("a value the input accepts");
+                    assert_eq!(
+                        outside(&edited),
+                        base,
+                        "{name}: {} = {value:?} moved a result outside the section",
+                        row.path
+                    );
+                }
+                seen.insert(row.path);
+            }
+        }
+        assert_eq!(
+            seen.len(),
+            28,
+            "the section's inputs: 25 clamp inputs and 3 screw classes"
+        );
+    }
 
     /// A run with a 10 mm shaft and the default cold-high torque (3.7647 N·m).
     fn run(ci: &ClampInputs, alloy: &AluminiumAlloy) -> ClampResults {

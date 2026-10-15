@@ -151,7 +151,11 @@ mod tests {
         // The design status line tops the dashboard: it was laid out (its lower rows scroll on
         // this screen, under the check guides).
         let defaults = DesignInputs::default();
-        let status = design_status_text(&design_status(&defaults, &compute_all(&defaults)));
+        let status = design_status_text(&design_status(
+            &defaults,
+            &compute_all(&defaults),
+            crate::engine::clamps::PAUSED,
+        ));
         assert!(texts.contains(&status), "missing {status:?} in {texts:?}");
         assert_eq!(ctx.style().visuals, theme::cad_dark_visuals());
     }

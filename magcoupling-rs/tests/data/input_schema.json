@@ -1961,7 +1961,7 @@
         ]
       ],
       "default": 1,
-      "help": "The cap material: 6061-T6 uses the inputs, another choice its library conductivity, density and specific heat. The aluminium adapter and the clamp alloy keep their own inputs.",
+      "help": "The cap material: 6061-T6 uses the inputs, another choice its library conductivity, density and specific heat. The aluminium adapter keeps its own inputs.",
       "label": "Cap and housing material",
       "path": "materials.parts.cap_housing",
       "range": null,
