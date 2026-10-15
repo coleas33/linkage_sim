@@ -506,7 +506,7 @@ pub const NOTES: &[Note] = &[
                 input: "temperature.duty.hot_ambient_C",
                 step: Step::Raise,
                 aim: Some(("temperature.magnet_life.torque_hot_day_Nm", Sense::Down)),
-                text: "a hotter day lowers the hot-day torque and the hot-day temperature margin; the hot-day start is this ambient plus the driving rise.",
+                text: "a hotter day lowers the hot-day torque and the temperature margins; the hot-day start is this ambient plus the driving rise.",
             },
         ],
         watch_out: &[
@@ -544,7 +544,7 @@ pub const NOTES: &[Note] = &[
             "metal.cold_high_input_Nm",
         ],
         sentences: &[
-            "Pull-out is a nominal estimate: production scatter makes real couplings weaker or stronger, and magnets weaken as they warm.",
+            "Hot-low is the weakest coupling expected at the operating temperature, and cold-high the strongest at the minimum temperature, allowing for production scatter.",
             "Hot-low, here {metal.torque_hot_low_Nm}, is the pull-out at the operating temperature less the variation allowance; it must reach the requirement.",
             "Cold-high, here {metal.torque_cold_high_Nm}, is the pull-out at the minimum temperature plus that allowance: the most torque expected before it slips.",
             "Whatever holds the hub on the shaft must carry cold-high with margin, and the gearbox output carries it too, so added torque loads both.",

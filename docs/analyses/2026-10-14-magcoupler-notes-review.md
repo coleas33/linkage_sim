@@ -2006,11 +2006,11 @@ Must-fix items applied: none. Round 1 passed this note on physics, and no field 
 any round.
 
 Seeds (A-24):
-- S-6 (sentences[0]: "Hot-low and cold-high are the pull-out made weaker by heat and production scatter, and stronger by cold and scatter: the torque band."): rejected in rounds 1 to 3. Reason: "the pull-out made weaker by heat" double-counts heat. The dashboard's pull-out is already at the operating temperature, and hot-low is that value less the allowance only (2.688 × 0.85 = 2.285 N·m, an exact identity): the T-E confusion over which temperature hot-low uses. It is also false below 20 °C: at 0 °C hot-low is 2.579 N·m, above the 20 °C pull-out less the allowance (2.893 × 0.85 = 2.459 N·m). The shipped sentence 0 is true at every probe and, with sentences 1 and 2, answers the three linking rows.
+- S-6 (sentences[0]: "Hot-low and cold-high are the pull-out made weaker by heat and production scatter, and stronger by cold and scatter: the torque band."): rejected in rounds 1 to 3. Reason: "the pull-out made weaker by heat" double-counts heat. The dashboard's pull-out is already at the operating temperature, and hot-low is that value less the allowance only (2.688 × 0.85 = 2.285 N·m, an exact identity): the T-E confusion over which temperature hot-low uses. It is also false below 20 °C: at 0 °C hot-low is 2.579 N·m, above the 20 °C pull-out less the allowance (2.893 × 0.85 = 2.459 N·m). The shipped sentence 0 is true at every probe and, with sentences 1 and 2, answers the three linking rows. (Sentence 0 was replaced by the task review fix round 1 below, so that it names both edges itself; S-6's text was not used.)
 - S-7 (sentences[4]: "On this design, hot-low passes exactly when the 20 °C pull-out reaches {metal.required_20C_Nm}, the requirement taken back to 20 °C with the allowance."): rejected in rounds 1 to 3. Reason: "passes once the 20 °C pull-out reaches X" already states the threshold the user acts on, and "exactly when" adds an iff that changes no action. At the boundary itself floating-point rounding makes the two comparisons disagree, so "exactly" claims more than the numbers show. The equivalence holds at all five designs with the requirement at 0.99 and 1.01 times hot-low, which `the_torque_band_note_s_sentences_hold_at_every_probe_design` pins.
 
 Should-fix offered, not applied (open for the controller; no on-screen text changed after the
-round-1 PASS):
+round-1 PASS until the task review fix round 1 below, which changed sentences[0] only):
 - SF-1 (round 1; rounds 2 and 3 keep it offered), change[2] (`coupling.op_temp_C`, Lower; aim unchanged), 16 words: "only if the magnets really run cooler; hot-low rises, while cold-high and the hot-day torque stay." Why: "The hot-day torque is reported apart." repeats watch_out[0]'s words in the same note and does not say what the lever does to it; one step down leaves the hot-day torque unchanged to rounding at all five designs (it is the 20 °C pull-out times the factor at the hot-day start and never reads the operating temperature). Its test: in the levers test's entry 3, assert that the hot-day torque stays.
 - SF-3 (round 1; rounds 2 and 3 keep it offered), sentences[2], 21 words raw: "Cold-high, here {metal.torque_cold_high_Nm}, is the pull-out at the minimum temperature plus that allowance: the most torque expected before the coupling slips." Why: in "before it slips", "it" follows "allowance" and "cold-high", and only the coupling slips. The physics is unchanged ("expected" keeps T-O).
 
@@ -2018,6 +2018,43 @@ Considered, no change (the reviewer's observations, round 1):
 - A cooler operating temperature raises the gap flux density the cup-wall rule reads, since Br is taken at the operating temperature (`model.backiron_needed_mm` up about 0.06 % per step; at the 8-magnet design the suggested wall goes from 2.4 to 2.5 mm, a check already red there). phys-new-notes T-J keeps the wall rule's temperature dependence out of note text, and change[2] is an honest-input entry ("only if the magnets really run cooler"), so it stays unnamed.
 - The magnet bonds also carry cold-high: the adhesive fatigue screen reads it (7x, 8x, 12x, 84x and 14x margin at the five designs, against a pass at 4x), and a colder minimum widens the bond's thermal-mismatch swing only once the cold side governs (below about −49 °C at the default; at −60 °C the peak shear rises from 11.68 to 13.48 MPa, still below the lap-shear strength). The joint-neutral "shaft-joint and gearbox loads" is controller-mandated and true, and no probe brings either bond check near red.
 - `HOT_MIN_GUIDE.why` and sentences 0 and 1 say nearly the same thing without contradiction; the note is also reached from the cold-high row and Start here, so it must stand alone.
+
+### Task review fix round 1 (2026-10-15): sentence 0 names both edges of the band
+
+- Why: the task code review (`task-14-review.md`, M-9) found that sentence 0 named neither edge
+  of the band. Spec 3.1 says sentence 0 answers the question of the row that links to the note,
+  and three rows link here (the hot-low, hot-minimum and cold-high rows); only sentences 1 and 2
+  named the edges. The rounds above judged sentences 0 to 2 together and rejected S-6 on its
+  physics, not on this rule.
+- sentences[0]:
+  - Old: "Pull-out is a nominal estimate: production scatter makes real couplings weaker or
+    stronger, and magnets weaken as they warm."
+  - New: "Hot-low is the weakest coupling expected at the operating temperature, and cold-high
+    the strongest at the minimum temperature, allowing for production scatter." (22 words; no
+    symbol, placeholder, ϑ, U+207B or ∝; the caps and plain-words tests pass.)
+- How the text was chosen (the implementer's wording; the re-review below judges it):
+  - It does not take S-6's "made weaker by heat". Hot-low is the pull-out at the operating
+    temperature less the allowance, with no further heat loss (2.688 × 0.85 = 2.285 N·m at the
+    default), so the sentence names the temperature each edge uses and nothing more.
+  - It keeps "production scatter", which glosses sentences[1]'s "variation allowance" at its
+    first use (round 1's form check relied on it).
+  - "Expected" keeps T-O (cold-high is an expectation, not a bound). "At the operating
+    temperature" keeps T-E (not the hot-day start, which watch_out[0] spells out).
+  - The task review's own example ("Hot-low and cold-high are the edges of the torque band: the
+    weakest coupling expected at the operating temperature and the strongest at the minimum.")
+    was not taken verbatim, because it drops "production scatter", the gloss above.
+  - Dropped from the old sentence: "a nominal estimate" and "magnets weaken as they warm". The
+    second is `br_temperature`'s subject, the Start here step before this one.
+- Engine, at the five probe designs: hot-low lies below cold-high (2.285 < 3.823, 1.673 < 2.799,
+  1.443 < 2.414, 0.1760 < 0.3381 and 2.158 < 3.611 N·m; round 1's numbers).
+- Test: `the_torque_band_note_s_sentences_hold_at_every_probe_design` (`tests/explain.rs`) also
+  asserts that sentence 0 names "hot-low", "cold-high" and "production scatter" (any case), and
+  that hot-low lies below cold-high at every probe design. It failed on the old text ("sentence 0
+  names hot-low") and passes on the new.
+- The dump for the re-review is `magcoupling-rs/target/notes-review-T14-fix1.txt` (both notes,
+  five designs; git-ignored).
+- A text re-review of this field follows (controller ruling 7). Its report goes below as
+  `### Re-review: code-review fix round 1`.
 
 ## br_temperature
 
@@ -2172,8 +2209,9 @@ Must-fix items applied:
 Seeds (A-24):
 - S-5 (sentences[2]: "Torque is proportional to inner Br times outer Br, so each °C of warming changes it by a share of about α_i + α_o."): accepted in round 1 and applied verbatim as MF-2; rounds 2 and 3 confirm it. Reason: "a share of" makes the unit explicit and matches sentence 1's definition; torque ∝ Br_i·Br_o is exact in the model, and α_i + α_o lies between the two readings of the share (of the 20 °C pull-out and of the current one) at every probe.
 
-Should-fix offered (open for the controller; no on-screen text changed after the round-3 PASS):
-- SF-2 (round 1; rounds 2 and 3 keep it offered), change[3] (`temperature.duty.hot_ambient_C`, Raise; aim unchanged), 21 words: "a hotter day lowers the hot-day torque and the temperature margins; the hot-day start is this ambient plus the driving rise." Why: one step lowers all three margins the temperature verdict reads (the hot-day, magnet-limit and adhesive margins, each by 0.5 °C at all five designs), not only the hot-day one; the shipped help for this input already says "temperature margins". Its test: also assert that `temperature.magnet_life.margin_limit_C` and `temperature.adhesive_life.margin_C` fall.
+Should-fix offered (open for the controller; no on-screen text changed after the round-3 PASS
+until the task review fix round 1 below, which applied SF-2):
+- SF-2 (round 1; rounds 2 and 3 keep it offered), change[3] (`temperature.duty.hot_ambient_C`, Raise; aim unchanged), 21 words: "a hotter day lowers the hot-day torque and the temperature margins; the hot-day start is this ambient plus the driving rise." Why: one step lowers all three margins the temperature verdict reads (the hot-day, magnet-limit and adhesive margins, each by 0.5 °C at all five designs), not only the hot-day one; the shipped help for this input already says "temperature margins". Its test: also assert that `temperature.magnet_life.margin_limit_C` and `temperature.adhesive_life.margin_C` fall. (Applied verbatim by the task review fix round 1 below.)
 - SF-4 (round 1, an optional test): at each design, one degree up from the operating temperature changes the pull-out, as a share of the 20 °C pull-out, by within 10 % of α_i + α_o (the worst case, 6.4 %, is at Y30).
 - SF-5 (rounds 2 and 3; the README, not on-screen text): applied with this task's docs. The README's `tests/explain.rs` row says "a grade with a coefficient nearer zero loses a smaller share of its torque when hot (not always fewer N·m), and SmCo, the nearest, starts below sintered NdFeB (on the Y30 design it starts above Y30)", in place of the plan's "keeps more of its torque hot but starts weaker", which restated the claim MF-1 and MF-3 remove.
 - SF-6 (round 3, an optional test): loop the kept-share assert over the five probe designs (SmCo_2_17_30 on both rings against each design as it is), so the claims test's "design by design" is tested at every design, not two.
@@ -2185,3 +2223,39 @@ Considered, no change (the reviewer's observations):
 - Sentence 2's "about" far from 20 °C: for ferrite at 120 °C the two readings are −0.32 and −0.50 %/°C against −0.40 %/°C. The first-order rule is what an engineer needs, sentence 3 shows the real values, and the cap leaves no room for "near 20 °C" (round 2).
 - Only the Y30 design draws change[2] as a live link; the other four draw "(set by the Inner magnet part pick)", which is correct because library parts are never in the grade mode (round 2).
 - A grade nearer zero can carry a lower heat rating (from the Y30 design every sintered NdFeB grade is nearer zero, and N35 to N52 are rated 80 °C). The entry's claim concerns the reversible share, watch_out[1] names the magnet's limits, and the dashboard's magnet temperature check flags an operating temperature over the rating (round 3).
+
+### Task review fix round 1 (2026-10-15): the hotter-day entry names the temperature margins
+
+- Why: the task code review (`task-14-review.md`, M-8) applied spec 3.1's trade-off rule: change[3]
+  named only the hot-day margin, while one step of the hot-day ambient also lowers the
+  magnet-limit and adhesive margins, both read by the temperature verdict. SF-2 above is the fix.
+- change[3] (`temperature.duty.hot_ambient_C`, `Step::Raise`, aim
+  `temperature.magnet_life.torque_hot_day_Nm` down; all unchanged):
+  - Old: "a hotter day lowers the hot-day torque and the hot-day temperature margin; the hot-day
+    start is this ambient plus the driving rise."
+  - New (SF-2 verbatim, 21 words): "a hotter day lowers the hot-day torque and the temperature
+    margins; the hot-day start is this ambient plus the driving rise."
+- Engine, one slider step (+0.5 °C) at the five probe designs, from `compute_all`:
+  - the hot-day, magnet-limit and adhesive margins each fall by 0.5 °C (default 28.06 to 27.56,
+    27.09 to 26.59 and 54.04 to 53.54 °C), since the hot-day start and the peak follow the
+    ambient;
+  - the skipping-onset margin falls by 0.5 °C at the four NdFeB designs and stays infinite at the
+    Y30 design (ferrite has no hot onset; the readout draws "no prediction");
+  - the service margin (the governing limit less the operating temperature) and the cure margin
+    read no ambient and stay exactly (43.06 and 121.36 °C at the default; 70 °C and infinite at
+    Y30).
+  - So every temperature margin that moves falls, and none rises.
+- For the re-review: "the temperature margins" covers every margin that moves; two (service, cure)
+  do not move. A narrower 24-word wording names the three the verdict reads: "a hotter day lowers
+  the hot-day torque and the hot-day, magnet-limit and adhesive margins; the hot-day start is this
+  ambient plus the driving rise." It was not applied: SF-2 is the reviewed text, and the input's
+  shipped help already says "temperature margins".
+- Test: `the_temperature_note_s_levers_hold_at_every_probe_design` (`tests/explain.rs`) asserts
+  that change[3] says "the temperature margins", and at each probe design that the hot-day,
+  magnet-limit and adhesive margins fall, the skipping-onset margin falls wherever it is finite
+  (at one design or more) and stays infinite elsewhere, and the service and cure margins do not
+  rise. It failed on the old text ("names the margins it lowers") and passes on the new.
+- The dump for the re-review is `magcoupling-rs/target/notes-review-T14-fix1.txt`, as under
+  `## hot_low_cold_high`.
+- A text re-review of this field follows (controller ruling 7). Its report goes below as
+  `### Re-review: code-review fix round 1`.

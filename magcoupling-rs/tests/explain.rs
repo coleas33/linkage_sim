@@ -2047,11 +2047,29 @@ fn the_torque_band_note_s_levers_move_hot_low_and_cold_high_as_it_says() {
 /// what carries cold-high, and the 20 °C pull-out at which hot-low passes.
 #[test]
 fn the_torque_band_note_s_sentences_hold_at_every_probe_design() {
+    // Sentence 0 answers the rows that link the note (spec 3.1: the hot-low, hot-minimum and
+    // cold-high rows), so it names both edges of the band; and production scatter, which
+    // glosses sentence 1's "variation allowance" before its first use (task review fix round 1).
+    let note = notes::note("hot_low_cold_high").expect("the torque-band note");
+    let first = note.sentences[0].to_lowercase();
+    for named in ["hot-low", "cold-high", "production scatter"] {
+        assert!(
+            first.contains(named),
+            "sentence 0 names {named}: {:?}",
+            note.sentences[0]
+        );
+    }
     let close = |a: f64, b: f64| (a / b - 1.0).abs() < 1e-12;
     for (name, design) in probes::probe_designs() {
         let base = compute_all(&design);
         let m = &base.metal;
         let v = design.metal.variation;
+        // Sentence 0: hot-low, the weakest coupling expected, lies below cold-high, the
+        // strongest.
+        assert!(
+            m.torque_hot_low_Nm < m.torque_cold_high_Nm,
+            "{name}: hot-low below cold-high"
+        );
         // Sentence 1: hot-low is the pull-out at the operating temperature less the allowance.
         assert!(
             close(m.torque_hot_low_Nm, base.model.pullout_Nm * (1.0 - v)),
@@ -2151,8 +2169,15 @@ fn the_temperature_note_s_levers_hold_at_every_probe_design() {
         note.change[3].aim,
         Some(("temperature.magnet_life.torque_hot_day_Nm", Sense::Down))
     );
+    // Entry 4 names every temperature margin a hotter day lowers, not the hot-day one alone
+    // (spec 3.1's trade-off rule; the in-task review's SF-2, task review fix round 1).
+    assert!(
+        note.change[3].text.contains("the temperature margins"),
+        "names the margins it lowers: {:?}",
+        note.change[3].text
+    );
     let close = |a: f64, b: f64| (a / b - 1.0).abs() < 1e-12;
-    let (mut library, mut graded) = (0, 0);
+    let (mut library, mut graded, mut hot_onsets) = (0, 0, 0);
     for (name, design) in probes::probe_designs() {
         let base = compute_all(&design);
         // Entry 1: hotter running lowers the pull-out and hot-low, never the 20 °C row.
@@ -2186,8 +2211,11 @@ fn the_temperature_note_s_levers_hold_at_every_probe_design() {
             assert_eq!(r.model.pullout_Nm, base.model.pullout_Nm, "{name}");
             assert_eq!(r.metal.torque_cold_Nm, base.metal.torque_cold_Nm, "{name}");
         }
-        // Entry 4: a hotter day lowers the hot-day torque and its temperature margin, not the
-        // pull-out at the operating temperature.
+        // Entry 4: a hotter day lowers the hot-day torque and the temperature margins, not the
+        // pull-out at the operating temperature. The margins it lowers are the three the
+        // temperature verdict reads (hot-day, magnet limit, adhesive), since the hot-day start
+        // and the peak follow the ambient, and the skipping onset's wherever the magnets have a
+        // hot onset; it raises none (the service and cure margins read no ambient).
         let r = compute_all(&stepped(
             &design,
             "temperature.duty.hot_ambient_C",
@@ -2198,16 +2226,52 @@ fn the_temperature_note_s_levers_hold_at_every_probe_design() {
                 < base.temperature.magnet_life.torque_hot_day_Nm,
             "{name}"
         );
-        assert!(
-            r.temperature.summary.margin_hot_day_C < base.temperature.summary.margin_hot_day_C,
-            "{name}"
-        );
+        let (t, t0) = (&r.temperature, &base.temperature);
+        for (margin, after, before) in [
+            (
+                "hot-day",
+                t.summary.margin_hot_day_C,
+                t0.summary.margin_hot_day_C,
+            ),
+            (
+                "magnet limit",
+                t.magnet_life.margin_limit_C,
+                t0.magnet_life.margin_limit_C,
+            ),
+            (
+                "adhesive",
+                t.adhesive_life.margin_C,
+                t0.adhesive_life.margin_C,
+            ),
+        ] {
+            assert!(after < before, "{name}: the {margin} margin falls");
+        }
+        // Ferrite has no hot skipping onset (the Y30 design's is infinite, drawn as "no
+        // prediction"), so its margin stays infinite; elsewhere it falls.
+        let (after, before) = (t.magnet_life.margin_onset_C, t0.magnet_life.margin_onset_C);
+        if before.is_finite() {
+            hot_onsets += 1;
+            assert!(after < before, "{name}: the skipping onset margin falls");
+        } else {
+            assert_eq!(after, before, "{name}: no hot onset, no margin to lose");
+        }
+        for (margin, after, before) in [
+            (
+                "service",
+                t.summary.margin_service_C,
+                t0.summary.margin_service_C,
+            ),
+            ("cure", t.summary.cure_margin_C, t0.summary.cure_margin_C),
+        ] {
+            assert!(after <= before, "{name}: the {margin} margin does not rise");
+        }
         assert_eq!(r.model.pullout_Nm, base.model.pullout_Nm, "{name}");
     }
     assert!(
         library >= 1 && graded >= 1,
         "library and graded rings among the probes"
     );
+    assert!(hot_onsets >= 1, "a hot skipping onset among the probes");
 }
 
 #[test]
