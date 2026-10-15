@@ -2050,7 +2050,10 @@ mod tests {
     use crate::gui::dashboard::{CHECKS, DASHBOARD};
     use crate::gui::explorer::reviewed_note;
     use crate::gui::plain_text::label_for;
-    use crate::gui::test_support::{assert_glyphs, passing_design, short_magnets, with_poles};
+    use crate::gui::test_support::{
+        assert_glyphs, clamp_at_its_limit, hot_day, only_the_clamp_fails, passing_design,
+        short_magnets, small_boss, with_poles,
+    };
     use std::collections::BTreeSet;
 
     // ------------------------------------------------------------------ the test designs
@@ -2070,13 +2073,6 @@ mod tests {
     /// another check red shows.
     fn breaking(edit: impl Fn(&mut DesignInputs)) -> DesignInputs {
         with(passing_design(), edit)
-    }
-
-    /// A hot day: 80 °C ambient and a 60 °C driving rise start the magnets at 140 °C, above
-    /// both the magnet and the adhesive limit, with the hottest-rated library part in use.
-    fn hot_day(i: &mut DesignInputs) {
-        i.temperature.duty.hot_ambient_C = 80.0;
-        i.temperature.duty.driving_rise_C = 60.0;
     }
 
     /// A hot day with the inner ring on manual dimensions and a blank grade: no library part
@@ -2117,11 +2113,6 @@ mod tests {
         i.coupling.magnets.part_outer.clear();
         i.coupling.magnets.grade_inner = "Y30".to_owned();
         i.coupling.magnets.grade_outer = "Y30".to_owned();
-    }
-
-    /// No screw fits a 12 mm boss.
-    fn small_boss(i: &mut DesignInputs) {
-        i.clamps.boss_od_mm = 12.0;
     }
 
     /// No screw fits a 3 mm clamp.
@@ -4017,12 +4008,6 @@ mod tests {
 
     // ------------------------------------------------------------------ the paused clamp section
 
-    /// The passing design with no screw fitting its 12 mm clamp boss: it fails the clamp
-    /// alone.
-    fn only_the_clamp_fails() -> DesignInputs {
-        breaking(small_boss)
-    }
-
     #[test]
     fn only_the_clamp_guide_stops_counting_and_only_while_the_section_is_paused() {
         for guide in CHECK_GUIDES.iter() {
@@ -4069,16 +4054,9 @@ mod tests {
         assert!(!shown.is_empty(), "the clamp's fixes show with the section");
         assert_eq!(fixes(clamp, &inputs, &results, true), []);
         assert!(all_fixes(&inputs, &results, true)[index].is_empty());
-        // At the clamp's limit (its safety factor raised until its capacity only just covers
-        // the requirement) one step of longer magnets fails the clamp: the hot-low guide's one
-        // fix is held back while the clamp shows, and offered while it is paused.
-        let defaults = DesignInputs::default();
-        let base = compute_all(&defaults);
-        let NumOrText::Num(capacity) = base.clamps.capacity_Nm else {
-            panic!("a screw fits the example design's clamp")
-        };
-        let mut at_limit = defaults.clone();
-        at_limit.clamps.safety_factor = capacity / base.clamps.max_torque_Nm * (1.0 - 1e-9);
+        // At the clamp's limit one step of longer magnets fails the clamp: the hot-low guide's
+        // one fix is held back while the clamp shows, and offered while it is paused.
+        let at_limit = clamp_at_its_limit();
         let results = compute_all(&at_limit);
         assert_eq!(level(clamp, &at_limit, &results), Level::Good);
         assert_eq!(level(hot, &at_limit, &results), Level::Bad);

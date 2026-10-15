@@ -1355,7 +1355,7 @@ mod tests {
     #[test]
     fn while_the_clamp_section_is_paused_the_table_leaves_out_its_rows() {
         use crate::gui::result_groups::HEADLINE_LABEL;
-        use crate::gui::test_support::{drawn_texts, passing_design, sized_frame};
+        use crate::gui::test_support::{drawn_texts, only_the_clamp_fails, sized_frame};
         let entries = table_entries();
         let hidden = entries
             .iter()
@@ -1369,9 +1369,7 @@ mod tests {
         assert_eq!(search(entries, "clamp", true), Vec::<usize>::new());
         // A design that fails only the clamp: the headline's badge is red only while the
         // clamp shows.
-        let mut inputs = passing_design();
-        inputs.clamps.boss_od_mm = 12.0;
-        let results = compute_all(&inputs);
+        let results = compute_all(&only_the_clamp_fails());
         let headline = &result_groups()[0];
         assert_eq!(headline.label, HEADLINE_LABEL);
         assert_eq!(

@@ -1604,9 +1604,9 @@ mod tests {
     };
     use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
-        SCREEN, drawn_texts, key_event, key_tap, primary_button, select_all, short_magnets,
-        sized_frame, sized_frame_at, text_center, text_rect, text_rects, tooltips_at_once,
-        with_poles,
+        SCREEN, clamp_at_its_limit, drawn_texts, hot_day, key_event, key_tap, only_the_clamp_fails,
+        primary_button, select_all, short_magnets, sized_frame, sized_frame_at, text_center,
+        text_rect, text_rects, tooltips_at_once, with_poles,
     };
     use crate::headline;
 
@@ -4246,15 +4246,12 @@ mod tests {
             }
             if clamps_paused {
                 // The dashboard and its guides on designs failing every check, the clamp's too.
-                let mut no_screw = crate::gui::test_support::passing_design();
-                no_screw.clamps.boss_od_mm = 12.0;
-                let mut hot_day = DesignInputs::default();
-                hot_day.temperature.duty.hot_ambient_C = 80.0;
-                hot_day.temperature.duty.driving_rise_C = 60.0;
+                let mut hot = DesignInputs::default();
+                hot_day(&mut hot);
                 for inputs in [
                     DesignInputs::default(),
-                    no_screw,
-                    hot_day,
+                    only_the_clamp_fails(),
+                    hot,
                     short_magnets(),
                     with_poles(40),
                 ] {
@@ -4513,10 +4510,16 @@ mod tests {
         }
     }
 
+    /// The defaults with the clamp's friction assumption modified.
+    fn clamp_friction_modified() -> DesignInputs {
+        let mut inputs = DesignInputs::default();
+        inputs.clamps.friction = 0.1;
+        inputs
+    }
+
     #[test]
     fn the_paused_section_s_assumptions_leave_the_view_and_the_banner() {
-        let mut friction = DesignInputs::default();
-        friction.clamps.friction = 0.1;
+        let friction = clamp_friction_modified();
         let label = ASSUMPTIONS
             .iter()
             .find(|a| a.id == "clamp_friction")
@@ -4545,22 +4548,14 @@ mod tests {
 
     #[test]
     fn the_panel_passes_its_pause_to_the_fixes_the_banner_and_the_trace() {
-        use crate::engine::meta::NumOrText;
         use crate::gui::guidance::{Direction, fix_text};
         // The shipped panel starts from the switch (the harness overrides it).
         assert_eq!(MagcouplingPanel::new().clamps_paused, clamps::PAUSED);
         // At the clamp's limit, the hot-low torque's one fix is withheld only while the clamp
         // shows (guidance's a_paused_clamp_offers_no_fix_and_holds_back_no_other_guide_s_fix).
-        let defaults = DesignInputs::default();
-        let base = compute_all(&defaults);
-        let NumOrText::Num(capacity) = base.clamps.capacity_Nm else {
-            panic!("a screw fits the example design's clamp")
-        };
-        let mut at_limit = defaults.clone();
-        at_limit.clamps.safety_factor = capacity / base.clamps.max_torque_Nm * (1.0 - 1e-9);
+        let at_limit = clamp_at_its_limit();
         let fix = fix_text(AXIAL_LENGTH, Direction::Raise);
-        let mut friction = DesignInputs::default();
-        friction.clamps.friction = 0.1;
+        let friction = clamp_friction_modified();
         for clamps_paused in [false, true] {
             let mut harness = Harness::on_screen(TALL);
             harness.panel.clamps_paused = clamps_paused;

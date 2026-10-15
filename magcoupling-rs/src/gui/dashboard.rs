@@ -965,8 +965,9 @@ mod tests {
     use crate::gui::guidance::{CHECK_GUIDES, Direction, Fixes, ROW_LEARN, all_fixes, trade_offs};
     use crate::gui::readouts::ReadoutEvents;
     use crate::gui::test_support::{
-        assert_glyphs, drawn_texts, hover_frames, passing_design, primary_button, short_magnets,
-        sized_frame, text_center, text_color, text_rect, tooltips_at_once, with_poles,
+        assert_glyphs, drawn_texts, hover_frames, only_the_clamp_fails, passing_design,
+        primary_button, short_magnets, sized_frame, text_center, text_color, text_rect,
+        tooltips_at_once, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -1014,14 +1015,7 @@ mod tests {
                 Good,
             ),
             (TEMPERATURE_VERDICT, DesignInputs::default(), Good),
-            (
-                TEMPERATURE_VERDICT,
-                design(|i| {
-                    i.temperature.duty.hot_ambient_C = 80.0;
-                    i.temperature.duty.driving_rise_C = 60.0;
-                }),
-                Caution,
-            ),
+            (TEMPERATURE_VERDICT, hot_day(), Caution),
             ("clamps.recommended", DesignInputs::default(), Good),
             (
                 "clamps.recommended",
@@ -1870,10 +1864,7 @@ mod tests {
 
     /// The defaults with a hot day past the temperature limits: the verdict asks for a look.
     fn hot_day() -> DesignInputs {
-        design(|i| {
-            i.temperature.duty.hot_ambient_C = 80.0;
-            i.temperature.duty.driving_rise_C = 60.0;
-        })
+        design(crate::gui::test_support::hot_day)
     }
 
     /// The defaults at 40 poles: the blocks no longer fit around the ring.
@@ -1918,11 +1909,10 @@ mod tests {
         // Ruling 11: a design that fails only the clamp reads as passing while it is paused;
         // with the section shown its row, its Problem and its Why sentence are drawn.
         let ctx = egui::Context::default();
-        let mut inputs = passing_design();
-        inputs.clamps.boss_od_mm = 12.0;
+        let inputs = only_the_clamp_fails();
         let results = compute_all(&inputs);
         let clamp = guidance::guide("clamps.recommended").expect("the clamp's guide");
-        let problem = (clamp.problem)(&inputs, &results).expect("no screw fits a 12 mm boss");
+        let problem = (clamp.problem)(&inputs, &results).expect("the clamp fails");
         for paused in [false, true] {
             let output = dashboard_frame_with(&ctx, &inputs, paused);
             let texts = drawn_texts(&output);
@@ -1946,9 +1936,7 @@ mod tests {
 
     #[test]
     fn while_the_clamp_section_is_paused_its_checks_leave_the_failing_list() {
-        let mut inputs = passing_design();
-        inputs.clamps.boss_od_mm = 12.0;
-        let results = compute_all(&inputs);
+        let results = compute_all(&only_the_clamp_fails());
         let shown = failing_checks(&results, false);
         assert!(
             shown.contains(&("clamps.recommended", Level::Bad)),

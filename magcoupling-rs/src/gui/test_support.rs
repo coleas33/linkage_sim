@@ -36,6 +36,38 @@ pub(crate) fn passing_design() -> crate::DesignInputs {
     inputs
 }
 
+/// A hot day: 80 °C ambient and a 60 °C driving rise start the magnets at 140 °C, above
+/// both the magnet and the adhesive limit, with the hottest-rated library part in use.
+pub(crate) fn hot_day(inputs: &mut crate::DesignInputs) {
+    inputs.temperature.duty.hot_ambient_C = 80.0;
+    inputs.temperature.duty.driving_rise_C = 60.0;
+}
+
+/// No screw fits a 12 mm clamp boss.
+pub(crate) fn small_boss(inputs: &mut crate::DesignInputs) {
+    inputs.clamps.boss_od_mm = 12.0;
+}
+
+/// [`passing_design`] with a [`small_boss`]: it fails the clamp alone, so the clamp section's
+/// pause decides whether the design passes.
+pub(crate) fn only_the_clamp_fails() -> crate::DesignInputs {
+    let mut inputs = passing_design();
+    small_boss(&mut inputs);
+    inputs
+}
+
+/// The defaults at the clamp's limit: the clamp's safety factor raised until its capacity only
+/// just covers the requirement.
+pub(crate) fn clamp_at_its_limit() -> crate::DesignInputs {
+    let mut inputs = crate::DesignInputs::default();
+    let base = crate::compute_all(&inputs);
+    let crate::engine::meta::NumOrText::Num(capacity) = base.clamps.capacity_Nm else {
+        panic!("a screw fits the example design's clamp")
+    };
+    inputs.clamps.safety_factor = capacity / base.clamps.max_torque_Nm * (1.0 - 1e-9);
+    inputs
+}
+
 /// The screen of the headless frames [points]: a laptop window.
 pub(crate) const SCREEN: egui::Vec2 = egui::vec2(1280.0, 1024.0);
 
