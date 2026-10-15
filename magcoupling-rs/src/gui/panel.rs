@@ -32,7 +32,9 @@ use crate::engine::size_controls::ring_radius_range;
 use crate::engine::sizing::{FreeVariable, SizingOutcome};
 use crate::gui::clamp_drawing::clamp_ui;
 use crate::gui::dashboard::{Level, dashboard_ui, end_effect_banner};
-use crate::gui::explorer::{EQUATION_PANEL, Explorer, FOCUS_WIDTH, explorer_ui, panel_heights};
+use crate::gui::explorer::{
+    EQUATION_PANEL, Explorer, FOCUS_WIDTH, explorer_ui, held_reason, panel_heights,
+};
 use crate::gui::format::{format_value, search_needle, with_unit};
 use crate::gui::geometry_view::geometry_ui;
 use crate::gui::guidance::{ConsequenceCache, FixCache, SIZE_TAB_ALIASES, within_minimum_diameter};
@@ -53,7 +55,7 @@ use crate::gui::session::{
 };
 use crate::gui::size_controls;
 use crate::gui::sizing::{
-    REQUIREMENT_INPUT, SOLVED_PREFIX, SOLVING, SizingMode, SizingRunner, SizingState, set_by_auto,
+    REQUIREMENT_INPUT, SOLVED_PREFIX, SOLVING, SizingMode, SizingRunner, SizingState, held_by_auto,
     with_own_value,
 };
 use crate::gui::spreadsheet::Snapshot;
@@ -763,7 +765,18 @@ impl MagcouplingPanel {
                 .default_height(start)
                 .height_range(range)
                 .show_inside(ui, |ui| {
-                    explorer_ui(ui, &mut self.explorer, shown, &self.results, show_details);
+                    // A note's change entry names an input Auto or a part pick holds as plain
+                    // text, on the design shown.
+                    let sizing = self.sizing;
+                    let held = |path: &str| held_reason(&sizing, shown, path);
+                    explorer_ui(
+                        ui,
+                        &mut self.explorer,
+                        shown,
+                        &self.results,
+                        show_details,
+                        &held,
+                    );
                 });
         }
         // egui's panel only shrinks the region's cursor: a widget laid out after it may still
@@ -1363,7 +1376,7 @@ impl MagcouplingPanel {
     }
 
     /// One input row; applies its edit. Returns the id of its main widget. In Torque →
-    /// Magnets the rows of the inputs Auto sets ([`set_by_auto`]: the free variable's, and for
+    /// Magnets the rows of the inputs Auto sets ([`held_by_auto`]: the free variable's, and for
     /// ring size the cap OD and thread that follow it) show the value the panel shows, locked
     /// (the label still traces the input). The row is framed in its term's colour while the equation in view
     /// reads the input (`readouts`).
@@ -1373,8 +1386,7 @@ impl MagcouplingPanel {
         entry: &'static InputEntry,
         readouts: &Readouts,
     ) -> egui::Id {
-        let locked = self.sizing.mode == SizingMode::TorqueToMagnets
-            && set_by_auto(self.sizing.variable).any(|path| path == entry.path);
+        let locked = held_by_auto(&self.sizing, &entry.path);
         // A locked row reads the design shown (one clone, for that row only).
         let current = if locked {
             self.shown_inputs().get(&entry.path)
@@ -7312,15 +7324,35 @@ mod tests {
 
     #[test]
     fn every_teaching_note_shows_with_glyphs_in_the_default_fonts() {
+        // Each note opened alone, then its sources fold opened (it starts closed): every drawn
+        // text, sources included, has glyphs.
         use crate::engine::explain::notes::NOTES;
+        use crate::gui::explorer::WHERE_FROM;
+        use crate::gui::typeset::glyph_safe;
         let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
         for note in NOTES {
             harness.panel.explorer.open_note(note.id);
             harness.frame(Vec::new());
             let output = harness.frame(Vec::new());
             let texts = drawn_texts(&output);
-            let title = crate::gui::typeset::glyph_safe(note.title);
-            assert!(texts.contains(&title), "{}", note.id);
+            assert!(texts.contains(&glyph_safe(note.title)), "{}", note.id);
+            let sources: Vec<String> = note.sources.iter().map(|s| glyph_safe(s)).collect();
+            for source in &sources {
+                assert!(
+                    !texts.contains(source),
+                    "{}: the fold starts closed",
+                    note.id
+                );
+            }
+            harness.click_text(WHERE_FROM);
+            let mut output = harness.frame(Vec::new());
+            for _ in 0..15 {
+                output = harness.frame(Vec::new());
+            }
+            let texts = drawn_texts(&output);
+            for source in &sources {
+                assert!(texts.contains(source), "{}: {source}", note.id);
+            }
             for text in &texts {
                 crate::gui::test_support::assert_glyphs(&harness.ctx, text, note.id);
             }

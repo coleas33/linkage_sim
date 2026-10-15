@@ -790,14 +790,14 @@ fn custom_hotter_grade(inputs: &DesignInputs, path: &str) -> Vec<DesignInputs> {
 
 /// `x` one step of the slider `range` up (Raise) or down (Lower), kept on the slider: `None`
 /// at the slider's end that way, for a number that is not one, and for a choice. A value
-/// typed past the slider's end comes back onto it.
+/// typed past the slider's end comes back onto it ([`SliderRange::step_from`], the step a
+/// teaching note's change entry takes too).
 fn step(x: f64, range: SliderRange, direction: Direction) -> Option<f64> {
-    let next = match direction {
-        Direction::Raise if x < range.max => x + range.step,
-        Direction::Lower if x > range.min => x - range.step,
-        _ => return None,
-    };
-    Some(next.clamp(range.min, range.max))
+    match direction {
+        Direction::Raise => range.step_from(x, true),
+        Direction::Lower => range.step_from(x, false),
+        Direction::Change | Direction::CustomHotterGrade => None,
+    }
 }
 
 /// `inputs` with the input at `path` set to `value`; `None` where the inputs refuse it.

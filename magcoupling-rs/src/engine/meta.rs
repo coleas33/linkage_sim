@@ -127,6 +127,21 @@ pub struct SliderRange {
     pub log: bool,
 }
 
+impl SliderRange {
+    /// `x` one step of the slider up (`up`) or down, kept on the slider: `None` at the
+    /// slider's end that way and for a number that is not one; a value typed past the slider's
+    /// other end comes back onto it. A check guide's fix (`gui::guidance`) and a teaching
+    /// note's change entry take this step.
+    pub fn step_from(self, x: f64, up: bool) -> Option<f64> {
+        let next = if up {
+            (x < self.max).then_some(x + self.step)
+        } else {
+            (x > self.min).then_some(x - self.step)
+        }?;
+        Some(next.clamp(self.min, self.max))
+    }
+}
+
 /// Metadata of one input field.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct InputMeta {
@@ -1499,5 +1514,34 @@ mod tests {
         );
         assert_eq!(down.cell(CellAxis::Row(6), 0), None);
         assert_eq!(down.cell(CellAxis::None, 0), None);
+    }
+
+    #[test]
+    fn a_step_from_a_value_stays_on_the_slider() {
+        let r = SliderRange {
+            min: 0.0,
+            max: 1.0,
+            step: 0.25,
+            log: false,
+        };
+        assert_eq!(r.step_from(0.5, true), Some(0.75));
+        assert_eq!(r.step_from(0.5, false), Some(0.25));
+        assert_eq!(r.step_from(1.0, true), None, "at the top");
+        assert_eq!(r.step_from(0.0, false), None, "at the bottom");
+        assert_eq!(r.step_from(0.9, true), Some(1.0), "kept on the slider");
+        assert_eq!(r.step_from(0.1, false), Some(0.0), "kept on the slider");
+        assert_eq!(
+            r.step_from(3.0, false),
+            Some(1.0),
+            "typed past the top: back onto it"
+        );
+        assert_eq!(r.step_from(3.0, true), None);
+        assert_eq!(
+            r.step_from(-2.0, true),
+            Some(0.0),
+            "typed past the bottom: back onto it"
+        );
+        assert_eq!(r.step_from(f64::NAN, true), None);
+        assert_eq!(r.step_from(f64::NAN, false), None);
     }
 }

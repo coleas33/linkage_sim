@@ -21,8 +21,12 @@
 //!
 //! Teaching notes (spec Addendum A4): the Explain toggle, off by default, shows under the open
 //! equation the reviewed note that explains it ([`notes::note_for`]: only notes a physics
-//! reviewer has checked), with its watch-out line and its diagram ([`crate::gui::diagrams`]),
-//! so it follows what the user investigates. "Start here" walks the suggested order
+//! reviewer has checked), with its diagram ([`crate::gui::diagrams`]), its "What to change"
+//! entries, its "Watch out" lines and its sources under a "Where this comes from" fold that
+//! starts closed ([`note_ui`]), so it follows what the user investigates. An entry's input is a
+//! link to its row, or plain text with the reason where the input is not free on the design
+//! shown ([`held_reason`]: Auto holds it or a part pick sets it; or the slider is at its end
+//! that way). "Start here" walks the suggested order
 //! ([`notes::START_HERE`]): each step opens its equation with Explain on. A warning's link
 //! opens its note on its own ([`Explorer::open_note`]; five of the six warning notes explain
 //! no single equation), with links to the equations it does explain. Every note the panel
@@ -41,16 +45,19 @@
 use egui::{Color32, Sense, Vec2};
 
 use crate::engine::explain::markup::{Expr, Symbol};
-use crate::engine::explain::notes::{self, Note, Review, START_HERE, covers};
+use crate::engine::explain::notes::{self, Change, Note, Review, START_HERE, covers};
 use crate::engine::explain::{Design, Equation, TermKind, TermStyle};
-use crate::engine::meta::{ResultSet, Value};
+use crate::engine::meta::{InputSet, ResultSet, Value};
+use crate::engine::picks::set_by_pick;
 use crate::gui::corrections::correction_title;
 use crate::gui::dashboard::result_info;
 use crate::gui::diagrams::diagram_ui;
 use crate::gui::format::{format_value, with_unit};
 use crate::gui::input_ui::CHANGED_DOT;
+use crate::gui::inputs::InputCatalogue;
 use crate::gui::plain_text::label_for;
 use crate::gui::readouts::{ReadoutEvents, registry};
+use crate::gui::sizing::{SizingState, held_by_auto};
 use crate::gui::typeset::{
     TermColors, glyph_safe, laid_ui, layout_equation, layout_symbol, term_at,
 };
@@ -99,11 +106,23 @@ pub const STOP: &str = "Stop";
 /// What Explain shows for an equation without a reviewed note.
 pub const NO_NOTE: &str = "No teaching note for this equation.";
 
-/// The start of a note's watch-out line.
+/// The heading of a note's watch-out lines.
 pub const WATCH_OUT: &str = "Watch out";
 
-/// The start of a note's sources line.
-pub const SOURCES: &str = "Sources";
+/// The heading of a note's "What to change" entries (slice-2 spec 3.1).
+pub const WHAT_TO_CHANGE: &str = "What to change";
+
+/// The fold under a note that holds its sources, closed until clicked (slice-2 spec 3.1).
+pub const WHERE_FROM: &str = "Where this comes from";
+
+/// Why a change entry's input is plain text, not a link: Auto sets it (Torque -> Magnets).
+pub const HELD_BY_AUTO: &str = "held by Auto";
+
+/// Why a Raise entry's input is plain text: it is at the top of its slider.
+pub const AT_TOP: &str = "at the top of its range";
+
+/// Why a Lower entry's input is plain text: it is at the bottom of its slider.
+pub const AT_BOTTOM: &str = "at the bottom of its range";
 
 /// The start of the links under a note opened on its own.
 pub const EXPLAINS: &str = "Explains";
@@ -298,6 +317,14 @@ impl Explorer {
         });
     }
 
+    /// Follows a link clicked in a teaching note: the input's row is highlighted and scrolled
+    /// to, as a leaf term's is; the note stays open.
+    pub fn follow_note_link(&mut self, link: NoteLink) {
+        match link {
+            NoteLink::Input(path) => self.focus_input(path),
+        }
+    }
+
     /// The input row highlighted, if any.
     pub fn focus(&self) -> Option<&Focus> {
         self.focus.as_ref()
@@ -445,14 +472,22 @@ fn unsummed(eq: &Equation, terms: &Design<'_>) -> Vec<String> {
 /// Draws the Equation panel: its header row (heading, breadcrumb, close), then the path shown;
 /// with `show_details` (the header's Show spreadsheet details, spec S2-5) also the value's
 /// workbook cell, the corrections its equation embodies and each term's internal name on hover.
+/// `held` says why an input is not free on the design shown ([`held_reason`]), for the notes'
+/// change entries.
 pub fn explorer_ui(
     ui: &mut egui::Ui,
     explorer: &mut Explorer,
     inputs: &DesignInputs,
     results: &DesignResults,
     show_details: bool,
+    held: &dyn Fn(&str) -> Option<String>,
 ) {
     let terms = Design { inputs, results };
+    let view = NoteView {
+        inputs,
+        results,
+        held,
+    };
     ui.horizontal_wrapped(|ui| {
         // Whole crumbs move to the next row (a wrapped text would start mid-row).
         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
@@ -526,7 +561,11 @@ pub fn explorer_ui(
         .auto_shrink([false, false])
         .show(ui, |ui| {
             if let Some(note) = explorer.note.and_then(reviewed_note) {
-                if let Some(path) = note_alone_ui(ui, note) {
+                let (equation, link) = note_alone_ui(ui, note, &view);
+                if let Some(link) = link {
+                    explorer.follow_note_link(link);
+                }
+                if let Some(path) = equation {
                     explorer.open_path(&path);
                 }
                 return;
@@ -537,7 +576,7 @@ pub fn explorer_ui(
             };
             // The marks on screen are another equation's while its value is hovered.
             let others_marked = explorer.hovered().is_some_and(|h| h != path);
-            let follow = match registry().equation_for(&path) {
+            let (follow, link) = match registry().equation_for(&path) {
                 Some(eq) => equation_body(
                     ui,
                     eq,
@@ -545,15 +584,19 @@ pub fn explorer_ui(
                     others_marked,
                     explorer.explain,
                     show_details,
+                    &view,
                 ),
                 None => {
                     no_equation_body(ui, &path, results, show_details);
                     if explorer.explain {
                         ui.weak(NO_NOTE);
                     }
-                    None
+                    (None, None)
                 }
             };
+            if let Some(link) = link {
+                explorer.follow_note_link(link);
+            }
             ui.add_space(6.0);
             let users = registry().used_by(&path);
             let mut up = None;
@@ -580,41 +623,124 @@ pub fn explorer_ui(
         });
 }
 
-/// A teaching note: its title, its sentences, its watch-out line, its diagram and its sources
-/// (every text drawn through `glyph_safe`).
-pub fn note_ui(ui: &mut egui::Ui, note: &Note) {
+/// What a note's change entries are drawn against: the design shown, its results, and why an
+/// input is not free on it (`held`: Auto holds it or a part pick sets it, [`held_reason`];
+/// `None` for a free input).
+pub struct NoteView<'a> {
+    pub inputs: &'a DesignInputs,
+    pub results: &'a DesignResults,
+    pub held: &'a dyn Fn(&str) -> Option<String>,
+}
+
+/// What a click in a teaching note asks for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NoteLink {
+    /// Highlight this input's row, as a leaf term does ([`Explorer::follow_note_link`]).
+    Input(&'static str),
+}
+
+/// Why the input at `path` is not free on the design `inputs` shown with `sizing`, for a note's
+/// change entry ([`NoteView::held`]): Auto sets it in Torque -> Magnets ([`HELD_BY_AUTO`]), or
+/// a part pick sets it in place of its own value ("set by the `<pick's label>` pick",
+/// [`set_by_pick`]); `None` when it is free.
+pub fn held_reason(sizing: &SizingState, inputs: &DesignInputs, path: &str) -> Option<String> {
+    if held_by_auto(sizing, path) {
+        return Some(HELD_BY_AUTO.to_owned());
+    }
+    set_by_pick(inputs, path).map(|pick| format!("set by the {} pick", label_for(pick)))
+}
+
+/// Why a change entry draws its input as plain text on `view`'s design: the input is not free
+/// there (`view.held`), or one more slider step its way is past its slider ([`AT_TOP`],
+/// [`AT_BOTTOM`]; the step a check guide's fix takes, `SliderRange::step_from`). `None` when the
+/// input is a link: a choice, an entered number and an optional number left blank (it enters at
+/// a result) are never at an end.
+fn unlinked_reason(change: &Change, view: &NoteView<'_>) -> Option<String> {
+    if let Some(reason) = (view.held)(change.input) {
+        return Some(reason);
+    }
+    let up = change.step.up()?;
+    let range = InputCatalogue::get().entry(change.input)?.meta.range?;
+    let x = match view.inputs.get(change.input)? {
+        Value::Num(x) if x.is_finite() => x,
+        Value::Int(n) => n as f64,
+        _ => return None,
+    };
+    if range.step_from(x, up).is_some() {
+        return None;
+    }
+    Some(if up { AT_TOP } else { AT_BOTTOM }.to_owned())
+}
+
+/// A teaching note (slice-2 spec 3.1): its title; what it is (its sentences) and its diagram;
+/// "What to change", each entry "`<Step> <input's label>: <text>`", the label a link to the
+/// input's row unless `unlinked_reason` gives a reason (then plain text with the reason);
+/// "Watch out" and its lines; and the "Where this comes from" fold, closed until clicked,
+/// holding its sources. Every text is drawn through `glyph_safe`. Returns the link clicked.
+pub fn note_ui(ui: &mut egui::Ui, note: &Note, view: &NoteView<'_>) -> Option<NoteLink> {
+    let mut clicked = None;
     ui.strong(glyph_safe(note.title));
     for sentence in note.sentences {
         ui.add(egui::Label::new(glyph_safe(sentence)).wrap());
     }
-    if let Some(watch_out) = note.watch_out {
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(format!("{WATCH_OUT}: {}", glyph_safe(watch_out)))
-                    .color(ui.visuals().warn_fg_color),
-            )
-            .wrap(),
-        );
-    }
     if let Some(diagram) = note.diagram {
         diagram_ui(ui, diagram);
     }
-    ui.add(
-        egui::Label::new(
-            egui::RichText::new(format!(
-                "{SOURCES}: {}",
-                glyph_safe(&note.sources.join("; "))
-            ))
-            .small()
-            .weak(),
-        )
-        .wrap(),
-    );
+    if !note.change.is_empty() {
+        ui.strong(WHAT_TO_CHANGE);
+        for change in note.change {
+            if change_ui(ui, change, view) {
+                clicked = Some(NoteLink::Input(change.input));
+            }
+        }
+    }
+    if !note.watch_out.is_empty() {
+        let warn = ui.visuals().warn_fg_color;
+        ui.label(egui::RichText::new(WATCH_OUT).strong().color(warn));
+        for line in note.watch_out {
+            ui.add(egui::Label::new(egui::RichText::new(glyph_safe(line)).color(warn)).wrap());
+        }
+    }
+    egui::CollapsingHeader::new(WHERE_FROM)
+        .id_salt(("magcoupling_note_sources", note.id))
+        .default_open(false)
+        .show(ui, |ui| {
+            for source in note.sources {
+                ui.add(
+                    egui::Label::new(egui::RichText::new(glyph_safe(source)).small().weak()).wrap(),
+                );
+            }
+        });
+    clicked
+}
+
+/// One change entry on one wrapped line: its step word, its input's display label (a link, or
+/// plain text and the reason), then ": " and its text. True when the link was clicked.
+fn change_ui(ui: &mut egui::Ui, change: &Change, view: &NoteView<'_>) -> bool {
+    let label = glyph_safe(label_for(change.input));
+    let mut clicked = false;
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        ui.label(format!("{} ", change.step.word()));
+        match unlinked_reason(change, view) {
+            Some(reason) => {
+                ui.label(label);
+                ui.weak(format!(" ({reason})"));
+            }
+            None => clicked = ui.link(label).clicked(),
+        }
+        ui.add(egui::Label::new(format!(": {}", glyph_safe(change.text))).wrap());
+    });
+    clicked
 }
 
 /// A note opened on its own: links to the equations it explains (a family's template is left
-/// out), then the note. Returns the equation clicked.
-fn note_alone_ui(ui: &mut egui::Ui, note: &Note) -> Option<String> {
+/// out), then the note. Returns the equation clicked and the note's link clicked.
+fn note_alone_ui(
+    ui: &mut egui::Ui,
+    note: &Note,
+    view: &NoteView<'_>,
+) -> (Option<String>, Option<NoteLink>) {
     let paths: Vec<&str> = note
         .equations
         .iter()
@@ -637,15 +763,15 @@ fn note_alone_ui(ui: &mut egui::Ui, note: &Note) -> Option<String> {
             }
         });
     }
-    note_ui(ui, note);
-    clicked
+    let link = note_ui(ui, note, view);
+    (clicked, link)
 }
 
 /// The open equation: its label (and with `show_details` its cell), the equation large (a term
 /// clicked is followed), the value, with `show_details` the corrections it embodies (their
-/// titles on hover), with `explain` its teaching note, then the term list, its swatches faded
-/// while `others_marked`, a term's internal name on hover with `show_details`. Returns the term
-/// clicked.
+/// titles on hover), with `explain` its teaching note (drawn against `view`), then the term
+/// list, its swatches faded while `others_marked`, a term's internal name on hover with
+/// `show_details`. Returns the term clicked and the note's link clicked.
 fn equation_body(
     ui: &mut egui::Ui,
     eq: &Equation,
@@ -653,8 +779,10 @@ fn equation_body(
     others_marked: bool,
     explain: bool,
     show_details: bool,
-) -> Option<String> {
+    view: &NoteView<'_>,
+) -> (Option<String>, Option<NoteLink>) {
     let mut clicked = None;
+    let mut link = None;
     if show_details {
         ui.weak(format!(
             "{} ({})",
@@ -701,7 +829,7 @@ fn equation_body(
     if explain {
         ui.separator();
         match notes::note_for(&eq.target) {
-            Some(note) => note_ui(ui, note),
+            Some(note) => link = note_ui(ui, note, view),
             None => {
                 ui.weak(NO_NOTE);
             }
@@ -767,7 +895,7 @@ fn equation_body(
                     }
                 });
         });
-    clicked
+    (clicked, link)
 }
 
 /// The colour of the family template of `eq` that covers `path`.
@@ -1008,7 +1136,7 @@ mod tests {
         use crate::gui::test_support::{SCREEN, flat_shapes, sized_frame};
         let (inputs, results) = design();
         let output = sized_frame(ctx, SCREEN, Vec::new(), |ui| {
-            explorer_ui(ui, explorer, &inputs, &results, false);
+            explorer_ui(ui, explorer, &inputs, &results, false, &nothing_held);
         });
         flat_shapes(&output)
             .into_iter()
@@ -1233,7 +1361,7 @@ mod tests {
             &egui::Context::default(),
             SCREEN,
             |output| text_center(output, text),
-            |ui| explorer_ui(ui, explorer, &inputs, &results, show_details),
+            |ui| explorer_ui(ui, explorer, &inputs, &results, show_details, &nothing_held),
         )
     }
 
@@ -1325,5 +1453,338 @@ mod tests {
             Some("metal.variation")
         );
         assert!(!explorer.open);
+    }
+
+    /// The view of a design on which no input is held.
+    fn nothing_held(_: &str) -> Option<String> {
+        None
+    }
+
+    /// A note with a change entry of each kind, for the renderer's own tests (no shipped note
+    /// has change entries before the note tasks rewrite them).
+    const RENDER_NOTE: Note = Note {
+        id: "test.render",
+        title: "A note to draw",
+        equations: &[],
+        sentences: &["The first sentence of the note.", "The second sentence."],
+        change: &[
+            Change {
+                input: "metal.face_gap_mm",
+                step: notes::Step::Lower,
+                aim: Some(("model.pullout_Nm", notes::Sense::Up)),
+                text: "the entry on the face gap.",
+            },
+            Change {
+                input: "coupling.op_temp_C",
+                step: notes::Step::Raise,
+                aim: Some(("model.pullout_Nm", notes::Sense::Down)),
+                text: "the entry on the operating temperature.",
+            },
+            Change {
+                input: "materials.parts.back_iron",
+                step: notes::Step::Choose,
+                aim: None,
+                text: "the entry on the back iron.",
+            },
+        ],
+        watch_out: &["The first watch-out.", "The second watch-out."],
+        diagram: None,
+        sources: &["The first source.", "The second source."],
+        review: Review::Draft,
+    };
+
+    /// One frame of `note` drawn against `view` with `events`: what egui painted and the link a
+    /// click asked for.
+    fn note_frame(
+        ctx: &egui::Context,
+        note: &Note,
+        view: &NoteView<'_>,
+        events: Vec<egui::Event>,
+    ) -> (egui::FullOutput, Option<NoteLink>) {
+        use crate::gui::test_support::{SCREEN, sized_frame};
+        let mut link = None;
+        let output = sized_frame(ctx, SCREEN, events, |ui| {
+            if let Some(clicked) = note_ui(ui, note, view) {
+                link = Some(clicked);
+            }
+        });
+        (output, link)
+    }
+
+    /// Clicks the first drawn text equal to `text` (move, press, release): the link the click
+    /// asked for, and a frame drawn once a fold the click opened has settled.
+    fn click_in_note(
+        ctx: &egui::Context,
+        note: &Note,
+        view: &NoteView<'_>,
+        text: &str,
+    ) -> (Option<NoteLink>, egui::FullOutput) {
+        use crate::gui::test_support::{primary_button, text_rect};
+        let (output, _) = note_frame(ctx, note, view, Vec::new());
+        // A text in a wrapped row is laid out from the row's start, so the left part of its rect
+        // covers the widgets before it on that row: click its last character.
+        let rect = text_rect(&output, text).unwrap_or_else(|| panic!("no text {text:?}"));
+        let at = egui::pos2(rect.max.x - 2.0, rect.center().y);
+        note_frame(ctx, note, view, vec![egui::Event::PointerMoved(at)]);
+        note_frame(ctx, note, view, vec![primary_button(at, true)]);
+        let (_, link) = note_frame(ctx, note, view, vec![primary_button(at, false)]);
+        let mut output = note_frame(ctx, note, view, Vec::new()).0;
+        for _ in 0..15 {
+            output = note_frame(ctx, note, view, Vec::new()).0;
+        }
+        (link, output)
+    }
+
+    #[test]
+    fn a_note_draws_its_parts_in_order_with_its_sources_folded_until_clicked() {
+        use crate::gui::test_support::{drawn_texts, text_color, text_rect};
+        let ctx = egui::Context::default();
+        let (inputs, results) = design();
+        let view = NoteView {
+            inputs: &inputs,
+            results: &results,
+            held: &nothing_held,
+        };
+        note_frame(&ctx, &RENDER_NOTE, &view, Vec::new());
+        let (output, _) = note_frame(&ctx, &RENDER_NOTE, &view, Vec::new());
+        let texts = drawn_texts(&output);
+        let count = |text: &str| texts.iter().filter(|t| *t == text).count();
+        let once = [RENDER_NOTE.title, WHAT_TO_CHANGE, WATCH_OUT, WHERE_FROM]
+            .into_iter()
+            .chain(RENDER_NOTE.sentences.iter().copied())
+            .chain(RENDER_NOTE.watch_out.iter().copied());
+        for text in once {
+            assert_eq!(count(text), 1, "{text}");
+        }
+        for change in RENDER_NOTE.change {
+            assert_eq!(
+                count(&format!("{} ", change.step.word())),
+                1,
+                "{}",
+                change.input
+            );
+            assert_eq!(count(label_for(change.input)), 1, "{}", change.input);
+            assert_eq!(count(&format!(": {}", change.text)), 1, "{}", change.input);
+        }
+        for source in RENDER_NOTE.sources {
+            assert_eq!(count(source), 0, "the fold starts closed: {source}");
+        }
+        // Top to bottom: what it is, what to change, watch out, where this comes from.
+        let top = |text: &str| text_rect(&output, text).unwrap().min.y;
+        let order = [
+            RENDER_NOTE.sentences[1],
+            WHAT_TO_CHANGE,
+            label_for(RENDER_NOTE.change[2].input),
+            WATCH_OUT,
+            RENDER_NOTE.watch_out[1],
+            WHERE_FROM,
+        ];
+        for pair in order.windows(2) {
+            assert!(top(pair[0]) < top(pair[1]), "{pair:?}");
+        }
+        let warn = ctx.style().visuals.warn_fg_color;
+        for line in RENDER_NOTE.watch_out {
+            assert_eq!(text_color(&output, line), Some(warn), "{line}");
+        }
+        let (link, output) = click_in_note(&ctx, &RENDER_NOTE, &view, WHERE_FROM);
+        assert_eq!(link, None, "the fold is no link to an input");
+        let texts = drawn_texts(&output);
+        for source in RENDER_NOTE.sources {
+            assert!(texts.iter().any(|t| t == source), "{source}");
+        }
+    }
+
+    #[test]
+    fn a_free_input_s_label_is_a_link_to_its_row_and_the_text_is_not() {
+        let ctx = egui::Context::default();
+        let (inputs, results) = design();
+        let view = NoteView {
+            inputs: &inputs,
+            results: &results,
+            held: &nothing_held,
+        };
+        for change in RENDER_NOTE.change {
+            let (link, _) = click_in_note(&ctx, &RENDER_NOTE, &view, label_for(change.input));
+            assert_eq!(
+                link,
+                Some(NoteLink::Input(change.input)),
+                "{}",
+                change.input
+            );
+            let text = format!(": {}", change.text);
+            let (link, _) = click_in_note(&ctx, &RENDER_NOTE, &view, &text);
+            assert_eq!(link, None, "{text}");
+        }
+    }
+
+    #[test]
+    fn an_input_that_is_not_free_is_plain_text_with_the_reason() {
+        use crate::gui::test_support::drawn_texts;
+        let ctx = egui::Context::default();
+        let (inputs, results) = design();
+        let held_entry = &RENDER_NOTE.change[0];
+        let held = |path: &str| (path == held_entry.input).then(|| HELD_BY_AUTO.to_owned());
+        let view = NoteView {
+            inputs: &inputs,
+            results: &results,
+            held: &held,
+        };
+        let (link, output) = click_in_note(&ctx, &RENDER_NOTE, &view, label_for(held_entry.input));
+        assert_eq!(link, None, "a held input is no link");
+        let reason = format!(" ({HELD_BY_AUTO})");
+        assert_eq!(
+            drawn_texts(&output)
+                .iter()
+                .filter(|t| **t == reason)
+                .count(),
+            1
+        );
+        let free = &RENDER_NOTE.change[1];
+        let (link, _) = click_in_note(&ctx, &RENDER_NOTE, &view, label_for(free.input));
+        assert_eq!(
+            link,
+            Some(NoteLink::Input(free.input)),
+            "the others stay links"
+        );
+    }
+
+    #[test]
+    fn an_entry_whose_input_cannot_move_its_way_names_why() {
+        use crate::engine::explain::notes::Step;
+        let range = |path: &str| {
+            InputCatalogue::get()
+                .entry(path)
+                .unwrap()
+                .meta
+                .range
+                .unwrap()
+        };
+        let entry = |input, step| Change {
+            input,
+            step,
+            aim: None,
+            text: "",
+        };
+        let reason = |inputs: &DesignInputs, change: &Change| {
+            let results = compute_all(inputs);
+            let view = NoteView {
+                inputs,
+                results: &results,
+                held: &nothing_held,
+            };
+            unlinked_reason(change, &view)
+        };
+        let gap = "metal.face_gap_mm";
+        let (lowest, highest) = (range(gap).min, range(gap).max);
+        let mut inputs = DesignInputs::default();
+        assert_eq!(reason(&inputs, &entry(gap, Step::Raise)), None);
+        assert_eq!(reason(&inputs, &entry(gap, Step::Lower)), None);
+        inputs.set(gap, Value::Num(highest)).unwrap();
+        assert_eq!(
+            reason(&inputs, &entry(gap, Step::Raise)).as_deref(),
+            Some(AT_TOP)
+        );
+        assert_eq!(reason(&inputs, &entry(gap, Step::Lower)), None);
+        inputs.set(gap, Value::Num(lowest)).unwrap();
+        assert_eq!(
+            reason(&inputs, &entry(gap, Step::Lower)).as_deref(),
+            Some(AT_BOTTOM)
+        );
+        assert_eq!(reason(&inputs, &entry(gap, Step::Raise)), None);
+        // A count at its end; a choice and a blank optional number are never at an end.
+        let mut poles = DesignInputs::default();
+        poles.coupling.npole = range("coupling.npole").max as i64;
+        assert_eq!(
+            reason(&poles, &entry("coupling.npole", Step::Raise)).as_deref(),
+            Some(AT_TOP)
+        );
+        let defaults = DesignInputs::default();
+        assert_eq!(
+            reason(&defaults, &entry("materials.parts.back_iron", Step::Choose)),
+            None
+        );
+        assert_eq!(
+            reason(
+                &defaults,
+                &entry("coupling.magnets.axial_length_mm", Step::Raise)
+            ),
+            None
+        );
+        // A held input names why it is held, whatever its slider says.
+        let held = |_: &str| Some(HELD_BY_AUTO.to_owned());
+        let results = compute_all(&inputs);
+        let view = NoteView {
+            inputs: &inputs,
+            results: &results,
+            held: &held,
+        };
+        assert_eq!(
+            unlinked_reason(&entry(gap, Step::Lower), &view).as_deref(),
+            Some(HELD_BY_AUTO)
+        );
+    }
+
+    #[test]
+    fn held_reason_names_auto_and_the_pick_that_sets_an_input() {
+        use crate::engine::explain::plain::plain_text_violations;
+        use crate::engine::picks::BACK_IRON_PICK;
+        use crate::engine::sizing::FreeVariable;
+        use crate::gui::sizing::SizingMode;
+        let inputs = DesignInputs::default();
+        let off = SizingState::default();
+        let auto = SizingState {
+            mode: SizingMode::TorqueToMagnets,
+            variable: FreeVariable::AxialLength,
+        };
+        let length = FreeVariable::AxialLength.path();
+        assert_eq!(held_reason(&off, &inputs, length), None);
+        assert_eq!(
+            held_reason(&auto, &inputs, length).as_deref(),
+            Some(HELD_BY_AUTO)
+        );
+        assert_eq!(held_reason(&auto, &inputs, "metal.face_gap_mm"), None);
+        let part_pick = format!(
+            "set by the {} pick",
+            label_for("coupling.magnets.part_inner")
+        );
+        assert_eq!(
+            held_reason(&off, &inputs, "coupling.magnets.manual_inner_br_T"),
+            Some(part_pick.clone())
+        );
+        let steel = "materials.steel.cte_per_C";
+        assert_eq!(held_reason(&off, &inputs, steel), None);
+        let mut picked = inputs.clone();
+        picked.materials.parts.back_iron = 2;
+        let steel_pick = format!("set by the {} pick", label_for(BACK_IRON_PICK));
+        assert_eq!(held_reason(&off, &picked, steel), Some(steel_pick.clone()));
+        for reason in [
+            HELD_BY_AUTO.to_owned(),
+            part_pick,
+            steel_pick,
+            AT_TOP.into(),
+            AT_BOTTOM.into(),
+        ] {
+            assert_eq!(
+                plain_text_violations(&reason),
+                Vec::<&str>::new(),
+                "{reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_note_s_link_highlights_its_input_s_row_and_keeps_the_note_open() {
+        let mut explorer = Explorer::default();
+        explorer.open_note("a5.low_saturation");
+        explorer.follow_note_link(NoteLink::Input("metal.cup_wall_corner_mm"));
+        assert_eq!(
+            explorer.focus(),
+            Some(&Focus {
+                path: "metal.cup_wall_corner_mm".to_owned(),
+                scroll: true,
+            })
+        );
+        assert_eq!(explorer.note(), Some("a5.low_saturation"));
+        assert!(explorer.open);
     }
 }

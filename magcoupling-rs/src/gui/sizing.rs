@@ -124,6 +124,13 @@ pub(crate) fn set_by_auto(variable: FreeVariable) -> impl Iterator<Item = &'stat
     std::iter::once(variable.path()).chain(followers.iter().copied())
 }
 
+/// Whether Auto holds the input at `path` on `state`: in Torque -> Magnets, one of the inputs
+/// the design shown sets ([`set_by_auto`]). Its row is locked at the value shown, and a teaching
+/// note's change entry draws it as plain text, "held by Auto".
+pub(crate) fn held_by_auto(state: &SizingState, path: &str) -> bool {
+    state.mode == SizingMode::TorqueToMagnets && set_by_auto(state.variable).any(|p| p == path)
+}
+
 /// `edited`, a Size-tab edit of the design shown ([`sized`]), with the inputs Auto set back at
 /// their values in `own`: while Auto is on, the inputs keep their own value of the variable it
 /// sets until Auto turns off (decision M41-7). For ring size these are the ring radius and the
@@ -382,6 +389,36 @@ mod tests {
     use super::*;
     use crate::compute_all;
     use crate::engine::sizing::solve;
+
+    #[test]
+    fn auto_holds_exactly_the_inputs_it_sets_and_only_in_torque_to_magnets() {
+        use std::collections::BTreeSet;
+        let paths: Vec<String> = crate::engine::meta::input_rows(&DesignInputs::default())
+            .into_iter()
+            .map(|r| r.path)
+            .collect();
+        for variable in FreeVariable::ALL {
+            for mode in SizingMode::ALL {
+                let state = SizingState { mode, variable };
+                let held: BTreeSet<&str> = paths
+                    .iter()
+                    .map(String::as_str)
+                    .filter(|p| held_by_auto(&state, p))
+                    .collect();
+                let want: BTreeSet<&str> = match mode {
+                    SizingMode::TorqueToMagnets => set_by_auto(variable).collect(),
+                    SizingMode::MagnetsToTorque => BTreeSet::new(),
+                };
+                assert_eq!(held, want, "{mode:?} {variable:?}");
+            }
+        }
+        // Ring size holds the cap OD and thread too, which follow the cup.
+        let ring = SizingState {
+            mode: SizingMode::TorqueToMagnets,
+            variable: FreeVariable::RingRadius,
+        };
+        assert!(held_by_auto(&ring, "metal.cap_od_mm"));
+    }
 
     #[test]
     fn every_mode_and_free_variable_round_trips_through_its_key() {
