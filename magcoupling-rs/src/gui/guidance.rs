@@ -1436,62 +1436,9 @@ pub fn design_status_text(status: &DesignStatus) -> String {
 
 // ------------------------------------------------------------------ plain words
 
-/// What [`plain_text_violations`] looks for, in its order: a workbook cell reference
-/// (`C\d{2,3}`), a correction id (`E\d{1,2}` as a whole id), the word "workbook" in any case
-/// (but in [`WORKBOOK_EXAMPLE`]'s exact phrase), and three names of the engine's provenance.
-pub const BANNED: [&str; 6] = [
-    "C\\d{2,3}",
-    "E\\d{1,2}",
-    "workbook",
-    "Addendum",
-    "Rust-only",
-    "Calculator!",
-];
-
-/// The phrase that may say "workbook": the design status line's.
-const ALLOWED_WORKBOOK: &str = "Workbook example";
-
-/// The [`BANNED`] patterns `text` contains, in [`BANNED`]'s order, each once. The guidance
-/// text is for engineers who are not reading the workbook: the tests of every task of the
-/// slice hold its strings to an empty list.
-pub fn plain_text_violations(text: &str) -> Vec<&'static str> {
-    let chars: Vec<char> = text.chars().collect();
-    let digits_after = |i: usize| {
-        chars[i + 1..]
-            .iter()
-            .take_while(|c| c.is_ascii_digit())
-            .count()
-    };
-    // C followed by two or more digits holds C\d{2,3}; E with one or two digits and then no
-    // letter, digit or underscore is E\d{1,2}\b.
-    let cell = chars
-        .iter()
-        .enumerate()
-        .any(|(i, &c)| c == 'C' && digits_after(i) >= 2);
-    let correction = chars.iter().enumerate().any(|(i, &c)| {
-        let digits = digits_after(i);
-        c == 'E'
-            && (1..=2).contains(&digits)
-            && chars
-                .get(i + 1 + digits)
-                .is_none_or(|&next| !next.is_alphanumeric() && next != '_')
-    });
-    let workbook =
-        text.to_lowercase().matches("workbook").count() > text.matches(ALLOWED_WORKBOOK).count();
-    let hits = [
-        cell,
-        correction,
-        workbook,
-        text.contains("Addendum"),
-        text.contains("Rust-only"),
-        text.contains("Calculator!"),
-    ];
-    BANNED
-        .iter()
-        .zip(hits)
-        .filter_map(|(&pattern, hit)| hit.then_some(pattern))
-        .collect()
-}
+// The plain-words guard lives in the engine (engine::explain::plain, pure std) so the engine's
+// tests hold the teaching notes to it; the GUI's texts use it from here.
+pub use crate::engine::explain::plain::{BANNED, plain_text_violations};
 
 // ------------------------------------------------------------------ the Problem builders
 
@@ -3283,44 +3230,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------ plain words
-
-    #[test]
-    fn plain_text_violations_names_each_banned_pattern() {
-        assert_eq!(
-            plain_text_violations("Too thin: raise Metal design C122 to at least 2.0 mm"),
-            ["C\\d{2,3}"]
-        );
-        assert_eq!(plain_text_violations("E3 E7 E8"), ["E\\d{1,2}"]);
-        assert_eq!(plain_text_violations("corrections E20."), ["E\\d{1,2}"]);
-        assert_eq!(
-            plain_text_violations("Calculator!C93"),
-            ["C\\d{2,3}", "Calculator!"]
-        );
-        assert_eq!(
-            plain_text_violations("Rust-only result (no workbook cell)"),
-            ["workbook", "Rust-only"]
-        );
-        assert_eq!(plain_text_violations("Spec Addendum A5"), ["Addendum"]);
-        assert_eq!(plain_text_violations("WORKBOOK"), ["workbook"]);
-        // The status line's phrase excuses itself only, and only as written.
-        assert_eq!(
-            plain_text_violations("Workbook example design from the workbook"),
-            ["workbook"]
-        );
-        assert_eq!(plain_text_violations("workbook example"), ["workbook"]);
-        for clean in [
-            "Workbook example design: fails 3 of 8 checks",
-            "2.000e7 mm",
-            "E123",
-            "C1",
-            "50.00 °C",
-            "ISO 4762 M4 x 14, class 12.9",
-            "Raise Minimum outer return ring wall",
-            "",
-        ] {
-            assert!(plain_text_violations(clean).is_empty(), "{clean:?}");
-        }
-    }
+    // (The guard's own examples are in engine::explain::plain, where gate 4 runs them.)
 
     #[test]
     fn no_guide_text_carries_workbook_jargon() {

@@ -25,11 +25,14 @@
 //! - [`symbols`]: display symbols of inputs and other leaf terms;
 //! - [`scope`]: the v1 scope (decision 31) and which chains are written;
 //! - [`notes`]: the A4 teaching notes, the "start here" order and the accuracy gate;
+//! - [`plain`]: the plain-words guard over every text on screen (guidance slice 2, spec 3.4),
+//!   shared with the GUI;
 //! - [`render`]: a plain-text rendering (tooltips fallback, export, tests).
 
 pub mod eval;
 pub mod markup;
 pub mod notes;
+pub mod plain;
 pub mod record;
 pub mod records;
 pub mod registry;
