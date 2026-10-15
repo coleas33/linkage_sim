@@ -42,7 +42,7 @@ use std::f64::consts::PI;
 use crate::engine::meta::{NumOrText, Value};
 use crate::gui::dashboard::{Level, verdict_level};
 use crate::gui::format::{format_value, with_unit};
-use crate::gui::plain_text::label_for;
+use crate::gui::plain_text::{CUP_WALL_INPUT, label_for};
 use crate::{DesignInputs, DesignResults};
 
 /// A point [mm]: x right, y up.
@@ -777,17 +777,21 @@ fn side_view(
     }
 }
 
-/// The notes under the views: the wall rule's cup wall (Addendum A1, decision 27) and the two
-/// design checks (decision 28, flagged only), each while it applies (decision M42-9).
+/// The notes under the views: the wall the cup wall check compares the wall input with
+/// (Addendum A1, decision 27) and the two design checks (decision 28, flagged only), each while
+/// it applies (decision M42-9).
 fn notes(inputs: &DesignInputs, results: &DesignResults) -> Vec<Note> {
     let md = &inputs.metal;
     let mut notes = Vec::new();
-    if let NumOrText::Num(wall) = results.materials.cup_wall_suggested_mm {
+    // The rule's own wall, not the failing verdict's suggestion (that wall rounded up to
+    // 0.1 mm): a wall between the two passes the check. The suggestion reads n/a exactly when
+    // there is no back iron, and then there is no rule.
+    if matches!(results.materials.cup_wall_suggested_mm, NumOrText::Num(_)) {
         notes.push(Note {
             text: format!(
                 "{WALL_RULE}: at least {} of cup wall at the pocket corners; {} is {}",
-                mm(wall),
-                label_for("metal.cup_wall_corner_mm"),
+                mm(results.materials.backiron_thickness_needed_mm),
+                label_for(CUP_WALL_INPUT),
                 mm(md.cup_wall_corner_mm)
             ),
             level: None,
@@ -1207,34 +1211,69 @@ mod tests {
         assert_eq!(checks(&equal).len(), 1);
     }
 
+    /// The wall-rule line under the views of `inputs`, if one is drawn.
+    fn wall_rule_line(inputs: &DesignInputs) -> Option<Note> {
+        of(inputs)
+            .notes
+            .into_iter()
+            .find(|n| n.text.starts_with(WALL_RULE))
+    }
+
+    /// The wall-rule line `inputs` draws: the wall the cup wall check compares with, then the
+    /// wall input by its label and its value.
+    fn expected_wall_rule(inputs: &DesignInputs) -> String {
+        format!(
+            "Wall rule: at least {} of cup wall at the pocket corners; {} is {}",
+            mm(compute_all(inputs).materials.backiron_thickness_needed_mm),
+            label_for(CUP_WALL_INPUT),
+            mm(inputs.metal.cup_wall_corner_mm)
+        )
+    }
+
     #[test]
     fn the_wall_rule_line_shows_unless_there_is_no_back_iron() {
-        let hint = |inputs: &DesignInputs| {
-            of(inputs)
-                .notes
-                .into_iter()
-                .find(|n| n.text.starts_with(WALL_RULE))
-        };
-        let note = hint(&DesignInputs::default()).expect("a steel circuit has a wall rule");
         let defaults = DesignInputs::default();
-        let NumOrText::Num(wall) = compute_all(&defaults).materials.cup_wall_suggested_mm else {
-            panic!("a steel circuit has a wall rule")
-        };
-        assert_eq!(
-            note.text,
-            format!(
-                "Wall rule: at least {} of cup wall at the pocket corners; {} is {}",
-                mm(wall),
-                label_for("metal.cup_wall_corner_mm"),
-                mm(defaults.metal.cup_wall_corner_mm)
-            )
-        );
+        let note = wall_rule_line(&defaults).expect("a steel circuit has a wall rule");
+        assert_eq!(note.text, expected_wall_rule(&defaults));
         assert_eq!(
             crate::gui::guidance::plain_text_violations(&note.text),
             Vec::<&str>::new()
         );
         assert_eq!(note.level, None);
-        assert_eq!(hint(&design(|i| i.coupling.backiron = 0)), None);
+        assert_eq!(wall_rule_line(&design(|i| i.coupling.backiron = 0)), None);
+    }
+
+    #[test]
+    fn the_wall_rule_line_asks_for_the_wall_the_check_compares_with() {
+        // The cup wall check compares the wall with the rule's own wall; the failing verdict's
+        // suggestion rounds that up to 0.1 mm. Stepping the wall's slider up from the defaults,
+        // the first wall the check passes lies below that rounding: the line must not ask for
+        // more than the check does.
+        let range = crate::gui::inputs::InputCatalogue::get()
+            .entry(CUP_WALL_INPUT)
+            .and_then(|entry| entry.meta.range)
+            .expect("the cup wall has a slider");
+        let mut inputs = DesignInputs::default();
+        let mut results = compute_all(&inputs);
+        while results.materials.cup_wall_check != "OK" {
+            inputs.metal.cup_wall_corner_mm = range
+                .step_from(inputs.metal.cup_wall_corner_mm, true)
+                .expect("the slider reaches a wall the check passes");
+            results = compute_all(&inputs);
+        }
+        let need = results.materials.backiron_thickness_needed_mm;
+        let wall = inputs.metal.cup_wall_corner_mm;
+        let NumOrText::Num(suggested) = results.materials.cup_wall_suggested_mm else {
+            panic!("a steel circuit has a wall rule")
+        };
+        // Not vacuous: the passing wall lies between the rule's wall and its rounding.
+        assert!(
+            need <= wall && wall < suggested,
+            "{need} {wall} {suggested}"
+        );
+        let note = wall_rule_line(&inputs).expect("a steel circuit has a wall rule");
+        assert_eq!(note.text, expected_wall_rule(&inputs));
+        assert!(!note.text.contains(&mm(suggested)), "{}", note.text);
     }
 
     #[test]

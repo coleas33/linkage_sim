@@ -8,11 +8,10 @@ mod common;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use common::{cell_values_for, code_names, num, provenance_words};
+use common::{cell_values_for, num, plain_problems};
 use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::Deviations;
-use magcoupling::engine::explain::plain::plain_text_violations;
 use magcoupling::engine::material_library::{
     BACK_IRON_CHOICES, CAP_HOUSING_CHOICES, SLEEVE_LINER_CHOICES, material,
 };
@@ -409,14 +408,8 @@ fn every_warning_text_reads_in_plain_words() {
     use magcoupling::engine::warnings::WARNING_RULES;
     let mut failures = Vec::new();
     for rule in WARNING_RULES {
-        let guard = plain_text_violations(rule.text);
-        let provenance = provenance_words(rule.text);
-        let code = code_names(rule.text);
-        if !(guard.is_empty() && provenance.is_empty() && code.is_empty()) {
-            failures.push(format!(
-                "{}: {guard:?} {provenance:?} {code:?}: {}",
-                rule.id, rule.text
-            ));
+        if let Some(problems) = plain_problems(rule.text) {
+            failures.push(format!("{}: {problems}: {}", rule.id, rule.text));
         }
     }
     assert!(failures.is_empty(), "{failures:#?}");

@@ -880,3 +880,31 @@ The relevant ones were checked above: T-I, T-K and T-L on the verdict; "a hotter
 
 - The typesetter draws `fmt`'s decimals as "(to 1 decimals)" (`typeset.rs:662`, and the oracle at 1626). It sits beside the changed literal in the cup wall formula.
 - It is pre-existing wording, not a T10 string. A later pass could singularize it for 1.
+
+### Task review fix round 1 (2026-10-15): the wall-rule line
+
+- The task code review (`task-10-review.md`, Important 1) found a wrong statement in the Geometry
+  tab's wall-rule line. The line printed the failing verdict's suggestion,
+  `materials.cup_wall_suggested_mm` (the rule's wall rounded up to 0.1 mm), as the rule. The
+  check compares the wall with the unrounded rule (`engine/materials.rs`, `compute`), and the
+  wall's slider steps by 0.05 mm. At the defaults with a 1.95 mm wall, the dashboard reads OK
+  while the line asked for at least 2.000 mm. Round 1's SF-5 raised only the number's format.
+- The line now prints the rule's own wall, `materials.backiron_thickness_needed_mm`. It is still
+  drawn only while `materials.cup_wall_suggested_mm` is a number, so it drops without back iron.
+  - Old, at a 1.95 mm wall: "Wall rule: at least 2.000 mm of cup wall at the pocket corners;
+    Minimum outer return ring wall is 1.950 mm"
+  - New, at a 1.95 mm wall: "Wall rule: at least 1.919 mm of cup wall at the pocket corners;
+    Minimum outer return ring wall is 1.950 mm"
+  - At the defaults (1.8 mm): "Wall rule: at least 1.919 mm of cup wall at the pocket corners;
+    Minimum outer return ring wall is 1.800 mm"
+- The line now quotes the same need as the cup wall guide's Problem line ("the flux it carries
+  needs 1.919 mm at the 1.500 T design flux density"). The failing verdict still advises "at least
+  2.0 mm", the suggestion, which passes the check, so the two numbers differ on purpose: the
+  rule's wall and its rounding. SF-5 (one number in two formats) no longer applies.
+- New test: `geometry::tests::the_wall_rule_line_asks_for_the_wall_the_check_compares_with`. It
+  steps the wall's slider up from the defaults to the first wall the check passes (1.95 mm),
+  checks that the wall lies between the rule's wall and its rounding, and pins the line.
+- A G-3 re-check of this line follows.
+- Left for the whole-branch review, as the task review says: T9's engine label of
+  `materials.cup_wall_suggested_mm`, "Cup wall the rule asks for at the pocket corners", has the
+  same conflation.

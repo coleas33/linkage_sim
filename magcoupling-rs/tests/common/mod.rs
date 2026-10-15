@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use magcoupling::engine::api::{DesignInputs, compute_all_with};
 use magcoupling::engine::deviations::{DeviationStatus, Deviations, REGISTRY};
+use magcoupling::engine::explain::plain::plain_text_violations;
 use magcoupling::engine::meta::{Value, input_rows, result_rows};
 
 /// A ported input group of `DesignInputs` and its workbook input cells
@@ -270,6 +271,20 @@ pub fn code_names(text: &str) -> Vec<String> {
         })
         .map(|w| w.iter().collect())
         .collect()
+}
+
+/// What keeps `text` from reading in plain words on screen, as every plain-words test reports
+/// it: the plain-words guard's hits (`engine::explain::plain::plain_text_violations`), then
+/// [`provenance_words`], then [`code_names`], each as a list. `None` when all three are empty.
+pub fn plain_problems(text: &str) -> Option<String> {
+    let guard = plain_text_violations(text);
+    let provenance = provenance_words(text);
+    let code = code_names(text);
+    if guard.is_empty() && provenance.is_empty() && code.is_empty() {
+        None
+    } else {
+        Some(format!("{guard:?} {provenance:?} {code:?}"))
+    }
 }
 
 /// The data file whose cases vary every input group and compare every result.

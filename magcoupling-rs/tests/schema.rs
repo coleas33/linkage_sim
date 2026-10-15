@@ -20,8 +20,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
 use common::{
-    code_names, data_path, provenance_words, read_text, report, reworded_help, snapshot,
-    value_to_json,
+    code_names, data_path, plain_problems, provenance_words, read_text, report, reworded_help,
+    snapshot, value_to_json,
 };
 use magcoupling::engine::api::{DesignInputs, compute_all};
 use magcoupling::engine::deviations::Deviations;
@@ -487,6 +487,21 @@ fn the_text_helpers_find_what_they_name() {
     ] {
         assert!(code_names(clean).is_empty(), "{clean:?}");
     }
+    // The three together, as every plain-words test reports a text: the guard's hits, then the
+    // provenance words, then the code names; nothing for plain words.
+    assert_eq!(
+        plain_problems("the workbook's value").as_deref(),
+        Some(r#"["workbook"] [] []"#)
+    );
+    assert_eq!(
+        plain_problems("an audit finding").as_deref(),
+        Some(r#"[] ["audit"] []"#)
+    );
+    assert_eq!(
+        plain_problems("when f_end is 0").as_deref(),
+        Some(r#"[] [] ["f_e"]"#)
+    );
+    assert_eq!(plain_problems("The cup wall check asks for it."), None);
     // The word and sentence counters are the plain-words module's, tested there (A-16).
 }
 
@@ -534,14 +549,8 @@ fn engine_owned_help_is_plain_and_short() {
         let mut strings = vec![("label", t.label), ("help", t.help)];
         strings.extend(t.choices.iter().map(|&choice| ("choice", choice)));
         for (what, text) in strings {
-            let guard = plain_text_violations(text);
-            let provenance = provenance_words(text);
-            let code = code_names(text);
-            if !(guard.is_empty() && provenance.is_empty() && code.is_empty()) {
-                failures.push(format!(
-                    "{}: {what} {guard:?} {provenance:?} {code:?}: {text:?}",
-                    t.path
-                ));
+            if let Some(problems) = plain_problems(text) {
+                failures.push(format!("{}: {what} {problems}: {text:?}", t.path));
             }
         }
         // Help style (spec 3.5): at most 30 words, in one or two sentences.

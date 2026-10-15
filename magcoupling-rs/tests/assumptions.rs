@@ -12,13 +12,12 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use common::{code_names, provenance_words};
+use common::plain_problems;
 use magcoupling::engine::api::{DesignInputs, compute_all};
 use magcoupling::engine::assumptions::{
     ASSUMPTIONS, any_modified, modified, reset_to_workbook_defaults, states,
 };
 use magcoupling::engine::deviations::Deviations;
-use magcoupling::engine::explain::plain::plain_text_violations;
 use magcoupling::engine::meta::{FieldType, InputMeta, InputSet, Value, input_rows, result_rows};
 
 /// The metadata of the input at `path`.
@@ -266,14 +265,8 @@ fn every_label_and_rationale_reads_in_plain_words() {
     let mut failures = Vec::new();
     for a in &ASSUMPTIONS {
         for (what, text) in [("label", a.label), ("rationale", a.rationale)] {
-            let guard = plain_text_violations(text);
-            let provenance = provenance_words(text);
-            let code = code_names(text);
-            if !(guard.is_empty() && provenance.is_empty() && code.is_empty()) {
-                failures.push(format!(
-                    "{}: {what} {guard:?} {provenance:?} {code:?}: {text:?}",
-                    a.id
-                ));
+            if let Some(problems) = plain_problems(text) {
+                failures.push(format!("{}: {what} {problems}: {text:?}", a.id));
             }
         }
     }
