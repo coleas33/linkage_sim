@@ -41,7 +41,7 @@ use std::f64::consts::PI;
 
 use crate::engine::meta::{NumOrText, Value};
 use crate::gui::dashboard::{Level, verdict_level};
-use crate::gui::format::{format_value, with_unit};
+use crate::gui::format::{SIGNIFICANT_DIGITS, format_value, with_unit};
 use crate::gui::plain_text::{CUP_WALL_INPUT, label_for};
 use crate::{DesignInputs, DesignResults};
 
@@ -258,6 +258,17 @@ pub(crate) fn finite(p: Mm) -> bool {
 /// A length as the callouts show it: four significant digits and the unit.
 pub fn mm(x: f64) -> String {
     with_unit(format_value(&Value::Num(x)), "mm")
+}
+
+/// A minimum length as [`mm`] shows it, rounded up at the last digit shown rather than to the
+/// nearest, so a wall shown equal to it meets it. A number that is not finite or not positive
+/// is shown as it is.
+pub fn mm_at_least(x: f64) -> String {
+    if !x.is_finite() || x <= 0.0 {
+        return mm(x);
+    }
+    let step = 10f64.powi(x.log10().floor() as i32 - (SIGNIFICANT_DIGITS - 1));
+    mm((x / step).ceil() * step)
 }
 
 /// The unit vector at angle `a` [rad].
@@ -784,13 +795,14 @@ fn notes(inputs: &DesignInputs, results: &DesignResults) -> Vec<Note> {
     let md = &inputs.metal;
     let mut notes = Vec::new();
     // The rule's own wall, not the failing verdict's suggestion (that wall rounded up to
-    // 0.1 mm): a wall between the two passes the check. The suggestion reads n/a exactly when
-    // there is no back iron, and then there is no rule.
+    // 0.1 mm): a wall between the two passes the check. It is a minimum, so it is rounded up
+    // at its last shown digit: a wall shown equal to it passes. The suggestion reads n/a
+    // exactly when there is no back iron, and then there is no rule.
     if matches!(results.materials.cup_wall_suggested_mm, NumOrText::Num(_)) {
         notes.push(Note {
             text: format!(
                 "{WALL_RULE}: at least {} of cup wall at the pocket corners; {} is {}",
-                mm(results.materials.backiron_thickness_needed_mm),
+                mm_at_least(results.materials.backiron_thickness_needed_mm),
                 label_for(CUP_WALL_INPUT),
                 mm(md.cup_wall_corner_mm)
             ),
@@ -1211,6 +1223,20 @@ mod tests {
         assert_eq!(checks(&equal).len(), 1);
     }
 
+    #[test]
+    fn a_minimum_length_is_rounded_up_at_its_last_shown_digit() {
+        // Above the nearest digit, below it, past a power of ten, and exactly on a digit.
+        assert_eq!(mm_at_least(1.9501155), "1.951 mm");
+        assert_eq!(mm_at_least(1.9189136565), "1.919 mm");
+        assert_eq!(mm_at_least(0.532555), "0.5326 mm");
+        assert_eq!(mm_at_least(9.99996), "10.00 mm");
+        assert_eq!(mm_at_least(1.9), "1.900 mm");
+        // A number that is not finite or not positive is shown as it is.
+        for x in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.0, -1.25] {
+            assert_eq!(mm_at_least(x), mm(x), "{x}");
+        }
+    }
+
     /// The wall-rule line under the views of `inputs`, if one is drawn.
     fn wall_rule_line(inputs: &DesignInputs) -> Option<Note> {
         of(inputs)
@@ -1219,12 +1245,12 @@ mod tests {
             .find(|n| n.text.starts_with(WALL_RULE))
     }
 
-    /// The wall-rule line `inputs` draws: the wall the cup wall check compares with, then the
-    /// wall input by its label and its value.
+    /// The wall-rule line `inputs` draws: the wall the cup wall check compares with, rounded up
+    /// at its last shown digit, then the wall input by its label and its value.
     fn expected_wall_rule(inputs: &DesignInputs) -> String {
         format!(
             "Wall rule: at least {} of cup wall at the pocket corners; {} is {}",
-            mm(compute_all(inputs).materials.backiron_thickness_needed_mm),
+            mm_at_least(compute_all(inputs).materials.backiron_thickness_needed_mm),
             label_for(CUP_WALL_INPUT),
             mm(inputs.metal.cup_wall_corner_mm)
         )
@@ -1274,6 +1300,31 @@ mod tests {
         let note = wall_rule_line(&inputs).expect("a steel circuit has a wall rule");
         assert_eq!(note.text, expected_wall_rule(&inputs));
         assert!(!note.text.contains(&mm(suggested)), "{}", note.text);
+    }
+
+    #[test]
+    fn a_wall_shown_equal_to_the_wall_rule_passes_the_check() {
+        // A minimum is rounded up, never to the nearest digit. At 12 poles and a 1.23 T design
+        // flux density (slider values) the rule's wall lies a tenth of a micron above the 1.95 mm
+        // slider step: rounded to the nearest digit both read alike while the check fails.
+        let inputs = design(|i| {
+            i.coupling.npole = 12;
+            i.materials.steel.bsat_T = 1.23;
+            i.metal.cup_wall_corner_mm = 1.95;
+        });
+        let results = compute_all(&inputs);
+        let need = results.materials.backiron_thickness_needed_mm;
+        let wall = inputs.metal.cup_wall_corner_mm;
+        // Not vacuous: the wall fails, yet shows as the need does when rounded to the nearest.
+        assert_ne!(results.materials.cup_wall_check, "OK");
+        assert!(wall < need && mm(need) == mm(wall), "{need} {wall}");
+        let note = wall_rule_line(&inputs).expect("a steel circuit has a wall rule");
+        assert_eq!(note.text, expected_wall_rule(&inputs));
+        assert!(
+            !note.text.contains(&format!("at least {}", mm(wall))),
+            "{}",
+            note.text
+        );
     }
 
     #[test]

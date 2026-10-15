@@ -898,13 +898,158 @@ The relevant ones were checked above: T-I, T-K and T-L on the verdict; "a hotter
   - At the defaults (1.8 mm): "Wall rule: at least 1.919 mm of cup wall at the pocket corners;
     Minimum outer return ring wall is 1.800 mm"
 - The line now quotes the same need as the cup wall guide's Problem line ("the flux it carries
-  needs 1.919 mm at the 1.500 T design flux density"). The failing verdict still advises "at least
-  2.0 mm", the suggestion, which passes the check, so the two numbers differ on purpose: the
+  needs 1.919 mm at the 1.500 T design flux density"). Since the re-check below the line rounds it
+  up and the guide to the nearest digit, so the two can differ in the last digit (its SF-2). The
+  failing verdict still advises "at least 2.0 mm", the suggestion, which passes the check, so the two numbers differ on purpose: the
   rule's wall and its rounding. SF-5 (one number in two formats) no longer applies.
 - New test: `geometry::tests::the_wall_rule_line_asks_for_the_wall_the_check_compares_with`. It
   steps the wall's slider up from the defaults to the first wall the check passes (1.95 mm),
   checks that the wall lies between the rule's wall and its rounding, and pins the line.
-- A G-3 re-check of this line follows.
+- The G-3 re-check of this line ran: MUST_FIX, one item, applied (the re-review below). The rule's
+  wall is a minimum, so the line now rounds it up at its last digit (`geometry::mm_at_least`), so
+  a wall shown equal to it passes. The line is unchanged at the defaults (1.919 mm).
+  - Rounded to the nearest digit, 12 poles at a 1.23 T design flux density with a 1.95 mm wall
+    (slider values; the rule's wall is 1.9501155 mm) read "Wall rule: at least 1.950 mm of cup
+    wall at the pocket corners; Minimum outer return ring wall is 1.950 mm" beside the dashboard's
+    "Too thin: raise Minimum outer return ring wall to at least 2.0 mm".
+  - Now, at that design: "Wall rule: at least 1.951 mm of cup wall at the pocket corners; Minimum
+    outer return ring wall is 1.950 mm".
+  - Over the 379,620 slider designs (poles 2 to 40, design flux density 0.50 to 2.20 T, wall 0.50
+    to 6.00 mm, the defaults otherwise), the nearest digit disagreed with the check 19 times,
+    always at the wall just below the rule's; rounding up disagrees 0 times. The reviewer probed
+    this, and the fix reproduced both counts.
+  - New tests: `geometry::tests::a_wall_shown_equal_to_the_wall_rule_passes_the_check` (that
+    design) and `geometry::tests::a_minimum_length_is_rounded_up_at_its_last_shown_digit` (the
+    helper).
 - Left for the whole-branch review, as the task review says: T9's engine label of
   `materials.cup_wall_suggested_mm`, "Cup wall the rule asks for at the pocket corners", has the
   same conflation.
+
+### Re-review: code-review fix round 1
+
+- Reviewer: a fresh-context physics reviewer (session model), 2026-10-15, on commit `ba2627d`
+  (`task-10-textreview-1.md`).
+- Scope: the one string the task review's fix round 1 changed, the wall-rule line under the
+  Geometry tab's views (`gui/geometry.rs`, `notes()`), and every on-screen text whose meaning
+  depends on it. The notes dump does not cover it (it is a Geometry-tab line, not a guidance
+  note), so the reviewer probed the line with `compute_all` designs.
+- Verdict: MUST_FIX, one item. The claim is right: the line prints the wall the check compares
+  with, names the right place, writes no trap and passes the plain-words guard at every probe.
+- MF-1, applied verbatim (the review's option A): the line rounded the rule's wall, a minimum, to
+  the nearest shown digit, while the check passes only at the unrounded wall. Now:
+  - `mm_at_least` (`gui/geometry.rs`, after `mm`) rounds a length up at the last digit `mm`
+    shows (tied to `format::SIGNIFICANT_DIGITS`); a number that is not finite or not positive is
+    shown as it is;
+  - the line prints `mm_at_least(materials.backiron_thickness_needed_mm)`, and its comment says
+    why;
+  - the tests' oracle, `expected_wall_rule`, uses `mm_at_least`;
+  - the review's red-first test, `a_wall_shown_equal_to_the_wall_rule_passes_the_check`, and its
+    optional helper test, `a_minimum_length_is_rounded_up_at_its_last_shown_digit` (the review's
+    six values, plus both infinities, zero and a negative length).
+  - The wording is unchanged (21 words); only the rounding of the number moved.
+- Should-fix, not in this round's list, left open for the controller:
+  - SF-1: T9's label and help of `materials.cup_wall_suggested_mm` ("Cup wall the rule asks for
+    at the pocket corners"; "The cup wall check asks for it") now give the rule a second number
+    at the defaults (2.0 mm beside this line's 1.919 mm). The review gives replacement text.
+  - SF-2: the cup wall guide's Problem line (`gui/guidance.rs`) rounds the same need to the
+    nearest digit, so at the MF-1 design it reads "needs 1.950 mm" beside this line's 1.951 mm.
+    The review leans to passing it through `mm_at_least` too.
+  - SF-3: two test comments (`gui/dashboard.rs`, `gui/panel.rs`) call the suggestion the rule's
+    wall. Not on screen.
+
+The reviewer's report for the record, as returned:
+
+#### The claim against the engine
+
+- **Same number as the check.** `materials::compute` stores `t_bi_req_mm` as
+  `backiron_thickness_needed_mm`, then tests `wall_corner_mm >= t_bi_req_mm`. `api.rs` passes
+  `m.backiron_needed_mm` and `md.cup_wall_corner_mm`, so the line's two numbers are exactly the
+  check's two operands. `model.cup_ring_check` (`model.rs:1043-1051`) compares the same wall with
+  the same unrounded `t_bi`, so the line agrees with both checks.
+- **Gating.**
+  - The line shows exactly when the suggestion is a number, which is when the circuit in effect
+    has back iron (`parts.backiron`, E9).
+  - It drops for "Back iron" off and for the 304 and 6061 picks (probed: no line, check "No
+    back iron").
+  - With E9 off and no back iron, the workbook's "Too thin" verdict and the line both appear.
+    They are consistent with each other, and this is pre-existing.
+- **Place.** On faceted rings the pole transitions fall at the polygon corners. That is where
+  the return ring's circumferential flux peaks and the pocketed wall is thinnest, so "at the
+  pocket corners" is the right place for the rule's wall. The input's help says the same
+  (`plain_text.rs:717`).
+- **Other texts.** The line now quotes the same need as the cup wall guide's Problem line
+  ("needs 1.919 mm at the 1.500 T design flux density", pinned at `guidance.rs:3485`). The
+  record subsection's claim is verified.
+
+#### Probe
+
+Default design except where the row says. The line is quoted after "Wall rule: at least".
+
+| Design | Need (mm) | Wall (mm) | Check | Dashboard verdict | Line number |
+|---|---|---|---|---|---|
+| defaults | 1.918914 | 1.80 | Too thin | ... at least 2.0 mm | 1.919 mm |
+| wall 1.90 | 1.918914 | 1.90 | Too thin | ... 2.0 mm | 1.919 mm |
+| wall 1.95 | 1.918914 | 1.95 | OK | none | 1.919 mm |
+| 8 poles | 2.398642 | 1.80 | Too thin | ... 2.4 mm | 2.399 mm |
+| 20 mm ring radius | 3.267081 | 1.80 | Too thin | ... 3.3 mm | 3.267 mm |
+| Y30 ferrite | 0.532555 | 1.80 | OK | none | 0.5326 mm |
+| 1018 back iron (1.7 T) | 1.693159 | 1.80 | OK | none | 1.693 mm |
+| 12L14, 416, 17-4PH picks (1.5 T input) | 1.918914 | 1.80 | Too thin | ... 2.0 mm | 1.919 mm |
+| design flux density 0.5 T | 5.756741 | 1.80 | Too thin | ... 5.8 mm | 5.757 mm |
+| 2 poles | 9.594568 | 1.80 | Too thin | ... 9.6 mm | 9.595 mm |
+| 40 poles | 0.479728 | 1.80 | OK | none | 0.4797 mm |
+| back iron off; 304; 6061 | n/a | 1.80 | No back iron | none | no line |
+
+- Every line is 21 words, has level `None`, and is guard-clean.
+- At the first passing slider wall (1.95 mm) the line no longer asks for more than the check.
+  This is Important 1's case, and it is fixed.
+
+#### Traps (none written)
+
+- **Slice-2 section 8.** No claim about poles, ring radius, re-locking, the end factor,
+  calibration, α, steel swaps, torque with steel, grades, mass, slipping, the clamp, the boss,
+  ferrite β, the expansion caution, 4140 saturation or the gearbox. The 416, 17-4PH and 12L14
+  picks show the rule's number only, with no adequacy claim.
+- **Slice-1 section 8.** Nothing on radius, poles, pull-out, calibration, 416 or the stored
+  fields.
+- **T-I** (the rule reads 12 to 16 % thin). The number is attributed to "Wall rule", the
+  calculator's rule, and claims no sufficiency.
+  - The cup wall guide links `a5.low_saturation`, whose watch-out says the formula reads 12 to
+    16 % thin and that walls near the limit deserve margin.
+  - The line now shows the unrounded rule (1.919 mm) where it used to show 2.000 mm. That is
+    the check's own number, so it states nothing new about adequacy.
+- **T-J, T-K, T-L.** The line names no temperature, no saturation figure and no torque effect.
+- **The added trap** (more magnets make the coupling stiffer): not touched.
+
+#### Caps and plain words
+
+- The wording is byte-equal to the reviewed text. Only the number's source changed, so the word
+  count is unchanged at 21.
+- The geometry notes have no row in the caps table. The line was reviewed at this length.
+- The number is a computed result, not a typed default.
+- The input's name comes from `label_for(CUP_WALL_INPUT)`.
+- No cell, correction id, file or code name appears.
+- `plain_text_violations` is empty at every probe design that draws the line (29 of 33).
+
+#### Pre-existing, not new, for the record
+
+- **Non-finite input from a design file.** A design file with a design flux density of 0 or NaN
+  (the slider stops at 0.5 T) gives "Wall rule: at least +inf mm" or "at least NaN mm". The old
+  line printed the same through `mm(ceiling(...))`. MF-1's helper keeps that behaviour (a
+  non-finite number is shown as it is). The geometry module drops non-finite pieces with a note,
+  but not this text. It is outside this round.
+- **Float edge.** `(x / step).ceil()` can lift a need that sits exactly on a shown digit by
+  one digit, through floating-point error, which asks 0.001 mm more than the check. A computed
+  need landing exactly on a digit is measure-zero, and the error is conservative.
+- **`docs/ai/02-system.yaml` does not parse as YAML.** The fix report says this predates this
+  round (line 15, the linkage-solver list item). It is not this review's.
+
+#### Docs checked against the code
+
+- README geometry row: true.
+- `02-system.yaml` sentence: true.
+- Tracker bullet: true. "1.95 mm (on the slider's 0.05 mm grid)" was verified by the probe.
+- BL-056: true.
+- The record subsection, `docs/analyses/2026-10-14-magcoupler-help-review.md` "Task review fix
+  round 1": true, including that SF-5 no longer applies.
+- After MF-1, each of these gets the "rounded up at its last digit" clause.
