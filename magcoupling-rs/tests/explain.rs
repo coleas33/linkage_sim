@@ -2048,11 +2048,21 @@ fn the_torque_band_note_s_levers_move_hot_low_and_cold_high_as_it_says() {
 #[test]
 fn the_torque_band_note_s_sentences_hold_at_every_probe_design() {
     // Sentence 0 answers the rows that link the note (spec 3.1: the hot-low, hot-minimum and
-    // cold-high rows), so it names both edges of the band; and production scatter, which
-    // glosses sentence 1's "variation allowance" before its first use (task review fix round 1).
+    // cold-high rows), so it names both edges of the band and the temperature each edge uses;
+    // and production scatter, which glosses sentence 1's "variation allowance" before its first
+    // use (task review fix round 1). "Operating temperature" keeps hot-low off the hot-day start
+    // (trap T-E), and "expected" keeps cold-high an expectation, not a bound (trap T-O; text
+    // re-review 1's SF-1).
     let note = notes::note("hot_low_cold_high").expect("the torque-band note");
     let first = note.sentences[0].to_lowercase();
-    for named in ["hot-low", "cold-high", "production scatter"] {
+    for named in [
+        "hot-low",
+        "cold-high",
+        "production scatter",
+        "operating temperature",
+        "minimum temperature",
+        "expected",
+    ] {
         assert!(
             first.contains(named),
             "sentence 0 names {named}: {:?}",
@@ -2225,6 +2235,14 @@ fn the_temperature_note_s_levers_hold_at_every_probe_design() {
             r.temperature.magnet_life.torque_hot_day_Nm
                 < base.temperature.magnet_life.torque_hot_day_Nm,
             "{name}"
+        );
+        // The entry's second clause: the hot-day start is this ambient plus the driving rise (an
+        // exact sum in the engine; text re-review 1's SF-2).
+        let duty = &design.temperature.duty;
+        assert_eq!(
+            base.temperature.summary.hot_day_start_C,
+            duty.hot_ambient_C + duty.driving_rise_C,
+            "{name}: the hot-day start"
         );
         let (t, t0) = (&r.temperature, &base.temperature);
         for (margin, after, before) in [

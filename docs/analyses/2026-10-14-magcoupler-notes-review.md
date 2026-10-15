@@ -2056,6 +2056,60 @@ Considered, no change (the reviewer's observations, round 1):
 - A text re-review of this field follows (controller ruling 7). Its report goes below as
   `### Re-review: code-review fix round 1`.
 
+### Re-review: code-review fix round 1
+
+- Reviewer: a fresh-context physics reviewer (session model), 2026-10-15, on commit `332eda1`
+  (`task-14-textreview-1.md`). This is the text re-review of the code-review fix round 1 above
+  (controller ruling 7). It re-checked both changed fields together: this note's sentences[0]
+  and `br_temperature` change[3].
+- Scope here: sentences[0], and the fields whose meaning depends on it: sentences[1] and [2],
+  watch_out[0], and `HOT_MIN_GUIDE.why`, which the hot-minimum row shows beside the link. The
+  dump (`NOTES_FOR_REVIEW=hot_low_cold_high,br_temperature`, written to
+  `magcoupling-rs/target/rereview-T14-1.txt`) draws the sentence identically at the five probe
+  designs; it holds no placeholder.
+- Verdict: PASS, no must-fix. Three optional should-fix items, all applied with no on-screen
+  text change: SF-1 (a test of this field) below; SF-2 (a test) and SF-3 (record wording) under
+  `## br_temperature`. The report's part on the tests of both notes is there too.
+
+The reviewer's report for the record on this field follows unchanged.
+
+- **Engine.** Hot-low = T_op·(1 − v) and cold-high = T_20·th2(T_min)·(1 + v) (`metal_design.rs:412-414`).
+  - "Hot-low is the weakest coupling expected at the operating temperature" is that identity in words: the nominal at the operating input, less the allowance.
+  - "cold-high the strongest at the minimum temperature" is the nominal at the minimum-temperature input, plus the allowance.
+  - "Allowing for production scatter" names what the allowance covers. Its display label is "Production variation allowance"; sources[0] says "symmetric; an engineering allowance, not measured".
+- **The five probe designs** (hot-low / cold-high, N·m): 2.2852 / 3.8233, 1.6731 / 2.7992, 1.4428 / 2.4138, 0.1760 / 0.3381, 2.1584 / 3.6111.
+  - These agree with the dump and with the record's fix-round numbers.
+  - The new assertion (hot-low below cold-high) passes.
+- **Edge cases.**
+  - Operating temperature below the minimum (op −40 °C, min 20 °C, both in range; default allowance): hot-low 2.826 against cold-high 3.327 N·m.
+  - The sentence ties each edge to its own temperature, so it stays literally true even where the two temperatures swap. It never says "hot" or "cold" in absolute terms.
+  - With v = 0 both edges are the nominal at their temperatures, still "expected".
+- **Traps.**
+  - **T-E** (hot-low means the operating input, not the hot-day start or the limit): the sentence says "at the operating temperature", and watch_out[0] spells out the hot-day contrast.
+  - **T-O** (cold-high is an expectation, not a bound): "expected" governs both clauses through the ellipsis ("cold-high [is] the strongest [coupling expected]"), and sentence 2 repeats it.
+  - **T-F** (the nominal hot margin): no margin is mentioned.
+  - **Slice-1** ("pull-out torque is guaranteed"): "expected" carries no guarantee.
+  - **Heat double count:** S-6's "made weaker by heat" is gone. The sentence names the temperature each edge uses and nothing more. Hot-low at the default is exactly 2.688 × 0.85 = 2.285 N·m.
+  - **Global:** no clamp wording (ruling 11), and no claim about the gearbox (ruling 8).
+  - No other trap applies.
+- **Spec 3.1, sentence 0.**
+  - No symbol, placeholder, ϑ, U+207B or ∝. "Hot-low" and "cold-high" are the rows' names, not symbols. The sentence is drawn as one label.
+  - It answers the hot-low row and the cold-high row outright.
+  - The hot-minimum row's question is whether hot-low reaches the requirement. Sentence 0 says what hot-low is, and sentence 1, right after it, says "it must reach the requirement". The check guide's own `why`, shown with the row, ends "and must reach the requirement".
+  - Considered and not proposed: a 25-word variant that also names the requirement. Every form I tried either detaches "allowing for production scatter" from hot-low or shortens "the minimum temperature" to "the minimum". The second reads as the minimum torque, next to "requirement".
+- **Form.** 22 words by `word_count`, one sentence. The caps and plain-words tests pass.
+- **Considered, no change:**
+  - **"Hot-low is the weakest coupling".** Hot-low is a torque, so this is metonymy. It reads naturally to an engineer: the row is labelled "Hot-low torque", and sentence 1 gives the formula. A 24-word "the pull-out of the weakest coupling ...; cold-high, of the strongest ..." is more literal but clumsier, so I do not propose it.
+  - **Overlap with sentences 1 and 2.** Sentences 0, 1 and 2 now restate the two temperatures. Sentence 0 is the plain answer drawn as one label, and sentences 1 and 2 add the live values and the formulas. Spec 3.1 asks for this structure, and nothing contradicts.
+  - **The Y30 probe.** Its cold check reads "Below the cold demagnetization limit" (cold limit 335.7 °C). That comes from the stored 3D reverse fields of the NdFeB example design (T-N). Every torque in the calculator is the reversible model's, and the temperature verdict flags this. `br_temperature` watch_out[1] and `ferrite_cold_demag` cover the irreversible loss. The field does not change this, and it is not this note's job.
+
+- SF-1, applied by the implementer (session model), 2026-10-15:
+  `the_torque_band_note_s_sentences_hold_at_every_probe_design` (`tests/explain.rs`) also
+  asserts that sentence 0 names "operating temperature", "minimum temperature" and "expected"
+  (any case). These are the words that keep it clear of T-E (hot-low reads the operating input,
+  not the hot-day start) and T-O (cold-high is an expectation, not a bound). With "expected"
+  dropped from sentence 0 the test fails ("sentence 0 names expected"); the shipped text passes.
+
 ## br_temperature
 
 Task T14. Rewrite of "Remanence against temperature, and torque ∝ Br²" as "Heat weakens magnets:
@@ -2244,7 +2298,10 @@ Considered, no change (the reviewer's observations):
   - the service margin (the governing limit less the operating temperature) and the cure margin
     read no ambient and stay exactly (43.06 and 121.36 °C at the default; 70 °C and infinite at
     Y30).
-  - So every temperature margin that moves falls, and none rises.
+  - So every temperature margin (in °C) that moves falls, and none rises. The adhesive's hot
+    fatigue margin, a strength ratio and not a temperature margin, rises slightly (4.780 to
+    4.786 at the default): the model holds the hot strength fraction fixed while the peak torque
+    falls. (Text re-review 1's SF-3.)
 - For the re-review: "the temperature margins" covers every margin that moves; two (service, cure)
   do not move. A narrower 24-word wording names the three the verdict reads: "a hotter day lowers
   the hot-day torque and the hot-day, magnet-limit and adhesive margins; the hot-day start is this
@@ -2259,3 +2316,83 @@ Considered, no change (the reviewer's observations):
   `## hot_low_cold_high`.
 - A text re-review of this field follows (controller ruling 7). Its report goes below as
   `### Re-review: code-review fix round 1`.
+
+### Re-review: code-review fix round 1
+
+- Reviewer: a fresh-context physics reviewer (session model), 2026-10-15, on commit `332eda1`
+  (`task-14-textreview-1.md`). This is the text re-review of the code-review fix round 1 above
+  (controller ruling 7), run on this field and `hot_low_cold_high` sentences[0] together.
+- Scope here: change[3] (input, step and aim unchanged), and the fields whose meaning depends on
+  it: sentences[4] (the hot-day torque's temperature, the ambient plus the driving rise) and the
+  input's shipped help ("Higher lowers the hot-day pull-out and temperature margins, not hot-low
+  torque."). The dump, as under `## hot_low_cold_high`, draws the entry identically at the five
+  probe designs, and the entry's aim moves as it says at all five (default 2.58901 to 2.58573
+  N·m).
+- Verdict: PASS, no must-fix. Three optional should-fix items, all applied with no on-screen
+  text change: SF-2 (a test) and SF-3 (record wording) below; SF-1 (a test of
+  `hot_low_cold_high` sentences[0]) under that note.
+
+The reviewer's report for the record on this field, then its part on the tests of both notes,
+follow unchanged.
+
+- **Engine.**
+  - T0 = hot ambient + driving rise (`temperature.rs:918`), exactly the second clause.
+  - The hot-day torque is T_20·thf(T0), so it falls with T0 for any α < 0.
+  - The fault temperature, and so the slip-fault peak, are T0 plus terms that do not read the ambient (`:1282`, `:1335`). The peak therefore follows the ambient degree for degree.
+- **One slider step (+0.5 °C), default design:**
+
+  | Margin (°C) | Before | After | Reads the ambient? |
+  |---|---|---|---|
+  | Hot-day (governing − T0), dashboard row and verdict | 28.056 | 27.556 | yes |
+  | Magnet design limit − peak, verdict | 27.091 | 26.591 | yes |
+  | Skipping onset − peak | 37.091 | 36.591 | yes |
+  | Adhesive design limit − peak, verdict | 54.036 | 53.536 | yes |
+  | Service (governing − operating) | 43.056 | 43.056 | no |
+  | Cure (single-ring onset − cure), verdict | 121.356 | 121.356 | no |
+
+  - The other four designs behave the same way: every margin that reads the ambient falls by exactly 0.5 °C, and the service and cure margins stay put.
+  - At Y30 the skipping onset is infinite (ferrite has no hot onset), so its margin stays infinite. The hot-day, magnet-limit and adhesive margins fall from 55.000 to 54.500, 184.021 to 183.521 and 54.021 to 53.521 °C. The service and cure margins (70 °C and infinite) do not move.
+  - So "the temperature margins" covers every margin that moves, and none rises. On the dashboard (`DASHBOARD`), the only temperature margin is the hot-day one, and it falls.
+- **The trade-off rule (spec 3.1).**
+  - A hotter day pushes these toward red: the hot-day torque's check against the requirement ("Meets it nominally" can become "Below it"), and the verdict's hot-day, magnet-limit and adhesive terms. Both are named.
+  - Nothing else that has a verdict moves toward red:
+    - the cold terms read only the minimum temperature;
+    - the daily bond-shear screen reads the daily swing;
+    - the hot fatigue screen moves away from red (SF-3).
+  - The time to the limit and the critical drag also fall, but neither carries a verdict.
+- **Wording.**
+  - Keeping SF-2's "the temperature margins" over the record's narrower 24-word alternative ("the hot-day, magnet-limit and adhesive margins") is right.
+    - The broad phrase matches the input's shipped help word for word ("temperature margins"), so one input is described one way.
+    - It is true of every margin that moves.
+    - The narrow form would set "the hot-day margin" beside "magnet-limit and adhesive margins", although the hot-day margin is itself measured against the magnet or adhesive limit. That invites a misreading.
+  - "This ambient" reads cleanly after the drawn label ("Raise Hot-day ambient temperature: ..."). "The driving rise" is the short name sentence 4 of the same note already uses.
+- **Traps.**
+  - None applies: no grade, no α per ring, no steady-temperature or mass claim, no slip-duration claim, no clamp or gearbox wording.
+  - **T-E:** the entry concerns the hot-day torque and leaves hot-low alone. One step leaves `model.pullout_Nm` exact, as the levers test pins, and watch-out 1's test pins hot-low exact.
+- **Form.** 21 words by `word_count`, one sentence. The caps and plain-words tests pass. The entry's input, step and aim are unchanged, and the aim test passes at all five designs.
+- **Considered, no change:**
+  - **α = 0** (the coefficient slider's top end, library rings): one step leaves the hot-day torque unchanged (2.893025 N·m both ways), so "lowers the hot-day torque" degenerates there. This clause predates this round and was reviewed in rounds 1 to 3. At α = 0 nothing in the note depends on temperature. Every probe design has α < 0.
+  - **"ambient plus the driving rise" appears twice** in the note (sentence 4 and this entry). This also predates the round. In the entry it tells the user what the input they are about to move feeds, so it earns its place. SF-2 adds the test that M-6 found missing.
+
+**Tests** (both notes):
+
+- The sentences test pins sentence 0's three names and hot-low below cold-high at the five designs.
+- The levers test pins "the temperature margins" and checks:
+  - the three verdict margins fall at every design;
+  - the skipping-onset margin falls wherever it is finite (with at least one such design);
+  - the service and cure margins do not rise.
+- I re-derived every one of these directions from the engine code above and confirmed them numerically at the five designs. SF-1 and SF-2 would make the tests cover the trap-critical words and the hot-day-start identity.
+
+- SF-2, applied by the implementer (session model), 2026-10-15:
+  `the_temperature_note_s_levers_hold_at_every_probe_design` (`tests/explain.rs`), entry 4,
+  also asserts at each probe design that `temperature.summary.hot_day_start_C` equals the hot-day
+  ambient plus the driving rise, exactly (`assert_eq!`, as the engine sums them), the second
+  clause of change[3]. With the engine's hot-day start offset by 1e-9 °C the test fails
+  ("default: the hot-day start"); the shipped engine passes.
+- SF-3, applied by the implementer (session model), 2026-10-15: in the "Task review fix round 1"
+  subsection above, "So every temperature margin that moves falls, and none rises." now reads as
+  the reviewer gives it, so "none rises" is not read as covering the adhesive's hot fatigue
+  margin, a strength ratio. The figures were re-run from `compute_all`: one step up raises it at
+  all five probe designs (4.7795 to 4.7856 at the default, 5.2230 to 5.2296, 7.5579 to 7.5675,
+  63.881 to 64.022 and 9.3578 to 9.3698). The note says nothing about this margin, so the screen
+  is unaffected.
