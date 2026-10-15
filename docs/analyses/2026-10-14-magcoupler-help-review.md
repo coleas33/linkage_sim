@@ -220,7 +220,8 @@ lower torque; the space claim leaves out the shaft boss; "with Auto on"; the mag
   not move with the knee fraction or the design margin (the cold limit does); S-e, for the
   controller, override `metal.cap_thread_dia_mm` ("M41 × 0.5 concept.", stale after a resize) and
   `materials.screws.proof_12_9_MPa` ("ISO 898-1."); S-f, for the code review, the cluster caveats
-  typed in every row.
+  typed in every row (resolved in T8's review fix round 1: each caveat is typed once, as a macro
+  the rows are built from; no text changed).
 
   Recorded, no change asked: the single-ring field's "lowers the cure margin" is moot for ferrite
   (the margin is infinite on the cold side); with the Back iron toggle off and a non-magnetic pick,

@@ -48,6 +48,38 @@ const LABELS: &[(&str, &str)] = &[
     ("metal.torque_cold_high_Nm", "Cold-high torque"),
 ];
 
+// The caveats that end the help of every row in four clusters of `HELP` rows. Each is a macro,
+// not a `const`, so that `concat!` can build the rows from it: each caveat is typed once.
+
+/// The last sentence of every stored 3D field's help (amendment A-7): the value is the example
+/// design's and stays fixed when the design changes.
+macro_rules! stored_3d_caveat {
+    () => {
+        "Stored 3D value for the example design; it does not follow yours."
+    };
+}
+
+/// The last sentence of every bench-prototype input's help: what the calibration it feeds is for.
+macro_rules! prototype_caveat {
+    () => {
+        "It sets the updated calibration coefficient, used only by no-back-iron designs with the prototype's magnet part and count."
+    };
+}
+
+/// The last sentence of the help of every default nobody has measured.
+macro_rules! guess_caveat {
+    () => {
+        "The default is a guess."
+    };
+}
+
+/// The last sentence of every optional-adapter geometry input's help: what it cannot change.
+macro_rules! adapter_caveat {
+    () => {
+        "It changes only the optional adapter variant's results, never the main design."
+    };
+}
+
 /// The overlay help of an input or a result, by path: 1-2 sentences of at most 30 words, what
 /// it physically is, what it moves and which way, and the trade-off (spec 3.5). Filled by the
 /// slice-2 help batches; while a path has no row its engine help shows.
@@ -264,31 +296,52 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "calibration.mu0",
-        "Magnetic constant for the prototype model; leave it unchanged. It sets the updated calibration coefficient, used only by no-back-iron designs with the prototype's magnet part and count.",
+        concat!(
+            "Magnetic constant for the prototype model; leave it unchanged. ",
+            prototype_caveat!()
+        ),
     ),
     (
         "calibration.apothem_mm",
-        "The bench prototype's radius to its inner magnet backs, not your design's. It sets the updated calibration coefficient, used only by no-back-iron designs with the prototype's magnet part and count.",
+        concat!(
+            "The bench prototype's radius to its inner magnet backs, not your design's. ",
+            prototype_caveat!()
+        ),
     ),
     (
         "calibration.magnet_length_mm",
-        "Axial length of the bench prototype's magnets, not your design's. It sets the updated calibration coefficient, used only by no-back-iron designs with the prototype's magnet part and count.",
+        concat!(
+            "Axial length of the bench prototype's magnets, not your design's. ",
+            prototype_caveat!()
+        ),
     ),
     (
         "calibration.magnet_width_mm",
-        "Width of the bench prototype's magnets around the ring, not your design's. It sets the updated calibration coefficient, used only by no-back-iron designs with the prototype's magnet part and count.",
+        concat!(
+            "Width of the bench prototype's magnets around the ring, not your design's. ",
+            prototype_caveat!()
+        ),
     ),
     (
         "calibration.magnet_thickness_mm",
-        "Radial thickness of the bench prototype's magnets, not your design's. It sets the updated calibration coefficient, used only by no-back-iron designs with the prototype's magnet part and count.",
+        concat!(
+            "Radial thickness of the bench prototype's magnets, not your design's. ",
+            prototype_caveat!()
+        ),
     ),
     (
         "calibration.br_T",
-        "Strength (remanence) of the prototype's magnets at 20 °C, not your design's. It sets the updated calibration coefficient, used only by no-back-iron designs with the prototype's magnet part and count.",
+        concat!(
+            "Strength (remanence) of the prototype's magnets at 20 °C, not your design's. ",
+            prototype_caveat!()
+        ),
     ),
     (
         "calibration.c_end",
-        "End-loss coefficient of the bench prototype's model, not your design's. It sets the updated calibration coefficient, used only by no-back-iron designs with the prototype's magnet part and count.",
+        concat!(
+            "End-loss coefficient of the bench prototype's model, not your design's. ",
+            prototype_caveat!()
+        ),
     ),
     (
         "calibration.fea_torque2_Nm",
@@ -426,27 +479,45 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "metal.adapter_flange_dia_mm",
-        "Flange diameter of the optional aluminium adapter that replaces the integral steel boss. It changes only the optional adapter variant's results, never the main design.",
+        concat!(
+            "Flange diameter of the optional aluminium adapter that replaces the integral steel boss. ",
+            adapter_caveat!()
+        ),
     ),
     (
         "metal.adapter_flange_mm",
-        "Flange thickness of the optional aluminium adapter; it adds to the adapter variant's length. It changes only the optional adapter variant's results, never the main design.",
+        concat!(
+            "Flange thickness of the optional aluminium adapter; it adds to the adapter variant's length. ",
+            adapter_caveat!()
+        ),
     ),
     (
         "metal.adapter_pilot_dia_mm",
-        "Pilot diameter of the optional aluminium adapter; a larger pilot bores more out of the rear wall. It changes only the optional adapter variant's results, never the main design.",
+        concat!(
+            "Pilot diameter of the optional aluminium adapter; a larger pilot bores more out of the rear wall. ",
+            adapter_caveat!()
+        ),
     ),
     (
         "metal.adapter_pilot_mm",
-        "Pilot length of the optional aluminium adapter. It changes only the optional adapter variant's results, never the main design.",
+        concat!(
+            "Pilot length of the optional aluminium adapter. ",
+            adapter_caveat!()
+        ),
     ),
     (
         "metal.adapter_boss_mm",
-        "Axial boss extension of the optional aluminium adapter; it adds to the adapter variant's length. It changes only the optional adapter variant's results, never the main design.",
+        concat!(
+            "Axial boss extension of the optional aluminium adapter; it adds to the adapter variant's length. ",
+            adapter_caveat!()
+        ),
     ),
     (
         "metal.adapter_hardware_g",
-        "Extra screw and dowel mass for the optional adapter's joint. It changes only the optional adapter variant's results, never the main design.",
+        concat!(
+            "Extra screw and dowel mass for the optional adapter's joint. ",
+            adapter_caveat!()
+        ),
     ),
     (
         "clamps.joint_bolt_circle_mm",
@@ -489,64 +560,109 @@ const HELP: &[(&str, &str)] = &[
     // Batch B (T8), overrides: the stored 3D fields ("3D." and the reverse fields).
     (
         "temperature.slip_loss.b_hub_T",
-        "Outer-ring field at the hub's steel surface, doubled by the steel; hub slip heat grows with its square. Stored 3D value for the example design; it does not follow yours.",
+        concat!(
+            "Outer-ring field at the hub's steel surface, doubled by the steel; hub slip heat grows with its square. ",
+            stored_3d_caveat!()
+        ),
     ),
     (
         "temperature.slip_loss.b_cup_T",
-        "Inner-ring field at the cup's steel surface, doubled by the steel; cup slip heat grows with its square. Stored 3D value for the example design; it does not follow yours.",
+        concat!(
+            "Inner-ring field at the cup's steel surface, doubled by the steel; cup slip heat grows with its square. ",
+            stored_3d_caveat!()
+        ),
     ),
     (
         "temperature.slip_loss.b_sleeve_T",
-        "Outer-ring field at the inner sleeve; the sleeve's slip heat grows with its square. Stored 3D value for the example design; it does not follow yours.",
+        concat!(
+            "Outer-ring field at the inner sleeve; the sleeve's slip heat grows with its square. ",
+            stored_3d_caveat!()
+        ),
     ),
     (
         "temperature.slip_loss.b_liner_T",
-        "Inner-ring field at the outer liner; the liner's slip heat grows with its square. Stored 3D value for the example design; it does not follow yours.",
+        concat!(
+            "Inner-ring field at the outer liner; the liner's slip heat grows with its square. ",
+            stored_3d_caveat!()
+        ),
     ),
     (
         "temperature.slip_loss.cap_integral_T2m4",
-        "Field integral over the cap face; the cap's slip heat grows in proportion. Stored 3D value for the example design; it does not follow yours.",
+        concat!(
+            "Field integral over the cap face; the cap's slip heat grows in proportion. ",
+            stored_3d_caveat!()
+        ),
     ),
     (
         "temperature.slip_loss.web_integral_T2m2",
-        "Squared-field integral over the rear wall, field doubled by the steel; the wall's slip heat grows in proportion. Stored 3D value for the example design; it does not follow yours.",
+        concat!(
+            "Squared-field integral over the rear wall, field doubled by the steel; the wall's slip heat grows in proportion. ",
+            stored_3d_caveat!()
+        ),
     ),
     (
         "temperature.slip_loss.b_magnet_T",
-        "Alternating field inside the magnet blocks during slip; their eddy-current heat grows with its square. Stored 3D value for the example design; it does not follow yours.",
+        concat!(
+            "Alternating field inside the magnet blocks during slip; their eddy-current heat grows with its square. ",
+            stored_3d_caveat!()
+        ),
     ),
     (
         "temperature.demag.h_rev_aligned_kA_m",
-        "Worst reverse field in the magnets, rings aligned; it sets only that case's onset, which no check uses. Stored 3D value for the example design; it does not follow yours.",
+        concat!(
+            "Worst reverse field in the magnets, rings aligned; it sets only that case's onset, which no check uses. ",
+            stored_3d_caveat!()
+        ),
     ),
     (
         "temperature.demag.h_rev_pullout_kA_m",
-        "Worst reverse field in the magnets at pull-out; it sets only that case's onset, which no check uses. Stored 3D value for the example design; it does not follow yours.",
+        concat!(
+            "Worst reverse field in the magnets at pull-out; it sets only that case's onset, which no check uses. ",
+            stored_3d_caveat!()
+        ),
     ),
     (
         "temperature.demag.h_rev_likepole_kA_m",
-        "Worst reverse field as like poles pass; higher lowers the magnet design limit (raises ferrite's cold limit). Stored 3D value for the example design; it does not follow yours.",
+        concat!(
+            "Worst reverse field as like poles pass; higher lowers the magnet design limit (raises ferrite's cold limit). ",
+            stored_3d_caveat!()
+        ),
     ),
     (
         "temperature.demag.h_rev_single_ring_kA_m",
-        "Worst reverse field on a single ring during adhesive cure; higher lowers the cure margin. Stored 3D value for the example design; it does not follow yours.",
+        concat!(
+            "Worst reverse field on a single ring during adhesive cure; higher lowers the cure margin. ",
+            stored_3d_caveat!()
+        ),
     ),
     // Batch B (T8), overrides: "Placeholder", "ASSUMED" and "Illustrative".
     (
         "temperature.duty.driving_rise_C",
-        "Rise of the coupling above outside air while driving, from housing air, sun and gearbox heat; it raises the hot-day starting magnet temperature. The default is a guess.",
+        concat!(
+            "Rise of the coupling above outside air while driving, from housing air, sun and gearbox heat; it raises the hot-day starting magnet temperature. ",
+            guess_caveat!()
+        ),
     ),
     (
         "temperature.duty.life_hours",
-        "Hours the coupling runs over its life; slip time divided by it gives the average slip duty, which adds to the peak temperature. The default is a guess.",
+        concat!(
+            "Hours the coupling runs over its life; slip time divided by it gives the average slip duty, which adds to the peak temperature. ",
+            guess_caveat!()
+        ),
     ),
     (
         "temperature.adhesive_life.hot_strength_retained",
-        "Share of the adhesive's lap-shear strength left at the peak temperature; the hot fatigue screen scales with it. The default is a guess.",
+        concat!(
+            "Share of the adhesive's lap-shear strength left at the peak temperature; the hot fatigue screen scales with it. ",
+            guess_caveat!()
+        ),
     ),
     (
         "calibration.test_temp_C",
-        "Magnet temperature during the prototype's bench test; enter the recorded value. It sets the updated calibration coefficient, used only by no-back-iron designs with the prototype's magnet part and count.",
+        concat!(
+            "Magnet temperature during the prototype's bench test; enter the recorded value. ",
+            prototype_caveat!()
+        ),
     ),
     (
         "metal.slip_event_s",
@@ -1676,12 +1792,29 @@ mod batch_b_tests {
 
     #[test]
     fn each_cluster_ends_with_one_shared_caveat() {
-        let last_sentence = |path: &str| help_for(path).rsplit(". ").next().unwrap_or_default();
-        for cluster in [&STORED_3D[..], &PROTOTYPE[..], &GUESSES[..], &ADAPTER[..]] {
-            let caveat = last_sentence(cluster[0]);
-            for &path in cluster {
-                assert_eq!(last_sentence(path), caveat, "{path} against {}", cluster[0]);
-            }
+        // Amendment A-7 fixes the stored-3D sentence word for word (T9's STORED_3D_SENTENCE).
+        assert_eq!(
+            stored_3d_caveat!(),
+            "Stored 3D value for the example design; it does not follow yours."
+        );
+        // A cluster is exactly the rows whose last sentence is its caveat.
+        for (cluster, caveat) in [
+            (&STORED_3D[..], stored_3d_caveat!()),
+            (&PROTOTYPE[..], prototype_caveat!()),
+            (&GUESSES[..], guess_caveat!()),
+            (&ADAPTER[..], adapter_caveat!()),
+        ] {
+            let ending = format!(". {caveat}");
+            let ending_with_it: BTreeSet<&str> = HELP
+                .iter()
+                .filter(|(_, text)| text.ends_with(&ending))
+                .map(|&(path, _)| path)
+                .collect();
+            assert_eq!(
+                ending_with_it,
+                BTreeSet::from_iter(cluster.iter().copied()),
+                "{caveat}"
+            );
         }
     }
 
