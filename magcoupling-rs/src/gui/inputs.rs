@@ -18,7 +18,7 @@ use crate::engine::grades;
 use crate::engine::library;
 use crate::engine::meta::{FieldType, InputMeta, SliderRange, Value, input_rows};
 use crate::gui::format::{search_haystack, search_needle};
-use crate::gui::plain_text::{display_label, help_for};
+use crate::gui::plain_text::{display_label, help_for, original_help};
 
 /// The Key design group, in order (spec M4 "Layout": face gap, pole count, magnet part, axial
 /// length, operating temperature, back iron, cup wall, conductance, measured drag). The axial
@@ -885,6 +885,10 @@ pub fn optional_seed(path: &str) -> Option<&'static str> {
         .map(|(_, result)| *result)
 }
 
+/// The start of the tooltip line that, with the spreadsheet details on, shows the original
+/// spreadsheet's note under a help the GUI's overlay replaced (spec 3.5; [`input_tooltip`]).
+pub const ORIGINAL_NOTE: &str = "Original spreadsheet note";
+
 /// A short note under a text input saying what the engine makes of the text: whether a part
 /// name is a library part, whether a grade name is in the grade table.
 pub fn text_hint(path: &str, text: &str) -> Option<&'static str> {
@@ -912,18 +916,26 @@ pub fn text_hint(path: &str, text: &str) -> Option<&'static str> {
 /// The hover text of an input: its help (the overlay's, else the engine's:
 /// [`help_for`]), path, workbook cell, slider range, default, and whether it is a model
 /// assumption.
-pub fn input_tooltip(entry: &InputEntry) -> String {
+///
+/// The original spreadsheet note ([`ORIGINAL_NOTE`]), the path and the workbook cell only with
+/// `show_details` (the header's Show spreadsheet details, spec S2-5), after the help.
+pub fn input_tooltip(entry: &InputEntry, show_details: bool) -> String {
     let meta = entry.meta;
     let mut lines = Vec::new();
     let help = help_for(&entry.path);
     if !help.is_empty() {
         lines.push(help.to_owned());
     }
-    lines.push(entry.path.clone());
-    lines.push(meta.cell.map_or_else(
-        || "Rust-only input (no workbook cell)".to_owned(),
-        str::to_owned,
-    ));
+    if show_details {
+        if let Some(original) = original_help(&entry.path) {
+            lines.push(format!("{ORIGINAL_NOTE}: {original}"));
+        }
+        lines.push(entry.path.clone());
+        lines.push(meta.cell.map_or_else(
+            || "Rust-only input (no workbook cell)".to_owned(),
+            str::to_owned,
+        ));
+    }
     if let Some(r) = meta.range {
         let unit = crate::gui::format::with_unit(String::new(), meta.unit);
         let scale = if r.log { ", logarithmic" } else { "" };
@@ -1388,30 +1400,65 @@ mod tests {
 
     #[test]
     fn tooltips_carry_help_path_cell_range_and_default() {
+        // With the spreadsheet details on (spec S2-5): the path and the cell too.
         let catalogue = InputCatalogue::new();
         assert_eq!(
-            input_tooltip(catalogue.entry("metal.face_gap_mm").unwrap()),
+            input_tooltip(catalogue.entry("metal.face_gap_mm").unwrap(), true),
             "Same as the measured prototype.\nmetal.face_gap_mm\nMetal design!C119\n\
              Slider 0.3 to 5 mm, step 0.01\nDefault: 1.400"
         );
-        let backiron = input_tooltip(catalogue.entry("coupling.backiron").unwrap());
+        let backiron = input_tooltip(catalogue.entry("coupling.backiron").unwrap(), true);
         assert!(
             backiron.ends_with("Default: 1 = steel circuit"),
             "{backiron}"
         );
-        let drag = input_tooltip(catalogue.entry("metal.measured_drag_Nm").unwrap());
+        let drag = input_tooltip(catalogue.entry("metal.measured_drag_Nm").unwrap(), true);
         assert!(
             drag.contains("logarithmic") && drag.ends_with("Default: blank"),
             "{drag}"
         );
-        let harmonic = input_tooltip(catalogue.entry("coupling.max_harmonic").unwrap());
+        let harmonic = input_tooltip(catalogue.entry("coupling.max_harmonic").unwrap(), true);
         assert!(
             harmonic.contains("Rust-only input (no workbook cell)")
                 && harmonic.ends_with("Model assumption (Addendum A3)"),
             "{harmonic}"
         );
-        let npole = input_tooltip(catalogue.entry("coupling.npole").unwrap());
+        let npole = input_tooltip(catalogue.entry("coupling.npole").unwrap(), true);
         assert!(npole.contains("Slider 4 to 40, step 2"), "{npole}");
+    }
+
+    #[test]
+    fn tooltips_name_the_path_cell_and_original_note_only_with_the_spreadsheet_details() {
+        // Spec S2-5 and 3.5: with Show spreadsheet details the tooltip adds, after the help,
+        // the original spreadsheet's note where the GUI's help replaced it, the path and the
+        // cell (or the line that says there is none); without them exactly those lines go.
+        let catalogue = InputCatalogue::new();
+        for entry in catalogue.all() {
+            let path = entry.path.as_str();
+            let on = input_tooltip(entry, true);
+            let off = input_tooltip(entry, false);
+            let original = original_help(path).map(|note| format!("{ORIGINAL_NOTE}: {note}"));
+            let added = 2 + usize::from(original.is_some());
+            assert_eq!(
+                on.lines().count(),
+                off.lines().count() + added,
+                "{path}: {on:?} against {off:?}"
+            );
+            assert!(on.lines().any(|line| line == path), "{on:?}");
+            assert!(!off.lines().any(|line| line == path), "{off:?}");
+            if let Some(cell) = entry.meta.cell {
+                assert!(on.lines().any(|line| line == cell), "{on:?}");
+                assert!(!off.lines().any(|line| line == cell), "{off:?}");
+            }
+            if let Some(original) = &original {
+                assert!(on.lines().any(|line| line == original), "{on:?}");
+            }
+            assert!(!off.contains(ORIGINAL_NOTE), "{off:?}");
+            assert!(
+                off.lines().all(|line| on.lines().any(|o| o == line)),
+                "{path}: {off:?} is not part of {on:?}"
+            );
+        }
     }
 
     #[test]
@@ -1560,7 +1607,8 @@ mod tests {
         // F19's first help site. It passes before HELP has rows (help_for is then the engine's
         // help); it is the guard that bites if an overlay row is not shown.
         for entry in InputCatalogue::get().all() {
-            let tooltip = input_tooltip(entry);
+            // With the spreadsheet details, so that a path with no help opens the tooltip.
+            let tooltip = input_tooltip(entry, true);
             match help_for(&entry.path) {
                 "" => assert!(
                     tooltip.starts_with(&format!("{}\n", entry.path)),

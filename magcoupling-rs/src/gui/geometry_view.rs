@@ -297,7 +297,9 @@ fn paint_view(
             ui.id().with(("geometry_dimension", callout.tag)),
             Sense::click(),
         );
-        readouts.show(ui, response, callout.path, || callout_text(callout));
+        readouts.show(ui, response, callout.path, |show_details| {
+            callout_text(callout, show_details)
+        });
         dimensions.push((callout.tag, rect));
     }
 }
@@ -348,9 +350,9 @@ pub(crate) fn plated_text(
     painter.galley(rect.min, galley, color);
 }
 
-/// The hover text of the callout's result.
-fn callout_text(callout: &Callout) -> String {
-    hover_text(callout.path).unwrap_or_else(|| callout.path.to_owned())
+/// The hover text of the callout's result, with the spreadsheet details when `show_details`.
+fn callout_text(callout: &Callout, show_details: bool) -> String {
+    hover_text(callout.path, show_details).unwrap_or_else(|| callout.path.to_owned())
 }
 
 /// The callouts (tag and text, in their colours, each a readout) and the notes, scrolling in
@@ -374,7 +376,9 @@ fn list_ui(ui: &mut egui::Ui, g: &Geometry, readouts: &mut Readouts) {
                     })
                     .response
                     .rect;
-                readouts.show_over(ui, rect, callout.path, || callout_text(callout));
+                readouts.show_over(ui, rect, callout.path, |show_details| {
+                    callout_text(callout, show_details)
+                });
             }
             for note in &g.notes {
                 let text = egui::RichText::new(&note.text);
@@ -591,40 +595,51 @@ mod tests {
 
     #[test]
     fn hovering_a_dimension_shows_its_result_s_hover_text() {
-        let ctx = egui::Context::default();
-        ctx.style_mut(|s| {
-            s.interaction.tooltip_delay = 0.0;
-            s.interaction.show_tooltips_only_when_still = false;
-        });
+        use crate::gui::typeset::TermColors;
         let inputs = DesignInputs::default();
         let size = egui::vec2(1000.0, 700.0);
-        let (_, layout) = frame(&ctx, &inputs, size, Vec::new());
-        let (_, rect) = layout
-            .dimensions
-            .iter()
-            .find(|(tag, _)| *tag == 1)
-            .copied()
-            .expect("the face gap is drawn");
-        let at = rect.center();
-        let want = hover_text("model.face_gap_mm").unwrap();
-        let (before, _) = frame(&ctx, &inputs, size, vec![egui::Event::PointerMoved(at)]);
-        assert!(
-            !drawn_texts(&before).contains(&want),
-            "not before the pointer is there"
-        );
         let results = compute_all(&inputs);
-        let mut output = None;
-        for dt in [0.1, 0.2] {
-            output = Some(sized_frame_at(&ctx, size, Some(dt), Vec::new(), |ui| {
-                geometry_ui(ui, &inputs, &results, &mut Readouts::default());
-            }));
+        // With and without the spreadsheet details (spec S2-5): the path only with them.
+        for show_details in [false, true] {
+            let ctx = egui::Context::default();
+            ctx.style_mut(|s| {
+                s.interaction.tooltip_delay = 0.0;
+                s.interaction.show_tooltips_only_when_still = false;
+            });
+            let (_, layout) = frame(&ctx, &inputs, size, Vec::new());
+            let (_, rect) = layout
+                .dimensions
+                .iter()
+                .find(|(tag, _)| *tag == 1)
+                .copied()
+                .expect("the face gap is drawn");
+            let at = rect.center();
+            let want = hover_text("model.face_gap_mm", show_details).unwrap();
+            assert_eq!(
+                want.lines().any(|line| line == "model.face_gap_mm"),
+                show_details,
+                "{want}"
+            );
+            let (before, _) = frame(&ctx, &inputs, size, vec![egui::Event::PointerMoved(at)]);
+            assert!(
+                !drawn_texts(&before).contains(&want),
+                "not before the pointer is there"
+            );
+            let mut output = None;
+            for dt in [0.1, 0.2] {
+                output = Some(sized_frame_at(&ctx, size, Some(dt), Vec::new(), |ui| {
+                    let mut readouts = Readouts::new(TermColors::default(), show_details);
+                    geometry_ui(ui, &inputs, &results, &mut readouts);
+                }));
+            }
+            assert_eq!(
+                want.lines().next(),
+                Some("Gap at the flat centres (effective gap)"),
+                "{want}"
+            );
+            let texts = drawn_texts(&output.unwrap());
+            assert!(texts.contains(&want), "no hover text in {texts:?}");
         }
-        assert!(
-            want.starts_with("Gap at the flat centres (effective gap)\n"),
-            "{want}"
-        );
-        let texts = drawn_texts(&output.unwrap());
-        assert!(texts.contains(&want), "no hover text in {texts:?}");
     }
 
     #[test]

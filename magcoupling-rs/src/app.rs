@@ -239,6 +239,11 @@ mod tests {
         assert!(script.contains(DESIGN_FILE_LOADED));
         // The equation registry's log line, built when the panel starts.
         assert!(script.contains(crate::gui::readouts::REGISTRY_LOG_PREFIX));
+        // The header's Show spreadsheet details toggle (spec S2-5), which the first view shows.
+        assert!(
+            script.contains(crate::gui::SHOW_DETAILS),
+            "the smoke prompt names the header's toggle"
+        );
         // The app opens the link and the solve succeeds after its debounce.
         let ctx = egui::Context::default();
         let mut app = MagcouplingApp::new(&ctx);

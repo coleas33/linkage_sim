@@ -85,6 +85,16 @@ pub const SAVE_DESIGN: &str = "Save design";
 pub const LOAD_DESIGN: &str = "Load design";
 pub const COPY_SHARE_LINK: &str = "Copy share link";
 
+/// The header's toggle of the provenance lines (spec S2-5), off when a panel opens: with it on,
+/// the hover texts add the internal name, the original spreadsheet cell and note and the
+/// corrections that change a value; the dashboard shows the correction ids, the results table
+/// the cells and the ids, the Equation panel the cell and corrections lines and each term's
+/// internal name, and the Assumptions view each source.
+pub const SHOW_DETAILS: &str = "Show spreadsheet details";
+
+/// The hover text of [`SHOW_DETAILS`].
+pub const SHOW_DETAILS_HINT: &str = "Show where each value comes from in the original spreadsheet: its cell, its internal name, the corrections that change it and each assumption's source";
+
 /// The header's spreadsheet button (decision X-8; the results table has its own, beside the CSV
 /// and JSON exports).
 pub const EXPORT_SPREADSHEET: &str = "Export spreadsheet";
@@ -265,6 +275,9 @@ pub struct MagcouplingPanel {
     /// Whether the session has hidden the welcome strip (spec 3.1): a view choice, never in a
     /// design file, a share link or the undo history, and kept by reset all and every load.
     welcome_dismissed: bool,
+    /// Whether the header's Show spreadsheet details is on (spec S2-5): a view choice, never in
+    /// a design file, a share link or the undo history, and kept by reset all and every load.
+    show_details: bool,
     /// What the inputs side shows.
     inputs_view: InputsView,
     /// How the design inputs are ordered (decision O-1): a view of this session only, never in
@@ -324,6 +337,7 @@ impl MagcouplingPanel {
             last_error: None,
             centre: CentreView::SizeAndTorque,
             welcome_dismissed: false,
+            show_details: false,
             inputs_view: InputsView::Design,
             input_order: InputOrder::default(),
             minimum_diameter_mm: None,
@@ -555,7 +569,8 @@ impl MagcouplingPanel {
                 ui.visuals().selection.stroke.color,
             );
         }
-        let mut readouts = Readouts::new(marks);
+        // The header's toggle as the frame begins: every view of this frame reads it here.
+        let mut readouts = Readouts::new(marks, self.show_details);
         ui.push_id("magcoupling_panel", |ui| {
             self.shortcuts(ui);
             egui::TopBottomPanel::top("magcoupling_header").show_inside(ui, |ui| {
@@ -740,6 +755,7 @@ impl MagcouplingPanel {
     fn centre_ui(&mut self, ui: &mut egui::Ui, shown: &DesignInputs, readouts: &mut Readouts) {
         // The Equation panel docks at the bottom of the centre region (decision M43-1). It
         // starts at about 45 % of the region, and its drag stops short of the view's strip.
+        let show_details = readouts.show_details();
         if self.explorer.open {
             let (range, start) = panel_heights(ui.available_rect_before_wrap().height());
             egui::TopBottomPanel::bottom(EQUATION_PANEL_ID)
@@ -747,7 +763,7 @@ impl MagcouplingPanel {
                 .default_height(start)
                 .height_range(range)
                 .show_inside(ui, |ui| {
-                    explorer_ui(ui, &mut self.explorer, shown, &self.results);
+                    explorer_ui(ui, &mut self.explorer, shown, &self.results, show_details);
                 });
         }
         // egui's panel only shrinks the region's cursor: a widget laid out after it may still
@@ -1005,6 +1021,16 @@ impl MagcouplingPanel {
                     self.explorer.open = true;
                 }
             }
+            ui.separator();
+            // The frame's readouts were set up before the header: the next frame draws every
+            // view with the new setting.
+            if ui
+                .checkbox(&mut self.show_details, SHOW_DETAILS)
+                .on_hover_text(SHOW_DETAILS_HINT)
+                .changed()
+            {
+                ui.ctx().request_repaint();
+            }
         });
         // Spec Addendum A3: the banner while any assumption differs from its workbook default.
         let banner = assumptions_banner(&self.inputs);
@@ -1140,7 +1166,8 @@ impl MagcouplingPanel {
 
     /// The Assumptions view (spec Addendum A3 "Toggle panel"): each assumption with its
     /// changed-from-default dot, the rows of its inputs (value, unit, reset: the inputs' own
-    /// rows, so an edit here is an edit like any other), its rationale and its source.
+    /// rows, so an edit here is an edit like any other), its rationale and, with the
+    /// spreadsheet details (spec S2-5), its source.
     fn assumptions_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
         let catalogue = InputCatalogue::get();
         egui::ScrollArea::vertical()
@@ -1167,14 +1194,16 @@ impl MagcouplingPanel {
                     ui.add(
                         egui::Label::new(egui::RichText::new(assumption.rationale).weak()).wrap(),
                     );
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(format!("{SOURCE}: {}", assumption.source))
-                                .small()
-                                .weak(),
-                        )
-                        .wrap(),
-                    );
+                    if readouts.show_details() {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(format!("{SOURCE}: {}", assumption.source))
+                                    .small()
+                                    .weak(),
+                            )
+                            .wrap(),
+                        );
+                    }
                 }
             });
     }
@@ -1354,7 +1383,8 @@ impl MagcouplingPanel {
         }
         .unwrap_or(Value::None);
         let seed = self.seed(entry);
-        let row = ui.scope(|ui| input_row(ui, entry, &current, seed, locked));
+        let show_details = readouts.show_details();
+        let row = ui.scope(|ui| input_row(ui, entry, &current, seed, locked, show_details));
         readouts.mark(ui, row.response.rect, &entry.path);
         if self
             .explorer
@@ -1457,8 +1487,8 @@ fn torque_readout(
     }
     let text = with_unit(format_value(&Value::Num(torque)), "N\u{b7}m");
     let response = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
-    readouts.show(ui, response, path, || {
-        crate::gui::dashboard::hover_text(path).unwrap_or_default()
+    readouts.show(ui, response, path, |show_details| {
+        crate::gui::dashboard::hover_text(path, show_details).unwrap_or_default()
     });
     Some(torque)
 }
@@ -1861,6 +1891,153 @@ mod tests {
             hidden(&mut harness, view.label());
         }
         assert!(!MagcouplingPanel::new().welcome_dismissed, "a new session");
+    }
+
+    #[test]
+    fn the_details_toggle_starts_off_and_a_click_turns_it_on_and_off() {
+        let mut harness = Harness::new();
+        assert!(!harness.panel.show_details);
+        assert!(!MagcouplingPanel::default().show_details);
+        tooltips_at_once(&harness);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, SHOW_DETAILS), 1);
+        // Its hover says what it shows.
+        let at = text_rect(&output, SHOW_DETAILS).unwrap().center();
+        harness.frame(vec![egui::Event::PointerMoved(at)]);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, SHOW_DETAILS_HINT), 1);
+        harness.click_text(SHOW_DETAILS);
+        assert!(harness.panel.show_details);
+        harness.click_text(SHOW_DETAILS);
+        assert!(!harness.panel.show_details);
+    }
+
+    #[test]
+    fn the_toggle_and_the_texts_it_adds_are_in_plain_words() {
+        use crate::gui::corrections::{MARKER_HEADING, MARKER_SCOPE};
+        use crate::gui::dashboard::MARKER_LEGEND;
+        use crate::gui::guidance::{EXAMPLE_DESIGN, EXAMPLE_DESIGN_HOVER, plain_text_violations};
+        use crate::gui::inputs::ORIGINAL_NOTE;
+        // Spec 3.4: what this slice writes passes the guard. The ids and cells the toggle
+        // reveals are the data it gates, not texts of this slice.
+        for text in [
+            SHOW_DETAILS,
+            SHOW_DETAILS_HINT,
+            MARKER_LEGEND,
+            MARKER_HEADING,
+            MARKER_SCOPE,
+            ORIGINAL_NOTE,
+            EXAMPLE_DESIGN,
+            EXAMPLE_DESIGN_HOVER,
+        ] {
+            assert_eq!(plain_text_violations(text), Vec::<&str>::new(), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn the_details_toggle_is_a_view_choice_in_no_file_link_or_undo_step() {
+        // Spec S2-5: GUI-only state, like the welcome strip's: the design, its file, its link
+        // and the undo history are untouched, and a load, undo, reset all or a share link
+        // opened as the session's start keep it; only a new panel starts with it off.
+        let kept = |harness: &mut Harness, after: &str| {
+            harness.frame(Vec::new());
+            assert!(harness.panel.show_details, "{after}");
+        };
+        let mut harness = Harness::new();
+        let file = design_to_json(&harness.panel.design());
+        let link = harness.panel.share_link();
+        harness.click_text(SHOW_DETAILS);
+        assert!(harness.panel.show_details);
+        assert_eq!(harness.panel.design(), Design::default());
+        assert_eq!(design_to_json(&harness.panel.design()), file);
+        assert_eq!(harness.panel.share_link(), link);
+        assert_eq!(harness.panel.history.undo_len(), 0);
+        assert!(!harness.panel.history.can_undo(&Design::default()));
+        harness
+            .panel
+            .load_design_file(&design_to_json(&gap_design(2.0)))
+            .unwrap();
+        kept(&mut harness, "a loaded design file");
+        harness.click_text(UNDO);
+        assert_eq!(harness.panel.design(), Design::default());
+        kept(&mut harness, "undo");
+        harness.click_text(RESET_ALL);
+        kept(&mut harness, "reset all");
+        harness
+            .panel
+            .open_share_payload(&encode_share_payload(&gap_design(1.6)))
+            .unwrap();
+        kept(&mut harness, "a share link opened as the session's start");
+        assert!(!MagcouplingPanel::new().show_details, "a new session");
+    }
+
+    #[test]
+    fn a_value_s_hover_names_its_path_cell_and_corrections_only_with_the_spreadsheet_details() {
+        use crate::gui::corrections::MARKER_HEADING;
+        use crate::gui::dashboard::{dashboard_lines, hover_text};
+        // The pull-out on the dashboard and on the Size tab: one result, two readouts.
+        let path = "model.pullout_Nm";
+        let cell = result_info(path)
+            .unwrap()
+            .cell
+            .clone()
+            .expect("the pull-out has a cell");
+        let shown = displayed_pullout(&DesignInputs::default());
+        for show_details in [false, true] {
+            let mut harness = Harness::first_view();
+            harness.panel.show_details = show_details;
+            tooltips_at_once(&harness);
+            let output = harness.frame(Vec::new());
+            let row = dashboard_lines(harness.panel.results())
+                .into_iter()
+                .find(|line| line.path == path)
+                .expect("a dashboard row")
+                .tooltip(show_details);
+            let readout = hover_text(path, show_details).expect("a result");
+            for want in [&row, &readout] {
+                assert_eq!(want.lines().any(|l| l == path), show_details, "{want}");
+                assert_eq!(want.lines().any(|l| l == cell), show_details, "{want}");
+                assert_eq!(want.contains(MARKER_HEADING), show_details, "{want}");
+            }
+            // The Size tab's readout in the centre, the dashboard's row on the right.
+            let mut rects = text_rects(&output, &shown);
+            rects.sort_by(|a, b| a.left().total_cmp(&b.left()));
+            assert_eq!(rects.len(), 2, "{rects:?}");
+            let (on_size_tab, on_dashboard) = (rects[0], rects[1]);
+            // At the text's right end (a wrapped label's rect starts at the row's left), with
+            // a frame for the last tooltip to close.
+            for (rect, want) in [(on_size_tab, &readout), (on_dashboard, &row)] {
+                let at = egui::pos2(rect.right() - 4.0, rect.center().y);
+                harness.frame(vec![egui::Event::PointerMoved(at)]);
+                harness.frame(Vec::new());
+                let output = harness.frame(Vec::new());
+                assert!(drawn_texts(&output).contains(want), "{want:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn an_input_row_s_hover_names_its_path_and_cell_only_with_the_spreadsheet_details() {
+        use crate::gui::input_ui::TRACE_HINT;
+        use crate::gui::inputs::input_tooltip;
+        let entry = InputCatalogue::get().entry(FACE_GAP).unwrap();
+        let cell = entry.meta.cell.expect("the face gap has a cell");
+        let label = crate::gui::plain_text::label_for(FACE_GAP);
+        for show_details in [false, true] {
+            // The Key design group's face-gap row, its label's hover.
+            let mut harness = Harness::new();
+            harness.panel.show_details = show_details;
+            tooltips_at_once(&harness);
+            let output = harness.frame(Vec::new());
+            let rect = text_rect(&output, label).unwrap_or_else(|| panic!("no {label:?}"));
+            harness.frame(vec![egui::Event::PointerMoved(rect.center())]);
+            harness.frame(Vec::new());
+            let output = harness.frame(Vec::new());
+            let want = format!("{}\n{TRACE_HINT}", input_tooltip(entry, show_details));
+            assert!(drawn_texts(&output).contains(&want), "{want:?}");
+            assert_eq!(want.lines().any(|line| line == FACE_GAP), show_details);
+            assert_eq!(want.lines().any(|line| line == cell), show_details);
+        }
     }
 
     #[test]
@@ -2575,17 +2752,26 @@ mod tests {
 
     #[test]
     fn the_dashboard_shows_the_stored_3d_label_and_the_corrected_markers() {
+        use crate::gui::dashboard::MARKER_LEGEND;
         let mut harness = Harness::on_screen(TALL);
+        // The correction ids and their legend only with the spreadsheet details (spec S2-5).
+        harness.panel.show_details = true;
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, STORED_3D_LABEL), 1);
         // The pull-out's marker: E3 changes it at the defaults, E7 and E8 have probes on it.
         assert!(count(&output, "E3 E7 E8") >= 1);
+        assert_eq!(count(&output, MARKER_LEGEND), 1);
         assert_eq!(count(&output, "Inside the space claim"), 1);
         assert!(
             !drawn_texts(&output)
                 .iter()
                 .any(|t| t.starts_with(END_EFFECT_BANNER))
         );
+        harness.panel.show_details = false;
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "E3 E7 E8"), 0);
+        assert_eq!(count(&output, MARKER_LEGEND), 0);
+        assert_eq!(count(&output, STORED_3D_LABEL), 1);
     }
 
     #[test]
@@ -2621,6 +2807,8 @@ mod tests {
         let cell = |index: usize| entries[index].info.cell.clone().unwrap();
         let (first, last) = (cell(0), cell(entries.len() - 1));
         let mut harness = Harness::new();
+        // The cell column, drawn with the spreadsheet details (spec S2-5).
+        harness.panel.show_details = true;
         let output = harness.click_text(CentreView::Results.label());
         let total = entries.len();
         assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
@@ -2644,8 +2832,10 @@ mod tests {
         use crate::gui::results_table::ResultOrder;
         let groups = result_groups();
         let heading = |g: usize| format!("{} ({})", groups[g].label, groups[g].rows.len());
-        // Tall enough to draw the headline and the whole torque chain.
+        // Tall enough to draw the headline and the whole torque chain; the cells are drawn with
+        // the spreadsheet details (spec S2-5).
         let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
+        harness.panel.show_details = true;
         harness.click_text(CentreView::Results.label());
         let output = harness.frame(Vec::new());
         for g in 0..groups.len() {
@@ -2721,6 +2911,8 @@ mod tests {
         let shown = torque.rows.iter().filter(|i| matches.contains(i)).count();
         let heading = format!("{} ({shown})", torque.label);
         let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
+        // The cell column, drawn with the spreadsheet details (spec S2-5).
+        harness.panel.show_details = true;
         tooltips_at_once(&harness);
         harness.click_text(CentreView::Results.label());
         harness.click_text(SEARCH_HINT);
@@ -3363,39 +3555,43 @@ mod tests {
     #[test]
     fn a_narrow_window_shows_each_row_s_label_and_value_without_scrolling() {
         // The M4-1 review's ~930 px window: the inputs (320) and the dashboard (300) leave the
-        // table about 294 points. The row's value must end left of the dashboard.
-        let mut harness = Harness::on_screen(egui::vec2(930.0, 1024.0));
-        // The wrapped tab row settles on the second frame (egui wraps from the last frame's
-        // widths).
-        harness.frame(Vec::new());
-        harness.click_text(CentreView::Results.label());
-        assert_eq!(harness.panel.centre, CentreView::Results);
-        harness.click_text(crate::gui::results_table::SEARCH_HINT);
-        harness.frame(vec![egui::Event::Text("calculator!c93".to_owned())]);
-        let output = harness.frame(Vec::new());
-        let value = displayed_pullout(&DesignInputs::default());
-        let in_table: Vec<egui::Rect> = text_rects(&output, &value)
-            .into_iter()
-            .filter(|r| r.right() <= 930.0 - 300.0)
-            .collect();
-        assert_eq!(in_table.len(), 1, "the row's value is on screen: {value}");
-        // And the row's label (truncated to its column, but there).
-        let label = crate::gui::results_table::table_entries()
-            .iter()
-            .find(|e| e.info.cell.as_deref() == Some("Calculator!C93"))
-            .expect("the pull-out's row")
-            .info
-            .meta
-            .label;
-        let labels: Vec<egui::Rect> = text_rects(&output, label)
-            .into_iter()
-            .filter(|r| r.left() >= 0.0 && r.right() <= 930.0 - 300.0)
-            .collect();
-        assert_eq!(labels.len(), 1, "the row's label is on screen: {label}");
-        // It fills its column, at least 120 points, and ends left of the value.
-        let min = crate::gui::results_table::LABEL_MIN_WIDTH;
-        assert!(labels[0].width() >= min - 1.0, "{:?}", labels[0]);
-        assert!(labels[0].right() <= in_table[0].left());
+        // table about 294 points. The row's value must end left of the dashboard, with the
+        // cell and marker columns (the spreadsheet details) and without them.
+        for show_details in [false, true] {
+            let mut harness = Harness::on_screen(egui::vec2(930.0, 1024.0));
+            harness.panel.show_details = show_details;
+            // The wrapped tab row settles on the second frame (egui wraps from the last frame's
+            // widths).
+            harness.frame(Vec::new());
+            harness.click_text(CentreView::Results.label());
+            assert_eq!(harness.panel.centre, CentreView::Results);
+            harness.click_text(crate::gui::results_table::SEARCH_HINT);
+            harness.frame(vec![egui::Event::Text("calculator!c93".to_owned())]);
+            let output = harness.frame(Vec::new());
+            let value = displayed_pullout(&DesignInputs::default());
+            let in_table: Vec<egui::Rect> = text_rects(&output, &value)
+                .into_iter()
+                .filter(|r| r.right() <= 930.0 - 300.0)
+                .collect();
+            assert_eq!(in_table.len(), 1, "the row's value is on screen: {value}");
+            // And the row's label (truncated to its column, but there).
+            let label = crate::gui::results_table::table_entries()
+                .iter()
+                .find(|e| e.info.cell.as_deref() == Some("Calculator!C93"))
+                .expect("the pull-out's row")
+                .info
+                .meta
+                .label;
+            let labels: Vec<egui::Rect> = text_rects(&output, label)
+                .into_iter()
+                .filter(|r| r.left() >= 0.0 && r.right() <= 930.0 - 300.0)
+                .collect();
+            assert_eq!(labels.len(), 1, "the row's label is on screen: {label}");
+            // It fills its column, at least 120 points, and ends left of the value.
+            let min = crate::gui::results_table::LABEL_MIN_WIDTH;
+            assert!(labels[0].width() >= min - 1.0, "{:?}", labels[0]);
+            assert!(labels[0].right() <= in_table[0].left());
+        }
     }
 
     #[test]
@@ -3957,6 +4153,8 @@ mod tests {
         // egui draws an empty box for a character its default fonts lack (U+2192, the
         // spec's arrow, is one): every drawn text, in each state, and every hover text.
         let mut harness = Harness::on_screen(egui::vec2(1280.0, 12000.0));
+        // With the spreadsheet details on: every provenance line is drawn too (spec S2-5).
+        harness.panel.show_details = true;
         let mut texts = drawn_texts(&harness.frame(Vec::new()));
         texts.extend(drawn_texts(&harness.size()));
         // Every view of the centre region, and the geometry callouts' hover texts.
@@ -3978,7 +4176,7 @@ mod tests {
         texts.extend(
             geometry
                 .callouts()
-                .filter_map(|c| crate::gui::dashboard::hover_text(c.path)),
+                .filter_map(|c| crate::gui::dashboard::hover_text(c.path, true)),
         );
         // Every group open, in both orders; every workflow heading; the filtered view's runs.
         for order in [InputOrder::Workflow, InputOrder::Workbook] {
@@ -4009,6 +4207,9 @@ mod tests {
         }
         texts.push(crate::gui::results_table::CLEAR_TO_CLOSE.to_owned());
         texts.extend([WELCOME, HIDE_WELCOME, HIDE_WELCOME_HINT].map(str::to_owned));
+        texts.extend([SHOW_DETAILS, SHOW_DETAILS_HINT].map(str::to_owned));
+        texts.push(crate::gui::dashboard::MARKER_LEGEND.to_owned());
+        texts.push(crate::gui::guidance::EXAMPLE_DESIGN_HOVER.to_owned());
         // The load's notice of a sizing target that differed from the requirement (G-2).
         texts.push(target_mismatch_notice(3.25, 2.5));
         harness.panel.input_filter = "a".to_owned();
@@ -4024,7 +4225,11 @@ mod tests {
         texts.extend(drawn_texts(&harness.frame(Vec::new())));
         assert!(texts.iter().any(|t| t.starts_with(ASSUMPTIONS_MODIFIED)));
         let catalogue = InputCatalogue::get();
-        texts.extend(catalogue.all().map(crate::gui::inputs::input_tooltip));
+        texts.extend(
+            catalogue
+                .all()
+                .map(|entry| crate::gui::inputs::input_tooltip(entry, true)),
+        );
         // The material warnings the dashboard can show.
         texts.extend(
             crate::engine::warnings::WARNING_RULES
@@ -4035,11 +4240,11 @@ mod tests {
         texts.extend(
             crate::gui::dashboard::dashboard_lines(&results)
                 .into_iter()
-                .map(|line| line.tooltip()),
+                .map(|line| line.tooltip(true)),
         );
         for entry in crate::gui::results_table::table_entries() {
             let value = results.get(&entry.path).unwrap_or(Value::None);
-            texts.push(crate::gui::results_table::row_tooltip(entry, &value));
+            texts.push(crate::gui::results_table::row_tooltip(entry, &value, true));
         }
         for text in &texts {
             crate::gui::test_support::assert_glyphs(&harness.ctx, text, "the panel");
@@ -6698,40 +6903,60 @@ mod tests {
                         && e.info.cell.is_some() == has_cell
                 })
                 .unwrap_or_else(|| panic!("no result without an equation (cell: {has_cell})"));
-            let mut harness = Harness::new();
-            let shut = harness.frame(Vec::new());
-            harness.panel.explorer.open_path(&entry.path);
-            harness.frame(Vec::new());
-            let output = harness.frame(Vec::new());
-            assert_eq!(count(&output, NO_EQUATION), 1);
-            // The panel adds a line to what the views draw: the cell, or "Rust-only result".
-            let cell = entry.info.cell.as_deref().unwrap_or("Rust-only result");
-            assert_eq!(count(&output, cell), count(&shut, cell) + 1, "{cell}");
-            // And the label with the value and its unit.
-            let value = harness.panel.results().get(&entry.path).unwrap();
-            let line = format!(
-                "{} = {}",
-                entry.info.meta.label,
-                with_unit(format_value(&value), entry.info.meta.unit)
-            );
-            assert_eq!(count(&output, &line), 1, "{line:?}");
+            // The cell line only with the spreadsheet details (spec S2-5).
+            for show_details in [false, true] {
+                let mut harness = Harness::new();
+                harness.panel.show_details = show_details;
+                let shut = harness.frame(Vec::new());
+                harness.panel.explorer.open_path(&entry.path);
+                harness.frame(Vec::new());
+                let output = harness.frame(Vec::new());
+                assert_eq!(count(&output, NO_EQUATION), 1);
+                // The panel adds a line to what the views draw: the cell, or "Rust-only result".
+                let cell = entry.info.cell.as_deref().unwrap_or("Rust-only result");
+                assert_eq!(
+                    count(&output, cell),
+                    count(&shut, cell) + usize::from(show_details),
+                    "{cell} (details {show_details})"
+                );
+                // And the label with the value and its unit.
+                let value = harness.panel.results().get(&entry.path).unwrap();
+                let line = format!(
+                    "{} = {}",
+                    entry.info.meta.label,
+                    with_unit(format_value(&value), entry.info.meta.unit)
+                );
+                assert_eq!(count(&output, &line), 1, "{line:?}");
+            }
         }
     }
 
     #[test]
     fn the_open_equation_shows_its_label_cell_value_and_corrections() {
-        let mut harness = Harness::new();
-        harness.panel.explorer.open_path("model.pullout_Nm");
-        harness.frame(Vec::new());
-        let output = harness.frame(Vec::new());
-        // Decision M43-14: the corrections the equation embodies, upstream of the pull-out.
+        // Decision M43-14: the corrections the equation embodies, upstream of the pull-out;
+        // the cell and the corrections only with the spreadsheet details (spec S2-5), the
+        // label alone without them.
         let value_line = format!("T_pull = {}", displayed_pullout(&DesignInputs::default()));
-        for line in [
-            "Pull-out torque at operating temperature (Calculator!C93)",
-            value_line.as_str(),
-            "Embodies corrections: E7, E8, E3",
-        ] {
-            assert_eq!(count(&output, line), 1, "{line:?}");
+        let label = "Pull-out torque at operating temperature";
+        for show_details in [false, true] {
+            let mut harness = Harness::new();
+            harness.panel.show_details = show_details;
+            let shut = harness.frame(Vec::new());
+            harness.panel.explorer.open_path("model.pullout_Nm");
+            harness.frame(Vec::new());
+            let output = harness.frame(Vec::new());
+            assert_eq!(count(&output, &value_line), 1, "{value_line:?}");
+            for line in [
+                "Pull-out torque at operating temperature (Calculator!C93)",
+                "Embodies corrections: E7, E8, E3",
+            ] {
+                assert_eq!(count(&output, line), usize::from(show_details), "{line:?}");
+            }
+            assert_eq!(
+                count(&output, label),
+                count(&shut, label) + usize::from(!show_details),
+                "{label:?}"
+            );
         }
     }
 
@@ -6775,28 +7000,30 @@ mod tests {
 
     #[test]
     fn the_assumptions_view_lists_each_assumption_with_its_rationale_and_source() {
-        // Tall enough for all fourteen without scrolling.
-        let mut harness = Harness::on_screen(egui::vec2(1280.0, 6000.0));
-        harness.click_text(InputsView::Assumptions.label());
-        assert_eq!(harness.panel.inputs_view, InputsView::Assumptions);
-        let output = harness.frame(Vec::new());
-        let texts = drawn_texts(&output);
-        for assumption in ASSUMPTIONS {
-            for want in [
-                assumption.label.to_owned(),
-                assumption.rationale.to_owned(),
-                format!("{SOURCE}: {}", assumption.source),
-            ] {
-                assert!(texts.contains(&want), "missing {want:?}");
+        // The source line only with the spreadsheet details (spec S2-5).
+        for show_details in [false, true] {
+            // Tall enough for all fourteen without scrolling.
+            let mut harness = Harness::on_screen(egui::vec2(1280.0, 6000.0));
+            harness.panel.show_details = show_details;
+            harness.click_text(InputsView::Assumptions.label());
+            assert_eq!(harness.panel.inputs_view, InputsView::Assumptions);
+            let output = harness.frame(Vec::new());
+            let texts = drawn_texts(&output);
+            for assumption in ASSUMPTIONS {
+                for want in [assumption.label.to_owned(), assumption.rationale.to_owned()] {
+                    assert!(texts.contains(&want), "missing {want:?}");
+                }
+                let source = format!("{SOURCE}: {}", assumption.source);
+                assert_eq!(texts.contains(&source), show_details, "{source:?}");
             }
+            // Idle frames rewrite no assumption (the rows are the inputs' own).
+            for _ in 0..3 {
+                harness.frame(Vec::new());
+            }
+            assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+            harness.click_text(InputsView::Design.label());
+            assert_eq!(harness.panel.inputs_view, InputsView::Design);
         }
-        // Idle frames rewrite no assumption (the rows are the inputs' own).
-        for _ in 0..3 {
-            harness.frame(Vec::new());
-        }
-        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
-        harness.click_text(InputsView::Design.label());
-        assert_eq!(harness.panel.inputs_view, InputsView::Design);
     }
 
     #[test]

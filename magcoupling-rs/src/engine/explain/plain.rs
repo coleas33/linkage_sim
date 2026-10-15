@@ -15,7 +15,7 @@ use crate::engine::clamps::SCREW_SIZES;
 /// ```text
 /// C\d{2,3}             a cell: C and two or more digits
 /// E\d{1,2}             a correction id: E, one or two digits, then no letter, digit or _
-/// workbook             the word, in any case, but in the status line's "Workbook example"
+/// workbook             the word, in any case
 /// Addendum             the spec's addenda
 /// Rust-only            the engine's provenance
 /// Calculator!          a Calculator sheet cell
@@ -57,10 +57,6 @@ pub const BANNED: [&str; 18] = [
     "\\bM\\d{1,3}\\b",
 ];
 
-/// The phrase that may say "workbook": the design status line's ("Workbook example design"),
-/// until slice 2 renames that line (spec S2-5) and drops this exception.
-const ALLOWED_WORKBOOK: &str = "Workbook example";
-
 /// The [`BANNED`] patterns `text` contains, in [`BANNED`]'s order, each once. Every text the
 /// calculator draws for its users (guides, notes, help, hover texts) is held to an empty list.
 pub fn plain_text_violations(text: &str) -> Vec<&'static str> {
@@ -69,7 +65,7 @@ pub fn plain_text_violations(text: &str) -> Vec<&'static str> {
     let hits = [
         cell(&chars),
         correction_id(&chars),
-        lower.matches("workbook").count() > text.matches(ALLOWED_WORKBOOK).count(),
+        lower.contains("workbook"),
         text.contains("Addendum"),
         text.contains("Rust-only"),
         text.contains("Calculator!"),
@@ -221,8 +217,11 @@ mod tests {
         ),
         ("Spec Addendum A5", &["Addendum"]),
         ("WORKBOOK", &["workbook"]),
-        // The status line's phrase excuses itself only, and only as written (until slice 2
-        // renames the status line, S2-5).
+        // No phrase is excused: the status line says "Example design" (S2-5).
+        (
+            "Workbook example design: fails 3 of 8 checks",
+            &["workbook"],
+        ),
         ("Workbook example design from the workbook", &["workbook"]),
         ("workbook example", &["workbook"]),
         // Slice 2 (spec 3.4): each text reports its patterns once, in BANNED's order.
@@ -277,7 +276,7 @@ mod tests {
 
     /// Texts the guard leaves alone: plain words the patterns must not catch.
     const CLEAN: &[&str] = &[
-        "Workbook example design: fails 3 of 8 checks",
+        "Example design: fails 3 of 8 checks",
         "2.000e7 mm",
         "E123",
         "C1",

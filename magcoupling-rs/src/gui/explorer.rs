@@ -9,7 +9,8 @@
 //! open equation, in the equation or in the term list, drills into it (a step on the trail) or,
 //! for an input, highlights its row on the inputs side, opening its group and scrolling to it
 //! (decision M43-12); a crumb goes back to its step; "used by" goes up the chain. A result
-//! without an equation record shows its label, value and workbook cell. The panel docks at the
+//! without an equation record shows its label, value and (with the spreadsheet details) its
+//! workbook cell. The panel docks at the
 //! bottom of the centre region, closed until a value is clicked or its header button is
 //! pressed (decisions M43-1, M43-2).
 //!
@@ -43,6 +44,7 @@ use crate::engine::explain::markup::{Expr, Symbol};
 use crate::engine::explain::notes::{self, Note, Review, START_HERE, covers};
 use crate::engine::explain::{Design, Equation, TermKind, TermStyle};
 use crate::engine::meta::{ResultSet, Value};
+use crate::gui::corrections::correction_title;
 use crate::gui::dashboard::result_info;
 use crate::gui::diagrams::diagram_ui;
 use crate::gui::format::{format_value, with_unit};
@@ -440,12 +442,15 @@ fn unsummed(eq: &Equation, terms: &Design<'_>) -> Vec<String> {
         .collect()
 }
 
-/// Draws the Equation panel: its header row (heading, breadcrumb, close), then the path shown.
+/// Draws the Equation panel: its header row (heading, breadcrumb, close), then the path shown;
+/// with `show_details` (the header's Show spreadsheet details, spec S2-5) also the value's
+/// workbook cell, the corrections its equation embodies and each term's internal name on hover.
 pub fn explorer_ui(
     ui: &mut egui::Ui,
     explorer: &mut Explorer,
     inputs: &DesignInputs,
     results: &DesignResults,
+    show_details: bool,
 ) {
     let terms = Design { inputs, results };
     ui.horizontal_wrapped(|ui| {
@@ -533,9 +538,16 @@ pub fn explorer_ui(
             // The marks on screen are another equation's while its value is hovered.
             let others_marked = explorer.hovered().is_some_and(|h| h != path);
             let follow = match registry().equation_for(&path) {
-                Some(eq) => equation_body(ui, eq, &terms, others_marked, explorer.explain),
+                Some(eq) => equation_body(
+                    ui,
+                    eq,
+                    &terms,
+                    others_marked,
+                    explorer.explain,
+                    show_details,
+                ),
                 None => {
-                    no_equation_body(ui, &path, results);
+                    no_equation_body(ui, &path, results, show_details);
                     if explorer.explain {
                         ui.weak(NO_NOTE);
                     }
@@ -629,22 +641,29 @@ fn note_alone_ui(ui: &mut egui::Ui, note: &Note) -> Option<String> {
     clicked
 }
 
-/// The open equation: its label and cell, the equation large (a term clicked is followed), the
-/// value, the corrections it embodies, with `explain` its teaching note, then the term list,
-/// its swatches faded while `others_marked`. Returns the term clicked.
+/// The open equation: its label (and with `show_details` its cell), the equation large (a term
+/// clicked is followed), the value, with `show_details` the corrections it embodies (their
+/// titles on hover), with `explain` its teaching note, then the term list, its swatches faded
+/// while `others_marked`, a term's internal name on hover with `show_details`. Returns the term
+/// clicked.
 fn equation_body(
     ui: &mut egui::Ui,
     eq: &Equation,
     terms: &Design<'_>,
     others_marked: bool,
     explain: bool,
+    show_details: bool,
 ) -> Option<String> {
     let mut clicked = None;
-    ui.weak(format!(
-        "{} ({})",
-        eq.label,
-        eq.cell.as_deref().unwrap_or("Rust-only result")
-    ));
+    if show_details {
+        ui.weak(format!(
+            "{} ({})",
+            eq.label,
+            eq.cell.as_deref().unwrap_or("Rust-only result")
+        ));
+    } else {
+        ui.weak(eq.label);
+    }
     let colors = TermColors::of(eq);
     let ink = ui.visuals().text_color();
     let laid = ui.fonts(|f| layout_equation(f, registry(), eq, &colors, PANEL_SIZE, ink));
@@ -673,9 +692,11 @@ fn equation_body(
         );
     }
     let corrections = registry().corrections_upstream(&eq.target);
-    if !corrections.is_empty() {
+    if show_details && !corrections.is_empty() {
         let ids: Vec<String> = corrections.iter().map(ToString::to_string).collect();
-        ui.weak(format!("{CORRECTIONS}: {}", ids.join(", ")));
+        let titles: Vec<String> = corrections.iter().map(|&id| correction_title(id)).collect();
+        ui.weak(format!("{CORRECTIONS}: {}", ids.join(", ")))
+            .on_hover_text(titles.join("\n"));
     }
     if explain {
         ui.separator();
@@ -720,11 +741,15 @@ fn equation_body(
                         laid_ui(ui, &symbol, ink, Sense::hover());
                         let value = row.value.clone().unwrap_or(Value::None);
                         ui.label(value_text(&row.path, &value, &row.unit));
-                        if ui
-                            .add(egui::Label::new(term_label(&row.path)).sense(Sense::click()))
-                            .on_hover_text(&row.path)
-                            .clicked()
-                        {
+                        let term =
+                            ui.add(egui::Label::new(term_label(&row.path)).sense(Sense::click()));
+                        // Its internal name only with the spreadsheet details.
+                        let term = if show_details {
+                            term.on_hover_text(&row.path)
+                        } else {
+                            term
+                        };
+                        if term.clicked() {
                             clicked = Some(row.path.clone());
                         }
                         let style = registry()
@@ -786,16 +811,18 @@ fn swatch(ui: &mut egui::Ui, color: Color32) {
     ui.painter().rect_filled(rect, 2.0, color);
 }
 
-/// A result without an equation record: its label, value and cell.
-fn no_equation_body(ui: &mut egui::Ui, path: &str, results: &DesignResults) {
+/// A result without an equation record: its label, value and, with `show_details`, its cell.
+fn no_equation_body(ui: &mut egui::Ui, path: &str, results: &DesignResults, show_details: bool) {
     let label = term_label(path);
     let value = results.get(path).unwrap_or(Value::None);
     let unit = result_info(path).map_or("", |info| info.meta.unit);
     ui.strong(format!("{label} = {}", value_text(path, &value, unit)));
-    let cell = result_info(path)
-        .and_then(|info| info.cell.clone())
-        .unwrap_or_else(|| "Rust-only result".to_owned());
-    ui.weak(cell);
+    if show_details {
+        let cell = result_info(path)
+            .and_then(|info| info.cell.clone())
+            .unwrap_or_else(|| "Rust-only result".to_owned());
+        ui.weak(cell);
+    }
     ui.weak(NO_EQUATION);
 }
 
@@ -981,7 +1008,7 @@ mod tests {
         use crate::gui::test_support::{SCREEN, flat_shapes, sized_frame};
         let (inputs, results) = design();
         let output = sized_frame(ctx, SCREEN, Vec::new(), |ui| {
-            explorer_ui(ui, explorer, &inputs, &results);
+            explorer_ui(ui, explorer, &inputs, &results, false);
         });
         flat_shapes(&output)
             .into_iter()
@@ -1190,6 +1217,84 @@ mod tests {
             .find(|e| registry().term_kind(&e.path) == Some(TermKind::CellOnly))
             .expect("a result without a record");
         assert!(results.get(&cell_only.path).is_some());
+    }
+
+    /// Frames of `explorer_ui` on the default design at `show_details`, tooltips at once: the
+    /// first, then one with the pointer moved to the centre of the first drawn `text`, then
+    /// the frame that shows its tooltip.
+    fn hover_in_panel(
+        explorer: &mut Explorer,
+        show_details: bool,
+        text: &str,
+    ) -> (egui::FullOutput, egui::FullOutput) {
+        use crate::gui::test_support::{SCREEN, sized_frame_at, text_rect};
+        let (inputs, results) = design();
+        let ctx = egui::Context::default();
+        ctx.style_mut(|s| {
+            s.interaction.tooltip_delay = 0.0;
+            s.interaction.show_tooltips_only_when_still = false;
+        });
+        let mut frame = |time: f64, events: Vec<egui::Event>| {
+            sized_frame_at(&ctx, SCREEN, Some(time), events, |ui| {
+                explorer_ui(ui, explorer, &inputs, &results, show_details);
+            })
+        };
+        let first = frame(0.0, Vec::new());
+        let at = text_rect(&first, text)
+            .unwrap_or_else(|| panic!("no {text:?}"))
+            .center();
+        frame(0.1, vec![egui::Event::PointerMoved(at)]);
+        frame(0.2, Vec::new());
+        (first, frame(0.3, Vec::new()))
+    }
+
+    #[test]
+    fn the_cell_and_corrections_lines_show_only_with_the_details_and_name_each_title_on_hover() {
+        use crate::gui::corrections::correction_title;
+        use crate::gui::test_support::drawn_texts;
+        let path = "model.pullout_Nm";
+        let eq = registry()
+            .equation_for(path)
+            .expect("the pull-out's equation");
+        let cell = eq.cell.clone().expect("the pull-out has a cell");
+        let corrections = registry().corrections_upstream(path);
+        assert!(!corrections.is_empty());
+        let ids: Vec<String> = corrections.iter().map(ToString::to_string).collect();
+        let line = format!("{CORRECTIONS}: {}", ids.join(", "));
+        let titles: Vec<String> = corrections.iter().map(|&id| correction_title(id)).collect();
+        let titles = titles.join("\n");
+        let with_cell = format!("{} ({cell})", eq.label);
+        for show_details in [false, true] {
+            let mut explorer = Explorer::default();
+            explorer.open_path(path);
+            // The label line is drawn either way; hovered, the corrections line names each
+            // correction's title.
+            let hovered = if show_details {
+                line.as_str()
+            } else {
+                eq.label
+            };
+            let (first, output) = hover_in_panel(&mut explorer, show_details, hovered);
+            let texts = drawn_texts(&first);
+            assert_eq!(texts.contains(&line), show_details);
+            assert_eq!(texts.contains(&with_cell), show_details);
+            assert_eq!(texts.contains(&eq.label.to_owned()), !show_details);
+            assert_eq!(drawn_texts(&output).contains(&titles), show_details);
+        }
+    }
+
+    #[test]
+    fn a_term_s_internal_name_shows_on_hover_only_with_the_details() {
+        use crate::gui::test_support::drawn_texts;
+        // The term list of the pull-out's equation: the end-effect factor's label, hovered.
+        let label = term_label("model.f_end");
+        for show_details in [false, true] {
+            let mut explorer = Explorer::default();
+            explorer.open_path("model.pullout_Nm");
+            let (_, output) = hover_in_panel(&mut explorer, show_details, label);
+            let shown = drawn_texts(&output).iter().any(|t| t == "model.f_end");
+            assert_eq!(shown, show_details);
+        }
     }
 
     #[test]

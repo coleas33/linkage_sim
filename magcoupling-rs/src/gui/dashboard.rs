@@ -213,6 +213,10 @@ pub const STORED_3D_NOTE: &str = "The demagnetization reverse fields and the sli
 /// The start of the banner shown when f_end ≤ 0.
 pub const END_EFFECT_BANNER: &str = END_EFFECT_OUT_OF_RANGE;
 
+/// The line over the dashboard's rows while the spreadsheet details show (spec S2-5): what the
+/// ids beside the values are.
+pub const MARKER_LEGEND: &str = "E-numbers beside a value are corrections to the original spreadsheet that change it; hover the value to see each one.";
+
 /// Every design-level check of the results, in schema order (decision O-3): the dashboard's
 /// verdicts, the coupling model's, the temperature design's and the clamp's checks and
 /// screens, the material warnings and the space claim. Each gives a badge level
@@ -405,18 +409,31 @@ pub struct ResultNotes<'a> {
 /// The hover text of a displayed result: its on-screen name and help (`gui::plain_text`: the
 /// overlay's, else the metadata's), path, workbook cell, then the notes. The text every readout
 /// shows (`Readouts::show` adds the equation under it).
-pub fn result_tooltip(path: &str, info: &ResultInfo, notes: ResultNotes<'_>) -> String {
+///
+/// The path, the workbook cell and the corrections' lines only with `show_details` (the
+/// header's Show spreadsheet details, spec S2-5).
+pub fn result_tooltip(
+    path: &str,
+    info: &ResultInfo,
+    notes: ResultNotes<'_>,
+    show_details: bool,
+) -> String {
     let mut lines = vec![display_label(path, info.meta.label).to_owned()];
     let help = help_for(path);
     if !help.is_empty() {
         lines.push(help.to_owned());
     }
-    lines.push(path.to_owned());
-    lines.push(
-        info.cell
-            .clone()
-            .unwrap_or_else(|| "Rust-only result (no workbook cell)".to_owned()),
-    );
+    if show_details {
+        if let Some(original) = crate::gui::plain_text::original_help(path) {
+            lines.push(format!("{}: {original}", crate::gui::inputs::ORIGINAL_NOTE));
+        }
+        lines.push(path.to_owned());
+        lines.push(
+            info.cell
+                .clone()
+                .unwrap_or_else(|| "Rust-only result (no workbook cell)".to_owned()),
+        );
+    }
     if notes.greyed {
         lines.push(format!(
             "{END_EFFECT_OUT_OF_RANGE}: computed from the pull-out, which is not valid while f_end <= 0."
@@ -425,16 +442,16 @@ pub fn result_tooltip(path: &str, info: &ResultInfo, notes: ResultNotes<'_>) -> 
     if notes.stored_3d {
         lines.push(format!("{STORED_3D_LABEL}: {STORED_3D_NOTE}"));
     }
-    if !notes.marks.is_empty() {
+    if show_details && !notes.marks.is_empty() {
         lines.push(marker_tooltip(notes.marks));
     }
     lines.join("\n")
 }
 
-/// The hover text of the result at `path` with its corrections' marks: the hook's text for a
-/// readout outside the dashboard (a results-table row, a geometry callout); `None` for a path
-/// that is no result.
-pub fn hover_text(path: &str) -> Option<String> {
+/// The hover text of the result at `path` with its corrections' marks, with the spreadsheet
+/// details when `show_details`: the hook's text for a readout outside the dashboard (a
+/// results-table row, a geometry callout); `None` for a path that is no result.
+pub fn hover_text(path: &str, show_details: bool) -> Option<String> {
     let info = result_info(path)?;
     let marks = CorrectionIndex::get().marks(info.cell.as_deref());
     Some(result_tooltip(
@@ -444,6 +461,7 @@ pub fn hover_text(path: &str) -> Option<String> {
             marks,
             ..ResultNotes::default()
         },
+        show_details,
     ))
 }
 
@@ -467,8 +485,9 @@ pub struct DashboardLine {
 }
 
 impl DashboardLine {
-    /// The row's hover text (built only while the row is hovered).
-    pub fn tooltip(&self) -> String {
+    /// The row's hover text (built only while the row is hovered), with the spreadsheet
+    /// details when `show_details`.
+    pub fn tooltip(&self, show_details: bool) -> String {
         let info = result_info(self.path).expect("a dashboard row is a result");
         result_tooltip(
             self.path,
@@ -478,6 +497,7 @@ impl DashboardLine {
                 greyed: self.greyed,
                 stored_3d: self.stored_3d,
             },
+            show_details,
         )
     }
 }
@@ -536,8 +556,9 @@ pub fn dashboard_lines(results: &DesignResults) -> Vec<DashboardLine> {
 }
 
 /// Draws the dashboard of `results`, computed from `inputs`: the design status line, the
-/// end-effect banner when f_end <= 0, then a row per line (badge and label, then the value and
-/// the marker under them, so a narrow side still reads) with its Why line, a guided check's
+/// end-effect banner when f_end <= 0, then a row per line (badge and label, then the value and,
+/// with the spreadsheet details, its correction ids under a one-line legend, so a narrow side
+/// still reads) with its Why line, a guided check's
 /// block over its Why line, the stored-3D label after the last temperature row, and the
 /// Magnets fit row last. `fixes` holds every guide's fixes in [`CHECK_GUIDES`]' order
 /// (`guidance::FixCache`). Each result row is a readout (`readouts`): its hover text and
@@ -556,6 +577,12 @@ pub fn dashboard_ui(
         ui.separator();
     }
     warnings_ui(ui, results, readouts);
+    // The correction ids beside the values, and what they are, only with the spreadsheet
+    // details (spec S2-5).
+    let show_details = readouts.show_details();
+    if show_details {
+        ui.add(egui::Label::new(egui::RichText::new(MARKER_LEGEND).small().weak()).wrap());
+    }
     let last_3d = lines.iter().rposition(|line| line.stored_3d);
     for (index, line) in lines.iter().enumerate() {
         let weak = ui.visuals().weak_text_color();
@@ -567,12 +594,14 @@ pub fn dashboard_ui(
         let value = ui.horizontal(|ui| {
             ui.add_space(16.0);
             ui.add(egui::Label::new(tint(egui::RichText::new(&line.value).strong())).wrap());
-            if !line.marker.is_empty() {
+            if show_details && !line.marker.is_empty() {
                 ui.small(&line.marker);
             }
         });
         let rect = title.response.rect.union(value.response.rect);
-        readouts.show_over(ui, rect, line.path, || line.tooltip());
+        readouts.show_over(ui, rect, line.path, |show_details| {
+            line.tooltip(show_details)
+        });
         // A check's block under its own row (the rows its verdict only badges have none), then
         // every row's Why line.
         match CHECK_GUIDES.iter().position(|g| g.check == line.path) {
@@ -594,7 +623,8 @@ pub fn dashboard_ui(
 }
 
 /// The design status line (guidance spec 3.1): whose design it is and how many guided checks
-/// fail, in the colour of the worst level, over a separator.
+/// fail, in the colour of the worst level, over a separator; at the defaults its hover says
+/// where the example's values come from (spec S2-5).
 fn status_ui(ui: &mut egui::Ui, inputs: &DesignInputs, results: &DesignResults) {
     let status = design_status(inputs, results);
     let level = if status.bad > 0 {
@@ -607,7 +637,10 @@ fn status_ui(ui: &mut egui::Ui, inputs: &DesignInputs, results: &DesignResults) 
     let text = egui::RichText::new(design_status_text(&status))
         .strong()
         .color(level.color(ui.visuals()));
-    ui.add(egui::Label::new(text).wrap());
+    let line = ui.add(egui::Label::new(text).wrap());
+    if status.is_default {
+        line.on_hover_text(guidance::EXAMPLE_DESIGN_HOVER);
+    }
     ui.separator();
 }
 
@@ -838,6 +871,7 @@ mod tests {
     use super::*;
     use crate::engine::api::HEADLINE;
     use crate::engine::meta::InputSet;
+    use crate::gui::corrections::MARKER_HEADING;
     use crate::gui::guidance::{CHECK_GUIDES, Direction, Fixes, ROW_LEARN, all_fixes, trade_offs};
     use crate::gui::readouts::ReadoutEvents;
     use crate::gui::test_support::{
@@ -1332,11 +1366,15 @@ mod tests {
         assert_eq!(line("model.pullout_Nm").value, "2.688 N·m");
         assert_eq!(line("model.pullout_Nm").level, None);
         assert_eq!(line("model.pullout_Nm").marker, "E3 E7 E8");
+        // With the spreadsheet details the hover says what differs from the original
+        // spreadsheet (corrections.rs tests the values); without them it does not.
+        let pullout = line("model.pullout_Nm");
         assert!(
-            line("model.pullout_Nm")
-                .tooltip()
-                .contains("with E3 alone: workbook 2.647, corrected 2.688")
+            pullout
+                .tooltip(true)
+                .contains(&format!("{MARKER_HEADING}:"))
         );
+        assert!(!pullout.tooltip(false).contains(MARKER_HEADING));
         assert_eq!(line("metal.torque_hot_low_Nm").level, Some(Level::Bad));
         assert_eq!(line("materials.cup_wall_check").level, Some(Level::Bad));
         assert_eq!(line(TEMPERATURE_VERDICT).level, Some(Level::Good));
@@ -1354,7 +1392,7 @@ mod tests {
         assert!(lines.iter().all(|l| !l.greyed));
         for path in STORED_3D_ROWS {
             assert!(line(path).stored_3d);
-            assert!(line(path).tooltip().contains(STORED_3D_LABEL));
+            assert!(line(path).tooltip(false).contains(STORED_3D_LABEL));
         }
         assert_eq!(lines.iter().filter(|l| l.stored_3d).count(), 3);
     }
@@ -1370,7 +1408,7 @@ mod tests {
             if derived {
                 assert_eq!(line.level, None, "{}", line.path);
                 assert!(
-                    line.tooltip().contains(END_EFFECT_OUT_OF_RANGE),
+                    line.tooltip(false).contains(END_EFFECT_OUT_OF_RANGE),
                     "{}",
                     line.path
                 );
@@ -1467,9 +1505,40 @@ mod tests {
     }
 
     #[test]
+    fn the_correction_ids_and_their_legend_show_only_with_the_spreadsheet_details() {
+        use crate::gui::typeset::TermColors;
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let fixes = all_fixes(&inputs, &results);
+        let markers: Vec<String> = dashboard_lines(&results)
+            .into_iter()
+            .map(|line| line.marker)
+            .filter(|marker| !marker.is_empty())
+            .collect();
+        assert!(!markers.is_empty(), "the defaults carry correction ids");
+        let status = design_status_text(&design_status(&inputs, &results));
+        for show_details in [false, true] {
+            let ctx = egui::Context::default();
+            let output = sized_frame(&ctx, egui::vec2(1280.0, 4000.0), Vec::new(), |ui| {
+                let mut readouts = Readouts::new(TermColors::default(), show_details);
+                dashboard_ui(ui, &inputs, &results, &fixes, &mut readouts);
+            });
+            let texts = drawn_texts(&output);
+            for marker in &markers {
+                assert_eq!(texts.contains(marker), show_details, "{marker}");
+            }
+            let legends = texts.iter().filter(|t| *t == MARKER_LEGEND).count();
+            assert_eq!(legends, usize::from(show_details));
+            // The status line still tops the dashboard.
+            assert_eq!(texts.first(), Some(&status));
+        }
+    }
+
+    #[test]
     fn the_result_tooltip_names_the_path_cell_and_notes() {
         let info = result_info("model.pullout_Nm").unwrap();
-        let tooltip = result_tooltip("model.pullout_Nm", info, ResultNotes::default());
+        // With the spreadsheet details (spec S2-5).
+        let tooltip = result_tooltip("model.pullout_Nm", info, ResultNotes::default(), true);
         // The on-screen name and the help first (gui::plain_text).
         let first = format!(
             "{}\n{}\n",
@@ -1487,7 +1556,8 @@ mod tests {
             result_tooltip(
                 "housing.space_claim_check",
                 rust_only,
-                ResultNotes::default()
+                ResultNotes::default(),
+                true
             )
             .contains("Rust-only result (no workbook cell)")
         );
@@ -1500,18 +1570,56 @@ mod tests {
 
     #[test]
     fn the_hover_text_carries_the_marks_and_needs_a_result() {
-        let text = hover_text("model.pullout_Nm").unwrap();
+        let text = hover_text("model.pullout_Nm", true).unwrap();
         assert!(
             text.starts_with(&format!("{}\n", label_for("model.pullout_Nm"))),
             "{text}"
         );
-        assert!(text.contains("Corrected vs workbook:"), "{text}");
+        assert!(text.contains(&format!("{MARKER_HEADING}:")), "{text}");
         assert!(
-            hover_text("housing.length_overshoot_mm")
+            hover_text("housing.length_overshoot_mm", true)
                 .unwrap()
                 .contains("Rust-only result (no workbook cell)")
         );
-        assert_eq!(hover_text("no.such"), None);
+        assert_eq!(hover_text("no.such", true), None);
+        assert_eq!(hover_text("no.such", false), None);
+    }
+
+    #[test]
+    fn every_result_s_hover_names_its_path_cell_and_corrections_only_with_the_details() {
+        // Spec S2-5: the path, the original spreadsheet cell (or the line that says there is
+        // none) and the corrections that change the value show with Show spreadsheet details;
+        // without them the hover is the same text with exactly those lines left out.
+        for entry in crate::gui::results_table::table_entries() {
+            let path = entry.path.as_str();
+            let on = hover_text(path, true).expect("every table row is a result");
+            let off = hover_text(path, false).expect("every table row is a result");
+            let marks = CorrectionIndex::get().marks(entry.info.cell.as_deref());
+            let marker_lines = if marks.is_empty() {
+                0
+            } else {
+                marker_tooltip(marks).lines().count()
+            };
+            // Where the overlay replaced the engine's help, the original note is one more line.
+            let original_lines = usize::from(crate::gui::plain_text::original_help(path).is_some());
+            assert_eq!(
+                on.lines().count(),
+                off.lines().count() + 2 + marker_lines + original_lines,
+                "{path}: {on:?} against {off:?}"
+            );
+            assert!(on.lines().any(|line| line == path), "{path}: {on:?}");
+            assert!(!off.lines().any(|line| line == path), "{path}: {off:?}");
+            if let Some(cell) = entry.info.cell.as_deref() {
+                assert!(on.lines().any(|line| line == cell), "{path}: {on:?}");
+                assert!(!off.lines().any(|line| line == cell), "{path}: {off:?}");
+            }
+            assert_eq!(on.contains(MARKER_HEADING), !marks.is_empty(), "{path}");
+            assert!(!off.contains(MARKER_HEADING), "{path}");
+            assert!(
+                off.lines().all(|line| on.lines().any(|o| o == line)),
+                "{path}: {off:?} is not part of {on:?}"
+            );
+        }
     }
 
     #[test]
@@ -1544,6 +1652,35 @@ mod tests {
         );
         for line in lines.iter().filter(|line| renamed.contains(&line.path)) {
             assert!(!texts.iter().any(|t| t == line.label), "{}", line.path);
+        }
+    }
+
+    #[test]
+    #[ignore = "un-ignored in T10, once T7 to T10 have rewritten the help and hover lines that still use spreadsheet words"]
+    fn every_hover_text_with_the_details_off_is_in_plain_words() {
+        // Spec 3.4: every drawn tooltip with Show spreadsheet details off passes the guard:
+        // every input's, every result's and every dashboard row's (in range and with the end
+        // effect out of range).
+        let mut texts: Vec<String> = crate::gui::inputs::InputCatalogue::get()
+            .all()
+            .map(|entry| crate::gui::inputs::input_tooltip(entry, false))
+            .collect();
+        for entry in crate::gui::results_table::table_entries() {
+            texts.push(hover_text(&entry.path, false).expect("every table row is a result"));
+        }
+        for inputs in [DesignInputs::default(), short_magnets()] {
+            texts.extend(
+                dashboard_lines(&compute_all(&inputs))
+                    .iter()
+                    .map(|line| line.tooltip(false)),
+            );
+        }
+        for text in &texts {
+            assert_eq!(
+                guidance::plain_text_violations(text),
+                Vec::<&str>::new(),
+                "{text:?}"
+            );
         }
     }
 
@@ -1795,6 +1932,39 @@ mod tests {
         assert!((0..CHECK_GUIDES.len()).any(|i| !trade_offs(&fixes, i).is_empty()));
         let texts = drawn_texts(&dashboard_frame(&ctx, &hot_day()));
         assert_eq!(count(&texts, CAUTION_DETAILS), 1);
+    }
+
+    #[test]
+    fn the_example_design_s_status_line_says_on_hover_where_its_values_come_from() {
+        // Spec S2-5: "Example design" at the defaults, its hover the original spreadsheet;
+        // "Your design" has no hover.
+        for (inputs, example) in [(DesignInputs::default(), true), (passing_design(), false)] {
+            let ctx = egui::Context::default();
+            ctx.style_mut(|s| {
+                s.interaction.tooltip_delay = 0.0;
+                s.interaction.show_tooltips_only_when_still = false;
+            });
+            let results = compute_all(&inputs);
+            let fixes = all_fixes(&inputs, &results);
+            let text = design_status_text(&design_status(&inputs, &results));
+            assert_eq!(
+                text.starts_with(guidance::EXAMPLE_DESIGN),
+                example,
+                "{text}"
+            );
+            let frame = |events: Vec<egui::Event>| {
+                sized_frame(&ctx, egui::vec2(1280.0, 4000.0), events, |ui| {
+                    dashboard_ui(ui, &inputs, &results, &fixes, &mut Readouts::default());
+                })
+            };
+            let output = frame(Vec::new());
+            let at = text_rect(&output, &text).expect("the status line").center();
+            frame(vec![egui::Event::PointerMoved(at)]);
+            frame(Vec::new());
+            let output = frame(Vec::new());
+            let hover = guidance::EXAMPLE_DESIGN_HOVER.to_owned();
+            assert_eq!(drawn_texts(&output).contains(&hover), example, "{text}");
+        }
     }
 
     #[test]

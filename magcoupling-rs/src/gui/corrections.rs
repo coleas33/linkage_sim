@@ -15,6 +15,9 @@
 //! Only applied engine corrections mark (E14 rewords help only). [`CorrectionIndex`] is built
 //! once, keyed by workbook cell; a value with no cell (a Rust-only result) has no marker. Plan
 //! A-3's equation registry may later supply each record's upstream corrections instead.
+//!
+//! On screen the markers and their hover lines show only with the header's Show spreadsheet
+//! details (guidance slice 2, spec S2-5); the spreadsheet export keeps its own columns.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -168,28 +171,44 @@ pub fn marker_text(marks: &[Mark]) -> String {
         .join(" ")
 }
 
-/// The tooltip lines of the markers: per correction its id and title, the workbook and
-/// corrected values where it changes the cell at the default design, and its evidence. The
-/// corrected value is the one with that correction alone (as the registry and the golden
-/// files record it), so on a cell two corrections change neither is the value shown.
+/// The first line of a marked value's hover text (spec 3.6), before a colon.
+pub const MARKER_HEADING: &str = "Differs from the original spreadsheet";
+
+/// The last line of a marked value's hover text when a correction gives its values.
+pub const MARKER_SCOPE: &str =
+    "Was and now are values at the default design, with only that correction applied.";
+
+/// A correction as the hover texts name it: its id and its title.
+pub fn correction_title(id: DeviationId) -> String {
+    format!("{id}: {}", REGISTRY[id.index()].title)
+}
+
+/// The hover lines of the markers (spec 3.6; shown only with the spreadsheet details): the
+/// heading, then per correction its id and title, with ", was X, now Y" where it changes the
+/// cell at the default design, and then what those values are. The "now" value is the one with
+/// that correction alone (as the registry and the golden files record it), so on a cell two
+/// corrections change neither is the value shown. No repo path: the export keeps the evidence.
 pub fn marker_tooltip(marks: &[Mark]) -> String {
-    let mut lines = vec!["Corrected vs workbook:".to_owned()];
+    let mut lines = vec![format!("{MARKER_HEADING}:")];
     for mark in marks {
-        let deviation = &REGISTRY[mark.id.index()];
-        lines.push(format!("{}: {}", mark.id, deviation.title));
-        if let Tie::AtDefaults {
-            workbook,
-            corrected,
-        } = &mark.tie
-        {
-            lines.push(format!(
-                "  at the default design, with {} alone: workbook {}, corrected {}",
-                mark.id,
+        let title = correction_title(mark.id);
+        lines.push(match &mark.tie {
+            Tie::AtDefaults {
+                workbook,
+                corrected,
+            } => format!(
+                "{title}, was {}, now {}",
                 format_value(workbook),
                 format_value(corrected)
-            ));
-        }
-        lines.push(format!("  {}", deviation.evidence()));
+            ),
+            Tie::Named => title,
+        });
+    }
+    if marks
+        .iter()
+        .any(|mark| matches!(mark.tie, Tie::AtDefaults { .. }))
+    {
+        lines.push(MARKER_SCOPE.to_owned());
     }
     lines.join("\n")
 }
@@ -234,17 +253,23 @@ mod tests {
         assert_eq!(corrected, &Value::Num(pullout));
         // E7 and E8 have probes on it; the ids are in report order.
         assert_eq!(marker_text(marks), "E3 E7 E8");
+        // The hover (spec 3.6): the plain heading, each correction's title, E3's values at the
+        // default design and what those values are, and no repo path.
         let tooltip = marker_tooltip(marks);
         assert!(
-            tooltip.starts_with("Corrected vs workbook:\nE3: "),
+            tooltip.starts_with(&format!("{MARKER_HEADING}:\nE3: ")),
             "{tooltip}"
         );
-        assert!(
-            tooltip
-                .contains("at the default design, with E3 alone: workbook 2.647, corrected 2.688"),
-            "{tooltip}"
+        let e3_line = format!(
+            "{}, was {}, now {}",
+            correction_title(DeviationId::E3),
+            format_value(workbook),
+            format_value(corrected)
         );
-        assert!(tooltip.contains("docs/analyses/2026-09-29-magcoupling-math-audit.md, entry E3"));
+        assert!(tooltip.lines().any(|line| line == e3_line), "{tooltip}");
+        assert!(tooltip.ends_with(MARKER_SCOPE), "{tooltip}");
+        assert!(!tooltip.contains("docs/"), "{tooltip}");
+        assert!(!tooltip.contains("workbook"), "{tooltip}");
     }
 
     #[test]
@@ -266,13 +291,26 @@ mod tests {
             assert_ne!(corrected, &shown, "{id}");
         }
         let tooltip = marker_tooltip(marks);
-        assert!(
-            tooltip.contains("\n  at the default design, with E1 alone: workbook "),
-            "{tooltip}"
+        for id in [DeviationId::E1, DeviationId::E3] {
+            let start = format!("\n{}, was ", correction_title(id));
+            assert!(tooltip.contains(&start), "{tooltip}");
+        }
+        assert!(tooltip.ends_with(MARKER_SCOPE), "{tooltip}");
+    }
+
+    #[test]
+    fn a_correction_without_values_gives_its_title_alone() {
+        let named = [Mark {
+            id: DeviationId::E7,
+            tie: Tie::Named,
+        }];
+        assert_eq!(
+            marker_tooltip(&named),
+            format!("{MARKER_HEADING}:\n{}", correction_title(DeviationId::E7))
         );
-        assert!(
-            tooltip.contains("\n  at the default design, with E3 alone: workbook "),
-            "{tooltip}"
+        assert_eq!(
+            correction_title(DeviationId::E7),
+            format!("E7: {}", REGISTRY[DeviationId::E7.index()].title)
         );
     }
 

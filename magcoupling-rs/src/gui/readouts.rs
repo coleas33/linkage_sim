@@ -3,8 +3,10 @@
 //! same colour marks that term wherever its value appears on screen").
 //!
 //! Every view hands each value it displays to [`Readouts::show`], with its result path and
-//! its hover text: the dashboard rows, the results-table rows, the geometry callouts, the
-//! clamp summary and screw table, the plot readouts. While the value is hovered the tooltip
+//! its hover text, built with the frame's [`Readouts::show_details`] (the header's Show
+//! spreadsheet details, spec S2-5): the dashboard rows, the results-table rows, the geometry
+//! callouts, the clamp summary and screw table, the plot readouts. While the value is hovered
+//! the tooltip
 //! shows that text, then the value's equation typeset with its terms in colour
 //! ([`TermColors::of`]); a click asks the panel to open it in the Equation panel. Both the
 //! text and the typesetting run only inside `on_hover_ui`, so a frame pays for the one value
@@ -63,20 +65,31 @@ pub struct ReadoutEvents {
     pub focus: Option<&'static str>,
 }
 
-/// One frame's readouts: the term colours they mark and what the user did.
+/// One frame's readouts: the term colours they mark, whether their hover texts carry the
+/// spreadsheet details, and what the user did.
 #[derive(Clone, Debug, Default)]
 pub struct Readouts {
     marks: TermColors,
     events: ReadoutEvents,
+    /// The header's Show spreadsheet details as the frame began ([`crate::gui::SHOW_DETAILS`]).
+    show_details: bool,
 }
 
 impl Readouts {
-    /// The readouts of a frame that marks the terms in `marks`.
-    pub fn new(marks: TermColors) -> Self {
+    /// The readouts of a frame that marks the terms in `marks`, its hover texts with the
+    /// spreadsheet details when `show_details`.
+    pub fn new(marks: TermColors, show_details: bool) -> Self {
         Self {
             marks,
             events: ReadoutEvents::default(),
+            show_details,
         }
+    }
+
+    /// Whether this frame shows the spreadsheet details (spec S2-5): the internal names, the
+    /// original spreadsheet's cells and the correction ids the header's toggle gates.
+    pub fn show_details(&self) -> bool {
+        self.show_details
     }
 
     /// The colours this frame marks.
@@ -97,14 +110,15 @@ impl Readouts {
     }
 
     /// Shows the value of the result at `path` that `response` displays: its mark, and while
-    /// hovered `text()` and its equation; a click asks for it in the Equation panel. `text` is
-    /// called only while the value is hovered.
+    /// hovered `text(show_details)` and its equation; a click asks for it in the Equation
+    /// panel. `text` is called only while the value is hovered, with
+    /// [`Readouts::show_details`].
     pub fn show(
         &mut self,
         ui: &egui::Ui,
         response: egui::Response,
         path: &str,
-        text: impl FnOnce() -> String,
+        text: impl FnOnce(bool) -> String,
     ) {
         self.mark(ui, response.rect, path);
         if response.hovered() {
@@ -113,8 +127,9 @@ impl Readouts {
         if response.clicked() {
             self.events.clicked = Some(path.to_owned());
         }
+        let show_details = self.show_details;
         response.on_hover_ui(|ui| {
-            ui.label(text());
+            ui.label(text(show_details));
             if let Some(eq) = registry().equation_for(path) {
                 ui.separator();
                 equation_ui(ui, registry(), eq, &TermColors::of(eq), TOOLTIP_SIZE);
@@ -130,7 +145,7 @@ impl Readouts {
         ui: &egui::Ui,
         rect: Rect,
         path: &str,
-        text: impl FnOnce() -> String,
+        text: impl FnOnce(bool) -> String,
     ) {
         let response = ui.interact(rect, ui.id().with(("readout", path)), egui::Sense::click());
         self.show(ui, response, path, text);
@@ -166,7 +181,7 @@ mod tests {
     /// A label of `text` showing the result at `path`, drawn with `readouts`.
     fn draw(ui: &mut egui::Ui, readouts: &mut Readouts, path: &str, text: &str) -> Rect {
         let rect = ui.label(text).rect;
-        readouts.show_over(ui, rect, path, || format!("hover text of {path}"));
+        readouts.show_over(ui, rect, path, |_| format!("hover text of {path}"));
         rect
     }
 
@@ -238,7 +253,7 @@ mod tests {
         let f_end = marks.get("model.f_end").unwrap();
         let ctx = egui::Context::default();
         let output = sized_frame(&ctx, egui::vec2(600.0, 400.0), Vec::new(), |ui| {
-            let mut readouts = Readouts::new(marks.clone());
+            let mut readouts = Readouts::new(marks.clone(), false);
             draw(ui, &mut readouts, "model.f_end", "0.9046");
             draw(ui, &mut readouts, "mass.total_g", "48.15 g");
         });
@@ -250,6 +265,38 @@ mod tests {
             })
             .collect();
         assert_eq!(frames, [f_end], "only the term's value is framed");
+    }
+
+    #[test]
+    fn a_hover_text_is_built_with_the_frame_s_details_setting() {
+        // The header's Show spreadsheet details reaches every readout's hover text through the
+        // frame's readouts (spec S2-5); readouts made without it have it off.
+        assert!(!Readouts::default().show_details());
+        let size = egui::vec2(800.0, 600.0);
+        for show_details in [false, true] {
+            let ctx = egui::Context::default();
+            ctx.style_mut(|s| {
+                s.interaction.tooltip_delay = 0.0;
+                s.interaction.show_tooltips_only_when_still = false;
+            });
+            let frame = |time: f64, events: Vec<egui::Event>| {
+                let mut rect = Rect::NOTHING;
+                let output = sized_frame_at(&ctx, size, Some(time), events, |ui| {
+                    let mut readouts = Readouts::new(TermColors::default(), show_details);
+                    assert_eq!(readouts.show_details(), show_details);
+                    rect = ui.label("2.688 N·m").rect;
+                    readouts.show_over(ui, rect, "model.pullout_Nm", |details| {
+                        format!("details shown: {details}")
+                    });
+                });
+                (output, rect)
+            };
+            let (_, rect) = frame(0.0, Vec::new());
+            frame(0.1, vec![egui::Event::PointerMoved(rect.center())]);
+            let (output, _) = frame(0.2, Vec::new());
+            let want = format!("details shown: {show_details}");
+            assert!(drawn_texts(&output).contains(&want), "{want}");
+        }
     }
 
     #[test]

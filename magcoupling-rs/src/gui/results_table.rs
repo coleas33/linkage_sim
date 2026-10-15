@@ -92,15 +92,30 @@ pub const LABEL_MIN_WIDTH: f32 = 120.0;
 /// The widths of the label, value, cell and marker columns of a table `available` points wide
 /// with `spacing` points between columns (decision M42-8): the label column flexes, at least
 /// [`LABEL_MIN_WIDTH`], so a narrow centre region (a ~930 px window, where the M4-1 table showed
-/// only its labels) still shows the label and the value without scrolling.
-pub fn column_widths(available: f32, spacing: f32) -> [f32; 4] {
-    let fixed = VALUE_WIDTH + CELL_WIDTH + MARKER_WIDTH + 3.0 * spacing;
+/// only its labels) still shows the label and the value without scrolling. Without the
+/// spreadsheet details (`show_details`, spec S2-5) the cell and marker columns are not drawn:
+/// their widths are 0 and the label takes their room.
+pub fn column_widths(available: f32, spacing: f32, show_details: bool) -> [f32; 4] {
+    let (cell, marker) = if show_details {
+        (CELL_WIDTH, MARKER_WIDTH)
+    } else {
+        (0.0, 0.0)
+    };
+    let gaps = if show_details { 3.0 } else { 1.0 };
+    let fixed = VALUE_WIDTH + cell + marker + gaps * spacing;
     [
         (available - fixed).max(LABEL_MIN_WIDTH),
         VALUE_WIDTH,
-        CELL_WIDTH,
-        MARKER_WIDTH,
+        cell,
+        marker,
     ]
+}
+
+/// The width of a row of columns `widths` ([`column_widths`]) with `spacing` points between
+/// the columns drawn (a column 0 wide is not drawn).
+pub fn row_width(widths: [f32; 4], spacing: f32) -> f32 {
+    let drawn = widths.iter().filter(|&&width| width > 0.0).count();
+    widths.iter().sum::<f32>() + spacing * drawn.saturating_sub(1) as f32
 }
 
 /// One row of the table: what does not change with the inputs.
@@ -533,8 +548,8 @@ impl ResultsTable {
         }
         let row_height = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
         let spacing = ui.spacing().item_spacing.x;
-        let widths = column_widths(ui.available_width(), spacing);
-        let row_width = widths.iter().sum::<f32>() + 3.0 * spacing;
+        let widths = column_widths(ui.available_width(), spacing, readouts.show_details());
+        let row_width = row_width(widths, spacing);
         let mut clicked = None;
         // In the height left, however short (egui's 64-point floor lowered to none).
         egui::ScrollArea::both()
@@ -694,19 +709,20 @@ fn group_heading_ui(ui: &mut egui::Ui, line: &HeadingLine, size: egui::Vec2) -> 
         .clicked()
 }
 
-/// A row's hover text: the hover hook's ([`hover_text`]) with the exact value.
-pub fn row_tooltip(entry: &TableEntry, value: &Value) -> String {
-    let mut tooltip = hover_text(&entry.path).expect("every table row is a result");
+/// A row's hover text: the hover hook's ([`hover_text`], with the spreadsheet details when
+/// `show_details`) with the exact value.
+pub fn row_tooltip(entry: &TableEntry, value: &Value, show_details: bool) -> String {
+    let mut tooltip = hover_text(&entry.path, show_details).expect("every table row is a result");
     if let Value::Num(x) = value {
         tooltip.push_str(&format!("\nExact value: {}", exact_number(*x)));
     }
     tooltip
 }
 
-/// One table row: label, value with unit (after the badge of a check's `level`), workbook
-/// cell, marker, in columns `widths` wide ([`column_widths`]; the path is in the hover text,
-/// which is built only while the row is hovered). The whole row is a readout: hover it for its
-/// equation, click it to open it.
+/// One table row: label, value with unit (after the badge of a check's `level`), and with the
+/// spreadsheet details the workbook cell and the marker, in columns `widths` wide
+/// ([`column_widths`]; the path is in the hover text, which is built only while the row is
+/// hovered). The whole row is a readout: hover it for its equation, click it to open it.
 fn row_ui(
     ui: &mut egui::Ui,
     entry: &TableEntry,
@@ -717,6 +733,8 @@ fn row_ui(
     readouts: &mut Readouts,
 ) {
     let value = results.get(&entry.path).unwrap_or(Value::None);
+    // The cell and marker columns only with the spreadsheet details (spec S2-5).
+    let show_details = readouts.show_details();
     let row = ui.horizontal(|ui| {
         // Left-aligned columns of fixed width (add_sized would centre the text).
         let cell = |ui: &mut egui::Ui, width: f32, text: &str, level: Option<Level>| {
@@ -737,16 +755,18 @@ fn row_ui(
             &with_unit(format_value(&value), entry.info.meta.unit),
             level,
         );
-        cell(
-            ui,
-            workbook,
-            entry.info.cell.as_deref().unwrap_or(RUST_ONLY),
-            None,
-        );
-        cell(ui, marker, &entry.marker, None);
+        if show_details {
+            cell(
+                ui,
+                workbook,
+                entry.info.cell.as_deref().unwrap_or(RUST_ONLY),
+                None,
+            );
+            cell(ui, marker, &entry.marker, None);
+        }
     });
-    readouts.show_over(ui, row.response.rect, &entry.path, || {
-        row_tooltip(entry, &value)
+    readouts.show_over(ui, row.response.rect, &entry.path, |show_details| {
+        row_tooltip(entry, &value, show_details)
     });
 }
 
@@ -784,12 +804,69 @@ mod tests {
     #[test]
     fn the_label_column_flexes_down_to_its_minimum() {
         // The 1280 x 800 default window: the label column widens past the M4-1 260 points.
-        assert_eq!(column_widths(644.0, 8.0), [300.0, 130.0, 130.0, 60.0]);
+        assert_eq!(column_widths(644.0, 8.0, true), [300.0, 130.0, 130.0, 60.0]);
         // A ~930 px window leaves about 294 points: the label shrinks to its minimum, so the
         // value column ends at 120 + 8 + 130 = 258 points, on screen.
-        assert_eq!(column_widths(294.0, 8.0), [120.0, 130.0, 130.0, 60.0]);
-        assert_eq!(column_widths(0.0, 8.0)[0], LABEL_MIN_WIDTH);
-        assert_eq!(column_widths(f32::NAN, 8.0)[0], LABEL_MIN_WIDTH);
+        assert_eq!(column_widths(294.0, 8.0, true), [120.0, 130.0, 130.0, 60.0]);
+        assert_eq!(column_widths(0.0, 8.0, true)[0], LABEL_MIN_WIDTH);
+        assert_eq!(column_widths(f32::NAN, 8.0, true)[0], LABEL_MIN_WIDTH);
+        // Without the spreadsheet details (spec S2-5) the cell and marker columns are not
+        // drawn: the label takes their room, and a row is the label, one gap and the value.
+        assert_eq!(
+            column_widths(644.0, 8.0, false),
+            [644.0 - VALUE_WIDTH - 8.0, VALUE_WIDTH, 0.0, 0.0]
+        );
+        assert_eq!(column_widths(0.0, 8.0, false)[0], LABEL_MIN_WIDTH);
+        assert_eq!(column_widths(f32::NAN, 8.0, false)[0], LABEL_MIN_WIDTH);
+        for show_details in [false, true] {
+            assert_eq!(
+                row_width(column_widths(644.0, 8.0, show_details), 8.0),
+                644.0,
+                "{show_details}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_cell_and_marker_columns_show_only_with_the_spreadsheet_details() {
+        use crate::gui::test_support::{SCREEN, drawn_texts, sized_frame};
+        use crate::gui::typeset::TermColors;
+        let results = compute_all(&DesignInputs::default());
+        let pullout = table_entries()
+            .iter()
+            .find(|entry| entry.path == "model.pullout_Nm")
+            .expect("the pull-out's row");
+        let cell = pullout.info.cell.clone().expect("the pull-out has a cell");
+        assert!(
+            !pullout.marker.is_empty(),
+            "the pull-out carries correction ids"
+        );
+        let value = with_unit(
+            format_value(&results.get("model.pullout_Nm").unwrap()),
+            pullout.info.meta.unit,
+        );
+        for show_details in [false, true] {
+            let ctx = egui::Context::default();
+            let mut table = ResultsTable::default();
+            let mut output = None;
+            // The headline group is open: the pull-out's row is on screen.
+            for _ in 0..2 {
+                output = Some(sized_frame(&ctx, SCREEN, Vec::new(), |ui| {
+                    let mut readouts = Readouts::new(TermColors::default(), show_details);
+                    table.ui(ui, &results, None, &mut readouts);
+                }));
+            }
+            let texts = drawn_texts(&output.unwrap());
+            let count = |text: &str| texts.iter().filter(|t| *t == text).count();
+            assert_eq!(count(&cell), usize::from(show_details), "{show_details}");
+            assert_eq!(count(&pullout.marker) > 0, show_details, "{show_details}");
+            // The value shows either way, and the search still matches the cell.
+            assert!(count(&value) > 0, "{value}");
+            assert!(
+                search(table_entries(), &cell)
+                    .contains(&entry_index("model.pullout_Nm").expect("the pull-out's row"))
+            );
+        }
     }
 
     #[test]
@@ -845,19 +922,35 @@ mod tests {
             .find(|e| e.path == "model.pullout_Nm")
             .unwrap();
         let value = Value::Num(2.6884762950539796);
-        let tooltip = row_tooltip(pullout, &value);
+        let tooltip = row_tooltip(pullout, &value, true);
         let label = crate::gui::plain_text::label_for("model.pullout_Nm");
         assert!(tooltip.starts_with(&format!("{label}\n")), "{tooltip}");
-        assert!(tooltip.contains("Corrected vs workbook:"), "{tooltip}");
+        assert!(
+            tooltip.contains(&format!("{}:", crate::gui::corrections::MARKER_HEADING)),
+            "{tooltip}"
+        );
         assert!(
             tooltip.ends_with("\nExact value: 2.6884762950539796"),
             "{tooltip}"
+        );
+        // Without the spreadsheet details: the hover hook's shorter text, the exact value kept.
+        let plain = row_tooltip(pullout, &value, false);
+        assert_eq!(
+            plain,
+            format!(
+                "{}\nExact value: 2.6884762950539796",
+                hover_text("model.pullout_Nm", false).unwrap()
+            )
         );
         let claim = entries
             .iter()
             .find(|e| e.path == "housing.space_claim_check")
             .unwrap();
-        let text = row_tooltip(claim, &Value::Text("Inside the space claim".to_owned()));
+        let text = row_tooltip(
+            claim,
+            &Value::Text("Inside the space claim".to_owned()),
+            true,
+        );
         assert!(!text.contains("Exact value"), "{text}");
     }
 

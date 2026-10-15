@@ -1380,8 +1380,11 @@ fn temperature_fixes(
 
 // ------------------------------------------------------------------ the design status
 
-/// The design status line's start for the defaults (spec G-6: they stay the workbook's example).
-pub const WORKBOOK_EXAMPLE: &str = "Workbook example design";
+/// The design status line's start for the defaults (spec G-6 as slice 2 amends it, S2-5).
+pub const EXAMPLE_DESIGN: &str = "Example design";
+
+/// The hover text of the status line at the defaults: where the example's values come from.
+pub const EXAMPLE_DESIGN_HOVER: &str = "The starting values from the original spreadsheet.";
 
 /// The design status line's start for any other design.
 pub const YOUR_DESIGN: &str = "Your design";
@@ -1395,7 +1398,7 @@ pub struct DesignStatus {
     pub caution: usize,
     /// Every guide's check: [`CHECK_GUIDES`]'s length.
     pub total: usize,
-    /// Whether the inputs are the defaults (the workbook's example design).
+    /// Whether the inputs are the defaults (the example design).
     pub is_default: bool,
 }
 
@@ -1415,12 +1418,12 @@ pub fn design_status(inputs: &DesignInputs, results: &DesignResults) -> DesignSt
     }
 }
 
-/// The design status line: "Workbook example design: fails 3 of 8 checks", "Your design: fails
+/// The design status line: "Example design: fails 3 of 8 checks", "Your design: fails
 /// 2 of 8 checks", "Your design: passes all 8 checks", each followed by ", 1 caution" or ", 2
 /// cautions" when a check asks for a look.
 pub fn design_status_text(status: &DesignStatus) -> String {
     let design = if status.is_default {
-        WORKBOOK_EXAMPLE
+        EXAMPLE_DESIGN
     } else {
         YOUR_DESIGN
     };
@@ -3880,7 +3883,7 @@ mod tests {
         );
         assert_eq!(
             design_status_text(&defaults),
-            "Workbook example design: fails 3 of 8 checks"
+            "Example design: fails 3 of 8 checks"
         );
         // One fix: the cup wall at its suggested 2.0 mm.
         let fixed = status(&design(|i| i.metal.cup_wall_corner_mm = 2.0));
@@ -3926,10 +3929,7 @@ mod tests {
                 is_default,
             })
         };
-        assert_eq!(
-            text(0, 0, true),
-            "Workbook example design: passes all 8 checks"
-        );
+        assert_eq!(text(0, 0, true), "Example design: passes all 8 checks");
         assert_eq!(
             text(0, 1, false),
             "Your design: passes all 8 checks, 1 caution"
@@ -3937,9 +3937,9 @@ mod tests {
         assert_eq!(text(1, 0, false), "Your design: fails 1 of 8 checks");
         assert_eq!(
             text(8, 3, true),
-            "Workbook example design: fails 8 of 8 checks, 3 cautions"
+            "Example design: fails 8 of 8 checks, 3 cautions"
         );
-        assert!(text(1, 0, true).starts_with(WORKBOOK_EXAMPLE));
+        assert!(text(1, 0, true).starts_with(EXAMPLE_DESIGN));
         assert!(text(1, 0, false).starts_with(YOUR_DESIGN));
     }
 

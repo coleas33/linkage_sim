@@ -829,7 +829,9 @@ pub fn clamp_ui(
                     })
                     .response
                     .rect;
-                readouts.show_over(ui, rect, path, || hover_text(path).unwrap_or_default());
+                readouts.show_over(ui, rect, path, |show_details| {
+                    hover_text(path, show_details).unwrap_or_default()
+                });
             }
             ui.add_space(4.0);
             for step in MACHINING_STEPS {
@@ -868,8 +870,8 @@ fn screw_table_ui(ui: &mut egui::Ui, results: &DesignResults, readouts: &mut Rea
                                 rich
                             };
                             let rect = ui.label(rich).rect;
-                            readouts.show_over(ui, rect, &path, || {
-                                hover_text(&path).unwrap_or_else(|| path.clone())
+                            readouts.show_over(ui, rect, &path, |show_details| {
+                                hover_text(&path, show_details).unwrap_or_else(|| path.clone())
                             });
                         }
                         ui.end_row();
@@ -883,6 +885,49 @@ mod tests {
     use super::*;
     use crate::compute_all;
     use crate::gui::test_support::{drawn_texts, flat_shapes, sized_frame, text_rects};
+
+    #[test]
+    fn a_summary_line_s_hover_names_its_path_only_with_the_spreadsheet_details() {
+        use crate::gui::dashboard::result_info;
+        use crate::gui::test_support::{sized_frame_at, text_rect};
+        use crate::gui::typeset::TermColors;
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let path = "clamps.recommended";
+        let label = result_info(path)
+            .expect("a summary line is a result")
+            .meta
+            .label;
+        let size = egui::vec2(1000.0, 1400.0);
+        for show_details in [false, true] {
+            let ctx = egui::Context::default();
+            ctx.style_mut(|s| {
+                s.interaction.tooltip_delay = 0.0;
+                s.interaction.show_tooltips_only_when_still = false;
+            });
+            let frame = |time: f64, events: Vec<egui::Event>| {
+                sized_frame_at(&ctx, size, Some(time), events, |ui| {
+                    let mut readouts = Readouts::new(TermColors::default(), show_details);
+                    clamp_ui(ui, &inputs, &results, &mut readouts);
+                })
+            };
+            let want = hover_text(path, show_details).expect("a result");
+            // Without the details the hover can be the label alone, which the summary line
+            // draws too: the hover counts as one more drawn copy of its text.
+            let drawn = |output: &egui::FullOutput| {
+                drawn_texts(output).iter().filter(|t| **t == want).count()
+            };
+            let output = frame(0.0, Vec::new());
+            let before = drawn(&output);
+            let at = text_rect(&output, label)
+                .unwrap_or_else(|| panic!("no {label:?}"))
+                .center();
+            frame(0.1, vec![egui::Event::PointerMoved(at)]);
+            let output = frame(0.2, Vec::new());
+            assert_eq!(drawn(&output), before + 1, "{want:?}");
+            assert_eq!(want.lines().any(|line| line == path), show_details);
+        }
+    }
 
     fn texts(view: &DrawingView) -> Vec<String> {
         view.marks
