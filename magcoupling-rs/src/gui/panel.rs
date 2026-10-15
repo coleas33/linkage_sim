@@ -1555,7 +1555,8 @@ mod tests {
     use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
         SCREEN, drawn_texts, key_event, key_tap, primary_button, select_all, short_magnets,
-        sized_frame, sized_frame_at, text_rect, text_rects, tooltips_at_once, with_poles,
+        sized_frame, sized_frame_at, text_center, text_rect, text_rects, tooltips_at_once,
+        with_poles,
     };
     use crate::headline;
 
@@ -6304,42 +6305,27 @@ mod tests {
     }
 
     #[test]
-    fn the_size_tab_s_gap_and_count_labels_show_the_overlay_help() {
+    fn the_size_tab_s_control_labels_show_their_hovers() {
         use crate::gui::plain_text::help_for;
-        // F19's second help site: the Size tab's gap and magnet-count labels hover their
-        // input's plain_text::help_for. It passes before HELP has rows; it bites once help is
-        // filled and a label stops showing it.
-        for (label, path) in [(GAP, FACE_GAP), (MAGNETS, POLES)] {
-            let mut harness = size_tab(SCREEN, DesignInputs::default());
-            tooltips_at_once(&harness.ctx);
-            let output = harness.frame(Vec::new());
-            let at = text_rect(&output, label)
-                .unwrap_or_else(|| panic!("no {label:?}"))
-                .center();
-            // egui shows a tooltip only after time has passed with the pointer on the widget.
-            harness.frame_after(0.5, vec![egui::Event::PointerMoved(at)]);
-            let output = harness.frame_after(0.5, Vec::new());
-            let help = help_for(path);
-            assert!(!help.is_empty(), "{path}");
-            assert!(
-                drawn_texts(&output).iter().any(|t| t == help),
-                "{path}: {help:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn the_size_tab_s_diameter_and_length_labels_say_what_they_move() {
         use crate::gui::size_controls::{DIAMETER_HOVER, LENGTH_HOVER};
-        // R-3: the Outside diameter control had no hover; it and Overall length now say what
-        // they are and what moving them changes.
-        for (label, hover) in [(DIAMETER, DIAMETER_HOVER), (LENGTH, LENGTH_HOVER)] {
+        // The gap and magnet-count labels hover their input's plain_text::help_for (F19's
+        // second help site); Outside diameter and Overall length, which are no inputs, say what
+        // they are and what moving them changes (R-3).
+        for (label, hover) in [
+            (GAP, help_for(FACE_GAP)),
+            (MAGNETS, help_for(POLES)),
+            (DIAMETER, DIAMETER_HOVER),
+            (LENGTH, LENGTH_HOVER),
+        ] {
+            assert!(!hover.is_empty(), "{label}");
             let mut harness = size_tab(SCREEN, DesignInputs::default());
             tooltips_at_once(&harness.ctx);
             let output = harness.frame(Vec::new());
-            let at = text_rect(&output, label)
-                .unwrap_or_else(|| panic!("no {label:?}"))
-                .center();
+            assert!(
+                !drawn_texts(&output).iter().any(|t| t == hover),
+                "{label}: {hover:?} is drawn before the hover"
+            );
+            let at = text_center(&output, label);
             // egui shows a tooltip only after time has passed with the pointer on the widget.
             harness.frame_after(0.5, vec![egui::Event::PointerMoved(at)]);
             let output = harness.frame_after(0.5, Vec::new());

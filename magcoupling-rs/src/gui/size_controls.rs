@@ -18,7 +18,7 @@ use crate::gui::format::{fixed, signed_percent};
 use crate::gui::guidance::Consequences;
 use crate::gui::input_ui::slider;
 use crate::gui::inputs::InputCatalogue;
-use crate::gui::plain_text::help_for;
+use crate::gui::plain_text::{HOT_LOW_TORQUE, REQUIRED_TORQUE, help_for};
 use crate::gui::sizing::{SizingMode, SizingState, auto_choice, variable_label};
 use crate::{DesignInputs, DesignResults, compute_all};
 
@@ -141,13 +141,12 @@ pub(crate) fn auto_ui(ui: &mut egui::Ui, state: SizingState) -> SizingState {
     asked
 }
 
-/// The label of the requirement's slider (`metal.required_min_Nm`): the input's display label
-/// (`gui::plain_text::label_for`; a test keeps them equal).
-pub const REQUIRED: &str = "Required torque";
+/// The label of the requirement's slider (`metal.required_min_Nm`): the input's display label.
+pub const REQUIRED: &str = REQUIRED_TORQUE;
 
 /// The label of the hot-low torque (`metal.torque_hot_low_Nm`), its gap to the requirement
 /// beside it ([`torque_gap_text`]): the dashboard row's display label.
-pub const HOT_LOW: &str = "Hot-low torque";
+pub const HOT_LOW: &str = HOT_LOW_TORQUE;
 
 /// What a torque readout shows, the gap left out, where the end effect is outside the model's
 /// range ([`predicts`]).

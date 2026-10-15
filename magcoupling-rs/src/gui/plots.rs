@@ -48,7 +48,7 @@ use crate::engine::model::{end_effect_in_range, harmonic_count, ring_pair_factor
 use crate::engine::sweeps::SweepRow;
 use crate::gui::dashboard::{Level, end_effect_out_of_range, hover_text, result_info};
 use crate::gui::format::{format_value, with_unit};
-use crate::gui::plain_text::label_for;
+use crate::gui::plain_text::{PULL_OUT_NOMINAL, REQUIRED_TORQUE, label_for};
 use crate::gui::readouts::Readouts;
 use crate::{DesignInputs, DesignResults};
 
@@ -146,12 +146,12 @@ pub const SLIP_HEATING_ID: &str = "magcoupling_plot_slip_heating";
 pub const TORQUE_ANGLE_ID: &str = "magcoupling_plot_torque_angle";
 
 /// The legend names.
-pub const PULL_OUT: &str = "Pull-out torque (nominal)";
+pub const PULL_OUT: &str = PULL_OUT_NOMINAL;
 /// The pole sweep's line: its rows are not at the design's ring radius.
 pub const PULL_OUT_SMALLEST_APOTHEM: &str = "Pull-out torque (nominal), each row at the smallest ring radius its inner magnets and the keyed bore allow";
 pub const LOW_BAND: &str = "Low: minus the production variation allowance";
 pub const HIGH_BAND: &str = "High: plus the production variation allowance";
-pub const REQUIRED: &str = "Required torque";
+pub const REQUIRED: &str = REQUIRED_TORQUE;
 pub const OPERATING: &str = "Operating temperature";
 pub const LIMIT: &str = "Governing limit";
 pub const THIS_DESIGN: &str = "This design";
@@ -1310,7 +1310,7 @@ mod tests {
         // dashboard and the input rows name them, the band edges name the production variation
         // allowance, the pole sweep's axis the magnet count and its line the ring radius.
         let pullout = label_for("model.pullout_Nm");
-        assert!(PULL_OUT.starts_with(pullout), "{PULL_OUT}");
+        assert_eq!(PULL_OUT, pullout);
         assert!(
             PULL_OUT_SMALLEST_APOTHEM.starts_with(pullout),
             "{PULL_OUT_SMALLEST_APOTHEM}"

@@ -21,17 +21,30 @@
 use crate::gui::dashboard::result_info;
 use crate::gui::inputs::InputCatalogue;
 
+/// The display label of the required torque (`metal.required_min_Nm`), which the Size tab's
+/// slider and the plots' requirement line draw as well.
+pub const REQUIRED_TORQUE: &str = "Required torque";
+
+/// The display label of the nominal pull-out (`model.pullout_Nm`), which the plots' pull-out
+/// line draws as well.
+pub const PULL_OUT_NOMINAL: &str = "Pull-out torque (nominal)";
+
+/// The display label of the hot-low torque (`metal.torque_hot_low_Nm`), which the Size tab's
+/// readout draws as well.
+pub const HOT_LOW_TORQUE: &str = "Hot-low torque";
+
 /// The display label of an input or a result, by path: spec 3.5's canonical names. A row is
-/// never longer than the catalogue label it replaces and names one quantity only (tests).
+/// never longer than the catalogue label it replaces and names one quantity only (tests). A
+/// name other modules draw too is a constant above, so it is typed once.
 const LABELS: &[(&str, &str)] = &[
     ("coupling.inner_back_apothem_mm", "Ring radius"),
     ("coupling.npole", "Magnets per ring"),
     ("metal.face_gap_mm", "Magnet face gap"),
-    ("metal.required_min_Nm", "Required torque"),
+    ("metal.required_min_Nm", REQUIRED_TORQUE),
     ("metal.variation", "Production variation allowance"),
     ("model.gap_radius_mm", "Gap radius R_g"),
-    ("model.pullout_Nm", "Pull-out torque (nominal)"),
-    ("metal.torque_hot_low_Nm", "Hot-low torque"),
+    ("model.pullout_Nm", PULL_OUT_NOMINAL),
+    ("metal.torque_hot_low_Nm", HOT_LOW_TORQUE),
     ("metal.torque_cold_high_Nm", "Cold-high torque"),
 ];
 
