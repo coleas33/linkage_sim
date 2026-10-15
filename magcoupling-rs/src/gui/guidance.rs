@@ -315,10 +315,10 @@ pub static ROW_LEARN: [(&str, Learn); DASHBOARD.len()] = [
         "metal.torque_cold_high_Nm",
         Learn::Note("hot_low_cold_high"),
     ),
-    // The pull-out through the gearbox: the torque-angle curve's amplitude.
+    // The torque swings that reach the gearbox input while the coupling slips.
     (
         "model.gearbox_input_ripple_Nm",
-        Learn::Note("pullout_angle"),
+        Learn::Note("when_slipping"),
     ),
     (
         "model.cup_od_mm",
@@ -2416,9 +2416,23 @@ mod tests {
         assert!(reviewed_note("hot_low_cold_high").is_some());
     }
 
-    /// The torque-band note's second watch-out says nothing checks cold-high at the gearbox
-    /// input against the gearbox's rating. When such a check lands (BL-059) this fails, and
-    /// that watch-out changes in the same commit.
+    #[test]
+    fn the_ripple_row_leads_to_the_slip_note() {
+        // Spec 3.3: the gearbox ripple row's Why link moves from the pull-out note to the note
+        // that owns its equation, what happens when the coupling slips.
+        assert_eq!(
+            row_learn("model.gearbox_input_ripple_Nm"),
+            Some(Learn::Note("when_slipping"))
+        );
+        assert_eq!(
+            notes::note_for("model.gearbox_input_ripple_Nm").map(|n| n.id),
+            Some("when_slipping")
+        );
+    }
+
+    /// The torque-band note's second watch-out and the slip note's first say nothing checks
+    /// cold-high at the gearbox input, or the slip swings, against the gearbox's rating. When
+    /// such a check lands (BL-059) this fails, and those watch-outs change in the same commit.
     #[test]
     fn nothing_checks_a_gearbox_torque_against_its_rating_yet() {
         let gearbox_rows: Vec<(&str, Option<&str>)> = DASHBOARD

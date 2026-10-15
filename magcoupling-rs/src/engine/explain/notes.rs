@@ -31,7 +31,8 @@ pub enum Diagram {
     /// The intrinsic demagnetization curve with its knee, and the load lines of a few
     /// permeance coefficients.
     DemagKnee,
-    /// First-order heating toward a steady temperature, the time constant marked.
+    /// First-order heating toward a steady temperature, the time constant marked, and a limit
+    /// below that level with the time the rise takes to reach it.
     HeatingCurve,
 }
 
@@ -142,11 +143,13 @@ pub struct Note {
     pub review: Review,
 }
 
-/// Every note: 19. Spec A4's list (harmonics, back iron, pull-out against angle, end effect,
-/// Br(T), demagnetization, slip loss, the thermal time constant, clamps and the six A5
-/// warnings), ferrite's cold side (spec A6) and the calibration; slice 2 adds how the coupling
-/// makes torque and the torque band (hot-low and cold-high). The clamp note stays here, but is
-/// not shown while the shaft-clamp section is paused ([`shown`]).
+/// Every note: 20, the cap the completeness test holds (15 to 20): the spec's list
+/// (harmonics, back iron, pull-out against angle, end effect, Br(T), demagnetization, slip
+/// heating, the slip temperature, the shaft clamp and the six A5 warnings), ferrite's cold
+/// side (spec A6), the one-point calibration, and slice 2's three: how the coupling makes
+/// torque, the hot-low and cold-high band, and what happens when the coupling slips. The
+/// clamp note stays here, but is not shown while the shaft-clamp section is paused
+/// ([`shown`]).
 pub const NOTES: &[Note] = &[
     Note {
         id: "torque_from_shear",
@@ -668,8 +671,51 @@ pub const NOTES: &[Note] = &[
         },
     },
     Note {
+        id: "when_slipping",
+        title: "When the coupling slips",
+        equations: &["model.gearbox_input_ripple_Nm", "metal.slip_freq_Hz"],
+        sentences: &[
+            "Past its pull-out torque the coupling slips: one ring turns against the other, and the torque between them swings back and forth.",
+            "The swing runs from plus to minus the pull-out once per pole pair passed, so the load gets almost no torque on average.",
+            "What remains is a drag from eddy currents, which the moving field drives in the metal parts, heating them: here an estimated {temperature.slip_loss.drag_Nm}.",
+            "The rings re-lock only once the slip speed falls, so slow the drive; a load dropping just below pull-out is not enough.",
+            "Each swing puts like poles face to face, the magnets' hardest case, and sends torque ripple to the gearbox: at its input, here {model.gearbox_input_ripple_Nm}.",
+        ],
+        change: &[
+            Change {
+                input: "temperature.duty.fault_trip_s",
+                step: Step::Lower,
+                aim: Some(("temperature.thermal.temp_at_fault_C", Sense::Down)),
+                text: "a shorter unbroken slip heats the magnets less; detect slip and slow the drive within it, without tripping on brief slips.",
+            },
+            Change {
+                input: "metal.slip_rpm",
+                step: Step::Lower,
+                aim: Some(("temperature.slip_loss.total_W", Sense::Down)),
+                text: "slower slipping makes less heat and slower swings, here {metal.slip_freq_Hz}; the drive's behaviour after slip sets it, not the coupling.",
+            },
+        ],
+        watch_out: &[
+            "Nothing checks the gearbox against these swings: when cold they can reach the cold-high torque, on this design {metal.cold_high_input_Nm} at its input; check its rating.",
+            "The drag, the heating and the magnets' limits use fields stored from the example design's 3D model; those fields do not follow your geometry or magnet grade.",
+        ],
+        diagram: None,
+        sources: &[
+            "The torque-angle model: pull-out as the peak of the summed harmonics, one cycle per pole pair",
+            "The slip-loss and thermal model: the drag, the heating and the slip fault trip time",
+            "The demagnetization model: the like-poles-facing reverse field while slipping sets the magnet limit",
+            "The gearbox rows: the ripple at the gearbox input is the pull-out through the gear ratio and efficiency",
+            "Guidance audit of 2026-10-13: what happens past pull-out; the rings re-lock only when the slip speed falls",
+        ],
+        review: Review::Reviewed {
+            reviewer: "physics reviewer (session model)",
+            date: "2026-10-14",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#when_slipping",
+        },
+    },
+    Note {
         id: "slip_heating",
-        title: "Eddy-current slip loss and skin depth",
+        title: "Slip heating: where the heat comes from",
         equations: &[
             "temperature.duty.field_omega_rad_s",
             "temperature.slip_loss.skin_depth_mm",
@@ -680,33 +726,64 @@ pub const NOTES: &[Note] = &[
             "temperature.slip_loss.magnets_W",
             "temperature.slip_loss.total_W",
             "temperature.slip_loss.drag_Nm",
+            "temperature.duty.field_freq_Hz",
+            "temperature.duty.pole_pairs",
+            "temperature.duty.slip_rad_s",
         ],
         sentences: &[
-            "When the coupling slips, each ring's alternating field sweeps past the other ring's parts at the field frequency f_e = p · n / 60, with p the pole pairs and n the slip speed in rev/min, and by Faraday's law it drives eddy currents in every conductor it crosses: the steel cup and hub, the sleeve, the liner, the cap and the magnets themselves.",
-            "The currents turn power into heat, and that power is also the drag torque times the slip speed.",
-            "In steel the currents crowd into a skin of depth δ = √(2/(ω_e μ0 μr σ)), with ω_e = 2πf_e the field's angular frequency, about 1.3 mm at the default slip, so the steel loss grows as speed to the power 1.5 rather than 2.",
-            "Thin shells such as the sleeve and liner are thinner than their skin depth (about 34 mm in 316L), so their loss follows σ (ω_s r B)²/2 per unit volume times the 0.7 end factor, with ω_s the slip speed in rad/s, the square of speed.",
+            "When the coupling slips, each ring's field sweeps over the other ring's metal parts and magnets, driving eddy currents that heat them.",
+            "The heat power is the drag torque times the slip speed: here an estimated {temperature.slip_loss.total_W}, a drag of {temperature.slip_loss.drag_Nm}.",
+            "In thick steel the currents crowd into a thin surface skin, so its loss grows about as slip speed to the power 1.5.",
+            "The thin sleeve, liner and cap, and the magnets, heat through their whole thickness, so their loss grows as the square of the speed.",
+            "Without steel back iron the hub, cup and web are non-magnetic metal: they see a weaker field and heat through their whole thickness.",
         ],
-        change: &[],
+        change: &[
+            Change {
+                input: "metal.measured_drag_Nm",
+                step: Step::Enter,
+                aim: None,
+                text: "your bench value from a slipping test; it replaces the estimated loss and its high case in the temperature results.",
+            },
+            Change {
+                input: "materials.parts.sleeve_liner",
+                step: Step::Choose,
+                aim: None,
+                text: "titanium, Inconel or PEEK conduct less than 316L, so the sleeve and liner heat less; check their strength and temperature limits.",
+            },
+            Change {
+                input: "metal.sleeve_mm",
+                step: Step::Lower,
+                aim: Some(("temperature.slip_loss.total_W", Sense::Down)),
+                text: "a thinner sleeve heats less and widens the running clearance, but holds the inner magnets less securely; nothing here checks that.",
+            },
+            Change {
+                input: "metal.liner_mm",
+                step: Step::Lower,
+                aim: Some(("temperature.slip_loss.total_W", Sense::Down)),
+                text: "a thinner liner heats less and widens the running clearance, but holds the outer magnets less securely; nothing here checks that.",
+            },
+        ],
         watch_out: &[
-            "Aluminium parts (no back iron) are resistance-limited, not skin-limited, and see the weaker free-space field (correction E17); every loss here is an estimate with a factor-3 high case until a bench drag is measured.",
+            "The losses use fields stored from a 3D model of the example design; those fields do not follow your magnet count, ring radius, gap, magnet size or grade.",
+            "Until a drag is measured, the high case, here {temperature.slip_loss.high_W}, is the estimate times an allowance for the model's errors; the temperature check uses it.",
         ],
         diagram: None,
         sources: &[
-            "M1 audit M11 (thin-skin steel losses against Stoll's half-space)",
-            "M1 audit M12 (magnet eddy loss)",
-            "M1 audit P1 (the shell end factor)",
-            "Addendum A report section 5.5 (E17: the low-Reynolds form for aluminium parts)",
+            "Math audit of 2026-09-29: thin-skin steel losses against Stoll's half-space solution",
+            "Math audit of 2026-09-29: the magnet eddy loss",
+            "Math audit of 2026-09-29: the shell end factor",
+            "Design report: the low-Reynolds form for aluminium parts",
+            "Guidance audit of 2026-10-13: the stored slip fields; the steel loss's speed exponent is about 1.54 to 1.64",
         ],
         review: Review::Reviewed {
-            reviewer: "independent physics review 2026-10-01",
-            date: "2026-10-01",
-            record: "independent physics review 2026-10-01 of the A4 notes: commit \"docs(magcoupling-rs): apply the independent physics review to six A4 notes\" (the seven findings and their fixes)",
+            reviewer: "physics reviewer (session model)",
+            date: "2026-10-14",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#slip_heating",
         },
     },
     Note {
         id: "thermal_time_constant",
-        title: "The thermal time constant",
+        title: "Slip temperature: how hot, and how fast",
         equations: &[
             "temperature.thermal.heat_capacity_J_K",
             "temperature.thermal.time_constant_s",
@@ -717,27 +794,53 @@ pub const NOTES: &[Note] = &[
             "temperature.thermal.time_to_limit_est",
             "temperature.thermal.temp_at_fault_C",
             "temperature.thermal.critical_drag_Nm",
+            "temperature.thermal.steady_est_C",
+            "temperature.thermal.steady_high_C",
+            "temperature.slip_life.rise_per_event_high_C",
+            "temperature.magnet_life.peak_C",
         ],
         sentences: &[
-            "The calculator treats the rotating coupling as one lump with heat capacity C = Σ m c, losing heat to its surroundings through one conductance G.",
-            "Heated with power P, its temperature rises toward ϑ_start + P/G along ϑ(t) = ϑ_start + (P/G)(1 − e^(−t/τ)), with time constant τ = C/G: 63 % of the rise after τ and 95 % after 3τ.",
-            "The steady rise P/G does not depend on C; C (with G) sets only how fast it is reached; one short slip event adds only P t / C.",
-            "The time to the limit solves that curve for the limit temperature; it is 'never' when the steady temperature stays at or below the limit, and 0 when the start is already at or above it (correction E12).",
+            "Unbroken slip heats the coupling toward a steady rise set by the loss and the heat path; more mass changes only how fast.",
+            "One lump stands for the rotating parts: heat capacity C, conductance G to its surroundings, starting at the hot-day start, hot ambient plus driving rise.",
+            "Slipping with loss P heats it toward a rise of P/G above that start, reaching 63 % after τ_th = C/G, here {temperature.thermal.time_constant_s}.",
+            "One short slip adds only P·t/C, but many slips over the life add an average rise: the slip duty times P/G.",
+            "The temperature check uses the peak: the hot-day start plus the hotter of a fault slip and one slip event, plus that average rise.",
         ],
-        change: &[],
+        change: &[
+            Change {
+                input: "temperature.thermal.conductance_W_K",
+                step: Step::Raise,
+                aim: Some(("temperature.thermal.steady_high_C", Sense::Down)),
+                text: "measure it first, as it is a placeholder; a better heat path through shafts and housing lowers the steady temperature and shortens τ_th.",
+            },
+            Change {
+                input: "metal.measured_drag_Nm",
+                step: Step::Enter,
+                aim: None,
+                text: "your bench value from a slipping test; the loss and its high case then follow the measurement.",
+            },
+            Change {
+                input: "temperature.duty.fault_trip_s",
+                step: Step::Lower,
+                aim: Some(("temperature.magnet_life.peak_C", Sense::Down)),
+                text: "a shorter unbroken slip can lower the peak, here {temperature.magnet_life.peak_C}, but not under a limit the hot-day start already reaches.",
+            },
+        ],
         watch_out: &[
-            "G is a placeholder (0.3 W/K, not measured): a 10 % higher G lowers the high-case steady temperature by about 2.5 °C (M1 audit placeholder table).",
+            "Time to the limit reads 'never' when the high-case steady temperature, here {temperature.thermal.steady_high_C}, stays at or below the limit, here {temperature.summary.governing_limit_C}; that rests on a placeholder conductance.",
+            "The single lump puts every part at one temperature; in a short fault the parts next to the gap run hotter than its average.",
         ],
         diagram: Some(Diagram::HeatingCurve),
         sources: &[
-            "M1 audit placeholder inputs (conductance: −2.48 °C per +10 %)",
-            "Addendum A decision 8 (E15: aluminium parts at their own specific heat)",
-            "M1 audit E12 (a start above the limit)",
+            "Math audit of 2026-09-29: the placeholder inputs and how far each moves the results, the conductance among them",
+            "Design ruling: aluminium parts at their own specific heat",
+            "Math audit of 2026-09-29: a start above the limit",
+            "Guidance audit of 2026-10-13: the panel's symbols τ_th and the hot-day start; the limit on the heating curve",
         ],
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
-            date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
+            date: "2026-10-14",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#thermal_time_constant",
         },
     },
     Note {
@@ -917,11 +1020,10 @@ pub const NOTES: &[Note] = &[
     },
 ];
 
-/// The whole suggested reading order (slice-2 spec 3.3: how the coupling makes torque, the
-/// torque chain with back iron, temperature, slipping and its heat, demagnetization, clamps):
-/// (note id, the equation it opens). The torque band is step 8; the slice's last note joins at
-/// step 9. The clamp step stays last: [`start_here_for`] leaves it out while the clamp section
-/// is paused.
+/// The full suggested reading order (slice-2 spec 3.3, 14 steps: how torque is made, the
+/// torque chain, temperature and the torque band, slipping and its heat, demagnetization,
+/// the clamp): (note id, the equation it opens). The clamp step stays last: while the
+/// shaft-clamp section is paused, [`START_HERE`] is the first 13 ([`start_here_for`]).
 pub const START_HERE_ALL: &[(&str, &str)] = &[
     ("torque_from_shear", "model.torque_2d_Nm"),
     ("harmonics", "model.tau_Pa"),
@@ -931,6 +1033,7 @@ pub const START_HERE_ALL: &[(&str, &str)] = &[
     ("calibration", "model.f_cal"),
     ("br_temperature", "model.pullout_20C_Nm"),
     ("hot_low_cold_high", "metal.torque_hot_low_Nm"),
+    ("when_slipping", "model.gearbox_input_ripple_Nm"),
     ("slip_heating", "temperature.slip_loss.total_W"),
     (
         "thermal_time_constant",
@@ -1142,6 +1245,47 @@ mod tests {
             assert_eq!(at, 7, "step 8 (paused: {paused})");
             assert_eq!(ids[at - 1], "br_temperature", "paused: {paused}");
             assert_eq!(steps[at].1, "metal.torque_hot_low_Nm", "paused: {paused}");
+        }
+    }
+
+    #[test]
+    fn when_slipping_is_start_here_step_9_after_the_torque_band() {
+        // Spec 3.3 (R4): 8 hot_low_cold_high, 9 when_slipping, 10 slip_heating, in the full
+        // order and in the order shown while the clamp section is paused (ruling 11).
+        for paused in [false, true] {
+            let steps = start_here_for(paused);
+            let ids: Vec<&str> = steps.iter().map(|&(id, _)| id).collect();
+            let at = ids
+                .iter()
+                .position(|&id| id == "when_slipping")
+                .unwrap_or_else(|| panic!("no start-here step: {ids:?}"));
+            assert_eq!(at, 8, "step 9: {ids:?}");
+            assert_eq!(ids[at - 1], "hot_low_cold_high", "{ids:?}");
+            assert_eq!(ids[at + 1], "slip_heating", "{ids:?}");
+            assert_eq!(steps[at].1, "model.gearbox_input_ripple_Nm");
+        }
+    }
+
+    #[test]
+    fn the_slip_and_thermal_notes_own_the_rows_spec_3_3_gives_them() {
+        let owner = |path: &str| note_for_any_status(path).map(|n| n.id);
+        for path in ["model.gearbox_input_ripple_Nm", "metal.slip_freq_Hz"] {
+            assert_eq!(owner(path), Some("when_slipping"), "{path}");
+        }
+        for path in [
+            "temperature.duty.field_freq_Hz",
+            "temperature.duty.pole_pairs",
+            "temperature.duty.slip_rad_s",
+        ] {
+            assert_eq!(owner(path), Some("slip_heating"), "{path}");
+        }
+        for path in [
+            "temperature.magnet_life.peak_C",
+            "temperature.thermal.steady_est_C",
+            "temperature.thermal.steady_high_C",
+            "temperature.slip_life.rise_per_event_high_C",
+        ] {
+            assert_eq!(owner(path), Some("thermal_time_constant"), "{path}");
         }
     }
 
@@ -1715,6 +1859,9 @@ mod tests {
         "calibration",
         "br_temperature",
         "hot_low_cold_high",
+        "when_slipping",
+        "slip_heating",
+        "thermal_time_constant",
     ];
 
     #[test]

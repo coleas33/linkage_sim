@@ -8481,6 +8481,22 @@ mod tests {
     }
 
     #[test]
+    fn the_ripple_row_s_why_link_opens_the_slip_note() {
+        // F10: the note's first sentence is drawn as one label, once; the click edits nothing.
+        let mut harness = Harness::on_screen(TALL);
+        harness.frame(Vec::new());
+        let note = crate::gui::explorer::reviewed_note("when_slipping")
+            .expect("the slip note is reviewed");
+        harness.click_text(&crate::gui::typeset::glyph_safe(note.title));
+        assert!(harness.panel.explorer.open);
+        assert_eq!(harness.panel.explorer.note(), Some("when_slipping"));
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, note.sentences[0]), 1);
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
     fn the_status_line_counts_the_checks_at_default_and_after_a_fix() {
         use crate::gui::guidance::{design_status, design_status_text};
         let mut harness = Harness::new();

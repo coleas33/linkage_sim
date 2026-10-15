@@ -11,7 +11,8 @@
 //! strong third harmonic and its peak; the field fringing at a magnet's ends, the length the end
 //! factor takes off bracketed at each end; the intrinsic
 //! demagnetization curve with its knee and three load lines; first-order heating with the time
-//! constant at 63 %.
+//! constant at 63 %, a limit below the steady temperature and the time the rise takes to reach
+//! it.
 
 use std::f32::consts::PI;
 
@@ -474,7 +475,13 @@ fn demag_knee(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
     shapes
 }
 
-/// First-order heating toward a steady temperature over five time constants, τ at 63 %.
+/// The heating curve's temperature limit as a share of its steady rise: below the steady
+/// temperature, so the rise crosses it (the case "time to the limit" names), and late enough
+/// (2.66 time constants) that the crossing's guide clears the τ_th label.
+const LIMIT_SHARE: f32 = 0.93;
+
+/// First-order heating toward a steady temperature over five time constants: τ_th at 63 %, a
+/// temperature limit below the steady level, and the time the rise takes to reach it.
 fn heating_curve(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
     let plot = Rect::from_min_max(
         pos2(r.left() + 14.0, r.top() + 4.0),
@@ -487,6 +494,10 @@ fn heating_curve(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
         plot.bottom() - rise(1.0 / span) / 1.1 * plot.height(),
     );
     let steady = plot.bottom() - plot.height() / 1.1;
+    let limit = plot.bottom() - LIMIT_SHARE / 1.1 * plot.height();
+    // The rise reaches LIMIT_SHARE of the steady rise after -ln(1 - LIMIT_SHARE) time
+    // constants, five of which span the plot.
+    let reach = plot.left() - (1.0 - LIMIT_SHARE).ln() / span * plot.width();
     let mut shapes = vec![
         Shape::line_segment(
             [plot.left_bottom(), plot.right_bottom()],
@@ -505,7 +516,7 @@ fn heating_curve(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
             fonts,
             tau + vec2(6.0, 2.0),
             Align2::LEFT_TOP,
-            "τ: 63 %",
+            "τ_th: 63 %",
             pens.second,
         ),
         label(
@@ -527,6 +538,32 @@ fn heating_curve(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
         pos2(plot.right(), steady - 2.0),
         Align2::RIGHT_BOTTOM,
         "steady temperature",
+        pens.weak,
+    ));
+    shapes.extend(Shape::dashed_line(
+        &[pos2(plot.left(), limit), pos2(plot.right(), limit)],
+        Stroke::new(1.0, pens.north),
+        4.0,
+        3.0,
+    ));
+    shapes.push(label(
+        fonts,
+        pos2(plot.left() + 3.0, limit + 2.0),
+        Align2::LEFT_TOP,
+        "limit",
+        pens.north,
+    ));
+    shapes.extend(Shape::dashed_line(
+        &[pos2(reach, limit), pos2(reach, plot.bottom())],
+        Stroke::new(1.0, pens.weak),
+        3.0,
+        3.0,
+    ));
+    shapes.push(label(
+        fonts,
+        pos2(reach, plot.bottom() + 1.0),
+        Align2::CENTER_TOP,
+        "time to the limit",
         pens.weak,
     ));
     shapes
@@ -851,11 +888,13 @@ mod tests {
         let (left, right, bottom) = (curve[0].x, curve[curve.len() - 1].x, curve[0].y);
         let lines = horizontal_lines(&shapes);
         assert!(lines.contains(&bottom), "the time axis: {lines:?}");
-        // The steady temperature: the dashed level above the axis.
+        // The steady temperature: the topmost dashed level above the axis (the limit, the
+        // other level, lies below it).
         let steady = lines
             .iter()
             .copied()
-            .find(|y| *y < bottom - 1.0)
+            .filter(|y| *y < bottom - 1.0)
+            .reduce(f32::min)
             .expect("the steady temperature");
         let rise = |y: f32| (bottom - y) / (bottom - steady);
         let tau = only_marker(&shapes);
@@ -875,6 +914,78 @@ mod tests {
         let at_three = rise(y_at(curve, three_tau));
         assert!((at_three - (1.0 - e.powi(-3))).abs() < 1e-3, "{at_three}");
         assert!(rise(curve[curve.len() - 1].y) > 0.99);
+    }
+
+    #[test]
+    fn the_heating_curve_marks_the_limit_and_the_time_to_reach_it() {
+        // The thermal note's "time to the limit" (TC-24): how long unbroken slip takes to heat
+        // the coupling to its limit, a level below the steady temperature that the rise crosses.
+        // Five labels, the time constant's named as the panel names it; no two overlap
+        // (`no_two_labels_of_a_diagram_overlap`).
+        let rect = Rect::from_min_size(pos2(40.0, 30.0), DIAGRAM_SIZE);
+        let (shapes, texts) = shapes_of(Diagram::HeatingCurve, rect);
+        assert_eq!(
+            texts,
+            [
+                "\u{3c4}_th: 63 %",
+                "time slipping",
+                "steady temperature",
+                "limit",
+                "time to the limit",
+            ]
+        );
+        let curve = only_path(&shapes);
+        let (left, right, bottom) = (curve[0].x, curve[curve.len() - 1].x, curve[0].y);
+        let levels: Vec<f32> = horizontal_lines(&shapes)
+            .into_iter()
+            .filter(|y| *y < bottom - 1.0)
+            .collect();
+        let steady = levels
+            .iter()
+            .copied()
+            .reduce(f32::min)
+            .expect("the steady level");
+        let limit = levels.iter().copied().reduce(f32::max).expect("the limit");
+        assert!(
+            limit > steady + 1.0,
+            "a limit below the steady level: {levels:?}"
+        );
+        let rise = |y: f32| (bottom - y) / (bottom - steady);
+        assert!((rise(limit) - LIMIT_SHARE).abs() < 1e-4, "{}", rise(limit));
+        // One dashed guide from the limit down to the time axis, where the curve reaches the
+        // limit: rise = 1 - e^(-t/τ_th), five time constants across the plot.
+        let guides: Vec<[Pos2; 2]> = shapes
+            .iter()
+            .filter_map(|s| match s {
+                Shape::LineSegment { points: [a, b], .. }
+                    if a.x == b.x && a.y != b.y && (a.x - left).abs() > 1.0 =>
+                {
+                    Some([*a, *b])
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(!guides.is_empty(), "the time-to-the-limit guide");
+        let x = guides[0][0].x;
+        assert!(
+            guides.iter().all(|[a, _]| (a.x - x).abs() < 1e-3),
+            "{guides:?}"
+        );
+        let ys = || guides.iter().flat_map(|g| g.iter().map(|p| p.y));
+        let top = ys().fold(f32::INFINITY, f32::min);
+        let foot = ys().fold(f32::NEG_INFINITY, f32::max);
+        assert!((top - limit).abs() < 1e-3, "{top} {limit}");
+        assert!(bottom - foot <= 6.5, "{foot} {bottom}");
+        let time_constants = (x - left) / (right - left) * 5.0;
+        assert!(
+            (time_constants + (1.0 - LIMIT_SHARE).ln()).abs() < 1e-3,
+            "{time_constants}"
+        );
+        assert!(
+            (y_at(curve, x) - limit).abs() < 0.5,
+            "{} {limit}",
+            y_at(curve, x)
+        );
     }
 
     #[test]

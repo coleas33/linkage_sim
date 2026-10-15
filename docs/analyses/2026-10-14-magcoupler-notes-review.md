@@ -2396,3 +2396,395 @@ follow unchanged.
   all five probe designs (4.7795 to 4.7856 at the default, 5.2230 to 5.2296, 7.5579 to 7.5675,
   63.881 to 64.022 and 9.3578 to 9.3698). The note says nothing about this margin, so the screen
   is unaffected.
+
+## when_slipping
+
+Task T15. New note "When the coupling slips", Start here step 9 (after the torque band and
+before slip heating, in the full order and in the order shown while the shaft-clamp section is
+paused). It owns the gearbox ripple (`model.gearbox_input_ripple_Nm`) and the slip frequency
+(`metal.slip_freq_Hz`), and the dashboard's gearbox ripple row now links it as its Why link (it
+linked the pull-out note before). Reviewer: physics reviewer (session model), fresh context.
+Date: 2026-10-14 (the date the slice plan fixes for the note's `review` field; both rounds ran
+on 2026-10-15).
+
+Rounds: 2. Verdict: PASS. Note: "When the coupling slips" (new; plan T15).
+
+Verdict by round: 1 MUST-FIX (3 items in this note, 6 across the task's three notes); 2 PASS.
+The three notes were reviewed together. Each round's full answer is
+`.superpowers/sdd/2026-10-14-magcoupler-guidance-slice-2/task-15-inreview-r<N>.md`, and the six
+fields that round 1 changed are listed with their old and new text in
+`task-15-inreview-r1-changes.md` beside it. Round 2 re-checked only those fields and the fields
+whose meaning depends on them.
+
+The text reviewed in round 1 already carried A-13's plain-words sources, and its gearbox
+watch-out used live values only, never a typed rating (ruling 8: the coupling sits on the
+gearbox output, which carries its torque directly). None of the three notes names a clamp, so
+A-28c (ruling 11, the shaft-clamp section paused) changed only the Start here mechanics. Every
+round confirmed them applied.
+
+The reviewer's report for the record, round by round, as returned:
+
+Round 1:
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; round 1.
+- Read:
+  - the dump `notes-review-T15-r1.txt`; the `when_slipping` literal (`notes.rs:673-711`);
+  - `records/torque.rs:21-23` (k = n N/(2 R_g): one electrical cycle per pole pair), `:65` (the pull-out angle is the peak of the summed harmonics) and `:73` (T_pull = T_2D·f_end·f_cal);
+  - `model.rs:1155-1156` and `records/dashboard.rs:29-30` (ripple = T_pull/(ratio·efficiency));
+  - `records/slip_heating.rs:279` (slip frequency = N/2 × rpm/60);
+  - `records/torque.rs:209-210, 229-231` (cold-high and its gearbox-input value);
+  - `records/slip_heating.rs:66-72, 137-147` (duty, total loss, drag = P/ω_s);
+  - `temperature.rs:1199-1202` (a measured drag replaces the loss used and the high case);
+  - `temperature.rs:1282` (fault temperature) and `:1335` (peak);
+  - `temperature.rs:105-114` (the stored reverse fields; like poles facing "once per pole pass while skipping") and `:711-731, 817-848` (onsets from those fields);
+  - `metal_design.rs:225, 230` (re-engagement and slip detection open; no re-lock model);
+  - `notes.rs` START_HERE_ALL (step 9); `guidance.rs` ROW_LEARN (the ripple row);
+  - spec 3.1-3.3 and 8; slice-1 spec 8; phys-new-notes 2 (T-G, T-H, T-M, T-N, T-O) and 3.3; phys-notes-b 6; amendments ruling 8, ruling 11, A-13, A-24 and A-28/A-28c.
+- Numbers reproduced from `compute_all`, in design order (default, 8 magnets per ring, 304 back iron, Y30 ferrite custom dimensions, 20 mm ring radius); every rendered value matches the dump:
+  - drag (`temperature.slip_loss.drag_Nm`): 0.01314, 0.01370, 0.004412, 0.01314, 0.04668 N·m. Each equals total loss / slip speed. As a share of the pull-out: 0.49, 0.70, 0.26, 6.34, 1.84 %.
+  - ripple at the gearbox input (`model.gearbox_input_ripple_Nm`): 0.5660, 0.4144, 0.3573, 0.04359, 0.5346 N·m. This equals pull-out (2.688, 1.968, 1.697, 0.2071, 2.539 N·m) / (5 × 0.95), exactly.
+  - slip frequency (`metal.slip_freq_Hz`): 166.7, 133.3, 166.7, 166.7, 166.7 Hz. This equals N/2 × 2000/60.
+  - cold-high at the gearbox input (`metal.cold_high_input_Nm`): 0.8049, 0.5893, 0.5082, 0.07117, 0.7602 N·m (cold-high 3.823, 2.799, 2.414, 0.3381, 3.611 N·m / 4.75). It is above the ripple at all five.
+  - onsets at the NdFeB designs: like poles facing 103.06 °C, pull-out 113.35 °C, aligned 170.16 °C. So like poles facing is the hardest case, and the magnet limit is 93.06 °C. At Y30 the onsets are infinite on the hot side and the adhesive governs at 120 °C.
+- Change directions confirmed (one slider step, `step_input`, at all five designs; the dump's aim lines all read "moves as it says"):
+  - Lower fault trip time: the fault temperature falls (default 65.2001 to 65.1901 °C). It also falls with a 140 °C hot-day start, and with a 60 s trip at 6000 rpm (99.152 to 99.101 °C).
+  - Lower slip speed: the total loss falls (default 2.7513 to 2.7287 W; at 6000 rpm 17.365 to 17.315 W). The swing frequency falls with it.
+- Extra probes:
+  - Measured drag 0.02 N·m: the drag and the loss stay the estimate (0.01314 N·m, 2.751 W), so "an estimated" stays true.
+  - A 60 s trip at 6000 rpm: 500 Hz (400 Hz at 8 magnets), every aim holds.
+  - Axial length 1.0 mm (f_end −0.3214): the engine's ripple (−0.01598) and cold-high input (−0.02273 N·m) render "no prediction". `a_value_computed_from_an_out_of_range_pull_out_reads_no_prediction` passes. The drag (0.004066 N·m) and the frequency render; neither depends on f_end. No negative torque is drawn.
+- Traps checked:
+  - "the rings re-lock below pull-out": sentence 3 says the opposite; MF-1 removes the unmodelled "near zero";
+  - "pull-out is guaranteed": not written;
+  - "the coupling protects the gearbox": not written; watch-out[0] says nothing checks it, and MF-2 stops the input value reading as the gearbox's swing;
+  - "the stored 3D fields follow the design": not written; MF-3 makes the fields, not the results, what stays fixed;
+  - T-H: the ripple row is the nominal swing at the operating temperature, larger when cold (watch-out[0]);
+  - T-M: one cycle per pole pair; the average is the drag; re-lock;
+  - T-N: stored fields;
+  - T-O: "can reach";
+  - "more magnets make the coupling stiffer": not written;
+  - no shaft-joint method is chosen or sized;
+  - "clamp" in any field, sources included: none.
+- Form:
+  - title 4 words;
+  - sentences 22, 23, 23, 24, 23 words raw; after MF-1 and MF-2, 22 and 24;
+  - changes 21, 20; watch-outs 25, 26, with 27 after MF-3;
+  - every field passes `plain_text_violations` and `audit_ids`;
+  - sentence 0 has no symbol and no placeholder;
+  - placeholders sit only in "here" or "on this design" clauses;
+  - eddy current and drag are glossed at their first use (sentence 2); pole pair is used at step 4 first.
+- Seeds and duplicates: S-8 accepted (MF-1). A-27: no trim; the note must stand alone as the ripple row's Why target.
+- Must-fix items: MF-1 (sentences[3], S-8), MF-2 (sentences[4], "at its input"), MF-3 (watch_out[1], "those fields"), to apply in round 2. Should-fix offered: SF-1 (sentence 0 names the gearbox), SF-2 (the mounting fact in watch_out[0]).
+- Verdict for this note, round 1: MUST_FIX (3 items).
+
+Round 2:
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; rounds 1 and 2 (PASS in round 2).
+- Read:
+  - the dumps `notes-review-T15-r1.txt` and `-r2.txt`; the `when_slipping` literal (`notes.rs:673-711`);
+  - `records/torque.rs:21-23, 65, 73` (one cycle per pole pair; pull-out as the peak of the summed curve; T_pull);
+  - `model.rs:1155-1156` and `records/dashboard.rs:29-30` (ripple = T_pull/(ratio·efficiency));
+  - `records/slip_heating.rs:279` (slip frequency);
+  - `records/torque.rs:209-210, 229-231` (cold-high at the gearbox input);
+  - `temperature.rs:105-114` (the stored reverse fields; like poles facing "once per pole pass while skipping"), `:236-275` (the stored slip fields), `:817-848` (onsets from the reverse fields, unscaled) and `:1116-1219` (the losses from the stored slip fields; a measured drag replaces the loss used and the high case);
+  - `metal_design.rs:225, 230` (re-engagement and slip detection open; no re-lock model);
+  - spec 8; slice-1 spec 8; phys-new-notes 2; amendments ruling 8, ruling 11, A-13, A-24, A-27 and A-28/A-28c.
+- Numbers reproduced from `compute_all`, in design order (default, 8 magnets per ring, 304 back iron, Y30 ferrite custom dimensions, 20 mm ring radius); every rendered value matches the dump:
+  - drag (`temperature.slip_loss.drag_Nm`): 0.01314, 0.01370, 0.004412, 0.01314, 0.04668 N·m. Each is under a tenth of the pull-out (most at Y30, 6.3 %, from the example design's fields).
+  - ripple at the gearbox input (`model.gearbox_input_ripple_Nm`): 0.5660, 0.4144, 0.3573, 0.04359, 0.5346 N·m. Each equals pull-out (2.688, 1.968, 1.697, 0.2071, 2.539 N·m) / (5 × 0.95) exactly.
+  - slip frequency (`metal.slip_freq_Hz`): 166.7, 133.3, 166.7, 166.7, 166.7 Hz. Each equals the pole pairs × 2000 rpm / 60.
+  - cold-high at the gearbox input (`metal.cold_high_input_Nm`): 0.8049, 0.5893, 0.5082, 0.07117, 0.7602 N·m. It is above the ripple at all five.
+  - The stored slip fields and reverse fields are identical at all five designs, and at a 2.0 mm gap and an 8 mm magnet length. The drag and the magnet limit follow the design (93.06 °C NdFeB, 250 °C Y30).
+- Change directions confirmed (the aim test passes; the dump's aim lines all read "moves as it says"):
+  - Lower fault trip time: the fault temperature falls at all five designs (default 65.2001 to 65.1901 °C).
+  - Lower slip speed: the total loss falls (default 2.7513 to 2.7287 W), and the swing frequency falls with it.
+  - Past the end effect (a 1 mm magnet): the ripple and cold-high input render "no prediction" (GUI test).
+- Traps checked:
+  - "the rings re-lock below pull-out" (sentence 4 says the opposite; no unmodelled threshold);
+  - "pull-out is guaranteed"; "the coupling protects the gearbox" (the input is named, and nothing checks it);
+  - "the stored 3D fields follow the design" (the fields, not the results, stay fixed);
+  - T-H, T-M, T-N, T-O; "more magnets make the coupling stiffer";
+  - no shaft-joint method chosen or sized;
+  - "clamp" in any field, sources included: none.
+- Form:
+  - sentences 22, 23, 23 (24 counted), 22, 24 (25 counted); changes 21, 20 (21 counted); watch-outs 25 (26 counted), 27;
+  - every field passes `plain_text_violations` and `audit_ids`;
+  - sentence 0 has no symbol and no placeholder; placeholders sit only in "here" or "on this design" clauses.
+- Seeds: S-8 accepted and applied verbatim.
+- Must-fix items and how they were applied (round 1, applied verbatim in round 2, re-reviewed true):
+  - sentences[3] drops "near zero" (S-8);
+  - sentences[4] names the value as the ripple "at its input";
+  - watch_out[1] makes "those fields" the subject that does not follow the design.
+- Verdict: PASS.
+
+Must-fix items applied (all in round 1, applied verbatim before round 2, which confirmed each):
+- sentences[3] (MF-1, seed S-8 accepted verbatim: "near zero" stated a re-lock threshold the engine does not model, and the re-lock slip speed depends on the inertias on both sides and on the load torque): "The rings re-lock only once the slip speed falls near zero, so slow the drive; a load dropping just below pull-out is not enough." -> "The rings re-lock only once the slip speed falls, so slow the drive; a load dropping just below pull-out is not enough."
+- sentences[4] (MF-2: the quoted value is the ripple referred to the gearbox input, the pull-out / (ratio × efficiency), while the gearbox output, where the coupling sits, carries the full swing; unqualified, 0.566 N·m read as the gearbox's own swing beside its 3 N·m output rating, the "coupling protects the gearbox" misreading): "Each swing brings like poles face to face, the hardest case for the magnets, and sends torque ripple to the gearbox, here {model.gearbox_input_ripple_Nm}." -> "Each swing puts like poles face to face, the magnets' hardest case, and sends torque ripple to the gearbox: at its input, here {model.gearbox_input_ripple_Nm}."
+- watch_out[1] (MF-3: "they" read most naturally as the drag, the heating and the magnets' limits, which do follow the geometry and the grade; only the stored fields stay fixed): "The drag, the heating and the magnets' limits use fields stored from the example design's 3D model; they do not follow your geometry or magnet grade." -> "The drag, the heating and the magnets' limits use fields stored from the example design's 3D model; those fields do not follow your geometry or magnet grade."
+
+Seeds (A-24):
+- S-8 (sentences[3]: "The rings re-lock only once the slip speed falls, so slow the drive; a load dropping just below pull-out is not enough."): accepted in round 1 and applied verbatim as MF-1; round 2 confirms it. Reason: the re-lock slip speed depends on the inertias on both sides and on the load torque, and the engine does not model re-locking (`metal_design.rs:225, 230`), so "near zero" is a heavy-load case, not a general threshold; "falls" carries the trap-safe claim (re-locking is set by the slip speed falling, not by the load dropping below pull-out) and agrees with the note's sources[4] and `pullout_angle`'s reviewed watch-out.
+
+Prose duplicates (A-27): no trim, in rounds 1 and 2. Sentences[1] and [3] overlap
+`pullout_angle` sentences[4] and its watch-out by one clause each, but this note is the ripple
+row's Why target and Start here step 9: a reader who arrives from the dashboard has not read
+step 4, so the note must stand alone. After MF-1 the two notes agree word for word on
+re-locking ("only once the slip speed falls"). `pullout_angle` (reviewed in T12) is not wrong,
+so no must-fix is named there.
+
+Should-fix offered, not applied (open for the controller; no on-screen text changed after the
+round-2 PASS):
+- SF-1 (round 1; round 2 keeps it offered), sentences[0], 24 words: "Past pull-out the coupling slips: one ring turns against the other, and the torque between them, carried by the gearbox, swings back and forth." Why: the linking row is the gearbox ripple, and the shipped sentence 0 answers when and what but never names the gearbox; the replacement stays free of symbols and placeholders.
+- SF-2 (round 1; round 2 keeps it offered; ruling 8), watch_out[0], 29 words: "Nothing checks the gearbox against these swings: its output carries them in full; when cold they can reach the cold-high torque, here {metal.cold_high_input_Nm} at its input; check its rating." Why: the mounting fact tells an engineer which rating to compare, and "can reach" keeps T-O (cold-high is an expectation, not a bound). It renders 0.8049, 0.5893, 0.5082, 0.07117 and 0.7602 N·m, or "no prediction" past the end effect.
+- SF-R2-2 (round 2; round 1's SF-7, second half; a test, shared with `slip_heating`): extend `the_slip_losses_read_fields_stored_from_the_example_design` (`tests/explain.rs`) with the four `temperature.demag.h_rev_*` inputs in `stored`, since watch_out[1]'s "the magnets' limits use fields stored ..." has no tripwire yet, and assert that the 20 mm design's `temperature.slip_loss.drag_Nm` differs from the default's (0.04668 against 0.01314 N·m) and the Y30 design's `temperature.summary.magnet_limit_C` from the default's (250 against 93.06 °C), so the test pins "the fields stay fixed while the results follow the design".
+
+Considered, no change (the reviewer's observations):
+- "Almost no torque on average" holds at all five designs: the drag is 0.49, 0.70, 0.26, 6.34 and 1.84 % of the pull-out. The 6.34 % at Y30 comes from the example design's stored NdFeB fields, which watch_out[1] discloses (round 1).
+- Past the end effect (a 1 mm magnet, f_end −0.3214) the ripple and cold-high at the gearbox input render "no prediction"; the drag and the swing frequency render, since neither depends on f_end, and no negative torque is drawn (rounds 1 and 2).
+- Ferrite's cold side with the stored NdFeB fields: at the Y30 design the cold limit is 335.7 °C, because the example's 863 kA/m like-pole field is applied to ferrite unscaled, so the cold check fails at any temperature. Watch_out[1] discloses the cause; the cold-side physics belongs to T16 (`ferrite_cold_demag`) and the backlog (round 2).
+- The shaft joint sees the slip swings too: while slipping, the hub-to-shaft joint carries the same ±pull-out reversal at the slip frequency (166.7 Hz at the default), a fretting and fatigue case for a shrink fit or a key. It is input for BL-064's joint check; no note text is proposed while the shaft-clamp section is paused (round 2).
+
+## slip_heating
+
+Task T15. Rewrite of "Eddy-current slip loss and skin depth" as "Slip heating: where the heat
+comes from", Start here step 10. It now also owns the field frequency, the pole pairs and the
+slip speed in rad/s (`temperature.duty.field_freq_Hz`, `temperature.duty.pole_pairs`,
+`temperature.duty.slip_rad_s`). Reviewer: physics reviewer (session model), fresh context. Date:
+2026-10-14 (the date the slice plan fixes for the note's `review` field; both rounds ran on
+2026-10-15).
+
+Rounds: 2. Verdict: PASS. Note: "Slip heating: where the heat comes from" (plan T15).
+
+Verdict by round: 1 MUST-FIX (1 item in this note); 2 PASS. Each round's full answer and the
+round-1 changes file are as under `## when_slipping`; the three notes were reviewed together.
+
+The text reviewed in round 1 already carried A-2 (change[0], the measured drag: `Step::Enter`, no
+aim, "your bench value from a slipping test; it replaces the estimated loss and its high case in
+the temperature results.") and A-13's plain-words sources. Every round confirmed them applied.
+
+The reviewer's report for the record, round by round, as returned:
+
+Round 1:
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; round 1.
+- Read:
+  - the dump; the `slip_heating` literal (`notes.rs:712-775`);
+  - `records/slip_heating.rs:23-64` (the materials in effect), `:66-72` (duty) and `:85-147`:
+    - skin depth √(2/(ω_e μ0 μ_r σ));
+    - steel hub, cup and web σω_e²B²δ/(4k²): speed^1.5;
+    - non-magnetic body (1 − e^(−2kd))/(2k): speed²;
+    - shells σ t (ω_s r B)²/2 and the cap: speed²;
+    - magnets σω_e²B²w²/24: speed²;
+    - drag = P/ω_s;
+  - `temperature.rs:1117, 1196-1219` (a measured drag replaces the loss used and the high case; the total and the drag stay the estimate);
+  - `material_library.rs:744-749` (sleeve and liner choices: 316L, Ti6Al4V, IN625, PEEK);
+  - `records/dashboard.rs:37-42` (running clearance);
+  - spec 8; phys-notes-b 3 and 6; amendments A-2, A-13, A-27.
+- Numbers reproduced from `compute_all`, in design order; every rendered value matches the dump:
+  - total loss (`temperature.slip_loss.total_W`): 2.751, 2.870, 0.9240, 2.751, 9.777 W. Each equals drag × slip speed (209.44 rad/s).
+  - drag: 0.01314, 0.01370, 0.004412, 0.01314, 0.04668 N·m.
+  - high case (`temperature.slip_loss.high_W`): 8.254, 8.609, 2.772, 8.254, 29.33 W. This equals total × 3.
+  - per part at the default: hub 0.2259, cup 1.3531, web 0.3656, sleeve 0.0747, liner 0.1805, cap 0.3236, magnets 0.2279 W. Skin depth 1.2995 mm (1.4529 mm at 8 magnets).
+  - speed exponents (slip speed doubled): steel hub, cup and web 1.5000 at the four steel designs; non-magnetic hub, cup and web 2.0000 at the 304 design; sleeve, liner, cap and magnets 2.0000 at all five.
+  - stored slip fields: identical at all five (b_hub 0.207, b_cup 0.214, b_sleeve 0.416, b_liner 0.419, b_magnet 0.19, b_hub_free 0.07832, b_cup_free 0.08764 T).
+- Change directions confirmed:
+  - Enter measured drag 0.02 N·m: the loss used and the high case become 4.189 W at all five. Steady high-case temperature: default 92.51 to 78.96 °C, 304 74.24 to 78.96 °C (the measurement replaces in both directions), 20 mm 162.8 to 78.96 °C. The total and the drag keep the estimate. "replaces", not "refines", holds.
+  - Choose sleeve and liner material, codes 2, 3 and 4 (Ti6Al4V 0.595, IN625 0.775, PEEK ~0 MS/m, against 316L 1.35 MS/m):
+    - sleeve plus liner loss falls at all five, from 0.0747 + 0.1805 W (default) to 0.0329 + 0.0796, 0.0429 + 0.1037 and 0 + 0 W;
+    - the total, the steady temperature and the peak all fall, though the lighter shells lower C (default peak 65.964 to 65.918, 65.928, 65.882 °C).
+  - Lower sleeve 0.01 mm: total 2.7513 to 2.7438 W; minimum running clearance −0.1032 to −0.0932 mm; peak falls; at all five.
+  - Lower liner 0.01 mm: total 2.7513 to 2.7425 W; clearance the same; peak falls; at all five.
+- Traps checked:
+  - "steel loss follows speed^1.5 exactly": "about";
+  - "a measured drag only refines the estimate": "replaces";
+  - "the stored 3D fields follow the design": MF-4;
+  - no lower-conductivity back iron and no pole count offered as a slip-loss lever (sentence 4 describes, offers no lever);
+  - "the coupling can slip indefinitely": not written;
+  - no shaft-joint method; "clamp" in any field, sources included: none.
+- Form:
+  - title 7 words;
+  - sentences 22, 19, 23, 24, 23; changes 20, 21, 21, 21; watch-outs 27, 25, with 28 after MF-4;
+  - sources pass the guards;
+  - "skin" is glossed ("crowd into a thin surface skin"); "high case" is glossed in watch-out[1].
+- Seeds and duplicates: no seed for this note. A-27: no trim on T15's side.
+- Must-fix items: MF-4 (watch_out[0], "those fields"), to apply in round 2. Should-fix offered: SF-3 (watch_out[1]), SF-6 (sources[3]).
+- Verdict for this note, round 1: MUST_FIX (1 item).
+
+Round 2:
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; rounds 1 and 2 (PASS in round 2).
+- Read:
+  - the dumps; the `slip_heating` literal (`notes.rs:712-775`);
+  - `records/slip_heating.rs:23-147`: skin depth; the steel hub, cup and web, thin-skin at speed^1.5; the non-magnetic body at the whole thickness, speed²; the shells, the cap and the magnets at speed²; drag = P/ω_s;
+  - `temperature.rs:236-275` and `:1116-1219` (the stored slip fields read as entered; a measured drag replaces the loss used and the high case, and the total and the drag stay the estimate);
+  - `material_library.rs:744-749` (sleeve and liner choices); `records/dashboard.rs:37-43` (running clearance);
+  - spec 8; phys-notes-b 3 and 6; amendments A-2, A-13 and A-27.
+- Numbers reproduced from `compute_all`, in design order; every rendered value matches the dump:
+  - total loss (`temperature.slip_loss.total_W`): 2.751, 2.870, 0.9240, 2.751, 9.777 W. Each equals drag × slip speed.
+  - drag: 0.01314, 0.01370, 0.004412, 0.01314, 0.04668 N·m.
+  - high case (`temperature.slip_loss.high_W`): 8.254, 8.609, 2.772, 8.254, 29.33 W, the estimate × 3.
+  - The stored slip fields are identical at all five designs, at a 2.0 mm gap (total 2.915 W) and at an 8 mm magnet length (1.988 W). The losses follow the design; the fields do not.
+- Change directions confirmed:
+  - Enter measured drag 0.02 N·m: the loss used and the high case become 4.1888 W at all five designs, while the total and the drag keep the estimate. The steady high-case temperature becomes 78.963 °C, down from 92.51 °C at the default and up from 74.24 °C at 304 ("replaces").
+  - Choose sleeve and liner material, codes 2, 3 and 4: the sleeve plus liner loss falls from 0.2552 W to 0.1125, 0.1466 and 0 W (20 mm: 1.2179 to 0.5370, 0.6993 and 0 W). The total and the peak fall at all five designs.
+  - Lower sleeve and lower liner: the total falls at all five designs (aim test). The thinner shell widens the running clearance.
+- Traps checked:
+  - "steel loss follows speed^1.5 exactly" ("about");
+  - "a measured drag only refines the estimate" ("replaces");
+  - "the stored 3D fields follow the design" (watch_out[0]: those fields do not);
+  - no lower-conductivity back iron and no pole count offered as a slip-loss lever;
+  - "more magnets make the coupling stiffer": not written;
+  - no shaft-joint method; "clamp" in any field, sources included: none.
+- Form:
+  - sentences 22, 19 (21 counted), 23, 24, 23; changes 20, 21, 21, 21; watch-outs 28, 25 (26 counted);
+  - the guards are empty on every field.
+- Must-fix items and how they were applied: watch_out[0] makes "those fields" the subject that does not follow the design (round 1, applied verbatim in round 2, re-reviewed true).
+- Verdict: PASS.
+
+Must-fix items applied (round 1, applied verbatim before round 2, which confirmed it):
+- watch_out[0] (MF-4: after the colon, "they" read as the losses, which do follow the magnet count, the ring radius, the gap, the magnet size and the grade, 2.751 W at the default, 2.870 W at 8 magnets and 9.777 W at a 20 mm ring radius; only the stored fields stay fixed): "The losses use fields stored from a 3D model of the example design: they do not follow your magnet count, ring radius, gap, magnet size or grade." -> "The losses use fields stored from a 3D model of the example design; those fields do not follow your magnet count, ring radius, gap, magnet size or grade."
+
+Seeds (A-24): none for this note.
+
+Prose duplicates (A-27): no trim on this note's side, in rounds 1 and 2. Change[1] to change[3]
+(the sleeve and liner material, the sleeve, the liner) overlap
+`a5.high_conductivity_sleeve_or_liner`, but this is the general note, reached from the
+total-loss row and Start here step 10, while the A5 note shows only when its warning fires.
+T17, which rewrites the A5 note, should point at these levers rather than restate them.
+
+Should-fix offered, not applied (open for the controller; no on-screen text changed after the
+round-2 PASS):
+- SF-3 (round 1), watch_out[1], 23 words: "The temperature check uses the high case, here {temperature.slip_loss.high_W}: until a drag is measured, the estimate times an allowance for the model's errors." Why: with a measured drag of 0.02 N·m the shipped text renders "Until a drag is measured, the high case, here 4.189 W, is the estimate times an allowance ...", while the value is then the measurement. The conditional keeps the shipped text logically true, but the value and its description disagree on screen; the replacement is true in both states.
+- SF-6 (round 1; this note's half), sources[3]: "Design report: the low-Reynolds form for aluminium parts" becomes "Design report: the weak-field, whole-thickness loss of non-magnetic body parts". Why: "low-Reynolds" is magnetics jargon for this audience, and the rule applies to any non-magnetic body pick (304 included: `materials.body_sigma_S_m`), not to aluminium alone.
+- SF-R2-2 (round 2, a test): as under `## when_slipping`; its drag half pins this note's watch_out[0] ("those fields", not the losses, stay fixed).
+
+Considered, no change (the reviewer's observations):
+- The steel exponent: in the model the hub, cup and web losses grow as exactly the speed to the power 1.5 (1.5000 at twice the speed at the four steel designs), while the real exponent is about 1.54 to 1.64 (the source); "about ... 1.5" avoids the "exactly" trap. Without steel the same parts go as the speed squared (2.0000 at the 304 design), as do the shells, the cap and the magnets everywhere (round 1).
+- "Heat through their whole thickness" without steel: the engine's depth (1 − e^(−2kd))/(2k) is set by the field's decay, not by a skin; "whole thickness" is the right plain contrast with "a thin surface skin" (round 1).
+- Ferrite magnet eddy loss: at the Y30 design the magnet loss is 0.2279 W, the same as NdFeB's, because the engine uses the NdFeB conductivity (BL-062, "verify first"). Physically ferrite's eddy loss is negligible, so the estimate is conservative (about 8 % of the 2.751 W total), and the sentence on magnets heating through their thickness is true for conducting magnets. Left to BL-062 (round 1).
+- Running clearance: at the default the minimum running clearance is −0.1032 mm, and one thinner step of the sleeve or the liner raises it to −0.0932 mm, so "widens the running clearance" is true; the trade-off (retention, unchecked) is named (round 1).
+- With stored fields a wider gap raises the modelled loss (the radii grow: 2.751 to 2.915 W at a 2.0 mm gap), where real fields would weaken; watch_out[0]'s "gap" item tells the reader not to trust that trend (round 2).
+
+## thermal_time_constant
+
+Task T15. Rewrite of "The thermal time constant" as "Slip temperature: how hot, and how fast",
+Start here step 11. It writes τ_th and the hot-day start as the panel shows them (it wrote τ and
+ϑ_start before: the open item M43-13, now resolved), names the peak the temperature check uses,
+and now also owns the steady temperatures, the rise per slip event and the peak
+(`temperature.thermal.steady_est_C`, `temperature.thermal.steady_high_C`,
+`temperature.slip_life.rise_per_event_high_C`, `temperature.magnet_life.peak_C`). Its heating
+diagram marks τ_th at 63 % of the steady rise and draws the limit and the time to reach it.
+Reviewer: physics reviewer (session model), fresh context. Date: 2026-10-14 (the date the slice
+plan fixes for the note's `review` field; both rounds ran on 2026-10-15).
+
+Rounds: 2. Verdict: PASS. Note: "Slip temperature: how hot, and how fast" (plan T15).
+
+Verdict by round: 1 MUST-FIX (2 items in this note); 2 PASS. Each round's full answer and the
+round-1 changes file are as under `## when_slipping`; the three notes were reviewed together.
+
+The text reviewed in round 1 already carried A-2 (change[1], the measured drag: `Step::Enter`, no
+aim, "your bench value from a slipping test; the loss and its high case then follow the
+measurement.") and A-13's plain-words sources. Every round confirmed them applied.
+
+The reviewer's report for the record, round by round, as returned:
+
+Round 1:
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; round 1.
+- Read:
+  - the dump; the `thermal_time_constant` literal (`notes.rs:776-833`);
+  - `records/slip_heating.rs:220-276`: C, τ_th = C/G, t95 = 3τ_th, steady rises P/G, steady temperatures, time to the limit (E12 first, then "never" when the steady temperature is at or below the limit), critical drag, fault temperature, event rise P_hi·t/C, slip duty, peak;
+  - `temperature.rs:918` (hot-day start = hot ambient + driving rise), `:1221-1300` (thermal network), `:1316, 1335` (duty, peak) and `:1382-1423` (the verdict reads the hot-day margin, magnet limit − peak and adhesive limit − peak);
+  - `gui/diagrams.rs` `heating_curve` and `LIMIT_SHARE`;
+  - spec 8; phys-notes-b 4 and 6; amendments A-2, A-13, A-24.
+- Numbers reproduced from `compute_all`, in design order; every rendered value matches the dump:
+  - τ_th (`temperature.thermal.time_constant_s`): 274.0, 276.1, 289.0, 255.2, 553.1 s. This equals C/G with C = 82.19, 82.82, 86.71, 76.57, 165.94 J/K and G = 0.3 W/K.
+  - peak (`temperature.magnet_life.peak_C`): 65.96, 66.00, 65.32, 65.98, 68.07 °C. The fault term wins at all five (default max(65.2001, 65.0100) + 0.02778 × 27.51 = 65.9644).
+  - high-case steady temperature (`temperature.thermal.steady_high_C`): 92.51, 93.70, 74.24, 92.51, 162.8 °C.
+  - governing limit (`temperature.summary.governing_limit_C`): 93.06, 93.06, 93.06, 120.0 (adhesive governs), 93.06 °C.
+  - time to the limit, high case: never, 1049.6 s, never, never, 187.1 s. The estimate case: never at four designs, 1091.1 s at 20 mm. "never" holds exactly when the high-case steady temperature is at or below the limit.
+  - hot-day start 65.00 °C and slip duty 0.02778 at all five.
+- Change directions confirmed:
+  - Raise conductance 0.001 W/K: steady high-case temperature 92.513 to 92.422 °C at the default, falling at all five. +10 % shortens τ_th (273.98 to 249.07 s). At a 60 s trip and 6000 rpm: 238.65 to 238.07 °C.
+  - Enter measured drag 0.02 N·m: the loss and the high case follow the measurement (above). The peak moves: 65.964 to 65.489 °C at the default, 65.320 to 65.484 °C at 304.
+  - Lower fault trip 0.1 s: the peak falls at every step down to the 0.1 s minimum at all five (default 65.9644 to 65.9544). With a 1 s slip event, trip 1.0 to 0.5 s leaves it unchanged at all five, hence MF-5. With a 140 °C start the peak stays above the limit at the shortest trip.
+  - More mass (hardware +100 g): the steady temperature is unchanged exactly at all five, and τ_th lengthens (sentence 0).
+- Diagram: τ_th at 63 % of the steady rise, a dashed limit at 0.93 of it, and a guide from the crossing down to the time axis at −ln(0.07)/5 of the width. It agrees with first-order heating. Its two tests pass.
+- Traps checked:
+  - "more mass lowers the steady temperature": sentence 0 says the opposite;
+  - "the coupling can slip indefinitely": watch-out[0] ties "never" to a placeholder conductance;
+  - "a measured drag only refines the estimate": not written;
+  - symbols as the panel shows them (τ_th, C, G, P); no ϑ, and no σ for conductivity;
+  - the hot-day start is glossed (sentence 1) and the peak is glossed (sentence 4);
+  - no shaft-joint method; "clamp" in any field, sources included: none.
+- Form:
+  - title 7 words;
+  - sentences 23, 25, 23, 21, 24; changes 23, 17, 21, with 20 after MF-5; watch-outs 27, 24;
+  - the guards are empty on every field;
+  - sentence 0 has no symbol and no placeholder.
+- Seeds and duplicates: S-9 accepted (MF-5). No A-27 duplicate here.
+- Must-fix items: MF-5 (change[2], S-9) and MF-6 (sources[0], no typed number), to apply in round 2. Should-fix offered: SF-4 (sentence 3 glosses), SF-5 (sentence 0 names the time constant), SF-6 (sources[1]).
+- Verdict for this note, round 1: MUST_FIX (2 items).
+
+Round 2:
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; rounds 1 and 2 (PASS in round 2).
+- Read:
+  - the dumps; the `thermal_time_constant` literal (`notes.rs:776-833`);
+  - `records/slip_heating.rs:220-276`;
+  - `temperature.rs:918` (hot-day start = hot ambient + driving rise), `:1221-1300` (the thermal network; T_fault :1282) and `:1316-1335` (slip duty; peak = max(T_fault, start + one-event rise) + duty × P_hi/G);
+  - `gui/diagrams.rs` `heating_curve`;
+  - the math audit of 2026-09-29, "Placeholder inputs" (`docs/analyses/2026-09-29-magcoupling-math-audit.md:73-82`);
+  - spec 8; phys-notes-b 4 and 6; amendments A-2, A-13 and A-24.
+- Numbers reproduced from `compute_all`, in design order; every rendered value matches the dump:
+  - τ_th (`temperature.thermal.time_constant_s`): 274.0, 276.1, 289.0, 255.2, 553.1 s.
+  - peak (`temperature.magnet_life.peak_C`): 65.96, 66.00, 65.32, 65.98, 68.07 °C, recomputed exactly from the fault and event terms.
+  - high-case steady temperature: 92.51, 93.70, 74.24, 92.51, 162.8 °C.
+  - governing limit: 93.06 °C at four designs, and 120.0 °C at Y30 (the adhesive).
+  - time to the limit, high case: never, 1049.6 s, never, never, 187.1 s.
+- Change directions confirmed:
+  - Raise conductance: the steady high-case temperature falls at all five designs (aim test).
+  - Enter measured drag: the loss and its high case follow the measurement (above).
+  - Lower fault trip:
+    - one step lowers the peak at all five designs (aim test);
+    - with a 1 s slip event, 1.0 s to 0.5 s leaves it unchanged at all five, so "can lower" is right;
+    - over 107,820 trip steps (four event lengths, three starts, three slip speeds) none raised it;
+    - with a 140 °C start the peak stays 140.26 to 142.73 °C at the 0.1 s minimum, above the 93.06 and 120 °C limits;
+    - with the start set equal to the limit and the smallest measured drag, it stays at or above the limit.
+- Diagram: τ_th at 63 %, the limit and the time to reach it; its two tests pass.
+- Traps checked:
+  - "more mass lowers the steady temperature" (sentence 0 says the opposite);
+  - "the coupling can slip indefinitely" (watch_out[0] and sources[0]: a placeholder conductance);
+  - "a measured drag only refines the estimate";
+  - a typed default value in any field, sources included: none after the round-1 fix;
+  - symbols as the panel shows them;
+  - no shaft-joint method; "clamp" in any field, sources included: none.
+- Form:
+  - sentences 23, 25, 23 (24 counted), 21, 24; changes 23, 17, 20 (21 counted); watch-outs 27 (29 counted), 24;
+  - the guards are empty on every field.
+- Seeds: S-9 accepted and applied verbatim.
+- Must-fix items and how they were applied (round 1, applied verbatim in round 2, re-reviewed true):
+  - change[2] says a shorter unbroken slip "can lower" the peak, "but not under a limit the hot-day start already reaches" (S-9);
+  - sources[0] drops the typed −2.48 °C and names the audit's placeholder-input table.
+- Verdict: PASS.
+
+Must-fix items applied (all in round 1, applied verbatim before round 2, which confirmed each):
+- change[2] (MF-5, seed S-9 accepted verbatim; input `temperature.duty.fault_trip_s`, `Step::Lower`, aim `temperature.magnet_life.peak_C` down, all unchanged: once one slip event is hotter than the fault slip, a shorter trip leaves the peak unchanged, as with a 1 s slip event at all five designs): "a shorter unbroken slip lowers the peak, here {temperature.magnet_life.peak_C}, but cannot bring it under a limit the hot-day start already reaches." -> "a shorter unbroken slip can lower the peak, here {temperature.magnet_life.peak_C}, but not under a limit the hot-day start already reaches."
+- sources[0] (MF-6: a typed default-design number on screen under the fold, which A-13 and the Global Constraints forbid, and which did not reproduce: +10 % conductance moves the high-case steady temperature by −2.501 °C at the default and by −0.840 to −8.888 °C at the other designs): "Math audit of 2026-09-29: the placeholder inputs (conductance: −2.48 °C per +10 %)" -> "Math audit of 2026-09-29: the placeholder inputs and how far each moves the results, the conductance among them"
+
+Seeds (A-24):
+- S-9 (change[2]: "a shorter unbroken slip can lower the peak, here {temperature.magnet_life.peak_C}, but not under a limit the hot-day start already reaches."): accepted in round 1 and applied verbatim as MF-5; round 2 confirms it. Reason: the peak is max(fault slip, one slip event) + duty × P_hi/G (`temperature.rs:1335`), so once one slip event outlasts the fault slip a shorter trip leaves the peak unchanged (probed at all five designs with a 1 s event), and "lowers" is false on reachable inputs. "Can lower" holds at every probe; round 2 found no shorter trip that raised the peak over 107,820 trip steps, and with a 140 °C hot-day start the peak stays above the limits at the 0.1 s minimum trip.
+
+Prose duplicates (A-27): none named for this note.
+
+Should-fix offered, not applied (open for the controller; no on-screen text changed after the
+round-2 PASS):
+- SF-4 (round 1), sentences[3], 24 words: "One short slip lasting t adds only P·t/C; slips over the life add an average rise, P/G times the share of life spent slipping." Why: t is not defined, and "slip duty" is not glossed along Start here; the physics is unchanged (the event rise is P_hi·t/C, and the life-average rise is (life events × event duration / life hours) × P_hi/G).
+- SF-5 (round 1), sentences[0], 25 words: "Unbroken slip heats the coupling toward a steady rise set by loss and heat path; mass changes only how fast, which the time constant measures." Why: the note is opened from the thermal time constant (Start here step 11), and the shipped sentence 0 never names it. The trap guard stays: more heat capacity leaves the steady temperature exactly unchanged at all five designs and lengthens τ_th (273.98 to 431.65 s for 100 g more hardware at the default).
+- SF-6 (round 1; this note's half), sources[1]: "Design ruling: aluminium parts at their own specific heat" becomes "Design ruling: non-magnetic body parts at their own specific heat". Why: the rule applies to any non-magnetic body pick (304 included: `materials.body_c_J_kgK`), not to aluminium alone.
+- SF-R2-1 (round 2; round 1's SF-7, first half; a test): in `tests/explain.rs`, at each probe design with `metal.slip_event_s` = 1.0, a fault trip of 1.0 s and of 0.5 s give the same `temperature.magnet_life.peak_C` while `temperature.thermal.temp_at_fault_C` falls (probed: equal peaks at all five designs). Why: today the aim test pins only the "lowers" half of "can lower".
+
+Considered, no change (the reviewer's observations):
+- "Never": the screen text reads "never: steady state stays below the limit" (`temperature.rs:704`), while the rule and watch_out[0] say "at or below"; they differ only at exact equality (round 1).
+- The heating curve draws the finite-time case (the limit at 0.93 of the steady rise, crossed after −ln 0.07 = 2.66 time constants); three probe designs read "never", which watch_out[0] covers, so no second picture is needed (round 1).
+- The same stale figure outside T15: `magcoupling-rs/src/engine/assumptions.rs:128` (the conductance assumption's `source`, drawn only with the spreadsheet details on) still reads "−2.48 °C of steady high-case magnet temperature per +10 %", the audit's figure at the old defaults (−2.501 °C today). Its owner is whichever task owns the Assumptions view's texts (round 2).

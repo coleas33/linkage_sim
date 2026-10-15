@@ -38,6 +38,7 @@ use magcoupling::engine::explain::scope::{SCOPE, Status};
 use magcoupling::engine::explain::{TermSource, Trace, note_text, notes, probes, render};
 use magcoupling::engine::grades::{GRADES, Grade, GradeFamily};
 use magcoupling::engine::library;
+use magcoupling::engine::material_library::SLEEVE_LINER_CHOICES;
 use magcoupling::engine::meta::{
     FieldType, InputMeta, InputSet, ResultSet, Value, input_rows, result_rows,
 };
@@ -1625,6 +1626,12 @@ fn stepped(design: &DesignInputs, path: &str, step: Step) -> DesignInputs {
         .unwrap_or_else(|why| panic!("{path} is free at every probe design: {why:?}"))
 }
 
+/// Whether `a` and `b` agree to a part in 10¹² (an engine relation the note states, computed
+/// two ways).
+fn close(a: f64, b: f64) -> bool {
+    (a / b - 1.0).abs() < 1e-12
+}
+
 /// `end_effect`'s two entries at the five probe designs: longer magnets lose a smaller share
 /// at the ends; a larger end coefficient lowers every torque but leaves the bench prototype's
 /// own end factor. The trade-offs the entries name hold too: cold-high, and with it the
@@ -1998,7 +2005,6 @@ fn the_torque_band_note_s_levers_move_hot_low_and_cold_high_as_it_says() {
         note.change[3].aim,
         Some(("metal.torque_cold_high_Nm", Sense::Up))
     );
-    let close = |a: f64, b: f64| (a / b - 1.0).abs() < 1e-12;
     for (name, design) in probes::probe_designs() {
         let base = compute_all(&design);
         let (hot, cold) = (base.metal.torque_hot_low_Nm, base.metal.torque_cold_high_Nm);
@@ -2069,7 +2075,6 @@ fn the_torque_band_note_s_sentences_hold_at_every_probe_design() {
             note.sentences[0]
         );
     }
-    let close = |a: f64, b: f64| (a / b - 1.0).abs() < 1e-12;
     for (name, design) in probes::probe_designs() {
         let base = compute_all(&design);
         let m = &base.metal;
@@ -2186,7 +2191,6 @@ fn the_temperature_note_s_levers_hold_at_every_probe_design() {
         "names the margins it lowers: {:?}",
         note.change[3].text
     );
-    let close = |a: f64, b: f64| (a / b - 1.0).abs() < 1e-12;
     let (mut library, mut graded, mut hot_onsets) = (0, 0, 0);
     for (name, design) in probes::probe_designs() {
         let base = compute_all(&design);
@@ -2413,6 +2417,402 @@ fn a_grade_nearer_zero_loses_a_smaller_share_when_hot_and_smco_starts_below_sint
     assert!(
         smco.model.pullout_20C_Nm > y30.model.pullout_20C_Nm,
         "Y30 design: nearer zero, and stronger at 20 °C"
+    );
+}
+
+// Slice 2 note claims: the slipping, slip-heating and slip-temperature notes (plan T15). Each
+// lever moves by one slider step ([`stepped`]); T5's aim test checks each entry's aim, and the
+// entries with none (a measured drag, a material) are checked here, design by design.
+
+/// A change entry without its text: (input, step, aim).
+type Lever = (&'static str, Step, Option<(&'static str, Sense)>);
+
+/// The note `id`'s change entries, without their texts.
+fn levers_of(id: &str) -> Vec<Lever> {
+    notes::note(id)
+        .unwrap_or_else(|| panic!("no note {id}"))
+        .change
+        .iter()
+        .map(|c| (c.input, c.step, c.aim))
+        .collect()
+}
+
+/// `when_slipping` at the five probe designs. Past pull-out the torque swings between plus
+/// and minus the pull-out once per pole pair passed (the slip frequency), leaving a drag far
+/// below the pull-out; the gearbox input sees that swing through the ratio and the efficiency,
+/// and cold-high at the input lies above it (the first watch-out: cold, the swings can reach
+/// cold-high).
+#[test]
+fn the_slip_note_s_claims_hold_at_every_probe_design() {
+    assert_eq!(
+        levers_of("when_slipping"),
+        [
+            (
+                "temperature.duty.fault_trip_s",
+                Step::Lower,
+                Some(("temperature.thermal.temp_at_fault_C", Sense::Down))
+            ),
+            (
+                "metal.slip_rpm",
+                Step::Lower,
+                Some(("temperature.slip_loss.total_W", Sense::Down))
+            ),
+        ]
+    );
+    for (name, design) in probes::probe_designs() {
+        let r = compute_all(&design);
+        let c = &design.coupling;
+        // Sentence 1: one swing per pole pair passed, so the swings come at the pole pairs
+        // times the slip revolutions per second.
+        let pole_pairs = c.npole as f64 / 2.0;
+        assert!(
+            close(
+                r.metal.slip_freq_Hz,
+                pole_pairs * design.metal.slip_rpm / 60.0
+            ),
+            "{name}: the slip frequency"
+        );
+        assert_eq!(r.temperature.duty.pole_pairs, pole_pairs, "{name}");
+        // Sentences 1 and 2: on average the load gets only the drag, under a tenth of the
+        // pull-out (the most is the Y30 design's, its drag from the example design's fields).
+        assert!(
+            r.temperature.slip_loss.drag_Nm < 0.1 * r.model.pullout_Nm,
+            "{name}: {} against {}",
+            r.temperature.slip_loss.drag_Nm,
+            r.model.pullout_Nm
+        );
+        // Sentence 4: the ripple at the gearbox input is the swing's amplitude, the pull-out,
+        // through the ratio and the efficiency.
+        assert!(
+            close(
+                r.model.gearbox_input_ripple_Nm * c.gear_ratio * c.gear_efficiency,
+                r.model.pullout_Nm
+            ),
+            "{name}: the ripple"
+        );
+        // Watch-out 1: cold, the swings reach cold-high, which at the gearbox input lies above
+        // the ripple at the operating temperature (the GUI test
+        // `nothing_checks_a_gearbox_torque_against_its_rating_yet` holds the "nothing checks").
+        assert!(
+            r.metal.cold_high_input_Nm > r.model.gearbox_input_ripple_Nm,
+            "{name}: cold-high at the gearbox input"
+        );
+        // Entry 2: slower slipping, slower swings.
+        let slower = compute_all(&stepped(&design, "metal.slip_rpm", Step::Lower));
+        assert!(
+            slower.metal.slip_freq_Hz < r.metal.slip_freq_Hz,
+            "{name}: slower swings"
+        );
+    }
+}
+
+/// `slip_heating` at the five probe designs: the heat is the drag times the slip speed; the
+/// steel parts' loss grows as the slip speed to the power 1.5 (skin-limited), the shells', the
+/// cap's and the magnets' as its square, and with no magnetic steel the hub's, cup's and web's
+/// as its square too; a library sleeve and liner material other than 316L, or a thinner sleeve
+/// or liner, heats less, and the thinner one widens the running clearance.
+#[test]
+fn the_slip_heating_note_s_claims_hold_at_every_probe_design() {
+    let total_down = Some(("temperature.slip_loss.total_W", Sense::Down));
+    assert_eq!(
+        levers_of("slip_heating"),
+        [
+            ("metal.measured_drag_Nm", Step::Enter, None),
+            ("materials.parts.sleeve_liner", Step::Choose, None),
+            ("metal.sleeve_mm", Step::Lower, total_down),
+            ("metal.liner_mm", Step::Lower, total_down),
+        ]
+    );
+    let code = |id: &str| {
+        SLEEVE_LINER_CHOICES
+            .iter()
+            .find(|&&(_, name)| name == id)
+            .map(|&(code, _)| code)
+            .unwrap_or_else(|| panic!("no sleeve and liner material {id}"))
+    };
+    let (mut steel, mut no_steel) = (0, 0);
+    for (name, design) in probes::probe_designs() {
+        let r = compute_all(&design);
+        let loss = &r.temperature.slip_loss;
+        // Sentence 1: the heat power is the drag torque times the slip speed.
+        assert!(
+            close(loss.drag_Nm * r.temperature.duty.slip_rad_s, loss.total_W),
+            "{name}: power"
+        );
+        // Sentences 2 to 4, at twice the slip speed (inside its slider).
+        let mut faster = design.clone();
+        faster.metal.slip_rpm *= 2.0;
+        let fast = compute_all(&faster).temperature.slip_loss;
+        let grows = |before: f64, after: f64| (after / before).log2();
+        let whole_thickness = [
+            ("sleeve", loss.sleeve_W, fast.sleeve_W),
+            ("liner", loss.liner_W, fast.liner_W),
+            ("cap", loss.cap_W, fast.cap_W),
+            ("magnets", loss.magnets_W, fast.magnets_W),
+        ];
+        for (part, before, after) in whole_thickness {
+            assert!(
+                (grows(before, after) - 2.0).abs() < 1e-9,
+                "{name}: the {part} as the speed squared"
+            );
+        }
+        let body = [
+            ("hub", loss.hub_W, fast.hub_W),
+            ("cup", loss.cup_W, fast.cup_W),
+            ("web", loss.web_W, fast.web_W),
+        ];
+        let magnetic_steel = r.materials.circuit_backiron == 1;
+        let power = if magnetic_steel {
+            steel += 1;
+            1.5
+        } else {
+            no_steel += 1;
+            2.0
+        };
+        for (part, before, after) in body {
+            assert!(
+                (grows(before, after) - power).abs() < 1e-9,
+                "{name}: the {part} as the speed to the power {power}"
+            );
+        }
+        // Entry 2: titanium, Inconel and PEEK conduct less than 316L, so the sleeve and the
+        // liner heat less (the probe designs use 316L).
+        assert_eq!(design.materials.parts.sleeve_liner, code("316L_annealed"));
+        for id in ["Ti6Al4V_annealed", "IN625_annealed", "PEEK_unfilled"] {
+            let mut other = design.clone();
+            other.materials.parts.sleeve_liner = code(id);
+            let o = compute_all(&other).temperature.slip_loss;
+            assert!(
+                o.sleeve_W < loss.sleeve_W && o.liner_W < loss.liner_W,
+                "{name}: {id}"
+            );
+            assert!(o.total_W < loss.total_W, "{name}: {id}, the total");
+        }
+        // Entries 3 and 4: a thinner sleeve or liner widens the running clearance (the loss it
+        // lowers is the aim test's).
+        for path in ["metal.sleeve_mm", "metal.liner_mm"] {
+            let thinner = compute_all(&stepped(&design, path, Step::Lower));
+            assert!(
+                thinner.metal.min_running_clearance_mm > r.metal.min_running_clearance_mm,
+                "{name}: {path} widens the clearance"
+            );
+        }
+    }
+    assert!(
+        steel >= 1 && no_steel >= 1,
+        "designs with and without magnetic steel among the probes"
+    );
+}
+
+/// The two notes' measured-drag entries (`slip_heating` and `thermal_time_constant`, A-2): a
+/// drag measured on the bench replaces the estimated loss and its high case in the temperature
+/// results (both become the measurement), while the slip-loss rows the notes call "estimated"
+/// keep the estimate.
+#[test]
+fn a_measured_drag_replaces_the_loss_and_its_high_case() {
+    for id in ["slip_heating", "thermal_time_constant"] {
+        assert!(
+            levers_of(id).contains(&("metal.measured_drag_Nm", Step::Enter, None)),
+            "{id}: the measured-drag entry"
+        );
+    }
+    for (name, design) in probes::probe_designs() {
+        assert_eq!(design.metal.measured_drag_Nm, None, "{name}: none measured");
+        let estimate = compute_all(&design).temperature;
+        let mut measured = design.clone();
+        measured.metal.measured_drag_Nm = Some(0.02);
+        let t = compute_all(&measured).temperature;
+        let power = 0.02 * t.duty.slip_rad_s;
+        assert!(close(t.slip_loss.used_W, power), "{name}: the loss used");
+        assert!(close(t.slip_loss.high_W, power), "{name}: its high case");
+        assert_eq!(t.thermal.steady_est_C, t.thermal.steady_high_C, "{name}");
+        assert_eq!(t.slip_loss.total_W, estimate.slip_loss.total_W, "{name}");
+        assert_eq!(t.slip_loss.drag_Nm, estimate.slip_loss.drag_Nm, "{name}");
+        // Unmeasured, the high case is the estimate times the allowance the check uses.
+        let multiplier = design.temperature.slip_loss.high_multiplier;
+        assert!(multiplier > 1.0, "{name}");
+        assert!(
+            close(
+                estimate.slip_loss.high_W,
+                estimate.slip_loss.total_W * multiplier
+            ),
+            "{name}: the high case"
+        );
+    }
+}
+
+/// `thermal_time_constant` at the five probe designs: one lump of heat capacity C and
+/// conductance G, starting at the hot-day start; the steady rise P/G, the time constant C/G;
+/// one slip event's P·t/C; the life's average rise; the peak the temperature check reads; and
+/// "never" exactly when the high-case steady temperature stays at or below the limit.
+#[test]
+fn the_slip_temperature_note_s_claims_hold_at_every_probe_design() {
+    use magcoupling::engine::meta::NumOrText;
+    assert_eq!(
+        levers_of("thermal_time_constant"),
+        [
+            (
+                "temperature.thermal.conductance_W_K",
+                Step::Raise,
+                Some(("temperature.thermal.steady_high_C", Sense::Down))
+            ),
+            ("metal.measured_drag_Nm", Step::Enter, None),
+            (
+                "temperature.duty.fault_trip_s",
+                Step::Lower,
+                Some(("temperature.magnet_life.peak_C", Sense::Down))
+            ),
+        ]
+    );
+    let (mut never, mut reached) = (0, 0);
+    for (name, design) in probes::probe_designs() {
+        let t = compute_all(&design).temperature;
+        let (th, life) = (&t.thermal, &t.slip_life);
+        let (p, p_high) = (t.slip_loss.used_W, t.slip_loss.high_W);
+        let g = design.temperature.thermal.conductance_W_K;
+        let c = th.heat_capacity_J_K;
+        // Sentence 1: the lump starts at the hot-day start, hot ambient plus driving rise.
+        let duty = &design.temperature.duty;
+        assert_eq!(
+            th.start_C,
+            duty.hot_ambient_C + duty.driving_rise_C,
+            "{name}"
+        );
+        assert_eq!(th.start_C, t.summary.hot_day_start_C, "{name}");
+        // Sentence 2: toward a rise of P/G above the start, τ_th = C/G.
+        assert!(close(th.steady_rise_est_C, p / g), "{name}");
+        assert!(close(th.steady_rise_high_C, p_high / g), "{name}");
+        assert!(close(th.time_constant_s, c / g), "{name}");
+        assert_eq!(
+            th.steady_high_C,
+            th.start_C + th.steady_rise_high_C,
+            "{name}"
+        );
+        // Sentence 0: more heat capacity changes only how fast, not the steady rise.
+        let mut heavier = design.clone();
+        heavier.temperature.thermal.c_ndfeb += 50.0;
+        let h = compute_all(&heavier).temperature.thermal;
+        assert!(h.time_constant_s > th.time_constant_s, "{name}: slower");
+        assert_eq!(h.steady_high_C, th.steady_high_C, "{name}: the same rise");
+        // Sentence 3: one slip event adds P·t/C; the life adds the slip duty times P/G.
+        assert!(
+            close(
+                life.rise_per_event_high_C,
+                p_high * design.metal.slip_event_s / c
+            ),
+            "{name}: one event"
+        );
+        assert!(
+            close(life.avg_rise_high_C, life.slip_duty * th.steady_rise_high_C),
+            "{name}: the average rise"
+        );
+        // Sentence 4: the peak is the start plus the hotter of a fault slip and one slip event,
+        // plus that average rise; the temperature check's limit margins read it.
+        let peak = t.magnet_life.peak_C;
+        let hotter = th
+            .temp_at_fault_C
+            .max(th.start_C + life.rise_per_event_high_C);
+        assert!(
+            close(peak, hotter + life.avg_rise_high_C),
+            "{name}: the peak"
+        );
+        assert_eq!(
+            t.magnet_life.margin_limit_C,
+            t.summary.magnet_limit_C - peak,
+            "{name}"
+        );
+        assert_eq!(
+            t.adhesive_life.margin_C,
+            t.summary.adhesive_limit_C - peak,
+            "{name}"
+        );
+        // Entry 1: a better heat path also shortens τ_th.
+        let better = compute_all(&stepped(
+            &design,
+            "temperature.thermal.conductance_W_K",
+            Step::Raise,
+        ));
+        assert!(
+            better.temperature.thermal.time_constant_s < th.time_constant_s,
+            "{name}: shorter τ_th"
+        );
+        // Watch-out 1: "never" exactly when the high-case steady temperature stays at or below
+        // the limit (every probe design starts below it).
+        let limit = t.summary.governing_limit_C;
+        assert!(th.start_C < limit, "{name}: starts below the limit");
+        let is_never = matches!(th.time_to_limit_high, NumOrText::Text(_));
+        assert_eq!(is_never, th.steady_high_C <= limit, "{name}");
+        if is_never {
+            never += 1;
+        } else {
+            reached += 1;
+        }
+    }
+    assert!(
+        never >= 1 && reached >= 1,
+        "'never' and a time to the limit among the probes"
+    );
+}
+
+/// `thermal_time_constant`'s fault-trip entry: a hot-day start at or above the limit (the
+/// hottest day and driving rise the sliders allow) keeps the peak there, however short the
+/// unbroken slip.
+#[test]
+fn a_shorter_fault_slip_cannot_bring_the_peak_under_a_limit_the_start_reaches() {
+    for (name, mut design) in probes::probe_designs() {
+        let duty = &mut design.temperature.duty;
+        duty.hot_ambient_C = 80.0;
+        duty.driving_rise_C = 60.0;
+        while let Ok(shorter) =
+            probes::step_input(&design, "temperature.duty.fault_trip_s", Step::Lower)
+        {
+            design = shorter;
+        }
+        let t = compute_all(&design).temperature;
+        assert!(
+            t.thermal.start_C >= t.summary.governing_limit_C,
+            "{name}: the start reaches the limit"
+        );
+        assert!(
+            t.magnet_life.peak_C > t.summary.governing_limit_C,
+            "{name}: the peak stays above it at a {} s trip",
+            design.temperature.duty.fault_trip_s
+        );
+    }
+}
+
+/// The slip notes' stored-field watch-outs (`when_slipping` and `slip_heating`): the slip
+/// losses read fields stored from the example design's 3D model, the same at every probe
+/// design, so they do not follow the magnet grade (the Y30 design, the example's geometry with
+/// ferrite on both rings, has the example's losses). When the fields follow the design, this
+/// fails, and those watch-outs change in the same commit.
+#[test]
+fn the_slip_losses_read_fields_stored_from_the_example_design() {
+    let example = DesignInputs::default();
+    let stored = |d: &DesignInputs| {
+        let s = &d.temperature.slip_loss;
+        [
+            s.b_hub_T,
+            s.b_cup_T,
+            s.b_sleeve_T,
+            s.b_liner_T,
+            s.cap_integral_T2m4,
+            s.web_integral_T2m2,
+            s.b_magnet_T,
+            s.b_hub_free_T,
+            s.b_cup_free_T,
+            s.web_integral_free_T2m2,
+        ]
+    };
+    for (name, design) in probes::probe_designs() {
+        assert_eq!(stored(&design), stored(&example), "{name}");
+    }
+    let y30 = compute_all(&probe_inputs("Y30 ferrite, custom dimensions"));
+    let r = compute_all(&example);
+    assert_ne!(y30.model.pullout_Nm, r.model.pullout_Nm);
+    assert_eq!(
+        y30.temperature.slip_loss.total_W,
+        r.temperature.slip_loss.total_W
     );
 }
 
